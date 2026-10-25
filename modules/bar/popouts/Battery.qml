@@ -17,6 +17,13 @@ Column {
     // renders. Defaults preserve upstream behavior.
     property bool profileStatusEnabled: true
     property bool profileControlsEnabled: true
+    // Windows host: controls can stay visible while writes are separately
+    // disabled. The default preserves upstream's interactive selector.
+    property bool profileWritesEnabled: true
+    // Windows host: profiles the native backend can truthfully map. null keeps
+    // upstream's all-three behavior; unavailable entries use the selector's
+    // existing disabled styling.
+    property var availableProfiles: null
 
     // Windows host: a native UPower read can fail, or report an unknown level
     // instead of a percentage. Linux always supplies a usable level, so these
@@ -53,6 +60,12 @@ Column {
         default:
             return Tr.trCtx("Unknown", "power profile");
         }
+    }
+
+    function isProfileAvailable(profile: int): bool {
+        if (root.availableProfiles === null || root.availableProfiles === undefined)
+            return true;
+        return root.availableProfiles.indexOf(profile) >= 0;
     }
 
     function perfDegradationToString(p: int): string {
@@ -179,6 +192,8 @@ Column {
             if (!root.profileControlsEnabled)
                 return "";
             const p = PowerProfiles.profile;
+            if (!root.isProfileAvailable(p))
+                return "";
             if (p === PowerProfile.PowerSaver)
                 return saver.icon;
             if (p === PowerProfile.Performance)
@@ -278,14 +293,19 @@ Column {
         required property string icon
         required property int profile
 
+        readonly property bool available: root.isProfileAvailable(profile)
+
         implicitWidth: icon.implicitHeight + Tokens.padding.small
         implicitHeight: icon.implicitHeight + Tokens.padding.small
 
         StateLayer {
             radius: Tokens.rounding.full
-            disabled: !root.profileControlsEnabled
+            disabled: !root.profileControlsEnabled || !root.profileWritesEnabled || !parent.available
             color: profiles.current === parent.icon ? Colours.palette.m3onPrimary : Colours.palette.m3onSurface
-            onClicked: PowerProfiles.profile = parent.profile
+            onClicked: {
+                if (root.profileWritesEnabled && parent.available)
+                    PowerProfiles.profile = parent.profile;
+            }
         }
 
         MaterialIcon {

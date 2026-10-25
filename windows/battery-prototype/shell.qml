@@ -44,7 +44,24 @@ ShellRoot {
             onBatteryKnown: Battery.onBatteryKnown, onBattery: Battery.onBattery,
             charging: Battery.charging, state: Battery.state,
             percentage: Battery.percentage, timeToEmpty: Battery.timeToEmpty,
-            iconName: Battery.iconName
+            iconName: Battery.iconName,
+            profilesEnabled: Battery.profilesEnabled,
+            profileWritesRequested: Battery.profileWritesRequested,
+            profileWritesEnabled: Battery.profiles.writesPermitted,
+            profileStatusEnabled: Battery.profileStatusEnabled,
+            profileControlsEnabled: Battery.profileControlsEnabled,
+            profilesState: Battery.profiles.state,
+            profileReason: Battery.profiles.reason,
+            profile: Battery.profiles.profile,
+            profileName: Battery.profiles.profileName,
+            availableProfiles: Battery.profiles.availableProfiles,
+            performanceMapped: Battery.profiles.performanceMapped,
+            performanceClaim: Battery.profiles.performanceClaim,
+            writeResultAvailable: Battery.profiles.writeResultAvailable,
+            writeState: Battery.profiles.writeState,
+            writeReason: Battery.profiles.writeReason,
+            writeError: Battery.profiles.writeError,
+            writeTimeoutMs: Battery.profiles.writeTimeoutMs
         };
     }
 
@@ -102,7 +119,7 @@ ShellRoot {
                     active: Battery.enabled
                     sourceComponent: BarStatus.BatteryStatus {
                         colour: Colours.palette.m3onSurfaceVariant
-                        profileStatusEnabled: false
+                        profileStatusEnabled: Battery.profileStatusEnabled
                         observationAvailable: Battery.observationAvailable
                         percentageKnown: Battery.percentageKnown
                     }
@@ -112,10 +129,20 @@ ShellRoot {
             StyledText {
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
-                text: Battery.reason
-                    + (Battery.enabled
-                    ? "\nRead-only preview. Profile selection and power-plan writes stay unavailable."
-                    : "")
+                text: {
+                    const parts = [Battery.reason];
+                    if (Battery.profilesEnabled) {
+                        parts.push(Battery.profiles.reason);
+                        if (Battery.profiles.writeReason)
+                            parts.push(Battery.profiles.writeReason);
+                        parts.push(Battery.profileWritesRequested
+                            ? "Power profile writes are enabled for explicit selections."
+                            : "Power profiles are observed read-only; writes need the separate opt-in.");
+                    } else if (Battery.enabled) {
+                        parts.push("Read-only preview. Profile selection and power-plan writes stay unavailable.");
+                    }
+                    return parts.join("\n");
+                }
                 color: Colours.palette.m3onSurfaceVariant
             }
 
@@ -138,8 +165,10 @@ ShellRoot {
                     sourceComponent: BarPopouts.Battery {
                         id: batteryContent
                         objectName: "windowsBatteryPopout"
-                        profileStatusEnabled: false
-                        profileControlsEnabled: false
+                        profileStatusEnabled: Battery.profileStatusEnabled
+                        profileControlsEnabled: Battery.profileControlsEnabled
+                        profileWritesEnabled: Battery.profiles.writesPermitted
+                        availableProfiles: Battery.profiles.availableProfiles
                         observationAvailable: Battery.observationAvailable
                         percentageKnown: Battery.percentageKnown
                         powerSourceKnown: Battery.onBatteryKnown
@@ -181,21 +210,31 @@ ShellRoot {
             const state = root.batteryState();
             if (step === 0) {
                 const requested = Quickshell.env("CAELESTIA_SHELL_SCALE");
+                const profilesExpected = Quickshell.env("CAELESTIA_WINDOWS_POWER_PROFILES") === "1";
+                const writesExpected = Quickshell.env("CAELESTIA_WINDOWS_POWER_PROFILE_WRITES") === "1"
+                    && !root.smoke;
                 if ((requested !== "native" && Math.abs(win.devicePixelRatio - Number(requested)) > 0.01)
                         || win.width !== root.previewWidth || win.height !== root.previewHeight
                         || bodyFont.status !== FontLoader.Ready || iconFont.status !== FontLoader.Ready
                         || state.enabled !== (Quickshell.env("CAELESTIA_WINDOWS_BATTERY") === "1")
+                        || state.profilesEnabled !== profilesExpected
+                        || state.profileWritesRequested !== writesExpected
+                        || state.profileWritesEnabled !== false
+                        || Battery.nativeProfilesRequested !== profilesExpected
                         || batteryHost.active !== Battery.enabled || statusLoader.active !== Battery.enabled) {
                     console.error("CAELESTIA_BATTERY_FAIL: UI, fonts, DPI or service policy");
                     Qt.exit(1);
                     return;
                 }
-                if (state.enabled && (batteryHost.item?.profileControlsEnabled !== false
-                        || batteryHost.item?.profileStatusEnabled !== false
-                        || statusLoader.item?.profileStatusEnabled !== false
+                if (state.enabled && (batteryHost.item?.profileStatusEnabled !== state.profileStatusEnabled
+                        || batteryHost.item?.profileControlsEnabled !== state.profileControlsEnabled
+                        || batteryHost.item?.profileWritesEnabled !== state.profileWritesEnabled
+                        || JSON.stringify(batteryHost.item?.availableProfiles ?? [])
+                            !== JSON.stringify(state.availableProfiles)
+                        || statusLoader.item?.profileStatusEnabled !== state.profileStatusEnabled
                         || batteryHost.item?.timeToFullSupported !== false
                         || batteryHost.item?.powerSourceKnown !== state.onBatteryKnown)) {
-                    console.error("CAELESTIA_BATTERY_FAIL: write-capable profile controls are bounded off");
+                    console.error("CAELESTIA_BATTERY_FAIL: profile or observation hooks are not wired to capability");
                     Qt.exit(1);
                     return;
                 }
@@ -234,6 +273,54 @@ ShellRoot {
                         Qt.exit(1);
                         return;
                     }
+                    if (state.profilesEnabled) {
+                        if (state.profilesState !== "observing" && state.profilesState !== "unknown") {
+                            console.error("CAELESTIA_BATTERY_FAIL: profile observation did not settle: "
+                                + state.profilesState);
+                            Qt.exit(1);
+                            return;
+                        }
+                        const observing = state.profilesState === "observing";
+                        if (state.profileStatusEnabled !== observing
+                                || state.profileControlsEnabled !== observing) {
+                            console.error("CAELESTIA_BATTERY_FAIL: profile host flags do not match capability");
+                            Qt.exit(1);
+                            return;
+                        }
+                        if (state.profileWritesEnabled !== false || state.profileWritesRequested !== false
+                                || state.writeState !== "idle") {
+                            console.error("CAELESTIA_BATTERY_FAIL: smoke permitted a profile write");
+                            Qt.exit(1);
+                            return;
+                        }
+                        if (batteryHost.item?.profileStatusEnabled !== state.profileStatusEnabled
+                                || batteryHost.item?.profileControlsEnabled !== state.profileControlsEnabled
+                                || batteryHost.item?.profileWritesEnabled !== false
+                                || JSON.stringify(batteryHost.item?.availableProfiles ?? [])
+                                    !== JSON.stringify(state.availableProfiles)) {
+                            console.error("CAELESTIA_BATTERY_FAIL: original profile hooks are not read-only");
+                            Qt.exit(1);
+                            return;
+                        }
+                        if (observing) {
+                            if (!state.availableProfiles.includes(state.profile)) {
+                                console.error("CAELESTIA_BATTERY_FAIL: observed profile is not mapped");
+                                Qt.exit(1);
+                                return;
+                            }
+                        } else if (state.profile !== -1) {
+                            console.error("CAELESTIA_BATTERY_FAIL: unknown profile was projected");
+                            Qt.exit(1);
+                            return;
+                        }
+                    } else if (state.profilesState !== "disabled" || Battery.nativeProfilesRequested
+                            || state.profileStatusEnabled || state.profileControlsEnabled
+                            || state.profileWritesEnabled || state.profile !== -1
+                            || state.availableProfiles.length !== 0) {
+                        console.error("CAELESTIA_BATTERY_FAIL: profile opt-in built the profile backend");
+                        Qt.exit(1);
+                        return;
+                    }
                     if (!state.observationAvailable) {
                         // A failed or unknown native read proves neither presence
                         // nor absence. No projection may invent either outcome.
@@ -267,24 +354,37 @@ ShellRoot {
                         Qt.exit(1);
                         return;
                     }
-                    // The original status icon must never consult PowerProfiles
-                    // here, and its glyph must state absence/unknown truthfully
-                    // instead of substituting a rocket or a zero-level battery.
+                    // The original status icon consults PowerProfiles only while
+                    // a mapped profile is actually observed, and its glyph must
+                    // state absence/unknown truthfully otherwise.
                     const icon = statusLoader.item?.text;
-                    if (statusLoader.item?.profileStatusEnabled !== false) {
+                    if (statusLoader.item?.profileStatusEnabled !== state.profileStatusEnabled) {
                         console.error("CAELESTIA_BATTERY_FAIL: status icon profile guard");
                         Qt.exit(1);
                         return;
                     }
-                    if ((!state.observationAvailable && icon !== "battery_unknown")
-                            || (state.observationAvailable && !state.hasBattery && icon !== "battery_alert")
-                            || (state.hasBattery && !state.percentageKnown && icon !== "battery_unknown")) {
+                    let expectedIcon = null;
+                    if (!state.observationAvailable)
+                        expectedIcon = "battery_unknown";
+                    else if (!state.hasBattery)
+                        expectedIcon = state.profileStatusEnabled
+                            ? (state.profile === Battery.profiles.profileSaver ? "energy_savings_leaf"
+                                : state.profile === Battery.profiles.profilePerformance
+                                    ? "rocket_launch" : "balance")
+                            : "battery_alert";
+                    else if (!state.percentageKnown)
+                        expectedIcon = "battery_unknown";
+                    if (expectedIcon !== null && icon !== expectedIcon) {
                         console.error("CAELESTIA_BATTERY_FAIL: status icon truthfulness: " + icon);
                         Qt.exit(1);
                         return;
                     }
                 } else if (state.status !== "disabled" || state.backendLoaded
-                        || batteryHost.item !== null || statusLoader.item !== null) {
+                        || batteryHost.item !== null || statusLoader.item !== null
+                        || state.profilesState !== "disabled" || Battery.nativeProfilesRequested
+                        || state.profileStatusEnabled || state.profileControlsEnabled
+                        || state.profileWritesEnabled || state.profile !== -1
+                        || state.availableProfiles.length !== 0) {
                     console.error("CAELESTIA_BATTERY_FAIL: disabled mode constructed the backend or original components");
                     Qt.exit(1);
                     return;

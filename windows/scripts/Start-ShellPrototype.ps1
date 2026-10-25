@@ -9,7 +9,7 @@ param(
     [switch]$Audio,
     [ValidateSet('Disabled', 'ReadOnly', 'Interactive')][string]$AudioMode = 'Disabled',
     [switch]$Battery,
-    [ValidateSet('Disabled', 'ReadOnly')][string]$BatteryMode = 'Disabled',
+    [ValidateSet('Disabled', 'ReadOnly', 'Profiles', 'ProfileWrites')][string]$BatteryMode = 'Disabled',
     [switch]$Media,
     [ValidateSet('Disabled', 'ReadOnly', 'Interactive')][string]$MediaMode = 'Disabled',
     [ValidateSet('native', '1', '1.5', '1.75')][string]$ScaleFactor = 'native',
@@ -102,8 +102,12 @@ $info.EnvironmentVariables['CAELESTIA_SHELL_TRACE_INPUT'] = $(if ($TraceInput) {
 $info.EnvironmentVariables['CAELESTIA_WINDOWS_AUDIO'] = $(if ($Audio -and $AudioMode -ne 'Disabled') { '1' } else { '0' })
 # Smoke is always read-only, including when Interactive was requested.
 $info.EnvironmentVariables['CAELESTIA_WINDOWS_AUDIO_CONTROLS'] = $(if ($Audio -and $AudioMode -eq 'Interactive' -and -not $Smoke) { '1' } else { '0' })
-# Battery observation has no interactive mode: this slice performs no writes.
+# Battery observation. Profiles adds read-only PowerProfiles observation;
+# ProfileWrites is a separate opt-in for explicit profile selection. Smoke is
+# always read-only, including when ProfileWrites was requested.
 $info.EnvironmentVariables['CAELESTIA_WINDOWS_BATTERY'] = $(if ($Battery -and $BatteryMode -ne 'Disabled') { '1' } else { '0' })
+$info.EnvironmentVariables['CAELESTIA_WINDOWS_POWER_PROFILES'] = $(if ($Battery -and $BatteryMode -in @('Profiles', 'ProfileWrites')) { '1' } else { '0' })
+$info.EnvironmentVariables['CAELESTIA_WINDOWS_POWER_PROFILE_WRITES'] = $(if ($Battery -and $BatteryMode -eq 'ProfileWrites' -and -not $Smoke) { '1' } else { '0' })
 # Media observation and explicit transport requests are separate opt-ins. Smoke
 # is always read-only, including when Interactive was requested.
 $info.EnvironmentVariables['CAELESTIA_WINDOWS_MEDIA'] = $(if ($Media -and $MediaMode -ne 'Disabled') { '1' } else { '0' })

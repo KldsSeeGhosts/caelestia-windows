@@ -52,7 +52,7 @@ try {
     $screenCount = $beforeDesktop.monitors.Count
     Assert ($screenCount -gt 0) 'No measured monitor available.'
     for ($screen = 0; $screen -lt $screenCount; $screen++) {
-        foreach ($mode in @('Disabled', 'ReadOnly')) {
+        foreach ($mode in @('Disabled', 'ReadOnly', 'Profiles')) {
             $result = & "$PSScriptRoot\Start-ShellPrototype.ps1" -QtPrefix $QtPrefix -BuildRoot $BuildRoot `
                 -Battery -BatteryMode $mode -Smoke -ScaleFactor native -ScreenIndex $screen | ConvertFrom-Json
             Assert $result.passed "Battery UI failed on screen $screen in $mode mode."
@@ -61,15 +61,34 @@ try {
             $final = $result.batterySnapshots[1].state
             if ($mode -eq 'Disabled') {
                 Assert ($initial.status -eq 'disabled' -and -not $initial.backendLoaded -and -not $initial.hasBattery) 'Disabled service constructed its backend or observed hardware.'
+                Assert (-not $initial.profilesEnabled -and $initial.profilesState -eq 'disabled' -and $initial.availableProfiles.Count -eq 0) 'Disabled mode constructed power profiles.'
             } else {
                 Assert ($initial.status -eq 'ready' -or $initial.status -eq 'unavailable') 'Battery did not settle.'
+            }
+            # Smoke never opts into profile writes, and observation must be a
+            # truthful observing/unknown capability, never a fabricated profile.
+            Assert (-not $initial.profileWritesEnabled -and -not $initial.profileWritesRequested) 'Smoke enabled power profile writes.'
+            Assert ($initial.writeState -eq 'idle') 'Smoke started a power profile write.'
+            if ($mode -eq 'ReadOnly') {
+                Assert (-not $initial.profilesEnabled -and $initial.profilesState -eq 'disabled' -and $initial.availableProfiles.Count -eq 0) 'ReadOnly mode constructed power profiles.'
+            }
+            if ($mode -eq 'Profiles') {
+                Assert $initial.profilesEnabled 'Profiles mode did not opt into observation.'
+                Assert ($initial.profilesState -eq 'observing' -or $initial.profilesState -eq 'unknown') 'Profile observation did not settle.'
+                if ($initial.profilesState -eq 'observing') {
+                    Assert ($initial.profileStatusEnabled -and $initial.profileControlsEnabled) 'Observed profile is not shown read-only.'
+                    Assert ($initial.availableProfiles -contains $initial.profile) 'Observed profile is not in the available set.'
+                } else {
+                    Assert (-not $initial.profileStatusEnabled -and -not $initial.profileControlsEnabled) 'Unknown profile is presented as available.'
+                    Assert ($initial.profile -eq -1) 'Unknown profile leaked a value.'
+                }
             }
             # Display state must be stable during a quiet read-only smoke. The
             # native time estimate can tick on discharging hardware; every other
             # projected field must match between INITIAL and FINAL.
             $initialStable = $initial | Select-Object -Property * -ExcludeProperty timeToEmpty
             $finalStable = $final | Select-Object -Property * -ExcludeProperty timeToEmpty
-            Assert (($initialStable | ConvertTo-Json -Depth 10 -Compress) -eq ($finalStable | ConvertTo-Json -Depth 10 -Compress)) 'Observed battery state changed during read-only smoke.'
+            Assert (($initialStable | ConvertTo-Json -Depth 10 -Compress) -eq ($finalStable | ConvertTo-Json -Depth 10 -Compress)) 'Observed battery or profile state changed during read-only smoke.'
         }
     }
     $regression = & "$PSScriptRoot\Start-ShellPrototype.ps1" -QtPrefix $QtPrefix -BuildRoot $BuildRoot `
