@@ -7,8 +7,9 @@ observation** on a desktop **without a battery**, disabled construction,
 truthful absence rendering and unchanged native power state. It does not
 complete M2 and does not validate a battery-present system.
 
-There is no root PR or backend PR for this slice: the backend gitlink and
-`windows/sources.lock.json` are untouched at the audio slice's pin, and no
+The original run preceded [root PR #5](https://github.com/KldsSeeGhosts/caelestia-windows/pull/5).
+At that recorded revision, the backend gitlink and
+`windows/sources.lock.json` were untouched at the audio slice's pin, and no
 backend change was made. Inherited GitHub Actions remain disabled at
 repository level during bootstrap, so there is no remote CI pass to report.
 
@@ -76,11 +77,20 @@ the percentage range, the no-fake-state absence invariants, the charging
 gate, the battery gating identity, and that disabled mode constructed neither
 the backend nor the original components.
 
-The read-only capture shows the original popout content rendering the
-truthful absent state: "No battery detected", "Power profile unavailable"
-(the localized false-state text), no profile selector, and the original
-status icon showing its unavailable-state glyph. Profile status and selection
-hooks are asserted false by every read-only smoke run before any capture.
+The read-only capture shows the original popout content rendering
+"No battery detected", "Power profile unavailable" and no profile selector.
+Review of PR #5 found that the separate status icon retained its default
+`profileStatusEnabled=true`, read PowerProfiles and rendered the performance
+rocket. The smoke asserted only the popout's hooks, so it did not catch this
+error. These captures do not establish that PowerProfiles remained unloaded.
+The original machine-generated evidence is retained unchanged; a corrected
+run must identify its own source revision and results.
+
+The original native contract also maps an unknown percentage to zero and
+failed status reads to absence. The adapter fixtures do not establish that
+the original UI distinguishes those states. ERM-499 remains incomplete until
+the unknown/unavailable observations and the remaining profile capability,
+separate write opt-in and denied-write gates are addressed.
 
 ## Isolation and unchanged native state
 

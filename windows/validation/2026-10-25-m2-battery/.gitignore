@@ -1,0 +1,3 @@
+# Preserve the build evidence referenced by this archive despite the root rule.
+!build/
+!build/**
