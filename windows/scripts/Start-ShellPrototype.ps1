@@ -12,6 +12,8 @@ param(
     [ValidateSet('Disabled', 'ReadOnly')][string]$BatteryMode = 'Disabled',
     [switch]$Media,
     [ValidateSet('Disabled', 'ReadOnly', 'Interactive')][string]$MediaMode = 'Disabled',
+    [switch]$Notifications,
+    [ValidateSet('Disabled', 'Local')][string]$NotificationsMode = 'Disabled',
     [ValidateSet('native', '1', '1.5', '1.75')][string]$ScaleFactor = 'native',
     [ValidateRange(0, 15)][int]$ScreenIndex = 0
 )
@@ -20,12 +22,13 @@ $ErrorActionPreference = 'Stop'
 if ($MonitorCycle -and (-not $Smoke -or $ScaleFactor -ne 'native')) {
     throw '-MonitorCycle requires -Smoke and native scaling.'
 }
-if ($Audio -and $Battery) { throw 'Select one prototype entry point per run.' }
-if ($Media -and ($Audio -or $Battery)) { throw 'Select one prototype entry point per run.' }
-if (($Audio -or $Battery -or $Media) -and $MonitorCycle) { throw 'The audio/battery/media prototypes do not implement monitor cycling.' }
+$entryPoints = @(@($Audio, $Battery, $Media, $Notifications) | Where-Object { $_ }).Count
+if ($entryPoints -gt 1) { throw 'Select one prototype entry point per run.' }
+if (($Audio -or $Battery -or $Media -or $Notifications) -and $MonitorCycle) { throw 'The service prototypes do not implement monitor cycling.' }
 if (-not $Audio -and $AudioMode -ne 'Disabled') { throw '-AudioMode requires -Audio.' }
 if (-not $Battery -and $BatteryMode -ne 'Disabled') { throw '-BatteryMode requires -Battery.' }
 if (-not $Media -and $MediaMode -ne 'Disabled') { throw '-MediaMode requires -Media.' }
+if (-not $Notifications -and $NotificationsMode -ne 'Disabled') { throw '-NotificationsMode requires -Notifications.' }
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
 if (-not $BuildRoot) { $BuildRoot = Join-Path $repoRoot 'windows\.local\build' }
 $BuildRoot = [IO.Path]::GetFullPath($BuildRoot)
@@ -34,13 +37,13 @@ $qmlRoot = Join-Path $BuildRoot 'install\qml'
 foreach ($required in @($exe, "$QtPrefix\bin\Qt6Core.dll", "$qmlRoot\Caelestia\Config\qmldir", "$qmlRoot\Caelestia\Windows\qmldir")) {
     if (-not (Test-Path -LiteralPath $required -PathType Leaf)) { throw "Build prerequisite missing: $required" }
 }
-$kind = $(if ($Audio) { 'audio' } elseif ($Battery) { 'battery' } elseif ($Media) { 'media' } else { 'shell' })
-$marker = $(if ($Audio) { 'CAELESTIA_AUDIO' } elseif ($Battery) { 'CAELESTIA_BATTERY' } elseif ($Media) { 'CAELESTIA_MEDIA' } else { 'CAELESTIA_SHELL' })
+$kind = $(if ($Audio) { 'audio' } elseif ($Battery) { 'battery' } elseif ($Media) { 'media' } elseif ($Notifications) { 'notifications' } else { 'shell' })
+$marker = $(if ($Audio) { 'CAELESTIA_AUDIO' } elseif ($Battery) { 'CAELESTIA_BATTERY' } elseif ($Media) { 'CAELESTIA_MEDIA' } elseif ($Notifications) { 'CAELESTIA_NOTIFICATIONS' } else { 'CAELESTIA_SHELL' })
 $runName = $kind + '-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff')
 $profileRoot = Join-Path $BuildRoot "$kind-prototype-profile"
 # A fresh stage avoids stale QML types from a previous implementation.
 $stage = & (Join-Path $PSScriptRoot 'Stage-ShellPrototype.ps1') `
-    -Destination (Join-Path $BuildRoot "shell-runs\$runName") -ProfileRoot $profileRoot -Audio:$Audio -Battery:$Battery -Media:$Media
+    -Destination (Join-Path $BuildRoot "shell-runs\$runName") -ProfileRoot $profileRoot -Audio:$Audio -Battery:$Battery -Media:$Media -Notifications:$Notifications
 foreach ($dir in @('config', 'state', 'runtime', 'cache', 'data')) {
     New-Item -ItemType Directory -Force -Path (Join-Path $profileRoot $dir) | Out-Null
 }
@@ -108,6 +111,9 @@ $info.EnvironmentVariables['CAELESTIA_WINDOWS_BATTERY'] = $(if ($Battery -and $B
 # is always read-only, including when Interactive was requested.
 $info.EnvironmentVariables['CAELESTIA_WINDOWS_MEDIA'] = $(if ($Media -and $MediaMode -ne 'Disabled') { '1' } else { '0' })
 $info.EnvironmentVariables['CAELESTIA_WINDOWS_MEDIA_CONTROLS'] = $(if ($Media -and $MediaMode -eq 'Interactive' -and -not $Smoke) { '1' } else { '0' })
+# Notifications are local-only in this slice: there is no mirroring or
+# system-access opt-in, and smoke runs use the same Local delivery path.
+$info.EnvironmentVariables['CAELESTIA_WINDOWS_NOTIFICATIONS'] = $(if ($Notifications -and $NotificationsMode -ne 'Disabled') { '1' } else { '0' })
 if ($ScaleFactor -ne 'native') {
     $info.EnvironmentVariables['QT_ENABLE_HIGHDPI_SCALING'] = '0'
     $info.EnvironmentVariables['QT_SCALE_FACTOR'] = $ScaleFactor
@@ -158,7 +164,7 @@ $passed = -not $timedOut -and -not $runtimeDiagnostics -and
 Copy-Item -LiteralPath (Join-Path $stage 'sources.json') -Destination (Join-Path $logRoot "$runName.sources.json")
 $result = [ordered]@{
     passed = $(if ($Smoke) { $passed } else { $null }); smoke = $Smoke.IsPresent
-    prototype = $kind; audioMode = $AudioMode; batteryMode = $BatteryMode; mediaMode = $MediaMode
+    prototype = $kind; audioMode = $AudioMode; batteryMode = $BatteryMode; mediaMode = $MediaMode; notificationsMode = $NotificationsMode
     timedOut = $timedOut; exitCode = $process.ExitCode
     scaleFactor = $ScaleFactor; screenIndex = $ScreenIndex
     monitorCycle = $MonitorCycle.IsPresent
@@ -172,6 +178,9 @@ $result = [ordered]@{
         [ordered]@{ phase = $_.Groups[1].Value; state = ($_.Groups[2].Value | ConvertFrom-Json) }
     })
     mediaSnapshots = @([regex]::Matches($combined, 'CAELESTIA_MEDIA_(INITIAL|FINAL) (\{[^\r\n]+\})') | ForEach-Object {
+        [ordered]@{ phase = $_.Groups[1].Value; state = ($_.Groups[2].Value | ConvertFrom-Json) }
+    })
+    notificationsSnapshots = @([regex]::Matches($combined, 'CAELESTIA_NOTIFICATIONS_(INITIAL|FINAL) (\{[^\r\n]+\})') | ForEach-Object {
         [ordered]@{ phase = $_.Groups[1].Value; state = ($_.Groups[2].Value | ConvertFrom-Json) }
     })
     elapsedMilliseconds = $elapsed.ElapsedMilliseconds

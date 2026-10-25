@@ -436,6 +436,26 @@ root to deduplicate against Linear, each enabled and validated independently:
    unexpectedly. **System notification mirroring** should be a dependent
    separate issue covering explicit consent, denied polling, app-open and
    Windows dismissal semantics.
+   **Progress:** implemented as ERM-502's bounded slice on
+   `windows/notifications-local-delivery`: a pure QtObject
+   [NotificationsService](../services/notifications/NotificationsService.qml)
+   with the original `Notifs`/`NotifData` contract, a thin
+   [native wrapper](../services/notifications/NativeNotificationBackend.qml)
+   that sets `mirrorSystemNotifications: false` at construction, and a
+   default-off facade writing history only under the isolated profile's
+   `state/notifs.json`. The bounded host stages the original
+   [popup list](../../modules/notifications/Content.qml) and
+   [sidebar notification center](../../modules/sidebar/NotifDock.qml); no file
+   under `modules/notifications` or `modules/sidebar` was edited. The pinned
+   backend's claim retry is not published to QML (`server.cpp` lines 55-91), so
+   native ownership is reported as `unknown`; the explicit `contended` and
+   `unconfirmed` states are fixture-covered and ready for a backend that
+   exposes the claim result. [Acceptance evidence](../validation/2026-10-25-m2-notifications/README.md)
+   covers 136 fixture assertions, disabled/local native smoke at two screens,
+   profile persistence across a separate process, expiry/dismissal, and
+   unchanged ordinary-history/desktop state. System notification mirroring,
+   denied access, Windows dismissal and native image-cache writing remain
+   outside this slice (ERM-503).
 7. **Brightness route policy:** adapt per-screen Monitor contract with explicit
    hardware versus software capability. Acceptance: absent/denied/DDC failures
    cause no automatic gamma write; querying and teardown side effects are
