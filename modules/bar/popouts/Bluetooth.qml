@@ -16,6 +16,33 @@ ColumnLayout {
 
     required property PopoutState popouts
 
+    // Windows host: explicit control opt-in. Upstream behavior stays enabled by
+    // default. A read-only host sets this false so no radio, discovery, connect,
+    // pair or forget request can be sent, while the original disabled styling
+    // and device list remain unchanged.
+    property bool controlsEnabled: true
+
+    // Windows host: pairing kinds that need a PIN or passkey have no shell UI.
+    // The host sets this true so the original settings button delegates to the
+    // host's explicit Windows Settings action instead of detaching a popout.
+    // Upstream keeps the original detach behavior.
+    property bool settingsDelegatesToWindows: false
+
+    // Windows host: the bounded settling window can expire while the native
+    // device still reports Connecting/Disconnecting. The service supplies the
+    // affected device addresses so the original loading spinner stops without
+    // cancelling or re-sending a request. Empty by default (upstream).
+    property var settlingTimedOut: ({})
+
+    signal settingsRequested()
+
+    function isSettlingTimedOut(device): bool {
+        if (!device || !root.settlingTimedOut)
+            return false;
+        const key = typeof device.address === "string" ? device.address : "";
+        return key !== "" && root.settlingTimedOut[key] === true;
+    }
+
     width: 300
     spacing: Tokens.spacing.small
 
@@ -29,7 +56,10 @@ ColumnLayout {
     Toggle {
         label: Tr.trCtx("Enabled", "toggle label")
         checked: Bluetooth.defaultAdapter?.enabled ?? false
+        controlsEnabled: root.controlsEnabled
         toggle.onToggled: {
+            if (!root.controlsEnabled)
+                return;
             const adapter = Bluetooth.defaultAdapter;
             if (adapter)
                 adapter.enabled = checked;
@@ -39,7 +69,10 @@ ColumnLayout {
     Toggle {
         label: Tr.trCtx("Discovering", "bluetooth adapter state")
         checked: Bluetooth.defaultAdapter?.discovering ?? false
+        controlsEnabled: root.controlsEnabled
         toggle.onToggled: {
+            if (!root.controlsEnabled)
+                return;
             const adapter = Bluetooth.defaultAdapter;
             if (adapter)
                 adapter.discovering = checked;
@@ -70,7 +103,9 @@ ColumnLayout {
             id: device
 
             required property BluetoothDevice modelData
-            readonly property bool loading: modelData.state === BluetoothDeviceState.Connecting || modelData.state === BluetoothDeviceState.Disconnecting
+            readonly property bool loading: !root.isSettlingTimedOut(modelData)
+                && (modelData.state === BluetoothDeviceState.Connecting
+                    || modelData.state === BluetoothDeviceState.Disconnecting)
 
             Layout.fillWidth: true
             Layout.rightMargin: Tokens.padding.extraSmall
@@ -128,8 +163,12 @@ ColumnLayout {
 
                 StateLayer {
                     color: device.modelData.state === BluetoothDeviceState.Connected ? Colours.palette.m3onPrimary : Colours.palette.m3onSurface
-                    disabled: device.loading
-                    onClicked: device.modelData.connected = !device.modelData.connected
+                    disabled: device.loading || !root.controlsEnabled
+                    onClicked: {
+                        if (!root.controlsEnabled)
+                            return;
+                        device.modelData.connected = !device.modelData.connected;
+                    }
                 }
 
                 MaterialIcon {
@@ -160,7 +199,11 @@ ColumnLayout {
 
                     StateLayer {
                         radius: Tokens.rounding.full
-                        onClicked: device.modelData.forget()
+                        disabled: !root.controlsEnabled
+                        onClicked: {
+                            if (root.controlsEnabled)
+                                device.modelData.forget();
+                        }
                     }
 
                     MaterialIcon {
@@ -181,11 +224,17 @@ ColumnLayout {
         text: Tr.tr("Open settings")
         icon: "settings"
 
-        onClicked: root.popouts.detachRequested("bluetooth")
+        onClicked: {
+            if (root.settingsDelegatesToWindows)
+                root.settingsRequested();
+            else
+                root.popouts.detachRequested("bluetooth");
+        }
     }
 
     component Toggle: RowLayout {
         required property string label
+        property bool controlsEnabled: true
         property alias checked: toggle.checked
         property alias toggle: toggle
 
@@ -200,6 +249,7 @@ ColumnLayout {
 
         StyledSwitch {
             id: toggle
+            disabled: !parent.controlsEnabled
         }
     }
 }
