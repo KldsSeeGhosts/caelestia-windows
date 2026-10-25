@@ -1,0 +1,14 @@
+{
+  "modules/bar/components/status/BluetoothStatus.qml": "modules/bar/components/status/BluetoothStatus.qml",
+  "modules/bar/popouts/Bluetooth.qml": "modules/bar/popouts/Bluetooth.qml",
+  "modules/bar/popouts/PopoutState.qml": "modules/bar/popouts/PopoutState.qml",
+  "components/controls/CircularIndicator.qml": "components/controls/CircularIndicator.qml",
+  "components/controls/CircularProgress.qml": "components/controls/CircularProgress.qml",
+  "components/controls/IconTextButton.qml": "components/controls/IconTextButton.qml",
+  "components/controls/StyledSwitch.qml": "components/controls/StyledSwitch.qml",
+  "components/controls/TextButton.qml": "components/controls/TextButton.qml",
+  "utils/Icons.qml": "utils/Icons.qml",
+  "windows/services/bluetooth/Bluetooth.qml": "services/Bluetooth.qml",
+  "windows/services/bluetooth/BluetoothService.qml": "services/BluetoothService.qml",
+  "windows/services/bluetooth/NativeBluetoothBackend.qml": "services/NativeBluetoothBackend.qml"
+}
