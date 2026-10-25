@@ -68,30 +68,43 @@ Per-monitor capability states:
 
 Policy, enforced in the pure state object:
 
-1. A hardware monitor is written only through its detected route. The adapter
-   records the route before the write. If `routeChanged` fires during the write
-   or `methodFor()` reports a different route when the write finishes, the
-   monitor is latched with `lastOutcome = "route-changed"`, its brightness
-   becomes unknown and the host labels the write a failure, not a success. No
-   further write is sent until an explicit route refresh (a user action) clears
-   the latch.
-2. A `wmi` -> `lcd` retry is a hardware alternative, but it is still a route
-   change and is still reported as a failure for the requested route.
+1. **No native write without the strict-route backend.** The adapter
+   feature-detects `typeof backend.strictRoutes === "boolean"` and the
+   `brightnessWriteResult` signal on the injected backend. The shared build is
+   still at the old pin, which has neither: there `Interactive` is refused with
+   "Brightness writes need the strict-route backend" and the slider is
+   read-only. This is deliberate — the legacy `setBrightness()` path retries
+   `\\.\LCD`, falls back to software gamma and then reports `ok = true`.
+2. With the strict API present, `strictRoutes = true` is set before the first
+   write (one-way) and `brightnessWriteResult(screen, value, ok, method, error)`
+   is the only completion. The legacy `brightnessSetFinished(bool)` is inert: at
+   the old pin every terminal path reported true, so it can never confirm a
+   write. A result that is not `ok` or reports a different route is a failure.
 3. A software-only monitor is written only when the separate gamma opt-in is
-   enabled. Otherwise the write is refused before reaching the backend.
+   enabled. Turning that opt-in off calls `clearSoftwareDimming(screen)` for
+   every screen when the backend exposes it.
 4. `unknown`, `querying`, `failed` and `unsupported` monitors are never written.
-   This also prevents the backend's unresolved-route behaviour of forcing DDC.
+   Route queries are explicit user actions and never run automatically after a
+   gamma touch.
 5. Non-finite values are refused; finite values are clamped to `0..1`, matching
    upstream `Monitor.setBrightness`.
-6. A pending write is not queued: a second write is refused until the first
-   finishes. Duplicate or foreign completion signals are ignored.
+6. `interactive` (slider accepts input: writes permitted and route known) is
+   separate from `writeReady`/`canWrite` (no write in flight). While a write is
+   pending, later values coalesce to the newest drag target and are sent after
+   the terminal result. A failure drops the queue and snaps the slider back to
+   the last confirmed value; a pending write never disables the slider
+   mid-gesture.
 
-`brightnessSetFinished(screenName, ok)` cannot prove success. At this pin every
-terminal write path emits `ok = true`, including the internal software-gamma
-fallback, so the adapter treats the route as the only failure evidence and
-records a forwarded hardware write as `hardware-requested`, never as confirmed.
-WMI and `\\.\LCD` may later emit `systemBrightnessChanged` as a read-back; DDC/CI
-has no read-back at this pin.
+A strict-route enable refusal is latched as a separate `policyError`, not as a
+per-monitor route latch, and an explicit route refresh clears it. Each screen
+record also carries a generation: a query result is accepted only while a query
+is outstanding for the current generation, so a late result for an unplugged
+screen cannot authorize the reconnected monitor.
+
+`brightnessWriteResult` is the only strict confirmation. Success means the
+backend accepted the write through the stored route, not that a read-back
+confirmed the requested level. WMI and `\\.\LCD` may later emit
+`systemBrightnessChanged`; DDC/CI has no read-back.
 
 ## Opt-ins and startup policy
 
@@ -110,8 +123,8 @@ explicitly so inherited flags cannot enable brightness in another profile.
 The host calls `Brightness.beginObservation()` once at startup. That performs
 one `query()` per screen, never `probe()`, and only while this process has
 applied no software dimming. A later automatic response is impossible: any
-software write or detected fallback sets `gammaTouched` and blocks automatic
-re-query. The non-smoke refresh button calls `refreshRoutes()` explicitly.
+software write sets `gammaTouched` and blocks automatic re-query. The non-smoke
+refresh button calls `refreshRoutes()` explicitly.
 
 ### Querying and teardown side effects
 
@@ -130,10 +143,10 @@ The native singleton's destructor waits for the worker pool
 worker or prototype process remains, and the harness checks that. The service
 never calls `refresh()` (a WMI/LCD read-back) and never calls `probe()`.
 
-## Backend gap: the adapter cannot prevent the internal fallback
+## Strict-route gate and the old pin
 
-At backend `14010429` a hardware write failure automatically retries another
-route and then software gamma, then emits success:
+At backend `14010429` (the shared gitlink) a hardware write failure
+automatically retries another route and then software gamma, then emits success:
 
 - `windows/deps/quickshell/src/windows/system/brightness.cpp:1386-1393` retries
   `\\.\LCD` after a WMI failure and emits a `routeChanged`.
@@ -144,16 +157,24 @@ route and then software gamma, then emits success:
 - `brightness.cpp:1260-1266` forces the DDC route when a write arrives before a
   route was resolved.
 
-The adapter can only detect this after the fact, surface `route-changed`, latch
-the monitor and refuse further writes. It cannot stop the backend's own gamma
-ramp write. A strict-route backend flag is the proposed fork change: for
-example `setBrightnessStrict(screenName, route, value)` (or a `strictRoutes`
-property set before construct) that rejects a write when the stored route is
-unresolved or differs from the requested route, disables the LCD retry and
-gamma fallback for that call, and reports the used route and a real per-write
-result. That requires a backend PR, a new gitlink and `sources.lock.json`
-revision, and its own validation; this slice changes no backend source and
-makes no live hardware-write claim.
+The adapter therefore refuses every native write on this build. It does not
+reach `setBrightness()` at all: `strictBackend` is false because the old-pin
+singleton has no `strictRoutes` and no `brightnessWriteResult`, so `Interactive`
+is reported as unsupported and the slider is read-only.
+
+The backend fork now has an accepted strict-route API (branch
+`windows/m2-brightness-strict-route`, commit `63eee61`): a one-way `strictRoutes`
+property that can only be enabled while idle, exactly one
+`brightnessWriteResult(screen, value, ok, method, error)` per strict write
+request, and `clearSoftwareDimming(screen)`. In strict mode the backend uses the
+stored route only: no unresolved/overlapping write, no `\\.\LCD` retry and no
+gamma fallback, and a rejection is a real failure result. The wrapper forwards
+those members when the native singleton has them; the adapter enables strict
+routes before the first write and uses the result as the only completion.
+
+Adopting the fork requires its own backend PR, gitlink and `sources.lock.json`
+revision. This slice changes no backend source and makes no live hardware-write
+claim.
 
 ## Validation
 
@@ -167,29 +188,37 @@ powershell -NoProfile -File windows/scripts/Test-BrightnessPrototype.ps1 `
 
 `Test-BrightnessService.ps1` stages only the state object and fixture into Qt's
 offscreen `qml.exe`. It rejects native imports, staging hash mismatches and QML
-diagnostics. The 255 injected assertions cover every capability state, WMI/LCD/
-DDC route names and labels, route-change-after-write through both the signal and
-the method lookup, the gamma opt-in refusal, non-finite and out-of-range values,
-hot unplug/re-plug and mid-write removal, controls-off refusal, pending/duplicate
-writes, read-only system read-back, malformed backend shapes, the one-shot
-automatic observation and the explicit refresh.
+diagnostics. The 304 injected assertions cover every capability state, WMI/LCD/
+DDC route names and labels, the strict-capable and old-pin backend shapes,
+one-way `strictRoutes`, terminal-only write completion, coalesced pending
+writes, failure snap-back and queue drop, per-screen query generations, the
+latched strict policy failure, `clearSoftwareDimming`, the gamma opt-in refusal,
+non-finite and out-of-range values, hot unplug/re-plug and mid-write removal,
+controls-off refusal, read-only system read-back, malformed backend shapes, the
+one-shot automatic observation and the explicit refresh.
 
 `Test-BrightnessPrototype.ps1` runs the fixture, then disabled/read-only smoke on
 every measured connected screen, then the original M1 bar/session regression. It
 also compares each display's `GetDeviceGammaRamp` hash before and after the whole
-harness. Smoke never sends input and never writes brightness.
+harness as a net-state check; `GammaController` restores ramps on `aboutToQuit`,
+so a matching hash does not prove that no write occurred. Smoke never sends input
+and never writes brightness.
 
 Raw results are under `windows/.local/build/brightness-validation-<timestamp>/`.
 
 ## Limits
 
 - No live hardware write, DDC denial, gamma write or recovery was performed.
-  The interactive mode is implemented and gated but unvalidated; the fixture
-  proves only the policy over injected backend shapes.
-- The adapter cannot prevent the backend's internal fallback attempt (gap
-  above). A successful hardware write is recorded as requested, not confirmed.
-- Real DDC/CI failure text is not exposed by `queried()`; `failed` states name
-  the route and say that no readable level was reported, without a Win32 code.
+  The strict-route native branch is unvalidated here: the shared gitlink predates
+  it, `Interactive` is refused on this build, and the fixture proves only the
+  policy over injected backend shapes.
+- The strict-route wrapper's forwarding path (`strictSupported`,
+  `brightnessWriteResult`, `clearSoftwareDimming`) cannot run until the gitlink
+  and `sources.lock.json` move; this slice changes neither.
+- A strict success means the backend accepted the write through the stored
+  route, not that a read-back confirmed the level. Real DDC/CI failure text is
+  still not exposed by `queried()`; `failed` states name the route and say that
+  no readable level was reported, without a Win32 code.
 - `getMonitor("active")` has a defined value only when one monitor is connected
   or a host assigns `activeScreen`; Windows has no Hyprland focused-monitor
   identity. `getMonitor("id:...")` returns null.

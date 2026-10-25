@@ -53,7 +53,7 @@ observed. The M1 `Colours.qml` adapter gained the upstream `layer()` helper
 | Original M1 bar/session regression | Pass | [result](m1-regression/result.json) |
 | Media service regression | 148 assertions, pass | [log](commands/final-media-service.json) |
 | Battery service regression | 128 assertions, pass | [log](commands/final-battery-service.json) |
-| Native gamma ramps | Identical SHA-256 before and after the whole harness on both displays | [before](gamma-before.json), [after](gamma-after.json) |
+| Native gamma ramps | Net-state check only: identical SHA-256 before and after the whole harness on both displays; `GammaController` restores ramps on `aboutToQuit`, so this does not prove that no write occurred | [before](gamma-before.json), [after](gamma-after.json) |
 | Desktop state | Explorer PID 9252, KSG Shell PID 24108, work rectangles and taskbar flags unchanged; no brightness prototype process remained | [before](desktop-before.json), [after](desktop-after.json) |
 
 Observed read-only routes from the native query:
@@ -123,8 +123,8 @@ artifacts.
   unvalidated; the fixture proves only the policy over injected backend shapes.
 - The adapter cannot prevent the pinned backend from attempting its internal
   LCD/gamma fallback or from reporting `brightnessSetFinished(..., true)` after
-  it. That gap and the proposed strict-route fork flag are recorded in
-  [M2-SERVICES.md](../audits/M2-SERVICES.md) candidate 7 and in the
+  it. That gap and the accepted strict-route fork API are recorded in
+  [M2-SERVICES.md](../../audits/M2-SERVICES.md) candidate 7 and in the
   [prototype README](../../brightness-prototype/README.md). A backend change
   requires its own PR, gitlink and `sources.lock.json` revision.
 - DDC failure text is not exposed by `queried()`, so `failed` states name the
@@ -132,3 +132,77 @@ artifacts.
 - The M1 smoke is a regression check, not renewed input/transparency
   acceptance. No Linux build or remote CI pass is claimed; inherited root
   Actions remain disabled.
+
+## Review addendum, strict-route adapter v2
+
+This addendum records the review fixes on branch
+`t3/m2-brightness-adapter-v2` (the route-policy branch merged with
+`windows/m2-services-integration` at `cf53844d`; code changes in `cfb770e5`).
+The final runs below were made on a clean tree at `9ed3cdb3`, and every harness
+result reports `sourceDirty=false`. The merge added the brightness slice to the
+integration launcher's slice table and removed a duplicated `Colours.layer()`
+left by the automatic merge.
+
+Reviewed behavior that changed:
+
+1. Native writes now require the strict-route backend, feature-detected at
+   runtime from `typeof backend.strictRoutes === "boolean"` **and** the
+   `brightnessWriteResult` signal. The shared gitlink is still at the old pin,
+   so on this build `Interactive` is refused with "Brightness writes need the
+   strict-route backend" and the slider stays read-only. With the strict API
+   present, strict routes are enabled before the first write and the one-shot
+   `brightnessWriteResult` is the only write confirmation.
+2. A pending write is cleared only by the terminal strict result for that
+   screen. The legacy `brightnessSetFinished(bool)` is inert: at the old pin it
+   is true after an internal gamma fallback, so it can never confirm a write.
+   A strict-route enable refusal is latched as a separate `policyError`, not as
+   a per-monitor route latch, and an explicit refresh clears it.
+3. Each screen record carries a generation. A query result is accepted only
+   while a query is outstanding for the current generation; removing and
+   re-adding a screen bumps the generation and a late result for the old record
+   is dropped instead of authorizing the reconnected monitor.
+4. `interactive` (slider accepts input: writes permitted and route known) is
+   separate from `writeReady`/`canWrite` (no write in flight). While a write is
+   pending the newest drag target is coalesced and sent after the terminal
+   result; a failure drops the queue and snaps the slider back to the last
+   confirmed value. A pending write no longer disables the slider mid-gesture.
+5. Gamma-ramp hashes are described as a net-state check only.
+6. The audit link now resolves to `../../audits/M2-SERVICES.md`.
+
+Commands (native PowerShell from the repository root):
+
+```powershell
+$qtPrefix = "$env:LOCALAPPDATA\caelestia-dev\Qt\6.11.2\msvc2022_64"
+$buildRoot = 'D:\AiStack\caelestia-windows\windows\.local\build'
+powershell -NoProfile -File windows/scripts/Test-BrightnessService.ps1 `
+    -QtPrefix $qtPrefix -BuildRoot $buildRoot
+powershell -NoProfile -File windows/scripts/Test-BrightnessPrototype.ps1 `
+    -QtPrefix $qtPrefix -BuildRoot $buildRoot
+powershell -NoProfile -File windows/scripts/Test-NetworkPrototype.ps1 `
+    -QtPrefix $qtPrefix -BuildRoot $buildRoot
+```
+
+| Check | Observed result |
+| --- | --- |
+| Offscreen strict-route fixture | Pass; **304 assertions**; no native imports, staging hash mismatch or QML diagnostic. Covers the strict-capable fake, the old-pin fake without strict members, one-way `strictRoutes`, coalescing, terminal-only completion, snap-back, generation, policy latch, `clearSoftwareDimming` and all prior route states |
+| Brightness prototype harness | Pass; 6 runs (fixture, `Disabled`/`ReadOnly` on each of the two measured screens, M1 regression); `runs=6`, `output=brightness-validation-20261025-195607-204` |
+| Network prototype regression | Pass; 6 runs; `output=network-validation-20261025-195632-216`; confirms the `Start-ShellPrototype.ps1`/`Stage-ShellPrototype.ps1` slice-table merge did not regress another slice |
+
+The fixture is the only new evidence for strict-route behavior. It injects
+both backend shapes; no native strict build exists in the shared tree.
+
+### Untested in this addendum
+
+- Every native write path: no `Interactive` run was made and no real monitor
+  brightness or gamma ramp was written. `Disabled` and `ReadOnly` are the only
+  native smoke modes exercised.
+- The strict-route native QML wrapper (`strictSupported`, forwarding
+  `brightnessWriteResult`, `clearSoftwareDimming`) against the fork branch
+  `windows/m2-brightness-strict-route` at `63eee61`. The shared build is at the
+  old pin, so the wrapper's strict branch is feature-detected off here. It
+  cannot be exercised until the gitlink and `sources.lock.json` move, which
+  this slice deliberately does not do.
+- Real DDC/CI denial, overlapping-write rejection, route changes during a
+  strict write, and recovery after a strict failure on hardware.
+- The caveat that a strict success means the backend accepted the write through
+  the stored route, not that a read-back confirmed the level.
