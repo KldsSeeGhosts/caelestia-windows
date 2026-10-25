@@ -156,3 +156,23 @@ artifacts referenced by the validation result without rewriting them;
   variants/wallpapers and a full launcher window are out of scope.
 - M1 checks here are smoke regressions, not renewed input/transparency
   acceptance. No Linux build, full-shell release or remote CI pass is claimed.
+
+## Review addendum
+
+An independent review of `bb93a9f0` found two defects, fixed in the follow-up
+commit:
+
+1. The original `AppItem` sets `screenState.launcher = false` on every click,
+   including a refused ReadOnly launch. The bounded host stayed visible, but
+   `AppList` stopped syncing its model, so later typing showed stale results.
+   The host now applies the original dismiss/reopen lifecycle immediately:
+   it clears the query and reopens the launcher state.
+2. `FileAppFrequencyStore` reported success as soon as `FileView.setText()`
+   returned, although the atomic write completes asynchronously. Asynchronous
+   storage now counts a write only after `saved`; `saveFailed` sets
+   `lastError`. The fixture covers this through a fake asynchronous storage;
+   a real unwritable-file failure on the native `FileView` remains untested.
+
+Results on the dirty follow-up tree: 177 fixture assertions;
+`Test-AppsPrototype.ps1` passed all eight records
+(`apps-validation-20261025-181856-935`). No application was launched.

@@ -101,6 +101,10 @@ QtObject {
     }
     readonly property FakeStore store: FakeStore {}
     readonly property FakeStorage storage: FakeStorage {}
+    // Mirrors FileAppFrequencyStore: setText() returns before completion.
+    readonly property FakeStorage asyncStorage: FakeStorage {
+        readonly property bool asynchronous: true
+    }
 
     // The frequency store under test is the real AppFrequencyStore driven by
     // the fixture storage above.
@@ -435,6 +439,22 @@ QtObject {
             "a failed write is reported");
         check(failedStore.frequencyFor("terminal") === 1, "state is kept after a failed write");
         storage.failWrites = false;
+
+        // Asynchronous storage counts a write only after it reports completion.
+        const asyncStore = storeComponent.createObject(test, {storage: asyncStorage});
+        asyncStore.increment("editor");
+        check(asyncStore.writes === 0 && asyncStore.writesPending === 1,
+            "an asynchronous write is pending, not confirmed");
+        asyncStore.writeFinished(false, "access denied");
+        check(asyncStore.writes === 0 && asyncStore.writesPending === 0,
+            "a failed asynchronous write is not counted");
+        check(asyncStore.lastError.indexOf("could not be written") >= 0
+            && asyncStore.lastError.indexOf("access denied") >= 0,
+            "an asynchronous write failure is reported");
+        asyncStore.increment("editor");
+        asyncStore.writeFinished(true, "");
+        check(asyncStore.writes === 1 && asyncStore.writesPending === 0,
+            "a confirmed asynchronous write is counted");
 
         // --- Path confinement -------------------------------------------------
         check(StoragePath.frequenciesPath("") === "", "empty state dir yields no path");

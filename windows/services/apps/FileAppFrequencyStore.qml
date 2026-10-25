@@ -25,6 +25,11 @@ AppFrequencyStore {
         atomicWrites: true
         watchChanges: false
         printErrors: false
+
+        // setText() returns before the atomic write completes; only these
+        // signals establish whether the document was persisted.
+        onSaved: root.writeFinished(true, "")
+        onSaveFailed: error => root.writeFinished(false, String(error))
     }
 
     // The store only ever sees this object. `available` mirrors path
@@ -32,6 +37,7 @@ AppFrequencyStore {
     // history stays in memory for the process lifetime.
     readonly property QtObject fileStorage: QtObject {
         readonly property bool available: root.resolvedPath !== ""
+        readonly property bool asynchronous: true
         readonly property string text: root.resolvedPath !== "" ? view.text() : ""
 
         function write(text): bool {

@@ -27,7 +27,10 @@ QtObject {
     property bool loaded: false
     property bool corrupt: false
     property string lastError: ""
+    // Confirmed writes. Asynchronous storage (`storage.asynchronous`) only
+    // counts a write once it reports completion through writeFinished().
     property int writes: 0
+    property int writesPending: 0
     property string savedText: ""
 
     // Persistence requires an explicit storage object that reports itself
@@ -126,8 +129,21 @@ QtObject {
             root.lastError = "The app frequency file could not be written.";
             return false;
         }
-        root.writes++;
+        if (storage.asynchronous === true)
+            root.writesPending++;
+        else
+            root.writes++;
         return true;
+    }
+
+    function writeFinished(ok, message): void {
+        root.writesPending = Math.max(0, root.writesPending - 1);
+        if (ok === true) {
+            root.writes++;
+            return;
+        }
+        root.lastError = "The app frequency file could not be written"
+            + (typeof message === "string" && message.length > 0 ? ": " + message : ".");
     }
 
     function reset(): void {

@@ -417,6 +417,20 @@ ShellRoot {
         function quit(): void { Qt.quit(); }
     }
 
+    // The original AppItem dismisses the launcher on every click, including a
+    // refused ReadOnly launch. The bounded host stays visible, so it applies
+    // the original dismiss/reopen lifecycle immediately: clear the query and
+    // reopen, keeping AppList's model in sync with the visible search text.
+    Connections {
+        target: root.screenStateObject
+        function onLauncherChanged(): void {
+            if (root.screenStateObject.launcher)
+                return;
+            searchBar.text = "";
+            root.screenStateObject.launcher = true;
+        }
+    }
+
     Component.onCompleted: {
         if (!root.selectedScreen) {
             Qt.callLater(() => Qt.exit(1));
