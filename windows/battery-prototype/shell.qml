@@ -97,6 +97,7 @@ ShellRoot {
                     active: Battery.enabled
                     sourceComponent: BarStatus.BatteryStatus {
                         colour: Colours.palette.m3onSurfaceVariant
+                        profileStatusEnabled: false
                     }
                 }
             }
@@ -179,7 +180,8 @@ ShellRoot {
                     return;
                 }
                 if (state.enabled && (batteryHost.item?.profileControlsEnabled !== false
-                        || batteryHost.item?.profileStatusEnabled !== false)) {
+                        || batteryHost.item?.profileStatusEnabled !== false
+                        || statusLoader.item?.profileStatusEnabled !== false)) {
                     console.error("CAELESTIA_BATTERY_FAIL: write-capable profile controls are bounded off");
                     Qt.exit(1);
                     return;
