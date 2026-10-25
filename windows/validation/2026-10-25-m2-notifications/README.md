@@ -383,3 +383,174 @@ prototype README) follows it.
 - No system consent, denied listener access, real Windows notification removal
   or app-open path is exercised; those remain ERM-503.
 
+## Second review addendum
+
+A second independent review found eight defects, nearly all in the notification
+image cache that copied notification-supplied files into the profile cache. The
+orchestrator decision was to **remove the cache entirely** instead of hardening
+it. All eight findings are addressed by deletion; the cache no longer exists in
+this slice.
+
+### Findings
+
+1. Percent-encoding bypassed source validation and deletion (`%2e%2e`, `%5c`).
+2. A junction/reparse component could escape the lexical cache boundary.
+3. The synchronous byte copy had no size bound and ran on the UI thread.
+4. Pruning raced history restoration and the `FolderListModel` listing.
+5. A failed deletion broke the 64-file quota accounting.
+6. A failed writer could strand its pool slot.
+7. A failed repeat copy could delete a valid shared cache file.
+8. Replacement sends (`-r`/`--replace-id`) were never confirmed and ended as
+   unconfirmed instead of being refused.
+
+The review also found that the whole state directory (including `notifs.json`)
+was accepted as an image location.
+
+### Decision: delete the cache
+
+The cache existed only to make a copy of an image the original card could load
+directly. It added file validation, copying, listing, pruning, quota and
+deletion to a slice whose job is local delivery, and every second-review defect
+lived in that surface. It is removed:
+
+- `windows/services/notifications/NotifImageCache.qml` is deleted (and its
+  staging entry removed from `windows/notifications-prototype/sources.json`).
+- The writer pool/queue, source-keyed hash names, prune/quota registry,
+  listing/removal injection and all copy/delete helpers are removed from
+  `NotificationsService.qml`.
+- `Notifs.qml` no longer imports `Qt.labs.folderlistmodel` or uses
+  `CUtils.copyFile`/`CUtils.deleteFile`, and no longer injects a cache
+  directory. The prototype no longer instantiates writer delegates.
+- `NotifData.qml` no longer has cache-pending/dropped/error properties.
+- The `cacheDirectory` path injection and the image-cache directory property are
+  removed. Path confinement now covers only the history (`state/notifs.json`).
+- The harness no longer creates, asserts or cleans an image-cache directory.
+
+No notification image file is ever copied, written, listed, pruned or deleted
+by this slice. Static checks in `Test-NotificationService.ps1` now fail on any
+`imageCache`/`copyFile`/`deleteFile`/`FolderListModel`/`CUtils` reference in the
+service, record or facade, and on the writer component reappearing.
+
+### New image source policy
+
+`NotificationsService.validateImageSource()` is still the single, pure,
+Quickshell-free decision (no filesystem access), applied to live notifications,
+image changes and restored history. It accepts exactly:
+
+- `image://` provider URLs (theme icons);
+- local files that are strict, case-insensitive children of the injected staged
+  shell assets directory.
+
+Rejected classes: any source containing `%`; UNC (`\\server`), `\\?\`, `\\.\`,
+`//` and `file://host`; alternate data streams (`:` beyond the drive letter);
+relative and drive-relative paths; any `.` or `..` component; components ending
+in `.` or a space; `~` in any component (8.3 short-name alias); the profile
+cache, data and state directories (including the old `cache/notifs` location);
+and anything outside the staged assets directory.
+
+The URL handed to the original card is rebuilt from the validated local path as
+`file:///` plus forward slashes, never from the raw input. A rejected or
+unsupported source becomes `""`, so the original card shows its existing
+fallback icon. Persisted history images go through the same validator on
+restore. App-supplied images outside the staged assets directory therefore show
+the fallback icon **by design**; that is the deliberate trade for removing the
+copy/validation/deletion surface.
+
+### Replacement sends
+
+`NotificationsService.replacementIdFromArgs()` mirrors the pinned backend's
+`-r`/`--replace-id` syntax, and `replacementSendRefusal()` returns a clear
+"Replacement notifications are not supported by this slice; the local send was
+refused." The facade refuses before `notifySend` and before `expectDelivery`, so
+a replacement send cannot become a pending or unconfirmed delivery. The native
+smoke posts such a send first and fails the run if it is not refused.
+
+### Kept from the previous fixes
+
+History restoration still merges (live records win id collisions), fresh
+delivery confirmation still requires a matching arrival after the send,
+system notification mirroring stays off with no access request, and the history
+path remains confined to the isolated profile state directory.
+
+### Results
+
+Recorded on the clean tree at
+`f14d77ce8dea30c70724acd40b58057d4bcb8410` (commit
+`windows: remove the notification image cache`). Both runs report
+`sourceDirty: false` and `sourceRevision: f14d77ce`.
+
+```powershell
+$qtPrefix = "$env:LOCALAPPDATA\caelestia-dev\Qt\6.11.2\msvc2022_64"
+$buildRoot = 'D:\AiStack\caelestia-windows\windows\.local\build'
+powershell -NoProfile -File windows/scripts/Test-NotificationService.ps1 -QtPrefix $qtPrefix -BuildRoot $buildRoot
+powershell -NoProfile -File windows/scripts/Test-NotificationsPrototype.ps1 -QtPrefix $qtPrefix -BuildRoot $buildRoot
+```
+
+- Fixture: `passed: true`, exit `0`, not timed out, **218 assertions** (was 244;
+  the cache pool/prune/quota assertions were removed and the policy,
+  replacement-refusal, restore-revalidation and original non-cache assertions
+  remain), no diagnostics, no hash mismatch. All twelve static checks are `true`:
+  no Quickshell/native import, no HOME/XDG/`Paths` fallback,
+  `NotificationServer` never constructed in the service or record, mirroring
+  false at construction, no notification access request, and no image-cache code
+  or writer component.
+- Prototype runs: Disabled screens 0/1 report `status: disabled`,
+  `deliveryConfirmation: idle`, no backend, no original UI and no records. Local
+  screens 0/1 report `status: local`, `deliveryConfirmation: confirmed`,
+  `mirroringOff: true`, `systemMirrorActive: false`,
+  `systemNotificationAccess: 0`, `protectedDismissals: 0`,
+  `rejectedImageSources: 0`; the replacement send was refused in each local run
+  before the real send. Disabled/`unknown` ownership and every other previous
+  policy assertion are unchanged.
+- Prototype: `passed: true`, nine runs (fixture, disabled screens 0/1, local
+  persist, local expire/dismiss, local extra screen 1, M1 regression, media
+  regression, battery regression). Output:
+  `windows\.local\build\notifications-validation-20261025-191533-249`.
+  Desktop identity, the legacy `%USERPROFILE%\.local\state\caelestia\notifs.json`
+  identity (absent before and after) and the isolated history path were
+  unchanged. No image is posted by the smoke, so no image file is touched.
+
+Evidence is archived under `second-review/`:
+
+- `second-review/matrix.json` and the per-run `stdout.log`, `stderr.log`,
+  `result.json`, `sources.json` and `capture.png` (screenshots for disabled,
+  local and M1 runs);
+- `second-review/fixture-standalone/` with the fixture `result.json`, both logs
+  and the three exact staged QML sources;
+- `second-review/desktop-before.json` / `desktop-after.json`;
+- `second-review/archive-second-review.ps1` is the archive script used.
+- `artifacts.sha256.json` was regenerated to cover the whole validation folder,
+  including the new evidence.
+
+Changed sources at the recorded revision:
+
+| source | sha256 |
+| --- | --- |
+| `windows/services/notifications/NotificationsService.qml` | `03EBA603919002B0EC53357DA7D37C06A7517D08B0E969516C4D36C0C6E67048` |
+| `windows/services/notifications/NotifData.qml` | `1C7FCED5555587E1B5BA869768323C43E3076FE2F1BF6EC47B8975B5EC6D6943` |
+| `windows/services/notifications/Notifs.qml` | `55EFD4C903A88149072127180AD4B5AB436650F8877D282AA885E8AEAB0726EB` |
+| `windows/services/notifications/NotificationsServiceTest.qml` | `4C95C672E42A859EFC580E5C0F0F7EC74AF0822825F92D5C8C45EBAACCB788CA` |
+| `windows/notifications-prototype/shell.qml` | `48C0FD5B06C6E580CA5DB448ED9E95EBAFEF62350EC16B980060CA860496AD93` |
+| `windows/notifications-prototype/sources.json` | `390F672B2A55526046DCFAE7BDE9027919293D87DAFB8EBCA80357F4F69F7EC9` |
+| `windows/scripts/Test-NotificationService.ps1` | `A46FABEA9587CA23C51BC347BC17D21DADBD3AE11DC00E17EF65410748B8D9EB` |
+| `windows/scripts/Test-NotificationsPrototype.ps1` | `CEE37E45A1CE63DD67D024A3A420619401931F91CEFBFBE4E1DC97A32C5FA119` |
+
+`windows/services/notifications/NotifImageCache.qml` no longer exists; the hash
+in the original sources table above documents the removed revision. The
+original "Image cache" and writer limits in the earlier sections describe the
+superseded slice and are retained as history.
+
+### Untested in this round
+
+- No smoke posts an image, so a provider or staged-asset image has not been
+  rendered by the original card; the policy, built URL, fallback and rejection
+  paths are fixture-covered.
+- The staged assets directory is injected from the real stage path, but no file
+  from it is loaded by the UI. Junction/reparse behaviour is rejected lexically;
+  no reparse point was exercised.
+- App-supplied images outside the staged assets directory now fall back by
+  design; there is no compatibility path.
+- No system consent, denied listener access, real Windows notification removal
+  or app-open path is exercised; those remain ERM-503.
+
+
