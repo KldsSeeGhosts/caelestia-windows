@@ -5,9 +5,11 @@ import QtQuick
 // compositor fullscreen query, no image copy or cache window and no process
 // call. NotificationsService injects service, expiry configuration and the
 // source notification; the facade owns persistence. A notification image is
-// used only when the service accepts it as an image-provider URL or as a file
-// inside the staged shell assets directory; otherwise it stays empty and the
-// original card shows its fallback icon.
+// used only when the service accepts it as an allowlisted image://icon theme
+// name or as a file inside the staged shell assets directory; otherwise it
+// stays empty and the original card shows its fallback icon. The app icon goes
+// through the same allowlist, and the body is sanitized of Markdown/HTML images
+// before the original Markdown-rendering UI can load them.
 //
 // close() keeps the original hover lock contract: a locked card is marked
 // closed but is only removed (and only then dismissed) when the last lock is
@@ -100,8 +102,8 @@ QtObject {
 
         record.notificationId = String(source.id ?? record.notificationId);
         record.summary = String(source.summary ?? "");
-        record.body = String(source.body ?? "");
-        record.appIcon = String(source.appIcon ?? "");
+        record.updateBody(source.body);
+        record.updateAppIcon(source.appIcon);
         record.appName = String(source.appName ?? "");
         record.updateImage(source.image);
         record.hints = source.hints ?? ({});
@@ -112,6 +114,30 @@ QtObject {
         record.hasActionIcons = source.hasActionIcons === true;
         record.local = !record.service?.isSystemNotification(source);
         record.syncActions();
+    }
+
+    // The service owns the body filter. The original popup/sidebar render the
+    // body as Markdown, so Markdown/HTML images are reduced to alt text before
+    // this record exposes it. Without the service the body stays empty rather
+    // than leaking an unfiltered Markdown source; records are only constructed
+    // by the service (or its fixture).
+    function updateBody(value): void {
+        const raw = String(value ?? "");
+        record.body = record.service && typeof record.service.sanitizeBody === "function"
+            ? record.service.sanitizeBody(raw) : "";
+    }
+
+    // Quickshell.iconPath() turns the app icon into image://icon/<value>, which
+    // also reaches QIcon::fromTheme. Only a theme name or a staged asset path is
+    // kept; anything else becomes "" so the original fallback icon renders.
+    function updateAppIcon(value): void {
+        const raw = String(value ?? "");
+        if (raw === "") {
+            record.appIcon = "";
+            return;
+        }
+        const result = record.service ? record.service.validateAppIcon(raw) : null;
+        record.appIcon = result && result.accepted ? String(result.value) : "";
     }
 
     // The service owns the single source-trust decision. A rejected source is
@@ -206,6 +232,10 @@ QtObject {
         if (record.notification) {
             record.syncFromNotification();
         } else {
+            // Restored history: re-apply the body filter and the app-icon
+            // allowlist even though the service already validated the entry.
+            record.updateBody(record.body);
+            record.updateAppIcon(record.appIcon);
             record.syncActions();
         }
     }
@@ -237,12 +267,12 @@ QtObject {
 
         function onBodyChanged(): void {
             if (record.notification)
-                record.body = String(record.notification.body ?? "");
+                record.updateBody(record.notification.body);
         }
 
         function onAppIconChanged(): void {
             if (record.notification)
-                record.appIcon = String(record.notification.appIcon ?? "");
+                record.updateAppIcon(record.notification.appIcon);
         }
 
         function onAppNameChanged(): void {

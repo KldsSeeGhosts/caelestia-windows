@@ -4,8 +4,10 @@ import QtQuick
 // services/NotifData.qml. This object has no Quickshell import, constructs no
 // native server, and performs no file or image reads, writes, listings or
 // deletions: the singleton facade owns FileView persistence. A notification
-// image is only ever accepted as an image-provider URL or as a file already
-// inside the staged shell assets directory; no image is copied or cached.
+// image is only ever accepted as an allowlisted image://icon theme name or as a
+// file already inside the staged shell assets directory; no image is copied or
+// cached. Bodies are sanitized of Markdown and HTML images before the original
+// Markdown-rendering popup/sidebar can load them.
 // Backends, paths and translations may be injected in tests.
 //
 // The notification list is the original NotifData contract consumed by
@@ -363,7 +365,9 @@ QtObject {
         root.pendingDeliveryContentKnown = summary !== undefined && summary !== null
             && body !== undefined && body !== null;
         root.pendingDeliverySummary = root.pendingDeliveryContentKnown ? String(summary) : "";
-        root.pendingDeliveryBody = root.pendingDeliveryContentKnown ? String(body) : "";
+        // The record exposes a sanitized body, so the expectation must compare
+        // against the same sanitized text.
+        root.pendingDeliveryBody = root.pendingDeliveryContentKnown ? root.sanitizeBody(String(body)) : "";
         root.deliveryUnconfirmed = false;
         root.deliveryConfirmation = root.pendingDeliveryId === 0 ? "idle" : "pending";
         deliveryTimer.stop();
@@ -498,6 +502,9 @@ QtObject {
             const image = root.validateImageSource(rawImage);
             if (rawImage !== "" && !image.accepted)
                 root.reportRejectedImageSource(rawImage, image.reason);
+            // Persisted history can be edited outside this process, so the app
+            // icon and body are re-validated exactly like a live one.
+            const appIcon = root.validateAppIcon(String(entry.appIcon ?? ""));
 
             const record = root._recordComponent.createObject(root, {
                 service: root,
@@ -507,8 +514,8 @@ QtObject {
                 time: new Date(Number.isFinite(time) && time > 0 ? time : Date.now()),
                 notificationId: String(entry.notificationId ?? entry.id ?? ""),
                 summary: String(entry.summary ?? ""),
-                body: String(entry.body ?? ""),
-                appIcon: String(entry.appIcon ?? ""),
+                body: root.sanitizeBody(String(entry.body ?? "")),
+                appIcon: appIcon.value,
                 appName: String(entry.appName ?? ""),
                 image: image.accepted ? image.canonical : "",
                 imageSourceRejected: rawImage !== "" && !image.accepted,
@@ -584,13 +591,22 @@ QtObject {
     // Upstream rasterised notification images into a cache and the previous
     // revision of this slice copied them into the profile cache. That cache is
     // removed: this slice never copies, writes, lists, prunes or deletes a
-    // notification image file. A notification image is used only when it is an
-    // image:// provider URL or a file already inside the staged shell assets
-    // directory; anything else is cleared so the original card shows its
-    // existing fallback icon.
+    // notification image file. A notification image is used only when it is the
+    // allowlisted image://icon theme provider or a file already inside the
+    // staged shell assets directory; anything else is cleared so the original
+    // card shows its existing fallback icon.
     //
-    // The decision is purely lexical (no filesystem access), so a rejected
-    // source is never opened by the UI:
+    // Providers are allowlisted, not merely prefixed. QIcon::fromTheme (the
+    // image://icon provider) loads an absolute path and honours a fallback name,
+    // so image://icon/C:/outside.png and image://icon/x?fallback=C:/outside.png
+    // were confinement bypasses. Only image://icon/<name> is accepted, where
+    // <name> is a bare theme name matching ^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$:
+    // no slash, backslash, colon, "?", "#", "%", whitespace or authority. Every
+    // other provider (image://, image:///path, image://other/..., query or
+    // fragment forms) is rejected.
+    //
+    // The local-file decision is purely lexical (no filesystem access), so a
+    // rejected source is never opened by the UI:
     //   - percent encoding is refused everywhere (%2e%2e and %5c would
     //     otherwise bypass the component checks after a decoder ran),
     //   - UNC, \\?\, \\.\, // and file://host sources are refused,
@@ -600,8 +616,14 @@ QtObject {
     //     short-name alias) or equal to "." or ".." is refused,
     //   - the remaining absolute path must be a strict case-insensitive child
     //     of the injected staged assets directory.
-    // The UI image is rebuilt from the validated path ("file:///" plus forward
-    // slashes), never from the raw input.
+    // The UI image URL is rebuilt from the validated path, never from the raw
+    // input, and each path segment is percent-encoded so "#", "?" and other URL
+    // delimiters in a staged file name cannot become a fragment or query.
+    //
+    // The staged assets root comes from Quickshell.shellPath("assets") and is
+    // trusted staging, not notification input. The validator is lexical: it does
+    // not detect a reparse point (junction/symlink) placed inside that trusted
+    // root, and physical containment relies on the staging step.
 
     // Injected by the facade: the staged shell's assets directory.
     property string shellAssetsDirectory: ""
@@ -611,6 +633,14 @@ QtObject {
     property string lastImageSourceError: ""
 
     readonly property string canonicalShellAssetsDirectory: canonicalLocalPath(shellAssetsDirectory)
+
+    // A theme icon name and a provider id share one shape. The name must start
+    // alphanumerically (so no "."/".." or leading punctuation) and may contain
+    // only characters that cannot introduce a path, query, fragment, authority
+    // or percent escape.
+    function isThemeIconName(value): bool {
+        return /^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$/.test(String(value ?? ""));
+    }
 
     // Pure, Quickshell-free source validation. Returns
     // { accepted, kind, canonical, path, reason } where kind is "provider",
@@ -630,12 +660,15 @@ QtObject {
             return reject("Percent-encoded notification image sources are not allowed.");
 
         const normalized = raw.replace(/\\/g, "/");
-        if (normalized.toLowerCase().startsWith("image://")) {
-            const provider = normalized.slice("image://".length);
-            if (provider === "" || provider.startsWith("/") || provider.indexOf("..") >= 0)
-                return reject("The notification image provider URL is invalid.");
+        if (normalized.startsWith("image://")) {
+            const prefix = "image://icon/";
+            if (!normalized.startsWith(prefix))
+                return reject("Only image://icon/<theme-name> provider URLs are allowed.");
+            const name = normalized.slice(prefix.length);
+            if (!root.isThemeIconName(name))
+                return reject("The image provider name is not a bare theme icon name.");
             return {
-                accepted: true, kind: "provider", canonical: "image://" + provider,
+                accepted: true, kind: "provider", canonical: prefix + name,
                 path: "", reason: ""
             };
         }
@@ -674,10 +707,37 @@ QtObject {
         if (assets === "" || !root.isUnder(validated, assets))
             return reject("The notification image is outside the staged shell assets directory.");
         const resolved = assets + "/" + validated.slice(assets.length + 1);
+        const canonical = root.imageUrlForPath(resolved);
+        if (canonical === "")
+            return reject("The notification image path cannot be represented as a file URL.");
         return {
-            accepted: true, kind: "assets", canonical: root.imageUrlForPath(resolved),
+            accepted: true, kind: "assets", canonical: canonical,
             path: resolved, reason: ""
         };
+    }
+
+    // App icons reach Quickshell.iconPath(), which turns the value into
+    // image://icon/<value> and therefore also reaches QIcon::fromTheme. The same
+    // allowlist applies: a bare theme name, or a staged asset file (returned as
+    // the validated local path, not a URL, because iconPath builds the provider
+    // URL itself). Anything else becomes "" so the original fallback renders.
+    function validateAppIcon(source): var {
+        const reject = reason => ({
+            accepted: false, kind: "rejected", value: "", reason: reason
+        });
+
+        if (source === undefined || source === null)
+            return { accepted: true, kind: "empty", value: "", reason: "" };
+        const raw = String(source);
+        if (raw === "")
+            return { accepted: true, kind: "empty", value: "", reason: "" };
+        if (root.isThemeIconName(raw))
+            return { accepted: true, kind: "theme", value: raw, reason: "" };
+
+        const image = root.validateImageSource(raw);
+        if (image.accepted && image.kind === "assets")
+            return { accepted: true, kind: "assets", value: image.path, reason: "" };
+        return reject("The app icon is neither a theme icon name nor a staged asset.");
     }
 
     // Lexical canonicalisation only: no filesystem access. Returns "" for a
@@ -711,6 +771,10 @@ QtObject {
                 return "";
             if (segment.indexOf(":") >= 0)
                 return "";
+            // A lone surrogate cannot be percent-encoded and is not a real
+            // Windows file name.
+            if (/[\uD800-\uDFFF]/.test(segment))
+                return "";
             parts.push(segment);
         }
         if (parts.length === 0)
@@ -718,8 +782,33 @@ QtObject {
         return match[1].toUpperCase() + ":/" + parts.join("/");
     }
 
+    // Build the UI URL only from the validated path. Each segment is
+    // percent-encoded so a staged file named "banner#v2.png" keeps its "#"
+    // instead of turning it into a URL fragment (and "?" cannot become a
+    // query). encodeURIComponent leaves the unreserved characters, including
+    // the "." used by ordinary extensions, untouched.
     function imageUrlForPath(path): string {
-        return "file:///" + normalizePath(path);
+        const normalized = normalizePath(path);
+        const match = /^([A-Za-z]):\/(.*)$/.exec(normalized);
+        if (!match)
+            return "";
+        const segments = [];
+        for (const segment of match[2].split("/")) {
+            if (segment === "")
+                continue;
+            let encoded = "";
+            try {
+                encoded = encodeURIComponent(segment);
+            } catch (error) {
+                return "";
+            }
+            if (encoded === "")
+                return "";
+            segments.push(encoded);
+        }
+        if (segments.length === 0)
+            return "";
+        return "file:///" + match[1].toUpperCase() + ":/" + segments.join("/");
     }
 
     function reportRejectedImageSource(source, reason): void {
@@ -728,55 +817,276 @@ QtObject {
         root.lastImageSourceError = String(reason ?? "");
     }
 
+    // ---- Body sanitization ------------------------------------------------
+
+    // The original popup and sidebar render the body as Markdown when it
+    // contains Markdown punctuation, and Qt's Markdown importer loads image
+    // resources from inline images, reference images and raw HTML. A
+    // notification body is untrusted text, so image-bearing constructs are
+    // reduced to their alt text (or removed) before the record exposes it:
+    //   - ![alt](destination "title") and ![alt](<destination>) -> alt,
+    //   - ![alt][reference] and ![alt] -> alt,
+    //   - reference definition lines "[ref]: url ..." -> removed,
+    //   - <img>, <picture>, <source>, <svg>, <image>, <object>, <embed> and
+    //     <iframe> tags (case-insensitive, multi-line attributes, quoted ">")
+    //     -> removed.
+    // Ordinary text and ordinary links are kept. This is a lexical filter, not
+    // a Markdown parser: fenced code blocks and multi-line reference titles are
+    // not modelled, and a definition-looking line is removed even without a
+    // matching image reference. NotifData applies it to live bodies, body
+    // updates and restored history, so the UI only ever sees the result.
+    function sanitizeBody(value): string {
+        if (value === undefined || value === null)
+            return "";
+        let text = String(value);
+        if (text === "")
+            return "";
+        text = root.stripHtmlMediaTags(text);
+        text = root.stripMarkdownReferenceDefinitions(text);
+        // An image alt may itself contain an image; a few passes handle the
+        // nesting without unbounded recursion.
+        for (let pass = 0; pass < 8; pass++) {
+            const next = root.replaceMarkdownImages(text);
+            if (next === text)
+                break;
+            text = next;
+        }
+        return text;
+    }
+
+    // Remove media-bearing HTML tags with a small scanner instead of a single
+    // regex: quoted attribute values may contain ">", and an unterminated tag is
+    // dropped to the end of the text because a tolerant HTML parser could still
+    // treat it as an image. Ordinary "<" text is left alone.
+    function stripHtmlMediaTags(text): string {
+        const source = String(text ?? "");
+        const opener = /^<\/?(?:img|image|picture|source|svg|object|embed|iframe)\b/i;
+        let output = "";
+        let i = 0;
+        while (i < source.length) {
+            if (source.charAt(i) === "<") {
+                const match = opener.exec(source.slice(i, i + 12));
+                if (match) {
+                    let j = i + match[0].length;
+                    let quote = "";
+                    while (j < source.length) {
+                        const ch = source.charAt(j);
+                        if (quote !== "") {
+                            if (ch === quote)
+                                quote = "";
+                        } else if (ch === "\"" || ch === "'") {
+                            quote = ch;
+                        } else if (ch === ">") {
+                            j++;
+                            break;
+                        }
+                        j++;
+                    }
+                    i = j;
+                    continue;
+                }
+            }
+            output += source.charAt(i);
+            i++;
+        }
+        return output;
+    }
+
+    function stripMarkdownReferenceDefinitions(text): string {
+        return String(text ?? "").replace(/^[ \t]{0,3}\[[^\]\n]+\]:[^\n]*(?:\r?\n|$)/gm, "");
+    }
+
+    // Replace every Markdown image with its alt text. Destinations are skipped
+    // with escape-aware delimiter matching, so "![x](file:///C:/a(b).png)" and
+    // nested alt brackets do not leave a partial destination behind.
+    function replaceMarkdownImages(text): string {
+        const source = String(text ?? "");
+        let output = "";
+        let i = 0;
+        while (i < source.length) {
+            const ch = source.charAt(i);
+            if (ch === "\\") {
+                output += source.slice(i, i + 2);
+                i += 2;
+                continue;
+            }
+            if (ch === "!" && source.charAt(i + 1) === "[") {
+                const altEnd = root.findClosingDelimiter(source, i + 2, "[", "]");
+                if (altEnd >= 0) {
+                    const alt = source.slice(i + 2, altEnd);
+                    const marker = source.charAt(altEnd + 1);
+                    if (marker === "(") {
+                        const destinationEnd = root.findClosingDelimiter(source, altEnd + 2, "(", ")");
+                        if (destinationEnd >= 0) {
+                            output += alt;
+                            i = destinationEnd + 1;
+                            continue;
+                        }
+                    } else if (marker === "[") {
+                        const referenceEnd = root.findClosingDelimiter(source, altEnd + 2, "[", "]");
+                        if (referenceEnd >= 0) {
+                            output += alt;
+                            i = referenceEnd + 1;
+                            continue;
+                        }
+                    } else {
+                        output += alt;
+                        i = altEnd + 1;
+                        continue;
+                    }
+                }
+            }
+            output += ch;
+            i++;
+        }
+        return output;
+    }
+
+    // Find the closing delimiter for an opening one just before start.
+    // Backslash escapes are skipped. In a "(" destination, leading whitespace
+    // is skipped and a "<...>" destination is opaque, so a ")" inside it does
+    // not end the image.
+    function findClosingDelimiter(text, start, open, close): int {
+        let depth = 1;
+        let i = start;
+        let atDestinationStart = open === "(";
+        while (i < text.length) {
+            const ch = text.charAt(i);
+            if (ch === "\\") {
+                i += 2;
+                atDestinationStart = false;
+                continue;
+            }
+            if (atDestinationStart && (ch === " " || ch === "\t" || ch === "\n" || ch === "\r")) {
+                i++;
+                continue;
+            }
+            if (atDestinationStart) {
+                atDestinationStart = false;
+                if (ch === "<") {
+                    const angleEnd = text.indexOf(">", i + 1);
+                    if (angleEnd >= 0) {
+                        i = angleEnd + 1;
+                        continue;
+                    }
+                }
+            }
+            if (ch === open) {
+                depth++;
+            } else if (ch === close) {
+                depth--;
+                if (depth === 0)
+                    return i;
+            }
+            i++;
+        }
+        return -1;
+    }
+
     // ---- Replacement sends -------------------------------------------------
 
     // The pinned backend parses -r/--replace-id and reports a new notification
     // with its own id; this slice has no local replace path, so a replacement
     // send would never confirm. It is refused before notifySend and before
     // expectDelivery, so it cannot be reported as forwarded/unconfirmed.
+    //
+    // This mirrors notify_send.cpp option consumption exactly: every option in
+    // the backend's table is recognised (case-sensitive long names, the first
+    // character after "-"), only u/t/a/i/c/h/A/r take a following argument, and
+    // an unknown option consumes nothing. That is why ["-a", "-r", "42"] is an
+    // app name and is NOT refused, while ["-r", "+42"] is a replacement.
+    //
+    // The value goes through QString::toUInt (base 10), whose observed rules are
+    // mirrored by backendReplaceId(): optional ASCII whitespace, optional "+",
+    // decimal digits, optional ASCII whitespace, and a result <= UINT_MAX.
+    // Unicode whitespace, a negative sign, fractional values and overflow are
+    // not parsed by the backend and are not treated as replacements.
+    readonly property var notifySendShortOptions: ["u", "t", "a", "i", "c", "h", "A", "r", "e", "p", "w"]
+    readonly property var notifySendValueOptions: ["u", "t", "a", "i", "c", "h", "A", "r"]
+    readonly property var notifySendLongOptions: ({
+        "urgency": "u",
+        "expire-time": "t",
+        "app-name": "a",
+        "icon": "i",
+        "category": "c",
+        "hint": "h",
+        "action": "A",
+        "replace-id": "r",
+        "transient": "e",
+        "print-id": "p",
+        "wait": "w"
+    })
+
+    function notifySendOptionTakesValue(option): bool {
+        return root.notifySendValueOptions.indexOf(String(option)) >= 0;
+    }
+
+    // Returns the unsigned 32-bit value the backend would parse, or -1 when
+    // toUInt() would fail. Zero is a valid parsed value but means "no replace".
+    function backendReplaceId(value): int {
+        const text = String(value ?? "");
+        if (!/^[\t\n\v\f\r ]*\+?[0-9]+[\t\n\v\f\r ]*$/.test(text))
+            return -1;
+        const digits = text.replace(/^[\t\n\v\f\r ]*\+?/, "").replace(/[\t\n\v\f\r ]*$/, "");
+        const id = Number(digits);
+        if (!Number.isSafeInteger(id) || id > 4294967295)
+            return -1;
+        return id;
+    }
+
     function replacementIdFromArgs(args): int {
         if (!args || typeof args.length !== "number")
             return 0;
+
+        let replacesId = 0;
         for (let i = 0; i < args.length; i++) {
             const arg = String(args[i] ?? "");
+            let option = "";
             let value = "";
             let hasValue = false;
 
-            if (arg.length > 2 && arg.startsWith("--")) {
+            if (arg.startsWith("--") && arg.length > 2) {
                 const eq = arg.indexOf("=");
-                const name = (eq < 0 ? arg.slice(2) : arg.slice(2, eq)).toLowerCase();
-                if (name !== "replace-id")
-                    continue;
+                const name = eq < 0 ? arg.slice(2) : arg.slice(2, eq);
+                // Long names are compared case-sensitively by the backend. Use
+                // an own-property test so inherited names are not mistaken for
+                // options.
+                const longNames = root.notifySendLongOptions;
+                option = Object.prototype.hasOwnProperty.call(longNames, name)
+                    ? String(longNames[name]) : "";
                 if (eq >= 0) {
                     value = arg.slice(eq + 1);
                     hasValue = true;
                 }
-            } else if (arg.length > 1 && arg.startsWith("-")) {
-                if (arg.charAt(1) !== "r")
-                    continue;
+            } else if (arg.startsWith("-") && arg.length > 1) {
+                const shortName = arg.charAt(1);
+                option = root.notifySendShortOptions.indexOf(shortName) >= 0 ? shortName : "";
                 if (arg.length > 2) {
                     value = arg.slice(arg.charAt(2) === "=" ? 3 : 2);
                     hasValue = true;
                 }
-            } else {
-                continue;
             }
 
-            if (!hasValue) {
+            // Unknown arguments are logged and ignored by the backend; they do
+            // not consume the next argument.
+            if (option === "")
+                continue;
+
+            if (root.notifySendOptionTakesValue(option) && !hasValue) {
                 if (i + 1 >= args.length)
-                    return 0;
+                    break;
                 value = String(args[++i] ?? "");
             }
-            // The backend parses the value with QString::toUInt, so a
-            // fractional or otherwise non-numeric value is not a replacement.
-            const text = value.trim();
-            if (!/^\d+$/.test(text))
+
+            if (option !== "r")
                 continue;
-            const id = Number(text);
-            if (id > 0)
-                return id;
+            const parsed = root.backendReplaceId(value);
+            // A later valid -r wins; an invalid later value keeps the previous
+            // one, exactly like the backend's apply().
+            if (parsed >= 0)
+                replacesId = parsed;
         }
-        return 0;
+        return replacesId;
     }
 
     function replacementSendRefusal(args): string {

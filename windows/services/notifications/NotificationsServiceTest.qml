@@ -295,6 +295,46 @@ QtObject {
         check(service.validateImageSource("image://icon/../escape").accepted === false,
             "provider traversal is rejected");
 
+        // The provider allowlist: QIcon::fromTheme loads an absolute path and
+        // honours a fallback name, so anything beyond a bare theme name would
+        // bypass the staged-asset confinement.
+        const providerName = service.validateImageSource("image://icon/app.icon_2-x+y");
+        check(providerName.accepted && providerName.canonical === "image://icon/app.icon_2-x+y",
+            "a bare theme name with dots, underscores, dashes and plus is accepted");
+        const longProviderName = "a".repeat(128);
+        check(service.validateImageSource("image://icon/" + longProviderName).accepted === true,
+            "a 128-character provider name is accepted");
+        check(service.validateImageSource("image://icon/" + longProviderName + "b").accepted === false,
+            "a 129-character provider name is rejected");
+        const rejectedProviders = [
+            ["image://icon/C:/outside/picture.png", "an absolute path as the provider name"],
+            ["image://icon/c:/outside/picture.png", "a lower-case drive as the provider name"],
+            ["image://icon/foo?fallback=C:/outside/picture.png", "a provider fallback query"],
+            ["image://icon/foo?path=C:/outside", "a provider path query"],
+            ["image://icon/foo#fragment", "a provider fragment"],
+            ["image://icon/foo/bar", "a provider subpath"],
+            ["image://icon//foo", "an empty provider path segment"],
+            ["image://icon@outside/foo", "a user-info authority"],
+            ["image://icon:8080/foo", "a port authority"],
+            ["image://icon/", "an empty provider name"],
+            ["image://icon", "a provider without a name"],
+            ["image://other/icon", "another image provider"],
+            ["image://qsimage/x", "a non-icon provider"],
+            ["image://icon/foo bar", "whitespace in the provider name"],
+            ["image://icon/foo\\bar", "a backslash in the provider name"],
+            ["image://icon/C:\\outside\\picture.png", "a backslash path as the provider name"],
+            ["IMAGE://icon/foo", "an upper-case provider scheme"],
+            ["image://icon/%2e%2e/x", "a percent-encoded provider traversal"],
+            ["image://icon/..", "a provider dot-dot name"],
+            ["image://icon/.", "a provider dot name"]
+        ];
+        for (const entry of rejectedProviders) {
+            const result = service.validateImageSource(entry[0]);
+            check(result.accepted === false && result.canonical === "" && result.path === ""
+                && result.reason.length > 0,
+                entry[1] + " is rejected without a canonical URL");
+        }
+
         const asset = service.validateImageSource("C:/fixtures/shell/assets/icon.png");
         check(asset.accepted && asset.kind === "assets"
             && asset.path === "C:/fixtures/shell/assets/icon.png"
@@ -319,9 +359,62 @@ QtObject {
         check(service.validateImageSource("C:/fixtures/shell/assetsevil/icon.png").accepted === false,
             "a prefix sibling of the assets directory is rejected");
 
+        // A "#" or "?" in a staged file name must stay part of the name, not
+        // become a URL fragment or query.
+        const hashAsset = service.validateImageSource("C:/fixtures/shell/assets/banner#v2.png");
+        check(hashAsset.accepted
+            && hashAsset.path === "C:/fixtures/shell/assets/banner#v2.png"
+            && hashAsset.canonical === "file:///C:/fixtures/shell/assets/banner%23v2.png",
+            "a hash in a staged file name is percent-encoded in the UI URL: " + hashAsset.canonical);
+        const queryAsset = service.validateImageSource("file:///C:/fixtures/shell/assets/banner?v=2.png");
+        check(queryAsset.accepted
+            && queryAsset.canonical === "file:///C:/fixtures/shell/assets/banner%3Fv%3D2.png",
+            "a query delimiter in a staged file name is percent-encoded");
+        const spaceAsset = service.validateImageSource("C:\\fixtures\\shell\\assets\\banner v2.png");
+        check(spaceAsset.accepted
+            && spaceAsset.canonical === "file:///C:/fixtures/shell/assets/banner%20v2.png",
+            "a space in a staged file name is percent-encoded");
+
+        // The app icon reaches QIcon::fromTheme through Quickshell.iconPath, so
+        // it gets the same theme-name/staged-asset allowlist.
+        const themeAppIcon = service.validateAppIcon("dialog-information-symbolic");
+        check(themeAppIcon.accepted && themeAppIcon.kind === "theme"
+            && themeAppIcon.value === "dialog-information-symbolic",
+            "a theme app icon is accepted as-is");
+        const emptyAppIcon = service.validateAppIcon("");
+        check(emptyAppIcon.accepted && emptyAppIcon.value === "",
+            "an empty app icon stays empty");
+        const assetAppIcon = service.validateAppIcon("C:\\fixtures\\shell\\assets\\app.png");
+        check(assetAppIcon.accepted && assetAppIcon.kind === "assets"
+            && assetAppIcon.value === "C:/fixtures/shell/assets/app.png",
+            "a staged asset app icon becomes the validated local path");
+        const urlAppIcon = service.validateAppIcon("file:///C:/fixtures/shell/assets/app.png");
+        check(urlAppIcon.accepted && urlAppIcon.value === "C:/fixtures/shell/assets/app.png",
+            "a staged asset file URL app icon becomes the validated local path");
+        const rejectedAppIcons = [
+            ["C:/outside/app.png", "an external absolute app icon"],
+            ["C:/fixtures/shell/assetsevil/app.png", "a prefix sibling app icon"],
+            ["C:/fixtures/shell/assets/../app.png", "a dot-dot app icon"],
+            ["\\\\server\\share\\app.png", "a UNC app icon"],
+            ["../app.png", "a relative parent app icon"],
+            ["image://icon/app", "an image provider app icon"],
+            ["image://icon/C:/outside/app.png", "a provider path app icon"],
+            ["qrc:/icons/app.png", "a qrc app icon"],
+            ["%2e%2e/app.png", "a percent-encoded app icon"],
+            ["dialog information", "a theme name with whitespace"],
+            [".hidden-icon", "a theme name starting with a dot"]
+        ];
+        for (const entry of rejectedAppIcons) {
+            const result = service.validateAppIcon(entry[0]);
+            check(result.accepted === false && result.value === "" && result.reason.length > 0,
+                entry[1] + " is rejected without a value");
+        }
+
         service.shellAssetsDirectory = "";
         check(service.validateImageSource("C:/fixtures/shell/assets/icon.png").accepted === false,
             "assets are rejected when the staged directory is not injected");
+        check(service.validateAppIcon("C:/fixtures/shell/assets/app.png").accepted === false,
+            "a staged app icon is rejected when the staged directory is not injected");
         service.shellAssetsDirectory = "C:/fixtures/shell/assets";
 
         const rejectedSources = [
@@ -421,6 +514,75 @@ QtObject {
         assetRecord.close();
         check(service.list.length === 1 && service.list[0] === record,
             "the image policy tests leave only the original local record");
+
+        // --- Body sanitization ------------------------------------------------
+        // Bodies render as Markdown in the original popup/sidebar, so
+        // image-bearing constructs must be reduced before the UI sees them.
+        check(service.sanitizeBody("") === "", "an empty body stays empty");
+        check(service.sanitizeBody(null) === "", "a null body stays empty");
+        check(service.sanitizeBody("Plain text, [a link](https://example.invalid) and *emphasis*")
+            === "Plain text, [a link](https://example.invalid) and *emphasis*",
+            "ordinary text and links are kept");
+        const bodyCases = [
+            ["Look ![x](file:///C:/outside.png) here", "Look x here", "an inline file image"],
+            ["![x](https://example.invalid/a.png)", "x", "an inline http image"],
+            ["![a [b] c](C:/a(b).png)", "a [b] c", "nested alt brackets and destination parens"],
+            ["![a\\]b](file:///C:/x.png)", "a\\]b", "an escaped bracket in the alt"],
+            ["![x](<file:///C:/a b.png>)", "x", "an angle-bracket destination"],
+            ["![x](<file:///C:/a)b.png>)", "x", "a paren inside an angle-bracket destination"],
+            ["![a ![b](c)](d)", "a b", "nested images"],
+            ["![x] plus text", "x plus text", "a shortcut reference image"],
+            ["![x][ref]", "x", "a reference-style image"],
+            ["![x][ref]\n[ref]: file:///C:/x.png", "x\n", "a reference definition line"],
+            ["[ref]: file:///C:/x.png\nText", "Text", "a leading reference definition line"],
+            ["<img src=\"file:///C:/outside.png\">text", "text", "an HTML img tag"],
+            ["<IMG SRC='x'>text", "text", "a case-insensitive HTML img tag"],
+            ["<img\n src=\"file:///C:/outside.png\"\n alt=\"a>b\">text", "text", "a multi-line HTML img tag"],
+            ["<img src=\"a>b\">text", "text", "a quoted greater-than inside a tag"],
+            ["<img src=x alt='a>b'>text", "text", "a single-quoted greater-than inside a tag"],
+            ["<img src=\"file:///C:/outside.png\"", "", "an unterminated HTML img tag"],
+            ["<picture><source srcset=\"x\">tail", "tail", "a terminated picture and source pair"],
+            ["<picture tail", "", "an unterminated media tag drops the rest"],
+            ["<picture><source srcset=\"x\"><img src=\"y\"></picture>text", "text", "picture and source tags"],
+            ["<svg><image href=\"file:///C:/x.png\"/></svg>text", "text", "svg and image tags"],
+            ["<object data=\"x\"></object><embed src=\"y\"><iframe src=\"z\"></iframe>text", "text", "object, embed and iframe tags"],
+            ["2 < 3 and 4 > 1", "2 < 3 and 4 > 1", "comparison text is not a tag"],
+            ["\\![x](file:///C:/x.png)", "\\![x](file:///C:/x.png)", "an escaped image marker stays text"],
+            ["<a href=\"https://example.invalid\">text</a>", "<a href=\"https://example.invalid\">text</a>", "ordinary HTML links are kept"]
+        ];
+        for (const entry of bodyCases) {
+            const sanitized = service.sanitizeBody(entry[0]);
+            check(sanitized === entry[1],
+                entry[2] + ": " + JSON.stringify(sanitized) + " != " + JSON.stringify(entry[1]));
+        }
+
+        // Live records apply the app-icon allowlist, the encoded image URL and
+        // the body filter, including on later property changes.
+        const livePolicy = makeNotification(115, "Live policy");
+        livePolicy.appIcon = "C:/outside/app.png";
+        livePolicy.image = "C:\\fixtures\\shell\\assets\\banner#v2.png";
+        livePolicy.body = "Before ![x](file:///C:/outside.png) after";
+        fixture.notificationReceived(livePolicy);
+        const livePolicyRecord = service.list[0];
+        check(livePolicyRecord.appIcon === "",
+            "an external app icon is cleared so the original fallback icon renders");
+        check(livePolicyRecord.image === "file:///C:/fixtures/shell/assets/banner%23v2.png",
+            "a hash in a live asset image is percent-encoded");
+        check(livePolicyRecord.body === "Before x after",
+            "a live Markdown body image is replaced with its alt text");
+
+        livePolicy.appIcon = "C:/fixtures/shell/assets/app.png";
+        livePolicy.body = "<img src=\"file:///C:/outside.png\">Changed body";
+        check(livePolicyRecord.appIcon === "C:/fixtures/shell/assets/app.png",
+            "a staged app icon is accepted as a local path");
+        check(livePolicyRecord.body === "Changed body",
+            "an HTML body image is removed from a live update");
+        livePolicy.appIcon = "image://icon/C:/outside.png";
+        check(livePolicyRecord.appIcon === "",
+            "a provider path app icon is cleared on update");
+        livePolicyRecord.close();
+        check(service.list.length === 1 && service.list[0] === record,
+            "the live policy tests leave only the original local record");
 
         // Baseline for the dismiss-counter assertions: the image policy tests
         // above closed their own records.
@@ -619,6 +781,35 @@ QtObject {
             && restoredState.imageSourceRejected === true,
             "a restored profile state image is rejected");
 
+        // Restored history is re-validated for the provider allowlist, the app
+        // icon and the body, exactly like a live notification.
+        const persistedPolicy = JSON.stringify([
+            {time: 6200, recordId: "restored-provider", notificationId: "9101",
+                summary: "Provider", body: "", image: "image://icon/C:/outside/picture.png",
+                appIcon: "image://icon/C:/outside/app.png"},
+            {time: 6100, recordId: "restored-body", notificationId: "9102",
+                summary: "Body", body: "A ![x](file:///C:/outside.png) B",
+                image: "", appIcon: "C:/outside/app.png"},
+            {time: 6000, recordId: "restored-body-ref", notificationId: "9103",
+                summary: "Body ref", body: "A ![x][r]\n[r]: file:///C:/outside.png",
+                image: "", appIcon: "dialog-information-symbolic"}
+        ]);
+        check(restoredService.restoreHistory(persistedPolicy) === true,
+            "history with policy-bearing bodies restores");
+        const restoredProvider = restoredService.recordForNotificationId("9101");
+        check(restoredProvider !== null && restoredProvider.image === ""
+            && restoredProvider.imageSourceRejected === true
+            && restoredProvider.appIcon === "",
+            "a restored provider-path image and app icon are rejected");
+        const restoredBody = restoredService.recordForNotificationId("9102");
+        check(restoredBody !== null && restoredBody.body === "A x B"
+            && restoredBody.appIcon === "",
+            "a restored Markdown body image is replaced and an external app icon is cleared");
+        const restoredBodyRef = restoredService.recordForNotificationId("9103");
+        check(restoredBodyRef !== null && restoredBodyRef.body === "A x\n"
+            && restoredBodyRef.appIcon === "dialog-information-symbolic",
+            "a restored reference image is reduced and its definition line removed");
+
         restoredService.failHistory("Fixture read failure");
         check(restoredService.historyError === "Fixture read failure"
             && restoredService.historyLoaded, "explicit history failure is exposed");
@@ -641,8 +832,62 @@ QtObject {
             "an invalid replace id is not a replacement");
         check(service.replacementIdFromArgs(["-r", "42.9"]) === 0,
             "a fractional replace id is not a replacement");
+
+        // QString::toUInt accepts a leading "+", leading zeros and ASCII
+        // whitespace; the backend therefore replaces for these values.
+        check(service.replacementIdFromArgs(["-r", "+42"]) === 42,
+            "a plus-signed replace id is a replacement");
+        check(service.replacementIdFromArgs(["--replace-id=+42"]) === 42,
+            "a plus-signed long replace id is a replacement");
+        check(service.replacementIdFromArgs(["-r", "007"]) === 7,
+            "a leading-zero replace id is a replacement");
+        check(service.replacementIdFromArgs(["--replace-id", " 42 "]) === 42,
+            "surrounding ASCII whitespace is trimmed like toUInt");
+        check(service.replacementIdFromArgs(["-r", "\t+0042\n"]) === 42,
+            "tabs, a plus sign and leading zeros are all accepted");
+        check(service.replacementIdFromArgs(["-r", "4294967295"]) === 4294967295,
+            "UINT_MAX is a valid replace id");
+        check(service.replacementIdFromArgs(["-r", "4294967296"]) === 0,
+            "an id above UINT_MAX is not parsed by toUInt");
+        check(service.replacementIdFromArgs(["-r", "\u00a042"]) === 0,
+            "non-ASCII whitespace is not trimmed by toUInt");
+        check(service.replacementIdFromArgs(["-r", "+ 42"]) === 0,
+            "a sign separated from the digits is not parsed");
+        check(service.replacementIdFromArgs(["-r", "42", "-r", "43"]) === 43,
+            "the last valid replace id wins");
+        check(service.replacementIdFromArgs(["-r", "42", "-r", "nope"]) === 42,
+            "an invalid later replace id keeps the earlier one");
+
+        // Option consumption mirrors notify_send.cpp: a value-taking option
+        // swallows the next argument even when it looks like -r.
+        check(service.replacementIdFromArgs(["-a", "-r", "42"]) === 0,
+            "-a consumes -r as the app name");
+        check(service.replacementIdFromArgs(["-i", "-r", "42"]) === 0,
+            "-i consumes -r as the icon");
+        check(service.replacementIdFromArgs(["-t", "-r", "42"]) === 0,
+            "-t consumes -r as the expire time");
+        check(service.replacementIdFromArgs(["--app-name", "-r", "42"]) === 0,
+            "--app-name consumes -r as the app name");
+        check(service.replacementIdFromArgs(["--replace-id", "-r", "42"]) === 0,
+            "--replace-id consumes -r as its value");
+        check(service.replacementIdFromArgs(["-e", "-r", "42"]) === 42,
+            "-e takes no value and does not consume the next argument");
+        check(service.replacementIdFromArgs(["--transient", "-r", "42"]) === 42,
+            "--transient takes no value and does not consume the next argument");
+        check(service.replacementIdFromArgs(["-x", "-r", "42"]) === 42,
+            "an unknown option consumes nothing");
+        check(service.replacementIdFromArgs(["--REPLACE-ID=42"]) === 0,
+            "long option names are case-sensitive like the backend");
+        check(service.replacementIdFromArgs(["-R42"]) === 0,
+            "short option names are case-sensitive like the backend");
+        check(service.replacementIdFromArgs(["--replace-id"]) === 0,
+            "a missing replace value is not a replacement");
         check(service.replacementSendRefusal(["-a", "Caelestia"]) === "",
             "an ordinary send is not refused");
+        check(service.replacementSendRefusal(["-a", "-r", "42"]) === "",
+            "a send whose app name looks like -r is not refused");
+        check(service.replacementSendRefusal(["-r", "+42"]).indexOf("Replacement") >= 0,
+            "a plus-signed replacement send is refused");
         const replacementRefusal = service.replacementSendRefusal(["-r", "42"]);
         check(replacementRefusal.indexOf("Replacement") >= 0
             && replacementRefusal.indexOf("not supported") >= 0,
@@ -745,6 +990,13 @@ QtObject {
             "a fresh matching delivery confirms the send");
         check(service.confirmedDeliveries === 1, "confirmed deliveries are counted");
         expectStatus("local", "a confirmed delivery returns the service to local");
+
+        service.expectDelivery(1003, "Image body", "Before ![x](file:///C:/outside.png) after");
+        const confirmedImage = makeNotification(1003, "Image body");
+        confirmedImage.body = "Before ![x](file:///C:/outside.png) after";
+        fixture.notificationReceived(confirmedImage);
+        check(service.deliveryConfirmation === "confirmed" && service.confirmedDeliveries === 2,
+            "a body with an image still confirms because both sides are sanitized");
 
         service.expectDelivery(1002, "Mismatch summary", "Mismatch body");
         const mismatch = makeNotification(1002, "Other summary");
