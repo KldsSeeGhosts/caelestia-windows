@@ -198,7 +198,7 @@ ColumnLayout {
 
         StateLayer {
             color: Colours.palette.m3onPrimaryContainer
-            disabled: Nmcli.scanning || !Nmcli.wifiEnabled
+            disabled: Nmcli.scanning || !Nmcli.wifiEnabled || !root.controlsEnabled
             onClicked: Nmcli.rescanWifi()
         }
 

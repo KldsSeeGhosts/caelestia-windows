@@ -353,10 +353,13 @@ QtObject {
             return;
         }
 
+        // Record the pending request first: native profile/connect failures
+        // emit wifiConnectResult synchronously (network_wifi.cpp:423-447), and
+        // that verified failure must not be overwritten afterwards.
         root.pendingSsid = ssid;
         root.commandsSent++;
-        root.backend.connectToNetwork(ssid, "");
         root._result("connect", ssid, true, false, null, "", "Connecting to " + ssid + "...");
+        root.backend.connectToNetwork(ssid, "");
     }
 
     // Disconnect has no native result (network_wifi.cpp:451-454).
@@ -418,23 +421,43 @@ QtObject {
         root._applyListVisibility();
     }
 
+    property bool _applyingVisibility: false
+    property bool _visibilityDirty: false
+
     function _applyListVisibility(): void {
         if (!root.backend || typeof root.backend.setWifiListVisible !== "function")
             return;
-        // Only a visible, queryable list asks the backend to refresh and start
-        // its periodic scan. Any other state, including disabling the service,
-        // stops the timer. Duplicate state is not forwarded.
-        const next = root.enabled && root.listVisible && root.listAvailable;
-        if (root.backendListVisible === next)
+        // setWifiListVisible(true) refreshes synchronously before starting the
+        // scan timer (network.cpp:75-78); a denial reported during that refresh
+        // re-enters here. Serialize and reconcile the final desired state after
+        // the native call returns so a stale true never leaves the timer on.
+        if (root._applyingVisibility) {
+            root._visibilityDirty = true;
             return;
-        root.backendListVisible = next;
-        root.backend.setWifiListVisible(next);
+        }
+        root._applyingVisibility = true;
+        do {
+            root._visibilityDirty = false;
+            // Periodic scans are radio activity: they need the controls opt-in
+            // as well as a visible, queryable list. Any other state, including
+            // disabling the service, stops the timer.
+            const next = root.enabled && root.controlsEnabled && root.listVisible && root.listAvailable;
+            if (root.backendListVisible !== next) {
+                root.backendListVisible = next;
+                root.backend.setWifiListVisible(next);
+            }
+        } while (root._visibilityDirty);
+        root._applyingVisibility = false;
     }
 
     // No native result exists for a scan. wifiScanning is the only evidence.
     function requestScan(): void {
         if (!root.enabled) {
             root._result("refused", "", false, true, false, "disabled", root._refusalText("Scanning"));
+            return;
+        }
+        if (!root.controlsEnabled) {
+            root._refuse("Scanning");
             return;
         }
         if (!root.listVisible) {
@@ -476,6 +499,7 @@ QtObject {
     }
 
     onListAvailableChanged: root._applyListVisibility()
+    onControlsEnabledChanged: root._applyListVisibility()
     onEnabledChanged: {
         if (!root.enabled) {
             root.listVisible = false;

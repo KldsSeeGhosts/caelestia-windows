@@ -31,7 +31,9 @@ ShellRoot {
     // policy starts the backend's eight-second scan timer only when this is
     // true, so a smoke run keeps every scan path off while still rendering the
     // list snapshot from the backend's single startup query.
-    readonly property bool listRequested: !root.smoke
+    // The wireless list is visible only when the original popout shows the
+    // wireless view (Ethernet hides it) in a visible window.
+    readonly property bool listRequested: !root.smoke && !Nmcli.activeEthernet && win.visible
     property var initialNetworkState: null
     property bool failed: false
 
@@ -338,6 +340,7 @@ ShellRoot {
                         view: Nmcli.activeEthernet ? "ethernet" : "wireless"
                         controlsEnabled: Nmcli.controlsEnabled
                         nativeConnect: true
+                        onConnectRequested: accessPoint => Nmcli.connectToAccessPoint(accessPoint)
                         nativeConnectingSsid: Nmcli.connectingSsid
                         ethernetControlAvailable: Nmcli.ethernetControlSupported
                         statusText: Nmcli.resultText.length > 0
@@ -367,6 +370,8 @@ ShellRoot {
             Qt.callLater(() => Qt.exit(1));
         Nmcli.setListVisible(root.listRequested);
     }
+
+    onListRequestedChanged: Nmcli.setListVisible(root.listRequested)
 
     Timer {
         id: check

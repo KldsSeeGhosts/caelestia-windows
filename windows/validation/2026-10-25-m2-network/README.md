@@ -204,3 +204,33 @@ this adapter is not upstream and remains opaque.
   native observation arrived first. That path is not fixture-covered either.
 - 100% scaling was not exercised; native 150% and 175% were.
 - No real hardware denial, recovery, privilege change or retry was tested.
+
+## Review addendum
+
+An independent review of `743f1bcb` found five defects, fixed in the follow-up
+commit:
+
+1. Periodic and explicit scans did not require the controls opt-in. Scans are
+   now radio activity: the scan timer and `requestScan()` need
+   `CAELESTIA_WINDOWS_NETWORK_CONTROLS=1`, and the original Rescan button is
+   disabled through the existing `controlsEnabled` hook (upstream default
+   unchanged). ReadOnly observes only the backend's construction-time query.
+2. A location denial reported synchronously inside `setWifiListVisible(true)`
+   (`network.cpp`, lines 75-78) could leave the native scan timer running.
+   Visibility updates are now serialized and the final desired state is
+   reconciled after the native call returns.
+3. The host set `nativeConnect: true` without handling `connectRequested`; it
+   now routes to the guarded `Nmcli.connectToAccessPoint()`.
+4. Synchronous `WlanSetProfile`/`WlanConnect` failures (`network_wifi.cpp`,
+   lines 423-447) were overwritten by the "Connecting..." message. The pending
+   message is now recorded before the backend call.
+5. The host requested a visible list while the original popout showed the
+   Ethernet view. The request now follows the wireless view and window
+   visibility.
+
+The fixture fake now models both synchronous callbacks and a scan timer that
+starts after the refresh; the new cases fail against `743f1bcb` and pass after
+the fix. Results on the dirty follow-up tree: 346 fixture assertions;
+`Test-NetworkPrototype.ps1` passed all six records
+(`network-validation-20261025-181138-772`). Interactive mode and every write
+remain untested.

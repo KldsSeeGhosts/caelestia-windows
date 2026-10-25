@@ -56,6 +56,14 @@ QtObject {
         property bool listVisibleArg: false
         property int wifiSettingsCalls: 0
         property int locationSettingsCalls: 0
+        // Reproduce the pinned backend's synchronous callbacks: a denied
+        // refresh inside setWifiListVisible(true) (network.cpp:75-78) and
+        // WlanSetProfile/WlanConnect failures (network_wifi.cpp:423-447).
+        property bool denyOnVisible: false
+        property bool failConnectSync: false
+        // The native timer starts after the refresh returns, so a nested
+        // setWifiListVisible(false) during that refresh does not stop it.
+        property bool scanTimerRunning: false
 
         signal connectResult(string ssid, bool success, string reason)
 
@@ -69,6 +77,8 @@ QtObject {
             connects++;
             lastConnectSsid = ssid;
             lastConnectPassword = password;
+            if (failConnectSync)
+                connectResult(ssid, false, "failed");
         }
         function disconnectActive(): void {
             disconnects++;
@@ -80,6 +90,13 @@ QtObject {
         function setWifiListVisible(visible): void {
             listVisibilityCalls++;
             listVisibleArg = visible;
+            if (!visible) {
+                scanTimerRunning = false;
+                return;
+            }
+            if (denyOnVisible)
+                needsLocationPermission = true;
+            scanTimerRunning = true;
         }
         function openWifiSettings(): void {
             wifiSettingsCalls++;
@@ -346,6 +363,19 @@ QtObject {
 
         // --- Bounded list visibility and scans --------------------------------
         check(service.listVisible === false, "list starts hidden");
+        // Scans are radio activity: without the controls opt-in a visible list
+        // neither starts the periodic timer nor accepts an explicit scan.
+        service.controlsEnabled = false;
+        resetCommandCounters();
+        const visibilityControlsOff = fixture.listVisibilityCalls;
+        service.setListVisible(true);
+        check(fixture.listVisibilityCalls === visibilityControlsOff,
+            "controls-off visibility started the scan timer");
+        service.requestScan();
+        expectResult("refused", false, true, false, "controls-off scan refusal");
+        check(fixture.scans === 0, "controls-off scan reached the backend");
+        service.setListVisible(false);
+        service.controlsEnabled = true;
         resetCommandCounters();
         const visibilityBefore = fixture.listVisibilityCalls;
         service.requestScan();
@@ -607,6 +637,34 @@ QtObject {
         check(service.activeSsid === "" && service.activeSignalQuality === 0
             && service.wifiStatus === "", "non-string native state is ignored");
         check(service.networkCount === 1, "valid entries survive a malformed backend");
+
+        // --- Synchronous native callbacks -------------------------------------
+        service.backend = fixture;
+        makeAvailable();
+        model.values = [openNetwork, secureProfile];
+        fixture.activeSsid = "";
+        fixture.needsLocationPermission = false;
+        service.controlsEnabled = true;
+        service.setListVisible(false);
+        fixture.denyOnVisible = true;
+        service.setListVisible(true);
+        check(fixture.needsLocationPermission, "fake reported denial during activation");
+        check(!fixture.scanTimerRunning && fixture.listVisibleArg === false
+            && service.backendListVisible === false,
+            "denial during activation leaves the scan timer stopped");
+        fixture.denyOnVisible = false;
+        fixture.needsLocationPermission = false;
+        check(fixture.listVisibleArg === true && service.backendListVisible === true,
+            "recovery after synchronous denial restarts the timer");
+        service.setListVisible(false);
+
+        resetCommandCounters();
+        fixture.failConnectSync = true;
+        service.requestConnect(openNetwork);
+        check(fixture.connects === 1, "synchronous-failure connect reached the backend once");
+        expectResult("connect", true, true, false, "synchronous connect failure stays verified");
+        check(service.pendingSsid === "", "synchronous failure clears pending state");
+        fixture.failConnectSync = false;
 
         // --- Disable clears observation and requests --------------------------
         service.backend = fixture;
