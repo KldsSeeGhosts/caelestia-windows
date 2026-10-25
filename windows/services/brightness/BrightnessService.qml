@@ -2,30 +2,27 @@ import QtQuick
 
 // Windows adaptation of the bounded parts of services/Brightness.qml. This
 // object imports no Quickshell or native module, creates no timers and runs no
-// probe on its own. It is a route-policy state machine over an injected backend
-// with the shape of NativeBrightnessBackend.qml:
+// probe on its own. It is a route-policy state machine over an injected backend.
 //
-//   query(screenName), probe(screenName), refresh(screenName),
-//   setBrightness(screenName, isDdc, value), methodFor(screenName) -> string
-//   signals: queried(QString, bool, bool, qreal),
-//            brightnessSetFinished(QString, bool),
-//            routeChanged(QString, QString),
-//            systemBrightnessChanged(QString, qreal)
+// STRICT-ROUTE CONTRACT (windows/deps/quickshell strict-route fork):
+//   property bool strictRoutes (one-way: enable only while idle)
+//   function setStrictRoutes(bool) [optional convenience]
+//   signal brightnessWriteResult(QString screen, real value, bool ok,
+//                                QString method, QString error)
+//   function clearSoftwareDimming(QString screen)
 //
-// PINNED BACKEND BEHAVIOUR THIS POLICY RELIES ON (windows/deps/quickshell):
-// - query() and probe() share startProbe(). Both drop software gamma dimming
-//   that this process applied earlier (brightness.cpp:1209-1221). probe() is
-//   not a write-free substitute; it only skips the DDC/CI read. The adapter
-//   therefore never probes automatically and only re-queries on an explicit
-//   user action after a gamma fallback.
-// - setBrightness() forces the DDC route when the route is unresolved
-//   (brightness.cpp:1260-1266), so this adapter refuses writes while the route
-//   is unknown.
-// - A hardware write failure silently retries \\.\LCD and then software gamma,
-//   and every terminal path emits brightnessSetFinished(..., true)
-//   (brightness.cpp:1386-1413). An adapter cannot prevent that fallback or use
-//   the boolean as proof of success; it must compare the route before and after
-//   the write and latch a route change as a failure.
+// Writes are never attempted without that contract. The shared build is still
+// at the old pin, which lacks every strict member: there an Interactive request
+// stays read-only rather than reaching the legacy setBrightness() path, which
+// silently retries \\.\LCD and falls back to software gamma and then reports
+// ok = true. With strict routes the backend never falls back and emits exactly
+// one brightnessWriteResult() per accepted write, so that signal is the only
+// write confirmation and a pending write is not cleared by any other signal.
+//
+// Route queries remain safe in both builds. query()/probe() share startProbe();
+// at the old pin that path drops software gamma dimming this process applied
+// earlier, so the adapter still never probes automatically and only re-queries
+// on an explicit user action after a gamma touch.
 QtObject {
     id: root
 
@@ -42,14 +39,21 @@ QtObject {
     // Screen-like objects with a string `name`, normally Quickshell.screens.
     property var screens: []
 
+    // A strict-route policy failure is latched separately from the per-monitor
+    // route records. An explicit route refresh (a user action) clears it.
+    property string policyError: ""
+    property bool strictRoutesEnabled: false
+
     // Evidence counters. They are informational for hosts and fixtures; no
     // caller may infer success from them.
     property int queryRequests: 0
     property int writeRequests: 0
+    property int coalescedWrites: 0
+    property int clearedDimmingRequests: 0
     property int refusedWrites: 0
     property bool everWrote: false
     // True once a write was forwarded for a software route or the backend
-    // changed a hardware route to software during a write.
+    // reported a software route for a hardware write.
     property bool gammaTouched: false
     property bool autoObservationDone: false
 
@@ -58,6 +62,17 @@ QtObject {
 
     readonly property bool nativeRequested: backend !== null
     readonly property bool ready: enabled && !backendError && backend !== null
+    // Feature-detected on the object: typeof strictRoutes is "undefined" on the
+    // old-pin wrapper, and a strict-capable backend always carries the result
+    // signal. Never assume strict routes from a build number.
+    readonly property bool strictBackend: backend !== null
+        && typeof backend.strictRoutes === "boolean"
+        && typeof backend.brightnessWriteResult === "function"
+    // Writes are permitted only with the controls opt-in, the strict backend and
+    // no latched policy failure. Interactive is separate from writeReady: a
+    // pending write must never disable a slider mid-gesture.
+    readonly property bool writesAllowed: enabled && controlsEnabled && strictBackend
+        && policyError.length === 0
     readonly property string status: {
         if (!enabled)
             return "disabled";
@@ -70,6 +85,8 @@ QtObject {
     readonly property string lastError: {
         if (!enabled)
             return "";
+        if (policyError)
+            return policyError;
         if (backendError)
             return backendError;
         const failed = _states.find(state => state.lastError.length > 0);
@@ -84,6 +101,10 @@ QtObject {
             return "Waiting for the Windows brightness backend.";
         if (!controlsEnabled)
             return "Windows brightness is observable through read-only route queries. Brightness writes are disabled.";
+        if (!strictBackend)
+            return "Brightness writes need the strict-route backend. This backend exposes read-only routes, so the interactive slider stays read-only.";
+        if (policyError)
+            return policyError;
         if (!softwareEnabled)
             return "Windows brightness controls are enabled for hardware routes only. Software gamma writes need the separate software opt-in.";
         return "Windows brightness controls are enabled, including software gamma for monitors without a hardware route.";
@@ -92,12 +113,19 @@ QtObject {
     // Internal per-screen policy record. Values are reactive so the facade and
     // host read them without copying.
     property var _states: []
+    // Per-screen record generations survive a screen removal so a late query
+    // result cannot authorize the reconnected monitor.
+    property var _generations: ({})
     property Component _stateFactory: Component {
         MonitorState {}
     }
 
     component MonitorState: QtObject {
         property string screenName: ""
+        // Bumped when the screen is removed; a result is accepted only for the
+        // generation that requested the outstanding query.
+        property int generation: 0
+        property int queryGeneration: -1
         // unknown | querying | hardware | software-only | unsupported | failed
         property string state: "unknown"
         // wmi | lcd | ddc | software | ""
@@ -106,16 +134,21 @@ QtObject {
         property bool brightnessKnown: false
         property real brightness: 0
         property bool querying: false
-        // A write is in flight. A second write is refused, not queued.
+        // A strict write is in flight. Further values coalesce to the latest
+        // drag target and are sent after the terminal result.
         property bool writePending: false
+        property bool hasQueuedWrite: false
+        property real queuedValue: 0
+        // Last level this adapter saw confirmed by a query, read-back or write.
+        property real lastConfirmed: 0
+        property bool lastConfirmedKnown: false
         property string expectedRoute: ""
         property real pendingValue: 0
-        property bool routeChangedDuringWrite: false
-        // A route change during a write latches the monitor. A user route
-        // refresh is the only thing that clears it.
+        // Kept for the facade contract. Route-change fallbacks no longer exist
+        // under strict routes, so no path sets it.
         property bool latched: false
-        // none | pending | queried | route-failed | hardware-requested |
-        // software-requested | route-changed | failed | refused
+        // none | pending | queried | hardware-requested | software-requested |
+        // failed | refused
         property string lastOutcome: "none"
         property string lastError: ""
     }
@@ -185,22 +218,42 @@ QtObject {
         return enabled && !backendError && backend !== null;
     }
 
-    // True only for a completed route discovery on a hardware route, or on a
-    // software-only route with the separate gamma opt-in. A latched monitor and
-    // a pending query/write are never writable.
-    function canWrite(screen): bool {
+    // True when the slider may accept input: writes are permitted and the route
+    // is known. Deliberately independent of writePending so a coalesced drag
+    // never disables the slider mid-gesture. A latched monitor and a pending
+    // query are still not interactive.
+    function interactive(screen): bool {
         const state = stateFor(screen);
         if (!state)
             return false;
-        if (!enabled || !controlsEnabled || backendError || backend === null)
+        if (!writesAllowed)
             return false;
-        if (state.querying || state.writePending || state.latched)
+        if (state.querying || state.latched)
             return false;
         if (state.state === "hardware")
             return state.route === "wmi" || state.route === "lcd" || state.route === "ddc";
         if (state.state === "software-only")
             return softwareEnabled && state.route === "software";
         return false;
+    }
+
+    // A write may be forwarded right now: interactive and no write in flight.
+    function canWrite(screen): bool {
+        const state = stateFor(screen);
+        if (!state || !interactive(screen))
+            return false;
+        return !state.writePending;
+    }
+
+    function _generationFor(name): int {
+        const value = _generations[name];
+        return typeof value === "number" ? value : 0;
+    }
+
+    function _bumpGeneration(name): void {
+        const map = Object.assign({}, _generations);
+        map[name] = _generationFor(name) + 1;
+        _generations = map;
     }
 
     function _syncStates(): void {
@@ -218,12 +271,20 @@ QtObject {
                 next.push(existing);
                 continue;
             }
-            const created = _stateFactory.createObject(root, {screenName: name});
+            const created = _stateFactory.createObject(root, {
+                screenName: name,
+                generation: _generationFor(name)
+            });
             if (created)
                 next.push(created);
         }
-        // Vanished screens are dropped with their pending query/write state.
-        // Late backend signals for them are ignored by stateFor().
+        // Vanished screens are dropped with their pending query/write state and
+        // their generation is bumped, so a late result cannot authorize the
+        // reconnected monitor.
+        for (const old of previous) {
+            if (!next.some(state => state.screenName === old.screenName))
+                _bumpGeneration(old.screenName);
+        }
         _states = next;
     }
 
@@ -236,13 +297,19 @@ QtObject {
             state.brightness = 0;
             state.querying = false;
             state.writePending = false;
+            state.hasQueuedWrite = false;
+            state.queuedValue = 0;
+            state.lastConfirmed = 0;
+            state.lastConfirmedKnown = false;
             state.expectedRoute = "";
             state.pendingValue = 0;
-            state.routeChangedDuringWrite = false;
             state.latched = false;
             state.lastOutcome = "none";
             state.lastError = "";
         }
+        _generations = ({});
+        policyError = "";
+        strictRoutesEnabled = false;
     }
 
     function _currentRoute(screenName): string {
@@ -280,14 +347,16 @@ QtObject {
             return false;
         }
         state.querying = true;
+        state.queryGeneration = state.generation;
         state.state = "querying";
         state.route = "";
         state.available = false;
         state.brightnessKnown = false;
         state.brightness = 0;
+        state.lastConfirmed = 0;
+        state.lastConfirmedKnown = false;
         state.expectedRoute = "";
         state.pendingValue = 0;
-        state.routeChangedDuringWrite = false;
         // A route refresh is the explicit user action that clears a latch.
         state.latched = false;
         state.lastOutcome = "none";
@@ -315,8 +384,9 @@ QtObject {
     }
 
     // One automatic route discovery per process, and only while this process
-    // has applied no software dimming. The backend drops existing gamma dimming
-    // in startProbe(), so a later automatic query could silently undo a write.
+    // has applied no software dimming. At the old pin the query path drops
+    // existing gamma dimming, so a later automatic query could silently undo a
+    // write.
     function beginObservation(): bool {
         if (!canQuery() || autoObservationDone)
             return false;
@@ -329,8 +399,10 @@ QtObject {
 
     // Explicit user action: re-detect every route. This can reset software
     // dimming this process applied earlier (documented backend behaviour);
-    // hosts must only call it from a user gesture.
+    // hosts must only call it from a user gesture. It also clears a latched
+    // strict-route policy failure so the user can retry once the backend is idle.
     function refreshRoutes(): int {
+        policyError = "";
         autoObservationDone = true;
         return queryAll();
     }
@@ -358,13 +430,15 @@ QtObject {
             return _refuse(state, "The Windows brightness backend is unavailable.");
         if (!controlsEnabled)
             return _refuse(state, "Brightness controls are disabled for read-only observation.");
+        if (!strictBackend)
+            return _refuse(state, "Brightness writes need the strict-route backend. This backend exposes read-only routes; the interactive slider stays read-only.");
+        if (policyError.length > 0)
+            return _refuse(state, policyError);
         if (typeof value !== "number" || !Number.isFinite(value))
             return _refuse(state, "The brightness value must be a finite number between 0 and 1.");
         const target = Math.max(0, Math.min(1, value));
         if (state.querying)
             return _refuse(state, "The brightness route is being queried; wait for it to finish.");
-        if (state.writePending)
-            return _refuse(state, "A brightness write is already in flight for this monitor.");
         if (state.latched)
             return _refuse(state, "This monitor's route changed during an earlier write. Refresh the route before writing again.");
         if (state.state === "unknown")
@@ -372,50 +446,129 @@ QtObject {
         if (state.state === "hardware") {
             if (state.route !== "wmi" && state.route !== "lcd" && state.route !== "ddc")
                 return _refuse(state, "The reported hardware route is not writable.");
-            return _startWrite(state, target);
-        }
-        if (state.state === "software-only") {
+        } else if (state.state === "software-only") {
             if (!softwareEnabled)
                 return _refuse(state, "This monitor only supports software gamma dimming; set CAELESTIA_WINDOWS_BRIGHTNESS_SOFTWARE=1 to allow it.");
-            return _startWrite(state, target);
-        }
-        if (state.state === "failed")
+            if (state.route !== "software")
+                return _refuse(state, "The reported software route is not writable.");
+        } else if (state.state === "failed") {
             return _refuse(state, "This monitor's hardware route failed its level read; no fallback is accepted.");
-        return _refuse(state, "This monitor has no writable brightness route.");
+        } else {
+            return _refuse(state, "This monitor has no writable brightness route.");
+        }
+        // Coalesce a drag: keep the terminal result as the only completion and
+        // remember the latest target for the next strict write.
+        if (state.writePending) {
+            state.queuedValue = target;
+            state.hasQueuedWrite = true;
+            state.lastOutcome = "pending";
+            coalescedWrites++;
+            return true;
+        }
+        return _startWrite(state, target);
+    }
+
+    // Enable the one-way strict mode immediately before the first write. The
+    // backend can refuse while a legacy write is still in flight; that refusal
+    // is latched as a policy failure, never retried silently.
+    function _ensureStrictRoutes(): bool {
+        if (!strictBackend) {
+            policyError = "Brightness writes need the strict-route backend. This backend exposes read-only routes; the interactive slider stays read-only.";
+            return false;
+        }
+        if (backend.strictRoutes === true) {
+            strictRoutesEnabled = true;
+            return true;
+        }
+        try {
+            if (typeof backend.setStrictRoutes === "function")
+                backend.setStrictRoutes(true);
+            else
+                backend.strictRoutes = true;
+        } catch (error) {
+            policyError = "The strict-route backend could not be enabled: " + error;
+            return false;
+        }
+        if (backend.strictRoutes !== true) {
+            policyError = "The strict-route backend refused to enable strict routes. Refresh the route once the backend is idle, then retry.";
+            return false;
+        }
+        strictRoutesEnabled = true;
+        return true;
     }
 
     function _startWrite(state, value): bool {
+        if (!_ensureStrictRoutes()) {
+            state.lastOutcome = "refused";
+            state.lastError = policyError;
+            refusedWrites++;
+            return false;
+        }
         state.expectedRoute = state.route;
         state.pendingValue = value;
         state.writePending = true;
-        state.routeChangedDuringWrite = false;
+        state.hasQueuedWrite = false;
+        state.queuedValue = value;
         state.lastOutcome = "pending";
         state.lastError = "";
         writeRequests++;
         everWrote = true;
         try {
-            // The backend chooses the actual method from its own route and may
-            // fall back internally; the adapter can only detect the outcome.
+            // Under strict routes the backend uses the stored route and never
+            // falls back; brightnessWriteResult() is the only completion.
             backend.setBrightness(state.screenName, state.route === "ddc", value);
         } catch (error) {
             state.writePending = false;
+            state.hasQueuedWrite = false;
             state.lastOutcome = "failed";
             state.lastError = "The brightness write failed: " + error;
-            state.latched = true;
+            _snapBack(state);
             return false;
         }
         return true;
     }
 
+    function _snapBack(state): void {
+        if (state.lastConfirmedKnown) {
+            state.brightness = state.lastConfirmed;
+            state.brightnessKnown = true;
+        } else {
+            state.brightness = 0;
+            state.brightnessKnown = false;
+        }
+    }
+
+    function _clearSoftwareDimming(): int {
+        if (!backend || typeof backend.clearSoftwareDimming !== "function")
+            return 0;
+        let cleared = 0;
+        for (const state of _states) {
+            try {
+                backend.clearSoftwareDimming(state.screenName);
+                cleared++;
+            } catch (error) {
+                // A screen that vanished mid-iteration is not a policy failure.
+            }
+        }
+        clearedDimmingRequests += cleared;
+        return cleared;
+    }
+
     function _onQueried(screenName, available, isDdc, brightness): void {
         const state = stateFor(screenName);
-        if (!state || state.writePending)
+        if (!state || !state.querying)
             return;
+        if (state.queryGeneration !== state.generation) {
+            // The record was dropped and reconnected after this query started.
+            state.querying = false;
+            return;
+        }
         // The backend also sets isDdc for the software route (brightness.cpp:
         // 1230-1236); methodFor() is the only route source.
         const route = _currentRoute(screenName);
         const level = Number(brightness);
         const readable = available === true && Number.isFinite(level);
+        const clamped = readable ? Math.max(0, Math.min(1, level)) : 0;
         state.querying = false;
         state.route = route;
         state.available = available === true;
@@ -423,7 +576,9 @@ QtObject {
         if (route === "wmi" || route === "lcd" || route === "ddc") {
             state.state = available === true ? "hardware" : "failed";
             state.brightnessKnown = readable;
-            state.brightness = readable ? Math.max(0, Math.min(1, level)) : 0;
+            state.brightness = clamped;
+            state.lastConfirmedKnown = readable;
+            state.lastConfirmed = clamped;
             state.lastError = available === true
                 ? ""
                 : routeLabel(route) + " did not report a readable brightness level.";
@@ -432,44 +587,67 @@ QtObject {
         if (route === "software") {
             state.state = "software-only";
             state.brightnessKnown = readable;
-            state.brightness = readable ? Math.max(0, Math.min(1, level)) : 0;
+            state.brightness = clamped;
+            state.lastConfirmedKnown = readable;
+            state.lastConfirmed = clamped;
             state.lastError = "";
             return;
         }
         state.state = "unsupported";
         state.brightnessKnown = false;
         state.brightness = 0;
+        state.lastConfirmedKnown = false;
         state.lastError = "The backend reported no brightness route for this display.";
     }
 
+    // Legacy signal. Under strict routes the backend no longer emits only this
+    // boolean; every terminal old-pin path reported true even after a fallback,
+    // so it can never confirm a write and stays inert.
     function _onBrightnessSetFinished(screenName, ok): void {
+    }
+
+    function _onBrightnessWriteResult(screenName, value, ok, method, error): void {
         const state = stateFor(screenName);
+        // Late or duplicate results are ignored: only an outstanding strict
+        // write for the current record can be confirmed.
         if (!state || !state.writePending)
             return;
-        const expected = state.expectedRoute;
-        const value = state.pendingValue;
         state.writePending = false;
-        const route = _currentRoute(screenName);
-        state.routeChangedDuringWrite = false;
-        // Route change wins over the boolean. At this pin the backend emits
-        // true even after its internal gamma fallback, so `ok` proves nothing.
-        if (route !== expected) {
-            _latchRouteChange(state, expected, route);
-            return;
-        }
-        if (ok !== true) {
+        const reportedRoute = typeof method === "string" ? method : "";
+        const reportedError = typeof error === "string" ? error : "";
+        const confirmed = ok === true && reportedRoute === state.expectedRoute;
+        if (!confirmed) {
             state.lastOutcome = "failed";
-            state.latched = true;
-            state.brightnessKnown = false;
-            state.brightness = 0;
-            state.lastError = "The backend reported an unsuccessful brightness write. No retry is sent until you refresh the route.";
+            state.hasQueuedWrite = false;
+            if (reportedError.length > 0) {
+                state.lastError = reportedError;
+            } else if (reportedRoute.length > 0 && reportedRoute !== state.expectedRoute) {
+                state.lastError = "The strict backend wrote through " + routeLabel(reportedRoute)
+                    + " instead of " + routeLabel(state.expectedRoute) + ".";
+            } else {
+                state.lastError = "The strict-route backend rejected the brightness write.";
+            }
+            // Drop every queued target and snap back to the last confirmation.
+            _snapBack(state);
             return;
         }
-        state.lastOutcome = expected === "software" ? "software-requested" : "hardware-requested";
+        const level = Number(value);
+        const applied = Number.isFinite(level)
+            ? Math.max(0, Math.min(1, level)) : state.pendingValue;
+        state.lastOutcome = state.expectedRoute === "software"
+            ? "software-requested" : "hardware-requested";
         state.brightnessKnown = true;
-        state.brightness = value;
-        if (expected === "software")
+        state.brightness = applied;
+        state.lastConfirmedKnown = true;
+        state.lastConfirmed = applied;
+        state.lastError = "";
+        if (state.expectedRoute === "software")
             gammaTouched = true;
+        if (state.hasQueuedWrite) {
+            const next = state.queuedValue;
+            state.hasQueuedWrite = false;
+            _startWrite(state, next);
+        }
     }
 
     function _onRouteChanged(screenName, route): void {
@@ -481,10 +659,8 @@ QtObject {
             return;
         if (state.querying)
             return; // The query path emits routeChanged immediately before queried.
-        if (state.writePending && state.expectedRoute.length > 0 && reported !== state.expectedRoute) {
-            _latchRouteChange(state, state.expectedRoute, reported);
-            return;
-        }
+        // A strict write never changes routes. Never clear writePending here: the
+        // terminal brightnessWriteResult() is the only completion.
         if (state.writePending)
             return;
         state.route = reported;
@@ -492,22 +668,6 @@ QtObject {
             state.state = "software-only";
         else if (state.state === "software-only" && reported !== "software")
             state.state = "hardware";
-    }
-
-    function _latchRouteChange(state, expected, route): void {
-        state.writePending = false;
-        state.routeChangedDuringWrite = true;
-        state.route = route;
-        state.latched = true;
-        state.state = route === "software" ? "software-only" : "failed";
-        state.brightnessKnown = false;
-        state.brightness = 0;
-        if (route === "software")
-            gammaTouched = true;
-        state.lastOutcome = "route-changed";
-        state.lastError = "The backend used " + routeLabel(route) + " instead of "
-            + routeLabel(expected) + " for this write. A route change is reported as a failure, "
-            + "not a success; no further writes are sent until the route is refreshed.";
     }
 
     function _onSystemBrightnessChanged(screenName, brightness): void {
@@ -519,6 +679,8 @@ QtObject {
             return;
         state.brightness = Math.max(0, Math.min(1, value));
         state.brightnessKnown = true;
+        state.lastConfirmed = state.brightness;
+        state.lastConfirmedKnown = true;
         // Only WMI and \\.\LCD start a read-back; DDC/CI has no confirmation.
         if (state.state === "hardware" && !state.latched)
             state.available = true;
@@ -533,6 +695,9 @@ QtObject {
         function onBrightnessSetFinished(screenName, ok): void {
             root._onBrightnessSetFinished(screenName, ok);
         }
+        function onBrightnessWriteResult(screenName, value, ok, method, error): void {
+            root._onBrightnessWriteResult(screenName, value, ok, method, error);
+        }
         function onRouteChanged(screenName, route): void {
             root._onRouteChanged(screenName, route);
         }
@@ -541,6 +706,16 @@ QtObject {
         }
     }
 
+    property bool _softwareWasEnabled: false
+    onSoftwareEnabledChanged: {
+        if (_softwareWasEnabled && !softwareEnabled)
+            _clearSoftwareDimming();
+        _softwareWasEnabled = softwareEnabled;
+    }
+    onBackendChanged: {
+        strictRoutesEnabled = false;
+        policyError = "";
+    }
     onScreensChanged: _syncStates()
     onEnabledChanged: {
         if (!enabled)

@@ -11,10 +11,13 @@ import Caelestia.Config
 //
 // Read-only observation is CAELESTIA_WINDOWS_BRIGHTNESS=1, writes are
 // CAELESTIA_WINDOWS_BRIGHTNESS_CONTROLS=1 and software gamma writes additionally
-// require CAELESTIA_WINDOWS_BRIGHTNESS_SOFTWARE=1. With brightness disabled the
-// native loader is inactive: no NativeBrightnessBackend, no Brightness
-// singleton, no query and no probe. The original IPC handler, global shortcuts
-// and Linux processes (asdbctl/ddcutil/brightnessctl) are not staged.
+// require CAELESTIA_WINDOWS_BRIGHTNESS_SOFTWARE=1. Native writes also require
+// the strict-route backend, feature-detected by the service; the shared gitlink
+// predates it, so Interactive is refused and the slider is read-only on this
+// build. With brightness disabled the native loader is inactive: no
+// NativeBrightnessBackend, no Brightness singleton, no query and no probe. The
+// original IPC handler, global shortcuts and Linux processes (asdbctl/ddcutil/
+// brightnessctl) are not staged.
 BrightnessService {
     id: root
 
@@ -111,7 +114,11 @@ BrightnessService {
 
         readonly property real brightness: record?.brightness ?? 0
         readonly property bool brightnessKnown: record?.brightnessKnown ?? false
-        readonly property bool writable: root.canWrite(screenName)
+        // interactive keeps the slider usable while a coalesced write is in
+        // flight; writable/writeReady additionally require no write pending.
+        readonly property bool interactive: root.interactive(screenName)
+        readonly property bool writeReady: root.canWrite(screenName)
+        readonly property bool writable: writeReady
         readonly property bool latched: record?.latched ?? false
         readonly property string lastOutcome: record?.lastOutcome ?? "none"
         readonly property string lastError: record?.lastError ?? ""

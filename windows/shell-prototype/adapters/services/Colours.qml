@@ -13,13 +13,6 @@ QtObject {
     readonly property bool available: false
     readonly property bool light: false
 
-    // Upstream Colours.layer() with the fixed opaque M1 palette: transparency
-    // is off, so every layer returns the input colour unchanged. Original
-    // controls such as FilledSlider call this helper.
-    function layer(c: color, level: var): color {
-        return c;
-    }
-
     readonly property QtObject tPalette: palette
     readonly property QtObject palette: QtObject {
         readonly property color m3primary_paletteKeyColor: "#a8627b"

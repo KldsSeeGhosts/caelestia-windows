@@ -90,9 +90,12 @@ function Assert-Routes($State, [string]$Where) {
     }
 }
 
-# Gamma ramps are read through GetDeviceGammaRamp. Any write this harness caused
-# would change the ramp even after the child process exits. Unsupported reads
-# are recorded and skipped rather than treated as a failure.
+# Gamma ramps are read through GetDeviceGammaRamp. This is a net-state check,
+# not proof that no write happened: GammaController restores its ramps on
+# aboutToQuit, and a write followed by restoration would leave the same final
+# hash. The service-level write counters above are the write evidence; the hash
+# shows only that the desktop's gamma was left as it was found. Unsupported
+# reads are recorded and skipped rather than treated as a failure.
 if (-not ('Caelestia.BrightnessGamma.Native' -as [type])) {
     Add-Type -TypeDefinition @'
 using System;

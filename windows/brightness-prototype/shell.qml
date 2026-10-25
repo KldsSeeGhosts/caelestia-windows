@@ -49,6 +49,8 @@ ShellRoot {
             available: monitor.record?.available ?? false,
             brightness: monitor.brightness,
             brightnessKnown: monitor.brightnessKnown,
+            interactive: monitor.interactive,
+            writeReady: monitor.writeReady,
             writable: monitor.writable,
             latched: monitor.latched,
             lastOutcome: monitor.lastOutcome,
@@ -67,7 +69,13 @@ ShellRoot {
             nativeRequested: Brightness.nativeRequested,
             nativeBackendId: Brightness.backend?.backendId ?? "",
             ready: Brightness.ready, lastError: Brightness.lastError,
+            strictBackend: Brightness.strictBackend,
+            writesAllowed: Brightness.writesAllowed,
+            strictRoutesEnabled: Brightness.strictRoutesEnabled,
+            policyError: Brightness.policyError,
             queryRequests: Brightness.queryRequests, writeRequests: Brightness.writeRequests,
+            coalescedWrites: Brightness.coalescedWrites,
+            clearedDimmingRequests: Brightness.clearedDimmingRequests,
             refusedWrites: Brightness.refusedWrites, everWrote: Brightness.everWrote,
             gammaTouched: Brightness.gammaTouched,
             autoObservationDone: Brightness.autoObservationDone,
@@ -76,6 +84,7 @@ ShellRoot {
             selectedScreen: selected?.screenName ?? "",
             selectedCapability: selected?.capability ?? "unknown",
             selectedRoute: selected?.route ?? "",
+            selectedInteractive: selected?.interactive ?? false,
             selectedWritable: selected?.writable ?? false,
             selectedBrightnessKnown: selected?.brightnessKnown ?? false,
             screenStatePresent: root.screenState !== null,
@@ -126,7 +135,7 @@ ShellRoot {
                 root.fail("staged audio rows were not disabled");
                 return;
             }
-            if (state.osdControlsEnabled !== state.selectedWritable) {
+            if (state.osdControlsEnabled !== state.selectedInteractive) {
                 root.fail("original OSD control hook is not guarded by the service");
                 return;
             }
@@ -368,8 +377,8 @@ ShellRoot {
                         sourceMuted: false
                         brightness: root.selectedMonitor ? root.selectedMonitor.brightness : 0
                         audioControlsEnabled: false
-                        brightnessControlsEnabled: Brightness.canWrite(
-                            root.selectedMonitor ? root.selectedMonitor.screenName : "")
+                        brightnessControlsEnabled: root.selectedMonitor
+                            ? root.selectedMonitor.interactive : false
                     }
                 }
 

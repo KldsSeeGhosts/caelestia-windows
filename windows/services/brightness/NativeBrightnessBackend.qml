@@ -7,17 +7,25 @@ import Quickshell.Windows
 // until query()/probe() is invoked. query() and probe() are deferred to the
 // backend's after-first-frame hook when called during startup.
 //
-// The backend exposes no per-query error text, no per-write result beyond a
-// boolean that is true even after an internal gamma fallback, and no
-// acknowledgement that a write used the requested route. BrightnessService.qml
-// treats a route change as the failure signal and never assumes success.
+// The shared build is still at the old pin, which has no strict-route members.
+// strictSupported is false there and strictRoutes stays undefined, so the pure
+// adapter refuses writes instead of reaching the legacy setBrightness() path
+// (which retries \\.\LCD, falls back to software gamma and then reports
+// ok = true). Once the gitlink moves, the same wrapper forwards the strict
+// property, the one-shot brightnessWriteResult() and clearSoftwareDimming().
 QtObject {
     id: root
 
     readonly property string backendId: "Quickshell.Windows.Brightness"
+    readonly property bool strictSupported: typeof Brightness.strictRoutes === "boolean"
+        && typeof Brightness.brightnessWriteResult === "function"
+    // Deliberately a `var`: undefined when the pinned native singleton lacks
+    // the strict API, which is exactly what the adapter feature-detects.
+    property var strictRoutes: strictSupported ? Brightness.strictRoutes : undefined
 
     signal queried(string screenName, bool available, bool isDdc, real brightness)
     signal brightnessSetFinished(string screenName, bool ok)
+    signal brightnessWriteResult(string screenName, real value, bool ok, string method, string error)
     signal routeChanged(string screenName, string route)
     signal systemBrightnessChanged(string screenName, real brightness)
 
@@ -45,13 +53,29 @@ QtObject {
         return typeof route === "string" ? route : "";
     }
 
+    // The adapter prefers this over assigning the read-only `strictRoutes`
+    // binding. Enabling is one-way in the native backend.
+    function setStrictRoutes(enabled): void {
+        if (strictSupported)
+            Brightness.strictRoutes = enabled === true;
+    }
+
+    function clearSoftwareDimming(screenName): void {
+        if (typeof Brightness.clearSoftwareDimming === "function")
+            Brightness.clearSoftwareDimming(screenName);
+    }
+
     property Connections nativeConnections: Connections {
         target: Brightness
+        ignoreUnknownSignals: true
         function onQueried(screenName, available, isDdc, brightness): void {
             root.queried(screenName, available, isDdc, brightness);
         }
         function onBrightnessSetFinished(screenName, ok): void {
             root.brightnessSetFinished(screenName, ok);
+        }
+        function onBrightnessWriteResult(screenName, value, ok, method, error): void {
+            root.brightnessWriteResult(screenName, value, ok, method, error);
         }
         function onRouteChanged(screenName, route): void {
             root.routeChanged(screenName, route);
