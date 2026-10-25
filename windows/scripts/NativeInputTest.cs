@@ -43,9 +43,6 @@ namespace Caelestia.InputTest {
         [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr window, uint message, IntPtr wparam, IntPtr lparam);
         [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr window, IntPtr after, int x, int y, int width, int height, uint flags);
         [DllImport("user32.dll")] public static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
-        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
-        private static extern IntPtr SendMessageTimeout(IntPtr window, uint message, UIntPtr wparam,
-            string lparam, uint flags, uint timeout, out UIntPtr result);
 
         private static void Send(Input input) {
             if (IntPtr.Size != 8) throw new InvalidOperationException("Use native x64 PowerShell.");
@@ -104,11 +101,6 @@ namespace Caelestia.InputTest {
                 return false;
             }, IntPtr.Zero);
             return result;
-        }
-        public static void NotifyTransparency() {
-            UIntPtr result;
-            SendMessageTimeout(new IntPtr(0xffff), 0x001a, UIntPtr.Zero,
-                "ImmersiveColorSet", 2, 1000, out result);
         }
     }
 }

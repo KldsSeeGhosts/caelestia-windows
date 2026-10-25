@@ -27,6 +27,8 @@ $previousCursor = New-Object Caelestia.InputTest.Native+Point
 if (-not $native::GetCursorPos([ref]$previousCursor)) { throw 'Could not read pointer position.' }
 $transparencyKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize'
 $previousTransparency = Get-ItemPropertyValue -LiteralPath $transparencyKey -Name EnableTransparency
+$uiSettingsType = [Windows.UI.ViewManagement.UISettings,Windows.UI.ViewManagement,ContentType=WindowsRuntime]
+$previousAdvancedEffects = ([Activator]::CreateInstance($uiSettingsType)).AdvancedEffectsEnabled
 $fixture = $null
 $fixtureWindow = [IntPtr]::Zero
 $launcher = $null
@@ -105,10 +107,13 @@ try {
     Assert ($fixtureWindow -ne [IntPtr]::Zero) 'Input fixture did not start'
     if ($TestTransparencyOff) {
         Set-ItemProperty -LiteralPath $transparencyKey -Name EnableTransparency -Value 0
-        $native::NotifyTransparency()
         Assert ((Get-ItemPropertyValue -LiteralPath $transparencyKey -Name EnableTransparency) -eq 0) 'Transparency did not turn off'
     }
     $observedTransparency = Get-ItemPropertyValue -LiteralPath $transparencyKey -Name EnableTransparency
+    $observedAdvancedEffects = ([Activator]::CreateInstance($uiSettingsType)).AdvancedEffectsEnabled
+    if ($TestTransparencyOff) { Assert (-not $observedAdvancedEffects) 'Windows advanced effects remain enabled' }
+    # Test startup under the real preference. Do not broadcast live desktop
+    # reconfiguration to unrelated shells or change their running surfaces.
     $launcher = Start-Process powershell.exe -WindowStyle Hidden -PassThru `
         -RedirectStandardOutput "$OutputDirectory\launcher.stdout.log" -RedirectStandardError "$OutputDirectory\launcher.stderr.log" `
         -ArgumentList @('-NoProfile', '-File', "`"$PSScriptRoot\Start-ShellPrototype.ps1`"", '-QtPrefix', "`"$QtPrefix`"",
@@ -267,10 +272,11 @@ try {
     }
     if ($TestTransparencyOff) {
         Set-ItemProperty -LiteralPath $transparencyKey -Name EnableTransparency -Value $previousTransparency
-        $native::NotifyTransparency()
     }
     $restoredTransparency = Get-ItemPropertyValue -LiteralPath $transparencyKey -Name EnableTransparency
+    $restoredAdvancedEffects = ([Activator]::CreateInstance($uiSettingsType)).AdvancedEffectsEnabled
     if ($restoredTransparency -ne $previousTransparency) { $passed = $false; $failure = 'Transparency was not restored.' }
+    if ($restoredAdvancedEffects -ne $previousAdvancedEffects) { $passed = $false; $failure = 'Windows advanced effects were not restored.' }
     $native::Move($previousCursor.X, $previousCursor.Y)
     if ($native::IsWindow($previousForeground)) { $native::SetForegroundWindow($previousForeground) | Out-Null }
     $native::SetThreadDpiAwarenessContext($previousDpi) | Out-Null
@@ -303,6 +309,8 @@ try {
         desktopPreserved = $desktopPreserved; transparencyOff = $TestTransparencyOff.IsPresent
         transparencyBefore = $previousTransparency; transparencyAfter = $restoredTransparency
         transparencyDuring = $observedTransparency
+        advancedEffectsBefore = $previousAdvancedEffects; advancedEffectsDuring = $observedAdvancedEffects
+        advancedEffectsAfter = $restoredAdvancedEffects
         command = 'powershell -NoProfile -File windows/scripts/Test-ShellPrototypeInput.ps1'
         parameters = @{ QtPrefix = $QtPrefix; AllowDesktopInput = $true; TestTransparencyOff = $TestTransparencyOff.IsPresent
             BuildRoot = $BuildRoot; OutputDirectory = $OutputDirectory }

@@ -106,7 +106,10 @@ pass-through, early foreground switching and repeated open/close. It requires
 two monitors and never starts a tiler. Add `-TestTransparencyOff` to temporarily
 set the current user's `EnableTransparency` to 0; `finally` restores the
 original value, pointer and foreground window and closes only test-owned
-processes. Run without another controller or user input. Automated injected
+processes. Windows `UISettings.AdvancedEffectsEnabled` independently confirms
+the preference during the test and after restoration. This tests startup with
+transparency off; it sends no desktop-wide settings notification and does not
+test live reconfiguration of other shells. Run without another controller or user input. Automated injected
 Windows input is distinct from physical hardware input.
 The isolated profile enables the original session `vimKeybinds` option for Tab
 navigation; Up/Down use the original button navigation links.
