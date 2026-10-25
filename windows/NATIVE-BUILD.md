@@ -119,6 +119,11 @@ factor, then assert the observed device pixel ratio. They do not change Windows 
 synthetic DPI coverage, not a mixed-monitor or native DPI transition test.
 See [Qt's DPI testing reference](https://doc.qt.io/qt-6/highdpi.html#testing).
 
+Each check allows 45 seconds for process startup and completion, with a separate
+10-second in-app watchdog after QML loads. The initial run after a plugin
+rebuild took about 19 seconds to produce its screenshot; warm runs took about
+four seconds. Logs include timestamps and results include elapsed time.
+
 Each check opens and closes the motion specimen, saves a PNG, and exits. It
 fails on an incorrect DPI, dimensions, capture failure, timeout, or warning/error
 in the runtime log. JSON results, source hashes, stdout, stderr, and screenshots

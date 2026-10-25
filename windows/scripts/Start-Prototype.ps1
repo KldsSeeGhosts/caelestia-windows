@@ -31,7 +31,7 @@ $runName = 'probe-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff')
 $screenshot = Join-Path $logRoot "$runName.png"
 $info = New-Object System.Diagnostics.ProcessStartInfo
 $info.FileName = $exe
-$info.Arguments = '--no-color --path "' + (Join-Path $stage 'shell.qml') + '"'
+$info.Arguments = '--no-color --log-times --path "' + (Join-Path $stage 'shell.qml') + '"'
 $info.WorkingDirectory = $stage
 $info.UseShellExecute = $false
 $info.CreateNoWindow = $true
@@ -57,6 +57,7 @@ $info.EnvironmentVariables['CAELESTIA_PROBE_SCREENSHOT'] = ([Uri]$screenshot).Ab
 $info.RedirectStandardOutput = $Smoke.IsPresent
 $info.RedirectStandardError = $Smoke.IsPresent
 
+$elapsed = [Diagnostics.Stopwatch]::StartNew()
 $process = [Diagnostics.Process]::Start($info)
 if (-not $Smoke) {
     Write-Output "Started component probe (PID $($process.Id)). Close its window when finished."
@@ -64,23 +65,25 @@ if (-not $Smoke) {
 }
 $outTask = $process.StandardOutput.ReadToEndAsync()
 $errTask = $process.StandardError.ReadToEndAsync()
-$timedOut = -not $process.WaitForExit(20000)
+$timedOut = -not $process.WaitForExit(45000)
 if ($timedOut) {
     $process.Kill()
     $process.WaitForExit()
 }
 $stdout = $outTask.GetAwaiter().GetResult()
 $stderr = $errTask.GetAwaiter().GetResult()
+$elapsed.Stop()
 $stdout | Set-Content -LiteralPath (Join-Path $logRoot "$runName.stdout.log") -Encoding UTF8
 $stderr | Set-Content -LiteralPath (Join-Path $logRoot "$runName.stderr.log") -Encoding UTF8
 $combined = "$stdout`n$stderr"
-$runtimeDiagnostics = $combined -match '(?m)^\s*(WARN(?:ING)?|ERROR|FATAL|CRIT(?:ICAL)?)\b'
+$runtimeDiagnostics = $combined -match '(?m)^(?:\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3})?\s*(WARN(?:ING)?|ERROR|FATAL|CRIT(?:ICAL)?)\b'
 $passed = -not $timedOut -and -not $runtimeDiagnostics -and
     $process.ExitCode -eq 0 -and $combined.Contains('CAELESTIA_PROBE_PASS') -and
     (Test-Path -LiteralPath $screenshot)
 Copy-Item -LiteralPath (Join-Path $stage 'sources.json') -Destination (Join-Path $logRoot "$runName.sources.json")
 $result = [ordered]@{
     passed = $passed; timedOut = $timedOut; exitCode = $process.ExitCode; scaleFactor = $ScaleFactor
+    elapsedMilliseconds = $elapsed.ElapsedMilliseconds
     sourceRevision = (& git -C $repoRoot rev-parse HEAD).Trim()
     sourceDirty = [bool](& git -C $repoRoot status --porcelain)
     buildRecordSha256 = (Get-FileHash -LiteralPath (Join-Path $logRoot 'build.json')).Hash
