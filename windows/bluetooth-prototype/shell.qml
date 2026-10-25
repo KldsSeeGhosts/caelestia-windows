@@ -74,6 +74,7 @@ ShellRoot {
             popoutLoaded: popoutHost.item !== null,
             popoutControlsEnabled: popoutHost.item?.controlsEnabled ?? false,
             popoutSettingsDelegated: popoutHost.item?.settingsDelegatesToWindows ?? false,
+            popoutActionsRouted: (popoutHost.item?.actions ?? null) === Bluetooth,
             popoutSettlingTimedOut: popoutHost.item?.settlingTimedOut ?? ({})
         };
     }
@@ -105,7 +106,8 @@ ShellRoot {
                 return;
             }
             if (state.popoutControlsEnabled !== state.controlsEnabled
-                    || state.popoutSettingsDelegated !== true) {
+                    || state.popoutSettingsDelegated !== true
+                    || state.popoutActionsRouted !== true) {
                 root.fail("original popout hooks do not match the service policy");
                 return;
             }
@@ -306,6 +308,7 @@ ShellRoot {
                         popouts: popoutState
                         controlsEnabled: Bluetooth.controlsEnabled
                         settingsDelegatesToWindows: true
+                        actions: Bluetooth
                         settlingTimedOut: Bluetooth.timedOutDevices
                         onSettingsRequested: Qt.openUrlExternally(Bluetooth.settingsUri)
                     }

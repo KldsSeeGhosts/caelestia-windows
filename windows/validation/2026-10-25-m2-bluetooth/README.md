@@ -167,3 +167,22 @@ media/battery service fixtures also pass.
   from a pending request beyond the observed state.
 
 No backend source, gitlink or `sources.lock.json` change is part of this slice.
+
+## Review addendum
+
+An independent review of `295c4fb8` found that the original popout wrote the
+native objects directly in Interactive mode, bypassing the service guards, and
+that clicking an unpaired device paired natively even though the pinned backend
+auto-accepts `ConfirmPinMatch` (`bt_worker.cpp`, lines 264-267). The follow-up
+commit routes every popout control through the service (`actions` hook,
+upstream default `null`), delegates unpaired devices to Windows Settings, and
+derives bounded-wait timing from accumulated timer intervals instead of
+`Date.now()`.
+
+Re-run of `Test-BluetoothPrototype.ps1` on the dirty follow-up tree: all six
+records passed (182 fixture assertions, Disabled/ReadOnly smoke on both screens,
+M1 regression). The harness's desktop comparison failed only because a parallel
+prototype `qs` process (PID 19196) owned by another concurrent slice appeared
+between snapshots; Explorer, KSG Shell, work areas and taskbar flags were
+unchanged. A clean, uncontended re-run is required at integration. Interactive
+mode and Windows Settings delegation remain untested.

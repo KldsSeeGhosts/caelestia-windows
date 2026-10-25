@@ -176,9 +176,16 @@ Raw results are under `windows/.local/build/bluetooth-validation-<timestamp>/`.
 
 - Native observation on the development machine saw one Intel adapter with the
   radio on and no paired devices. Null/blocked/off radios, paired devices,
-  discovery, connect, pair, forget and PIN/passkey delegation are
-  fixture-validated only. No radio, discovery, pairing or connection request was
-  sent by the native runs.
+  discovery, connect and forget are fixture-validated only. Windows Settings
+  delegation for unpaired devices is untested: the fixture checks only the
+  settings URI and guidance. No radio, discovery, pairing or connection request
+  was sent by the native runs.
+- The Windows host routes every original popout control through the guarded
+  service (`actions`). Clicking an unpaired device opens Windows Settings
+  instead of pairing natively, because the pinned backend auto-accepts
+  `ConfirmPinMatch` pairing (`bt_worker.cpp`, lines 264-267). Native pairing
+  stays unavailable from the shell until the backend enforces a pairing-kind
+  policy.
 - Interactive mode is not validated: it is the separate explicit-control opt-in
   and no control was exercised.
 - The backend exposes no per-command result. A permitted request is not a

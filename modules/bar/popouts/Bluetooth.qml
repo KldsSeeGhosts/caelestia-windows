@@ -34,7 +34,24 @@ ColumnLayout {
     // cancelling or re-sending a request. Empty by default (upstream).
     property var settlingTimedOut: ({})
 
+    // Windows host: guarded control service. When set, every radio, discovery,
+    // connect and forget request is routed through its capability checks
+    // instead of writing the native objects directly, and unpaired devices
+    // delegate pairing to Windows Settings rather than pairing natively. Null
+    // by default (upstream writes the objects directly).
+    property var actions: null
+
     signal settingsRequested()
+
+    // Unpaired devices stay clickable under a host service: the click delegates
+    // to Windows Settings, never to native pairing.
+    function canActOn(device): bool {
+        if (!root.actions)
+            return true;
+        if (!device || device.paired !== true)
+            return true;
+        return device.connected ? root.actions.canDisconnect(device) : root.actions.canConnect(device);
+    }
 
     function isSettlingTimedOut(device): bool {
         if (!device || !root.settlingTimedOut)
@@ -56,10 +73,15 @@ ColumnLayout {
     Toggle {
         label: Tr.trCtx("Enabled", "toggle label")
         checked: Bluetooth.defaultAdapter?.enabled ?? false
-        controlsEnabled: root.controlsEnabled
+        controlsEnabled: root.controlsEnabled && (!root.actions || root.actions.canToggleRadio)
         toggle.onToggled: {
             if (!root.controlsEnabled)
                 return;
+            if (root.actions) {
+                if (!root.actions.setRadioEnabled(checked))
+                    checked = !checked;
+                return;
+            }
             const adapter = Bluetooth.defaultAdapter;
             if (adapter)
                 adapter.enabled = checked;
@@ -69,10 +91,15 @@ ColumnLayout {
     Toggle {
         label: Tr.trCtx("Discovering", "bluetooth adapter state")
         checked: Bluetooth.defaultAdapter?.discovering ?? false
-        controlsEnabled: root.controlsEnabled
+        controlsEnabled: root.controlsEnabled && (!root.actions || root.actions.canSetDiscovering)
         toggle.onToggled: {
             if (!root.controlsEnabled)
                 return;
+            if (root.actions) {
+                if (!root.actions.setDiscovering(checked))
+                    checked = !checked;
+                return;
+            }
             const adapter = Bluetooth.defaultAdapter;
             if (adapter)
                 adapter.discovering = checked;
@@ -163,10 +190,20 @@ ColumnLayout {
 
                 StateLayer {
                     color: device.modelData.state === BluetoothDeviceState.Connected ? Colours.palette.m3onPrimary : Colours.palette.m3onSurface
-                    disabled: device.loading || !root.controlsEnabled
+                    disabled: device.loading || !root.controlsEnabled || !root.canActOn(device.modelData)
                     onClicked: {
                         if (!root.controlsEnabled)
                             return;
+                        if (root.actions) {
+                            const target = device.modelData;
+                            if (target.paired !== true)
+                                root.settingsRequested();
+                            else if (target.connected)
+                                root.actions.disconnectDevice(target);
+                            else
+                                root.actions.connectDevice(target);
+                            return;
+                        }
                         device.modelData.connected = !device.modelData.connected;
                     }
                 }
@@ -199,9 +236,13 @@ ColumnLayout {
 
                     StateLayer {
                         radius: Tokens.rounding.full
-                        disabled: !root.controlsEnabled
+                        disabled: !root.controlsEnabled || (root.actions !== null && !root.actions.canForget(device.modelData))
                         onClicked: {
-                            if (root.controlsEnabled)
+                            if (!root.controlsEnabled)
+                                return;
+                            if (root.actions)
+                                root.actions.forgetDevice(device.modelData);
+                            else
                                 device.modelData.forget();
                         }
                     }
