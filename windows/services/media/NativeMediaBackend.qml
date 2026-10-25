@@ -5,16 +5,20 @@ import Quickshell.Services.Mpris
 // constructs the GSMTC backend: its worker thread starts after the first frame
 // and begins session observation; artwork sessions may be written to the
 // process cache location's mpris-art directory. Construction sends no
-// transport command. The pinned backend exposes no initialization result: a
-// failed COM apartment init or GSMTC manager request logs a warning and leaves
-// an empty player list, which this facade cannot distinguish from "no
-// sessions" (audits/M2-MEDIA-BACKEND-GAPS.md).
+// transport command.
+//
+// The pinned backend reports its own lifecycle. ready stays false until a
+// successful GetSessions scan and becomes true with an empty lastError even
+// when no sessions are open. An init_apartment, RequestAsync, GetSessions or
+// later scan failure sets ready=false and publishes the failed operation with
+// its HRESULT. Player snapshots can remain published while ready=false, so
+// PlayersService hides them until the next successful scan. There is no
+// per-command result: failed transport requests are logged by the worker only.
 QtObject {
     id: root
 
-    // Completing construction only proves the facade loaded and the worker
-    // thread was requested, not that GSMTC access succeeded.
-    readonly property bool ready: true
+    readonly property bool ready: Mpris.ready
+    readonly property string lastError: Mpris.lastError
 
     readonly property var players: Mpris.players
 }

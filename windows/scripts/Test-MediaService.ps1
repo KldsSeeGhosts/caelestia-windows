@@ -26,6 +26,12 @@ $sources = foreach ($name in @('PlayersService.qml', 'PlayersServiceTest.qml')) 
         stagedSha256 = (Get-FileHash -LiteralPath $target).Hash
     }
 }
+# The state object must stay importable without Quickshell or a native Mpris
+# singleton. The fixture is the only other staged file and never constructs
+# Players.qml, so no GSMTC worker can start in this process.
+$serviceSource = Join-Path $repoRoot 'windows\services\media\PlayersService.qml'
+$nativeImports = @(Select-String -LiteralPath $serviceSource -Pattern '^\s*import\s+Quickshell')
+$hashMismatch = @($sources | Where-Object { $_.sourceSha256 -ne $_.stagedSha256 })
 $info = New-Object Diagnostics.ProcessStartInfo
 $info.FileName = $exe
 $info.Arguments = '"' + (Join-Path $stage 'PlayersServiceTest.qml') + '"'
@@ -53,11 +59,20 @@ $stdout | Set-Content -LiteralPath $stdoutPath -Encoding UTF8
 $stderr | Set-Content -LiteralPath $stderrPath -Encoding UTF8
 $combined = "$stdout`n$stderr"
 $match = [regex]::Match($combined, 'CAELESTIA_MEDIA_FIXTURE_PASS (\{[^\r\n]+\})')
+$fixture = $(if ($match.Success) { $match.Groups[1].Value | ConvertFrom-Json } else { $null })
+$diagnostics = @([regex]::Matches(
+    $combined,
+    '(?im)^.*(?:CAELESTIA_MEDIA_FIXTURE_FAIL|ReferenceError|TypeError|SyntaxError|binding loop|Unable to assign|Cannot assign|is not a type|Cannot read property|is not defined).*$'
+))
 $passed = -not $timedOut -and $process.ExitCode -eq 0 -and $match.Success -and
-    $combined -notmatch '(?i)(CAELESTIA_MEDIA_FIXTURE_FAIL|ReferenceError|TypeError|binding loop|Unable to assign|not available|is not a type)'
+    $null -ne $fixture -and [int]$fixture.assertions -ge 100 -and
+    $hashMismatch.Count -eq 0 -and $nativeImports.Count -eq 0 -and $diagnostics.Count -eq 0
 $result = [ordered]@{
     passed = $passed; timedOut = $timedOut; exitCode = $process.ExitCode
-    fixture = $(if ($match.Success) { $match.Groups[1].Value | ConvertFrom-Json } else { $null })
+    fixture = $fixture
+    nativeImports = $nativeImports.Count
+    hashMismatch = @($hashMismatch)
+    diagnostics = @($diagnostics | ForEach-Object { $_.Value })
     sourceRevision = (& git -C $repoRoot rev-parse HEAD).Trim()
     sourceDirty = [bool](& git -C $repoRoot status --porcelain)
     qtVersion = (& "$QtPrefix\bin\qtpaths.exe" --qt-version).Trim()
