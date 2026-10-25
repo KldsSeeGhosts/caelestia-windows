@@ -7,11 +7,17 @@ import Quickshell.Services.Notifications
 // local delivery signal. Construction sends no system access request.
 //
 // mirrorSystemNotifications is set to false at construction, before the
-// post-reload hook applies it, and the property is never written true. At the
-// pinned backend the default is true (qml.hpp line 112); leaving it there would
-// construct the system mirror, request notification-listener access and let a
-// local dismiss remove a real Windows notification. That path stays out of this
-// slice.
+// post-reload hook applies it. At the pinned backend the default is true
+// (qml.hpp line 112); leaving it there would construct the system mirror,
+// request notification-listener access and start reading real toasts. Mirroring
+// is enabled only by the service's setMirroring() after the explicit consent
+// button produced an Allowed status.
+//
+// requestAccess() is the single consent path. It is invoked only from
+// NotificationsService.requestAccess(), which the original notification-center
+// button calls while the state is Unspecified; nothing in this wrapper calls it.
+// The pinned backend itself only raises an OS prompt when Windows reports
+// Unspecified, and GetAccessStatus is read from inside its worker.
 //
 // The pinned backend does not publish whether the claim succeeded, is retrying,
 // or was forwarded (server.cpp lines 55-91 only log and retry internally), so
@@ -40,7 +46,7 @@ QtObject {
         imageSupported: true
         persistenceSupported: true
 
-        // Backend default is true. This slice must never enable mirroring.
+        // Backend default is true. Mirroring starts off in every mode.
         mirrorSystemNotifications: false
 
         onNotification: notification => {
@@ -54,6 +60,17 @@ QtObject {
     readonly property bool mirrorSystemNotifications: server.mirrorSystemNotifications
     readonly property bool systemMirrorActive: server.systemMirrorActive
     readonly property int systemNotificationAccess: server.systemNotificationAccess
+
+    // Explicit consent path. The service calls this at most once per process.
+    function requestAccess(): void {
+        server.requestSystemNotificationAccess();
+    }
+
+    // Called only after Windows reports Allowed. The backend's own setter also
+    // reads the access status and never prompts for Allowed/Denied/Unavailable.
+    function setMirroring(enabled): void {
+        server.mirrorSystemNotifications = enabled === true;
+    }
 
     function notifySend(summary, body, args): int {
         return server.notifySend(summary, body, args ?? []);

@@ -124,6 +124,10 @@ Item {
                     Layout.preferredWidth: implicitWidth + (actionStateLayer.pressed ? Tokens.padding.large : 0)
                     radius: actionStateLayer.pressed ? Tokens.rounding.medium / 2 : Tokens.rounding.medium
                     color: Colours.layer(Colours.palette.m3surfaceContainerHighest, 4)
+                    // Windows: a mirrored toast's app-open action stays visible
+                    // but uses the existing 38% disabled-content opacity until
+                    // its separate opt-in is present.
+                    opacity: action.modelData.disabled === true ? 0.38 : 1
 
                     Timer {
                         id: copyTimer
@@ -135,6 +139,7 @@ Item {
                     StateLayer {
                         id: actionStateLayer
 
+                        disabled: action.modelData.disabled === true
                         onClicked: {
                             if (action.modelData.isClose) {
                                 root.notif.close();

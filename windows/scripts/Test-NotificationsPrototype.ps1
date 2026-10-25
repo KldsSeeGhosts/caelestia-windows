@@ -49,6 +49,28 @@ function Assert-Common($State, [string]$Mode) {
     Assert ($State.mirrorSystemNotifications -eq $false) "$Mode mode requested mirrorSystemNotifications."
     Assert ($State.systemMirrorActive -eq $false) "$Mode mode activated the system mirror."
     Assert ($State.protectedDismissals -eq 0) "$Mode mode targeted a real Windows notification for dismissal."
+    # Mirroring, its two side effects and every access request are absent.
+    Assert ($State.mirrorOptIn -eq $false) "$Mode mode staged the mirroring opt-in."
+    Assert ($State.mirrorControlEnabled -eq $false) "$Mode mode offered the mirroring control."
+    Assert ($State.mirrorStatus -eq 'disabled') "$Mode mode reported mirroring status '$($State.mirrorStatus)'."
+    Assert ($State.mirrorAccessState -eq 'Unknown') "$Mode mode observed notification access."
+    Assert ($State.canRequestMirrorAccess -eq $false) "$Mode mode made access requestable."
+    Assert ($State.mirrorConsentRequested -eq $false -and $State.mirrorConsentPending -eq $false) `
+        "$Mode mode recorded mirroring consent."
+    Assert ($State.mirrorAccessRequests -eq 0) "$Mode mode issued a notification access request."
+    Assert ($State.mirrorWrites -eq 0) "$Mode mode wrote mirrorSystemNotifications."
+    Assert ($State.windowsDismissEnabled -eq $false -and $State.appOpenEnabled -eq $false) `
+        "$Mode mode enabled a mirrored-record side effect."
+    Assert ($State.mirroredCount -eq 0 -and $State.windowsDismissals -eq 0) `
+        "$Mode mode observed a mirrored record or Windows dismissal."
+    Assert ($State.mirrorSettingsActionRequired -eq $false -and $State.settingsOpenRequests -eq 0) `
+        "$Mode mode offered or opened Windows notification settings."
+    Assert ($State.appOpenRefusals -eq 0 -and $State.appOpenInvocations -eq 0) `
+        "$Mode mode reached the app-open path."
+    Assert ($State.deniedPolls -eq 0 -and -not $State.deniedPollingActive) `
+        "$Mode mode polled denied access."
+    Assert ($State.centerVisible -eq $State.dockLoaded) `
+        "$Mode mode reported an inconsistent notification-center visibility."
     if ($Mode -eq 'Disabled') {
         Assert ($State.status -eq 'disabled') 'Disabled mode did not report disabled.'
         Assert (-not $State.enabled) 'Disabled mode enabled the service.'

@@ -456,6 +456,23 @@ root to deduplicate against Linear, each enabled and validated independently:
    unchanged ordinary-history/desktop state. System notification mirroring,
    denied access, Windows dismissal and native image-cache writing remain
    outside this slice (ERM-503).
+   **Progress (ERM-503):** the dependent mirroring slice is implemented on
+   `windows/notification-mirroring`. Mirroring stays off unless
+   `CAELESTIA_WINDOWS_NOTIFICATION_MIRROR=1`; the service exposes
+   Unknown/Unspecified/Allowed/Denied/Unavailable and requests access only from
+   one explicit button in the original notification center, only while
+   Unspecified, and never twice. Denied never retries the prompt, offers
+   `Quickshell.Windows.NotificationSettings.openAccessSettings()` and polls at
+   most five times while the center is visible. Mirrored records are identified
+   only by `x-windows-toast-id`/`x-windows-aumid`, use the original app
+   name/icon fields and are not persisted. Dismissal removes the real Windows
+   toast only with `..._MIRROR_DISMISS=1`; app-open needs `..._APP_OPEN=1` and
+   is otherwise shown with the existing disabled styling. Smoke forces all
+   three off. [Mirroring evidence](../validation/2026-10-25-m2-notification-mirroring/README.md)
+   records 221 fixture assertions and disabled/local native smoke with every
+   mirroring counter at zero. Native mirroring, consent, denial, Windows
+   dismissal and app-open remain untested; the pinned backend has no read-only
+   access query and its `setEnabled(true)` itself passes `request=true`.
 7. **Brightness route policy:** adapt per-screen Monitor contract with explicit
    hardware versus software capability. Acceptance: absent/denied/DDC failures
    cause no automatic gamma write; querying and teardown side effects are

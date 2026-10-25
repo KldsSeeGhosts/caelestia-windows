@@ -20,6 +20,14 @@ Item {
     required property ScreenState screenState
     readonly property int notifCount: Notifs.list.reduce((acc, n) => n.closed ? acc : acc + 1, 0)
 
+    // Windows adaptation: an optional mirroring control supplied by the bounded
+    // Windows host. It is null on Linux and for every existing caller, so the
+    // original layout, text and buttons are unchanged there. The control is the
+    // only place notification-listener access can be requested, and only from
+    // its explicit button while the state is Unspecified.
+    property var mirrorControl: null
+    readonly property bool mirrorControlVisible: mirrorControl !== null
+
     anchors.fill: parent
     anchors.margins: Tokens.padding.medium
 
@@ -74,12 +82,48 @@ Item {
         }
     }
 
+    // Windows mirroring status and its single explicit consent action. With no
+    // mirrorControl injected (Linux and the existing callers) this area has no
+    // height and the original layout is unchanged.
+    RowLayout {
+        id: mirrorArea
+
+        anchors.top: title.bottom
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.topMargin: Tokens.spacing.small
+
+        visible: root.mirrorControlVisible
+        height: visible ? implicitHeight : 0
+        spacing: Tokens.spacing.small
+
+        StyledText {
+            Layout.fillWidth: true
+            wrapMode: Text.WordWrap
+            text: root.mirrorControl?.mirrorStatusText ?? ""
+            color: Colours.palette.m3onSurfaceVariant
+            font: Tokens.font.body.small
+        }
+
+        TextButton {
+            visible: root.mirrorControl?.canRequestMirrorAccess === true
+            text: Tr.tr("Enable mirroring")
+            onClicked: root.mirrorControl.requestMirrorAccess()
+        }
+
+        TextButton {
+            visible: root.mirrorControl?.mirrorSettingsActionRequired === true
+            text: Tr.tr("Open Windows settings")
+            onClicked: root.mirrorControl.openNotificationAccessSettings()
+        }
+    }
+
     ClipRect {
         id: clipRect
 
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.top: title.bottom
+        anchors.top: mirrorArea.bottom
         anchors.bottom: parent.bottom
         anchors.topMargin: Tokens.spacing.medium
 

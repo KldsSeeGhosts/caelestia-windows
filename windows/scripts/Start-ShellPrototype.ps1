@@ -13,7 +13,9 @@ param(
     [switch]$Media,
     [ValidateSet('Disabled', 'ReadOnly', 'Interactive')][string]$MediaMode = 'Disabled',
     [switch]$Notifications,
-    [ValidateSet('Disabled', 'Local')][string]$NotificationsMode = 'Disabled',
+    [ValidateSet('Disabled', 'Local', 'Mirror')][string]$NotificationsMode = 'Disabled',
+    [switch]$NotificationDismiss,
+    [switch]$NotificationAppOpen,
     [ValidateSet('native', '1', '1.5', '1.75')][string]$ScaleFactor = 'native',
     [ValidateRange(0, 15)][int]$ScreenIndex = 0
 )
@@ -29,6 +31,8 @@ if (-not $Audio -and $AudioMode -ne 'Disabled') { throw '-AudioMode requires -Au
 if (-not $Battery -and $BatteryMode -ne 'Disabled') { throw '-BatteryMode requires -Battery.' }
 if (-not $Media -and $MediaMode -ne 'Disabled') { throw '-MediaMode requires -Media.' }
 if (-not $Notifications -and $NotificationsMode -ne 'Disabled') { throw '-NotificationsMode requires -Notifications.' }
+if ($NotificationDismiss -and $NotificationsMode -ne 'Mirror') { throw '-NotificationDismiss requires -NotificationsMode Mirror.' }
+if ($NotificationAppOpen -and $NotificationsMode -ne 'Mirror') { throw '-NotificationAppOpen requires -NotificationsMode Mirror.' }
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
 if (-not $BuildRoot) { $BuildRoot = Join-Path $repoRoot 'windows\.local\build' }
 $BuildRoot = [IO.Path]::GetFullPath($BuildRoot)
@@ -111,9 +115,16 @@ $info.EnvironmentVariables['CAELESTIA_WINDOWS_BATTERY'] = $(if ($Battery -and $B
 # is always read-only, including when Interactive was requested.
 $info.EnvironmentVariables['CAELESTIA_WINDOWS_MEDIA'] = $(if ($Media -and $MediaMode -ne 'Disabled') { '1' } else { '0' })
 $info.EnvironmentVariables['CAELESTIA_WINDOWS_MEDIA_CONTROLS'] = $(if ($Media -and $MediaMode -eq 'Interactive' -and -not $Smoke) { '1' } else { '0' })
-# Notifications are local-only in this slice: there is no mirroring or
-# system-access opt-in, and smoke runs use the same Local delivery path.
+# Notifications keep their local-delivery opt-in. Mirroring and its two side
+# effects are separate opt-ins that only exist in Mirror mode. Smoke always
+# forces all three off, so a smoke run never constructs the mirror worker, never
+# requests notification-listener access and never enables Windows dismissal or
+# app-open.
+$mirrorMode = $Notifications -and $NotificationsMode -eq 'Mirror' -and -not $Smoke
 $info.EnvironmentVariables['CAELESTIA_WINDOWS_NOTIFICATIONS'] = $(if ($Notifications -and $NotificationsMode -ne 'Disabled') { '1' } else { '0' })
+$info.EnvironmentVariables['CAELESTIA_WINDOWS_NOTIFICATION_MIRROR'] = $(if ($mirrorMode) { '1' } else { '0' })
+$info.EnvironmentVariables['CAELESTIA_WINDOWS_NOTIFICATION_MIRROR_DISMISS'] = $(if ($mirrorMode -and $NotificationDismiss) { '1' } else { '0' })
+$info.EnvironmentVariables['CAELESTIA_WINDOWS_NOTIFICATION_APP_OPEN'] = $(if ($mirrorMode -and $NotificationAppOpen) { '1' } else { '0' })
 if ($ScaleFactor -ne 'native') {
     $info.EnvironmentVariables['QT_ENABLE_HIGHDPI_SCALING'] = '0'
     $info.EnvironmentVariables['QT_SCALE_FACTOR'] = $ScaleFactor
@@ -165,6 +176,10 @@ Copy-Item -LiteralPath (Join-Path $stage 'sources.json') -Destination (Join-Path
 $result = [ordered]@{
     passed = $(if ($Smoke) { $passed } else { $null }); smoke = $Smoke.IsPresent
     prototype = $kind; audioMode = $AudioMode; batteryMode = $BatteryMode; mediaMode = $MediaMode; notificationsMode = $NotificationsMode
+    notificationsMirror = $mirrorMode
+    notificationsDismiss = [bool]($mirrorMode -and $NotificationDismiss)
+    notificationsAppOpen = [bool]($mirrorMode -and $NotificationAppOpen)
+    mirrorSuppressedBySmoke = [bool]($Notifications -and $NotificationsMode -eq 'Mirror' -and $Smoke)
     timedOut = $timedOut; exitCode = $process.ExitCode
     scaleFactor = $ScaleFactor; screenIndex = $ScreenIndex
     monitorCycle = $MonitorCycle.IsPresent
