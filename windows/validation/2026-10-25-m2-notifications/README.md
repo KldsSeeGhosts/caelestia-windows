@@ -353,6 +353,19 @@ powershell -NoProfile -File windows/scripts/Test-NotificationsPrototype.ps1 -QtP
   rejected; the dismiss-counter assertions are relative to the image tests'
   baseline. All other original assertions still pass.
 
+Clean re-run: both harnesses were then run again on the committed tree at
+`26c49656e6fe024941bdae8b057ad9934095ed0b` (the commit that contains the fixes
+above). Both report `sourceRevision: 26c49656` and `sourceDirty: false`:
+
+- fixture `passed: true`, 244 assertions, no diagnostics
+  (`notification-tests/notifications-fixture-20261025-184514-931`);
+- prototype `passed: true`, nine runs, output
+  `windows\.local\build\notifications-validation-20261025-184521-303`; the
+  local runs again report `deliveryConfirmation: "confirmed"` and the disabled
+  runs `idle`, with every policy assertion above unchanged.
+
+The code was not modified after that run; this note is the only later change.
+
 ### Untested in this round
 
 - The committed smoke posts no image, so `NotifImageCache` and the
