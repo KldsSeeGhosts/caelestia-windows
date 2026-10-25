@@ -59,6 +59,8 @@ For the next development session, start with [HANDOFF.md](HANDOFF.md).
   separate opt-ins; smoke forces dispatch off and destructive actions require
   an explicit confirmation the original UI does not yet supply. Native
   Disabled/Observe runs never invoke a session action.
+  [Session evidence](validation/2026-10-25-m2-session/README.md) records the
+  fixtures, both native modes and shared regressions.
 
 ## Checkout and inspect
 

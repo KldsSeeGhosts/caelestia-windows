@@ -1,0 +1,25 @@
+﻿2026-10-25 18:13:20.790  INFO: Launching config: "D:/AiStack/caelestia-windows/windows/.local/build/shell-runs/session-20261025-181320-438/shell.qml"
+2026-10-25 18:13:20.791  INFO: Shell ID: "36c1b604708dcc9dd0760d8d86aa9b0c" Path ID "36c1b604708dcc9dd0760d8d86aa9b0c"
+2026-10-25 18:13:20.809  INFO: Saving logs to "C:/Users/Ermin/AppData/Local/quickshell/run/by-id/k6k8qhhnt/log.qslog"
+2026-10-25 18:13:20.879  INFO quickshell.windows.blur: Blur behind panels is turned off by QS_WINDOWS_BLUR.
+2026-10-25 18:13:20.883  INFO quickshell.windows.blur: No layer rules file found (looked for D:/AiStack/caelestia-windows/windows/.local/build/shell-runs/session-20261025-181320-438/defaults/windows/layerrules.json ), blur behind panels is off.
+2026-10-25 18:13:20.883  INFO caelestia.windows.focusguard: target-unavailable
+2026-10-25 18:13:20.883 DEBUG qml: CAELESTIA_SHELL_FOCUS target-unavailable
+2026-10-25 18:13:21.002 DEBUG quickshell.windows.desktops: Desktop list changed: 1 desktops
+2026-10-25 18:13:21.002 DEBUG quickshell.windows.desktops: Current desktop: 0
+2026-10-25 18:13:21.003 DEBUG quickshell.windows.panel: Placing qs::windows::WinPanelWindow(0x21866ad4db0) at QRect(-3760,80 900x620) on "DELL S2725QS"
+2026-10-25 18:13:21.004  INFO caelestia.windows.focusguard: idle
+2026-10-25 18:13:21.004 DEBUG qml: CAELESTIA_SHELL_FOCUS idle
+2026-10-25 18:13:21.013  INFO: Configuration Loaded
+2026-10-25 18:13:21.195 DEBUG quickshell.windows.startup: First panel frame presented
+2026-10-25 18:13:21.595 DEBUG quickshell.windows.startup: Startup settled, running 1 deferred tasks
+2026-10-25 18:13:21.595  INFO quickshell.windows.desktops: VirtualDesktopAccessor.dll not found next to the executable; desktop switching falls back to keyboard shortcuts.
+2026-10-25 18:13:22.396 DEBUG qml: CAELESTIA_SHELL_SCREEN {"index":1,"name":"DELL S2725QS","x":-3840,"y":0,"dpr":1.75}
+2026-10-25 18:13:22.396 DEBUG qml: CAELESTIA_SHELL_GEOMETRY DELL S2725QS -3840 0 900 620 1.75 4
+2026-10-25 18:13:22.396 DEBUG qml: CAELESTIA_SESSION_INITIAL {"mode":"Disabled","run":true,"enabled":false,"actionsEnabled":false,"available":false,"status":"disabled","nativeRequested":false,"backendLoaded":false,"backendError":"","hibernateCapabilityKnown":false,"canHibernate":false,"hibernateSupported":false,"actionGating":true,"fallbackBlocked":true,"actions":{"lock":{"supported":true,"capability":false,"available":false,"requiresConfirmation":false},"logout":{"supported":true,"capability":false,"available":false,"requiresConfirmation":true},"shutdown":{"supported":true,"capability":false,"available":false,"requiresConfirmation":true},"reboot":{"supported":true,"capability":false,"available":false,"requiresConfirmation":true},"suspend":{"supported":true,"capability":false,"available":false,"requiresConfirmation":false},"hibernate":{"supported":true,"capability":false,"available":false,"requiresConfirmation":false},"firmware":{"supported":true,"capability":false,"available":false,"requiresConfirmation":true}},"lastOutcome":"disabled","lastAction":"","lastConsumed":true,"lastDispatched":false,"lastRequested":false,"lastSucceeded":false}
+2026-10-25 18:13:23.595 DEBUG qml: CAELESTIA_SHELL_OPEN 40 155 102 400
+2026-10-25 18:13:23.596 DEBUG qml: CAELESTIA_SESSION_BUTTONS [{"icon":"logout","disabled":true},{"icon":"power_settings_new","disabled":true},{"icon":"downloading","disabled":true},{"icon":"cached","disabled":true}]
+2026-10-25 18:13:23.651 DEBUG qml: CAELESTIA_SHELL_CAPTURE file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/session-20261025-181320-438.png
+2026-10-25 18:13:24.796 DEBUG qml: CAELESTIA_SESSION_FINAL {"mode":"Disabled","run":true,"enabled":false,"actionsEnabled":false,"available":false,"status":"disabled","nativeRequested":false,"backendLoaded":false,"backendError":"","hibernateCapabilityKnown":false,"canHibernate":false,"hibernateSupported":false,"actionGating":true,"fallbackBlocked":true,"actions":{"lock":{"supported":true,"capability":false,"available":false,"requiresConfirmation":false},"logout":{"supported":true,"capability":false,"available":false,"requiresConfirmation":true},"shutdown":{"supported":true,"capability":false,"available":false,"requiresConfirmation":true},"reboot":{"supported":true,"capability":false,"available":false,"requiresConfirmation":true},"suspend":{"supported":true,"capability":false,"available":false,"requiresConfirmation":false},"hibernate":{"supported":true,"capability":false,"available":false,"requiresConfirmation":false},"firmware":{"supported":true,"capability":false,"available":false,"requiresConfirmation":true}},"lastOutcome":"disabled","lastAction":"","lastConsumed":true,"lastDispatched":false,"lastRequested":false,"lastSucceeded":false}
+2026-10-25 18:13:24.796 DEBUG qml: CAELESTIA_SHELL_PASS 6.11.2
+
