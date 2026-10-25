@@ -14,6 +14,7 @@ QtObject {
         readonly property color m3surfaceContainer: "#261d20"
         readonly property color m3onSurface: "#efdfe2"
         readonly property color m3onSurfaceVariant: "#d5c2c6"
+        readonly property color m3outline: "#9e8c91"
         readonly property color m3outlineVariant: "#514347"
         readonly property color m3shadow: "#000000"
         readonly property color m3scrim: "#000000"

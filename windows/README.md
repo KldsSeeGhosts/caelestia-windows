@@ -79,9 +79,11 @@ these commands. The submodule command downloads source only.
 ## Portable build and isolated prototype
 
 `CAELESTIA_PORTABLE_UI=ON` builds `Caelestia`, `Settings`, `Components`, `Config`,
-`State`, `Blobs`, `I18n`, and `Shaders`, plus `Caelestia.Windows` on Windows.
-It excludes the calculator, Models, upstream Services, Images, and Multimedia.
-The isolated session service is an unavailable QML adapter that consumes
+`State`, `Blobs`, `Images`, `I18n`, and `Shaders`, plus `Caelestia.Windows` on
+Windows. It excludes the calculator, Models, upstream Services, and Multimedia.
+`Images` is Qt-only (Quick/Concurrent) and is retained because the original
+`ColouredIcon` tray icon tinting imports `Caelestia.Images`. The isolated
+session service is an unavailable QML adapter that consumes
 actions without executing them. Linux retains its default module set.
 Windows rejects installation of the unadapted upstream shell.
 

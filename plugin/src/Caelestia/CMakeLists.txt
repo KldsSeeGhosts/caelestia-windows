@@ -37,9 +37,10 @@ if(NOT CAELESTIA_PORTABLE_UI)
     add_subdirectory(Services)
 endif()
 add_subdirectory(Blobs)
-if(NOT CAELESTIA_PORTABLE_UI)
-    add_subdirectory(Images)
-endif()
+# The image analyser is portable Qt code (Quick/Concurrent only, no Linux
+# platform services). The Windows tray keeps the original ColouredIcon, which
+# imports Caelestia.Images, so this module must exist in the portable build too.
+add_subdirectory(Images)
 add_subdirectory(I18n)
 if(NOT CAELESTIA_PORTABLE_UI)
     add_subdirectory(Multimedia)
