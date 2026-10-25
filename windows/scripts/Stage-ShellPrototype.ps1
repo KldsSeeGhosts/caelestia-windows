@@ -4,11 +4,12 @@ param(
     [Parameter(Mandatory)][string]$ProfileRoot,
     [switch]$Audio,
     [switch]$Battery,
-    [switch]$Media
+    [switch]$Media,
+    [switch]$Apps
 )
 
 $ErrorActionPreference = 'Stop'
-$entryPoints = @(@($Audio, $Battery, $Media) | Where-Object { $_ }).Count
+$entryPoints = @(@($Audio, $Battery, $Media, $Apps) | Where-Object { $_ }).Count
 if ($entryPoints -gt 1) { throw 'Select one prototype entry point per stage.' }
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
 $Destination = [IO.Path]::GetFullPath($Destination)
@@ -34,6 +35,10 @@ if ($Media) {
     $files.Remove('windows/shell-prototype/shell.qml')
     $files.Add('windows/media-prototype/shell.qml', 'shell.qml')
 }
+if ($Apps) {
+    $files.Remove('windows/shell-prototype/shell.qml')
+    $files.Add('windows/apps-prototype/shell.qml', 'shell.qml')
+}
 $manifest = Get-Content -LiteralPath (Join-Path $repoRoot 'windows\shell-prototype\sources.json') -Raw | ConvertFrom-Json
 foreach ($entry in $manifest.PSObject.Properties) { $files.Add($entry.Name, $entry.Value) }
 if ($Audio) {
@@ -47,6 +52,10 @@ if ($Battery) {
 if ($Media) {
     $mediaManifest = Get-Content -LiteralPath (Join-Path $repoRoot 'windows\media-prototype\sources.json') -Raw | ConvertFrom-Json
     foreach ($entry in $mediaManifest.PSObject.Properties) { $files.Add($entry.Name, $entry.Value) }
+}
+if ($Apps) {
+    $appsManifest = Get-Content -LiteralPath (Join-Path $repoRoot 'windows\apps-prototype\sources.json') -Raw | ConvertFrom-Json
+    foreach ($entry in $appsManifest.PSObject.Properties) { $files.Add($entry.Name, $entry.Value) }
 }
 $hashes = foreach ($entry in $files.GetEnumerator()) {
     $source = [IO.Path]::GetFullPath((Join-Path $repoRoot $entry.Key))
