@@ -1,4 +1,4 @@
-﻿pragma Singleton
+pragma Singleton
 
 import QtQuick
 import Quickshell
@@ -93,6 +93,14 @@ NetworkService {
 
     function enableWifi(enabled): void {
         root.requestRadio(enabled);
+    }
+
+    // Upstream returns a typed access point here. The raw projection must not
+    // leak because consumers (for example saved-network pages) read isSecure.
+    function findNetwork(ssid): var {
+        if (typeof ssid !== "string" || ssid.length === 0)
+            return null;
+        return root.networks.find(point => point.ssid === ssid) ?? null;
     }
 
     function rescanWifi(): void {
