@@ -9,8 +9,11 @@ tracks the milestones and implementation issues.
 
 - M0: local developer bootstrap complete. Backend pin, native build commands,
   isolated probe configuration, and validation evidence are recorded.
-- M1: in progress. Portable plugins and component rendering pass; the actual
-  bar and one drawer, hover interactions, focus, and monitor tests remain.
+- M1: complete for the bounded original bar/session prototype. The native
+  hover handoff is fixed. Two clean 36-scenario input matrices pass at native
+  150%/175%, with transparency on and off, plus rendering and lifecycle checks.
+  [Final evidence and limits](validation/2026-10-25-m1-acceptance/README.md)
+  include the rejected preliminary desktop-wide notification test.
 - M2, M3, M4: not started. No Windows service integration, tiling validation,
   or installable shell release is claimed.
 
@@ -18,13 +21,15 @@ Continue from [HANDOFF.md](HANDOFF.md). Linear was connected and synchronized
 on 2026-10-25 under the Ermin Zeherovic (ERM) team. This roadmap owns detailed
 acceptance criteria; Linear tracks issue status and dependencies.
 
-Completed foundation issues are ERM-489 (M0 bootstrap) and ERM-490 (M1 component
-probe). Remaining M1 work is sequenced as:
+Completed issues are ERM-489 (M0 bootstrap), ERM-490 (component probe),
+ERM-491 (dependency/backend audit), ERM-492 (original bar/session loading),
+ERM-493 (input/focus) and ERM-494 (final compatibility gate).
+M1 work was sequenced as:
 
-1. [ERM-491: dependency and backend API audit](https://linear.app/ermin-zeherovic/issue/ERM-491).
-2. [ERM-492: load the original bar and one drawer](https://linear.app/ermin-zeherovic/issue/ERM-492).
-3. [ERM-493: hover, input, focus, and dismissal](https://linear.app/ermin-zeherovic/issue/ERM-493).
-4. [ERM-494: native DPI, monitor, transparency, and lifecycle gate](https://linear.app/ermin-zeherovic/issue/ERM-494).
+1. [ERM-491: dependency and backend API audit](https://linear.app/ermin-zeherovic/issue/ERM-491), done.
+2. [ERM-492: load the original bar and one drawer](https://linear.app/ermin-zeherovic/issue/ERM-492), done with archived evidence.
+3. [ERM-493: hover, input, focus, and dismissal](https://linear.app/ermin-zeherovic/issue/ERM-493), done.
+4. [ERM-494: native DPI, monitor, transparency, and lifecycle gate](https://linear.app/ermin-zeherovic/issue/ERM-494), done.
 
 ## M0: source and reproducibility
 
@@ -45,11 +50,32 @@ Use an explicit isolated entry point with unsupported services disabled through
 platform boundaries. Preserve upstream components rather than replacing them
 with lookalike rectangles.
 
-Status: portable plugin compilation and a component probe pass. The probe uses
-the original clock widgets, graphics plugins, and animations with a fixed
-palette adapter in an ordinary window. It does not load `Bar.qml` or
-`ContentWindow.qml`, and M1 remains open.
-See the [component validation record](validation/2026-10-25-component-probe/README.md).
+The [native bar/session prototype](shell-prototype/README.md) loads
+original ContentWindow/StyledWindow, Regions/Interactions, Bar/Clock/Power and
+Session.Wrapper/Content. Fixed palette and explicit unavailable adapters keep
+unsupported services out; process-local fonts preserve original icons.
+WindowsFocusGuard provides bounded native activation/restoration policy.
+Drawers/Exclusions and Taskbar/Tiling controllers are not instantiated.
+
+Status: complete. Clean `24229c9a` passes 72 recorded native input scenarios
+across the 150% primary and 175% negative-origin secondary, including stationary
+hover, rapid crossings, original bar pin/unpin and session drag, keyboard,
+Escape/focus return, outside-click pass-through, early app switching and
+repeated open/close. The same window preserves 900x620 geometry through
+150% -> 175% -> 150%. Clean synthetic 100%/150%/175% rendering and a separate
+175% -> 150% -> 175% native cycle also pass without QML diagnostics.
+
+Actual transparency-off startup is verified by both the Windows preference
+and `UISettings.AdvancedEffectsEnabled`, then restored. Both final input runs
+preserve the existing shell PID, work areas and taskbar flags. A preliminary
+desktop-wide settings broadcast exposed a separate KSG Shell panic; that run
+was rejected and the installed shell restored. Live global reconfiguration of
+other shells is not certified. The
+[final acceptance record](validation/2026-10-25-m1-acceptance/README.md) owns
+exact versions, sources, commands, failures, passing evidence and limits.
+The earlier bar/session archive and older
+[component validation record](validation/2026-10-25-component-probe/README.md)
+continue to describe only their own source revisions.
 
 Gate:
 

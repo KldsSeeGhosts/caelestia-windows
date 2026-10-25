@@ -1,0 +1,51 @@
+﻿{
+    "passed":  true,
+    "smoke":  true,
+    "timedOut":  false,
+    "exitCode":  0,
+    "scaleFactor":  "native",
+    "screenIndex":  1,
+    "monitorCycle":  true,
+    "actualScreens":  [
+                          {
+                              "index":  1,
+                              "name":  "DELL S2725QS",
+                              "x":  -3840,
+                              "y":  0,
+                              "dpr":  1.75
+                          },
+                          {
+                              "index":  0,
+                              "name":  "MAG321UX OLED",
+                              "x":  0,
+                              "y":  0,
+                              "dpr":  1.5
+                          },
+                          {
+                              "index":  1,
+                              "name":  "DELL S2725QS",
+                              "x":  -3840,
+                              "y":  0,
+                              "dpr":  1.75
+                          }
+                      ],
+    "captures":  [
+                     "file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/shell-20261025-011714-768.png",
+                     "file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/shell-20261025-011714-768-screen0.png",
+                     "file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/shell-20261025-011714-768-screen1.png"
+                 ],
+    "elapsedMilliseconds":  11369,
+    "sourceRevision":  "e2e5b69763a16c6fbd70f259f9a1591405787c06",
+    "sourceDirty":  false,
+    "backendRevision":  "e8ae0ef124b1c14b547c80d00422d2ffbd423d81",
+    "buildRecordSha256":  "75BCD336772CFB4AEC503ACA2B6EC65E4CC7D5E03C11D9B969F2A498D5520F0B",
+    "configSha256":  "B22AE86858A53E750715BB15F85594144CD6289545E911795B64F21F99C7D339",
+    "command":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\quickshell\\qs.exe",
+    "arguments":  "--no-color --log-times --path \"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\shell-20261025-011714-768\\shell.qml\"",
+    "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\shell-20261025-011714-768",
+    "profile":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-prototype-profile",
+    "sources":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\shell-20261025-011714-768.sources.json",
+    "screenshot":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\shell-20261025-011714-768.png",
+    "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\shell-20261025-011714-768.stdout.log",
+    "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\shell-20261025-011714-768.stderr.log"
+}

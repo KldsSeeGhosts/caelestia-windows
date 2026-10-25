@@ -1,0 +1,290 @@
+﻿[
+    {
+        "source":  "windows/shell-prototype/shell.qml",
+        "staged":  "shell.qml",
+        "sourceSha256":  "8045E4513EFBB3027A39141AEA3D6B1CB13470D1792A266933A63550EA061636",
+        "stagedSha256":  "220CA4B4AAB0077646CB2E697BECA2A99F49CD1413B3F56F5BB85CEB68E79F02"
+    },
+    {
+        "source":  "windows/assets/material-symbols-rounded/MaterialSymbolsRounded.ttf",
+        "staged":  "assets/material-symbols-rounded/MaterialSymbolsRounded.ttf",
+        "sourceSha256":  "7E74E36533CCEE12C2B81E75BFCF3CCF123D3BB7E7E46D65D94445F23DB0C97C",
+        "stagedSha256":  "7E74E36533CCEE12C2B81E75BFCF3CCF123D3BB7E7E46D65D94445F23DB0C97C"
+    },
+    {
+        "source":  "windows/assets/material-symbols-rounded/LICENSE",
+        "staged":  "assets/material-symbols-rounded/LICENSE",
+        "sourceSha256":  "58D1E17FFE5109A7AE296CAAFCADFDBE6A7D176F0BC4AB01E12A689B0499D8BD",
+        "stagedSha256":  "58D1E17FFE5109A7AE296CAAFCADFDBE6A7D176F0BC4AB01E12A689B0499D8BD"
+    },
+    {
+        "source":  "windows/assets/rubik/Rubik.ttf",
+        "staged":  "assets/rubik/Rubik.ttf",
+        "sourceSha256":  "1B3A7437BA2AF80E465E773ED60C5036D1BA6ACE492D89046DBCF18FB31E4E88",
+        "stagedSha256":  "1B3A7437BA2AF80E465E773ED60C5036D1BA6ACE492D89046DBCF18FB31E4E88"
+    },
+    {
+        "source":  "windows/assets/rubik/OFL.txt",
+        "staged":  "assets/rubik/OFL.txt",
+        "sourceSha256":  "472CBE7C25441DF63E9C7864B43EB3C0F4B3DF950C66A76224E6CFE1EAE843FB",
+        "stagedSha256":  "472CBE7C25441DF63E9C7864B43EB3C0F4B3DF950C66A76224E6CFE1EAE843FB"
+    },
+    {
+        "source":  "windows/assets/README.md",
+        "staged":  "assets/README.md",
+        "sourceSha256":  "DED22F5E7486D5E09030FF67F16D8927D455B262AA0EFF3608889961EE1A9E1B",
+        "stagedSha256":  "DED22F5E7486D5E09030FF67F16D8927D455B262AA0EFF3608889961EE1A9E1B"
+    },
+    {
+        "source":  "modules/bar/Bar.qml",
+        "staged":  "modules/bar/Bar.qml",
+        "sourceSha256":  "F040287ABDB948F6AAF82F76F6469CDA5E5B492407FD3CA9BE39DD7EB74F0384",
+        "stagedSha256":  "F040287ABDB948F6AAF82F76F6469CDA5E5B492407FD3CA9BE39DD7EB74F0384"
+    },
+    {
+        "source":  "modules/bar/BarWrapper.qml",
+        "staged":  "modules/bar/BarWrapper.qml",
+        "sourceSha256":  "102F8145AB95C81EF9054B3F1B2F25647026E4EBBDC17BBDCD25C5AB6362F3FE",
+        "stagedSha256":  "102F8145AB95C81EF9054B3F1B2F25647026E4EBBDC17BBDCD25C5AB6362F3FE"
+    },
+    {
+        "source":  "modules/bar/components/Clock.qml",
+        "staged":  "modules/bar/components/Clock.qml",
+        "sourceSha256":  "5CE72B2E7BA06760221D873DF780305E138B414768E696D04119E660FFF3F96B",
+        "stagedSha256":  "5CE72B2E7BA06760221D873DF780305E138B414768E696D04119E660FFF3F96B"
+    },
+    {
+        "source":  "modules/bar/components/Power.qml",
+        "staged":  "modules/bar/components/Power.qml",
+        "sourceSha256":  "19F67E760F74AEF95957A29EC4FC03326ED1CD4B6A48CB04407B3D6503108423",
+        "stagedSha256":  "19F67E760F74AEF95957A29EC4FC03326ED1CD4B6A48CB04407B3D6503108423"
+    },
+    {
+        "source":  "modules/drawers/ContentWindow.qml",
+        "staged":  "modules/drawers/ContentWindow.qml",
+        "sourceSha256":  "266737119123BCCE763A47384A329EF28FBE29E9CED36910F7CD064D3A6108B0",
+        "stagedSha256":  "266737119123BCCE763A47384A329EF28FBE29E9CED36910F7CD064D3A6108B0"
+    },
+    {
+        "source":  "modules/drawers/Regions.qml",
+        "staged":  "modules/drawers/Regions.qml",
+        "sourceSha256":  "A7210694CCE22C1B437BD4E8AB1ED240E3CB34E8D9EA3A71B14E07392A01C853",
+        "stagedSha256":  "A7210694CCE22C1B437BD4E8AB1ED240E3CB34E8D9EA3A71B14E07392A01C853"
+    },
+    {
+        "source":  "modules/drawers/Interactions.qml",
+        "staged":  "modules/drawers/Interactions.qml",
+        "sourceSha256":  "F7F6B0D27CC0B3DADE263868FCFCE5408CCD5D3A92A7DE040626A74BC8F223C0",
+        "stagedSha256":  "F7F6B0D27CC0B3DADE263868FCFCE5408CCD5D3A92A7DE040626A74BC8F223C0"
+    },
+    {
+        "source":  "modules/session/Wrapper.qml",
+        "staged":  "modules/session/Wrapper.qml",
+        "sourceSha256":  "97B88954F443E06A64F0B9073ED567DB1B5D73A2B41866FD31B9F3B3C21963BE",
+        "stagedSha256":  "97B88954F443E06A64F0B9073ED567DB1B5D73A2B41866FD31B9F3B3C21963BE"
+    },
+    {
+        "source":  "modules/session/Content.qml",
+        "staged":  "modules/session/Content.qml",
+        "sourceSha256":  "55BBE45017DCEEDDC29A84780FE30761953095119AB1750BB281BF3DFD4686E6",
+        "stagedSha256":  "55BBE45017DCEEDDC29A84780FE30761953095119AB1750BB281BF3DFD4686E6"
+    },
+    {
+        "source":  "components/containers/StyledWindow.qml",
+        "staged":  "components/containers/StyledWindow.qml",
+        "sourceSha256":  "D5EF6A6A82920216936E5C72FC98D804828887EE2EBA64C999682CBBE05E7383",
+        "stagedSha256":  "D5EF6A6A82920216936E5C72FC98D804828887EE2EBA64C999682CBBE05E7383"
+    },
+    {
+        "source":  "components/ScreenState.qml",
+        "staged":  "components/ScreenState.qml",
+        "sourceSha256":  "28E16BD26180B3FBE06B18CAD5BE3EE9EBAF1276D8D81762F6BA7BF3EF8C3E7C",
+        "stagedSha256":  "28E16BD26180B3FBE06B18CAD5BE3EE9EBAF1276D8D81762F6BA7BF3EF8C3E7C"
+    },
+    {
+        "source":  "components/Anim.qml",
+        "staged":  "components/Anim.qml",
+        "sourceSha256":  "E5501B5D9006AA0DF8F5A367B2C48B6917C00A12B53D535ED0BE00306D5C017F",
+        "stagedSha256":  "E5501B5D9006AA0DF8F5A367B2C48B6917C00A12B53D535ED0BE00306D5C017F"
+    },
+    {
+        "source":  "components/CAnim.qml",
+        "staged":  "components/CAnim.qml",
+        "sourceSha256":  "ADDD601B2DB47648585E85685C88066065F865C8C17C8BFADF3AE8BD5846ABE0",
+        "stagedSha256":  "ADDD601B2DB47648585E85685C88066065F865C8C17C8BFADF3AE8BD5846ABE0"
+    },
+    {
+        "source":  "components/StyledRect.qml",
+        "staged":  "components/StyledRect.qml",
+        "sourceSha256":  "2555D0DC4A18EC897238CC1594FBC4AB32522AD1AC09679337E2B5DE25500F2D",
+        "stagedSha256":  "2555D0DC4A18EC897238CC1594FBC4AB32522AD1AC09679337E2B5DE25500F2D"
+    },
+    {
+        "source":  "components/StyledText.qml",
+        "staged":  "components/StyledText.qml",
+        "sourceSha256":  "24D99B074634214D7250B9EA11ECB9E13AEAEFC0B6534E6022D4EE13256B37DB",
+        "stagedSha256":  "24D99B074634214D7250B9EA11ECB9E13AEAEFC0B6534E6022D4EE13256B37DB"
+    },
+    {
+        "source":  "components/MaterialIcon.qml",
+        "staged":  "components/MaterialIcon.qml",
+        "sourceSha256":  "5C13BE52AD907CF648B7655E35DE877A66B30520B72F6BAF33CBC724D60BD193",
+        "stagedSha256":  "5C13BE52AD907CF648B7655E35DE877A66B30520B72F6BAF33CBC724D60BD193"
+    },
+    {
+        "source":  "components/StateLayer.qml",
+        "staged":  "components/StateLayer.qml",
+        "sourceSha256":  "97B15EF391941F9A6E83BBEDB68CFD34F6AEF3E8090B9C068864C2B3699412FC",
+        "stagedSha256":  "97B15EF391941F9A6E83BBEDB68CFD34F6AEF3E8090B9C068864C2B3699412FC"
+    },
+    {
+        "source":  "components/ClipRect.qml",
+        "staged":  "components/ClipRect.qml",
+        "sourceSha256":  "F118427882C490A0FDB0740715FFBC62F13B574BAD96D6BC80B29FE931C6CC03",
+        "stagedSha256":  "F118427882C490A0FDB0740715FFBC62F13B574BAD96D6BC80B29FE931C6CC03"
+    },
+    {
+        "source":  "components/controls/ButtonBase.qml",
+        "staged":  "components/controls/ButtonBase.qml",
+        "sourceSha256":  "DC0ED4FB25056FF791E115100F823B024F7CAE22607B69C1FBFD86059D4811B9",
+        "stagedSha256":  "DC0ED4FB25056FF791E115100F823B024F7CAE22607B69C1FBFD86059D4811B9"
+    },
+    {
+        "source":  "components/controls/IconButton.qml",
+        "staged":  "components/controls/IconButton.qml",
+        "sourceSha256":  "A9F80920FEECDAAD48508D4B064C14D678B3AA5FF984938C9C0D59BF17E54419",
+        "stagedSha256":  "A9F80920FEECDAAD48508D4B064C14D678B3AA5FF984938C9C0D59BF17E54419"
+    },
+    {
+        "source":  "components/controls/CustomMouseArea.qml",
+        "staged":  "components/controls/CustomMouseArea.qml",
+        "sourceSha256":  "D558F65CD6614BDB299C35309AEF6FEA9FB86A910149A7F1ADD37298B8CAAD71",
+        "stagedSha256":  "D558F65CD6614BDB299C35309AEF6FEA9FB86A910149A7F1ADD37298B8CAAD71"
+    },
+    {
+        "source":  "services/ShellState.qml",
+        "staged":  "services/ShellState.qml",
+        "sourceSha256":  "9DD6CDE521CDA3C2F67135F743A6E139D16C2D3D53C62EEB8DC0B352CC27721B",
+        "stagedSha256":  "9DD6CDE521CDA3C2F67135F743A6E139D16C2D3D53C62EEB8DC0B352CC27721B"
+    },
+    {
+        "source":  "services/Screens.qml",
+        "staged":  "services/Screens.qml",
+        "sourceSha256":  "84261CE09CDF589B0604315FD44839AD4144F71E34F4E70E2203B61EB20D55FE",
+        "stagedSha256":  "84261CE09CDF589B0604315FD44839AD4144F71E34F4E70E2203B61EB20D55FE"
+    },
+    {
+        "source":  "services/Time.qml",
+        "staged":  "services/Time.qml",
+        "sourceSha256":  "2CC9E3184A18B04987F60EEC4C4E5A001516A4181E70705AF9CD16F386EF85D7",
+        "stagedSha256":  "2CC9E3184A18B04987F60EEC4C4E5A001516A4181E70705AF9CD16F386EF85D7"
+    },
+    {
+        "source":  "utils/Strings.qml",
+        "staged":  "utils/Strings.qml",
+        "sourceSha256":  "6D409324C9C2A5E0B7925F7BD118BF4C2015C24D78230269BA8CD29F902CDD20",
+        "stagedSha256":  "6D409324C9C2A5E0B7925F7BD118BF4C2015C24D78230269BA8CD29F902CDD20"
+    },
+    {
+        "source":  "windows/shell-prototype/adapters/services/Colours.qml",
+        "staged":  "services/Colours.qml",
+        "sourceSha256":  "F5D11C94563C97AE723578FDB1BDBE1A31D86C97F33A3737A91D8DDCEB63F9DB",
+        "stagedSha256":  "F5D11C94563C97AE723578FDB1BDBE1A31D86C97F33A3737A91D8DDCEB63F9DB"
+    },
+    {
+        "source":  "windows/shell-prototype/adapters/services/Hypr.qml",
+        "staged":  "services/Hypr.qml",
+        "sourceSha256":  "55B48356349654BF650C0DAD9C25423AE1F72FC7468976B733B6F48032A5AE06",
+        "stagedSha256":  "55B48356349654BF650C0DAD9C25423AE1F72FC7468976B733B6F48032A5AE06"
+    },
+    {
+        "source":  "windows/shell-prototype/adapters/utils/Paths.qml",
+        "staged":  "utils/Paths.qml",
+        "sourceSha256":  "EDE33C5AE55590061F39A1F1BADFC30CEA8F7870AFC513F9F136F8F726D6DEEE",
+        "stagedSha256":  "EDE33C5AE55590061F39A1F1BADFC30CEA8F7870AFC513F9F136F8F726D6DEEE"
+    },
+    {
+        "source":  "windows/shell-prototype/adapters/Caelestia/Services/qmldir",
+        "staged":  "imports/Caelestia/Services/qmldir",
+        "sourceSha256":  "DA9CEAA35F7F96D2F627303B6E0F43660C9B676998E6394F886CBBFD24D4DC89",
+        "stagedSha256":  "DA9CEAA35F7F96D2F627303B6E0F43660C9B676998E6394F886CBBFD24D4DC89"
+    },
+    {
+        "source":  "windows/shell-prototype/adapters/Caelestia/Services/SessionManager.qml",
+        "staged":  "imports/Caelestia/Services/SessionManager.qml",
+        "sourceSha256":  "4522E49984464080FB33D501B4ACE92F4F6F98BED89B42326DC454F2EF7A0DCA",
+        "stagedSha256":  "4522E49984464080FB33D501B4ACE92F4F6F98BED89B42326DC454F2EF7A0DCA"
+    },
+    {
+        "source":  "windows/shell-prototype/adapters/modules/bar/components/OsIcon.qml",
+        "staged":  "modules/bar/components/OsIcon.qml",
+        "sourceSha256":  "5A92AA78512423A999B1CA9EB83DD4AF929A045E7BEEE1BCD7E474AE6289269D",
+        "stagedSha256":  "5A92AA78512423A999B1CA9EB83DD4AF929A045E7BEEE1BCD7E474AE6289269D"
+    },
+    {
+        "source":  "windows/shell-prototype/adapters/modules/bar/components/workspaces/Workspaces.qml",
+        "staged":  "modules/bar/components/workspaces/Workspaces.qml",
+        "sourceSha256":  "B6B953BD6F466F8BA9134D3488CEEE59ACC2880F4AB03D0088EF22600B41C819",
+        "stagedSha256":  "B6B953BD6F466F8BA9134D3488CEEE59ACC2880F4AB03D0088EF22600B41C819"
+    },
+    {
+        "source":  "windows/shell-prototype/adapters/modules/bar/components/ActiveWindow.qml",
+        "staged":  "modules/bar/components/ActiveWindow.qml",
+        "sourceSha256":  "7A3BAFE5FF26AE6A48FA8B45ADCB25A388DAEDD118B4C375EDD8D4A9D76AAB7F",
+        "stagedSha256":  "7A3BAFE5FF26AE6A48FA8B45ADCB25A388DAEDD118B4C375EDD8D4A9D76AAB7F"
+    },
+    {
+        "source":  "windows/shell-prototype/adapters/modules/bar/components/Tray.qml",
+        "staged":  "modules/bar/components/Tray.qml",
+        "sourceSha256":  "28263AA87051C3AEFF5888B3726275C6597ABF734C66C9B70F2E34129B2F1CAF",
+        "stagedSha256":  "28263AA87051C3AEFF5888B3726275C6597ABF734C66C9B70F2E34129B2F1CAF"
+    },
+    {
+        "source":  "windows/shell-prototype/adapters/modules/bar/components/StatusIcons.qml",
+        "staged":  "modules/bar/components/StatusIcons.qml",
+        "sourceSha256":  "F1497FF881CAD7E31CA902565583B08125B5E83BA11DA6DBD55F1B5E98AA5BC0",
+        "stagedSha256":  "F1497FF881CAD7E31CA902565583B08125B5E83BA11DA6DBD55F1B5E98AA5BC0"
+    },
+    {
+        "source":  "windows/shell-prototype/adapters/modules/bar/popouts/Wrapper.qml",
+        "staged":  "modules/bar/popouts/Wrapper.qml",
+        "sourceSha256":  "3AB48FCF3936B339DF4DD86EA11338417C378EDA193376038F15E4554EC23299",
+        "stagedSha256":  "3AB48FCF3936B339DF4DD86EA11338417C378EDA193376038F15E4554EC23299"
+    },
+    {
+        "source":  "windows/shell-prototype/adapters/modules/bar/popouts/ClipWrapper.qml",
+        "staged":  "modules/bar/popouts/ClipWrapper.qml",
+        "sourceSha256":  "D4CBFAF3449FE82331FC2F662640F9A958DE2DAFDE47CD22FEB15F3FCE057C6E",
+        "stagedSha256":  "D4CBFAF3449FE82331FC2F662640F9A958DE2DAFDE47CD22FEB15F3FCE057C6E"
+    },
+    {
+        "source":  "windows/shell-prototype/adapters/modules/drawers/Panels.qml",
+        "staged":  "modules/drawers/Panels.qml",
+        "sourceSha256":  "77C118C2E65CCD91B264D6D187EDA809F26B819D0E2ADC02E058E6EFB0F07F2D",
+        "stagedSha256":  "77C118C2E65CCD91B264D6D187EDA809F26B819D0E2ADC02E058E6EFB0F07F2D"
+    },
+    {
+        "source":  "windows/shell-prototype/adapters/modules/drawers/UnavailablePanel.qml",
+        "staged":  "modules/drawers/UnavailablePanel.qml",
+        "sourceSha256":  "44FC86097E6B897D8ADCAD77753A91025F0DA5A0C9058C1837BB786682AF6B9B",
+        "stagedSha256":  "44FC86097E6B897D8ADCAD77753A91025F0DA5A0C9058C1837BB786682AF6B9B"
+    },
+    {
+        "source":  "LICENSE",
+        "staged":  "LICENSE",
+        "sourceSha256":  "230184F60BAE2FEAF244F10A8BAC053C8FF33A183BCC365B4D8B876D2B7F4809",
+        "stagedSha256":  "230184F60BAE2FEAF244F10A8BAC053C8FF33A183BCC365B4D8B876D2B7F4809"
+    },
+    {
+        "source":  "assets/google-sans-flex/GoogleSansFlex-VariableFont_GRAD,ROND,opsz,slnt,wdth,wght.ttf",
+        "staged":  "assets/google-sans-flex/GoogleSansFlex-VariableFont_GRAD,ROND,opsz,slnt,wdth,wght.ttf",
+        "sourceSha256":  "2510A8B7A24BEB1FE8163E9A49813CCFE96B5453444B9443D42665CA4FA320C9",
+        "stagedSha256":  "2510A8B7A24BEB1FE8163E9A49813CCFE96B5453444B9443D42665CA4FA320C9"
+    },
+    {
+        "source":  "assets/google-sans-flex/LICENSE",
+        "staged":  "assets/google-sans-flex/LICENSE",
+        "sourceSha256":  "425676CE436CEB37CDCD172E0BD4946F24C9EB3ED245B22971E60F5993D95723",
+        "stagedSha256":  "425676CE436CEB37CDCD172E0BD4946F24C9EB3ED245B22971E60F5993D95723"
+    }
+]

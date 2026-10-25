@@ -6,10 +6,10 @@
     "role": "Initial upstream source baseline; local port commits follow this commit."
   },
   "quickshell": {
-    "repository": "https://github.com/nunreasonable/quickshell.git",
-    "revision": "e8ae0ef124b1c14b547c80d00422d2ffbd423d81",
+    "repository": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows.git",
+    "revision": "84604c258da92a004b46d62a89718ae615840b98",
     "path": "windows/deps/quickshell",
-    "role": "Windows backend and QML compatibility interfaces."
+    "role": "Windows backend and QML compatibility interfaces. Preserves nunreasonable/quickshell e8ae0ef124b1c14b547c80d00422d2ffbd423d81 plus the reviewed native mask hover handoff fix."
   },
   "iiWindowsReference": {
     "repository": "https://github.com/nunreasonable/ii-windows.git",

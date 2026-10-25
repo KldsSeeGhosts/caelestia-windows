@@ -1,0 +1,35 @@
+﻿2026-10-25 01:17:15.200  INFO: Launching config: "D:/AiStack/caelestia-windows/windows/.local/build/shell-runs/shell-20261025-011714-768/shell.qml"
+2026-10-25 01:17:15.200  INFO: Shell ID: "4488a6baf1714668d06ebbf2c98e41a5" Path ID "4488a6baf1714668d06ebbf2c98e41a5"
+2026-10-25 01:17:15.229  INFO: Saving logs to "C:/Users/Ermin/AppData/Local/quickshell/run/by-id/kzpro6gnt/log.qslog"
+2026-10-25 01:17:15.300  INFO quickshell.windows.blur: Blur behind panels is turned off by QS_WINDOWS_BLUR.
+2026-10-25 01:17:15.306  INFO quickshell.windows.blur: No layer rules file found (looked for D:/AiStack/caelestia-windows/windows/.local/build/shell-runs/shell-20261025-011714-768/defaults/windows/layerrules.json ), blur behind panels is off.
+2026-10-25 01:17:15.306  INFO caelestia.windows.focusguard: target-unavailable
+2026-10-25 01:17:15.306 DEBUG qml: CAELESTIA_SHELL_FOCUS target-unavailable
+2026-10-25 01:17:15.447 DEBUG quickshell.windows.desktops: Desktop list changed: 1 desktops
+2026-10-25 01:17:15.447 DEBUG quickshell.windows.desktops: Current desktop: 0
+2026-10-25 01:17:15.448 DEBUG quickshell.windows.panel: Placing qs::windows::WinPanelWindow(0x1c6fe0b6200) at QRect(-3760,80 900x620) on "DELL S2725QS"
+2026-10-25 01:17:15.450  INFO caelestia.windows.focusguard: idle
+2026-10-25 01:17:15.450 DEBUG qml: CAELESTIA_SHELL_FOCUS idle
+2026-10-25 01:17:15.462  INFO: Configuration Loaded
+2026-10-25 01:17:15.659 DEBUG quickshell.windows.startup: First panel frame presented
+2026-10-25 01:17:16.060 DEBUG quickshell.windows.startup: Startup settled, running 1 deferred tasks
+2026-10-25 01:17:16.060  INFO quickshell.windows.desktops: VirtualDesktopAccessor.dll not found next to the executable; desktop switching falls back to keyboard shortcuts.
+2026-10-25 01:17:16.860 DEBUG qml: CAELESTIA_SHELL_SCREEN {"index":1,"name":"DELL S2725QS","x":-3840,"y":0,"dpr":1.75}
+2026-10-25 01:17:16.860 DEBUG qml: CAELESTIA_SHELL_GEOMETRY DELL S2725QS -3840 0 900 620 1.75 4
+2026-10-25 01:17:16.860 DEBUG qml: CAELESTIA_SESSION_UNAVAILABLE: request consumed without executing a command.
+2026-10-25 01:17:18.061 DEBUG qml: CAELESTIA_SHELL_OPEN 40 155 102 400
+2026-10-25 01:17:18.126 DEBUG qml: CAELESTIA_SHELL_CAPTURE file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/shell-20261025-011714-768.png
+2026-10-25 01:17:19.262 DEBUG quickshell.windows.panel: Placing qs::windows::WinPanelWindow(0x1c6fe0b6200) at QRect(80,80 900x620) on "MAG321UX OLED"
+2026-10-25 01:17:20.462 DEBUG qml: CAELESTIA_SHELL_SCREEN {"index":0,"name":"MAG321UX OLED","x":0,"y":0,"dpr":1.5}
+2026-10-25 01:17:20.462 DEBUG qml: CAELESTIA_SHELL_GEOMETRY MAG321UX OLED 0 0 900 620 1.5 4
+2026-10-25 01:17:20.462 DEBUG qml: CAELESTIA_SESSION_UNAVAILABLE: request consumed without executing a command.
+2026-10-25 01:17:21.660 DEBUG qml: CAELESTIA_SHELL_OPEN 40 155 102 400
+2026-10-25 01:17:21.702 DEBUG qml: CAELESTIA_SHELL_CAPTURE file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/shell-20261025-011714-768-screen0.png
+2026-10-25 01:17:22.862 DEBUG quickshell.windows.panel: Placing qs::windows::WinPanelWindow(0x1c6fe0b6200) at QRect(-3760,80 900x620) on "DELL S2725QS"
+2026-10-25 01:17:24.062 DEBUG qml: CAELESTIA_SHELL_SCREEN {"index":1,"name":"DELL S2725QS","x":-3840,"y":0,"dpr":1.75}
+2026-10-25 01:17:24.062 DEBUG qml: CAELESTIA_SHELL_GEOMETRY DELL S2725QS -3840 0 900 620 1.75 4
+2026-10-25 01:17:24.062 DEBUG qml: CAELESTIA_SESSION_UNAVAILABLE: request consumed without executing a command.
+2026-10-25 01:17:25.262 DEBUG qml: CAELESTIA_SHELL_OPEN 40 155 102 400
+2026-10-25 01:17:25.319 DEBUG qml: CAELESTIA_SHELL_CAPTURE file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/shell-20261025-011714-768-screen1.png
+2026-10-25 01:17:26.462 DEBUG qml: CAELESTIA_SHELL_PASS 6.11.2
+

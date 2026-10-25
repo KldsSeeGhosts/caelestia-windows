@@ -1,0 +1,36 @@
+﻿2026-10-25 00:56:16.911  INFO: Launching config: "D:/AiStack/caelestia-windows/windows/.local/build/shell-runs/shell-20261025-005616-489/shell.qml"
+2026-10-25 00:56:16.911  INFO: Shell ID: "c9f7c59227373d78a8b00145ccdaf0a3" Path ID "c9f7c59227373d78a8b00145ccdaf0a3"
+2026-10-25 00:56:16.933  INFO: Saving logs to "C:/Users/Ermin/AppData/Local/quickshell/run/by-id/grfsp5gnt/log.qslog"
+2026-10-25 00:56:18.066  INFO quickshell.windows.blur: Blur behind panels is turned off by QS_WINDOWS_BLUR.
+2026-10-25 00:56:18.071  INFO quickshell.windows.blur: No layer rules file found (looked for D:/AiStack/caelestia-windows/windows/.local/build/shell-runs/shell-20261025-005616-489/defaults/windows/layerrules.json ), blur behind panels is off.
+2026-10-25 00:56:18.071  INFO caelestia.windows.focusguard: target-unavailable
+2026-10-25 00:56:18.071 DEBUG qml: CAELESTIA_SHELL_FOCUS target-unavailable
+2026-10-25 00:56:18.206 DEBUG quickshell.windows.desktops: Desktop list changed: 1 desktops
+2026-10-25 00:56:18.206 DEBUG quickshell.windows.desktops: Current desktop: 0
+2026-10-25 00:56:18.207 DEBUG quickshell.windows.panel: Placing qs::windows::WinPanelWindow(0x1ae341d2dd0) at QRect(80,80 900x620) on "MAG321UX OLED"
+2026-10-25 00:56:18.208  INFO caelestia.windows.focusguard: idle
+2026-10-25 00:56:18.208 DEBUG qml: CAELESTIA_SHELL_FOCUS idle
+2026-10-25 00:56:18.220  INFO: Configuration Loaded
+2026-10-25 00:56:18.421 DEBUG quickshell.windows.startup: First panel frame presented
+2026-10-25 00:56:18.822 DEBUG quickshell.windows.startup: Startup settled, running 1 deferred tasks
+2026-10-25 00:56:18.822  INFO quickshell.windows.desktops: VirtualDesktopAccessor.dll not found next to the executable; desktop switching falls back to keyboard shortcuts.
+2026-10-25 00:58:48.972  INFO caelestia.windows.focusguard: activation-already-foreground
+2026-10-25 00:58:48.972 DEBUG qml: CAELESTIA_SHELL_FOCUS activation-already-foreground
+2026-10-25 00:58:48.999 DEBUG quickshell.windows.focusgrab: Foreground moved to another process: 0x307ce
+2026-10-25 00:58:48.999 DEBUG quickshell.windows.focusgrab: Ignoring foreground change during the grab's grace period
+2026-10-25 00:59:02.390  INFO caelestia.windows.focusguard: restore-succeeded
+2026-10-25 00:59:02.391 DEBUG qml: CAELESTIA_SHELL_FOCUS restore-succeeded
+2026-10-25 01:00:46.135  INFO caelestia.windows.focusguard: activation-already-foreground
+2026-10-25 01:00:46.135 DEBUG qml: CAELESTIA_SHELL_FOCUS activation-already-foreground
+2026-10-25 01:00:46.174 DEBUG quickshell.windows.focusgrab: Foreground moved to another process: 0x800d2a
+2026-10-25 01:00:46.174 DEBUG quickshell.windows.focusgrab: Ignoring foreground change during the grab's grace period
+2026-10-25 01:01:03.695  INFO caelestia.windows.focusguard: restore-succeeded
+2026-10-25 01:01:03.695 DEBUG qml: CAELESTIA_SHELL_FOCUS restore-succeeded
+2026-10-25 01:01:26.737  INFO caelestia.windows.focusguard: activation-already-foreground
+2026-10-25 01:01:26.737 DEBUG qml: CAELESTIA_SHELL_FOCUS activation-already-foreground
+2026-10-25 01:01:26.777 DEBUG quickshell.windows.focusgrab: Foreground moved to another process: 0x800d2a
+2026-10-25 01:01:26.777 DEBUG quickshell.windows.focusgrab: Ignoring foreground change during the grab's grace period
+2026-10-25 01:01:28.914 DEBUG quickshell.windows.focusgrab: Button pressed at QPoint(700,600) on 0x800d2a
+2026-10-25 01:01:28.989  INFO caelestia.windows.focusguard: restore-skipped-foreground-changed
+2026-10-25 01:01:28.989 DEBUG qml: CAELESTIA_SHELL_FOCUS restore-skipped-foreground-changed
+

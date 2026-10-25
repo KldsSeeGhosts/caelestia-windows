@@ -1,0 +1,78 @@
+﻿{
+    "sourceRevision":  "f1d3a020e935dcf31b8217145d52d9dfcd5af62b",
+    "sourceDirty":  true,
+    "captureMethod":  "Manual observations transcribed from Cua Driver and exact-instance Quickshell IPC tool returns; see accompanying runtime logs, source comparison, and fixture events.",
+    "runtimePid":  20428,
+    "windowId":  984758,
+    "fixturePid":  2880,
+    "fixtureWindowId":  8391978,
+    "runtimeGeometry":  {
+                            "y":  120,
+                            "dpr":  1.5,
+                            "physicalHeight":  930,
+                            "physicalWidth":  1350,
+                            "x":  120
+                        },
+    "hover":  {
+                  "continuousMovementOpened":  true,
+                  "closedBarWidth":  10,
+                  "observedBarWidth":  60,
+                  "singleJumpInitiallyDidNotOpen":  true,
+                  "leaveClosed":  true,
+                  "needsInvestigation":  true
+              },
+    "escape":  {
+                   "passed":  true,
+                   "observedAt":  "2026-10-25T01:01:02-04:00",
+                   "afterForegroundPid":  2880,
+                   "focusStatus":  "restore-succeeded",
+                   "afterSession":  false,
+                   "beforeForegroundPid":  20428,
+                   "beforeSession":  true
+               },
+    "outsideClick":  {
+                         "scenario":  "outside-click-through",
+                         "observedAtUtc":  "2026-10-25T05:01:29.7635790Z",
+                         "open":  {
+                                      "screen":  "MAG321UX OLED",
+                                      "x":  0,
+                                      "y":  0,
+                                      "dpr":  1.5,
+                                      "width":  900,
+                                      "height":  620,
+                                      "barWidth":  60,
+                                      "barHovered":  true,
+                                      "session":  true,
+                                      "sessionVisible":  true,
+                                      "sessionOffset":  0,
+                                      "launcher":  false,
+                                      "focusStatus":  "activation-already-foreground"
+                                  },
+                         "closed":  {
+                                        "screen":  "MAG321UX OLED",
+                                        "x":  0,
+                                        "y":  0,
+                                        "dpr":  1.5,
+                                        "width":  900,
+                                        "height":  620,
+                                        "barWidth":  10,
+                                        "barHovered":  false,
+                                        "session":  false,
+                                        "sessionVisible":  false,
+                                        "sessionOffset":  1,
+                                        "launcher":  false,
+                                        "focusStatus":  "restore-skipped-foreground-changed"
+                                    },
+                         "targetPid":  2880,
+                         "beforeClicks":  1,
+                         "afterClicks":  2,
+                         "passed":  true
+                     },
+    "outsideClickDriverDiagnostic":  "foreground_unavailable: exact target HWND 0xf06b6 was not foreground after the click; actual foreground HWND 0x800d2a. The fixture click count and IPC state independently verified the intended pass-through/dismissal result.",
+    "limitations":  [
+                        "Background-posted Down was sent, but focused-button traversal was not independently verified.",
+                        "Only primary native 150% input tested.",
+                        "Early external-foreground reconciliation was reviewed statically but not exercised in a recorded scenario.",
+                        "Hover boundary timing and rapid crossing remain open."
+                    ]
+}

@@ -1,0 +1,32 @@
+Started isolated bar/session prototype (PID 24436); capturing logs until it exits.
+Staged source: D:\AiStack\caelestia-windows\windows\.local\build\shell-runs\shell-20261025-015204-477
+{
+    "passed":  null,
+    "smoke":  false,
+    "timedOut":  false,
+    "exitCode":  0,
+    "scaleFactor":  "native",
+    "screenIndex":  0,
+    "monitorCycle":  false,
+    "traceInput":  true,
+    "actualScreens":  [
+
+                      ],
+    "captures":  [
+
+                 ],
+    "elapsedMilliseconds":  36239,
+    "sourceRevision":  "24229c9af63cf92235b387c2997c3c50248540dc",
+    "sourceDirty":  false,
+    "backendRevision":  "84604c258da92a004b46d62a89718ae615840b98",
+    "buildRecordSha256":  "83297EB6089317223B2E1968B442D4C7B374AB56F6C3BB3CF8C63F5B7A542374",
+    "configSha256":  "E922F225252AE82CAF16EDF757E0D74FE38934100583A085B15BC5B58BC5B3C0",
+    "command":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\quickshell\\qs.exe",
+    "arguments":  "--no-color --log-times --path \"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\shell-20261025-015204-477\\shell.qml\"",
+    "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\shell-20261025-015204-477",
+    "profile":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-prototype-profile",
+    "sources":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\shell-20261025-015204-477.sources.json",
+    "screenshot":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\shell-20261025-015204-477.png",
+    "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\shell-20261025-015204-477.stdout.log",
+    "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\shell-20261025-015204-477.stderr.log"
+}

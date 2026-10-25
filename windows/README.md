@@ -1,8 +1,8 @@
 # Windows port
 
 The goal is Caelestia's original shell experience on Windows, retaining its QML
-components and motion while adapting platform services. The dependency is the
-Windows Quickshell fork used by ii-windows. Hyprland itself remains a Linux
+components and motion while adapting platform services. The dependency derives
+from the Windows Quickshell fork used by ii-windows. Hyprland remains a Linux
 Wayland compositor; Windows continues to own application composition through DWM.
 
 ## Current state
@@ -12,17 +12,20 @@ For the next development session, start with [HANDOFF.md](HANDOFF.md).
 - The full Caelestia source history is retained, based on the revision in
   [sources.lock.json](sources.lock.json).
 - The Windows Quickshell source is pinned as `windows/deps/quickshell`.
-- The pinned backend and eight portable Caelestia plugin modules build natively
-  with clang-cl and Qt 6.11.2. See [native build instructions](NATIVE-BUILD.md).
-- An isolated component probe renders the original bar clock, dashboard clock,
-  blob surfaces, rounded mask, and motion in an ordinary application window.
-  Automated rendering checks pass at device pixel ratios 1, 1.5, and 1.75.
-  [Recorded results and screenshots](validation/2026-10-25-component-probe/README.md)
-  document the tested sources and limits.
-- This is a component compatibility result. The full bar and drawer are not
-  ported, and the upstream `shell.qml` still starts Linux-specific services.
-- The probe opens its motion specimen by clicking the clock; Escape closes it.
-  Caelestia's original configurable hover interactions remain part of M1.
+- The pinned backend, eight portable Caelestia modules, and Windows-only
+  `Caelestia.Windows` focus helper build with Qt 6.11.2 and clang-cl 20.1.8.
+  See [native build instructions](NATIVE-BUILD.md).
+- The [bar/session prototype](shell-prototype/README.md) loads the original
+  `ContentWindow`, `StyledWindow`, `Regions`, `Interactions`, bar Clock/Power,
+  and session content/wrapper in a bounded native window. Original blob
+  surfaces, motion, and icons render through isolated adapters.
+- M1 is complete for the bounded prototype. The native hover handoff is fixed,
+  and 72 clean native input scenarios pass at 150%/175% with transparency on
+  and off. Rendering, both monitor-cycle origins and lifecycle checks pass.
+  [Final acceptance](validation/2026-10-25-m1-acceptance/README.md) records the
+  evidence, limits and rejected preliminary KSG Shell notification failure.
+- The earlier ordinary-window [component probe](prototype/README.md) remains
+  available, with [archived synthetic 100%, 150%, and 175% results](validation/2026-10-25-component-probe/README.md).
 - Inherited GitHub Actions are disabled at repository level during bootstrap.
   They are upstream Linux workflows, not validation of this port.
 
@@ -49,46 +52,48 @@ missing. Tool availability does not mean Caelestia's Windows adapters are ready.
 No runtime, SDK, compiler, installer, or authentication change is performed by
 these commands. The submodule command downloads source only.
 
-## Portable build and component probe
+## Portable build and isolated prototype
 
 `CAELESTIA_PORTABLE_UI=ON` builds `Caelestia`, `Settings`, `Components`, `Config`,
-`State`, `Blobs`, `I18n`, and `Shaders`. It excludes the calculator, Models,
-Services, Images, and Multimedia. The full Linux build remains the default on
-Linux. Windows defaults to plugins only and rejects installation of the
-unadapted upstream shell.
+`State`, `Blobs`, `I18n`, and `Shaders`, plus `Caelestia.Windows` on Windows.
+It excludes the calculator, Models, upstream Services, Images, and Multimedia.
+The isolated session service is an unavailable QML adapter that consumes
+actions without executing them. Linux retains its default module set.
+Windows rejects installation of the unadapted upstream shell.
 
 Windows adaptations include DLL export/import declarations for shared Qt
 metadata, generated forwarding headers that need no symlink privileges, and
 HLSL shader generation. Optional SPIR-V optimization is omitted on Windows
 because it requires a separate `spirv-opt` executable.
 
-The probe stages an explicit subset of original QML files without modifying
-them. Its fixed palette adapter bypasses wallpaper analysis and Hyprland rules.
-Only the body font is bundled; the clock icon is disabled. This does not validate
-the full font set, dynamic theme service, or any Windows system service.
+The native prototype stages an explicit original QML subset with a fixed
+palette and nonvisual unavailable adapters. Localized upstream changes use
+the window's direct `exclusionMode`, keep drag padding finite with no monitor,
+and gate input/gestures and keyboard focus. `interactionEnabled` defaults to
+true; the profile enables no-input smoke tests without changing normal Linux
+defaults. Bundled [Rubik and Material Symbols fonts](assets/README.md) include
+pinned provenance and licenses and are loaded only into the prototype process.
 
 Build and run through the scripts in [NATIVE-BUILD.md](NATIVE-BUILD.md). Output,
 configuration, state, and screenshots default to ignored `windows/.local/build`.
 The child process receives `CAELESTIA_CONFIG_DIR`, `CAELESTIA_STATE_DIR`, and
 `CAELESTIA_RUNTIME_DIR`; ordinary Linux runs retain their standard paths.
-Quickshell's own instance bookkeeping remains in its Windows application
-directory, with the probe identified by its separate configuration path.
+The native entry point skips Drawers/Exclusions and does not instantiate
+Taskbar or Tiling controllers. The active `ksg-shell` is left running.
+The backend still provides native support for its own window, maintains
+Quickshell instance bookkeeping, and runs shared stale-AppBar startup cleanup.
+Isolation does not mean zero global backend bookkeeping.
 
 ## Next compatibility work
 
-1. Audit the dependencies of `modules/bar/Bar.qml`, `modules/drawers/ContentWindow.qml`,
-   and `modules/drawers/Panels.qml`. Add platform boundaries for the services
-   they actually instantiate, preserving their existing QML interfaces.
-2. `components/containers/StyledWindow.qml` and the drawer module use
-   `Quickshell.Wayland`; the drawer also uses `Quickshell.Hyprland`. Check the
-   exact types, properties, and signals Caelestia needs against the pinned
-   backend. Matching import names do not prove API parity.
-3. Load the real bar and one drawer through an isolated entry point. Validate
-   pointer regions, keyboard focus, dismissal, and focus return, then the
-   remaining [M1 gates](ROADMAP.md#m1-actual-caelestia-compatibility-prototype).
-4. Audit Linux process calls and filesystem assumptions before enabling each
-   service. For example, `services/Brightness.qml` still invokes `ddcutil`,
-   `brightnessctl`, and `sh`.
+ERM-491's [dependency](audits/M1-DEPENDENCIES.md) and
+[backend API](audits/M1-BACKEND-API.md) audits are complete in `f1d3a020`.
+ERM-492's original bar/session loading and evidence archive are complete.
+ERM-493/494 are complete with clean native input and final acceptance evidence.
+The backend fork fixes mask handoff without replacing the original interaction
+paths. M2-M4 have not started; dynamic themes, hardware-denial handling and
+Windows services are not validated. Plan the next Windows service boundary
+from the completed dependency/API audits.
 
 ## Toolchain direction
 
@@ -106,6 +111,15 @@ as a Windows bootstrap step. The first packaging milestone comes after the
 isolated prototype passes.
 
 ## Dependency maintenance
+
+The current backend pin is in the private
+[Caelestia backend fork](https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/tree/84604c258da92a004b46d62a89718ae615840b98).
+It retains the audited `nunreasonable/quickshell` baseline `e8ae0ef1` and adds
+one native mask handoff change: reconcile Qt hover when `WS_EX_TRANSPARENT`
+changes, because the move that triggered the hook can already have reached the
+underlying window. The patch queues only local Qt enter/leave notifications, avoids
+enter reconciliation while mouse buttons are held or another window covers
+the point, and injects no system input or focus changes.
 
 Keep the source manifest and submodule revision in agreement. Review backend
 updates before moving the gitlink; keep backend patches in a dedicated fork

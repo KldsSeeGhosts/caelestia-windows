@@ -1,0 +1,35 @@
+﻿{
+    "passed":  true,
+    "smoke":  true,
+    "timedOut":  false,
+    "exitCode":  0,
+    "scaleFactor":  "1.5",
+    "screenIndex":  0,
+    "monitorCycle":  false,
+    "actualScreens":  [
+                          {
+                              "index":  0,
+                              "name":  "MAG321UX OLED",
+                              "x":  0,
+                              "y":  0,
+                              "dpr":  1.5
+                          }
+                      ],
+    "captures":  [
+                     "file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/shell-20261025-010712-044.png"
+                 ],
+    "elapsedMilliseconds":  4118,
+    "sourceRevision":  "b9f07e34b74ed200aa262bc1e41d9bf54467d38a",
+    "sourceDirty":  false,
+    "backendRevision":  "e8ae0ef124b1c14b547c80d00422d2ffbd423d81",
+    "buildRecordSha256":  "75BCD336772CFB4AEC503ACA2B6EC65E4CC7D5E03C11D9B969F2A498D5520F0B",
+    "configSha256":  "B22AE86858A53E750715BB15F85594144CD6289545E911795B64F21F99C7D339",
+    "command":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\quickshell\\qs.exe",
+    "arguments":  "--no-color --log-times --path \"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\shell-20261025-010712-044\\shell.qml\"",
+    "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\shell-20261025-010712-044",
+    "profile":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-prototype-profile",
+    "sources":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\shell-20261025-010712-044.sources.json",
+    "screenshot":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\shell-20261025-010712-044.png",
+    "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\shell-20261025-010712-044.stdout.log",
+    "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\shell-20261025-010712-044.stderr.log"
+}
