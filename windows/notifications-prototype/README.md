@@ -180,7 +180,11 @@ screenshots.
   those belong to ERM-503.
 - The pinned backend does not publish claim ownership. Native runs report
   `unknown`; the explicit `contended` state is fixture-only until a backend
-  revision exposes it. A "not delivered locally" probe is a hint, not proof.
+  revision exposes it. A "not delivered locally" probe is a hint, not proof. If
+  another Quickshell notification owner holds the session mutex, the bounded
+  smoke's single `notifySend` is forwarded by the backend instead of arriving
+  locally; the run fails with the competing-owner hint rather than retrying or
+  fighting the claim.
 - The image-cache writer is implemented but the native smoke posts no image;
   only path validation and refusal are recorded natively.
 - The sidebar dock is staged only as a notification list; its empty-state

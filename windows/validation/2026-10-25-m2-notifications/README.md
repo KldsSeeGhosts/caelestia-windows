@@ -169,7 +169,9 @@ Windows notification removal.
   is not published to QML. Native ownership is therefore `unknown`; the
   `contended` and `unconfirmed` states are fixture-covered and ready for a
   backend revision that exposes the claim result. A missing local delivery is
-  reported as a likely competing owner, not proven ownership.
+  reported as a likely competing owner, not proven ownership. If another
+  Quickshell owner holds the session mutex, the single smoke send is forwarded
+  by the backend and the run fails with that hint instead of retrying.
 - The image-cache writer is implemented (hidden `PanelWindow` + `CUtils.saveItem`)
   but native evidence posts no image. Only the confined path calculation,
   acceptance and refusal are recorded.
