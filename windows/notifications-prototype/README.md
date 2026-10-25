@@ -106,7 +106,11 @@ A notification image is used only when
 `NotificationsService.validateImageSource()` accepts it. The policy is purely
 lexical (no filesystem access) and accepts exactly two forms:
 
-- an `image://` provider URL (theme icons);
+- an `image://icon/<theme-name>` provider URL, where the name matches
+  `^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$`: a bare theme name with no path, query
+  (`?fallback=`/`?path=`), fragment, authority or percent escape. Every other
+  provider is rejected because `QIcon::fromTheme` loads absolute paths and
+  honours a fallback name;
 - a file already inside the staged shell assets directory
   (`Quickshell.shellPath("assets")`), after a local path is validated.
 
@@ -117,12 +121,24 @@ letter), is relative or drive-relative, contains a `.`/`..` component, has a
 component ending in `.` or a space, or contains `~` (an 8.3 short-name alias).
 The remaining path must be a strict, case-insensitive child of the staged assets
 directory. The URL handed to the original card is rebuilt from the validated
-path as `file:///C:/...`; the raw input is never used.
+path as `file:///C:/...` with each path segment percent-encoded, so `#` and `?`
+in a staged file name cannot become a fragment or query; the raw input is never
+used. The staged assets root comes from trusted staging, not notification input,
+and the validator is lexical (it does not detect reparse points).
+
+App icons are validated by the same rule (a theme name or a staged asset path);
+anything else becomes `""`, so the original fallback icon renders. Notification
+bodies are sanitized before the original Markdown-rendering popup/sidebar sees
+them: Markdown inline and reference images are replaced with their alt text,
+reference definition lines are removed, and `<img>`, `<picture>`, `<source>`,
+`<svg>`, `<image>`, `<object>`, `<embed>` and `<iframe>` tags are removed.
+Ordinary text and links are kept. Live bodies, body updates and restored history
+all go through the filter.
 
 There is no image cache: no notification image is copied, written, listed,
 pruned or deleted by this slice. Rejected or unsupported sources are cleared to
 `""`, so the original card shows its existing fallback icon. Persisted history
-images are re-validated on restore.
+images, app icons and bodies are re-validated on restore.
 
 App-supplied notification images outside the staged assets directory therefore
 show the fallback icon by design. That is the intentional trade for removing the

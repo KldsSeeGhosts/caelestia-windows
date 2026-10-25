@@ -13,8 +13,8 @@ import Caelestia.I18n
 // loader, the isolated-profile FileView and the local send helper. It
 // intentionally imports no HOME/XDG path object and never constructs the native
 // server while disabled. No notification image is copied, written, listed or
-// deleted: only image:// provider icons and files already inside the staged
-// shell assets directory are used.
+// deleted: only allowlisted image://icon theme names and files already inside
+// the staged shell assets directory are used.
 Singleton {
     id: root
 
