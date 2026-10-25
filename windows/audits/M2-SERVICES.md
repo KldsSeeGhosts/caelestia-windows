@@ -457,7 +457,7 @@ root to deduplicate against Linear, each enabled and validated independently:
    denied access, Windows dismissal and native image-cache writing remain
    outside this slice (ERM-503).
    **Progress (ERM-503):** the dependent mirroring slice is implemented on
-   `windows/notification-mirroring`. Mirroring stays off unless
+   the `t3/notification-mirroring` worktree branch. Mirroring stays off unless
    `CAELESTIA_WINDOWS_NOTIFICATION_MIRROR=1`; the service exposes
    Unknown/Unspecified/Allowed/Denied/Unavailable and requests access only from
    one explicit button in the original notification center, only while
