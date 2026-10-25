@@ -25,6 +25,8 @@ param(
     [switch]$Session,
     [ValidateSet('Disabled', 'Observe')][string]$SessionMode = 'Disabled',
     [switch]$SessionActions,
+    [switch]$Notifications,
+    [ValidateSet('Disabled', 'Local')][string]$NotificationsMode = 'Disabled',
     [ValidateSet('native', '1', '1.5', '1.75')][string]$ScaleFactor = 'native',
     [ValidateRange(0, 15)][int]$ScreenIndex = 0
 )
@@ -47,6 +49,8 @@ $slices = [ordered]@{
     apps      = @{ On = $Apps; Mode = $AppsMode; Observe = 'CAELESTIA_WINDOWS_APPS'; Controls = 'CAELESTIA_WINDOWS_APP_LAUNCH'; ControlMode = 'Interactive' }
     tray      = @{ On = $Tray; Mode = $TrayMode; Observe = 'CAELESTIA_WINDOWS_TRAY'; Controls = 'CAELESTIA_WINDOWS_TRAY_ACTIVATION'; ControlMode = 'Interactive' }
     session   = @{ On = $Session; Mode = $SessionMode; Observe = 'CAELESTIA_WINDOWS_SESSION'; Controls = 'CAELESTIA_WINDOWS_SESSION_ACTIONS'; ControlSwitch = $SessionActions; Stage = 'shell'; Marker = 'CAELESTIA_SHELL' }
+    # Local delivery only: mirroring and system access have their own review.
+    notifications = @{ On = $Notifications; Mode = $NotificationsMode; Observe = 'CAELESTIA_WINDOWS_NOTIFICATIONS' }
 }
 $selected = @($slices.Keys | Where-Object { $slices[$_].On })
 if ($selected.Count -gt 1) { throw 'Select one prototype entry point per run.' }
@@ -252,7 +256,7 @@ $result = [ordered]@{
     bluetoothMode = $BluetoothMode; appsMode = $AppsMode; appsSearchQuery = $(if ($Apps) { $AppsSearchQuery } else { '' })
     trayMode = $TrayMode; trayFixture = $TrayFixture.IsPresent
     trayHookMode = $(if ($Tray) { $info.EnvironmentVariables['QS_WINDOWS_TRAY_HOOK'] } else { $null })
-    sessionMode = $SessionMode; sessionActions = $SessionActions.IsPresent
+    sessionMode = $SessionMode; sessionActions = $SessionActions.IsPresent; notificationsMode = $NotificationsMode
     timedOut = $timedOut; exitCode = $process.ExitCode
     scaleFactor = $ScaleFactor; screenIndex = $ScreenIndex
     monitorCycle = $MonitorCycle.IsPresent

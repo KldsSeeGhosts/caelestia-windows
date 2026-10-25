@@ -1,0 +1,161 @@
+﻿{
+    "passed":  true,
+    "timedOut":  false,
+    "exitCode":  0,
+    "fixture":  {
+                    "assertions":  218
+                },
+    "nativeImports":  [
+
+                      ],
+    "servicePathFallbacks":  [
+
+                             ],
+    "recordPathFallbacks":  [
+
+                            ],
+    "facadePathFallbacks":  [
+
+                            ],
+    "serviceImageCacheReferences":  [
+
+                                    ],
+    "cacheCodeReferences":  [
+
+                            ],
+    "cacheWriterExists":  false,
+    "mirrorSetting":  [
+                          {
+                              "IgnoreCase":  true,
+                              "LineNumber":  44,
+                              "Line":  "        mirrorSystemNotifications: false",
+                              "Filename":  "NativeNotificationBackend.qml",
+                              "Path":  "C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-4e2ea6fd\\windows\\services\\notifications\\NativeNotificationBackend.qml",
+                              "Pattern":  "mirrorSystemNotifications:\\s*false",
+                              "Context":  null,
+                              "Matches":  [
+                                              {
+                                                  "Groups":  [
+                                                                 {
+                                                                     "Groups":  [
+                                                                                    {
+                                                                                        "Groups":  "mirrorSystemNotifications: false",
+                                                                                        "Success":  true,
+                                                                                        "Name":  "0",
+                                                                                        "Captures":  "mirrorSystemNotifications: false",
+                                                                                        "Index":  8,
+                                                                                        "Length":  32,
+                                                                                        "Value":  "mirrorSystemNotifications: false"
+                                                                                    }
+                                                                                ],
+                                                                     "Success":  true,
+                                                                     "Name":  "0",
+                                                                     "Captures":  [
+                                                                                      {
+                                                                                          "Groups":  "mirrorSystemNotifications: false",
+                                                                                          "Success":  true,
+                                                                                          "Name":  "0",
+                                                                                          "Captures":  "mirrorSystemNotifications: false",
+                                                                                          "Index":  8,
+                                                                                          "Length":  32,
+                                                                                          "Value":  "mirrorSystemNotifications: false"
+                                                                                      }
+                                                                                  ],
+                                                                     "Index":  8,
+                                                                     "Length":  32,
+                                                                     "Value":  "mirrorSystemNotifications: false"
+                                                                 }
+                                                             ],
+                                                  "Success":  true,
+                                                  "Name":  "0",
+                                                  "Captures":  [
+                                                                   {
+                                                                       "Groups":  [
+                                                                                      {
+                                                                                          "Groups":  "mirrorSystemNotifications: false",
+                                                                                          "Success":  true,
+                                                                                          "Name":  "0",
+                                                                                          "Captures":  "mirrorSystemNotifications: false",
+                                                                                          "Index":  8,
+                                                                                          "Length":  32,
+                                                                                          "Value":  "mirrorSystemNotifications: false"
+                                                                                      }
+                                                                                  ],
+                                                                       "Success":  true,
+                                                                       "Name":  "0",
+                                                                       "Captures":  [
+                                                                                        {
+                                                                                            "Groups":  "mirrorSystemNotifications: false",
+                                                                                            "Success":  true,
+                                                                                            "Name":  "0",
+                                                                                            "Captures":  "mirrorSystemNotifications: false",
+                                                                                            "Index":  8,
+                                                                                            "Length":  32,
+                                                                                            "Value":  "mirrorSystemNotifications: false"
+                                                                                        }
+                                                                                    ],
+                                                                       "Index":  8,
+                                                                       "Length":  32,
+                                                                       "Value":  "mirrorSystemNotifications: false"
+                                                                   }
+                                                               ],
+                                                  "Index":  8,
+                                                  "Length":  32,
+                                                  "Value":  "mirrorSystemNotifications: false"
+                                              }
+                                          ]
+                          }
+                      ],
+    "mirrorEnabled":  [
+
+                      ],
+    "accessRequests":  [
+
+                       ],
+    "hashMismatch":  [
+
+                     ],
+    "diagnostics":  [
+
+                    ],
+    "staticChecks":  {
+                         "serviceImportsNoQuickshell":  true,
+                         "serviceImportsNoPaths":  true,
+                         "recordIsPure":  true,
+                         "recordNeverConstructsServer":  true,
+                         "facadeImportsNoPaths":  true,
+                         "serviceUsesNoUpstreamImageCache":  true,
+                         "noNotificationImageCacheCode":  true,
+                         "imageCacheWriterRemoved":  true,
+                         "serviceNeverConstructsServer":  true,
+                         "wrapperMirroringFalseAtConstruction":  true,
+                         "wrapperNeverEnablesMirroring":  true,
+                         "noNotificationAccessRequest":  true
+                     },
+    "sourceRevision":  "f14d77ce8dea30c70724acd40b58057d4bcb8410",
+    "sourceDirty":  false,
+    "qtVersion":  "6.11.2",
+    "runnerSha256":  "24994D434962751713F0C8932B356104B0849572B95765DAD50C13DA6BE3FA20",
+    "command":  "C:\\Users\\Ermin\\AppData\\Local\\caelestia-dev\\Qt\\6.11.2\\msvc2022_64\\bin\\qml.exe",
+    "arguments":  "\"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\notification-tests\\notifications-fixture-20261025-191533-443\\NotificationsServiceTest.qml\"",
+    "sources":  [
+                    {
+                        "source":  "windows/services/notifications/NotificationsService.qml",
+                        "sourceSha256":  "03EBA603919002B0EC53357DA7D37C06A7517D08B0E969516C4D36C0C6E67048",
+                        "stagedSha256":  "03EBA603919002B0EC53357DA7D37C06A7517D08B0E969516C4D36C0C6E67048"
+                    },
+                    {
+                        "source":  "windows/services/notifications/NotifData.qml",
+                        "sourceSha256":  "1C7FCED5555587E1B5BA869768323C43E3076FE2F1BF6EC47B8975B5EC6D6943",
+                        "stagedSha256":  "1C7FCED5555587E1B5BA869768323C43E3076FE2F1BF6EC47B8975B5EC6D6943"
+                    },
+                    {
+                        "source":  "windows/services/notifications/NotificationsServiceTest.qml",
+                        "sourceSha256":  "4C95C672E42A859EFC580E5C0F0F7EC74AF0822825F92D5C8C45EBAACCB788CA",
+                        "stagedSha256":  "4C95C672E42A859EFC580E5C0F0F7EC74AF0822825F92D5C8C45EBAACCB788CA"
+                    }
+                ],
+    "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\notification-tests\\notifications-fixture-20261025-191533-443",
+    "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\notifications-fixture-20261025-191533-443.stdout.log",
+    "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\notifications-fixture-20261025-191533-443.stderr.log"
+}

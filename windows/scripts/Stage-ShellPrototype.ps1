@@ -5,7 +5,7 @@ param(
     # 'shell' is the M1 bar/session host. Every other value names one bounded
     # slice under windows/<name>-prototype with its own shell.qml and
     # sources.json manifest. One slice per stage.
-    [ValidateSet('shell', 'audio', 'battery', 'media', 'network', 'bluetooth', 'apps', 'tray')]
+    [ValidateSet('shell', 'audio', 'battery', 'media', 'network', 'bluetooth', 'apps', 'tray', 'notifications')]
     [string]$Prototype = 'shell'
 )
 
