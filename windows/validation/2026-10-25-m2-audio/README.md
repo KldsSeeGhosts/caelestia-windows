@@ -6,7 +6,8 @@ backend capability/error patch are implemented. This archive validates native
 mutation guards and deterministic injected failures. It does not complete M2.
 
 [Root PR #4](https://github.com/KldsSeeGhosts/caelestia-windows/pull/4) and
-backend PR #1 are open for review. The backend's inherited GitHub lint/build
+backend PR #1 were opened for review with this archive; their linked state
+records subsequent merges. The backend's inherited GitHub lint/build
 jobs did not start: their check annotations report an account payment or
 spending-limit block. They have no job steps/logs to assess. This archive
 provides local native validation, not remote CI or Linux certification.
