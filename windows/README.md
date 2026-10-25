@@ -15,6 +15,8 @@ Wayland compositor; Windows continues to own application composition through DWM
 - An isolated component probe renders the original bar clock, dashboard clock,
   blob surfaces, rounded mask, and motion in an ordinary application window.
   Automated rendering checks pass at device pixel ratios 1, 1.5, and 1.75.
+  [Recorded results and screenshots](validation/2026-10-25-component-probe/README.md)
+  document the tested sources and limits.
 - This is a component compatibility result. The full bar and drawer are not
   ported, and the upstream `shell.qml` still starts Linux-specific services.
 - Inherited GitHub Actions are disabled at repository level during bootstrap.

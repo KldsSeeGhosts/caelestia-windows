@@ -27,6 +27,7 @@ Status: portable plugin compilation and a component probe pass. The probe uses
 the original clock widgets, graphics plugins, and animations with a fixed
 palette adapter in an ordinary window. It does not load `Bar.qml` or
 `ContentWindow.qml`, and M1 remains open.
+See the [component validation record](validation/2026-10-25-component-probe/README.md).
 
 Gate:
 

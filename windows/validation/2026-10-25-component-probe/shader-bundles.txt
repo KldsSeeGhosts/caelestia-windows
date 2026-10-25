@@ -1,0 +1,18 @@
+﻿qsb.exe --dump Blobs/.qsb/shaders/blob.frag.qsb
+  Shader 0: SPIR-V 100 [Standard]
+  Shader 1: GLSL 300 es [Standard]
+  Shader 2: GLSL 330 [Standard]
+  Shader 3: HLSL 50 [Standard]
+SHA256 FB64B23A43E8F29D086EA82A584539959CC5C341F54085105D907166D5327FDB
+qsb.exe --dump Components/.qsb/shaders/roundedmask.frag.qsb
+  Shader 0: SPIR-V 100 [Standard]
+  Shader 1: GLSL 300 es [Standard]
+  Shader 2: GLSL 330 [Standard]
+  Shader 3: HLSL 50 [Standard]
+SHA256 2CE2E63F45D9546EEF2313D9700D7A0BE3D1512AEB5C0B0BDF8BD4B22B17724D
+qsb.exe --dump Shaders/.qsb/crossfade.frag.qsb
+  Shader 0: SPIR-V 100 [Standard]
+  Shader 1: GLSL 300 es [Standard]
+  Shader 2: GLSL 330 [Standard]
+  Shader 3: HLSL 50 [Standard]
+SHA256 CE6FD6EF4E7A4230A6B6BE7CEAC0D5AA4A37169BDCDC93C9973F973E67F0A9AC

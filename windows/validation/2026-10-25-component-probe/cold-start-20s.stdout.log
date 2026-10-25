@@ -1,0 +1,6 @@
+﻿  INFO: Launching config: "D:/AiStack/caelestia-windows/windows/.local/build/probe/shell.qml"
+  INFO: Shell ID: "92b470586980039e23b0e45bff14a5ee" Path ID "92b470586980039e23b0e45bff14a5ee"
+  INFO: Saving logs to "C:/Users/Ermin/AppData/Local/quickshell/run/by-id/cgn8o3gnt/log.qslog"
+ DEBUG qml: CAELESTIA_PROBE_READY 2.5.0 false qrc:/shaders/crossfade.frag.qsb
+  INFO: Configuration Loaded
+ DEBUG qml: CAELESTIA_PROBE_GEOMETRY 740 460 1 4

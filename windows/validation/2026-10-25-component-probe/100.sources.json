@@ -1,0 +1,86 @@
+﻿[
+    {
+        "source":  "windows/prototype/shell.qml",
+        "staged":  "shell.qml",
+        "sourceSha256":  "257F6BCF196A4BE2E676C380669B007847F89A28F5EE2FC63B2CF32CC8798877",
+        "stagedSha256":  "83BD37724346ACC78D859AF58CDCF19637C58DB6A82B351CDCE8A9D749DA50D8"
+    },
+    {
+        "source":  "windows/prototype/services/Colours.qml",
+        "staged":  "services/Colours.qml",
+        "sourceSha256":  "4DE6A16BF3E111437C9DAE2B32E7DFB7DB391E4FA695244A3A8750D79D4C3633",
+        "stagedSha256":  "4DE6A16BF3E111437C9DAE2B32E7DFB7DB391E4FA695244A3A8750D79D4C3633"
+    },
+    {
+        "source":  "services/Time.qml",
+        "staged":  "services/Time.qml",
+        "sourceSha256":  "2CC9E3184A18B04987F60EEC4C4E5A001516A4181E70705AF9CD16F386EF85D7",
+        "stagedSha256":  "2CC9E3184A18B04987F60EEC4C4E5A001516A4181E70705AF9CD16F386EF85D7"
+    },
+    {
+        "source":  "components/Anim.qml",
+        "staged":  "components/Anim.qml",
+        "sourceSha256":  "E5501B5D9006AA0DF8F5A367B2C48B6917C00A12B53D535ED0BE00306D5C017F",
+        "stagedSha256":  "E5501B5D9006AA0DF8F5A367B2C48B6917C00A12B53D535ED0BE00306D5C017F"
+    },
+    {
+        "source":  "components/CAnim.qml",
+        "staged":  "components/CAnim.qml",
+        "sourceSha256":  "ADDD601B2DB47648585E85685C88066065F865C8C17C8BFADF3AE8BD5846ABE0",
+        "stagedSha256":  "ADDD601B2DB47648585E85685C88066065F865C8C17C8BFADF3AE8BD5846ABE0"
+    },
+    {
+        "source":  "components/StyledRect.qml",
+        "staged":  "components/StyledRect.qml",
+        "sourceSha256":  "2555D0DC4A18EC897238CC1594FBC4AB32522AD1AC09679337E2B5DE25500F2D",
+        "stagedSha256":  "2555D0DC4A18EC897238CC1594FBC4AB32522AD1AC09679337E2B5DE25500F2D"
+    },
+    {
+        "source":  "components/StyledText.qml",
+        "staged":  "components/StyledText.qml",
+        "sourceSha256":  "24D99B074634214D7250B9EA11ECB9E13AEAEFC0B6534E6022D4EE13256B37DB",
+        "stagedSha256":  "24D99B074634214D7250B9EA11ECB9E13AEAEFC0B6534E6022D4EE13256B37DB"
+    },
+    {
+        "source":  "components/MaterialIcon.qml",
+        "staged":  "components/MaterialIcon.qml",
+        "sourceSha256":  "5C13BE52AD907CF648B7655E35DE877A66B30520B72F6BAF33CBC724D60BD193",
+        "stagedSha256":  "5C13BE52AD907CF648B7655E35DE877A66B30520B72F6BAF33CBC724D60BD193"
+    },
+    {
+        "source":  "components/ClipRect.qml",
+        "staged":  "components/ClipRect.qml",
+        "sourceSha256":  "F118427882C490A0FDB0740715FFBC62F13B574BAD96D6BC80B29FE931C6CC03",
+        "stagedSha256":  "F118427882C490A0FDB0740715FFBC62F13B574BAD96D6BC80B29FE931C6CC03"
+    },
+    {
+        "source":  "LICENSE",
+        "staged":  "LICENSE",
+        "sourceSha256":  "230184F60BAE2FEAF244F10A8BAC053C8FF33A183BCC365B4D8B876D2B7F4809",
+        "stagedSha256":  "230184F60BAE2FEAF244F10A8BAC053C8FF33A183BCC365B4D8B876D2B7F4809"
+    },
+    {
+        "source":  "modules/bar/components/Clock.qml",
+        "staged":  "modules/bar/components/Clock.qml",
+        "sourceSha256":  "5CE72B2E7BA06760221D873DF780305E138B414768E696D04119E660FFF3F96B",
+        "stagedSha256":  "5CE72B2E7BA06760221D873DF780305E138B414768E696D04119E660FFF3F96B"
+    },
+    {
+        "source":  "modules/dashboard/dash/DateTime.qml",
+        "staged":  "modules/dashboard/dash/DateTime.qml",
+        "sourceSha256":  "99E25AC97663A3F355586EA64EE73A8283AB94DE97A503CB59FD4A2E69547441",
+        "stagedSha256":  "99E25AC97663A3F355586EA64EE73A8283AB94DE97A503CB59FD4A2E69547441"
+    },
+    {
+        "source":  "assets/google-sans-flex/GoogleSansFlex-VariableFont_GRAD,ROND,opsz,slnt,wdth,wght.ttf",
+        "staged":  "assets/google-sans-flex/GoogleSansFlex-VariableFont_GRAD,ROND,opsz,slnt,wdth,wght.ttf",
+        "sourceSha256":  "2510A8B7A24BEB1FE8163E9A49813CCFE96B5453444B9443D42665CA4FA320C9",
+        "stagedSha256":  "2510A8B7A24BEB1FE8163E9A49813CCFE96B5453444B9443D42665CA4FA320C9"
+    },
+    {
+        "source":  "assets/google-sans-flex/LICENSE",
+        "staged":  "assets/google-sans-flex/LICENSE",
+        "sourceSha256":  "425676CE436CEB37CDCD172E0BD4946F24C9EB3ED245B22971E60F5993D95723",
+        "stagedSha256":  "425676CE436CEB37CDCD172E0BD4946F24C9EB3ED245B22971E60F5993D95723"
+    }
+]
