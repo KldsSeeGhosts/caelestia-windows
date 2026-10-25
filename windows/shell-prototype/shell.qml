@@ -78,13 +78,32 @@ ShellRoot {
         function state(): string {
             const panels = ShellState.componentsFor(win.screen)?.panels;
             const content = panels?.session.children.find(c => c.item)?.item;
+            const power = CUtils.findChild(win.contentItem, "taskbarPowerButton");
+            const center = item => {
+                if (!item)
+                    return null;
+                const p = item.mapToItem(win.contentItem, item.width / 2, item.height / 2);
+                return { x: p.x, y: p.y };
+            };
             return JSON.stringify({
                 screen: win.screen?.name, x: win.screen?.x, y: win.screen?.y,
                 dpr: win.devicePixelRatio, width: win.width, height: win.height,
                 barWidth: win.bar.implicitWidth, barHovered: win.bar.isHovered,
+                barPinned: win.screenState?.bar,
+                containsMouse: win.interactionWrapper.containsMouse,
+                mouseX: win.interactionWrapper.mouseX, mouseY: win.interactionWrapper.mouseY,
+                pressed: win.interactionWrapper.pressed,
                 session: win.screenState?.session, sessionVisible: panels?.session.visible,
                 sessionOffset: panels?.session.offsetScale,
                 sessionFocusedIcon: content?.children.find(c => c.activeFocus)?.icon ?? "",
+                powerCenter: center(power),
+                sessionButtons: content?.children.filter(c => c.icon).map(c => ({
+                    icon: c.icon, center: center(c), focused: c.activeFocus
+                })) ?? [],
+                sessionDragY: panels ? panels.sessionWrapper.y + win.borderThickness + panels.sessionWrapper.height / 2 : 0,
+                barDragThreshold: win.contentItem.Config.bar.dragThreshold,
+                sessionDragThreshold: win.contentItem.Config.session.dragThreshold,
+                sessionVimKeybinds: win.contentItem.Config.session.vimKeybinds,
                 launcher: win.screenState?.launcher, focusStatus: focusGuard.status
             });
         }
@@ -92,6 +111,21 @@ ShellRoot {
             CUtils.saveItem(win.contentItem, Qt.resolvedUrl(Quickshell.env("CAELESTIA_SHELL_SCREENSHOT")));
         }
         function quit(): void { Qt.quit(); }
+        function moveToScreen(index: int): bool {
+            if (index < 0 || index >= Quickshell.screens.length)
+                return false;
+            root.screenIndex = index;
+            return true;
+        }
+    }
+
+    Connections {
+        target: win.interactionWrapper
+        enabled: Quickshell.env("CAELESTIA_SHELL_TRACE_INPUT") === "1"
+        function onContainsMouseChanged(): void {
+            console.log("CAELESTIA_SHELL_POINTER", win.interactionWrapper.containsMouse,
+                win.interactionWrapper.mouseX, win.interactionWrapper.mouseY);
+        }
     }
 
     Component.onCompleted: {

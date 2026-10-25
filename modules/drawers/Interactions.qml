@@ -65,6 +65,12 @@ CustomMouseArea {
     hoverEnabled: true
 
     onPressed: event => dragStart = Qt.point(event.x, event.y)
+    // Re-entry at the same coordinates may carry an enter without a new move.
+    onEntered: {
+        if (!fullscreen && !popouts.isDetached && !screenState.bar
+                && Config.bar.showOnHover && mouseX < bar.clampedWidth)
+            bar.isHovered = true;
+    }
     onContainsMouseChanged: {
         if (!containsMouse) {
             // Only hide if not activated by shortcut

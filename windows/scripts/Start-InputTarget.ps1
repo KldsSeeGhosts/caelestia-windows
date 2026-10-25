@@ -112,7 +112,7 @@ namespace Caelestia.InputTest {
                 Record("deactivate", null);
             };
             Shown += delegate { input.Focus(); Record("shown", null); };
-            FormClosed += delegate { Record("closed", null); };
+            FormClosed += delegate { Record("closed", null); Application.ExitThread(); };
             UpdateStatus();
             Record("created", new Dictionary<string, object> { { "logPath", logPath } });
         }
@@ -189,3 +189,4 @@ if ([Threading.Thread]::CurrentThread.ApartmentState -ne [Threading.ApartmentSta
 }
 Write-Output "Input target PID: $PID; JSONL: $LogPath"
 [Caelestia.InputTest.Target]::Run($LogPath, $ClientWidth, $ClientHeight)
+Write-Output 'Input target message loop exited.'

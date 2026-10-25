@@ -213,6 +213,26 @@ screen-sized host. Keep the mask established before first visibility.
 
 ## Focus, dismissal and return
 
+2026-10-25 input-gate addendum: the current pin `84604c25` in
+`KldsSeeGhosts/caelestia-quickshell-windows` retains this audited baseline and
+changes only `src/windows/input_mask.cpp`. Native input reproduced missed
+stationary re-entry after rapid mask crossings. The hook's GUI-thread
+evaluation runs after Windows can route the triggering movement to the
+underlying application. The patch queues a deferred Qt enter on transparent
+to interactive transition, guarded by the unchanged physical pointer,
+native surface identity, current hit window, transparency and mouse buttons.
+It delivers leave when routing becomes transparent. It sends no system input,
+clicks, focus requests or extra hook, and changes no tiling policy. Original
+Interactions also opens the configured hover bar on enter at unchanged
+coordinates. The native input runner covers the resulting behavior at both
+monitor DPIs. Earlier archived results continue to describe their own pins.
+
+Qt's relevant implementation is
+[processMouseEvent](https://github.com/qt/qtbase/blob/v6.11.2/src/gui/kernel/qguiapplication.cpp)
+(filters unchanged-position moves) and
+[QQuickDeliveryAgent](https://github.com/qt/qtdeclarative/blob/v6.11.2/src/quick/util/qquickdeliveryagent.cpp)
+(enter delivers hover; leave clears it).
+
 `keyboardFocus.None` sets `Qt::WindowDoesNotAcceptFocus` when the backing
 window is connected (`src/windows/panel_window.cpp:501-505`).
 `focusable: true` maps to OnDemand (`:663-668`). Updating to None can be

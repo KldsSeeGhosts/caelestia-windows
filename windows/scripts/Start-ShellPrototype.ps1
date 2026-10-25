@@ -5,6 +5,7 @@ param(
     [switch]$Smoke,
     [switch]$Wait,
     [switch]$MonitorCycle,
+    [switch]$TraceInput,
     [ValidateSet('native', '1', '1.5', '1.75')][string]$ScaleFactor = 'native',
     [ValidateRange(0, 15)][int]$ScreenIndex = 0
 )
@@ -49,6 +50,7 @@ $config = Join-Path $profileRoot 'config\shell.json'
   },
   "session": {
     "enabled": true,
+    "vimKeybinds": true,
     "commands": {"logout":[],"shutdown":[],"hibernate":[],"reboot":[]}
   },
   "paths": {"sessionGif":""},
@@ -79,6 +81,10 @@ $info.EnvironmentVariables['CAELESTIA_STATE_DIR'] = Join-Path $profileRoot 'stat
 $info.EnvironmentVariables['CAELESTIA_RUNTIME_DIR'] = Join-Path $profileRoot 'runtime'
 $info.EnvironmentVariables['QS_WINDOWS_BLUR'] = '0'
 $info.EnvironmentVariables['QT_LOGGING_RULES'] = 'quickshell.windows.tracker.debug=false;quickshell.windows.inputmask.debug=false'
+if ($TraceInput) {
+    $info.EnvironmentVariables['QT_LOGGING_RULES'] = 'quickshell.windows.tracker.debug=false;quickshell.windows.inputmask.debug=true'
+}
+$info.EnvironmentVariables['CAELESTIA_SHELL_TRACE_INPUT'] = $(if ($TraceInput) { '1' } else { '0' })
 if ($ScaleFactor -ne 'native') {
     $info.EnvironmentVariables['QT_ENABLE_HIGHDPI_SCALING'] = '0'
     $info.EnvironmentVariables['QT_SCALE_FACTOR'] = $ScaleFactor
@@ -132,6 +138,7 @@ $result = [ordered]@{
     timedOut = $timedOut; exitCode = $process.ExitCode
     scaleFactor = $ScaleFactor; screenIndex = $ScreenIndex
     monitorCycle = $MonitorCycle.IsPresent
+    traceInput = $TraceInput.IsPresent
     actualScreens = @([regex]::Matches($combined, 'CAELESTIA_SHELL_SCREEN (\{[^\r\n]+\})') | ForEach-Object { $_.Groups[1].Value | ConvertFrom-Json })
     captures = @([regex]::Matches($combined, 'CAELESTIA_SHELL_CAPTURE ([^\r\n]+)') | ForEach-Object { $_.Groups[1].Value })
     elapsedMilliseconds = $elapsed.ElapsedMilliseconds

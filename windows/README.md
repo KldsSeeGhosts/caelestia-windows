@@ -117,6 +117,15 @@ isolated prototype passes.
 
 ## Dependency maintenance
 
+The current backend pin is in the private
+[Caelestia backend fork](https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/tree/84604c258da92a004b46d62a89718ae615840b98).
+It retains the audited `nunreasonable/quickshell` baseline `e8ae0ef1` and adds
+one native mask handoff change: reconcile Qt hover when `WS_EX_TRANSPARENT`
+changes, because the move that triggered the hook can already have reached the
+underlying window. The patch queues only local Qt enter/leave notifications, avoids
+enter reconciliation while mouse buttons are held or another window covers
+the point, and injects no system input or focus changes.
+
 Keep the source manifest and submodule revision in agreement. Review backend
 updates before moving the gitlink; keep backend patches in a dedicated fork
 when needed. Preserve the dependency's license and notices. The original

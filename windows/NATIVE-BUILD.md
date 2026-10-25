@@ -165,6 +165,13 @@ Capture read-only desktop state before/after a test:
 powershell -NoProfile -File windows/scripts/Get-DesktopState.ps1
 ```
 
+For the opt-in automated native input matrix, see
+[the prototype instructions](shell-prototype/README.md). It uses `SendInput`
+through real Windows routing, a dedicated fixture, exact-instance IPC, and
+native 150%/175% monitor transfer. `-TestTransparencyOff` temporarily changes
+and restores the current user's transparency preference. Keep pointer/keyboard
+input idle during that test. It never enables tiling or taskbar control.
+
 Optional `-OutputPath` saves the report. It queries physical monitor/work
 rectangles, scale, taskbar flags, foreground PID/HWND and relevant process names/PIDs, preserving
 negative origins. It changes only its measurement thread's DPI context

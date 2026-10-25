@@ -1,4 +1,4 @@
 [submodule "windows-quickshell"]
 	path = windows/deps/quickshell
-	url = https://github.com/nunreasonable/quickshell.git
+	url = https://github.com/KldsSeeGhosts/caelestia-quickshell-windows.git
 	shallow = true

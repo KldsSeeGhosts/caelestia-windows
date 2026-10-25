@@ -91,6 +91,34 @@ printed staged `shell.qml` path; do not broadcast to other Quickshell sessions.
 State includes screen/DPR, bar visibility, session state, focused session icon,
 and focus-guard status.
 
+For repeatable native input tests, leave the pointer and keyboard idle and run:
+
+```powershell
+powershell -NoProfile -File windows/scripts/Test-ShellPrototypeInput.ps1 `
+    -QtPrefix $qtPrefix -AllowDesktopInput
+```
+
+This opt-in test uses Windows `SendInput`, a dedicated fixture and exact-instance
+IPC. It moves the pointer and focus across the primary, secondary and primary
+displays. It checks stationary hover, rapid boundaries, configured bar pin/unpin
+and session drag, keyboard traversal, Escape/focus return, outside-click
+pass-through, early foreground switching and repeated open/close. It requires
+two monitors and never starts a tiler. Add `-TestTransparencyOff` to temporarily
+set the current user's `EnableTransparency` to 0; `finally` restores the
+original value, pointer and foreground window and closes only test-owned
+processes. Run without another controller or user input. Automated injected
+Windows input is distinct from physical hardware input.
+The isolated profile enables the original session `vimKeybinds` option for Tab
+navigation; Up/Down use the original button navigation links.
+
+The runner saves assertions, actual DPR/geometry, screenshots, fixture events,
+input-mask traces, source hashes and before/after desktop state under the ignored
+build directory. `-OutputDirectory` chooses another evidence directory.
+`Start-ShellPrototype.ps1 -TraceInput` enables backend mask diagnostics for
+manual investigation. `prototype.state` also exposes mouse coordinates,
+containsMouse, pressed/pinned state and control centers; `moveToScreen(index)`
+transfers the exact prototype instance without changing display settings.
+
 At this update, native 150% primary-display tests demonstrated continuous
 pointer hover, Power opening, and Escape closing the original drawer.
 Direct GetForegroundWindow observations confirmed foreground changed from
