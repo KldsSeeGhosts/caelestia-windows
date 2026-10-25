@@ -9,6 +9,9 @@ using Qt::StringLiterals::operator""_s;
 Q_LOGGING_CATEGORY(lcConfig, "caelestia.config", QtInfoMsg)
 
 QString configDir() {
+    const auto isolated = qEnvironmentVariable("CAELESTIA_CONFIG_DIR");
+    if (!isolated.isEmpty())
+        return isolated;
     return QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation) + u"/caelestia"_s;
 }
 

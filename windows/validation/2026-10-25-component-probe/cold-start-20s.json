@@ -1,0 +1,13 @@
+﻿{
+    "passed":  false,
+    "timedOut":  true,
+    "exitCode":  -1,
+    "scaleFactor":  "1",
+    "sourceRevision":  "a80afac770564130e83f12212e54cee7fe3b0f80",
+    "sourceDirty":  false,
+    "buildRecordSha256":  "E1379386B18B7FDA67D73C7138E06A24B8F17D30E8F14B450B6A22ACA487BA92",
+    "sources":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\probe-20261025-001208-446.sources.json",
+    "screenshot":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\probe-20261025-001208-446.png",
+    "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\probe-20261025-001208-446.stdout.log",
+    "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\probe-20261025-001208-446.stderr.log"
+}

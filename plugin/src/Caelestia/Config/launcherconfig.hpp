@@ -4,6 +4,8 @@
 #include <qstringlist.h>
 #include <qvariantlist.h>
 
+#include "util/export.hpp"
+
 #include "settings/objectnode.hpp"
 #include "util/i18n.hpp"
 #include "common.hpp"
@@ -15,7 +17,7 @@ using settings::vmap;
 using util::i18n::mark;
 using util::i18n::markCtx;
 
-class LauncherUseFuzzy : public settings::ObjectNode {
+class CAELESTIA_CONFIG_API LauncherUseFuzzy : public settings::ObjectNode {
     CONFIG_NODE(LauncherUseFuzzy, settings::ObjectNode)
 
     CONFIG_PROPERTY(bool, apps, false)
@@ -25,7 +27,7 @@ class LauncherUseFuzzy : public settings::ObjectNode {
     CONFIG_PROPERTY(bool, wallpapers, false)
 };
 
-class LauncherAction : public settings::ObjectNode {
+class CAELESTIA_CONFIG_API LauncherAction : public settings::ObjectNode {
     CONFIG_NODE(LauncherAction, settings::ObjectNode)
 
     CONFIG_PROPERTY(bool, enabled, true)
@@ -37,7 +39,7 @@ class LauncherAction : public settings::ObjectNode {
 };
 CONFIG_LIST_TYPE(LauncherAction, LauncherActionList)
 
-class LauncherConfig : public settings::ObjectNode {
+class CAELESTIA_CONFIG_API LauncherConfig : public settings::ObjectNode {
     CONFIG_NODE(LauncherConfig, settings::ObjectNode)
 
     CONFIG_PROPERTY(bool, enabled, true)

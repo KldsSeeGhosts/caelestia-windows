@@ -4,6 +4,8 @@
 #include <qstringlist.h>
 #include <qvariantlist.h>
 
+#include "util/export.hpp"
+
 #include "settings/objectnode.hpp"
 #include "util/i18n.hpp"
 #include "common.hpp"
@@ -14,7 +16,7 @@ using Qt::StringLiterals::operator""_s;
 using settings::vmap;
 using util::i18n::mark;
 
-class GeneralApps : public settings::ObjectNode {
+class CAELESTIA_CONFIG_API GeneralApps : public settings::ObjectNode {
     CONFIG_NODE(GeneralApps, settings::ObjectNode)
 
     CONFIG_PROPERTY(QStringList, terminal, { u"foot"_s })
@@ -23,7 +25,7 @@ class GeneralApps : public settings::ObjectNode {
     CONFIG_PROPERTY(QStringList, explorer, { u"thunar"_s })
 };
 
-class GeneralIdleTimeout : public settings::ObjectNode {
+class CAELESTIA_CONFIG_API GeneralIdleTimeout : public settings::ObjectNode {
     CONFIG_NODE(GeneralIdleTimeout, settings::ObjectNode)
 
     CONFIG_PROPERTY(bool, enabled, true)
@@ -36,7 +38,7 @@ class GeneralIdleTimeout : public settings::ObjectNode {
 };
 CONFIG_LIST_TYPE(GeneralIdleTimeout, GeneralIdleTimeoutList)
 
-class GeneralIdle : public settings::ObjectNode {
+class CAELESTIA_CONFIG_API GeneralIdle : public settings::ObjectNode {
     CONFIG_NODE(GeneralIdle, settings::ObjectNode)
 
     CONFIG_PROPERTY(bool, lockBeforeSleep, true)
@@ -60,7 +62,7 @@ class GeneralIdle : public settings::ObjectNode {
         }))
 };
 
-class GeneralBatteryWarnLevel : public settings::ObjectNode {
+class CAELESTIA_CONFIG_API GeneralBatteryWarnLevel : public settings::ObjectNode {
     CONFIG_NODE(GeneralBatteryWarnLevel, settings::ObjectNode)
 
     CONFIG_PROPERTY(int, level, -1)
@@ -71,7 +73,7 @@ class GeneralBatteryWarnLevel : public settings::ObjectNode {
 };
 CONFIG_LIST_TYPE(GeneralBatteryWarnLevel, GeneralBatteryWarnList)
 
-class GeneralBattery : public settings::ObjectNode {
+class CAELESTIA_CONFIG_API GeneralBattery : public settings::ObjectNode {
     CONFIG_NODE(GeneralBattery, settings::ObjectNode)
 
     CONFIG_LIST(GeneralBatteryWarnList, warnLevels,
@@ -99,7 +101,7 @@ class GeneralBattery : public settings::ObjectNode {
     CONFIG_PROPERTY(int, criticalLevel, 3)
 };
 
-class GeneralConfig : public settings::ObjectNode {
+class CAELESTIA_CONFIG_API GeneralConfig : public settings::ObjectNode {
     CONFIG_NODE(GeneralConfig, settings::ObjectNode)
 
     CONFIG_GLOBAL_PROPERTY(QString, logo, {})

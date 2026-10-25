@@ -3,6 +3,8 @@
 #include <qloggingcategory.h>
 #include <qstring.h>
 
+#include "util/export.hpp"
+
 #include "settings/macros.hpp"
 #include "settings/objectnode.hpp"
 
@@ -19,7 +21,7 @@
 #define CONFIG_SUBOBJECT(Type, name) SETTINGS_SUBOBJECT(caelestia::shell::config::Type, name)
 #define CONFIG_GLOBAL_SUBOBJECT(Type, name) SETTINGS_GLOBAL_SUBOBJECT(caelestia::shell::config::Type, name)
 
-#define CONFIG_LIST_TYPE SETTINGS_LIST_TYPE
+#define CONFIG_LIST_TYPE(Element, Name) SETTINGS_LIST_TYPE(Element, Name, CAELESTIA_CONFIG_API)
 #define CONFIG_LIST(Type, name, defaultVal, ...)                                                                       \
     SETTINGS_LIST(caelestia::shell::config::Type, name, DEFAULT_ARG(defaultVal), __VA_ARGS__)
 #define CONFIG_GLOBAL_LIST(Type, name, defaultVal, ...)                                                                \
@@ -32,7 +34,7 @@ Q_DECLARE_LOGGING_CATEGORY(lcConfig)
 QString configDir();
 QString monitorConfigDir();
 
-class ListEntry : public settings::ObjectNode {
+class CAELESTIA_CONFIG_API ListEntry : public settings::ObjectNode {
     CONFIG_NODE(ListEntry, settings::ObjectNode)
 
     CONFIG_PROPERTY(QString, id, {})
@@ -40,7 +42,7 @@ class ListEntry : public settings::ObjectNode {
 };
 CONFIG_LIST_TYPE(ListEntry, EntryList)
 
-class IconRule : public settings::ObjectNode {
+class CAELESTIA_CONFIG_API IconRule : public settings::ObjectNode {
     CONFIG_NODE(IconRule, settings::ObjectNode)
 
     CONFIG_PROPERTY(QString, name, {})

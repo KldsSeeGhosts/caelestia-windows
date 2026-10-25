@@ -4,6 +4,8 @@
 #include <qstring.h>
 #include <qvariantmap.h>
 
+#include "util/export.hpp"
+
 #include "settings/objectnode.hpp"
 #include "common.hpp"
 
@@ -12,12 +14,12 @@ namespace caelestia::shell::config {
 using Qt::StringLiterals::operator""_s;
 
 // Forward declare token types from tokens.hpp
-class RoundingTokens;
-class SpacingTokens;
-class PaddingTokens;
-class AnimDurationTokens;
+class CAELESTIA_CONFIG_API RoundingTokens;
+class CAELESTIA_CONFIG_API SpacingTokens;
+class CAELESTIA_CONFIG_API PaddingTokens;
+class CAELESTIA_CONFIG_API AnimDurationTokens;
 
-class AppearanceRounding : public settings::ObjectNode {
+class CAELESTIA_CONFIG_API AppearanceRounding : public settings::ObjectNode {
     CONFIG_NODE(AppearanceRounding, settings::ObjectNode)
 
     CONFIG_PROPERTY(qreal, scale, 1)
@@ -52,7 +54,7 @@ private:
     RoundingTokens* m_tokens = nullptr;
 };
 
-class AppearanceSpacing : public settings::ObjectNode {
+class CAELESTIA_CONFIG_API AppearanceSpacing : public settings::ObjectNode {
     CONFIG_NODE(AppearanceSpacing, settings::ObjectNode)
 
     CONFIG_PROPERTY(qreal, scale, 1)
@@ -85,7 +87,7 @@ private:
     SpacingTokens* m_tokens = nullptr;
 };
 
-class AppearancePadding : public settings::ObjectNode {
+class CAELESTIA_CONFIG_API AppearancePadding : public settings::ObjectNode {
     CONFIG_NODE(AppearancePadding, settings::ObjectNode)
 
     CONFIG_PROPERTY(qreal, scale, 1)
@@ -133,7 +135,7 @@ struct FontConfig {
 #define ARG(...) __VA_ARGS__
 #define FONT(...) detail::FontConfig __VA_ARGS__
 #define FONT_CONFIG(Style, Size, props)                                                                                \
-    class FontConfig##Style##Size : public settings::ObjectNode {                                                      \
+    class CAELESTIA_CONFIG_API FontConfig##Style##Size : public settings::ObjectNode {                                 \
         CONFIG_NODE(FontConfig##Style##Size, settings::ObjectNode)                                                     \
                                                                                                                        \
         CONFIG_PROPERTY(QString, family, ARG(props).family) /* Empty inherits the style family */                      \
@@ -147,7 +149,7 @@ struct FontConfig {
     FONT_CONFIG(Style, Medium, ARG(medium_))                                                                           \
     FONT_CONFIG(Style, Small, ARG(small_))                                                                             \
                                                                                                                        \
-    class FontStyle##Style : public settings::ObjectNode {                                                             \
+    class CAELESTIA_CONFIG_API FontStyle##Style : public settings::ObjectNode {                                        \
         CONFIG_NODE(FontStyle##Style, settings::ObjectNode)                                                            \
                                                                                                                        \
         CONFIG_PROPERTY(QString, family, family_)                                                                      \
@@ -189,7 +191,7 @@ FONT_CONFIG(Icon, Large, FONT({ .size = static_cast<int>(32 / 1.33) }))
 FONT_CONFIG(Icon, Medium, FONT({ .size = static_cast<int>(24 / 1.33) }))
 FONT_CONFIG(Icon, Small, FONT({ .size = static_cast<int>(20 / 1.33) }))
 
-class FontStyleIcon : public settings::ObjectNode {
+class CAELESTIA_CONFIG_API FontStyleIcon : public settings::ObjectNode {
     CONFIG_NODE(FontStyleIcon, settings::ObjectNode)
 
     CONFIG_PROPERTY(QString, family, u"Material Symbols Rounded"_s)
@@ -204,7 +206,7 @@ class FontStyleIcon : public settings::ObjectNode {
 #undef FONT_CONFIG
 #undef FONT_STYLE
 
-class AppearanceFont : public settings::ObjectNode {
+class CAELESTIA_CONFIG_API AppearanceFont : public settings::ObjectNode {
     CONFIG_NODE(AppearanceFont, settings::ObjectNode)
 
     CONFIG_PROPERTY(qreal, scale, 1)
@@ -219,7 +221,7 @@ class AppearanceFont : public settings::ObjectNode {
     CONFIG_PROPERTY(QString, workspaces, u"Rubik"_s)
 };
 
-class AnimDurations : public settings::ObjectNode {
+class CAELESTIA_CONFIG_API AnimDurations : public settings::ObjectNode {
     CONFIG_NODE(AnimDurations, settings::ObjectNode)
 
     CONFIG_GLOBAL_PROPERTY(qreal, scale, 1)
@@ -256,13 +258,13 @@ private:
     AnimDurationTokens* m_tokens = nullptr;
 };
 
-class AppearanceAnim : public settings::ObjectNode {
+class CAELESTIA_CONFIG_API AppearanceAnim : public settings::ObjectNode {
     CONFIG_NODE(AppearanceAnim, settings::ObjectNode)
 
     CONFIG_SUBOBJECT(AnimDurations, durations)
 };
 
-class AppearanceTransparency : public settings::ObjectNode {
+class CAELESTIA_CONFIG_API AppearanceTransparency : public settings::ObjectNode {
     CONFIG_NODE(AppearanceTransparency, settings::ObjectNode)
 
     CONFIG_GLOBAL_PROPERTY(bool, enabled, false)
@@ -270,7 +272,7 @@ class AppearanceTransparency : public settings::ObjectNode {
     CONFIG_GLOBAL_PROPERTY(qreal, layers, 0.4)
 };
 
-class AppearanceConfig : public settings::ObjectNode {
+class CAELESTIA_CONFIG_API AppearanceConfig : public settings::ObjectNode {
     CONFIG_NODE(AppearanceConfig, settings::ObjectNode)
 
     CONFIG_PROPERTY(qreal, deformScale, 1)

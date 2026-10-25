@@ -3,12 +3,14 @@
 #include <qobject.h>
 #include <qqmlintegration.h>
 
+#include "util/export.hpp"
+
 namespace caelestia::shell::config {
 
 #define ENUM(Name, ...)                                                                                                \
     namespace Name {                                                                                                   \
                                                                                                                        \
-    Q_NAMESPACE                                                                                                        \
+    Q_NAMESPACE_EXPORT(CAELESTIA_CONFIG_API)                                                                           \
     QML_NAMED_ELEMENT(Name)                                                                                            \
                                                                                                                        \
     enum Enum : quint8 {                                                                                               \

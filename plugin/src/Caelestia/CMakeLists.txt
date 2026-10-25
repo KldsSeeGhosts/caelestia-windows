@@ -1,17 +1,17 @@
+set(caelestia_core_sources cutils.cpp requests.cpp toaster.cpp circularbuffer.cpp)
+set(caelestia_core_libraries Qt::Gui Qt::Quick Qt::Concurrent Qt::Network)
+if(NOT CAELESTIA_PORTABLE_UI)
+    list(APPEND caelestia_core_sources qalculator.cpp)
+    list(APPEND caelestia_core_libraries PkgConfig::Qalculate)
+endif()
+
 qml_module(caelestia-core
     URI Caelestia
     INCLUDE_PREFIX core
     SOURCES
-        cutils.cpp
-        qalculator.cpp
-        requests.cpp
-        toaster.cpp
-        circularbuffer.cpp
+        ${caelestia_core_sources}
     LIBRARIES
-        Qt::Gui
-        Qt::Quick
-        Qt::Concurrent
-        PkgConfig::Qalculate
+        ${caelestia_core_libraries}
 )
 target_link_libraries(caelestia-core PUBLIC caelestia-util)
 
@@ -29,10 +29,16 @@ add_subdirectory(Settings)
 add_subdirectory(Components)
 add_subdirectory(Config)
 add_subdirectory(State)
-add_subdirectory(Models)
-add_subdirectory(Services)
+if(NOT CAELESTIA_PORTABLE_UI)
+    add_subdirectory(Models)
+    add_subdirectory(Services)
+endif()
 add_subdirectory(Blobs)
-add_subdirectory(Images)
+if(NOT CAELESTIA_PORTABLE_UI)
+    add_subdirectory(Images)
+endif()
 add_subdirectory(I18n)
-add_subdirectory(Multimedia)
+if(NOT CAELESTIA_PORTABLE_UI)
+    add_subdirectory(Multimedia)
+endif()
 add_subdirectory(Shaders)

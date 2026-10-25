@@ -2,11 +2,13 @@
 
 #include <qquickattachedpropertypropagator.h>
 
+#include "util/export.hpp"
+
 #include "rootnodes.hpp"
 
 namespace caelestia::shell::config {
 
-class Config : public QQuickAttachedPropertyPropagator, public QQmlParserStatus {
+class CAELESTIA_CONFIG_API Config : public QQuickAttachedPropertyPropagator, public QQmlParserStatus {
     Q_OBJECT
     Q_INTERFACES(QQmlParserStatus)
     QML_ELEMENT

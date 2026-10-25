@@ -4,9 +4,11 @@
 #include <qqmlintegration.h>
 #include <qvariant.h>
 
+#include "util/export.hpp"
+
 namespace caelestia::shell::config {
 
-class FontBuilder {
+class CAELESTIA_CONFIG_API FontBuilder {
     Q_GADGET
     QML_ANONYMOUS
 

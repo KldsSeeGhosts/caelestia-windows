@@ -4,12 +4,14 @@
 #include <qobject.h>
 #include <qqmlintegration.h>
 
+#include "util/export.hpp"
+
 namespace caelestia::shell::config {
 
-class AnimCurves;
-class AnimDurations;
+class CAELESTIA_CONFIG_API AnimCurves;
+class CAELESTIA_CONFIG_API AnimDurations;
 
-class AnimTokens : public QObject {
+class CAELESTIA_CONFIG_API AnimTokens : public QObject {
     Q_OBJECT
     Q_MOC_INCLUDE("tokens.hpp")           // AnimCurves
     Q_MOC_INCLUDE("appearanceconfig.hpp") // AnimDurations

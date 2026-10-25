@@ -1,5 +1,7 @@
 #pragma once
 
+#include "util/export.hpp"
+
 #include "settings/rootnode.hpp"
 #include "settings/singleton.hpp"
 #include "appearanceconfig.hpp"
@@ -24,7 +26,7 @@
 
 namespace caelestia::shell::config {
 
-class ConfigRoot : public settings::RootNode {
+class CAELESTIA_CONFIG_API ConfigRoot : public settings::RootNode {
     CONFIG_NODE_NO_CTOR(ConfigRoot, settings::RootNode)
     QML_ANONYMOUS
 
@@ -58,7 +60,7 @@ private:
     FontTokens* const m_fontTokens;
 };
 
-class TokensRoot : public settings::RootNode {
+class CAELESTIA_CONFIG_API TokensRoot : public settings::RootNode {
     CONFIG_NODE_NO_CTOR(TokensRoot, settings::RootNode)
     QML_ANONYMOUS
 
@@ -100,7 +102,7 @@ template <ConfigKind Kind> void Handler<Kind>::saveFailed(const QString& error, 
 
 } // namespace detail
 
-SETTINGS_SINGLETON_DECL(ConfigSingleton, ConfigRoot, GlobalConfig)
-SETTINGS_SINGLETON_DECL(TokensSingleton, TokensRoot, TokenConfig)
+SETTINGS_SINGLETON_DECL(ConfigSingleton, ConfigRoot, GlobalConfig, CAELESTIA_CONFIG_API)
+SETTINGS_SINGLETON_DECL(TokensSingleton, TokensRoot, TokenConfig, CAELESTIA_CONFIG_API)
 
 } // namespace caelestia::shell::config

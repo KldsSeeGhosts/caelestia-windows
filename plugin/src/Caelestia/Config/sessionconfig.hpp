@@ -3,6 +3,8 @@
 #include <qstring.h>
 #include <qstringlist.h>
 
+#include "util/export.hpp"
+
 #include "settings/objectnode.hpp"
 #include "common.hpp"
 
@@ -10,7 +12,7 @@ namespace caelestia::shell::config {
 
 using Qt::StringLiterals::operator""_s;
 
-class SessionIcons : public settings::ObjectNode {
+class CAELESTIA_CONFIG_API SessionIcons : public settings::ObjectNode {
     CONFIG_NODE(SessionIcons, settings::ObjectNode)
 
     CONFIG_PROPERTY(QString, logout, u"logout"_s)
@@ -19,7 +21,7 @@ class SessionIcons : public settings::ObjectNode {
     CONFIG_PROPERTY(QString, reboot, u"cached"_s)
 };
 
-class SessionCommands : public settings::ObjectNode {
+class CAELESTIA_CONFIG_API SessionCommands : public settings::ObjectNode {
     CONFIG_NODE(SessionCommands, settings::ObjectNode)
 
     CONFIG_PROPERTY(QStringList, logout, { u"logout"_s })
@@ -28,7 +30,7 @@ class SessionCommands : public settings::ObjectNode {
     CONFIG_PROPERTY(QStringList, reboot, { u"reboot"_s })
 };
 
-class SessionConfig : public settings::ObjectNode {
+class CAELESTIA_CONFIG_API SessionConfig : public settings::ObjectNode {
     CONFIG_NODE(SessionConfig, settings::ObjectNode)
 
     CONFIG_PROPERTY(bool, enabled, true)

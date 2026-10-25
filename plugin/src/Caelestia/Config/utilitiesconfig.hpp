@@ -3,6 +3,8 @@
 #include <qstring.h>
 #include <qvariantlist.h>
 
+#include "util/export.hpp"
+
 #include "settings/objectnode.hpp"
 #include "common.hpp"
 
@@ -10,7 +12,7 @@ namespace caelestia::shell::config {
 
 using Qt::StringLiterals::operator""_s;
 
-class UtilitiesToasts : public settings::ObjectNode {
+class CAELESTIA_CONFIG_API UtilitiesToasts : public settings::ObjectNode {
     CONFIG_NODE(UtilitiesToasts, settings::ObjectNode)
 
     CONFIG_PROPERTY(QString, fullscreen, u"off"_s)
@@ -28,7 +30,7 @@ class UtilitiesToasts : public settings::ObjectNode {
     CONFIG_PROPERTY(bool, nowPlaying, false)
 };
 
-class UtilitiesVpnProvider : public settings::ObjectNode {
+class CAELESTIA_CONFIG_API UtilitiesVpnProvider : public settings::ObjectNode {
     CONFIG_NODE(UtilitiesVpnProvider, settings::ObjectNode)
 
     CONFIG_PROPERTY(QString, id, {})
@@ -40,7 +42,7 @@ class UtilitiesVpnProvider : public settings::ObjectNode {
 };
 CONFIG_LIST_TYPE(UtilitiesVpnProvider, UtilitiesVpnProviderList)
 
-class UtilitiesVpn : public settings::ObjectNode {
+class CAELESTIA_CONFIG_API UtilitiesVpn : public settings::ObjectNode {
     CONFIG_NODE(UtilitiesVpn, settings::ObjectNode)
 
     CONFIG_PROPERTY(bool, enabled, false)
@@ -48,7 +50,7 @@ class UtilitiesVpn : public settings::ObjectNode {
     CONFIG_PROPERTY(QString, selectedProvider, {})
 };
 
-class UtilitiesCards : public settings::ObjectNode {
+class CAELESTIA_CONFIG_API UtilitiesCards : public settings::ObjectNode {
     CONFIG_NODE(UtilitiesCards, settings::ObjectNode)
 
     CONFIG_PROPERTY(bool, keepAwake, true)
@@ -56,7 +58,7 @@ class UtilitiesCards : public settings::ObjectNode {
     CONFIG_PROPERTY(bool, quickToggles, true)
 };
 
-class UtilitiesConfig : public settings::ObjectNode {
+class CAELESTIA_CONFIG_API UtilitiesConfig : public settings::ObjectNode {
     CONFIG_NODE(UtilitiesConfig, settings::ObjectNode)
 
     CONFIG_PROPERTY(bool, enabled, true)

@@ -2,6 +2,8 @@
 
 #include <qlist.h>
 
+#include "util/export.hpp"
+
 #include <limits>
 
 #include "settings/objectnode.hpp"
@@ -9,7 +11,7 @@
 
 namespace caelestia::shell::config {
 
-class AnimCurves : public settings::ObjectNode {
+class CAELESTIA_CONFIG_API AnimCurves : public settings::ObjectNode {
     CONFIG_NODE(AnimCurves, settings::ObjectNode)
 
     CONFIG_GLOBAL_PROPERTY(QList<qreal>, emphasized,
@@ -27,7 +29,7 @@ class AnimCurves : public settings::ObjectNode {
     CONFIG_GLOBAL_PROPERTY(QList<qreal>, expressiveSlowEffects, DEFAULT_ARG({ 0.34, 0.88, 0.34, 1, 1, 1 }))
 };
 
-class RoundingTokens : public settings::ObjectNode {
+class CAELESTIA_CONFIG_API RoundingTokens : public settings::ObjectNode {
     CONFIG_NODE(RoundingTokens, settings::ObjectNode)
 
     CONFIG_PROPERTY(int, extraSmall, 4)
@@ -41,7 +43,7 @@ class RoundingTokens : public settings::ObjectNode {
     CONFIG_PROPERTY(int, full, std::numeric_limits<int>::max())
 };
 
-class SpacingTokens : public settings::ObjectNode {
+class CAELESTIA_CONFIG_API SpacingTokens : public settings::ObjectNode {
     CONFIG_NODE(SpacingTokens, settings::ObjectNode)
 
     CONFIG_PROPERTY(int, extraSmall, 4)
@@ -54,7 +56,7 @@ class SpacingTokens : public settings::ObjectNode {
     CONFIG_PROPERTY(int, extraExtraLarge, 48)
 };
 
-class PaddingTokens : public settings::ObjectNode {
+class CAELESTIA_CONFIG_API PaddingTokens : public settings::ObjectNode {
     CONFIG_NODE(PaddingTokens, settings::ObjectNode)
 
     CONFIG_PROPERTY(int, extraSmall, 4)
@@ -67,7 +69,7 @@ class PaddingTokens : public settings::ObjectNode {
     CONFIG_PROPERTY(int, extraExtraLarge, 48)
 };
 
-class FontSizeTokens : public settings::ObjectNode {
+class CAELESTIA_CONFIG_API FontSizeTokens : public settings::ObjectNode {
     CONFIG_NODE(FontSizeTokens, settings::ObjectNode)
 
     CONFIG_PROPERTY(int, small, 11)
@@ -78,7 +80,7 @@ class FontSizeTokens : public settings::ObjectNode {
     CONFIG_PROPERTY(int, extraLarge, 28)
 };
 
-class AnimDurationTokens : public settings::ObjectNode {
+class CAELESTIA_CONFIG_API AnimDurationTokens : public settings::ObjectNode {
     CONFIG_NODE(AnimDurationTokens, settings::ObjectNode)
 
     CONFIG_GLOBAL_PROPERTY(int, small, 200)
@@ -93,7 +95,7 @@ class AnimDurationTokens : public settings::ObjectNode {
     CONFIG_GLOBAL_PROPERTY(int, expressiveSlowEffects, 300)
 };
 
-class AppearanceTokens : public settings::ObjectNode {
+class CAELESTIA_CONFIG_API AppearanceTokens : public settings::ObjectNode {
     CONFIG_NODE(AppearanceTokens, settings::ObjectNode)
 
     CONFIG_SUBOBJECT(AnimCurves, curves)
@@ -104,7 +106,7 @@ class AppearanceTokens : public settings::ObjectNode {
     CONFIG_SUBOBJECT(AnimDurationTokens, animDurations)
 };
 
-class BarTokens : public settings::ObjectNode {
+class CAELESTIA_CONFIG_API BarTokens : public settings::ObjectNode {
     CONFIG_NODE(BarTokens, settings::ObjectNode)
 
     CONFIG_PROPERTY(int, innerWidth, 40)
@@ -116,7 +118,7 @@ class BarTokens : public settings::ObjectNode {
     CONFIG_PROPERTY(int, kbLayoutWidth, 320)
 };
 
-class DashboardTokens : public settings::ObjectNode {
+class CAELESTIA_CONFIG_API DashboardTokens : public settings::ObjectNode {
     CONFIG_NODE(DashboardTokens, settings::ObjectNode)
 
     CONFIG_PROPERTY(int, tabIndicatorHeight, 3)
@@ -145,7 +147,7 @@ class DashboardTokens : public settings::ObjectNode {
     CONFIG_PROPERTY(int, perfPlaceholderWidth, 700)
 };
 
-class LauncherTokens : public settings::ObjectNode {
+class CAELESTIA_CONFIG_API LauncherTokens : public settings::ObjectNode {
     CONFIG_NODE(LauncherTokens, settings::ObjectNode)
 
     CONFIG_PROPERTY(int, itemWidth, 600)
@@ -154,7 +156,7 @@ class LauncherTokens : public settings::ObjectNode {
     CONFIG_PROPERTY(int, wallpaperHeight, 200)
 };
 
-class NotifsTokens : public settings::ObjectNode {
+class CAELESTIA_CONFIG_API NotifsTokens : public settings::ObjectNode {
     CONFIG_NODE(NotifsTokens, settings::ObjectNode)
 
     CONFIG_PROPERTY(int, width, 430)
@@ -162,33 +164,33 @@ class NotifsTokens : public settings::ObjectNode {
     CONFIG_PROPERTY(int, badge, 20)
 };
 
-class OsdTokens : public settings::ObjectNode {
+class CAELESTIA_CONFIG_API OsdTokens : public settings::ObjectNode {
     CONFIG_NODE(OsdTokens, settings::ObjectNode)
 
     CONFIG_PROPERTY(int, sliderWidth, 30)
     CONFIG_PROPERTY(int, sliderHeight, 150)
 };
 
-class SessionTokens : public settings::ObjectNode {
+class CAELESTIA_CONFIG_API SessionTokens : public settings::ObjectNode {
     CONFIG_NODE(SessionTokens, settings::ObjectNode)
 
     CONFIG_PROPERTY(int, button, 80)
 };
 
-class SidebarTokens : public settings::ObjectNode {
+class CAELESTIA_CONFIG_API SidebarTokens : public settings::ObjectNode {
     CONFIG_NODE(SidebarTokens, settings::ObjectNode)
 
     CONFIG_PROPERTY(int, width, 430)
 };
 
-class UtilitiesTokens : public settings::ObjectNode {
+class CAELESTIA_CONFIG_API UtilitiesTokens : public settings::ObjectNode {
     CONFIG_NODE(UtilitiesTokens, settings::ObjectNode)
 
     CONFIG_PROPERTY(int, width, 430)
     CONFIG_PROPERTY(int, toastWidth, 430)
 };
 
-class LockTokens : public settings::ObjectNode {
+class CAELESTIA_CONFIG_API LockTokens : public settings::ObjectNode {
     CONFIG_NODE(LockTokens, settings::ObjectNode)
 
     CONFIG_PROPERTY(qreal, heightMult, 0.7)
@@ -204,14 +206,14 @@ class LockTokens : public settings::ObjectNode {
     CONFIG_PROPERTY(int, showColourBoxRowHeight, 570)
 };
 
-class WInfoTokens : public settings::ObjectNode {
+class CAELESTIA_CONFIG_API WInfoTokens : public settings::ObjectNode {
     CONFIG_NODE(WInfoTokens, settings::ObjectNode)
 
     CONFIG_PROPERTY(qreal, heightMult, 0.7)
     CONFIG_PROPERTY(qreal, detailsWidth, 500)
 };
 
-class NexusTokens : public settings::ObjectNode {
+class CAELESTIA_CONFIG_API NexusTokens : public settings::ObjectNode {
     CONFIG_NODE(NexusTokens, settings::ObjectNode)
 
     CONFIG_PROPERTY(qreal, heightMult, 0.7)
@@ -231,7 +233,7 @@ class NexusTokens : public settings::ObjectNode {
     CONFIG_PROPERTY(int, smallTextFieldWidth, 100)
 };
 
-class SizeTokens : public settings::ObjectNode {
+class CAELESTIA_CONFIG_API SizeTokens : public settings::ObjectNode {
     CONFIG_NODE(SizeTokens, settings::ObjectNode)
 
     CONFIG_SUBOBJECT(BarTokens, bar)

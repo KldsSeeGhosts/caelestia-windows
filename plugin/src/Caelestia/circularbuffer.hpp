@@ -3,11 +3,13 @@
 #include <qobject.h>
 #include <qqmlintegration.h>
 
+#include "util/export.hpp"
+
 #include "util/ringbuffer.hpp"
 
 namespace caelestia::shell {
 
-class CircularBuffer : public QObject {
+class CAELESTIA_CORE_API CircularBuffer : public QObject {
     Q_OBJECT
     QML_ELEMENT
 

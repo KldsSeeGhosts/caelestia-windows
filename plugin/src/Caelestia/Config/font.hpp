@@ -4,16 +4,18 @@
 #include <qqmlintegration.h>
 #include <qvariantmap.h>
 
+#include "util/export.hpp"
+
 #include "settings/objectnode.hpp"
 #include "fontbuilder.hpp"
 
 namespace caelestia::shell::config {
 
-class AppearanceFont;
-class FontStyleBase;
-class IconFontStyle;
+class CAELESTIA_CONFIG_API AppearanceFont;
+class CAELESTIA_CONFIG_API FontStyleBase;
+class CAELESTIA_CONFIG_API IconFontStyle;
 
-class FontBuilders : public QObject {
+class CAELESTIA_CONFIG_API FontBuilders : public QObject {
     Q_OBJECT
     QML_ANONYMOUS
 
@@ -35,7 +37,7 @@ protected:
     const FontStyleBase* m_style;
 };
 
-class IconFontBuilders : public FontBuilders {
+class CAELESTIA_CONFIG_API IconFontBuilders : public FontBuilders {
     Q_OBJECT
     QML_ANONYMOUS
 
@@ -47,7 +49,7 @@ public:
     [[nodiscard]] FontBuilder extraLarge() const;
 };
 
-class FontStyleBase : public QObject {
+class CAELESTIA_CONFIG_API FontStyleBase : public QObject {
     Q_OBJECT
 
     Q_PROPERTY(QFont large READ large NOTIFY fontsChanged FINAL)
@@ -79,7 +81,7 @@ protected:
     QFont m_small;
 };
 
-class FontStyle : public FontStyleBase {
+class CAELESTIA_CONFIG_API FontStyle : public FontStyleBase {
     Q_OBJECT
     QML_ANONYMOUS
 
@@ -94,7 +96,7 @@ private:
     FontBuilders* m_builders;
 };
 
-class IconFontStyle : public FontStyleBase {
+class CAELESTIA_CONFIG_API IconFontStyle : public FontStyleBase {
     Q_OBJECT
     QML_ANONYMOUS
 
@@ -119,7 +121,7 @@ private:
     IconFontBuilders* m_builders;
 };
 
-class FontTokens : public QObject {
+class CAELESTIA_CONFIG_API FontTokens : public QObject {
     Q_OBJECT
     QML_ANONYMOUS
 

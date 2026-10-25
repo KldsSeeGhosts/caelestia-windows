@@ -2,6 +2,8 @@
 
 #include <qstring.h>
 
+#include "util/export.hpp"
+
 #include "settings/objectnode.hpp"
 #include "common.hpp"
 #include "enums.hpp"
@@ -10,7 +12,7 @@ namespace caelestia::shell::config {
 
 using Qt::StringLiterals::operator""_s;
 
-class DesktopClockBackground : public settings::ObjectNode {
+class CAELESTIA_CONFIG_API DesktopClockBackground : public settings::ObjectNode {
     CONFIG_NODE(DesktopClockBackground, settings::ObjectNode)
 
     CONFIG_PROPERTY(bool, enabled, false)
@@ -18,7 +20,7 @@ class DesktopClockBackground : public settings::ObjectNode {
     CONFIG_PROPERTY(bool, blur, true)
 };
 
-class DesktopClockShadow : public settings::ObjectNode {
+class CAELESTIA_CONFIG_API DesktopClockShadow : public settings::ObjectNode {
     CONFIG_NODE(DesktopClockShadow, settings::ObjectNode)
 
     CONFIG_PROPERTY(bool, enabled, true)
@@ -26,7 +28,7 @@ class DesktopClockShadow : public settings::ObjectNode {
     CONFIG_PROPERTY(qreal, blur, 0.4)
 };
 
-class DesktopClock : public settings::ObjectNode {
+class CAELESTIA_CONFIG_API DesktopClock : public settings::ObjectNode {
     CONFIG_NODE(DesktopClock, settings::ObjectNode)
 
     CONFIG_PROPERTY(bool, enabled, false)
@@ -37,7 +39,7 @@ class DesktopClock : public settings::ObjectNode {
     CONFIG_SUBOBJECT(DesktopClockShadow, shadow)
 };
 
-class BackgroundVisualiser : public settings::ObjectNode {
+class CAELESTIA_CONFIG_API BackgroundVisualiser : public settings::ObjectNode {
     CONFIG_NODE(BackgroundVisualiser, settings::ObjectNode)
 
     CONFIG_PROPERTY(bool, enabled, false)
@@ -47,7 +49,7 @@ class BackgroundVisualiser : public settings::ObjectNode {
     CONFIG_PROPERTY(qreal, spacing, 1)
 };
 
-class BackgroundConfig : public settings::ObjectNode {
+class CAELESTIA_CONFIG_API BackgroundConfig : public settings::ObjectNode {
     CONFIG_NODE(BackgroundConfig, settings::ObjectNode)
 
     CONFIG_PROPERTY(bool, enabled, true)

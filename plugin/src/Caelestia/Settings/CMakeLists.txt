@@ -15,3 +15,4 @@ qml_module(caelestia-settings
     LIBRARIES
         caelestia-util
 )
+target_link_libraries(caelestia-settings PUBLIC caelestia-util)

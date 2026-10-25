@@ -1,8 +1,21 @@
 # Caelestia Windows milestones
 
-This project starts with an unverified compatibility route. Gates below are
-acceptance criteria, not claims of existing functionality. Track these as
+The native backend build and portable component rendering are now demonstrated.
+Gates below are acceptance criteria, not claims of a complete shell. Track these as
 separate issues when the Linear connection is available.
+
+## Status snapshot, 2026-10-25
+
+- M0: local developer bootstrap complete. Backend pin, native build commands,
+  isolated probe configuration, and validation evidence are recorded.
+- M1: in progress. Portable plugins and component rendering pass; the actual
+  bar and one drawer, hover interactions, focus, and monitor tests remain.
+- M2, M3, M4: not started. No Windows service integration, tiling validation,
+  or installable shell release is claimed.
+
+Continue from [HANDOFF.md](HANDOFF.md). Linear could not be synchronized on
+2026-10-25 because the connection requires reauthentication; this roadmap is
+the current milestone record.
 
 ## M0: source and reproducibility
 
@@ -11,7 +24,10 @@ Keep configuration and state isolated. Record the source revisions and exact
 commands for every build. Do not distribute a binary before its sources and
 dependencies are accounted for.
 
-Status: repository bootstrap complete; a Windows toolchain is still needed.
+Status: repository bootstrap complete; the pinned backend and portable plugins
+build with the native toolchain documented in [NATIVE-BUILD.md](NATIVE-BUILD.md).
+Build scripts record source revisions, tool versions, prerequisite results, and
+commands under `windows/.local/build/logs`.
 
 ## M1: actual Caelestia compatibility prototype
 
@@ -20,10 +36,18 @@ Use an explicit isolated entry point with unsupported services disabled through
 platform boundaries. Preserve upstream components rather than replacing them
 with lookalike rectangles.
 
+Status: portable plugin compilation and a component probe pass. The probe uses
+the original clock widgets, graphics plugins, and animations with a fixed
+palette adapter in an ordinary window. It does not load `Bar.qml` or
+`ContentWindow.qml`, and M1 remains open.
+See the [component validation record](validation/2026-10-25-component-probe/README.md).
+
 Gate:
 
 - No missing required QML imports, types, properties, or signals.
 - Bar and drawer render with the intended shader and animation behavior.
+- Original configurable hover interactions work; the click-only component
+  probe is not acceptance evidence for hover behavior.
 - Pointer regions, keyboard focus, dismissal, and focus return work.
 - Test 150% and 175% DPI, negative monitor origins, and transparency off.
 - Startup and shutdown leave the existing shell, taskbar, tiler, autostart, and

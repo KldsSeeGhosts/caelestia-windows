@@ -4,12 +4,14 @@
 #include <qqmlparserstatus.h>
 #include <qquickattachedpropertypropagator.h>
 
+#include "util/export.hpp"
+
 #include "anim.hpp"
 #include "rootnodes.hpp"
 
 namespace caelestia::shell::config {
 
-class Tokens : public QQuickAttachedPropertyPropagator, public QQmlParserStatus {
+class CAELESTIA_CONFIG_API Tokens : public QQuickAttachedPropertyPropagator, public QQmlParserStatus {
     Q_OBJECT
     Q_INTERFACES(QQmlParserStatus)
     QML_ELEMENT

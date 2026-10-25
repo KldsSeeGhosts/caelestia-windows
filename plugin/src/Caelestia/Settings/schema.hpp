@@ -8,6 +8,8 @@
 #include <qstring.h>
 #include <qvariant.h>
 
+#include "util/export.hpp"
+
 namespace caelestia::shell::settings {
 
 class ValueCodec;
@@ -37,7 +39,7 @@ public:                                                                         
                                                                                                                        \
 private:
 
-struct Descriptor {
+struct CAELESTIA_SETTINGS_API Descriptor {
     Q_GADGET
     QML_VALUE_TYPE(descriptor)
 

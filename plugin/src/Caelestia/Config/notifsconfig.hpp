@@ -1,12 +1,14 @@
 #pragma once
 
+#include "util/export.hpp"
+
 #include "settings/objectnode.hpp"
 #include "common.hpp"
 #include "enums.hpp"
 
 namespace caelestia::shell::config {
 
-class NotifsConfig : public settings::ObjectNode {
+class CAELESTIA_CONFIG_API NotifsConfig : public settings::ObjectNode {
     CONFIG_NODE(NotifsConfig, settings::ObjectNode)
 
     CONFIG_GLOBAL_PROPERTY(bool, expire, true)
