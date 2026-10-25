@@ -418,8 +418,24 @@ root to deduplicate against Linear, each enabled and validated independently:
    hooks and their false-state rendering; upstream defaults are preserved.
    [Acceptance evidence](../validation/2026-10-25-m2-battery/README.md) covers
    the batteryless desktop path natively at clean `41cf6aae`; battery-present
-   behavior is fixture-validated only, and IdlePower/profile selection stays
-   out of scope.
+   behavior is fixture-validated only, and IdlePower stays out of scope. The
+   profile follow-up below adds observation and an explicitly opted-in write
+   path without changing ReadOnly semantics.
+   **Profile follow-up (2026-10-25):** clean `59cf7715`/backend `14010429` adds
+   a pure [PowerProfiles state object](../services/battery/PowerProfilesService.qml)
+   with explicit unknown/observing/mapped/write-pending/write-confirmed/
+   write-unconfirmed/unsupported capability, a thin native facade, read-only
+   `-BatteryMode Profiles`, separate `-BatteryMode ProfileWrites` and separate
+   environment opt-ins. Native 150%/175% Profiles smoke observed Performance
+   read-only with the base scheme and effective overlay unchanged; 96 profile
+   fixture assertions cover writes refused without the opt-in, timeout and
+   backend-loss denial. [Evidence](../validation/2026-10-25-m2-power-profiles/README.md).
+   The pinned backend's hard-coded performance availability, log-only failures,
+   missing read-success/write-result signals and notification-only refresh are
+   recorded with a fork fix outline in the
+   [battery README](../battery-prototype/README.md#pinned-backend-gaps).
+   Battery-present aggregate AC observation, native denied writes and a native
+   PowerSaver observation remain untested.
 4. **Windows Network adapter and original network UI:** define explicit
    AccessPoint/Ethernet boundaries instead of porting the nmcli process graph.
    Acceptance: absent adapter/location denial, bounded list-visible scans,

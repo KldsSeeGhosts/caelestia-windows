@@ -9,7 +9,7 @@ param(
     [switch]$Audio,
     [ValidateSet('Disabled', 'ReadOnly', 'Interactive')][string]$AudioMode = 'Disabled',
     [switch]$Battery,
-    [ValidateSet('Disabled', 'ReadOnly')][string]$BatteryMode = 'Disabled',
+    [ValidateSet('Disabled', 'ReadOnly', 'Profiles', 'ProfileWrites')][string]$BatteryMode = 'Disabled',
     [switch]$Media,
     [ValidateSet('Disabled', 'ReadOnly', 'Interactive')][string]$MediaMode = 'Disabled',
     [switch]$Network,
@@ -40,7 +40,7 @@ if ($MonitorCycle -and (-not $Smoke -or $ScaleFactor -ne 'native')) {
 # -SessionActions switch.
 $slices = [ordered]@{
     audio     = @{ On = $Audio; Mode = $AudioMode; Observe = 'CAELESTIA_WINDOWS_AUDIO'; Controls = 'CAELESTIA_WINDOWS_AUDIO_CONTROLS'; ControlMode = 'Interactive' }
-    battery   = @{ On = $Battery; Mode = $BatteryMode; Observe = 'CAELESTIA_WINDOWS_BATTERY' }
+    battery   = @{ On = $Battery; Mode = $BatteryMode; Observe = 'CAELESTIA_WINDOWS_BATTERY'; Controls = 'CAELESTIA_WINDOWS_POWER_PROFILE_WRITES'; ControlMode = 'ProfileWrites' }
     media     = @{ On = $Media; Mode = $MediaMode; Observe = 'CAELESTIA_WINDOWS_MEDIA'; Controls = 'CAELESTIA_WINDOWS_MEDIA_CONTROLS'; ControlMode = 'Interactive' }
     network   = @{ On = $Network; Mode = $NetworkMode; Observe = 'CAELESTIA_WINDOWS_NETWORK'; Controls = 'CAELESTIA_WINDOWS_NETWORK_CONTROLS'; ControlMode = 'Interactive' }
     bluetooth = @{ On = $Bluetooth; Mode = $BluetoothMode; Observe = 'CAELESTIA_WINDOWS_BLUETOOTH'; Controls = 'CAELESTIA_WINDOWS_BLUETOOTH_CONTROLS'; ControlMode = 'Interactive' }
@@ -176,6 +176,10 @@ foreach ($name in $slices.Keys) {
     $info.EnvironmentVariables[$slice.Observe] = $(if ($observe) { '1' } else { '0' })
     if ($slice.Controls) { $info.EnvironmentVariables[$slice.Controls] = $(if ($controls) { '1' } else { '0' }) }
 }
+# Battery observation stays read-only; Profiles adds read-only PowerProfiles
+# observation, and ProfileWrites (the battery control mode above) additionally
+# permits explicit profile selection outside smoke.
+$info.EnvironmentVariables['CAELESTIA_WINDOWS_POWER_PROFILES'] = $(if ($Battery -and $BatteryMode -in @('Profiles', 'ProfileWrites')) { '1' } else { '0' })
 $info.EnvironmentVariables['CAELESTIA_APPS_SMOKE_QUERY'] = $(if ($Apps) { $AppsSearchQuery } else { '' })
 $info.EnvironmentVariables['CAELESTIA_TRAY_FIXTURE'] = $(if ($TrayFixture) { '1' } else { '0' })
 # Tray runs never enable the backend tray hook: with 0 the host skips

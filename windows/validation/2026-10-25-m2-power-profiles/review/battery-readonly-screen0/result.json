@@ -1,0 +1,137 @@
+﻿{
+    "passed":  true,
+    "smoke":  true,
+    "prototype":  "battery",
+    "audioMode":  "Disabled",
+    "batteryMode":  "ReadOnly",
+    "mediaMode":  "Disabled",
+    "timedOut":  false,
+    "exitCode":  0,
+    "scaleFactor":  "native",
+    "screenIndex":  0,
+    "monitorCycle":  false,
+    "traceInput":  false,
+    "actualScreens":  [
+                          {
+                              "index":  0,
+                              "name":  "MAG321UX OLED",
+                              "x":  0,
+                              "y":  0,
+                              "dpr":  1.5,
+                              "width":  640,
+                              "height":  620
+                          }
+                      ],
+    "captures":  [
+                     "file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/battery-20261025-191124-399.png"
+                 ],
+    "audioSnapshots":  [
+
+                       ],
+    "batterySnapshots":  [
+                             {
+                                 "phase":  "INITIAL",
+                                 "state":  {
+                                               "status":  "ready",
+                                               "reason":  "No battery detected on this system.",
+                                               "enabled":  true,
+                                               "backendLoaded":  true,
+                                               "nativeReadAvailable":  true,
+                                               "presenceKnown":  true,
+                                               "observationAvailable":  true,
+                                               "present":  false,
+                                               "absent":  true,
+                                               "laptopBattery":  false,
+                                               "hasBattery":  false,
+                                               "percentageKnown":  false,
+                                               "onBatteryKnown":  true,
+                                               "onBattery":  false,
+                                               "charging":  false,
+                                               "state":  0,
+                                               "percentage":  0,
+                                               "timeToEmpty":  0,
+                                               "iconName":  "",
+                                               "profilesEnabled":  false,
+                                               "profileWritesRequested":  false,
+                                               "profileWritesEnabled":  false,
+                                               "profileStatusEnabled":  false,
+                                               "profileControlsEnabled":  false,
+                                               "profilesState":  "disabled",
+                                               "profileReason":  "Windows power profile observation is disabled.",
+                                               "profile":  -1,
+                                               "profileName":  "Unknown",
+                                               "availableProfiles":  [
+
+                                                                     ],
+                                               "performanceMapped":  false,
+                                               "performanceClaim":  false,
+                                               "writeResultAvailable":  false,
+                                               "writeState":  "idle",
+                                               "writeReason":  "Power profile writes are disabled.",
+                                               "writeError":  "",
+                                               "writeTimeoutMs":  4000
+                                           }
+                             },
+                             {
+                                 "phase":  "FINAL",
+                                 "state":  {
+                                               "status":  "ready",
+                                               "reason":  "No battery detected on this system.",
+                                               "enabled":  true,
+                                               "backendLoaded":  true,
+                                               "nativeReadAvailable":  true,
+                                               "presenceKnown":  true,
+                                               "observationAvailable":  true,
+                                               "present":  false,
+                                               "absent":  true,
+                                               "laptopBattery":  false,
+                                               "hasBattery":  false,
+                                               "percentageKnown":  false,
+                                               "onBatteryKnown":  true,
+                                               "onBattery":  false,
+                                               "charging":  false,
+                                               "state":  0,
+                                               "percentage":  0,
+                                               "timeToEmpty":  0,
+                                               "iconName":  "",
+                                               "profilesEnabled":  false,
+                                               "profileWritesRequested":  false,
+                                               "profileWritesEnabled":  false,
+                                               "profileStatusEnabled":  false,
+                                               "profileControlsEnabled":  false,
+                                               "profilesState":  "disabled",
+                                               "profileReason":  "Windows power profile observation is disabled.",
+                                               "profile":  -1,
+                                               "profileName":  "Unknown",
+                                               "availableProfiles":  [
+
+                                                                     ],
+                                               "performanceMapped":  false,
+                                               "performanceClaim":  false,
+                                               "writeResultAvailable":  false,
+                                               "writeState":  "idle",
+                                               "writeReason":  "Power profile writes are disabled.",
+                                               "writeError":  "",
+                                               "writeTimeoutMs":  4000
+                                           }
+                             }
+                         ],
+    "mediaSnapshots":  [
+
+                       ],
+    "elapsedMilliseconds":  3456,
+    "sourceRevision":  "18523825ee58c64307c65723620a7d2bc3ff8672",
+    "sourceDirty":  false,
+    "backendRevision":  "1401042969e4b7ab3cfb314fc76945ab081db3de",
+    "buildRecordSha256":  "94F0834B7358EB3F0F6E254AFF6F70D60DF9259641E275A6162ADE96C4126333",
+    "configSha256":  "6FC8F8B80AF9D45A49A4737AF51B8C43A11B97E1B59A82468F31AB4C779C6F65",
+    "command":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\quickshell\\qs.exe",
+    "arguments":  "--no-color --log-times --path \"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\battery-20261025-191124-399\\shell.qml\"",
+    "executableSha256":  "22B69FFE0523F8FFDB86C22E1669A36B2C8DCAEA97B19754000EC7455345AF22",
+    "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\battery-20261025-191124-399",
+    "profile":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\battery-prototype-profile",
+    "sources":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\battery-20261025-191124-399.sources.json",
+    "screenshot":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\battery-20261025-191124-399.png",
+    "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\battery-20261025-191124-399.stdout.log",
+    "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\battery-20261025-191124-399.stderr.log"
+}

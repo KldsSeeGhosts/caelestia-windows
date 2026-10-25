@@ -1,0 +1,40 @@
+{
+    "capturedAtUtc":  "2026-10-25T23:11:39.8949798Z",
+    "identity":  {
+                     "activeSchemeGuid":  "381b4222-f694-41f0-9685-ff5bb260df2e",
+                     "activeSchemeName":  "Balanced",
+                     "overlaySchemeGuid":  "ded574b5-45a0-4f42-8737-46345c09c238",
+                     "overlaySchemeName":  "Best performance",
+                     "acLineStatus":  1,
+                     "batteryPresent":  false,
+                     "batteryLifePercent":  255
+                 },
+    "systemPowerStatus":  {
+                              "acLineStatus":  1,
+                              "acOnline":  true,
+                              "batteryFlag":  128,
+                              "batteryPresent":  false,
+                              "batteryLifePercent":  255,
+                              "batteryLifeTimeSeconds":  null,
+                              "batteryFullLifeTimeSeconds":  null
+                          },
+    "overlayScheme":  {
+                          "query":  "PowerGetEffectiveOverlayScheme",
+                          "guid":  "ded574b5-45a0-4f42-8737-46345c09c238",
+                          "name":  "Best performance",
+                          "note":  "This is the write target of backend PowerProfiles profile selection."
+                      },
+    "activeScheme":  {
+                         "query":  "powercfg /getactivescheme",
+                         "guid":  "381b4222-f694-41f0-9685-ff5bb260df2e",
+                         "name":  "Balanced",
+                         "note":  "Base power plan; the write target of plan changes."
+                     },
+    "batteries":  [
+
+                  ],
+    "warnings":  [
+
+                 ],
+    "measurement":  "Read-only observation: GetSystemPowerStatus, PowerGetEffectiveOverlayScheme, powercfg /getactivescheme and a Win32_Battery CIM query. No setting or plan is written."
+}
