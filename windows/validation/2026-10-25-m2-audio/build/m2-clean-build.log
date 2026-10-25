@@ -1,0 +1,164 @@
+﻿**********************************************************************
+** Visual Studio 2022 Developer PowerShell v17.14.42
+** Copyright (c) 2025 Microsoft Corporation
+**********************************************************************
+== configure-backend ==
+-- Quickshell configuration
+--   Distributor: Unset
+--   Disable precompild headers (dev): OFF
+--   Build tests (dev): OFF
+--   ASAN (dev): OFF
+--   Keep Frame Pointers (dev): OFF
+--   Use jemalloc: OFF
+--   Crash Handling: OFF
+--   Unix Sockets: ON
+--   Wayland: OFF
+--     Wlroots Layer-Shell: OFF (Requires WAYLAND)
+--     Session Lock: OFF (Requires WAYLAND)
+--     Foreign Toplevel Management: OFF (Requires WAYLAND)
+--     Hyprland: OFF (Requires WAYLAND)
+--       Hyprland IPC: OFF (Requires HYPRLAND)
+--       Hyprland Global Shortcuts: OFF (Requires HYPRLAND)
+--       Hyprland Focus Grabbing: OFF (Requires HYPRLAND)
+--       Hyprland Surface Extensions: OFF (Requires HYPRLAND)
+--     Screencopy: OFF (Requires WAYLAND)
+--       Image Copy Capture: OFF (Requires WAYLAND)
+--       Wlroots Screencopy: OFF (Requires WAYLAND)
+--       Hyprland Toplevel Export: OFF (Requires WAYLAND)
+--   X11: OFF
+--   I3/Sway: OFF
+--     I3/Sway IPC: OFF (Requires I3)
+--   System Tray: OFF
+--   PipeWire: OFF
+--   Mpris: OFF
+--   Pam: OFF
+--   Polkit: OFF
+--   Greetd: OFF
+--   UPower: OFF
+--   Notifications: OFF
+--   Bluetooth: OFF
+--   Network: OFF
+--   Windows backend: ON
+-- QML install dir: qml
+-- Could NOT find WrapVulkanHeaders (missing: Vulkan_INCLUDE_DIR) 
+-- Could NOT find WrapVulkanHeaders (missing: Vulkan_INCLUDE_DIR) 
+CMake Warning (author) at C:/Users/Ermin/AppData/Local/caelestia-dev/Qt/6.11.2/msvc2022_64/lib/cmake/Qt6Core/Qt6CoreMacros.cmake:3573 (message):
+  Qt policy QTP0004 is not set: You need qmldir files for each extra
+  directory that contains .qml files for your module.  Check
+  https://doc.qt.io/qt-6/qt-cmake-policy-qtp0004.html for policy details.
+  Use the qt_policy command to set the policy and suppress this warning.
+System.Management.Automation.RemoteException
+Call Stack (most recent call first):
+  C:/Users/Ermin/AppData/Local/caelestia-dev/Qt/6.11.2/msvc2022_64/lib/cmake/Qt6Qml/Qt6QmlMacros.cmake:4040 (__qt_internal_setup_policy)
+  C:/Users/Ermin/AppData/Local/caelestia-dev/Qt/6.11.2/msvc2022_64/lib/cmake/Qt6Qml/Qt6QmlMacros.cmake:1035 (qt6_target_qml_sources)
+  C:/Users/Ermin/AppData/Local/caelestia-dev/Qt/6.11.2/msvc2022_64/lib/cmake/Qt6Qml/Qt6QmlMacros.cmake:1513 (qt6_add_qml_module)
+  src/windows/wayland/CMakeLists.txt:8 (qt_add_qml_module)
+This warning is for project developers.  Use -Wno-author to suppress it.
+System.Management.Automation.RemoteException
+CMake Warning (author) at C:/Users/Ermin/AppData/Local/caelestia-dev/Qt/6.11.2/msvc2022_64/lib/cmake/Qt6Core/Qt6CoreMacros.cmake:3573 (message):
+  Qt policy QTP0004 is not set: You need qmldir files for each extra
+  directory that contains .qml files for your module.  Check
+  https://doc.qt.io/qt-6/qt-cmake-policy-qtp0004.html for policy details.
+  Use the qt_policy command to set the policy and suppress this warning.
+System.Management.Automation.RemoteException
+Call Stack (most recent call first):
+  C:/Users/Ermin/AppData/Local/caelestia-dev/Qt/6.11.2/msvc2022_64/lib/cmake/Qt6Qml/Qt6QmlMacros.cmake:4040 (__qt_internal_setup_policy)
+  C:/Users/Ermin/AppData/Local/caelestia-dev/Qt/6.11.2/msvc2022_64/lib/cmake/Qt6Qml/Qt6QmlMacros.cmake:1035 (qt6_target_qml_sources)
+  C:/Users/Ermin/AppData/Local/caelestia-dev/Qt/6.11.2/msvc2022_64/lib/cmake/Qt6Qml/Qt6QmlMacros.cmake:1513 (qt6_add_qml_module)
+  src/windows/hyprland/CMakeLists.txt:10 (qt_add_qml_module)
+This warning is for project developers.  Use -Wno-author to suppress it.
+System.Management.Automation.RemoteException
+-- Configuring done (1.3s)
+-- Generating done (0.7s)
+-- Build files have been written to: D:/AiStack/caelestia-windows/windows/.local/build/quickshell
+== build-backend ==
+[1/3] Automatic MOC for target quickshell
+== configure-plugins ==
+-- Could NOT find WrapVulkanHeaders (missing: Vulkan_INCLUDE_DIR) 
+-- Could NOT find WrapVulkanHeaders (missing: Vulkan_INCLUDE_DIR) 
+-- QML install dir: D:/AiStack/caelestia-windows/windows/.local/build/install/qml
+-- Created QML module: Caelestia
+-- Created QML module: Caelestia.Settings
+-- Created QML module: Caelestia.Components
+shaders/roundedmask.frag -> shaders/roundedmask.frag.qsb exposed as ://shaders/roundedmask.frag.qsb
+shaders/roundedmask.vert -> shaders/roundedmask.vert.qsb exposed as ://shaders/roundedmask.vert.qsb
+-- Created QML module: Caelestia.Config
+-- Created QML module: Caelestia.State
+-- Created QML module: Caelestia.Windows
+-- Created QML module: Caelestia.Blobs
+shaders/blob.frag -> shaders/blob.frag.qsb exposed as ://shaders/blob.frag.qsb
+shaders/blob.vert -> shaders/blob.vert.qsb exposed as ://shaders/blob.vert.qsb
+-- Created QML module: Caelestia.I18n
+-- Created QML module: Caelestia.Shaders
+crossfade.frag -> crossfade.frag.qsb exposed as :/shaders/crossfade.frag.qsb
+chromatic-bloom.frag -> chromatic-bloom.frag.qsb exposed as :/shaders/chromatic-bloom.frag.qsb
+colour-distance.frag -> colour-distance.frag.qsb exposed as :/shaders/colour-distance.frag.qsb
+crosshatch.frag -> crosshatch.frag.qsb exposed as :/shaders/crosshatch.frag.qsb
+crosswarp.frag -> crosswarp.frag.qsb exposed as :/shaders/crosswarp.frag.qsb
+directional.frag -> directional.frag.qsb exposed as :/shaders/directional.frag.qsb
+directional-wipe.frag -> directional-wipe.frag.qsb exposed as :/shaders/directional-wipe.frag.qsb
+fade-colour.frag -> fade-colour.frag.qsb exposed as :/shaders/fade-colour.frag.qsb
+glitch.frag -> glitch.frag.qsb exposed as :/shaders/glitch.frag.qsb
+glitch-displace.frag -> glitch-displace.frag.qsb exposed as :/shaders/glitch-displace.frag.qsb
+heat-melt.frag -> heat-melt.frag.qsb exposed as :/shaders/heat-melt.frag.qsb
+ink-splash.frag -> ink-splash.frag.qsb exposed as :/shaders/ink-splash.frag.qsb
+inkwell-drop.frag -> inkwell-drop.frag.qsb exposed as :/shaders/inkwell-drop.frag.qsb
+iris.frag -> iris.frag.qsb exposed as :/shaders/iris.frag.qsb
+morph.frag -> morph.frag.qsb exposed as :/shaders/morph.frag.qsb
+parametric-glitch.frag -> parametric-glitch.frag.qsb exposed as :/shaders/parametric-glitch.frag.qsb
+perlin.frag -> perlin.frag.qsb exposed as :/shaders/perlin.frag.qsb
+pixelate.frag -> pixelate.frag.qsb exposed as :/shaders/pixelate.frag.qsb
+pixelfade-wave.frag -> pixelfade-wave.frag.qsb exposed as :/shaders/pixelfade-wave.frag.qsb
+plasma-flow.frag -> plasma-flow.frag.qsb exposed as :/shaders/plasma-flow.frag.qsb
+polka-dots-curtain.frag -> polka-dots-curtain.frag.qsb exposed as :/shaders/polka-dots-curtain.frag.qsb
+puzzle-right.frag -> puzzle-right.frag.qsb exposed as :/shaders/puzzle-right.frag.qsb
+random-squares.frag -> random-squares.frag.qsb exposed as :/shaders/random-squares.frag.qsb
+smoke.frag -> smoke.frag.qsb exposed as :/shaders/smoke.frag.qsb
+soft-warp-fade.frag -> soft-warp-fade.frag.qsb exposed as :/shaders/soft-warp-fade.frag.qsb
+voronoi-shatter.frag -> voronoi-shatter.frag.qsb exposed as :/shaders/voronoi-shatter.frag.qsb
+zoom-blur-pull.frag -> zoom-blur-pull.frag.qsb exposed as :/shaders/zoom-blur-pull.frag.qsb
+-- Configuring done (0.9s)
+-- Generating done (0.3s)
+-- Build files have been written to: D:/AiStack/caelestia-windows/windows/.local/build/caelestia
+== build-plugins ==
+[0/2] Re-checking globbed directories...
+ninja: no work to do.
+== install-plugins ==
+-- Install configuration: "Release"
+-- Up-to-date: D:/AiStack/caelestia-windows/windows/.local/build/install/qml/Caelestia/lib/caelestia-core.dll
+-- Up-to-date: D:/AiStack/caelestia-windows/windows/.local/build/install/qml/Caelestia/caelestia-coreplugin.dll
+-- Up-to-date: D:/AiStack/caelestia-windows/windows/.local/build/install/qml/Caelestia/qmldir
+-- Up-to-date: D:/AiStack/caelestia-windows/windows/.local/build/install/qml/Caelestia/caelestia-core.qmltypes
+-- Up-to-date: D:/AiStack/caelestia-windows/windows/.local/build/install/qml/Caelestia/lib/caelestia-settings.dll
+-- Up-to-date: D:/AiStack/caelestia-windows/windows/.local/build/install/qml/Caelestia/Settings/caelestia-settingsplugin.dll
+-- Up-to-date: D:/AiStack/caelestia-windows/windows/.local/build/install/qml/Caelestia/Settings/qmldir
+-- Up-to-date: D:/AiStack/caelestia-windows/windows/.local/build/install/qml/Caelestia/Settings/caelestia-settings.qmltypes
+-- Up-to-date: D:/AiStack/caelestia-windows/windows/.local/build/install/qml/Caelestia/lib/caelestia-components.dll
+-- Up-to-date: D:/AiStack/caelestia-windows/windows/.local/build/install/qml/Caelestia/Components/caelestia-componentsplugin.dll
+-- Up-to-date: D:/AiStack/caelestia-windows/windows/.local/build/install/qml/Caelestia/Components/qmldir
+-- Up-to-date: D:/AiStack/caelestia-windows/windows/.local/build/install/qml/Caelestia/Components/caelestia-components.qmltypes
+-- Up-to-date: D:/AiStack/caelestia-windows/windows/.local/build/install/qml/Caelestia/lib/caelestia-config.dll
+-- Up-to-date: D:/AiStack/caelestia-windows/windows/.local/build/install/qml/Caelestia/Config/caelestia-configplugin.dll
+-- Up-to-date: D:/AiStack/caelestia-windows/windows/.local/build/install/qml/Caelestia/Config/qmldir
+-- Up-to-date: D:/AiStack/caelestia-windows/windows/.local/build/install/qml/Caelestia/Config/caelestia-config.qmltypes
+-- Up-to-date: D:/AiStack/caelestia-windows/windows/.local/build/install/qml/Caelestia/lib/caelestia-state.dll
+-- Up-to-date: D:/AiStack/caelestia-windows/windows/.local/build/install/qml/Caelestia/State/caelestia-stateplugin.dll
+-- Up-to-date: D:/AiStack/caelestia-windows/windows/.local/build/install/qml/Caelestia/State/qmldir
+-- Up-to-date: D:/AiStack/caelestia-windows/windows/.local/build/install/qml/Caelestia/State/caelestia-state.qmltypes
+-- Up-to-date: D:/AiStack/caelestia-windows/windows/.local/build/install/qml/Caelestia/lib/caelestia-windows.dll
+-- Up-to-date: D:/AiStack/caelestia-windows/windows/.local/build/install/qml/Caelestia/Windows/caelestia-windowsplugin.dll
+-- Up-to-date: D:/AiStack/caelestia-windows/windows/.local/build/install/qml/Caelestia/Windows/qmldir
+-- Up-to-date: D:/AiStack/caelestia-windows/windows/.local/build/install/qml/Caelestia/Windows/caelestia-windows.qmltypes
+-- Up-to-date: D:/AiStack/caelestia-windows/windows/.local/build/install/qml/Caelestia/lib/caelestia-blobs.dll
+-- Up-to-date: D:/AiStack/caelestia-windows/windows/.local/build/install/qml/Caelestia/Blobs/caelestia-blobsplugin.dll
+-- Up-to-date: D:/AiStack/caelestia-windows/windows/.local/build/install/qml/Caelestia/Blobs/qmldir
+-- Up-to-date: D:/AiStack/caelestia-windows/windows/.local/build/install/qml/Caelestia/Blobs/caelestia-blobs.qmltypes
+-- Up-to-date: D:/AiStack/caelestia-windows/windows/.local/build/install/qml/Caelestia/lib/caelestia-i18n.dll
+-- Up-to-date: D:/AiStack/caelestia-windows/windows/.local/build/install/qml/Caelestia/I18n/caelestia-i18nplugin.dll
+-- Up-to-date: D:/AiStack/caelestia-windows/windows/.local/build/install/qml/Caelestia/I18n/qmldir
+-- Up-to-date: D:/AiStack/caelestia-windows/windows/.local/build/install/qml/Caelestia/I18n/caelestia-i18n.qmltypes
+-- Up-to-date: D:/AiStack/caelestia-windows/windows/.local/build/install/qml/Caelestia/lib/caelestia-shaders.dll
+-- Up-to-date: D:/AiStack/caelestia-windows/windows/.local/build/install/qml/Caelestia/Shaders/caelestia-shadersplugin.dll
+-- Up-to-date: D:/AiStack/caelestia-windows/windows/.local/build/install/qml/Caelestia/Shaders/qmldir
+-- Up-to-date: D:/AiStack/caelestia-windows/windows/.local/build/install/qml/Caelestia/Shaders/caelestia-shaders.qmltypes
+Built backend and portable plugins. Evidence: D:\AiStack\caelestia-windows\windows\.local\build\logs

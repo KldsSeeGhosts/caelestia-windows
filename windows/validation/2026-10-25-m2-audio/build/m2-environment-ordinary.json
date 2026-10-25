@@ -1,0 +1,48 @@
+﻿{
+    "schemaVersion":  1,
+    "repository":  "D:\\AiStack\\caelestia-windows",
+    "platform":  "Microsoft Windows NT 10.0.26300.0",
+    "source":  {
+                   "expectedBackendRevision":  "8c71bdb8116dffeb274edb31c3803e1c28dbb270",
+                   "actualBackendRevision":  "8c71bdb8116dffeb274edb31c3803e1c28dbb270",
+                   "matches":  true
+               },
+    "tools":  [
+                  {
+                      "name":  "git",
+                      "path":  "C:\\Users\\Ermin\\AppData\\Local\\Programs\\PortableGit-2.55.0.5\\cmd\\git.exe"
+                  },
+                  {
+                      "name":  "cmake",
+                      "path":  null
+                  },
+                  {
+                      "name":  "ninja",
+                      "path":  null
+                  },
+                  {
+                      "name":  "cxxCompiler",
+                      "path":  null
+                  },
+                  {
+                      "name":  "qtpaths",
+                      "path":  null
+                  },
+                  {
+                      "name":  "quickshellRuntime",
+                      "path":  null
+                  }
+              ],
+    "nativeToolchainReady":  false,
+    "blockers":  [
+                     "cmake is not available on PATH.",
+                     "ninja is not available on PATH.",
+                     "No MSVC cl.exe or clang-cl.exe is available in this environment.",
+                     "Qt development tools were not found; supply -QtPrefix or configure the Qt build environment."
+                 ],
+    "notes":  [
+                  "This report does not validate a Caelestia build, Qt module coverage, SDK compatibility, or runtime behavior.",
+                  "No software was installed and no desktop, configuration, authentication, or environment settings were changed.",
+                  "The portable plugin build and component probe do not validate the full bar/drawer or Windows service adaptation."
+              ]
+}
