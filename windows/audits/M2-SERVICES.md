@@ -1,4 +1,4 @@
-# M2 Windows service source audit
+﻿# M2 Windows service source audit
 
 Current media follow-up: clean root `d9cdcf9a` and backend `14010429` implement
 a default-off Players adapter and original dashboard player details. Native
@@ -425,6 +425,28 @@ root to deduplicate against Linear, each enabled and validated independently:
    Acceptance: absent adapter/location denial, bounded list-visible scans,
    action results, no credential logging and no privilege changes. Keep advanced
    Ethernet configuration outside the first network issue.
+   **Progress:** implemented as ERM-500's bounded slice on
+   `t3/network-service-ui` at clean `475c7a27` with backend `14010429`.
+   A Quickshell-free [NetworkService](../services/network/NetworkService.qml)
+   exposes disabled/initializing/no-adapter/location-denied/radio-off/
+   connecting/connected/disconnected states and hides lists when a WLAN query
+   cannot be truthful. [Nmcli.qml](../services/network/Nmcli.qml) is staged in
+   place of the upstream singleton and owns the typed `AccessPoint`/
+   `EthernetDevice` boundary; the original
+   [Network.qml](../../modules/bar/popouts/Network.qml) popout gained
+   upstream-preserving control/connect/status hooks. Scans are bounded to a
+   visible list, connect results come only from `wifiConnectResult`, and radio/
+   disconnect/forget stay requested/unverified because the backend has no
+   result. There is no password path; secure networks without a saved profile
+   point to Windows Settings. The pinned backend has no initialization/error
+   state (a WLAN failure looks like no adapter), performs one startup query
+   even while hidden, and trusts `connectToNetwork()` input; the adapter guards
+   membership and credentials. Ethernet remains a connected flag with no
+   control, speed or usage. [Evidence](../validation/2026-10-25-m2-network/README.md)
+   records 329 fixture assertions, native Disabled/ReadOnly smoke at 150%/175%
+   with 0 commands and 0 scans, the M1 regression and media/battery fixtures.
+   Interactive control, real access-point connect/forget, radio toggling and
+   location denial/recovery remain untested.
 5. **Bluetooth original status/popout integration:** preserve typed backend
    devices and unsupported-control states. Acceptance: null/blocked adapter,
    discovery lifecycle and denied pairing settle; unsupported pairing delegates
