@@ -7,9 +7,17 @@ import qs.utils
 MaterialIcon {
     required property color colour
 
+    // Windows host: the upstream power-profile icon reads PowerProfiles, whose
+    // only Windows capability is an overlay-scheme write. Hosts that keep that
+    // service out of the process set this false; the icon then reports the
+    // unavailable battery status instead of substituting a profile state.
+    property bool profileStatusEnabled: true
+
     animate: true
     text: {
         if (!UPower.displayDevice.isLaptopBattery) {
+            if (!profileStatusEnabled)
+                return "battery_alert";
             if (PowerProfiles.profile === PowerProfile.PowerSaver)
                 return "energy_savings_leaf";
             if (PowerProfiles.profile === PowerProfile.Performance)

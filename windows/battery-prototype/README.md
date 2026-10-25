@@ -1,0 +1,95 @@
+# Windows battery prototype
+
+ERM-499's read-only M2 slice loads the original
+[`BatteryStatus.qml`](../../modules/bar/components/status/BatteryStatus.qml)
+status icon and the original
+[`Battery.qml`](../../modules/bar/popouts/Battery.qml) popout content in a
+separate bounded native window. The window is at most 640x620 logical pixels,
+inset 80 from the chosen screen. Escape closes an interactive run.
+
+The [Battery adapter](../services/battery/BatteryService.qml) projects the
+pinned backend's native `Quickshell.Services.UPower` display device and
+`onBattery` source: explicit disabled/initializing/unavailable/ready states,
+truthful battery presence (`hasBattery`), a percentage guarded to finite
+0..1, the upstream charging-state gating, and null-safe behavior when the
+device is missing, stale, or a native read failed. The Windows backend maps
+failed `GetSystemPowerStatus` reads to `isPresent=false`; a system without a
+battery renders the original "No battery detected" state and never a fake
+zero-percent battery. Energy/health telemetry stays unavailable, matching the
+backend's stubbed values.
+
+This slice is strictly read-only. The adapter exposes no mutating methods at
+all. `PowerProfiles` is never referenced by the adapter or the host, and the
+original components' profile hooks are disabled by the host: the profile
+selector does not render, its click handler is disabled, the degradation
+warning does not activate, and profile text reports "Power profile
+unavailable". No power scheme, overlay, or IdlePower setting is written.
+`IdlePower` and profile selection remain a separate later issue.
+
+No notifications, network, Bluetooth, brightness, app catalog, tray, media,
+session actions, global shortcuts or unrelated services are created. The
+backend retains ordinary instance bookkeeping, own-window desktop support and
+stale-AppBar startup cleanup as documented for M1.
+
+## Launch
+
+Build using [NATIVE-BUILD.md](../NATIVE-BUILD.md). In native PowerShell:
+
+```powershell
+$qtPrefix = "$env:LOCALAPPDATA\caelestia-dev\Qt\6.11.2\msvc2022_64"
+powershell -NoProfile -File windows/scripts/Start-ShellPrototype.ps1 `
+    -QtPrefix $qtPrefix -Battery -BatteryMode ReadOnly -Wait
+```
+
+`-Battery` selects this separate entry point. `-BatteryMode Disabled` is the
+default and never loads the native power backend or instantiates the original
+UPower components. `ReadOnly` opts into the native UPower observation (its
+initial status read, 30-second poll and power notifications). There is no
+`Interactive` mode: this slice has no writes.
+
+The opt-in is a child-process environment variable
+`CAELESTIA_WINDOWS_BATTERY`. The launcher sets it explicitly, preventing
+inherited flags from enabling the service in the M1 profile. Every `-Smoke`
+run is read-only by construction. The M1 profile's default behavior is
+preserved. This host uses its own `battery-prototype-profile` and fresh source
+stage under ignored `windows/.local/build`.
+
+The original components gained localized availability hooks for the
+PowerProfiles read/write paths only (`profileStatusEnabled`,
+`profileControlsEnabled`, defaulting to upstream behavior). Unlike the audio
+host, the original UPower components are instantiated only in the read-only
+mode: they bind the native `UPower` singleton directly, so disabled mode keeps
+them unloaded through host loaders. All battery display gating remains the
+original component logic; the adapter's `hasBattery` matches upstream's
+`isLaptopBattery` display gate.
+
+## Validation
+
+```powershell
+powershell -NoProfile -File windows/scripts/Test-BatteryService.ps1 `
+    -QtPrefix $qtPrefix
+powershell -NoProfile -File windows/scripts/Test-BatteryPrototype.ps1 `
+    -QtPrefix $qtPrefix
+```
+
+The first command runs injected QML fixtures in Qt's offscreen `qml.exe`,
+staging only the state object and fixtures. It constructs no native UPower
+backend and covers disabled/initializing/unavailable/ready states, truthful
+no-battery absence, charging-state gating, numeric/state/icon guards, null and
+stale devices, unready/denied backends, the `onBattery` truth table and an
+introspection check that the adapter exposes no write methods.
+
+The second command snapshots native power state (active scheme, effective
+overlay scheme, `GetSystemPowerStatus`, `Win32_Battery`) before and after,
+runs the adapter fixtures, then disabled/read-only smoke on every measured
+connected screen, then the original M1 bar/session regression and a full
+[Test-AudioPrototype.ps1](../scripts/Test-AudioPrototype.ps1) re-run as the
+shared-script regression gate. Each run records source/staged hashes,
+runtime/build references, snapshots, logs and a PNG. It rejects QML
+diagnostics. A workstation without a battery demonstrates the truthful absent
+path natively; battery-present behavior stays fixture-validated until run on
+battery hardware. Raw results are under
+`windows/.local/build/battery-validation-<timestamp>/result.json`.
+
+[Final acceptance](../validation/2026-10-25-m2-battery/README.md) records the
+clean-source results and limits.

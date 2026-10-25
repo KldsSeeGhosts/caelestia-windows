@@ -10,6 +10,14 @@ import qs.services
 Column {
     id: root
 
+    // Windows host: the profile text and degradation warning read PowerProfiles
+    // and the selector below writes an overlay scheme. Hosts that keep that
+    // service out of the process set these false; the text then reports the
+    // unavailable profile status and neither the warning nor the selector
+    // renders. Defaults preserve upstream behavior.
+    property bool profileStatusEnabled: true
+    property bool profileControlsEnabled: true
+
     function formatSeconds(s: int): string {
         const day = Math.floor(s / 86400);
         const hr = Math.floor(s / 3600) % 24;
@@ -61,7 +69,9 @@ Column {
         text: {
             const dev = UPower.displayDevice;
             if (!dev.isLaptopBattery)
-                return Tr.tr("Power profile: %1").arg(root.powerProfileToString(PowerProfiles.profile));
+                return profileStatusEnabled
+                    ? Tr.tr("Power profile: %1").arg(root.powerProfileToString(PowerProfiles.profile))
+                    : Tr.tr("Power profile unavailable");
 
             if (UPower.onBattery) {
                 const time = root.formatSeconds(dev.timeToEmpty);
@@ -82,7 +92,8 @@ Column {
         asynchronous: true
         anchors.horizontalCenter: parent.horizontalCenter
 
-        active: PowerProfiles.degradationReason !== PerformanceDegradationReason.None
+        // Short-circuits before referencing PowerProfiles when disabled.
+        active: root.profileStatusEnabled && PowerProfiles.degradationReason !== PerformanceDegradationReason.None
 
         height: active ? ((item as Item)?.implicitHeight ?? 0) : 0
 
@@ -141,6 +152,8 @@ Column {
         id: profiles
 
         property string current: {
+            if (!root.profileControlsEnabled)
+                return "";
             const p = PowerProfiles.profile;
             if (p === PowerProfile.PowerSaver)
                 return saver.icon;
@@ -148,6 +161,8 @@ Column {
                 return perf.icon;
             return balance.icon;
         }
+
+        visible: root.profileControlsEnabled
 
         anchors.horizontalCenter: parent.horizontalCenter
 
@@ -244,6 +259,7 @@ Column {
 
         StateLayer {
             radius: Tokens.rounding.full
+            disabled: !root.profileControlsEnabled
             color: profiles.current === parent.icon ? Colours.palette.m3onPrimary : Colours.palette.m3onSurface
             onClicked: PowerProfiles.profile = parent.profile
         }

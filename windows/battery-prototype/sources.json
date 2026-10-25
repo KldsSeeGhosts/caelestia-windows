@@ -1,0 +1,9 @@
+{
+  "modules/bar/components/status/BatteryStatus.qml": "modules/bar/components/status/BatteryStatus.qml",
+  "modules/bar/popouts/Battery.qml": "modules/bar/popouts/Battery.qml",
+  "components/AnchorAnim.qml": "components/AnchorAnim.qml",
+  "utils/Icons.qml": "utils/Icons.qml",
+  "windows/services/battery/Battery.qml": "services/Battery.qml",
+  "windows/services/battery/BatteryService.qml": "services/BatteryService.qml",
+  "windows/services/battery/NativePowerBackend.qml": "services/NativePowerBackend.qml"
+}
