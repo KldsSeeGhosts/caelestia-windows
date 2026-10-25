@@ -1,0 +1,36 @@
+﻿{
+    "passed":  true,
+    "timedOut":  false,
+    "exitCode":  0,
+    "fixture":  {
+                    "assertions":  329
+                },
+    "nativeImports":  0,
+    "hashMismatch":  [
+
+                     ],
+    "diagnostics":  [
+
+                    ],
+    "sourceRevision":  "475c7a271f2e57f8ff3605adf3bc92d4d9044261",
+    "sourceDirty":  false,
+    "qtVersion":  "6.11.2",
+    "runnerSha256":  "24994D434962751713F0C8932B356104B0849572B95765DAD50C13DA6BE3FA20",
+    "command":  "C:\\Users\\Ermin\\AppData\\Local\\caelestia-dev\\Qt\\6.11.2\\msvc2022_64\\bin\\qml.exe",
+    "arguments":  "\"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\network-tests\\network-fixture-20261025-180420-650\\NetworkServiceTest.qml\"",
+    "sources":  [
+                    {
+                        "source":  "windows/services/network/NetworkService.qml",
+                        "sourceSha256":  "B24060D09712CEB9D0272E8548991AB5E6599B71984BD246EBAA96FD5DCF233D",
+                        "stagedSha256":  "B24060D09712CEB9D0272E8548991AB5E6599B71984BD246EBAA96FD5DCF233D"
+                    },
+                    {
+                        "source":  "windows/services/network/NetworkServiceTest.qml",
+                        "sourceSha256":  "3666A1F44D9A46C329045471AA2D70245B5A8043D0FCC94F511B0C588E249B2D",
+                        "stagedSha256":  "3666A1F44D9A46C329045471AA2D70245B5A8043D0FCC94F511B0C588E249B2D"
+                    }
+                ],
+    "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\network-tests\\network-fixture-20261025-180420-650",
+    "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\network-fixture-20261025-180420-650.stdout.log",
+    "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\network-fixture-20261025-180420-650.stderr.log"
+}

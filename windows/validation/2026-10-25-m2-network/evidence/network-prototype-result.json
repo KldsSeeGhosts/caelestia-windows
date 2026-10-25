@@ -1,0 +1,768 @@
+﻿{
+    "passed":  true,
+    "failure":  null,
+    "sourceRevision":  "475c7a271f2e57f8ff3605adf3bc92d4d9044261",
+    "sourceDirty":  false,
+    "backendRevision":  "1401042969e4b7ab3cfb314fc76945ab081db3de",
+    "measurementSources":  [
+                               {
+                                   "source":  "windows/scripts/Get-DesktopState.ps1",
+                                   "sha256":  "44E06C706EE5A930A41EA723D9DFC104469D2019DDBC3BAEA71B240B71A401DE"
+                               },
+                               {
+                                   "source":  "windows/scripts/Test-NetworkService.ps1",
+                                   "sha256":  "68C0021E0B83991B079D1F0B283816FE759287FCF556DCA317B3F440E69851A8"
+                               },
+                               {
+                                   "source":  "windows/scripts/Test-NetworkPrototype.ps1",
+                                   "sha256":  "32D99D86A747E41DEB8F9D21F90B53009AE9D7E48C6F3109008A7CD44BDC5D2E"
+                               }
+                           ],
+    "output":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\network-validation-20261025-180420-455",
+    "records":  [
+                    {
+                        "kind":  "fixture",
+                        "result":  {
+                                       "passed":  true,
+                                       "timedOut":  false,
+                                       "exitCode":  0,
+                                       "fixture":  {
+                                                       "assertions":  329
+                                                   },
+                                       "nativeImports":  0,
+                                       "hashMismatch":  [
+
+                                                        ],
+                                       "diagnostics":  [
+
+                                                       ],
+                                       "sourceRevision":  "475c7a271f2e57f8ff3605adf3bc92d4d9044261",
+                                       "sourceDirty":  false,
+                                       "qtVersion":  "6.11.2",
+                                       "runnerSha256":  "24994D434962751713F0C8932B356104B0849572B95765DAD50C13DA6BE3FA20",
+                                       "command":  "C:\\Users\\Ermin\\AppData\\Local\\caelestia-dev\\Qt\\6.11.2\\msvc2022_64\\bin\\qml.exe",
+                                       "arguments":  "\"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\network-tests\\network-fixture-20261025-180420-650\\NetworkServiceTest.qml\"",
+                                       "sources":  [
+                                                       {
+                                                           "source":  "windows/services/network/NetworkService.qml",
+                                                           "sourceSha256":  "B24060D09712CEB9D0272E8548991AB5E6599B71984BD246EBAA96FD5DCF233D",
+                                                           "stagedSha256":  "B24060D09712CEB9D0272E8548991AB5E6599B71984BD246EBAA96FD5DCF233D"
+                                                       },
+                                                       {
+                                                           "source":  "windows/services/network/NetworkServiceTest.qml",
+                                                           "sourceSha256":  "3666A1F44D9A46C329045471AA2D70245B5A8043D0FCC94F511B0C588E249B2D",
+                                                           "stagedSha256":  "3666A1F44D9A46C329045471AA2D70245B5A8043D0FCC94F511B0C588E249B2D"
+                                                       }
+                                                   ],
+                                       "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\network-tests\\network-fixture-20261025-180420-650",
+                                       "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\network-fixture-20261025-180420-650.stdout.log",
+                                       "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\network-fixture-20261025-180420-650.stderr.log"
+                                   }
+                    },
+                    {
+                        "kind":  "network",
+                        "result":  {
+                                       "passed":  true,
+                                       "smoke":  true,
+                                       "prototype":  "network",
+                                       "audioMode":  "Disabled",
+                                       "batteryMode":  "Disabled",
+                                       "mediaMode":  "Disabled",
+                                       "networkMode":  "Disabled",
+                                       "timedOut":  false,
+                                       "exitCode":  0,
+                                       "scaleFactor":  "native",
+                                       "screenIndex":  0,
+                                       "monitorCycle":  false,
+                                       "traceInput":  false,
+                                       "actualScreens":  [
+                                                             {
+                                                                 "index":  0,
+                                                                 "name":  "MAG321UX OLED",
+                                                                 "x":  0,
+                                                                 "y":  0,
+                                                                 "dpr":  1.5,
+                                                                 "width":  520,
+                                                                 "height":  680
+                                                             }
+                                                         ],
+                                       "captures":  [
+                                                        "file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/network-20261025-180420-933.png"
+                                                    ],
+                                       "audioSnapshots":  [
+
+                                                          ],
+                                       "batterySnapshots":  [
+
+                                                            ],
+                                       "mediaSnapshots":  [
+
+                                                          ],
+                                       "networkSnapshots":  [
+                                                                {
+                                                                    "phase":  "INITIAL",
+                                                                    "state":  {
+                                                                                  "status":  "disabled",
+                                                                                  "reason":  "Windows network is disabled.",
+                                                                                  "enabled":  false,
+                                                                                  "controlsEnabled":  false,
+                                                                                  "backendLoaded":  false,
+                                                                                  "nativeRequested":  false,
+                                                                                  "initialized":  false,
+                                                                                  "adapterPresent":  false,
+                                                                                  "radioOn":  false,
+                                                                                  "locationDenied":  false,
+                                                                                  "needsLocationPermission":  false,
+                                                                                  "connected":  false,
+                                                                                  "activeSsid":  "",
+                                                                                  "activeSignalQuality":  0,
+                                                                                  "hasInternet":  false,
+                                                                                  "limited":  false,
+                                                                                  "wifiStatus":  "",
+                                                                                  "scanning":  false,
+                                                                                  "connecting":  false,
+                                                                                  "connectingSsid":  "",
+                                                                                  "listVisible":  false,
+                                                                                  "listAvailable":  false,
+                                                                                  "listHidden":  false,
+                                                                                  "networkCount":  0,
+                                                                                  "networks":  [
+
+                                                                                               ],
+                                                                                  "activeIdentity":  "",
+                                                                                  "ethernetConnected":  false,
+                                                                                  "ethernetDeviceCount":  0,
+                                                                                  "ethernetControlSupported":  false,
+                                                                                  "ethernetConfigSupported":  false,
+                                                                                  "lastResultKind":  "",
+                                                                                  "lastResultText":  "",
+                                                                                  "resultRequested":  false,
+                                                                                  "resultVerified":  false,
+                                                                                  "resultSucceeded":  false,
+                                                                                  "resultSequence":  0,
+                                                                                  "commandsSent":  0,
+                                                                                  "scansRequested":  0,
+                                                                                  "pendingSsid":  "",
+                                                                                  "popoutLoaded":  false,
+                                                                                  "popoutControlsEnabled":  null,
+                                                                                  "popoutNativeConnect":  null,
+                                                                                  "popoutEthernetControlAvailable":  null,
+                                                                                  "popoutNativeConnectingSsid":  "",
+                                                                                  "statusIcon":  "wifi_off"
+                                                                              }
+                                                                },
+                                                                {
+                                                                    "phase":  "FINAL",
+                                                                    "state":  {
+                                                                                  "status":  "disabled",
+                                                                                  "reason":  "Windows network is disabled.",
+                                                                                  "enabled":  false,
+                                                                                  "controlsEnabled":  false,
+                                                                                  "backendLoaded":  false,
+                                                                                  "nativeRequested":  false,
+                                                                                  "initialized":  false,
+                                                                                  "adapterPresent":  false,
+                                                                                  "radioOn":  false,
+                                                                                  "locationDenied":  false,
+                                                                                  "needsLocationPermission":  false,
+                                                                                  "connected":  false,
+                                                                                  "activeSsid":  "",
+                                                                                  "activeSignalQuality":  0,
+                                                                                  "hasInternet":  false,
+                                                                                  "limited":  false,
+                                                                                  "wifiStatus":  "",
+                                                                                  "scanning":  false,
+                                                                                  "connecting":  false,
+                                                                                  "connectingSsid":  "",
+                                                                                  "listVisible":  false,
+                                                                                  "listAvailable":  false,
+                                                                                  "listHidden":  false,
+                                                                                  "networkCount":  0,
+                                                                                  "networks":  [
+
+                                                                                               ],
+                                                                                  "activeIdentity":  "",
+                                                                                  "ethernetConnected":  false,
+                                                                                  "ethernetDeviceCount":  0,
+                                                                                  "ethernetControlSupported":  false,
+                                                                                  "ethernetConfigSupported":  false,
+                                                                                  "lastResultKind":  "",
+                                                                                  "lastResultText":  "",
+                                                                                  "resultRequested":  false,
+                                                                                  "resultVerified":  false,
+                                                                                  "resultSucceeded":  false,
+                                                                                  "resultSequence":  0,
+                                                                                  "commandsSent":  0,
+                                                                                  "scansRequested":  0,
+                                                                                  "pendingSsid":  "",
+                                                                                  "popoutLoaded":  false,
+                                                                                  "popoutControlsEnabled":  null,
+                                                                                  "popoutNativeConnect":  null,
+                                                                                  "popoutEthernetControlAvailable":  null,
+                                                                                  "popoutNativeConnectingSsid":  "",
+                                                                                  "statusIcon":  "wifi_off"
+                                                                              }
+                                                                }
+                                                            ],
+                                       "elapsedMilliseconds":  3426,
+                                       "sourceRevision":  "475c7a271f2e57f8ff3605adf3bc92d4d9044261",
+                                       "sourceDirty":  false,
+                                       "backendRevision":  "1401042969e4b7ab3cfb314fc76945ab081db3de",
+                                       "buildRecordSha256":  "3FA201EE45FC755B663FF122090B617D222BBFD99352B18F490B003F0C14FED1",
+                                       "configSha256":  "6FC8F8B80AF9D45A49A4737AF51B8C43A11B97E1B59A82468F31AB4C779C6F65",
+                                       "command":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\quickshell\\qs.exe",
+                                       "arguments":  "--no-color --log-times --path \"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\network-20261025-180420-933\\shell.qml\"",
+                                       "executableSha256":  "22B69FFE0523F8FFDB86C22E1669A36B2C8DCAEA97B19754000EC7455345AF22",
+                                       "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\network-20261025-180420-933",
+                                       "profile":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\network-prototype-profile",
+                                       "sources":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\network-20261025-180420-933.sources.json",
+                                       "screenshot":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\network-20261025-180420-933.png",
+                                       "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\network-20261025-180420-933.stdout.log",
+                                       "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\network-20261025-180420-933.stderr.log"
+                                   }
+                    },
+                    {
+                        "kind":  "network",
+                        "result":  {
+                                       "passed":  true,
+                                       "smoke":  true,
+                                       "prototype":  "network",
+                                       "audioMode":  "Disabled",
+                                       "batteryMode":  "Disabled",
+                                       "mediaMode":  "Disabled",
+                                       "networkMode":  "ReadOnly",
+                                       "timedOut":  false,
+                                       "exitCode":  0,
+                                       "scaleFactor":  "native",
+                                       "screenIndex":  0,
+                                       "monitorCycle":  false,
+                                       "traceInput":  false,
+                                       "actualScreens":  [
+                                                             {
+                                                                 "index":  0,
+                                                                 "name":  "MAG321UX OLED",
+                                                                 "x":  0,
+                                                                 "y":  0,
+                                                                 "dpr":  1.5,
+                                                                 "width":  520,
+                                                                 "height":  680
+                                                             }
+                                                         ],
+                                       "captures":  [
+                                                        "file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/network-20261025-180424-805.png"
+                                                    ],
+                                       "audioSnapshots":  [
+
+                                                          ],
+                                       "batterySnapshots":  [
+
+                                                            ],
+                                       "mediaSnapshots":  [
+
+                                                          ],
+                                       "networkSnapshots":  [
+                                                                {
+                                                                    "phase":  "INITIAL",
+                                                                    "state":  {
+                                                                                  "status":  "disconnected",
+                                                                                  "reason":  "Wi-Fi is on; no network is connected.",
+                                                                                  "enabled":  true,
+                                                                                  "controlsEnabled":  false,
+                                                                                  "backendLoaded":  true,
+                                                                                  "nativeRequested":  true,
+                                                                                  "initialized":  true,
+                                                                                  "adapterPresent":  true,
+                                                                                  "radioOn":  true,
+                                                                                  "locationDenied":  false,
+                                                                                  "needsLocationPermission":  false,
+                                                                                  "connected":  false,
+                                                                                  "activeSsid":  "",
+                                                                                  "activeSignalQuality":  0,
+                                                                                  "hasInternet":  true,
+                                                                                  "limited":  false,
+                                                                                  "wifiStatus":  "disconnected",
+                                                                                  "scanning":  false,
+                                                                                  "connecting":  false,
+                                                                                  "connectingSsid":  "",
+                                                                                  "listVisible":  false,
+                                                                                  "listAvailable":  true,
+                                                                                  "listHidden":  false,
+                                                                                  "networkCount":  0,
+                                                                                  "networks":  [
+
+                                                                                               ],
+                                                                                  "activeIdentity":  "",
+                                                                                  "ethernetConnected":  true,
+                                                                                  "ethernetDeviceCount":  1,
+                                                                                  "ethernetControlSupported":  false,
+                                                                                  "ethernetConfigSupported":  false,
+                                                                                  "lastResultKind":  "",
+                                                                                  "lastResultText":  "",
+                                                                                  "resultRequested":  false,
+                                                                                  "resultVerified":  false,
+                                                                                  "resultSucceeded":  false,
+                                                                                  "resultSequence":  0,
+                                                                                  "commandsSent":  0,
+                                                                                  "scansRequested":  0,
+                                                                                  "pendingSsid":  "",
+                                                                                  "popoutLoaded":  true,
+                                                                                  "popoutControlsEnabled":  false,
+                                                                                  "popoutNativeConnect":  true,
+                                                                                  "popoutEthernetControlAvailable":  false,
+                                                                                  "popoutNativeConnectingSsid":  "",
+                                                                                  "statusIcon":  "cable"
+                                                                              }
+                                                                },
+                                                                {
+                                                                    "phase":  "FINAL",
+                                                                    "state":  {
+                                                                                  "status":  "disconnected",
+                                                                                  "reason":  "Wi-Fi is on; no network is connected.",
+                                                                                  "enabled":  true,
+                                                                                  "controlsEnabled":  false,
+                                                                                  "backendLoaded":  true,
+                                                                                  "nativeRequested":  true,
+                                                                                  "initialized":  true,
+                                                                                  "adapterPresent":  true,
+                                                                                  "radioOn":  true,
+                                                                                  "locationDenied":  false,
+                                                                                  "needsLocationPermission":  false,
+                                                                                  "connected":  false,
+                                                                                  "activeSsid":  "",
+                                                                                  "activeSignalQuality":  0,
+                                                                                  "hasInternet":  true,
+                                                                                  "limited":  false,
+                                                                                  "wifiStatus":  "disconnected",
+                                                                                  "scanning":  false,
+                                                                                  "connecting":  false,
+                                                                                  "connectingSsid":  "",
+                                                                                  "listVisible":  false,
+                                                                                  "listAvailable":  true,
+                                                                                  "listHidden":  false,
+                                                                                  "networkCount":  0,
+                                                                                  "networks":  [
+
+                                                                                               ],
+                                                                                  "activeIdentity":  "",
+                                                                                  "ethernetConnected":  true,
+                                                                                  "ethernetDeviceCount":  1,
+                                                                                  "ethernetControlSupported":  false,
+                                                                                  "ethernetConfigSupported":  false,
+                                                                                  "lastResultKind":  "",
+                                                                                  "lastResultText":  "",
+                                                                                  "resultRequested":  false,
+                                                                                  "resultVerified":  false,
+                                                                                  "resultSucceeded":  false,
+                                                                                  "resultSequence":  0,
+                                                                                  "commandsSent":  0,
+                                                                                  "scansRequested":  0,
+                                                                                  "pendingSsid":  "",
+                                                                                  "popoutLoaded":  true,
+                                                                                  "popoutControlsEnabled":  false,
+                                                                                  "popoutNativeConnect":  true,
+                                                                                  "popoutEthernetControlAvailable":  false,
+                                                                                  "popoutNativeConnectingSsid":  "",
+                                                                                  "statusIcon":  "cable"
+                                                                              }
+                                                                }
+                                                            ],
+                                       "elapsedMilliseconds":  3447,
+                                       "sourceRevision":  "475c7a271f2e57f8ff3605adf3bc92d4d9044261",
+                                       "sourceDirty":  false,
+                                       "backendRevision":  "1401042969e4b7ab3cfb314fc76945ab081db3de",
+                                       "buildRecordSha256":  "3FA201EE45FC755B663FF122090B617D222BBFD99352B18F490B003F0C14FED1",
+                                       "configSha256":  "6FC8F8B80AF9D45A49A4737AF51B8C43A11B97E1B59A82468F31AB4C779C6F65",
+                                       "command":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\quickshell\\qs.exe",
+                                       "arguments":  "--no-color --log-times --path \"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\network-20261025-180424-805\\shell.qml\"",
+                                       "executableSha256":  "22B69FFE0523F8FFDB86C22E1669A36B2C8DCAEA97B19754000EC7455345AF22",
+                                       "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\network-20261025-180424-805",
+                                       "profile":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\network-prototype-profile",
+                                       "sources":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\network-20261025-180424-805.sources.json",
+                                       "screenshot":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\network-20261025-180424-805.png",
+                                       "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\network-20261025-180424-805.stdout.log",
+                                       "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\network-20261025-180424-805.stderr.log"
+                                   }
+                    },
+                    {
+                        "kind":  "network",
+                        "result":  {
+                                       "passed":  true,
+                                       "smoke":  true,
+                                       "prototype":  "network",
+                                       "audioMode":  "Disabled",
+                                       "batteryMode":  "Disabled",
+                                       "mediaMode":  "Disabled",
+                                       "networkMode":  "Disabled",
+                                       "timedOut":  false,
+                                       "exitCode":  0,
+                                       "scaleFactor":  "native",
+                                       "screenIndex":  1,
+                                       "monitorCycle":  false,
+                                       "traceInput":  false,
+                                       "actualScreens":  [
+                                                             {
+                                                                 "index":  1,
+                                                                 "name":  "DELL S2725QS",
+                                                                 "x":  -3840,
+                                                                 "y":  0,
+                                                                 "dpr":  1.75,
+                                                                 "width":  520,
+                                                                 "height":  680
+                                                             }
+                                                         ],
+                                       "captures":  [
+                                                        "file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/network-20261025-180428-623.png"
+                                                    ],
+                                       "audioSnapshots":  [
+
+                                                          ],
+                                       "batterySnapshots":  [
+
+                                                            ],
+                                       "mediaSnapshots":  [
+
+                                                          ],
+                                       "networkSnapshots":  [
+                                                                {
+                                                                    "phase":  "INITIAL",
+                                                                    "state":  {
+                                                                                  "status":  "disabled",
+                                                                                  "reason":  "Windows network is disabled.",
+                                                                                  "enabled":  false,
+                                                                                  "controlsEnabled":  false,
+                                                                                  "backendLoaded":  false,
+                                                                                  "nativeRequested":  false,
+                                                                                  "initialized":  false,
+                                                                                  "adapterPresent":  false,
+                                                                                  "radioOn":  false,
+                                                                                  "locationDenied":  false,
+                                                                                  "needsLocationPermission":  false,
+                                                                                  "connected":  false,
+                                                                                  "activeSsid":  "",
+                                                                                  "activeSignalQuality":  0,
+                                                                                  "hasInternet":  false,
+                                                                                  "limited":  false,
+                                                                                  "wifiStatus":  "",
+                                                                                  "scanning":  false,
+                                                                                  "connecting":  false,
+                                                                                  "connectingSsid":  "",
+                                                                                  "listVisible":  false,
+                                                                                  "listAvailable":  false,
+                                                                                  "listHidden":  false,
+                                                                                  "networkCount":  0,
+                                                                                  "networks":  [
+
+                                                                                               ],
+                                                                                  "activeIdentity":  "",
+                                                                                  "ethernetConnected":  false,
+                                                                                  "ethernetDeviceCount":  0,
+                                                                                  "ethernetControlSupported":  false,
+                                                                                  "ethernetConfigSupported":  false,
+                                                                                  "lastResultKind":  "",
+                                                                                  "lastResultText":  "",
+                                                                                  "resultRequested":  false,
+                                                                                  "resultVerified":  false,
+                                                                                  "resultSucceeded":  false,
+                                                                                  "resultSequence":  0,
+                                                                                  "commandsSent":  0,
+                                                                                  "scansRequested":  0,
+                                                                                  "pendingSsid":  "",
+                                                                                  "popoutLoaded":  false,
+                                                                                  "popoutControlsEnabled":  null,
+                                                                                  "popoutNativeConnect":  null,
+                                                                                  "popoutEthernetControlAvailable":  null,
+                                                                                  "popoutNativeConnectingSsid":  "",
+                                                                                  "statusIcon":  "wifi_off"
+                                                                              }
+                                                                },
+                                                                {
+                                                                    "phase":  "FINAL",
+                                                                    "state":  {
+                                                                                  "status":  "disabled",
+                                                                                  "reason":  "Windows network is disabled.",
+                                                                                  "enabled":  false,
+                                                                                  "controlsEnabled":  false,
+                                                                                  "backendLoaded":  false,
+                                                                                  "nativeRequested":  false,
+                                                                                  "initialized":  false,
+                                                                                  "adapterPresent":  false,
+                                                                                  "radioOn":  false,
+                                                                                  "locationDenied":  false,
+                                                                                  "needsLocationPermission":  false,
+                                                                                  "connected":  false,
+                                                                                  "activeSsid":  "",
+                                                                                  "activeSignalQuality":  0,
+                                                                                  "hasInternet":  false,
+                                                                                  "limited":  false,
+                                                                                  "wifiStatus":  "",
+                                                                                  "scanning":  false,
+                                                                                  "connecting":  false,
+                                                                                  "connectingSsid":  "",
+                                                                                  "listVisible":  false,
+                                                                                  "listAvailable":  false,
+                                                                                  "listHidden":  false,
+                                                                                  "networkCount":  0,
+                                                                                  "networks":  [
+
+                                                                                               ],
+                                                                                  "activeIdentity":  "",
+                                                                                  "ethernetConnected":  false,
+                                                                                  "ethernetDeviceCount":  0,
+                                                                                  "ethernetControlSupported":  false,
+                                                                                  "ethernetConfigSupported":  false,
+                                                                                  "lastResultKind":  "",
+                                                                                  "lastResultText":  "",
+                                                                                  "resultRequested":  false,
+                                                                                  "resultVerified":  false,
+                                                                                  "resultSucceeded":  false,
+                                                                                  "resultSequence":  0,
+                                                                                  "commandsSent":  0,
+                                                                                  "scansRequested":  0,
+                                                                                  "pendingSsid":  "",
+                                                                                  "popoutLoaded":  false,
+                                                                                  "popoutControlsEnabled":  null,
+                                                                                  "popoutNativeConnect":  null,
+                                                                                  "popoutEthernetControlAvailable":  null,
+                                                                                  "popoutNativeConnectingSsid":  "",
+                                                                                  "statusIcon":  "wifi_off"
+                                                                              }
+                                                                }
+                                                            ],
+                                       "elapsedMilliseconds":  3437,
+                                       "sourceRevision":  "475c7a271f2e57f8ff3605adf3bc92d4d9044261",
+                                       "sourceDirty":  false,
+                                       "backendRevision":  "1401042969e4b7ab3cfb314fc76945ab081db3de",
+                                       "buildRecordSha256":  "3FA201EE45FC755B663FF122090B617D222BBFD99352B18F490B003F0C14FED1",
+                                       "configSha256":  "6FC8F8B80AF9D45A49A4737AF51B8C43A11B97E1B59A82468F31AB4C779C6F65",
+                                       "command":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\quickshell\\qs.exe",
+                                       "arguments":  "--no-color --log-times --path \"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\network-20261025-180428-623\\shell.qml\"",
+                                       "executableSha256":  "22B69FFE0523F8FFDB86C22E1669A36B2C8DCAEA97B19754000EC7455345AF22",
+                                       "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\network-20261025-180428-623",
+                                       "profile":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\network-prototype-profile",
+                                       "sources":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\network-20261025-180428-623.sources.json",
+                                       "screenshot":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\network-20261025-180428-623.png",
+                                       "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\network-20261025-180428-623.stdout.log",
+                                       "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\network-20261025-180428-623.stderr.log"
+                                   }
+                    },
+                    {
+                        "kind":  "network",
+                        "result":  {
+                                       "passed":  true,
+                                       "smoke":  true,
+                                       "prototype":  "network",
+                                       "audioMode":  "Disabled",
+                                       "batteryMode":  "Disabled",
+                                       "mediaMode":  "Disabled",
+                                       "networkMode":  "ReadOnly",
+                                       "timedOut":  false,
+                                       "exitCode":  0,
+                                       "scaleFactor":  "native",
+                                       "screenIndex":  1,
+                                       "monitorCycle":  false,
+                                       "traceInput":  false,
+                                       "actualScreens":  [
+                                                             {
+                                                                 "index":  1,
+                                                                 "name":  "DELL S2725QS",
+                                                                 "x":  -3840,
+                                                                 "y":  0,
+                                                                 "dpr":  1.75,
+                                                                 "width":  520,
+                                                                 "height":  680
+                                                             }
+                                                         ],
+                                       "captures":  [
+                                                        "file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/network-20261025-180432-414.png"
+                                                    ],
+                                       "audioSnapshots":  [
+
+                                                          ],
+                                       "batterySnapshots":  [
+
+                                                            ],
+                                       "mediaSnapshots":  [
+
+                                                          ],
+                                       "networkSnapshots":  [
+                                                                {
+                                                                    "phase":  "INITIAL",
+                                                                    "state":  {
+                                                                                  "status":  "disconnected",
+                                                                                  "reason":  "Wi-Fi is on; no network is connected.",
+                                                                                  "enabled":  true,
+                                                                                  "controlsEnabled":  false,
+                                                                                  "backendLoaded":  true,
+                                                                                  "nativeRequested":  true,
+                                                                                  "initialized":  true,
+                                                                                  "adapterPresent":  true,
+                                                                                  "radioOn":  true,
+                                                                                  "locationDenied":  false,
+                                                                                  "needsLocationPermission":  false,
+                                                                                  "connected":  false,
+                                                                                  "activeSsid":  "",
+                                                                                  "activeSignalQuality":  0,
+                                                                                  "hasInternet":  true,
+                                                                                  "limited":  false,
+                                                                                  "wifiStatus":  "disconnected",
+                                                                                  "scanning":  false,
+                                                                                  "connecting":  false,
+                                                                                  "connectingSsid":  "",
+                                                                                  "listVisible":  false,
+                                                                                  "listAvailable":  true,
+                                                                                  "listHidden":  false,
+                                                                                  "networkCount":  0,
+                                                                                  "networks":  [
+
+                                                                                               ],
+                                                                                  "activeIdentity":  "",
+                                                                                  "ethernetConnected":  true,
+                                                                                  "ethernetDeviceCount":  1,
+                                                                                  "ethernetControlSupported":  false,
+                                                                                  "ethernetConfigSupported":  false,
+                                                                                  "lastResultKind":  "",
+                                                                                  "lastResultText":  "",
+                                                                                  "resultRequested":  false,
+                                                                                  "resultVerified":  false,
+                                                                                  "resultSucceeded":  false,
+                                                                                  "resultSequence":  0,
+                                                                                  "commandsSent":  0,
+                                                                                  "scansRequested":  0,
+                                                                                  "pendingSsid":  "",
+                                                                                  "popoutLoaded":  true,
+                                                                                  "popoutControlsEnabled":  false,
+                                                                                  "popoutNativeConnect":  true,
+                                                                                  "popoutEthernetControlAvailable":  false,
+                                                                                  "popoutNativeConnectingSsid":  "",
+                                                                                  "statusIcon":  "cable"
+                                                                              }
+                                                                },
+                                                                {
+                                                                    "phase":  "FINAL",
+                                                                    "state":  {
+                                                                                  "status":  "disconnected",
+                                                                                  "reason":  "Wi-Fi is on; no network is connected.",
+                                                                                  "enabled":  true,
+                                                                                  "controlsEnabled":  false,
+                                                                                  "backendLoaded":  true,
+                                                                                  "nativeRequested":  true,
+                                                                                  "initialized":  true,
+                                                                                  "adapterPresent":  true,
+                                                                                  "radioOn":  true,
+                                                                                  "locationDenied":  false,
+                                                                                  "needsLocationPermission":  false,
+                                                                                  "connected":  false,
+                                                                                  "activeSsid":  "",
+                                                                                  "activeSignalQuality":  0,
+                                                                                  "hasInternet":  true,
+                                                                                  "limited":  false,
+                                                                                  "wifiStatus":  "disconnected",
+                                                                                  "scanning":  false,
+                                                                                  "connecting":  false,
+                                                                                  "connectingSsid":  "",
+                                                                                  "listVisible":  false,
+                                                                                  "listAvailable":  true,
+                                                                                  "listHidden":  false,
+                                                                                  "networkCount":  0,
+                                                                                  "networks":  [
+
+                                                                                               ],
+                                                                                  "activeIdentity":  "",
+                                                                                  "ethernetConnected":  true,
+                                                                                  "ethernetDeviceCount":  1,
+                                                                                  "ethernetControlSupported":  false,
+                                                                                  "ethernetConfigSupported":  false,
+                                                                                  "lastResultKind":  "",
+                                                                                  "lastResultText":  "",
+                                                                                  "resultRequested":  false,
+                                                                                  "resultVerified":  false,
+                                                                                  "resultSucceeded":  false,
+                                                                                  "resultSequence":  0,
+                                                                                  "commandsSent":  0,
+                                                                                  "scansRequested":  0,
+                                                                                  "pendingSsid":  "",
+                                                                                  "popoutLoaded":  true,
+                                                                                  "popoutControlsEnabled":  false,
+                                                                                  "popoutNativeConnect":  true,
+                                                                                  "popoutEthernetControlAvailable":  false,
+                                                                                  "popoutNativeConnectingSsid":  "",
+                                                                                  "statusIcon":  "cable"
+                                                                              }
+                                                                }
+                                                            ],
+                                       "elapsedMilliseconds":  3440,
+                                       "sourceRevision":  "475c7a271f2e57f8ff3605adf3bc92d4d9044261",
+                                       "sourceDirty":  false,
+                                       "backendRevision":  "1401042969e4b7ab3cfb314fc76945ab081db3de",
+                                       "buildRecordSha256":  "3FA201EE45FC755B663FF122090B617D222BBFD99352B18F490B003F0C14FED1",
+                                       "configSha256":  "6FC8F8B80AF9D45A49A4737AF51B8C43A11B97E1B59A82468F31AB4C779C6F65",
+                                       "command":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\quickshell\\qs.exe",
+                                       "arguments":  "--no-color --log-times --path \"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\network-20261025-180432-414\\shell.qml\"",
+                                       "executableSha256":  "22B69FFE0523F8FFDB86C22E1669A36B2C8DCAEA97B19754000EC7455345AF22",
+                                       "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\network-20261025-180432-414",
+                                       "profile":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\network-prototype-profile",
+                                       "sources":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\network-20261025-180432-414.sources.json",
+                                       "screenshot":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\network-20261025-180432-414.png",
+                                       "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\network-20261025-180432-414.stdout.log",
+                                       "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\network-20261025-180432-414.stderr.log"
+                                   }
+                    },
+                    {
+                        "kind":  "m1-regression",
+                        "result":  {
+                                       "passed":  true,
+                                       "smoke":  true,
+                                       "prototype":  "shell",
+                                       "audioMode":  "Disabled",
+                                       "batteryMode":  "Disabled",
+                                       "mediaMode":  "Disabled",
+                                       "networkMode":  "Disabled",
+                                       "timedOut":  false,
+                                       "exitCode":  0,
+                                       "scaleFactor":  "native",
+                                       "screenIndex":  0,
+                                       "monitorCycle":  false,
+                                       "traceInput":  false,
+                                       "actualScreens":  [
+                                                             {
+                                                                 "index":  0,
+                                                                 "name":  "MAG321UX OLED",
+                                                                 "x":  0,
+                                                                 "y":  0,
+                                                                 "dpr":  1.5
+                                                             }
+                                                         ],
+                                       "captures":  [
+                                                        "file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/shell-20261025-180436-207.png"
+                                                    ],
+                                       "audioSnapshots":  [
+
+                                                          ],
+                                       "batterySnapshots":  [
+
+                                                            ],
+                                       "mediaSnapshots":  [
+
+                                                          ],
+                                       "networkSnapshots":  [
+
+                                                            ],
+                                       "elapsedMilliseconds":  4071,
+                                       "sourceRevision":  "475c7a271f2e57f8ff3605adf3bc92d4d9044261",
+                                       "sourceDirty":  false,
+                                       "backendRevision":  "1401042969e4b7ab3cfb314fc76945ab081db3de",
+                                       "buildRecordSha256":  "3FA201EE45FC755B663FF122090B617D222BBFD99352B18F490B003F0C14FED1",
+                                       "configSha256":  "6FC8F8B80AF9D45A49A4737AF51B8C43A11B97E1B59A82468F31AB4C779C6F65",
+                                       "command":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\quickshell\\qs.exe",
+                                       "arguments":  "--no-color --log-times --path \"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\shell-20261025-180436-207\\shell.qml\"",
+                                       "executableSha256":  "22B69FFE0523F8FFDB86C22E1669A36B2C8DCAEA97B19754000EC7455345AF22",
+                                       "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\shell-20261025-180436-207",
+                                       "profile":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-prototype-profile",
+                                       "sources":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\shell-20261025-180436-207.sources.json",
+                                       "screenshot":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\shell-20261025-180436-207.png",
+                                       "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\shell-20261025-180436-207.stdout.log",
+                                       "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\shell-20261025-180436-207.stderr.log"
+                                   }
+                    }
+                ]
+}
