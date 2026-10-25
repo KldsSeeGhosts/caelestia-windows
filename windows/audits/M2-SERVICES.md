@@ -481,6 +481,29 @@ root to deduplicate against Linear, each enabled and validated independently:
    around DesktopEntries. Acceptance: original search handles empty/failed scan,
    names/icons and profile-local frequency state; enumeration never launches.
    Explicit app launch is separately tested; admin/uninstall actions stay out.
+   **Progress:** implemented as ERM-505's bounded slice on
+   `t3/windows-app-catalog-search` (topic worktree). A pure
+   [AppsService](../services/apps/AppsService.qml) imports no Quickshell and
+   separates disabled/scanning/empty/failed/ready states, the preserved
+   `search`/`query`/`list`/prefix contract (upstream fzf/fuzzysort), the original
+   favourite/frequency/name order and the launch policy. A thin
+   [NativeAppCatalog](../services/apps/NativeAppCatalog.qml) wraps
+   `DesktopEntries`; [AppFrequencyStore](../services/apps/AppFrequencyStore.qml)
+   replaces the excluded AppDb with atomic profile-local JSON
+   (`$CAELESTIA_STATE_DIR/apps-frequencies.json`, no SQLite/HOME/XDG) and
+   tolerates missing/corrupt documents. `CAELESTIA_WINDOWS_APPS=1` observes and
+   searches only; `CAELESTIA_WINDOWS_APP_LAUNCH=1` is a separate opt-in.
+   Terminal entries are an explicit unsupported launch instead of the missing
+   Linux terminal wrapper. The localized edit to
+   [AppList.qml](../../modules/launcher/AppList.qml) adds only `appsOnly`
+   (default false) and keeps upstream Linux behavior. A bounded host stages the
+   original list/search components; 173 offscreen assertions plus native
+   disabled/read-only smoke at 150%/175% cover the fixture and empty/ready paths
+   ([evidence](../validation/2026-10-25-m2-apps/README.md)). The backend exposes
+   no scan result or per-command outcome
+   ([gaps](M2-APPS-BACKEND-GAPS.md)), so native scan failure reads as `empty`,
+   and no native launch was performed. Real activation, Interactive mode and
+   terminal launch remain untested.
 9. **Native tray boundary:** define native context-menu behavior and review
    interception ownership before enabling it. Acceptance: null semantic menus,
    Explorer restart, stale owners, activation and shutdown are handled; no

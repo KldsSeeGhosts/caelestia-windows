@@ -1,0 +1,250 @@
+﻿{
+    "generatedAtUtc":  "2026-10-25T22:09:21.9804363Z",
+    "files":  [
+                  {
+                      "source":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\apps-20261025-180709-968.stdout.log",
+                      "archived":  "apps-corrupt-frequency\\stdout.log",
+                      "sha256":  "D9C6BA419BC20A5D26B80D3966F8C8ECFF6FD4D0C6DC44A52E0E799AF63E571C"
+                  },
+                  {
+                      "source":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\apps-20261025-180705-896.png",
+                      "archived":  "apps-frequency-read\\capture.png",
+                      "sha256":  "5AB73E090B7615620469254662358A91AEA819B1F5502A13A0B9F7F36C06CA41"
+                  },
+                  {
+                      "source":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\apps-20261025-180705-896.sources.json",
+                      "archived":  "apps-frequency-read\\sources.json",
+                      "sha256":  "8D2219B099FD6C0B55DCF633E319B202D9E4ADDE301EFB7E57AE134537C1EFDF"
+                  },
+                  {
+                      "source":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\apps-20261025-180709-968.sources.json",
+                      "archived":  "apps-corrupt-frequency\\sources.json",
+                      "sha256":  "8D2219B099FD6C0B55DCF633E319B202D9E4ADDE301EFB7E57AE134537C1EFDF"
+                  },
+                  {
+                      "source":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\apps-20261025-180709-968.json",
+                      "archived":  "apps-corrupt-frequency\\result.json",
+                      "sha256":  "7E77A2C4BEE7636EC00F32C7D1124D387DD3BDB0FFA86386E89B6C2F03DA499A"
+                  },
+                  {
+                      "source":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\apps-20261025-180709-968.stderr.log",
+                      "archived":  "apps-corrupt-frequency\\stderr.log",
+                      "sha256":  "F01A374E9C81E3DB89B3A42940C4D6A5447684986A1296E42BF13F196EED6295"
+                  },
+                  {
+                      "source":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\apps-20261025-180701-732.png",
+                      "archived":  "apps-readonly-screen1\\capture.png",
+                      "sha256":  "FFB09025DBB0041B8E6EBD2C440AA0A50EC0C743B92FBBC94F8C8C01CE6EE206"
+                  },
+                  {
+                      "source":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\apps-20261025-180701-732.sources.json",
+                      "archived":  "apps-readonly-screen1\\sources.json",
+                      "sha256":  "8D2219B099FD6C0B55DCF633E319B202D9E4ADDE301EFB7E57AE134537C1EFDF"
+                  },
+                  {
+                      "source":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\apps-20261025-180701-732.json",
+                      "archived":  "apps-readonly-screen1\\result.json",
+                      "sha256":  "26ED9BC1070075CEF7B653AC39D16F92FEBEE146AC690790F37588EEB5AA1ED3"
+                  },
+                  {
+                      "source":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\apps-20261025-180705-896.json",
+                      "archived":  "apps-frequency-read\\result.json",
+                      "sha256":  "CDD87239C7FC61ACBEE5B159D5956CAB88E000A6D099896A77DF26AD645A3BB3"
+                  },
+                  {
+                      "source":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\apps-20261025-180705-896.stderr.log",
+                      "archived":  "apps-frequency-read\\stderr.log",
+                      "sha256":  "F01A374E9C81E3DB89B3A42940C4D6A5447684986A1296E42BF13F196EED6295"
+                  },
+                  {
+                      "source":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\apps-20261025-180705-896.stdout.log",
+                      "archived":  "apps-frequency-read\\stdout.log",
+                      "sha256":  "191AA5A63B181E0EB8F0946B3706D3F098E2CA6709C0A6D99EADCC0A6A585A59"
+                  },
+                  {
+                      "source":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\apps-tests\\apps-fixture-20261025-180649-022\\windows\\services\\apps\\AppStoragePath.js",
+                      "archived":  "fixture\\AppStoragePath.js",
+                      "sha256":  "47757D15526B4AAB455452E9B60736D13116D19E34A66248CA696107CF7A0870"
+                  },
+                  {
+                      "source":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\apps-tests\\apps-fixture-20261025-180649-022\\windows\\services\\apps\\AppFrequencyStore.qml",
+                      "archived":  "fixture\\AppFrequencyStore.qml",
+                      "sha256":  "836381A7FEAA2ABEFA01E35FEE5C1E60EDB2C3D667BA24897ED511490D23A025"
+                  },
+                  {
+                      "source":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\apps-tests\\apps-fixture-20261025-180649-022\\windows\\services\\apps\\AppsService.qml",
+                      "archived":  "fixture\\AppsService.qml",
+                      "sha256":  "99890061C486C5322B1BC6352B47F1EE494494DE476AF166E1B258D13663DC58"
+                  },
+                  {
+                      "source":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\apps-tests\\apps-fixture-20261025-180649-022\\utils\\scripts\\fuzzysort.js",
+                      "archived":  "fixture\\fuzzysort.js",
+                      "sha256":  "C86BD4C6F488DD10AF40333C4EE9FDFAB9C45C807F0CB19AAB1849853EF8EFE5"
+                  },
+                  {
+                      "source":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\apps-tests\\apps-fixture-20261025-180649-022\\utils\\scripts\\fzf.js",
+                      "archived":  "fixture\\fzf.js",
+                      "sha256":  "79ABBA38D5C91AB856051CB70D4249EFC5C26D1F5881F7A4D9B43DC54BE48956"
+                  },
+                  {
+                      "source":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\apps-tests\\apps-fixture-20261025-180649-022\\windows\\services\\apps\\AppsServiceTest.qml",
+                      "archived":  "fixture\\AppsServiceTest.qml",
+                      "sha256":  "78D21FC5E81EF52BF1D532F768FCD3AA813D33A1696FB7241045C732F8F4CE3A"
+                  },
+                  {
+                      "source":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\shell-20261025-180714-014.stderr.log",
+                      "archived":  "m1-regression\\stderr.log",
+                      "sha256":  "F01A374E9C81E3DB89B3A42940C4D6A5447684986A1296E42BF13F196EED6295"
+                  },
+                  {
+                      "source":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\shell-20261025-180714-014.stdout.log",
+                      "archived":  "m1-regression\\stdout.log",
+                      "sha256":  "18090C3C8A6B58E5FD5F2E0DDFFF62C56AC9F965B2A01E7F772316C09A769B14"
+                  },
+                  {
+                      "source":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\apps-20261025-180709-968.png",
+                      "archived":  "apps-corrupt-frequency\\capture.png",
+                      "sha256":  "5AB73E090B7615620469254662358A91AEA819B1F5502A13A0B9F7F36C06CA41"
+                  },
+                  {
+                      "source":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\shell-20261025-180714-014.png",
+                      "archived":  "m1-regression\\capture.png",
+                      "sha256":  "9708D7B9A308143F51889B21A5E989B260F6725641014CF9335F9D5752A54538"
+                  },
+                  {
+                      "source":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\shell-20261025-180714-014.sources.json",
+                      "archived":  "m1-regression\\sources.json",
+                      "sha256":  "933C60132D703DDB4E636E100EE09BD3ED5659040E987947E84503B18031926B"
+                  },
+                  {
+                      "source":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\shell-20261025-180714-014.json",
+                      "archived":  "m1-regression\\result.json",
+                      "sha256":  "4C2573F1AE8DEEB5239D946033F23D10D3F35EAF44E863EDE86FB6AA38044C38"
+                  },
+                  {
+                      "source":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\apps-20261025-180701-732.stderr.log",
+                      "archived":  "apps-readonly-screen1\\stderr.log",
+                      "sha256":  "F01A374E9C81E3DB89B3A42940C4D6A5447684986A1296E42BF13F196EED6295"
+                  },
+                  {
+                      "source":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\apps-20261025-180649-384.stdout.log",
+                      "archived":  "apps-disabled-screen0\\stdout.log",
+                      "sha256":  "CFB3988E93BE523AAEDF23CC2EFBF2C109E347900E235F66478DA56370D4615C"
+                  },
+                  {
+                      "source":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\apps-fixture-20261025-180649-022.json",
+                      "archived":  "fixture\\result.json",
+                      "sha256":  "5D4DDB8105D737B408ED7FEF906D22069998F599664C2F6AA038F4350B6D515E"
+                  },
+                  {
+                      "source":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\apps-fixture-20261025-180649-022.stderr.log",
+                      "archived":  "fixture\\stderr.log",
+                      "sha256":  "DC89BE1251BE3D7351CFA266ECB0E682FE3EEA099FD8E8C3243DFAE1967B1B86"
+                  },
+                  {
+                      "source":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\apps-20261025-180649-384.sources.json",
+                      "archived":  "apps-disabled-screen0\\sources.json",
+                      "sha256":  "8D2219B099FD6C0B55DCF633E319B202D9E4ADDE301EFB7E57AE134537C1EFDF"
+                  },
+                  {
+                      "source":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\apps-20261025-180649-384.json",
+                      "archived":  "apps-disabled-screen0\\result.json",
+                      "sha256":  "403149C5E21E6AAB31842720C3C2D3D32DCC755DA508A78CCBDCEC2F42E6F649"
+                  },
+                  {
+                      "source":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\apps-20261025-180649-384.stderr.log",
+                      "archived":  "apps-disabled-screen0\\stderr.log",
+                      "sha256":  "F01A374E9C81E3DB89B3A42940C4D6A5447684986A1296E42BF13F196EED6295"
+                  },
+                  {
+                      "source":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\apps-validation-20261025-180648-838\\result.json",
+                      "archived":  "result.json",
+                      "sha256":  "B1742AA00CC6A7B33EFAEBD7D58A99C5CB981DA3B5429059938036867AFB1628"
+                  },
+                  {
+                      "source":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\apps-validation-20261025-180648-838\\desktop-after.json",
+                      "archived":  "desktop-after.json",
+                      "sha256":  "7FDCD7A5CFC2C7D9C1C9E35B54E6812803C9AFCF910ED53FDB05FFCB0FAF82C4"
+                  },
+                  {
+                      "source":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\apps-validation-20261025-180648-838\\desktop-before.json",
+                      "archived":  "desktop-before.json",
+                      "sha256":  "F1CCE4224B1CCE66E80C8FA4046C807999057FD8237530DBF52E184805B40E56"
+                  },
+                  {
+                      "source":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\apps-fixture-20261025-180649-022.stdout.log",
+                      "archived":  "fixture\\stdout.log",
+                      "sha256":  "F01A374E9C81E3DB89B3A42940C4D6A5447684986A1296E42BF13F196EED6295"
+                  },
+                  {
+                      "source":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\apps-evidence-20261025\\battery-service.json",
+                      "archived":  "shared-regressions\\battery-service.json",
+                      "sha256":  "D25916E9FB6841B27F038013EDFA7722490C5EFB04394BBB3D677525CDCBBBEF"
+                  },
+                  {
+                      "source":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\apps-evidence-20261025\\media-service.json",
+                      "archived":  "shared-regressions\\media-service.json",
+                      "sha256":  "0083AFCDDB05F4E4D48A53F45BEF9D21862797126D10AE02CD8E354AE173F413"
+                  },
+                  {
+                      "source":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\apps-20261025-180657-620.json",
+                      "archived":  "apps-disabled-screen1\\result.json",
+                      "sha256":  "EFE2D761D86D79212312F406578CCE376F1DF631D33877007DDCCFEC5FC37EE0"
+                  },
+                  {
+                      "source":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\apps-20261025-180657-620.stderr.log",
+                      "archived":  "apps-disabled-screen1\\stderr.log",
+                      "sha256":  "F01A374E9C81E3DB89B3A42940C4D6A5447684986A1296E42BF13F196EED6295"
+                  },
+                  {
+                      "source":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\apps-20261025-180657-620.stdout.log",
+                      "archived":  "apps-disabled-screen1\\stdout.log",
+                      "sha256":  "1608B68DFA97D5F316706AC40B778EA717498989A920D4FFCFAC255A61A806CE"
+                  },
+                  {
+                      "source":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\apps-20261025-180701-732.stdout.log",
+                      "archived":  "apps-readonly-screen1\\stdout.log",
+                      "sha256":  "14D30C47DE371E96C5F0F4B4578238400A3605271BFB3731812624EE2A5A092A"
+                  },
+                  {
+                      "source":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\apps-20261025-180657-620.png",
+                      "archived":  "apps-disabled-screen1\\capture.png",
+                      "sha256":  "FC0389328B08C94039FEA6DBFE6517229AC4B232A02E908697D800EBECE57C57"
+                  },
+                  {
+                      "source":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\apps-20261025-180657-620.sources.json",
+                      "archived":  "apps-disabled-screen1\\sources.json",
+                      "sha256":  "8D2219B099FD6C0B55DCF633E319B202D9E4ADDE301EFB7E57AE134537C1EFDF"
+                  },
+                  {
+                      "source":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\apps-20261025-180653-553.stderr.log",
+                      "archived":  "apps-readonly-screen0\\stderr.log",
+                      "sha256":  "F01A374E9C81E3DB89B3A42940C4D6A5447684986A1296E42BF13F196EED6295"
+                  },
+                  {
+                      "source":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\apps-20261025-180653-553.stdout.log",
+                      "archived":  "apps-readonly-screen0\\stdout.log",
+                      "sha256":  "EFCEF1BA609424012F6A8A60938A6DB56E6ADFCE591D07B4AEDDB9B991E7B181"
+                  },
+                  {
+                      "source":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\apps-20261025-180649-384.png",
+                      "archived":  "apps-disabled-screen0\\capture.png",
+                      "sha256":  "4E5A2569DBA54D4FAA37177A07199B0EA66F6FDAFE5F1CF6EBEA3CB0A77AF4B7"
+                  },
+                  {
+                      "source":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\apps-20261025-180653-553.png",
+                      "archived":  "apps-readonly-screen0\\capture.png",
+                      "sha256":  "A0B7AA569BD142BCB3DA3AB6B9377EED7A21CF67C512C0C70C42887E5A1A353D"
+                  },
+                  {
+                      "source":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\apps-20261025-180653-553.sources.json",
+                      "archived":  "apps-readonly-screen0\\sources.json",
+                      "sha256":  "8D2219B099FD6C0B55DCF633E319B202D9E4ADDE301EFB7E57AE134537C1EFDF"
+                  },
+                  {
+                      "source":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\apps-20261025-180653-553.json",
+                      "archived":  "apps-readonly-screen0\\result.json",
+                      "sha256":  "37F524B4E997F84D43BE6429295FD7F0EF81DA254633B96B3FCD3193E50100D1"
+                  }
+              ]
+}

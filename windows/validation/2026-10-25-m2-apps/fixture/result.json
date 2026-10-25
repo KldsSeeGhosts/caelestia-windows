@@ -1,0 +1,62 @@
+﻿{
+    "passed":  true,
+    "timedOut":  false,
+    "exitCode":  0,
+    "fixture":  {
+                    "assertions":  173
+                },
+    "nativeImports":  0,
+    "hashMismatch":  [
+
+                     ],
+    "diagnostics":  [
+
+                    ],
+    "sourceRevision":  "7ae03d7106e9b0fc144ee9e51ebdf4d45db7db1d",
+    "sourceDirty":  false,
+    "qtVersion":  "6.11.2",
+    "runnerSha256":  "24994D434962751713F0C8932B356104B0849572B95765DAD50C13DA6BE3FA20",
+    "command":  "C:\\Users\\Ermin\\AppData\\Local\\caelestia-dev\\Qt\\6.11.2\\msvc2022_64\\bin\\qml.exe",
+    "arguments":  "\"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\apps-tests\\apps-fixture-20261025-180649-022\\windows\\services\\apps\\AppsServiceTest.qml\"",
+    "sources":  [
+                    {
+                        "source":  "windows/services/apps/AppsService.qml",
+                        "staged":  "windows/services/apps/AppsService.qml",
+                        "sourceSha256":  "99890061C486C5322B1BC6352B47F1EE494494DE476AF166E1B258D13663DC58",
+                        "stagedSha256":  "99890061C486C5322B1BC6352B47F1EE494494DE476AF166E1B258D13663DC58"
+                    },
+                    {
+                        "source":  "windows/services/apps/AppFrequencyStore.qml",
+                        "staged":  "windows/services/apps/AppFrequencyStore.qml",
+                        "sourceSha256":  "836381A7FEAA2ABEFA01E35FEE5C1E60EDB2C3D667BA24897ED511490D23A025",
+                        "stagedSha256":  "836381A7FEAA2ABEFA01E35FEE5C1E60EDB2C3D667BA24897ED511490D23A025"
+                    },
+                    {
+                        "source":  "windows/services/apps/AppStoragePath.js",
+                        "staged":  "windows/services/apps/AppStoragePath.js",
+                        "sourceSha256":  "47757D15526B4AAB455452E9B60736D13116D19E34A66248CA696107CF7A0870",
+                        "stagedSha256":  "47757D15526B4AAB455452E9B60736D13116D19E34A66248CA696107CF7A0870"
+                    },
+                    {
+                        "source":  "windows/services/apps/AppsServiceTest.qml",
+                        "staged":  "windows/services/apps/AppsServiceTest.qml",
+                        "sourceSha256":  "78D21FC5E81EF52BF1D532F768FCD3AA813D33A1696FB7241045C732F8F4CE3A",
+                        "stagedSha256":  "78D21FC5E81EF52BF1D532F768FCD3AA813D33A1696FB7241045C732F8F4CE3A"
+                    },
+                    {
+                        "source":  "utils/scripts/fzf.js",
+                        "staged":  "utils/scripts/fzf.js",
+                        "sourceSha256":  "79ABBA38D5C91AB856051CB70D4249EFC5C26D1F5881F7A4D9B43DC54BE48956",
+                        "stagedSha256":  "79ABBA38D5C91AB856051CB70D4249EFC5C26D1F5881F7A4D9B43DC54BE48956"
+                    },
+                    {
+                        "source":  "utils/scripts/fuzzysort.js",
+                        "staged":  "utils/scripts/fuzzysort.js",
+                        "sourceSha256":  "C86BD4C6F488DD10AF40333C4EE9FDFAB9C45C807F0CB19AAB1849853EF8EFE5",
+                        "stagedSha256":  "C86BD4C6F488DD10AF40333C4EE9FDFAB9C45C807F0CB19AAB1849853EF8EFE5"
+                    }
+                ],
+    "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\apps-tests\\apps-fixture-20261025-180649-022",
+    "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\apps-fixture-20261025-180649-022.stdout.log",
+    "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\apps-fixture-20261025-180649-022.stderr.log"
+}

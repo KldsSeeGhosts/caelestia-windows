@@ -52,6 +52,17 @@ For the next development session, start with [HANDOFF.md](HANDOFF.md).
   the isolated profile. Clean native 150%/175% runs observed no open sessions;
   [media evidence](validation/2026-10-25-m2-media/README.md) separates those
   results from fixture-only real-player behavior. ERM-498 remains open.
+- A default-off [app catalog prototype](apps-prototype/README.md) loads the
+  original launcher app list and search bar over the Windows AppsFolder
+  enumeration. Explicit disabled/scanning/empty/failed/ready states, the
+  original fzf/smart-case search prefixes and profile-local JSON launch
+  frequencies replace the excluded AppDb/SQLite store. Enumeration and search
+  never launch; `CAELESTIA_WINDOWS_APP_LAUNCH` is a separate opt-in and terminal
+  entries stay unsupported. Native smoke records a 153-application catalog and
+  a search sample without launching anything;
+  [apps evidence](validation/2026-10-25-m2-apps/README.md) records the fixture
+  and read-only limits, the backend scan/command gaps and the untested
+  interactive path. ERM-505 remains open.
 
 ## Checkout and inspect
 
