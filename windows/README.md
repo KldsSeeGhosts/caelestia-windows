@@ -30,6 +30,8 @@ For the next development session, start with [HANDOFF.md](HANDOFF.md).
   It preserves the original audio controls and core public service API.
   Disabled/read-only modes, hardware/failure fixtures and native observation
   are separate from live write/recovery validation. Other services remain off.
+  The [first M2 acceptance archive](validation/2026-10-25-m2-audio/README.md)
+  records clean-source two-monitor results and unchanged audio/desktop state.
 - Inherited GitHub Actions are disabled at repository level during bootstrap.
   They are upstream Linux workflows, not validation of this port.
 
@@ -96,7 +98,7 @@ ERM-492's original bar/session loading and evidence archive are complete.
 ERM-493/494 are complete with clean native input and final acceptance evidence.
 The backend fork fixes mask handoff without replacing the original interaction
 paths. M2's [service audit](audits/M2-SERVICES.md) sequences ERM-495 through
-ERM-507. Audio integration and truthful backend control errors are the first
+ERM-508. Audio integration and truthful backend control errors are the first
 slice; remaining services, actual hardware-denial/recovery, dynamic themes,
 M3 and M4 remain unvalidated.
 

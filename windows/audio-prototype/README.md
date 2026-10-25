@@ -106,3 +106,7 @@ Default selection reports all role failures and refreshes the observed
 console default rather than assigning a requested node optimistically.
 Control availability means an interface exists; an individual write can still
 fail. The adapter exposes those synchronous errors and makes no retry loop.
+
+[Final acceptance](../validation/2026-10-25-m2-audio/README.md) records the
+clean-source results. ERM-508 retains real control, denial and hardware-recovery
+validation before the full M2 gate can close.

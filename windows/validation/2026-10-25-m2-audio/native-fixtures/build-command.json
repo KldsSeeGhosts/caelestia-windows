@@ -1,0 +1,8 @@
+﻿[
+    "--build",
+    "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\audio-backend-tests",
+    "--target",
+    "pw_audio_control_test",
+    "--parallel",
+    "4"
+]

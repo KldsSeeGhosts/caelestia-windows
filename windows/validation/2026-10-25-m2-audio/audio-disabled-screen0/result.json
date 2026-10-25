@@ -1,0 +1,91 @@
+﻿{
+    "passed":  true,
+    "smoke":  true,
+    "prototype":  "audio",
+    "audioMode":  "Disabled",
+    "timedOut":  false,
+    "exitCode":  0,
+    "scaleFactor":  "native",
+    "screenIndex":  0,
+    "monitorCycle":  false,
+    "traceInput":  false,
+    "actualScreens":  [
+                          {
+                              "index":  0,
+                              "name":  "MAG321UX OLED",
+                              "x":  0,
+                              "y":  0,
+                              "dpr":  1.5,
+                              "width":  640,
+                              "height":  620
+                          }
+                      ],
+    "captures":  [
+                     "file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/audio-20261025-022302-857.png"
+                 ],
+    "audioSnapshots":  [
+                           {
+                               "phase":  "INITIAL",
+                               "state":  {
+                                             "status":  "disabled",
+                                             "reason":  "Windows audio is disabled.",
+                                             "enabled":  false,
+                                             "backendLoaded":  false,
+                                             "controlsEnabled":  false,
+                                             "outputAvailable":  false,
+                                             "inputAvailable":  false,
+                                             "outputControlsAvailable":  false,
+                                             "inputControlsAvailable":  false,
+                                             "lastError":  "",
+                                             "sink":  null,
+                                             "source":  null,
+                                             "sinks":  [
+
+                                                       ],
+                                             "sources":  [
+
+                                                         ],
+                                             "streamCount":  0
+                                         }
+                           },
+                           {
+                               "phase":  "FINAL",
+                               "state":  {
+                                             "status":  "disabled",
+                                             "reason":  "Windows audio is disabled.",
+                                             "enabled":  false,
+                                             "backendLoaded":  false,
+                                             "controlsEnabled":  false,
+                                             "outputAvailable":  false,
+                                             "inputAvailable":  false,
+                                             "outputControlsAvailable":  false,
+                                             "inputControlsAvailable":  false,
+                                             "lastError":  "",
+                                             "sink":  null,
+                                             "source":  null,
+                                             "sinks":  [
+
+                                                       ],
+                                             "sources":  [
+
+                                                         ],
+                                             "streamCount":  0
+                                         }
+                           }
+                       ],
+    "elapsedMilliseconds":  3443,
+    "sourceRevision":  "fb6665ab4c901cf60871b4847d7e62d3e6777742",
+    "sourceDirty":  false,
+    "backendRevision":  "8c71bdb8116dffeb274edb31c3803e1c28dbb270",
+    "buildRecordSha256":  "D754253A81648077B5BE2ECCF822DC3F1BA2D67A98E58B51FDD5EFC4E5856DDC",
+    "configSha256":  "E922F225252AE82CAF16EDF757E0D74FE38934100583A085B15BC5B58BC5B3C0",
+    "command":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\quickshell\\qs.exe",
+    "arguments":  "--no-color --log-times --path \"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\audio-20261025-022302-857\\shell.qml\"",
+    "executableSha256":  "0742608F64E8BBC8F322DD97BC53693FDFA5DE46CA065488EB50979626DE3B16",
+    "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\audio-20261025-022302-857",
+    "profile":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\audio-prototype-profile",
+    "sources":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\audio-20261025-022302-857.sources.json",
+    "screenshot":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\audio-20261025-022302-857.png",
+    "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\audio-20261025-022302-857.stdout.log",
+    "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\audio-20261025-022302-857.stderr.log"
+}

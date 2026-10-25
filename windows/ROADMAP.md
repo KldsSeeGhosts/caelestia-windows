@@ -16,7 +16,8 @@ tracks the milestones and implementation issues.
   include the rejected preliminary desktop-wide notification test.
 - M2: in progress. ERM-495 audits all service contracts; ERM-496/497 implement
   isolated opt-in audio and truthful native control errors. Remaining service
-  integrations are ERM-498 through ERM-507. M3/M4 have not started.
+  integrations are ERM-498 through ERM-507; ERM-508 owns real audio control/
+  denial/recovery. M3/M4 have not started.
 
 Continue from [HANDOFF.md](HANDOFF.md). Linear was connected and synchronized
 on 2026-10-25 under the Ermin Zeherovic (ERM) team. This roadmap owns detailed
@@ -111,6 +112,13 @@ distinct validation claims. The [source audit](audits/M2-SERVICES.md) records
 all service gaps, Linux process/path boundaries and staged acceptance work.
 Audio defaults disabled; observation and interactive controls require separate
 child-process opt-ins. Other services remain unavailable.
+
+ERM-495/496/497 are complete for the bounded slice. Clean `fb6665ab` passes
+238 adapter assertions, 16 native fake-COM cases, native 150%/175%
+disabled/read-only UI and M1 smoke regression with unchanged endpoint/default
+and shell/work-area/taskbar state.
+[Evidence and limits](validation/2026-10-25-m2-audio/README.md) distinguish
+those checks from ERM-508's remaining live controls/denial/recovery.
 
 ## M3: windows, workspaces, and tiling
 

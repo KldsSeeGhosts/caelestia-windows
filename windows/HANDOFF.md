@@ -9,7 +9,16 @@ The first M2 implementation is the
 ERM-495 is the complete [service source audit](audits/M2-SERVICES.md);
 ERM-496 adds the core Audio adapter and original AudioPopout;
 ERM-497 adds truthful native audio capability/errors.
-ERM-498 through ERM-507 track remaining services. M2 is not complete.
+These three scoped issues are complete. ERM-498 through ERM-507 track remaining
+services; ERM-508 tracks live audio control/denial/recovery. M2 is not complete.
+
+Clean root `fb6665ab` passes 238 adapter assertions, 16 native fake-COM cases,
+disabled/read-only UI runs at native 150%/175% (negative secondary origin),
+and the existing M1 bar/session smoke regression.
+[Archived evidence](validation/2026-10-25-m2-audio/README.md) records exact
+sources, commands, hashes, native state comparisons, screenshots and limits.
+Explorer/KSG Shell PIDs, work areas, taskbar flags and independent endpoint
+levels/mute/channels/default-role snapshots are unchanged.
 
 Backend pin `8c71bdb8116dffeb274edb31c3803e1c28dbb270` preserves M1's hover fix
 and adds Core Audio interface/state availability, initialization/control errors,
