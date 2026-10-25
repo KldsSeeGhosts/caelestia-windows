@@ -42,6 +42,16 @@ ShellRoot {
         } : null;
     }
 
+    function sessionButtons(): var {
+        const panels = ShellState.componentsFor(win.screen)?.panels;
+        const content = panels?.session.children.find(c => c.item)?.item;
+        if (!content)
+            return [];
+        return content.children.filter(c => c.icon).map(c => ({
+            icon: c.icon, disabled: c.disabled === true
+        }));
+    }
+
     function sessionState(): var {
         const actions = {};
         for (const action of ["lock", "logout", "shutdown", "reboot", "suspend", "hibernate", "firmware"])
@@ -272,6 +282,15 @@ ShellRoot {
                 }
                 console.log("CAELESTIA_SHELL_OPEN", barContent.width, barContent.height,
                     panels.session.width, panels.session.height);
+                // Smoke never enables dispatch, so every original session button
+                // must use its existing disabled styling.
+                const sessionButtons = root.sessionButtons();
+                if (sessionButtons.length !== 4 || sessionButtons.some(button => !button.disabled)) {
+                    console.error("CAELESTIA_SHELL_FAIL: session actions are not disabled in smoke");
+                    Qt.exit(1);
+                    return;
+                }
+                console.log("CAELESTIA_SESSION_BUTTONS", JSON.stringify(sessionButtons));
                 const path = Quickshell.env("CAELESTIA_SHELL_SCREENSHOT");
                 const capturePath = cycle === 0 ? path : path.replace(/\.png$/, "-screen" + root.screenIndex + ".png");
                 CUtils.saveItem(win.contentItem, Qt.resolvedUrl(capturePath), () => {

@@ -167,6 +167,12 @@ $elapsed.Stop()
 $stdout | Set-Content -LiteralPath $stdoutPath -Encoding UTF8
 $stderr | Set-Content -LiteralPath $stderrPath -Encoding UTF8
 $combined = "$stdout`n$stderr"
+$sessionButtonRecords = New-Object Collections.Generic.List[object]
+foreach ($buttonMatch in [regex]::Matches($combined, 'CAELESTIA_SESSION_BUTTONS (\[[^\r\n]+\])')) {
+    foreach ($button in ($buttonMatch.Groups[1].Value | ConvertFrom-Json)) {
+        $sessionButtonRecords.Add($button)
+    }
+}
 $runtimeDiagnostics = $combined -match '(?m)^(?:\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3})?\s*(WARN(?:ING)?|ERROR|FATAL|CRIT(?:ICAL)?)\b'
 $passed = -not $timedOut -and -not $runtimeDiagnostics -and
     $process.ExitCode -eq 0 -and $combined.Contains("${marker}_PASS") -and
@@ -194,6 +200,7 @@ $result = [ordered]@{
     sessionSnapshots = @([regex]::Matches($combined, 'CAELESTIA_SESSION_(INITIAL|FINAL) (\{[^\r\n]+\})') | ForEach-Object {
         [ordered]@{ phase = $_.Groups[1].Value; state = ($_.Groups[2].Value | ConvertFrom-Json) }
     })
+    sessionButtons = @($sessionButtonRecords.ToArray())
     elapsedMilliseconds = $elapsed.ElapsedMilliseconds
     sourceRevision = (& git -C $repoRoot rev-parse HEAD).Trim()
     sourceDirty = [bool](& git -C $repoRoot status --porcelain)

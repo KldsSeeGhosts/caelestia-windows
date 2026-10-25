@@ -67,6 +67,9 @@ try {
             Assert $result.passed "Session UI failed on screen $screen in $mode mode."
             $records.Add([ordered]@{ kind = 'session'; result = $result })
             Assert ($result.sessionSnapshots.Count -eq 2) 'Session smoke did not record initial and final state.'
+            Assert ($result.sessionButtons.Count -eq 4) 'Session smoke did not record four original buttons.'
+            Assert (@($result.sessionButtons | Where-Object { -not $_.disabled }).Count -eq 0) `
+                'An original session button did not use disabled styling in smoke.'
             $initial = $result.sessionSnapshots[0].state
             $final = $result.sessionSnapshots[1].state
             Assert ($initial.mode -eq $mode) 'Session mode was not propagated to the host.'
