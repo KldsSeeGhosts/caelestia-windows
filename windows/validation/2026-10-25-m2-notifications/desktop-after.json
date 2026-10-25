@@ -1,0 +1,90 @@
+{
+    "capturedAtUtc":  "2026-10-25T22:15:27.0395385Z",
+    "physicalCoordinates":  true,
+    "coordinateNotes":  "Physical monitor/work rectangles preserve negative origins. Logical sizes are derived from monitor scale; no synthetic logical desktop origins are assigned.",
+    "monitors":  [
+                     {
+                         "deviceName":  "\\\\.\\DISPLAY1",
+                         "primary":  true,
+                         "physicalBounds":  {
+                                                "left":  0,
+                                                "top":  0,
+                                                "right":  3840,
+                                                "bottom":  2160,
+                                                "width":  3840,
+                                                "height":  2160
+                                            },
+                         "physicalWorkArea":  {
+                                                  "left":  0,
+                                                  "top":  48,
+                                                  "right":  3840,
+                                                  "bottom":  2022,
+                                                  "width":  3840,
+                                                  "height":  1974
+                                              },
+                         "scalePercent":  150,
+                         "logicalSizeAt96Dpi":  {
+                                                    "width":  2560,
+                                                    "height":  1440
+                                                },
+                         "logicalWorkAreaSizeAt96Dpi":  {
+                                                            "width":  2560,
+                                                            "height":  1316
+                                                        }
+                     },
+                     {
+                         "deviceName":  "\\\\.\\DISPLAY2",
+                         "primary":  false,
+                         "physicalBounds":  {
+                                                "left":  -3840,
+                                                "top":  0,
+                                                "right":  0,
+                                                "bottom":  2160,
+                                                "width":  3840,
+                                                "height":  2160
+                                            },
+                         "physicalWorkArea":  {
+                                                  "left":  -3840,
+                                                  "top":  56,
+                                                  "right":  0,
+                                                  "bottom":  1997,
+                                                  "width":  3840,
+                                                  "height":  1941
+                                              },
+                         "scalePercent":  175,
+                         "logicalSizeAt96Dpi":  {
+                                                    "width":  2194.2857142857142,
+                                                    "height":  1234.2857142857142
+                                                },
+                         "logicalWorkAreaSizeAt96Dpi":  {
+                                                            "width":  2194.2857142857142,
+                                                            "height":  1109.1428571428571
+                                                        }
+                     }
+                 ],
+    "explorerRunning":  true,
+    "taskbar":  {
+                    "query":  "SHAppBarMessage ABM_GETSTATE",
+                    "stateFlags":  1,
+                    "autoHide":  true,
+                    "alwaysOnTop":  false,
+                    "scope":  "Shell taskbar state, not individual secondary taskbar visibility"
+                },
+    "relevantProcesses":  [
+                              {
+                                  "name":  "explorer",
+                                  "pid":  9252
+                              },
+                              {
+                                  "name":  "ksg-shell",
+                                  "pid":  24108
+                              }
+                          ],
+    "foreground":  {
+                       "pid":  33288,
+                       "windowId":  330022
+                   },
+    "warnings":  [
+
+                 ]
+}
