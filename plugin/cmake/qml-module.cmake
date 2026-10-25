@@ -51,7 +51,17 @@ function(qml_module arg_TARGET)
     if(arg_INCLUDE_PREFIX)
         set(include_dir "${CMAKE_CURRENT_BINARY_DIR}/include")
         file(MAKE_DIRECTORY "${include_dir}")
-        file(CREATE_LINK "${CMAKE_CURRENT_SOURCE_DIR}" "${include_dir}/${arg_INCLUDE_PREFIX}" SYMBOLIC)
+        if(WIN32)
+            # Header forwarding works without Developer Mode or symlink privileges.
+            file(GLOB_RECURSE public_headers CONFIGURE_DEPENDS
+                RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/*.hpp")
+            foreach(header IN LISTS public_headers)
+                configure_file("${PROJECT_SOURCE_DIR}/windows/cmake/forward-header.hpp.in"
+                    "${include_dir}/${arg_INCLUDE_PREFIX}/${header}" @ONLY)
+            endforeach()
+        else()
+            file(CREATE_LINK "${CMAKE_CURRENT_SOURCE_DIR}" "${include_dir}/${arg_INCLUDE_PREFIX}" SYMBOLIC)
+        endif()
         target_include_directories(${arg_TARGET} PUBLIC "${include_dir}")
     endif()
 

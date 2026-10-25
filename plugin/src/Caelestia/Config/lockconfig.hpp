@@ -1,11 +1,13 @@
 #pragma once
 
+#include "util/export.hpp"
+
 #include "settings/objectnode.hpp"
 #include "common.hpp"
 
 namespace caelestia::shell::config {
 
-class LockConfig : public settings::ObjectNode {
+class CAELESTIA_CONFIG_API LockConfig : public settings::ObjectNode {
     CONFIG_NODE(LockConfig, settings::ObjectNode)
 
     CONFIG_PROPERTY(bool, enabled, true)

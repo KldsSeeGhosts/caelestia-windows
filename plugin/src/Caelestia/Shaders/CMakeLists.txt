@@ -8,7 +8,7 @@ qml_module(caelestia-shaders
 )
 
 qt_add_shaders(caelestia-shaders "shaders"
-    BATCHABLE OPTIMIZED NOHLSL NOMSL
+    ${CAELESTIA_SHADER_OPTIONS}
     GLSL "300es,330"
     PREFIX "/shaders"
     FILES

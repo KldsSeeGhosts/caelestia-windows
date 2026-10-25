@@ -1,7 +1,7 @@
 # Caelestia Windows milestones
 
-This project starts with an unverified compatibility route. Gates below are
-acceptance criteria, not claims of existing functionality. Track these as
+The native backend build and portable component rendering are now demonstrated.
+Gates below are acceptance criteria, not claims of a complete shell. Track these as
 separate issues when the Linear connection is available.
 
 ## M0: source and reproducibility
@@ -11,7 +11,10 @@ Keep configuration and state isolated. Record the source revisions and exact
 commands for every build. Do not distribute a binary before its sources and
 dependencies are accounted for.
 
-Status: repository bootstrap complete; a Windows toolchain is still needed.
+Status: repository bootstrap complete; the pinned backend and portable plugins
+build with the native toolchain documented in [NATIVE-BUILD.md](NATIVE-BUILD.md).
+Build scripts record source revisions, tool versions, prerequisite results, and
+commands under `windows/.local/build/logs`.
 
 ## M1: actual Caelestia compatibility prototype
 
@@ -19,6 +22,11 @@ Build the portable plugin subset and load Caelestia's own bar plus one drawer.
 Use an explicit isolated entry point with unsupported services disabled through
 platform boundaries. Preserve upstream components rather than replacing them
 with lookalike rectangles.
+
+Status: portable plugin compilation and a component probe pass. The probe uses
+the original clock widgets, graphics plugins, and animations with a fixed
+palette adapter in an ordinary window. It does not load `Bar.qml` or
+`ContentWindow.qml`, and M1 remains open.
 
 Gate:
 

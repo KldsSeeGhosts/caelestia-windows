@@ -11,7 +11,7 @@
 
 namespace caelestia::shell::settings {
 
-class Node : public QObject {
+class CAELESTIA_SETTINGS_API Node : public QObject {
     Q_OBJECT
 
 public:

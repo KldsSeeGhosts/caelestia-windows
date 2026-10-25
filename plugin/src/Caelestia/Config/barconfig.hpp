@@ -4,6 +4,8 @@
 #include <qstringlist.h>
 #include <qvariantlist.h>
 
+#include "util/export.hpp"
+
 #include "settings/objectnode.hpp"
 #include "common.hpp"
 #include "enums.hpp"
@@ -13,7 +15,7 @@ namespace caelestia::shell::config {
 using Qt::StringLiterals::operator""_s;
 using settings::vmap;
 
-class BarScrollActions : public settings::ObjectNode {
+class CAELESTIA_CONFIG_API BarScrollActions : public settings::ObjectNode {
     CONFIG_NODE(BarScrollActions, settings::ObjectNode)
 
     CONFIG_PROPERTY(bool, workspaces, true)
@@ -21,7 +23,7 @@ class BarScrollActions : public settings::ObjectNode {
     CONFIG_PROPERTY(bool, brightness, true)
 };
 
-class BarPopouts : public settings::ObjectNode {
+class CAELESTIA_CONFIG_API BarPopouts : public settings::ObjectNode {
     CONFIG_NODE(BarPopouts, settings::ObjectNode)
 
     CONFIG_PROPERTY(bool, activeWindow, true)
@@ -29,7 +31,7 @@ class BarPopouts : public settings::ObjectNode {
     CONFIG_PROPERTY(bool, statusIcons, true)
 };
 
-class BarWorkspaces : public settings::ObjectNode {
+class CAELESTIA_CONFIG_API BarWorkspaces : public settings::ObjectNode {
     CONFIG_NODE(BarWorkspaces, settings::ObjectNode)
 
     CONFIG_PROPERTY(int, shown, 5)
@@ -67,7 +69,7 @@ class BarWorkspaces : public settings::ObjectNode {
         }))
 };
 
-class BarActiveWindow : public settings::ObjectNode {
+class CAELESTIA_CONFIG_API BarActiveWindow : public settings::ObjectNode {
     CONFIG_NODE(BarActiveWindow, settings::ObjectNode)
 
     CONFIG_PROPERTY(bool, compact, false)
@@ -75,7 +77,7 @@ class BarActiveWindow : public settings::ObjectNode {
     CONFIG_PROPERTY(bool, showOnHover, true)
 };
 
-class BarTrayIconSub : public settings::ObjectNode {
+class CAELESTIA_CONFIG_API BarTrayIconSub : public settings::ObjectNode {
     CONFIG_NODE(BarTrayIconSub, settings::ObjectNode)
 
     CONFIG_PROPERTY(QString, id, {})
@@ -84,7 +86,7 @@ class BarTrayIconSub : public settings::ObjectNode {
 };
 CONFIG_LIST_TYPE(BarTrayIconSub, BarTrayIconSubList)
 
-class BarTray : public settings::ObjectNode {
+class CAELESTIA_CONFIG_API BarTray : public settings::ObjectNode {
     CONFIG_NODE(BarTray, settings::ObjectNode)
 
     CONFIG_PROPERTY(bool, background, false)
@@ -94,7 +96,7 @@ class BarTray : public settings::ObjectNode {
     CONFIG_GLOBAL_PROPERTY(QStringList, hiddenIcons, {})
 };
 
-class BarClock : public settings::ObjectNode {
+class CAELESTIA_CONFIG_API BarClock : public settings::ObjectNode {
     CONFIG_NODE(BarClock, settings::ObjectNode)
 
     CONFIG_PROPERTY(bool, background, false)
@@ -103,7 +105,7 @@ class BarClock : public settings::ObjectNode {
     CONFIG_PROPERTY(bool, showSeconds, false)
 };
 
-class BarConfig : public settings::ObjectNode {
+class CAELESTIA_CONFIG_API BarConfig : public settings::ObjectNode {
     CONFIG_NODE(BarConfig, settings::ObjectNode)
 
     CONFIG_PROPERTY(bool, persistent, true)

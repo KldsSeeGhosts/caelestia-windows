@@ -1,11 +1,13 @@
 #pragma once
 
+#include "util/export.hpp"
+
 #include "settings/objectnode.hpp"
 #include "common.hpp"
 
 namespace caelestia::shell::config {
 
-class DashboardPerformance : public settings::ObjectNode {
+class CAELESTIA_CONFIG_API DashboardPerformance : public settings::ObjectNode {
     CONFIG_NODE(DashboardPerformance, settings::ObjectNode)
 
     CONFIG_PROPERTY(bool, showBattery, true)
@@ -16,7 +18,7 @@ class DashboardPerformance : public settings::ObjectNode {
     CONFIG_PROPERTY(bool, showNetwork, true)
 };
 
-class DashboardConfig : public settings::ObjectNode {
+class CAELESTIA_CONFIG_API DashboardConfig : public settings::ObjectNode {
     CONFIG_NODE(DashboardConfig, settings::ObjectNode)
 
     CONFIG_PROPERTY(bool, enabled, true)

@@ -3,6 +3,8 @@
 #include <qstring.h>
 #include <qvariantlist.h>
 
+#include "util/export.hpp"
+
 #include "settings/objectnode.hpp"
 #include "common.hpp"
 #include "enums.hpp"
@@ -12,7 +14,7 @@ namespace caelestia::shell::config {
 using Qt::StringLiterals::operator""_s;
 using settings::vmap;
 
-class PlayerAlias : public settings::ObjectNode {
+class CAELESTIA_CONFIG_API PlayerAlias : public settings::ObjectNode {
     CONFIG_NODE(PlayerAlias, settings::ObjectNode)
 
     CONFIG_PROPERTY(QString, from, {})
@@ -20,7 +22,7 @@ class PlayerAlias : public settings::ObjectNode {
 };
 CONFIG_LIST_TYPE(PlayerAlias, PlayerAliasList)
 
-class ServiceConfig : public settings::ObjectNode {
+class CAELESTIA_CONFIG_API ServiceConfig : public settings::ObjectNode {
     CONFIG_NODE(ServiceConfig, settings::ObjectNode)
 
     CONFIG_GLOBAL_PROPERTY(QString, weatherLocation, {})

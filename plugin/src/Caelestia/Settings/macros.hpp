@@ -143,8 +143,8 @@ private:                                                                        
 #define SETTINGS_GLOBAL_SUBOBJECT(Type, name) SETTINGS_SUBOBJECT_IMPL(Type, name, true)
 
 // Defines a list type for use with SETTINGS_LIST.
-#define SETTINGS_LIST_TYPE(Element, Name)                                                                              \
-    class Name : public caelestia::shell::settings::ListNode {                                                         \
+#define SETTINGS_LIST_TYPE(Element, Name, ...)                                                                         \
+    class __VA_ARGS__ Name : public caelestia::shell::settings::ListNode {                                             \
         Q_OBJECT                                                                                                       \
         QML_ANONYMOUS                                                                                                  \
                                                                                                                        \

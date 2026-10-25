@@ -10,10 +10,13 @@ Wayland compositor; Windows continues to own application composition through DWM
 - The full Caelestia source history is retained, based on the revision in
   [sources.lock.json](sources.lock.json).
 - The Windows Quickshell source is pinned as `windows/deps/quickshell`.
-- Windows setup guidance, compatibility gates, and a read-only prerequisite
-  report are present.
-- There is no validated Windows Caelestia build or runnable bar/drawer prototype
-  yet. The upstream `shell.qml` still starts Linux-specific services.
+- The pinned backend and eight portable Caelestia plugin modules build natively
+  with clang-cl and Qt 6.11.2. See [native build instructions](NATIVE-BUILD.md).
+- An isolated component probe renders the original bar clock, dashboard clock,
+  blob surfaces, rounded mask, and motion in an ordinary application window.
+  Automated rendering checks pass at device pixel ratios 1, 1.5, and 1.75.
+- This is a component compatibility result. The full bar and drawer are not
+  ported, and the upstream `shell.qml` still starts Linux-specific services.
 - Inherited GitHub Actions are disabled at repository level during bootstrap.
   They are upstream Linux workflows, not validation of this port.
 
@@ -40,37 +43,57 @@ missing. Tool availability does not mean Caelestia's Windows adapters are ready.
 No runtime, SDK, compiler, installer, or authentication change is performed by
 these commands. The submodule command downloads source only.
 
-## Compatibility work to do first
+## Portable build and component probe
 
-These are source findings, not completed porting work:
+`CAELESTIA_PORTABLE_UI=ON` builds `Caelestia`, `Settings`, `Components`, `Config`,
+`State`, `Blobs`, `I18n`, and `Shaders`. It excludes the calculator, Models,
+Services, Images, and Multimedia. The full Linux build remains the default on
+Linux. Windows defaults to plugins only and rejects installation of the
+unadapted upstream shell.
 
-1. `plugin/CMakeLists.txt` requires Qt DBus, PipeWire, Aubio, Cava, libqalculate,
-   and a sensors library. Split portable UI modules from platform services
-   before attempting a complete Windows plugin build.
-2. The Blobs and Components shader declarations currently specify `NOHLSL`.
-   Verify shader generation and rendering on the Windows Qt Quick backend.
-3. `services/Brightness.qml` invokes `ddcutil`, `brightnessctl`, and `sh`.
-   Audit all startup daemons and services for Linux commands and filesystem
-   assumptions. Adapt their interfaces to Windows services.
-4. `components/containers/StyledWindow.qml` and the drawer module use
+Windows adaptations include DLL export/import declarations for shared Qt
+metadata, generated forwarding headers that need no symlink privileges, and
+HLSL shader generation. Optional SPIR-V optimization is omitted on Windows
+because it requires a separate `spirv-opt` executable.
+
+The probe stages an explicit subset of original QML files without modifying
+them. Its fixed palette adapter bypasses wallpaper analysis and Hyprland rules.
+Only the body font is bundled; the clock icon is disabled. This does not validate
+the full font set, dynamic theme service, or any Windows system service.
+
+Build and run through the scripts in [NATIVE-BUILD.md](NATIVE-BUILD.md). Output,
+configuration, state, and screenshots default to ignored `windows/.local/build`.
+The child process receives `CAELESTIA_CONFIG_DIR`, `CAELESTIA_STATE_DIR`, and
+`CAELESTIA_RUNTIME_DIR`; ordinary Linux runs retain their standard paths.
+Quickshell's own instance bookkeeping remains in its Windows application
+directory, with the probe identified by its separate configuration path.
+
+## Next compatibility work
+
+1. Audit the dependencies of `modules/bar/Bar.qml`, `modules/drawers/ContentWindow.qml`,
+   and `modules/drawers/Panels.qml`. Add platform boundaries for the services
+   they actually instantiate, preserving their existing QML interfaces.
+2. `components/containers/StyledWindow.qml` and the drawer module use
    `Quickshell.Wayland`; the drawer also uses `Quickshell.Hyprland`. Check the
    exact types, properties, and signals Caelestia needs against the pinned
    backend. Matching import names do not prove API parity.
-5. The upstream entry point starts background, drawers, area picker, lock, and
-   daemons together. The first Windows entry point must load a small audited
-   subset with isolated state and no desktop takeover.
-
-No Qt runtime, Qt development tools, CMake, Ninja, or C++ compiler was available
-on PATH during bootstrap. The environment report is the current source of truth
-for subsequent machines.
+3. Load the real bar and one drawer through an isolated entry point. Validate
+   pointer regions, keyboard focus, dismissal, and focus return, then the
+   remaining [M1 gates](ROADMAP.md#m1-actual-caelestia-compatibility-prototype).
+4. Audit Linux process calls and filesystem assumptions before enabling each
+   service. For example, `services/Brightness.qml` still invokes `ddcutil`,
+   `brightnessctl`, and `sh`.
 
 ## Toolchain direction
 
-ii-windows documents a Linux cross-build using clang-cl/xwin and Windows Qt.
-That is a reference route, not a build verified by this project. If used here,
-run its Linux steps inside Ubuntu-24.04 under WSL2. A native Windows build needs
-its own verified CMake preset and compiler/Qt package selection. Do not copy
-Linux setup commands into a native PowerShell session.
+The verified initial route uses native Windows clang-cl, Visual Studio's C++
+tools and Windows SDK, Ninja, and Windows Qt. Tool discovery in an ordinary
+PowerShell session can still report missing tools because the development
+environment is loaded only inside the build script's process.
+
+ii-windows also documents a Linux cross-build using clang-cl/xwin and Windows
+Qt. That remains a reference route, not a build verified by this project. Run
+its Linux steps inside Ubuntu-24.04 under WSL2 if investigating it.
 
 Do not run the root Linux installation instructions or an upstream installer
 as a Windows bootstrap step. The first packaging milestone comes after the

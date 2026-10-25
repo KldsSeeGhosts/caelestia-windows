@@ -7,8 +7,8 @@
 #include "rootnode.hpp"      // IWYU pragma: keep
 
 // Declares a QML singleton over a root node: the global layer plus per-screen overlays via forScreen().
-#define SETTINGS_SINGLETON_DECL(Type, Root, QmlName)                                                                   \
-    class Type : public Root {                                                                                         \
+#define SETTINGS_SINGLETON_DECL(Type, Root, QmlName, ...)                                                              \
+    class __VA_ARGS__ Type : public Root {                                                                             \
         Q_OBJECT                                                                                                       \
         QML_NAMED_ELEMENT(QmlName)                                                                                     \
         QML_SINGLETON                                                                                                  \

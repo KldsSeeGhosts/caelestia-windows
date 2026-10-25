@@ -3,6 +3,8 @@
 #include <qstandardpaths.h>
 #include <qstring.h>
 
+#include "util/export.hpp"
+
 #include "settings/objectnode.hpp"
 #include "common.hpp"
 
@@ -10,7 +12,7 @@ namespace caelestia::shell::config {
 
 using Qt::StringLiterals::operator""_s;
 
-class UserPaths : public settings::ObjectNode {
+class CAELESTIA_CONFIG_API UserPaths : public settings::ObjectNode {
     CONFIG_NODE(UserPaths, settings::ObjectNode)
 
     CONFIG_GLOBAL_PROPERTY(

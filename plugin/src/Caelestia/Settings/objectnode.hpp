@@ -8,7 +8,7 @@
 
 namespace caelestia::shell::settings {
 
-class ObjectNode : public Node {
+class CAELESTIA_SETTINGS_API ObjectNode : public Node {
     Q_OBJECT
 
 public:

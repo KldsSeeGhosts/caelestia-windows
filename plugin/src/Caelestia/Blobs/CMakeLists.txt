@@ -11,7 +11,7 @@ qml_module(caelestia-blobs
 )
 
 qt_add_shaders(caelestia-blobs "blob_shaders"
-    BATCHABLE OPTIMIZED NOHLSL NOMSL
+    ${CAELESTIA_SHADER_OPTIONS}
     GLSL "300es,330"
     PREFIX "/"
     FILES

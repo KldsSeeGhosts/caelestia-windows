@@ -36,7 +36,20 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
 
 set(DISTRIBUTOR "Unset" CACHE STRING "Distributor")
-set(ENABLE_MODULES "extras;plugin;shell" CACHE STRING "Modules to build/install")
+if(WIN32)
+    set(CAELESTIA_DEFAULT_MODULES "plugin")
+    set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
+else()
+    set(CAELESTIA_DEFAULT_MODULES "extras;plugin;shell")
+endif()
+set(ENABLE_MODULES "${CAELESTIA_DEFAULT_MODULES}" CACHE STRING "Modules to build/install")
+option(CAELESTIA_PORTABLE_UI "Build UI plugins without Linux platform services or the calculator" ${WIN32})
+if(WIN32 AND NOT CAELESTIA_PORTABLE_UI)
+    message(FATAL_ERROR "Windows currently supports only CAELESTIA_PORTABLE_UI. Platform services are not ported.")
+endif()
+if(WIN32 AND "shell" IN_LIST ENABLE_MODULES)
+    message(FATAL_ERROR "The upstream shell entry point is not Windows-ready. Use windows/scripts/Start-Prototype.ps1.")
+endif()
 set(INSTALL_LIBDIR "${CMAKE_INSTALL_LIBDIR}/caelestia" CACHE STRING "Library install dir")
 set(INSTALL_QMLDIR "${CMAKE_INSTALL_LIBDIR}/qt6/qml" CACHE STRING "QML install dir")
 set(INSTALL_QSCONFDIR "${CMAKE_INSTALL_SYSCONFDIR}/xdg/quickshell/caelestia" CACHE STRING "Quickshell config install dir")
@@ -47,13 +60,17 @@ add_compile_definitions(
     QT_NO_CAST_FROM_BYTEARRAY
 )
 
-add_compile_options(
-    -Wall -Wextra -Wpedantic -Wshadow -Wconversion
-    -Wold-style-cast -Wnull-dereference -Wdouble-promotion
-    -Wformat=2 -Wfloat-equal -Woverloaded-virtual
-    -Wsign-conversion -Wredundant-decls -Wswitch
-    -Wunreachable-code
-)
+if(MSVC)
+    add_compile_options(/W4 /bigobj /utf-8)
+else()
+    add_compile_options(
+        -Wall -Wextra -Wpedantic -Wshadow -Wconversion
+        -Wold-style-cast -Wnull-dereference -Wdouble-promotion
+        -Wformat=2 -Wfloat-equal -Woverloaded-virtual
+        -Wsign-conversion -Wredundant-decls -Wswitch
+        -Wunreachable-code
+    )
+endif()
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     add_compile_options(-Wunused-lambda-capture -Wno-nonportable-include-path)

@@ -6,7 +6,7 @@
 
 namespace caelestia::shell::settings {
 
-class RootNode : public ObjectNode {
+class CAELESTIA_SETTINGS_API RootNode : public ObjectNode {
     Q_OBJECT
 
     Q_PROPERTY(QList<caelestia::shell::settings::Diagnostic> diagnostics READ diagnostics NOTIFY diagnosticsChanged)

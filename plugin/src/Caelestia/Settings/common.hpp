@@ -6,11 +6,13 @@
 #include <qobject.h>
 #include <qqmlintegration.h>
 
+#include "util/export.hpp"
+
 namespace caelestia::shell::settings {
 
 Q_DECLARE_LOGGING_CATEGORY(lcSettings)
 
-class Node;
+class CAELESTIA_SETTINGS_API Node;
 
 enum class WriteOrigin : quint8 {
     Init,      // On init
@@ -45,7 +47,7 @@ private:
     Q_DISABLE_COPY_MOVE(InternalRead)
 };
 
-class DiagnosticType : public QObject {
+class CAELESTIA_SETTINGS_API DiagnosticType : public QObject {
     Q_OBJECT
     QML_NAMED_ELEMENT(DiagnosticType)
     QML_SINGLETON
@@ -71,7 +73,7 @@ enum class ExpectedType : quint8 {
     Object,
 };
 
-struct Diagnostic {
+struct CAELESTIA_SETTINGS_API Diagnostic {
     Q_GADGET
     QML_VALUE_TYPE(diagnostic)
 

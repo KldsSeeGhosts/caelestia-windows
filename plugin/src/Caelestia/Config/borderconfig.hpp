@@ -1,11 +1,13 @@
 #pragma once
 
+#include "util/export.hpp"
+
 #include "settings/objectnode.hpp"
 #include "common.hpp"
 
 namespace caelestia::shell::config {
 
-class BorderConfig : public settings::ObjectNode {
+class CAELESTIA_CONFIG_API BorderConfig : public settings::ObjectNode {
     CONFIG_NODE(BorderConfig, settings::ObjectNode)
 
     CONFIG_PROPERTY(int, thickness, 10)

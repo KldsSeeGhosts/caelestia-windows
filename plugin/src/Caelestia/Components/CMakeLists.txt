@@ -19,7 +19,7 @@ qml_module(caelestia-components
 )
 
 qt_add_shaders(caelestia-components "components_shaders"
-    BATCHABLE OPTIMIZED NOHLSL NOMSL
+    ${CAELESTIA_SHADER_OPTIONS}
     GLSL "300es,330"
     PREFIX "/"
     FILES

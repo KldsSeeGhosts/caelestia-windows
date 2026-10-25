@@ -1,11 +1,13 @@
 #pragma once
 
+#include "util/export.hpp"
+
 #include "settings/objectnode.hpp"
 #include "common.hpp"
 
 namespace caelestia::shell::config {
 
-class NexusConfig : public settings::ObjectNode {
+class CAELESTIA_CONFIG_API NexusConfig : public settings::ObjectNode {
     CONFIG_NODE(NexusConfig, settings::ObjectNode)
 
     CONFIG_PROPERTY(int, wallpapersPerRow, 4)
