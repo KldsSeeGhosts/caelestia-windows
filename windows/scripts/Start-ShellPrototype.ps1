@@ -14,6 +14,8 @@ param(
     [ValidateSet('Disabled', 'ReadOnly', 'Interactive')][string]$MediaMode = 'Disabled',
     [switch]$Network,
     [ValidateSet('Disabled', 'ReadOnly', 'Interactive')][string]$NetworkMode = 'Disabled',
+    [switch]$Hypr,
+    [ValidateSet('Disabled', 'Observe', 'Dispatch')][string]$HyprMode = 'Disabled',
     [switch]$Bluetooth,
     [ValidateSet('Disabled', 'ReadOnly', 'Interactive')][string]$BluetoothMode = 'Disabled',
     [switch]$Apps,
@@ -43,6 +45,7 @@ $slices = [ordered]@{
     battery   = @{ On = $Battery; Mode = $BatteryMode; Observe = 'CAELESTIA_WINDOWS_BATTERY'; Controls = 'CAELESTIA_WINDOWS_POWER_PROFILE_WRITES'; ControlMode = 'ProfileWrites' }
     media     = @{ On = $Media; Mode = $MediaMode; Observe = 'CAELESTIA_WINDOWS_MEDIA'; Controls = 'CAELESTIA_WINDOWS_MEDIA_CONTROLS'; ControlMode = 'Interactive' }
     network   = @{ On = $Network; Mode = $NetworkMode; Observe = 'CAELESTIA_WINDOWS_NETWORK'; Controls = 'CAELESTIA_WINDOWS_NETWORK_CONTROLS'; ControlMode = 'Interactive' }
+    hypr      = @{ On = $Hypr; Mode = $HyprMode; Observe = 'CAELESTIA_WINDOWS_HYPR'; Controls = 'CAELESTIA_WINDOWS_HYPR_DISPATCH'; ControlMode = 'Dispatch' }
     bluetooth = @{ On = $Bluetooth; Mode = $BluetoothMode; Observe = 'CAELESTIA_WINDOWS_BLUETOOTH'; Controls = 'CAELESTIA_WINDOWS_BLUETOOTH_CONTROLS'; ControlMode = 'Interactive' }
     apps      = @{ On = $Apps; Mode = $AppsMode; Observe = 'CAELESTIA_WINDOWS_APPS'; Controls = 'CAELESTIA_WINDOWS_APP_LAUNCH'; ControlMode = 'Interactive' }
     tray      = @{ On = $Tray; Mode = $TrayMode; Observe = 'CAELESTIA_WINDOWS_TRAY'; Controls = 'CAELESTIA_WINDOWS_TRAY_ACTIVATION'; ControlMode = 'Interactive' }
@@ -129,6 +132,28 @@ if ($Session) {
     $configText = $configText.Replace(
         '"commands": {"logout":[],"shutdown":[],"hibernate":[],"reboot":[]}',
         '"commands": {"logout":["logout"],"shutdown":["shutdown"],"hibernate":["hibernate"],"reboot":["reboot"]}')
+}
+# Hypr runs stage the original bar workspace and active-window components. The
+# original Text display type is selected because the external M3Shapes module
+# is not part of the portable build; the prototype ships only a compatibility
+# stand-in for its type. Per-monitor workspace ownership stays unclaimed, so
+# perMonitor keeps the upstream default while showUnoccupied keeps the five
+# configured slots visible on both monitors.
+if ($Hypr) {
+    $configObject = $configText | ConvertFrom-Json
+    $configObject.bar | Add-Member -NotePropertyName workspaces -NotePropertyValue ([pscustomobject]@{
+        shown = 5
+        showUnoccupied = $true
+        perMonitor = $true
+        displayType = 'Text'
+        showWindows = $true
+    }) -Force
+    $configObject.bar | Add-Member -NotePropertyName activeWindow -NotePropertyValue ([pscustomobject]@{
+        showOnHover = $false
+        compact = $false
+        inverted = $false
+    }) -Force
+    $configText = $configObject | ConvertTo-Json -Depth 10
 }
 $configText | Set-Content -LiteralPath $config -Encoding UTF8
 $logRoot = Join-Path $BuildRoot 'logs'
@@ -249,6 +274,7 @@ Copy-Item -LiteralPath (Join-Path $stage 'sources.json') -Destination (Join-Path
 $result = [ordered]@{
     passed = $(if ($Smoke) { $passed } else { $null }); smoke = $Smoke.IsPresent
     prototype = $kind; audioMode = $AudioMode; batteryMode = $BatteryMode; mediaMode = $MediaMode; networkMode = $NetworkMode
+    hyprMode = $HyprMode
     bluetoothMode = $BluetoothMode; appsMode = $AppsMode; appsSearchQuery = $(if ($Apps) { $AppsSearchQuery } else { '' })
     trayMode = $TrayMode; trayFixture = $TrayFixture.IsPresent
     trayHookMode = $(if ($Tray) { $info.EnvironmentVariables['QS_WINDOWS_TRAY_HOOK'] } else { $null })

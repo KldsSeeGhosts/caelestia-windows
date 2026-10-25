@@ -80,6 +80,18 @@ For the next development session, start with [HANDOFF.md](HANDOFF.md).
   adapter assertions, Disabled/ReadOnly runs at 150%/175%, a three-icon fixture
   preview, and unchanged Explorer/taskbar state. Live items, activation and
   interception ownership remain unvalidated.
+- A default-off [Hyprland adapter prototype](hypr-prototype/README.md) covers
+  M3-2 stages 0-3 for the bar workspace and active-window components.
+  `CAELESTIA_WINDOWS_HYPR=1` observes the pinned backend's Hyprland data;
+  `CAELESTIA_WINDOWS_HYPR_DISPATCH=1` separately permits an allowlist of
+  workspace/move/graceful-close dispatches. Special-workspace UI stays inactive,
+  the backend's global focused workspace is documented per monitor, and the
+  `killwindow` translation is a graceful `WM_CLOSE`. No `Tiling`, `WindowManager`
+  or `Taskbar` object is constructed. The fixture covers default-off
+  construction, mapping, the global-focus limitation, every allowlisted and
+  refused dispatch form and injection attempts. Only the native Disabled mode
+  is recorded; native Observe/Dispatch and the original components against a
+  live desktop remain untested.
 
 ## Checkout and inspect
 

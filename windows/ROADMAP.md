@@ -165,6 +165,14 @@ Gate: no overlapping tiled windows, accidental size floating, lost focus, or
 unbounded correction loop during the recorded scenarios. When fitting is
 impossible, the UI must explain the outcome.
 
+M3-2 stages 0-3 have a default-off [Hypr adapter and prototype](hypr-prototype/README.md):
+observation maps the backend's monitors/workspaces/toplevels/focused data,
+dispatch is a separate allowlist opt-in, special-workspace UI is inactive and
+per-monitor ownership is explicitly not claimed. Only the native Disabled mode
+is recorded so far. Tiling construction (stages 4-8), live Observe/Dispatch,
+the fitting-impossible explanation and the full M3 scenario matrix remain
+unvalidated.
+
 ## M4: complete shell and packaging
 
 Expand to dashboard, launcher, sidebar, notifications, OSD, and the remaining

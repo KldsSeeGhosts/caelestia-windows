@@ -5,7 +5,7 @@ param(
     # 'shell' is the M1 bar/session host. Every other value names one bounded
     # slice under windows/<name>-prototype with its own shell.qml and
     # sources.json manifest. One slice per stage.
-    [ValidateSet('shell', 'audio', 'battery', 'media', 'network', 'bluetooth', 'apps', 'tray')]
+    [ValidateSet('shell', 'audio', 'battery', 'media', 'network', 'bluetooth', 'apps', 'tray', 'hypr')]
     [string]$Prototype = 'shell'
 )
 
@@ -32,6 +32,14 @@ if ($Prototype -eq 'tray') {
     # The base manifest stages an unavailable Tray adapter. This slice stages
     # the original component plus its item/menu dependencies instead.
     $files.Remove('windows/shell-prototype/adapters/modules/bar/components/Tray.qml')
+}
+if ($Prototype -eq 'hypr') {
+    # The base manifest stages contract-only Hypr, Workspaces and ActiveWindow
+    # adapters. This slice stages the real facade and the original components
+    # (plus their dependencies) instead.
+    $files.Remove('windows/shell-prototype/adapters/services/Hypr.qml')
+    $files.Remove('windows/shell-prototype/adapters/modules/bar/components/workspaces/Workspaces.qml')
+    $files.Remove('windows/shell-prototype/adapters/modules/bar/components/ActiveWindow.qml')
 }
 if ($Prototype -ne 'shell') {
     $sliceManifest = Get-Content -LiteralPath (Join-Path $repoRoot "windows\$Prototype-prototype\sources.json") -Raw | ConvertFrom-Json
