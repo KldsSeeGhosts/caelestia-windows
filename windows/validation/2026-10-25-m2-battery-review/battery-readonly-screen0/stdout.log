@@ -1,0 +1,18 @@
+﻿2026-10-25 15:42:59.777  INFO: Launching config: "D:/AiStack/caelestia-windows/windows/.local/build/shell-runs/battery-20261025-154259-501/shell.qml"
+2026-10-25 15:42:59.777  INFO: Shell ID: "1be99a3676f04010542634eb82a1588d" Path ID "1be99a3676f04010542634eb82a1588d"
+2026-10-25 15:42:59.797  INFO: Saving logs to "C:/Users/Ermin/AppData/Local/quickshell/run/by-id/kt1nrahnt/log.qslog"
+2026-10-25 15:42:59.845  INFO quickshell.windows.blur: Blur behind panels is turned off by QS_WINDOWS_BLUR.
+2026-10-25 15:42:59.849  INFO quickshell.windows.blur: No layer rules file found (looked for D:/AiStack/caelestia-windows/windows/.local/build/shell-runs/battery-20261025-154259-501/defaults/windows/layerrules.json ), blur behind panels is off.
+2026-10-25 15:42:59.967 DEBUG quickshell.windows.desktops: Desktop list changed: 1 desktops
+2026-10-25 15:42:59.967 DEBUG quickshell.windows.desktops: Current desktop: 0
+2026-10-25 15:42:59.968 DEBUG quickshell.windows.panel: Placing qs::windows::WinPanelWindow(0x24b67adf410) at QRect(80,80 640x620) on "MAG321UX OLED"
+2026-10-25 15:42:59.976  INFO: Configuration Loaded
+2026-10-25 15:43:00.093 DEBUG quickshell.windows.startup: First panel frame presented
+2026-10-25 15:43:00.494 DEBUG quickshell.windows.startup: Startup settled, running 1 deferred tasks
+2026-10-25 15:43:00.494  INFO quickshell.windows.desktops: VirtualDesktopAccessor.dll not found next to the executable; desktop switching falls back to keyboard shortcuts.
+2026-10-25 15:43:01.093 DEBUG qml: CAELESTIA_BATTERY_SCREEN {"index":0,"name":"MAG321UX OLED","x":0,"y":0,"dpr":1.5,"width":640,"height":620}
+2026-10-25 15:43:01.093 DEBUG qml: CAELESTIA_BATTERY_INITIAL {"status":"ready","reason":"No battery detected on this system.","enabled":true,"backendLoaded":true,"nativeReadAvailable":true,"presenceKnown":true,"observationAvailable":true,"present":false,"absent":true,"laptopBattery":false,"hasBattery":false,"percentageKnown":false,"onBatteryKnown":true,"onBattery":false,"charging":false,"state":0,"percentage":0,"timeToEmpty":0,"iconName":""}
+2026-10-25 15:43:03.094 DEBUG qml: CAELESTIA_BATTERY_FINAL {"status":"ready","reason":"No battery detected on this system.","enabled":true,"backendLoaded":true,"nativeReadAvailable":true,"presenceKnown":true,"observationAvailable":true,"present":false,"absent":true,"laptopBattery":false,"hasBattery":false,"percentageKnown":false,"onBatteryKnown":true,"onBattery":false,"charging":false,"state":0,"percentage":0,"timeToEmpty":0,"iconName":""}
+2026-10-25 15:43:03.126 DEBUG qml: CAELESTIA_BATTERY_CAPTURE file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/battery-20261025-154259-501.png
+2026-10-25 15:43:03.126 DEBUG qml: CAELESTIA_BATTERY_PASS 6.11.2
+

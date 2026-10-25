@@ -1,3 +1,4 @@
 *.json -text -whitespace
 *.log -text -whitespace
 *.txt -text -whitespace
+*.qml -text -whitespace

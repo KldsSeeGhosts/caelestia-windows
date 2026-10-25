@@ -1,0 +1,29 @@
+﻿{
+    "passed":  true,
+    "timedOut":  false,
+    "exitCode":  0,
+    "fixture":  {
+                    "assertions":  128
+                },
+    "sourceRevision":  "96788c8a4e009466dadd94fde89b9287263ebd20",
+    "sourceDirty":  false,
+    "qtVersion":  "6.11.2",
+    "runnerSha256":  "24994D434962751713F0C8932B356104B0849572B95765DAD50C13DA6BE3FA20",
+    "command":  "C:\\Users\\Ermin\\AppData\\Local\\caelestia-dev\\Qt\\6.11.2\\msvc2022_64\\bin\\qml.exe",
+    "arguments":  "\"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\battery-tests\\battery-fixture-20261025-154254-176\\BatteryServiceTest.qml\"",
+    "sources":  [
+                    {
+                        "source":  "windows/services/battery/BatteryService.qml",
+                        "sourceSha256":  "6D548EC91299476175DF9567E1770B26DE172BC86CE110794CCF3DBAE3D30C68",
+                        "stagedSha256":  "6D548EC91299476175DF9567E1770B26DE172BC86CE110794CCF3DBAE3D30C68"
+                    },
+                    {
+                        "source":  "windows/services/battery/BatteryServiceTest.qml",
+                        "sourceSha256":  "293E71A0EF9891EEBBE8625C7846E34DD83FF7C72EC433391398FC7CFF85F312",
+                        "stagedSha256":  "293E71A0EF9891EEBBE8625C7846E34DD83FF7C72EC433391398FC7CFF85F312"
+                    }
+                ],
+    "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\battery-tests\\battery-fixture-20261025-154254-176",
+    "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\battery-fixture-20261025-154254-176.stdout.log",
+    "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\battery-fixture-20261025-154254-176.stderr.log"
+}

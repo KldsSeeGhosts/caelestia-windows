@@ -1,0 +1,46 @@
+﻿{
+    "passed":  true,
+    "smoke":  true,
+    "prototype":  "shell",
+    "audioMode":  "Disabled",
+    "batteryMode":  "Disabled",
+    "timedOut":  false,
+    "exitCode":  0,
+    "scaleFactor":  "native",
+    "screenIndex":  0,
+    "monitorCycle":  false,
+    "traceInput":  false,
+    "actualScreens":  [
+                          {
+                              "index":  0,
+                              "name":  "MAG321UX OLED",
+                              "x":  0,
+                              "y":  0,
+                              "dpr":  1.5
+                          }
+                      ],
+    "captures":  [
+                     "file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/shell-20261025-154330-717.png"
+                 ],
+    "audioSnapshots":  [
+
+                       ],
+    "batterySnapshots":  [
+
+                         ],
+    "elapsedMilliseconds":  4074,
+    "sourceRevision":  "96788c8a4e009466dadd94fde89b9287263ebd20",
+    "sourceDirty":  false,
+    "backendRevision":  "5d0a33d36b17cb41d658b4a4a699c56ae91d6b5e",
+    "buildRecordSha256":  "807BC5A3F8748D800E9CE28E7D1E2C1473C42AC2CF7F3E53A423B4C433F4FEC8",
+    "configSha256":  "6FC8F8B80AF9D45A49A4737AF51B8C43A11B97E1B59A82468F31AB4C779C6F65",
+    "command":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\quickshell\\qs.exe",
+    "arguments":  "--no-color --log-times --path \"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\shell-20261025-154330-717\\shell.qml\"",
+    "executableSha256":  "CDE332D7A0C1829BFCDEB8C13685635A2FB90980D9BC987097B410D66DB66F2F",
+    "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\shell-20261025-154330-717",
+    "profile":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-prototype-profile",
+    "sources":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\shell-20261025-154330-717.sources.json",
+    "screenshot":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\shell-20261025-154330-717.png",
+    "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\shell-20261025-154330-717.stdout.log",
+    "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\shell-20261025-154330-717.stderr.log"
+}

@@ -1,0 +1,15 @@
+﻿[
+    "-S",
+    "D:\\AiStack\\caelestia-windows",
+    "-B",
+    "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\caelestia",
+    "-G",
+    "Ninja",
+    "-DCMAKE_BUILD_TYPE=Release",
+    "-DCMAKE_CXX_COMPILER=clang-cl",
+    "-DCMAKE_PREFIX_PATH=C:\\Users\\Ermin\\AppData\\Local\\caelestia-dev/Qt/6.11.2/msvc2022_64",
+    "-DCAELESTIA_PORTABLE_UI=ON",
+    "-DENABLE_MODULES=plugin",
+    "-DINSTALL_QMLDIR=qml",
+    "-DCMAKE_INSTALL_PREFIX=D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\install"
+]

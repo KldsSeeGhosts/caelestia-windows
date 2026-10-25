@@ -1,0 +1,13 @@
+********* Start testing of UPowerStatusTest *********
+Config: Using QtTest library 6.11.2, Qt 6.11.2 (x86_64-little_endian-llp64 shared (dynamic) release build; by MSVC 2022), windows 11
+PASS   : UPowerStatusTest::initTestCase()
+PASS   : UPowerStatusTest::successfulReadOfAbsentBattery()
+PASS   : UPowerStatusTest::unknownBatteryFlagIsNotProvenAbsence()
+PASS   : UPowerStatusTest::unknownPercentageIsNotZeroPercent()
+PASS   : UPowerStatusTest::failedReadClearsStaleReadings()
+PASS   : UPowerStatusTest::outOfRangePercentageIsUnknown()
+PASS   : UPowerStatusTest::stateAndTimeFollowFlags()
+PASS   : UPowerStatusTest::onBatteryRequiresSuccessfulRead()
+PASS   : UPowerStatusTest::cleanupTestCase()
+Totals: 9 passed, 0 failed, 0 skipped, 0 blacklisted, 1ms
+********* Finished testing of UPowerStatusTest *********

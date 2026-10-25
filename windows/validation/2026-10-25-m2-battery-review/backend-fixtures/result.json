@@ -1,0 +1,15 @@
+﻿{
+    "passed":  true,
+    "timedOut":  false,
+    "exitCode":  0,
+    "backendRevision":  "5d0a33d36b17cb41d658b4a4a699c56ae91d6b5e",
+    "backendDirty":  false,
+    "qtVersion":  "6.11.2",
+    "compiler":  "clang version 20.1.8",
+    "manifestTool":  "C:\\Program Files (x86)\\Windows Kits\\10\\bin\\10.0.26100.0\\x64\\mt.exe",
+    "linker":  "MSVC",
+    "command":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\battery-backend-tests\\upower_status_test.exe",
+    "arguments":  "-o \"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\battery-backend-tests\\fixtures.txt\",txt",
+    "executableSha256":  "C6EF5C6A8C1EFFF9937A60B34E804D2201AE45CC3B1D6EA4A7169E76A7FE3F2B",
+    "totals":  "Totals: 9 passed, 0 failed, 0 skipped, 0 blacklisted, 1ms"
+}

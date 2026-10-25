@@ -1,0 +1,8 @@
+﻿[
+    "--build",
+    "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\battery-backend-tests",
+    "--target",
+    "upower_status_test",
+    "--parallel",
+    "4"
+]

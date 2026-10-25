@@ -124,18 +124,20 @@ and shell/work-area/taskbar state.
 [Evidence and limits](validation/2026-10-25-m2-audio/README.md) distinguish
 those checks from ERM-508's remaining live controls/denial/recovery.
 
-ERM-499 has a read-only battery implementation subset. Clean `41cf6aae`
-passes 94 adapter assertions, native 150%/175% disabled/read-only UI on a
+ERM-499 has a read-only battery implementation subset. Clean `96788c8a`
+and backend `5d0a33d3` pass 128 adapter assertions, 9 native fake-status
+QtTest cases, native 150%/175% disabled/read-only UI on a
 batteryless desktop with truthful absence rendering, unchanged base scheme,
 overlay scheme and desktop state, the M1 smoke regression and a full audio
 harness re-run. Battery-present hardware, overlay/profile writes and
 IdlePower remain unvalidated by design;
-[evidence and limits](validation/2026-10-25-m2-battery/README.md) record the
-fixture-only coverage for battery-present behavior. Review also found that
-the original status icon still read PowerProfiles and that unknown charge
-was not distinguished from zero; the archived smoke did not cover those
-gaps. ERM-499 remains open for corrected observations, truthful profile
-capabilities, separate write opt-in and denied-write validation. M2 remains
+[corrected evidence and limits](validation/2026-10-25-m2-battery-review/README.md)
+record the fixture-only coverage for battery-present behavior.
+Review corrections disable and assert the original status icon's profile
+hook, distinguish unknown charge/presence/source and failed reads, and
+label unsupported charge time. ERM-499 remains open for truthful profile
+capabilities, separate write opt-in, denied-write and real hardware
+validation. M2 remains
 incomplete: ERM-498 (media), the remaining ERM-499 work and the other service
 tickets are next.
 

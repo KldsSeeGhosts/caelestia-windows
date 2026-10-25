@@ -1,0 +1,29 @@
+﻿{
+    "passed":  true,
+    "timedOut":  false,
+    "exitCode":  0,
+    "fixture":  {
+                    "assertions":  238
+                },
+    "sourceRevision":  "96788c8a4e009466dadd94fde89b9287263ebd20",
+    "sourceDirty":  false,
+    "qtVersion":  "6.11.2",
+    "runnerSha256":  "24994D434962751713F0C8932B356104B0849572B95765DAD50C13DA6BE3FA20",
+    "command":  "C:\\Users\\Ermin\\AppData\\Local\\caelestia-dev\\Qt\\6.11.2\\msvc2022_64\\bin\\qml.exe",
+    "arguments":  "\"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\audio-tests\\audio-fixture-20261025-154315-294\\AudioServiceTest.qml\"",
+    "sources":  [
+                    {
+                        "source":  "windows/services/audio/AudioService.qml",
+                        "sourceSha256":  "BBFE70212955B36AEDCEF84BB770EB492AC3BA78AEB4E74439BEAF39A67197FD",
+                        "stagedSha256":  "BBFE70212955B36AEDCEF84BB770EB492AC3BA78AEB4E74439BEAF39A67197FD"
+                    },
+                    {
+                        "source":  "windows/services/audio/AudioServiceTest.qml",
+                        "sourceSha256":  "0728AE5F356F2FACB5DEF99B917DBB644974A88F816CB719F39D4BE23C38669F",
+                        "stagedSha256":  "0728AE5F356F2FACB5DEF99B917DBB644974A88F816CB719F39D4BE23C38669F"
+                    }
+                ],
+    "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\audio-tests\\audio-fixture-20261025-154315-294",
+    "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\audio-fixture-20261025-154315-294.stdout.log",
+    "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\audio-fixture-20261025-154315-294.stderr.log"
+}

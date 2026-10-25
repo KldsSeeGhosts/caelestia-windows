@@ -8,8 +8,10 @@ M0/M1 are complete and PR #3 is merged. Current topic branch:
 PR #1 track the audio integration; consult their linked merge state. Backend
 GitHub CI could not start because GitHub reports an account billing/spending-
 limit block. Local native checks pass; no remote CI pass is claimed. The
-battery slice makes no backend change: the root gitlink and
-`windows/sources.lock.json` stay at audio's pin, unchanged together.
+battery review corrections add explicit UPower observation validity in
+[backend PR #2](https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/pull/2).
+The root gitlink and `windows/sources.lock.json` agree at pushed backend
+`5d0a33d36b17cb41d658b4a4a699c56ae91d6b5e`; the PR remains open.
 M2 implementation order so far:
 ERM-495 is the complete [service source audit](audits/M2-SERVICES.md);
 ERM-496 adds the core Audio adapter and original AudioPopout;
@@ -22,19 +24,21 @@ ERM-498 (GSMTC media), the remaining ERM-499 work, ERM-500 through ERM-507
 and ERM-508 (live audio control/denial/recovery) track remaining services.
 M2 is not complete.
 
-Clean root `41cf6aae` passes 94 battery adapter assertions, disabled/read-only
+Clean root `96788c8a` passes 128 battery adapter assertions, 9 native
+fake-status QtTest cases, disabled/read-only
 UI runs at native 150%/175% (negative secondary origin) with truthful
 no-battery rendering, unchanged base power scheme `381b4222` and effective
 overlay scheme `ded574b5`, unchanged Explorer/KSG Shell PIDs, work areas and
 taskbar flags, the existing M1 bar/session smoke regression and a full audio
 harness re-run.
-[Archived evidence](validation/2026-10-25-m2-battery/README.md) records exact
+[Corrected evidence](validation/2026-10-25-m2-battery-review/README.md) records exact
 sources, commands, hashes, native state comparisons, screenshots and limits.
 This workstation has no battery, so battery-present behavior remains
-fixture-validated only. PR #5 review additionally found an enabled status-icon
-profile hook, unknown percentage reported as zero by the backend, and missing
-tracked build evidence. The historical archive now records those limitations;
-its passing smoke did not establish the full ERM-499 contract.
+fixture-validated only. Review fixes disable and assert the status-icon
+profile hook, distinguish unknown charge/presence/source and failed reads,
+clear stale values and label unsupported charge time. The 12 missing
+historical build artifacts are tracked with their original hashes.
+The earlier archive retains its recorded sources and limitations.
 
 ```powershell
 $qtPrefix = "$env:LOCALAPPDATA\caelestia-dev\Qt\6.11.2\msvc2022_64"
@@ -52,8 +56,9 @@ is no interactive mode. The original
 [BatteryStatus](../modules/bar/components/status/BatteryStatus.qml) and
 [Battery](../modules/bar/popouts/Battery.qml) components gained
 `profileStatusEnabled`/`profileControlsEnabled` hooks with upstream-preserving
-defaults. The original recorded run disabled the popout hooks but omitted the
-status-icon hook; corrected code and new validation must cover both.
+defaults. The corrected host disables both original components' profile hooks
+and wires observation/percentage/source validity. The original run omitted
+the status-icon hook; the corrected native smoke covers both components.
 No other services, global shortcuts, toasts or shell controllers
 are enabled. The normal M1 entry point and the audio prototype remain
 available. Do not claim the read-only gate validates battery-present
@@ -65,9 +70,11 @@ actions, and distinguish absent sessions from an unavailable backend. No
 automatic playback, shortcuts, toasts or capture. Re-check the
 [audit](audits/M2-SERVICES.md) candidate list before starting.
 
-Backend pin `8c71bdb8116dffeb274edb31c3803e1c28dbb270` preserves M1's hover fix
+Backend pin `5d0a33d36b17cb41d658b4a4a699c56ae91d6b5e` preserves M1's hover fix
 and adds Core Audio interface/state availability, initialization/control errors,
 and observed default routing after partial role failures.
+It also carries UPower read/presence/percentage and AC-source validity,
+single-read projections and stale-value clearing from backend PR #2.
 [Backend PR #1](https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/pull/1)
 holds the committed fork patch. Native fake-COM fixtures pass 16 QtTest cases;
 actual hardware denial, hot removal and live writes remain unvalidated.

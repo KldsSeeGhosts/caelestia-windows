@@ -1,0 +1,793 @@
+﻿{
+    "passed":  true,
+    "failure":  null,
+    "sourceRevision":  "96788c8a4e009466dadd94fde89b9287263ebd20",
+    "sourceDirty":  false,
+    "backendRevision":  "5d0a33d36b17cb41d658b4a4a699c56ae91d6b5e",
+    "measurementSources":  [
+                               {
+                                   "source":  "windows/scripts/Get-AudioState.ps1",
+                                   "sha256":  "76B57CD4537A1B720E3B725FF92C53D0CE2CFB3309FCE9FF970F0871F126FB37"
+                               },
+                               {
+                                   "source":  "windows/scripts/NativeAudioSnapshot.cs",
+                                   "sha256":  "2D66591FC243677EC41E3D5CE7E02DDDD49EE8120234CD606D008473A74B1AD6"
+                               },
+                               {
+                                   "source":  "windows/scripts/Get-DesktopState.ps1",
+                                   "sha256":  "44E06C706EE5A930A41EA723D9DFC104469D2019DDBC3BAEA71B240B71A401DE"
+                               },
+                               {
+                                   "source":  "windows/scripts/Test-AudioPrototype.ps1",
+                                   "sha256":  "760D5817561C3C57E70CE215A8D9C7D13B5E6971142686EB542D3F3358D07065"
+                               }
+                           ],
+    "output":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\audio-validation-20261025-154315-132",
+    "records":  [
+                    {
+                        "kind":  "fixture",
+                        "result":  {
+                                       "passed":  true,
+                                       "timedOut":  false,
+                                       "exitCode":  0,
+                                       "fixture":  {
+                                                       "assertions":  238
+                                                   },
+                                       "sourceRevision":  "96788c8a4e009466dadd94fde89b9287263ebd20",
+                                       "sourceDirty":  false,
+                                       "qtVersion":  "6.11.2",
+                                       "runnerSha256":  "24994D434962751713F0C8932B356104B0849572B95765DAD50C13DA6BE3FA20",
+                                       "command":  "C:\\Users\\Ermin\\AppData\\Local\\caelestia-dev\\Qt\\6.11.2\\msvc2022_64\\bin\\qml.exe",
+                                       "arguments":  "\"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\audio-tests\\audio-fixture-20261025-154315-294\\AudioServiceTest.qml\"",
+                                       "sources":  [
+                                                       {
+                                                           "source":  "windows/services/audio/AudioService.qml",
+                                                           "sourceSha256":  "BBFE70212955B36AEDCEF84BB770EB492AC3BA78AEB4E74439BEAF39A67197FD",
+                                                           "stagedSha256":  "BBFE70212955B36AEDCEF84BB770EB492AC3BA78AEB4E74439BEAF39A67197FD"
+                                                       },
+                                                       {
+                                                           "source":  "windows/services/audio/AudioServiceTest.qml",
+                                                           "sourceSha256":  "0728AE5F356F2FACB5DEF99B917DBB644974A88F816CB719F39D4BE23C38669F",
+                                                           "stagedSha256":  "0728AE5F356F2FACB5DEF99B917DBB644974A88F816CB719F39D4BE23C38669F"
+                                                       }
+                                                   ],
+                                       "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\audio-tests\\audio-fixture-20261025-154315-294",
+                                       "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\audio-fixture-20261025-154315-294.stdout.log",
+                                       "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\audio-fixture-20261025-154315-294.stderr.log"
+                                   }
+                    },
+                    {
+                        "kind":  "audio",
+                        "result":  {
+                                       "passed":  true,
+                                       "smoke":  true,
+                                       "prototype":  "audio",
+                                       "audioMode":  "Disabled",
+                                       "batteryMode":  "Disabled",
+                                       "timedOut":  false,
+                                       "exitCode":  0,
+                                       "scaleFactor":  "native",
+                                       "screenIndex":  0,
+                                       "monitorCycle":  false,
+                                       "traceInput":  false,
+                                       "actualScreens":  [
+                                                             {
+                                                                 "index":  0,
+                                                                 "name":  "MAG321UX OLED",
+                                                                 "x":  0,
+                                                                 "y":  0,
+                                                                 "dpr":  1.5,
+                                                                 "width":  640,
+                                                                 "height":  620
+                                                             }
+                                                         ],
+                                       "captures":  [
+                                                        "file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/audio-20261025-154315-475.png"
+                                                    ],
+                                       "audioSnapshots":  [
+                                                              {
+                                                                  "phase":  "INITIAL",
+                                                                  "state":  {
+                                                                                "status":  "disabled",
+                                                                                "reason":  "Windows audio is disabled.",
+                                                                                "enabled":  false,
+                                                                                "backendLoaded":  false,
+                                                                                "controlsEnabled":  false,
+                                                                                "outputAvailable":  false,
+                                                                                "inputAvailable":  false,
+                                                                                "outputControlsAvailable":  false,
+                                                                                "inputControlsAvailable":  false,
+                                                                                "lastError":  "",
+                                                                                "sink":  null,
+                                                                                "source":  null,
+                                                                                "sinks":  [
+
+                                                                                          ],
+                                                                                "sources":  [
+
+                                                                                            ],
+                                                                                "streamCount":  0
+                                                                            }
+                                                              },
+                                                              {
+                                                                  "phase":  "FINAL",
+                                                                  "state":  {
+                                                                                "status":  "disabled",
+                                                                                "reason":  "Windows audio is disabled.",
+                                                                                "enabled":  false,
+                                                                                "backendLoaded":  false,
+                                                                                "controlsEnabled":  false,
+                                                                                "outputAvailable":  false,
+                                                                                "inputAvailable":  false,
+                                                                                "outputControlsAvailable":  false,
+                                                                                "inputControlsAvailable":  false,
+                                                                                "lastError":  "",
+                                                                                "sink":  null,
+                                                                                "source":  null,
+                                                                                "sinks":  [
+
+                                                                                          ],
+                                                                                "sources":  [
+
+                                                                                            ],
+                                                                                "streamCount":  0
+                                                                            }
+                                                              }
+                                                          ],
+                                       "batterySnapshots":  [
+
+                                                            ],
+                                       "elapsedMilliseconds":  3440,
+                                       "sourceRevision":  "96788c8a4e009466dadd94fde89b9287263ebd20",
+                                       "sourceDirty":  false,
+                                       "backendRevision":  "5d0a33d36b17cb41d658b4a4a699c56ae91d6b5e",
+                                       "buildRecordSha256":  "807BC5A3F8748D800E9CE28E7D1E2C1473C42AC2CF7F3E53A423B4C433F4FEC8",
+                                       "configSha256":  "6FC8F8B80AF9D45A49A4737AF51B8C43A11B97E1B59A82468F31AB4C779C6F65",
+                                       "command":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\quickshell\\qs.exe",
+                                       "arguments":  "--no-color --log-times --path \"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\audio-20261025-154315-475\\shell.qml\"",
+                                       "executableSha256":  "CDE332D7A0C1829BFCDEB8C13685635A2FB90980D9BC987097B410D66DB66F2F",
+                                       "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\audio-20261025-154315-475",
+                                       "profile":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\audio-prototype-profile",
+                                       "sources":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\audio-20261025-154315-475.sources.json",
+                                       "screenshot":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\audio-20261025-154315-475.png",
+                                       "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\audio-20261025-154315-475.stdout.log",
+                                       "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\audio-20261025-154315-475.stderr.log"
+                                   }
+                    },
+                    {
+                        "kind":  "audio",
+                        "result":  {
+                                       "passed":  true,
+                                       "smoke":  true,
+                                       "prototype":  "audio",
+                                       "audioMode":  "ReadOnly",
+                                       "batteryMode":  "Disabled",
+                                       "timedOut":  false,
+                                       "exitCode":  0,
+                                       "scaleFactor":  "native",
+                                       "screenIndex":  0,
+                                       "monitorCycle":  false,
+                                       "traceInput":  false,
+                                       "actualScreens":  [
+                                                             {
+                                                                 "index":  0,
+                                                                 "name":  "MAG321UX OLED",
+                                                                 "x":  0,
+                                                                 "y":  0,
+                                                                 "dpr":  1.5,
+                                                                 "width":  640,
+                                                                 "height":  620
+                                                             }
+                                                         ],
+                                       "captures":  [
+                                                        "file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/audio-20261025-154319-279.png"
+                                                    ],
+                                       "audioSnapshots":  [
+                                                              {
+                                                                  "phase":  "INITIAL",
+                                                                  "state":  {
+                                                                                "status":  "ready",
+                                                                                "reason":  "Windows audio is ready with controls disabled.",
+                                                                                "enabled":  true,
+                                                                                "backendLoaded":  true,
+                                                                                "controlsEnabled":  false,
+                                                                                "outputAvailable":  true,
+                                                                                "inputAvailable":  true,
+                                                                                "outputControlsAvailable":  false,
+                                                                                "inputControlsAvailable":  false,
+                                                                                "lastError":  "",
+                                                                                "sink":  {
+                                                                                             "id":  1,
+                                                                                             "name":  "{0.0.0.00000000}.{27be2a8f-ae74-401b-86e5-e067acbaaa4e}",
+                                                                                             "description":  "Headphones (USB-C to 3.5mm Headphone Jack Adapter)",
+                                                                                             "ready":  true,
+                                                                                             "controlAvailable":  true,
+                                                                                             "stateAvailable":  true,
+                                                                                             "controlError":  "",
+                                                                                             "volume":  0.3246932625770569,
+                                                                                             "muted":  false
+                                                                                         },
+                                                                                "source":  {
+                                                                                               "id":  2,
+                                                                                               "name":  "{0.0.1.00000000}.{ec6f008d-9fdd-45b6-976d-a729e064bec3}",
+                                                                                               "description":  "Microphone (fifine Microphone)",
+                                                                                               "ready":  true,
+                                                                                               "controlAvailable":  true,
+                                                                                               "stateAvailable":  true,
+                                                                                               "controlError":  "",
+                                                                                               "volume":  1,
+                                                                                               "muted":  false
+                                                                                           },
+                                                                                "sinks":  [
+                                                                                              {
+                                                                                                  "id":  1,
+                                                                                                  "name":  "{0.0.0.00000000}.{27be2a8f-ae74-401b-86e5-e067acbaaa4e}",
+                                                                                                  "description":  "Headphones (USB-C to 3.5mm Headphone Jack Adapter)",
+                                                                                                  "ready":  true,
+                                                                                                  "controlAvailable":  true,
+                                                                                                  "stateAvailable":  true,
+                                                                                                  "controlError":  "",
+                                                                                                  "volume":  0.3246932625770569,
+                                                                                                  "muted":  false
+                                                                                              },
+                                                                                              {
+                                                                                                  "id":  12,
+                                                                                                  "name":  "{0.0.0.00000000}.{0aa4348b-351b-468f-aef1-7ca4cd542bb2}",
+                                                                                                  "description":  "DELL S2725QS (NVIDIA High Definition Audio)",
+                                                                                                  "ready":  true,
+                                                                                                  "controlAvailable":  true,
+                                                                                                  "stateAvailable":  true,
+                                                                                                  "controlError":  "",
+                                                                                                  "volume":  1,
+                                                                                                  "muted":  false
+                                                                                              },
+                                                                                              {
+                                                                                                  "id":  14,
+                                                                                                  "name":  "{0.0.0.00000000}.{7165262d-f137-4186-b56d-8db3770d5ee3}",
+                                                                                                  "description":  "Speakers (fifine Microphone)",
+                                                                                                  "ready":  true,
+                                                                                                  "controlAvailable":  true,
+                                                                                                  "stateAvailable":  true,
+                                                                                                  "controlError":  "",
+                                                                                                  "volume":  1,
+                                                                                                  "muted":  false
+                                                                                              },
+                                                                                              {
+                                                                                                  "id":  16,
+                                                                                                  "name":  "{0.0.0.00000000}.{bfa334e9-76cd-43ee-b31c-dd769b6adc84}",
+                                                                                                  "description":  "MAG321UX OLED (NVIDIA High Definition Audio)",
+                                                                                                  "ready":  true,
+                                                                                                  "controlAvailable":  true,
+                                                                                                  "stateAvailable":  true,
+                                                                                                  "controlError":  "",
+                                                                                                  "volume":  1,
+                                                                                                  "muted":  false
+                                                                                              }
+                                                                                          ],
+                                                                                "sources":  [
+                                                                                                {
+                                                                                                    "id":  2,
+                                                                                                    "name":  "{0.0.1.00000000}.{ec6f008d-9fdd-45b6-976d-a729e064bec3}",
+                                                                                                    "description":  "Microphone (fifine Microphone)",
+                                                                                                    "ready":  true,
+                                                                                                    "controlAvailable":  true,
+                                                                                                    "stateAvailable":  true,
+                                                                                                    "controlError":  "",
+                                                                                                    "volume":  1,
+                                                                                                    "muted":  false
+                                                                                                }
+                                                                                            ],
+                                                                                "streamCount":  12
+                                                                            }
+                                                              },
+                                                              {
+                                                                  "phase":  "FINAL",
+                                                                  "state":  {
+                                                                                "status":  "ready",
+                                                                                "reason":  "Windows audio is ready with controls disabled.",
+                                                                                "enabled":  true,
+                                                                                "backendLoaded":  true,
+                                                                                "controlsEnabled":  false,
+                                                                                "outputAvailable":  true,
+                                                                                "inputAvailable":  true,
+                                                                                "outputControlsAvailable":  false,
+                                                                                "inputControlsAvailable":  false,
+                                                                                "lastError":  "",
+                                                                                "sink":  {
+                                                                                             "id":  1,
+                                                                                             "name":  "{0.0.0.00000000}.{27be2a8f-ae74-401b-86e5-e067acbaaa4e}",
+                                                                                             "description":  "Headphones (USB-C to 3.5mm Headphone Jack Adapter)",
+                                                                                             "ready":  true,
+                                                                                             "controlAvailable":  true,
+                                                                                             "stateAvailable":  true,
+                                                                                             "controlError":  "",
+                                                                                             "volume":  0.3246932625770569,
+                                                                                             "muted":  false
+                                                                                         },
+                                                                                "source":  {
+                                                                                               "id":  2,
+                                                                                               "name":  "{0.0.1.00000000}.{ec6f008d-9fdd-45b6-976d-a729e064bec3}",
+                                                                                               "description":  "Microphone (fifine Microphone)",
+                                                                                               "ready":  true,
+                                                                                               "controlAvailable":  true,
+                                                                                               "stateAvailable":  true,
+                                                                                               "controlError":  "",
+                                                                                               "volume":  1,
+                                                                                               "muted":  false
+                                                                                           },
+                                                                                "sinks":  [
+                                                                                              {
+                                                                                                  "id":  1,
+                                                                                                  "name":  "{0.0.0.00000000}.{27be2a8f-ae74-401b-86e5-e067acbaaa4e}",
+                                                                                                  "description":  "Headphones (USB-C to 3.5mm Headphone Jack Adapter)",
+                                                                                                  "ready":  true,
+                                                                                                  "controlAvailable":  true,
+                                                                                                  "stateAvailable":  true,
+                                                                                                  "controlError":  "",
+                                                                                                  "volume":  0.3246932625770569,
+                                                                                                  "muted":  false
+                                                                                              },
+                                                                                              {
+                                                                                                  "id":  12,
+                                                                                                  "name":  "{0.0.0.00000000}.{0aa4348b-351b-468f-aef1-7ca4cd542bb2}",
+                                                                                                  "description":  "DELL S2725QS (NVIDIA High Definition Audio)",
+                                                                                                  "ready":  true,
+                                                                                                  "controlAvailable":  true,
+                                                                                                  "stateAvailable":  true,
+                                                                                                  "controlError":  "",
+                                                                                                  "volume":  1,
+                                                                                                  "muted":  false
+                                                                                              },
+                                                                                              {
+                                                                                                  "id":  14,
+                                                                                                  "name":  "{0.0.0.00000000}.{7165262d-f137-4186-b56d-8db3770d5ee3}",
+                                                                                                  "description":  "Speakers (fifine Microphone)",
+                                                                                                  "ready":  true,
+                                                                                                  "controlAvailable":  true,
+                                                                                                  "stateAvailable":  true,
+                                                                                                  "controlError":  "",
+                                                                                                  "volume":  1,
+                                                                                                  "muted":  false
+                                                                                              },
+                                                                                              {
+                                                                                                  "id":  16,
+                                                                                                  "name":  "{0.0.0.00000000}.{bfa334e9-76cd-43ee-b31c-dd769b6adc84}",
+                                                                                                  "description":  "MAG321UX OLED (NVIDIA High Definition Audio)",
+                                                                                                  "ready":  true,
+                                                                                                  "controlAvailable":  true,
+                                                                                                  "stateAvailable":  true,
+                                                                                                  "controlError":  "",
+                                                                                                  "volume":  1,
+                                                                                                  "muted":  false
+                                                                                              }
+                                                                                          ],
+                                                                                "sources":  [
+                                                                                                {
+                                                                                                    "id":  2,
+                                                                                                    "name":  "{0.0.1.00000000}.{ec6f008d-9fdd-45b6-976d-a729e064bec3}",
+                                                                                                    "description":  "Microphone (fifine Microphone)",
+                                                                                                    "ready":  true,
+                                                                                                    "controlAvailable":  true,
+                                                                                                    "stateAvailable":  true,
+                                                                                                    "controlError":  "",
+                                                                                                    "volume":  1,
+                                                                                                    "muted":  false
+                                                                                                }
+                                                                                            ],
+                                                                                "streamCount":  12
+                                                                            }
+                                                              }
+                                                          ],
+                                       "batterySnapshots":  [
+
+                                                            ],
+                                       "elapsedMilliseconds":  3457,
+                                       "sourceRevision":  "96788c8a4e009466dadd94fde89b9287263ebd20",
+                                       "sourceDirty":  false,
+                                       "backendRevision":  "5d0a33d36b17cb41d658b4a4a699c56ae91d6b5e",
+                                       "buildRecordSha256":  "807BC5A3F8748D800E9CE28E7D1E2C1473C42AC2CF7F3E53A423B4C433F4FEC8",
+                                       "configSha256":  "6FC8F8B80AF9D45A49A4737AF51B8C43A11B97E1B59A82468F31AB4C779C6F65",
+                                       "command":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\quickshell\\qs.exe",
+                                       "arguments":  "--no-color --log-times --path \"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\audio-20261025-154319-279\\shell.qml\"",
+                                       "executableSha256":  "CDE332D7A0C1829BFCDEB8C13685635A2FB90980D9BC987097B410D66DB66F2F",
+                                       "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\audio-20261025-154319-279",
+                                       "profile":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\audio-prototype-profile",
+                                       "sources":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\audio-20261025-154319-279.sources.json",
+                                       "screenshot":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\audio-20261025-154319-279.png",
+                                       "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\audio-20261025-154319-279.stdout.log",
+                                       "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\audio-20261025-154319-279.stderr.log"
+                                   }
+                    },
+                    {
+                        "kind":  "audio",
+                        "result":  {
+                                       "passed":  true,
+                                       "smoke":  true,
+                                       "prototype":  "audio",
+                                       "audioMode":  "Disabled",
+                                       "batteryMode":  "Disabled",
+                                       "timedOut":  false,
+                                       "exitCode":  0,
+                                       "scaleFactor":  "native",
+                                       "screenIndex":  1,
+                                       "monitorCycle":  false,
+                                       "traceInput":  false,
+                                       "actualScreens":  [
+                                                             {
+                                                                 "index":  1,
+                                                                 "name":  "DELL S2725QS",
+                                                                 "x":  -3840,
+                                                                 "y":  0,
+                                                                 "dpr":  1.75,
+                                                                 "width":  640,
+                                                                 "height":  620
+                                                             }
+                                                         ],
+                                       "captures":  [
+                                                        "file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/audio-20261025-154323-181.png"
+                                                    ],
+                                       "audioSnapshots":  [
+                                                              {
+                                                                  "phase":  "INITIAL",
+                                                                  "state":  {
+                                                                                "status":  "disabled",
+                                                                                "reason":  "Windows audio is disabled.",
+                                                                                "enabled":  false,
+                                                                                "backendLoaded":  false,
+                                                                                "controlsEnabled":  false,
+                                                                                "outputAvailable":  false,
+                                                                                "inputAvailable":  false,
+                                                                                "outputControlsAvailable":  false,
+                                                                                "inputControlsAvailable":  false,
+                                                                                "lastError":  "",
+                                                                                "sink":  null,
+                                                                                "source":  null,
+                                                                                "sinks":  [
+
+                                                                                          ],
+                                                                                "sources":  [
+
+                                                                                            ],
+                                                                                "streamCount":  0
+                                                                            }
+                                                              },
+                                                              {
+                                                                  "phase":  "FINAL",
+                                                                  "state":  {
+                                                                                "status":  "disabled",
+                                                                                "reason":  "Windows audio is disabled.",
+                                                                                "enabled":  false,
+                                                                                "backendLoaded":  false,
+                                                                                "controlsEnabled":  false,
+                                                                                "outputAvailable":  false,
+                                                                                "inputAvailable":  false,
+                                                                                "outputControlsAvailable":  false,
+                                                                                "inputControlsAvailable":  false,
+                                                                                "lastError":  "",
+                                                                                "sink":  null,
+                                                                                "source":  null,
+                                                                                "sinks":  [
+
+                                                                                          ],
+                                                                                "sources":  [
+
+                                                                                            ],
+                                                                                "streamCount":  0
+                                                                            }
+                                                              }
+                                                          ],
+                                       "batterySnapshots":  [
+
+                                                            ],
+                                       "elapsedMilliseconds":  3442,
+                                       "sourceRevision":  "96788c8a4e009466dadd94fde89b9287263ebd20",
+                                       "sourceDirty":  false,
+                                       "backendRevision":  "5d0a33d36b17cb41d658b4a4a699c56ae91d6b5e",
+                                       "buildRecordSha256":  "807BC5A3F8748D800E9CE28E7D1E2C1473C42AC2CF7F3E53A423B4C433F4FEC8",
+                                       "configSha256":  "6FC8F8B80AF9D45A49A4737AF51B8C43A11B97E1B59A82468F31AB4C779C6F65",
+                                       "command":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\quickshell\\qs.exe",
+                                       "arguments":  "--no-color --log-times --path \"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\audio-20261025-154323-181\\shell.qml\"",
+                                       "executableSha256":  "CDE332D7A0C1829BFCDEB8C13685635A2FB90980D9BC987097B410D66DB66F2F",
+                                       "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\audio-20261025-154323-181",
+                                       "profile":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\audio-prototype-profile",
+                                       "sources":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\audio-20261025-154323-181.sources.json",
+                                       "screenshot":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\audio-20261025-154323-181.png",
+                                       "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\audio-20261025-154323-181.stdout.log",
+                                       "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\audio-20261025-154323-181.stderr.log"
+                                   }
+                    },
+                    {
+                        "kind":  "audio",
+                        "result":  {
+                                       "passed":  true,
+                                       "smoke":  true,
+                                       "prototype":  "audio",
+                                       "audioMode":  "ReadOnly",
+                                       "batteryMode":  "Disabled",
+                                       "timedOut":  false,
+                                       "exitCode":  0,
+                                       "scaleFactor":  "native",
+                                       "screenIndex":  1,
+                                       "monitorCycle":  false,
+                                       "traceInput":  false,
+                                       "actualScreens":  [
+                                                             {
+                                                                 "index":  1,
+                                                                 "name":  "DELL S2725QS",
+                                                                 "x":  -3840,
+                                                                 "y":  0,
+                                                                 "dpr":  1.75,
+                                                                 "width":  640,
+                                                                 "height":  620
+                                                             }
+                                                         ],
+                                       "captures":  [
+                                                        "file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/audio-20261025-154326-943.png"
+                                                    ],
+                                       "audioSnapshots":  [
+                                                              {
+                                                                  "phase":  "INITIAL",
+                                                                  "state":  {
+                                                                                "status":  "ready",
+                                                                                "reason":  "Windows audio is ready with controls disabled.",
+                                                                                "enabled":  true,
+                                                                                "backendLoaded":  true,
+                                                                                "controlsEnabled":  false,
+                                                                                "outputAvailable":  true,
+                                                                                "inputAvailable":  true,
+                                                                                "outputControlsAvailable":  false,
+                                                                                "inputControlsAvailable":  false,
+                                                                                "lastError":  "",
+                                                                                "sink":  {
+                                                                                             "id":  1,
+                                                                                             "name":  "{0.0.0.00000000}.{27be2a8f-ae74-401b-86e5-e067acbaaa4e}",
+                                                                                             "description":  "Headphones (USB-C to 3.5mm Headphone Jack Adapter)",
+                                                                                             "ready":  true,
+                                                                                             "controlAvailable":  true,
+                                                                                             "stateAvailable":  true,
+                                                                                             "controlError":  "",
+                                                                                             "volume":  0.3246932625770569,
+                                                                                             "muted":  false
+                                                                                         },
+                                                                                "source":  {
+                                                                                               "id":  2,
+                                                                                               "name":  "{0.0.1.00000000}.{ec6f008d-9fdd-45b6-976d-a729e064bec3}",
+                                                                                               "description":  "Microphone (fifine Microphone)",
+                                                                                               "ready":  true,
+                                                                                               "controlAvailable":  true,
+                                                                                               "stateAvailable":  true,
+                                                                                               "controlError":  "",
+                                                                                               "volume":  1,
+                                                                                               "muted":  false
+                                                                                           },
+                                                                                "sinks":  [
+                                                                                              {
+                                                                                                  "id":  1,
+                                                                                                  "name":  "{0.0.0.00000000}.{27be2a8f-ae74-401b-86e5-e067acbaaa4e}",
+                                                                                                  "description":  "Headphones (USB-C to 3.5mm Headphone Jack Adapter)",
+                                                                                                  "ready":  true,
+                                                                                                  "controlAvailable":  true,
+                                                                                                  "stateAvailable":  true,
+                                                                                                  "controlError":  "",
+                                                                                                  "volume":  0.3246932625770569,
+                                                                                                  "muted":  false
+                                                                                              },
+                                                                                              {
+                                                                                                  "id":  12,
+                                                                                                  "name":  "{0.0.0.00000000}.{0aa4348b-351b-468f-aef1-7ca4cd542bb2}",
+                                                                                                  "description":  "DELL S2725QS (NVIDIA High Definition Audio)",
+                                                                                                  "ready":  true,
+                                                                                                  "controlAvailable":  true,
+                                                                                                  "stateAvailable":  true,
+                                                                                                  "controlError":  "",
+                                                                                                  "volume":  1,
+                                                                                                  "muted":  false
+                                                                                              },
+                                                                                              {
+                                                                                                  "id":  14,
+                                                                                                  "name":  "{0.0.0.00000000}.{7165262d-f137-4186-b56d-8db3770d5ee3}",
+                                                                                                  "description":  "Speakers (fifine Microphone)",
+                                                                                                  "ready":  true,
+                                                                                                  "controlAvailable":  true,
+                                                                                                  "stateAvailable":  true,
+                                                                                                  "controlError":  "",
+                                                                                                  "volume":  1,
+                                                                                                  "muted":  false
+                                                                                              },
+                                                                                              {
+                                                                                                  "id":  16,
+                                                                                                  "name":  "{0.0.0.00000000}.{bfa334e9-76cd-43ee-b31c-dd769b6adc84}",
+                                                                                                  "description":  "MAG321UX OLED (NVIDIA High Definition Audio)",
+                                                                                                  "ready":  true,
+                                                                                                  "controlAvailable":  true,
+                                                                                                  "stateAvailable":  true,
+                                                                                                  "controlError":  "",
+                                                                                                  "volume":  1,
+                                                                                                  "muted":  false
+                                                                                              }
+                                                                                          ],
+                                                                                "sources":  [
+                                                                                                {
+                                                                                                    "id":  2,
+                                                                                                    "name":  "{0.0.1.00000000}.{ec6f008d-9fdd-45b6-976d-a729e064bec3}",
+                                                                                                    "description":  "Microphone (fifine Microphone)",
+                                                                                                    "ready":  true,
+                                                                                                    "controlAvailable":  true,
+                                                                                                    "stateAvailable":  true,
+                                                                                                    "controlError":  "",
+                                                                                                    "volume":  1,
+                                                                                                    "muted":  false
+                                                                                                }
+                                                                                            ],
+                                                                                "streamCount":  12
+                                                                            }
+                                                              },
+                                                              {
+                                                                  "phase":  "FINAL",
+                                                                  "state":  {
+                                                                                "status":  "ready",
+                                                                                "reason":  "Windows audio is ready with controls disabled.",
+                                                                                "enabled":  true,
+                                                                                "backendLoaded":  true,
+                                                                                "controlsEnabled":  false,
+                                                                                "outputAvailable":  true,
+                                                                                "inputAvailable":  true,
+                                                                                "outputControlsAvailable":  false,
+                                                                                "inputControlsAvailable":  false,
+                                                                                "lastError":  "",
+                                                                                "sink":  {
+                                                                                             "id":  1,
+                                                                                             "name":  "{0.0.0.00000000}.{27be2a8f-ae74-401b-86e5-e067acbaaa4e}",
+                                                                                             "description":  "Headphones (USB-C to 3.5mm Headphone Jack Adapter)",
+                                                                                             "ready":  true,
+                                                                                             "controlAvailable":  true,
+                                                                                             "stateAvailable":  true,
+                                                                                             "controlError":  "",
+                                                                                             "volume":  0.3246932625770569,
+                                                                                             "muted":  false
+                                                                                         },
+                                                                                "source":  {
+                                                                                               "id":  2,
+                                                                                               "name":  "{0.0.1.00000000}.{ec6f008d-9fdd-45b6-976d-a729e064bec3}",
+                                                                                               "description":  "Microphone (fifine Microphone)",
+                                                                                               "ready":  true,
+                                                                                               "controlAvailable":  true,
+                                                                                               "stateAvailable":  true,
+                                                                                               "controlError":  "",
+                                                                                               "volume":  1,
+                                                                                               "muted":  false
+                                                                                           },
+                                                                                "sinks":  [
+                                                                                              {
+                                                                                                  "id":  1,
+                                                                                                  "name":  "{0.0.0.00000000}.{27be2a8f-ae74-401b-86e5-e067acbaaa4e}",
+                                                                                                  "description":  "Headphones (USB-C to 3.5mm Headphone Jack Adapter)",
+                                                                                                  "ready":  true,
+                                                                                                  "controlAvailable":  true,
+                                                                                                  "stateAvailable":  true,
+                                                                                                  "controlError":  "",
+                                                                                                  "volume":  0.3246932625770569,
+                                                                                                  "muted":  false
+                                                                                              },
+                                                                                              {
+                                                                                                  "id":  12,
+                                                                                                  "name":  "{0.0.0.00000000}.{0aa4348b-351b-468f-aef1-7ca4cd542bb2}",
+                                                                                                  "description":  "DELL S2725QS (NVIDIA High Definition Audio)",
+                                                                                                  "ready":  true,
+                                                                                                  "controlAvailable":  true,
+                                                                                                  "stateAvailable":  true,
+                                                                                                  "controlError":  "",
+                                                                                                  "volume":  1,
+                                                                                                  "muted":  false
+                                                                                              },
+                                                                                              {
+                                                                                                  "id":  14,
+                                                                                                  "name":  "{0.0.0.00000000}.{7165262d-f137-4186-b56d-8db3770d5ee3}",
+                                                                                                  "description":  "Speakers (fifine Microphone)",
+                                                                                                  "ready":  true,
+                                                                                                  "controlAvailable":  true,
+                                                                                                  "stateAvailable":  true,
+                                                                                                  "controlError":  "",
+                                                                                                  "volume":  1,
+                                                                                                  "muted":  false
+                                                                                              },
+                                                                                              {
+                                                                                                  "id":  16,
+                                                                                                  "name":  "{0.0.0.00000000}.{bfa334e9-76cd-43ee-b31c-dd769b6adc84}",
+                                                                                                  "description":  "MAG321UX OLED (NVIDIA High Definition Audio)",
+                                                                                                  "ready":  true,
+                                                                                                  "controlAvailable":  true,
+                                                                                                  "stateAvailable":  true,
+                                                                                                  "controlError":  "",
+                                                                                                  "volume":  1,
+                                                                                                  "muted":  false
+                                                                                              }
+                                                                                          ],
+                                                                                "sources":  [
+                                                                                                {
+                                                                                                    "id":  2,
+                                                                                                    "name":  "{0.0.1.00000000}.{ec6f008d-9fdd-45b6-976d-a729e064bec3}",
+                                                                                                    "description":  "Microphone (fifine Microphone)",
+                                                                                                    "ready":  true,
+                                                                                                    "controlAvailable":  true,
+                                                                                                    "stateAvailable":  true,
+                                                                                                    "controlError":  "",
+                                                                                                    "volume":  1,
+                                                                                                    "muted":  false
+                                                                                                }
+                                                                                            ],
+                                                                                "streamCount":  12
+                                                                            }
+                                                              }
+                                                          ],
+                                       "batterySnapshots":  [
+
+                                                            ],
+                                       "elapsedMilliseconds":  3442,
+                                       "sourceRevision":  "96788c8a4e009466dadd94fde89b9287263ebd20",
+                                       "sourceDirty":  false,
+                                       "backendRevision":  "5d0a33d36b17cb41d658b4a4a699c56ae91d6b5e",
+                                       "buildRecordSha256":  "807BC5A3F8748D800E9CE28E7D1E2C1473C42AC2CF7F3E53A423B4C433F4FEC8",
+                                       "configSha256":  "6FC8F8B80AF9D45A49A4737AF51B8C43A11B97E1B59A82468F31AB4C779C6F65",
+                                       "command":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\quickshell\\qs.exe",
+                                       "arguments":  "--no-color --log-times --path \"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\audio-20261025-154326-943\\shell.qml\"",
+                                       "executableSha256":  "CDE332D7A0C1829BFCDEB8C13685635A2FB90980D9BC987097B410D66DB66F2F",
+                                       "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\audio-20261025-154326-943",
+                                       "profile":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\audio-prototype-profile",
+                                       "sources":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\audio-20261025-154326-943.sources.json",
+                                       "screenshot":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\audio-20261025-154326-943.png",
+                                       "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\audio-20261025-154326-943.stdout.log",
+                                       "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\audio-20261025-154326-943.stderr.log"
+                                   }
+                    },
+                    {
+                        "kind":  "m1-regression",
+                        "result":  {
+                                       "passed":  true,
+                                       "smoke":  true,
+                                       "prototype":  "shell",
+                                       "audioMode":  "Disabled",
+                                       "batteryMode":  "Disabled",
+                                       "timedOut":  false,
+                                       "exitCode":  0,
+                                       "scaleFactor":  "native",
+                                       "screenIndex":  0,
+                                       "monitorCycle":  false,
+                                       "traceInput":  false,
+                                       "actualScreens":  [
+                                                             {
+                                                                 "index":  0,
+                                                                 "name":  "MAG321UX OLED",
+                                                                 "x":  0,
+                                                                 "y":  0,
+                                                                 "dpr":  1.5
+                                                             }
+                                                         ],
+                                       "captures":  [
+                                                        "file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/shell-20261025-154330-717.png"
+                                                    ],
+                                       "audioSnapshots":  [
+
+                                                          ],
+                                       "batterySnapshots":  [
+
+                                                            ],
+                                       "elapsedMilliseconds":  4074,
+                                       "sourceRevision":  "96788c8a4e009466dadd94fde89b9287263ebd20",
+                                       "sourceDirty":  false,
+                                       "backendRevision":  "5d0a33d36b17cb41d658b4a4a699c56ae91d6b5e",
+                                       "buildRecordSha256":  "807BC5A3F8748D800E9CE28E7D1E2C1473C42AC2CF7F3E53A423B4C433F4FEC8",
+                                       "configSha256":  "6FC8F8B80AF9D45A49A4737AF51B8C43A11B97E1B59A82468F31AB4C779C6F65",
+                                       "command":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\quickshell\\qs.exe",
+                                       "arguments":  "--no-color --log-times --path \"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\shell-20261025-154330-717\\shell.qml\"",
+                                       "executableSha256":  "CDE332D7A0C1829BFCDEB8C13685635A2FB90980D9BC987097B410D66DB66F2F",
+                                       "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\shell-20261025-154330-717",
+                                       "profile":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-prototype-profile",
+                                       "sources":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\shell-20261025-154330-717.sources.json",
+                                       "screenshot":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\shell-20261025-154330-717.png",
+                                       "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\shell-20261025-154330-717.stdout.log",
+                                       "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\shell-20261025-154330-717.stderr.log"
+                                   }
+                    }
+                ]
+}

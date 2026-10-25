@@ -1,0 +1,18 @@
+﻿2026-10-25 15:43:15.775  INFO: Launching config: "D:/AiStack/caelestia-windows/windows/.local/build/shell-runs/audio-20261025-154315-475/shell.qml"
+2026-10-25 15:43:15.775  INFO: Shell ID: "1f9a35fc24e86d62645c051ef24a6b7e" Path ID "1f9a35fc24e86d62645c051ef24a6b7e"
+2026-10-25 15:43:15.796  INFO: Saving logs to "C:/Users/Ermin/AppData/Local/quickshell/run/by-id/wv53sahnt/log.qslog"
+2026-10-25 15:43:15.852  INFO quickshell.windows.blur: Blur behind panels is turned off by QS_WINDOWS_BLUR.
+2026-10-25 15:43:15.859  INFO quickshell.windows.blur: No layer rules file found (looked for D:/AiStack/caelestia-windows/windows/.local/build/shell-runs/audio-20261025-154315-475/defaults/windows/layerrules.json ), blur behind panels is off.
+2026-10-25 15:43:15.975 DEBUG quickshell.windows.desktops: Desktop list changed: 1 desktops
+2026-10-25 15:43:15.975 DEBUG quickshell.windows.desktops: Current desktop: 0
+2026-10-25 15:43:15.976 DEBUG quickshell.windows.panel: Placing qs::windows::WinPanelWindow(0x1f0a7aafa70) at QRect(80,80 640x620) on "MAG321UX OLED"
+2026-10-25 15:43:15.985  INFO: Configuration Loaded
+2026-10-25 15:43:16.103 DEBUG quickshell.windows.startup: First panel frame presented
+2026-10-25 15:43:16.503 DEBUG quickshell.windows.startup: Startup settled, running 1 deferred tasks
+2026-10-25 15:43:16.503  INFO quickshell.windows.desktops: VirtualDesktopAccessor.dll not found next to the executable; desktop switching falls back to keyboard shortcuts.
+2026-10-25 15:43:17.106 DEBUG qml: CAELESTIA_AUDIO_SCREEN {"index":0,"name":"MAG321UX OLED","x":0,"y":0,"dpr":1.5,"width":640,"height":620}
+2026-10-25 15:43:17.106 DEBUG qml: CAELESTIA_AUDIO_INITIAL {"status":"disabled","reason":"Windows audio is disabled.","enabled":false,"backendLoaded":false,"controlsEnabled":false,"outputAvailable":false,"inputAvailable":false,"outputControlsAvailable":false,"inputControlsAvailable":false,"lastError":"","sink":null,"source":null,"sinks":[],"sources":[],"streamCount":0}
+2026-10-25 15:43:19.105 DEBUG qml: CAELESTIA_AUDIO_FINAL {"status":"disabled","reason":"Windows audio is disabled.","enabled":false,"backendLoaded":false,"controlsEnabled":false,"outputAvailable":false,"inputAvailable":false,"outputControlsAvailable":false,"inputControlsAvailable":false,"lastError":"","sink":null,"source":null,"sinks":[],"sources":[],"streamCount":0}
+2026-10-25 15:43:19.139 DEBUG qml: CAELESTIA_AUDIO_CAPTURE file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/audio-20261025-154315-475.png
+2026-10-25 15:43:19.139 DEBUG qml: CAELESTIA_AUDIO_PASS 6.11.2
+

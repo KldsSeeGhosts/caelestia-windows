@@ -1,0 +1,14 @@
+﻿{
+    "sourceRevision":  "96788c8a4e009466dadd94fde89b9287263ebd20",
+    "sourceDirty":  false,
+    "backendRevision":  "5d0a33d36b17cb41d658b4a4a699c56ae91d6b5e",
+    "windowsSdkVersion":  "10.0.26100.0\\",
+    "msvcToolsVersion":  "14.44.35207",
+    "qtVersion":  "6.11.2",
+    "qtPrefix":  "C:\\Users\\Ermin\\AppData\\Local\\caelestia-dev/Qt/6.11.2/msvc2022_64",
+    "compiler":  "clang version 20.1.8",
+    "cmake":  "cmake version 4.4.4",
+    "ninja":  "1.13.2.git.kitware.jobserver-pipe-1",
+    "windows":  "Microsoft Windows NT 10.0.26300.0",
+    "builtAtUtc":  "2026-10-25T19:42:05.4444914Z"
+}

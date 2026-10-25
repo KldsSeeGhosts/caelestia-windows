@@ -38,9 +38,12 @@ For the next development session, start with [HANDOFF.md](HANDOFF.md).
   display device through a QtObject adapter with no mutating methods, and
   keeps PowerProfiles and IdlePower writes out of the process. A system
   without a battery renders the truthful absent state. The
-  [second M2 acceptance archive](validation/2026-10-25-m2-battery/README.md)
-  records the batteryless-desktop results, unchanged scheme/overlay/desktop
-  state and the limits of fixture-only battery-present coverage.
+  [corrected M2 battery archive](validation/2026-10-25-m2-battery-review/README.md)
+  records 128 adapter assertions, 9 native fake-status cases, batteryless
+  native 150%/175% results and unchanged scheme/overlay/desktop state.
+  Native read, presence, charge and AC-source validity distinguish unknown
+  observations from a measured zero or proven absence. Real battery
+  hardware and the remaining profile/write gates keep ERM-499 open.
 - Inherited GitHub Actions are disabled at repository level during bootstrap.
   They are upstream Linux workflows, not validation of this port.
 
@@ -129,7 +132,7 @@ isolated prototype passes.
 ## Dependency maintenance
 
 The current backend pin is in the private
-[Caelestia backend fork](https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/tree/8c71bdb8116dffeb274edb31c3803e1c28dbb270).
+[Caelestia backend fork](https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/tree/5d0a33d36b17cb41d658b4a4a699c56ae91d6b5e).
 It retains the audited `nunreasonable/quickshell` baseline `e8ae0ef1` and adds
 a native mask handoff change: reconcile Qt hover when `WS_EX_TRANSPARENT`
 changes, because the move that triggered the hook can already have reached the
@@ -141,6 +144,12 @@ The M2 patch additionally reports Core Audio control/state capability and
 HRESULT failures. It retains snapshots on failed reads and reads back actual
 default routing after partial role failures. See
 [backend PR #1](https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/pull/1).
+
+[Backend PR #2](https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/pull/2)
+adds UPower read/presence/charge/source validity and stale-value clearing.
+Unknown AC source supplies neither a discharging state nor a time estimate.
+The root gitlink and source manifest use the pushed implementation revision;
+the backend PR remains open.
 
 Keep the source manifest and submodule revision in agreement. Review backend
 updates before moving the gitlink; keep backend patches in a dedicated fork
