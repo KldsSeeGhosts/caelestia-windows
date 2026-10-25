@@ -364,7 +364,8 @@ above). Both report `sourceRevision: 26c49656` and `sourceDirty: false`:
   local runs again report `deliveryConfirmation: "confirmed"` and the disabled
   runs `idle`, with every policy assertion above unchanged.
 
-The code was not modified after that run; this note is the only later change.
+The code was not modified after that run; only documentation (this note and the
+prototype README) follows it.
 
 ### Untested in this round
 
