@@ -5,6 +5,8 @@ The first verified build uses Windows 11, Qt 6.11.2 `msvc2022_64`, clang-cl
 Ninja 1.13.2, and CLI11 2.5.0. The main entry point is now the
 [bounded native bar/session prototype](shell-prototype/README.md); the earlier
 component probe is retained. A build or smoke pass does not complete M1.
+The separate [final acceptance record](validation/2026-10-25-m1-acceptance/README.md)
+now completes the bounded M1 gate with native input and lifecycle evidence.
 
 ## Developer dependencies
 
@@ -127,7 +129,8 @@ and return. Results include `actualScreens` metadata and a `captures` array.
 A rendered placement is not a pass if runtime warnings occur; see the
 validation record for exact results. The corrected native cycle passed on
 150% primary -> 175% negative-origin secondary -> primary with 900x620 geometry
-and no QML diagnostics; pointer/focus at 175% remains unvalidated.
+and no QML diagnostics. The separate native input matrix now also validates
+pointer/focus at both DPIs; smoke alone does not establish those results.
 
 Smoke programmatically opens/closes the original content, checks geometry,
 fonts, DPI and unavailable session actions, saves a PNG and exits. Input and
@@ -136,7 +139,7 @@ limit and a 15-second QML watchdog and rejects runtime warnings/errors.
 Numeric scale overrides are synthetic child-process DPI tests; native uses
 the selected display. Neither replaces real pointer/focus or same-process
 mixed-DPI monitor tests. See the
-[bar/session validation record](validation/2026-10-25-bar-session/README.md)
+[final acceptance record](validation/2026-10-25-m1-acceptance/README.md)
 for the completed matrix, exact revisions and input limitations.
 
 The launcher rewrites only its dedicated `shell-prototype-profile/config/shell.json`
@@ -147,8 +150,9 @@ Drawers/Exclusions and Taskbar/Tiling controllers, while the backend still
 initializes native support for its own window and shared stale-AppBar cleanup.
 Quickshell also retains its own Windows instance bookkeeping.
 No zero-global-bookkeeping guarantee is implied.
-The tested palette is opaque with Windows EnableTransparency=1, so disabled
-backend blur is not evidence of system transparency being off.
+The tested palette is opaque. Disabled backend blur alone is not evidence of
+system transparency being off; the separate opt-in input test verifies the
+actual Windows preference and advanced-effects state.
 
 For manual input evidence, launch the dedicated fixture in its own STA process:
 

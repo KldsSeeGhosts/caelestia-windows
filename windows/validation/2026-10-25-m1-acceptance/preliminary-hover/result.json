@@ -1,0 +1,43 @@
+﻿{
+    "passed":  false,
+    "failure":  "Fixture did not close.",
+    "sourceRevision":  "8ee14c310183986f65afc4bc30a443089e44511e",
+    "sourceDirty":  true,
+    "runtime":  {
+                    "passed":  null,
+                    "smoke":  false,
+                    "timedOut":  false,
+                    "exitCode":  0,
+                    "scaleFactor":  "native",
+                    "screenIndex":  0,
+                    "monitorCycle":  false,
+                    "traceInput":  true,
+                    "actualScreens":  [
+
+                                      ],
+                    "captures":  [
+
+                                 ],
+                    "elapsedMilliseconds":  7169,
+                    "sourceRevision":  "8ee14c310183986f65afc4bc30a443089e44511e",
+                    "sourceDirty":  true,
+                    "backendRevision":  "e8ae0ef124b1c14b547c80d00422d2ffbd423d81",
+                    "buildRecordSha256":  "75BCD336772CFB4AEC503ACA2B6EC65E4CC7D5E03C11D9B969F2A498D5520F0B",
+                    "configSha256":  "B22AE86858A53E750715BB15F85594144CD6289545E911795B64F21F99C7D339",
+                    "command":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\quickshell\\qs.exe",
+                    "arguments":  "--no-color --log-times --path \"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\shell-20261025-013632-887\\shell.qml\"",
+                    "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\shell-20261025-013632-887",
+                    "profile":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-prototype-profile",
+                    "sources":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\shell-20261025-013632-887.sources.json",
+                    "screenshot":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\shell-20261025-013632-887.png",
+                    "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\shell-20261025-013632-887.stdout.log",
+                    "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\shell-20261025-013632-887.stderr.log"
+                },
+    "testScriptSha256":  "CF9AB78A304EE25B2EE356D1891CB66704EFF5A4E533999E2E35B74818308711",
+    "nativeInputSha256":  "1ADDD81DF5509BAF07CF937060220E42155B1B7ED68CB53A914E291949DC3074",
+    "desktopPreserved":  true,
+    "transparencyOff":  false,
+    "transparencyBefore":  1,
+    "transparencyAfter":  1,
+    "scenarioCount":  1
+}

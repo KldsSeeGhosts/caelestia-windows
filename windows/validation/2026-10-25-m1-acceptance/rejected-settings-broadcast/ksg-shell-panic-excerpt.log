@@ -1,0 +1,46 @@
+﻿[1792907290.811][ERROR] ksg-shell panic: boundary=Some("ksg-shell::dispatcher_proc") panicked at shell\ksg-compose\src\app_bar.rs:101:36:
+RefCell already borrowed
+   0: <unknown>
+   1: <unknown>
+   2: <unknown>
+   3: <unknown>
+   4: <unknown>
+   5: <unknown>
+   6: <unknown>
+   7: <unknown>
+   8: <unknown>
+   9: <unknown>
+  10: <unknown>
+  11: <unknown>
+  12: <unknown>
+  13: <unknown>
+  14: CallWindowProcW
+  15: GetFocus
+  16: User32InitializeImmEntryTable
+  17: KiUserCallbackDispatcher
+  18: NtUserMessageCall
+  19: SendMessageW
+  20: SendMessageW
+  21: SendMessageW
+  22: SHAppBarMessage
+  23: <unknown>
+  24: <unknown>
+  25: CallWindowProcW
+  26: IsWindowUnicode
+  27: <unknown>
+  28: <unknown>
+  29: <unknown>
+  30: BaseThreadInitThunk
+  31: RtlUserThreadStart
+
+[1792907290.833][INFO] dock surface stopped: monitor="MAG321UX OLED" surface=657032
+[1792907290.853][INFO] dock appbar removed: monitor="MAG321UX OLED"
+[1792907290.931][INFO] dock surface stopped: monitor="DELL S2725QS" surface=659172
+[1792907291.199][INFO] dock appbar removed: monitor="DELL S2725QS"
+[1792907291.209][INFO] top appbar removed: monitor="DELL S2725QS"
+[1792907291.209][INFO] bar surface stopped: monitor="DELL S2725QS" surface=786994
+[1792907291.239][INFO] top appbar removed: monitor="MAG321UX OLED"
+[1792907291.239][INFO] bar surface stopped: monitor="MAG321UX OLED" surface=985158
+[1792907291.815][INFO] native taskbars restored: count=2
+[1792907291.848][INFO] ksg-shell stopped
+[1792907291.859][ERROR] ksg-shell failed: Error { code: HRESULT(0x80004005), message: "Host shut down after a panic; see ksg-shell.log" }

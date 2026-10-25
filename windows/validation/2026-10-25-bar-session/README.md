@@ -1,5 +1,9 @@
 # Native bar and session validation, 2026-10-25
 
+This is the earlier loading checkpoint. The
+[final M1 acceptance record](../2026-10-25-m1-acceptance/README.md) supersedes
+its open-gate status; results below retain their original source revisions.
+
 The original bar and session drawer load and render through the isolated
 Windows platform boundaries. This satisfies the loading slice in ERM-492.
 M1 remains open for input and lifecycle coverage, including a hover entry

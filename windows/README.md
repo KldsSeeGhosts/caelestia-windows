@@ -1,8 +1,8 @@
 # Windows port
 
 The goal is Caelestia's original shell experience on Windows, retaining its QML
-components and motion while adapting platform services. The dependency is the
-Windows Quickshell fork used by ii-windows. Hyprland itself remains a Linux
+components and motion while adapting platform services. The dependency derives
+from the Windows Quickshell fork used by ii-windows. Hyprland remains a Linux
 Wayland compositor; Windows continues to own application composition through DWM.
 
 ## Current state
@@ -19,13 +19,11 @@ For the next development session, start with [HANDOFF.md](HANDOFF.md).
   `ContentWindow`, `StyledWindow`, `Regions`, `Interactions`, bar Clock/Power,
   and session content/wrapper in a bounded native window. Original blob
   surfaces, motion, and icons render through isolated adapters.
-- Native 150% pointer tests have demonstrated bar hover, Power opening,
-  Escape dismissal with focus return, and outside-click pass-through with
-  dismissal. The same native window also passed 150% primary -> 175%
-  negative-origin secondary -> primary transfer at 900x620 without QML
-  diagnostics. Synthetic 100%, 150%, and 175% rendering also passes;
-  [bar/session validation](validation/2026-10-25-bar-session/README.md) owns exact
-  results and limitations. M1 remains open.
+- M1 is complete for the bounded prototype. The native hover handoff is fixed,
+  and 72 clean native input scenarios pass at 150%/175% with transparency on
+  and off. Rendering, both monitor-cycle origins and lifecycle checks pass.
+  [Final acceptance](validation/2026-10-25-m1-acceptance/README.md) records the
+  evidence, limits and rejected preliminary KSG Shell notification failure.
 - The earlier ordinary-window [component probe](prototype/README.md) remains
   available, with [archived synthetic 100%, 150%, and 175% results](validation/2026-10-25-component-probe/README.md).
 - Inherited GitHub Actions are disabled at repository level during bootstrap.
@@ -91,14 +89,11 @@ Isolation does not mean zero global backend bookkeeping.
 ERM-491's [dependency](audits/M1-DEPENDENCIES.md) and
 [backend API](audits/M1-BACKEND-API.md) audits are complete in `f1d3a020`.
 ERM-492's original bar/session loading and evidence archive are complete.
-ERM-493/494 remain in progress. Investigate the recorded single-jump hover
-case, then complete native 175% input, rapid boundaries, keyboard/drag,
-system-transparency-off and remaining lifecycle tests. The remaining
-[M1 gates](ROADMAP.md#m1-actual-caelestia-compatibility-prototype) remain open.
-The tested fixed palette is opaque and backend blur is disabled, while Windows
-EnableTransparency remains 1; this is not a system-transparency-off test.
-M2-M4 have not started; dynamic themes, hardware-denial handling and Windows
-services are not validated.
+ERM-493/494 are complete with clean native input and final acceptance evidence.
+The backend fork fixes mask handoff without replacing the original interaction
+paths. M2-M4 have not started; dynamic themes, hardware-denial handling and
+Windows services are not validated. Plan the next Windows service boundary
+from the completed dependency/API audits.
 
 ## Toolchain direction
 

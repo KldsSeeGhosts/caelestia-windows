@@ -9,11 +9,11 @@ tracks the milestones and implementation issues.
 
 - M0: local developer bootstrap complete. Backend pin, native build commands,
   isolated probe configuration, and validation evidence are recorded.
-- M1: in progress. The original bounded native bar and session drawer load and
-  render. Native 150% hover, opening, Escape/focus return, and outside-click
-  pass-through have evidence. Same-window native 150% -> 175% -> 150%
-  transfer passes; 175% pointer/focus, rapid boundaries, system transparency
-  off and drag/lifecycle scenarios remain. A single-jump hover case is unresolved.
+- M1: complete for the bounded original bar/session prototype. The native
+  hover handoff is fixed. Two clean 36-scenario input matrices pass at native
+  150%/175%, with transparency on and off, plus rendering and lifecycle checks.
+  [Final evidence and limits](validation/2026-10-25-m1-acceptance/README.md)
+  include the rejected preliminary desktop-wide notification test.
 - M2, M3, M4: not started. No Windows service integration, tiling validation,
   or installable shell release is claimed.
 
@@ -22,13 +22,14 @@ on 2026-10-25 under the Ermin Zeherovic (ERM) team. This roadmap owns detailed
 acceptance criteria; Linear tracks issue status and dependencies.
 
 Completed issues are ERM-489 (M0 bootstrap), ERM-490 (component probe),
-ERM-491 (dependency/backend audit), and ERM-492 (original bar/session loading).
-M1 work is sequenced as:
+ERM-491 (dependency/backend audit), ERM-492 (original bar/session loading),
+ERM-493 (input/focus) and ERM-494 (final compatibility gate).
+M1 work was sequenced as:
 
 1. [ERM-491: dependency and backend API audit](https://linear.app/ermin-zeherovic/issue/ERM-491), done.
 2. [ERM-492: load the original bar and one drawer](https://linear.app/ermin-zeherovic/issue/ERM-492), done with archived evidence.
-3. [ERM-493: hover, input, focus, and dismissal](https://linear.app/ermin-zeherovic/issue/ERM-493), in progress.
-4. [ERM-494: native DPI, monitor, transparency, and lifecycle gate](https://linear.app/ermin-zeherovic/issue/ERM-494), in progress.
+3. [ERM-493: hover, input, focus, and dismissal](https://linear.app/ermin-zeherovic/issue/ERM-493), done.
+4. [ERM-494: native DPI, monitor, transparency, and lifecycle gate](https://linear.app/ermin-zeherovic/issue/ERM-494), done.
 
 ## M0: source and reproducibility
 
@@ -49,28 +50,32 @@ Use an explicit isolated entry point with unsupported services disabled through
 platform boundaries. Preserve upstream components rather than replacing them
 with lookalike rectangles.
 
-Status: the [native bar/session prototype](shell-prototype/README.md) loads
+The [native bar/session prototype](shell-prototype/README.md) loads
 original ContentWindow/StyledWindow, Regions/Interactions, Bar/Clock/Power and
 Session.Wrapper/Content. Fixed palette and explicit unavailable adapters keep
 unsupported services out; process-local fonts preserve original icons.
 WindowsFocusGuard provides bounded native activation/restoration policy.
 Drawers/Exclusions and Taskbar/Tiling controllers are not instantiated.
 
-Real pointer tests on the native 150% primary display demonstrated hover,
-Power opening, Escape dismissal with direct foreground verification, and
-outside-click dismissal passing through to a dedicated fixture. Rapid
-boundary tests have not passed yet. The same ContentWindow passed native
-MAG321UX OLED 150% -> DELL S2725QS 175% at x=-3840 -> primary transfer,
-remaining 900x620 at each placement without QML diagnostics. That rendering
-test does not validate pointer masks/focus at 175%. Synthetic
-100%/150%/175% rendering checks pass on the clean implementation build.
-Windows EnableTransparency=1 with backend blur disabled
-and an opaque fixed palette is not a system-transparency-off result.
-Final evidence and limitations belong in the
-[bar/session validation record](validation/2026-10-25-bar-session/README.md);
-M1 remains open, including the recorded single-jump hover case. The older
+Status: complete. Clean `24229c9a` passes 72 recorded native input scenarios
+across the 150% primary and 175% negative-origin secondary, including stationary
+hover, rapid crossings, original bar pin/unpin and session drag, keyboard,
+Escape/focus return, outside-click pass-through, early app switching and
+repeated open/close. The same window preserves 900x620 geometry through
+150% -> 175% -> 150%. Clean synthetic 100%/150%/175% rendering and a separate
+175% -> 150% -> 175% native cycle also pass without QML diagnostics.
+
+Actual transparency-off startup is verified by both the Windows preference
+and `UISettings.AdvancedEffectsEnabled`, then restored. Both final input runs
+preserve the existing shell PID, work areas and taskbar flags. A preliminary
+desktop-wide settings broadcast exposed a separate KSG Shell panic; that run
+was rejected and the installed shell restored. Live global reconfiguration of
+other shells is not certified. The
+[final acceptance record](validation/2026-10-25-m1-acceptance/README.md) owns
+exact versions, sources, commands, failures, passing evidence and limits.
+The earlier bar/session archive and older
 [component validation record](validation/2026-10-25-component-probe/README.md)
-continues to describe only its own source revision.
+continue to describe only their own source revisions.
 
 Gate:
 

@@ -10,8 +10,9 @@ The prototype uses a fixed palette and nonvisual unavailable adapters for
 disabled bar entries and panels. Session actions are explicitly unavailable:
 their adapter consumes every command without executing it, and all four
 configured command lists are empty. Drawers/Exclusions and Taskbar/Tiling
-controllers are not instantiated. The active `ksg-shell` remains untouched.
-This is a compatibility prototype, not a complete shell or M1 release.
+controllers are not instantiated. The entry point does not configure or launch
+the existing `ksg-shell`. This is a bounded compatibility prototype; a complete
+shell and packaging belong to later milestones.
 
 ## Build and launch
 
@@ -122,26 +123,17 @@ manual investigation. `prototype.state` also exposes mouse coordinates,
 containsMouse, pressed/pinned state and control centers; `moveToScreen(index)`
 transfers the exact prototype instance without changing display settings.
 
-At this update, native 150% primary-display tests demonstrated continuous
-pointer hover, Power opening, and Escape closing the original drawer.
-Direct GetForegroundWindow observations confirmed foreground changed from
-the prototype PID 20428 to fixture PID 2880 with `restore-succeeded`.
-An outside click through transparent interior incremented fixture clickCount
-from 1 to 2, closed the session, and skipped restoration. Cua reported a
-foreground mismatch because the fixture became foreground instead of the
-expected prototype; independent state/fixture observations verified the
-intended result. That driver call is not recorded as successful.
-
-Synthetic 100%/150%/175% checks pass on the clean implementation build.
-A single-jump hover case required further movement and remains unresolved.
-The physical primary display is 150%; the secondary is 175% at x=-3840. Secondary native
-rendering and same-process transfer now pass. Actual 175% pointer masks/focus,
-rapid races, remaining drag/lifecycle scenarios and system transparency off
-remain open. Windows EnableTransparency=1, an opaque fixed palette and
-QS_WINDOWS_BLUR=0 do not constitute a system-transparency-off test.
-The final synthetic matrix and native-cycle evidence are archived.
-The [validation record](../validation/2026-10-25-bar-session/README.md) owns
-exact final commands, revisions, screenshots, results and remaining gaps.
+M1 is complete for this bounded prototype. Clean `24229c9a` passes 72 native
+input scenarios at 150%/175%, including negative origin, rapid boundaries,
+stationary hover, original drag/pin behavior, keyboard navigation, focus,
+dismissal and lifecycle. Actual transparency-off startup is verified by
+Windows UISettings and restored afterward. Synthetic 100%/150%/175% rendering
+and the secondary-origin native monitor cycle also pass.
+The [final acceptance record](../validation/2026-10-25-m1-acceptance/README.md)
+owns exact commands, revisions, screenshots, results and limitations.
+It also retains a rejected desktop-wide settings-broadcast test that exposed
+a separate KSG Shell panic; the existing installed shell was restored.
+Live global reconfiguration across other shells is not certified.
 
 ## Focus and platform boundaries
 
@@ -171,5 +163,5 @@ Body font, [pinned Rubik/Material Symbols fonts and licenses](../assets/README.m
 are loaded into this process only. Dynamic wallpaper themes and Windows
 services remain outside this slice. See the [dependency](../audits/M1-DEPENDENCIES.md)
 and [backend](../audits/M1-BACKEND-API.md) audits. ERM-491/492 are done with
-archived evidence; ERM-493/494 remain in progress and M1 remains open. Denied/unavailable
+archived evidence; ERM-493/494 and the bounded M1 gate are complete. Denied/unavailable
 hardware handling belongs to future service integration.

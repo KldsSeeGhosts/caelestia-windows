@@ -1,0 +1,52 @@
+﻿{
+    "passed":  false,
+    "failure":  "Desktop state or relevant processes changed.",
+    "sourceRevision":  "9bb447aa2171c50cc5fdf6a5077d1048f8cc0e4d",
+    "sourceDirty":  false,
+    "runtime":  {
+                    "passed":  null,
+                    "smoke":  false,
+                    "timedOut":  false,
+                    "exitCode":  0,
+                    "scaleFactor":  "native",
+                    "screenIndex":  0,
+                    "monitorCycle":  false,
+                    "traceInput":  true,
+                    "actualScreens":  [
+
+                                      ],
+                    "captures":  [
+
+                                 ],
+                    "elapsedMilliseconds":  36541,
+                    "sourceRevision":  "9bb447aa2171c50cc5fdf6a5077d1048f8cc0e4d",
+                    "sourceDirty":  false,
+                    "backendRevision":  "84604c258da92a004b46d62a89718ae615840b98",
+                    "buildRecordSha256":  "83297EB6089317223B2E1968B442D4C7B374AB56F6C3BB3CF8C63F5B7A542374",
+                    "configSha256":  "E922F225252AE82CAF16EDF757E0D74FE38934100583A085B15BC5B58BC5B3C0",
+                    "command":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\quickshell\\qs.exe",
+                    "arguments":  "--no-color --log-times --path \"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\shell-20261025-014733-450\\shell.qml\"",
+                    "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\shell-20261025-014733-450",
+                    "profile":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-prototype-profile",
+                    "sources":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\shell-20261025-014733-450.sources.json",
+                    "screenshot":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\shell-20261025-014733-450.png",
+                    "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\shell-20261025-014733-450.stdout.log",
+                    "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\shell-20261025-014733-450.stderr.log"
+                },
+    "testScriptSha256":  "954B5B3EC2377266C79C3251577C433C068A8638BB75CA13E227C1922CDB271A",
+    "nativeInputSha256":  "1ADDD81DF5509BAF07CF937060220E42155B1B7ED68CB53A914E291949DC3074",
+    "desktopPreserved":  false,
+    "transparencyOff":  true,
+    "transparencyBefore":  1,
+    "transparencyAfter":  1,
+    "transparencyDuring":  0,
+    "command":  "powershell -NoProfile -File windows/scripts/Test-ShellPrototypeInput.ps1",
+    "parameters":  {
+                       "QtPrefix":  "C:\\Users\\Ermin\\AppData\\Local\\caelestia-dev\\Qt\\6.11.2\\msvc2022_64",
+                       "AllowDesktopInput":  true,
+                       "TestTransparencyOff":  true,
+                       "BuildRoot":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build",
+                       "OutputDirectory":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\m1-final\\acceptance-transparency-off"
+                   },
+    "scenarioCount":  36
+}
