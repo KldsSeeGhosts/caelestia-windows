@@ -45,7 +45,7 @@ therefore `requested`, never `succeeded`. Destructive actions stop at
 confirmation flow, so the host does not auto-confirm and the buttons remain
 disabled instead of bypassing it. Observation (`CAELESTIA_WINDOWS_SESSION=1`)
 and dispatch (`CAELESTIA_WINDOWS_SESSION_ACTIONS=1`) are separate opt-ins; smoke
-forces both off.
+forces dispatch off, while Observe smoke still observes.
 
 ## Results
 
@@ -147,3 +147,19 @@ action or privilege change occurred.
   performed.
 - No backend source or pin changed; the backend gap and its file/line references
   remain as audited.
+
+## Review addendum
+
+An independent review of `229ca28e` found that `-SessionActions` had no usable
+path: the launcher wrote empty command arrays for all four original session
+buttons, so even supported hibernate stayed disabled. `-Session` runs now bind
+the buttons to the allowlisted command names (`logout`, `shutdown`,
+`hibernate`, `reboot`); the M1 default keeps empty commands. Dispatch still
+requires `CAELESTIA_WINDOWS_SESSION_ACTIONS=1`, smoke forces it off, and
+destructive actions still stop at the confirmation gate. Comments that said
+smoke forces both opt-ins off now say it forces dispatch off.
+
+Re-run of `Test-SessionPrototype.ps1` on the dirty follow-up tree: all six
+records passed (`session-validation-20261025-182013-909`); all four original
+buttons stayed disabled with dispatch off. No session action was executed.
+`-SessionActions` interactive dispatch remains untested.

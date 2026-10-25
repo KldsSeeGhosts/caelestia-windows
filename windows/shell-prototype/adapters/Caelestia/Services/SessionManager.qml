@@ -10,7 +10,7 @@ import Quickshell
 // CAELESTIA_WINDOWS_SESSION=1 loads the native facade for capability
 // observation (including canHibernate). CAELESTIA_WINDOWS_SESSION_ACTIONS=1
 // additionally permits allowlisted dispatch; it is independent so observation
-// alone can never invoke lock/suspend/etc. Smoke runs force both off.
+// alone can never invoke lock/suspend/etc. Smoke runs force dispatch off; Observe smoke still observes.
 //
 // The service always consumes commands, including unknown ones, so the original
 // components' detached fallback cannot run. allowDetachedFallback is the

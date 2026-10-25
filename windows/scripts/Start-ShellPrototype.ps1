@@ -85,6 +85,16 @@ $config = Join-Path $profileRoot 'config\shell.json'
   "utilities": {"enabled":false}
 }
 '@ | Set-Content -LiteralPath $config -Encoding UTF8
+if ($Session) {
+    # Session runs bind the original buttons to the adapter's allowlisted
+    # command names. The M1 default keeps empty commands. Dispatch still needs
+    # CAELESTIA_WINDOWS_SESSION_ACTIONS, and destructive actions still stop at
+    # the confirmation gate.
+    $sessionConfig = (Get-Content -LiteralPath $config -Raw).Replace(
+        '"commands": {"logout":[],"shutdown":[],"hibernate":[],"reboot":[]}',
+        '"commands": {"logout":["logout"],"shutdown":["shutdown"],"hibernate":["hibernate"],"reboot":["reboot"]}')
+    Set-Content -LiteralPath $config -Value $sessionConfig -Encoding UTF8 -NoNewline
+}
 $logRoot = Join-Path $BuildRoot 'logs'
 New-Item -ItemType Directory -Force -Path $logRoot | Out-Null
 $screenshot = Join-Path $logRoot "$runName.png"
@@ -119,7 +129,8 @@ $info.EnvironmentVariables['CAELESTIA_WINDOWS_BATTERY'] = $(if ($Battery -and $B
 $info.EnvironmentVariables['CAELESTIA_WINDOWS_MEDIA'] = $(if ($Media -and $MediaMode -ne 'Disabled') { '1' } else { '0' })
 $info.EnvironmentVariables['CAELESTIA_WINDOWS_MEDIA_CONTROLS'] = $(if ($Media -and $MediaMode -eq 'Interactive' -and -not $Smoke) { '1' } else { '0' })
 # Session observation and action dispatch are separate opt-ins. Smoke always
-# forces both off; -SessionActions is only for an explicit interactive decision.
+# forces dispatch off (Observe smoke still observes); -SessionActions is only
+# for an explicit interactive decision.
 $info.EnvironmentVariables['CAELESTIA_WINDOWS_SESSION'] = $(if ($Session -and $SessionMode -eq 'Observe') { '1' } else { '0' })
 $info.EnvironmentVariables['CAELESTIA_WINDOWS_SESSION_ACTIONS'] = $(if ($SessionActions -and -not $Smoke) { '1' } else { '0' })
 $info.EnvironmentVariables['CAELESTIA_SHELL_SESSION'] = $(if ($Session) { '1' } else { '0' })
