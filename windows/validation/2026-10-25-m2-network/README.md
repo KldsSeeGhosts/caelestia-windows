@@ -192,7 +192,10 @@ this adapter is not upstream and remains opaque.
 - `-NetworkMode Interactive`, the radio toggle, connect/disconnect/forget,
   rescan and any visible-list scan were not run.
 - Connected Wi-Fi, access-point rows, connect success/failure, stale/removed
-  access points and location denial/recovery are fixture-validated only.
+  access points and location denial/recovery are fixture-validated only. The
+  typed `Nmcli.AccessPoint` type reference compiled with the original popout,
+  but no native access-point row was instantiated because the visible list was
+  empty; the typed delegate assignment is therefore not natively exercised.
 - The password/saved-profile UI, IPv4 configuration, hidden networks,
   autoconnect, saved-connection detail and Ethernet speed/usage/control are not
   implemented.

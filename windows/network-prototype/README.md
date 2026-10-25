@@ -202,9 +202,10 @@ Raw results are under `windows/.local/build/network-validation-<timestamp>/`.
   on this workstation's hardware, which has an active Ethernet link, a present
   Wi-Fi adapter and radio on with no associated network and no visible access
   points. Connected Wi-Fi, access-point rows, connect results and location
-  denial are fixture-validated only. Real access-point connect/disconnect/
-  forget, radio toggling and denial/recovery are **not** exercised by this
-  slice and must not be claimed.
+  denial are fixture-validated only; the typed `Nmcli.AccessPoint` reference
+  compiled but no native row was instantiated. Real access-point
+  connect/disconnect/forget, radio toggling and denial/recovery are **not**
+  exercised by this slice and must not be claimed.
 - The four-second settle flag is an adapter heuristic, not a backend capability;
   a WLAN service failure is presented as `no-adapter`.
 - A refused radio write only warns and may open Windows Settings; this slice
