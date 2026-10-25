@@ -1,0 +1,202 @@
+﻿{
+    "sourceRevision":  "c6117d0aaa0365e848faefb72a0c9dcd988b4ad3",
+    "backendRevision":  "1401042969e4b7ab3cfb314fc76945ab081db3de",
+    "validationOutput":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\brightness-validation-20261025-181659-795",
+    "artifacts":  [
+                      {
+                          "path":  "brightness-disabled-screen0/brightness-20261025-181700-377.png",
+                          "bytes":  52446,
+                          "sha256":  "49e9b2af9e43b6cfa3e2413007eac6523688a2425c3c6c8b68a7cc3a558bdd8a"
+                      },
+                      {
+                          "path":  "brightness-disabled-screen0/brightness-20261025-181700-377.sources.json",
+                          "bytes":  18462,
+                          "sha256":  "1123fbea8e8462c2bc6055bcd82888ca45346aec2a49aeef68dabfa33ede4236"
+                      },
+                      {
+                          "path":  "brightness-disabled-screen0/brightness-20261025-181700-377.stderr.log",
+                          "bytes":  5,
+                          "sha256":  "f01a374e9c81e3db89b3a42940c4d6a5447684986a1296e42bf13f196eed6295"
+                      },
+                      {
+                          "path":  "brightness-disabled-screen0/brightness-20261025-181700-377.stdout.log",
+                          "bytes":  4511,
+                          "sha256":  "4ada79fe867ddfda622d204e64bbddfa09d4375a34b0d17fa149d47b22f6a4b5"
+                      },
+                      {
+                          "path":  "brightness-disabled-screen0/result.json",
+                          "bytes":  13161,
+                          "sha256":  "d2889914961401de42c6f7c4c78189f350b6097b684f7ed1be57c19b1e7fe652"
+                      },
+                      {
+                          "path":  "brightness-disabled-screen1/brightness-20261025-181708-047.png",
+                          "bytes":  61606,
+                          "sha256":  "4924438ef5b497be1cc50746fa63627a76a7d57d992e8548209355e6b5ec74cd"
+                      },
+                      {
+                          "path":  "brightness-disabled-screen1/brightness-20261025-181708-047.sources.json",
+                          "bytes":  18462,
+                          "sha256":  "1123fbea8e8462c2bc6055bcd82888ca45346aec2a49aeef68dabfa33ede4236"
+                      },
+                      {
+                          "path":  "brightness-disabled-screen1/brightness-20261025-181708-047.stderr.log",
+                          "bytes":  5,
+                          "sha256":  "f01a374e9c81e3db89b3a42940c4d6a5447684986a1296e42bf13f196eed6295"
+                      },
+                      {
+                          "path":  "brightness-disabled-screen1/brightness-20261025-181708-047.stdout.log",
+                          "bytes":  4515,
+                          "sha256":  "835f6ef459578c8e01479ebe168cfad0a81ee601c5beee2b265c8f7ea39b6928"
+                      },
+                      {
+                          "path":  "brightness-disabled-screen1/result.json",
+                          "bytes":  13163,
+                          "sha256":  "996f7850fdadeef81c15a81a01c8976b23aafcf85ee14a58447115ded7c4d27b"
+                      },
+                      {
+                          "path":  "brightness-readonly-screen0/brightness-20261025-181704-229.png",
+                          "bytes":  63984,
+                          "sha256":  "89164b19236986b7b23daa9f72cbcb1ec0df53feb990de0aea12d83b31c43d65"
+                      },
+                      {
+                          "path":  "brightness-readonly-screen0/brightness-20261025-181704-229.sources.json",
+                          "bytes":  18462,
+                          "sha256":  "1123fbea8e8462c2bc6055bcd82888ca45346aec2a49aeef68dabfa33ede4236"
+                      },
+                      {
+                          "path":  "brightness-readonly-screen0/brightness-20261025-181704-229.stderr.log",
+                          "bytes":  5,
+                          "sha256":  "f01a374e9c81e3db89b3a42940c4d6a5447684986a1296e42bf13f196eed6295"
+                      },
+                      {
+                          "path":  "brightness-readonly-screen0/brightness-20261025-181704-229.stdout.log",
+                          "bytes":  5398,
+                          "sha256":  "58fbf39e35121928ae278a1905e6e5d4bbedbd977cae479354ce4aad7226a268"
+                      },
+                      {
+                          "path":  "brightness-readonly-screen0/result.json",
+                          "bytes":  13853,
+                          "sha256":  "b1f84b35798103aadc89e672e48356bbffcf2c41c0c5679df153f3309486cb24"
+                      },
+                      {
+                          "path":  "brightness-readonly-screen1/brightness-20261025-181711-839.png",
+                          "bytes":  76088,
+                          "sha256":  "e3f57759ecfb870b28b5f6b541c1007dfa44f351b2c9819c7063920582834bd7"
+                      },
+                      {
+                          "path":  "brightness-readonly-screen1/brightness-20261025-181711-839.sources.json",
+                          "bytes":  18462,
+                          "sha256":  "1123fbea8e8462c2bc6055bcd82888ca45346aec2a49aeef68dabfa33ede4236"
+                      },
+                      {
+                          "path":  "brightness-readonly-screen1/brightness-20261025-181711-839.stderr.log",
+                          "bytes":  5,
+                          "sha256":  "f01a374e9c81e3db89b3a42940c4d6a5447684986a1296e42bf13f196eed6295"
+                      },
+                      {
+                          "path":  "brightness-readonly-screen1/brightness-20261025-181711-839.stdout.log",
+                          "bytes":  5402,
+                          "sha256":  "0c34d3cf74f10e11aacdf00bbedf7dfd157a73d59866d4aa5cb41ad79dbdbe5c"
+                      },
+                      {
+                          "path":  "brightness-readonly-screen1/result.json",
+                          "bytes":  13855,
+                          "sha256":  "ac8e6325baa1920212177c6eba4bf6df5ba90507aa34fd171d5e4798b9088318"
+                      },
+                      {
+                          "path":  "commands/final-battery-service.json",
+                          "bytes":  3506,
+                          "sha256":  "d133738db9bbf8301bfc64c26b4b533a263937b04f50cabfa00d23a67b9832d2"
+                      },
+                      {
+                          "path":  "commands/final-brightness-prototype.log",
+                          "bytes":  370,
+                          "sha256":  "db0ce438e42c6f0f657652fc3af2a6fa7e67b9f4765f4af192818dcdcda69184"
+                      },
+                      {
+                          "path":  "commands/final-brightness-service.json",
+                          "bytes":  3824,
+                          "sha256":  "4d23ca50319c0a894622b378747abb240e1dd17b2c970d6f468bb54706d82267"
+                      },
+                      {
+                          "path":  "commands/final-media-service.json",
+                          "bytes":  3726,
+                          "sha256":  "f927eb18107655d903254301615bd4f33ff785d2acb3879e9fa02c4092af6e6b"
+                      },
+                      {
+                          "path":  "desktop-after.json",
+                          "bytes":  4676,
+                          "sha256":  "efd191c258a62c35d91864c16aee921af6a8767f6b90bff04f88c05b38b49855"
+                      },
+                      {
+                          "path":  "desktop-before.json",
+                          "bytes":  4676,
+                          "sha256":  "020db285348d5e0d9df356d8494792249fe6dbe951b1782263c0bb9a5fab8152"
+                      },
+                      {
+                          "path":  "fixture/brightness-fixture-20261025-181700-084.stderr.log",
+                          "bytes":  64,
+                          "sha256":  "891c042babe1ed8a91a83441ff89a273ee5757a67679c0419ccc799e364322cc"
+                      },
+                      {
+                          "path":  "fixture/brightness-fixture-20261025-181700-084.stdout.log",
+                          "bytes":  5,
+                          "sha256":  "f01a374e9c81e3db89b3a42940c4d6a5447684986a1296e42bf13f196eed6295"
+                      },
+                      {
+                          "path":  "fixture/BrightnessServiceTest.qml",
+                          "bytes":  32810,
+                          "sha256":  "28102616b6141f9394f56486b30037423ac41e5ae3660e50b382b782e8e5db57"
+                      },
+                      {
+                          "path":  "fixture/result.json",
+                          "bytes":  1914,
+                          "sha256":  "0e4f00ef5e1035e77fab5343d67644b246f50ae00cef6748e6682c140fade282"
+                      },
+                      {
+                          "path":  "gamma-after.json",
+                          "bytes":  507,
+                          "sha256":  "d829cbff163aea4c371021b9c2aa0f2dd46b1ad9f70725f46bacfcfb24c15f0b"
+                      },
+                      {
+                          "path":  "gamma-before.json",
+                          "bytes":  507,
+                          "sha256":  "9a9a214e6b2838da63e63a81927803057b57f1aa617d09fd1fe31e779987b756"
+                      },
+                      {
+                          "path":  "m1-regression/result.json",
+                          "bytes":  2570,
+                          "sha256":  "20f21b789292f495093ef3aa0c6857d1ac8b75e17676178dff78abcdc69cea36"
+                      },
+                      {
+                          "path":  "m1-regression/shell-20261025-181715-627.png",
+                          "bytes":  79222,
+                          "sha256":  "00a24c69cb16269785bb8c1a1aecb2c6ce04bb5353f59731a4eaad1b3387d46b"
+                      },
+                      {
+                          "path":  "m1-regression/shell-20261025-181715-627.sources.json",
+                          "bytes":  15320,
+                          "sha256":  "ab6228a8de3bc61f14209f5a076aecc37659619cd73892e1053c602b1cd40f14"
+                      },
+                      {
+                          "path":  "m1-regression/shell-20261025-181715-627.stderr.log",
+                          "bytes":  5,
+                          "sha256":  "f01a374e9c81e3db89b3a42940c4d6a5447684986a1296e42bf13f196eed6295"
+                      },
+                      {
+                          "path":  "m1-regression/shell-20261025-181715-627.stdout.log",
+                          "bytes":  2380,
+                          "sha256":  "267c3238c3a22c69622cb086205d78a6864071989b87309f9349502d868f5da6"
+                      },
+                      {
+                          "path":  "matrix.json",
+                          "bytes":  90892,
+                          "sha256":  "60c3107a0beb69527fa97603abfbd53c0c1269f68ac433be2670a8fa6eb69265"
+                      },
+                      {
+                          "path":  "README.md",
+                          "bytes":  8115,
+                          "sha256":  "b79bd3d31c5be429b76ec3a69f42ae815457ac058084c41220392bdda21b384c"
+                      }
+                  ]
+}
