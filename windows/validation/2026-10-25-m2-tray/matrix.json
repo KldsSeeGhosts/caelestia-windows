@@ -1,0 +1,1249 @@
+﻿{
+    "passed":  true,
+    "failure":  null,
+    "sourceRevision":  "298fd12556a7330e1f8974fd54b871172f7220d1",
+    "sourceDirty":  false,
+    "backendRevision":  "1401042969e4b7ab3cfb314fc76945ab081db3de",
+    "qtVersion":  "6.11.2",
+    "explorerBefore":  [
+                           {
+                               "name":  "explorer",
+                               "pid":  9252
+                           }
+                       ],
+    "explorerAfter":  [
+                          {
+                              "name":  "explorer",
+                              "pid":  9252
+                          }
+                      ],
+    "taskbarBefore":  {
+                          "query":  "SHAppBarMessage ABM_GETSTATE",
+                          "stateFlags":  1,
+                          "autoHide":  true,
+                          "alwaysOnTop":  false,
+                          "scope":  "Shell taskbar state, not individual secondary taskbar visibility"
+                      },
+    "taskbarAfter":  {
+                         "query":  "SHAppBarMessage ABM_GETSTATE",
+                         "stateFlags":  1,
+                         "autoHide":  true,
+                         "alwaysOnTop":  false,
+                         "scope":  "Shell taskbar state, not individual secondary taskbar visibility"
+                     },
+    "otherShellsBefore":  [
+                              "ksg-shell:24108"
+                          ],
+    "otherShellsAfter":  [
+                             "ksg-shell:24108"
+                         ],
+    "measurementSources":  [
+                               {
+                                   "source":  "windows/scripts/Get-DesktopState.ps1",
+                                   "sha256":  "44E06C706EE5A930A41EA723D9DFC104469D2019DDBC3BAEA71B240B71A401DE"
+                               },
+                               {
+                                   "source":  "windows/scripts/Test-TrayService.ps1",
+                                   "sha256":  "A88B2F5FF58A0D4E2AF2A28432066D948D7A1D7C455AD479BBE23D7C869ACA42"
+                               },
+                               {
+                                   "source":  "windows/scripts/Test-TrayPrototype.ps1",
+                                   "sha256":  "7C0F450241C3F361E3A14ECCB663C2282E3554729370571FF6FBC2771AE6D00F"
+                               }
+                           ],
+    "output":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\tray-validation-20261025-183135-148",
+    "records":  [
+                    {
+                        "kind":  "fixture",
+                        "result":  {
+                                       "passed":  true,
+                                       "timedOut":  false,
+                                       "exitCode":  0,
+                                       "fixture":  {
+                                                       "assertions":  115
+                                                   },
+                                       "nativeImports":  0,
+                                       "nativeReferences":  [
+
+                                                            ],
+                                       "hashMismatch":  [
+
+                                                        ],
+                                       "diagnostics":  [
+
+                                                       ],
+                                       "sourceRevision":  "298fd12556a7330e1f8974fd54b871172f7220d1",
+                                       "sourceDirty":  false,
+                                       "qtVersion":  "6.11.2",
+                                       "runnerSha256":  "24994D434962751713F0C8932B356104B0849572B95765DAD50C13DA6BE3FA20",
+                                       "command":  "C:\\Users\\Ermin\\AppData\\Local\\caelestia-dev\\Qt\\6.11.2\\msvc2022_64\\bin\\qml.exe",
+                                       "arguments":  "\"D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\tray-tests\\tray-fixture-20261025-183135-341\\TrayServiceTest.qml\"",
+                                       "sources":  [
+                                                       {
+                                                           "source":  "windows/services/tray/TrayService.qml",
+                                                           "sourceSha256":  "95CB88D2AB12B65CEF05AAE051EB612C3970722E7383DC661836363A30488C19",
+                                                           "stagedSha256":  "95CB88D2AB12B65CEF05AAE051EB612C3970722E7383DC661836363A30488C19"
+                                                       },
+                                                       {
+                                                           "source":  "windows/services/tray/TrayServiceTest.qml",
+                                                           "sourceSha256":  "78E01D91428D5D5A8BF63B5CB10488918230E214537D2A7F4923D9990683E13E",
+                                                           "stagedSha256":  "78E01D91428D5D5A8BF63B5CB10488918230E214537D2A7F4923D9990683E13E"
+                                                       }
+                                                   ],
+                                       "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\tray-tests\\tray-fixture-20261025-183135-341",
+                                       "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\logs\\tray-fixture-20261025-183135-341.stdout.log",
+                                       "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\logs\\tray-fixture-20261025-183135-341.stderr.log"
+                                   }
+                    },
+                    {
+                        "kind":  "tray",
+                        "mode":  "Disabled",
+                        "screen":  0,
+                        "result":  {
+                                       "passed":  true,
+                                       "smoke":  true,
+                                       "prototype":  "tray",
+                                       "audioMode":  "Disabled",
+                                       "batteryMode":  "Disabled",
+                                       "mediaMode":  "Disabled",
+                                       "trayMode":  "Disabled",
+                                       "trayFixture":  false,
+                                       "trayHookMode":  "0",
+                                       "timedOut":  false,
+                                       "exitCode":  0,
+                                       "scaleFactor":  "native",
+                                       "screenIndex":  0,
+                                       "monitorCycle":  false,
+                                       "traceInput":  false,
+                                       "actualScreens":  [
+                                                             {
+                                                                 "index":  0,
+                                                                 "name":  "MAG321UX OLED",
+                                                                 "x":  0,
+                                                                 "y":  0,
+                                                                 "dpr":  1.5,
+                                                                 "width":  660,
+                                                                 "height":  600
+                                                             }
+                                                         ],
+                                       "captures":  [
+                                                        "file:///D:/AiStack/caelestia-windows/windows/.local/build-tray/logs/tray-20261025-183135-673.png"
+                                                    ],
+                                       "audioSnapshots":  [
+
+                                                          ],
+                                       "batterySnapshots":  [
+
+                                                            ],
+                                       "mediaSnapshots":  [
+
+                                                          ],
+                                       "traySnapshots":  [
+                                                             {
+                                                                 "phase":  "INITIAL",
+                                                                 "state":  {
+                                                                               "smoke":  true,
+                                                                               "fixture":  false,
+                                                                               "status":  "disabled",
+                                                                               "reason":  "Windows tray observation is disabled.",
+                                                                               "enabled":  false,
+                                                                               "activationEnabled":  false,
+                                                                               "nativeRequested":  false,
+                                                                               "backendLoaded":  false,
+                                                                               "backendError":  "",
+                                                                               "lastError":  "",
+                                                                               "ready":  false,
+                                                                               "count":  0,
+                                                                               "titles":  [
+
+                                                                                          ],
+                                                                               "ids":  [
+
+                                                                                       ],
+                                                                               "interceptionEnabled":  false,
+                                                                               "hookMode":  "0",
+                                                                               "menuMode":  "native",
+                                                                               "menuCoordinatesSupported":  false,
+                                                                               "scrollSupported":  false,
+                                                                               "semanticMenuAvailable":  false,
+                                                                               "listGeneration":  0,
+                                                                               "listResets":  0,
+                                                                               "peakCount":  0,
+                                                                               "lastResetKind":  "",
+                                                                               "activationRequests":  0,
+                                                                               "activationRefusals":  0,
+                                                                               "lastActivationResult":  "",
+                                                                               "lastActivationReason":  "",
+                                                                               "menuRequests":  0,
+                                                                               "menuShown":  0,
+                                                                               "menuRefusals":  0,
+                                                                               "lastMenuResult":  "",
+                                                                               "lastMenuReason":  "",
+                                                                               "staleRequests":  0,
+                                                                               "scrollRequests":  0,
+                                                                               "firstId":  "",
+                                                                               "firstTitle":  "",
+                                                                               "firstHasMenu":  false,
+                                                                               "firstMenuHandleNull":  true,
+                                                                               "firstRenderableMenu":  false,
+                                                                               "trayLoaded":  false,
+                                                                               "trayActive":  false,
+                                                                               "renderedCount":  0,
+                                                                               "renderedTitles":  [
+
+                                                                                                  ],
+                                                                               "firstDelegated":  false,
+                                                                               "firstItemInteractions":  null,
+                                                                               "firstItemNativeMenu":  null,
+                                                                               "firstIconReady":  null,
+                                                                               "firstIconLayer":  null,
+                                                                               "firstIconTint":  "",
+                                                                               "expectedTint":  "#e2bdc7",
+                                                                               "menuLoaded":  false,
+                                                                               "menuActive":  false,
+                                                                               "menuSemanticAvailable":  null,
+                                                                               "menuNotice":  "",
+                                                                               "menuNoticeColour":  "",
+                                                                               "expectedDisabledColour":  "#9e8c91"
+                                                                           }
+                                                             },
+                                                             {
+                                                                 "phase":  "FINAL",
+                                                                 "state":  {
+                                                                               "smoke":  true,
+                                                                               "fixture":  false,
+                                                                               "status":  "disabled",
+                                                                               "reason":  "Windows tray observation is disabled.",
+                                                                               "enabled":  false,
+                                                                               "activationEnabled":  false,
+                                                                               "nativeRequested":  false,
+                                                                               "backendLoaded":  false,
+                                                                               "backendError":  "",
+                                                                               "lastError":  "",
+                                                                               "ready":  false,
+                                                                               "count":  0,
+                                                                               "titles":  [
+
+                                                                                          ],
+                                                                               "ids":  [
+
+                                                                                       ],
+                                                                               "interceptionEnabled":  false,
+                                                                               "hookMode":  "0",
+                                                                               "menuMode":  "native",
+                                                                               "menuCoordinatesSupported":  false,
+                                                                               "scrollSupported":  false,
+                                                                               "semanticMenuAvailable":  false,
+                                                                               "listGeneration":  0,
+                                                                               "listResets":  0,
+                                                                               "peakCount":  0,
+                                                                               "lastResetKind":  "",
+                                                                               "activationRequests":  0,
+                                                                               "activationRefusals":  0,
+                                                                               "lastActivationResult":  "",
+                                                                               "lastActivationReason":  "",
+                                                                               "menuRequests":  0,
+                                                                               "menuShown":  0,
+                                                                               "menuRefusals":  0,
+                                                                               "lastMenuResult":  "",
+                                                                               "lastMenuReason":  "",
+                                                                               "staleRequests":  0,
+                                                                               "scrollRequests":  0,
+                                                                               "firstId":  "",
+                                                                               "firstTitle":  "",
+                                                                               "firstHasMenu":  false,
+                                                                               "firstMenuHandleNull":  true,
+                                                                               "firstRenderableMenu":  false,
+                                                                               "trayLoaded":  false,
+                                                                               "trayActive":  false,
+                                                                               "renderedCount":  0,
+                                                                               "renderedTitles":  [
+
+                                                                                                  ],
+                                                                               "firstDelegated":  false,
+                                                                               "firstItemInteractions":  null,
+                                                                               "firstItemNativeMenu":  null,
+                                                                               "firstIconReady":  null,
+                                                                               "firstIconLayer":  null,
+                                                                               "firstIconTint":  "",
+                                                                               "expectedTint":  "#e2bdc7",
+                                                                               "menuLoaded":  false,
+                                                                               "menuActive":  false,
+                                                                               "menuSemanticAvailable":  null,
+                                                                               "menuNotice":  "",
+                                                                               "menuNoticeColour":  "",
+                                                                               "expectedDisabledColour":  "#9e8c91"
+                                                                           }
+                                                             }
+                                                         ],
+                                       "elapsedMilliseconds":  3427,
+                                       "sourceRevision":  "298fd12556a7330e1f8974fd54b871172f7220d1",
+                                       "sourceDirty":  false,
+                                       "backendRevision":  "1401042969e4b7ab3cfb314fc76945ab081db3de",
+                                       "buildRecordSha256":  "403AA4AB1B1A38B1A9838C24D2EB4608937F8F8F63F157D7CF75DA2CDE66CD46",
+                                       "configSha256":  "84EE899E2FE835A8153C86EA5CDD0C5071D5DB379FD35950CD7C41E205541412",
+                                       "command":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\quickshell\\qs.exe",
+                                       "arguments":  "--no-color --log-times --path \"D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\shell-runs\\tray-20261025-183135-673\\shell.qml\"",
+                                       "executableSha256":  "20710E5E2E5F36B96C49D67901FFD2BA24CD7193D28C4870937E77F673DAAE79",
+                                       "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\shell-runs\\tray-20261025-183135-673",
+                                       "profile":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\tray-prototype-profile",
+                                       "sources":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\logs\\tray-20261025-183135-673.sources.json",
+                                       "screenshot":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\logs\\tray-20261025-183135-673.png",
+                                       "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\logs\\tray-20261025-183135-673.stdout.log",
+                                       "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\logs\\tray-20261025-183135-673.stderr.log"
+                                   }
+                    },
+                    {
+                        "kind":  "tray",
+                        "mode":  "ReadOnly",
+                        "screen":  0,
+                        "result":  {
+                                       "passed":  true,
+                                       "smoke":  true,
+                                       "prototype":  "tray",
+                                       "audioMode":  "Disabled",
+                                       "batteryMode":  "Disabled",
+                                       "mediaMode":  "Disabled",
+                                       "trayMode":  "ReadOnly",
+                                       "trayFixture":  false,
+                                       "trayHookMode":  "0",
+                                       "timedOut":  false,
+                                       "exitCode":  0,
+                                       "scaleFactor":  "native",
+                                       "screenIndex":  0,
+                                       "monitorCycle":  false,
+                                       "traceInput":  false,
+                                       "actualScreens":  [
+                                                             {
+                                                                 "index":  0,
+                                                                 "name":  "MAG321UX OLED",
+                                                                 "x":  0,
+                                                                 "y":  0,
+                                                                 "dpr":  1.5,
+                                                                 "width":  660,
+                                                                 "height":  600
+                                                             }
+                                                         ],
+                                       "captures":  [
+                                                        "file:///D:/AiStack/caelestia-windows/windows/.local/build-tray/logs/tray-20261025-183139-562.png"
+                                                    ],
+                                       "audioSnapshots":  [
+
+                                                          ],
+                                       "batterySnapshots":  [
+
+                                                            ],
+                                       "mediaSnapshots":  [
+
+                                                          ],
+                                       "traySnapshots":  [
+                                                             {
+                                                                 "phase":  "INITIAL",
+                                                                 "state":  {
+                                                                               "smoke":  true,
+                                                                               "fixture":  false,
+                                                                               "status":  "empty",
+                                                                               "reason":  "Windows tray observation is active; no tray items are currently observed.",
+                                                                               "enabled":  true,
+                                                                               "activationEnabled":  false,
+                                                                               "nativeRequested":  true,
+                                                                               "backendLoaded":  true,
+                                                                               "backendError":  "",
+                                                                               "lastError":  "",
+                                                                               "ready":  true,
+                                                                               "count":  0,
+                                                                               "titles":  [
+
+                                                                                          ],
+                                                                               "ids":  [
+
+                                                                                       ],
+                                                                               "interceptionEnabled":  false,
+                                                                               "hookMode":  "0",
+                                                                               "menuMode":  "native",
+                                                                               "menuCoordinatesSupported":  false,
+                                                                               "scrollSupported":  false,
+                                                                               "semanticMenuAvailable":  false,
+                                                                               "listGeneration":  0,
+                                                                               "listResets":  0,
+                                                                               "peakCount":  0,
+                                                                               "lastResetKind":  "",
+                                                                               "activationRequests":  0,
+                                                                               "activationRefusals":  0,
+                                                                               "lastActivationResult":  "",
+                                                                               "lastActivationReason":  "",
+                                                                               "menuRequests":  0,
+                                                                               "menuShown":  0,
+                                                                               "menuRefusals":  0,
+                                                                               "lastMenuResult":  "",
+                                                                               "lastMenuReason":  "",
+                                                                               "staleRequests":  0,
+                                                                               "scrollRequests":  0,
+                                                                               "firstId":  "",
+                                                                               "firstTitle":  "",
+                                                                               "firstHasMenu":  false,
+                                                                               "firstMenuHandleNull":  true,
+                                                                               "firstRenderableMenu":  false,
+                                                                               "trayLoaded":  true,
+                                                                               "trayActive":  true,
+                                                                               "renderedCount":  0,
+                                                                               "renderedTitles":  [
+
+                                                                                                  ],
+                                                                               "firstDelegated":  false,
+                                                                               "firstItemInteractions":  null,
+                                                                               "firstItemNativeMenu":  null,
+                                                                               "firstIconReady":  null,
+                                                                               "firstIconLayer":  null,
+                                                                               "firstIconTint":  "",
+                                                                               "expectedTint":  "#e2bdc7",
+                                                                               "menuLoaded":  true,
+                                                                               "menuActive":  true,
+                                                                               "menuSemanticAvailable":  false,
+                                                                               "menuNotice":  "Menu unavailable",
+                                                                               "menuNoticeColour":  "#9e8c91",
+                                                                               "expectedDisabledColour":  "#9e8c91"
+                                                                           }
+                                                             },
+                                                             {
+                                                                 "phase":  "FINAL",
+                                                                 "state":  {
+                                                                               "smoke":  true,
+                                                                               "fixture":  false,
+                                                                               "status":  "empty",
+                                                                               "reason":  "Windows tray observation is active; no tray items are currently observed.",
+                                                                               "enabled":  true,
+                                                                               "activationEnabled":  false,
+                                                                               "nativeRequested":  true,
+                                                                               "backendLoaded":  true,
+                                                                               "backendError":  "",
+                                                                               "lastError":  "",
+                                                                               "ready":  true,
+                                                                               "count":  0,
+                                                                               "titles":  [
+
+                                                                                          ],
+                                                                               "ids":  [
+
+                                                                                       ],
+                                                                               "interceptionEnabled":  false,
+                                                                               "hookMode":  "0",
+                                                                               "menuMode":  "native",
+                                                                               "menuCoordinatesSupported":  false,
+                                                                               "scrollSupported":  false,
+                                                                               "semanticMenuAvailable":  false,
+                                                                               "listGeneration":  0,
+                                                                               "listResets":  0,
+                                                                               "peakCount":  0,
+                                                                               "lastResetKind":  "",
+                                                                               "activationRequests":  0,
+                                                                               "activationRefusals":  2,
+                                                                               "lastActivationResult":  "refused",
+                                                                               "lastActivationReason":  "Tray activation is disabled by policy; no native request was sent.",
+                                                                               "menuRequests":  1,
+                                                                               "menuShown":  0,
+                                                                               "menuRefusals":  1,
+                                                                               "lastMenuResult":  "refused",
+                                                                               "lastMenuReason":  "Tray activation is disabled by policy; no native request was sent.",
+                                                                               "staleRequests":  0,
+                                                                               "scrollRequests":  1,
+                                                                               "firstId":  "",
+                                                                               "firstTitle":  "",
+                                                                               "firstHasMenu":  false,
+                                                                               "firstMenuHandleNull":  true,
+                                                                               "firstRenderableMenu":  false,
+                                                                               "trayLoaded":  true,
+                                                                               "trayActive":  true,
+                                                                               "renderedCount":  0,
+                                                                               "renderedTitles":  [
+
+                                                                                                  ],
+                                                                               "firstDelegated":  false,
+                                                                               "firstItemInteractions":  null,
+                                                                               "firstItemNativeMenu":  null,
+                                                                               "firstIconReady":  null,
+                                                                               "firstIconLayer":  null,
+                                                                               "firstIconTint":  "",
+                                                                               "expectedTint":  "#e2bdc7",
+                                                                               "menuLoaded":  true,
+                                                                               "menuActive":  true,
+                                                                               "menuSemanticAvailable":  false,
+                                                                               "menuNotice":  "Menu unavailable",
+                                                                               "menuNoticeColour":  "#9e8c91",
+                                                                               "expectedDisabledColour":  "#9e8c91"
+                                                                           }
+                                                             }
+                                                         ],
+                                       "elapsedMilliseconds":  3431,
+                                       "sourceRevision":  "298fd12556a7330e1f8974fd54b871172f7220d1",
+                                       "sourceDirty":  false,
+                                       "backendRevision":  "1401042969e4b7ab3cfb314fc76945ab081db3de",
+                                       "buildRecordSha256":  "403AA4AB1B1A38B1A9838C24D2EB4608937F8F8F63F157D7CF75DA2CDE66CD46",
+                                       "configSha256":  "84EE899E2FE835A8153C86EA5CDD0C5071D5DB379FD35950CD7C41E205541412",
+                                       "command":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\quickshell\\qs.exe",
+                                       "arguments":  "--no-color --log-times --path \"D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\shell-runs\\tray-20261025-183139-562\\shell.qml\"",
+                                       "executableSha256":  "20710E5E2E5F36B96C49D67901FFD2BA24CD7193D28C4870937E77F673DAAE79",
+                                       "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\shell-runs\\tray-20261025-183139-562",
+                                       "profile":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\tray-prototype-profile",
+                                       "sources":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\logs\\tray-20261025-183139-562.sources.json",
+                                       "screenshot":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\logs\\tray-20261025-183139-562.png",
+                                       "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\logs\\tray-20261025-183139-562.stdout.log",
+                                       "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\logs\\tray-20261025-183139-562.stderr.log"
+                                   }
+                    },
+                    {
+                        "kind":  "tray-observation",
+                        "screen":  0,
+                        "status":  "empty",
+                        "count":  0,
+                        "titles":  [
+
+                                   ],
+                        "ids":  [
+
+                                ],
+                        "renderedCount":  0,
+                        "lastError":  ""
+                    },
+                    {
+                        "kind":  "tray",
+                        "mode":  "Disabled",
+                        "screen":  1,
+                        "result":  {
+                                       "passed":  true,
+                                       "smoke":  true,
+                                       "prototype":  "tray",
+                                       "audioMode":  "Disabled",
+                                       "batteryMode":  "Disabled",
+                                       "mediaMode":  "Disabled",
+                                       "trayMode":  "Disabled",
+                                       "trayFixture":  false,
+                                       "trayHookMode":  "0",
+                                       "timedOut":  false,
+                                       "exitCode":  0,
+                                       "scaleFactor":  "native",
+                                       "screenIndex":  1,
+                                       "monitorCycle":  false,
+                                       "traceInput":  false,
+                                       "actualScreens":  [
+                                                             {
+                                                                 "index":  1,
+                                                                 "name":  "DELL S2725QS",
+                                                                 "x":  -3840,
+                                                                 "y":  0,
+                                                                 "dpr":  1.75,
+                                                                 "width":  660,
+                                                                 "height":  600
+                                                             }
+                                                         ],
+                                       "captures":  [
+                                                        "file:///D:/AiStack/caelestia-windows/windows/.local/build-tray/logs/tray-20261025-183143-385.png"
+                                                    ],
+                                       "audioSnapshots":  [
+
+                                                          ],
+                                       "batterySnapshots":  [
+
+                                                            ],
+                                       "mediaSnapshots":  [
+
+                                                          ],
+                                       "traySnapshots":  [
+                                                             {
+                                                                 "phase":  "INITIAL",
+                                                                 "state":  {
+                                                                               "smoke":  true,
+                                                                               "fixture":  false,
+                                                                               "status":  "disabled",
+                                                                               "reason":  "Windows tray observation is disabled.",
+                                                                               "enabled":  false,
+                                                                               "activationEnabled":  false,
+                                                                               "nativeRequested":  false,
+                                                                               "backendLoaded":  false,
+                                                                               "backendError":  "",
+                                                                               "lastError":  "",
+                                                                               "ready":  false,
+                                                                               "count":  0,
+                                                                               "titles":  [
+
+                                                                                          ],
+                                                                               "ids":  [
+
+                                                                                       ],
+                                                                               "interceptionEnabled":  false,
+                                                                               "hookMode":  "0",
+                                                                               "menuMode":  "native",
+                                                                               "menuCoordinatesSupported":  false,
+                                                                               "scrollSupported":  false,
+                                                                               "semanticMenuAvailable":  false,
+                                                                               "listGeneration":  0,
+                                                                               "listResets":  0,
+                                                                               "peakCount":  0,
+                                                                               "lastResetKind":  "",
+                                                                               "activationRequests":  0,
+                                                                               "activationRefusals":  0,
+                                                                               "lastActivationResult":  "",
+                                                                               "lastActivationReason":  "",
+                                                                               "menuRequests":  0,
+                                                                               "menuShown":  0,
+                                                                               "menuRefusals":  0,
+                                                                               "lastMenuResult":  "",
+                                                                               "lastMenuReason":  "",
+                                                                               "staleRequests":  0,
+                                                                               "scrollRequests":  0,
+                                                                               "firstId":  "",
+                                                                               "firstTitle":  "",
+                                                                               "firstHasMenu":  false,
+                                                                               "firstMenuHandleNull":  true,
+                                                                               "firstRenderableMenu":  false,
+                                                                               "trayLoaded":  false,
+                                                                               "trayActive":  false,
+                                                                               "renderedCount":  0,
+                                                                               "renderedTitles":  [
+
+                                                                                                  ],
+                                                                               "firstDelegated":  false,
+                                                                               "firstItemInteractions":  null,
+                                                                               "firstItemNativeMenu":  null,
+                                                                               "firstIconReady":  null,
+                                                                               "firstIconLayer":  null,
+                                                                               "firstIconTint":  "",
+                                                                               "expectedTint":  "#e2bdc7",
+                                                                               "menuLoaded":  false,
+                                                                               "menuActive":  false,
+                                                                               "menuSemanticAvailable":  null,
+                                                                               "menuNotice":  "",
+                                                                               "menuNoticeColour":  "",
+                                                                               "expectedDisabledColour":  "#9e8c91"
+                                                                           }
+                                                             },
+                                                             {
+                                                                 "phase":  "FINAL",
+                                                                 "state":  {
+                                                                               "smoke":  true,
+                                                                               "fixture":  false,
+                                                                               "status":  "disabled",
+                                                                               "reason":  "Windows tray observation is disabled.",
+                                                                               "enabled":  false,
+                                                                               "activationEnabled":  false,
+                                                                               "nativeRequested":  false,
+                                                                               "backendLoaded":  false,
+                                                                               "backendError":  "",
+                                                                               "lastError":  "",
+                                                                               "ready":  false,
+                                                                               "count":  0,
+                                                                               "titles":  [
+
+                                                                                          ],
+                                                                               "ids":  [
+
+                                                                                       ],
+                                                                               "interceptionEnabled":  false,
+                                                                               "hookMode":  "0",
+                                                                               "menuMode":  "native",
+                                                                               "menuCoordinatesSupported":  false,
+                                                                               "scrollSupported":  false,
+                                                                               "semanticMenuAvailable":  false,
+                                                                               "listGeneration":  0,
+                                                                               "listResets":  0,
+                                                                               "peakCount":  0,
+                                                                               "lastResetKind":  "",
+                                                                               "activationRequests":  0,
+                                                                               "activationRefusals":  0,
+                                                                               "lastActivationResult":  "",
+                                                                               "lastActivationReason":  "",
+                                                                               "menuRequests":  0,
+                                                                               "menuShown":  0,
+                                                                               "menuRefusals":  0,
+                                                                               "lastMenuResult":  "",
+                                                                               "lastMenuReason":  "",
+                                                                               "staleRequests":  0,
+                                                                               "scrollRequests":  0,
+                                                                               "firstId":  "",
+                                                                               "firstTitle":  "",
+                                                                               "firstHasMenu":  false,
+                                                                               "firstMenuHandleNull":  true,
+                                                                               "firstRenderableMenu":  false,
+                                                                               "trayLoaded":  false,
+                                                                               "trayActive":  false,
+                                                                               "renderedCount":  0,
+                                                                               "renderedTitles":  [
+
+                                                                                                  ],
+                                                                               "firstDelegated":  false,
+                                                                               "firstItemInteractions":  null,
+                                                                               "firstItemNativeMenu":  null,
+                                                                               "firstIconReady":  null,
+                                                                               "firstIconLayer":  null,
+                                                                               "firstIconTint":  "",
+                                                                               "expectedTint":  "#e2bdc7",
+                                                                               "menuLoaded":  false,
+                                                                               "menuActive":  false,
+                                                                               "menuSemanticAvailable":  null,
+                                                                               "menuNotice":  "",
+                                                                               "menuNoticeColour":  "",
+                                                                               "expectedDisabledColour":  "#9e8c91"
+                                                                           }
+                                                             }
+                                                         ],
+                                       "elapsedMilliseconds":  3440,
+                                       "sourceRevision":  "298fd12556a7330e1f8974fd54b871172f7220d1",
+                                       "sourceDirty":  false,
+                                       "backendRevision":  "1401042969e4b7ab3cfb314fc76945ab081db3de",
+                                       "buildRecordSha256":  "403AA4AB1B1A38B1A9838C24D2EB4608937F8F8F63F157D7CF75DA2CDE66CD46",
+                                       "configSha256":  "84EE899E2FE835A8153C86EA5CDD0C5071D5DB379FD35950CD7C41E205541412",
+                                       "command":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\quickshell\\qs.exe",
+                                       "arguments":  "--no-color --log-times --path \"D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\shell-runs\\tray-20261025-183143-385\\shell.qml\"",
+                                       "executableSha256":  "20710E5E2E5F36B96C49D67901FFD2BA24CD7193D28C4870937E77F673DAAE79",
+                                       "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\shell-runs\\tray-20261025-183143-385",
+                                       "profile":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\tray-prototype-profile",
+                                       "sources":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\logs\\tray-20261025-183143-385.sources.json",
+                                       "screenshot":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\logs\\tray-20261025-183143-385.png",
+                                       "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\logs\\tray-20261025-183143-385.stdout.log",
+                                       "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\logs\\tray-20261025-183143-385.stderr.log"
+                                   }
+                    },
+                    {
+                        "kind":  "tray",
+                        "mode":  "ReadOnly",
+                        "screen":  1,
+                        "result":  {
+                                       "passed":  true,
+                                       "smoke":  true,
+                                       "prototype":  "tray",
+                                       "audioMode":  "Disabled",
+                                       "batteryMode":  "Disabled",
+                                       "mediaMode":  "Disabled",
+                                       "trayMode":  "ReadOnly",
+                                       "trayFixture":  false,
+                                       "trayHookMode":  "0",
+                                       "timedOut":  false,
+                                       "exitCode":  0,
+                                       "scaleFactor":  "native",
+                                       "screenIndex":  1,
+                                       "monitorCycle":  false,
+                                       "traceInput":  false,
+                                       "actualScreens":  [
+                                                             {
+                                                                 "index":  1,
+                                                                 "name":  "DELL S2725QS",
+                                                                 "x":  -3840,
+                                                                 "y":  0,
+                                                                 "dpr":  1.75,
+                                                                 "width":  660,
+                                                                 "height":  600
+                                                             }
+                                                         ],
+                                       "captures":  [
+                                                        "file:///D:/AiStack/caelestia-windows/windows/.local/build-tray/logs/tray-20261025-183147-186.png"
+                                                    ],
+                                       "audioSnapshots":  [
+
+                                                          ],
+                                       "batterySnapshots":  [
+
+                                                            ],
+                                       "mediaSnapshots":  [
+
+                                                          ],
+                                       "traySnapshots":  [
+                                                             {
+                                                                 "phase":  "INITIAL",
+                                                                 "state":  {
+                                                                               "smoke":  true,
+                                                                               "fixture":  false,
+                                                                               "status":  "empty",
+                                                                               "reason":  "Windows tray observation is active; no tray items are currently observed.",
+                                                                               "enabled":  true,
+                                                                               "activationEnabled":  false,
+                                                                               "nativeRequested":  true,
+                                                                               "backendLoaded":  true,
+                                                                               "backendError":  "",
+                                                                               "lastError":  "",
+                                                                               "ready":  true,
+                                                                               "count":  0,
+                                                                               "titles":  [
+
+                                                                                          ],
+                                                                               "ids":  [
+
+                                                                                       ],
+                                                                               "interceptionEnabled":  false,
+                                                                               "hookMode":  "0",
+                                                                               "menuMode":  "native",
+                                                                               "menuCoordinatesSupported":  false,
+                                                                               "scrollSupported":  false,
+                                                                               "semanticMenuAvailable":  false,
+                                                                               "listGeneration":  0,
+                                                                               "listResets":  0,
+                                                                               "peakCount":  0,
+                                                                               "lastResetKind":  "",
+                                                                               "activationRequests":  0,
+                                                                               "activationRefusals":  0,
+                                                                               "lastActivationResult":  "",
+                                                                               "lastActivationReason":  "",
+                                                                               "menuRequests":  0,
+                                                                               "menuShown":  0,
+                                                                               "menuRefusals":  0,
+                                                                               "lastMenuResult":  "",
+                                                                               "lastMenuReason":  "",
+                                                                               "staleRequests":  0,
+                                                                               "scrollRequests":  0,
+                                                                               "firstId":  "",
+                                                                               "firstTitle":  "",
+                                                                               "firstHasMenu":  false,
+                                                                               "firstMenuHandleNull":  true,
+                                                                               "firstRenderableMenu":  false,
+                                                                               "trayLoaded":  true,
+                                                                               "trayActive":  true,
+                                                                               "renderedCount":  0,
+                                                                               "renderedTitles":  [
+
+                                                                                                  ],
+                                                                               "firstDelegated":  false,
+                                                                               "firstItemInteractions":  null,
+                                                                               "firstItemNativeMenu":  null,
+                                                                               "firstIconReady":  null,
+                                                                               "firstIconLayer":  null,
+                                                                               "firstIconTint":  "",
+                                                                               "expectedTint":  "#e2bdc7",
+                                                                               "menuLoaded":  true,
+                                                                               "menuActive":  true,
+                                                                               "menuSemanticAvailable":  false,
+                                                                               "menuNotice":  "Menu unavailable",
+                                                                               "menuNoticeColour":  "#9e8c91",
+                                                                               "expectedDisabledColour":  "#9e8c91"
+                                                                           }
+                                                             },
+                                                             {
+                                                                 "phase":  "FINAL",
+                                                                 "state":  {
+                                                                               "smoke":  true,
+                                                                               "fixture":  false,
+                                                                               "status":  "empty",
+                                                                               "reason":  "Windows tray observation is active; no tray items are currently observed.",
+                                                                               "enabled":  true,
+                                                                               "activationEnabled":  false,
+                                                                               "nativeRequested":  true,
+                                                                               "backendLoaded":  true,
+                                                                               "backendError":  "",
+                                                                               "lastError":  "",
+                                                                               "ready":  true,
+                                                                               "count":  0,
+                                                                               "titles":  [
+
+                                                                                          ],
+                                                                               "ids":  [
+
+                                                                                       ],
+                                                                               "interceptionEnabled":  false,
+                                                                               "hookMode":  "0",
+                                                                               "menuMode":  "native",
+                                                                               "menuCoordinatesSupported":  false,
+                                                                               "scrollSupported":  false,
+                                                                               "semanticMenuAvailable":  false,
+                                                                               "listGeneration":  0,
+                                                                               "listResets":  0,
+                                                                               "peakCount":  0,
+                                                                               "lastResetKind":  "",
+                                                                               "activationRequests":  0,
+                                                                               "activationRefusals":  2,
+                                                                               "lastActivationResult":  "refused",
+                                                                               "lastActivationReason":  "Tray activation is disabled by policy; no native request was sent.",
+                                                                               "menuRequests":  1,
+                                                                               "menuShown":  0,
+                                                                               "menuRefusals":  1,
+                                                                               "lastMenuResult":  "refused",
+                                                                               "lastMenuReason":  "Tray activation is disabled by policy; no native request was sent.",
+                                                                               "staleRequests":  0,
+                                                                               "scrollRequests":  1,
+                                                                               "firstId":  "",
+                                                                               "firstTitle":  "",
+                                                                               "firstHasMenu":  false,
+                                                                               "firstMenuHandleNull":  true,
+                                                                               "firstRenderableMenu":  false,
+                                                                               "trayLoaded":  true,
+                                                                               "trayActive":  true,
+                                                                               "renderedCount":  0,
+                                                                               "renderedTitles":  [
+
+                                                                                                  ],
+                                                                               "firstDelegated":  false,
+                                                                               "firstItemInteractions":  null,
+                                                                               "firstItemNativeMenu":  null,
+                                                                               "firstIconReady":  null,
+                                                                               "firstIconLayer":  null,
+                                                                               "firstIconTint":  "",
+                                                                               "expectedTint":  "#e2bdc7",
+                                                                               "menuLoaded":  true,
+                                                                               "menuActive":  true,
+                                                                               "menuSemanticAvailable":  false,
+                                                                               "menuNotice":  "Menu unavailable",
+                                                                               "menuNoticeColour":  "#9e8c91",
+                                                                               "expectedDisabledColour":  "#9e8c91"
+                                                                           }
+                                                             }
+                                                         ],
+                                       "elapsedMilliseconds":  3434,
+                                       "sourceRevision":  "298fd12556a7330e1f8974fd54b871172f7220d1",
+                                       "sourceDirty":  false,
+                                       "backendRevision":  "1401042969e4b7ab3cfb314fc76945ab081db3de",
+                                       "buildRecordSha256":  "403AA4AB1B1A38B1A9838C24D2EB4608937F8F8F63F157D7CF75DA2CDE66CD46",
+                                       "configSha256":  "84EE899E2FE835A8153C86EA5CDD0C5071D5DB379FD35950CD7C41E205541412",
+                                       "command":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\quickshell\\qs.exe",
+                                       "arguments":  "--no-color --log-times --path \"D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\shell-runs\\tray-20261025-183147-186\\shell.qml\"",
+                                       "executableSha256":  "20710E5E2E5F36B96C49D67901FFD2BA24CD7193D28C4870937E77F673DAAE79",
+                                       "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\shell-runs\\tray-20261025-183147-186",
+                                       "profile":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\tray-prototype-profile",
+                                       "sources":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\logs\\tray-20261025-183147-186.sources.json",
+                                       "screenshot":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\logs\\tray-20261025-183147-186.png",
+                                       "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\logs\\tray-20261025-183147-186.stdout.log",
+                                       "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\logs\\tray-20261025-183147-186.stderr.log"
+                                   }
+                    },
+                    {
+                        "kind":  "tray-observation",
+                        "screen":  1,
+                        "status":  "empty",
+                        "count":  0,
+                        "titles":  [
+
+                                   ],
+                        "ids":  [
+
+                                ],
+                        "renderedCount":  0,
+                        "lastError":  ""
+                    },
+                    {
+                        "kind":  "tray-fixture",
+                        "result":  {
+                                       "passed":  true,
+                                       "smoke":  true,
+                                       "prototype":  "tray",
+                                       "audioMode":  "Disabled",
+                                       "batteryMode":  "Disabled",
+                                       "mediaMode":  "Disabled",
+                                       "trayMode":  "Disabled",
+                                       "trayFixture":  true,
+                                       "trayHookMode":  "0",
+                                       "timedOut":  false,
+                                       "exitCode":  0,
+                                       "scaleFactor":  "native",
+                                       "screenIndex":  0,
+                                       "monitorCycle":  false,
+                                       "traceInput":  false,
+                                       "actualScreens":  [
+                                                             {
+                                                                 "index":  0,
+                                                                 "name":  "MAG321UX OLED",
+                                                                 "x":  0,
+                                                                 "y":  0,
+                                                                 "dpr":  1.5,
+                                                                 "width":  660,
+                                                                 "height":  600
+                                                             }
+                                                         ],
+                                       "captures":  [
+                                                        "file:///D:/AiStack/caelestia-windows/windows/.local/build-tray/logs/tray-20261025-183150-970.png"
+                                                    ],
+                                       "audioSnapshots":  [
+
+                                                          ],
+                                       "batterySnapshots":  [
+
+                                                            ],
+                                       "mediaSnapshots":  [
+
+                                                          ],
+                                       "traySnapshots":  [
+                                                             {
+                                                                 "phase":  "INITIAL",
+                                                                 "state":  {
+                                                                               "smoke":  true,
+                                                                               "fixture":  true,
+                                                                               "status":  "disabled",
+                                                                               "reason":  "Windows tray observation is disabled.",
+                                                                               "enabled":  false,
+                                                                               "activationEnabled":  false,
+                                                                               "nativeRequested":  false,
+                                                                               "backendLoaded":  false,
+                                                                               "backendError":  "",
+                                                                               "lastError":  "",
+                                                                               "ready":  false,
+                                                                               "count":  0,
+                                                                               "titles":  [
+
+                                                                                          ],
+                                                                               "ids":  [
+
+                                                                                       ],
+                                                                               "interceptionEnabled":  false,
+                                                                               "hookMode":  "0",
+                                                                               "menuMode":  "native",
+                                                                               "menuCoordinatesSupported":  false,
+                                                                               "scrollSupported":  false,
+                                                                               "semanticMenuAvailable":  false,
+                                                                               "listGeneration":  0,
+                                                                               "listResets":  0,
+                                                                               "peakCount":  0,
+                                                                               "lastResetKind":  "",
+                                                                               "activationRequests":  0,
+                                                                               "activationRefusals":  0,
+                                                                               "lastActivationResult":  "",
+                                                                               "lastActivationReason":  "",
+                                                                               "menuRequests":  0,
+                                                                               "menuShown":  0,
+                                                                               "menuRefusals":  0,
+                                                                               "lastMenuResult":  "",
+                                                                               "lastMenuReason":  "",
+                                                                               "staleRequests":  0,
+                                                                               "scrollRequests":  0,
+                                                                               "firstId":  "",
+                                                                               "firstTitle":  "",
+                                                                               "firstHasMenu":  false,
+                                                                               "firstMenuHandleNull":  true,
+                                                                               "firstRenderableMenu":  false,
+                                                                               "trayLoaded":  true,
+                                                                               "trayActive":  true,
+                                                                               "renderedCount":  3,
+                                                                               "renderedTitles":  [
+                                                                                                      "Fixture One",
+                                                                                                      "Fixture Two",
+                                                                                                      "Fixture Three"
+                                                                                                  ],
+                                                                               "firstDelegated":  true,
+                                                                               "firstItemInteractions":  false,
+                                                                               "firstItemNativeMenu":  false,
+                                                                               "firstIconReady":  true,
+                                                                               "firstIconLayer":  true,
+                                                                               "firstIconTint":  "#e2bdc7",
+                                                                               "expectedTint":  "#e2bdc7",
+                                                                               "menuLoaded":  true,
+                                                                               "menuActive":  true,
+                                                                               "menuSemanticAvailable":  false,
+                                                                               "menuNotice":  "Menu unavailable",
+                                                                               "menuNoticeColour":  "#9e8c91",
+                                                                               "expectedDisabledColour":  "#9e8c91"
+                                                                           }
+                                                             },
+                                                             {
+                                                                 "phase":  "FINAL",
+                                                                 "state":  {
+                                                                               "smoke":  true,
+                                                                               "fixture":  true,
+                                                                               "status":  "disabled",
+                                                                               "reason":  "Windows tray observation is disabled.",
+                                                                               "enabled":  false,
+                                                                               "activationEnabled":  false,
+                                                                               "nativeRequested":  false,
+                                                                               "backendLoaded":  false,
+                                                                               "backendError":  "",
+                                                                               "lastError":  "",
+                                                                               "ready":  false,
+                                                                               "count":  0,
+                                                                               "titles":  [
+
+                                                                                          ],
+                                                                               "ids":  [
+
+                                                                                       ],
+                                                                               "interceptionEnabled":  false,
+                                                                               "hookMode":  "0",
+                                                                               "menuMode":  "native",
+                                                                               "menuCoordinatesSupported":  false,
+                                                                               "scrollSupported":  false,
+                                                                               "semanticMenuAvailable":  false,
+                                                                               "listGeneration":  0,
+                                                                               "listResets":  0,
+                                                                               "peakCount":  0,
+                                                                               "lastResetKind":  "",
+                                                                               "activationRequests":  0,
+                                                                               "activationRefusals":  0,
+                                                                               "lastActivationResult":  "",
+                                                                               "lastActivationReason":  "",
+                                                                               "menuRequests":  0,
+                                                                               "menuShown":  0,
+                                                                               "menuRefusals":  0,
+                                                                               "lastMenuResult":  "",
+                                                                               "lastMenuReason":  "",
+                                                                               "staleRequests":  0,
+                                                                               "scrollRequests":  0,
+                                                                               "firstId":  "",
+                                                                               "firstTitle":  "",
+                                                                               "firstHasMenu":  false,
+                                                                               "firstMenuHandleNull":  true,
+                                                                               "firstRenderableMenu":  false,
+                                                                               "trayLoaded":  true,
+                                                                               "trayActive":  true,
+                                                                               "renderedCount":  3,
+                                                                               "renderedTitles":  [
+                                                                                                      "Fixture One",
+                                                                                                      "Fixture Two",
+                                                                                                      "Fixture Three"
+                                                                                                  ],
+                                                                               "firstDelegated":  true,
+                                                                               "firstItemInteractions":  false,
+                                                                               "firstItemNativeMenu":  false,
+                                                                               "firstIconReady":  true,
+                                                                               "firstIconLayer":  true,
+                                                                               "firstIconTint":  "#e2bdc7",
+                                                                               "expectedTint":  "#e2bdc7",
+                                                                               "menuLoaded":  true,
+                                                                               "menuActive":  true,
+                                                                               "menuSemanticAvailable":  false,
+                                                                               "menuNotice":  "Menu unavailable",
+                                                                               "menuNoticeColour":  "#9e8c91",
+                                                                               "expectedDisabledColour":  "#9e8c91"
+                                                                           }
+                                                             }
+                                                         ],
+                                       "elapsedMilliseconds":  3445,
+                                       "sourceRevision":  "298fd12556a7330e1f8974fd54b871172f7220d1",
+                                       "sourceDirty":  false,
+                                       "backendRevision":  "1401042969e4b7ab3cfb314fc76945ab081db3de",
+                                       "buildRecordSha256":  "403AA4AB1B1A38B1A9838C24D2EB4608937F8F8F63F157D7CF75DA2CDE66CD46",
+                                       "configSha256":  "84EE899E2FE835A8153C86EA5CDD0C5071D5DB379FD35950CD7C41E205541412",
+                                       "command":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\quickshell\\qs.exe",
+                                       "arguments":  "--no-color --log-times --path \"D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\shell-runs\\tray-20261025-183150-970\\shell.qml\"",
+                                       "executableSha256":  "20710E5E2E5F36B96C49D67901FFD2BA24CD7193D28C4870937E77F673DAAE79",
+                                       "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\shell-runs\\tray-20261025-183150-970",
+                                       "profile":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\tray-prototype-profile",
+                                       "sources":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\logs\\tray-20261025-183150-970.sources.json",
+                                       "screenshot":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\logs\\tray-20261025-183150-970.png",
+                                       "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\logs\\tray-20261025-183150-970.stdout.log",
+                                       "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\logs\\tray-20261025-183150-970.stderr.log"
+                                   }
+                    },
+                    {
+                        "kind":  "m1-regression",
+                        "result":  {
+                                       "passed":  true,
+                                       "smoke":  true,
+                                       "prototype":  "shell",
+                                       "audioMode":  "Disabled",
+                                       "batteryMode":  "Disabled",
+                                       "mediaMode":  "Disabled",
+                                       "trayMode":  "Disabled",
+                                       "trayFixture":  false,
+                                       "trayHookMode":  "0",
+                                       "timedOut":  false,
+                                       "exitCode":  0,
+                                       "scaleFactor":  "native",
+                                       "screenIndex":  0,
+                                       "monitorCycle":  false,
+                                       "traceInput":  false,
+                                       "actualScreens":  [
+                                                             {
+                                                                 "index":  0,
+                                                                 "name":  "MAG321UX OLED",
+                                                                 "x":  0,
+                                                                 "y":  0,
+                                                                 "dpr":  1.5
+                                                             }
+                                                         ],
+                                       "captures":  [
+                                                        "file:///D:/AiStack/caelestia-windows/windows/.local/build-tray/logs/shell-20261025-183154-774.png"
+                                                    ],
+                                       "audioSnapshots":  [
+
+                                                          ],
+                                       "batterySnapshots":  [
+
+                                                            ],
+                                       "mediaSnapshots":  [
+
+                                                          ],
+                                       "traySnapshots":  [
+
+                                                         ],
+                                       "elapsedMilliseconds":  4055,
+                                       "sourceRevision":  "298fd12556a7330e1f8974fd54b871172f7220d1",
+                                       "sourceDirty":  false,
+                                       "backendRevision":  "1401042969e4b7ab3cfb314fc76945ab081db3de",
+                                       "buildRecordSha256":  "403AA4AB1B1A38B1A9838C24D2EB4608937F8F8F63F157D7CF75DA2CDE66CD46",
+                                       "configSha256":  "6FC8F8B80AF9D45A49A4737AF51B8C43A11B97E1B59A82468F31AB4C779C6F65",
+                                       "command":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\quickshell\\qs.exe",
+                                       "arguments":  "--no-color --log-times --path \"D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\shell-runs\\shell-20261025-183154-774\\shell.qml\"",
+                                       "executableSha256":  "20710E5E2E5F36B96C49D67901FFD2BA24CD7193D28C4870937E77F673DAAE79",
+                                       "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\shell-runs\\shell-20261025-183154-774",
+                                       "profile":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\shell-prototype-profile",
+                                       "sources":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\logs\\shell-20261025-183154-774.sources.json",
+                                       "screenshot":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\logs\\shell-20261025-183154-774.png",
+                                       "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\logs\\shell-20261025-183154-774.stdout.log",
+                                       "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\logs\\shell-20261025-183154-774.stderr.log"
+                                   }
+                    },
+                    {
+                        "kind":  "media-fixture",
+                        "result":  {
+                                       "passed":  true,
+                                       "timedOut":  false,
+                                       "exitCode":  0,
+                                       "fixture":  {
+                                                       "assertions":  148
+                                                   },
+                                       "nativeImports":  0,
+                                       "hashMismatch":  [
+
+                                                        ],
+                                       "diagnostics":  [
+
+                                                       ],
+                                       "sourceRevision":  "298fd12556a7330e1f8974fd54b871172f7220d1",
+                                       "sourceDirty":  false,
+                                       "qtVersion":  "6.11.2",
+                                       "runnerSha256":  "24994D434962751713F0C8932B356104B0849572B95765DAD50C13DA6BE3FA20",
+                                       "command":  "C:\\Users\\Ermin\\AppData\\Local\\caelestia-dev\\Qt\\6.11.2\\msvc2022_64\\bin\\qml.exe",
+                                       "arguments":  "\"D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\media-tests\\media-fixture-20261025-183159-139\\PlayersServiceTest.qml\"",
+                                       "sources":  [
+                                                       {
+                                                           "source":  "windows/services/media/PlayersService.qml",
+                                                           "sourceSha256":  "CFF2626FCE3506EF35C02A52AE4C28706D64706A5F7EB46E235318DCD67C8B15",
+                                                           "stagedSha256":  "CFF2626FCE3506EF35C02A52AE4C28706D64706A5F7EB46E235318DCD67C8B15"
+                                                       },
+                                                       {
+                                                           "source":  "windows/services/media/PlayersServiceTest.qml",
+                                                           "sourceSha256":  "5EEA84E11B0A954EE3AC8FE4B4DC968129AB06F58B96AD6CAA316E51788D443B",
+                                                           "stagedSha256":  "5EEA84E11B0A954EE3AC8FE4B4DC968129AB06F58B96AD6CAA316E51788D443B"
+                                                       }
+                                                   ],
+                                       "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\media-tests\\media-fixture-20261025-183159-139",
+                                       "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\logs\\media-fixture-20261025-183159-139.stdout.log",
+                                       "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\logs\\media-fixture-20261025-183159-139.stderr.log"
+                                   }
+                    },
+                    {
+                        "kind":  "battery-fixture",
+                        "result":  {
+                                       "passed":  true,
+                                       "timedOut":  false,
+                                       "exitCode":  0,
+                                       "fixture":  {
+                                                       "assertions":  128
+                                                   },
+                                       "sourceRevision":  "298fd12556a7330e1f8974fd54b871172f7220d1",
+                                       "sourceDirty":  false,
+                                       "qtVersion":  "6.11.2",
+                                       "runnerSha256":  "24994D434962751713F0C8932B356104B0849572B95765DAD50C13DA6BE3FA20",
+                                       "command":  "C:\\Users\\Ermin\\AppData\\Local\\caelestia-dev\\Qt\\6.11.2\\msvc2022_64\\bin\\qml.exe",
+                                       "arguments":  "\"D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\battery-tests\\battery-fixture-20261025-183159-362\\BatteryServiceTest.qml\"",
+                                       "sources":  [
+                                                       {
+                                                           "source":  "windows/services/battery/BatteryService.qml",
+                                                           "sourceSha256":  "6D548EC91299476175DF9567E1770B26DE172BC86CE110794CCF3DBAE3D30C68",
+                                                           "stagedSha256":  "6D548EC91299476175DF9567E1770B26DE172BC86CE110794CCF3DBAE3D30C68"
+                                                       },
+                                                       {
+                                                           "source":  "windows/services/battery/BatteryServiceTest.qml",
+                                                           "sourceSha256":  "293E71A0EF9891EEBBE8625C7846E34DD83FF7C72EC433391398FC7CFF85F312",
+                                                           "stagedSha256":  "293E71A0EF9891EEBBE8625C7846E34DD83FF7C72EC433391398FC7CFF85F312"
+                                                       }
+                                                   ],
+                                       "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\battery-tests\\battery-fixture-20261025-183159-362",
+                                       "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\logs\\battery-fixture-20261025-183159-362.stdout.log",
+                                       "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\logs\\battery-fixture-20261025-183159-362.stderr.log"
+                                   }
+                    }
+                ]
+}

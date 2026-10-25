@@ -14,6 +14,17 @@ StyledRect {
     readonly property alias items: items
     readonly property alias expandIcon: expandIcon
 
+    // Windows staging hooks. Defaults preserve upstream Linux behavior: the
+    // native SystemTray model is used and interactions keep their original
+    // meaning. A bounded Windows host may inject an observed item list, disable
+    // interactions for read-only observation, or route a menu request to the
+    // native context menu that the backend opens through display().
+    property var sourceItems: null
+    property bool itemInteractionsEnabled: true
+    property bool itemNativeMenuMode: false
+
+    signal itemMenuRequested(var item, real x, real y)
+
     readonly property int padding: Config.bar.tray.background ? Tokens.padding.medium : Tokens.padding.extraSmall
     readonly property int spacing: Config.bar.tray.background ? Tokens.spacing.medium : Tokens.spacing.extraSmall
 
@@ -71,10 +82,16 @@ StyledRect {
             id: items
 
             model: ScriptModel {
-                values: SystemTray.items.values.filter(i => i.status !== Status.Passive && !GlobalConfig.bar.tray.hiddenIcons.includes(i.id))
+                values: (root.sourceItems ?? SystemTray.items.values).filter(i => i.status !== Status.Passive && !GlobalConfig.bar.tray.hiddenIcons.includes(i.id))
             }
 
-            TrayItem {}
+            TrayItem {
+                id: trayItem
+
+                interactionsEnabled: root.itemInteractionsEnabled
+                nativeMenuMode: root.itemNativeMenuMode
+                onNativeMenuRequested: (x, y) => root.itemMenuRequested(trayItem.modelData, x, y)
+            }
         }
 
         Behavior on opacity {

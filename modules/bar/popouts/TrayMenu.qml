@@ -15,11 +15,29 @@ StackView {
     required property PopoutState popouts
     required property QsMenuHandle trayItem
 
-    implicitWidth: (currentItem as SubMenu)?.hasChildren ? currentItem.implicitWidth : -Tokens.padding.large * 2
-    implicitHeight: (currentItem as SubMenu)?.hasChildren ? currentItem.implicitHeight : -Tokens.padding.large * 2
+    // Windows staging hook. The pinned native backend reports hasMenu=true
+    // while the menu handle is null (item.hpp lines 102-103), so the original
+    // semantic menu cannot be rendered; the native context menu is opened
+    // through SystemTrayItem.display() instead. The default preserves upstream
+    // behavior. The unavailable notice below reuses the existing disabled-entry
+    // colour rather than introducing a new style.
+    property bool semanticMenuAvailable: true
 
-    initialItem: SubMenu {
-        handle: root.trayItem
+    implicitWidth: semanticMenuAvailable
+        ? ((currentItem as SubMenu)?.hasChildren ? currentItem.implicitWidth : -Tokens.padding.large * 2)
+        : (currentItem?.implicitWidth ?? 0)
+    implicitHeight: semanticMenuAvailable
+        ? ((currentItem as SubMenu)?.hasChildren ? currentItem.implicitHeight : -Tokens.padding.large * 2)
+        : (currentItem?.implicitHeight ?? 0)
+
+    initialItem: semanticMenuAvailable ? initialMenu : unavailableItem
+
+    Component {
+        id: initialMenu
+
+        SubMenu {
+            handle: root.trayItem
+        }
     }
 
     pushEnter: NoAnim {}
@@ -31,6 +49,35 @@ StackView {
         id: subMenuComp
 
         SubMenu {}
+    }
+
+    // Windows staging: shown only while no native QsMenuHandle exists. The
+    // notice uses the same m3outline colour as a disabled menu entry so an
+    // unavailable menu is expressed with existing disabled styling.
+    Component {
+        id: unavailableItem
+
+        Item {
+            id: unavailable
+
+            readonly property string notice: noticeText.text
+            readonly property color noticeColour: noticeText.color
+
+            implicitWidth: Tokens.sizes.bar.trayMenuWidth
+            implicitHeight: noticeText.implicitHeight + Tokens.padding.large
+
+            StyledText {
+                id: noticeText
+
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+
+                horizontalAlignment: Text.AlignHCenter
+                text: Tr.tr("Menu unavailable")
+                color: Colours.palette.m3outline
+            }
+        }
     }
 
     component NoAnim: Transition {

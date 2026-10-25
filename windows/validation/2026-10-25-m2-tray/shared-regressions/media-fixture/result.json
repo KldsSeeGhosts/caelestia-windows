@@ -1,0 +1,36 @@
+﻿{
+    "passed":  true,
+    "timedOut":  false,
+    "exitCode":  0,
+    "fixture":  {
+                    "assertions":  148
+                },
+    "nativeImports":  0,
+    "hashMismatch":  [
+
+                     ],
+    "diagnostics":  [
+
+                    ],
+    "sourceRevision":  "298fd12556a7330e1f8974fd54b871172f7220d1",
+    "sourceDirty":  false,
+    "qtVersion":  "6.11.2",
+    "runnerSha256":  "24994D434962751713F0C8932B356104B0849572B95765DAD50C13DA6BE3FA20",
+    "command":  "C:\\Users\\Ermin\\AppData\\Local\\caelestia-dev\\Qt\\6.11.2\\msvc2022_64\\bin\\qml.exe",
+    "arguments":  "\"D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\media-tests\\media-fixture-20261025-183159-139\\PlayersServiceTest.qml\"",
+    "sources":  [
+                    {
+                        "source":  "windows/services/media/PlayersService.qml",
+                        "sourceSha256":  "CFF2626FCE3506EF35C02A52AE4C28706D64706A5F7EB46E235318DCD67C8B15",
+                        "stagedSha256":  "CFF2626FCE3506EF35C02A52AE4C28706D64706A5F7EB46E235318DCD67C8B15"
+                    },
+                    {
+                        "source":  "windows/services/media/PlayersServiceTest.qml",
+                        "sourceSha256":  "5EEA84E11B0A954EE3AC8FE4B4DC968129AB06F58B96AD6CAA316E51788D443B",
+                        "stagedSha256":  "5EEA84E11B0A954EE3AC8FE4B4DC968129AB06F58B96AD6CAA316E51788D443B"
+                    }
+                ],
+    "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\media-tests\\media-fixture-20261025-183159-139",
+    "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\logs\\media-fixture-20261025-183159-139.stdout.log",
+    "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\logs\\media-fixture-20261025-183159-139.stderr.log"
+}

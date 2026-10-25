@@ -72,6 +72,14 @@ For the next development session, start with [HANDOFF.md](HANDOFF.md).
   Disabled/Observe runs never invoke a session action.
   [Session evidence](validation/2026-10-25-m2-session/README.md) records the
   fixtures, both native modes and shared regressions.
+- A bounded, default-off [tray prototype](tray-prototype/README.md) stages the
+  original bar tray icons, `ColouredIcon` tinting and menu component. Read-only
+  observation keeps `QS_WINDOWS_TRAY_HOOK=0`, so the backend cannot enumerate
+  items and native smoke reports the tray as not observable; semantic menus are native-only and activation is a separate
+  opt-in. [Tray evidence](validation/2026-10-25-m2-tray/README.md) records 115
+  adapter assertions, Disabled/ReadOnly runs at 150%/175%, a three-icon fixture
+  preview, and unchanged Explorer/taskbar state. Live items, activation and
+  interception ownership remain unvalidated.
 
 ## Checkout and inspect
 
@@ -99,9 +107,11 @@ these commands. The submodule command downloads source only.
 ## Portable build and isolated prototype
 
 `CAELESTIA_PORTABLE_UI=ON` builds `Caelestia`, `Settings`, `Components`, `Config`,
-`State`, `Blobs`, `I18n`, and `Shaders`, plus `Caelestia.Windows` on Windows.
-It excludes the calculator, Models, upstream Services, Images, and Multimedia.
-The isolated session service defaults to unavailable; opt-in observation loads
+`State`, `Blobs`, `Images`, `I18n`, and `Shaders`, plus `Caelestia.Windows` on
+Windows. It excludes the calculator, Models, upstream Services, and Multimedia.
+`Images` is Qt-only (Quick/Concurrent) and is retained because the original
+`ColouredIcon` tray icon tinting imports `Caelestia.Images`. The isolated
+session service defaults to unavailable; opt-in observation loads
 `Quickshell.Windows.Session` for capability reporting only, and a separate
 opt-in permits allowlisted non-destructive dispatch. Unknown commands are
 consumed without detached execution. Linux retains its default module set.

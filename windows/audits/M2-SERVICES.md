@@ -508,6 +508,23 @@ root to deduplicate against Linear, each enabled and validated independently:
    interception ownership before enabling it. Acceptance: null semantic menus,
    Explorer restart, stale owners, activation and shutdown are handled; no
    taskbar setting changes or competing tray takeover.
+   **Progress:** implemented as ERM-506's bounded read-only slice on
+   `t3/windows-native-tray-boundary` at `298fd125`: a pure QtObject
+   [TrayService](../services/tray/TrayService.qml) over an injected
+   [native facade](../services/tray/NativeTrayBackend.qml), a default-off
+   `Tray.qml`, a 115-assertion fixture, and a bounded
+   [host](../tray-prototype/README.md) staging the original
+   `Tray.qml`/`TrayItem.qml`/`TrayMenu.qml` with upstream-preserving hooks.
+   The launcher forces `QS_WINDOWS_TRAY_HOOK=0`; construction still starts the
+   native host's 10 s prune timer. Read-only smoke recorded 0 items on both
+   monitors because the pinned backend schedules Explorer snapshots only from
+   the hook path (host.cpp lines 172-201), so live items, activation and the
+   native context menu remain unvalidated. Semantic menus are absent
+   (`hasMenu=true`, `menu=null`, item.hpp lines 102-104); "open menu" routes to
+   `display()` only under the separate activation opt-in, and coordinates are
+   ignored (item.cpp lines 199-210). Scroll is an unsupported no-op.
+   Interception ownership needs its own review before the hook may be enabled.
+   [Evidence](../validation/2026-10-25-m2-tray/README.md).
 10. **Explicit Windows session actions:** retain unavailable behavior by default;
     map only allowlisted actions and expose capability/results. Acceptance:
     unknown commands are consumed without detached fallback, secure Windows lock
