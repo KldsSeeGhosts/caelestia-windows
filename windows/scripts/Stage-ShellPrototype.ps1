@@ -4,12 +4,14 @@ param(
     [Parameter(Mandatory)][string]$ProfileRoot,
     [switch]$Audio,
     [switch]$Battery,
-    [switch]$Media
+    [switch]$Media,
+    [switch]$Session
 )
 
 $ErrorActionPreference = 'Stop'
 $entryPoints = @(@($Audio, $Battery, $Media) | Where-Object { $_ }).Count
 if ($entryPoints -gt 1) { throw 'Select one prototype entry point per stage.' }
+if ($Session -and $entryPoints -gt 0) { throw 'The session mode extends the M1 host and cannot be combined with another entry point.' }
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
 $Destination = [IO.Path]::GetFullPath($Destination)
 $ProfileRoot = [IO.Path]::GetFullPath($ProfileRoot)

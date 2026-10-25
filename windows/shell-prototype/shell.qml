@@ -23,11 +23,97 @@ ShellRoot {
     property int screenIndex: initialScreenIndex
     readonly property ShellScreen selectedScreen: Quickshell.screens[screenIndex] ?? null
     readonly property bool monitorCycle: Quickshell.env("CAELESTIA_SHELL_MONITOR_CYCLE") === "1"
+    readonly property bool sessionRun: Quickshell.env("CAELESTIA_SHELL_SESSION") === "1"
+    readonly property string sessionMode: Quickshell.env("CAELESTIA_SHELL_SESSION_MODE") || "Disabled"
     readonly property int inset: 80
     readonly property int previewWidth: Math.min(900, (selectedScreen?.width ?? 1060) - inset * 2)
     readonly property int previewHeight: Math.min(620, (selectedScreen?.height ?? 780) - inset * 2)
 
     settings.watchFiles: false
+
+    function sessionActionState(action): var {
+        const state = SessionManager.sessionAction
+            ? SessionManager.sessionAction(action) : null;
+        return state ? {
+            supported: state.supported === true,
+            capability: state.capability === true,
+            available: state.available === true,
+            requiresConfirmation: state.requiresConfirmation === true
+        } : null;
+    }
+
+    function sessionState(): var {
+        const actions = {};
+        for (const action of ["lock", "logout", "shutdown", "reboot", "suspend", "hibernate", "firmware"])
+            actions[action] = root.sessionActionState(action);
+
+        const result = SessionManager.lastResult ?? {};
+        return {
+            mode: root.sessionMode, run: root.sessionRun,
+            enabled: SessionManager.enabled === true,
+            actionsEnabled: SessionManager.actionsEnabled === true,
+            available: SessionManager.available === true,
+            status: SessionManager.status ?? "",
+            nativeRequested: SessionManager.nativeRequested === true,
+            backendLoaded: SessionManager.backend !== null && SessionManager.backend !== undefined,
+            backendError: SessionManager.backendError ?? "",
+            hibernateCapabilityKnown: SessionManager.hibernateCapabilityKnown === true,
+            canHibernate: SessionManager.canHibernate === true,
+            hibernateSupported: SessionManager.hibernateSupported === true,
+            actionGating: SessionManager.sessionActionGating === true,
+            fallbackBlocked: SessionManager.allowDetachedFallback === false,
+            actions: actions,
+            lastOutcome: result.outcome ?? "", lastAction: result.action ?? "",
+            lastConsumed: result.consumed === true,
+            lastDispatched: result.dispatched === true,
+            lastRequested: result.requested === true,
+            lastSucceeded: result.succeeded === true
+        };
+    }
+
+    // The smoke boundary for both Disabled and Observe modes. It proves that
+    // observation is the only enabled capability, dispatch is off, every
+    // command (including an unknown probe) is consumed without a native call,
+    // and the detached fallback is blocked. Observe mode reads canHibernate but
+    // never invokes an action.
+    function checkSessionBoundary(): bool {
+        if (root.sessionMode !== "Disabled" && root.sessionMode !== "Observe")
+            return false;
+
+        const observe = root.sessionMode === "Observe";
+        const probe = SessionManager.exec(["caelestia-m1-unavailable-probe"]);
+        const state = root.sessionState();
+        if (probe !== true || state.enabled !== observe || state.available !== observe
+                || state.actionsEnabled !== false || state.actionGating !== true
+                || state.fallbackBlocked !== true || state.lastConsumed !== true
+                || state.lastDispatched !== false || state.lastRequested !== false
+                || state.lastSucceeded !== false)
+            return false;
+
+        for (const action of ["lock", "logout", "shutdown", "reboot", "suspend", "hibernate", "firmware"]) {
+            const actionState = state.actions[action];
+            if (!actionState || actionState.available !== false
+                    || actionState.requiresConfirmation !== (action === "logout"
+                        || action === "shutdown" || action === "reboot" || action === "firmware"))
+                return false;
+        }
+
+        if (observe) {
+            if (!state.nativeRequested || !state.backendLoaded
+                    || !state.hibernateCapabilityKnown
+                    || state.canHibernate !== state.hibernateSupported
+                    || state.lastOutcome !== "unsupported")
+                return false;
+            if (!state.hibernateSupported && state.actions.hibernate.capability !== false)
+                return false;
+        } else {
+            if (state.nativeRequested || state.backendLoaded
+                    || state.hibernateCapabilityKnown || state.hibernateSupported
+                    || state.lastOutcome !== "disabled")
+                return false;
+        }
+        return true;
+    }
 
     FontLoader {
         id: bodyFont
@@ -166,12 +252,12 @@ ShellRoot {
                         || bodyFont.status !== FontLoader.Ready
                         || iconFont.status !== FontLoader.Ready
                         || clockFont.status !== FontLoader.Ready
-                        || SessionManager.available
-                        || !SessionManager.exec(["caelestia-m1-unavailable-probe"])) {
-                    console.error("CAELESTIA_SHELL_FAIL: geometry, fonts, DPI, or unavailable action boundary");
+                        || !root.checkSessionBoundary()) {
+                    console.error("CAELESTIA_SHELL_FAIL: geometry, fonts, DPI, or session action boundary");
                     Qt.exit(1);
                     return;
                 }
+                console.log("CAELESTIA_SESSION_INITIAL", JSON.stringify(root.sessionState()));
                 win.bar.isHovered = true;
                 win.screenState.session = true;
             } else if (step === 1) {
@@ -210,6 +296,7 @@ ShellRoot {
                     cycle++;
                     step = -1;
                 } else {
+                    console.log("CAELESTIA_SESSION_FINAL", JSON.stringify(root.sessionState()));
                     console.log("CAELESTIA_SHELL_PASS", CUtils.qtVersion);
                     Qt.quit();
                 }

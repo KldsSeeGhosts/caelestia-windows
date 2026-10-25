@@ -50,7 +50,12 @@ Searcher {
                 Colours.setMode(command[1]);
             } else {
                 list.screenState.launcher = false;
-                if (!SessionManager.exec(command))
+                // Windows adaptation: the Windows SessionManager consumes every
+                // command (including unknown ones) and sets allowDetachedFallback
+                // false, so this can never launch an arbitrary process. Upstream
+                // native SessionManager lacks the property, preserving the
+                // original Linux fallback when exec() declines a command.
+                if (!SessionManager.exec(command) && SessionManager.allowDetachedFallback !== false)
                     Quickshell.execDetached(command);
             }
         }
