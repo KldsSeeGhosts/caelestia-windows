@@ -89,7 +89,9 @@ slice; these gaps are recorded rather than fixed here:
   `degradationReason=None` and an empty hold list, then calls `refresh()`.
 - [powerprofiles.cpp](../deps/quickshell/src/windows/services/upower/powerprofiles.cpp),
   lines 100-112: a failed effective-power-mode notification registration only
-  logs; no public capability records it.
+  logs; no public capability records it. `refresh()` runs on construction and
+  from that notification callback, not on a poll, so a missed notification can
+  leave the observed profile stale.
 - [powerprofiles.cpp](../deps/quickshell/src/windows/services/upower/powerprofiles.cpp),
   lines 120-137: `refresh()` returns on a missing `PowerGetEffectiveOverlayScheme`
   export or a failed read without publishing a read-success/error property.
