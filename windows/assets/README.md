@@ -1,0 +1,13 @@
+# Preview fonts
+
+These are unmodified upstream fonts, loaded only in the prototype process.
+They are not installed into Windows.
+
+| Font | Source revision and path | SHA-256 | License |
+| --- | --- | --- | --- |
+| Material Symbols Rounded | `google/material-design-icons` at `10ecc14790612ca8fd164e3f4ffe9c16fc50d5b7`, `variablefont/MaterialSymbolsRounded[FILL,GRAD,opsz,wght].ttf` | `7e74e36533ccee12c2b81e75bfcf3ccf123d3bb7e7e46d65d94445f23db0c97c` | [Apache 2.0](material-symbols-rounded/LICENSE) |
+| Rubik | `google/fonts` at `e7db6ca603fd4862010383ff17ffd6cc4ffac1c0`, `ofl/rubik/Rubik[wght].ttf` | `1b3a7437ba2af80e465e773ed60c5036d1ba6ace492d89046dbcf18fb31e4e88` | [SIL OFL 1.1](rubik/OFL.txt) |
+
+The original body font and its license remain in `assets/google-sans-flex`.
+The full symbols font retains ligatures and variable axes used by Caelestia's
+original `MaterialIcon.qml`.

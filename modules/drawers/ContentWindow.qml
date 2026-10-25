@@ -18,6 +18,8 @@ StyledWindow {
 
     readonly property alias bar: bar
     readonly property alias interactionWrapper: interactions
+    // Automated rendering can exercise the original graph without taking input.
+    property bool interactionEnabled: true
 
     readonly property ScreenState screenState: ShellState.forScreen(screen)
 
@@ -45,7 +47,8 @@ StyledWindow {
     property color surfaceColour: Colours.tPalette.m3surface
 
     readonly property int dragMaskPadding: {
-        if (focusGrab.active || panels.popouts.isDetached)
+        // Without compositor data, keep input confined to the visible border.
+        if (!monitor || focusGrab.active || panels.popouts.isDetached)
             return 0;
 
         if (monitor?.lastIpcObject.specialWorkspace?.name || monitor?.activeWorkspace?.toplevels.values.length > 0)
@@ -55,7 +58,7 @@ StyledWindow {
         for (const panel of ["dashboard", "launcher", "session", "sidebar"])
             if (contentItem.Config[panel].enabled)
                 thresholds.push(contentItem.Config[panel].dragThreshold);
-        return Math.max(...thresholds);
+        return Math.max(0, ...thresholds);
     }
 
     onHasFullscreenChanged: {
@@ -66,11 +69,11 @@ StyledWindow {
     }
 
     name: "drawers"
-    WlrLayershell.exclusionMode: ExclusionMode.Ignore
+    exclusionMode: ExclusionMode.Ignore
     WlrLayershell.layer: (fsTransitionProg > 0 && contentItem.Config.general.showOverFullscreen) || (hasSpecialWorkspace && hasFullscreenOnNormalWs) ? WlrLayer.Overlay : WlrLayer.Top
-    WlrLayershell.keyboardFocus: screenState.launcher || screenState.session ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+    WlrLayershell.keyboardFocus: interactionEnabled && ((screenState.launcher && contentItem.Config.launcher.enabled) || (screenState.session && contentItem.Config.session.enabled)) ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
 
-    mask: hasFullscreen ? emptyRegion : regions
+    mask: !interactionEnabled ? noInputRegion : hasFullscreen ? emptyRegion : regions
 
     anchors.top: true
     anchors.bottom: true
@@ -83,6 +86,10 @@ StyledWindow {
 
     Behavior on surfaceColour {
         CAnim {}
+    }
+
+    Region {
+        id: noInputRegion
     }
 
     Region {
@@ -113,6 +120,8 @@ StyledWindow {
         id: focusGrab
 
         active: {
+            if (!root.interactionEnabled)
+                return false;
             const s = root.screenState;
             const conf = root.contentItem.Config;
             if ((s.launcher && conf.launcher.enabled) || (s.session && conf.session.enabled) || (s.sidebar && conf.sidebar.enabled))
@@ -251,6 +260,7 @@ StyledWindow {
     Interactions {
         id: interactions
 
+        enabled: root.interactionEnabled
         screen: root.screen
         popouts: panels.popouts
         screenState: root.screenState

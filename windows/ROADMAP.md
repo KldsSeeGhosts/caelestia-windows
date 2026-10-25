@@ -9,8 +9,11 @@ tracks the milestones and implementation issues.
 
 - M0: local developer bootstrap complete. Backend pin, native build commands,
   isolated probe configuration, and validation evidence are recorded.
-- M1: in progress. Portable plugins and component rendering pass; the actual
-  bar and one drawer, hover interactions, focus, and monitor tests remain.
+- M1: in progress. The original bounded native bar and session drawer load and
+  render. Native 150% hover, opening, Escape/focus return, and outside-click
+  pass-through have evidence. Same-window native 150% -> 175% -> 150%
+  transfer passes; 175% pointer/focus, rapid boundaries, system transparency
+  off, drag/lifecycle scenarios, final matrix and archival remain.
 - M2, M3, M4: not started. No Windows service integration, tiling validation,
   or installable shell release is claimed.
 
@@ -18,13 +21,13 @@ Continue from [HANDOFF.md](HANDOFF.md). Linear was connected and synchronized
 on 2026-10-25 under the Ermin Zeherovic (ERM) team. This roadmap owns detailed
 acceptance criteria; Linear tracks issue status and dependencies.
 
-Completed foundation issues are ERM-489 (M0 bootstrap) and ERM-490 (M1 component
-probe). Remaining M1 work is sequenced as:
+Completed issues are ERM-489 (M0 bootstrap), ERM-490 (component probe), and
+ERM-491 (dependency/backend audit, pushed in `f1d3a020`). M1 work is sequenced as:
 
-1. [ERM-491: dependency and backend API audit](https://linear.app/ermin-zeherovic/issue/ERM-491).
-2. [ERM-492: load the original bar and one drawer](https://linear.app/ermin-zeherovic/issue/ERM-492).
-3. [ERM-493: hover, input, focus, and dismissal](https://linear.app/ermin-zeherovic/issue/ERM-493).
-4. [ERM-494: native DPI, monitor, transparency, and lifecycle gate](https://linear.app/ermin-zeherovic/issue/ERM-494).
+1. [ERM-491: dependency and backend API audit](https://linear.app/ermin-zeherovic/issue/ERM-491), done.
+2. [ERM-492: load the original bar and one drawer](https://linear.app/ermin-zeherovic/issue/ERM-492), implemented; validation and archival underway.
+3. [ERM-493: hover, input, focus, and dismissal](https://linear.app/ermin-zeherovic/issue/ERM-493), in progress.
+4. [ERM-494: native DPI, monitor, transparency, and lifecycle gate](https://linear.app/ermin-zeherovic/issue/ERM-494), open.
 
 ## M0: source and reproducibility
 
@@ -45,11 +48,28 @@ Use an explicit isolated entry point with unsupported services disabled through
 platform boundaries. Preserve upstream components rather than replacing them
 with lookalike rectangles.
 
-Status: portable plugin compilation and a component probe pass. The probe uses
-the original clock widgets, graphics plugins, and animations with a fixed
-palette adapter in an ordinary window. It does not load `Bar.qml` or
-`ContentWindow.qml`, and M1 remains open.
-See the [component validation record](validation/2026-10-25-component-probe/README.md).
+Status: the [native bar/session prototype](shell-prototype/README.md) loads
+original ContentWindow/StyledWindow, Regions/Interactions, Bar/Clock/Power and
+Session.Wrapper/Content. Fixed palette and explicit unavailable adapters keep
+unsupported services out; process-local fonts preserve original icons.
+WindowsFocusGuard provides bounded native activation/restoration policy.
+Drawers/Exclusions and Taskbar/Tiling controllers are not instantiated.
+
+Real pointer tests on the native 150% primary display demonstrated hover,
+Power opening, Escape dismissal with direct foreground verification, and
+outside-click dismissal passing through to a dedicated fixture. Rapid
+boundary tests have not passed yet. The same ContentWindow passed native
+MAG321UX OLED 150% -> DELL S2725QS 175% at x=-3840 -> primary transfer,
+remaining 900x620 at each placement without QML diagnostics. That rendering
+test does not validate pointer masks/focus at 175%. Earlier synthetic
+100%/150% baselines preceded the focus helper; the final synthetic matrix and
+archival are underway. Windows EnableTransparency=1 with backend blur disabled
+and an opaque fixed palette is not a system-transparency-off result.
+Final evidence and limitations belong in the
+[bar/session validation record](validation/2026-10-25-bar-session/README.md);
+archival is underway. M1 remains open. The older
+[component validation record](validation/2026-10-25-component-probe/README.md)
+continues to describe only its own source revision.
 
 Gate:
 
