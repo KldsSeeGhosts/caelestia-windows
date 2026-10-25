@@ -52,6 +52,14 @@ For the next development session, start with [HANDOFF.md](HANDOFF.md).
   the isolated profile. Clean native 150%/175% runs observed no open sessions;
   [media evidence](validation/2026-10-25-m2-media/README.md) separates those
   results from fixture-only real-player behavior. ERM-498 remains open.
+- A bounded, default-off [tray prototype](tray-prototype/README.md) stages the
+  original bar tray icons, `ColouredIcon` tinting and menu component. Read-only
+  observation keeps `QS_WINDOWS_TRAY_HOOK=0`, so native smoke recorded an empty
+  item list; semantic menus are native-only and activation is a separate
+  opt-in. [Tray evidence](validation/2026-10-25-m2-tray/README.md) records 115
+  adapter assertions, Disabled/ReadOnly runs at 150%/175%, a three-icon fixture
+  preview, and unchanged Explorer/taskbar state. Live items, activation and
+  interception ownership remain unvalidated.
 
 ## Checkout and inspect
 

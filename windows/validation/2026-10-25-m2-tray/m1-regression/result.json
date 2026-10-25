@@ -1,0 +1,56 @@
+﻿{
+    "passed":  true,
+    "smoke":  true,
+    "prototype":  "shell",
+    "audioMode":  "Disabled",
+    "batteryMode":  "Disabled",
+    "mediaMode":  "Disabled",
+    "trayMode":  "Disabled",
+    "trayFixture":  false,
+    "trayHookMode":  "0",
+    "timedOut":  false,
+    "exitCode":  0,
+    "scaleFactor":  "native",
+    "screenIndex":  0,
+    "monitorCycle":  false,
+    "traceInput":  false,
+    "actualScreens":  [
+                          {
+                              "index":  0,
+                              "name":  "MAG321UX OLED",
+                              "x":  0,
+                              "y":  0,
+                              "dpr":  1.5
+                          }
+                      ],
+    "captures":  [
+                     "file:///D:/AiStack/caelestia-windows/windows/.local/build-tray/logs/shell-20261025-183154-774.png"
+                 ],
+    "audioSnapshots":  [
+
+                       ],
+    "batterySnapshots":  [
+
+                         ],
+    "mediaSnapshots":  [
+
+                       ],
+    "traySnapshots":  [
+
+                      ],
+    "elapsedMilliseconds":  4055,
+    "sourceRevision":  "298fd12556a7330e1f8974fd54b871172f7220d1",
+    "sourceDirty":  false,
+    "backendRevision":  "1401042969e4b7ab3cfb314fc76945ab081db3de",
+    "buildRecordSha256":  "403AA4AB1B1A38B1A9838C24D2EB4608937F8F8F63F157D7CF75DA2CDE66CD46",
+    "configSha256":  "6FC8F8B80AF9D45A49A4737AF51B8C43A11B97E1B59A82468F31AB4C779C6F65",
+    "command":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\quickshell\\qs.exe",
+    "arguments":  "--no-color --log-times --path \"D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\shell-runs\\shell-20261025-183154-774\\shell.qml\"",
+    "executableSha256":  "20710E5E2E5F36B96C49D67901FFD2BA24CD7193D28C4870937E77F673DAAE79",
+    "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\shell-runs\\shell-20261025-183154-774",
+    "profile":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\shell-prototype-profile",
+    "sources":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\logs\\shell-20261025-183154-774.sources.json",
+    "screenshot":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\logs\\shell-20261025-183154-774.png",
+    "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\logs\\shell-20261025-183154-774.stdout.log",
+    "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\logs\\shell-20261025-183154-774.stderr.log"
+}
