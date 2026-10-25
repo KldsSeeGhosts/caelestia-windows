@@ -2,9 +2,10 @@ import QtQuick
 
 // Windows adaptation of the bounded parts of services/Notifs.qml and
 // services/NotifData.qml. This object has no Quickshell import, constructs no
-// native server, and performs no file or image writes itself: the singleton
-// facade owns FileView persistence and the host owns the optional image cache.
-// Backends, paths and translations may be injected in tests.
+// native server, and performs no file or image reads or writes itself: the
+// singleton facade owns FileView persistence and the injected directory
+// listing/removal, and the host owns the bounded image-cache writer. Backends,
+// paths and translations may be injected in tests.
 //
 // The notification list is the original NotifData contract consumed by
 // modules/notifications/*: summary, body, appName, appIcon, image, urgency,
@@ -101,10 +102,23 @@ QtObject {
     property int localDismissals: 0
     property int protectedDismissals: 0
     property int unconfirmedDeliveries: 0
+    property int confirmedDeliveries: 0
     property int imageCacheErrors: 0
     property int pendingDeliveryId: 0
     property bool deliveryUnconfirmed: false
     property int nextRecordId: 1
+
+    // Delivery confirmation. A send is only confirmed by a delivery observed
+    // after it: the arrival sequence is monotonic, and a matching record must
+    // have been received after expectDelivery(). Anything else is reported as
+    // forwarded/unconfirmed; a pre-existing id never confirms a send.
+    // deliveryConfirmation is "idle", "pending", "confirmed" or "forwarded".
+    property int arrivalSequence: 0
+    property int pendingDeliverySequence: 0
+    property bool pendingDeliveryContentKnown: false
+    property string pendingDeliverySummary: ""
+    property string pendingDeliveryBody: ""
+    property string deliveryConfirmation: "idle"
 
     signal historyChanged()
 
@@ -119,10 +133,13 @@ QtObject {
             record.destroy();
         }
         root.list = [];
+        root.imageCacheSlots = [];
+        root.imageCacheQueue = [];
         root.historyLoaded = false;
         root.historyError = "";
         root.pendingDeliveryId = 0;
         root.deliveryUnconfirmed = false;
+        root.deliveryConfirmation = "idle";
         if (typeof deliveryTimer !== "undefined")
             deliveryTimer.stop();
     }
@@ -414,7 +431,7 @@ QtObject {
         if (contended)
             return "Another notification owner is active. This shell is not delivering notifications and leaves the backend's bounded ownership retry alone.";
         if (deliveryUnconfirmed)
-            return "A local notification was not delivered by this shell. Another notification owner may be active; no system notification was requested or dismissed.";
+            return "The send was forwarded to another notification owner or was not delivered by this shell, so it is unconfirmed. No system notification was requested or dismissed.";
         if (root.mirrorStaged)
             return root.mirrorReason + " " + root.mirroringStateNote;
         return "Windows local notifications are delivered to this shell only. System notification mirroring is off; real Windows notifications are neither read nor removed.";
@@ -483,17 +500,12 @@ QtObject {
         if (!deliveryAllowed() || !notification || typeof notification !== "object")
             return false;
 
-        const id = String(notification.id ?? "");
-        if (root.pendingDeliveryId !== 0 && id === String(root.pendingDeliveryId))
-            clearPendingDelivery();
-
-        // Any local delivery proves this server can receive its own local
-        // path, so an earlier unconfirmed probe hint no longer applies.
-        root.deliveryUnconfirmed = false;
+        root.arrivalSequence++;
 
         const existing = root.list.find(record => !record.closed && record.notification === notification);
         if (existing) {
             existing.syncFromNotification();
+            root.settlePendingDelivery();
             return true;
         }
 
@@ -511,8 +523,12 @@ QtObject {
 
         if (mirrored)
             root.mirroredCount++;
+        record.arrivalSequence = root.arrivalSequence;
         root.list = [record, ...root.list];
         root.deliveredNotifications++;
+        if (record.imageCachePending)
+            root.scheduleImageCache(record);
+        root.settlePendingDelivery();
         root.historyChanged();
         return true;
     }
@@ -595,6 +611,7 @@ QtObject {
             return;
 
         root.list = root.list.filter(item => item !== record);
+        root.releaseImageCache(record);
 
         if (dismiss && record.notification && record.local) {
             // Local-only removal. The local path never reaches a Windows toast.
@@ -616,6 +633,7 @@ QtObject {
 
         record.notification = null;
         record.destroy();
+        root.pruneImageCacheFiles();
         root.historyChanged();
     }
 
@@ -637,25 +655,56 @@ QtObject {
             record.close();
     }
 
-    // ---- Delivery confirmation (bounded ownership hint) -------------------
+    // ---- Delivery confirmation (fresh-delivery only) ----------------------
 
-    function expectDelivery(id): void {
+    // A send's returned id may belong to a notification that already existed
+    // (the backend forwards to another owner, or an id is reused). Confirmation
+    // therefore requires a record received after this call whose id matches and
+    // whose summary/body match when the caller supplied them.
+    function expectDelivery(id, summary, body): void {
         const numeric = Number(id);
         root.pendingDeliveryId = Number.isFinite(numeric) && numeric > 0 ? numeric : 0;
+        root.pendingDeliverySequence = root.arrivalSequence;
+        root.pendingDeliveryContentKnown = summary !== undefined && summary !== null
+            && body !== undefined && body !== null;
+        root.pendingDeliverySummary = root.pendingDeliveryContentKnown ? String(summary) : "";
+        root.pendingDeliveryBody = root.pendingDeliveryContentKnown ? String(body) : "";
         root.deliveryUnconfirmed = false;
+        root.deliveryConfirmation = root.pendingDeliveryId === 0 ? "idle" : "pending";
         deliveryTimer.stop();
         if (root.pendingDeliveryId !== 0)
             deliveryTimer.restart();
     }
 
+    function settlePendingDelivery(): void {
+        if (root.pendingDeliveryId === 0)
+            return;
+
+        const id = String(root.pendingDeliveryId);
+        const record = root.list.find(item => item.notification !== null
+            && String(item.notificationId) === id
+            && item.arrivalSequence > root.pendingDeliverySequence
+            && (!root.pendingDeliveryContentKnown
+                || (String(item.summary) === root.pendingDeliverySummary
+                    && String(item.body) === root.pendingDeliveryBody))) ?? null;
+        if (!record)
+            return;
+
+        root.confirmedDeliveries++;
+        root.deliveryUnconfirmed = false;
+        root.deliveryConfirmation = "confirmed";
+        root.pendingDeliveryId = 0;
+        deliveryTimer.stop();
+    }
+
     function checkPendingDelivery(): void {
         if (root.pendingDeliveryId === 0)
             return;
-        if (liveRecordForNotificationId(root.pendingDeliveryId)) {
-            clearPendingDelivery();
+        root.settlePendingDelivery();
+        if (root.pendingDeliveryId === 0)
             return;
-        }
         root.deliveryUnconfirmed = true;
+        root.deliveryConfirmation = "forwarded";
         root.unconfirmedDeliveries++;
         root.pendingDeliveryId = 0;
         deliveryTimer.stop();
@@ -664,6 +713,7 @@ QtObject {
     function clearPendingDelivery(): void {
         root.pendingDeliveryId = 0;
         root.deliveryUnconfirmed = false;
+        root.deliveryConfirmation = "idle";
         deliveryTimer.stop();
     }
 
@@ -724,21 +774,20 @@ QtObject {
     function restoreHistory(data): bool {
         root.historyError = "";
 
-        for (const record of root.list.slice())
-            record.destroy();
-        root.list = [];
-        root.clearPendingDelivery();
-
+        // Restoration merges instead of replacing. A live notification can
+        // arrive before the asynchronous history load finishes; destroying it
+        // here lost it and its arrival. Live records survive (and win every id
+        // collision) and the merged set is what the facade persists back.
         if (!root.pathConfined) {
             root.historyLoaded = true;
             root.historyError = root.pathError || "The notification history path is not confined to the isolated profile.";
-            root.historyChanged();
+            root.finishHistoryRestore([]);
             return false;
         }
 
         if (data === undefined || data === null || String(data).trim() === "") {
             root.historyLoaded = true;
-            root.historyChanged();
+            root.finishHistoryRestore([]);
             return true;
         }
 
@@ -748,14 +797,14 @@ QtObject {
         } catch (error) {
             root.historyLoaded = true;
             root.historyError = "The notification history is not valid JSON.";
-            root.historyChanged();
+            root.finishHistoryRestore([]);
             return false;
         }
 
         if (!Array.isArray(parsed)) {
             root.historyLoaded = true;
             root.historyError = "The notification history is not a list.";
-            root.historyChanged();
+            root.finishHistoryRestore([]);
             return false;
         }
 
@@ -771,6 +820,12 @@ QtObject {
                     text: String(action.text ?? "")
                 }))
                 : [];
+            // Persisted history can be edited outside this process, so its
+            // image is re-validated exactly like a live one.
+            const rawImage = String(entry.image ?? "");
+            const image = root.validateImageSource(rawImage);
+            if (rawImage !== "" && !image.accepted)
+                root.reportRejectedImageSource(rawImage, image.reason);
 
             const record = root._recordComponent.createObject(root, {
                 service: root,
@@ -783,7 +838,10 @@ QtObject {
                 body: String(entry.body ?? ""),
                 appIcon: String(entry.appIcon ?? ""),
                 appName: String(entry.appName ?? ""),
-                image: String(entry.image ?? ""),
+                image: image.accepted ? image.canonical : "",
+                imageCachePending: image.accepted && root.imageSourceNeedsCache(image.canonical),
+                imageSourceRejected: rawImage !== "" && !image.accepted,
+                imageSourceError: image.accepted ? "" : image.reason,
                 expireTimeout: Number.isFinite(Number(entry.expireTimeout)) ? Number(entry.expireTimeout) : root.defaultExpireTimeout,
                 urgency: Number.isInteger(entry.urgency) ? entry.urgency : root.urgencyNormal,
                 resident: entry.resident === true,
@@ -796,11 +854,51 @@ QtObject {
                 restored.push(record);
         }
 
-        restored.sort((a, b) => b.time.getTime() - a.time.getTime());
-        root.list = restored;
         root.historyLoaded = true;
-        root.historyChanged();
+        root.finishHistoryRestore(restored);
         return true;
+    }
+
+    // Keeps every live (backend-backed) record, drops the previously restored
+    // historical ones, then appends the freshly parsed entries that do not
+    // collide with a live id. Live records win; the merged list is persisted by
+    // the facade's existing historyChanged save.
+    function finishHistoryRestore(restored): void {
+        const live = root.list.filter(record => !record.closed && record.notification !== null);
+        for (const record of root.list.slice()) {
+            if (live.indexOf(record) < 0)
+                record.destroy();
+        }
+
+        const merged = live.slice();
+        const recordIds = merged.map(record => String(record.recordId ?? "").toLowerCase());
+        const notificationIds = merged.map(record => String(record.notificationId ?? "").toLowerCase())
+            .filter(id => id !== "");
+
+        for (const record of restored) {
+            const recordId = String(record.recordId ?? "").toLowerCase();
+            const notificationId = String(record.notificationId ?? "").toLowerCase();
+            if ((recordId !== "" && recordIds.indexOf(recordId) >= 0)
+                    || (notificationId !== "" && notificationIds.indexOf(notificationId) >= 0)) {
+                record.destroy();
+                continue;
+            }
+            if (recordId !== "")
+                recordIds.push(recordId);
+            if (notificationId !== "")
+                notificationIds.push(notificationId);
+            merged.push(record);
+        }
+
+        merged.sort((a, b) => b.time.getTime() - a.time.getTime());
+        root.list = merged;
+        for (const record of merged) {
+            if (record.imageCachePending)
+                root.scheduleImageCache(record);
+        }
+        root.pumpImageCache();
+        root.pruneImageCacheFiles();
+        root.historyChanged();
     }
 
     function failHistory(message): void {
@@ -820,46 +918,414 @@ QtObject {
     // ---- Image-cache boundary ---------------------------------------------
 
     // The original NotifData cached remote images through a hidden native
-    // window under the upstream image-cache path. This object only computes a
-    // confined destination and accepts a saved path back; the host owns any
-    // native writer. An image already served from the icon provider or the
-    // confined cache never requests a copy.
-    function needsImageCache(record): bool {
-        if (!record || record.closed || !root.pathConfined)
-            return false;
-        const image = String(record.image ?? "");
-        if (image === "" || image.startsWith("image://"))
-            return false;
-        return !isUnder(normalizePath(image), root.imageCacheDirectory);
+    // window under the upstream image-cache path. This object performs no
+    // reads, stats, writes or deletions itself. It owns the source-trust
+    // decision, the hash key and the bounded writer pool; the host owns the
+    // actual window, and the facade supplies the directory listing/removal.
+    //
+    // Trusted sources are exactly: image:// provider icons, and local absolute
+    // non-UNC files that canonicalise (separators, "." and ".." resolved,
+    // case-insensitive containment) inside the isolated profile cache or state
+    // directory, or the staged shell assets directory. Everything else is
+    // rejected before any writer or UI image sees it, so a rejected path is
+    // never opened.
+
+    // Injected by the facade: the staged shell's assets directory.
+    property string shellAssetsDirectory: ""
+
+    // Injected by the facade: directory listing and deletion. The service only
+    // ever hands them canonical paths inside imageCacheDirectory.
+    property var imageCacheLister: null
+    property var imageCacheRemover: null
+
+    // Bounded writer pool. A host instantiates maxConcurrentImageWriters
+    // writers and binds each to imageCacheSlot(index); the service hands slots
+    // out FIFO, caps the waiting queue and records every drop.
+    readonly property int maxConcurrentImageWriters: 2
+    property int maxQueuedImageWriters: 8
+    property int maxImageCacheFiles: 64
+    property var imageCacheSlots: []
+    property var imageCacheQueue: []
+    property var imageCacheFiles: []
+    property int imageCacheCompleted: 0
+    property int imageCacheDropped: 0
+    property int imageCacheEvicted: 0
+    property int imageCachePruned: 0
+    property string lastImageCacheDropReason: ""
+    property string lastImageCacheError: ""
+
+    property int rejectedImageSources: 0
+    property string lastRejectedImageSource: ""
+    property string lastImageSourceError: ""
+
+    readonly property string canonicalStateDirectory: canonicalImagePath(normalizedStateDirectory)
+    readonly property string canonicalCacheDirectory: canonicalImagePath(normalizedCacheDirectory)
+    readonly property string canonicalImageCacheDirectory: canonicalImagePath(imageCacheDirectory)
+    readonly property string canonicalShellAssetsDirectory: canonicalImagePath(shellAssetsDirectory)
+
+    readonly property int activeImageWriters: imageCacheSlots.filter(record => record !== null && record !== undefined).length
+    readonly property int queuedImageWriters: imageCacheQueue.length
+    readonly property var imageCacheRequests: imageCacheSlots.filter(record => record !== null && record !== undefined).concat(imageCacheQueue)
+
+    // Pure, Quickshell-free source validation. Returns
+    // { accepted, kind, canonical, reason } where kind is one of "provider",
+    // "cache", "data", "assets" or "rejected". No filesystem access happens
+    // here, so a rejected source is never opened by callers.
+    function validateImageSource(source): var {
+        const reject = reason => ({
+            accepted: false, kind: "rejected", canonical: "", reason: reason
+        });
+
+        if (source === undefined || source === null)
+            return reject("The notification image source is missing.");
+        const raw = String(source).trim();
+        if (raw === "")
+            return reject("The notification image source is empty.");
+
+        const normalized = raw.replace(/\\/g, "/");
+        if (normalized.toLowerCase().startsWith("image://")) {
+            const provider = normalized.slice("image://".length);
+            if (provider === "" || provider.startsWith("/") || provider.indexOf("..") >= 0)
+                return reject("The notification image provider URL is invalid.");
+            return {
+                accepted: true, kind: "provider", canonical: "image://" + provider, reason: ""
+            };
+        }
+
+        // A leading // is a UNC share or a protocol-relative URL on every
+        // platform this object runs on. Neither is ever local to the profile.
+        if (normalized.startsWith("//"))
+            return reject("UNC and protocol-relative sources are not allowed.");
+
+        let path = normalized;
+        const scheme = /^([A-Za-z][A-Za-z0-9+.\-]*):/.exec(normalized);
+        // A single letter is a drive, not a URL scheme.
+        if (scheme && scheme[1].length > 1) {
+            const name = scheme[1].toLowerCase();
+            if (name !== "file")
+                return reject("Only image:// and local file sources are allowed; " + name + ": is refused.");
+            path = normalized.slice(scheme[0].length);
+            if (path.startsWith("//")) {
+                // file://<host>/<path>: any authority is a UNC share.
+                const authority = path.slice(2);
+                const slash = authority.indexOf("/");
+                const host = slash < 0 ? authority : authority.slice(0, slash);
+                if (host !== "")
+                    return reject("UNC file URLs are not allowed.");
+                path = slash < 0 ? "" : authority.slice(slash);
+            }
+            if (/^\/[A-Za-z]:\//.test(path))
+                path = path.slice(1);
+        }
+
+        const canonical = canonicalImagePath(path);
+        if (canonical === "")
+            return reject("The notification image is not an absolute local path.");
+
+        if (root.canonicalImageCacheDirectory !== ""
+                && isUnder(canonical, root.canonicalImageCacheDirectory))
+            return { accepted: true, kind: "cache", canonical: canonical, reason: "" };
+        if (root.canonicalCacheDirectory !== "" && isUnder(canonical, root.canonicalCacheDirectory))
+            return { accepted: true, kind: "cache", canonical: canonical, reason: "" };
+        if (root.canonicalStateDirectory !== "" && isUnder(canonical, root.canonicalStateDirectory))
+            return { accepted: true, kind: "data", canonical: canonical, reason: "" };
+        if (root.canonicalShellAssetsDirectory !== ""
+                && isUnder(canonical, root.canonicalShellAssetsDirectory))
+            return { accepted: true, kind: "assets", canonical: canonical, reason: "" };
+        return reject("The notification image is outside the isolated profile cache/state and the staged shell assets.");
     }
 
-    readonly property var imageCacheRequests: list.filter(record => needsImageCache(record))
-
-    function imageCachePath(record): string {
-        if (!root.needsImageCache(record))
+    // Lexical canonicalisation only: no filesystem access. Returns "" for a
+    // relative, drive-relative, UNC or traversal-above-root path, an
+    // alternate-data-stream name or a bare directory root.
+    function canonicalImagePath(value): string {
+        if (value === undefined || value === null)
+            return "";
+        const path = String(value).trim().replace(/\\/g, "/");
+        const match = /^([A-Za-z]):\/(.*)$/.exec(path);
+        if (!match)
             return "";
 
-        const cacheKey = String(record.appName ?? "") + String(record.summary ?? "")
-            + String(record.notificationId ?? "") + String(record.image ?? "");
-        const hash = notificationHash(cacheKey);
+        const segments = match[2].split("/");
+        const parts = [];
+        for (const segment of segments) {
+            if (segment === "" || segment === ".")
+                continue;
+            if (segment === "..") {
+                if (parts.length === 0)
+                    return "";
+                parts.pop();
+                continue;
+            }
+            if (segment.indexOf(":") >= 0)
+                return "";
+            parts.push(segment);
+        }
+        if (parts.length === 0)
+            return "";
+        return match[1].toUpperCase() + ":/" + parts.join("/");
+    }
+
+    function reportRejectedImageSource(source, reason): void {
+        root.rejectedImageSources++;
+        root.lastRejectedImageSource = String(source ?? "");
+        root.lastImageSourceError = String(reason ?? "");
+    }
+
+    function imageSourceNeedsCache(source): bool {
+        if (!root.pathConfined)
+            return false;
+        const validation = root.validateImageSource(source);
+        if (!validation.accepted || validation.kind === "provider")
+            return false;
+        return !isUnder(validation.canonical, root.canonicalImageCacheDirectory);
+    }
+
+    function needsImageCache(record): bool {
+        return !!record && !record.closed && root.imageSourceNeedsCache(record.image);
+    }
+
+    // The destination is keyed by a hash of the canonical source, so a repeat
+    // of the same image always shares one cache file.
+    function imageCachePath(record): string {
+        if (!root.needsImageCache(record) || root.imageCacheDirectory === "")
+            return "";
+        const validation = root.validateImageSource(record.image);
+        if (!validation.accepted)
+            return "";
+        const hash = notificationHash(validation.canonical.toLowerCase());
         return root.imageCacheDirectory + "/" + hash + ".png";
+    }
+
+    function imageCacheSlot(index): var {
+        const slots = root.imageCacheSlots;
+        if (index < 0 || index >= slots.length)
+            return null;
+        return slots[index] ?? null;
+    }
+
+    function scheduleImageCache(record): void {
+        if (!record || record.closed || !root.list.includes(record) || !root.needsImageCache(record))
+            return;
+        if (root.imageCacheSlots.indexOf(record) >= 0 || root.imageCacheQueue.indexOf(record) >= 0)
+            return;
+
+        const queue = root.imageCacheQueue.slice();
+        if (queue.length >= root.maxQueuedImageWriters) {
+            const dropped = queue.shift();
+            if (dropped) {
+                dropped.imageCachePending = false;
+                dropped.imageCacheDropped = true;
+                dropped.imageCacheError = "The notification image-cache queue was full.";
+                root.imageCacheDropped++;
+                root.lastImageCacheDropReason = "The notification image-cache queue is full; the oldest waiting image was dropped.";
+            }
+        }
+        queue.push(record);
+        root.imageCacheQueue = queue;
+        root.pumpImageCache();
+    }
+
+    function pumpImageCache(): void {
+        if (!root.pathConfined) {
+            root.imageCacheQueue = [];
+            root.imageCacheSlots = [];
+            return;
+        }
+
+        const slots = root.imageCacheSlots.slice();
+        while (slots.length < root.maxConcurrentImageWriters)
+            slots.push(null);
+
+        const queue = [];
+        for (const record of root.imageCacheQueue) {
+            if (record && !record.closed && root.needsImageCache(record) && queue.indexOf(record) < 0)
+                queue.push(record);
+        }
+
+        for (let i = 0; i < slots.length; i++) {
+            if (slots[i] && (slots[i].closed || !root.needsImageCache(slots[i])))
+                slots[i] = null;
+            if (slots[i] === null && queue.length > 0) {
+                const next = queue.shift();
+                if (slots.indexOf(next) < 0) {
+                    slots[i] = next;
+                    next.imageCachePending = true;
+                }
+            }
+        }
+
+        root.imageCacheQueue = queue;
+        root.imageCacheSlots = slots.slice(0, root.maxConcurrentImageWriters);
+    }
+
+    function completeImageCache(record): void {
+        const index = root.imageCacheSlots.indexOf(record);
+        if (index < 0)
+            return;
+        const slots = root.imageCacheSlots.slice();
+        slots[index] = null;
+        root.imageCacheSlots = slots;
+        root.imageCacheCompleted++;
+        root.pumpImageCache();
+    }
+
+    function abortImageCache(record, reason): void {
+        const message = String(reason ?? "The notification image could not be written.");
+        const slots = root.imageCacheSlots.slice();
+        const index = slots.indexOf(record);
+        if (index >= 0)
+            slots[index] = null;
+        const queue = root.imageCacheQueue.filter(item => item !== record);
+        const wasQueued = queue.length !== root.imageCacheQueue.length;
+        root.imageCacheSlots = slots;
+        root.imageCacheQueue = queue;
+        if (record) {
+            record.imageCachePending = false;
+            record.imageCacheError = message;
+        }
+        root.imageCacheErrors++;
+        root.lastImageCacheError = message;
+        if (index >= 0 || wasQueued)
+            root.pumpImageCache();
+    }
+
+    function releaseImageCache(record): void {
+        const slots = root.imageCacheSlots.slice();
+        const index = slots.indexOf(record);
+        if (index >= 0)
+            slots[index] = null;
+        const queue = root.imageCacheQueue.filter(item => item !== record);
+        if (index < 0 && queue.length === root.imageCacheQueue.length)
+            return;
+        root.imageCacheSlots = slots;
+        root.imageCacheQueue = queue;
+        root.pumpImageCache();
     }
 
     function applyCachedImage(record, path): bool {
         if (!root.pathConfined || !record || !root.list.includes(record))
             return false;
-        const normalized = normalizePath(String(path ?? ""));
-        if (normalized === "" || !isUnder(normalized, root.imageCacheDirectory))
+
+        const validation = root.validateImageSource(path);
+        if (!validation.accepted || validation.kind !== "cache" || validation.canonical === "")
             return false;
-        record.image = path;
+        if (!isUnder(validation.canonical, root.canonicalImageCacheDirectory)
+                || !/\.png$/i.test(validation.canonical))
+            return false;
+
+        record.image = validation.canonical;
         record.imageCachePending = false;
+        record.imageCacheError = "";
+        root.registerImageCacheFile(validation.canonical);
+        root.completeImageCache(record);
         return true;
     }
 
     function markImageCacheFailed(record): void {
-        if (record)
-            record.imageCachePending = false;
-        root.imageCacheErrors++;
+        root.abortImageCache(record, root.lastImageCacheError !== ""
+            ? root.lastImageCacheError : "The notification image could not be written.");
+    }
+
+    function registerImageCacheFile(path): void {
+        const canonical = root.canonicalImagePath(path);
+        if (canonical === "" || !root.pathConfined
+                || !isUnder(canonical, root.canonicalImageCacheDirectory))
+            return;
+        const key = canonical.toLowerCase();
+        const files = root.imageCacheFiles.filter(file => file && String(file.key ?? "").toLowerCase() !== key);
+        files.push({ path: canonical, key: key, savedAt: Date.now() });
+        root.imageCacheFiles = files;
+        root.pruneImageCacheFiles();
+    }
+
+    function removeImageCacheFile(path): bool {
+        if (typeof root.imageCacheRemover !== "function")
+            return false;
+        const canonical = root.canonicalImagePath(path);
+        if (canonical === "" || root.canonicalImageCacheDirectory === ""
+                || !isUnder(canonical, root.canonicalImageCacheDirectory))
+            return false;
+        return root.imageCacheRemover(canonical) === true;
+    }
+
+    function forgetImageCacheFile(path): void {
+        const key = root.canonicalImagePath(path).toLowerCase();
+        if (key === "")
+            return;
+        for (const record of root.list) {
+            if (record && record.image && root.canonicalImagePath(record.image).toLowerCase() === key) {
+                record.image = "";
+                record.imageCachePending = false;
+            }
+        }
+    }
+
+    // Deletes cache files no retained record references, then enforces the hard
+    // file quota oldest-first. Deletion only ever targets canonical paths under
+    // imageCacheDirectory; a rejected or outside entry is skipped unread.
+    function pruneImageCacheFiles(): void {
+        if (!root.pathConfined || root.imageCacheDirectory === ""
+                || typeof root.imageCacheRemover !== "function")
+            return;
+
+        const referenced = [];
+        const addReference = value => {
+            const canonical = root.canonicalImagePath(value);
+            if (canonical !== "" && isUnder(canonical, root.canonicalImageCacheDirectory))
+                referenced.push(canonical.toLowerCase());
+        };
+        for (const record of root.list) {
+            if (record && !record.closed)
+                addReference(record.image);
+        }
+        for (const record of root.imageCacheQueue)
+            addReference(root.imageCachePath(record));
+        for (const record of root.imageCacheSlots) {
+            if (record)
+                addReference(root.imageCachePath(record));
+        }
+
+        const listing = typeof root.imageCacheLister === "function" ? root.imageCacheLister() : null;
+        const source = Array.isArray(listing) ? listing.concat(root.imageCacheFiles) : root.imageCacheFiles;
+        const known = [];
+        const seen = [];
+        for (const entry of source) {
+            const raw = typeof entry === "string" ? entry : String(entry?.path ?? "");
+            const canonical = root.canonicalImagePath(raw);
+            if (canonical === "" || !isUnder(canonical, root.canonicalImageCacheDirectory))
+                continue;
+            const key = canonical.toLowerCase();
+            if (seen.indexOf(key) >= 0)
+                continue;
+            seen.push(key);
+            const savedAt = entry && typeof entry === "object" ? Number(entry.savedAt ?? 0) : 0;
+            known.push({ path: canonical, key: key, savedAt: Number.isFinite(savedAt) ? savedAt : 0 });
+        }
+
+        const retained = [];
+        for (const file of known) {
+            if (referenced.indexOf(file.key) >= 0) {
+                retained.push(file);
+                continue;
+            }
+            if (root.removeImageCacheFile(file.path))
+                root.imageCachePruned++;
+        }
+
+        retained.sort((a, b) => a.savedAt - b.savedAt);
+        if (retained.length > root.maxImageCacheFiles) {
+            const excess = retained.length - root.maxImageCacheFiles;
+            for (let i = 0; i < excess; i++) {
+                const file = retained[i];
+                if (!root.removeImageCacheFile(file.path))
+                    continue;
+                root.imageCacheEvicted++;
+                root.forgetImageCacheFile(file.path);
+            }
+            retained.splice(0, excess);
+        }
+        root.imageCacheFiles = retained;
     }
 
     // ---- Small path helpers ------------------------------------------------

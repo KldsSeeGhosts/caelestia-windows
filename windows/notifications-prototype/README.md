@@ -174,14 +174,29 @@ also carry a stable `recordId` for identity after a restart.
 
 ## Image cache
 
-The original `NotifData` rasterised remote images through a hidden native
-window. This slice keeps the same bounded technique in
-[`NotifImageCache.qml`](../services/notifications/NotifImageCache.qml), but the
-destination is always `NotificationsService.imageCachePath()` under the profile
-`cache/notifs` directory. A path outside that directory is rejected. Icons from
-the icon provider and images already in the confined cache never request a copy.
-The smoke path posts no image, so the native writer itself is not exercised in
-the recorded runs; the fixture covers path generation, acceptance and refusal.
+A notification image is used only when
+`NotificationsService.validateImageSource()` accepts it: an `image://` provider
+icon, or a local non-UNC absolute path whose canonical form resolves inside the
+isolated profile cache/state directory or the staged shell assets directory.
+Rejected sources are cleared before the original UI sees them, so its existing
+fallback icon is shown and no writer is pointed at that path.
+
+The original `NotifData` rasterised remote images through a hidden native window.
+That surface cannot hide itself in this backend: a native writer probe saved a
+blank transparent PNG for zero-opacity, 1x1, clipped and off-screen writer
+windows (`grabToImage` renders through the window pass). This slice therefore
+keeps the cache without the surface:
+[`NotifImageCache.qml`](../services/notifications/NotifImageCache.qml) makes one
+synchronous confined copy of the already validated source. The destination is
+always `NotificationsService.imageCachePath()`, keyed by a hash of the canonical
+source under the profile `cache/notifs` directory, so repeats share one file.
+The service bounds writers (two active, eight queued, the oldest dropped with a
+recorded reason), prunes files that no retained record references on dismissal,
+and enforces a 64-file oldest-first quota. Deletion never leaves that directory.
+Icons from the icon provider and images already in the confined cache never
+request a copy. The smoke path posts no image, so the native writer is not
+exercised by the recorded runs; the fixture covers source validation, path
+generation, the writer pool, pruning and the quota.
 
 ## Opt-in and launch
 
@@ -292,8 +307,11 @@ ordinary user notification history before/after, desktop state and screenshots.
   smoke's single `notifySend` is forwarded by the backend instead of arriving
   locally; the run fails with the competing-owner hint rather than retrying or
   fighting the claim.
-- The image-cache writer is implemented but the native smoke posts no image;
-  only path validation and refusal are recorded natively.
+- The image-cache writer is implemented as a confined byte copy and the native
+  smoke posts no image; source validation, the writer pool, pruning and the
+  quota are fixture-covered. The copy itself and the cache-directory marker were
+  only exercised by the ad-hoc native writer probe recorded in the validation
+  addendum.
 - The sidebar dock is staged only as a notification list; its empty-state
   picture is intentionally unavailable on Windows.
 - Notifications are local-only, so ordinary Windows applications cannot create

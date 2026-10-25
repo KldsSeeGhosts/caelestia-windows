@@ -146,6 +146,16 @@ ShellRoot {
             localDismissals: Notifs.localDismissals,
             protectedDismissals: Notifs.protectedDismissals,
             unconfirmedDeliveries: Notifs.unconfirmedDeliveries,
+            confirmedDeliveries: Notifs.confirmedDeliveries,
+            deliveryConfirmation: Notifs.deliveryConfirmation,
+            rejectedImageSources: Notifs.rejectedImageSources,
+            lastImageSourceError: Notifs.lastImageSourceError,
+            imageCacheErrors: Notifs.imageCacheErrors,
+            imageCacheDropped: Notifs.imageCacheDropped,
+            imageCacheEvicted: Notifs.imageCacheEvicted,
+            imageCachePruned: Notifs.imageCachePruned,
+            activeImageWriters: Notifs.activeImageWriters,
+            queuedImageWriters: Notifs.queuedImageWriters,
             uiLoaded: contentHost.item !== null,
             dockLoaded: dockHost.item !== null,
             contentWidth: contentHost.item?.width ?? 0,
@@ -493,14 +503,15 @@ ShellRoot {
                     }
 
                     // Upstream cached remote notification images through a
-                    // hidden native window. This writer is instantiated only
-                    // for a confined, non-icon image and writes only under the
-                    // isolated profile cache.
+                    // hidden native window. The service owns the bounded FIFO
+                    // writer pool: this fixed set of writers is bound to its
+                    // slots, and each slot is only handed a source the service
+                    // has already validated and confined.
                     Repeater {
-                        model: Notifs.enabled ? Notifs.imageCacheRequests : []
+                        model: Notifs.enabled ? Notifs.service.maxConcurrentImageWriters : 0
                         delegate: NotifImageCache {
-                            record: modelData
-                            service: Notifs.service
+                            record: Notifs.enabled ? Notifs.imageCacheSlot(index) : null
+                            service: Notifs.enabled ? Notifs.service : null
                         }
                     }
                 }
