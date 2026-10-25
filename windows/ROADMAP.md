@@ -1,8 +1,9 @@
 # Caelestia Windows milestones
 
 The native backend build and portable component rendering are now demonstrated.
-Gates below are acceptance criteria, not claims of a complete shell. Track these as
-separate issues when the Linear connection is available.
+Gates below are acceptance criteria, not claims of a complete shell.
+[Caelestia Windows in Linear](https://linear.app/ermin-zeherovic/project/caelestia-windows-c69c05fa35b7)
+tracks the milestones and implementation issues.
 
 ## Status snapshot, 2026-10-25
 
@@ -13,9 +14,17 @@ separate issues when the Linear connection is available.
 - M2, M3, M4: not started. No Windows service integration, tiling validation,
   or installable shell release is claimed.
 
-Continue from [HANDOFF.md](HANDOFF.md). Linear could not be synchronized on
-2026-10-25 because the connection requires reauthentication; this roadmap is
-the current milestone record.
+Continue from [HANDOFF.md](HANDOFF.md). Linear was connected and synchronized
+on 2026-10-25 under the Ermin Zeherovic (ERM) team. This roadmap owns detailed
+acceptance criteria; Linear tracks issue status and dependencies.
+
+Completed foundation issues are ERM-489 (M0 bootstrap) and ERM-490 (M1 component
+probe). Remaining M1 work is sequenced as:
+
+1. [ERM-491: dependency and backend API audit](https://linear.app/ermin-zeherovic/issue/ERM-491).
+2. [ERM-492: load the original bar and one drawer](https://linear.app/ermin-zeherovic/issue/ERM-492).
+3. [ERM-493: hover, input, focus, and dismissal](https://linear.app/ermin-zeherovic/issue/ERM-493).
+4. [ERM-494: native DPI, monitor, transparency, and lifecycle gate](https://linear.app/ermin-zeherovic/issue/ERM-494).
 
 ## M0: source and reproducibility
 
