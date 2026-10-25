@@ -40,6 +40,11 @@ $servicePathFallbacks = @(Select-String -LiteralPath $serviceSource -CaseSensiti
 $recordPathFallbacks = @(Select-String -LiteralPath $recordSource -CaseSensitive -Pattern 'Quickshell\.env\(\s*["''](?:HOME|XDG_)|Paths\.(state|cache|notifimagecache)|Hypr|CUtils|saveItem')
 $facadePathFallbacks = @(Select-String -LiteralPath $facadeSource -CaseSensitive -Pattern 'Quickshell\.env\(\s*["''](?:HOME|XDG_)|Paths\.(state|cache|notifimagecache)')
 $serviceImageCache = @(Select-String -LiteralPath $serviceSource -CaseSensitive -Pattern 'notifimagecache')
+# The image cache was removed entirely: no cache pool, queue, prune, quota,
+# listing or file copy/deletion may remain in the staged service, record or
+# facade, and the writer component must stay deleted.
+$cacheCode = @(Select-String -LiteralPath $serviceSource, $recordSource, $facadeSource -CaseSensitive -Pattern 'imageCache|ImageCache|copyFile|deleteFile|FolderListModel|CUtils')
+$cacheWriterExists = Test-Path -LiteralPath (Join-Path $repoRoot 'windows\services\notifications\NotifImageCache.qml')
 # The wrapper must set mirroring false at construction and must never request
 # notification access or re-enable mirroring. The facade must not call the
 # request invokable either.
@@ -85,7 +90,8 @@ $passed = -not $timedOut -and $process.ExitCode -eq 0 -and $match.Success -and
     $hashMismatch.Count -eq 0 -and $nativeImports.Count -eq 0 -and
     $servicePathFallbacks.Count -eq 0 -and $recordPathFallbacks.Count -eq 0 -and
     $facadePathFallbacks.Count -eq 0 -and
-    $serviceImageCache.Count -eq 0 -and $mirrorSetting.Count -eq 1 -and
+    $serviceImageCache.Count -eq 0 -and $cacheCode.Count -eq 0 -and
+    -not $cacheWriterExists -and $mirrorSetting.Count -eq 1 -and
     $mirrorEnabled.Count -eq 0 -and $accessRequest.Count -eq 0 -and
     $serviceText -notmatch 'NotificationServer' -and
     $recordText -notmatch 'NotificationServer' -and
@@ -98,6 +104,8 @@ $result = [ordered]@{
     recordPathFallbacks = @($recordPathFallbacks)
     facadePathFallbacks = @($facadePathFallbacks)
     serviceImageCacheReferences = @($serviceImageCache)
+    cacheCodeReferences = @($cacheCode)
+    cacheWriterExists = $cacheWriterExists
     mirrorSetting = @($mirrorSetting)
     mirrorEnabled = @($mirrorEnabled)
     accessRequests = @($accessRequest)
@@ -110,6 +118,8 @@ $result = [ordered]@{
         recordNeverConstructsServer = $recordText -notmatch 'NotificationServer'
         facadeImportsNoPaths = $facadePathFallbacks.Count -eq 0
         serviceUsesNoUpstreamImageCache = $serviceImageCache.Count -eq 0
+        noNotificationImageCacheCode = $cacheCode.Count -eq 0
+        imageCacheWriterRemoved = -not $cacheWriterExists
         serviceNeverConstructsServer = $serviceText -notmatch 'NotificationServer'
         wrapperMirroringFalseAtConstruction = $mirrorSetting.Count -eq 1
         wrapperNeverEnablesMirroring = $mirrorEnabled.Count -eq 0

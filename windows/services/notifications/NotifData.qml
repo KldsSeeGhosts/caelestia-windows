@@ -2,10 +2,12 @@ import QtQuick
 
 // Windows adaptation of the original services/NotifData.qml record consumed by
 // modules/notifications/*. It is a pure QtObject: no Quickshell import, no
-// compositor fullscreen query, no hidden native image-cache window and no
-// process call. NotificationsService injects service, expiry configuration and
-// the source notification; the facade owns persistence and any host-provided
-// image cache.
+// compositor fullscreen query, no image copy or cache window and no process
+// call. NotificationsService injects service, expiry configuration and the
+// source notification; the facade owns persistence. A notification image is
+// used only when the service accepts it as an image-provider URL or as a file
+// inside the staged shell assets directory; otherwise it stays empty and the
+// original card shows its fallback icon.
 //
 // close() keeps the original hover lock contract: a locked card is marked
 // closed but is only removed (and only then dismissed) when the last lock is
@@ -37,9 +39,6 @@ QtObject {
     property var actions: []
     property var historicalActions: []
     property bool local: false
-    property bool imageCachePending: false
-    property bool imageCacheDropped: false
-    property string imageCacheError: ""
     property bool imageSourceRejected: false
     property string imageSourceError: ""
     property bool hasFullscreen: false
@@ -117,15 +116,15 @@ QtObject {
 
     // The service owns the single source-trust decision. A rejected source is
     // dropped from this record entirely, so the original card shows its
-    // existing fallback icon and no writer is ever pointed at it. Accepted
-    // local sources are replaced by their canonical path.
+    // existing fallback icon and no file is ever opened. An accepted source is
+    // the validated UI URL: image:// for a provider, file:/// for a staged
+    // asset.
     function updateImage(source): void {
         const raw = String(source ?? "");
         if (raw === "") {
             record.image = "";
             record.imageSourceRejected = false;
             record.imageSourceError = "";
-            record.imageCachePending = false;
             return;
         }
 
@@ -134,7 +133,6 @@ QtObject {
             record.image = "";
             record.imageSourceRejected = true;
             record.imageSourceError = String(result?.reason ?? "No notification image validator is available.");
-            record.imageCachePending = false;
             record.service?.reportRejectedImageSource(raw, record.imageSourceError);
             return;
         }
@@ -142,7 +140,6 @@ QtObject {
         record.image = result.canonical;
         record.imageSourceRejected = false;
         record.imageSourceError = "";
-        record.imageCachePending = record.service?.needsImageCache(record) ?? false;
     }
 
     function syncActions(): void {
@@ -257,8 +254,6 @@ QtObject {
             if (!record.notification)
                 return;
             record.updateImage(record.notification.image);
-            if (record.imageCachePending)
-                record.service?.scheduleImageCache(record);
         }
 
         function onExpireTimeoutChanged(): void {

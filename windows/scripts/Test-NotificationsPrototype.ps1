@@ -14,7 +14,6 @@ $records = New-Object Collections.Generic.List[object]
 $failure = $null
 $profile = Join-Path $BuildRoot 'notifications-prototype-profile'
 $historyPath = Join-Path $profile 'state\notifs.json'
-$imageCachePath = Join-Path $profile 'cache\notifs'
 # These are test-owned paths. The ordinary user profile is never read or
 # written; the legacy path is measured only to prove it did not change.
 $legacyHistory = Join-Path $env:USERPROFILE '.local\state\caelestia\notifs.json'
@@ -66,7 +65,6 @@ function Assert-Common($State, [string]$Mode) {
         Assert ($State.dockLoaded -eq $true) 'Local mode did not load the original notification dock.'
         Assert ($State.pathConfined -eq $true) 'Local mode did not report confined paths.'
         Assert ($State.historyInsideProfile -eq $true) 'History path is outside the isolated profile.'
-        Assert ($State.cacheInsideProfile -eq $true) 'Image cache is outside the isolated profile.'
         Assert ($State.systemNotificationAccess -eq 0) 'Local mode changed system notification access.'
         Assert ($State.ownership -eq 'unknown') 'Unexpected native ownership was invented.'
     }
@@ -90,7 +88,6 @@ try {
     # Start from an empty history in the test-owned profile so the first local
     # run is a real arrival rather than a restored record.
     Remove-Item -LiteralPath $historyPath -Force -ErrorAction SilentlyContinue
-    Remove-Item -LiteralPath $imageCachePath -Recurse -Force -ErrorAction SilentlyContinue
 
     $screenCount = $beforeDesktop.monitors.Count
     Assert ($screenCount -gt 0) 'No measured monitor available.'
@@ -205,7 +202,6 @@ $summary = [ordered]@{
     legacyHistory = $legacyHistory
     legacyHistoryBefore = $beforeLegacy
     legacyHistoryAfter = $afterLegacy
-    imageCachePath = $imageCachePath
     measurementSources = @('Get-DesktopState.ps1', 'Test-NotificationService.ps1', 'Test-NotificationsPrototype.ps1') | ForEach-Object {
         [ordered]@{ source = "windows/scripts/$_"; sha256 = (Get-FileHash -LiteralPath (Join-Path $PSScriptRoot $_)).Hash }
     }

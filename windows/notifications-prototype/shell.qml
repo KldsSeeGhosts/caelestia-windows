@@ -75,7 +75,6 @@ ShellRoot {
     function notificationState(): var {
         const profile = Notifs.profileRoot.toLowerCase();
         const history = Notifs.historyPath.toLowerCase();
-        const cache = Notifs.imageCacheDirectory.toLowerCase();
         const posted = root.postedId > 0
             ? (Notifs.liveRecordForNotificationId(root.postedId)
                 ?? (root.postedRecordId !== "" ? Notifs.findRecordById(root.postedRecordId) : null))
@@ -99,9 +98,7 @@ ShellRoot {
             pathConfined: Notifs.pathConfined,
             pathError: Notifs.pathError,
             historyPath: Notifs.historyPath,
-            imageCacheDirectory: Notifs.imageCacheDirectory,
             historyInsideProfile: profile !== "" && history.startsWith(profile + "/"),
-            cacheInsideProfile: profile !== "" && cache.startsWith(profile + "/"),
             listCount: Notifs.list.length,
             popupCount: Notifs.popups.length,
             notClosedCount: Notifs.notClosed.length,
@@ -124,14 +121,9 @@ ShellRoot {
             unconfirmedDeliveries: Notifs.unconfirmedDeliveries,
             confirmedDeliveries: Notifs.confirmedDeliveries,
             deliveryConfirmation: Notifs.deliveryConfirmation,
+            lastSendRefusal: Notifs.lastSendRefusal,
             rejectedImageSources: Notifs.rejectedImageSources,
             lastImageSourceError: Notifs.lastImageSourceError,
-            imageCacheErrors: Notifs.imageCacheErrors,
-            imageCacheDropped: Notifs.imageCacheDropped,
-            imageCacheEvicted: Notifs.imageCacheEvicted,
-            imageCachePruned: Notifs.imageCachePruned,
-            activeImageWriters: Notifs.activeImageWriters,
-            queuedImageWriters: Notifs.queuedImageWriters,
             uiLoaded: contentHost.item !== null,
             dockLoaded: dockHost.item !== null,
             contentWidth: contentHost.item?.width ?? 0,
@@ -181,8 +173,8 @@ ShellRoot {
                 root.fail("local mode did not load the isolated history");
                 return;
             }
-            if (!state.pathConfined || !state.historyInsideProfile || !state.cacheInsideProfile) {
-                root.fail("notification history/image cache is outside the isolated profile");
+            if (!state.pathConfined || !state.historyInsideProfile) {
+                root.fail("notification history is outside the isolated profile");
                 return;
             }
             if (!state.uiLoaded || !state.dockLoaded) {
@@ -268,7 +260,7 @@ ShellRoot {
             }
         } else {
             if (state.status !== "local" || !state.pathConfined
-                    || !state.historyInsideProfile || !state.cacheInsideProfile) {
+                    || !state.historyInsideProfile) {
                 root.fail("local service state changed during smoke");
                 return;
             }
@@ -437,19 +429,6 @@ ShellRoot {
                             utilitiesPanel: root.utilitiesPlaceholder
                         }
                     }
-
-                    // Upstream cached remote notification images through a
-                    // hidden native window. The service owns the bounded FIFO
-                    // writer pool: this fixed set of writers is bound to its
-                    // slots, and each slot is only handed a source the service
-                    // has already validated and confined.
-                    Repeater {
-                        model: Notifs.enabled ? Notifs.service.maxConcurrentImageWriters : 0
-                        delegate: NotifImageCache {
-                            record: Notifs.enabled ? Notifs.imageCacheSlot(index) : null
-                            service: Notifs.enabled ? Notifs.service : null
-                        }
-                    }
                 }
             }
         }
@@ -495,6 +474,14 @@ ShellRoot {
                     return;
                 root.initialNotificationState = state;
                 if (Notifs.enabled) {
+                    // A replacement send has no local replace path in this
+                    // slice. It must be refused before notifySend rather than
+                    // left pending and reported as forwarded/unconfirmed.
+                    const refused = Notifs.postLocalTest(root.testSummary, root.testBody, ["-r", "999"]);
+                    if (refused !== 0 || Notifs.lastSendRefusal.indexOf("Replacement") < 0) {
+                        root.fail("a replacement send was not refused: " + Notifs.lastSendRefusal);
+                        return;
+                    }
                     const args = root.runB
                         ? ["-a", "Caelestia Windows", "-t", "1200", "-A", "default=Open"]
                         : ["-a", "Caelestia Windows", "-t", "60000", "-A", "default=Open"];
