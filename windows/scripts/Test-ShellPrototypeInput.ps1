@@ -54,6 +54,15 @@ function Wait-State([scriptblock]$Condition, [string]$Message, [int]$Timeout = 3
 function Assert([bool]$Value, [string]$Message) {
     if (-not $Value) { throw $Message }
 }
+function Wait-Foreground([int]$Expected) {
+    $deadline = [DateTime]::UtcNow.AddSeconds(2)
+    do {
+        $foreground = $native::ForegroundProcess()
+        if ($foreground -eq $Expected) { return }
+        Start-Sleep -Milliseconds 20
+    } while ([DateTime]::UtcNow -lt $deadline)
+    throw "Expected foreground PID $Expected, observed $foreground."
+}
 function Record([string]$Scenario, $State = (Get-State), $Details = $null) {
     $record = [ordered]@{
         scenario = $Scenario; timestampUtc = [DateTime]::UtcNow.ToString('o')
@@ -209,8 +218,10 @@ try {
         Record "$prefix-keyboard" $state @{ initialIcon = $initialIcon; downIcon = $downIcon }
         $native::Key(0x0d) # Return is consumed by the unavailable session adapter.
         $native::Key(0x1b)
-        $state = Wait-State { param($s) -not $s.sessionVisible -and $s.focusStatus -eq 'restore-succeeded' } 'Escape/focus return failed'
-        Assert ($native::ForegroundProcess() -eq $fixture.Id) 'Escape did not restore fixture foreground'
+        $state = Wait-State { param($s) -not $s.sessionVisible -and $s.focusStatus -in @('restore-succeeded', 'restore-requested') } 'Escape/focus return failed'
+        # Cross-thread SetForegroundWindow can complete after the request returns.
+        # Observe the real foreground; do not retry activation or trust the status alone.
+        Wait-Foreground $fixture.Id
         Record "$prefix-escape-focus-return" $state
 
         $state = Open-Session
