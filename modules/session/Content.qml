@@ -89,10 +89,26 @@ Column {
 
         required property list<string> command
 
+        // Windows adaptation: the native Linux SessionManager has neither hook,
+        // so upstream behavior (enabled buttons and detached fallback when exec
+        // declines a command) is preserved. The Windows adapter sets
+        // sessionActionGating and allowDetachedFallback=false; unavailable
+        // actions then use the existing disabled styling and a declined command
+        // can never reach execDetached.
+        readonly property var sessionAction: SessionManager.sessionActionGating === true
+            && SessionManager.sessionAction ? SessionManager.sessionAction(command) : null
+
         function exec(): void {
-            if (!SessionManager.exec(command))
-                Quickshell.execDetached(command);
+            if (button.disabled)
+                return;
+            if (SessionManager.exec(command))
+                return;
+            if (SessionManager.allowDetachedFallback === false)
+                return;
+            Quickshell.execDetached(command);
         }
+
+        disabled: sessionAction !== null && sessionAction.available !== true
 
         implicitWidth: Tokens.sizes.session.button
         implicitHeight: Tokens.sizes.session.button

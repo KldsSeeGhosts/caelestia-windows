@@ -513,3 +513,23 @@ root to deduplicate against Linear, each enabled and validated independently:
     unknown commands are consumed without detached fallback, secure Windows lock
     is used, and unsupported sleep/hibernate/privilege-denied actions fail
     clearly. Destructive actions require a separately agreed live test.
+    **Progress:** implemented as ERM-507's bounded slice on
+    `t3/windows-session-actions`: a pure
+    [SessionService](../services/session/SessionService.qml) with an explicit
+    allowlist (secure lock, logout, shutdown/poweroff, reboot, suspend,
+    capability-gated hibernate, firmware reboot), `requested`-not-`succeeded`
+    results, and consumed-unsupported outcomes for arbitrary/unknown commands.
+    The [native facade](../services/session/NativeSessionBackend.qml) is loaded
+    only after `CAELESTIA_WINDOWS_SESSION=1`; dispatch additionally requires
+    `CAELESTIA_WINDOWS_SESSION_ACTIONS=1`. The localized
+    [session](../../modules/session/Content.qml) and
+    [launcher](../../modules/launcher/services/Actions.qml) hooks preserve Linux
+    fallback behavior and block detached execution in the Windows adapter.
+    Destructive actions stay behind an explicit confirmation gate; the original
+    UI has no confirmation flow at this revision, so they remain disabled
+    instead of being auto-confirmed. The backend methods return void and only log
+    failures (`windows/deps/quickshell/src/windows/system/session.cpp:45-115`).
+    Native Disabled/Observe smoke never invokes an action; no real session action
+    was executed. [Evidence](../validation/2026-10-25-m2-session/README.md)
+    covers fixtures, two native modes and shared regressions. Real
+    privilege-denied behavior and destructive live acceptance remain untested.

@@ -63,6 +63,15 @@ For the next development session, start with [HANDOFF.md](HANDOFF.md).
   [apps evidence](validation/2026-10-25-m2-apps/README.md) records the fixture
   and read-only limits, the backend scan/command gaps and the untested
   interactive path. ERM-505 remains open.
+- A default-off [Windows session service](services/session/README.md) maps only
+  an explicit allowlist of lock/logout/shutdown/reboot/suspend/hibernate/
+  firmware commands, consumes unknown commands without a detached fallback, and
+  exposes requested-not-succeeded results. Observation and dispatch are
+  separate opt-ins; smoke forces dispatch off and destructive actions require
+  an explicit confirmation the original UI does not yet supply. Native
+  Disabled/Observe runs never invoke a session action.
+  [Session evidence](validation/2026-10-25-m2-session/README.md) records the
+  fixtures, both native modes and shared regressions.
 
 ## Checkout and inspect
 
@@ -92,8 +101,10 @@ these commands. The submodule command downloads source only.
 `CAELESTIA_PORTABLE_UI=ON` builds `Caelestia`, `Settings`, `Components`, `Config`,
 `State`, `Blobs`, `I18n`, and `Shaders`, plus `Caelestia.Windows` on Windows.
 It excludes the calculator, Models, upstream Services, Images, and Multimedia.
-The isolated session service is an unavailable QML adapter that consumes
-actions without executing them. Linux retains its default module set.
+The isolated session service defaults to unavailable; opt-in observation loads
+`Quickshell.Windows.Session` for capability reporting only, and a separate
+opt-in permits allowlisted non-destructive dispatch. Unknown commands are
+consumed without detached execution. Linux retains its default module set.
 Windows rejects installation of the unadapted upstream shell.
 
 Windows adaptations include DLL export/import declarations for shared Qt

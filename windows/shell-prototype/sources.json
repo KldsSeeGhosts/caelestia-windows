@@ -29,6 +29,8 @@
   "windows/shell-prototype/adapters/utils/Paths.qml": "utils/Paths.qml",
   "windows/shell-prototype/adapters/Caelestia/Services/qmldir": "imports/Caelestia/Services/qmldir",
   "windows/shell-prototype/adapters/Caelestia/Services/SessionManager.qml": "imports/Caelestia/Services/SessionManager.qml",
+  "windows/services/session/SessionService.qml": "imports/Caelestia/Services/SessionService.qml",
+  "windows/services/session/NativeSessionBackend.qml": "imports/Caelestia/Services/NativeSessionBackend.qml",
   "windows/shell-prototype/adapters/modules/bar/components/OsIcon.qml": "modules/bar/components/OsIcon.qml",
   "windows/shell-prototype/adapters/modules/bar/components/workspaces/Workspaces.qml": "modules/bar/components/workspaces/Workspaces.qml",
   "windows/shell-prototype/adapters/modules/bar/components/ActiveWindow.qml": "modules/bar/components/ActiveWindow.qml",

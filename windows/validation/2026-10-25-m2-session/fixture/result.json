@@ -1,0 +1,37 @@
+﻿{
+    "passed":  true,
+    "timedOut":  false,
+    "exitCode":  0,
+    "fixture":  {
+                    "assertions":  338
+                },
+    "nativeImports":  0,
+    "fallbackPaths":  0,
+    "hashMismatch":  [
+
+                     ],
+    "diagnostics":  [
+
+                    ],
+    "sourceRevision":  "0c54b48d16677ddcc258ede95780c8b035a56d45",
+    "sourceDirty":  false,
+    "qtVersion":  "6.11.2",
+    "runnerSha256":  "24994D434962751713F0C8932B356104B0849572B95765DAD50C13DA6BE3FA20",
+    "command":  "C:\\Users\\Ermin\\AppData\\Local\\caelestia-dev\\Qt\\6.11.2\\msvc2022_64\\bin\\qml.exe",
+    "arguments":  "\"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\session-tests\\session-fixture-20261025-181311-079\\SessionServiceTest.qml\"",
+    "sources":  [
+                    {
+                        "source":  "windows/services/session/SessionService.qml",
+                        "sourceSha256":  "8C6B5A1C4BEE15C4567DB0A15A8A5BBB8A44BC2179C853EDCF883044E69B37E3",
+                        "stagedSha256":  "8C6B5A1C4BEE15C4567DB0A15A8A5BBB8A44BC2179C853EDCF883044E69B37E3"
+                    },
+                    {
+                        "source":  "windows/services/session/SessionServiceTest.qml",
+                        "sourceSha256":  "FE36D7BCFBED9AF07B60213E4A448B5A6BBB44FE8E1354B158D509E39BD69D67",
+                        "stagedSha256":  "FE36D7BCFBED9AF07B60213E4A448B5A6BBB44FE8E1354B158D509E39BD69D67"
+                    }
+                ],
+    "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\session-tests\\session-fixture-20261025-181311-079",
+    "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\session-fixture-20261025-181311-079.stdout.log",
+    "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\session-fixture-20261025-181311-079.stderr.log"
+}
