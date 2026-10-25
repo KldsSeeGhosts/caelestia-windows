@@ -4,6 +4,10 @@
 
 M0/M1 are complete and PR #3 is merged. Current topic branch:
 `windows/m2-audio-services`, based on merged `0e0f9fd6`.
+[PR #4](https://github.com/KldsSeeGhosts/caelestia-windows/pull/4) and backend
+PR #1 are open and ready for review, not merged. Backend GitHub CI could not
+start because GitHub reports an account billing/spending-limit block. Local
+native checks pass; no remote CI pass is claimed.
 The first M2 implementation is the
 [separate bounded audio prototype](audio-prototype/README.md).
 ERM-495 is the complete [service source audit](audits/M2-SERVICES.md);

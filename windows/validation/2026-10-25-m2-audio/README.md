@@ -5,6 +5,12 @@ backend capability/error patch are implemented. This archive validates native
 **read-only observation**, original audio UI loading, disabled construction,
 mutation guards and deterministic injected failures. It does not complete M2.
 
+[Root PR #4](https://github.com/KldsSeeGhosts/caelestia-windows/pull/4) and
+backend PR #1 are open for review. The backend's inherited GitHub lint/build
+jobs did not start: their check annotations report an account payment or
+spending-limit block. They have no job steps/logs to assess. This archive
+provides local native validation, not remote CI or Linux certification.
+
 ## Sources and runtime
 
 - Root source: clean `fb6665ab4c901cf60871b4847d7e62d3e6777742`.
