@@ -1,0 +1,68 @@
+﻿{
+    "passed":  true,
+    "timedOut":  false,
+    "exitCode":  0,
+    "battery":  {
+                    "name":  "battery",
+                    "passed":  true,
+                    "timedOut":  false,
+                    "exitCode":  0,
+                    "fixture":  {
+                                    "assertions":  128
+                                },
+                    "minimumAssertions":  128,
+                    "command":  "C:\\Users\\Ermin\\AppData\\Local\\caelestia-dev\\Qt\\6.11.2\\msvc2022_64\\bin\\qml.exe",
+                    "arguments":  "\"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\battery-tests\\battery-fixture-20261025-182102-823\\BatteryServiceTest.qml\"",
+                    "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\battery-fixture-20261025-182102-823.battery.stdout.log",
+                    "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\battery-fixture-20261025-182102-823.battery.stderr.log"
+                },
+    "profiles":  {
+                     "name":  "profiles",
+                     "passed":  true,
+                     "timedOut":  false,
+                     "exitCode":  0,
+                     "fixture":  {
+                                     "assertions":  96
+                                 },
+                     "minimumAssertions":  90,
+                     "command":  "C:\\Users\\Ermin\\AppData\\Local\\caelestia-dev\\Qt\\6.11.2\\msvc2022_64\\bin\\qml.exe",
+                     "arguments":  "\"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\battery-tests\\battery-fixture-20261025-182102-823\\PowerProfilesServiceTest.qml\"",
+                     "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\battery-fixture-20261025-182102-823.profiles.stdout.log",
+                     "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\battery-fixture-20261025-182102-823.profiles.stderr.log"
+                 },
+    "fixture":  {
+                    "assertions":  128
+                },
+    "nativeImports":  0,
+    "hashMismatch":  [
+
+                     ],
+    "sourceRevision":  "59cf771519826413e2cc504d3d6cdbf16defb57d",
+    "sourceDirty":  false,
+    "qtVersion":  "6.11.2",
+    "runnerSha256":  "24994D434962751713F0C8932B356104B0849572B95765DAD50C13DA6BE3FA20",
+    "command":  "C:\\Users\\Ermin\\AppData\\Local\\caelestia-dev\\Qt\\6.11.2\\msvc2022_64\\bin\\qml.exe",
+    "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\battery-tests\\battery-fixture-20261025-182102-823",
+    "sources":  [
+                    {
+                        "source":  "windows/services/battery/BatteryService.qml",
+                        "sourceSha256":  "6D548EC91299476175DF9567E1770B26DE172BC86CE110794CCF3DBAE3D30C68",
+                        "stagedSha256":  "6D548EC91299476175DF9567E1770B26DE172BC86CE110794CCF3DBAE3D30C68"
+                    },
+                    {
+                        "source":  "windows/services/battery/BatteryServiceTest.qml",
+                        "sourceSha256":  "293E71A0EF9891EEBBE8625C7846E34DD83FF7C72EC433391398FC7CFF85F312",
+                        "stagedSha256":  "293E71A0EF9891EEBBE8625C7846E34DD83FF7C72EC433391398FC7CFF85F312"
+                    },
+                    {
+                        "source":  "windows/services/battery/PowerProfilesService.qml",
+                        "sourceSha256":  "6F2A3DB0478CD175B038116F6CDBFDCA6D3F9E06085605E059613DB4A7E96A36",
+                        "stagedSha256":  "6F2A3DB0478CD175B038116F6CDBFDCA6D3F9E06085605E059613DB4A7E96A36"
+                    },
+                    {
+                        "source":  "windows/services/battery/PowerProfilesServiceTest.qml",
+                        "sourceSha256":  "FD0AF0C07CC43349DD05D2F04A908CCB679F0C288A85F7D7D40EA6F8D53F9E57",
+                        "stagedSha256":  "FD0AF0C07CC43349DD05D2F04A908CCB679F0C288A85F7D7D40EA6F8D53F9E57"
+                    }
+                ]
+}

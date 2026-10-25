@@ -241,7 +241,11 @@ effective overlay read-only; it never selects a profile.
 Raw results are under
 `windows/.local/build/battery-validation-<timestamp>/result.json`.
 
-[Final acceptance](../validation/2026-10-25-m2-battery/README.md) records the
-earlier revision's clean-source results and limits. The capability contract in
-this README needs a new acceptance run and archive after the backend pin is
-reviewed; this document does not extend that archive's claims.
+[Power-profile acceptance](../validation/2026-10-25-m2-power-profiles/README.md)
+records clean `59cf7715`/backend `14010429`: 128 unchanged battery assertions,
+96 profile assertions, native Disabled/ReadOnly/Profiles smoke at 150%/175%,
+and unchanged base/overlay schemes. [Final read-only
+acceptance](../validation/2026-10-25-m2-battery/README.md) retains the earlier
+revision's clean-source results and limits. Native profile writes, native
+denied writes, PowerSaver observation and battery-present hardware remain
+untested.

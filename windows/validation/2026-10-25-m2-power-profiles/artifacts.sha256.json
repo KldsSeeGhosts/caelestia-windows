@@ -1,0 +1,462 @@
+﻿[
+    {
+        "path":  "archive.ps1",
+        "sha256":  "960A9B7E6E4875AFBA7F6F047462BEBB5681D1A0991C6A42B0CFB94A09F90D47",
+        "bytes":  4640
+    },
+    {
+        "path":  "audio-regression/audio-after.json",
+        "sha256":  "9F10CDDE606001762BA8314C6457C06A35BCBA224AF6FC443AA02319D54BA654",
+        "bytes":  3516
+    },
+    {
+        "path":  "audio-regression/audio-before.json",
+        "sha256":  "9F10CDDE606001762BA8314C6457C06A35BCBA224AF6FC443AA02319D54BA654",
+        "bytes":  3516
+    },
+    {
+        "path":  "audio-regression/audio-disabled-screen0/capture.png",
+        "sha256":  "5FDD7669543E0C0AE95B7F469520EBF338632DD92CE1572ED4E0A373AB770DF2",
+        "bytes":  37153
+    },
+    {
+        "path":  "audio-regression/audio-disabled-screen0/result.json",
+        "sha256":  "D12CB42B0B3068A627A987FC3464CC59EDCFF69079D2FA480C45BADC03A3A9AA",
+        "bytes":  5232
+    },
+    {
+        "path":  "audio-regression/audio-disabled-screen0/sources.json",
+        "sha256":  "C94A8D3D47D8BD65665774A00FF7E20E8A404E91F1A7A7608D13086A7332EA50",
+        "bytes":  18198
+    },
+    {
+        "path":  "audio-regression/audio-disabled-screen0/stderr.log",
+        "sha256":  "F01A374E9C81E3DB89B3A42940C4D6A5447684986A1296E42BF13F196EED6295",
+        "bytes":  5
+    },
+    {
+        "path":  "audio-regression/audio-disabled-screen0/stdout.log",
+        "sha256":  "068B313EEA065C162AB4E36C2C51C962F327E309DDE77C563DEA3FEBA7B9A33E",
+        "bytes":  2585
+    },
+    {
+        "path":  "audio-regression/audio-disabled-screen1/capture.png",
+        "sha256":  "2F57D0FB9892431391A6E8B1422D100DA074548799B4B829B2C10716D0A00471",
+        "bytes":  44068
+    },
+    {
+        "path":  "audio-regression/audio-disabled-screen1/result.json",
+        "sha256":  "E039548528557EEB0C5BD00775ECBB8C2C2D48EEEF167CDFB32903F501BAE20B",
+        "bytes":  5236
+    },
+    {
+        "path":  "audio-regression/audio-disabled-screen1/sources.json",
+        "sha256":  "C94A8D3D47D8BD65665774A00FF7E20E8A404E91F1A7A7608D13086A7332EA50",
+        "bytes":  18198
+    },
+    {
+        "path":  "audio-regression/audio-disabled-screen1/stderr.log",
+        "sha256":  "F01A374E9C81E3DB89B3A42940C4D6A5447684986A1296E42BF13F196EED6295",
+        "bytes":  5
+    },
+    {
+        "path":  "audio-regression/audio-disabled-screen1/stdout.log",
+        "sha256":  "6744D5D9A070943523586994B53964911B0A2D6F3CA711451C4C1638CE0E11FE",
+        "bytes":  2591
+    },
+    {
+        "path":  "audio-regression/audio-readonly-screen0/capture.png",
+        "sha256":  "C037FF8A74AF19E5832788E8CC831D6308741EA210A75848AA14AFB49248F006",
+        "bytes":  83665
+    },
+    {
+        "path":  "audio-regression/audio-readonly-screen0/result.json",
+        "sha256":  "114BAD45571C73785092AA4897BD4B5FCEAD7D78FED04E776F7E398F6ABA5E43",
+        "bytes":  18344
+    },
+    {
+        "path":  "audio-regression/audio-readonly-screen0/sources.json",
+        "sha256":  "C94A8D3D47D8BD65665774A00FF7E20E8A404E91F1A7A7608D13086A7332EA50",
+        "bytes":  18198
+    },
+    {
+        "path":  "audio-regression/audio-readonly-screen0/stderr.log",
+        "sha256":  "F01A374E9C81E3DB89B3A42940C4D6A5447684986A1296E42BF13F196EED6295",
+        "bytes":  5
+    },
+    {
+        "path":  "audio-regression/audio-readonly-screen0/stdout.log",
+        "sha256":  "C1C62C1AF9A92B9EAA559CE6494BA22560578DD63C4A6BD9E842E3FA35D407FE",
+        "bytes":  5915
+    },
+    {
+        "path":  "audio-regression/audio-readonly-screen1/capture.png",
+        "sha256":  "DAF5F7176144917A907008FFD1D6DF0F935B6125068C752A5814F474A505F86C",
+        "bytes":  98592
+    },
+    {
+        "path":  "audio-regression/audio-readonly-screen1/result.json",
+        "sha256":  "84BDE35ACDED8919DA31B7EDF56EFD80418C92CF08E2E00A53F41B30CD4C31B2",
+        "bytes":  18348
+    },
+    {
+        "path":  "audio-regression/audio-readonly-screen1/sources.json",
+        "sha256":  "C94A8D3D47D8BD65665774A00FF7E20E8A404E91F1A7A7608D13086A7332EA50",
+        "bytes":  18198
+    },
+    {
+        "path":  "audio-regression/audio-readonly-screen1/stderr.log",
+        "sha256":  "F01A374E9C81E3DB89B3A42940C4D6A5447684986A1296E42BF13F196EED6295",
+        "bytes":  5
+    },
+    {
+        "path":  "audio-regression/audio-readonly-screen1/stdout.log",
+        "sha256":  "C683D20225BCF739442BC763EB0600D91664EF821F8698A62FF28499537EEC2F",
+        "bytes":  5921
+    },
+    {
+        "path":  "audio-regression/desktop-after.json",
+        "sha256":  "2C4163DBED7EA5561B4832322E26A914DEEC6FF6388DABE689673DD3FC999F6D",
+        "bytes":  4676
+    },
+    {
+        "path":  "audio-regression/desktop-before.json",
+        "sha256":  "4455AD7C175D9D07D93E620BF80AE19D8B09A069C1DF8A8C42D3484E1AC2DAE4",
+        "bytes":  4676
+    },
+    {
+        "path":  "audio-regression/fixture/AudioService.qml",
+        "sha256":  "BBFE70212955B36AEDCEF84BB770EB492AC3BA78AEB4E74439BEAF39A67197FD",
+        "bytes":  9187
+    },
+    {
+        "path":  "audio-regression/fixture/AudioServiceTest.qml",
+        "sha256":  "0728AE5F356F2FACB5DEF99B917DBB644974A88F816CB719F39D4BE23C38669F",
+        "bytes":  20120
+    },
+    {
+        "path":  "audio-regression/fixture/result.json",
+        "sha256":  "84DF1729A7E8FFFF23603A6EBBBD7D38FF705438160285B48F7DE0523B51823D",
+        "bytes":  1733
+    },
+    {
+        "path":  "audio-regression/fixture/stderr.log",
+        "sha256":  "F38EB926E384D315DC7FB31C69D8723DB4B68D6E10D67FA30725C023D5DE802D",
+        "bytes":  59
+    },
+    {
+        "path":  "audio-regression/fixture/stdout.log",
+        "sha256":  "F01A374E9C81E3DB89B3A42940C4D6A5447684986A1296E42BF13F196EED6295",
+        "bytes":  5
+    },
+    {
+        "path":  "audio-regression/m1-regression/capture.png",
+        "sha256":  "1C7E5943CC55D2157F1019116ACC782FCF113AD3B7BB2C81C3FFB89C59F7C455",
+        "bytes":  79394
+    },
+    {
+        "path":  "audio-regression/m1-regression/result.json",
+        "sha256":  "AF7D2FD675F0DBFC61799F740F58CE24E1C15BB81C7A254BCC11C9EEA2DD3ED4",
+        "bytes":  2410
+    },
+    {
+        "path":  "audio-regression/m1-regression/sources.json",
+        "sha256":  "786ACFAE51A0D75341B24DC68DE73E9A140163142BDA9C8D77226C8A8EF186AD",
+        "bytes":  15320
+    },
+    {
+        "path":  "audio-regression/m1-regression/stderr.log",
+        "sha256":  "F01A374E9C81E3DB89B3A42940C4D6A5447684986A1296E42BF13F196EED6295",
+        "bytes":  5
+    },
+    {
+        "path":  "audio-regression/m1-regression/stdout.log",
+        "sha256":  "733DCD4AA587D1965D2D9404FD7CCF338A97377908FBAA8FA4C1C0266862C5D5",
+        "bytes":  2380
+    },
+    {
+        "path":  "audio-regression/matrix.json",
+        "sha256":  "87CBCFE0B0BD4E9FF096E1EAF10289CC66812770A403310B112E18FA97A05DB4",
+        "bytes":  79526
+    },
+    {
+        "path":  "battery-disabled-screen0/capture.png",
+        "sha256":  "29ACAD117E76030DB44B74D7624AD2D55B9E579E174F06F6CD12CF0C70506CB5",
+        "bytes":  19419
+    },
+    {
+        "path":  "battery-disabled-screen0/result.json",
+        "sha256":  "C5756FCE4E56F82A120AEDD188BC706692E0580202F5FB20D79EC4AE38D8C34C",
+        "bytes":  8508
+    },
+    {
+        "path":  "battery-disabled-screen0/sources.json",
+        "sha256":  "90406ECF9ACEC7D695DE3A5608464885772E0A3561053CA53ADF6C59112354BC",
+        "bytes":  18188
+    },
+    {
+        "path":  "battery-disabled-screen0/stderr.log",
+        "sha256":  "F01A374E9C81E3DB89B3A42940C4D6A5447684986A1296E42BF13F196EED6295",
+        "bytes":  5
+    },
+    {
+        "path":  "battery-disabled-screen0/stdout.log",
+        "sha256":  "99F85314346EDB0452B5D5FC3BF794BC2C653F874390FE1A02244E0469F16B24",
+        "bytes":  3731
+    },
+    {
+        "path":  "battery-disabled-screen1/capture.png",
+        "sha256":  "D249199ECB39ED86C5CAB3DF04B8D77ACD48C4FB2DE404E4036C7756181566D1",
+        "bytes":  22971
+    },
+    {
+        "path":  "battery-disabled-screen1/result.json",
+        "sha256":  "1B2E50840EF2D3AF91321955F80FF1BD29A7C5993E9C1641DE5A2A815F15C1FF",
+        "bytes":  8512
+    },
+    {
+        "path":  "battery-disabled-screen1/sources.json",
+        "sha256":  "90406ECF9ACEC7D695DE3A5608464885772E0A3561053CA53ADF6C59112354BC",
+        "bytes":  18188
+    },
+    {
+        "path":  "battery-disabled-screen1/stderr.log",
+        "sha256":  "F01A374E9C81E3DB89B3A42940C4D6A5447684986A1296E42BF13F196EED6295",
+        "bytes":  5
+    },
+    {
+        "path":  "battery-disabled-screen1/stdout.log",
+        "sha256":  "DC500C36DBFE75E8943AAE9C6615416BBE5EA729E4FFFDF2A4DC864C13EEFCF7",
+        "bytes":  3737
+    },
+    {
+        "path":  "battery-profiles-screen0/capture.png",
+        "sha256":  "F3194CC3B95833082DABC8CADC77E258E0E1F2C51DC143BB2437844FEF578511",
+        "bytes":  63014
+    },
+    {
+        "path":  "battery-profiles-screen0/result.json",
+        "sha256":  "9435A215FDA1F23E4CF9C91F99D6DB35029A5B9097CCDA9FFC4C33F1CB4557D6",
+        "bytes":  9144
+    },
+    {
+        "path":  "battery-profiles-screen0/sources.json",
+        "sha256":  "90406ECF9ACEC7D695DE3A5608464885772E0A3561053CA53ADF6C59112354BC",
+        "bytes":  18188
+    },
+    {
+        "path":  "battery-profiles-screen0/stderr.log",
+        "sha256":  "F01A374E9C81E3DB89B3A42940C4D6A5447684986A1296E42BF13F196EED6295",
+        "bytes":  5
+    },
+    {
+        "path":  "battery-profiles-screen0/stdout.log",
+        "sha256":  "27713C89DF558920806BB53D09855C64BAC998897C5F9515F654FC3708C6CC0E",
+        "bytes":  3921
+    },
+    {
+        "path":  "battery-profiles-screen1/capture.png",
+        "sha256":  "F3C8B12AE21CD4204895CCD7BE0B918382BD34FF1D3362B2987377E18E7F3424",
+        "bytes":  73666
+    },
+    {
+        "path":  "battery-profiles-screen1/result.json",
+        "sha256":  "EDCEDEA748A401CBA664634633DFEB9CC62F23499909F30E40C5CECEEDC832D1",
+        "bytes":  9148
+    },
+    {
+        "path":  "battery-profiles-screen1/sources.json",
+        "sha256":  "90406ECF9ACEC7D695DE3A5608464885772E0A3561053CA53ADF6C59112354BC",
+        "bytes":  18188
+    },
+    {
+        "path":  "battery-profiles-screen1/stderr.log",
+        "sha256":  "F01A374E9C81E3DB89B3A42940C4D6A5447684986A1296E42BF13F196EED6295",
+        "bytes":  5
+    },
+    {
+        "path":  "battery-profiles-screen1/stdout.log",
+        "sha256":  "DA17C92101B4616CAA53290B166CBC01B00F45F888A0637049DF69990FD772BB",
+        "bytes":  3927
+    },
+    {
+        "path":  "battery-readonly-screen0/capture.png",
+        "sha256":  "0B3B6D381A7B3F03BB4725386590305B9F50D9961151939CE24F0175F6FF7F7D",
+        "bytes":  36066
+    },
+    {
+        "path":  "battery-readonly-screen0/result.json",
+        "sha256":  "6A823EFFEFEEF80CE2277D4334340AE3D50FCC4A86DBA9CF7659307B2DBC723F",
+        "bytes":  8492
+    },
+    {
+        "path":  "battery-readonly-screen0/sources.json",
+        "sha256":  "90406ECF9ACEC7D695DE3A5608464885772E0A3561053CA53ADF6C59112354BC",
+        "bytes":  18188
+    },
+    {
+        "path":  "battery-readonly-screen0/stderr.log",
+        "sha256":  "F01A374E9C81E3DB89B3A42940C4D6A5447684986A1296E42BF13F196EED6295",
+        "bytes":  5
+    },
+    {
+        "path":  "battery-readonly-screen0/stdout.log",
+        "sha256":  "CD54F5BBD49E128880C252B33ACBC1FB4882FDCB42E77977A98378A5F44D1A50",
+        "bytes":  3715
+    },
+    {
+        "path":  "battery-readonly-screen1/capture.png",
+        "sha256":  "FBAC7A5549591F22F28473967247B7187A35EFDC3BC8FC7B11D7BC797D80D783",
+        "bytes":  41578
+    },
+    {
+        "path":  "battery-readonly-screen1/result.json",
+        "sha256":  "280BC406ED984168C4805F0D9F41DAB3B96FFCA84D92C94D13260E8671AE843F",
+        "bytes":  8496
+    },
+    {
+        "path":  "battery-readonly-screen1/sources.json",
+        "sha256":  "90406ECF9ACEC7D695DE3A5608464885772E0A3561053CA53ADF6C59112354BC",
+        "bytes":  18188
+    },
+    {
+        "path":  "battery-readonly-screen1/stderr.log",
+        "sha256":  "F01A374E9C81E3DB89B3A42940C4D6A5447684986A1296E42BF13F196EED6295",
+        "bytes":  5
+    },
+    {
+        "path":  "battery-readonly-screen1/stdout.log",
+        "sha256":  "8F421EB359C885319898C38FB1821955983C88F74C6E4C374BABED880575BD89",
+        "bytes":  3721
+    },
+    {
+        "path":  "build/build.json",
+        "sha256":  "3FA201EE45FC755B663FF122090B617D222BBFD99352B18F490B003F0C14FED1",
+        "bytes":  619
+    },
+    {
+        "path":  "desktop-after.json",
+        "sha256":  "9EC4BAD4B05EE34C36C89B35FCBE44708E1B501A64F1DC6765FBB8FFA242EEC6",
+        "bytes":  4676
+    },
+    {
+        "path":  "desktop-before.json",
+        "sha256":  "6D40A21FF53E0AD64AED4934FBE55FCEF4E90359EC4A79314BF0E112C3658006",
+        "bytes":  4676
+    },
+    {
+        "path":  "fixture/battery.stderr.log",
+        "sha256":  "8ACE9815912D051EC528DFB26428726C1DD3DA4659A0C7257BC8841B7E104484",
+        "bytes":  61
+    },
+    {
+        "path":  "fixture/battery.stdout.log",
+        "sha256":  "F01A374E9C81E3DB89B3A42940C4D6A5447684986A1296E42BF13F196EED6295",
+        "bytes":  5
+    },
+    {
+        "path":  "fixture/BatteryService.qml",
+        "sha256":  "6D548EC91299476175DF9567E1770B26DE172BC86CE110794CCF3DBAE3D30C68",
+        "bytes":  6557
+    },
+    {
+        "path":  "fixture/BatteryServiceTest.qml",
+        "sha256":  "293E71A0EF9891EEBBE8625C7846E34DD83FF7C72EC433391398FC7CFF85F312",
+        "bytes":  18729
+    },
+    {
+        "path":  "fixture/PowerProfilesService.qml",
+        "sha256":  "6F2A3DB0478CD175B038116F6CDBFDCA6D3F9E06085605E059613DB4A7E96A36",
+        "bytes":  11673
+    },
+    {
+        "path":  "fixture/PowerProfilesServiceTest.qml",
+        "sha256":  "FD0AF0C07CC43349DD05D2F04A908CCB679F0C288A85F7D7D40EA6F8D53F9E57",
+        "bytes":  15096
+    },
+    {
+        "path":  "fixture/profiles.stderr.log",
+        "sha256":  "2CF9A12E0835A59FE25C7B347C3381D7D022716E8A72813F9041C72583FFB532",
+        "bytes":  67
+    },
+    {
+        "path":  "fixture/profiles.stdout.log",
+        "sha256":  "F01A374E9C81E3DB89B3A42940C4D6A5447684986A1296E42BF13F196EED6295",
+        "bytes":  5
+    },
+    {
+        "path":  "fixture/result.json",
+        "sha256":  "CA63AB1062B2313601818F5B942C1A209E8127B661CB6581DE2E97E08B771E6D",
+        "bytes":  4094
+    },
+    {
+        "path":  "isolated-shell.json",
+        "sha256":  "6FC8F8B80AF9D45A49A4737AF51B8C43A11B97E1B59A82468F31AB4C779C6F65",
+        "bytes":  874
+    },
+    {
+        "path":  "m1-regression/capture.png",
+        "sha256":  "DEAAF716DF9E4B2BF013774055F3826AAE3AB999345CE0D30838038F094A8AA7",
+        "bytes":  79633
+    },
+    {
+        "path":  "m1-regression/result.json",
+        "sha256":  "9CBDC312C37A5AA59DB5A3C13E374B27F10076378BF79FF5358390BE7C16F7DF",
+        "bytes":  2410
+    },
+    {
+        "path":  "m1-regression/sources.json",
+        "sha256":  "786ACFAE51A0D75341B24DC68DE73E9A140163142BDA9C8D77226C8A8EF186AD",
+        "bytes":  15320
+    },
+    {
+        "path":  "m1-regression/stderr.log",
+        "sha256":  "F01A374E9C81E3DB89B3A42940C4D6A5447684986A1296E42BF13F196EED6295",
+        "bytes":  5
+    },
+    {
+        "path":  "m1-regression/stdout.log",
+        "sha256":  "45542F754B20E7AA808E5846FC79A9890D138209DEF04471ED3C545401122961",
+        "bytes":  2380
+    },
+    {
+        "path":  "matrix.json",
+        "sha256":  "012EB39DA7F328C530F0DE182BBBB61ED8F57FB72AE318A7528F3A0253B19BC6",
+        "bytes":  93868
+    },
+    {
+        "path":  "media-service/PlayersService.qml",
+        "sha256":  "CFF2626FCE3506EF35C02A52AE4C28706D64706A5F7EB46E235318DCD67C8B15",
+        "bytes":  9803
+    },
+    {
+        "path":  "media-service/PlayersServiceTest.qml",
+        "sha256":  "5EEA84E11B0A954EE3AC8FE4B4DC968129AB06F58B96AD6CAA316E51788D443B",
+        "bytes":  23989
+    },
+    {
+        "path":  "media-service/result.json",
+        "sha256":  "A881BCDE82C4C581C64CA98786E623E99BDF3C048E781D9E5595A70A01CF0A63",
+        "bytes":  1865
+    },
+    {
+        "path":  "media-service/stderr.log",
+        "sha256":  "CA0DBF59559E392A892A3456A68970B42B2CDF5FD3483330EDA1FAF4B91CB353",
+        "bytes":  59
+    },
+    {
+        "path":  "media-service/stdout.log",
+        "sha256":  "F01A374E9C81E3DB89B3A42940C4D6A5447684986A1296E42BF13F196EED6295",
+        "bytes":  5
+    },
+    {
+        "path":  "power-after.json",
+        "sha256":  "13854C911278F4FBEC518EF90D06107F90C0B3EE580EA6F4EDCA4B6148CA41CF",
+        "bytes":  1947
+    },
+    {
+        "path":  "power-before.json",
+        "sha256":  "6E028830C74D3A1D66F8958DB721E7CEFD8535E8CC54E5816446467F11115555",
+        "bytes":  1947
+    }
+]

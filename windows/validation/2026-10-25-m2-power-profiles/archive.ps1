@@ -26,16 +26,27 @@ function Copy-Run($Run, [string]$Name) {
         Copy-Evidence ([uri]$capture).LocalPath "$Name/capture.png"
     }
 }
-function Copy-Fixture($Fixture) {
-    Copy-Evidence $Fixture.battery.stdout 'fixture/battery.stdout.log'
-    Copy-Evidence $Fixture.battery.stderr 'fixture/battery.stderr.log'
-    Copy-Evidence $Fixture.profiles.stdout 'fixture/profiles.stdout.log'
-    Copy-Evidence $Fixture.profiles.stderr 'fixture/profiles.stderr.log'
-    $prefix = $Fixture.battery.stdout -replace '\.battery\.stdout\.log$', ''
-    Copy-Evidence "$prefix.json" 'fixture/result.json'
-    foreach ($source in $Fixture.sources) {
-        $fileName = Split-Path -Leaf $source.source
-        Copy-Evidence (Join-Path $Fixture.stage $fileName) "fixture/$fileName"
+function Copy-Fixture($Fixture, $Prefix) {
+    $base = $(if ($Prefix -eq '.') { 'fixture' } else { "$Prefix/fixture" })
+    if ($null -ne $Fixture.battery -and $null -ne $Fixture.profiles) {
+        # Test-BatteryService runs two pure fixtures and reports both.
+        Copy-Evidence $Fixture.battery.stdout "$base/battery.stdout.log"
+        Copy-Evidence $Fixture.battery.stderr "$base/battery.stderr.log"
+        Copy-Evidence $Fixture.profiles.stdout "$base/profiles.stdout.log"
+        Copy-Evidence $Fixture.profiles.stderr "$base/profiles.stderr.log"
+        $prefix = $Fixture.battery.stdout -replace '\.battery\.stdout\.log$', ''
+        Copy-Evidence "$prefix.json" "$base/result.json"
+        foreach ($source in $Fixture.sources) {
+            $fileName = Split-Path -Leaf $source.source
+            Copy-Evidence (Join-Path $Fixture.stage $fileName) "$base/$fileName"
+        }
+    } else {
+        # Other slices (for example audio) report one fixture record.
+        Copy-Run $Fixture $base
+        foreach ($source in $Fixture.sources) {
+            $fileName = Split-Path -Leaf $source.source
+            Copy-Evidence (Join-Path $Fixture.stage $fileName) "$base/$fileName"
+        }
     }
 }
 function Copy-Matrix([string]$SourceRoot, [string]$Prefix) {
@@ -49,11 +60,12 @@ function Copy-Matrix([string]$SourceRoot, [string]$Prefix) {
         if ($record.kind -eq 'audio-regression') {
             Copy-Matrix $record.result.output "$Prefix/audio-regression"
         } elseif ($record.kind -eq 'fixture') {
-            Copy-Fixture $record.result
+            Copy-Fixture $record.result $Prefix
         } else {
             $name = $record.kind
-            if ($record.kind -eq 'battery') {
-                $name = "$name-$($record.result.batteryMode.ToLowerInvariant())-screen$($record.result.screenIndex)"
+            if ($record.kind -in @('battery', 'audio')) {
+                $mode = $(if ($record.kind -eq 'battery') { $record.result.batteryMode } else { $record.result.audioMode })
+                $name = "$name-$($mode.ToLowerInvariant())-screen$($record.result.screenIndex)"
             }
             Copy-Run $record.result "$Prefix/$name"
         }
@@ -66,7 +78,6 @@ foreach ($file in @('build.json', 'server.log')) {
     }
 }
 Copy-Evidence (Join-Path $buildRoot 'battery-prototype-profile/config/shell.json') 'isolated-shell.json'
-Copy-Evidence $PSCommandPath 'archive.ps1'
 $entries = @(Get-ChildItem -LiteralPath $ArchiveRoot -File -Recurse | Where-Object {
     $_.Name -notin @('README.md', '.gitignore', '.gitattributes', 'artifacts.sha256.json')
 } | Sort-Object FullName | ForEach-Object {
