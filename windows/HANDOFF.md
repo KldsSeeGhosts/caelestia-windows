@@ -88,6 +88,15 @@ That is not evidence that the installed toolchain is absent.
 
 ## Next implementation task
 
+Linear is connected under the Ermin Zeherovic (ERM) team:
+[Caelestia Windows project](https://linear.app/ermin-zeherovic/project/caelestia-windows-c69c05fa35b7).
+M0 bootstrap and the component probe are recorded as completed in ERM-489 and
+ERM-490. Start with
+[ERM-491](https://linear.app/ermin-zeherovic/issue/ERM-491), then ERM-492 (actual
+bar/drawer), ERM-493 (hover/input/focus), and ERM-494 (M1 validation). Dependencies
+are linked in that order. Update Linear as work progresses and keep the
+repository's acceptance criteria and validation evidence current.
+
 Continue M1 by loading the real bar and one drawer with their original
 interactions:
 
@@ -126,6 +135,7 @@ Do not start broad M2 feature work until the M1 compatibility route is proven.
 - Inherited GitHub Actions remain disabled at repository level. Do not enable
   the upstream Linux/release workflows. Local validation is the available
   build/runtime evidence.
-- Linear returned a reauthentication error on 2026-10-25. No Linear items were
-  changed. Reconnect it before attempting a milestone sync; do not modify
-  authentication from this repository.
+- The user reauthorized Linear on 2026-10-25 and the project, five milestones,
+  and six issues were created. The optional `get_agent_context` tool returned
+  `Tool get_agent_context not found` despite appearing in tool discovery;
+  ordinary project, milestone, and issue operations work.
