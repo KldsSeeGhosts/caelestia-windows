@@ -96,7 +96,8 @@ ShellRoot {
     Component.onCompleted: {
         if (!selectedScreen || (monitorCycle && Quickshell.screens.length < 2)) {
             console.error("CAELESTIA_SHELL_FAIL: requested screen does not exist", screenIndex);
-            Qt.exit(1);
+            // Quickshell attaches the engine exit handler after creation.
+            Qt.callLater(() => Qt.exit(1));
         }
     }
 
@@ -105,7 +106,8 @@ ShellRoot {
         property int step
         property int cycle
 
-        running: root.smoke
+        running: root.smoke && root.selectedScreen !== null
+                 && (!root.monitorCycle || Quickshell.screens.length >= 2)
         repeat: true
         interval: 1200
         onTriggered: {

@@ -147,4 +147,6 @@ $result = [ordered]@{
 } | ConvertTo-Json
 $result | Set-Content -LiteralPath (Join-Path $logRoot "$runName.json") -Encoding UTF8
 Write-Output $result
-if ($Smoke -and -not $passed) { throw "Bar/session prototype failed. See $stdoutPath and $stderrPath." }
+if (($Smoke -and -not $passed) -or $process.ExitCode -ne 0) {
+    throw "Bar/session prototype failed. See $stdoutPath and $stderrPath."
+}
