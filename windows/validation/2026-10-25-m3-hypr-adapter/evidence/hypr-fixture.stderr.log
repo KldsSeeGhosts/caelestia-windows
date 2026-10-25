@@ -1,0 +1,90 @@
+﻿qml: Caelestia: Hypr dispatch is disabled. Set CAELESTIA_WINDOWS_HYPR=1 and CAELESTIA_WINDOWS_HYPR_DISPATCH=1 to allow an allowlisted request.
+qml: Caelestia: Hypr dispatch is disabled. Set CAELESTIA_WINDOWS_HYPR=1 and CAELESTIA_WINDOWS_HYPR_DISPATCH=1 to allow an allowlisted request.
+qml: Caelestia: Special workspaces are not available on Windows; the toggle was consumed.
+qml: Caelestia: Special workspaces are not available on Windows; the cycle was consumed.
+qml: Caelestia: Hypr dispatch is disabled. Set CAELESTIA_WINDOWS_HYPR=1 and CAELESTIA_WINDOWS_HYPR_DISPATCH=1 to allow an allowlisted request.
+qml: Caelestia: Hypr dispatch is disabled. Set CAELESTIA_WINDOWS_HYPR=1 and CAELESTIA_WINDOWS_HYPR_DISPATCH=1 to allow an allowlisted request.
+qml: Caelestia: Hypr dispatch is unavailable while the Windows Hyprland observation backend is not initialized.
+qml: Caelestia: Hypr dispatch is unavailable while the Windows Hyprland observation backend is not initialized.
+qml: Caelestia: Hypr dispatch is unavailable while the Windows Hyprland observation backend is not initialized.
+qml: Caelestia: Hypr dispatch is disabled. Set CAELESTIA_WINDOWS_HYPR=1 and CAELESTIA_WINDOWS_HYPR_DISPATCH=1 to allow an allowlisted request.
+qml: Caelestia: Hypr dispatch is disabled. Set CAELESTIA_WINDOWS_HYPR=1 and CAELESTIA_WINDOWS_HYPR_DISPATCH=1 to allow an allowlisted request.
+qml: Caelestia: Hypr focus refused a workspace that is not a positive id or name.
+qml: Caelestia: Hypr focus refused a workspace that is not a positive id or name.
+qml: Caelestia: Hypr focus refused a workspace that is not a positive id or name.
+qml: Caelestia: Hypr dispatch refused "workspace dev": expected workspace <1-9999>, workspace r+1/r-1 or workspace name:<safe-name>.
+qml: Caelestia: Special workspaces are not available on Windows; the toggle was consumed.
+qml: Caelestia: Special workspaces are not available on Windows; request consumed.
+qml: Caelestia: Special workspaces are not available on Windows; request consumed.
+qml: Caelestia: Special workspaces are not available on Windows; request consumed.
+qml: Caelestia: Special workspaces are not available on Windows; the cycle was consumed.
+qml: Caelestia: Hypr dispatch refused "togglefloating address:0x1": this backend command is not supported by the Windows adapter.
+qml: Caelestia: Hypr dispatch refused "pin address:0x1": this backend command is not supported by the Windows adapter.
+qml: Caelestia: Hypr dispatch refused "dpms off": this backend command is not supported by the Windows adapter.
+qml: Caelestia: Hypr dispatch refused "dpms on": this backend command is not supported by the Windows adapter.
+qml: Caelestia: Hypr dispatch refused "focusmonitor 1": this backend command is not supported by the Windows adapter.
+qml: Caelestia: Hypr dispatch refused "cyclenext": this backend command is not supported by the Windows adapter.
+qml: Caelestia: Hypr dispatch refused "swapnext": this backend command is not supported by the Windows adapter.
+qml: Caelestia: Hypr dispatch refused "togglegroup": this backend command is not supported by the Windows adapter.
+qml: Caelestia: Hypr dispatch refused "submap foo": this backend command is not supported by the Windows adapter.
+qml: Caelestia: Hypr dispatch refused "exec sh": this backend command is not supported by the Windows adapter.
+qml: Caelestia: Hypr dispatch refused "movewindowpixel exact 1 1,address:0x1": this backend command is not supported by the Windows adapter.
+qml: Caelestia: Hypr dispatch refused "workspace 0": expected workspace <1-9999>, workspace r+1/r-1 or workspace name:<safe-name>.
+qml: Caelestia: Hypr dispatch refused "workspace 00": expected workspace <1-9999>, workspace r+1/r-1 or workspace name:<safe-name>.
+qml: Caelestia: Hypr dispatch refused "workspace 01": expected workspace <1-9999>, workspace r+1/r-1 or workspace name:<safe-name>.
+qml: Caelestia: Hypr dispatch refused "workspace -1": expected workspace <1-9999>, workspace r+1/r-1 or workspace name:<safe-name>.
+qml: Caelestia: Hypr dispatch refused "workspace +1": expected workspace <1-9999>, workspace r+1/r-1 or workspace name:<safe-name>.
+qml: Caelestia: Hypr dispatch refused "workspace 10000": expected workspace <1-9999>, workspace r+1/r-1 or workspace name:<safe-name>.
+qml: Caelestia: Hypr dispatch refused "workspace 1 ": expected workspace <1-9999>, workspace r+1/r-1 or workspace name:<safe-name>.
+qml: Caelestia: Hypr dispatch refused "workspace  1": expected workspace <1-9999>, workspace r+1/r-1 or workspace name:<safe-name>.
+qml: Caelestia: Hypr dispatch refused "workspace": expected workspace <1-9999>, workspace r+1/r-1 or workspace name:<safe-name>.
+qml: Caelestia: Hypr dispatch refused "workspace r+2": expected workspace <1-9999>, workspace r+1/r-1 or workspace name:<safe-name>.
+qml: Caelestia: Hypr dispatch refused "workspace r1": expected workspace <1-9999>, workspace r+1/r-1 or workspace name:<safe-name>.
+qml: Caelestia: Hypr dispatch refused "workspace special:scratch": expected workspace <1-9999>, workspace r+1/r-1 or workspace name:<safe-name>.
+qml: Caelestia: Hypr dispatch refused "workspace name:": expected workspace <1-9999>, workspace r+1/r-1 or workspace name:<safe-name>.
+qml: Caelestia: Hypr dispatch refused "workspace name:a:b": expected workspace <1-9999>, workspace r+1/r-1 or workspace name:<safe-name>.
+qml: Caelestia: Hypr dispatch refused "workspace name:a b": expected workspace <1-9999>, workspace r+1/r-1 or workspace name:<safe-name>.
+qml: Caelestia: Hypr dispatch refused "workspace name:a/b": expected workspace <1-9999>, workspace r+1/r-1 or workspace name:<safe-name>.
+qml: Caelestia: Hypr dispatch refused "movetoworkspace 1,address:0x1,extra": expected movetoworkspace <1-9999>,address:0x<hex>.
+qml: Caelestia: Hypr dispatch refused "movetoworkspace 1,address:0x": expected movetoworkspace <1-9999>,address:0x<hex>.
+qml: Caelestia: Hypr dispatch refused "movetoworkspace 0,address:0x1": expected movetoworkspace <1-9999>,address:0x<hex>.
+qml: Caelestia: Hypr dispatch refused "movetoworkspace 1,address:1": expected movetoworkspace <1-9999>,address:0x<hex>.
+qml: Caelestia: Hypr dispatch refused "movetoworkspace 1, address:0x1": expected movetoworkspace <1-9999>,address:0x<hex>.
+qml: Caelestia: Hypr dispatch refused "movetoworkspace 1,address:0x1 ": expected movetoworkspace <1-9999>,address:0x<hex>.
+qml: Caelestia: Hypr dispatch refused "movetoworkspace 1,address:0x1,address:0x2": expected movetoworkspace <1-9999>,address:0x<hex>.
+qml: Caelestia: Hypr dispatch refused "movetoworkspace 1,address:0x1234567890abcdef0": expected movetoworkspace <1-9999>,address:0x<hex>.
+qml: Caelestia: Hypr dispatch refused "movetoworkspace": expected movetoworkspace <1-9999>,address:0x<hex>.
+qml: Caelestia: Hypr dispatch refused "killwindow address:0x": expected killwindow address:0x<hex>.
+qml: Caelestia: Hypr dispatch refused "killwindow address:0xzz": expected killwindow address:0x<hex>.
+qml: Caelestia: Hypr dispatch refused "killwindow  address:0x1": expected killwindow address:0x<hex>.
+qml: Caelestia: Hypr dispatch refused "killwindow": expected killwindow address:0x<hex>.
+qml: Caelestia: Hypr dispatch refused "togglespecialworkspace  scratch": malformed special-workspace request.
+qml: Caelestia: Hypr dispatch refused "togglespecialworkspace scratch ": malformed special-workspace request.
+qml: Caelestia: Hypr dispatch refused "togglespecialworkspace a:b": malformed special-workspace request.
+qml: Caelestia: Hypr dispatch refused "workspace 1;workspace 2": command separators, quotes or control characters are not accepted.
+qml: Caelestia: Hypr dispatch refused "workspace 1\nworkspace 2": command separators, quotes or control characters are not accepted.
+qml: Caelestia: Hypr dispatch refused "workspace 1\rworkspace 2": command separators, quotes or control characters are not accepted.
+qml: Caelestia: Hypr dispatch refused "workspace 1\t2": command separators, quotes or control characters are not accepted.
+qml: Caelestia: Hypr dispatch refused "workspace 1`id`": command separators, quotes or control characters are not accepted.
+qml: Caelestia: Hypr dispatch refused "workspace 1$(whoami)": command separators, quotes or control characters are not accepted.
+qml: Caelestia: Hypr dispatch refused "workspace 1|dpms off": command separators, quotes or control characters are not accepted.
+qml: Caelestia: Hypr dispatch refused "workspace 1&workspace 2": command separators, quotes or control characters are not accepted.
+qml: Caelestia: Hypr dispatch refused "workspace 1>out": command separators, quotes or control characters are not accepted.
+qml: Caelestia: Hypr dispatch refused "workspace \"1\"": command separators, quotes or control characters are not accepted.
+qml: Caelestia: Hypr dispatch refused "killwindow address:0x1; dpms off": command separators, quotes or control characters are not accepted.
+qml: Caelestia: Hypr dispatch refused "killwindow address:0x1 && workspace 2": command separators, quotes or control characters are not accepted.
+qml: Caelestia: Hypr dispatch refused "movetoworkspace 1,address:0x1\nworkspace 2": command separators, quotes or control characters are not accepted.
+qml: Caelestia: Hypr dispatch refused "togglespecialworkspace a;b": command separators, quotes or control characters are not accepted.
+qml: Caelestia: Hypr dispatch refused "workspace 1\nkillwindow address:0x1": command separators, quotes or control characters are not accepted.
+qml: Caelestia: Hypr dispatch refused a non-string request.
+qml: Caelestia: Hypr dispatch refused a non-string request.
+qml: Caelestia: Hypr dispatch refused a non-string request.
+qml: Caelestia: Hypr dispatch refused a non-string request.
+qml: Caelestia: Hypr dispatch refused a non-string request.
+qml: Caelestia: Hypr dispatch refused a non-string request.
+qml: Caelestia: Hypr dispatch refused an empty request.
+qml: Caelestia: Hypr dispatch refused " workspace 1": this backend command is not supported by the Windows adapter.
+qml: Caelestia: Hypr dispatch refused a request longer than 96 characters.
+qml: Caelestia: Hypr dispatch is disabled. Set CAELESTIA_WINDOWS_HYPR=1 and CAELESTIA_WINDOWS_HYPR_DISPATCH=1 to allow an allowlisted request.
+qml: CAELESTIA_HYPR_FIXTURE_PASS {"assertions":578}
+

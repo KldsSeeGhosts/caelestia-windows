@@ -1,0 +1,36 @@
+﻿{
+    "passed":  true,
+    "timedOut":  false,
+    "exitCode":  0,
+    "fixture":  {
+                    "assertions":  578
+                },
+    "nativeImports":  0,
+    "hashMismatch":  [
+
+                     ],
+    "diagnostics":  [
+
+                    ],
+    "sourceRevision":  "ca40f983f5d0aa6402a41cb8f87536dc894d9fe2",
+    "sourceDirty":  false,
+    "qtVersion":  "6.11.2",
+    "runnerSha256":  "24994D434962751713F0C8932B356104B0849572B95765DAD50C13DA6BE3FA20",
+    "command":  "C:\\Users\\Ermin\\AppData\\Local\\caelestia-dev\\Qt\\6.11.2\\msvc2022_64\\bin\\qml.exe",
+    "arguments":  "\"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\hypr-tests\\hypr-fixture-20261025-195447-552\\HyprServiceTest.qml\"",
+    "sources":  [
+                    {
+                        "source":  "windows/services/hypr/HyprService.qml",
+                        "sourceSha256":  "6CEB58DE0034165C6CA771FEC143CBC281D613EEF4D194032E13B43072690D6D",
+                        "stagedSha256":  "6CEB58DE0034165C6CA771FEC143CBC281D613EEF4D194032E13B43072690D6D"
+                    },
+                    {
+                        "source":  "windows/services/hypr/HyprServiceTest.qml",
+                        "sourceSha256":  "DE6000B4908AFDBF0F68B3E270F990D3AAF651FE83669D45F3FB7A70C749D4B5",
+                        "stagedSha256":  "DE6000B4908AFDBF0F68B3E270F990D3AAF651FE83669D45F3FB7A70C749D4B5"
+                    }
+                ],
+    "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\hypr-tests\\hypr-fixture-20261025-195447-552",
+    "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\hypr-fixture-20261025-195447-552.stdout.log",
+    "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\hypr-fixture-20261025-195447-552.stderr.log"
+}

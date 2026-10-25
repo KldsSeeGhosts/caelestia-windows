@@ -1,0 +1,1070 @@
+﻿{
+    "passed":  true,
+    "failure":  null,
+    "sourceRevision":  "ca40f983f5d0aa6402a41cb8f87536dc894d9fe2",
+    "sourceDirty":  false,
+    "backendRevision":  "1401042969e4b7ab3cfb314fc76945ab081db3de",
+    "measurementSources":  [
+                               {
+                                   "source":  "windows/scripts/Get-DesktopState.ps1",
+                                   "sha256":  "44E06C706EE5A930A41EA723D9DFC104469D2019DDBC3BAEA71B240B71A401DE"
+                               },
+                               {
+                                   "source":  "windows/scripts/Test-NetworkService.ps1",
+                                   "sha256":  "C5CAA77CBD85423D5F1855D18A526D4499BAD0F7A424A87B19E145CE17697D01"
+                               },
+                               {
+                                   "source":  "windows/scripts/Test-NetworkPrototype.ps1",
+                                   "sha256":  "968C64605102F84D45F38564834953C226D37963EE08A6F0842081D384178D39"
+                               }
+                           ],
+    "output":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\network-validation-20261025-195530-182",
+    "records":  [
+                    {
+                        "kind":  "fixture",
+                        "result":  {
+                                       "passed":  true,
+                                       "timedOut":  false,
+                                       "exitCode":  0,
+                                       "fixture":  {
+                                                       "assertions":  346
+                                                   },
+                                       "nativeImports":  0,
+                                       "hashMismatch":  [
+
+                                                        ],
+                                       "diagnostics":  [
+
+                                                       ],
+                                       "sourceRevision":  "ca40f983f5d0aa6402a41cb8f87536dc894d9fe2",
+                                       "sourceDirty":  false,
+                                       "qtVersion":  "6.11.2",
+                                       "runnerSha256":  "24994D434962751713F0C8932B356104B0849572B95765DAD50C13DA6BE3FA20",
+                                       "command":  "C:\\Users\\Ermin\\AppData\\Local\\caelestia-dev\\Qt\\6.11.2\\msvc2022_64\\bin\\qml.exe",
+                                       "arguments":  "\"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\network-tests\\network-fixture-20261025-195530-377\\NetworkServiceTest.qml\"",
+                                       "sources":  [
+                                                       {
+                                                           "source":  "windows/services/network/NetworkService.qml",
+                                                           "sourceSha256":  "0CB6AE01E3D589AC29513BCAE01A5972A8041186006A1DBE99A3E23B80CECC9F",
+                                                           "stagedSha256":  "0CB6AE01E3D589AC29513BCAE01A5972A8041186006A1DBE99A3E23B80CECC9F"
+                                                       },
+                                                       {
+                                                           "source":  "windows/services/network/NetworkServiceTest.qml",
+                                                           "sourceSha256":  "260AA04373ED330D063A357519047A20D6CFCF7A9118F5EA07764FDD33A865CB",
+                                                           "stagedSha256":  "260AA04373ED330D063A357519047A20D6CFCF7A9118F5EA07764FDD33A865CB"
+                                                       }
+                                                   ],
+                                       "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\network-tests\\network-fixture-20261025-195530-377",
+                                       "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\network-fixture-20261025-195530-377.stdout.log",
+                                       "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\network-fixture-20261025-195530-377.stderr.log"
+                                   }
+                    },
+                    {
+                        "kind":  "network",
+                        "result":  {
+                                       "passed":  true,
+                                       "smoke":  true,
+                                       "prototype":  "network",
+                                       "audioMode":  "Disabled",
+                                       "batteryMode":  "Disabled",
+                                       "mediaMode":  "Disabled",
+                                       "networkMode":  "Disabled",
+                                       "hyprMode":  "Disabled",
+                                       "bluetoothMode":  "Disabled",
+                                       "appsMode":  "Disabled",
+                                       "appsSearchQuery":  "",
+                                       "trayMode":  "Disabled",
+                                       "trayFixture":  false,
+                                       "trayHookMode":  null,
+                                       "sessionMode":  "Disabled",
+                                       "sessionActions":  false,
+                                       "timedOut":  false,
+                                       "exitCode":  0,
+                                       "scaleFactor":  "native",
+                                       "screenIndex":  0,
+                                       "monitorCycle":  false,
+                                       "traceInput":  false,
+                                       "actualScreens":  [
+                                                             {
+                                                                 "index":  0,
+                                                                 "name":  "MAG321UX OLED",
+                                                                 "x":  0,
+                                                                 "y":  0,
+                                                                 "dpr":  1.5,
+                                                                 "width":  520,
+                                                                 "height":  680
+                                                             }
+                                                         ],
+                                       "captures":  [
+                                                        "file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/network-20261025-195530-698.png"
+                                                    ],
+                                       "elapsedMilliseconds":  3449,
+                                       "sourceRevision":  "ca40f983f5d0aa6402a41cb8f87536dc894d9fe2",
+                                       "sourceDirty":  false,
+                                       "backendRevision":  "1401042969e4b7ab3cfb314fc76945ab081db3de",
+                                       "buildRecordSha256":  "94F0834B7358EB3F0F6E254AFF6F70D60DF9259641E275A6162ADE96C4126333",
+                                       "configSha256":  "6FC8F8B80AF9D45A49A4737AF51B8C43A11B97E1B59A82468F31AB4C779C6F65",
+                                       "command":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\quickshell\\qs.exe",
+                                       "arguments":  "--no-color --log-times --path \"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\network-20261025-195530-698\\shell.qml\"",
+                                       "executableSha256":  "22B69FFE0523F8FFDB86C22E1669A36B2C8DCAEA97B19754000EC7455345AF22",
+                                       "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\network-20261025-195530-698",
+                                       "profile":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\network-prototype-profile",
+                                       "sources":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\network-20261025-195530-698.sources.json",
+                                       "screenshot":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\network-20261025-195530-698.png",
+                                       "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\network-20261025-195530-698.stdout.log",
+                                       "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\network-20261025-195530-698.stderr.log",
+                                       "audioSnapshots":  [
+
+                                                          ],
+                                       "batterySnapshots":  [
+
+                                                            ],
+                                       "mediaSnapshots":  [
+
+                                                          ],
+                                       "networkSnapshots":  [
+                                                                {
+                                                                    "phase":  "INITIAL",
+                                                                    "state":  {
+                                                                                  "status":  "disabled",
+                                                                                  "reason":  "Windows network is disabled.",
+                                                                                  "enabled":  false,
+                                                                                  "controlsEnabled":  false,
+                                                                                  "backendLoaded":  false,
+                                                                                  "nativeRequested":  false,
+                                                                                  "initialized":  false,
+                                                                                  "adapterPresent":  false,
+                                                                                  "radioOn":  false,
+                                                                                  "locationDenied":  false,
+                                                                                  "needsLocationPermission":  false,
+                                                                                  "connected":  false,
+                                                                                  "activeSsid":  "",
+                                                                                  "activeSignalQuality":  0,
+                                                                                  "hasInternet":  false,
+                                                                                  "limited":  false,
+                                                                                  "wifiStatus":  "",
+                                                                                  "scanning":  false,
+                                                                                  "connecting":  false,
+                                                                                  "connectingSsid":  "",
+                                                                                  "listVisible":  false,
+                                                                                  "listAvailable":  false,
+                                                                                  "listHidden":  false,
+                                                                                  "networkCount":  0,
+                                                                                  "networks":  [
+
+                                                                                               ],
+                                                                                  "activeIdentity":  "",
+                                                                                  "ethernetConnected":  false,
+                                                                                  "ethernetDeviceCount":  0,
+                                                                                  "ethernetControlSupported":  false,
+                                                                                  "ethernetConfigSupported":  false,
+                                                                                  "lastResultKind":  "",
+                                                                                  "lastResultText":  "",
+                                                                                  "resultRequested":  false,
+                                                                                  "resultVerified":  false,
+                                                                                  "resultSucceeded":  false,
+                                                                                  "resultSequence":  0,
+                                                                                  "commandsSent":  0,
+                                                                                  "scansRequested":  0,
+                                                                                  "pendingSsid":  "",
+                                                                                  "popoutLoaded":  false,
+                                                                                  "popoutControlsEnabled":  null,
+                                                                                  "popoutNativeConnect":  null,
+                                                                                  "popoutEthernetControlAvailable":  null,
+                                                                                  "popoutNativeConnectingSsid":  "",
+                                                                                  "statusIcon":  "wifi_off"
+                                                                              }
+                                                                },
+                                                                {
+                                                                    "phase":  "FINAL",
+                                                                    "state":  {
+                                                                                  "status":  "disabled",
+                                                                                  "reason":  "Windows network is disabled.",
+                                                                                  "enabled":  false,
+                                                                                  "controlsEnabled":  false,
+                                                                                  "backendLoaded":  false,
+                                                                                  "nativeRequested":  false,
+                                                                                  "initialized":  false,
+                                                                                  "adapterPresent":  false,
+                                                                                  "radioOn":  false,
+                                                                                  "locationDenied":  false,
+                                                                                  "needsLocationPermission":  false,
+                                                                                  "connected":  false,
+                                                                                  "activeSsid":  "",
+                                                                                  "activeSignalQuality":  0,
+                                                                                  "hasInternet":  false,
+                                                                                  "limited":  false,
+                                                                                  "wifiStatus":  "",
+                                                                                  "scanning":  false,
+                                                                                  "connecting":  false,
+                                                                                  "connectingSsid":  "",
+                                                                                  "listVisible":  false,
+                                                                                  "listAvailable":  false,
+                                                                                  "listHidden":  false,
+                                                                                  "networkCount":  0,
+                                                                                  "networks":  [
+
+                                                                                               ],
+                                                                                  "activeIdentity":  "",
+                                                                                  "ethernetConnected":  false,
+                                                                                  "ethernetDeviceCount":  0,
+                                                                                  "ethernetControlSupported":  false,
+                                                                                  "ethernetConfigSupported":  false,
+                                                                                  "lastResultKind":  "",
+                                                                                  "lastResultText":  "",
+                                                                                  "resultRequested":  false,
+                                                                                  "resultVerified":  false,
+                                                                                  "resultSucceeded":  false,
+                                                                                  "resultSequence":  0,
+                                                                                  "commandsSent":  0,
+                                                                                  "scansRequested":  0,
+                                                                                  "pendingSsid":  "",
+                                                                                  "popoutLoaded":  false,
+                                                                                  "popoutControlsEnabled":  null,
+                                                                                  "popoutNativeConnect":  null,
+                                                                                  "popoutEthernetControlAvailable":  null,
+                                                                                  "popoutNativeConnectingSsid":  "",
+                                                                                  "statusIcon":  "wifi_off"
+                                                                              }
+                                                                }
+                                                            ],
+                                       "hyprSnapshots":  [
+
+                                                         ],
+                                       "bluetoothSnapshots":  [
+
+                                                              ],
+                                       "appsSnapshots":  [
+
+                                                         ],
+                                       "traySnapshots":  [
+
+                                                         ],
+                                       "sessionSnapshots":  [
+
+                                                            ],
+                                       "appsSearches":  [
+
+                                                        ],
+                                       "sessionButtons":  [
+
+                                                          ]
+                                   }
+                    },
+                    {
+                        "kind":  "network",
+                        "result":  {
+                                       "passed":  true,
+                                       "smoke":  true,
+                                       "prototype":  "network",
+                                       "audioMode":  "Disabled",
+                                       "batteryMode":  "Disabled",
+                                       "mediaMode":  "Disabled",
+                                       "networkMode":  "ReadOnly",
+                                       "hyprMode":  "Disabled",
+                                       "bluetoothMode":  "Disabled",
+                                       "appsMode":  "Disabled",
+                                       "appsSearchQuery":  "",
+                                       "trayMode":  "Disabled",
+                                       "trayFixture":  false,
+                                       "trayHookMode":  null,
+                                       "sessionMode":  "Disabled",
+                                       "sessionActions":  false,
+                                       "timedOut":  false,
+                                       "exitCode":  0,
+                                       "scaleFactor":  "native",
+                                       "screenIndex":  0,
+                                       "monitorCycle":  false,
+                                       "traceInput":  false,
+                                       "actualScreens":  [
+                                                             {
+                                                                 "index":  0,
+                                                                 "name":  "MAG321UX OLED",
+                                                                 "x":  0,
+                                                                 "y":  0,
+                                                                 "dpr":  1.5,
+                                                                 "width":  520,
+                                                                 "height":  680
+                                                             }
+                                                         ],
+                                       "captures":  [
+                                                        "file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/network-20261025-195534-624.png"
+                                                    ],
+                                       "elapsedMilliseconds":  3453,
+                                       "sourceRevision":  "ca40f983f5d0aa6402a41cb8f87536dc894d9fe2",
+                                       "sourceDirty":  false,
+                                       "backendRevision":  "1401042969e4b7ab3cfb314fc76945ab081db3de",
+                                       "buildRecordSha256":  "94F0834B7358EB3F0F6E254AFF6F70D60DF9259641E275A6162ADE96C4126333",
+                                       "configSha256":  "6FC8F8B80AF9D45A49A4737AF51B8C43A11B97E1B59A82468F31AB4C779C6F65",
+                                       "command":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\quickshell\\qs.exe",
+                                       "arguments":  "--no-color --log-times --path \"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\network-20261025-195534-624\\shell.qml\"",
+                                       "executableSha256":  "22B69FFE0523F8FFDB86C22E1669A36B2C8DCAEA97B19754000EC7455345AF22",
+                                       "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\network-20261025-195534-624",
+                                       "profile":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\network-prototype-profile",
+                                       "sources":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\network-20261025-195534-624.sources.json",
+                                       "screenshot":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\network-20261025-195534-624.png",
+                                       "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\network-20261025-195534-624.stdout.log",
+                                       "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\network-20261025-195534-624.stderr.log",
+                                       "audioSnapshots":  [
+
+                                                          ],
+                                       "batterySnapshots":  [
+
+                                                            ],
+                                       "mediaSnapshots":  [
+
+                                                          ],
+                                       "networkSnapshots":  [
+                                                                {
+                                                                    "phase":  "INITIAL",
+                                                                    "state":  {
+                                                                                  "status":  "disconnected",
+                                                                                  "reason":  "Wi-Fi is on; no network is connected.",
+                                                                                  "enabled":  true,
+                                                                                  "controlsEnabled":  false,
+                                                                                  "backendLoaded":  true,
+                                                                                  "nativeRequested":  true,
+                                                                                  "initialized":  true,
+                                                                                  "adapterPresent":  true,
+                                                                                  "radioOn":  true,
+                                                                                  "locationDenied":  false,
+                                                                                  "needsLocationPermission":  false,
+                                                                                  "connected":  false,
+                                                                                  "activeSsid":  "",
+                                                                                  "activeSignalQuality":  0,
+                                                                                  "hasInternet":  true,
+                                                                                  "limited":  false,
+                                                                                  "wifiStatus":  "disconnected",
+                                                                                  "scanning":  false,
+                                                                                  "connecting":  false,
+                                                                                  "connectingSsid":  "",
+                                                                                  "listVisible":  false,
+                                                                                  "listAvailable":  true,
+                                                                                  "listHidden":  false,
+                                                                                  "networkCount":  0,
+                                                                                  "networks":  [
+
+                                                                                               ],
+                                                                                  "activeIdentity":  "",
+                                                                                  "ethernetConnected":  true,
+                                                                                  "ethernetDeviceCount":  1,
+                                                                                  "ethernetControlSupported":  false,
+                                                                                  "ethernetConfigSupported":  false,
+                                                                                  "lastResultKind":  "",
+                                                                                  "lastResultText":  "",
+                                                                                  "resultRequested":  false,
+                                                                                  "resultVerified":  false,
+                                                                                  "resultSucceeded":  false,
+                                                                                  "resultSequence":  0,
+                                                                                  "commandsSent":  0,
+                                                                                  "scansRequested":  0,
+                                                                                  "pendingSsid":  "",
+                                                                                  "popoutLoaded":  true,
+                                                                                  "popoutControlsEnabled":  false,
+                                                                                  "popoutNativeConnect":  true,
+                                                                                  "popoutEthernetControlAvailable":  false,
+                                                                                  "popoutNativeConnectingSsid":  "",
+                                                                                  "statusIcon":  "cable"
+                                                                              }
+                                                                },
+                                                                {
+                                                                    "phase":  "FINAL",
+                                                                    "state":  {
+                                                                                  "status":  "disconnected",
+                                                                                  "reason":  "Wi-Fi is on; no network is connected.",
+                                                                                  "enabled":  true,
+                                                                                  "controlsEnabled":  false,
+                                                                                  "backendLoaded":  true,
+                                                                                  "nativeRequested":  true,
+                                                                                  "initialized":  true,
+                                                                                  "adapterPresent":  true,
+                                                                                  "radioOn":  true,
+                                                                                  "locationDenied":  false,
+                                                                                  "needsLocationPermission":  false,
+                                                                                  "connected":  false,
+                                                                                  "activeSsid":  "",
+                                                                                  "activeSignalQuality":  0,
+                                                                                  "hasInternet":  true,
+                                                                                  "limited":  false,
+                                                                                  "wifiStatus":  "disconnected",
+                                                                                  "scanning":  false,
+                                                                                  "connecting":  false,
+                                                                                  "connectingSsid":  "",
+                                                                                  "listVisible":  false,
+                                                                                  "listAvailable":  true,
+                                                                                  "listHidden":  false,
+                                                                                  "networkCount":  0,
+                                                                                  "networks":  [
+
+                                                                                               ],
+                                                                                  "activeIdentity":  "",
+                                                                                  "ethernetConnected":  true,
+                                                                                  "ethernetDeviceCount":  1,
+                                                                                  "ethernetControlSupported":  false,
+                                                                                  "ethernetConfigSupported":  false,
+                                                                                  "lastResultKind":  "",
+                                                                                  "lastResultText":  "",
+                                                                                  "resultRequested":  false,
+                                                                                  "resultVerified":  false,
+                                                                                  "resultSucceeded":  false,
+                                                                                  "resultSequence":  0,
+                                                                                  "commandsSent":  0,
+                                                                                  "scansRequested":  0,
+                                                                                  "pendingSsid":  "",
+                                                                                  "popoutLoaded":  true,
+                                                                                  "popoutControlsEnabled":  false,
+                                                                                  "popoutNativeConnect":  true,
+                                                                                  "popoutEthernetControlAvailable":  false,
+                                                                                  "popoutNativeConnectingSsid":  "",
+                                                                                  "statusIcon":  "cable"
+                                                                              }
+                                                                }
+                                                            ],
+                                       "hyprSnapshots":  [
+
+                                                         ],
+                                       "bluetoothSnapshots":  [
+
+                                                              ],
+                                       "appsSnapshots":  [
+
+                                                         ],
+                                       "traySnapshots":  [
+
+                                                         ],
+                                       "sessionSnapshots":  [
+
+                                                            ],
+                                       "appsSearches":  [
+
+                                                        ],
+                                       "sessionButtons":  [
+
+                                                          ]
+                                   }
+                    },
+                    {
+                        "kind":  "network",
+                        "result":  {
+                                       "passed":  true,
+                                       "smoke":  true,
+                                       "prototype":  "network",
+                                       "audioMode":  "Disabled",
+                                       "batteryMode":  "Disabled",
+                                       "mediaMode":  "Disabled",
+                                       "networkMode":  "Disabled",
+                                       "hyprMode":  "Disabled",
+                                       "bluetoothMode":  "Disabled",
+                                       "appsMode":  "Disabled",
+                                       "appsSearchQuery":  "",
+                                       "trayMode":  "Disabled",
+                                       "trayFixture":  false,
+                                       "trayHookMode":  null,
+                                       "sessionMode":  "Disabled",
+                                       "sessionActions":  false,
+                                       "timedOut":  false,
+                                       "exitCode":  0,
+                                       "scaleFactor":  "native",
+                                       "screenIndex":  1,
+                                       "monitorCycle":  false,
+                                       "traceInput":  false,
+                                       "actualScreens":  [
+                                                             {
+                                                                 "index":  1,
+                                                                 "name":  "DELL S2725QS",
+                                                                 "x":  -3840,
+                                                                 "y":  0,
+                                                                 "dpr":  1.75,
+                                                                 "width":  520,
+                                                                 "height":  680
+                                                             }
+                                                         ],
+                                       "captures":  [
+                                                        "file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/network-20261025-195538-527.png"
+                                                    ],
+                                       "elapsedMilliseconds":  3452,
+                                       "sourceRevision":  "ca40f983f5d0aa6402a41cb8f87536dc894d9fe2",
+                                       "sourceDirty":  false,
+                                       "backendRevision":  "1401042969e4b7ab3cfb314fc76945ab081db3de",
+                                       "buildRecordSha256":  "94F0834B7358EB3F0F6E254AFF6F70D60DF9259641E275A6162ADE96C4126333",
+                                       "configSha256":  "6FC8F8B80AF9D45A49A4737AF51B8C43A11B97E1B59A82468F31AB4C779C6F65",
+                                       "command":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\quickshell\\qs.exe",
+                                       "arguments":  "--no-color --log-times --path \"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\network-20261025-195538-527\\shell.qml\"",
+                                       "executableSha256":  "22B69FFE0523F8FFDB86C22E1669A36B2C8DCAEA97B19754000EC7455345AF22",
+                                       "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\network-20261025-195538-527",
+                                       "profile":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\network-prototype-profile",
+                                       "sources":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\network-20261025-195538-527.sources.json",
+                                       "screenshot":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\network-20261025-195538-527.png",
+                                       "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\network-20261025-195538-527.stdout.log",
+                                       "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\network-20261025-195538-527.stderr.log",
+                                       "audioSnapshots":  [
+
+                                                          ],
+                                       "batterySnapshots":  [
+
+                                                            ],
+                                       "mediaSnapshots":  [
+
+                                                          ],
+                                       "networkSnapshots":  [
+                                                                {
+                                                                    "phase":  "INITIAL",
+                                                                    "state":  {
+                                                                                  "status":  "disabled",
+                                                                                  "reason":  "Windows network is disabled.",
+                                                                                  "enabled":  false,
+                                                                                  "controlsEnabled":  false,
+                                                                                  "backendLoaded":  false,
+                                                                                  "nativeRequested":  false,
+                                                                                  "initialized":  false,
+                                                                                  "adapterPresent":  false,
+                                                                                  "radioOn":  false,
+                                                                                  "locationDenied":  false,
+                                                                                  "needsLocationPermission":  false,
+                                                                                  "connected":  false,
+                                                                                  "activeSsid":  "",
+                                                                                  "activeSignalQuality":  0,
+                                                                                  "hasInternet":  false,
+                                                                                  "limited":  false,
+                                                                                  "wifiStatus":  "",
+                                                                                  "scanning":  false,
+                                                                                  "connecting":  false,
+                                                                                  "connectingSsid":  "",
+                                                                                  "listVisible":  false,
+                                                                                  "listAvailable":  false,
+                                                                                  "listHidden":  false,
+                                                                                  "networkCount":  0,
+                                                                                  "networks":  [
+
+                                                                                               ],
+                                                                                  "activeIdentity":  "",
+                                                                                  "ethernetConnected":  false,
+                                                                                  "ethernetDeviceCount":  0,
+                                                                                  "ethernetControlSupported":  false,
+                                                                                  "ethernetConfigSupported":  false,
+                                                                                  "lastResultKind":  "",
+                                                                                  "lastResultText":  "",
+                                                                                  "resultRequested":  false,
+                                                                                  "resultVerified":  false,
+                                                                                  "resultSucceeded":  false,
+                                                                                  "resultSequence":  0,
+                                                                                  "commandsSent":  0,
+                                                                                  "scansRequested":  0,
+                                                                                  "pendingSsid":  "",
+                                                                                  "popoutLoaded":  false,
+                                                                                  "popoutControlsEnabled":  null,
+                                                                                  "popoutNativeConnect":  null,
+                                                                                  "popoutEthernetControlAvailable":  null,
+                                                                                  "popoutNativeConnectingSsid":  "",
+                                                                                  "statusIcon":  "wifi_off"
+                                                                              }
+                                                                },
+                                                                {
+                                                                    "phase":  "FINAL",
+                                                                    "state":  {
+                                                                                  "status":  "disabled",
+                                                                                  "reason":  "Windows network is disabled.",
+                                                                                  "enabled":  false,
+                                                                                  "controlsEnabled":  false,
+                                                                                  "backendLoaded":  false,
+                                                                                  "nativeRequested":  false,
+                                                                                  "initialized":  false,
+                                                                                  "adapterPresent":  false,
+                                                                                  "radioOn":  false,
+                                                                                  "locationDenied":  false,
+                                                                                  "needsLocationPermission":  false,
+                                                                                  "connected":  false,
+                                                                                  "activeSsid":  "",
+                                                                                  "activeSignalQuality":  0,
+                                                                                  "hasInternet":  false,
+                                                                                  "limited":  false,
+                                                                                  "wifiStatus":  "",
+                                                                                  "scanning":  false,
+                                                                                  "connecting":  false,
+                                                                                  "connectingSsid":  "",
+                                                                                  "listVisible":  false,
+                                                                                  "listAvailable":  false,
+                                                                                  "listHidden":  false,
+                                                                                  "networkCount":  0,
+                                                                                  "networks":  [
+
+                                                                                               ],
+                                                                                  "activeIdentity":  "",
+                                                                                  "ethernetConnected":  false,
+                                                                                  "ethernetDeviceCount":  0,
+                                                                                  "ethernetControlSupported":  false,
+                                                                                  "ethernetConfigSupported":  false,
+                                                                                  "lastResultKind":  "",
+                                                                                  "lastResultText":  "",
+                                                                                  "resultRequested":  false,
+                                                                                  "resultVerified":  false,
+                                                                                  "resultSucceeded":  false,
+                                                                                  "resultSequence":  0,
+                                                                                  "commandsSent":  0,
+                                                                                  "scansRequested":  0,
+                                                                                  "pendingSsid":  "",
+                                                                                  "popoutLoaded":  false,
+                                                                                  "popoutControlsEnabled":  null,
+                                                                                  "popoutNativeConnect":  null,
+                                                                                  "popoutEthernetControlAvailable":  null,
+                                                                                  "popoutNativeConnectingSsid":  "",
+                                                                                  "statusIcon":  "wifi_off"
+                                                                              }
+                                                                }
+                                                            ],
+                                       "hyprSnapshots":  [
+
+                                                         ],
+                                       "bluetoothSnapshots":  [
+
+                                                              ],
+                                       "appsSnapshots":  [
+
+                                                         ],
+                                       "traySnapshots":  [
+
+                                                         ],
+                                       "sessionSnapshots":  [
+
+                                                            ],
+                                       "appsSearches":  [
+
+                                                        ],
+                                       "sessionButtons":  [
+
+                                                          ]
+                                   }
+                    },
+                    {
+                        "kind":  "network",
+                        "result":  {
+                                       "passed":  true,
+                                       "smoke":  true,
+                                       "prototype":  "network",
+                                       "audioMode":  "Disabled",
+                                       "batteryMode":  "Disabled",
+                                       "mediaMode":  "Disabled",
+                                       "networkMode":  "ReadOnly",
+                                       "hyprMode":  "Disabled",
+                                       "bluetoothMode":  "Disabled",
+                                       "appsMode":  "Disabled",
+                                       "appsSearchQuery":  "",
+                                       "trayMode":  "Disabled",
+                                       "trayFixture":  false,
+                                       "trayHookMode":  null,
+                                       "sessionMode":  "Disabled",
+                                       "sessionActions":  false,
+                                       "timedOut":  false,
+                                       "exitCode":  0,
+                                       "scaleFactor":  "native",
+                                       "screenIndex":  1,
+                                       "monitorCycle":  false,
+                                       "traceInput":  false,
+                                       "actualScreens":  [
+                                                             {
+                                                                 "index":  1,
+                                                                 "name":  "DELL S2725QS",
+                                                                 "x":  -3840,
+                                                                 "y":  0,
+                                                                 "dpr":  1.75,
+                                                                 "width":  520,
+                                                                 "height":  680
+                                                             }
+                                                         ],
+                                       "captures":  [
+                                                        "file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/network-20261025-195542-417.png"
+                                                    ],
+                                       "elapsedMilliseconds":  3465,
+                                       "sourceRevision":  "ca40f983f5d0aa6402a41cb8f87536dc894d9fe2",
+                                       "sourceDirty":  false,
+                                       "backendRevision":  "1401042969e4b7ab3cfb314fc76945ab081db3de",
+                                       "buildRecordSha256":  "94F0834B7358EB3F0F6E254AFF6F70D60DF9259641E275A6162ADE96C4126333",
+                                       "configSha256":  "6FC8F8B80AF9D45A49A4737AF51B8C43A11B97E1B59A82468F31AB4C779C6F65",
+                                       "command":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\quickshell\\qs.exe",
+                                       "arguments":  "--no-color --log-times --path \"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\network-20261025-195542-417\\shell.qml\"",
+                                       "executableSha256":  "22B69FFE0523F8FFDB86C22E1669A36B2C8DCAEA97B19754000EC7455345AF22",
+                                       "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\network-20261025-195542-417",
+                                       "profile":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\network-prototype-profile",
+                                       "sources":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\network-20261025-195542-417.sources.json",
+                                       "screenshot":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\network-20261025-195542-417.png",
+                                       "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\network-20261025-195542-417.stdout.log",
+                                       "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\network-20261025-195542-417.stderr.log",
+                                       "audioSnapshots":  [
+
+                                                          ],
+                                       "batterySnapshots":  [
+
+                                                            ],
+                                       "mediaSnapshots":  [
+
+                                                          ],
+                                       "networkSnapshots":  [
+                                                                {
+                                                                    "phase":  "INITIAL",
+                                                                    "state":  {
+                                                                                  "status":  "disconnected",
+                                                                                  "reason":  "Wi-Fi is on; no network is connected.",
+                                                                                  "enabled":  true,
+                                                                                  "controlsEnabled":  false,
+                                                                                  "backendLoaded":  true,
+                                                                                  "nativeRequested":  true,
+                                                                                  "initialized":  true,
+                                                                                  "adapterPresent":  true,
+                                                                                  "radioOn":  true,
+                                                                                  "locationDenied":  false,
+                                                                                  "needsLocationPermission":  false,
+                                                                                  "connected":  false,
+                                                                                  "activeSsid":  "",
+                                                                                  "activeSignalQuality":  0,
+                                                                                  "hasInternet":  true,
+                                                                                  "limited":  false,
+                                                                                  "wifiStatus":  "disconnected",
+                                                                                  "scanning":  false,
+                                                                                  "connecting":  false,
+                                                                                  "connectingSsid":  "",
+                                                                                  "listVisible":  false,
+                                                                                  "listAvailable":  true,
+                                                                                  "listHidden":  false,
+                                                                                  "networkCount":  0,
+                                                                                  "networks":  [
+
+                                                                                               ],
+                                                                                  "activeIdentity":  "",
+                                                                                  "ethernetConnected":  true,
+                                                                                  "ethernetDeviceCount":  1,
+                                                                                  "ethernetControlSupported":  false,
+                                                                                  "ethernetConfigSupported":  false,
+                                                                                  "lastResultKind":  "",
+                                                                                  "lastResultText":  "",
+                                                                                  "resultRequested":  false,
+                                                                                  "resultVerified":  false,
+                                                                                  "resultSucceeded":  false,
+                                                                                  "resultSequence":  0,
+                                                                                  "commandsSent":  0,
+                                                                                  "scansRequested":  0,
+                                                                                  "pendingSsid":  "",
+                                                                                  "popoutLoaded":  true,
+                                                                                  "popoutControlsEnabled":  false,
+                                                                                  "popoutNativeConnect":  true,
+                                                                                  "popoutEthernetControlAvailable":  false,
+                                                                                  "popoutNativeConnectingSsid":  "",
+                                                                                  "statusIcon":  "cable"
+                                                                              }
+                                                                },
+                                                                {
+                                                                    "phase":  "FINAL",
+                                                                    "state":  {
+                                                                                  "status":  "disconnected",
+                                                                                  "reason":  "Wi-Fi is on; no network is connected.",
+                                                                                  "enabled":  true,
+                                                                                  "controlsEnabled":  false,
+                                                                                  "backendLoaded":  true,
+                                                                                  "nativeRequested":  true,
+                                                                                  "initialized":  true,
+                                                                                  "adapterPresent":  true,
+                                                                                  "radioOn":  true,
+                                                                                  "locationDenied":  false,
+                                                                                  "needsLocationPermission":  false,
+                                                                                  "connected":  false,
+                                                                                  "activeSsid":  "",
+                                                                                  "activeSignalQuality":  0,
+                                                                                  "hasInternet":  true,
+                                                                                  "limited":  false,
+                                                                                  "wifiStatus":  "disconnected",
+                                                                                  "scanning":  false,
+                                                                                  "connecting":  false,
+                                                                                  "connectingSsid":  "",
+                                                                                  "listVisible":  false,
+                                                                                  "listAvailable":  true,
+                                                                                  "listHidden":  false,
+                                                                                  "networkCount":  0,
+                                                                                  "networks":  [
+
+                                                                                               ],
+                                                                                  "activeIdentity":  "",
+                                                                                  "ethernetConnected":  true,
+                                                                                  "ethernetDeviceCount":  1,
+                                                                                  "ethernetControlSupported":  false,
+                                                                                  "ethernetConfigSupported":  false,
+                                                                                  "lastResultKind":  "",
+                                                                                  "lastResultText":  "",
+                                                                                  "resultRequested":  false,
+                                                                                  "resultVerified":  false,
+                                                                                  "resultSucceeded":  false,
+                                                                                  "resultSequence":  0,
+                                                                                  "commandsSent":  0,
+                                                                                  "scansRequested":  0,
+                                                                                  "pendingSsid":  "",
+                                                                                  "popoutLoaded":  true,
+                                                                                  "popoutControlsEnabled":  false,
+                                                                                  "popoutNativeConnect":  true,
+                                                                                  "popoutEthernetControlAvailable":  false,
+                                                                                  "popoutNativeConnectingSsid":  "",
+                                                                                  "statusIcon":  "cable"
+                                                                              }
+                                                                }
+                                                            ],
+                                       "hyprSnapshots":  [
+
+                                                         ],
+                                       "bluetoothSnapshots":  [
+
+                                                              ],
+                                       "appsSnapshots":  [
+
+                                                         ],
+                                       "traySnapshots":  [
+
+                                                         ],
+                                       "sessionSnapshots":  [
+
+                                                            ],
+                                       "appsSearches":  [
+
+                                                        ],
+                                       "sessionButtons":  [
+
+                                                          ]
+                                   }
+                    },
+                    {
+                        "kind":  "m1-regression",
+                        "result":  {
+                                       "passed":  true,
+                                       "smoke":  true,
+                                       "prototype":  "shell",
+                                       "audioMode":  "Disabled",
+                                       "batteryMode":  "Disabled",
+                                       "mediaMode":  "Disabled",
+                                       "networkMode":  "Disabled",
+                                       "hyprMode":  "Disabled",
+                                       "bluetoothMode":  "Disabled",
+                                       "appsMode":  "Disabled",
+                                       "appsSearchQuery":  "",
+                                       "trayMode":  "Disabled",
+                                       "trayFixture":  false,
+                                       "trayHookMode":  null,
+                                       "sessionMode":  "Disabled",
+                                       "sessionActions":  false,
+                                       "timedOut":  false,
+                                       "exitCode":  0,
+                                       "scaleFactor":  "native",
+                                       "screenIndex":  0,
+                                       "monitorCycle":  false,
+                                       "traceInput":  false,
+                                       "actualScreens":  [
+                                                             {
+                                                                 "index":  0,
+                                                                 "name":  "MAG321UX OLED",
+                                                                 "x":  0,
+                                                                 "y":  0,
+                                                                 "dpr":  1.5
+                                                             }
+                                                         ],
+                                       "captures":  [
+                                                        "file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/shell-20261025-195546-270.png"
+                                                    ],
+                                       "elapsedMilliseconds":  4105,
+                                       "sourceRevision":  "ca40f983f5d0aa6402a41cb8f87536dc894d9fe2",
+                                       "sourceDirty":  false,
+                                       "backendRevision":  "1401042969e4b7ab3cfb314fc76945ab081db3de",
+                                       "buildRecordSha256":  "94F0834B7358EB3F0F6E254AFF6F70D60DF9259641E275A6162ADE96C4126333",
+                                       "configSha256":  "6FC8F8B80AF9D45A49A4737AF51B8C43A11B97E1B59A82468F31AB4C779C6F65",
+                                       "command":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\quickshell\\qs.exe",
+                                       "arguments":  "--no-color --log-times --path \"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\shell-20261025-195546-270\\shell.qml\"",
+                                       "executableSha256":  "22B69FFE0523F8FFDB86C22E1669A36B2C8DCAEA97B19754000EC7455345AF22",
+                                       "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\shell-20261025-195546-270",
+                                       "profile":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-prototype-profile",
+                                       "sources":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\shell-20261025-195546-270.sources.json",
+                                       "screenshot":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\shell-20261025-195546-270.png",
+                                       "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\shell-20261025-195546-270.stdout.log",
+                                       "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\shell-20261025-195546-270.stderr.log",
+                                       "audioSnapshots":  [
+
+                                                          ],
+                                       "batterySnapshots":  [
+
+                                                            ],
+                                       "mediaSnapshots":  [
+
+                                                          ],
+                                       "networkSnapshots":  [
+
+                                                            ],
+                                       "hyprSnapshots":  [
+
+                                                         ],
+                                       "bluetoothSnapshots":  [
+
+                                                              ],
+                                       "appsSnapshots":  [
+
+                                                         ],
+                                       "traySnapshots":  [
+
+                                                         ],
+                                       "sessionSnapshots":  [
+                                                                {
+                                                                    "phase":  "INITIAL",
+                                                                    "state":  {
+                                                                                  "mode":  "Disabled",
+                                                                                  "run":  false,
+                                                                                  "enabled":  false,
+                                                                                  "actionsEnabled":  false,
+                                                                                  "available":  false,
+                                                                                  "status":  "disabled",
+                                                                                  "nativeRequested":  false,
+                                                                                  "backendLoaded":  false,
+                                                                                  "backendError":  "",
+                                                                                  "hibernateCapabilityKnown":  false,
+                                                                                  "canHibernate":  false,
+                                                                                  "hibernateSupported":  false,
+                                                                                  "actionGating":  true,
+                                                                                  "fallbackBlocked":  true,
+                                                                                  "actions":  {
+                                                                                                  "lock":  {
+                                                                                                               "supported":  true,
+                                                                                                               "capability":  false,
+                                                                                                               "available":  false,
+                                                                                                               "requiresConfirmation":  false
+                                                                                                           },
+                                                                                                  "logout":  {
+                                                                                                                 "supported":  true,
+                                                                                                                 "capability":  false,
+                                                                                                                 "available":  false,
+                                                                                                                 "requiresConfirmation":  true
+                                                                                                             },
+                                                                                                  "shutdown":  {
+                                                                                                                   "supported":  true,
+                                                                                                                   "capability":  false,
+                                                                                                                   "available":  false,
+                                                                                                                   "requiresConfirmation":  true
+                                                                                                               },
+                                                                                                  "reboot":  {
+                                                                                                                 "supported":  true,
+                                                                                                                 "capability":  false,
+                                                                                                                 "available":  false,
+                                                                                                                 "requiresConfirmation":  true
+                                                                                                             },
+                                                                                                  "suspend":  {
+                                                                                                                  "supported":  true,
+                                                                                                                  "capability":  false,
+                                                                                                                  "available":  false,
+                                                                                                                  "requiresConfirmation":  false
+                                                                                                              },
+                                                                                                  "hibernate":  {
+                                                                                                                    "supported":  true,
+                                                                                                                    "capability":  false,
+                                                                                                                    "available":  false,
+                                                                                                                    "requiresConfirmation":  false
+                                                                                                                },
+                                                                                                  "firmware":  {
+                                                                                                                   "supported":  true,
+                                                                                                                   "capability":  false,
+                                                                                                                   "available":  false,
+                                                                                                                   "requiresConfirmation":  true
+                                                                                                               }
+                                                                                              },
+                                                                                  "lastOutcome":  "disabled",
+                                                                                  "lastAction":  "",
+                                                                                  "lastConsumed":  true,
+                                                                                  "lastDispatched":  false,
+                                                                                  "lastRequested":  false,
+                                                                                  "lastSucceeded":  false
+                                                                              }
+                                                                },
+                                                                {
+                                                                    "phase":  "FINAL",
+                                                                    "state":  {
+                                                                                  "mode":  "Disabled",
+                                                                                  "run":  false,
+                                                                                  "enabled":  false,
+                                                                                  "actionsEnabled":  false,
+                                                                                  "available":  false,
+                                                                                  "status":  "disabled",
+                                                                                  "nativeRequested":  false,
+                                                                                  "backendLoaded":  false,
+                                                                                  "backendError":  "",
+                                                                                  "hibernateCapabilityKnown":  false,
+                                                                                  "canHibernate":  false,
+                                                                                  "hibernateSupported":  false,
+                                                                                  "actionGating":  true,
+                                                                                  "fallbackBlocked":  true,
+                                                                                  "actions":  {
+                                                                                                  "lock":  {
+                                                                                                               "supported":  true,
+                                                                                                               "capability":  false,
+                                                                                                               "available":  false,
+                                                                                                               "requiresConfirmation":  false
+                                                                                                           },
+                                                                                                  "logout":  {
+                                                                                                                 "supported":  true,
+                                                                                                                 "capability":  false,
+                                                                                                                 "available":  false,
+                                                                                                                 "requiresConfirmation":  true
+                                                                                                             },
+                                                                                                  "shutdown":  {
+                                                                                                                   "supported":  true,
+                                                                                                                   "capability":  false,
+                                                                                                                   "available":  false,
+                                                                                                                   "requiresConfirmation":  true
+                                                                                                               },
+                                                                                                  "reboot":  {
+                                                                                                                 "supported":  true,
+                                                                                                                 "capability":  false,
+                                                                                                                 "available":  false,
+                                                                                                                 "requiresConfirmation":  true
+                                                                                                             },
+                                                                                                  "suspend":  {
+                                                                                                                  "supported":  true,
+                                                                                                                  "capability":  false,
+                                                                                                                  "available":  false,
+                                                                                                                  "requiresConfirmation":  false
+                                                                                                              },
+                                                                                                  "hibernate":  {
+                                                                                                                    "supported":  true,
+                                                                                                                    "capability":  false,
+                                                                                                                    "available":  false,
+                                                                                                                    "requiresConfirmation":  false
+                                                                                                                },
+                                                                                                  "firmware":  {
+                                                                                                                   "supported":  true,
+                                                                                                                   "capability":  false,
+                                                                                                                   "available":  false,
+                                                                                                                   "requiresConfirmation":  true
+                                                                                                               }
+                                                                                              },
+                                                                                  "lastOutcome":  "disabled",
+                                                                                  "lastAction":  "",
+                                                                                  "lastConsumed":  true,
+                                                                                  "lastDispatched":  false,
+                                                                                  "lastRequested":  false,
+                                                                                  "lastSucceeded":  false
+                                                                              }
+                                                                }
+                                                            ],
+                                       "appsSearches":  [
+
+                                                        ],
+                                       "sessionButtons":  [
+                                                              {
+                                                                  "icon":  "logout",
+                                                                  "disabled":  true
+                                                              },
+                                                              {
+                                                                  "icon":  "power_settings_new",
+                                                                  "disabled":  true
+                                                              },
+                                                              {
+                                                                  "icon":  "downloading",
+                                                                  "disabled":  true
+                                                              },
+                                                              {
+                                                                  "icon":  "cached",
+                                                                  "disabled":  true
+                                                              }
+                                                          ]
+                                   }
+                    }
+                ]
+}

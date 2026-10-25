@@ -1,0 +1,1632 @@
+﻿{
+    "passed":  true,
+    "failure":  null,
+    "sourceRevision":  "ca40f983f5d0aa6402a41cb8f87536dc894d9fe2",
+    "sourceDirty":  false,
+    "backendRevision":  "1401042969e4b7ab3cfb314fc76945ab081db3de",
+    "measurementSources":  [
+                               {
+                                   "source":  "windows/scripts/Get-DesktopState.ps1",
+                                   "sha256":  "44E06C706EE5A930A41EA723D9DFC104469D2019DDBC3BAEA71B240B71A401DE"
+                               },
+                               {
+                                   "source":  "windows/scripts/Test-AppsService.ps1",
+                                   "sha256":  "1187F3AA692083288E1490E07B3D8607CC82DA6630E60D123DBC12281B774289"
+                               },
+                               {
+                                   "source":  "windows/scripts/Test-AppsPrototype.ps1",
+                                   "sha256":  "1484B17829490522A0815817AFF19BA7DE969B172584FA961773A378FD51FD0E"
+                               }
+                           ],
+    "output":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\apps-validation-20261025-195559-350",
+    "records":  [
+                    {
+                        "kind":  "fixture",
+                        "result":  {
+                                       "passed":  true,
+                                       "timedOut":  false,
+                                       "exitCode":  0,
+                                       "fixture":  {
+                                                       "assertions":  177
+                                                   },
+                                       "nativeImports":  0,
+                                       "hashMismatch":  [
+
+                                                        ],
+                                       "diagnostics":  [
+
+                                                       ],
+                                       "sourceRevision":  "ca40f983f5d0aa6402a41cb8f87536dc894d9fe2",
+                                       "sourceDirty":  false,
+                                       "qtVersion":  "6.11.2",
+                                       "runnerSha256":  "24994D434962751713F0C8932B356104B0849572B95765DAD50C13DA6BE3FA20",
+                                       "command":  "C:\\Users\\Ermin\\AppData\\Local\\caelestia-dev\\Qt\\6.11.2\\msvc2022_64\\bin\\qml.exe",
+                                       "arguments":  "\"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\apps-tests\\apps-fixture-20261025-195559-680\\windows\\services\\apps\\AppsServiceTest.qml\"",
+                                       "sources":  [
+                                                       {
+                                                           "source":  "windows/services/apps/AppsService.qml",
+                                                           "staged":  "windows/services/apps/AppsService.qml",
+                                                           "sourceSha256":  "692B95F32149ABCDF7B14A9EF3E2EF9E8A9770572C391D9252898C433B73DD4F",
+                                                           "stagedSha256":  "692B95F32149ABCDF7B14A9EF3E2EF9E8A9770572C391D9252898C433B73DD4F"
+                                                       },
+                                                       {
+                                                           "source":  "windows/services/apps/AppFrequencyStore.qml",
+                                                           "staged":  "windows/services/apps/AppFrequencyStore.qml",
+                                                           "sourceSha256":  "4DE889281A5D087C6E68BF2FF8B4B0BC04CDBD32BA5F1A1D98EAFC3355347619",
+                                                           "stagedSha256":  "4DE889281A5D087C6E68BF2FF8B4B0BC04CDBD32BA5F1A1D98EAFC3355347619"
+                                                       },
+                                                       {
+                                                           "source":  "windows/services/apps/AppStoragePath.js",
+                                                           "staged":  "windows/services/apps/AppStoragePath.js",
+                                                           "sourceSha256":  "0A4D070346B0C1BBF5F743FF70FB23D7BE9B9E17F9AB8C276BB85F5271F38DD2",
+                                                           "stagedSha256":  "0A4D070346B0C1BBF5F743FF70FB23D7BE9B9E17F9AB8C276BB85F5271F38DD2"
+                                                       },
+                                                       {
+                                                           "source":  "windows/services/apps/AppsServiceTest.qml",
+                                                           "staged":  "windows/services/apps/AppsServiceTest.qml",
+                                                           "sourceSha256":  "AC03238EC210B03301582FC4824AA879990DC286E8A39F70838748896130B4E9",
+                                                           "stagedSha256":  "AC03238EC210B03301582FC4824AA879990DC286E8A39F70838748896130B4E9"
+                                                       },
+                                                       {
+                                                           "source":  "utils/scripts/fzf.js",
+                                                           "staged":  "utils/scripts/fzf.js",
+                                                           "sourceSha256":  "79ABBA38D5C91AB856051CB70D4249EFC5C26D1F5881F7A4D9B43DC54BE48956",
+                                                           "stagedSha256":  "79ABBA38D5C91AB856051CB70D4249EFC5C26D1F5881F7A4D9B43DC54BE48956"
+                                                       },
+                                                       {
+                                                           "source":  "utils/scripts/fuzzysort.js",
+                                                           "staged":  "utils/scripts/fuzzysort.js",
+                                                           "sourceSha256":  "C86BD4C6F488DD10AF40333C4EE9FDFAB9C45C807F0CB19AAB1849853EF8EFE5",
+                                                           "stagedSha256":  "C86BD4C6F488DD10AF40333C4EE9FDFAB9C45C807F0CB19AAB1849853EF8EFE5"
+                                                       }
+                                                   ],
+                                       "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\apps-tests\\apps-fixture-20261025-195559-680",
+                                       "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\apps-fixture-20261025-195559-680.stdout.log",
+                                       "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\apps-fixture-20261025-195559-680.stderr.log"
+                                   }
+                    },
+                    {
+                        "kind":  "apps",
+                        "result":  {
+                                       "passed":  true,
+                                       "smoke":  true,
+                                       "prototype":  "apps",
+                                       "audioMode":  "Disabled",
+                                       "batteryMode":  "Disabled",
+                                       "mediaMode":  "Disabled",
+                                       "networkMode":  "Disabled",
+                                       "hyprMode":  "Disabled",
+                                       "bluetoothMode":  "Disabled",
+                                       "appsMode":  "Disabled",
+                                       "appsSearchQuery":  "",
+                                       "trayMode":  "Disabled",
+                                       "trayFixture":  false,
+                                       "trayHookMode":  null,
+                                       "sessionMode":  "Disabled",
+                                       "sessionActions":  false,
+                                       "timedOut":  false,
+                                       "exitCode":  0,
+                                       "scaleFactor":  "native",
+                                       "screenIndex":  0,
+                                       "monitorCycle":  false,
+                                       "traceInput":  false,
+                                       "actualScreens":  [
+                                                             {
+                                                                 "index":  0,
+                                                                 "name":  "MAG321UX OLED",
+                                                                 "x":  0,
+                                                                 "y":  0,
+                                                                 "dpr":  1.5,
+                                                                 "width":  560,
+                                                                 "height":  560
+                                                             }
+                                                         ],
+                                       "captures":  [
+                                                        "file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/apps-20261025-195600-084.png"
+                                                    ],
+                                       "elapsedMilliseconds":  3642,
+                                       "sourceRevision":  "ca40f983f5d0aa6402a41cb8f87536dc894d9fe2",
+                                       "sourceDirty":  false,
+                                       "backendRevision":  "1401042969e4b7ab3cfb314fc76945ab081db3de",
+                                       "buildRecordSha256":  "94F0834B7358EB3F0F6E254AFF6F70D60DF9259641E275A6162ADE96C4126333",
+                                       "configSha256":  "6FC8F8B80AF9D45A49A4737AF51B8C43A11B97E1B59A82468F31AB4C779C6F65",
+                                       "command":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\quickshell\\qs.exe",
+                                       "arguments":  "--no-color --log-times --path \"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\apps-20261025-195600-084\\shell.qml\"",
+                                       "executableSha256":  "22B69FFE0523F8FFDB86C22E1669A36B2C8DCAEA97B19754000EC7455345AF22",
+                                       "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\apps-20261025-195600-084",
+                                       "profile":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\apps-prototype-profile",
+                                       "sources":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\apps-20261025-195600-084.sources.json",
+                                       "screenshot":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\apps-20261025-195600-084.png",
+                                       "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\apps-20261025-195600-084.stdout.log",
+                                       "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\apps-20261025-195600-084.stderr.log",
+                                       "audioSnapshots":  [
+
+                                                          ],
+                                       "batterySnapshots":  [
+
+                                                            ],
+                                       "mediaSnapshots":  [
+
+                                                          ],
+                                       "networkSnapshots":  [
+
+                                                            ],
+                                       "hyprSnapshots":  [
+
+                                                         ],
+                                       "bluetoothSnapshots":  [
+
+                                                              ],
+                                       "appsSnapshots":  [
+                                                             {
+                                                                 "phase":  "INITIAL",
+                                                                 "state":  {
+                                                                               "status":  "disabled",
+                                                                               "reason":  "Windows app search is disabled.",
+                                                                               "enabled":  false,
+                                                                               "launchEnabled":  false,
+                                                                               "nativeRequested":  false,
+                                                                               "storeRequested":  false,
+                                                                               "backendLoaded":  false,
+                                                                               "scanning":  false,
+                                                                               "empty":  false,
+                                                                               "failed":  false,
+                                                                               "disabled":  true,
+                                                                               "ready":  false,
+                                                                               "lastError":  "",
+                                                                               "persistentFrequencies":  false,
+                                                                               "frequencyPath":  "",
+                                                                               "count":  0,
+                                                                               "listLoaded":  false,
+                                                                               "listCount":  0,
+                                                                               "query":  "",
+                                                                               "queryCount":  0,
+                                                                               "queryNames":  [
+
+                                                                                              ],
+                                                                               "queryIcons":  [
+
+                                                                                              ],
+                                                                               "catalogNames":  [
+
+                                                                                                ],
+                                                                               "catalogIds":  [
+
+                                                                                              ],
+                                                                               "launchRequests":  0,
+                                                                               "launchesIssued":  0,
+                                                                               "lastLaunchError":  "",
+                                                                               "terminalLaunchSupported":  false,
+                                                                               "searchMatchesList":  true
+                                                                           }
+                                                             },
+                                                             {
+                                                                 "phase":  "FINAL",
+                                                                 "state":  {
+                                                                               "status":  "disabled",
+                                                                               "reason":  "Windows app search is disabled.",
+                                                                               "enabled":  false,
+                                                                               "launchEnabled":  false,
+                                                                               "nativeRequested":  false,
+                                                                               "storeRequested":  false,
+                                                                               "backendLoaded":  false,
+                                                                               "scanning":  false,
+                                                                               "empty":  false,
+                                                                               "failed":  false,
+                                                                               "disabled":  true,
+                                                                               "ready":  false,
+                                                                               "lastError":  "",
+                                                                               "persistentFrequencies":  false,
+                                                                               "frequencyPath":  "",
+                                                                               "count":  0,
+                                                                               "listLoaded":  false,
+                                                                               "listCount":  0,
+                                                                               "query":  "a",
+                                                                               "queryCount":  0,
+                                                                               "queryNames":  [
+
+                                                                                              ],
+                                                                               "queryIcons":  [
+
+                                                                                              ],
+                                                                               "catalogNames":  [
+
+                                                                                                ],
+                                                                               "catalogIds":  [
+
+                                                                                              ],
+                                                                               "launchRequests":  0,
+                                                                               "launchesIssued":  0,
+                                                                               "lastLaunchError":  "",
+                                                                               "terminalLaunchSupported":  false,
+                                                                               "searchMatchesList":  true
+                                                                           }
+                                                             }
+                                                         ],
+                                       "traySnapshots":  [
+
+                                                         ],
+                                       "sessionSnapshots":  [
+
+                                                            ],
+                                       "appsSearches":  [
+                                                            {
+                                                                "query":  "a",
+                                                                "queryCount":  0,
+                                                                "queryNames":  [
+
+                                                                               ],
+                                                                "queryIcons":  [
+
+                                                                               ],
+                                                                "listCount":  0,
+                                                                "listMatchesQuery":  true,
+                                                                "totalCount":  0
+                                                            }
+                                                        ],
+                                       "sessionButtons":  [
+
+                                                          ]
+                                   }
+                    },
+                    {
+                        "kind":  "apps",
+                        "result":  {
+                                       "passed":  true,
+                                       "smoke":  true,
+                                       "prototype":  "apps",
+                                       "audioMode":  "Disabled",
+                                       "batteryMode":  "Disabled",
+                                       "mediaMode":  "Disabled",
+                                       "networkMode":  "Disabled",
+                                       "hyprMode":  "Disabled",
+                                       "bluetoothMode":  "Disabled",
+                                       "appsMode":  "ReadOnly",
+                                       "appsSearchQuery":  "",
+                                       "trayMode":  "Disabled",
+                                       "trayFixture":  false,
+                                       "trayHookMode":  null,
+                                       "sessionMode":  "Disabled",
+                                       "sessionActions":  false,
+                                       "timedOut":  false,
+                                       "exitCode":  0,
+                                       "scaleFactor":  "native",
+                                       "screenIndex":  0,
+                                       "monitorCycle":  false,
+                                       "traceInput":  false,
+                                       "actualScreens":  [
+                                                             {
+                                                                 "index":  0,
+                                                                 "name":  "MAG321UX OLED",
+                                                                 "x":  0,
+                                                                 "y":  0,
+                                                                 "dpr":  1.5,
+                                                                 "width":  560,
+                                                                 "height":  560
+                                                             }
+                                                         ],
+                                       "captures":  [
+                                                        "file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/apps-20261025-195604-270.png"
+                                                    ],
+                                       "elapsedMilliseconds":  3685,
+                                       "sourceRevision":  "ca40f983f5d0aa6402a41cb8f87536dc894d9fe2",
+                                       "sourceDirty":  false,
+                                       "backendRevision":  "1401042969e4b7ab3cfb314fc76945ab081db3de",
+                                       "buildRecordSha256":  "94F0834B7358EB3F0F6E254AFF6F70D60DF9259641E275A6162ADE96C4126333",
+                                       "configSha256":  "6FC8F8B80AF9D45A49A4737AF51B8C43A11B97E1B59A82468F31AB4C779C6F65",
+                                       "command":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\quickshell\\qs.exe",
+                                       "arguments":  "--no-color --log-times --path \"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\apps-20261025-195604-270\\shell.qml\"",
+                                       "executableSha256":  "22B69FFE0523F8FFDB86C22E1669A36B2C8DCAEA97B19754000EC7455345AF22",
+                                       "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\apps-20261025-195604-270",
+                                       "profile":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\apps-prototype-profile",
+                                       "sources":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\apps-20261025-195604-270.sources.json",
+                                       "screenshot":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\apps-20261025-195604-270.png",
+                                       "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\apps-20261025-195604-270.stdout.log",
+                                       "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\apps-20261025-195604-270.stderr.log",
+                                       "audioSnapshots":  [
+
+                                                          ],
+                                       "batterySnapshots":  [
+
+                                                            ],
+                                       "mediaSnapshots":  [
+
+                                                          ],
+                                       "networkSnapshots":  [
+
+                                                            ],
+                                       "hyprSnapshots":  [
+
+                                                         ],
+                                       "bluetoothSnapshots":  [
+
+                                                              ],
+                                       "appsSnapshots":  [
+                                                             {
+                                                                 "phase":  "INITIAL",
+                                                                 "state":  {
+                                                                               "status":  "ready",
+                                                                               "reason":  "153 application(s) observed. Read-only observation: launching is disabled.",
+                                                                               "enabled":  true,
+                                                                               "launchEnabled":  false,
+                                                                               "nativeRequested":  true,
+                                                                               "storeRequested":  true,
+                                                                               "backendLoaded":  true,
+                                                                               "scanning":  false,
+                                                                               "empty":  false,
+                                                                               "failed":  false,
+                                                                               "disabled":  false,
+                                                                               "ready":  true,
+                                                                               "lastError":  "",
+                                                                               "persistentFrequencies":  true,
+                                                                               "frequencyPath":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\apps-prototype-profile\\state\\apps-frequencies.json",
+                                                                               "count":  153,
+                                                                               "listLoaded":  true,
+                                                                               "listCount":  153,
+                                                                               "query":  "",
+                                                                               "queryCount":  153,
+                                                                               "queryNames":  [
+                                                                                                  "Application Verifier (WOW)",
+                                                                                                  "Application Verifier (X64)",
+                                                                                                  "Bloodborne",
+                                                                                                  "BlueBubbles",
+                                                                                                  "Calculator",
+                                                                                                  "Camera"
+                                                                                              ],
+                                                                               "queryIcons":  [
+                                                                                                  "appicon:{d65231b0-b2f1-4857-a4ce-a8e7c6ea7d27}\\appverif.exe",
+                                                                                                  "appicon:{1ac14e77-02e7-4e5d-b744-2eb1ae5198b7}\\appverif.exe",
+                                                                                                  "appicon:d:\\games\\bloodborne\\bbport-windows\\bloodborne.exe",
+                                                                                                  "appicon:23344bluebubbles.bluebubbles_2fva2ntdzvhtw!bluebubbles",
+                                                                                                  "appicon:microsoft.windowscalculator_8wekyb3d8bbwe!app",
+                                                                                                  "appicon:microsoft.windowscamera_8wekyb3d8bbwe!app"
+                                                                                              ],
+                                                                               "catalogNames":  [
+                                                                                                    "Application Verifier (WOW)",
+                                                                                                    "Application Verifier (X64)",
+                                                                                                    "Bloodborne",
+                                                                                                    "BlueBubbles",
+                                                                                                    "Calculator",
+                                                                                                    "Camera"
+                                                                                                ],
+                                                                               "catalogIds":  [
+                                                                                                  "{d65231b0-b2f1-4857-a4ce-a8e7c6ea7d27}\\appverif.exe",
+                                                                                                  "{1ac14e77-02e7-4e5d-b744-2eb1ae5198b7}\\appverif.exe",
+                                                                                                  "d:\\games\\bloodborne\\bbport-windows\\bloodborne.exe",
+                                                                                                  "23344bluebubbles.bluebubbles_2fva2ntdzvhtw!bluebubbles",
+                                                                                                  "microsoft.windowscalculator_8wekyb3d8bbwe!app",
+                                                                                                  "microsoft.windowscamera_8wekyb3d8bbwe!app"
+                                                                                              ],
+                                                                               "launchRequests":  0,
+                                                                               "launchesIssued":  0,
+                                                                               "lastLaunchError":  "",
+                                                                               "terminalLaunchSupported":  false,
+                                                                               "searchMatchesList":  true
+                                                                           }
+                                                             },
+                                                             {
+                                                                 "phase":  "FINAL",
+                                                                 "state":  {
+                                                                               "status":  "ready",
+                                                                               "reason":  "153 application(s) observed. Read-only observation: launching is disabled.",
+                                                                               "enabled":  true,
+                                                                               "launchEnabled":  false,
+                                                                               "nativeRequested":  true,
+                                                                               "storeRequested":  true,
+                                                                               "backendLoaded":  true,
+                                                                               "scanning":  false,
+                                                                               "empty":  false,
+                                                                               "failed":  false,
+                                                                               "disabled":  false,
+                                                                               "ready":  true,
+                                                                               "lastError":  "",
+                                                                               "persistentFrequencies":  true,
+                                                                               "frequencyPath":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\apps-prototype-profile\\state\\apps-frequencies.json",
+                                                                               "count":  153,
+                                                                               "listLoaded":  true,
+                                                                               "listCount":  19,
+                                                                               "query":  "A",
+                                                                               "queryCount":  19,
+                                                                               "queryNames":  [
+                                                                                                  "NVIDIA App",
+                                                                                                  "Quick Assist",
+                                                                                                  "Power Automate",
+                                                                                                  "MSI Afterburner",
+                                                                                                  "Sample UWP Apps",
+                                                                                                  "Tools for UWP Apps"
+                                                                                              ],
+                                                                               "queryIcons":  [
+                                                                                                  "appicon:com.nvidia.nvapp",
+                                                                                                  "appicon:microsoftcorporationii.quickassist_8wekyb3d8bbwe!app",
+                                                                                                  "appicon:microsoft.powerautomatedesktop_8wekyb3d8bbwe!pad.console",
+                                                                                                  "appicon:{7c5a40ef-a0fb-4bfc-874a-c0f2e0b9fa8e}\\msi afterburner\\msiafterburner.exe",
+                                                                                                  "appicon:{7c5a40ef-a0fb-4bfc-874a-c0f2e0b9fa8e}\\windows kits\\10\\shortcuts\\uwpappssamples.url",
+                                                                                                  "appicon:{7c5a40ef-a0fb-4bfc-874a-c0f2e0b9fa8e}\\windows kits\\10\\shortcuts\\uwpappstoolsdocumentation.url"
+                                                                                              ],
+                                                                               "catalogNames":  [
+                                                                                                    "Application Verifier (WOW)",
+                                                                                                    "Application Verifier (X64)",
+                                                                                                    "Bloodborne",
+                                                                                                    "BlueBubbles",
+                                                                                                    "Calculator",
+                                                                                                    "Camera"
+                                                                                                ],
+                                                                               "catalogIds":  [
+                                                                                                  "{d65231b0-b2f1-4857-a4ce-a8e7c6ea7d27}\\appverif.exe",
+                                                                                                  "{1ac14e77-02e7-4e5d-b744-2eb1ae5198b7}\\appverif.exe",
+                                                                                                  "d:\\games\\bloodborne\\bbport-windows\\bloodborne.exe",
+                                                                                                  "23344bluebubbles.bluebubbles_2fva2ntdzvhtw!bluebubbles",
+                                                                                                  "microsoft.windowscalculator_8wekyb3d8bbwe!app",
+                                                                                                  "microsoft.windowscamera_8wekyb3d8bbwe!app"
+                                                                                              ],
+                                                                               "launchRequests":  0,
+                                                                               "launchesIssued":  0,
+                                                                               "lastLaunchError":  "",
+                                                                               "terminalLaunchSupported":  false,
+                                                                               "searchMatchesList":  true
+                                                                           }
+                                                             }
+                                                         ],
+                                       "traySnapshots":  [
+
+                                                         ],
+                                       "sessionSnapshots":  [
+
+                                                            ],
+                                       "appsSearches":  [
+                                                            {
+                                                                "query":  "A",
+                                                                "queryCount":  19,
+                                                                "queryNames":  [
+                                                                                   "NVIDIA App",
+                                                                                   "Quick Assist",
+                                                                                   "Power Automate",
+                                                                                   "MSI Afterburner",
+                                                                                   "Sample UWP Apps",
+                                                                                   "Tools for UWP Apps"
+                                                                               ],
+                                                                "queryIcons":  [
+                                                                                   "appicon:com.nvidia.nvapp",
+                                                                                   "appicon:microsoftcorporationii.quickassist_8wekyb3d8bbwe!app",
+                                                                                   "appicon:microsoft.powerautomatedesktop_8wekyb3d8bbwe!pad.console",
+                                                                                   "appicon:{7c5a40ef-a0fb-4bfc-874a-c0f2e0b9fa8e}\\msi afterburner\\msiafterburner.exe",
+                                                                                   "appicon:{7c5a40ef-a0fb-4bfc-874a-c0f2e0b9fa8e}\\windows kits\\10\\shortcuts\\uwpappssamples.url",
+                                                                                   "appicon:{7c5a40ef-a0fb-4bfc-874a-c0f2e0b9fa8e}\\windows kits\\10\\shortcuts\\uwpappstoolsdocumentation.url"
+                                                                               ],
+                                                                "listCount":  19,
+                                                                "listMatchesQuery":  true,
+                                                                "totalCount":  153
+                                                            }
+                                                        ],
+                                       "sessionButtons":  [
+
+                                                          ]
+                                   }
+                    },
+                    {
+                        "kind":  "apps",
+                        "result":  {
+                                       "passed":  true,
+                                       "smoke":  true,
+                                       "prototype":  "apps",
+                                       "audioMode":  "Disabled",
+                                       "batteryMode":  "Disabled",
+                                       "mediaMode":  "Disabled",
+                                       "networkMode":  "Disabled",
+                                       "hyprMode":  "Disabled",
+                                       "bluetoothMode":  "Disabled",
+                                       "appsMode":  "Disabled",
+                                       "appsSearchQuery":  "",
+                                       "trayMode":  "Disabled",
+                                       "trayFixture":  false,
+                                       "trayHookMode":  null,
+                                       "sessionMode":  "Disabled",
+                                       "sessionActions":  false,
+                                       "timedOut":  false,
+                                       "exitCode":  0,
+                                       "scaleFactor":  "native",
+                                       "screenIndex":  1,
+                                       "monitorCycle":  false,
+                                       "traceInput":  false,
+                                       "actualScreens":  [
+                                                             {
+                                                                 "index":  1,
+                                                                 "name":  "DELL S2725QS",
+                                                                 "x":  -3840,
+                                                                 "y":  0,
+                                                                 "dpr":  1.75,
+                                                                 "width":  560,
+                                                                 "height":  560
+                                                             }
+                                                         ],
+                                       "captures":  [
+                                                        "file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/apps-20261025-195608-407.png"
+                                                    ],
+                                       "elapsedMilliseconds":  3678,
+                                       "sourceRevision":  "ca40f983f5d0aa6402a41cb8f87536dc894d9fe2",
+                                       "sourceDirty":  false,
+                                       "backendRevision":  "1401042969e4b7ab3cfb314fc76945ab081db3de",
+                                       "buildRecordSha256":  "94F0834B7358EB3F0F6E254AFF6F70D60DF9259641E275A6162ADE96C4126333",
+                                       "configSha256":  "6FC8F8B80AF9D45A49A4737AF51B8C43A11B97E1B59A82468F31AB4C779C6F65",
+                                       "command":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\quickshell\\qs.exe",
+                                       "arguments":  "--no-color --log-times --path \"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\apps-20261025-195608-407\\shell.qml\"",
+                                       "executableSha256":  "22B69FFE0523F8FFDB86C22E1669A36B2C8DCAEA97B19754000EC7455345AF22",
+                                       "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\apps-20261025-195608-407",
+                                       "profile":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\apps-prototype-profile",
+                                       "sources":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\apps-20261025-195608-407.sources.json",
+                                       "screenshot":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\apps-20261025-195608-407.png",
+                                       "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\apps-20261025-195608-407.stdout.log",
+                                       "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\apps-20261025-195608-407.stderr.log",
+                                       "audioSnapshots":  [
+
+                                                          ],
+                                       "batterySnapshots":  [
+
+                                                            ],
+                                       "mediaSnapshots":  [
+
+                                                          ],
+                                       "networkSnapshots":  [
+
+                                                            ],
+                                       "hyprSnapshots":  [
+
+                                                         ],
+                                       "bluetoothSnapshots":  [
+
+                                                              ],
+                                       "appsSnapshots":  [
+                                                             {
+                                                                 "phase":  "INITIAL",
+                                                                 "state":  {
+                                                                               "status":  "disabled",
+                                                                               "reason":  "Windows app search is disabled.",
+                                                                               "enabled":  false,
+                                                                               "launchEnabled":  false,
+                                                                               "nativeRequested":  false,
+                                                                               "storeRequested":  false,
+                                                                               "backendLoaded":  false,
+                                                                               "scanning":  false,
+                                                                               "empty":  false,
+                                                                               "failed":  false,
+                                                                               "disabled":  true,
+                                                                               "ready":  false,
+                                                                               "lastError":  "",
+                                                                               "persistentFrequencies":  false,
+                                                                               "frequencyPath":  "",
+                                                                               "count":  0,
+                                                                               "listLoaded":  false,
+                                                                               "listCount":  0,
+                                                                               "query":  "",
+                                                                               "queryCount":  0,
+                                                                               "queryNames":  [
+
+                                                                                              ],
+                                                                               "queryIcons":  [
+
+                                                                                              ],
+                                                                               "catalogNames":  [
+
+                                                                                                ],
+                                                                               "catalogIds":  [
+
+                                                                                              ],
+                                                                               "launchRequests":  0,
+                                                                               "launchesIssued":  0,
+                                                                               "lastLaunchError":  "",
+                                                                               "terminalLaunchSupported":  false,
+                                                                               "searchMatchesList":  true
+                                                                           }
+                                                             },
+                                                             {
+                                                                 "phase":  "FINAL",
+                                                                 "state":  {
+                                                                               "status":  "disabled",
+                                                                               "reason":  "Windows app search is disabled.",
+                                                                               "enabled":  false,
+                                                                               "launchEnabled":  false,
+                                                                               "nativeRequested":  false,
+                                                                               "storeRequested":  false,
+                                                                               "backendLoaded":  false,
+                                                                               "scanning":  false,
+                                                                               "empty":  false,
+                                                                               "failed":  false,
+                                                                               "disabled":  true,
+                                                                               "ready":  false,
+                                                                               "lastError":  "",
+                                                                               "persistentFrequencies":  false,
+                                                                               "frequencyPath":  "",
+                                                                               "count":  0,
+                                                                               "listLoaded":  false,
+                                                                               "listCount":  0,
+                                                                               "query":  "a",
+                                                                               "queryCount":  0,
+                                                                               "queryNames":  [
+
+                                                                                              ],
+                                                                               "queryIcons":  [
+
+                                                                                              ],
+                                                                               "catalogNames":  [
+
+                                                                                                ],
+                                                                               "catalogIds":  [
+
+                                                                                              ],
+                                                                               "launchRequests":  0,
+                                                                               "launchesIssued":  0,
+                                                                               "lastLaunchError":  "",
+                                                                               "terminalLaunchSupported":  false,
+                                                                               "searchMatchesList":  true
+                                                                           }
+                                                             }
+                                                         ],
+                                       "traySnapshots":  [
+
+                                                         ],
+                                       "sessionSnapshots":  [
+
+                                                            ],
+                                       "appsSearches":  [
+                                                            {
+                                                                "query":  "a",
+                                                                "queryCount":  0,
+                                                                "queryNames":  [
+
+                                                                               ],
+                                                                "queryIcons":  [
+
+                                                                               ],
+                                                                "listCount":  0,
+                                                                "listMatchesQuery":  true,
+                                                                "totalCount":  0
+                                                            }
+                                                        ],
+                                       "sessionButtons":  [
+
+                                                          ]
+                                   }
+                    },
+                    {
+                        "kind":  "apps",
+                        "result":  {
+                                       "passed":  true,
+                                       "smoke":  true,
+                                       "prototype":  "apps",
+                                       "audioMode":  "Disabled",
+                                       "batteryMode":  "Disabled",
+                                       "mediaMode":  "Disabled",
+                                       "networkMode":  "Disabled",
+                                       "hyprMode":  "Disabled",
+                                       "bluetoothMode":  "Disabled",
+                                       "appsMode":  "ReadOnly",
+                                       "appsSearchQuery":  "",
+                                       "trayMode":  "Disabled",
+                                       "trayFixture":  false,
+                                       "trayHookMode":  null,
+                                       "sessionMode":  "Disabled",
+                                       "sessionActions":  false,
+                                       "timedOut":  false,
+                                       "exitCode":  0,
+                                       "scaleFactor":  "native",
+                                       "screenIndex":  1,
+                                       "monitorCycle":  false,
+                                       "traceInput":  false,
+                                       "actualScreens":  [
+                                                             {
+                                                                 "index":  1,
+                                                                 "name":  "DELL S2725QS",
+                                                                 "x":  -3840,
+                                                                 "y":  0,
+                                                                 "dpr":  1.75,
+                                                                 "width":  560,
+                                                                 "height":  560
+                                                             }
+                                                         ],
+                                       "captures":  [
+                                                        "file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/apps-20261025-195612-572.png"
+                                                    ],
+                                       "elapsedMilliseconds":  3696,
+                                       "sourceRevision":  "ca40f983f5d0aa6402a41cb8f87536dc894d9fe2",
+                                       "sourceDirty":  false,
+                                       "backendRevision":  "1401042969e4b7ab3cfb314fc76945ab081db3de",
+                                       "buildRecordSha256":  "94F0834B7358EB3F0F6E254AFF6F70D60DF9259641E275A6162ADE96C4126333",
+                                       "configSha256":  "6FC8F8B80AF9D45A49A4737AF51B8C43A11B97E1B59A82468F31AB4C779C6F65",
+                                       "command":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\quickshell\\qs.exe",
+                                       "arguments":  "--no-color --log-times --path \"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\apps-20261025-195612-572\\shell.qml\"",
+                                       "executableSha256":  "22B69FFE0523F8FFDB86C22E1669A36B2C8DCAEA97B19754000EC7455345AF22",
+                                       "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\apps-20261025-195612-572",
+                                       "profile":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\apps-prototype-profile",
+                                       "sources":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\apps-20261025-195612-572.sources.json",
+                                       "screenshot":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\apps-20261025-195612-572.png",
+                                       "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\apps-20261025-195612-572.stdout.log",
+                                       "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\apps-20261025-195612-572.stderr.log",
+                                       "audioSnapshots":  [
+
+                                                          ],
+                                       "batterySnapshots":  [
+
+                                                            ],
+                                       "mediaSnapshots":  [
+
+                                                          ],
+                                       "networkSnapshots":  [
+
+                                                            ],
+                                       "hyprSnapshots":  [
+
+                                                         ],
+                                       "bluetoothSnapshots":  [
+
+                                                              ],
+                                       "appsSnapshots":  [
+                                                             {
+                                                                 "phase":  "INITIAL",
+                                                                 "state":  {
+                                                                               "status":  "ready",
+                                                                               "reason":  "153 application(s) observed. Read-only observation: launching is disabled.",
+                                                                               "enabled":  true,
+                                                                               "launchEnabled":  false,
+                                                                               "nativeRequested":  true,
+                                                                               "storeRequested":  true,
+                                                                               "backendLoaded":  true,
+                                                                               "scanning":  false,
+                                                                               "empty":  false,
+                                                                               "failed":  false,
+                                                                               "disabled":  false,
+                                                                               "ready":  true,
+                                                                               "lastError":  "",
+                                                                               "persistentFrequencies":  true,
+                                                                               "frequencyPath":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\apps-prototype-profile\\state\\apps-frequencies.json",
+                                                                               "count":  153,
+                                                                               "listLoaded":  true,
+                                                                               "listCount":  153,
+                                                                               "query":  "",
+                                                                               "queryCount":  153,
+                                                                               "queryNames":  [
+                                                                                                  "Application Verifier (WOW)",
+                                                                                                  "Application Verifier (X64)",
+                                                                                                  "Bloodborne",
+                                                                                                  "BlueBubbles",
+                                                                                                  "Calculator",
+                                                                                                  "Camera"
+                                                                                              ],
+                                                                               "queryIcons":  [
+                                                                                                  "appicon:{d65231b0-b2f1-4857-a4ce-a8e7c6ea7d27}\\appverif.exe",
+                                                                                                  "appicon:{1ac14e77-02e7-4e5d-b744-2eb1ae5198b7}\\appverif.exe",
+                                                                                                  "appicon:d:\\games\\bloodborne\\bbport-windows\\bloodborne.exe",
+                                                                                                  "appicon:23344bluebubbles.bluebubbles_2fva2ntdzvhtw!bluebubbles",
+                                                                                                  "appicon:microsoft.windowscalculator_8wekyb3d8bbwe!app",
+                                                                                                  "appicon:microsoft.windowscamera_8wekyb3d8bbwe!app"
+                                                                                              ],
+                                                                               "catalogNames":  [
+                                                                                                    "Application Verifier (WOW)",
+                                                                                                    "Application Verifier (X64)",
+                                                                                                    "Bloodborne",
+                                                                                                    "BlueBubbles",
+                                                                                                    "Calculator",
+                                                                                                    "Camera"
+                                                                                                ],
+                                                                               "catalogIds":  [
+                                                                                                  "{d65231b0-b2f1-4857-a4ce-a8e7c6ea7d27}\\appverif.exe",
+                                                                                                  "{1ac14e77-02e7-4e5d-b744-2eb1ae5198b7}\\appverif.exe",
+                                                                                                  "d:\\games\\bloodborne\\bbport-windows\\bloodborne.exe",
+                                                                                                  "23344bluebubbles.bluebubbles_2fva2ntdzvhtw!bluebubbles",
+                                                                                                  "microsoft.windowscalculator_8wekyb3d8bbwe!app",
+                                                                                                  "microsoft.windowscamera_8wekyb3d8bbwe!app"
+                                                                                              ],
+                                                                               "launchRequests":  0,
+                                                                               "launchesIssued":  0,
+                                                                               "lastLaunchError":  "",
+                                                                               "terminalLaunchSupported":  false,
+                                                                               "searchMatchesList":  true
+                                                                           }
+                                                             },
+                                                             {
+                                                                 "phase":  "FINAL",
+                                                                 "state":  {
+                                                                               "status":  "ready",
+                                                                               "reason":  "153 application(s) observed. Read-only observation: launching is disabled.",
+                                                                               "enabled":  true,
+                                                                               "launchEnabled":  false,
+                                                                               "nativeRequested":  true,
+                                                                               "storeRequested":  true,
+                                                                               "backendLoaded":  true,
+                                                                               "scanning":  false,
+                                                                               "empty":  false,
+                                                                               "failed":  false,
+                                                                               "disabled":  false,
+                                                                               "ready":  true,
+                                                                               "lastError":  "",
+                                                                               "persistentFrequencies":  true,
+                                                                               "frequencyPath":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\apps-prototype-profile\\state\\apps-frequencies.json",
+                                                                               "count":  153,
+                                                                               "listLoaded":  true,
+                                                                               "listCount":  19,
+                                                                               "query":  "A",
+                                                                               "queryCount":  19,
+                                                                               "queryNames":  [
+                                                                                                  "NVIDIA App",
+                                                                                                  "Quick Assist",
+                                                                                                  "Power Automate",
+                                                                                                  "MSI Afterburner",
+                                                                                                  "Sample UWP Apps",
+                                                                                                  "Tools for UWP Apps"
+                                                                                              ],
+                                                                               "queryIcons":  [
+                                                                                                  "appicon:com.nvidia.nvapp",
+                                                                                                  "appicon:microsoftcorporationii.quickassist_8wekyb3d8bbwe!app",
+                                                                                                  "appicon:microsoft.powerautomatedesktop_8wekyb3d8bbwe!pad.console",
+                                                                                                  "appicon:{7c5a40ef-a0fb-4bfc-874a-c0f2e0b9fa8e}\\msi afterburner\\msiafterburner.exe",
+                                                                                                  "appicon:{7c5a40ef-a0fb-4bfc-874a-c0f2e0b9fa8e}\\windows kits\\10\\shortcuts\\uwpappssamples.url",
+                                                                                                  "appicon:{7c5a40ef-a0fb-4bfc-874a-c0f2e0b9fa8e}\\windows kits\\10\\shortcuts\\uwpappstoolsdocumentation.url"
+                                                                                              ],
+                                                                               "catalogNames":  [
+                                                                                                    "Application Verifier (WOW)",
+                                                                                                    "Application Verifier (X64)",
+                                                                                                    "Bloodborne",
+                                                                                                    "BlueBubbles",
+                                                                                                    "Calculator",
+                                                                                                    "Camera"
+                                                                                                ],
+                                                                               "catalogIds":  [
+                                                                                                  "{d65231b0-b2f1-4857-a4ce-a8e7c6ea7d27}\\appverif.exe",
+                                                                                                  "{1ac14e77-02e7-4e5d-b744-2eb1ae5198b7}\\appverif.exe",
+                                                                                                  "d:\\games\\bloodborne\\bbport-windows\\bloodborne.exe",
+                                                                                                  "23344bluebubbles.bluebubbles_2fva2ntdzvhtw!bluebubbles",
+                                                                                                  "microsoft.windowscalculator_8wekyb3d8bbwe!app",
+                                                                                                  "microsoft.windowscamera_8wekyb3d8bbwe!app"
+                                                                                              ],
+                                                                               "launchRequests":  0,
+                                                                               "launchesIssued":  0,
+                                                                               "lastLaunchError":  "",
+                                                                               "terminalLaunchSupported":  false,
+                                                                               "searchMatchesList":  true
+                                                                           }
+                                                             }
+                                                         ],
+                                       "traySnapshots":  [
+
+                                                         ],
+                                       "sessionSnapshots":  [
+
+                                                            ],
+                                       "appsSearches":  [
+                                                            {
+                                                                "query":  "A",
+                                                                "queryCount":  19,
+                                                                "queryNames":  [
+                                                                                   "NVIDIA App",
+                                                                                   "Quick Assist",
+                                                                                   "Power Automate",
+                                                                                   "MSI Afterburner",
+                                                                                   "Sample UWP Apps",
+                                                                                   "Tools for UWP Apps"
+                                                                               ],
+                                                                "queryIcons":  [
+                                                                                   "appicon:com.nvidia.nvapp",
+                                                                                   "appicon:microsoftcorporationii.quickassist_8wekyb3d8bbwe!app",
+                                                                                   "appicon:microsoft.powerautomatedesktop_8wekyb3d8bbwe!pad.console",
+                                                                                   "appicon:{7c5a40ef-a0fb-4bfc-874a-c0f2e0b9fa8e}\\msi afterburner\\msiafterburner.exe",
+                                                                                   "appicon:{7c5a40ef-a0fb-4bfc-874a-c0f2e0b9fa8e}\\windows kits\\10\\shortcuts\\uwpappssamples.url",
+                                                                                   "appicon:{7c5a40ef-a0fb-4bfc-874a-c0f2e0b9fa8e}\\windows kits\\10\\shortcuts\\uwpappstoolsdocumentation.url"
+                                                                               ],
+                                                                "listCount":  19,
+                                                                "listMatchesQuery":  true,
+                                                                "totalCount":  153
+                                                            }
+                                                        ],
+                                       "sessionButtons":  [
+
+                                                          ]
+                                   }
+                    },
+                    {
+                        "kind":  "apps-frequency-read",
+                        "result":  {
+                                       "passed":  true,
+                                       "smoke":  true,
+                                       "prototype":  "apps",
+                                       "audioMode":  "Disabled",
+                                       "batteryMode":  "Disabled",
+                                       "mediaMode":  "Disabled",
+                                       "networkMode":  "Disabled",
+                                       "hyprMode":  "Disabled",
+                                       "bluetoothMode":  "Disabled",
+                                       "appsMode":  "ReadOnly",
+                                       "appsSearchQuery":  "",
+                                       "trayMode":  "Disabled",
+                                       "trayFixture":  false,
+                                       "trayHookMode":  null,
+                                       "sessionMode":  "Disabled",
+                                       "sessionActions":  false,
+                                       "timedOut":  false,
+                                       "exitCode":  0,
+                                       "scaleFactor":  "native",
+                                       "screenIndex":  0,
+                                       "monitorCycle":  false,
+                                       "traceInput":  false,
+                                       "actualScreens":  [
+                                                             {
+                                                                 "index":  0,
+                                                                 "name":  "MAG321UX OLED",
+                                                                 "x":  0,
+                                                                 "y":  0,
+                                                                 "dpr":  1.5,
+                                                                 "width":  560,
+                                                                 "height":  560
+                                                             }
+                                                         ],
+                                       "captures":  [
+                                                        "file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/apps-20261025-195616-721.png"
+                                                    ],
+                                       "elapsedMilliseconds":  3690,
+                                       "sourceRevision":  "ca40f983f5d0aa6402a41cb8f87536dc894d9fe2",
+                                       "sourceDirty":  false,
+                                       "backendRevision":  "1401042969e4b7ab3cfb314fc76945ab081db3de",
+                                       "buildRecordSha256":  "94F0834B7358EB3F0F6E254AFF6F70D60DF9259641E275A6162ADE96C4126333",
+                                       "configSha256":  "6FC8F8B80AF9D45A49A4737AF51B8C43A11B97E1B59A82468F31AB4C779C6F65",
+                                       "command":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\quickshell\\qs.exe",
+                                       "arguments":  "--no-color --log-times --path \"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\apps-20261025-195616-721\\shell.qml\"",
+                                       "executableSha256":  "22B69FFE0523F8FFDB86C22E1669A36B2C8DCAEA97B19754000EC7455345AF22",
+                                       "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\apps-20261025-195616-721",
+                                       "profile":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\apps-prototype-profile",
+                                       "sources":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\apps-20261025-195616-721.sources.json",
+                                       "screenshot":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\apps-20261025-195616-721.png",
+                                       "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\apps-20261025-195616-721.stdout.log",
+                                       "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\apps-20261025-195616-721.stderr.log",
+                                       "audioSnapshots":  [
+
+                                                          ],
+                                       "batterySnapshots":  [
+
+                                                            ],
+                                       "mediaSnapshots":  [
+
+                                                          ],
+                                       "networkSnapshots":  [
+
+                                                            ],
+                                       "hyprSnapshots":  [
+
+                                                         ],
+                                       "bluetoothSnapshots":  [
+
+                                                              ],
+                                       "appsSnapshots":  [
+                                                             {
+                                                                 "phase":  "INITIAL",
+                                                                 "state":  {
+                                                                               "status":  "ready",
+                                                                               "reason":  "153 application(s) observed. Read-only observation: launching is disabled.",
+                                                                               "enabled":  true,
+                                                                               "launchEnabled":  false,
+                                                                               "nativeRequested":  true,
+                                                                               "storeRequested":  true,
+                                                                               "backendLoaded":  true,
+                                                                               "scanning":  false,
+                                                                               "empty":  false,
+                                                                               "failed":  false,
+                                                                               "disabled":  false,
+                                                                               "ready":  true,
+                                                                               "lastError":  "",
+                                                                               "persistentFrequencies":  true,
+                                                                               "frequencyPath":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\apps-prototype-profile\\state\\apps-frequencies.json",
+                                                                               "count":  153,
+                                                                               "listLoaded":  true,
+                                                                               "listCount":  153,
+                                                                               "query":  "",
+                                                                               "queryCount":  153,
+                                                                               "queryNames":  [
+                                                                                                  "Application Verifier (X64)",
+                                                                                                  "Application Verifier (WOW)",
+                                                                                                  "Bloodborne",
+                                                                                                  "BlueBubbles",
+                                                                                                  "Calculator",
+                                                                                                  "Camera"
+                                                                                              ],
+                                                                               "queryIcons":  [
+                                                                                                  "appicon:{1ac14e77-02e7-4e5d-b744-2eb1ae5198b7}\\appverif.exe",
+                                                                                                  "appicon:{d65231b0-b2f1-4857-a4ce-a8e7c6ea7d27}\\appverif.exe",
+                                                                                                  "appicon:d:\\games\\bloodborne\\bbport-windows\\bloodborne.exe",
+                                                                                                  "appicon:23344bluebubbles.bluebubbles_2fva2ntdzvhtw!bluebubbles",
+                                                                                                  "appicon:microsoft.windowscalculator_8wekyb3d8bbwe!app",
+                                                                                                  "appicon:microsoft.windowscamera_8wekyb3d8bbwe!app"
+                                                                                              ],
+                                                                               "catalogNames":  [
+                                                                                                    "Application Verifier (X64)",
+                                                                                                    "Application Verifier (WOW)",
+                                                                                                    "Bloodborne",
+                                                                                                    "BlueBubbles",
+                                                                                                    "Calculator",
+                                                                                                    "Camera"
+                                                                                                ],
+                                                                               "catalogIds":  [
+                                                                                                  "{1ac14e77-02e7-4e5d-b744-2eb1ae5198b7}\\appverif.exe",
+                                                                                                  "{d65231b0-b2f1-4857-a4ce-a8e7c6ea7d27}\\appverif.exe",
+                                                                                                  "d:\\games\\bloodborne\\bbport-windows\\bloodborne.exe",
+                                                                                                  "23344bluebubbles.bluebubbles_2fva2ntdzvhtw!bluebubbles",
+                                                                                                  "microsoft.windowscalculator_8wekyb3d8bbwe!app",
+                                                                                                  "microsoft.windowscamera_8wekyb3d8bbwe!app"
+                                                                                              ],
+                                                                               "launchRequests":  0,
+                                                                               "launchesIssued":  0,
+                                                                               "lastLaunchError":  "",
+                                                                               "terminalLaunchSupported":  false,
+                                                                               "searchMatchesList":  true
+                                                                           }
+                                                             },
+                                                             {
+                                                                 "phase":  "FINAL",
+                                                                 "state":  {
+                                                                               "status":  "ready",
+                                                                               "reason":  "153 application(s) observed. Read-only observation: launching is disabled.",
+                                                                               "enabled":  true,
+                                                                               "launchEnabled":  false,
+                                                                               "nativeRequested":  true,
+                                                                               "storeRequested":  true,
+                                                                               "backendLoaded":  true,
+                                                                               "scanning":  false,
+                                                                               "empty":  false,
+                                                                               "failed":  false,
+                                                                               "disabled":  false,
+                                                                               "ready":  true,
+                                                                               "lastError":  "",
+                                                                               "persistentFrequencies":  true,
+                                                                               "frequencyPath":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\apps-prototype-profile\\state\\apps-frequencies.json",
+                                                                               "count":  153,
+                                                                               "listLoaded":  true,
+                                                                               "listCount":  19,
+                                                                               "query":  "A",
+                                                                               "queryCount":  19,
+                                                                               "queryNames":  [
+                                                                                                  "NVIDIA App",
+                                                                                                  "Quick Assist",
+                                                                                                  "Power Automate",
+                                                                                                  "MSI Afterburner",
+                                                                                                  "Sample UWP Apps",
+                                                                                                  "Tools for UWP Apps"
+                                                                                              ],
+                                                                               "queryIcons":  [
+                                                                                                  "appicon:com.nvidia.nvapp",
+                                                                                                  "appicon:microsoftcorporationii.quickassist_8wekyb3d8bbwe!app",
+                                                                                                  "appicon:microsoft.powerautomatedesktop_8wekyb3d8bbwe!pad.console",
+                                                                                                  "appicon:{7c5a40ef-a0fb-4bfc-874a-c0f2e0b9fa8e}\\msi afterburner\\msiafterburner.exe",
+                                                                                                  "appicon:{7c5a40ef-a0fb-4bfc-874a-c0f2e0b9fa8e}\\windows kits\\10\\shortcuts\\uwpappssamples.url",
+                                                                                                  "appicon:{7c5a40ef-a0fb-4bfc-874a-c0f2e0b9fa8e}\\windows kits\\10\\shortcuts\\uwpappstoolsdocumentation.url"
+                                                                                              ],
+                                                                               "catalogNames":  [
+                                                                                                    "Application Verifier (X64)",
+                                                                                                    "Application Verifier (WOW)",
+                                                                                                    "Bloodborne",
+                                                                                                    "BlueBubbles",
+                                                                                                    "Calculator",
+                                                                                                    "Camera"
+                                                                                                ],
+                                                                               "catalogIds":  [
+                                                                                                  "{1ac14e77-02e7-4e5d-b744-2eb1ae5198b7}\\appverif.exe",
+                                                                                                  "{d65231b0-b2f1-4857-a4ce-a8e7c6ea7d27}\\appverif.exe",
+                                                                                                  "d:\\games\\bloodborne\\bbport-windows\\bloodborne.exe",
+                                                                                                  "23344bluebubbles.bluebubbles_2fva2ntdzvhtw!bluebubbles",
+                                                                                                  "microsoft.windowscalculator_8wekyb3d8bbwe!app",
+                                                                                                  "microsoft.windowscamera_8wekyb3d8bbwe!app"
+                                                                                              ],
+                                                                               "launchRequests":  0,
+                                                                               "launchesIssued":  0,
+                                                                               "lastLaunchError":  "",
+                                                                               "terminalLaunchSupported":  false,
+                                                                               "searchMatchesList":  true
+                                                                           }
+                                                             }
+                                                         ],
+                                       "traySnapshots":  [
+
+                                                         ],
+                                       "sessionSnapshots":  [
+
+                                                            ],
+                                       "appsSearches":  [
+                                                            {
+                                                                "query":  "A",
+                                                                "queryCount":  19,
+                                                                "queryNames":  [
+                                                                                   "NVIDIA App",
+                                                                                   "Quick Assist",
+                                                                                   "Power Automate",
+                                                                                   "MSI Afterburner",
+                                                                                   "Sample UWP Apps",
+                                                                                   "Tools for UWP Apps"
+                                                                               ],
+                                                                "queryIcons":  [
+                                                                                   "appicon:com.nvidia.nvapp",
+                                                                                   "appicon:microsoftcorporationii.quickassist_8wekyb3d8bbwe!app",
+                                                                                   "appicon:microsoft.powerautomatedesktop_8wekyb3d8bbwe!pad.console",
+                                                                                   "appicon:{7c5a40ef-a0fb-4bfc-874a-c0f2e0b9fa8e}\\msi afterburner\\msiafterburner.exe",
+                                                                                   "appicon:{7c5a40ef-a0fb-4bfc-874a-c0f2e0b9fa8e}\\windows kits\\10\\shortcuts\\uwpappssamples.url",
+                                                                                   "appicon:{7c5a40ef-a0fb-4bfc-874a-c0f2e0b9fa8e}\\windows kits\\10\\shortcuts\\uwpappstoolsdocumentation.url"
+                                                                               ],
+                                                                "listCount":  19,
+                                                                "listMatchesQuery":  true,
+                                                                "totalCount":  153
+                                                            }
+                                                        ],
+                                       "sessionButtons":  [
+
+                                                          ]
+                                   }
+                    },
+                    {
+                        "kind":  "apps-corrupt-frequency",
+                        "result":  {
+                                       "passed":  true,
+                                       "smoke":  true,
+                                       "prototype":  "apps",
+                                       "audioMode":  "Disabled",
+                                       "batteryMode":  "Disabled",
+                                       "mediaMode":  "Disabled",
+                                       "networkMode":  "Disabled",
+                                       "hyprMode":  "Disabled",
+                                       "bluetoothMode":  "Disabled",
+                                       "appsMode":  "ReadOnly",
+                                       "appsSearchQuery":  "",
+                                       "trayMode":  "Disabled",
+                                       "trayFixture":  false,
+                                       "trayHookMode":  null,
+                                       "sessionMode":  "Disabled",
+                                       "sessionActions":  false,
+                                       "timedOut":  false,
+                                       "exitCode":  0,
+                                       "scaleFactor":  "native",
+                                       "screenIndex":  0,
+                                       "monitorCycle":  false,
+                                       "traceInput":  false,
+                                       "actualScreens":  [
+                                                             {
+                                                                 "index":  0,
+                                                                 "name":  "MAG321UX OLED",
+                                                                 "x":  0,
+                                                                 "y":  0,
+                                                                 "dpr":  1.5,
+                                                                 "width":  560,
+                                                                 "height":  560
+                                                             }
+                                                         ],
+                                       "captures":  [
+                                                        "file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/apps-20261025-195620-869.png"
+                                                    ],
+                                       "elapsedMilliseconds":  3670,
+                                       "sourceRevision":  "ca40f983f5d0aa6402a41cb8f87536dc894d9fe2",
+                                       "sourceDirty":  false,
+                                       "backendRevision":  "1401042969e4b7ab3cfb314fc76945ab081db3de",
+                                       "buildRecordSha256":  "94F0834B7358EB3F0F6E254AFF6F70D60DF9259641E275A6162ADE96C4126333",
+                                       "configSha256":  "6FC8F8B80AF9D45A49A4737AF51B8C43A11B97E1B59A82468F31AB4C779C6F65",
+                                       "command":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\quickshell\\qs.exe",
+                                       "arguments":  "--no-color --log-times --path \"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\apps-20261025-195620-869\\shell.qml\"",
+                                       "executableSha256":  "22B69FFE0523F8FFDB86C22E1669A36B2C8DCAEA97B19754000EC7455345AF22",
+                                       "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\apps-20261025-195620-869",
+                                       "profile":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\apps-prototype-profile",
+                                       "sources":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\apps-20261025-195620-869.sources.json",
+                                       "screenshot":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\apps-20261025-195620-869.png",
+                                       "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\apps-20261025-195620-869.stdout.log",
+                                       "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\apps-20261025-195620-869.stderr.log",
+                                       "audioSnapshots":  [
+
+                                                          ],
+                                       "batterySnapshots":  [
+
+                                                            ],
+                                       "mediaSnapshots":  [
+
+                                                          ],
+                                       "networkSnapshots":  [
+
+                                                            ],
+                                       "hyprSnapshots":  [
+
+                                                         ],
+                                       "bluetoothSnapshots":  [
+
+                                                              ],
+                                       "appsSnapshots":  [
+                                                             {
+                                                                 "phase":  "INITIAL",
+                                                                 "state":  {
+                                                                               "status":  "ready",
+                                                                               "reason":  "153 application(s) observed. Read-only observation: launching is disabled.",
+                                                                               "enabled":  true,
+                                                                               "launchEnabled":  false,
+                                                                               "nativeRequested":  true,
+                                                                               "storeRequested":  true,
+                                                                               "backendLoaded":  true,
+                                                                               "scanning":  false,
+                                                                               "empty":  false,
+                                                                               "failed":  false,
+                                                                               "disabled":  false,
+                                                                               "ready":  true,
+                                                                               "lastError":  "",
+                                                                               "persistentFrequencies":  true,
+                                                                               "frequencyPath":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\apps-prototype-profile\\state\\apps-frequencies.json",
+                                                                               "count":  153,
+                                                                               "listLoaded":  true,
+                                                                               "listCount":  153,
+                                                                               "query":  "",
+                                                                               "queryCount":  153,
+                                                                               "queryNames":  [
+                                                                                                  "Application Verifier (WOW)",
+                                                                                                  "Application Verifier (X64)",
+                                                                                                  "Bloodborne",
+                                                                                                  "BlueBubbles",
+                                                                                                  "Calculator",
+                                                                                                  "Camera"
+                                                                                              ],
+                                                                               "queryIcons":  [
+                                                                                                  "appicon:{d65231b0-b2f1-4857-a4ce-a8e7c6ea7d27}\\appverif.exe",
+                                                                                                  "appicon:{1ac14e77-02e7-4e5d-b744-2eb1ae5198b7}\\appverif.exe",
+                                                                                                  "appicon:d:\\games\\bloodborne\\bbport-windows\\bloodborne.exe",
+                                                                                                  "appicon:23344bluebubbles.bluebubbles_2fva2ntdzvhtw!bluebubbles",
+                                                                                                  "appicon:microsoft.windowscalculator_8wekyb3d8bbwe!app",
+                                                                                                  "appicon:microsoft.windowscamera_8wekyb3d8bbwe!app"
+                                                                                              ],
+                                                                               "catalogNames":  [
+                                                                                                    "Application Verifier (WOW)",
+                                                                                                    "Application Verifier (X64)",
+                                                                                                    "Bloodborne",
+                                                                                                    "BlueBubbles",
+                                                                                                    "Calculator",
+                                                                                                    "Camera"
+                                                                                                ],
+                                                                               "catalogIds":  [
+                                                                                                  "{d65231b0-b2f1-4857-a4ce-a8e7c6ea7d27}\\appverif.exe",
+                                                                                                  "{1ac14e77-02e7-4e5d-b744-2eb1ae5198b7}\\appverif.exe",
+                                                                                                  "d:\\games\\bloodborne\\bbport-windows\\bloodborne.exe",
+                                                                                                  "23344bluebubbles.bluebubbles_2fva2ntdzvhtw!bluebubbles",
+                                                                                                  "microsoft.windowscalculator_8wekyb3d8bbwe!app",
+                                                                                                  "microsoft.windowscamera_8wekyb3d8bbwe!app"
+                                                                                              ],
+                                                                               "launchRequests":  0,
+                                                                               "launchesIssued":  0,
+                                                                               "lastLaunchError":  "",
+                                                                               "terminalLaunchSupported":  false,
+                                                                               "searchMatchesList":  true
+                                                                           }
+                                                             },
+                                                             {
+                                                                 "phase":  "FINAL",
+                                                                 "state":  {
+                                                                               "status":  "ready",
+                                                                               "reason":  "153 application(s) observed. Read-only observation: launching is disabled.",
+                                                                               "enabled":  true,
+                                                                               "launchEnabled":  false,
+                                                                               "nativeRequested":  true,
+                                                                               "storeRequested":  true,
+                                                                               "backendLoaded":  true,
+                                                                               "scanning":  false,
+                                                                               "empty":  false,
+                                                                               "failed":  false,
+                                                                               "disabled":  false,
+                                                                               "ready":  true,
+                                                                               "lastError":  "",
+                                                                               "persistentFrequencies":  true,
+                                                                               "frequencyPath":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\apps-prototype-profile\\state\\apps-frequencies.json",
+                                                                               "count":  153,
+                                                                               "listLoaded":  true,
+                                                                               "listCount":  19,
+                                                                               "query":  "A",
+                                                                               "queryCount":  19,
+                                                                               "queryNames":  [
+                                                                                                  "NVIDIA App",
+                                                                                                  "Quick Assist",
+                                                                                                  "Power Automate",
+                                                                                                  "MSI Afterburner",
+                                                                                                  "Sample UWP Apps",
+                                                                                                  "Tools for UWP Apps"
+                                                                                              ],
+                                                                               "queryIcons":  [
+                                                                                                  "appicon:com.nvidia.nvapp",
+                                                                                                  "appicon:microsoftcorporationii.quickassist_8wekyb3d8bbwe!app",
+                                                                                                  "appicon:microsoft.powerautomatedesktop_8wekyb3d8bbwe!pad.console",
+                                                                                                  "appicon:{7c5a40ef-a0fb-4bfc-874a-c0f2e0b9fa8e}\\msi afterburner\\msiafterburner.exe",
+                                                                                                  "appicon:{7c5a40ef-a0fb-4bfc-874a-c0f2e0b9fa8e}\\windows kits\\10\\shortcuts\\uwpappssamples.url",
+                                                                                                  "appicon:{7c5a40ef-a0fb-4bfc-874a-c0f2e0b9fa8e}\\windows kits\\10\\shortcuts\\uwpappstoolsdocumentation.url"
+                                                                                              ],
+                                                                               "catalogNames":  [
+                                                                                                    "Application Verifier (WOW)",
+                                                                                                    "Application Verifier (X64)",
+                                                                                                    "Bloodborne",
+                                                                                                    "BlueBubbles",
+                                                                                                    "Calculator",
+                                                                                                    "Camera"
+                                                                                                ],
+                                                                               "catalogIds":  [
+                                                                                                  "{d65231b0-b2f1-4857-a4ce-a8e7c6ea7d27}\\appverif.exe",
+                                                                                                  "{1ac14e77-02e7-4e5d-b744-2eb1ae5198b7}\\appverif.exe",
+                                                                                                  "d:\\games\\bloodborne\\bbport-windows\\bloodborne.exe",
+                                                                                                  "23344bluebubbles.bluebubbles_2fva2ntdzvhtw!bluebubbles",
+                                                                                                  "microsoft.windowscalculator_8wekyb3d8bbwe!app",
+                                                                                                  "microsoft.windowscamera_8wekyb3d8bbwe!app"
+                                                                                              ],
+                                                                               "launchRequests":  0,
+                                                                               "launchesIssued":  0,
+                                                                               "lastLaunchError":  "",
+                                                                               "terminalLaunchSupported":  false,
+                                                                               "searchMatchesList":  true
+                                                                           }
+                                                             }
+                                                         ],
+                                       "traySnapshots":  [
+
+                                                         ],
+                                       "sessionSnapshots":  [
+
+                                                            ],
+                                       "appsSearches":  [
+                                                            {
+                                                                "query":  "A",
+                                                                "queryCount":  19,
+                                                                "queryNames":  [
+                                                                                   "NVIDIA App",
+                                                                                   "Quick Assist",
+                                                                                   "Power Automate",
+                                                                                   "MSI Afterburner",
+                                                                                   "Sample UWP Apps",
+                                                                                   "Tools for UWP Apps"
+                                                                               ],
+                                                                "queryIcons":  [
+                                                                                   "appicon:com.nvidia.nvapp",
+                                                                                   "appicon:microsoftcorporationii.quickassist_8wekyb3d8bbwe!app",
+                                                                                   "appicon:microsoft.powerautomatedesktop_8wekyb3d8bbwe!pad.console",
+                                                                                   "appicon:{7c5a40ef-a0fb-4bfc-874a-c0f2e0b9fa8e}\\msi afterburner\\msiafterburner.exe",
+                                                                                   "appicon:{7c5a40ef-a0fb-4bfc-874a-c0f2e0b9fa8e}\\windows kits\\10\\shortcuts\\uwpappssamples.url",
+                                                                                   "appicon:{7c5a40ef-a0fb-4bfc-874a-c0f2e0b9fa8e}\\windows kits\\10\\shortcuts\\uwpappstoolsdocumentation.url"
+                                                                               ],
+                                                                "listCount":  19,
+                                                                "listMatchesQuery":  true,
+                                                                "totalCount":  153
+                                                            }
+                                                        ],
+                                       "sessionButtons":  [
+
+                                                          ]
+                                   }
+                    },
+                    {
+                        "kind":  "m1-regression",
+                        "result":  {
+                                       "passed":  true,
+                                       "smoke":  true,
+                                       "prototype":  "shell",
+                                       "audioMode":  "Disabled",
+                                       "batteryMode":  "Disabled",
+                                       "mediaMode":  "Disabled",
+                                       "networkMode":  "Disabled",
+                                       "hyprMode":  "Disabled",
+                                       "bluetoothMode":  "Disabled",
+                                       "appsMode":  "Disabled",
+                                       "appsSearchQuery":  "",
+                                       "trayMode":  "Disabled",
+                                       "trayFixture":  false,
+                                       "trayHookMode":  null,
+                                       "sessionMode":  "Disabled",
+                                       "sessionActions":  false,
+                                       "timedOut":  false,
+                                       "exitCode":  0,
+                                       "scaleFactor":  "native",
+                                       "screenIndex":  0,
+                                       "monitorCycle":  false,
+                                       "traceInput":  false,
+                                       "actualScreens":  [
+                                                             {
+                                                                 "index":  0,
+                                                                 "name":  "MAG321UX OLED",
+                                                                 "x":  0,
+                                                                 "y":  0,
+                                                                 "dpr":  1.5
+                                                             }
+                                                         ],
+                                       "captures":  [
+                                                        "file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/shell-20261025-195624-994.png"
+                                                    ],
+                                       "elapsedMilliseconds":  4127,
+                                       "sourceRevision":  "ca40f983f5d0aa6402a41cb8f87536dc894d9fe2",
+                                       "sourceDirty":  false,
+                                       "backendRevision":  "1401042969e4b7ab3cfb314fc76945ab081db3de",
+                                       "buildRecordSha256":  "94F0834B7358EB3F0F6E254AFF6F70D60DF9259641E275A6162ADE96C4126333",
+                                       "configSha256":  "6FC8F8B80AF9D45A49A4737AF51B8C43A11B97E1B59A82468F31AB4C779C6F65",
+                                       "command":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\quickshell\\qs.exe",
+                                       "arguments":  "--no-color --log-times --path \"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\shell-20261025-195624-994\\shell.qml\"",
+                                       "executableSha256":  "22B69FFE0523F8FFDB86C22E1669A36B2C8DCAEA97B19754000EC7455345AF22",
+                                       "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\shell-20261025-195624-994",
+                                       "profile":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-prototype-profile",
+                                       "sources":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\shell-20261025-195624-994.sources.json",
+                                       "screenshot":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\shell-20261025-195624-994.png",
+                                       "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\shell-20261025-195624-994.stdout.log",
+                                       "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\shell-20261025-195624-994.stderr.log",
+                                       "audioSnapshots":  [
+
+                                                          ],
+                                       "batterySnapshots":  [
+
+                                                            ],
+                                       "mediaSnapshots":  [
+
+                                                          ],
+                                       "networkSnapshots":  [
+
+                                                            ],
+                                       "hyprSnapshots":  [
+
+                                                         ],
+                                       "bluetoothSnapshots":  [
+
+                                                              ],
+                                       "appsSnapshots":  [
+
+                                                         ],
+                                       "traySnapshots":  [
+
+                                                         ],
+                                       "sessionSnapshots":  [
+                                                                {
+                                                                    "phase":  "INITIAL",
+                                                                    "state":  {
+                                                                                  "mode":  "Disabled",
+                                                                                  "run":  false,
+                                                                                  "enabled":  false,
+                                                                                  "actionsEnabled":  false,
+                                                                                  "available":  false,
+                                                                                  "status":  "disabled",
+                                                                                  "nativeRequested":  false,
+                                                                                  "backendLoaded":  false,
+                                                                                  "backendError":  "",
+                                                                                  "hibernateCapabilityKnown":  false,
+                                                                                  "canHibernate":  false,
+                                                                                  "hibernateSupported":  false,
+                                                                                  "actionGating":  true,
+                                                                                  "fallbackBlocked":  true,
+                                                                                  "actions":  {
+                                                                                                  "lock":  {
+                                                                                                               "supported":  true,
+                                                                                                               "capability":  false,
+                                                                                                               "available":  false,
+                                                                                                               "requiresConfirmation":  false
+                                                                                                           },
+                                                                                                  "logout":  {
+                                                                                                                 "supported":  true,
+                                                                                                                 "capability":  false,
+                                                                                                                 "available":  false,
+                                                                                                                 "requiresConfirmation":  true
+                                                                                                             },
+                                                                                                  "shutdown":  {
+                                                                                                                   "supported":  true,
+                                                                                                                   "capability":  false,
+                                                                                                                   "available":  false,
+                                                                                                                   "requiresConfirmation":  true
+                                                                                                               },
+                                                                                                  "reboot":  {
+                                                                                                                 "supported":  true,
+                                                                                                                 "capability":  false,
+                                                                                                                 "available":  false,
+                                                                                                                 "requiresConfirmation":  true
+                                                                                                             },
+                                                                                                  "suspend":  {
+                                                                                                                  "supported":  true,
+                                                                                                                  "capability":  false,
+                                                                                                                  "available":  false,
+                                                                                                                  "requiresConfirmation":  false
+                                                                                                              },
+                                                                                                  "hibernate":  {
+                                                                                                                    "supported":  true,
+                                                                                                                    "capability":  false,
+                                                                                                                    "available":  false,
+                                                                                                                    "requiresConfirmation":  false
+                                                                                                                },
+                                                                                                  "firmware":  {
+                                                                                                                   "supported":  true,
+                                                                                                                   "capability":  false,
+                                                                                                                   "available":  false,
+                                                                                                                   "requiresConfirmation":  true
+                                                                                                               }
+                                                                                              },
+                                                                                  "lastOutcome":  "disabled",
+                                                                                  "lastAction":  "",
+                                                                                  "lastConsumed":  true,
+                                                                                  "lastDispatched":  false,
+                                                                                  "lastRequested":  false,
+                                                                                  "lastSucceeded":  false
+                                                                              }
+                                                                },
+                                                                {
+                                                                    "phase":  "FINAL",
+                                                                    "state":  {
+                                                                                  "mode":  "Disabled",
+                                                                                  "run":  false,
+                                                                                  "enabled":  false,
+                                                                                  "actionsEnabled":  false,
+                                                                                  "available":  false,
+                                                                                  "status":  "disabled",
+                                                                                  "nativeRequested":  false,
+                                                                                  "backendLoaded":  false,
+                                                                                  "backendError":  "",
+                                                                                  "hibernateCapabilityKnown":  false,
+                                                                                  "canHibernate":  false,
+                                                                                  "hibernateSupported":  false,
+                                                                                  "actionGating":  true,
+                                                                                  "fallbackBlocked":  true,
+                                                                                  "actions":  {
+                                                                                                  "lock":  {
+                                                                                                               "supported":  true,
+                                                                                                               "capability":  false,
+                                                                                                               "available":  false,
+                                                                                                               "requiresConfirmation":  false
+                                                                                                           },
+                                                                                                  "logout":  {
+                                                                                                                 "supported":  true,
+                                                                                                                 "capability":  false,
+                                                                                                                 "available":  false,
+                                                                                                                 "requiresConfirmation":  true
+                                                                                                             },
+                                                                                                  "shutdown":  {
+                                                                                                                   "supported":  true,
+                                                                                                                   "capability":  false,
+                                                                                                                   "available":  false,
+                                                                                                                   "requiresConfirmation":  true
+                                                                                                               },
+                                                                                                  "reboot":  {
+                                                                                                                 "supported":  true,
+                                                                                                                 "capability":  false,
+                                                                                                                 "available":  false,
+                                                                                                                 "requiresConfirmation":  true
+                                                                                                             },
+                                                                                                  "suspend":  {
+                                                                                                                  "supported":  true,
+                                                                                                                  "capability":  false,
+                                                                                                                  "available":  false,
+                                                                                                                  "requiresConfirmation":  false
+                                                                                                              },
+                                                                                                  "hibernate":  {
+                                                                                                                    "supported":  true,
+                                                                                                                    "capability":  false,
+                                                                                                                    "available":  false,
+                                                                                                                    "requiresConfirmation":  false
+                                                                                                                },
+                                                                                                  "firmware":  {
+                                                                                                                   "supported":  true,
+                                                                                                                   "capability":  false,
+                                                                                                                   "available":  false,
+                                                                                                                   "requiresConfirmation":  true
+                                                                                                               }
+                                                                                              },
+                                                                                  "lastOutcome":  "disabled",
+                                                                                  "lastAction":  "",
+                                                                                  "lastConsumed":  true,
+                                                                                  "lastDispatched":  false,
+                                                                                  "lastRequested":  false,
+                                                                                  "lastSucceeded":  false
+                                                                              }
+                                                                }
+                                                            ],
+                                       "appsSearches":  [
+
+                                                        ],
+                                       "sessionButtons":  [
+                                                              {
+                                                                  "icon":  "logout",
+                                                                  "disabled":  true
+                                                              },
+                                                              {
+                                                                  "icon":  "power_settings_new",
+                                                                  "disabled":  true
+                                                              },
+                                                              {
+                                                                  "icon":  "downloading",
+                                                                  "disabled":  true
+                                                              },
+                                                              {
+                                                                  "icon":  "cached",
+                                                                  "disabled":  true
+                                                              }
+                                                          ]
+                                   }
+                    }
+                ]
+}

@@ -1,0 +1,183 @@
+﻿qmllint.exe : Warning: C:\Users\Ermin\AppData\Local\Temp\hypr-lint3\qs\shell.qml:253:9: unknown grouped property scope 
+margins. [unqualified]
+At line:1 char:2348
++ ...  Join-Path $lint $_ }; & "$qt\bin\qmllint.exe" -E @files 2>&1 | Out-F ...
++                            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Warning: C:\Use.... [unqualified]:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+        margins.top: 80
+        ^^^^^^^
+Warning: C:\Users\Ermin\AppData\Local\Temp\hypr-lint3\qs\shell.qml:253:9: Type margins is used but it is not resolved 
+[unresolved-type]
+        margins.top: 80
+        ^^^^^^^
+Warning: C:\Users\Ermin\AppData\Local\Temp\hypr-lint3\qs\shell.qml:69:55: Member "monitor" not found on type "QObject" 
+[missing-property]
+            workspacesMonitorId: workspacesHost.item?.monitor?.id ?? -1,
+                                                      ^^^^^^^
+Warning: C:\Users\Ermin\AppData\Local\Temp\hypr-lint3\qs\shell.qml:70:48: Member "wsIds" not found on type "QObject" 
+[missing-property]
+            workspaceIds: workspacesHost.item?.wsIds ?? [],
+                                               ^^^^^
+Warning: C:\Users\Ermin\AppData\Local\Temp\hypr-lint3\qs\shell.qml:72:45: Member "wsIds" not found on type "QObject" 
+[missing-property]
+            specialWsIds: specialHost.item?.wsIds ?? [],
+                                            ^^^^^
+Warning: C:\Users\Ermin\AppData\Local\Temp\hypr-lint3\qs\shell.qml:73:48: Member "activeSpecialId" not found on type 
+"QObject" [missing-property]
+            specialActiveId: specialHost.item?.activeSpecialId ?? -1,
+                                               ^^^^^^^^^^^^^^^
+Warning: C:\Users\Ermin\AppData\Local\Temp\hypr-lint3\qs\shell.qml:75:55: Member "activeWindowTitle" not found on type 
+"QObject" [missing-property]
+            activeWindowTitle: activeWindowHost.item?.activeWindowTitle ?? "",
+                                                      ^^^^^^^^^^^^^^^^^
+Warning: C:\Users\Ermin\AppData\Local\Temp\hypr-lint3\qs\shell.qml:259:32: Member "m3surface" not found on type 
+"QObject" [missing-property]
+        color: Colours.palette.m3surface
+                               ^^^^^^^^^
+Warning: C:\Users\Ermin\AppData\Local\Temp\hypr-lint3\qs\shell.qml:263:36: Member "m3surface" not found on type 
+"QObject" [missing-property]
+            color: Colours.palette.m3surface
+                                   ^^^^^^^^^
+Warning: C:\Users\Ermin\AppData\Local\Temp\hypr-lint3\qs\shell.qml:287:44: Member "m3onSurfaceVariant" not found on 
+type "QObject" [missing-property]
+                    color: Colours.palette.m3onSurfaceVariant
+                                           ^^^^^^^^^^^^^^^^^^
+Warning: C:\Users\Ermin\AppData\Local\Temp\hypr-lint3\qs\shell.qml:295:40: Member "m3onSurfaceVariant" not found on 
+type "QObject" [missing-property]
+                color: Colours.palette.m3onSurfaceVariant
+                                       ^^^^^^^^^^^^^^^^^^
+Warning: C:\Users\Ermin\AppData\Local\Temp\hypr-lint3\qs\shell.qml:311:40: Member "m3onSurfaceVariant" not found on 
+type "QObject" [missing-property]
+                color: Colours.palette.m3onSurfaceVariant
+                                       ^^^^^^^^^^^^^^^^^^
+Warning: C:\Users\Ermin\AppData\Local\Temp\hypr-lint3\qs\shell.qml:318:40: Member "m3outlineVariant" not found on type 
+"QObject" [missing-property]
+                color: Colours.palette.m3outlineVariant
+                                       ^^^^^^^^^^^^^^^^
+Warning: C:\Users\Ermin\AppData\Local\Temp\hypr-lint3\qs\shell.qml:332:48: Member "m3onSurfaceVariant" not found on 
+type "QObject" [missing-property]
+                        color: Colours.palette.m3onSurfaceVariant
+                                               ^^^^^^^^^^^^^^^^^^
+Warning: C:\Users\Ermin\AppData\Local\Temp\hypr-lint3\qs\shell.qml:339:60: Member "implicitWidth" not found on type 
+"QObject" [missing-property]
+                        Layout.preferredWidth: item ? item.implicitWidth : 0
+                                                           ^^^^^^^^^^^^^
+Warning: C:\Users\Ermin\AppData\Local\Temp\hypr-lint3\qs\shell.qml:340:61: Member "implicitHeight" not found on type 
+"QObject" [missing-property]
+                        Layout.preferredHeight: item ? item.implicitHeight : 0
+                                                            ^^^^^^^^^^^^^^
+Warning: C:\Users\Ermin\AppData\Local\Temp\hypr-lint3\qs\shell.qml:350:48: Member "m3onSurfaceVariant" not found on 
+type "QObject" [missing-property]
+                        color: Colours.palette.m3onSurfaceVariant
+                                               ^^^^^^^^^^^^^^^^^^
+Warning: C:\Users\Ermin\AppData\Local\Temp\hypr-lint3\qs\shell.qml:368:48: Member "m3onSurfaceVariant" not found on 
+type "QObject" [missing-property]
+                        color: Colours.palette.m3onSurfaceVariant
+                                               ^^^^^^^^^^^^^^^^^^
+Warning: C:\Users\Ermin\AppData\Local\Temp\hypr-lint3\qs\components\ActiveWindowHost.qml:34:33: Member "m3primary" not 
+found on type "QObject" [missing-property]
+        colour: Colours.palette.m3primary
+                                ^^^^^^^^^
+Warning: C:\Users\Ermin\AppData\Local\Temp\hypr-lint3\qs\modules\bar\components\workspaces\Workspaces.qml:71:29: 
+Member "m3surfaceContainer" not found on type "QObject" [missing-property]
+    color: Colours.tPalette.m3surfaceContainer
+
+                            ^^^^^^^^^^^^^^^^^^
+Warning: C:\Users\Ermin\AppData\Local\Temp\hypr-lint3\qs\modules\bar\components\workspaces\Workspaces.qml:209:49: 
+Member "m3scrim" not found on type "QObject" [missing-property]
+                color: Qt.alpha(Colours.palette.m3scrim, Colours.light ? 0 : 0.2)
+
+                                                ^^^^^^^
+Warning: C:\Users\Ermin\AppData\Local\Temp\hypr-lint3\qs\modules\bar\components\workspaces\Workspace.qml:36:54: Member 
+"m3outlineVariant" not found on type "QObject" [missing-property]
+    property color offMonitorColour: Colours.palette.m3outlineVariant
+
+                                                     ^^^^^^^^^^^^^^^^
+Warning: C:\Users\Ermin\AppData\Local\Temp\hypr-lint3\qs\modules\bar\components\workspaces\Workspace.qml:47:36: Member 
+"m3onSurface" not found on type "QObject" [missing-property]
+            return Colours.palette.m3onSurface;
+
+                                   ^^^^^^^^^^^
+Warning: C:\Users\Ermin\AppData\Local\Temp\hypr-lint3\qs\modules\bar\components\workspaces\Workspace.qml:48:46: Member 
+"m3outlineVariant" not found on type "QObject" [missing-property]
+        return Colours.layer(Colours.palette.m3outlineVariant, 2);
+
+                                             ^^^^^^^^^^^^^^^^
+Warning: C:\Users\Ermin\AppData\Local\Temp\hypr-lint3\qs\modules\bar\components\workspaces\Workspace.qml:232:90: 
+Member "m3onSurfaceVariant" not found on type "QObject" [missing-property]
+                    color: root.onOtherMonitor ? root.offMonitorColour : Colours.palette.m3onSurfaceVariant
+
+                                                                                         ^^^^^^^^^^^^^^^^^^
+Warning: 
+C:\Users\Ermin\AppData\Local\Temp\hypr-lint3\qs\modules\bar\components\workspaces\SpecialWorkspaces.qml:168:47: Member 
+"m3outline" not found on type "QObject" [missing-property]
+            offMonitorColour: Colours.palette.m3outline
+
+                                              ^^^^^^^^^
+Warning: 
+C:\Users\Ermin\AppData\Local\Temp\hypr-lint3\qs\modules\bar\components\workspaces\SpecialWorkspaces.qml:194:36: Member 
+"m3tertiary" not found on type "QObject" [missing-property]
+            color: Colours.palette.m3tertiary
+
+                                   ^^^^^^^^^^
+Warning: 
+C:\Users\Ermin\AppData\Local\Temp\hypr-lint3\qs\modules\bar\components\workspaces\SpecialWorkspaces.qml:195:44: Member 
+"m3onTertiary" not found on type "QObject" [missing-property]
+            contentColour: Colours.palette.m3onTertiary
+
+                                           ^^^^^^^^^^^^
+Warning: C:\Users\Ermin\AppData\Local\Temp\hypr-lint3\qs\modules\bar\components\workspaces\ActiveIndicator.qml:46:28: 
+Member "m3primary" not found on type "QObject" [missing-property]
+    color: Colours.palette.m3primary
+
+                           ^^^^^^^^^
+Warning: C:\Users\Ermin\AppData\Local\Temp\hypr-lint3\qs\modules\bar\components\workspaces\ActiveIndicator.qml:72:38: 
+Member "m3onSurface" not found on type "QObject" [missing-property]
+        sourceColor: Colours.palette.m3onSurface
+
+                                     ^^^^^^^^^^^
+Warning: C:\Users\Ermin\AppData\Local\Temp\hypr-lint3\qs\modules\bar\components\workspaces\ActiveIndicator.qml:73:44: 
+Member "m3onPrimary" not found on type "QObject" [missing-property]
+        colorizationColor: Colours.palette.m3onPrimary
+
+                                           ^^^^^^^^^^^
+Warning: C:\Users\Ermin\AppData\Local\Temp\hypr-lint3\qs\modules\bar\components\workspaces\GapMarkers.qml:41:36: 
+Member "m3outline" not found on type "QObject" [missing-property]
+            color: Colours.palette.m3outline
+
+                                   ^^^^^^^^^
+Warning: C:\Users\Ermin\AppData\Local\Temp\hypr-lint3\qs\modules\bar\components\workspaces\OccupiedBg.qml:16:67: 
+Member "m3surfaceContainerHighest" not found on type "QObject" [missing-property]
+    readonly property color colour: Colours.layer(Colours.palette.m3surfaceContainerHighest, 2)
+
+                                                                  ^^^^^^^^^^^^^^^^^^^^^^^^^
+Warning: C:\Users\Ermin\AppData\Local\Temp\hypr-lint3\qs\modules\bar\components\ActiveWindow.qml:5:1: Warnings 
+occurred while importing module "Caelestia.I18n": [import]
+import Caelestia.I18n
+
+^^^^^^
+---
+Warning: 5:1: Units.qml is listed as component in 
+D:/AiStack/caelestia-windows/windows/.local/build/install/qml/Caelestia/I18n/qmldir but does not exist.
+ [import]
+Warning: 5:1: Tr.qml is listed as component in 
+D:/AiStack/caelestia-windows/windows/.local/build/install/qml/Caelestia/I18n/qmldir but does not exist.
+ [import]
+---
+
+Warning: C:\Users\Ermin\AppData\Local\Temp\hypr-lint3\qs\modules\bar\components\ActiveWindow.qml:15:44: Member 
+"m3primary" not found on type "QObject" [missing-property]
+    property color colour: Colours.palette.m3primary
+
+                                           ^^^^^^^^^
+Warning: C:\Users\Ermin\AppData\Local\Temp\hypr-lint3\qs\modules\bar\components\ActiveWindow.qml:20:20: Unqualified 
+access [unqualified]
+            return Tr.trCtx("Desktop", "shown when no window is focused");
+
+                   ^^
+Warning: C:\Users\Ermin\AppData\Local\Temp\hypr-lint3\qs\services\Hypr.qml:52:48: Member "options" not found on type 
+"QObject" [missing-property]
+    readonly property var options: root.extras.options
+                                               ^^^^^^^
