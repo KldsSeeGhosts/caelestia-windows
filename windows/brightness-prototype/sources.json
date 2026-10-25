@@ -1,0 +1,12 @@
+{
+  "modules/osd/Content.qml": "modules/osd/Content.qml",
+  "components/controls/FilledSlider.qml": "components/controls/FilledSlider.qml",
+  "components/effects/Elevation.qml": "components/effects/Elevation.qml",
+  "utils/Icons.qml": "utils/Icons.qml",
+  "windows/services/brightness/Brightness.qml": "services/Brightness.qml",
+  "windows/services/brightness/BrightnessService.qml": "services/BrightnessService.qml",
+  "windows/services/brightness/NativeBrightnessBackend.qml": "services/NativeBrightnessBackend.qml",
+  "windows/services/audio/Audio.qml": "services/Audio.qml",
+  "windows/services/audio/AudioService.qml": "services/AudioService.qml",
+  "windows/services/audio/NativeAudioBackend.qml": "services/NativeAudioBackend.qml"
+}
