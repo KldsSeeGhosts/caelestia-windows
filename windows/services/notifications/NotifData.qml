@@ -38,7 +38,14 @@ QtObject {
     property var historicalActions: []
     property bool local: false
     property bool imageCachePending: false
+    property bool imageCacheDropped: false
+    property string imageCacheError: ""
+    property bool imageSourceRejected: false
+    property string imageSourceError: ""
     property bool hasFullscreen: false
+    // Monotonic arrival order assigned by the service. Delivery confirmation
+    // only accepts a record received after the send that is being checked.
+    property int arrivalSequence: 0
 
     readonly property string timeStr: {
         if (record.ageMins < 1)
@@ -97,7 +104,7 @@ QtObject {
         record.body = String(source.body ?? "");
         record.appIcon = String(source.appIcon ?? "");
         record.appName = String(source.appName ?? "");
-        record.image = String(source.image ?? "");
+        record.updateImage(source.image);
         record.hints = source.hints ?? ({});
         record.expireTimeout = Number.isFinite(source.expireTimeout)
             ? source.expireTimeout : (record.service?.defaultExpireTimeout ?? 5000);
@@ -106,6 +113,35 @@ QtObject {
         record.hasActionIcons = source.hasActionIcons === true;
         record.local = !record.service?.isSystemNotification(source);
         record.syncActions();
+    }
+
+    // The service owns the single source-trust decision. A rejected source is
+    // dropped from this record entirely, so the original card shows its
+    // existing fallback icon and no writer is ever pointed at it. Accepted
+    // local sources are replaced by their canonical path.
+    function updateImage(source): void {
+        const raw = String(source ?? "");
+        if (raw === "") {
+            record.image = "";
+            record.imageSourceRejected = false;
+            record.imageSourceError = "";
+            record.imageCachePending = false;
+            return;
+        }
+
+        const result = record.service ? record.service.validateImageSource(raw) : null;
+        if (!result || !result.accepted) {
+            record.image = "";
+            record.imageSourceRejected = true;
+            record.imageSourceError = String(result?.reason ?? "No notification image validator is available.");
+            record.imageCachePending = false;
+            record.service?.reportRejectedImageSource(raw, record.imageSourceError);
+            return;
+        }
+
+        record.image = result.canonical;
+        record.imageSourceRejected = false;
+        record.imageSourceError = "";
         record.imageCachePending = record.service?.needsImageCache(record) ?? false;
     }
 
@@ -220,8 +256,9 @@ QtObject {
         function onImageChanged(): void {
             if (!record.notification)
                 return;
-            record.image = String(record.notification.image ?? "");
-            record.imageCachePending = record.service?.needsImageCache(record) ?? false;
+            record.updateImage(record.notification.image);
+            if (record.imageCachePending)
+                record.service?.scheduleImageCache(record);
         }
 
         function onExpireTimeoutChanged(): void {
