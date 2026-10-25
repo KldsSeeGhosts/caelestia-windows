@@ -1,0 +1,36 @@
+﻿{
+    "passed":  true,
+    "timedOut":  false,
+    "exitCode":  0,
+    "fixture":  {
+                    "assertions":  255
+                },
+    "nativeImports":  0,
+    "hashMismatch":  [
+
+                     ],
+    "diagnostics":  [
+
+                    ],
+    "sourceRevision":  "c6117d0aaa0365e848faefb72a0c9dcd988b4ad3",
+    "sourceDirty":  false,
+    "qtVersion":  "6.11.2",
+    "runnerSha256":  "24994D434962751713F0C8932B356104B0849572B95765DAD50C13DA6BE3FA20",
+    "command":  "C:\\Users\\Ermin\\AppData\\Local\\caelestia-dev\\Qt\\6.11.2\\msvc2022_64\\bin\\qml.exe",
+    "arguments":  "\"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\brightness-tests\\brightness-fixture-20261025-181700-084\\BrightnessServiceTest.qml\"",
+    "sources":  [
+                    {
+                        "source":  "windows/services/brightness/BrightnessService.qml",
+                        "sourceSha256":  "5103AAAA71E8A28BDC81EA4865AC4CF52F27DABB3C156DADB8091520FA522D42",
+                        "stagedSha256":  "5103AAAA71E8A28BDC81EA4865AC4CF52F27DABB3C156DADB8091520FA522D42"
+                    },
+                    {
+                        "source":  "windows/services/brightness/BrightnessServiceTest.qml",
+                        "sourceSha256":  "28102616B6141F9394F56486B30037423AC41E5AE3660E50B382B782E8E5DB57",
+                        "stagedSha256":  "28102616B6141F9394F56486B30037423AC41E5AE3660E50B382B782E8E5DB57"
+                    }
+                ],
+    "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\brightness-tests\\brightness-fixture-20261025-181700-084",
+    "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\brightness-fixture-20261025-181700-084.stdout.log",
+    "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\brightness-fixture-20261025-181700-084.stderr.log"
+}

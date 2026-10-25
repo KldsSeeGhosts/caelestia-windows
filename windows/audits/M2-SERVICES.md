@@ -513,6 +513,40 @@ root to deduplicate against Linear, each enabled and validated independently:
    hardware versus software capability. Acceptance: absent/denied/DDC failures
    cause no automatic gamma write; querying and teardown side effects are
    understood. Implement/review any backend policy gap before live writes.
+   **Progress:** implemented as ERM-504's bounded slice on
+   `t3/m2-brightness-route-policy` at clean `c6117d0a`: a pure
+   [BrightnessService](../services/brightness/BrightnessService.qml) state
+   object with no Quickshell/native imports or timers, the upstream-compatible
+   [Brightness](../services/brightness/Brightness.qml) singleton and a thin
+   `Quickshell.Windows.Brightness` wrapper. States are unknown, querying,
+   hardware (`wmi`/`lcd`/`ddc` named), software-only, unsupported and
+   denied/failed. A hardware monitor is written only through its detected
+   route; a route change or gamma fallback during a write is latched as a
+   failure and no further write is sent until a user route refresh. Software
+   gamma additionally requires `CAELESTIA_WINDOWS_BRIGHTNESS_SOFTWARE=1` on top
+   of the write opt-in. The bounded [OSD host](../brightness-prototype/README.md)
+   stages original `modules/osd/Content.qml` and `FilledSlider`; its
+   `audioControlsEnabled`/`brightnessControlsEnabled` hooks default to upstream
+   Linux behavior. `query()` and `probe()` share `startProbe()` and drop
+   software dimming this process applied earlier
+   ([brightness.cpp](../deps/quickshell/src/windows/system/brightness.cpp),
+   lines 1209-1221), so the adapter never probes, queries once before any gamma
+   write and refuses an automatic re-query after gamma. Fixtures pass 255
+   assertions; native disabled/read-only smoke at 150%/175% observed both
+   external panels on DDC/CI with unchanged gamma hashes and preserved desktop
+   state. [Evidence](../validation/2026-10-25-m2-brightness/README.md).
+   **Backend gap:** the adapter cannot prevent the internal fallback.
+   `brightness.cpp:1260-1266` forces DDC when a write arrives before a route is
+   resolved; a hardware failure retries `\\.\LCD` and then gamma
+   (`brightness.cpp:1386-1393`, `1395-1413`); `finishSet` emits
+   `brightnessSetFinished(..., true)` on every terminal path
+   (`brightness.cpp:1343-1401`). Proposed fork fix: a strict-route write flag
+   (for example `setBrightnessStrict` or a pre-set `strictRoutes`) that rejects
+   an unresolved or mismatched route, disables the LCD retry and gamma fallback
+   for that call, and reports the used route with a real per-write result. That
+   needs its own backend PR, gitlink/manifest update and validation. Live
+   hardware writes, DDC denial and recovery remain untested; no backend source,
+   gitlink or `sources.lock.json` change is part of this slice.
 8. **Read-only app catalog and search:** adapt AppDb/path/terminal boundaries
    around DesktopEntries. Acceptance: original search handles empty/failed scan,
    names/icons and profile-local frequency state; enumeration never launches.

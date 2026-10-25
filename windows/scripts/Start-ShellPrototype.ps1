@@ -12,6 +12,8 @@ param(
     [ValidateSet('Disabled', 'ReadOnly', 'Profiles', 'ProfileWrites')][string]$BatteryMode = 'Disabled',
     [switch]$Media,
     [ValidateSet('Disabled', 'ReadOnly', 'Interactive')][string]$MediaMode = 'Disabled',
+    [switch]$Brightness,
+    [ValidateSet('Disabled', 'ReadOnly', 'Interactive')][string]$BrightnessMode = 'Disabled',
     [switch]$Network,
     [ValidateSet('Disabled', 'ReadOnly', 'Interactive')][string]$NetworkMode = 'Disabled',
     [switch]$Bluetooth,
@@ -44,6 +46,7 @@ $slices = [ordered]@{
     audio     = @{ On = $Audio; Mode = $AudioMode; Observe = 'CAELESTIA_WINDOWS_AUDIO'; Controls = 'CAELESTIA_WINDOWS_AUDIO_CONTROLS'; ControlMode = 'Interactive' }
     battery   = @{ On = $Battery; Mode = $BatteryMode; Observe = 'CAELESTIA_WINDOWS_BATTERY'; Controls = 'CAELESTIA_WINDOWS_POWER_PROFILE_WRITES'; ControlMode = 'ProfileWrites' }
     media     = @{ On = $Media; Mode = $MediaMode; Observe = 'CAELESTIA_WINDOWS_MEDIA'; Controls = 'CAELESTIA_WINDOWS_MEDIA_CONTROLS'; ControlMode = 'Interactive' }
+    brightness = @{ On = $Brightness; Mode = $BrightnessMode; Observe = 'CAELESTIA_WINDOWS_BRIGHTNESS'; Controls = 'CAELESTIA_WINDOWS_BRIGHTNESS_CONTROLS'; ControlMode = 'Interactive' }
     network   = @{ On = $Network; Mode = $NetworkMode; Observe = 'CAELESTIA_WINDOWS_NETWORK'; Controls = 'CAELESTIA_WINDOWS_NETWORK_CONTROLS'; ControlMode = 'Interactive' }
     bluetooth = @{ On = $Bluetooth; Mode = $BluetoothMode; Observe = 'CAELESTIA_WINDOWS_BLUETOOTH'; Controls = 'CAELESTIA_WINDOWS_BLUETOOTH_CONTROLS'; ControlMode = 'Interactive' }
     apps      = @{ On = $Apps; Mode = $AppsMode; Observe = 'CAELESTIA_WINDOWS_APPS'; Controls = 'CAELESTIA_WINDOWS_APP_LAUNCH'; ControlMode = 'Interactive' }
@@ -180,6 +183,10 @@ foreach ($name in $slices.Keys) {
     $info.EnvironmentVariables[$slice.Observe] = $(if ($observe) { '1' } else { '0' })
     if ($slice.Controls) { $info.EnvironmentVariables[$slice.Controls] = $(if ($controls) { '1' } else { '0' }) }
 }
+# Brightness software gamma is a separate parent-process opt-in. This launcher
+# neither supplies it nor forwards it to a smoke run.
+$softwareOptIn = $env:CAELESTIA_WINDOWS_BRIGHTNESS_SOFTWARE -eq '1'
+$info.EnvironmentVariables['CAELESTIA_WINDOWS_BRIGHTNESS_SOFTWARE'] = $(if ($Brightness -and $BrightnessMode -eq 'Interactive' -and -not $Smoke -and $softwareOptIn) { '1' } else { '0' })
 # Battery observation stays read-only; Profiles adds read-only PowerProfiles
 # observation, and ProfileWrites (the battery control mode above) additionally
 # permits explicit profile selection outside smoke.
@@ -252,7 +259,8 @@ $passed = -not $timedOut -and -not $runtimeDiagnostics -and
 Copy-Item -LiteralPath (Join-Path $stage 'sources.json') -Destination (Join-Path $logRoot "$runName.sources.json")
 $result = [ordered]@{
     passed = $(if ($Smoke) { $passed } else { $null }); smoke = $Smoke.IsPresent
-    prototype = $kind; audioMode = $AudioMode; batteryMode = $BatteryMode; mediaMode = $MediaMode; networkMode = $NetworkMode
+    prototype = $kind; audioMode = $AudioMode; batteryMode = $BatteryMode; mediaMode = $MediaMode; brightnessMode = $BrightnessMode
+    networkMode = $NetworkMode
     bluetoothMode = $BluetoothMode; appsMode = $AppsMode; appsSearchQuery = $(if ($Apps) { $AppsSearchQuery } else { '' })
     trayMode = $TrayMode; trayFixture = $TrayFixture.IsPresent
     trayHookMode = $(if ($Tray) { $info.EnvironmentVariables['QS_WINDOWS_TRAY_HOOK'] } else { $null })
@@ -280,6 +288,12 @@ foreach ($name in $slices.Keys) {
     $result["${name}Snapshots"] = @([regex]::Matches($combined, "${prefix}_(INITIAL|FINAL) (\{[^\r\n]+\})") | ForEach-Object {
         [ordered]@{ phase = $_.Groups[1].Value; state = ($_.Groups[2].Value | ConvertFrom-Json) }
     })
+}
+if ($Brightness) {
+    # Route probes are a plain array, not a phase-tagged snapshot.
+    $result['brightnessRoutes'] = @([regex]::Matches($combined, 'CAELESTIA_BRIGHTNESS_ROUTES (\[[^\r\n]+\])') | ForEach-Object {
+        $_.Groups[1].Value | ConvertFrom-Json
+    } | ForEach-Object { $_ })
 }
 $result['appsSearches'] = @([regex]::Matches($combined, 'CAELESTIA_APPS_SEARCH (\{[^\r\n]+\})') | ForEach-Object {
     $_.Groups[1].Value | ConvertFrom-Json

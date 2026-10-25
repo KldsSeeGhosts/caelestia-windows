@@ -21,6 +21,14 @@ Item {
     required property bool sourceMuted
     required property real brightness
 
+    // Windows-localized hooks. Both default to the upstream Linux behavior; the
+    // bounded Windows brightness host stages this content for the brightness
+    // row only and disables the audio rows. With brightness read-only or a
+    // monitor whose route is unsupported, the original slider is disabled and
+    // dimmed instead of issuing a write.
+    property bool audioControlsEnabled: true
+    property bool brightnessControlsEnabled: true
+
     implicitWidth: layout.implicitWidth + Tokens.padding.large + layout.anchors.horizontalCenterOffset * 2
     implicitHeight: layout.implicitHeight + Tokens.padding.large * 2
 
@@ -43,6 +51,11 @@ Item {
             implicitWidth: Tokens.sizes.osd.sliderWidth
             implicitHeight: Tokens.sizes.osd.sliderHeight
 
+            // Windows hook: the brightness host hides audio rather than
+            // exposing a second, unconfigured service.
+            visible: root.audioControlsEnabled
+            Layout.preferredHeight: root.audioControlsEnabled ? Tokens.sizes.osd.sliderHeight : 0
+
             FilledSlider {
                 anchors.fill: parent
 
@@ -55,7 +68,7 @@ Item {
 
         // Microphone volume
         WrappedLoader {
-            shouldBeActive: Config.osd.enableMicrophone && (!Config.osd.enableBrightness || !root.screenState.session)
+            shouldBeActive: root.audioControlsEnabled && Config.osd.enableMicrophone && (!Config.osd.enableBrightness || !root.screenState.session)
 
             sourceComponent: CustomMouseArea {
                 function onWheel(event: WheelEvent) {
@@ -97,9 +110,16 @@ Item {
                 implicitWidth: Tokens.sizes.osd.sliderWidth
                 implicitHeight: Tokens.sizes.osd.sliderHeight
 
+                // Windows hook: disabled styling for read-only, software-only
+                // and unsupported monitor routes. The handle still shows the
+                // last observed value.
+                enabled: root.brightnessControlsEnabled
+                opacity: root.brightnessControlsEnabled ? 1 : 0.38
+
                 FilledSlider {
                     anchors.fill: parent
 
+                    enabled: root.brightnessControlsEnabled
                     icon: `brightness_${(Math.round(value * 6) + 1)}`
                     value: root.brightness
                     onMoved: root.monitor?.setBrightness(value)

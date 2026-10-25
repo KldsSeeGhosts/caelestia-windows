@@ -12,6 +12,7 @@ import QtQuick
 QtObject {
     readonly property bool available: false
     readonly property bool light: false
+
     readonly property QtObject tPalette: palette
     readonly property QtObject palette: QtObject {
         readonly property color m3primary_paletteKeyColor: "#a8627b"

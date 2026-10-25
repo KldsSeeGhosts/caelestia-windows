@@ -1,0 +1,184 @@
+﻿{
+    "passed":  true,
+    "smoke":  true,
+    "prototype":  "brightness",
+    "audioMode":  "Disabled",
+    "batteryMode":  "Disabled",
+    "mediaMode":  "Disabled",
+    "brightnessMode":  "Disabled",
+    "timedOut":  false,
+    "exitCode":  0,
+    "scaleFactor":  "native",
+    "screenIndex":  1,
+    "monitorCycle":  false,
+    "traceInput":  false,
+    "actualScreens":  [
+                          {
+                              "index":  1,
+                              "name":  "DELL S2725QS",
+                              "x":  -3840,
+                              "y":  0,
+                              "dpr":  1.75,
+                              "width":  560,
+                              "height":  620
+                          }
+                      ],
+    "captures":  [
+                     "file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/brightness-20261025-181708-047.png"
+                 ],
+    "audioSnapshots":  [
+
+                       ],
+    "batterySnapshots":  [
+
+                         ],
+    "mediaSnapshots":  [
+
+                       ],
+    "brightnessSnapshots":  [
+                                {
+                                    "phase":  "INITIAL",
+                                    "state":  {
+                                                  "status":  "disabled",
+                                                  "reason":  "Windows brightness is disabled. No native Brightness object, route query or probe is created.",
+                                                  "enabled":  false,
+                                                  "controlsEnabled":  false,
+                                                  "softwareEnabled":  false,
+                                                  "backendLoaded":  false,
+                                                  "nativeRequested":  false,
+                                                  "nativeBackendId":  "",
+                                                  "ready":  false,
+                                                  "lastError":  "",
+                                                  "queryRequests":  0,
+                                                  "writeRequests":  0,
+                                                  "refusedWrites":  0,
+                                                  "everWrote":  false,
+                                                  "gammaTouched":  false,
+                                                  "autoObservationDone":  false,
+                                                  "monitorCount":  2,
+                                                  "monitors":  [
+                                                                   {
+                                                                       "screen":  "MAG321UX OLED",
+                                                                       "capability":  "unknown",
+                                                                       "stateLabel":  "Unknown",
+                                                                       "route":  "",
+                                                                       "routeLabel":  "no route",
+                                                                       "available":  false,
+                                                                       "brightness":  0,
+                                                                       "brightnessKnown":  false,
+                                                                       "writable":  false,
+                                                                       "latched":  false,
+                                                                       "lastOutcome":  "none",
+                                                                       "lastError":  "",
+                                                                       "reason":  "The brightness route has not been checked."
+                                                                   },
+                                                                   {
+                                                                       "screen":  "DELL S2725QS",
+                                                                       "capability":  "unknown",
+                                                                       "stateLabel":  "Unknown",
+                                                                       "route":  "",
+                                                                       "routeLabel":  "no route",
+                                                                       "available":  false,
+                                                                       "brightness":  0,
+                                                                       "brightnessKnown":  false,
+                                                                       "writable":  false,
+                                                                       "latched":  false,
+                                                                       "lastOutcome":  "none",
+                                                                       "lastError":  "",
+                                                                       "reason":  "The brightness route has not been checked."
+                                                                   }
+                                                               ],
+                                                  "selectedScreen":  "DELL S2725QS",
+                                                  "selectedCapability":  "unknown",
+                                                  "selectedRoute":  "",
+                                                  "selectedWritable":  false,
+                                                  "selectedBrightnessKnown":  false,
+                                                  "screenStatePresent":  false,
+                                                  "osdLoaded":  false,
+                                                  "osdControlsEnabled":  false,
+                                                  "osdAudioControlsEnabled":  true
+                                              }
+                                },
+                                {
+                                    "phase":  "FINAL",
+                                    "state":  {
+                                                  "status":  "disabled",
+                                                  "reason":  "Windows brightness is disabled. No native Brightness object, route query or probe is created.",
+                                                  "enabled":  false,
+                                                  "controlsEnabled":  false,
+                                                  "softwareEnabled":  false,
+                                                  "backendLoaded":  false,
+                                                  "nativeRequested":  false,
+                                                  "nativeBackendId":  "",
+                                                  "ready":  false,
+                                                  "lastError":  "",
+                                                  "queryRequests":  0,
+                                                  "writeRequests":  0,
+                                                  "refusedWrites":  0,
+                                                  "everWrote":  false,
+                                                  "gammaTouched":  false,
+                                                  "autoObservationDone":  false,
+                                                  "monitorCount":  2,
+                                                  "monitors":  [
+                                                                   {
+                                                                       "screen":  "MAG321UX OLED",
+                                                                       "capability":  "unknown",
+                                                                       "stateLabel":  "Unknown",
+                                                                       "route":  "",
+                                                                       "routeLabel":  "no route",
+                                                                       "available":  false,
+                                                                       "brightness":  0,
+                                                                       "brightnessKnown":  false,
+                                                                       "writable":  false,
+                                                                       "latched":  false,
+                                                                       "lastOutcome":  "none",
+                                                                       "lastError":  "",
+                                                                       "reason":  "The brightness route has not been checked."
+                                                                   },
+                                                                   {
+                                                                       "screen":  "DELL S2725QS",
+                                                                       "capability":  "unknown",
+                                                                       "stateLabel":  "Unknown",
+                                                                       "route":  "",
+                                                                       "routeLabel":  "no route",
+                                                                       "available":  false,
+                                                                       "brightness":  0,
+                                                                       "brightnessKnown":  false,
+                                                                       "writable":  false,
+                                                                       "latched":  false,
+                                                                       "lastOutcome":  "none",
+                                                                       "lastError":  "",
+                                                                       "reason":  "The brightness route has not been checked."
+                                                                   }
+                                                               ],
+                                                  "selectedScreen":  "DELL S2725QS",
+                                                  "selectedCapability":  "unknown",
+                                                  "selectedRoute":  "",
+                                                  "selectedWritable":  false,
+                                                  "selectedBrightnessKnown":  false,
+                                                  "screenStatePresent":  false,
+                                                  "osdLoaded":  false,
+                                                  "osdControlsEnabled":  false,
+                                                  "osdAudioControlsEnabled":  true
+                                              }
+                                }
+                            ],
+    "brightnessRoutes":  [
+
+                         ],
+    "elapsedMilliseconds":  3426,
+    "sourceRevision":  "c6117d0aaa0365e848faefb72a0c9dcd988b4ad3",
+    "sourceDirty":  false,
+    "backendRevision":  "1401042969e4b7ab3cfb314fc76945ab081db3de",
+    "buildRecordSha256":  "3FA201EE45FC755B663FF122090B617D222BBFD99352B18F490B003F0C14FED1",
+    "configSha256":  "6FC8F8B80AF9D45A49A4737AF51B8C43A11B97E1B59A82468F31AB4C779C6F65",
+    "command":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\quickshell\\qs.exe",
+    "arguments":  "--no-color --log-times --path \"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\brightness-20261025-181708-047\\shell.qml\"",
+    "executableSha256":  "22B69FFE0523F8FFDB86C22E1669A36B2C8DCAEA97B19754000EC7455345AF22",
+    "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\brightness-20261025-181708-047",
+    "profile":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\brightness-prototype-profile",
+    "sources":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\brightness-20261025-181708-047.sources.json",
+    "screenshot":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\brightness-20261025-181708-047.png",
+    "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\brightness-20261025-181708-047.stdout.log",
+    "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\brightness-20261025-181708-047.stderr.log"
+}
