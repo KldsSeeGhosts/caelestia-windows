@@ -7,6 +7,8 @@ Wayland compositor; Windows continues to own application composition through DWM
 
 ## Current state
 
+For the next development session, start with [HANDOFF.md](HANDOFF.md).
+
 - The full Caelestia source history is retained, based on the revision in
   [sources.lock.json](sources.lock.json).
 - The Windows Quickshell source is pinned as `windows/deps/quickshell`.
@@ -19,6 +21,8 @@ Wayland compositor; Windows continues to own application composition through DWM
   document the tested sources and limits.
 - This is a component compatibility result. The full bar and drawer are not
   ported, and the upstream `shell.qml` still starts Linux-specific services.
+- The probe opens its motion specimen by clicking the clock; Escape closes it.
+  Caelestia's original configurable hover interactions remain part of M1.
 - Inherited GitHub Actions are disabled at repository level during bootstrap.
   They are upstream Linux workflows, not validation of this port.
 

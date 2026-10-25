@@ -4,6 +4,19 @@ The native backend build and portable component rendering are now demonstrated.
 Gates below are acceptance criteria, not claims of a complete shell. Track these as
 separate issues when the Linear connection is available.
 
+## Status snapshot, 2026-10-25
+
+- M0: local developer bootstrap complete. Backend pin, native build commands,
+  isolated probe configuration, and validation evidence are recorded.
+- M1: in progress. Portable plugins and component rendering pass; the actual
+  bar and one drawer, hover interactions, focus, and monitor tests remain.
+- M2, M3, M4: not started. No Windows service integration, tiling validation,
+  or installable shell release is claimed.
+
+Continue from [HANDOFF.md](HANDOFF.md). Linear could not be synchronized on
+2026-10-25 because the connection requires reauthentication; this roadmap is
+the current milestone record.
+
 ## M0: source and reproducibility
 
 Retain upstream history, pin Windows Quickshell, and report the local toolchain.
@@ -33,6 +46,8 @@ Gate:
 
 - No missing required QML imports, types, properties, or signals.
 - Bar and drawer render with the intended shader and animation behavior.
+- Original configurable hover interactions work; the click-only component
+  probe is not acceptance evidence for hover behavior.
 - Pointer regions, keyboard focus, dismissal, and focus return work.
 - Test 150% and 175% DPI, negative monitor origins, and transparency off.
 - Startup and shutdown leave the existing shell, taskbar, tiler, autostart, and
