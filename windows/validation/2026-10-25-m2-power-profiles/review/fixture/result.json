@@ -1,0 +1,73 @@
+﻿{
+    "passed":  true,
+    "timedOut":  false,
+    "exitCode":  0,
+    "battery":  {
+                    "name":  "battery",
+                    "passed":  true,
+                    "timedOut":  false,
+                    "exitCode":  0,
+                    "fixture":  {
+                                    "assertions":  128
+                                },
+                    "minimumAssertions":  128,
+                    "command":  "C:\\Users\\Ermin\\AppData\\Local\\caelestia-dev\\Qt\\6.11.2\\msvc2022_64\\bin\\qml.exe",
+                    "arguments":  "\"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\battery-tests\\battery-fixture-20261025-191123-645\\BatteryServiceTest.qml\"",
+                    "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\battery-fixture-20261025-191123-645.battery.stdout.log",
+                    "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\battery-fixture-20261025-191123-645.battery.stderr.log"
+                },
+    "profiles":  {
+                     "name":  "profiles",
+                     "passed":  true,
+                     "timedOut":  false,
+                     "exitCode":  0,
+                     "fixture":  {
+                                     "assertions":  132
+                                 },
+                     "minimumAssertions":  132,
+                     "command":  "C:\\Users\\Ermin\\AppData\\Local\\caelestia-dev\\Qt\\6.11.2\\msvc2022_64\\bin\\qml.exe",
+                     "arguments":  "\"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\battery-tests\\battery-fixture-20261025-191123-645\\PowerProfilesServiceTest.qml\"",
+                     "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\battery-fixture-20261025-191123-645.profiles.stdout.log",
+                     "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\battery-fixture-20261025-191123-645.profiles.stderr.log"
+                 },
+    "fixture":  {
+                    "assertions":  128
+                },
+    "nativeImports":  0,
+    "hashMismatch":  [
+
+                     ],
+    "sourceRevision":  "18523825ee58c64307c65723620a7d2bc3ff8672",
+    "sourceDirty":  false,
+    "qtVersion":  "6.11.2",
+    "runnerSha256":  "24994D434962751713F0C8932B356104B0849572B95765DAD50C13DA6BE3FA20",
+    "command":  "C:\\Users\\Ermin\\AppData\\Local\\caelestia-dev\\Qt\\6.11.2\\msvc2022_64\\bin\\qml.exe",
+    "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\battery-tests\\battery-fixture-20261025-191123-645",
+    "sources":  [
+                    {
+                        "source":  "windows/services/battery/BatteryService.qml",
+                        "sourceSha256":  "6D548EC91299476175DF9567E1770B26DE172BC86CE110794CCF3DBAE3D30C68",
+                        "stagedSha256":  "6D548EC91299476175DF9567E1770B26DE172BC86CE110794CCF3DBAE3D30C68"
+                    },
+                    {
+                        "source":  "windows/services/battery/BatteryServiceTest.qml",
+                        "sourceSha256":  "293E71A0EF9891EEBBE8625C7846E34DD83FF7C72EC433391398FC7CFF85F312",
+                        "stagedSha256":  "293E71A0EF9891EEBBE8625C7846E34DD83FF7C72EC433391398FC7CFF85F312"
+                    },
+                    {
+                        "source":  "windows/services/battery/PowerProfilesService.qml",
+                        "sourceSha256":  "7215738FD9478DC70C42C2F594827C1D7139E6C4B47723D93EC1D999F29B0EEA",
+                        "stagedSha256":  "7215738FD9478DC70C42C2F594827C1D7139E6C4B47723D93EC1D999F29B0EEA"
+                    },
+                    {
+                        "source":  "windows/services/battery/PowerProfilesServiceTest.qml",
+                        "sourceSha256":  "557C1052E430CDA4738B1D39C61E0EED6111F41C531F585BA1E6DAFCFB94D197",
+                        "stagedSha256":  "557C1052E430CDA4738B1D39C61E0EED6111F41C531F585BA1E6DAFCFB94D197"
+                    },
+                    {
+                        "source":  "windows/services/battery/PowerProfilesBackend.qml",
+                        "sourceSha256":  "E368967694BE8EB4E837BA4538B63713E2BE97D2CF0A85F1EFDABDB34CD19262",
+                        "stagedSha256":  "E368967694BE8EB4E837BA4538B63713E2BE97D2CF0A85F1EFDABDB34CD19262"
+                    }
+                ]
+}

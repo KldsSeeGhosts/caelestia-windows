@@ -155,3 +155,94 @@ evidence retains original absolute workstation paths.
   not a new media session or UI acceptance.
 - No Linux build or remote CI pass is claimed; backend CI remains subject to the
   account billing/spending-limit block. IdlePower settings remain out of scope.
+
+## Review addendum
+
+The review fixes were validated at clean root
+`18523825ee58c64307c65723620a7d2bc3ff8672`, following reviewed root `a0b6317b`.
+This addendum supersedes the heuristic-read and property-transition
+confirmation claims above. The root gitlink and `windows/sources.lock.json`
+remain unchanged at backend `14010429`. The reviewed reference was backend
+`327cd09` (`windows/m2-power-profile-results`), inspected without modifying
+either backend checkout. The shared native build was not rebuilt and still
+uses the **old backend pin**.
+
+- **Selector lifecycle:** the original popout now has an injectable
+  `selectProfile` hook, defaulting to its original direct setter on Linux.
+  The Windows host routes selections through `Battery.profiles.requestProfile`.
+  Selecting the current verified profile is idle, sends no write, starts no
+  timer and does not count as a confirmed write. Original icons, layout and
+  transitions are unchanged.
+- **Write results:** a matching `profileWriteResult(requested, true, error)` is
+  the only confirmation path. Matching failure results are rejected with the
+  supplied error. Matching property changes alone remain pending, and missing
+  results expire as unconfirmed. Result-less backend submissions cannot
+  confirm. Synchronous results during the setter are handled.
+- **Truthful observation:** the injectable pure facade requires
+  `profileKnown === true`, invalidates projected values after unknown/failed
+  reads and reports `lastError`. Available targets require `writeSupported`,
+  with Performance additionally requiring `hasPerformanceProfile`.
+  Old-pin members are feature-detected; every legacy profile value remains
+  unknown, with an empty available set and no native submissions.
+
+The original battery fixture still passes **128 assertions**. The profile
+fixture passes **132 assertions**, up from 96, covering new and legacy backend
+shapes, optimistic setters, result success/failure, mismatched and late results,
+timeout, no-op selection, injected selection routing, unknown GUIDs, failed-read
+cache invalidation and capability-derived availability.
+Existing expectations changed where required by the fix: property transitions
+now need an explicit result; current-profile no-ops stay idle without increasing
+confirmed writes; refused native submissions are rejected rather than
+unconfirmed. There were no QML diagnostics in the passing fixture runs.
+
+The [focused harness matrix](review/matrix.json) passes five records: both
+fixtures plus four native smoke runs, ReadOnly and Profiles on each screen
+(150% primary and 175% negative-origin secondary). The actual Windows popout
+hook was invoked after each capture with an invalid target while writes were
+off. All four runs logged `CAELESTIA_BATTERY_SELECTOR_PASS` and verified service
+rejection with no native submission attempt. This checks the host wiring
+without a profile write. Profiles snapshots correctly report `unknown`,
+`profile=-1`, `availableProfiles=[]`, controls unavailable, and writes idle/off
+with the old runtime. ReadOnly still leaves PowerProfiles unloaded.
+
+[Power before](review/power-before.json) and
+[after](review/power-after.json) are identity-equal: base scheme
+`381b4222-f694-41f0-9685-ff5bb260df2e` (Balanced), overlay
+`ded574b5-45a0-4f42-8737-46345c09c238` (Best performance), AC online, battery
+absent and raw charge 255. A separate full-task before/after comparison also
+passed. Desktop identity (shell processes, work areas and taskbar flags) passed.
+No native ProfileWrites run, power profile/overlay/plan change, input takeover
+or backend modification occurred.
+
+Commands used from the specified worktree in native PowerShell:
+
+```powershell
+$qtPrefix = "$env:LOCALAPPDATA\caelestia-dev\Qt\6.11.2\msvc2022_64"
+$buildRoot = 'D:\AiStack\caelestia-windows\windows\.local\build'
+powershell -NoProfile -File windows/scripts/Test-BatteryService.ps1 `
+    -QtPrefix $qtPrefix -BuildRoot $buildRoot
+powershell -NoProfile -File windows/scripts/Test-BatteryPrototype.ps1 `
+    -QtPrefix $qtPrefix -BuildRoot $buildRoot -ReadOnlyProfilesOnly
+powershell -NoProfile -File windows/scripts/Test-Environment.ps1 -Json
+```
+
+The focused option was added to honor the review's native ReadOnly/Profiles
+restriction. It skips Disabled, M1 and audio native runs, preserving the full
+harness defaults for other sessions. The environment report matched the
+unchanged pin but reported cmake, ninja, compiler and Qt tools missing from the
+ordinary process PATH; it is not a new build claim. The explicit Qt prefix and
+existing shared build supplied the fixture/smoke runtimes.
+
+Raw final results:
+`windows/.local/build/battery-validation-20261025-191123-280/result.json`.
+[Archived source hashes, logs, snapshots and captures](review/artifacts.sha256.json)
+cover 37 artifacts. The standalone fixture also passed from clean `18523825`
+at `battery-fixture-20261025-191122-270`.
+
+**Untested:** native operation against backend `327cd09`, native successful or
+denied profile writes and verification, real battery hardware, interactive
+selector clicks/motion, and Linux runtime behavior. The newer backend shape
+and result forwarding are fixture-validated only. Notification registration
+failure/fallback behavior was reviewed in the backend source, not rerun here.
+The full Disabled/M1/audio regression harness was intentionally not run in this
+review. Earlier acceptance results retain their original scope.
