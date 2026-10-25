@@ -20,6 +20,17 @@ ColumnLayout {
     property var passwordNetwork: null
     property bool showPasswordDialog: false
 
+    // Windows host hooks. Every default preserves upstream behavior: controls
+    // stay interactive, the component owns its connecting marker and the
+    // NetworkConnection path, Ethernet controls are offered, and no additional
+    // status line renders. A host that projects a native backend sets these.
+    property bool controlsEnabled: true
+    property string nativeConnectingSsid: ""
+    property string statusText: ""
+    property bool nativeConnect: false
+    property bool ethernetControlAvailable: true
+    signal connectRequested(var accessPoint)
+
     spacing: Tokens.spacing.small
     width: Tokens.sizes.bar.networkWidth
 
@@ -36,6 +47,7 @@ ColumnLayout {
     Toggle {
         visible: root.view === "wireless"
         Layout.preferredHeight: visible ? implicitHeight : 0
+        toggleEnabled: root.controlsEnabled
         label: Tr.trCtx("Enabled", "toggle label")
         checked: Nmcli.wifiEnabled
         toggle.onToggled: Nmcli.enableWifi(checked)
@@ -65,7 +77,9 @@ ColumnLayout {
             id: networkItem
 
             required property Nmcli.AccessPoint modelData
-            readonly property bool isConnecting: root.connectingToSsid === modelData.ssid
+            readonly property bool isConnecting: root.nativeConnectingSsid !== ""
+                ? root.nativeConnectingSsid === modelData.ssid
+                : root.connectingToSsid === modelData.ssid
             readonly property bool loading: networkItem.isConnecting
 
             visible: root.view === "wireless"
@@ -127,11 +141,16 @@ ColumnLayout {
 
                 StateLayer {
                     color: networkItem.modelData.active ? Colours.palette.m3onPrimary : Colours.palette.m3onSurface
-                    disabled: networkItem.loading || !Nmcli.wifiEnabled
+                    disabled: networkItem.loading || !Nmcli.wifiEnabled || !root.controlsEnabled
 
                     onClicked: {
                         if (networkItem.modelData.active) {
                             Nmcli.disconnectFromNetwork();
+                        } else if (root.nativeConnect) {
+                            // The Windows host facade owns profile lookup,
+                            // pending state and the native result. It never
+                            // reports success optimistically.
+                            root.connectRequested(networkItem.modelData);
                         } else {
                             root.connectingToSsid = networkItem.modelData.ssid;
                             NetworkConnection.handleConnect(networkItem.modelData, null, network => {
@@ -310,7 +329,7 @@ ColumnLayout {
 
                 StateLayer {
                     color: ethernetItem.modelData.connected ? Colours.palette.m3onPrimary : Colours.palette.m3onSurface
-                    disabled: ethernetItem.loading
+                    disabled: ethernetItem.loading || !root.ethernetControlAvailable
 
                     onClicked: {
                         if (ethernetItem.modelData.connected && ethernetItem.modelData.connection) {
@@ -339,6 +358,20 @@ ColumnLayout {
                 }
             }
         }
+    }
+
+    // Windows host: command/state feedback in the original popout's own text
+    // style. Upstream leaves this empty, so no extra line renders on Linux.
+    StyledText {
+        visible: root.statusText.length > 0
+        Layout.preferredHeight: visible ? implicitHeight : 0
+        Layout.topMargin: visible ? Tokens.spacing.small : 0
+        Layout.rightMargin: Tokens.padding.extraSmall
+        Layout.fillWidth: true
+        wrapMode: Text.WordWrap
+        text: root.statusText
+        color: Colours.palette.m3onSurfaceVariant
+        font: Tokens.font.body.small
     }
 
     Connections {
@@ -377,7 +410,10 @@ ColumnLayout {
     }
 
     component Toggle: RowLayout {
+        id: toggleRow
+
         required property string label
+        property bool toggleEnabled: true
         property alias checked: toggle.checked
         property alias toggle: toggle
 
@@ -392,6 +428,8 @@ ColumnLayout {
 
         StyledSwitch {
             id: toggle
+
+            disabled: !toggleRow.toggleEnabled
         }
     }
 }

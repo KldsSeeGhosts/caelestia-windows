@@ -8,12 +8,22 @@ QtObject {
     readonly property bool available: false
     readonly property bool light: false
     readonly property QtObject tPalette: palette
+
+    // The fixed palette is opaque. Upstream layer() returns its input when
+    // transparency is disabled, so this preserves the original component
+    // colours without reading theme or wallpaper state.
+    function layer(c, layer): color {
+        return c;
+    }
+
     readonly property QtObject palette: QtObject {
         readonly property color m3background: "#191114"
         readonly property color m3surface: "#191114"
         readonly property color m3surfaceContainer: "#261d20"
         readonly property color m3onSurface: "#efdfe2"
         readonly property color m3onSurfaceVariant: "#d5c2c6"
+        readonly property color m3surfaceContainerHighest: "#3c3235"
+        readonly property color m3outline: "#9e8c91"
         readonly property color m3outlineVariant: "#514347"
         readonly property color m3shadow: "#000000"
         readonly property color m3scrim: "#000000"
