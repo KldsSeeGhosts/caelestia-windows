@@ -1,0 +1,19 @@
+﻿2026-10-25 18:06:57.970  INFO: Launching config: "D:/AiStack/caelestia-windows/windows/.local/build/shell-runs/apps-20261025-180657-620/shell.qml"
+2026-10-25 18:06:57.970  INFO: Shell ID: "0bce900c1be4623aebabefbab11d98f7" Path ID "0bce900c1be4623aebabefbab11d98f7"
+2026-10-25 18:06:57.991  INFO: Saving logs to "C:/Users/Ermin/AppData/Local/quickshell/run/by-id/krclfhhnt/log.qslog"
+2026-10-25 18:06:58.049  INFO quickshell.windows.blur: Blur behind panels is turned off by QS_WINDOWS_BLUR.
+2026-10-25 18:06:58.056  INFO quickshell.windows.blur: No layer rules file found (looked for D:/AiStack/caelestia-windows/windows/.local/build/shell-runs/apps-20261025-180657-620/defaults/windows/layerrules.json ), blur behind panels is off.
+2026-10-25 18:06:58.200 DEBUG quickshell.windows.desktops: Desktop list changed: 1 desktops
+2026-10-25 18:06:58.200 DEBUG quickshell.windows.desktops: Current desktop: 0
+2026-10-25 18:06:58.201 DEBUG quickshell.windows.panel: Placing qs::windows::WinPanelWindow(0x22037af3280) at QRect(-3760,80 560x560) on "DELL S2725QS"
+2026-10-25 18:06:58.210  INFO: Configuration Loaded
+2026-10-25 18:06:58.335 DEBUG quickshell.windows.startup: First panel frame presented
+2026-10-25 18:06:58.736 DEBUG quickshell.windows.startup: Startup settled, running 1 deferred tasks
+2026-10-25 18:06:58.736  INFO quickshell.windows.desktops: VirtualDesktopAccessor.dll not found next to the executable; desktop switching falls back to keyboard shortcuts.
+2026-10-25 18:06:59.137 DEBUG qml: CAELESTIA_APPS_SCREEN {"index":1,"name":"DELL S2725QS","x":-3840,"y":0,"dpr":1.75,"width":560,"height":560}
+2026-10-25 18:06:59.137 DEBUG qml: CAELESTIA_APPS_INITIAL {"status":"disabled","reason":"Windows app search is disabled.","enabled":false,"launchEnabled":false,"nativeRequested":false,"storeRequested":false,"backendLoaded":false,"scanning":false,"empty":false,"failed":false,"disabled":true,"ready":false,"lastError":"","persistentFrequencies":false,"frequencyPath":"","count":0,"listLoaded":false,"listCount":0,"query":"","queryCount":0,"queryNames":[],"queryIcons":[],"catalogNames":[],"catalogIds":[],"launchRequests":0,"launchesIssued":0,"lastLaunchError":"","terminalLaunchSupported":false,"searchMatchesList":true}
+2026-10-25 18:07:00.737 DEBUG qml: CAELESTIA_APPS_SEARCH {"query":"a","queryCount":0,"queryNames":[],"queryIcons":[],"listCount":0,"listMatchesQuery":true,"totalCount":0}
+2026-10-25 18:07:00.737 DEBUG qml: CAELESTIA_APPS_FINAL {"status":"disabled","reason":"Windows app search is disabled.","enabled":false,"launchEnabled":false,"nativeRequested":false,"storeRequested":false,"backendLoaded":false,"scanning":false,"empty":false,"failed":false,"disabled":true,"ready":false,"lastError":"","persistentFrequencies":false,"frequencyPath":"","count":0,"listLoaded":false,"listCount":0,"query":"a","queryCount":0,"queryNames":[],"queryIcons":[],"catalogNames":[],"catalogIds":[],"launchRequests":0,"launchesIssued":0,"lastLaunchError":"","terminalLaunchSupported":false,"searchMatchesList":true}
+2026-10-25 18:07:01.570 DEBUG qml: CAELESTIA_APPS_CAPTURE file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/apps-20261025-180657-620.png
+2026-10-25 18:07:01.570 DEBUG qml: CAELESTIA_APPS_PASS 6.11.2
+

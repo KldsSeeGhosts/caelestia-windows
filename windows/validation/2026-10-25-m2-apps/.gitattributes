@@ -1,0 +1,6 @@
+*.json -text -whitespace
+*.log -text -whitespace
+*.txt -text -whitespace
+*.qml -text -whitespace
+*.js -text -whitespace
+*.ps1 -text -whitespace
