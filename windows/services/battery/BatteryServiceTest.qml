@@ -217,12 +217,13 @@ QtObject {
         battery.percentage = 1;
         close(service.percentage, 1, "full percentage read");
         battery.percentage = 1.5;
-        close(service.percentage, 1, "over-range percentage is bounded");
+        check(!service.percentageKnown && service.percentage === 0, "over-range percentage is unknown");
         battery.percentage = -0.2;
-        close(service.percentage, 0, "negative percentage is bounded");
+        check(!service.percentageKnown && service.percentage === 0, "negative percentage is unknown");
         for (const value of [NaN, Infinity, -Infinity, undefined, null, true, "0.5", {}]) {
             battery.percentage = value;
             close(service.percentage, 0, "invalid percentage " + String(value) + " reads zero");
+            check(!service.percentageKnown, "invalid percentage " + String(value) + " is unknown");
         }
         battery.percentage = 0.63;
 

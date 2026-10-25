@@ -142,6 +142,8 @@ ShellRoot {
                         profileControlsEnabled: false
                         observationAvailable: Battery.observationAvailable
                         percentageKnown: Battery.percentageKnown
+                        powerSourceKnown: Battery.onBatteryKnown
+                        timeToFullSupported: false
                     }
                 }
             }
@@ -190,7 +192,9 @@ ShellRoot {
                 }
                 if (state.enabled && (batteryHost.item?.profileControlsEnabled !== false
                         || batteryHost.item?.profileStatusEnabled !== false
-                        || statusLoader.item?.profileStatusEnabled !== false)) {
+                        || statusLoader.item?.profileStatusEnabled !== false
+                        || batteryHost.item?.timeToFullSupported !== false
+                        || batteryHost.item?.powerSourceKnown !== state.onBatteryKnown)) {
                     console.error("CAELESTIA_BATTERY_FAIL: write-capable profile controls are bounded off");
                     Qt.exit(1);
                     return;

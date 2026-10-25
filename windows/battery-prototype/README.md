@@ -18,8 +18,10 @@ The backend pin now carries capability fields rather than inferring absence
 from missing data. `UPowerDevice.isAvailable` records whether the
 `GetSystemPowerStatus` read succeeded, `isPresenceKnown` distinguishes Win32's
 "battery flag unknown" (255) from the proven "no battery" flag (128), and
-`isPercentageKnown` distinguishes `BATTERY_PERCENTAGE_UNKNOWN` (255) from an
-actual 0%. `UPower.onBatteryKnown` marks whether the AC source read succeeded.
+`isPercentageKnown` distinguishes `BATTERY_PERCENTAGE_UNKNOWN` (255) and
+out-of-range values from an actual 0%. `UPower.onBatteryKnown` marks whether
+Windows supplied a known AC source. Unknown AC state supplies neither a
+discharging state nor a time-to-empty estimate.
 A failed read clears the device's level, state, estimate, icon, path and model
 instead of retaining the previous reading, and the adapter then reports
 `observationAvailable=false` and `status="unavailable"` rather than proven
@@ -73,6 +75,10 @@ or "Battery level unknown" instead of a level, and the status icon uses
 `battery_unknown` rather than a zero-level or profile glyph. The status icon
 also sets `profileStatusEnabled: false` explicitly; every read-only smoke
 asserts that guard and the truthful absent/unknown glyph before capture.
+The popout's `powerSourceKnown` hook follows the adapter's AC-source validity,
+and `timeToFullSupported` is false because the backend does not measure charge
+time. These hooks retain true defaults for upstream consumers. An unknown
+source or unavailable charge-time estimate is labeled explicitly.
 Unlike the audio host, the original UPower components are instantiated only
 in the read-only mode: they bind the native `UPower` singleton directly, so
 disabled mode keeps them unloaded through host loaders. All battery display

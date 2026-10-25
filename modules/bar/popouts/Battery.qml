@@ -23,6 +23,8 @@ Column {
     // defaults preserve upstream behavior.
     property bool observationAvailable: true
     property bool percentageKnown: true
+    property bool powerSourceKnown: true
+    property bool timeToFullSupported: true
 
     function formatSeconds(s: int): string {
         const day = Math.floor(s / 86400);
@@ -81,12 +83,16 @@ Column {
 
     StyledText {
         text: {
+            if (!root.observationAvailable)
+                return Tr.tr("Power source unavailable");
             const dev = UPower.displayDevice;
             if (!dev.isLaptopBattery)
                 return profileStatusEnabled
                     ? Tr.tr("Power profile: %1").arg(root.powerProfileToString(PowerProfiles.profile))
                     : Tr.tr("Power profile unavailable");
 
+            if (!root.powerSourceKnown)
+                return Tr.tr("Power source unknown");
             if (UPower.onBattery) {
                 const time = root.formatSeconds(dev.timeToEmpty);
                 if (time)
@@ -100,6 +106,8 @@ Column {
                 return Tr.tr("Battery level unknown");
             if (Math.round(dev.percentage * 100) === 100)
                 return Tr.tr("Fully charged!");
+            if (!root.timeToFullSupported)
+                return Tr.tr("Charge time unavailable");
             return Tr.tr("Calculating time until charged...");
         }
     }

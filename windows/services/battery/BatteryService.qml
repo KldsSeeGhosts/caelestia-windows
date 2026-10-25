@@ -55,6 +55,8 @@ QtObject {
     // 255 (BATTERY_PERCENTAGE_UNKNOWN) is not 0%. A known level is required
     // before any percentage is projected.
     readonly property bool percentageKnown: present && displayDevice?.isPercentageKnown === true
+        && Number.isFinite(displayDevice?.percentage)
+        && displayDevice.percentage >= 0 && displayDevice.percentage <= 1
 
     // Guards reject nonfinite and out-of-range native values instead of
     // propagating them. Presence and capability gate every device projection:
