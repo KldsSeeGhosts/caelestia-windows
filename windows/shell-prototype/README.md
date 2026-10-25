@@ -101,14 +101,14 @@ foreground mismatch because the fixture became foreground instead of the
 expected prototype; independent state/fixture observations verified the
 intended result. That driver call is not recorded as successful.
 
-Rapid boundary tests have not passed yet. Synthetic 100%/150% baselines
-preceded WindowsFocusGuard and do not validate its final build. The physical
-primary display is 150%; the secondary is 175% at x=-3840. Secondary native
+Synthetic 100%/150%/175% checks pass on the clean implementation build.
+A single-jump hover case required further movement and remains unresolved.
+The physical primary display is 150%; the secondary is 175% at x=-3840. Secondary native
 rendering and same-process transfer now pass. Actual 175% pointer masks/focus,
 rapid races, remaining drag/lifecycle scenarios and system transparency off
 remain open. Windows EnableTransparency=1, an opaque fixed palette and
 QS_WINDOWS_BLUR=0 do not constitute a system-transparency-off test.
-The final synthetic matrix and archival are underway.
+The final synthetic matrix and native-cycle evidence are archived.
 The [validation record](../validation/2026-10-25-bar-session/README.md) owns
 exact final commands, revisions, screenshots, results and remaining gaps.
 
@@ -139,7 +139,6 @@ taskbar changes, tiling or autostart.
 Body font, [pinned Rubik/Material Symbols fonts and licenses](../assets/README.md)
 are loaded into this process only. Dynamic wallpaper themes and Windows
 services remain outside this slice. See the [dependency](../audits/M1-DEPENDENCIES.md)
-and [backend](../audits/M1-BACKEND-API.md) audits. ERM-491 is done; ERM-492's
-loading is implemented with validation/archival underway; ERM-493 is in
-progress, ERM-494 remains open, and M1 remains open. Denied/unavailable
+and [backend](../audits/M1-BACKEND-API.md) audits. ERM-491/492 are done with
+archived evidence; ERM-493/494 remain in progress and M1 remains open. Denied/unavailable
 hardware handling belongs to future service integration.

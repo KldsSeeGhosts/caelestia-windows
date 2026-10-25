@@ -1,0 +1,23 @@
+﻿{
+    "passed":  null,
+    "smoke":  false,
+    "timedOut":  false,
+    "exitCode":  0,
+    "scaleFactor":  "native",
+    "screenIndex":  0,
+    "actualScreen":  null,
+    "elapsedMilliseconds":  383204,
+    "sourceRevision":  "f1d3a020e935dcf31b8217145d52d9dfcd5af62b",
+    "sourceDirty":  true,
+    "backendRevision":  "e8ae0ef124b1c14b547c80d00422d2ffbd423d81",
+    "buildRecordSha256":  "A2CA9C0EB2EF6753D8C23F92627C348F0DA3BFFCD8BA64DC058CFDDC29D48A71",
+    "configSha256":  "B22AE86858A53E750715BB15F85594144CD6289545E911795B64F21F99C7D339",
+    "command":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\quickshell\\qs.exe",
+    "arguments":  "--no-color --log-times --path \"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\shell-20261025-005616-489\\shell.qml\"",
+    "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\shell-20261025-005616-489",
+    "profile":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-prototype-profile",
+    "sources":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\shell-20261025-005616-489.sources.json",
+    "screenshot":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\shell-20261025-005616-489.png",
+    "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\shell-20261025-005616-489.stdout.log",
+    "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\shell-20261025-005616-489.stderr.log"
+}

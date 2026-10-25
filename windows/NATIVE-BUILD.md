@@ -137,7 +137,7 @@ Numeric scale overrides are synthetic child-process DPI tests; native uses
 the selected display. Neither replaces real pointer/focus or same-process
 mixed-DPI monitor tests. See the
 [bar/session validation record](validation/2026-10-25-bar-session/README.md)
-for completed runs; the final matrix/archive are still underway.
+for the completed matrix, exact revisions and input limitations.
 
 The launcher rewrites only its dedicated `shell-prototype-profile/config/shell.json`
 to the audited Clock/Power/session slice. It isolates configuration, state,

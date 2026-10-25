@@ -1,0 +1,44 @@
+﻿2026-10-25 01:02:40.680  INFO: Launching config: "D:/AiStack/caelestia-windows/windows/.local/build/shell-runs/shell-20261025-010240-237/shell.qml"
+2026-10-25 01:02:40.680  INFO: Shell ID: "8947ab2e34d7aa5d579eea974db8cb27" Path ID "8947ab2e34d7aa5d579eea974db8cb27"
+2026-10-25 01:02:40.702  INFO: Saving logs to "C:/Users/Ermin/AppData/Local/quickshell/run/by-id/sdjg06gnt/log.qslog"
+2026-10-25 01:02:40.772  INFO quickshell.windows.blur: Blur behind panels is turned off by QS_WINDOWS_BLUR.
+2026-10-25 01:02:40.777  INFO quickshell.windows.blur: No layer rules file found (looked for D:/AiStack/caelestia-windows/windows/.local/build/shell-runs/shell-20261025-010240-237/defaults/windows/layerrules.json ), blur behind panels is off.
+2026-10-25 01:02:40.777  INFO caelestia.windows.focusguard: target-unavailable
+2026-10-25 01:02:40.777 DEBUG qml: CAELESTIA_SHELL_FOCUS target-unavailable
+2026-10-25 01:02:40.908 DEBUG quickshell.windows.desktops: Desktop list changed: 1 desktops
+2026-10-25 01:02:40.908 DEBUG quickshell.windows.desktops: Current desktop: 0
+2026-10-25 01:02:40.909 DEBUG quickshell.windows.panel: Placing qs::windows::WinPanelWindow(0x21103abd580) at QRect(80,80 900x620) on "MAG321UX OLED"
+2026-10-25 01:02:40.910  INFO caelestia.windows.focusguard: idle
+2026-10-25 01:02:40.910 DEBUG qml: CAELESTIA_SHELL_FOCUS idle
+2026-10-25 01:02:40.923  INFO: Configuration Loaded
+2026-10-25 01:02:41.118 DEBUG quickshell.windows.startup: First panel frame presented
+2026-10-25 01:02:41.518 DEBUG quickshell.windows.startup: Startup settled, running 1 deferred tasks
+2026-10-25 01:02:41.518  INFO quickshell.windows.desktops: VirtualDesktopAccessor.dll not found next to the executable; desktop switching falls back to keyboard shortcuts.
+2026-10-25 01:02:42.318 DEBUG qml: CAELESTIA_SHELL_SCREEN {"index":0,"name":"MAG321UX OLED","x":0,"y":0,"dpr":1.5}
+2026-10-25 01:02:42.318 DEBUG qml: CAELESTIA_SHELL_GEOMETRY MAG321UX OLED 0 0 900 620 1.5 4
+2026-10-25 01:02:43.521 DEBUG qml: CAELESTIA_SHELL_OPEN 40 155 102 400
+2026-10-25 01:02:43.567 DEBUG qml: CAELESTIA_SHELL_CAPTURE file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/shell-20261025-010240-237.png
+2026-10-25 01:02:44.720 DEBUG quickshell.windows.panel: Placing qs::windows::WinPanelWindow(0x21103abd580) at QRect(80,80 1266x620) on "MAG321UX OLED"
+2026-10-25 01:02:44.721  WARN scene: QML ContentWindow at @shell.qml[55:5]: Binding loop detected for property "margins.right":
+qs:@/qs/shell.qml:63:9
+2026-10-25 01:02:44.721 DEBUG quickshell.windows.panel: Placing qs::windows::WinPanelWindow(0x21103abd580) at QRect(-3760,80 900x414) on "DELL S2725QS"
+2026-10-25 01:02:44.722  WARN scene: QML ContentWindow at @shell.qml[55:5]: Binding loop detected for property "margins.right":
+qs:@/qs/shell.qml:63:9
+2026-10-25 01:02:44.724 DEBUG quickshell.windows.panel: Placing qs::windows::WinPanelWindow(0x21103abd580) at QRect(-3760,80 900x620) on "DELL S2725QS"
+2026-10-25 01:02:45.919 DEBUG qml: CAELESTIA_SHELL_SCREEN {"index":1,"name":"DELL S2725QS","x":-3840,"y":0,"dpr":1.75}
+2026-10-25 01:02:45.919 DEBUG qml: CAELESTIA_SHELL_GEOMETRY DELL S2725QS -3840 0 900 620 1.75 4
+2026-10-25 01:02:47.120 DEBUG qml: CAELESTIA_SHELL_OPEN 40 155 102 400
+2026-10-25 01:02:47.172 DEBUG qml: CAELESTIA_SHELL_CAPTURE file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/shell-20261025-010240-237-screen1.png
+2026-10-25 01:02:48.321 DEBUG quickshell.windows.panel: Placing qs::windows::WinPanelWindow(0x21103abd580) at QRect(-3760,80 534x620) on "DELL S2725QS"
+2026-10-25 01:02:48.321  WARN scene: QML ContentWindow at @shell.qml[55:5]: Binding loop detected for property "margins.right":
+qs:@/qs/shell.qml:63:9
+2026-10-25 01:02:48.322 DEBUG quickshell.windows.panel: Placing qs::windows::WinPanelWindow(0x21103abd580) at QRect(80,80 900x826) on "MAG321UX OLED"
+2026-10-25 01:02:48.322  WARN scene: QML ContentWindow at @shell.qml[55:5]: Binding loop detected for property "margins.right":
+qs:@/qs/shell.qml:63:9
+2026-10-25 01:02:48.323 DEBUG quickshell.windows.panel: Placing qs::windows::WinPanelWindow(0x21103abd580) at QRect(80,80 900x620) on "MAG321UX OLED"
+2026-10-25 01:02:49.520 DEBUG qml: CAELESTIA_SHELL_SCREEN {"index":0,"name":"MAG321UX OLED","x":0,"y":0,"dpr":1.5}
+2026-10-25 01:02:49.520 DEBUG qml: CAELESTIA_SHELL_GEOMETRY MAG321UX OLED 0 0 900 620 1.5 4
+2026-10-25 01:02:50.721 DEBUG qml: CAELESTIA_SHELL_OPEN 40 155 102 400
+2026-10-25 01:02:50.767 DEBUG qml: CAELESTIA_SHELL_CAPTURE file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/shell-20261025-010240-237-screen0.png
+2026-10-25 01:02:51.919 DEBUG qml: CAELESTIA_SHELL_PASS 6.11.2
+

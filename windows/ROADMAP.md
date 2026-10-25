@@ -13,7 +13,7 @@ tracks the milestones and implementation issues.
   render. Native 150% hover, opening, Escape/focus return, and outside-click
   pass-through have evidence. Same-window native 150% -> 175% -> 150%
   transfer passes; 175% pointer/focus, rapid boundaries, system transparency
-  off, drag/lifecycle scenarios, final matrix and archival remain.
+  off and drag/lifecycle scenarios remain. A single-jump hover case is unresolved.
 - M2, M3, M4: not started. No Windows service integration, tiling validation,
   or installable shell release is claimed.
 
@@ -21,13 +21,14 @@ Continue from [HANDOFF.md](HANDOFF.md). Linear was connected and synchronized
 on 2026-10-25 under the Ermin Zeherovic (ERM) team. This roadmap owns detailed
 acceptance criteria; Linear tracks issue status and dependencies.
 
-Completed issues are ERM-489 (M0 bootstrap), ERM-490 (component probe), and
-ERM-491 (dependency/backend audit, pushed in `f1d3a020`). M1 work is sequenced as:
+Completed issues are ERM-489 (M0 bootstrap), ERM-490 (component probe),
+ERM-491 (dependency/backend audit), and ERM-492 (original bar/session loading).
+M1 work is sequenced as:
 
 1. [ERM-491: dependency and backend API audit](https://linear.app/ermin-zeherovic/issue/ERM-491), done.
-2. [ERM-492: load the original bar and one drawer](https://linear.app/ermin-zeherovic/issue/ERM-492), implemented; validation and archival underway.
+2. [ERM-492: load the original bar and one drawer](https://linear.app/ermin-zeherovic/issue/ERM-492), done with archived evidence.
 3. [ERM-493: hover, input, focus, and dismissal](https://linear.app/ermin-zeherovic/issue/ERM-493), in progress.
-4. [ERM-494: native DPI, monitor, transparency, and lifecycle gate](https://linear.app/ermin-zeherovic/issue/ERM-494), open.
+4. [ERM-494: native DPI, monitor, transparency, and lifecycle gate](https://linear.app/ermin-zeherovic/issue/ERM-494), in progress.
 
 ## M0: source and reproducibility
 
@@ -61,13 +62,13 @@ outside-click dismissal passing through to a dedicated fixture. Rapid
 boundary tests have not passed yet. The same ContentWindow passed native
 MAG321UX OLED 150% -> DELL S2725QS 175% at x=-3840 -> primary transfer,
 remaining 900x620 at each placement without QML diagnostics. That rendering
-test does not validate pointer masks/focus at 175%. Earlier synthetic
-100%/150% baselines preceded the focus helper; the final synthetic matrix and
-archival are underway. Windows EnableTransparency=1 with backend blur disabled
+test does not validate pointer masks/focus at 175%. Synthetic
+100%/150%/175% rendering checks pass on the clean implementation build.
+Windows EnableTransparency=1 with backend blur disabled
 and an opaque fixed palette is not a system-transparency-off result.
 Final evidence and limitations belong in the
 [bar/session validation record](validation/2026-10-25-bar-session/README.md);
-archival is underway. M1 remains open. The older
+M1 remains open, including the recorded single-jump hover case. The older
 [component validation record](validation/2026-10-25-component-probe/README.md)
 continues to describe only its own source revision.
 

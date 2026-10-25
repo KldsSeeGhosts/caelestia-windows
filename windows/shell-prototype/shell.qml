@@ -19,7 +19,8 @@ ShellRoot {
     id: root
 
     readonly property bool smoke: Quickshell.env("CAELESTIA_SHELL_SMOKE") === "1"
-    property int screenIndex: Number(Quickshell.env("CAELESTIA_SHELL_SCREEN") || "0")
+    readonly property int initialScreenIndex: Number(Quickshell.env("CAELESTIA_SHELL_SCREEN") || "0")
+    property int screenIndex: initialScreenIndex
     readonly property ShellScreen selectedScreen: Quickshell.screens[screenIndex] ?? null
     readonly property bool monitorCycle: Quickshell.env("CAELESTIA_SHELL_MONITOR_CYCLE") === "1"
     readonly property int inset: 80
@@ -169,7 +170,9 @@ ShellRoot {
                     return;
                 }
                 if (root.monitorCycle && cycle < 2) {
-                    root.screenIndex = (root.screenIndex + 1) % Quickshell.screens.length;
+                    root.screenIndex = cycle === 0
+                        ? (root.initialScreenIndex + 1) % Quickshell.screens.length
+                        : root.initialScreenIndex;
                     cycle++;
                     step = -1;
                 } else {

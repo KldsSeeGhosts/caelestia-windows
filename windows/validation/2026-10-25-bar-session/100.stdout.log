@@ -1,0 +1,23 @@
+﻿2026-10-25 01:07:07.602  INFO: Launching config: "D:/AiStack/caelestia-windows/windows/.local/build/shell-runs/shell-20261025-010707-162/shell.qml"
+2026-10-25 01:07:07.602  INFO: Shell ID: "3ad4ff1e4203bf3df0fdcd63ad6f4e99" Path ID "3ad4ff1e4203bf3df0fdcd63ad6f4e99"
+2026-10-25 01:07:07.623  INFO: Saving logs to "C:/Users/Ermin/AppData/Local/quickshell/run/by-id/womv76gnt/log.qslog"
+2026-10-25 01:07:07.691  INFO quickshell.windows.blur: Blur behind panels is turned off by QS_WINDOWS_BLUR.
+2026-10-25 01:07:07.695  INFO quickshell.windows.blur: No layer rules file found (looked for D:/AiStack/caelestia-windows/windows/.local/build/shell-runs/shell-20261025-010707-162/defaults/windows/layerrules.json ), blur behind panels is off.
+2026-10-25 01:07:07.695  INFO caelestia.windows.focusguard: target-unavailable
+2026-10-25 01:07:07.695 DEBUG qml: CAELESTIA_SHELL_FOCUS target-unavailable
+2026-10-25 01:07:07.824 DEBUG quickshell.windows.desktops: Desktop list changed: 1 desktops
+2026-10-25 01:07:07.824 DEBUG quickshell.windows.desktops: Current desktop: 0
+2026-10-25 01:07:07.825 DEBUG quickshell.windows.panel: Placing qs::windows::WinPanelWindow(0x18fc01ea0d0) at QRect(80,80 900x620) on "MAG321UX OLED"
+2026-10-25 01:07:07.826  INFO caelestia.windows.focusguard: idle
+2026-10-25 01:07:07.826 DEBUG qml: CAELESTIA_SHELL_FOCUS idle
+2026-10-25 01:07:07.837  INFO: Configuration Loaded
+2026-10-25 01:07:08.026 DEBUG quickshell.windows.startup: First panel frame presented
+2026-10-25 01:07:08.426 DEBUG quickshell.windows.startup: Startup settled, running 1 deferred tasks
+2026-10-25 01:07:08.426  INFO quickshell.windows.desktops: VirtualDesktopAccessor.dll not found next to the executable; desktop switching falls back to keyboard shortcuts.
+2026-10-25 01:07:09.228 DEBUG qml: CAELESTIA_SHELL_SCREEN {"index":0,"name":"MAG321UX OLED","x":0,"y":0,"dpr":1}
+2026-10-25 01:07:09.228 DEBUG qml: CAELESTIA_SHELL_GEOMETRY MAG321UX OLED 0 0 900 620 1 4
+2026-10-25 01:07:09.228 DEBUG qml: CAELESTIA_SESSION_UNAVAILABLE: request consumed without executing a command.
+2026-10-25 01:07:10.428 DEBUG qml: CAELESTIA_SHELL_OPEN 40 155 102 400
+2026-10-25 01:07:10.460 DEBUG qml: CAELESTIA_SHELL_CAPTURE file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/shell-20261025-010707-162.png
+2026-10-25 01:07:11.629 DEBUG qml: CAELESTIA_SHELL_PASS 6.11.2
+

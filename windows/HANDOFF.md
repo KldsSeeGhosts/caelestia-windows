@@ -22,8 +22,10 @@ clickCount 1 -> 2, closed the session and skipped focus restoration.
 Cua returned a foreground mismatch on that outside click; independent fixture
 and state evidence verified the intended result, not driver success.
 
-Rapid boundary tests have not passed yet. Synthetic 100%/150% baselines
-preceded the helper; the final synthetic matrix and archival are underway.
+Synthetic 100%/150%/175% checks pass on clean `b9f07e34`.
+The final startup patch and native cycle pass on clean `b534ae26`.
+Single-jump hover did not open the bar until further movement; investigate
+that case before closing the input gate.
 Native same-window transfer passed without QML diagnostics: screen 0
 MAG321UX OLED at 150%, screen 1 DELL S2725QS at 175% and x=-3840, back to 0,
 all 900x620. Actual DPI metadata and captures were recorded.
@@ -35,8 +37,9 @@ owns exact final evidence and limitations. M2-M4 have not started.
 - `a80afac7`, `15633d6d`, `fffea341`: native portable build, component probe,
   bounded startup checks and archived evidence.
 - `f1d3a020`, pushed: ERM-491 dependency and backend API audits.
-- ERM-492's original loading is implemented; validation/archival are underway.
-  ERM-493 is in progress; ERM-494 remains open. See [ROADMAP.md](ROADMAP.md).
+- `b9f07e34`, `b534ae26`: original loading, focus policy, isolated staging and
+  startup handling. ERM-492 and its archive are complete.
+  ERM-493/494 remain in progress. See [ROADMAP.md](ROADMAP.md).
 
 The [component probe archive](validation/2026-10-25-component-probe/README.md)
 still describes revision `15633d6d1f6bcfb5d3634e7750784dac3d150d70` and its
@@ -103,12 +106,11 @@ The old `Start-Prototype.ps1` component probe remains available.
 
 ## Next work and boundaries
 
-Finish native 175% pointer-mask/focus checks, rapid hover/drag/focus races,
-actual system-transparency-off and remaining drag/lifecycle tests; archive
-commands, source hashes, logs, screenshots and desktop-state comparisons.
-Do not promote preliminary synthetic baselines to final helper validation.
-Update ERM-492 when artifacts are complete, then ERM-493/494 against their
-own acceptance evidence. Do not begin broad M2 services before M1 passes.
+Start with the single-jump hover case in the validation record. Finish native
+175% pointer/focus, keyboard traversal, early app-switch reconciliation,
+configured drag/pin, rapid boundaries, actual system-transparency-off and
+remaining lifecycle tests. Keep ERM-493/494 open until their own acceptance
+evidence passes. Do not begin broad M2 services before M1 passes.
 Second independent source review found no actionable findings in the fixes;
 that does not replace the remaining runtime gates.
 

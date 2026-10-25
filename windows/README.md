@@ -23,7 +23,7 @@ For the next development session, start with [HANDOFF.md](HANDOFF.md).
   Escape dismissal with focus return, and outside-click pass-through with
   dismissal. The same native window also passed 150% primary -> 175%
   negative-origin secondary -> primary transfer at 900x620 without QML
-  diagnostics. The final synthetic matrix and evidence archive are underway;
+  diagnostics. Synthetic 100%, 150%, and 175% rendering also passes;
   [bar/session validation](validation/2026-10-25-bar-session/README.md) owns exact
   results and limitations. M1 remains open.
 - The earlier ordinary-window [component probe](prototype/README.md) remains
@@ -90,11 +90,10 @@ Isolation does not mean zero global backend bookkeeping.
 
 ERM-491's [dependency](audits/M1-DEPENDENCIES.md) and
 [backend API](audits/M1-BACKEND-API.md) audits are complete in `f1d3a020`.
-ERM-492's original bar/session loading is implemented with validation and
-archival underway. ERM-493 is in progress; ERM-494 remains open.
-Complete native 175% pointer-mask/focus checks, rapid boundary races,
-system-transparency-off and remaining drag/lifecycle tests, then archive exact
-sources and results. The remaining
+ERM-492's original bar/session loading and evidence archive are complete.
+ERM-493/494 remain in progress. Investigate the recorded single-jump hover
+case, then complete native 175% input, rapid boundaries, keyboard/drag,
+system-transparency-off and remaining lifecycle tests. The remaining
 [M1 gates](ROADMAP.md#m1-actual-caelestia-compatibility-prototype) remain open.
 The tested fixed palette is opaque and backend blur is disabled, while Windows
 EnableTransparency remains 1; this is not a system-transparency-off test.
