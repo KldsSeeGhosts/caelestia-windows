@@ -1,7 +1,10 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][string]$QtPrefix,
-    [string]$BuildRoot
+    [string]$BuildRoot,
+    # Focused review gate: only ReadOnly/Profiles battery smoke. Omits Disabled,
+    # M1 and audio native runs while retaining fixture/state-preservation checks.
+    [switch]$ReadOnlyProfilesOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -52,7 +55,8 @@ try {
     $screenCount = $beforeDesktop.monitors.Count
     Assert ($screenCount -gt 0) 'No measured monitor available.'
     for ($screen = 0; $screen -lt $screenCount; $screen++) {
-        foreach ($mode in @('Disabled', 'ReadOnly', 'Profiles')) {
+        $modes = if ($ReadOnlyProfilesOnly) { @('ReadOnly', 'Profiles') } else { @('Disabled', 'ReadOnly', 'Profiles') }
+        foreach ($mode in $modes) {
             $result = & "$PSScriptRoot\Start-ShellPrototype.ps1" -QtPrefix $QtPrefix -BuildRoot $BuildRoot `
                 -Battery -BatteryMode $mode -Smoke -ScaleFactor native -ScreenIndex $screen | ConvertFrom-Json
             Assert $result.passed "Battery UI failed on screen $screen in $mode mode."
@@ -64,6 +68,7 @@ try {
                 Assert (-not $initial.profilesEnabled -and $initial.profilesState -eq 'disabled' -and $initial.availableProfiles.Count -eq 0) 'Disabled mode constructed power profiles.'
             } else {
                 Assert ($initial.status -eq 'ready' -or $initial.status -eq 'unavailable') 'Battery did not settle.'
+                Assert ((Get-Content -LiteralPath $result.stdout -Raw).Contains('CAELESTIA_BATTERY_SELECTOR_PASS:')) 'Windows selector hook did not route through the read-only service.'
             }
             # Smoke never opts into profile writes, and observation must be a
             # truthful observing/unknown capability, never a fabricated profile.
@@ -91,15 +96,17 @@ try {
             Assert (($initialStable | ConvertTo-Json -Depth 10 -Compress) -eq ($finalStable | ConvertTo-Json -Depth 10 -Compress)) 'Observed battery or profile state changed during read-only smoke.'
         }
     }
-    $regression = & "$PSScriptRoot\Start-ShellPrototype.ps1" -QtPrefix $QtPrefix -BuildRoot $BuildRoot `
-        -Smoke -ScaleFactor native -ScreenIndex 0 | ConvertFrom-Json
-    Assert $regression.passed 'Original M1 bar/session smoke regression failed.'
-    $records.Add([ordered]@{ kind = 'm1-regression'; result = $regression })
-    # The shared launcher/staging scripts also serve the audio slice; re-run its
-    # full acceptance harness as the regression gate.
-    $audioRegression = & "$PSScriptRoot\Test-AudioPrototype.ps1" -QtPrefix $QtPrefix -BuildRoot $BuildRoot | ConvertFrom-Json
-    Assert $audioRegression.passed 'Audio prototype regression gate failed.'
-    $records.Add([ordered]@{ kind = 'audio-regression'; result = $audioRegression })
+    if (-not $ReadOnlyProfilesOnly) {
+        $regression = & "$PSScriptRoot\Start-ShellPrototype.ps1" -QtPrefix $QtPrefix -BuildRoot $BuildRoot `
+            -Smoke -ScaleFactor native -ScreenIndex 0 | ConvertFrom-Json
+        Assert $regression.passed 'Original M1 bar/session smoke regression failed.'
+        $records.Add([ordered]@{ kind = 'm1-regression'; result = $regression })
+        # The shared launcher/staging scripts also serve the audio slice; re-run
+        # its full acceptance harness as the regression gate.
+        $audioRegression = & "$PSScriptRoot\Test-AudioPrototype.ps1" -QtPrefix $QtPrefix -BuildRoot $BuildRoot | ConvertFrom-Json
+        Assert $audioRegression.passed 'Audio prototype regression gate failed.'
+        $records.Add([ordered]@{ kind = 'audio-regression'; result = $audioRegression })
+    }
 } catch {
     $failure = $_.ToString()
 } finally {
@@ -117,6 +124,7 @@ try {
 }
 $summary = [ordered]@{
     passed = -not [bool]$failure; failure = $failure
+    readOnlyProfilesOnly = [bool]$ReadOnlyProfilesOnly
     sourceRevision = (& git -C $repoRoot rev-parse HEAD).Trim()
     sourceDirty = [bool](& git -C $repoRoot status --porcelain)
     backendRevision = (& git -C "$repoRoot\windows\deps\quickshell" rev-parse HEAD).Trim()

@@ -16,24 +16,70 @@ QtObject {
         property int profile: 1
         property var mappedProfiles: [0, 1, 2]
         property bool performanceClaim: true
-        property bool writeResultAvailable: false
+        property bool writeResultAvailable: true
         property string lastError: ""
         property bool acceptWrites: true
         property int setCalls: 0
         property int lastRequested: -1
+        property bool synchronousResult: false
+        property bool resultOk: true
+        signal profileWriteResult(int requestedProfile, bool ok, string error)
 
         function setProfile(target): bool {
             setCalls++;
             lastRequested = target;
+            if (synchronousResult)
+                profileWriteResult(target, resultOk, resultOk ? "" : "Fixture access denied");
             return acceptWrites;
         }
     }
 
     readonly property PowerProfilesService service: PowerProfilesService {}
     readonly property FakeBackend fake: FakeBackend {}
+    // Actual native API shapes, projected through the same pure facade loaded
+    // by NativePowerProfilesBackend. The legacy shape has no result signal.
+    component LegacyNative: QtObject {
+        property int profile: 1
+        property bool hasPerformanceProfile: true
+    }
+    component ResultNative: LegacyNative {
+        property bool profileKnown: true
+        property string rawOverlayGuid: "{00000000-0000-0000-0000-000000000000}"
+        property string lastError: ""
+        property bool writeSupported: true
+        property bool observing: true
+        signal profileWriteResult(int requestedProfile, bool ok, string error)
+    }
+    readonly property LegacyNative legacy: LegacyNative {}
+    readonly property ResultNative current: ResultNative {}
+    readonly property PowerProfilesBackend facade: PowerProfilesBackend { source: test.current }
+    readonly property PowerProfilesService projected: PowerProfilesService {
+        backend: test.facade
+        enabled: true
+        writesEnabled: true
+    }
+    readonly property LegacySubmission legacySubmission: LegacySubmission {}
+    component LegacySubmission: QtObject {
+        property bool ready: true
+        property bool profileKnown: true
+        property int profile: 0
+        property var mappedProfiles: [0, 1, 2]
+        function setProfile(target): bool {
+            profile = target; // Old optimistic setter must never confirm.
+            return true;
+        }
+    }
+    readonly property PowerProfilesService oldService: PowerProfilesService {
+        backend: test.legacySubmission
+        enabled: true
+        writesEnabled: true
+        writeTimeoutMs: 120
+    }
+    readonly property QtObject selector: QtObject {
+        property var selectProfile: profile => test.service.requestProfile(profile)
+    }
 
     property int assertions: 0
-    property bool phaseTimedOut: false
 
     function check(condition, message): void {
         assertions++;
@@ -47,7 +93,7 @@ QtObject {
         fake.profile = 1;
         fake.mappedProfiles = [0, 1, 2];
         fake.performanceClaim = true;
-        fake.writeResultAvailable = false;
+        fake.writeResultAvailable = true;
         fake.lastError = "";
         fake.acceptWrites = true;
         fake.setCalls = 0;
@@ -86,7 +132,7 @@ QtObject {
         check(JSON.stringify(service.availableProfiles) === "[0,1,2]", "explicit mapped profile set");
         check(service.performanceMapped, "performance mapping is exposed");
         check(service.performanceClaim === true, "hard-coded native performance claim is diagnostic");
-        check(service.writeResultAvailable === false, "pinned backend has no write result");
+        check(service.writeResultAvailable === true, "result-capable backend exposes the result signal");
         check(!service.writesPermitted && service.writeState === "idle", "observation alone permits no writes");
 
         // Observation without the separate write opt-in must not call the
@@ -141,8 +187,7 @@ QtObject {
         check(service.profile === 2 && service.state === "observing", "representable profile returns");
 
         // A stale value with an unverified read must not be projected, and a
-        // request from an unknown baseline can still be confirmed by an observed
-        // transition.
+        // request from an unknown baseline needs an explicit successful result.
         fake.profileKnown = false;
         fake.profile = 2;
         check(service.state === "unknown" && service.profile === -1
@@ -154,16 +199,26 @@ QtObject {
         check(fake.setCalls === callsBefore + 1 && fake.lastRequested === 1, "pending write reaches the backend");
         fake.profileKnown = true;
         fake.profile = 1;
+        check(service.writeState === "pending" && service.confirmedWrites === 0,
+            "matching local setter transition never confirms");
+        fake.profileWriteResult(2, true, "");
+        check(service.writeState === "pending", "result for another target is ignored");
+        fake.profileWriteResult(1, true, "");
         check(service.writeState === "confirmed" && service.confirmedWrites === 1,
-            "observed transition confirms the write");
+            "matching successful result confirms the write");
         check(service.profile === 1 && service.profileName === "Balanced", "confirmed profile projection");
 
         // Selecting the observed profile is a no-op, not a native write.
         const noopCalls = fake.setCalls;
+        const noopAttempts = service.writeAttempts;
         service.writeState = "idle";
-        check(service.requestProfile(1) === true && service.writeState === "confirmed",
-            "selecting the current profile is confirmed");
+        const noopConfirmed = service.confirmedWrites;
+        check(selector.selectProfile(1) === true && service.writeState === "idle",
+            "injected selector routes a current-profile selection through the service");
         check(service.lastWriteNoop && fake.setCalls === noopCalls, "current-profile selection sends no write");
+        check(service.confirmedWrites === noopConfirmed && service.writeAttempts === noopAttempts
+            && !service.writePending,
+            "no-op is not counted as a confirmed write");
 
         // A write that observes a different overlay transition must not be
         // confirmed. It expires as unconfirmed after the bounded timeout.
@@ -179,33 +234,60 @@ QtObject {
         fake.profile = 1;
         check(service.profile === 1 && service.writeState === "pending",
             "an unrelated overlay transition does not confirm the write");
-        phaseTimedOut = false;
+        fake.profile = 2;
+        check(service.writeState === "pending", "matching transition without a result still waits");
+        fake.profile = 1;
+        check(oldService.requestProfile(2) && oldService.writeState === "pending",
+            "backend without result signal reports submission");
+        check(!oldService.writeResultAvailable && oldService.confirmedWrites === 0,
+            "legacy optimistic setter cannot confirm");
+        check(oldService.writeReason.indexOf("submitted") >= 0, "legacy submission reason");
         wait.start();
     }
 
     function afterTimeout(): void {
         check(service.writeState === "unconfirmed" && service.writeFailed, "timeout is unconfirmed");
         check(service.unconfirmedWrites === 1, "timeout counter");
-        check(service.writeError.indexOf("No overlay change") >= 0, "timeout reason");
+        check(service.writeError.indexOf("No power profile result") >= 0, "timeout reason");
         check(service.profile === 1, "unrelated observed profile stays truthful");
         check(service.writePending === false, "timeout clears pending");
+        check(oldService.writeState === "unconfirmed" && oldService.confirmedWrites === 0,
+            "legacy submission expires as unconfirmed");
+        fake.profileWriteResult(2, true, "");
+        check(service.writeState === "unconfirmed", "late result does not confirm expired request");
 
-        // A later write is still possible and confirms from its own transition.
+        // A later write is still possible and needs its own successful result.
         service.writeState = "idle";
         fake.profile = 0;
         check(service.requestProfile(2) === true && service.writeState === "pending", "later write is pending");
         fake.profile = 2;
-        check(service.writeState === "confirmed" && service.confirmedWrites === 3,
-            "later observed transition confirms the write");
+        check(service.writeState === "pending", "later transition still needs its result");
+        fake.profileWriteResult(2, true, "");
+        check(service.writeState === "confirmed" && service.confirmedWrites === 2,
+            "later successful result confirms the write");
         check(service.profile === 2 && service.profileName === "Performance", "performance projection");
 
         // A rejected native submission fails immediately instead of waiting.
         fake.acceptWrites = false;
         service.writeState = "idle";
-        check(service.requestProfile(1) === false && service.writeState === "unconfirmed",
-            "native rejection is unconfirmed");
+        check(service.requestProfile(1) === false && service.writeState === "rejected",
+            "refused submission is rejected");
         check(service.writeError.indexOf("did not accept") >= 0, "native rejection reason");
         fake.acceptWrites = true;
+        service.writeState = "idle";
+        check(selector.selectProfile(1) && fake.lastRequested === 1 && service.writePending,
+            "injected selector sends a changed profile through requestProfile");
+        const rejectedBefore = service.rejectedWrites;
+        fake.profileWriteResult(1, false, "Fixture set failed: 5");
+        check(service.writeState === "rejected" && service.writeError === "Fixture set failed: 5"
+            && service.rejectedWrites === rejectedBefore + 1, "failed native result preserves its error");
+        fake.synchronousResult = true;
+        check(service.requestProfile(1) && service.writeState === "confirmed",
+            "synchronous native success is handled during submission");
+        fake.resultOk = false;
+        check(service.requestProfile(1) && service.writeState === "rejected"
+            && service.writeError === "Fixture access denied", "synchronous native failure is rejected");
+        fake.synchronousResult = false;
 
         // A pending write fails when the backend becomes unavailable.
         service.writeState = "idle";
@@ -259,8 +341,60 @@ QtObject {
         fake.profileKnown = false;
         check(service.state === "unknown" && service.profile === -1, "missing read capability is unknown");
 
+        checkFacade();
         console.log("CAELESTIA_POWER_PROFILES_FIXTURE_PASS " + JSON.stringify({ assertions: assertions }));
         Qt.quit();
+    }
+
+    function checkFacade(): void {
+        check(facade.profileKnown && facade.profile === 1 && projected.profile === 1,
+            "explicit known Balanced read is projected");
+        check(facade.writeResultAvailable && facade.observing, "new native capabilities detected");
+        check(JSON.stringify(facade.mappedProfiles) === "[0,1,2]", "set API exposes mapped profiles");
+        current.hasPerformanceProfile = false;
+        check(JSON.stringify(facade.mappedProfiles) === "[0,1]", "performance capability limits availability");
+        current.writeSupported = false;
+        check(facade.mappedProfiles.length === 0 && !projected.writesPermitted,
+            "missing set API disables available write targets");
+        current.writeSupported = true;
+        current.hasPerformanceProfile = true;
+
+        current.profileKnown = false;
+        current.rawOverlayGuid = "{11111111-2222-3333-0102-030405060708}";
+        check(facade.profile === -1 && projected.profile === -1 && projected.state === "unknown",
+            "unknown GUID with legacy Balanced value is never Balanced");
+        check(projected.reason.indexOf("unknown") >= 0, "unknown GUID has a short reason");
+        current.profileKnown = true;
+        current.profile = 2;
+        check(projected.profile === 2, "known read restores observation");
+        current.lastError = "PowerGetEffectiveOverlayScheme failed: 5";
+        current.profileKnown = false;
+        current.rawOverlayGuid = "";
+        check(facade.profile === -1 && projected.rawBackendProfile === -1 && projected.profile === -1,
+            "failed read invalidates previously known cached values");
+        check(projected.reason === current.lastError, "native read failure reason is preserved");
+        current.profileKnown = true;
+        current.lastError = "";
+        check(projected.requestProfile(0) && projected.writePending, "facade submits a fake write");
+        check(current.profile === 0 && projected.writePending, "facade setter alone never confirms");
+        current.profileWriteResult(0, true, "");
+        check(projected.writeState === "confirmed", "native result forwarded through facade confirms");
+        check(projected.requestProfile(1), "facade submits second fake write");
+        current.profileWriteResult(1, false, "Fixture overlay mismatch");
+        check(projected.writeState === "rejected" && projected.writeError === "Fixture overlay mismatch",
+            "native failure forwarded through facade rejects");
+        facade.source = legacy;
+        for (const value of [0, 1, 2]) {
+            legacy.profile = value;
+            check(!facade.profileKnown && facade.profile === -1 && projected.profile === -1,
+                "old pin cannot verify profile " + value);
+        }
+        check(!facade.writeResultAvailable && !facade.writeSupported && !facade.observing,
+            "absent old-pin members fail closed");
+        check(facade.mappedProfiles.length === 0 && !projected.writesPermitted,
+            "hard-coded legacy performance flag grants no write targets");
+        check(projected.reason.indexOf("cannot verify") >= 0, "old pin explains missing verification");
+        check(!facade.setProfile(1), "old-pin facade refuses native submission");
     }
 
     readonly property Timer wait: Timer {

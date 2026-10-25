@@ -169,6 +169,7 @@ ShellRoot {
                         profileControlsEnabled: Battery.profileControlsEnabled
                         profileWritesEnabled: Battery.profiles.writesPermitted
                         availableProfiles: Battery.profiles.availableProfiles
+                        selectProfile: profile => Battery.profiles.requestProfile(profile)
                         observationAvailable: Battery.observationAvailable
                         percentageKnown: Battery.percentageKnown
                         powerSourceKnown: Battery.onBatteryKnown
@@ -394,6 +395,25 @@ ShellRoot {
                 const path = Quickshell.env("CAELESTIA_SHELL_SCREENSHOT");
                 CUtils.saveItem(win.contentItem, Qt.resolvedUrl(path), () => {
                     console.log("CAELESTIA_BATTERY_CAPTURE", path);
+                    // Exercise the actual host hook after the stable snapshots
+                    // and capture. Writes must be off, so this selection is
+                    // refused by the service before any native submission.
+                    // Use an invalid target as an additional safety boundary.
+                    if (Battery.enabled) {
+                        const attempts = Battery.profiles.writeAttempts;
+                        const rejections = Battery.profiles.rejectedWrites;
+                        if (Battery.profiles.writesEnabled !== false
+                                || typeof batteryHost.item?.selectProfile !== "function"
+                                || batteryHost.item.selectProfile(-1) !== false
+                                || Battery.profiles.writeState !== "rejected"
+                                || Battery.profiles.rejectedWrites !== rejections + 1
+                                || Battery.profiles.writeAttempts !== attempts) {
+                            console.error("CAELESTIA_BATTERY_FAIL: selector bypassed the read-only service");
+                            Qt.exit(1);
+                            return;
+                        }
+                        console.log("CAELESTIA_BATTERY_SELECTOR_PASS: read-only selection rejected before submission");
+                    }
                     console.log("CAELESTIA_BATTERY_PASS", CUtils.qtVersion);
                     Qt.quit();
                 }, () => {

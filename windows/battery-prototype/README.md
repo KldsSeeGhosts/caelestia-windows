@@ -44,7 +44,7 @@ unless two further child-process opt-ins are set. `ReadOnly` keeps the original
 behavior exactly.
 
 - `CAELESTIA_WINDOWS_POWER_PROFILES=1` enables profile observation and shows
-  the original selector read-only. The host loads
+  the original selector read-only when a supported profile is verified. The host loads
   [NativePowerProfilesBackend.qml](../services/battery/NativePowerProfilesBackend.qml),
   a thin facade over the pinned `PowerProfiles` singleton.
   [PowerProfilesService.qml](../services/battery/PowerProfilesService.qml) is a
@@ -54,80 +54,52 @@ behavior exactly.
   forces both the launcher variable and the host permission off, so no smoke
   run can select a profile.
 
-Capability states are explicit: `unknown`, `observing` (the effective
-overlay-mapped profile is verified), `availableProfiles` (only the profiles the
-backend can truthfully map), `write-pending`, `write-confirmed` (an observed
-overlay-mapped transition after the request), `write-unconfirmed`/failed (no
-observed transition within a bounded timeout or a refused native submission),
-and `unsupported` (a known backend load/initialization failure). Observation
-and writes are separate: a read-only run can observe and display a profile but
-never calls `setProfile`.
+Capability states are explicit: `unknown`, `observing` (a verified mapped
+profile), and `unsupported` (backend failure). Write states are `idle`,
+`pending`, `confirmed`, `rejected`, and `unconfirmed`. Only a matching
+`profileWriteResult(requestedProfile, true, error)` confirms a write. The
+reviewed backend emits success only after the native set succeeds and a
+re-read maps to the requested profile. A failed result rejects the request
+with its error. Property transitions never confirm a write. A missing result
+expires as unconfirmed after the bounded timeout, including older backends
+without that signal. Selecting the current verified profile sends no write,
+starts no timeout, and stays idle without incrementing confirmed writes.
 
-The available set comes only from the explicit overlay GUID mapping, not from
-the backend's `hasPerformanceProfile`, which is hard-coded true. The pinned
-mapping recognizes Best efficiency -> PowerSaver, Best performance ->
-Performance and the zero GUID -> Balanced, and treats any other GUID as
-Balanced. Performance is therefore listed as mappable but not as proven
-platform support; actual acceptance is only established by an observed write.
-Unavailable mapped profiles use the original selector's existing disabled
-`StateLayer` styling; the icon set, motion and layout are unchanged.
+The original popout's injectable `selectProfile` hook defaults to the original
+direct setter on Linux. The Windows host routes it through
+`Battery.profiles.requestProfile()`, including no-op detection and result
+handling. The original icons, layout, and motion are unchanged. The other
+additive hooks (`profileStatusEnabled`, `profileControlsEnabled`,
+`profileWritesEnabled`, and `availableProfiles`) retain upstream defaults;
+unavailable entries use the existing disabled `StateLayer` styling.
 
-The original components gained only localized additive hooks with
-upstream-preserving defaults: `profileStatusEnabled` and
-`profileControlsEnabled` already existed, and `profileWritesEnabled` plus
-`availableProfiles` let the Windows host keep the selector visible read-only
-or disable individual unmapped profiles. The Linux defaults leave all three
-profiles visible and interactive.
+### Backend compatibility
 
-### Pinned backend gaps
+The pure [PowerProfilesBackend.qml](../services/battery/PowerProfilesBackend.qml)
+facade accepts the native singleton or an injected fake. With the reviewed
+backend `327cd09` on `windows/m2-power-profile-results`, it trusts only
+`profileKnown === true`, clears the projected profile on an unknown GUID or
+failed read, and forwards `lastError`. `rawOverlayGuid` and native notification
+`observing` remain available for diagnostics. The backend publishes consistent
+snapshots; failed notification registration reports `observing=false` and
+uses a 10-second fallback refresh.
 
-The backend at `1401042969e4b7ab3cfb314fc76945ab081db3de` is read-only in this
-slice; these gaps are recorded rather than fixed here:
+Available selection targets require `writeSupported === true`: PowerSaver and
+Balanced are mapped, with Performance added only when `hasPerformanceProfile`
+is true. This describes API support, not proof that a particular native write
+will succeed. Result support is feature-detected from `profileWriteResult`.
 
-- [powerprofiles.cpp](../deps/quickshell/src/windows/services/upower/powerprofiles.cpp),
-  lines 93-98: the constructor hard-codes `hasPerformanceProfile=true`,
-  `degradationReason=None` and an empty hold list, then calls `refresh()`.
-- [powerprofiles.cpp](../deps/quickshell/src/windows/services/upower/powerprofiles.cpp),
-  lines 100-112: a failed effective-power-mode notification registration only
-  logs; no public capability records it. `refresh()` runs on construction and
-  from that notification callback, not on a poll, so a missed notification can
-  leave the observed profile stale.
-- [powerprofiles.cpp](../deps/quickshell/src/windows/services/upower/powerprofiles.cpp),
-  lines 120-137: `refresh()` returns on a missing `PowerGetEffectiveOverlayScheme`
-  export or a failed read without publishing a read-success/error property.
-  `bProfile` keeps its zero-initialized value (Qt 6.11.2 `qproperty.h:73`), so a
-  failed read is indistinguishable from a real PowerSaver profile.
-- [powerprofiles.cpp](../deps/quickshell/src/windows/services/upower/powerprofiles.cpp),
-  lines 139-159: `setProfile()` logs a missing `PowerSetActiveOverlayScheme`
-  export or a failed write and returns; it publishes no write result signal and
-  assigns `bProfile` only after the native call reports success.
-- [powerprofiles.hpp](../deps/quickshell/src/windows/services/upower/powerprofiles.hpp),
-  lines 70-73 and 105-108: the QML properties/bindables expose no read-known or
-  write-result state.
-
-The facade cannot make these fields truthful. It verifies a non-default
-Balanced/Performance read (this host never writes before observation, so a
-non-default value proves the read), reports PowerSaver as `unknown`, and
-confirms a write only from an observed profile transition. A `PowerSaver`
-overlay and a failed read therefore both show as unknown until a profile
-change is observed. This is why native Profiles evidence below cannot claim a
-PowerSaver observation.
-
-### Proposed backend fork fix
-
-1. Add a bindable read capability (`profileReadKnown` or `lastReadError`) to
-   `PowerProfilesQml`; clear it before `refresh()` and set it only after a
-   successful `PowerGetEffectiveOverlayScheme` call, including the notification
-   callback path.
-2. Return and signal a write outcome from `setProfile()` (for example
-   `writeFinished(bool ok, quint32 error)`), and re-read the effective overlay
-   after a successful set instead of trusting the submitted enum alone.
-3. Derive availability from the actual overlay APIs/mapping: expose whether the
-   `powrprof` exports resolved, stop hard-coding `hasPerformanceProfile`, and
-   mark degradation/holds as unsupported rather than fabricated `None`/empty.
-4. Add injectable powrprof function pointers and QtTest cases for a missing
-   export, get failure, set failure and set success, then review the gitlink and
-   `windows/sources.lock.json` together with a new backend PR.
+The root dependency remains pinned to
+`1401042969e4b7ab3cfb314fc76945ab081db3de`; neither the gitlink nor
+`windows/sources.lock.json` is changed by this slice. That old backend exposes
+no read validity, raw GUID, error, result, or write-support capability. Its
+Balanced value can also mean an unknown overlay GUID, and its setter can
+update a local property without verifying the effective overlay. Consequently,
+**all old-pin profile values remain unknown**, including Balanced and
+Performance; profile controls stay unavailable and the facade submits no
+writes. A hard-coded legacy performance claim grants no available targets.
+There is no latched or non-default-value read heuristic. Updating the pin and
+validating the newer backend natively are separate work.
 
 `IdlePower` settings remain out of scope and are never constructed or written.
 
@@ -151,8 +123,9 @@ powershell -NoProfile -File windows/scripts/Start-ShellPrototype.ps1 `
 default and never loads the native power backend, the profile backend or the
 original UPower components. `ReadOnly` opts into the native UPower observation
 (initial status read, 30-second poll and power notifications) with no
-PowerProfiles reference. `Profiles` adds read-only PowerProfiles observation
-and renders the original selector with its write path disabled.
+PowerProfiles reference. `Profiles` adds read-only PowerProfiles observation. A verified supported
+profile renders the original selector with its write path disabled; the old
+pin reports unknown and keeps profile controls unavailable.
 `ProfileWrites` is the separate write opt-in for explicit human selection; it
 is not exercised by the native smoke gate on this workstation. Every `-Smoke`
 run forces writes off.
@@ -219,11 +192,13 @@ numeric/state/icon guards, null and stale devices, unready/denied backends, the
 `onBattery` truth table and an introspection check that the battery adapter
 exposes no write methods. The profile fixture covers every capability state
 (disabled, initializing, unsupported, unknown, observing), the mapped
-availability set (including the ignored hard-coded performance claim),
-write refusal without the separate opt-in, write-pending, observed
-write-confirmation, unconfirmed/timeout, native rejection, backend loss,
+availability set (including conservative old-pin behavior),
+write refusal without the separate opt-in, result-only confirmation,
+unconfirmed/timeout, native rejection, backend loss,
 write-opt-in revocation, no-op selection, stale/unverified reads and the
-bounded write timeout.
+bounded write timeout. It also exercises both native API shapes through the
+pure facade, unknown GUIDs, failed-read cache invalidation, synchronous results,
+and an injected selection hook.
 
 The third command snapshots native power state (active scheme, effective
 overlay scheme, `GetSystemPowerStatus`, `Win32_Battery`) before and after,
@@ -237,6 +212,15 @@ battery demonstrates the truthful proven absence path natively; battery-present
 behavior, unknown native values and failed reads stay fixture-validated until
 run on hardware that produces them. Profiles mode observes the current
 effective overlay read-only; it never selects a profile.
+After stable snapshots and capture, each enabled smoke invokes the actual
+Windows popout selection hook with an invalid target while writes are off.
+The service must reject it without incrementing native submission attempts;
+this verifies the routing without a native profile write.
+
+For a focused gate limited to native ReadOnly and Profiles smoke, add
+`-ReadOnlyProfilesOnly` to the third command. It retains fixtures and power/desktop
+identity checks, runs both modes on every measured screen, and skips Disabled,
+M1 and audio native runs.
 
 Raw results are under
 `windows/.local/build/battery-validation-<timestamp>/result.json`.
@@ -249,3 +233,6 @@ acceptance](../validation/2026-10-25-m2-battery/README.md) retains the earlier
 revision's clean-source results and limits. Native profile writes, native
 denied writes, PowerSaver observation and battery-present hardware remain
 untested.
+
+The [review addendum](../validation/2026-10-25-m2-power-profiles/README.md#review-addendum)
+supersedes the earlier heuristic observation and transition-confirmation claims.

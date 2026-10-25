@@ -11,19 +11,15 @@ import QtQuick
 //                             profile value alone is not proof
 //   profile (int)             PowerProfile enum value
 //   mappedProfiles (var[])    profile ids the wrapper can truthfully map
-//   performanceClaim (bool)   raw native hasPerformanceProfile, diagnostics
-//                             only; never used to extend availability
-//   writeResultAvailable bool whether the backend supplies a synchronous write
-//                             result
+//   performanceClaim (bool)   native hasPerformanceProfile, diagnostics
+//   writeResultAvailable bool whether profileWriteResult is supported
+//   profileWriteResult(requested, ok, error) set + verification outcome
 //   lastError (string)
 //   setProfile(profile)       submits one request; true means accepted, not
 //                             confirmed
 //
-// The pinned backend has no read-success or write-result signal. The wrapper
-// verifies a non-default observation and this object confirms a write only from
-// an observed overlay-mapped profile transition within writeTimeoutMs. Backend
-// gaps and a fork fix outline are recorded in
-// windows/battery-prototype/README.md.
+// Only a matching successful result confirms a write. Property transitions can
+// be optimistic on older backends and are never confirmation.
 QtObject {
     id: root
 
@@ -33,7 +29,7 @@ QtObject {
     // calls setProfile.
     property bool writesEnabled: false
     property string backendError: ""
-    // Bounded wait for the overlay-mapped profile to change after a request.
+    // Bounded wait for the native set + verification result.
     property int writeTimeoutMs: 4000
 
     readonly property int profileSaver: 0
@@ -70,8 +66,7 @@ QtObject {
         return result;
     }
     readonly property bool performanceMapped: availableProfiles.indexOf(profilePerformance) >= 0
-    // Diagnostic only. powerprofiles.cpp hard-codes this true; availability is
-    // derived from the explicit GUID mapping in mappedProfiles instead.
+    // The facade derives mappings from explicit native write capabilities.
     readonly property bool performanceClaim: backend?.performanceClaim === true
     readonly property bool writeResultAvailable: backend?.writeResultAvailable === true
 
@@ -106,9 +101,9 @@ QtObject {
         if (!backend)
             return "Waiting for the Windows power profile backend.";
         if (!backendReady)
-            return "The Windows power profile backend is unavailable; PowerProfiles initialization or the overlay API failed, and native error details are not exposed.";
+            return backend?.lastError || "The Windows power profile backend is unavailable.";
         if (!profileKnown)
-            return "The effective overlay scheme is not verified, so the current power profile is unknown. The pinned backend reports neither read success nor read failure.";
+            return backend?.lastError || "The current power profile is not verified.";
         if (availableProfiles.indexOf(profile) < 0)
             return "The effective overlay scheme mapped to a profile this backend cannot represent.";
         if (!writesEnabled)
@@ -116,10 +111,9 @@ QtObject {
         return "The effective overlay scheme is observable as " + profileName + ". Power profile writes are enabled for the mapped profiles.";
     }
 
-    // idle -> no request; pending -> waiting for an observed transition;
-    // confirmed -> the requested profile was observed (or was already current);
-    // unconfirmed -> no observed transition within writeTimeoutMs or a rejected
-    // native submission; rejected -> the request never reached the backend.
+    // idle -> no write (including current-profile no-op); pending -> submitted;
+    // confirmed -> native set + re-read succeeded; unconfirmed -> no result;
+    // rejected -> refused locally or a native failure result.
     property string writeState: "idle"
     property int requestedProfile: profileUnknown
     property string writeError: ""
@@ -130,7 +124,7 @@ QtObject {
     property int rejectedWrites: 0
 
     readonly property bool writePending: writeState === "pending"
-    readonly property bool writeFailed: writeState === "unconfirmed"
+    readonly property bool writeFailed: writeState === "unconfirmed" || writeState === "rejected"
     readonly property int effectiveWriteTimeoutMs: Number.isFinite(writeTimeoutMs)
         && writeTimeoutMs > 0 ? writeTimeoutMs : 4000
     readonly property string writeReason: {
@@ -139,14 +133,13 @@ QtObject {
         if (!writesEnabled)
             return "Power profile writes are disabled; observation is read-only.";
         if (writeState === "pending")
-            return "Waiting for the overlay to report " + profileNameFor(requestedProfile) + ".";
+            return writeResultAvailable ? "Waiting for the power profile result."
+                : "Power profile request submitted; confirmation is unavailable.";
         if (writeState === "confirmed")
-            return lastWriteNoop
-                ? "The requested profile was already observed; no write was sent."
-                : "The overlay reported the requested profile.";
+            return "The power profile change was verified.";
         if (writeState === "unconfirmed" || writeState === "rejected")
             return writeError;
-        return "";
+        return lastWriteNoop ? "This profile is already active." : "";
     }
 
     function isValidProfile(value): bool {
@@ -196,8 +189,7 @@ QtObject {
             // and no confirmation timeout.
             writeTimer.stop();
             lastWriteNoop = true;
-            writeState = "confirmed";
-            confirmedWrites++;
+            writeState = "idle";
             return true;
         }
 
@@ -207,7 +199,7 @@ QtObject {
 
         const submitted = typeof backend.setProfile === "function" ? backend.setProfile(target) : false;
         if (submitted !== true && writeState === "pending") {
-            failWrite("The native backend did not accept the power profile request.");
+            rejectWriteResult(backend?.lastError || "The native backend did not accept the power profile request.");
             return false;
         }
         return true;
@@ -228,6 +220,13 @@ QtObject {
         confirmedWrites++;
     }
 
+    function rejectWriteResult(message): void {
+        writeTimer.stop();
+        writeState = "rejected";
+        writeError = message || "The power profile request failed.";
+        rejectedWrites++;
+    }
+
     function failWrite(message): void {
         writeTimer.stop();
         writeState = "unconfirmed";
@@ -235,22 +234,28 @@ QtObject {
         unconfirmedWrites++;
     }
 
-    onRawBackendProfileChanged: {
-        // Read the backend value directly: dependent bindings such as profile
-        // are not guaranteed to have re-evaluated when this signal handler runs.
-        if (writeState === "pending" && backendReady && backend?.profileKnown === true
-                && backend?.profile === requestedProfile)
-            confirmWrite();
+    readonly property Connections results: Connections {
+        target: root.backend
+        ignoreUnknownSignals: true
+        function onProfileWriteResult(requestedProfile, ok, error) {
+            if (!root.writeResultAvailable || !root.writePending
+                    || requestedProfile !== root.requestedProfile)
+                return;
+            if (ok === true)
+                root.confirmWrite();
+            else
+                root.rejectWriteResult(error);
+        }
     }
 
     onBackendReadyChanged: {
         if (!backendReady && writeState === "pending")
-            failWrite("The Windows power profile backend became unavailable before the overlay changed.");
+            failWrite("The Windows power profile backend became unavailable before confirmation.");
     }
 
     onWritesEnabledChanged: {
         if (!writesEnabled && writeState === "pending")
-            failWrite("Power profile writes were disabled before the overlay changed.");
+            failWrite("Power profile writes were disabled before confirmation.");
     }
 
     onEnabledChanged: {
@@ -266,7 +271,7 @@ QtObject {
     readonly property Timer writeTimer: Timer {
         interval: root.effectiveWriteTimeoutMs
         repeat: false
-        onTriggered: root.failWrite("No overlay change was observed within "
+        onTriggered: root.failWrite("No power profile result arrived within "
             + root.effectiveWriteTimeoutMs + " ms.")
     }
 }

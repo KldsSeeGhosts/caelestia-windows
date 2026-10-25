@@ -30,8 +30,8 @@ $fixtures = @(
         name = 'profiles'; file = 'PowerProfilesServiceTest.qml'
         passMarker = 'CAELESTIA_POWER_PROFILES_FIXTURE_PASS'
         failMarker = 'CAELESTIA_POWER_PROFILES_FIXTURE_FAIL'
-        minimumAssertions = 90
-        sources = @('PowerProfilesService.qml', 'PowerProfilesServiceTest.qml')
+        minimumAssertions = 132
+        sources = @('PowerProfilesService.qml', 'PowerProfilesServiceTest.qml', 'PowerProfilesBackend.qml')
     }
 )
 
@@ -49,9 +49,8 @@ $sources = foreach ($name in $stagedNames) {
 # The state objects must stay importable without Quickshell or a native UPower
 # singleton. The fixtures are the only other staged files and never construct
 # Battery.qml, so no native backend can start in this process.
-$nativeImports = @($fixtures | ForEach-Object {
-    $serviceName = $_.sources[0]
-    @(Select-String -LiteralPath (Join-Path $repoRoot "windows\services\battery\$serviceName") `
+$nativeImports = @($stagedNames | ForEach-Object {
+    @(Select-String -LiteralPath (Join-Path $repoRoot "windows\services\battery\$_") `
         -Pattern '^\s*import\s+Quickshell')
 })
 $hashMismatch = @($sources | Where-Object { $_.sourceSha256 -ne $_.stagedSha256 })
@@ -103,7 +102,7 @@ $profilesResult = $results | Where-Object { $_.name -eq 'profiles' } | Select-Ob
 $passed = ($results | Where-Object { -not $_.passed }).Count -eq 0 -and
     $hashMismatch.Count -eq 0 -and $nativeImports.Count -eq 0 -and
     [int]$batteryResult.fixture.assertions -ge 128 -and
-    [int]$profilesResult.fixture.assertions -ge 90
+    [int]$profilesResult.fixture.assertions -ge 132
 $result = [ordered]@{
     passed = $passed
     timedOut = [bool]($results | Where-Object { $_.timedOut })

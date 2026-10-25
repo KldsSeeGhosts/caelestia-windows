@@ -24,6 +24,9 @@ Column {
     // upstream's all-three behavior; unavailable entries use the selector's
     // existing disabled styling.
     property var availableProfiles: null
+    // Hosts can route selections through their write lifecycle. The default
+    // retains the original Linux setter.
+    property var selectProfile: profile => { PowerProfiles.profile = profile; }
 
     // Windows host: a native UPower read can fail, or report an unknown level
     // instead of a percentage. Linux always supplies a usable level, so these
@@ -304,7 +307,7 @@ Column {
             color: profiles.current === parent.icon ? Colours.palette.m3onPrimary : Colours.palette.m3onSurface
             onClicked: {
                 if (root.profileWritesEnabled && parent.available)
-                    PowerProfiles.profile = parent.profile;
+                    root.selectProfile(parent.profile);
             }
         }
 
