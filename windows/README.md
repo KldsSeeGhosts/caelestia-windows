@@ -46,6 +46,12 @@ For the next development session, start with [HANDOFF.md](HANDOFF.md).
   hardware and the remaining profile/write gates keep ERM-499 open.
 - Inherited GitHub Actions are disabled at repository level during bootstrap.
   They are upstream Linux workflows, not validation of this port.
+- An opt-in [media prototype](media-prototype/README.md) loads the original
+  dashboard player details. Native lifecycle status distinguishes unavailable
+  observations from a healthy empty session list, and artwork caching honors
+  the isolated profile. Clean native 150%/175% runs observed no open sessions;
+  [media evidence](validation/2026-10-25-m2-media/README.md) separates those
+  results from fixture-only real-player behavior. ERM-498 remains open.
 
 ## Checkout and inspect
 
@@ -132,7 +138,7 @@ isolated prototype passes.
 ## Dependency maintenance
 
 The current backend pin is in the private
-[Caelestia backend fork](https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/tree/5d0a33d36b17cb41d658b4a4a699c56ae91d6b5e).
+[Caelestia backend fork](https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/tree/1401042969e4b7ab3cfb314fc76945ab081db3de).
 It retains the audited `nunreasonable/quickshell` baseline `e8ae0ef1` and adds
 a native mask handoff change: reconcile Qt hover when `WS_EX_TRANSPARENT`
 changes, because the move that triggered the hook can already have reached the
@@ -150,6 +156,11 @@ adds UPower read/presence/charge/source validity and stale-value clearing.
 Unknown AC source supplies neither a discharging state nor a time estimate.
 The root gitlink and source manifest use the pushed implementation revision;
 the backend PR remains open.
+
+[Backend PR #3](https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/pull/3)
+adds GSMTC initialization/session-scan status and isolates artwork writes and
+pruning to the shell profile cache. It is stacked on backend PR #2; the root
+media integration is [PR #7](https://github.com/KldsSeeGhosts/caelestia-windows/pull/7).
 
 Keep the source manifest and submodule revision in agreement. Review backend
 updates before moving the gitlink; keep backend patches in a dedicated fork

@@ -1,0 +1,9 @@
+﻿[
+    "--build",
+    "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\media-backend-tests",
+    "--target",
+    "mpris_status_test",
+    "mpris_art_cache_test",
+    "--parallel",
+    "4"
+]

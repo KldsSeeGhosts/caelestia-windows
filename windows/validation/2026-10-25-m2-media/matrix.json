@@ -1,0 +1,748 @@
+﻿{
+    "passed":  true,
+    "failure":  null,
+    "sourceRevision":  "d9cdcf9a92a6e3dc108403efc8336a42b5aaee92",
+    "sourceDirty":  false,
+    "backendRevision":  "1401042969e4b7ab3cfb314fc76945ab081db3de",
+    "measurementSources":  [
+                               {
+                                   "source":  "windows/scripts/Get-DesktopState.ps1",
+                                   "sha256":  "44E06C706EE5A930A41EA723D9DFC104469D2019DDBC3BAEA71B240B71A401DE"
+                               },
+                               {
+                                   "source":  "windows/scripts/Test-MediaService.ps1",
+                                   "sha256":  "B78B6EF753C07EABCA6872DF5A82BB33026378503F9CCF28F678178171F29703"
+                               },
+                               {
+                                   "source":  "windows/scripts/Test-MediaPrototype.ps1",
+                                   "sha256":  "39609C49B75CA34FF95D54B581A6ACCEB033E565E4B51F0D4AA45BBC21C53C88"
+                               }
+                           ],
+    "output":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\media-validation-20261025-170511-901",
+    "records":  [
+                    {
+                        "kind":  "fixture",
+                        "result":  {
+                                       "passed":  true,
+                                       "timedOut":  false,
+                                       "exitCode":  0,
+                                       "fixture":  {
+                                                       "assertions":  148
+                                                   },
+                                       "nativeImports":  0,
+                                       "hashMismatch":  [
+
+                                                        ],
+                                       "diagnostics":  [
+
+                                                       ],
+                                       "sourceRevision":  "d9cdcf9a92a6e3dc108403efc8336a42b5aaee92",
+                                       "sourceDirty":  false,
+                                       "qtVersion":  "6.11.2",
+                                       "runnerSha256":  "24994D434962751713F0C8932B356104B0849572B95765DAD50C13DA6BE3FA20",
+                                       "command":  "C:\\Users\\Ermin\\AppData\\Local\\caelestia-dev\\Qt\\6.11.2\\msvc2022_64\\bin\\qml.exe",
+                                       "arguments":  "\"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\media-tests\\media-fixture-20261025-170512-113\\PlayersServiceTest.qml\"",
+                                       "sources":  [
+                                                       {
+                                                           "source":  "windows/services/media/PlayersService.qml",
+                                                           "sourceSha256":  "CFF2626FCE3506EF35C02A52AE4C28706D64706A5F7EB46E235318DCD67C8B15",
+                                                           "stagedSha256":  "CFF2626FCE3506EF35C02A52AE4C28706D64706A5F7EB46E235318DCD67C8B15"
+                                                       },
+                                                       {
+                                                           "source":  "windows/services/media/PlayersServiceTest.qml",
+                                                           "sourceSha256":  "5EEA84E11B0A954EE3AC8FE4B4DC968129AB06F58B96AD6CAA316E51788D443B",
+                                                           "stagedSha256":  "5EEA84E11B0A954EE3AC8FE4B4DC968129AB06F58B96AD6CAA316E51788D443B"
+                                                       }
+                                                   ],
+                                       "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\media-tests\\media-fixture-20261025-170512-113",
+                                       "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\media-fixture-20261025-170512-113.stdout.log",
+                                       "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\media-fixture-20261025-170512-113.stderr.log"
+                                   }
+                    },
+                    {
+                        "kind":  "media",
+                        "result":  {
+                                       "passed":  true,
+                                       "smoke":  true,
+                                       "prototype":  "media",
+                                       "audioMode":  "Disabled",
+                                       "batteryMode":  "Disabled",
+                                       "mediaMode":  "Disabled",
+                                       "timedOut":  false,
+                                       "exitCode":  0,
+                                       "scaleFactor":  "native",
+                                       "screenIndex":  0,
+                                       "monitorCycle":  false,
+                                       "traceInput":  false,
+                                       "actualScreens":  [
+                                                             {
+                                                                 "index":  0,
+                                                                 "name":  "MAG321UX OLED",
+                                                                 "x":  0,
+                                                                 "y":  0,
+                                                                 "dpr":  1.5,
+                                                                 "width":  560,
+                                                                 "height":  460
+                                                             }
+                                                         ],
+                                       "captures":  [
+                                                        "file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/media-20261025-170512-374.png"
+                                                    ],
+                                       "audioSnapshots":  [
+
+                                                          ],
+                                       "batterySnapshots":  [
+
+                                                            ],
+                                       "mediaSnapshots":  [
+                                                              {
+                                                                  "phase":  "INITIAL",
+                                                                  "state":  {
+                                                                                "status":  "disabled",
+                                                                                "reason":  "Windows media is disabled.",
+                                                                                "enabled":  false,
+                                                                                "controlsEnabled":  false,
+                                                                                "backendLoaded":  false,
+                                                                                "nativeRequested":  false,
+                                                                                "nativeReady":  false,
+                                                                                "backendReady":  false,
+                                                                                "ready":  false,
+                                                                                "noSessions":  false,
+                                                                                "sessionsObserved":  false,
+                                                                                "lastError":  "",
+                                                                                "playerCount":  0,
+                                                                                "players":  [
+
+                                                                                            ],
+                                                                                "activeIdentity":  "",
+                                                                                "activeTitle":  "",
+                                                                                "activeArtist":  "",
+                                                                                "activeAlbum":  "",
+                                                                                "activeArtUrl":  "",
+                                                                                "activeIsPlaying":  false,
+                                                                                "position":  0,
+                                                                                "length":  0,
+                                                                                "positionSupported":  false,
+                                                                                "lengthSupported":  false,
+                                                                                "canControl":  false,
+                                                                                "canPlay":  false,
+                                                                                "canPause":  false,
+                                                                                "canTogglePlaying":  false,
+                                                                                "canSeek":  false,
+                                                                                "canGoNext":  false,
+                                                                                "canGoPrevious":  false,
+                                                                                "canSetShuffle":  false,
+                                                                                "canSetLoop":  false,
+                                                                                "stopSupported":  false,
+                                                                                "raiseSupported":  false,
+                                                                                "quitSupported":  false,
+                                                                                "openUriSupported":  false,
+                                                                                "volumeSupported":  false,
+                                                                                "canStop":  false,
+                                                                                "canRaise":  false,
+                                                                                "canQuit":  false,
+                                                                                "canOpenUri":  false,
+                                                                                "canSetVolume":  false,
+                                                                                "playerLoaded":  false,
+                                                                                "playerControlsEnabled":  false
+                                                                            }
+                                                              },
+                                                              {
+                                                                  "phase":  "FINAL",
+                                                                  "state":  {
+                                                                                "status":  "disabled",
+                                                                                "reason":  "Windows media is disabled.",
+                                                                                "enabled":  false,
+                                                                                "controlsEnabled":  false,
+                                                                                "backendLoaded":  false,
+                                                                                "nativeRequested":  false,
+                                                                                "nativeReady":  false,
+                                                                                "backendReady":  false,
+                                                                                "ready":  false,
+                                                                                "noSessions":  false,
+                                                                                "sessionsObserved":  false,
+                                                                                "lastError":  "",
+                                                                                "playerCount":  0,
+                                                                                "players":  [
+
+                                                                                            ],
+                                                                                "activeIdentity":  "",
+                                                                                "activeTitle":  "",
+                                                                                "activeArtist":  "",
+                                                                                "activeAlbum":  "",
+                                                                                "activeArtUrl":  "",
+                                                                                "activeIsPlaying":  false,
+                                                                                "position":  0,
+                                                                                "length":  0,
+                                                                                "positionSupported":  false,
+                                                                                "lengthSupported":  false,
+                                                                                "canControl":  false,
+                                                                                "canPlay":  false,
+                                                                                "canPause":  false,
+                                                                                "canTogglePlaying":  false,
+                                                                                "canSeek":  false,
+                                                                                "canGoNext":  false,
+                                                                                "canGoPrevious":  false,
+                                                                                "canSetShuffle":  false,
+                                                                                "canSetLoop":  false,
+                                                                                "stopSupported":  false,
+                                                                                "raiseSupported":  false,
+                                                                                "quitSupported":  false,
+                                                                                "openUriSupported":  false,
+                                                                                "volumeSupported":  false,
+                                                                                "canStop":  false,
+                                                                                "canRaise":  false,
+                                                                                "canQuit":  false,
+                                                                                "canOpenUri":  false,
+                                                                                "canSetVolume":  false,
+                                                                                "playerLoaded":  false,
+                                                                                "playerControlsEnabled":  false
+                                                                            }
+                                                              }
+                                                          ],
+                                       "elapsedMilliseconds":  4199,
+                                       "sourceRevision":  "d9cdcf9a92a6e3dc108403efc8336a42b5aaee92",
+                                       "sourceDirty":  false,
+                                       "backendRevision":  "1401042969e4b7ab3cfb314fc76945ab081db3de",
+                                       "buildRecordSha256":  "3FA201EE45FC755B663FF122090B617D222BBFD99352B18F490B003F0C14FED1",
+                                       "configSha256":  "6FC8F8B80AF9D45A49A4737AF51B8C43A11B97E1B59A82468F31AB4C779C6F65",
+                                       "command":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\quickshell\\qs.exe",
+                                       "arguments":  "--no-color --log-times --path \"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\media-20261025-170512-374\\shell.qml\"",
+                                       "executableSha256":  "22B69FFE0523F8FFDB86C22E1669A36B2C8DCAEA97B19754000EC7455345AF22",
+                                       "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\media-20261025-170512-374",
+                                       "profile":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\media-prototype-profile",
+                                       "sources":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\media-20261025-170512-374.sources.json",
+                                       "screenshot":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\media-20261025-170512-374.png",
+                                       "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\media-20261025-170512-374.stdout.log",
+                                       "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\media-20261025-170512-374.stderr.log"
+                                   }
+                    },
+                    {
+                        "kind":  "media",
+                        "result":  {
+                                       "passed":  true,
+                                       "smoke":  true,
+                                       "prototype":  "media",
+                                       "audioMode":  "Disabled",
+                                       "batteryMode":  "Disabled",
+                                       "mediaMode":  "ReadOnly",
+                                       "timedOut":  false,
+                                       "exitCode":  0,
+                                       "scaleFactor":  "native",
+                                       "screenIndex":  0,
+                                       "monitorCycle":  false,
+                                       "traceInput":  false,
+                                       "actualScreens":  [
+                                                             {
+                                                                 "index":  0,
+                                                                 "name":  "MAG321UX OLED",
+                                                                 "x":  0,
+                                                                 "y":  0,
+                                                                 "dpr":  1.5,
+                                                                 "width":  560,
+                                                                 "height":  460
+                                                             }
+                                                         ],
+                                       "captures":  [
+                                                        "file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/media-20261025-170517-034.png"
+                                                    ],
+                                       "audioSnapshots":  [
+
+                                                          ],
+                                       "batterySnapshots":  [
+
+                                                            ],
+                                       "mediaSnapshots":  [
+                                                              {
+                                                                  "phase":  "INITIAL",
+                                                                  "state":  {
+                                                                                "status":  "no-sessions",
+                                                                                "reason":  "Windows media is observable; no media sessions are currently open.",
+                                                                                "enabled":  true,
+                                                                                "controlsEnabled":  false,
+                                                                                "backendLoaded":  true,
+                                                                                "nativeRequested":  true,
+                                                                                "nativeReady":  true,
+                                                                                "backendReady":  true,
+                                                                                "ready":  true,
+                                                                                "noSessions":  true,
+                                                                                "sessionsObserved":  false,
+                                                                                "lastError":  "",
+                                                                                "playerCount":  0,
+                                                                                "players":  [
+
+                                                                                            ],
+                                                                                "activeIdentity":  "",
+                                                                                "activeTitle":  "",
+                                                                                "activeArtist":  "",
+                                                                                "activeAlbum":  "",
+                                                                                "activeArtUrl":  "",
+                                                                                "activeIsPlaying":  false,
+                                                                                "position":  0,
+                                                                                "length":  0,
+                                                                                "positionSupported":  false,
+                                                                                "lengthSupported":  false,
+                                                                                "canControl":  false,
+                                                                                "canPlay":  false,
+                                                                                "canPause":  false,
+                                                                                "canTogglePlaying":  false,
+                                                                                "canSeek":  false,
+                                                                                "canGoNext":  false,
+                                                                                "canGoPrevious":  false,
+                                                                                "canSetShuffle":  false,
+                                                                                "canSetLoop":  false,
+                                                                                "stopSupported":  false,
+                                                                                "raiseSupported":  false,
+                                                                                "quitSupported":  false,
+                                                                                "openUriSupported":  false,
+                                                                                "volumeSupported":  false,
+                                                                                "canStop":  false,
+                                                                                "canRaise":  false,
+                                                                                "canQuit":  false,
+                                                                                "canOpenUri":  false,
+                                                                                "canSetVolume":  false,
+                                                                                "playerLoaded":  true,
+                                                                                "playerControlsEnabled":  false
+                                                                            }
+                                                              },
+                                                              {
+                                                                  "phase":  "FINAL",
+                                                                  "state":  {
+                                                                                "status":  "no-sessions",
+                                                                                "reason":  "Windows media is observable; no media sessions are currently open.",
+                                                                                "enabled":  true,
+                                                                                "controlsEnabled":  false,
+                                                                                "backendLoaded":  true,
+                                                                                "nativeRequested":  true,
+                                                                                "nativeReady":  true,
+                                                                                "backendReady":  true,
+                                                                                "ready":  true,
+                                                                                "noSessions":  true,
+                                                                                "sessionsObserved":  false,
+                                                                                "lastError":  "",
+                                                                                "playerCount":  0,
+                                                                                "players":  [
+
+                                                                                            ],
+                                                                                "activeIdentity":  "",
+                                                                                "activeTitle":  "",
+                                                                                "activeArtist":  "",
+                                                                                "activeAlbum":  "",
+                                                                                "activeArtUrl":  "",
+                                                                                "activeIsPlaying":  false,
+                                                                                "position":  0,
+                                                                                "length":  0,
+                                                                                "positionSupported":  false,
+                                                                                "lengthSupported":  false,
+                                                                                "canControl":  false,
+                                                                                "canPlay":  false,
+                                                                                "canPause":  false,
+                                                                                "canTogglePlaying":  false,
+                                                                                "canSeek":  false,
+                                                                                "canGoNext":  false,
+                                                                                "canGoPrevious":  false,
+                                                                                "canSetShuffle":  false,
+                                                                                "canSetLoop":  false,
+                                                                                "stopSupported":  false,
+                                                                                "raiseSupported":  false,
+                                                                                "quitSupported":  false,
+                                                                                "openUriSupported":  false,
+                                                                                "volumeSupported":  false,
+                                                                                "canStop":  false,
+                                                                                "canRaise":  false,
+                                                                                "canQuit":  false,
+                                                                                "canOpenUri":  false,
+                                                                                "canSetVolume":  false,
+                                                                                "playerLoaded":  true,
+                                                                                "playerControlsEnabled":  false
+                                                                            }
+                                                              }
+                                                          ],
+                                       "elapsedMilliseconds":  3434,
+                                       "sourceRevision":  "d9cdcf9a92a6e3dc108403efc8336a42b5aaee92",
+                                       "sourceDirty":  false,
+                                       "backendRevision":  "1401042969e4b7ab3cfb314fc76945ab081db3de",
+                                       "buildRecordSha256":  "3FA201EE45FC755B663FF122090B617D222BBFD99352B18F490B003F0C14FED1",
+                                       "configSha256":  "6FC8F8B80AF9D45A49A4737AF51B8C43A11B97E1B59A82468F31AB4C779C6F65",
+                                       "command":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\quickshell\\qs.exe",
+                                       "arguments":  "--no-color --log-times --path \"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\media-20261025-170517-034\\shell.qml\"",
+                                       "executableSha256":  "22B69FFE0523F8FFDB86C22E1669A36B2C8DCAEA97B19754000EC7455345AF22",
+                                       "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\media-20261025-170517-034",
+                                       "profile":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\media-prototype-profile",
+                                       "sources":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\media-20261025-170517-034.sources.json",
+                                       "screenshot":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\media-20261025-170517-034.png",
+                                       "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\media-20261025-170517-034.stdout.log",
+                                       "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\media-20261025-170517-034.stderr.log"
+                                   }
+                    },
+                    {
+                        "kind":  "media",
+                        "result":  {
+                                       "passed":  true,
+                                       "smoke":  true,
+                                       "prototype":  "media",
+                                       "audioMode":  "Disabled",
+                                       "batteryMode":  "Disabled",
+                                       "mediaMode":  "Disabled",
+                                       "timedOut":  false,
+                                       "exitCode":  0,
+                                       "scaleFactor":  "native",
+                                       "screenIndex":  1,
+                                       "monitorCycle":  false,
+                                       "traceInput":  false,
+                                       "actualScreens":  [
+                                                             {
+                                                                 "index":  1,
+                                                                 "name":  "DELL S2725QS",
+                                                                 "x":  -3840,
+                                                                 "y":  0,
+                                                                 "dpr":  1.75,
+                                                                 "width":  560,
+                                                                 "height":  460
+                                                             }
+                                                         ],
+                                       "captures":  [
+                                                        "file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/media-20261025-170520-805.png"
+                                                    ],
+                                       "audioSnapshots":  [
+
+                                                          ],
+                                       "batterySnapshots":  [
+
+                                                            ],
+                                       "mediaSnapshots":  [
+                                                              {
+                                                                  "phase":  "INITIAL",
+                                                                  "state":  {
+                                                                                "status":  "disabled",
+                                                                                "reason":  "Windows media is disabled.",
+                                                                                "enabled":  false,
+                                                                                "controlsEnabled":  false,
+                                                                                "backendLoaded":  false,
+                                                                                "nativeRequested":  false,
+                                                                                "nativeReady":  false,
+                                                                                "backendReady":  false,
+                                                                                "ready":  false,
+                                                                                "noSessions":  false,
+                                                                                "sessionsObserved":  false,
+                                                                                "lastError":  "",
+                                                                                "playerCount":  0,
+                                                                                "players":  [
+
+                                                                                            ],
+                                                                                "activeIdentity":  "",
+                                                                                "activeTitle":  "",
+                                                                                "activeArtist":  "",
+                                                                                "activeAlbum":  "",
+                                                                                "activeArtUrl":  "",
+                                                                                "activeIsPlaying":  false,
+                                                                                "position":  0,
+                                                                                "length":  0,
+                                                                                "positionSupported":  false,
+                                                                                "lengthSupported":  false,
+                                                                                "canControl":  false,
+                                                                                "canPlay":  false,
+                                                                                "canPause":  false,
+                                                                                "canTogglePlaying":  false,
+                                                                                "canSeek":  false,
+                                                                                "canGoNext":  false,
+                                                                                "canGoPrevious":  false,
+                                                                                "canSetShuffle":  false,
+                                                                                "canSetLoop":  false,
+                                                                                "stopSupported":  false,
+                                                                                "raiseSupported":  false,
+                                                                                "quitSupported":  false,
+                                                                                "openUriSupported":  false,
+                                                                                "volumeSupported":  false,
+                                                                                "canStop":  false,
+                                                                                "canRaise":  false,
+                                                                                "canQuit":  false,
+                                                                                "canOpenUri":  false,
+                                                                                "canSetVolume":  false,
+                                                                                "playerLoaded":  false,
+                                                                                "playerControlsEnabled":  false
+                                                                            }
+                                                              },
+                                                              {
+                                                                  "phase":  "FINAL",
+                                                                  "state":  {
+                                                                                "status":  "disabled",
+                                                                                "reason":  "Windows media is disabled.",
+                                                                                "enabled":  false,
+                                                                                "controlsEnabled":  false,
+                                                                                "backendLoaded":  false,
+                                                                                "nativeRequested":  false,
+                                                                                "nativeReady":  false,
+                                                                                "backendReady":  false,
+                                                                                "ready":  false,
+                                                                                "noSessions":  false,
+                                                                                "sessionsObserved":  false,
+                                                                                "lastError":  "",
+                                                                                "playerCount":  0,
+                                                                                "players":  [
+
+                                                                                            ],
+                                                                                "activeIdentity":  "",
+                                                                                "activeTitle":  "",
+                                                                                "activeArtist":  "",
+                                                                                "activeAlbum":  "",
+                                                                                "activeArtUrl":  "",
+                                                                                "activeIsPlaying":  false,
+                                                                                "position":  0,
+                                                                                "length":  0,
+                                                                                "positionSupported":  false,
+                                                                                "lengthSupported":  false,
+                                                                                "canControl":  false,
+                                                                                "canPlay":  false,
+                                                                                "canPause":  false,
+                                                                                "canTogglePlaying":  false,
+                                                                                "canSeek":  false,
+                                                                                "canGoNext":  false,
+                                                                                "canGoPrevious":  false,
+                                                                                "canSetShuffle":  false,
+                                                                                "canSetLoop":  false,
+                                                                                "stopSupported":  false,
+                                                                                "raiseSupported":  false,
+                                                                                "quitSupported":  false,
+                                                                                "openUriSupported":  false,
+                                                                                "volumeSupported":  false,
+                                                                                "canStop":  false,
+                                                                                "canRaise":  false,
+                                                                                "canQuit":  false,
+                                                                                "canOpenUri":  false,
+                                                                                "canSetVolume":  false,
+                                                                                "playerLoaded":  false,
+                                                                                "playerControlsEnabled":  false
+                                                                            }
+                                                              }
+                                                          ],
+                                       "elapsedMilliseconds":  3411,
+                                       "sourceRevision":  "d9cdcf9a92a6e3dc108403efc8336a42b5aaee92",
+                                       "sourceDirty":  false,
+                                       "backendRevision":  "1401042969e4b7ab3cfb314fc76945ab081db3de",
+                                       "buildRecordSha256":  "3FA201EE45FC755B663FF122090B617D222BBFD99352B18F490B003F0C14FED1",
+                                       "configSha256":  "6FC8F8B80AF9D45A49A4737AF51B8C43A11B97E1B59A82468F31AB4C779C6F65",
+                                       "command":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\quickshell\\qs.exe",
+                                       "arguments":  "--no-color --log-times --path \"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\media-20261025-170520-805\\shell.qml\"",
+                                       "executableSha256":  "22B69FFE0523F8FFDB86C22E1669A36B2C8DCAEA97B19754000EC7455345AF22",
+                                       "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\media-20261025-170520-805",
+                                       "profile":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\media-prototype-profile",
+                                       "sources":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\media-20261025-170520-805.sources.json",
+                                       "screenshot":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\media-20261025-170520-805.png",
+                                       "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\media-20261025-170520-805.stdout.log",
+                                       "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\media-20261025-170520-805.stderr.log"
+                                   }
+                    },
+                    {
+                        "kind":  "media",
+                        "result":  {
+                                       "passed":  true,
+                                       "smoke":  true,
+                                       "prototype":  "media",
+                                       "audioMode":  "Disabled",
+                                       "batteryMode":  "Disabled",
+                                       "mediaMode":  "ReadOnly",
+                                       "timedOut":  false,
+                                       "exitCode":  0,
+                                       "scaleFactor":  "native",
+                                       "screenIndex":  1,
+                                       "monitorCycle":  false,
+                                       "traceInput":  false,
+                                       "actualScreens":  [
+                                                             {
+                                                                 "index":  1,
+                                                                 "name":  "DELL S2725QS",
+                                                                 "x":  -3840,
+                                                                 "y":  0,
+                                                                 "dpr":  1.75,
+                                                                 "width":  560,
+                                                                 "height":  460
+                                                             }
+                                                         ],
+                                       "captures":  [
+                                                        "file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/media-20261025-170524-521.png"
+                                                    ],
+                                       "audioSnapshots":  [
+
+                                                          ],
+                                       "batterySnapshots":  [
+
+                                                            ],
+                                       "mediaSnapshots":  [
+                                                              {
+                                                                  "phase":  "INITIAL",
+                                                                  "state":  {
+                                                                                "status":  "no-sessions",
+                                                                                "reason":  "Windows media is observable; no media sessions are currently open.",
+                                                                                "enabled":  true,
+                                                                                "controlsEnabled":  false,
+                                                                                "backendLoaded":  true,
+                                                                                "nativeRequested":  true,
+                                                                                "nativeReady":  true,
+                                                                                "backendReady":  true,
+                                                                                "ready":  true,
+                                                                                "noSessions":  true,
+                                                                                "sessionsObserved":  false,
+                                                                                "lastError":  "",
+                                                                                "playerCount":  0,
+                                                                                "players":  [
+
+                                                                                            ],
+                                                                                "activeIdentity":  "",
+                                                                                "activeTitle":  "",
+                                                                                "activeArtist":  "",
+                                                                                "activeAlbum":  "",
+                                                                                "activeArtUrl":  "",
+                                                                                "activeIsPlaying":  false,
+                                                                                "position":  0,
+                                                                                "length":  0,
+                                                                                "positionSupported":  false,
+                                                                                "lengthSupported":  false,
+                                                                                "canControl":  false,
+                                                                                "canPlay":  false,
+                                                                                "canPause":  false,
+                                                                                "canTogglePlaying":  false,
+                                                                                "canSeek":  false,
+                                                                                "canGoNext":  false,
+                                                                                "canGoPrevious":  false,
+                                                                                "canSetShuffle":  false,
+                                                                                "canSetLoop":  false,
+                                                                                "stopSupported":  false,
+                                                                                "raiseSupported":  false,
+                                                                                "quitSupported":  false,
+                                                                                "openUriSupported":  false,
+                                                                                "volumeSupported":  false,
+                                                                                "canStop":  false,
+                                                                                "canRaise":  false,
+                                                                                "canQuit":  false,
+                                                                                "canOpenUri":  false,
+                                                                                "canSetVolume":  false,
+                                                                                "playerLoaded":  true,
+                                                                                "playerControlsEnabled":  false
+                                                                            }
+                                                              },
+                                                              {
+                                                                  "phase":  "FINAL",
+                                                                  "state":  {
+                                                                                "status":  "no-sessions",
+                                                                                "reason":  "Windows media is observable; no media sessions are currently open.",
+                                                                                "enabled":  true,
+                                                                                "controlsEnabled":  false,
+                                                                                "backendLoaded":  true,
+                                                                                "nativeRequested":  true,
+                                                                                "nativeReady":  true,
+                                                                                "backendReady":  true,
+                                                                                "ready":  true,
+                                                                                "noSessions":  true,
+                                                                                "sessionsObserved":  false,
+                                                                                "lastError":  "",
+                                                                                "playerCount":  0,
+                                                                                "players":  [
+
+                                                                                            ],
+                                                                                "activeIdentity":  "",
+                                                                                "activeTitle":  "",
+                                                                                "activeArtist":  "",
+                                                                                "activeAlbum":  "",
+                                                                                "activeArtUrl":  "",
+                                                                                "activeIsPlaying":  false,
+                                                                                "position":  0,
+                                                                                "length":  0,
+                                                                                "positionSupported":  false,
+                                                                                "lengthSupported":  false,
+                                                                                "canControl":  false,
+                                                                                "canPlay":  false,
+                                                                                "canPause":  false,
+                                                                                "canTogglePlaying":  false,
+                                                                                "canSeek":  false,
+                                                                                "canGoNext":  false,
+                                                                                "canGoPrevious":  false,
+                                                                                "canSetShuffle":  false,
+                                                                                "canSetLoop":  false,
+                                                                                "stopSupported":  false,
+                                                                                "raiseSupported":  false,
+                                                                                "quitSupported":  false,
+                                                                                "openUriSupported":  false,
+                                                                                "volumeSupported":  false,
+                                                                                "canStop":  false,
+                                                                                "canRaise":  false,
+                                                                                "canQuit":  false,
+                                                                                "canOpenUri":  false,
+                                                                                "canSetVolume":  false,
+                                                                                "playerLoaded":  true,
+                                                                                "playerControlsEnabled":  false
+                                                                            }
+                                                              }
+                                                          ],
+                                       "elapsedMilliseconds":  3427,
+                                       "sourceRevision":  "d9cdcf9a92a6e3dc108403efc8336a42b5aaee92",
+                                       "sourceDirty":  false,
+                                       "backendRevision":  "1401042969e4b7ab3cfb314fc76945ab081db3de",
+                                       "buildRecordSha256":  "3FA201EE45FC755B663FF122090B617D222BBFD99352B18F490B003F0C14FED1",
+                                       "configSha256":  "6FC8F8B80AF9D45A49A4737AF51B8C43A11B97E1B59A82468F31AB4C779C6F65",
+                                       "command":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\quickshell\\qs.exe",
+                                       "arguments":  "--no-color --log-times --path \"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\media-20261025-170524-521\\shell.qml\"",
+                                       "executableSha256":  "22B69FFE0523F8FFDB86C22E1669A36B2C8DCAEA97B19754000EC7455345AF22",
+                                       "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\media-20261025-170524-521",
+                                       "profile":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\media-prototype-profile",
+                                       "sources":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\media-20261025-170524-521.sources.json",
+                                       "screenshot":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\media-20261025-170524-521.png",
+                                       "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\media-20261025-170524-521.stdout.log",
+                                       "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\media-20261025-170524-521.stderr.log"
+                                   }
+                    },
+                    {
+                        "kind":  "m1-regression",
+                        "result":  {
+                                       "passed":  true,
+                                       "smoke":  true,
+                                       "prototype":  "shell",
+                                       "audioMode":  "Disabled",
+                                       "batteryMode":  "Disabled",
+                                       "mediaMode":  "Disabled",
+                                       "timedOut":  false,
+                                       "exitCode":  0,
+                                       "scaleFactor":  "native",
+                                       "screenIndex":  0,
+                                       "monitorCycle":  false,
+                                       "traceInput":  false,
+                                       "actualScreens":  [
+                                                             {
+                                                                 "index":  0,
+                                                                 "name":  "MAG321UX OLED",
+                                                                 "x":  0,
+                                                                 "y":  0,
+                                                                 "dpr":  1.5
+                                                             }
+                                                         ],
+                                       "captures":  [
+                                                        "file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/shell-20261025-170528-265.png"
+                                                    ],
+                                       "audioSnapshots":  [
+
+                                                          ],
+                                       "batterySnapshots":  [
+
+                                                            ],
+                                       "mediaSnapshots":  [
+
+                                                          ],
+                                       "elapsedMilliseconds":  4073,
+                                       "sourceRevision":  "d9cdcf9a92a6e3dc108403efc8336a42b5aaee92",
+                                       "sourceDirty":  false,
+                                       "backendRevision":  "1401042969e4b7ab3cfb314fc76945ab081db3de",
+                                       "buildRecordSha256":  "3FA201EE45FC755B663FF122090B617D222BBFD99352B18F490B003F0C14FED1",
+                                       "configSha256":  "6FC8F8B80AF9D45A49A4737AF51B8C43A11B97E1B59A82468F31AB4C779C6F65",
+                                       "command":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\quickshell\\qs.exe",
+                                       "arguments":  "--no-color --log-times --path \"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\shell-20261025-170528-265\\shell.qml\"",
+                                       "executableSha256":  "22B69FFE0523F8FFDB86C22E1669A36B2C8DCAEA97B19754000EC7455345AF22",
+                                       "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\shell-20261025-170528-265",
+                                       "profile":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-prototype-profile",
+                                       "sources":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\shell-20261025-170528-265.sources.json",
+                                       "screenshot":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\shell-20261025-170528-265.png",
+                                       "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\shell-20261025-170528-265.stdout.log",
+                                       "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\shell-20261025-170528-265.stderr.log"
+                                   }
+                    }
+                ]
+}

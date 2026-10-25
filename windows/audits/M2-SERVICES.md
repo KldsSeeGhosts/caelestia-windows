@@ -1,5 +1,15 @@
 # M2 Windows service source audit
 
+Current media follow-up: clean root `d9cdcf9a` and backend `14010429` implement
+a default-off Players adapter and original dashboard player details. Native
+150%/175% runs observed a healthy backend with no sessions, with read-only
+controls and preserved desktop state. Backend PR #3 supplies lifecycle status
+and profile-isolated artwork caching.
+[Media evidence](../validation/2026-10-25-m2-media/README.md) and the
+[revision-specific media audit](M2-MEDIA-BACKEND-GAPS.md) own those claims.
+ERM-498 remains In Progress for real-session and transport acceptance.
+The baseline inventory below retains its original source revisions.
+
 Static evidence collected 2026-10-25 for ERM-495. Source checkout:
 `0e0f9fd61bed186c83626a5aabfcd05c92afb186` (`0e0f9fd6`).
 Audited Quickshell gitlink and [source manifest](../sources.lock.json):

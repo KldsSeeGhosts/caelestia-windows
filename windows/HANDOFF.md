@@ -1,8 +1,52 @@
 # Windows port handoff, 2026-10-25
 
-## M2 continuation
+## Current M2 media work
 
-M0/M1 are complete and PR #3 is merged. Current topic branch:
+Current branch: `windows/m2-media-services`,
+[PR #7](https://github.com/KldsSeeGhosts/caelestia-windows/pull/7), stacked on
+battery PR #5. The default-off media adapter and original dashboard
+`Details.qml` player component are implemented in a separate bounded host.
+Do not run the root Linux shell.
+
+Clean root `d9cdcf9a` and backend `14010429` build natively and pass 148
+offscreen media assertions, 6 native lifecycle-status cases, 5 artwork-cache
+cases, disabled/read-only media UI at native 150%/175%, M1 smoke and the full
+battery/audio regression harnesses. Native GSMTC reported a successful scan
+with **no open sessions**; real-session observation and transport are not
+validated. [Evidence and commands](validation/2026-10-25-m2-media/README.md)
+record the scope, sources, screenshots, logs and unchanged desktop/power state.
+
+The source manifest and gitlink agree at pushed backend
+`1401042969e4b7ab3cfb314fc76945ab081db3de`.
+[Backend PR #3](https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/pull/3)
+is stacked on backend PR #2. It exposes `Mpris.ready`/`lastError`, hides
+initialization/scan failures behind an explicit unavailable state, and routes
+native thumbnail caching to the shell's isolated CacheDir instead of the
+shared application cache. All four root/backend PRs remain open.
+
+```powershell
+$qtPrefix = "$env:LOCALAPPDATA\caelestia-dev\Qt\6.11.2\msvc2022_64"
+powershell -NoProfile -File windows/scripts/Test-MediaPrototype.ps1 `
+    -QtPrefix $qtPrefix
+powershell -NoProfile -File windows/scripts/Start-ShellPrototype.ps1 `
+    -QtPrefix $qtPrefix -Media -MediaMode ReadOnly -Wait
+```
+
+`-MediaMode Interactive` is a separate unvalidated opt-in. Smoke always
+disables controls. The native backend has no per-command result, so enabling
+a request does not establish success. No application or playback was started
+to fabricate session evidence.
+
+ERM-498 remains In Progress for real-session metadata/art/timeline,
+arrival/removal, selection, denial/recovery and explicit transport acceptance.
+ERM-499 remains In Progress for its profile/write/hardware gates. Other M2
+services remain unimplemented. The corrected
+[M3/M4 plan](https://github.com/KldsSeeGhosts/caelestia-windows/pull/6) retains
+those remaining gates in its planning ranges; no release date is set.
+
+## Battery baseline and remaining M2 work
+
+M0/M1 are complete and PR #3 is merged. Battery baseline topic branch:
 `windows/m2-battery-service`, based on merged main `0af60352`.
 [PR #4](https://github.com/KldsSeeGhosts/caelestia-windows/pull/4) and backend
 PR #1 track the audio integration; consult their linked merge state. Backend
@@ -64,7 +108,8 @@ are enabled. The normal M1 entry point and the audio prototype remain
 available. Do not claim the read-only gate validates battery-present
 hardware, profile selection, IdlePower settings or the full M2 milestone.
 
-The next M2 work is ERM-498: GSMTC media players. Preserve player
+ERM-498's bounded media implementation is described above. Its remaining
+acceptance must preserve player
 selection/metadata and the original transport UI, capability-gate unsupported
 actions, and distinguish absent sessions from an unavailable backend. No
 automatic playback, shortcuts, toasts or capture. Re-check the

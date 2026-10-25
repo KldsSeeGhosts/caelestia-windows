@@ -1,0 +1,79 @@
+{
+    "Defaults":  {
+                     "capture.communications":  "4ad6cd3a6d21c49a912b5d7d44aacf32b24233244f4059e431217024c1dc2921",
+                     "capture.console":  "4ad6cd3a6d21c49a912b5d7d44aacf32b24233244f4059e431217024c1dc2921",
+                     "capture.multimedia":  "4ad6cd3a6d21c49a912b5d7d44aacf32b24233244f4059e431217024c1dc2921",
+                     "render.communications":  "44c2c2424ce7101b795532acc6cd9912f6070cb222556a3cb43883bf0fd88b64",
+                     "render.console":  "44c2c2424ce7101b795532acc6cd9912f6070cb222556a3cb43883bf0fd88b64",
+                     "render.multimedia":  "44c2c2424ce7101b795532acc6cd9912f6070cb222556a3cb43883bf0fd88b64"
+                 },
+    "Endpoints":  [
+                      {
+                          "IdHash":  "44c2c2424ce7101b795532acc6cd9912f6070cb222556a3cb43883bf0fd88b64",
+                          "Flow":  "render",
+                          "Volume":  0.324693,
+                          "Muted":  false,
+                          "Channels":  [
+                                           0.324693,
+                                           0.324693
+                                       ],
+                          "Errors":  [
+
+                                     ]
+                      },
+                      {
+                          "IdHash":  "4ad6cd3a6d21c49a912b5d7d44aacf32b24233244f4059e431217024c1dc2921",
+                          "Flow":  "capture",
+                          "Volume":  1,
+                          "Muted":  false,
+                          "Channels":  [
+                                           1
+                                       ],
+                          "Errors":  [
+
+                                     ]
+                      },
+                      {
+                          "IdHash":  "c11c59773485feff3b7a447f916e36cf9421af2844acb940c7396a2ec4c12c4e",
+                          "Flow":  "render",
+                          "Volume":  1,
+                          "Muted":  false,
+                          "Channels":  [
+                                           1,
+                                           1
+                                       ],
+                          "Errors":  [
+
+                                     ]
+                      },
+                      {
+                          "IdHash":  "d2bef5aa7087d5a81dc6f0f343f1007dae2bc90ee7f159e878fcd5d44808f9ac",
+                          "Flow":  "render",
+                          "Volume":  1,
+                          "Muted":  false,
+                          "Channels":  [
+                                           1,
+                                           1
+                                       ],
+                          "Errors":  [
+
+                                     ]
+                      },
+                      {
+                          "IdHash":  "f7778088a795da964cc227362564dfee02274219d86e5852ed500323b00da000",
+                          "Flow":  "render",
+                          "Volume":  1,
+                          "Muted":  false,
+                          "Channels":  [
+                                           1,
+                                           1
+                                       ],
+                          "Errors":  [
+
+                                     ]
+                      }
+                  ],
+    "Errors":  [
+
+               ]
+}

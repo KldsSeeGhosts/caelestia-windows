@@ -1,0 +1,32 @@
+﻿{
+    "passed":  true,
+    "tests":  [
+                  {
+                      "target":  "mpris_status_test",
+                      "passed":  true,
+                      "timedOut":  false,
+                      "exitCode":  0,
+                      "command":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\media-backend-tests\\mpris_status_test.exe",
+                      "arguments":  "-o \"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\media-backend-tests\\mpris_status_test.txt\",txt",
+                      "executableSha256":  "E33CABBFC79B49C76D2D7DAD4678D33EDF432A6D2408B68AF3BB8B69C002324C",
+                      "totals":  "Totals: 6 passed, 0 failed, 0 skipped, 0 blacklisted, 1ms"
+                  },
+                  {
+                      "target":  "mpris_art_cache_test",
+                      "passed":  true,
+                      "timedOut":  false,
+                      "exitCode":  0,
+                      "command":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\media-backend-tests\\mpris_art_cache_test.exe",
+                      "arguments":  "-o \"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\media-backend-tests\\mpris_art_cache_test.txt\",txt",
+                      "executableSha256":  "252DACBF0DE1E7FEB1FA87D502E4644E96E982450627E2A94D44A40E4BFF1884",
+                      "totals":  "Totals: 5 passed, 0 failed, 0 skipped, 0 blacklisted, 42ms"
+                  }
+              ],
+    "totals":  "Totals: 6 passed, 0 failed, 0 skipped, 0 blacklisted, 1ms; Totals: 5 passed, 0 failed, 0 skipped, 0 blacklisted, 42ms",
+    "backendRevision":  "1401042969e4b7ab3cfb314fc76945ab081db3de",
+    "backendDirty":  false,
+    "qtVersion":  "6.11.2",
+    "compiler":  "clang version 20.1.8",
+    "manifestTool":  "C:\\Program Files (x86)\\Windows Kits\\10\\bin\\10.0.26100.0\\x64\\mt.exe",
+    "linker":  "MSVC"
+}

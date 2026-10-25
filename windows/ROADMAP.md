@@ -19,7 +19,8 @@ tracks the milestones and implementation issues.
   read-only battery status slice with truthful absence on a batteryless
   desktop. Remaining service integrations are ERM-498 and ERM-500 through
   ERM-507; ERM-508 owns real audio control/denial/recovery. M3/M4 have not
-  started.
+  started. ERM-498 now has a bounded media adapter/original player prototype;
+  its real-session and transport gates remain open.
 
 Continue from [HANDOFF.md](HANDOFF.md). Linear was connected and synchronized
 on 2026-10-25 under the Ermin Zeherovic (ERM) team. This roadmap owns detailed
@@ -140,6 +141,17 @@ capabilities, separate write opt-in, denied-write and real hardware
 validation. M2 remains
 incomplete: ERM-498 (media), the remaining ERM-499 work and the other service
 tickets are next.
+
+ERM-498 has a default-off media adapter and original dashboard player-details
+prototype. Clean `d9cdcf9a` with backend `14010429` passes 148 adapter
+assertions, 6 native lifecycle-status cases, 5 isolated artwork-cache cases,
+disabled/read-only native UI at 150%/175%, M1 smoke and complete battery/audio
+regressions with preserved desktop/power state.
+[Media evidence and limits](validation/2026-10-25-m2-media/README.md) record a
+healthy native backend with no open sessions. Real metadata/art/timeline,
+arrival/removal, selection, denial/recovery and explicit transport acceptance
+remain outstanding. The backend exposes no per-command outcome. ERM-498 and
+M2 remain incomplete.
 
 ## M3: windows, workspaces, and tiling
 

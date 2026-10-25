@@ -1,0 +1,18 @@
+﻿2026-10-25 17:05:21.046  INFO: Launching config: "D:/AiStack/caelestia-windows/windows/.local/build/shell-runs/media-20261025-170520-805/shell.qml"
+2026-10-25 17:05:21.047  INFO: Shell ID: "b40d9081fe51f9acb3ea64e51f09ce86" Path ID "b40d9081fe51f9acb3ea64e51f09ce86"
+2026-10-25 17:05:21.067  INFO: Saving logs to "C:/Users/Ermin/AppData/Local/quickshell/run/by-id/g1qxkehnt/log.qslog"
+2026-10-25 17:05:21.115  INFO quickshell.windows.blur: Blur behind panels is turned off by QS_WINDOWS_BLUR.
+2026-10-25 17:05:21.118  INFO quickshell.windows.blur: No layer rules file found (looked for D:/AiStack/caelestia-windows/windows/.local/build/shell-runs/media-20261025-170520-805/defaults/windows/layerrules.json ), blur behind panels is off.
+2026-10-25 17:05:21.230 DEBUG quickshell.windows.desktops: Desktop list changed: 1 desktops
+2026-10-25 17:05:21.230 DEBUG quickshell.windows.desktops: Current desktop: 0
+2026-10-25 17:05:21.231 DEBUG quickshell.windows.panel: Placing qs::windows::WinPanelWindow(0x1deedfd6a20) at QRect(-3760,80 560x460) on "DELL S2725QS"
+2026-10-25 17:05:21.239  INFO: Configuration Loaded
+2026-10-25 17:05:21.350 DEBUG quickshell.windows.startup: First panel frame presented
+2026-10-25 17:05:21.752 DEBUG quickshell.windows.startup: Startup settled, running 1 deferred tasks
+2026-10-25 17:05:21.752  INFO quickshell.windows.desktops: VirtualDesktopAccessor.dll not found next to the executable; desktop switching falls back to keyboard shortcuts.
+2026-10-25 17:05:22.353 DEBUG qml: CAELESTIA_MEDIA_SCREEN {"index":1,"name":"DELL S2725QS","x":-3840,"y":0,"dpr":1.75,"width":560,"height":460}
+2026-10-25 17:05:22.353 DEBUG qml: CAELESTIA_MEDIA_INITIAL {"status":"disabled","reason":"Windows media is disabled.","enabled":false,"controlsEnabled":false,"backendLoaded":false,"nativeRequested":false,"nativeReady":false,"backendReady":false,"ready":false,"noSessions":false,"sessionsObserved":false,"lastError":"","playerCount":0,"players":[],"activeIdentity":"","activeTitle":"","activeArtist":"","activeAlbum":"","activeArtUrl":"","activeIsPlaying":false,"position":0,"length":0,"positionSupported":false,"lengthSupported":false,"canControl":false,"canPlay":false,"canPause":false,"canTogglePlaying":false,"canSeek":false,"canGoNext":false,"canGoPrevious":false,"canSetShuffle":false,"canSetLoop":false,"stopSupported":false,"raiseSupported":false,"quitSupported":false,"openUriSupported":false,"volumeSupported":false,"canStop":false,"canRaise":false,"canQuit":false,"canOpenUri":false,"canSetVolume":false,"playerLoaded":false,"playerControlsEnabled":false}
+2026-10-25 17:05:24.352 DEBUG qml: CAELESTIA_MEDIA_FINAL {"status":"disabled","reason":"Windows media is disabled.","enabled":false,"controlsEnabled":false,"backendLoaded":false,"nativeRequested":false,"nativeReady":false,"backendReady":false,"ready":false,"noSessions":false,"sessionsObserved":false,"lastError":"","playerCount":0,"players":[],"activeIdentity":"","activeTitle":"","activeArtist":"","activeAlbum":"","activeArtUrl":"","activeIsPlaying":false,"position":0,"length":0,"positionSupported":false,"lengthSupported":false,"canControl":false,"canPlay":false,"canPause":false,"canTogglePlaying":false,"canSeek":false,"canGoNext":false,"canGoPrevious":false,"canSetShuffle":false,"canSetLoop":false,"stopSupported":false,"raiseSupported":false,"quitSupported":false,"openUriSupported":false,"volumeSupported":false,"canStop":false,"canRaise":false,"canQuit":false,"canOpenUri":false,"canSetVolume":false,"playerLoaded":false,"playerControlsEnabled":false}
+2026-10-25 17:05:24.382 DEBUG qml: CAELESTIA_MEDIA_CAPTURE file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/media-20261025-170520-805.png
+2026-10-25 17:05:24.382 DEBUG qml: CAELESTIA_MEDIA_PASS 6.11.2
+
