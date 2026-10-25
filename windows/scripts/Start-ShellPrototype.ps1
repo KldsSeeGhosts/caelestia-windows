@@ -12,6 +12,9 @@ param(
     [ValidateSet('Disabled', 'ReadOnly')][string]$BatteryMode = 'Disabled',
     [switch]$Media,
     [ValidateSet('Disabled', 'ReadOnly', 'Interactive')][string]$MediaMode = 'Disabled',
+    [switch]$Tray,
+    [ValidateSet('Disabled', 'ReadOnly', 'Interactive')][string]$TrayMode = 'Disabled',
+    [switch]$TrayFixture,
     [ValidateSet('native', '1', '1.5', '1.75')][string]$ScaleFactor = 'native',
     [ValidateRange(0, 15)][int]$ScreenIndex = 0
 )
@@ -22,10 +25,16 @@ if ($MonitorCycle -and (-not $Smoke -or $ScaleFactor -ne 'native')) {
 }
 if ($Audio -and $Battery) { throw 'Select one prototype entry point per run.' }
 if ($Media -and ($Audio -or $Battery)) { throw 'Select one prototype entry point per run.' }
-if (($Audio -or $Battery -or $Media) -and $MonitorCycle) { throw 'The audio/battery/media prototypes do not implement monitor cycling.' }
+if ($Tray -and ($Audio -or $Battery -or $Media)) { throw 'Select one prototype entry point per run.' }
+if (($Audio -or $Battery -or $Media -or $Tray) -and $MonitorCycle) { throw 'The audio/battery/media/tray prototypes do not implement monitor cycling.' }
 if (-not $Audio -and $AudioMode -ne 'Disabled') { throw '-AudioMode requires -Audio.' }
 if (-not $Battery -and $BatteryMode -ne 'Disabled') { throw '-BatteryMode requires -Battery.' }
 if (-not $Media -and $MediaMode -ne 'Disabled') { throw '-MediaMode requires -Media.' }
+if (-not $Tray -and $TrayMode -ne 'Disabled') { throw '-TrayMode requires -Tray.' }
+# The fixture preview must never run with native observation or activation.
+if ($TrayFixture -and (-not $Tray -or -not $Smoke -or $TrayMode -ne 'Disabled')) {
+    throw '-TrayFixture requires -Tray -TrayMode Disabled -Smoke.'
+}
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
 if (-not $BuildRoot) { $BuildRoot = Join-Path $repoRoot 'windows\.local\build' }
 $BuildRoot = [IO.Path]::GetFullPath($BuildRoot)
@@ -34,20 +43,20 @@ $qmlRoot = Join-Path $BuildRoot 'install\qml'
 foreach ($required in @($exe, "$QtPrefix\bin\Qt6Core.dll", "$qmlRoot\Caelestia\Config\qmldir", "$qmlRoot\Caelestia\Windows\qmldir")) {
     if (-not (Test-Path -LiteralPath $required -PathType Leaf)) { throw "Build prerequisite missing: $required" }
 }
-$kind = $(if ($Audio) { 'audio' } elseif ($Battery) { 'battery' } elseif ($Media) { 'media' } else { 'shell' })
-$marker = $(if ($Audio) { 'CAELESTIA_AUDIO' } elseif ($Battery) { 'CAELESTIA_BATTERY' } elseif ($Media) { 'CAELESTIA_MEDIA' } else { 'CAELESTIA_SHELL' })
+$kind = $(if ($Audio) { 'audio' } elseif ($Battery) { 'battery' } elseif ($Media) { 'media' } elseif ($Tray) { 'tray' } else { 'shell' })
+$marker = $(if ($Audio) { 'CAELESTIA_AUDIO' } elseif ($Battery) { 'CAELESTIA_BATTERY' } elseif ($Media) { 'CAELESTIA_MEDIA' } elseif ($Tray) { 'CAELESTIA_TRAY' } else { 'CAELESTIA_SHELL' })
 $runName = $kind + '-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff')
 $profileRoot = Join-Path $BuildRoot "$kind-prototype-profile"
 # A fresh stage avoids stale QML types from a previous implementation.
 $stage = & (Join-Path $PSScriptRoot 'Stage-ShellPrototype.ps1') `
-    -Destination (Join-Path $BuildRoot "shell-runs\$runName") -ProfileRoot $profileRoot -Audio:$Audio -Battery:$Battery -Media:$Media
+    -Destination (Join-Path $BuildRoot "shell-runs\$runName") -ProfileRoot $profileRoot -Audio:$Audio -Battery:$Battery -Media:$Media -Tray:$Tray
 foreach ($dir in @('config', 'state', 'runtime', 'cache', 'data')) {
     New-Item -ItemType Directory -Force -Path (Join-Path $profileRoot $dir) | Out-Null
 }
 # This dedicated prototype profile intentionally accepts only this audited slice.
 # Never read or write ordinary Caelestia configuration.
 $config = Join-Path $profileRoot 'config\shell.json'
-@'
+$configText = @'
 {
   "bar": {
     "persistent": false,
@@ -74,7 +83,16 @@ $config = Join-Path $profileRoot 'config\shell.json'
   "osd": {"enabled":false},
   "utilities": {"enabled":false}
 }
-'@ | Set-Content -LiteralPath $config -Encoding UTF8
+'@
+# Only the tray profile opts into icon recolouring; the upstream default stays
+# false for every other prototype slice.
+if ($Tray) {
+    $configObject = $configText | ConvertFrom-Json
+    $configObject.bar | Add-Member -NotePropertyName tray `
+        -NotePropertyValue ([pscustomobject]@{ recolour = $true }) -Force
+    $configText = $configObject | ConvertTo-Json -Depth 10
+}
+$configText | Set-Content -LiteralPath $config -Encoding UTF8
 $logRoot = Join-Path $BuildRoot 'logs'
 New-Item -ItemType Directory -Force -Path $logRoot | Out-Null
 $screenshot = Join-Path $logRoot "$runName.png"
@@ -98,6 +116,11 @@ $info.EnvironmentVariables['QT_LOGGING_RULES'] = 'quickshell.windows.tracker.deb
 if ($TraceInput) {
     $info.EnvironmentVariables['QT_LOGGING_RULES'] = 'quickshell.windows.tracker.debug=false;quickshell.windows.inputmask.debug=true'
 }
+# Tray runs surface the backend's construction line so the harness can prove
+# whether SystemTray was instantiated. It is an INFO record, not a warning.
+if ($Tray) {
+    $info.EnvironmentVariables['QT_LOGGING_RULES'] = $info.EnvironmentVariables['QT_LOGGING_RULES'] + ';quickshell.windows.systray.info=true'
+}
 $info.EnvironmentVariables['CAELESTIA_SHELL_TRACE_INPUT'] = $(if ($TraceInput) { '1' } else { '0' })
 $info.EnvironmentVariables['CAELESTIA_WINDOWS_AUDIO'] = $(if ($Audio -and $AudioMode -ne 'Disabled') { '1' } else { '0' })
 # Smoke is always read-only, including when Interactive was requested.
@@ -108,6 +131,17 @@ $info.EnvironmentVariables['CAELESTIA_WINDOWS_BATTERY'] = $(if ($Battery -and $B
 # is always read-only, including when Interactive was requested.
 $info.EnvironmentVariables['CAELESTIA_WINDOWS_MEDIA'] = $(if ($Media -and $MediaMode -ne 'Disabled') { '1' } else { '0' })
 $info.EnvironmentVariables['CAELESTIA_WINDOWS_MEDIA_CONTROLS'] = $(if ($Media -and $MediaMode -eq 'Interactive' -and -not $Smoke) { '1' } else { '0' })
+# The backend tray hook is never enabled by a prototype run: with 0 the host
+# skips interception and Explorer snapshot scheduling, while SystemTray
+# construction still starts its 10 s prune timer. Interception ownership is a
+# separate review, so no launcher switch exposes it.
+$info.EnvironmentVariables['QS_WINDOWS_TRAY_HOOK'] = '0'
+# Tray observation and activation are separate opt-ins. Smoke is always
+# read-only, including when Interactive was requested. The fixture preview
+# constructs no native backend at all.
+$info.EnvironmentVariables['CAELESTIA_WINDOWS_TRAY'] = $(if ($Tray -and $TrayMode -ne 'Disabled' -and -not $TrayFixture) { '1' } else { '0' })
+$info.EnvironmentVariables['CAELESTIA_WINDOWS_TRAY_ACTIVATION'] = $(if ($Tray -and $TrayMode -eq 'Interactive' -and -not $Smoke -and -not $TrayFixture) { '1' } else { '0' })
+$info.EnvironmentVariables['CAELESTIA_TRAY_FIXTURE'] = $(if ($TrayFixture) { '1' } else { '0' })
 if ($ScaleFactor -ne 'native') {
     $info.EnvironmentVariables['QT_ENABLE_HIGHDPI_SCALING'] = '0'
     $info.EnvironmentVariables['QT_SCALE_FACTOR'] = $ScaleFactor
@@ -159,6 +193,8 @@ Copy-Item -LiteralPath (Join-Path $stage 'sources.json') -Destination (Join-Path
 $result = [ordered]@{
     passed = $(if ($Smoke) { $passed } else { $null }); smoke = $Smoke.IsPresent
     prototype = $kind; audioMode = $AudioMode; batteryMode = $BatteryMode; mediaMode = $MediaMode
+    trayMode = $TrayMode; trayFixture = $TrayFixture.IsPresent
+    trayHookMode = $info.EnvironmentVariables['QS_WINDOWS_TRAY_HOOK']
     timedOut = $timedOut; exitCode = $process.ExitCode
     scaleFactor = $ScaleFactor; screenIndex = $ScreenIndex
     monitorCycle = $MonitorCycle.IsPresent
@@ -172,6 +208,9 @@ $result = [ordered]@{
         [ordered]@{ phase = $_.Groups[1].Value; state = ($_.Groups[2].Value | ConvertFrom-Json) }
     })
     mediaSnapshots = @([regex]::Matches($combined, 'CAELESTIA_MEDIA_(INITIAL|FINAL) (\{[^\r\n]+\})') | ForEach-Object {
+        [ordered]@{ phase = $_.Groups[1].Value; state = ($_.Groups[2].Value | ConvertFrom-Json) }
+    })
+    traySnapshots = @([regex]::Matches($combined, 'CAELESTIA_TRAY_(INITIAL|FINAL) (\{[^\r\n]+\})') | ForEach-Object {
         [ordered]@{ phase = $_.Groups[1].Value; state = ($_.Groups[2].Value | ConvertFrom-Json) }
     })
     elapsedMilliseconds = $elapsed.ElapsedMilliseconds

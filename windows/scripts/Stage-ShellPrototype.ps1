@@ -4,11 +4,12 @@ param(
     [Parameter(Mandatory)][string]$ProfileRoot,
     [switch]$Audio,
     [switch]$Battery,
-    [switch]$Media
+    [switch]$Media,
+    [switch]$Tray
 )
 
 $ErrorActionPreference = 'Stop'
-$entryPoints = @(@($Audio, $Battery, $Media) | Where-Object { $_ }).Count
+$entryPoints = @(@($Audio, $Battery, $Media, $Tray) | Where-Object { $_ }).Count
 if ($entryPoints -gt 1) { throw 'Select one prototype entry point per stage.' }
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
 $Destination = [IO.Path]::GetFullPath($Destination)
@@ -34,8 +35,19 @@ if ($Media) {
     $files.Remove('windows/shell-prototype/shell.qml')
     $files.Add('windows/media-prototype/shell.qml', 'shell.qml')
 }
+if ($Tray) {
+    $files.Remove('windows/shell-prototype/shell.qml')
+    $files.Add('windows/tray-prototype/shell.qml', 'shell.qml')
+}
 $manifest = Get-Content -LiteralPath (Join-Path $repoRoot 'windows\shell-prototype\sources.json') -Raw | ConvertFrom-Json
 foreach ($entry in $manifest.PSObject.Properties) { $files.Add($entry.Name, $entry.Value) }
+if ($Tray) {
+    # The base manifest stages an unavailable Tray adapter. This slice stages
+    # the original component plus its item/menu dependencies instead.
+    $files.Remove('windows/shell-prototype/adapters/modules/bar/components/Tray.qml')
+    $trayManifest = Get-Content -LiteralPath (Join-Path $repoRoot 'windows\tray-prototype\sources.json') -Raw | ConvertFrom-Json
+    foreach ($entry in $trayManifest.PSObject.Properties) { $files.Add($entry.Name, $entry.Value) }
+}
 if ($Audio) {
     $audioManifest = Get-Content -LiteralPath (Join-Path $repoRoot 'windows\audio-prototype\sources.json') -Raw | ConvertFrom-Json
     foreach ($entry in $audioManifest.PSObject.Properties) { $files.Add($entry.Name, $entry.Value) }
