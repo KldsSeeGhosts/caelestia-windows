@@ -3,7 +3,7 @@
 This archive records the bounded read-only tray slice (ERM-506) on branch
 `t3/windows-native-tray-boundary`, root `298fd12556a7330e1f8974fd54b871172f7220d1`,
 with the backend pin unchanged at
-`1401042969e4b7ab3cfb314fc76945ab0813db3de`. It does not enable tray
+`1401042969e4b7ab3cfb314fc76945ab081db3de`. It does not enable tray
 interception, taskbar changes or real icon activation. The slice remains
 read-only: **no real tray item was observed** because the hook is forced off.
 
@@ -198,3 +198,27 @@ broadcast (`hook.cpp` 211-350) before it may be turned on. `Interactive` mode,
 real icon clicks and the semantic `TrayMenu` with a live handle were not
 exercised. M2 remains incomplete; no Linux build, release or remote CI pass is
 claimed.
+
+## Review addendum
+
+An independent review of `735e753a` found two blocking defects and one
+accounting defect, fixed in the follow-up commit:
+
+1. ReadOnly reported a healthy, ready `empty` tray although, with the hook
+   off, the backend never enumerates items (`host.cpp`, lines 172-201). With
+   interception disabled and no items the service now reports
+   `not-observable`, `ready=false`, and names the disabled interception;
+   `empty` exists only for a host that enables interception.
+2. The launcher set `QS_WINDOWS_TRAY_HOOK=0` for every prototype. It is now set
+   only for tray runs; other prototypes keep the inherited environment and
+   record `trayHookMode=null`.
+3. Native menu requests were counted as shown. They are now counted as sent
+   (`menuSent`, `lastMenuResult="sent"`), because the backend reports no
+   outcome.
+
+The README now says smoke forces activation off while ReadOnly smoke still
+observes, and the backend SHA typo is corrected. Results on the dirty
+follow-up tree: 117 fixture assertions; `Test-TrayPrototype.ps1` passed all 11
+records (`tray-validation-20261025-183928-673`, build root
+`windows/.local/build-tray`). Real tray items, activation and native menus
+remain untested.

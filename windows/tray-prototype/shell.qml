@@ -108,7 +108,7 @@ ShellRoot {
             activationRefusals: Tray.activationRefusals,
             lastActivationResult: Tray.lastActivationResult,
             lastActivationReason: Tray.lastActivationReason,
-            menuRequests: Tray.menuRequests, menuShown: Tray.menuShown,
+            menuRequests: Tray.menuRequests, menuSent: Tray.menuSent,
             menuRefusals: Tray.menuRefusals,
             lastMenuResult: Tray.lastMenuResult, lastMenuReason: Tray.lastMenuReason,
             staleRequests: Tray.staleRequests, scrollRequests: Tray.scrollRequests,
@@ -208,7 +208,7 @@ ShellRoot {
                 root.fail("enabled mode did not load the original tray components");
                 return;
             }
-            if (["initializing", "empty", "ready", "unavailable"].indexOf(state.status) < 0) {
+            if (["initializing", "not-observable", "empty", "ready", "unavailable"].indexOf(state.status) < 0) {
                 root.fail("tray service did not start: " + state.status);
                 return;
             }
@@ -248,7 +248,7 @@ ShellRoot {
                 return;
             }
         } else if (state.enabled) {
-            if (["empty", "ready", "unavailable"].indexOf(state.status) < 0) {
+            if (["not-observable", "empty", "ready", "unavailable"].indexOf(state.status) < 0) {
                 root.fail("tray service did not settle: " + state.status);
                 return;
             }
@@ -290,7 +290,7 @@ ShellRoot {
                 root.fail("read-only observation forwarded a native request");
                 return;
             }
-            if (Tray.activationRequests !== 0 || Tray.menuShown !== 0) {
+            if (Tray.activationRequests !== 0 || Tray.menuSent !== 0) {
                 root.fail("read-only request accounting is wrong");
                 return;
             }

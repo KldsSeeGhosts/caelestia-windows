@@ -19,7 +19,8 @@ never activates or clicks a real tray icon during a test.
 | `ReadOnly` | `CAELESTIA_WINDOWS_TRAY=1`; items observed | refused | no-op |
 | `Interactive` | observation plus `CAELESTIA_WINDOWS_TRAY_ACTIVATION=1` | `activate()`, `secondaryActivate()`, `display()` | unsupported |
 
-`-Smoke` always forces both opt-ins off and is the only mode used by the
+`-Smoke` always forces activation off (ReadOnly smoke still observes) and is
+the only mode used by the
 checked-in validation. `Interactive` is an unvalidated explicit opt-in: the
 pinned backend reports no per-command result, and its activation/menu paths call
 `AllowSetForegroundWindow` for the icon owner, so they can foreground another

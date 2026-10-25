@@ -131,11 +131,14 @@ $info.EnvironmentVariables['CAELESTIA_WINDOWS_BATTERY'] = $(if ($Battery -and $B
 # is always read-only, including when Interactive was requested.
 $info.EnvironmentVariables['CAELESTIA_WINDOWS_MEDIA'] = $(if ($Media -and $MediaMode -ne 'Disabled') { '1' } else { '0' })
 $info.EnvironmentVariables['CAELESTIA_WINDOWS_MEDIA_CONTROLS'] = $(if ($Media -and $MediaMode -eq 'Interactive' -and -not $Smoke) { '1' } else { '0' })
-# The backend tray hook is never enabled by a prototype run: with 0 the host
-# skips interception and Explorer snapshot scheduling, while SystemTray
-# construction still starts its 10 s prune timer. Interception ownership is a
-# separate review, so no launcher switch exposes it.
-$info.EnvironmentVariables['QS_WINDOWS_TRAY_HOOK'] = '0'
+# Tray runs never enable the backend tray hook: with 0 the host skips
+# interception and Explorer snapshot scheduling, while SystemTray construction
+# still starts its 10 s prune timer. Interception ownership is a separate
+# review, so no launcher switch exposes it. Other prototypes keep the inherited
+# environment unchanged.
+if ($Tray) {
+    $info.EnvironmentVariables['QS_WINDOWS_TRAY_HOOK'] = '0'
+}
 # Tray observation and activation are separate opt-ins. Smoke is always
 # read-only, including when Interactive was requested. The fixture preview
 # constructs no native backend at all.
@@ -194,7 +197,7 @@ $result = [ordered]@{
     passed = $(if ($Smoke) { $passed } else { $null }); smoke = $Smoke.IsPresent
     prototype = $kind; audioMode = $AudioMode; batteryMode = $BatteryMode; mediaMode = $MediaMode
     trayMode = $TrayMode; trayFixture = $TrayFixture.IsPresent
-    trayHookMode = $info.EnvironmentVariables['QS_WINDOWS_TRAY_HOOK']
+    trayHookMode = $(if ($Tray) { $info.EnvironmentVariables['QS_WINDOWS_TRAY_HOOK'] } else { $null })
     timedOut = $timedOut; exitCode = $process.ExitCode
     scaleFactor = $ScaleFactor; screenIndex = $ScreenIndex
     monitorCycle = $MonitorCycle.IsPresent

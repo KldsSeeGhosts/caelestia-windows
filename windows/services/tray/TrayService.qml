@@ -37,9 +37,11 @@ QtObject {
     // This slice never enables interception. The native hook creates its own
     // Shell_TrayWnd/TrayNotifyWnd windows, forwards tray messages and can
     // broadcast TaskbarCreated (hook.cpp lines 211-350). Enabling it needs a
-    // separate tray-ownership review; the launcher always passes
-    // QS_WINDOWS_TRAY_HOOK=0.
-    readonly property bool interceptionEnabled: false
+    // separate tray-ownership review; tray runs always pass
+    // QS_WINDOWS_TRAY_HOOK=0. With interception off the backend never
+    // schedules enumeration (host.cpp:172-201), so an empty list is not an
+    // observation. Only a host that enables interception may set this true.
+    property bool interceptionEnabled: false
 
     // Native context menus only. The original semantic TrayMenu cannot render
     // while menu is null; openMenu() routes to display() instead.
@@ -66,9 +68,9 @@ QtObject {
     readonly property var titles: list.map(item => root.itemTitle(item))
     readonly property var ids: list.map(item => root.itemId(item))
 
-    // Five states. "empty" is an observation with no current items; the pinned
-    // backend cannot distinguish "no icons" from "enumeration never ran"
-    // (see the hook note above), and the reason text does not invent either.
+    // Six states. "empty" is an observation with no current items and only
+    // exists while interception runs. With interception off the backend never
+    // enumerates, so no items is "not-observable", not a healthy empty tray.
     readonly property string status: {
         if (!root.enabled)
             return "disabled";
@@ -78,7 +80,9 @@ QtObject {
             return "initializing";
         if (!root.backend.items || !root.backend.items.values)
             return "unavailable";
-        return root.count > 0 ? "ready" : "empty";
+        if (root.count > 0)
+            return "ready";
+        return root.interceptionEnabled ? "empty" : "not-observable";
     }
     readonly property bool ready: status === "empty" || status === "ready"
 
@@ -99,6 +103,8 @@ QtObject {
             return "Waiting for the Windows tray backend.";
         if (root.status === "unavailable")
             return "The Windows tray backend is unavailable: " + root.lastError;
+        if (root.status === "not-observable")
+            return "Tray icons are not observable: tray interception is disabled, so Windows tray items are never enumerated.";
         if (root.status === "empty")
             return "Windows tray observation is active; no tray items are currently observed.";
         return "Windows tray observation is active: " + root.count + " item(s) observed.";
@@ -173,7 +179,9 @@ QtObject {
     property string lastMenuResult: ""
     property string lastMenuReason: ""
     property int menuRequests: 0
-    property int menuShown: 0
+    // Dispatched display() requests. The backend reports no outcome and may
+    // queue a request that expires, so this never claims a shown menu.
+    property int menuSent: 0
     property int menuRefusals: 0
     property var lastMenuCoordinates: []
     property int staleRequests: 0
@@ -246,7 +254,7 @@ QtObject {
         root.lastMenuResult = "";
         root.lastMenuReason = "";
         root.menuRequests = 0;
-        root.menuShown = 0;
+        root.menuSent = 0;
         root.menuRefusals = 0;
         root.lastMenuCoordinates = [];
         root.staleRequests = 0;
@@ -322,9 +330,9 @@ QtObject {
         }
 
         item.display(parentWindow ?? null, relativeX, relativeY);
-        root.menuShown++;
-        root.lastMenuResult = "shown";
-        root.lastMenuReason = "Native context menu requested; the backend ignores the requested coordinates.";
+        root.menuSent++;
+        root.lastMenuResult = "sent";
+        root.lastMenuReason = "Native context menu requested; the backend reports no outcome and ignores the requested coordinates.";
         return true;
     }
 

@@ -154,6 +154,10 @@ QtObject {
         service.backend = fixture;
         fixture.items = model;
         setItems([]);
+        expectStatus("not-observable", "no items without interception is not an observation");
+        check(!service.ready && service.reason.indexOf("interception is disabled") >= 0,
+            "not-observable is not ready and names the disabled interception");
+        service.interceptionEnabled = true;
         expectStatus("empty", "healthy observation with no items");
         check(service.ready && service.count === 0 && service.lastError === "",
             "empty is ready without an error");
@@ -163,6 +167,7 @@ QtObject {
         check(service.activationRefusal(spotify).indexOf("no longer observed") >= 0,
             "an absent item is stale even while observation is ready");
         service.activationEnabled = false;
+        service.interceptionEnabled = false;
 
         // --- Ready with observed items ---------------------------------------
         setItems([spotify, discord]);
@@ -227,7 +232,7 @@ QtObject {
         check(spotify.lastDisplay.length === 3 && spotify.lastDisplay[0] === null
             && spotify.lastDisplay[1] === 41 && spotify.lastDisplay[2] === -12,
             "coordinates are rounded and a null parent window is forwarded");
-        check(service.menuShown === 1 && service.lastMenuResult === "shown",
+        check(service.menuSent === 1 && service.lastMenuResult === "sent",
             "menu result is recorded");
         check(service.lastMenuReason.indexOf("ignores the requested coordinates") >= 0,
             "menu result records the ignored coordinates");
@@ -271,6 +276,9 @@ QtObject {
             "an item without hasMenu has no menu");
 
         // --- Stale item removal ----------------------------------------------
+        // Removal is only an observation while interception enumerates items;
+        // without it an emptied list is not-observable rather than stale.
+        service.interceptionEnabled = true;
         setItems([spotify, discord]);
         check(service.isListed(spotify), "item is observed before removal");
         setItems([]);
@@ -279,6 +287,7 @@ QtObject {
         check(!service.openMenu(spotify, null, 5, 5), "a menu request for a removed item is refused");
         check(!service.activate(spotify), "an activation for a removed item is refused");
         check(service.staleRequests === staleRemovalBefore + 2, "removed-item requests count as stale");
+        service.interceptionEnabled = false;
         check(service.lastMenuResult === "refused"
             && service.lastMenuReason.indexOf("no longer observed") >= 0,
             "stale menu refusal is explicit");
@@ -337,7 +346,7 @@ QtObject {
             && service.previousList.length === 0, "disable clears observed state");
         check(service.listResets === 0 && service.listGeneration === 0 && service.peakCount === 0
             && service.lastResetKind === "", "disable clears observation history");
-        check(service.menuShown === 0 && service.menuRequests === 0
+        check(service.menuSent === 0 && service.menuRequests === 0
             && service.activationRequests === 0 && service.staleRequests === 0
             && service.scrollRequests === 0 && service.lastMenuResult === ""
             && service.lastActivationResult === "", "disable clears request accounting");

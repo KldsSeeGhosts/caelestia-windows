@@ -68,7 +68,7 @@ function Assert-Policy($State, [string]$Label) {
     Assert (-not $State.menuCoordinatesSupported) "${Label}: menu coordinates are advertised."
     Assert (-not $State.scrollSupported) "${Label}: scroll is advertised as supported."
     Assert ($State.activationRequests -eq 0) "${Label}: a native activation was sent."
-    Assert ($State.menuShown -eq 0) "${Label}: a native menu was opened."
+    Assert ($State.menuSent -eq 0) "${Label}: a native menu was opened."
 }
 
 function Assert-MenuUnavailable($State, [string]$Label) {
@@ -111,7 +111,7 @@ try {
                 # No tray item was clicked, activated or enumerated without the hook.
                 Assert (@($initial.titles).Count -eq 0) 'Disabled mode observed item titles.'
             } else {
-                Assert (@('empty', 'ready', 'unavailable').Contains($final.status)) `
+                Assert (@('not-observable', 'empty', 'ready', 'unavailable').Contains($final.status)) `
                     "Tray service did not settle: $($final.status) ($($final.reason))"
                 Assert ($final.nativeRequested -and $final.backendLoaded) `
                     'Enabled mode did not construct the native facade.'
@@ -119,7 +119,11 @@ try {
                     'Enabled mode did not load the original tray components.'
                 Assert ((Assert-TrayHookConstruction $result $true "tray ReadOnly screen $screen") -eq $true) `
                     'Enabled mode did not construct SystemTray.'
-                $healthy = @('empty', 'ready').Contains($final.status)
+                # not-observable carries no backend error: it states the known
+                # hook-off enumeration limit rather than a failure.
+                $healthy = @('not-observable', 'empty', 'ready').Contains($final.status)
+                Assert (($final.status -ne 'not-observable') -or ($final.ready -eq $false)) `
+                    'A non-observable tray was reported ready.'
                 Assert (($final.status -eq 'ready') -eq ($final.count -gt 0)) 'Tray count and status disagree.'
                 if (-not $healthy) {
                     Assert ($final.lastError.Length -gt 0) 'Unavailable tray backend did not expose an error.'
