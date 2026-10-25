@@ -429,6 +429,21 @@ root to deduplicate against Linear, each enabled and validated independently:
    devices and unsupported-control states. Acceptance: null/blocked adapter,
    discovery lifecycle and denied pairing settle; unsupported pairing delegates
    to Windows Settings without implementing credential UI or repeated prompts.
+   **Progress:** implemented as ERM-501's bounded slice on
+   `t3/bluetooth-service-integration` (`ddba8d12`): a pure QtObject
+   [BluetoothService adapter](../services/bluetooth/BluetoothService.qml) with
+   explicit disabled/initializing/null-adapter/blocked/off/unknown states,
+   bounded discovery and connect/pair settling, and refusing unsupported
+   setters; the original status/popout components are instantiated only after
+   opt-in. The localized edits to
+   [Bluetooth.qml](../../modules/bar/popouts/Bluetooth.qml) add only
+   `controlsEnabled`, `settingsDelegatesToWindows` (explicit
+   `ms-settings:bluetooth`) and `settlingTimedOut` hooks; upstream defaults are
+   preserved. [Acceptance evidence](../validation/2026-10-25-m2-bluetooth/README.md)
+   covers 182 adapter assertions and native disabled/read-only runs at
+   150%/175% on a real Intel adapter with zero paired devices; interactive
+   controls, null/blocked/off hardware, paired devices, discovery and
+   PIN/passkey delegation remain untested.
 6. **Notification local delivery boundary:** isolate history/image-cache paths,
    disable system mirroring initially and account for session-bus ownership.
    Acceptance: fixture/local notifications, persistence and competing-owner

@@ -1,0 +1,37 @@
+﻿{
+    "passed":  true,
+    "timedOut":  false,
+    "exitCode":  0,
+    "fixture":  {
+                    "assertions":  182,
+                    "service":  "BluetoothService.qml"
+                },
+    "nativeImports":  0,
+    "hashMismatch":  [
+
+                     ],
+    "diagnostics":  [
+
+                    ],
+    "sourceRevision":  "ddba8d1211c0cde758f9f6cd8b9042e1934cf13c",
+    "sourceDirty":  false,
+    "qtVersion":  "6.11.2",
+    "runnerSha256":  "24994D434962751713F0C8932B356104B0849572B95765DAD50C13DA6BE3FA20",
+    "command":  "C:\\Users\\Ermin\\AppData\\Local\\caelestia-dev\\Qt\\6.11.2\\msvc2022_64\\bin\\qml.exe",
+    "arguments":  "\"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\bluetooth-tests\\bluetooth-fixture-20261025-175529-269\\BluetoothServiceTest.qml\"",
+    "sources":  [
+                    {
+                        "source":  "windows/services/bluetooth/BluetoothService.qml",
+                        "sourceSha256":  "DBD81C458CBEDBABD411D24FE8EAC5A83441B8ECE5C04652A57E5A13102F8AA6",
+                        "stagedSha256":  "DBD81C458CBEDBABD411D24FE8EAC5A83441B8ECE5C04652A57E5A13102F8AA6"
+                    },
+                    {
+                        "source":  "windows/services/bluetooth/BluetoothServiceTest.qml",
+                        "sourceSha256":  "B3A58306D59004218C14AECC7C26DCCAE15AA5446E26729A23BFE781EFD348F3",
+                        "stagedSha256":  "B3A58306D59004218C14AECC7C26DCCAE15AA5446E26729A23BFE781EFD348F3"
+                    }
+                ],
+    "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\bluetooth-tests\\bluetooth-fixture-20261025-175529-269",
+    "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\bluetooth-fixture-20261025-175529-269.stdout.log",
+    "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\bluetooth-fixture-20261025-175529-269.stderr.log"
+}

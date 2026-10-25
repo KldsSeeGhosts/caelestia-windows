@@ -1,0 +1,825 @@
+﻿{
+    "passed":  true,
+    "failure":  null,
+    "sourceRevision":  "ddba8d1211c0cde758f9f6cd8b9042e1934cf13c",
+    "sourceDirty":  false,
+    "backendRevision":  "1401042969e4b7ab3cfb314fc76945ab081db3de",
+    "measurementSources":  [
+                               {
+                                   "source":  "windows/scripts/Get-DesktopState.ps1",
+                                   "sha256":  "44E06C706EE5A930A41EA723D9DFC104469D2019DDBC3BAEA71B240B71A401DE"
+                               },
+                               {
+                                   "source":  "windows/scripts/Test-BluetoothService.ps1",
+                                   "sha256":  "31003184AF7F03F8086B47CEE7E5FFFA98815DD76606734AA777951AD064B305"
+                               },
+                               {
+                                   "source":  "windows/scripts/Test-BluetoothPrototype.ps1",
+                                   "sha256":  "DAEFF988780DBAF1E8D4B191D02A92CBFD91295003E16ED19937CB0F139B4A85"
+                               }
+                           ],
+    "output":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\bluetooth-validation-20261025-175529-079",
+    "records":  [
+                    {
+                        "kind":  "fixture",
+                        "result":  {
+                                       "passed":  true,
+                                       "timedOut":  false,
+                                       "exitCode":  0,
+                                       "fixture":  {
+                                                       "assertions":  182,
+                                                       "service":  "BluetoothService.qml"
+                                                   },
+                                       "nativeImports":  0,
+                                       "hashMismatch":  [
+
+                                                        ],
+                                       "diagnostics":  [
+
+                                                       ],
+                                       "sourceRevision":  "ddba8d1211c0cde758f9f6cd8b9042e1934cf13c",
+                                       "sourceDirty":  false,
+                                       "qtVersion":  "6.11.2",
+                                       "runnerSha256":  "24994D434962751713F0C8932B356104B0849572B95765DAD50C13DA6BE3FA20",
+                                       "command":  "C:\\Users\\Ermin\\AppData\\Local\\caelestia-dev\\Qt\\6.11.2\\msvc2022_64\\bin\\qml.exe",
+                                       "arguments":  "\"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\bluetooth-tests\\bluetooth-fixture-20261025-175529-269\\BluetoothServiceTest.qml\"",
+                                       "sources":  [
+                                                       {
+                                                           "source":  "windows/services/bluetooth/BluetoothService.qml",
+                                                           "sourceSha256":  "DBD81C458CBEDBABD411D24FE8EAC5A83441B8ECE5C04652A57E5A13102F8AA6",
+                                                           "stagedSha256":  "DBD81C458CBEDBABD411D24FE8EAC5A83441B8ECE5C04652A57E5A13102F8AA6"
+                                                       },
+                                                       {
+                                                           "source":  "windows/services/bluetooth/BluetoothServiceTest.qml",
+                                                           "sourceSha256":  "B3A58306D59004218C14AECC7C26DCCAE15AA5446E26729A23BFE781EFD348F3",
+                                                           "stagedSha256":  "B3A58306D59004218C14AECC7C26DCCAE15AA5446E26729A23BFE781EFD348F3"
+                                                       }
+                                                   ],
+                                       "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\bluetooth-tests\\bluetooth-fixture-20261025-175529-269",
+                                       "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\bluetooth-fixture-20261025-175529-269.stdout.log",
+                                       "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\bluetooth-fixture-20261025-175529-269.stderr.log"
+                                   }
+                    },
+                    {
+                        "kind":  "bluetooth",
+                        "result":  {
+                                       "passed":  true,
+                                       "smoke":  true,
+                                       "prototype":  "bluetooth",
+                                       "audioMode":  "Disabled",
+                                       "batteryMode":  "Disabled",
+                                       "mediaMode":  "Disabled",
+                                       "bluetoothMode":  "Disabled",
+                                       "timedOut":  false,
+                                       "exitCode":  0,
+                                       "scaleFactor":  "native",
+                                       "screenIndex":  0,
+                                       "monitorCycle":  false,
+                                       "traceInput":  false,
+                                       "actualScreens":  [
+                                                             {
+                                                                 "index":  0,
+                                                                 "name":  "MAG321UX OLED",
+                                                                 "x":  0,
+                                                                 "y":  0,
+                                                                 "dpr":  1.5,
+                                                                 "width":  560,
+                                                                 "height":  700
+                                                             }
+                                                         ],
+                                       "captures":  [
+                                                        "file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/bluetooth-20261025-175529-537.png"
+                                                    ],
+                                       "audioSnapshots":  [
+
+                                                          ],
+                                       "batterySnapshots":  [
+
+                                                            ],
+                                       "mediaSnapshots":  [
+
+                                                          ],
+                                       "bluetoothSnapshots":  [
+                                                                  {
+                                                                      "phase":  "INITIAL",
+                                                                      "state":  {
+                                                                                    "status":  "disabled",
+                                                                                    "reason":  "Windows Bluetooth is disabled.",
+                                                                                    "enabled":  false,
+                                                                                    "controlsEnabled":  false,
+                                                                                    "backendLoaded":  false,
+                                                                                    "nativeRequested":  false,
+                                                                                    "initializationExpired":  false,
+                                                                                    "hasAdapter":  false,
+                                                                                    "adapterName":  "",
+                                                                                    "adapterState":  -1,
+                                                                                    "radioEnabled":  false,
+                                                                                    "radioBlocked":  false,
+                                                                                    "radioPending":  false,
+                                                                                    "radioOff":  false,
+                                                                                    "radioUnknown":  false,
+                                                                                    "discovering":  false,
+                                                                                    "discoveryTimedOut":  false,
+                                                                                    "deviceCount":  0,
+                                                                                    "devices":  [
+
+                                                                                                ],
+                                                                                    "connectedCount":  0,
+                                                                                    "pendingCount":  0,
+                                                                                    "hasPending":  false,
+                                                                                    "pairing":  false,
+                                                                                    "pairingNeedsWindowsSettings":  false,
+                                                                                    "canToggleRadio":  false,
+                                                                                    "canSetDiscovering":  false,
+                                                                                    "canControlDevices":  false,
+                                                                                    "canConnect":  [
+
+                                                                                                   ],
+                                                                                    "canDisconnect":  [
+
+                                                                                                      ],
+                                                                                    "canPair":  [
+
+                                                                                                ],
+                                                                                    "canForget":  [
+
+                                                                                                  ],
+                                                                                    "discoverableSupported":  false,
+                                                                                    "renameSupported":  false,
+                                                                                    "trustedSupported":  false,
+                                                                                    "blockedSupported":  false,
+                                                                                    "wakeSupported":  false,
+                                                                                    "settingsUri":  "ms-settings:bluetooth",
+                                                                                    "statusLoaded":  false,
+                                                                                    "popoutLoaded":  false,
+                                                                                    "popoutControlsEnabled":  false,
+                                                                                    "popoutSettingsDelegated":  false,
+                                                                                    "popoutSettlingTimedOut":  {
+
+                                                                                                               }
+                                                                                }
+                                                                  },
+                                                                  {
+                                                                      "phase":  "FINAL",
+                                                                      "state":  {
+                                                                                    "status":  "disabled",
+                                                                                    "reason":  "Windows Bluetooth is disabled.",
+                                                                                    "enabled":  false,
+                                                                                    "controlsEnabled":  false,
+                                                                                    "backendLoaded":  false,
+                                                                                    "nativeRequested":  false,
+                                                                                    "initializationExpired":  false,
+                                                                                    "hasAdapter":  false,
+                                                                                    "adapterName":  "",
+                                                                                    "adapterState":  -1,
+                                                                                    "radioEnabled":  false,
+                                                                                    "radioBlocked":  false,
+                                                                                    "radioPending":  false,
+                                                                                    "radioOff":  false,
+                                                                                    "radioUnknown":  false,
+                                                                                    "discovering":  false,
+                                                                                    "discoveryTimedOut":  false,
+                                                                                    "deviceCount":  0,
+                                                                                    "devices":  [
+
+                                                                                                ],
+                                                                                    "connectedCount":  0,
+                                                                                    "pendingCount":  0,
+                                                                                    "hasPending":  false,
+                                                                                    "pairing":  false,
+                                                                                    "pairingNeedsWindowsSettings":  false,
+                                                                                    "canToggleRadio":  false,
+                                                                                    "canSetDiscovering":  false,
+                                                                                    "canControlDevices":  false,
+                                                                                    "canConnect":  [
+
+                                                                                                   ],
+                                                                                    "canDisconnect":  [
+
+                                                                                                      ],
+                                                                                    "canPair":  [
+
+                                                                                                ],
+                                                                                    "canForget":  [
+
+                                                                                                  ],
+                                                                                    "discoverableSupported":  false,
+                                                                                    "renameSupported":  false,
+                                                                                    "trustedSupported":  false,
+                                                                                    "blockedSupported":  false,
+                                                                                    "wakeSupported":  false,
+                                                                                    "settingsUri":  "ms-settings:bluetooth",
+                                                                                    "statusLoaded":  false,
+                                                                                    "popoutLoaded":  false,
+                                                                                    "popoutControlsEnabled":  false,
+                                                                                    "popoutSettingsDelegated":  false,
+                                                                                    "popoutSettlingTimedOut":  {
+
+                                                                                                               }
+                                                                                }
+                                                                  }
+                                                              ],
+                                       "elapsedMilliseconds":  3428,
+                                       "sourceRevision":  "ddba8d1211c0cde758f9f6cd8b9042e1934cf13c",
+                                       "sourceDirty":  false,
+                                       "backendRevision":  "1401042969e4b7ab3cfb314fc76945ab081db3de",
+                                       "buildRecordSha256":  "3FA201EE45FC755B663FF122090B617D222BBFD99352B18F490B003F0C14FED1",
+                                       "configSha256":  "6FC8F8B80AF9D45A49A4737AF51B8C43A11B97E1B59A82468F31AB4C779C6F65",
+                                       "command":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\quickshell\\qs.exe",
+                                       "arguments":  "--no-color --log-times --path \"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\bluetooth-20261025-175529-537\\shell.qml\"",
+                                       "executableSha256":  "22B69FFE0523F8FFDB86C22E1669A36B2C8DCAEA97B19754000EC7455345AF22",
+                                       "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\bluetooth-20261025-175529-537",
+                                       "profile":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\bluetooth-prototype-profile",
+                                       "sources":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\bluetooth-20261025-175529-537.sources.json",
+                                       "screenshot":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\bluetooth-20261025-175529-537.png",
+                                       "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\bluetooth-20261025-175529-537.stdout.log",
+                                       "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\bluetooth-20261025-175529-537.stderr.log"
+                                   }
+                    },
+                    {
+                        "kind":  "bluetooth",
+                        "result":  {
+                                       "passed":  true,
+                                       "smoke":  true,
+                                       "prototype":  "bluetooth",
+                                       "audioMode":  "Disabled",
+                                       "batteryMode":  "Disabled",
+                                       "mediaMode":  "Disabled",
+                                       "bluetoothMode":  "ReadOnly",
+                                       "timedOut":  false,
+                                       "exitCode":  0,
+                                       "scaleFactor":  "native",
+                                       "screenIndex":  0,
+                                       "monitorCycle":  false,
+                                       "traceInput":  false,
+                                       "actualScreens":  [
+                                                             {
+                                                                 "index":  0,
+                                                                 "name":  "MAG321UX OLED",
+                                                                 "x":  0,
+                                                                 "y":  0,
+                                                                 "dpr":  1.5,
+                                                                 "width":  560,
+                                                                 "height":  700
+                                                             }
+                                                         ],
+                                       "captures":  [
+                                                        "file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/bluetooth-20261025-175533-444.png"
+                                                    ],
+                                       "audioSnapshots":  [
+
+                                                          ],
+                                       "batterySnapshots":  [
+
+                                                            ],
+                                       "mediaSnapshots":  [
+
+                                                          ],
+                                       "bluetoothSnapshots":  [
+                                                                  {
+                                                                      "phase":  "INITIAL",
+                                                                      "state":  {
+                                                                                    "status":  "on",
+                                                                                    "reason":  "Bluetooth is on: 0 device(s) observed, 0 connected. This run only observes Bluetooth; every control stays disabled.",
+                                                                                    "enabled":  true,
+                                                                                    "controlsEnabled":  false,
+                                                                                    "backendLoaded":  true,
+                                                                                    "nativeRequested":  true,
+                                                                                    "initializationExpired":  false,
+                                                                                    "hasAdapter":  true,
+                                                                                    "adapterName":  "Intel(R) Wireless Bluetooth(R)",
+                                                                                    "adapterState":  1,
+                                                                                    "radioEnabled":  true,
+                                                                                    "radioBlocked":  false,
+                                                                                    "radioPending":  false,
+                                                                                    "radioOff":  false,
+                                                                                    "radioUnknown":  false,
+                                                                                    "discovering":  false,
+                                                                                    "discoveryTimedOut":  false,
+                                                                                    "deviceCount":  0,
+                                                                                    "devices":  [
+
+                                                                                                ],
+                                                                                    "connectedCount":  0,
+                                                                                    "pendingCount":  0,
+                                                                                    "hasPending":  false,
+                                                                                    "pairing":  false,
+                                                                                    "pairingNeedsWindowsSettings":  false,
+                                                                                    "canToggleRadio":  false,
+                                                                                    "canSetDiscovering":  false,
+                                                                                    "canControlDevices":  false,
+                                                                                    "canConnect":  [
+
+                                                                                                   ],
+                                                                                    "canDisconnect":  [
+
+                                                                                                      ],
+                                                                                    "canPair":  [
+
+                                                                                                ],
+                                                                                    "canForget":  [
+
+                                                                                                  ],
+                                                                                    "discoverableSupported":  false,
+                                                                                    "renameSupported":  false,
+                                                                                    "trustedSupported":  false,
+                                                                                    "blockedSupported":  false,
+                                                                                    "wakeSupported":  false,
+                                                                                    "settingsUri":  "ms-settings:bluetooth",
+                                                                                    "statusLoaded":  true,
+                                                                                    "popoutLoaded":  true,
+                                                                                    "popoutControlsEnabled":  false,
+                                                                                    "popoutSettingsDelegated":  true,
+                                                                                    "popoutSettlingTimedOut":  {
+
+                                                                                                               }
+                                                                                }
+                                                                  },
+                                                                  {
+                                                                      "phase":  "FINAL",
+                                                                      "state":  {
+                                                                                    "status":  "on",
+                                                                                    "reason":  "Bluetooth is on: 0 device(s) observed, 0 connected. This run only observes Bluetooth; every control stays disabled.",
+                                                                                    "enabled":  true,
+                                                                                    "controlsEnabled":  false,
+                                                                                    "backendLoaded":  true,
+                                                                                    "nativeRequested":  true,
+                                                                                    "initializationExpired":  false,
+                                                                                    "hasAdapter":  true,
+                                                                                    "adapterName":  "Intel(R) Wireless Bluetooth(R)",
+                                                                                    "adapterState":  1,
+                                                                                    "radioEnabled":  true,
+                                                                                    "radioBlocked":  false,
+                                                                                    "radioPending":  false,
+                                                                                    "radioOff":  false,
+                                                                                    "radioUnknown":  false,
+                                                                                    "discovering":  false,
+                                                                                    "discoveryTimedOut":  false,
+                                                                                    "deviceCount":  0,
+                                                                                    "devices":  [
+
+                                                                                                ],
+                                                                                    "connectedCount":  0,
+                                                                                    "pendingCount":  0,
+                                                                                    "hasPending":  false,
+                                                                                    "pairing":  false,
+                                                                                    "pairingNeedsWindowsSettings":  false,
+                                                                                    "canToggleRadio":  false,
+                                                                                    "canSetDiscovering":  false,
+                                                                                    "canControlDevices":  false,
+                                                                                    "canConnect":  [
+
+                                                                                                   ],
+                                                                                    "canDisconnect":  [
+
+                                                                                                      ],
+                                                                                    "canPair":  [
+
+                                                                                                ],
+                                                                                    "canForget":  [
+
+                                                                                                  ],
+                                                                                    "discoverableSupported":  false,
+                                                                                    "renameSupported":  false,
+                                                                                    "trustedSupported":  false,
+                                                                                    "blockedSupported":  false,
+                                                                                    "wakeSupported":  false,
+                                                                                    "settingsUri":  "ms-settings:bluetooth",
+                                                                                    "statusLoaded":  true,
+                                                                                    "popoutLoaded":  true,
+                                                                                    "popoutControlsEnabled":  false,
+                                                                                    "popoutSettingsDelegated":  true,
+                                                                                    "popoutSettlingTimedOut":  {
+
+                                                                                                               }
+                                                                                }
+                                                                  }
+                                                              ],
+                                       "elapsedMilliseconds":  3442,
+                                       "sourceRevision":  "ddba8d1211c0cde758f9f6cd8b9042e1934cf13c",
+                                       "sourceDirty":  false,
+                                       "backendRevision":  "1401042969e4b7ab3cfb314fc76945ab081db3de",
+                                       "buildRecordSha256":  "3FA201EE45FC755B663FF122090B617D222BBFD99352B18F490B003F0C14FED1",
+                                       "configSha256":  "6FC8F8B80AF9D45A49A4737AF51B8C43A11B97E1B59A82468F31AB4C779C6F65",
+                                       "command":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\quickshell\\qs.exe",
+                                       "arguments":  "--no-color --log-times --path \"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\bluetooth-20261025-175533-444\\shell.qml\"",
+                                       "executableSha256":  "22B69FFE0523F8FFDB86C22E1669A36B2C8DCAEA97B19754000EC7455345AF22",
+                                       "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\bluetooth-20261025-175533-444",
+                                       "profile":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\bluetooth-prototype-profile",
+                                       "sources":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\bluetooth-20261025-175533-444.sources.json",
+                                       "screenshot":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\bluetooth-20261025-175533-444.png",
+                                       "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\bluetooth-20261025-175533-444.stdout.log",
+                                       "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\bluetooth-20261025-175533-444.stderr.log"
+                                   }
+                    },
+                    {
+                        "kind":  "bluetooth",
+                        "result":  {
+                                       "passed":  true,
+                                       "smoke":  true,
+                                       "prototype":  "bluetooth",
+                                       "audioMode":  "Disabled",
+                                       "batteryMode":  "Disabled",
+                                       "mediaMode":  "Disabled",
+                                       "bluetoothMode":  "Disabled",
+                                       "timedOut":  false,
+                                       "exitCode":  0,
+                                       "scaleFactor":  "native",
+                                       "screenIndex":  1,
+                                       "monitorCycle":  false,
+                                       "traceInput":  false,
+                                       "actualScreens":  [
+                                                             {
+                                                                 "index":  1,
+                                                                 "name":  "DELL S2725QS",
+                                                                 "x":  -3840,
+                                                                 "y":  0,
+                                                                 "dpr":  1.75,
+                                                                 "width":  560,
+                                                                 "height":  700
+                                                             }
+                                                         ],
+                                       "captures":  [
+                                                        "file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/bluetooth-20261025-175537-276.png"
+                                                    ],
+                                       "audioSnapshots":  [
+
+                                                          ],
+                                       "batterySnapshots":  [
+
+                                                            ],
+                                       "mediaSnapshots":  [
+
+                                                          ],
+                                       "bluetoothSnapshots":  [
+                                                                  {
+                                                                      "phase":  "INITIAL",
+                                                                      "state":  {
+                                                                                    "status":  "disabled",
+                                                                                    "reason":  "Windows Bluetooth is disabled.",
+                                                                                    "enabled":  false,
+                                                                                    "controlsEnabled":  false,
+                                                                                    "backendLoaded":  false,
+                                                                                    "nativeRequested":  false,
+                                                                                    "initializationExpired":  false,
+                                                                                    "hasAdapter":  false,
+                                                                                    "adapterName":  "",
+                                                                                    "adapterState":  -1,
+                                                                                    "radioEnabled":  false,
+                                                                                    "radioBlocked":  false,
+                                                                                    "radioPending":  false,
+                                                                                    "radioOff":  false,
+                                                                                    "radioUnknown":  false,
+                                                                                    "discovering":  false,
+                                                                                    "discoveryTimedOut":  false,
+                                                                                    "deviceCount":  0,
+                                                                                    "devices":  [
+
+                                                                                                ],
+                                                                                    "connectedCount":  0,
+                                                                                    "pendingCount":  0,
+                                                                                    "hasPending":  false,
+                                                                                    "pairing":  false,
+                                                                                    "pairingNeedsWindowsSettings":  false,
+                                                                                    "canToggleRadio":  false,
+                                                                                    "canSetDiscovering":  false,
+                                                                                    "canControlDevices":  false,
+                                                                                    "canConnect":  [
+
+                                                                                                   ],
+                                                                                    "canDisconnect":  [
+
+                                                                                                      ],
+                                                                                    "canPair":  [
+
+                                                                                                ],
+                                                                                    "canForget":  [
+
+                                                                                                  ],
+                                                                                    "discoverableSupported":  false,
+                                                                                    "renameSupported":  false,
+                                                                                    "trustedSupported":  false,
+                                                                                    "blockedSupported":  false,
+                                                                                    "wakeSupported":  false,
+                                                                                    "settingsUri":  "ms-settings:bluetooth",
+                                                                                    "statusLoaded":  false,
+                                                                                    "popoutLoaded":  false,
+                                                                                    "popoutControlsEnabled":  false,
+                                                                                    "popoutSettingsDelegated":  false,
+                                                                                    "popoutSettlingTimedOut":  {
+
+                                                                                                               }
+                                                                                }
+                                                                  },
+                                                                  {
+                                                                      "phase":  "FINAL",
+                                                                      "state":  {
+                                                                                    "status":  "disabled",
+                                                                                    "reason":  "Windows Bluetooth is disabled.",
+                                                                                    "enabled":  false,
+                                                                                    "controlsEnabled":  false,
+                                                                                    "backendLoaded":  false,
+                                                                                    "nativeRequested":  false,
+                                                                                    "initializationExpired":  false,
+                                                                                    "hasAdapter":  false,
+                                                                                    "adapterName":  "",
+                                                                                    "adapterState":  -1,
+                                                                                    "radioEnabled":  false,
+                                                                                    "radioBlocked":  false,
+                                                                                    "radioPending":  false,
+                                                                                    "radioOff":  false,
+                                                                                    "radioUnknown":  false,
+                                                                                    "discovering":  false,
+                                                                                    "discoveryTimedOut":  false,
+                                                                                    "deviceCount":  0,
+                                                                                    "devices":  [
+
+                                                                                                ],
+                                                                                    "connectedCount":  0,
+                                                                                    "pendingCount":  0,
+                                                                                    "hasPending":  false,
+                                                                                    "pairing":  false,
+                                                                                    "pairingNeedsWindowsSettings":  false,
+                                                                                    "canToggleRadio":  false,
+                                                                                    "canSetDiscovering":  false,
+                                                                                    "canControlDevices":  false,
+                                                                                    "canConnect":  [
+
+                                                                                                   ],
+                                                                                    "canDisconnect":  [
+
+                                                                                                      ],
+                                                                                    "canPair":  [
+
+                                                                                                ],
+                                                                                    "canForget":  [
+
+                                                                                                  ],
+                                                                                    "discoverableSupported":  false,
+                                                                                    "renameSupported":  false,
+                                                                                    "trustedSupported":  false,
+                                                                                    "blockedSupported":  false,
+                                                                                    "wakeSupported":  false,
+                                                                                    "settingsUri":  "ms-settings:bluetooth",
+                                                                                    "statusLoaded":  false,
+                                                                                    "popoutLoaded":  false,
+                                                                                    "popoutControlsEnabled":  false,
+                                                                                    "popoutSettingsDelegated":  false,
+                                                                                    "popoutSettlingTimedOut":  {
+
+                                                                                                               }
+                                                                                }
+                                                                  }
+                                                              ],
+                                       "elapsedMilliseconds":  3434,
+                                       "sourceRevision":  "ddba8d1211c0cde758f9f6cd8b9042e1934cf13c",
+                                       "sourceDirty":  false,
+                                       "backendRevision":  "1401042969e4b7ab3cfb314fc76945ab081db3de",
+                                       "buildRecordSha256":  "3FA201EE45FC755B663FF122090B617D222BBFD99352B18F490B003F0C14FED1",
+                                       "configSha256":  "6FC8F8B80AF9D45A49A4737AF51B8C43A11B97E1B59A82468F31AB4C779C6F65",
+                                       "command":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\quickshell\\qs.exe",
+                                       "arguments":  "--no-color --log-times --path \"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\bluetooth-20261025-175537-276\\shell.qml\"",
+                                       "executableSha256":  "22B69FFE0523F8FFDB86C22E1669A36B2C8DCAEA97B19754000EC7455345AF22",
+                                       "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\bluetooth-20261025-175537-276",
+                                       "profile":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\bluetooth-prototype-profile",
+                                       "sources":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\bluetooth-20261025-175537-276.sources.json",
+                                       "screenshot":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\bluetooth-20261025-175537-276.png",
+                                       "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\bluetooth-20261025-175537-276.stdout.log",
+                                       "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\bluetooth-20261025-175537-276.stderr.log"
+                                   }
+                    },
+                    {
+                        "kind":  "bluetooth",
+                        "result":  {
+                                       "passed":  true,
+                                       "smoke":  true,
+                                       "prototype":  "bluetooth",
+                                       "audioMode":  "Disabled",
+                                       "batteryMode":  "Disabled",
+                                       "mediaMode":  "Disabled",
+                                       "bluetoothMode":  "ReadOnly",
+                                       "timedOut":  false,
+                                       "exitCode":  0,
+                                       "scaleFactor":  "native",
+                                       "screenIndex":  1,
+                                       "monitorCycle":  false,
+                                       "traceInput":  false,
+                                       "actualScreens":  [
+                                                             {
+                                                                 "index":  1,
+                                                                 "name":  "DELL S2725QS",
+                                                                 "x":  -3840,
+                                                                 "y":  0,
+                                                                 "dpr":  1.75,
+                                                                 "width":  560,
+                                                                 "height":  700
+                                                             }
+                                                         ],
+                                       "captures":  [
+                                                        "file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/bluetooth-20261025-175541-070.png"
+                                                    ],
+                                       "audioSnapshots":  [
+
+                                                          ],
+                                       "batterySnapshots":  [
+
+                                                            ],
+                                       "mediaSnapshots":  [
+
+                                                          ],
+                                       "bluetoothSnapshots":  [
+                                                                  {
+                                                                      "phase":  "INITIAL",
+                                                                      "state":  {
+                                                                                    "status":  "on",
+                                                                                    "reason":  "Bluetooth is on: 0 device(s) observed, 0 connected. This run only observes Bluetooth; every control stays disabled.",
+                                                                                    "enabled":  true,
+                                                                                    "controlsEnabled":  false,
+                                                                                    "backendLoaded":  true,
+                                                                                    "nativeRequested":  true,
+                                                                                    "initializationExpired":  false,
+                                                                                    "hasAdapter":  true,
+                                                                                    "adapterName":  "Intel(R) Wireless Bluetooth(R)",
+                                                                                    "adapterState":  1,
+                                                                                    "radioEnabled":  true,
+                                                                                    "radioBlocked":  false,
+                                                                                    "radioPending":  false,
+                                                                                    "radioOff":  false,
+                                                                                    "radioUnknown":  false,
+                                                                                    "discovering":  false,
+                                                                                    "discoveryTimedOut":  false,
+                                                                                    "deviceCount":  0,
+                                                                                    "devices":  [
+
+                                                                                                ],
+                                                                                    "connectedCount":  0,
+                                                                                    "pendingCount":  0,
+                                                                                    "hasPending":  false,
+                                                                                    "pairing":  false,
+                                                                                    "pairingNeedsWindowsSettings":  false,
+                                                                                    "canToggleRadio":  false,
+                                                                                    "canSetDiscovering":  false,
+                                                                                    "canControlDevices":  false,
+                                                                                    "canConnect":  [
+
+                                                                                                   ],
+                                                                                    "canDisconnect":  [
+
+                                                                                                      ],
+                                                                                    "canPair":  [
+
+                                                                                                ],
+                                                                                    "canForget":  [
+
+                                                                                                  ],
+                                                                                    "discoverableSupported":  false,
+                                                                                    "renameSupported":  false,
+                                                                                    "trustedSupported":  false,
+                                                                                    "blockedSupported":  false,
+                                                                                    "wakeSupported":  false,
+                                                                                    "settingsUri":  "ms-settings:bluetooth",
+                                                                                    "statusLoaded":  true,
+                                                                                    "popoutLoaded":  true,
+                                                                                    "popoutControlsEnabled":  false,
+                                                                                    "popoutSettingsDelegated":  true,
+                                                                                    "popoutSettlingTimedOut":  {
+
+                                                                                                               }
+                                                                                }
+                                                                  },
+                                                                  {
+                                                                      "phase":  "FINAL",
+                                                                      "state":  {
+                                                                                    "status":  "on",
+                                                                                    "reason":  "Bluetooth is on: 0 device(s) observed, 0 connected. This run only observes Bluetooth; every control stays disabled.",
+                                                                                    "enabled":  true,
+                                                                                    "controlsEnabled":  false,
+                                                                                    "backendLoaded":  true,
+                                                                                    "nativeRequested":  true,
+                                                                                    "initializationExpired":  false,
+                                                                                    "hasAdapter":  true,
+                                                                                    "adapterName":  "Intel(R) Wireless Bluetooth(R)",
+                                                                                    "adapterState":  1,
+                                                                                    "radioEnabled":  true,
+                                                                                    "radioBlocked":  false,
+                                                                                    "radioPending":  false,
+                                                                                    "radioOff":  false,
+                                                                                    "radioUnknown":  false,
+                                                                                    "discovering":  false,
+                                                                                    "discoveryTimedOut":  false,
+                                                                                    "deviceCount":  0,
+                                                                                    "devices":  [
+
+                                                                                                ],
+                                                                                    "connectedCount":  0,
+                                                                                    "pendingCount":  0,
+                                                                                    "hasPending":  false,
+                                                                                    "pairing":  false,
+                                                                                    "pairingNeedsWindowsSettings":  false,
+                                                                                    "canToggleRadio":  false,
+                                                                                    "canSetDiscovering":  false,
+                                                                                    "canControlDevices":  false,
+                                                                                    "canConnect":  [
+
+                                                                                                   ],
+                                                                                    "canDisconnect":  [
+
+                                                                                                      ],
+                                                                                    "canPair":  [
+
+                                                                                                ],
+                                                                                    "canForget":  [
+
+                                                                                                  ],
+                                                                                    "discoverableSupported":  false,
+                                                                                    "renameSupported":  false,
+                                                                                    "trustedSupported":  false,
+                                                                                    "blockedSupported":  false,
+                                                                                    "wakeSupported":  false,
+                                                                                    "settingsUri":  "ms-settings:bluetooth",
+                                                                                    "statusLoaded":  true,
+                                                                                    "popoutLoaded":  true,
+                                                                                    "popoutControlsEnabled":  false,
+                                                                                    "popoutSettingsDelegated":  true,
+                                                                                    "popoutSettlingTimedOut":  {
+
+                                                                                                               }
+                                                                                }
+                                                                  }
+                                                              ],
+                                       "elapsedMilliseconds":  3445,
+                                       "sourceRevision":  "ddba8d1211c0cde758f9f6cd8b9042e1934cf13c",
+                                       "sourceDirty":  false,
+                                       "backendRevision":  "1401042969e4b7ab3cfb314fc76945ab081db3de",
+                                       "buildRecordSha256":  "3FA201EE45FC755B663FF122090B617D222BBFD99352B18F490B003F0C14FED1",
+                                       "configSha256":  "6FC8F8B80AF9D45A49A4737AF51B8C43A11B97E1B59A82468F31AB4C779C6F65",
+                                       "command":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\quickshell\\qs.exe",
+                                       "arguments":  "--no-color --log-times --path \"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\bluetooth-20261025-175541-070\\shell.qml\"",
+                                       "executableSha256":  "22B69FFE0523F8FFDB86C22E1669A36B2C8DCAEA97B19754000EC7455345AF22",
+                                       "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\bluetooth-20261025-175541-070",
+                                       "profile":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\bluetooth-prototype-profile",
+                                       "sources":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\bluetooth-20261025-175541-070.sources.json",
+                                       "screenshot":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\bluetooth-20261025-175541-070.png",
+                                       "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\bluetooth-20261025-175541-070.stdout.log",
+                                       "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\bluetooth-20261025-175541-070.stderr.log"
+                                   }
+                    },
+                    {
+                        "kind":  "m1-regression",
+                        "result":  {
+                                       "passed":  true,
+                                       "smoke":  true,
+                                       "prototype":  "shell",
+                                       "audioMode":  "Disabled",
+                                       "batteryMode":  "Disabled",
+                                       "mediaMode":  "Disabled",
+                                       "bluetoothMode":  "Disabled",
+                                       "timedOut":  false,
+                                       "exitCode":  0,
+                                       "scaleFactor":  "native",
+                                       "screenIndex":  0,
+                                       "monitorCycle":  false,
+                                       "traceInput":  false,
+                                       "actualScreens":  [
+                                                             {
+                                                                 "index":  0,
+                                                                 "name":  "MAG321UX OLED",
+                                                                 "x":  0,
+                                                                 "y":  0,
+                                                                 "dpr":  1.5
+                                                             }
+                                                         ],
+                                       "captures":  [
+                                                        "file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/shell-20261025-175544-859.png"
+                                                    ],
+                                       "audioSnapshots":  [
+
+                                                          ],
+                                       "batterySnapshots":  [
+
+                                                            ],
+                                       "mediaSnapshots":  [
+
+                                                          ],
+                                       "bluetoothSnapshots":  [
+
+                                                              ],
+                                       "elapsedMilliseconds":  4060,
+                                       "sourceRevision":  "ddba8d1211c0cde758f9f6cd8b9042e1934cf13c",
+                                       "sourceDirty":  false,
+                                       "backendRevision":  "1401042969e4b7ab3cfb314fc76945ab081db3de",
+                                       "buildRecordSha256":  "3FA201EE45FC755B663FF122090B617D222BBFD99352B18F490B003F0C14FED1",
+                                       "configSha256":  "6FC8F8B80AF9D45A49A4737AF51B8C43A11B97E1B59A82468F31AB4C779C6F65",
+                                       "command":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\quickshell\\qs.exe",
+                                       "arguments":  "--no-color --log-times --path \"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\shell-20261025-175544-859\\shell.qml\"",
+                                       "executableSha256":  "22B69FFE0523F8FFDB86C22E1669A36B2C8DCAEA97B19754000EC7455345AF22",
+                                       "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\shell-20261025-175544-859",
+                                       "profile":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-prototype-profile",
+                                       "sources":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\shell-20261025-175544-859.sources.json",
+                                       "screenshot":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\shell-20261025-175544-859.png",
+                                       "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\shell-20261025-175544-859.stdout.log",
+                                       "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\shell-20261025-175544-859.stderr.log"
+                                   }
+                    }
+                ]
+}
