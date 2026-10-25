@@ -246,3 +246,14 @@ and result forwarding are fixture-validated only. Notification registration
 failure/fallback behavior was reviewed in the backend source, not rerun here.
 The full Disabled/M1/audio regression harness was intentionally not run in this
 review. Earlier acceptance results retain their original scope.
+
+## Final review note
+
+The final review of `11639abd` found no blocking defects. Its one minor
+finding: results carry only the target profile, so a late success for an
+expired request could confirm a newer request for the same profile. The
+service now attributes a late result to the oldest unanswered expired request
+for that target and never lets it confirm a newer one. The fixture covers the
+expire-retry-late-result ordering: 128 battery and 137 profile assertions pass
+(`Test-BatteryService.ps1`, dirty follow-up tree). No native power write was
+made.

@@ -227,7 +227,18 @@ QtObject {
         rejectedWrites++;
     }
 
+    // Requests that expired without a result, per target. Results carry only
+    // the target profile, so a late result is attributed to the oldest
+    // unanswered request for that target (backends answer in order) and can
+    // never confirm a newer request for the same profile.
+    property var _unansweredExpired: ({})
+
     function failWrite(message): void {
+        if (writeState === "pending" && isValidProfile(requestedProfile)) {
+            const expired = Object.assign({}, _unansweredExpired);
+            expired[requestedProfile] = (expired[requestedProfile] || 0) + 1;
+            _unansweredExpired = expired;
+        }
         writeTimer.stop();
         writeState = "unconfirmed";
         writeError = message;
@@ -238,8 +249,15 @@ QtObject {
         target: root.backend
         ignoreUnknownSignals: true
         function onProfileWriteResult(requestedProfile, ok, error) {
-            if (!root.writeResultAvailable || !root.writePending
-                    || requestedProfile !== root.requestedProfile)
+            if (!root.writeResultAvailable)
+                return;
+            if ((root._unansweredExpired[requestedProfile] || 0) > 0) {
+                const expired = Object.assign({}, root._unansweredExpired);
+                expired[requestedProfile]--;
+                root._unansweredExpired = expired;
+                return;
+            }
+            if (!root.writePending || requestedProfile !== root.requestedProfile)
                 return;
             if (ok === true)
                 root.confirmWrite();
@@ -262,6 +280,7 @@ QtObject {
         if (!enabled) {
             writeTimer.stop();
             writeState = "idle";
+            _unansweredExpired = {};
             requestedProfile = profileUnknown;
             lastWriteNoop = false;
             writeError = "";

@@ -267,6 +267,23 @@ QtObject {
             "later successful result confirms the write");
         check(service.profile === 2 && service.profileName === "Performance", "performance projection");
 
+        // A late result for an expired request is attributed to that request
+        // and cannot confirm a newer request for the same profile.
+        service.writeState = "idle";
+        fake.profile = 0;
+        check(service.requestProfile(2) === true && service.writePending, "request A is pending");
+        service.failWrite("Fixture timeout for request A.");
+        check(service.writeState === "unconfirmed", "request A expires");
+        service.writeState = "idle";
+        check(service.requestProfile(2) === true && service.writePending, "request B for the same profile is pending");
+        const confirmedBeforeLate = service.confirmedWrites;
+        fake.profileWriteResult(2, true, "");
+        check(service.writePending && service.confirmedWrites === confirmedBeforeLate,
+            "request A's late result does not confirm request B");
+        fake.profileWriteResult(2, true, "");
+        check(service.writeState === "confirmed" && service.confirmedWrites === confirmedBeforeLate + 1,
+            "request B's own result confirms it");
+
         // A rejected native submission fails immediately instead of waiting.
         fake.acceptWrites = false;
         service.writeState = "idle";
