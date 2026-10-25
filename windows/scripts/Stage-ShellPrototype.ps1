@@ -3,11 +3,13 @@ param(
     [Parameter(Mandatory)][string]$Destination,
     [Parameter(Mandatory)][string]$ProfileRoot,
     [switch]$Audio,
-    [switch]$Battery
+    [switch]$Battery,
+    [switch]$Media
 )
 
 $ErrorActionPreference = 'Stop'
-if ($Audio -and $Battery) { throw 'Select one prototype entry point per stage.' }
+$entryPoints = @(@($Audio, $Battery, $Media) | Where-Object { $_ }).Count
+if ($entryPoints -gt 1) { throw 'Select one prototype entry point per stage.' }
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
 $Destination = [IO.Path]::GetFullPath($Destination)
 $ProfileRoot = [IO.Path]::GetFullPath($ProfileRoot)
@@ -28,6 +30,10 @@ if ($Battery) {
     $files.Remove('windows/shell-prototype/shell.qml')
     $files.Add('windows/battery-prototype/shell.qml', 'shell.qml')
 }
+if ($Media) {
+    $files.Remove('windows/shell-prototype/shell.qml')
+    $files.Add('windows/media-prototype/shell.qml', 'shell.qml')
+}
 $manifest = Get-Content -LiteralPath (Join-Path $repoRoot 'windows\shell-prototype\sources.json') -Raw | ConvertFrom-Json
 foreach ($entry in $manifest.PSObject.Properties) { $files.Add($entry.Name, $entry.Value) }
 if ($Audio) {
@@ -37,6 +43,10 @@ if ($Audio) {
 if ($Battery) {
     $batteryManifest = Get-Content -LiteralPath (Join-Path $repoRoot 'windows\battery-prototype\sources.json') -Raw | ConvertFrom-Json
     foreach ($entry in $batteryManifest.PSObject.Properties) { $files.Add($entry.Name, $entry.Value) }
+}
+if ($Media) {
+    $mediaManifest = Get-Content -LiteralPath (Join-Path $repoRoot 'windows\media-prototype\sources.json') -Raw | ConvertFrom-Json
+    foreach ($entry in $mediaManifest.PSObject.Properties) { $files.Add($entry.Name, $entry.Value) }
 }
 $hashes = foreach ($entry in $files.GetEnumerator()) {
     $source = [IO.Path]::GetFullPath((Join-Path $repoRoot $entry.Key))

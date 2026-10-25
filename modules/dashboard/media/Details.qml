@@ -11,6 +11,13 @@ import qs.services
 ColumnLayout {
     id: root
 
+    // Windows adaptation: explicit transport opt-in for the bounded media host.
+    // Upstream behavior stays enabled by default. A read-only host sets this
+    // false so no transport or seek request can be sent, while metadata and
+    // timeline remain observable. Native capability flags still gate each
+    // request independently.
+    property bool controlsEnabled: true
+
     readonly property bool hasUnknownLength: (Players.active?.length ?? 0) > 2147483647
 
     function lengthStr(length: int): string {
@@ -89,13 +96,15 @@ ColumnLayout {
 
             Layout.fillWidth: true
             value: Players.active ? Players.active.position / (Players.active.length || 1) : 0
-            enabled: (Players.active?.canSeek ?? false) && !root.hasUnknownLength
+            enabled: root.controlsEnabled && (Players.active?.canSeek ?? false) && !root.hasUnknownLength
             wavy: true
             animateWave: Players.active?.isPlaying ?? false
             waveFrequency: 5
             waveDuration: 2000
             interactionOnMove: false
             onInteraction: value => {
+                if (!root.controlsEnabled)
+                    return;
                 const active = Players.active;
                 if (active?.canSeek && active?.positionSupported)
                     active.position = value * active.length;
@@ -130,7 +139,7 @@ ColumnLayout {
             shapeMorph: true
             checked: Players.active?.shuffle ?? false
             font: Tokens.font.icon.builders.medium.weight(Font.Medium).build()
-            disabled: !Players.active?.shuffleSupported
+            disabled: !root.controlsEnabled || !Players.active?.shuffleSupported
             onClicked: Players.active.shuffle = !Players.active?.shuffle
             implicitWidth: Math.round(implicitHeight * 0.9)
         }
@@ -143,7 +152,7 @@ ColumnLayout {
             isRound: true
             shapeMorph: true
             font: Tokens.font.icon.large
-            disabled: !Players.active?.canGoPrevious
+            disabled: !root.controlsEnabled || !Players.active?.canGoPrevious
             onClicked: Players.active?.previous()
         }
 
@@ -156,7 +165,7 @@ ColumnLayout {
             fillWidth: true
             checked: Players.active?.isPlaying ?? false
             font: Tokens.font.icon.large
-            disabled: !Players.active?.canTogglePlaying
+            disabled: !root.controlsEnabled || !Players.active?.canTogglePlaying
             onClicked: Players.active?.togglePlaying()
         }
 
@@ -168,7 +177,7 @@ ColumnLayout {
             isRound: true
             shapeMorph: true
             font: Tokens.font.icon.large
-            disabled: !Players.active?.canGoNext
+            disabled: !root.controlsEnabled || !Players.active?.canGoNext
             onClicked: Players.active?.next()
         }
 
@@ -179,7 +188,7 @@ ColumnLayout {
             shapeMorph: true
             checked: Players.active?.loopState === MprisLoopState.Track || Players.active?.loopState === MprisLoopState.Playlist
             font: Tokens.font.icon.builders.medium.weight(Font.Medium).build()
-            disabled: !Players.active?.loopSupported
+            disabled: !root.controlsEnabled || !Players.active?.loopSupported
             onClicked: {
                 const state = Players.active.loopState;
                 if (state === MprisLoopState.None)
