@@ -437,7 +437,8 @@ service, record or facade, and on the writer component reappearing.
 Quickshell-free decision (no filesystem access), applied to live notifications,
 image changes and restored history. It accepts exactly:
 
-- `image://` provider URLs (theme icons);
+- `image://` provider URLs (theme icons); the final review addendum narrows this
+  to `image://icon/<bare-theme-name>`;
 - local files that are strict, case-insensitive children of the injected staged
   shell assets directory.
 
@@ -449,10 +450,11 @@ cache, data and state directories (including the old `cache/notifs` location);
 and anything outside the staged assets directory.
 
 The URL handed to the original card is rebuilt from the validated local path as
-`file:///` plus forward slashes, never from the raw input. A rejected or
-unsupported source becomes `""`, so the original card shows its existing
-fallback icon. Persisted history images go through the same validator on
-restore. App-supplied images outside the staged assets directory therefore show
+`file:///` plus forward slashes, never from the raw input; the final review
+addendum percent-encodes each segment. A rejected or unsupported source becomes
+`""`, so the original card shows its existing fallback icon. Persisted history
+images go through the same validator on restore; the final review addendum also
+re-validates restored app icons and sanitizes restored bodies. App-supplied images outside the staged assets directory therefore show
 the fallback icon **by design**; that is the deliberate trade for removing the
 copy/validation/deletion surface.
 
@@ -546,10 +548,189 @@ superseded slice and are retained as history.
   rendered by the original card; the policy, built URL, fallback and rejection
   paths are fixture-covered.
 - The staged assets directory is injected from the real stage path, but no file
-  from it is loaded by the UI. Junction/reparse behaviour is rejected lexically;
-  no reparse point was exercised.
+  from it is loaded by the UI. The validator is lexical and does **not** detect
+  reparse points; the staged assets root comes from trusted staging
+  (`Quickshell.shellPath("assets")`), not notification input, so physical
+  containment relies on the staging step. No reparse point was exercised.
 - App-supplied images outside the staged assets directory now fall back by
   design; there is no compatibility path.
+- No system consent, denied listener access, real Windows notification removal
+  or app-open path is exercised; those remain ERM-503.
+
+## Final review addendum
+
+A third independent review found three blocking bypasses and two minor defects
+in the second-review slice. All five are fixed here. The fixes are in
+`8cbf416b` (`windows: fix final notification review findings`); `17a37c26`
+(`windows: correct the notification image policy documentation`) only corrects a
+comment and documentation, so the behaviour is identical. This addendum
+supersedes two earlier statements: that any `image://` provider URL is accepted,
+and that junction/reparse behaviour is rejected lexically.
+
+Changed files: `windows/services/notifications/NotificationsService.qml`,
+`NotifData.qml`, `Notifs.qml` (comment), `NotificationsServiceTest.qml` and
+`windows/notifications-prototype/README.md`.
+
+### 1. BLOCKING: image://icon provider confinement
+
+Defect: `validateImageSource()` accepted any `image://` URL whose provider part
+was non-empty and free of `..`. `image://icon/C:/outside/picture.png` reached
+`QIcon::fromTheme`, which loads an absolute path, and
+`image://icon/foo?fallback=C:/outside.png` loaded the fallback name; both escaped
+the staged-asset confinement. App icons had the same problem through
+`Quickshell.iconPath()`, which builds `image://icon/<appIcon>`.
+
+Fix: only `image://icon/<name>` is accepted, where `<name>` matches
+`^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$`. The name cannot contain a slash,
+backslash, colon, `?`, `#`, `%`, whitespace or authority, and the canonical URL
+is rebuilt as `image://icon/` plus the validated name. Every other provider is
+rejected. `validateAppIcon()` applies the same theme-name rule plus the staged
+asset rule (returned as the validated local path because `iconPath()` builds the
+provider URL itself); anything else becomes `""` so the original fallback icon
+renders. Restored history re-validates the app icon.
+
+Coverage: fixture cases for an absolute path, a lower-case drive, `?fallback=`,
+`?path=`, a fragment, a subpath, an empty segment, an empty name, a provider
+without a name, other providers, user-info and port authorities, whitespace, a
+backslash, an upper-case scheme, percent-encoded traversal and `..`/`.` names,
+128/129-character names, and app icons (theme, empty, staged path, staged file
+URL, external/prefix-sibling/dot-dot/UNC/relative/qrc/percent forms, provider
+forms, whitespace, leading dot). Restored provider-path image and app icon are
+rejected; a restored theme app icon survives.
+
+### 2. BLOCKING: body images
+
+Defect: bodies render as Markdown in the original popup and sidebar, so
+`![x](file:///C:/outside.png)`, reference-style images and raw HTML `<img>` could
+load arbitrary local or remote images.
+
+Fix: `NotificationsService.sanitizeBody()` is applied by `NotifData` to the
+initial live body, every `bodyChanged` update and restored history. It:
+
+- replaces inline `![alt](destination "title")` and `![alt](<destination>)` with
+  `alt`, using escape-aware bracket/paren matching, nested alt brackets,
+  parentheses in the destination and nested images;
+- replaces `![alt][reference]` and `![alt]` with `alt`;
+- removes reference definition lines `[ref]: url ...`;
+- removes `<img>`, `<picture>`, `<source>`, `<svg>`, `<image>`, `<object>`,
+  `<embed>` and `<iframe>` tags, case-insensitively, across lines and with a
+  quoted `>` in an attribute. An unterminated media tag drops the rest of the
+  body because a tolerant HTML parser could still load it.
+
+Ordinary text, Markdown links and ordinary HTML links are kept.
+`expectDelivery()` compares the sanitized body, so a body image cannot make a
+genuine delivery look unconfirmed. This is a lexical filter, not a full Markdown
+parser: fenced code blocks and multi-line reference titles are not modelled.
+
+Coverage: fixture cases for inline file/http images, nested alt brackets and
+destination parentheses, escaped brackets, angle-bracket destinations,
+parentheses inside them, nested images, shortcut and reference images, reference
+definition lines, HTML `img` (case, multi-line, quoted `>`), picture/source/
+svg/image/object/embed/iframe, unterminated tags, escaped image markers,
+comparison text and ordinary links; a live body and a live body update; restored
+history bodies; and a body-image delivery confirmation.
+
+### 3. BLOCKING: replacement IDs
+
+Defect: `replacementIdFromArgs()` scanned every argument independently, so
+`["-r", "+42"]` and `["--replace-id=+42"]` were not refused although
+`QString::toUInt` accepts a leading `+`. It also mis-parsed
+`["-a", "-r", "42"]` as a replacement although the backend consumes `-r` as the
+app name.
+
+Fix: the parser mirrors `notify_send.cpp` option consumption: the same short and
+long table, case-sensitive names, only `u/t/a/i/c/h/A/r` take a following
+argument, an unknown option consumes nothing, and the last valid `-r` wins while
+an invalid later value keeps the earlier one. `backendReplaceId()` mirrors
+`QString::toUInt` base 10 as measured against Qt 6.11.2: optional ASCII
+whitespace, optional `+`, decimal digits, optional ASCII whitespace and a value
+`<= UINT_MAX` (4294967295). Unicode whitespace, `-1`, fractional values,
+`+ 42`, `0x2a` and overflow are not parsed. A parsed value `> 0` is refused
+before `notifySend` and `expectDelivery`.
+
+Coverage: existing cases plus `+42`, `--replace-id=+42`, `007`, surrounding
+whitespace, tab/plus/leading zeros, `UINT_MAX`, `UINT_MAX + 1`, non-breaking
+space, `+ 42`, last-valid-wins, invalid-later-keeps-earlier,
+`-a/-i/-t/--app-name/--replace-id` consuming `-r`, `-e/--transient` not
+consuming, an unknown option, case-sensitive long and short names, a missing
+value, and refusal/no-refusal of the corresponding sends.
+
+### 4. MINOR: rebuilt file URLs
+
+Defect: `imageUrlForPath()` concatenated the validated path, so
+`assets/banner#v2.png` became a URL fragment.
+
+Fix: each validated path segment is percent-encoded with `encodeURIComponent`;
+lone surrogates are rejected during canonicalisation and an encoding failure
+rejects the source. `banner#v2.png` becomes `banner%23v2.png`,
+`banner?v=2.png` becomes `banner%3Fv%3D2.png`, and a space becomes `%20`.
+
+Coverage: fixture cases for `#`, `?` and a space in a staged file name, plus a
+live record.
+
+### 5. MINOR: README junction claim
+
+The second-review text said junction/reparse behaviour was rejected lexically.
+That was wrong: the validator is lexical and does not detect reparse points. The
+staged assets root comes from `Quickshell.shellPath("assets")`, which is trusted
+staging rather than notification input, and physical containment relies on that
+staging. The stale bullet was corrected in place, as was the claim that any
+`image://` provider URL is accepted.
+
+### Results
+
+Recorded on the clean tree at
+`17a37c261a74d43f13f3c4eb0a9a8ad4e5befe95` (behaviour identical to `8cbf416b`).
+Both harnesses report `sourceRevision: 17a37c26` and `sourceDirty: false`.
+
+```powershell
+$qtPrefix = "$env:LOCALAPPDATA\caelestia-dev\Qt\6.11.2\msvc2022_64"
+$buildRoot = 'D:\AiStack\caelestia-windows\windows\.local\build'
+powershell -NoProfile -File windows/scripts/Test-NotificationService.ps1 `
+    -QtPrefix $qtPrefix -BuildRoot $buildRoot
+powershell -NoProfile -File windows/scripts/Test-NotificationsPrototype.ps1 `
+    -QtPrefix $qtPrefix -BuildRoot $buildRoot
+```
+
+- Fixture: `passed: true`, exit `0`, not timed out, **324 assertions** (was 218;
+  106 added), no diagnostics, all twelve static checks `true`. Stage
+  `windows\.local\build\notification-tests\notifications-fixture-20261025-193051-195`.
+- Prototype: `passed: true`, nine runs, output
+  `windows\.local\build\notifications-validation-20261025-193053-982`:
+  fixture (324 assertions), disabled screens 0/1, local persist, local
+  expire/dismiss, local extra screen 1, M1 regression, media regression (148
+  assertions) and battery regression (128 assertions). Disabled runs report
+  `status: disabled`, `deliveryConfirmation: idle`, no backend, no original UI
+  and no records; local runs report `status: local`,
+  `deliveryConfirmation: confirmed`, `rejectedImageSources: 0`,
+  `mirroringOff: true`, `systemMirrorActive: false`,
+  `systemNotificationAccess: 0` and `protectedDismissals: 0`. Desktop identity,
+  the legacy `%USERPROFILE%\.local\state\caelestia\notifs.json` identity (absent
+  before and after) and the isolated history path were unchanged.
+- Prior assertions: all 218 are unchanged and passing. The 106 additions are new
+  cases; no prior assertion needed a change.
+
+Changed sources at the recorded revision:
+
+| source | sha256 |
+| --- | --- |
+| `windows/services/notifications/NotificationsService.qml` | `ADD9DAA92FFD57448F4272D4F140F06160EB7CACF23E1E32393B5F38332F7488` |
+| `windows/services/notifications/NotifData.qml` | `735C9C5978C973DF0DA62C80A24177F1728CC15509721021D40FB2C30E7B963A` |
+| `windows/services/notifications/Notifs.qml` | `1ED746ED13B4BF0B9FB9B8C1668D8321FB00ECED323E23426621D1FD32BA4B0D` |
+| `windows/services/notifications/NotificationsServiceTest.qml` | `4A176CB722A615701B48D752339905E7391C707621DC78FB2E5A4A14CCC8A583` |
+| `windows/notifications-prototype/README.md` | `0040B94CD19C46598A9E3A1883421109614A3479FD191919F8B51A6440698533` |
+
+### Untested in this round
+
+- No smoke posts an image or an app icon, so the original card has not rendered
+  an accepted provider/staged image or a staged app icon; the allowlist, built
+  URLs, fallback and rejection paths are fixture-covered.
+- The body filter is lexical, not a full Markdown parser: fenced code blocks,
+  multi-line reference titles and HTML entities are not modelled. No real
+  notification body containing an image was rendered by the original card.
+- No reparse point (junction/symlink) was exercised. The staged assets root is
+  trusted staging, not notification input; the validator is lexical and does not
+  detect reparse points.
 - No system consent, denied listener access, real Windows notification removal
   or app-open path is exercised; those remain ERM-503.
 
