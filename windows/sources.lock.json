@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "caelestia": {
+    "repository": "https://github.com/caelestia-dots/shell.git",
+    "revision": "2e1c51fa76d94457624b642c678218970aa2517a",
+    "role": "Initial upstream source baseline; local port commits follow this commit."
+  },
+  "quickshell": {
+    "repository": "https://github.com/nunreasonable/quickshell.git",
+    "revision": "e8ae0ef124b1c14b547c80d00422d2ffbd423d81",
+    "path": "windows/deps/quickshell",
+    "role": "Windows backend and QML compatibility interfaces."
+  },
+  "iiWindowsReference": {
+    "repository": "https://github.com/nunreasonable/ii-windows.git",
+    "revision": "b59ac3b1389c1d562bec8a81aa3f6fb6480ca6b1",
+    "role": "Porting and packaging reference. Its sources.lock supplies the backend pin; it is not the Caelestia UI dependency."
+  }
+}

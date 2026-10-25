@@ -1,3 +1,25 @@
+# Caelestia for Windows
+
+Private Windows port of [Caelestia Shell](https://github.com/caelestia-dots/shell), using the Windows Quickshell backend developed for [ii-windows](https://github.com/nunreasonable/ii-windows).
+
+**Status: source and compatibility groundwork. This is not a working Windows shell distribution yet.** The upstream UI and history are retained. Windows-specific work lives in `windows/`; the pinned Quickshell backend is a Git submodule.
+
+- [Windows setup and current blockers](windows/README.md)
+- [Milestones and acceptance criteria](windows/ROADMAP.md)
+- [Compatibility prototype](windows/prototype/README.md)
+- [Source revisions](windows/sources.lock.json)
+
+After cloning, initialize the backend and inspect the local prerequisites:
+
+```powershell
+git submodule update --init --recursive
+powershell -NoProfile -File windows/scripts/Test-Environment.ps1
+```
+
+This check does not install software, start a shell, alter authentication, or change the desktop. The Linux installation instructions below are preserved upstream documentation. Follow the Windows notes for this port.
+
+## Upstream documentation
+
 <h1 align=center>caelestia-shell</h1>
 
 <div align=center>

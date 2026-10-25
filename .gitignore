@@ -4,3 +4,4 @@
 build/
 .cache/
 logs
+/windows/.local/
