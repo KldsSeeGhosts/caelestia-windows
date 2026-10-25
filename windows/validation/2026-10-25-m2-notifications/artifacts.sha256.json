@@ -30,6 +30,11 @@
         "bytes":  5
     },
     {
+        "path":  "build/build.json",
+        "sha256":  "3FA201EE45FC755B663FF122090B617D222BBFD99352B18F490B003F0C14FED1",
+        "bytes":  619
+    },
+    {
         "path":  "desktop-after.json",
         "sha256":  "4C2EE48DF631F3D7029869F11F603CE9899A59B026F9ADFE467E34DC3B92A65C",
         "bytes":  4676
