@@ -1,0 +1,26 @@
+﻿{
+  "bar": {
+    "persistent": false,
+    "showOnHover": true,
+    "entries": [
+      {"id":"spacer","enabled":true},
+      {"id":"clock","enabled":true},
+      {"id":"spacer","enabled":true},
+      {"id":"power","enabled":true}
+    ],
+    "clock": {"showIcon":true,"showDate":true,"showSeconds":true},
+    "scrollActions": {"workspaces":false,"volume":false,"brightness":false},
+    "popouts": {"activeWindow":false,"tray":false,"statusIcons":false}
+  },
+  "session": {
+    "enabled": true,
+    "vimKeybinds": true,
+    "commands": {"logout":[],"shutdown":[],"hibernate":[],"reboot":[]}
+  },
+  "paths": {"sessionGif":""},
+  "dashboard": {"enabled":false,"showOnHover":false},
+  "launcher": {"enabled":false,"showOnHover":false},
+  "sidebar": {"enabled":false,"showOnHover":false},
+  "osd": {"enabled":false},
+  "utilities": {"enabled":false}
+}

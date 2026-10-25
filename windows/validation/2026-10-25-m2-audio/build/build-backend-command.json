@@ -1,0 +1,8 @@
+﻿[
+    "--build",
+    "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\quickshell",
+    "--target",
+    "quickshell",
+    "--parallel",
+    "4"
+]

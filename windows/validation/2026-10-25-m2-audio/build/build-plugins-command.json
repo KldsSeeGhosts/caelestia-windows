@@ -1,0 +1,6 @@
+﻿[
+    "--build",
+    "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\caelestia",
+    "--parallel",
+    "4"
+]

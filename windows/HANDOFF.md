@@ -1,5 +1,64 @@
 # Windows port handoff, 2026-10-25
 
+## M2 continuation
+
+M0/M1 are complete and PR #3 is merged. Current topic branch:
+`windows/m2-audio-services`, based on merged `0e0f9fd6`.
+[PR #4](https://github.com/KldsSeeGhosts/caelestia-windows/pull/4) and backend
+PR #1 track this integration; consult their linked merge state. Backend GitHub CI could not
+start because GitHub reports an account billing/spending-limit block. Local
+native checks pass; no remote CI pass is claimed.
+The first M2 implementation is the
+[separate bounded audio prototype](audio-prototype/README.md).
+ERM-495 is the complete [service source audit](audits/M2-SERVICES.md);
+ERM-496 adds the core Audio adapter and original AudioPopout;
+ERM-497 adds truthful native audio capability/errors.
+These three scoped issues are complete. ERM-498 through ERM-507 track remaining
+services; ERM-508 tracks live audio control/denial/recovery. M2 is not complete.
+
+Clean root `fb6665ab` passes 238 adapter assertions, 16 native fake-COM cases,
+disabled/read-only UI runs at native 150%/175% (negative secondary origin),
+and the existing M1 bar/session smoke regression.
+[Archived evidence](validation/2026-10-25-m2-audio/README.md) records exact
+sources, commands, hashes, native state comparisons, screenshots and limits.
+Explorer/KSG Shell PIDs, work areas, taskbar flags and independent endpoint
+levels/mute/channels/default-role snapshots are unchanged.
+
+Backend pin `8c71bdb8116dffeb274edb31c3803e1c28dbb270` preserves M1's hover fix
+and adds Core Audio interface/state availability, initialization/control errors,
+and observed default routing after partial role failures.
+[Backend PR #1](https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/pull/1)
+holds the committed fork patch. Native fake-COM fixtures pass 16 QtTest cases;
+actual hardware denial, hot removal and live writes remain unvalidated.
+The root gitlink and sources.lock.json move together.
+
+```powershell
+$qtPrefix = "$env:LOCALAPPDATA\caelestia-dev\Qt\6.11.2\msvc2022_64"
+powershell -NoProfile -File windows/scripts/Test-AudioPrototype.ps1 `
+    -QtPrefix $qtPrefix
+powershell -NoProfile -File windows/scripts/Start-ShellPrototype.ps1 `
+    -QtPrefix $qtPrefix -Audio -AudioMode ReadOnly -Wait
+```
+
+The audio adapter defaults disabled and creates its native backend only after
+an explicit read opt-in. `Interactive` additionally enables explicit writes;
+smoke always disables writes/input. No other services, global shortcuts,
+toasts, visualizers or shell controllers are enabled. The normal M1 entry
+point remains available. Do not claim the read-only gate validates live
+control changes, device recovery or the full M2 milestone.
+
+The standalone backend tests build from
+`windows/deps/quickshell/src/windows/test` with Qt 6.11.2 and clang-cl 20.1.8.
+Use `-DCMAKE_LINKER_TYPE=MSVC` and SDK `mt.exe` for this target. LLVM 20's
+manifest merge produced invalid namespaced execution-level attributes for the
+Qt-generated test manifest; no UAC/security changes were made.
+
+## Previous M1 handoff and historical evidence
+
+The remainder records the completed M1 revision and its validation limits.
+Its pin, topic branch and next-work statements are historical; the M2 section
+above owns current continuation instructions.
+
 ## Current milestone
 
 M0 and the bounded M1 compatibility prototype are complete. ERM-489 through

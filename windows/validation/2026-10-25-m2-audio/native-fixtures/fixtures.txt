@@ -1,0 +1,25 @@
+********* Start testing of PwAudioControlTest *********
+Config: Using QtTest library 6.11.2, Qt 6.11.2 (x86_64-little_endian-llp64 shared (dynamic) release build; by MSVC 2022), windows 11
+PASS   : PwAudioControlTest::initTestCase()
+PASS   : PwAudioControlTest::unavailableControl()
+QWARN  : PwAudioControlTest::sessionFailureKeepsState() quickshell.windows.pipewire.node: SetMasterVolume failed: -7ff8fffb
+QWARN  : PwAudioControlTest::sessionFailureKeepsState() quickshell.windows.pipewire.node: SetMute failed: -7ff8fffb
+PASS   : PwAudioControlTest::sessionFailureKeepsState()
+PASS   : PwAudioControlTest::sessionReadFailureKeepsSnapshot()
+QWARN  : PwAudioControlTest::endpointFailuresAndPartialChannels() quickshell.windows.pipewire.node: SetMasterVolume failed: -7ff8fffb
+QWARN  : PwAudioControlTest::endpointFailuresAndPartialChannels() quickshell.windows.pipewire.node: SetMute failed: -7ff8fffb
+PASS   : PwAudioControlTest::endpointFailuresAndPartialChannels()
+QWARN  : PwAudioControlTest::notificationFailure() quickshell.windows.pipewire.node: RegisterControlChangeNotify failed: -7ff8fffb
+PASS   : PwAudioControlTest::notificationFailure()
+PASS   : PwAudioControlTest::invalidVolumeDoesNotWrite()
+PASS   : PwAudioControlTest::defaultRoles(0)
+PASS   : PwAudioControlTest::defaultRoles(1)
+PASS   : PwAudioControlTest::defaultRoles(2)
+PASS   : PwAudioControlTest::defaultRoles(3)
+PASS   : PwAudioControlTest::defaultRoles(4)
+PASS   : PwAudioControlTest::defaultRoles(5)
+PASS   : PwAudioControlTest::defaultRoles(6)
+PASS   : PwAudioControlTest::defaultRoles(7)
+PASS   : PwAudioControlTest::cleanupTestCase()
+Totals: 16 passed, 0 failed, 0 skipped, 0 blacklisted, 8ms
+********* Finished testing of PwAudioControlTest *********

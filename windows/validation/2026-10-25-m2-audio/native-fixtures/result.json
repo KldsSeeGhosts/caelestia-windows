@@ -1,0 +1,15 @@
+﻿{
+    "passed":  true,
+    "timedOut":  false,
+    "exitCode":  0,
+    "backendRevision":  "8c71bdb8116dffeb274edb31c3803e1c28dbb270",
+    "backendDirty":  false,
+    "qtVersion":  "6.11.2",
+    "compiler":  "clang version 20.1.8",
+    "manifestTool":  "C:\\Program Files (x86)\\Windows Kits\\10\\bin\\10.0.26100.0\\x64\\mt.exe",
+    "linker":  "MSVC",
+    "command":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\audio-backend-tests\\pw_audio_control_test.exe",
+    "arguments":  "-o \"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\audio-backend-tests\\fixtures.txt\",txt",
+    "executableSha256":  "8873A37769F0F4C74F446385A51CED813E5CF1F7D4451237240CA9FE3D4593EA",
+    "totals":  "Totals: 16 passed, 0 failed, 0 skipped, 0 blacklisted, 8ms"
+}

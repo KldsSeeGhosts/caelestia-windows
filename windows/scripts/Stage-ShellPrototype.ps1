@@ -1,7 +1,8 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][string]$Destination,
-    [Parameter(Mandatory)][string]$ProfileRoot
+    [Parameter(Mandatory)][string]$ProfileRoot,
+    [switch]$Audio
 )
 
 $ErrorActionPreference = 'Stop'
@@ -17,8 +18,16 @@ $files = [ordered]@{
     'windows/assets/rubik/OFL.txt' = 'assets/rubik/OFL.txt'
     'windows/assets/README.md' = 'assets/README.md'
 }
+if ($Audio) {
+    $files.Remove('windows/shell-prototype/shell.qml')
+    $files.Add('windows/audio-prototype/shell.qml', 'shell.qml')
+}
 $manifest = Get-Content -LiteralPath (Join-Path $repoRoot 'windows\shell-prototype\sources.json') -Raw | ConvertFrom-Json
 foreach ($entry in $manifest.PSObject.Properties) { $files.Add($entry.Name, $entry.Value) }
+if ($Audio) {
+    $audioManifest = Get-Content -LiteralPath (Join-Path $repoRoot 'windows\audio-prototype\sources.json') -Raw | ConvertFrom-Json
+    foreach ($entry in $audioManifest.PSObject.Properties) { $files.Add($entry.Name, $entry.Value) }
+}
 $hashes = foreach ($entry in $files.GetEnumerator()) {
     $source = [IO.Path]::GetFullPath((Join-Path $repoRoot $entry.Key))
     $target = [IO.Path]::GetFullPath((Join-Path $Destination $entry.Value))

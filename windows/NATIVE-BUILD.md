@@ -169,6 +169,14 @@ Capture read-only desktop state before/after a test:
 powershell -NoProfile -File windows/scripts/Get-DesktopState.ps1
 ```
 
+For the separate M2 audio host, use `Start-ShellPrototype.ps1 -Audio
+-AudioMode ReadOnly -Wait` with the same Qt prefix. Audio defaults disabled;
+`Interactive` opts into explicit volume/routing writes and every smoke run
+remains read-only. `Test-AudioPrototype.ps1 -QtPrefix <path>` runs the
+read-only two-monitor/service gate. See the
+[audio prototype instructions](audio-prototype/README.md) for exact commands,
+failure semantics and limitations.
+
 For the opt-in automated native input matrix, see
 [the prototype instructions](shell-prototype/README.md). It uses `SendInput`
 through real Windows routing, a dedicated fixture, exact-instance IPC, and
