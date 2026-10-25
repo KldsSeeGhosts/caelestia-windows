@@ -15,9 +15,12 @@ ERM-495 is the complete [service source audit](audits/M2-SERVICES.md);
 ERM-496 adds the core Audio adapter and original AudioPopout;
 ERM-497 adds truthful native audio capability/errors;
 ERM-499 adds the [read-only battery slice](battery-prototype/README.md).
-These four scoped issues are complete. ERM-498 (GSMTC media), ERM-500 through
-ERM-507 and ERM-508 (live audio control/denial/recovery) track remaining
-services. M2 is not complete.
+ERM-495/496/497 are complete for the bounded audio slice. ERM-499 remains
+open: the read-only battery subset does not complete its unknown-reading,
+profile capability, separate write opt-in and denied-write acceptance gates.
+ERM-498 (GSMTC media), the remaining ERM-499 work, ERM-500 through ERM-507
+and ERM-508 (live audio control/denial/recovery) track remaining services.
+M2 is not complete.
 
 Clean root `41cf6aae` passes 94 battery adapter assertions, disabled/read-only
 UI runs at native 150%/175% (negative secondary origin) with truthful
@@ -28,7 +31,10 @@ harness re-run.
 [Archived evidence](validation/2026-10-25-m2-battery/README.md) records exact
 sources, commands, hashes, native state comparisons, screenshots and limits.
 This workstation has no battery, so battery-present behavior remains
-fixture-validated only; the archive states that limit explicitly.
+fixture-validated only. PR #5 review additionally found an enabled status-icon
+profile hook, unknown percentage reported as zero by the backend, and missing
+tracked build evidence. The historical archive now records those limitations;
+its passing smoke did not establish the full ERM-499 contract.
 
 ```powershell
 $qtPrefix = "$env:LOCALAPPDATA\caelestia-dev\Qt\6.11.2\msvc2022_64"
@@ -46,8 +52,9 @@ is no interactive mode. The original
 [BatteryStatus](../modules/bar/components/status/BatteryStatus.qml) and
 [Battery](../modules/bar/popouts/Battery.qml) components gained
 `profileStatusEnabled`/`profileControlsEnabled` hooks with upstream-preserving
-defaults; the host disables them so the overlay-scheme write path stays
-unreachable. No other services, global shortcuts, toasts or shell controllers
+defaults. The original recorded run disabled the popout hooks but omitted the
+status-icon hook; corrected code and new validation must cover both.
+No other services, global shortcuts, toasts or shell controllers
 are enabled. The normal M1 entry point and the audio prototype remain
 available. Do not claim the read-only gate validates battery-present
 hardware, profile selection, IdlePower settings or the full M2 milestone.
