@@ -1,0 +1,1 @@
+[{"time":1792968233242,"recordId":"1-1792968233242","notificationId":"1","summary":"Caelestia Windows local notification","body":"Local delivery test 1792968231992","appIcon":"","appName":"Caelestia Windows","image":"","expireTimeout":60000,"urgency":1,"resident":false,"hasActionIcons":false,"actions":[{"identifier":"default","text":"Open"}],"local":true}]
