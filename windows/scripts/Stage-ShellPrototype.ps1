@@ -2,15 +2,14 @@
 param(
     [Parameter(Mandatory)][string]$Destination,
     [Parameter(Mandatory)][string]$ProfileRoot,
-    [switch]$Audio,
-    [switch]$Battery,
-    [switch]$Media,
-    [switch]$Network
+    # 'shell' is the M1 bar/session host. Every other value names one bounded
+    # slice under windows/<name>-prototype with its own shell.qml and
+    # sources.json manifest. One slice per stage.
+    [ValidateSet('shell', 'audio', 'battery', 'media', 'network', 'bluetooth', 'apps', 'tray')]
+    [string]$Prototype = 'shell'
 )
 
 $ErrorActionPreference = 'Stop'
-$entryPoints = @(@($Audio, $Battery, $Media, $Network) | Where-Object { $_ }).Count
-if ($entryPoints -gt 1) { throw 'Select one prototype entry point per stage.' }
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
 $Destination = [IO.Path]::GetFullPath($Destination)
 $ProfileRoot = [IO.Path]::GetFullPath($ProfileRoot)
@@ -23,39 +22,20 @@ $files = [ordered]@{
     'windows/assets/rubik/OFL.txt' = 'assets/rubik/OFL.txt'
     'windows/assets/README.md' = 'assets/README.md'
 }
-if ($Audio) {
+if ($Prototype -ne 'shell') {
     $files.Remove('windows/shell-prototype/shell.qml')
-    $files.Add('windows/audio-prototype/shell.qml', 'shell.qml')
-}
-if ($Battery) {
-    $files.Remove('windows/shell-prototype/shell.qml')
-    $files.Add('windows/battery-prototype/shell.qml', 'shell.qml')
-}
-if ($Media) {
-    $files.Remove('windows/shell-prototype/shell.qml')
-    $files.Add('windows/media-prototype/shell.qml', 'shell.qml')
-}
-if ($Network) {
-    $files.Remove('windows/shell-prototype/shell.qml')
-    $files.Add('windows/network-prototype/shell.qml', 'shell.qml')
+    $files.Add("windows/$Prototype-prototype/shell.qml", 'shell.qml')
 }
 $manifest = Get-Content -LiteralPath (Join-Path $repoRoot 'windows\shell-prototype\sources.json') -Raw | ConvertFrom-Json
 foreach ($entry in $manifest.PSObject.Properties) { $files.Add($entry.Name, $entry.Value) }
-if ($Audio) {
-    $audioManifest = Get-Content -LiteralPath (Join-Path $repoRoot 'windows\audio-prototype\sources.json') -Raw | ConvertFrom-Json
-    foreach ($entry in $audioManifest.PSObject.Properties) { $files.Add($entry.Name, $entry.Value) }
+if ($Prototype -eq 'tray') {
+    # The base manifest stages an unavailable Tray adapter. This slice stages
+    # the original component plus its item/menu dependencies instead.
+    $files.Remove('windows/shell-prototype/adapters/modules/bar/components/Tray.qml')
 }
-if ($Battery) {
-    $batteryManifest = Get-Content -LiteralPath (Join-Path $repoRoot 'windows\battery-prototype\sources.json') -Raw | ConvertFrom-Json
-    foreach ($entry in $batteryManifest.PSObject.Properties) { $files.Add($entry.Name, $entry.Value) }
-}
-if ($Media) {
-    $mediaManifest = Get-Content -LiteralPath (Join-Path $repoRoot 'windows\media-prototype\sources.json') -Raw | ConvertFrom-Json
-    foreach ($entry in $mediaManifest.PSObject.Properties) { $files.Add($entry.Name, $entry.Value) }
-}
-if ($Network) {
-    $networkManifest = Get-Content -LiteralPath (Join-Path $repoRoot 'windows\network-prototype\sources.json') -Raw | ConvertFrom-Json
-    foreach ($entry in $networkManifest.PSObject.Properties) { $files.Add($entry.Name, $entry.Value) }
+if ($Prototype -ne 'shell') {
+    $sliceManifest = Get-Content -LiteralPath (Join-Path $repoRoot "windows\$Prototype-prototype\sources.json") -Raw | ConvertFrom-Json
+    foreach ($entry in $sliceManifest.PSObject.Properties) { $files.Add($entry.Name, $entry.Value) }
 }
 $hashes = foreach ($entry in $files.GetEnumerator()) {
     $source = [IO.Path]::GetFullPath((Join-Path $repoRoot $entry.Key))

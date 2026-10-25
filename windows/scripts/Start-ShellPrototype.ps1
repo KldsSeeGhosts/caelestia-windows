@@ -14,6 +14,17 @@ param(
     [ValidateSet('Disabled', 'ReadOnly', 'Interactive')][string]$MediaMode = 'Disabled',
     [switch]$Network,
     [ValidateSet('Disabled', 'ReadOnly', 'Interactive')][string]$NetworkMode = 'Disabled',
+    [switch]$Bluetooth,
+    [ValidateSet('Disabled', 'ReadOnly', 'Interactive')][string]$BluetoothMode = 'Disabled',
+    [switch]$Apps,
+    [ValidateSet('Disabled', 'ReadOnly', 'Interactive')][string]$AppsMode = 'Disabled',
+    [string]$AppsSearchQuery = '',
+    [switch]$Tray,
+    [ValidateSet('Disabled', 'ReadOnly', 'Interactive')][string]$TrayMode = 'Disabled',
+    [switch]$TrayFixture,
+    [switch]$Session,
+    [ValidateSet('Disabled', 'Observe')][string]$SessionMode = 'Disabled',
+    [switch]$SessionActions,
     [ValidateSet('native', '1', '1.5', '1.75')][string]$ScaleFactor = 'native',
     [ValidateRange(0, 15)][int]$ScreenIndex = 0
 )
@@ -22,14 +33,36 @@ $ErrorActionPreference = 'Stop'
 if ($MonitorCycle -and (-not $Smoke -or $ScaleFactor -ne 'native')) {
     throw '-MonitorCycle requires -Smoke and native scaling.'
 }
-if ($Audio -and $Battery) { throw 'Select one prototype entry point per run.' }
-if ($Media -and ($Audio -or $Battery)) { throw 'Select one prototype entry point per run.' }
-if ($Network -and ($Audio -or $Battery -or $Media)) { throw 'Select one prototype entry point per run.' }
-if (($Audio -or $Battery -or $Media -or $Network) -and $MonitorCycle) { throw 'The audio/battery/media/network prototypes do not implement monitor cycling.' }
-if (-not $Audio -and $AudioMode -ne 'Disabled') { throw '-AudioMode requires -Audio.' }
-if (-not $Battery -and $BatteryMode -ne 'Disabled') { throw '-BatteryMode requires -Battery.' }
-if (-not $Media -and $MediaMode -ne 'Disabled') { throw '-MediaMode requires -Media.' }
-if (-not $Network -and $NetworkMode -ne 'Disabled') { throw '-NetworkMode requires -Network.' }
+# One row per bounded slice. Observe is the observation opt-in; Controls is the
+# separate write/action opt-in, set only for its control mode and never during
+# smoke. Session extends the M1 bar/session host, so it stages the shell host
+# and its pass marker stays CAELESTIA_SHELL; its control opt-in is the explicit
+# -SessionActions switch.
+$slices = [ordered]@{
+    audio     = @{ On = $Audio; Mode = $AudioMode; Observe = 'CAELESTIA_WINDOWS_AUDIO'; Controls = 'CAELESTIA_WINDOWS_AUDIO_CONTROLS'; ControlMode = 'Interactive' }
+    battery   = @{ On = $Battery; Mode = $BatteryMode; Observe = 'CAELESTIA_WINDOWS_BATTERY' }
+    media     = @{ On = $Media; Mode = $MediaMode; Observe = 'CAELESTIA_WINDOWS_MEDIA'; Controls = 'CAELESTIA_WINDOWS_MEDIA_CONTROLS'; ControlMode = 'Interactive' }
+    network   = @{ On = $Network; Mode = $NetworkMode; Observe = 'CAELESTIA_WINDOWS_NETWORK'; Controls = 'CAELESTIA_WINDOWS_NETWORK_CONTROLS'; ControlMode = 'Interactive' }
+    bluetooth = @{ On = $Bluetooth; Mode = $BluetoothMode; Observe = 'CAELESTIA_WINDOWS_BLUETOOTH'; Controls = 'CAELESTIA_WINDOWS_BLUETOOTH_CONTROLS'; ControlMode = 'Interactive' }
+    apps      = @{ On = $Apps; Mode = $AppsMode; Observe = 'CAELESTIA_WINDOWS_APPS'; Controls = 'CAELESTIA_WINDOWS_APP_LAUNCH'; ControlMode = 'Interactive' }
+    tray      = @{ On = $Tray; Mode = $TrayMode; Observe = 'CAELESTIA_WINDOWS_TRAY'; Controls = 'CAELESTIA_WINDOWS_TRAY_ACTIVATION'; ControlMode = 'Interactive' }
+    session   = @{ On = $Session; Mode = $SessionMode; Observe = 'CAELESTIA_WINDOWS_SESSION'; Controls = 'CAELESTIA_WINDOWS_SESSION_ACTIONS'; ControlSwitch = $SessionActions; Stage = 'shell'; Marker = 'CAELESTIA_SHELL' }
+}
+$selected = @($slices.Keys | Where-Object { $slices[$_].On })
+if ($selected.Count -gt 1) { throw 'Select one prototype entry point per run.' }
+foreach ($name in $slices.Keys) {
+    $label = (Get-Culture).TextInfo.ToTitleCase($name)
+    if (-not $slices[$name].On -and $slices[$name].Mode -ne 'Disabled') { throw "-${label}Mode requires -$label." }
+}
+if ($selected.Count -gt 0 -and $MonitorCycle) { throw 'Only the M1 shell prototype implements monitor cycling.' }
+if (-not $Apps -and $AppsSearchQuery) { throw '-AppsSearchQuery requires -Apps.' }
+# The fixture preview must never run with native observation or activation.
+if ($TrayFixture -and (-not $Tray -or -not $Smoke -or $TrayMode -ne 'Disabled')) {
+    throw '-TrayFixture requires -Tray -TrayMode Disabled -Smoke.'
+}
+if ($SessionActions -and (-not $Session -or $SessionMode -ne 'Observe')) {
+    throw '-SessionActions requires -Session -SessionMode Observe.'
+}
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
 if (-not $BuildRoot) { $BuildRoot = Join-Path $repoRoot 'windows\.local\build' }
 $BuildRoot = [IO.Path]::GetFullPath($BuildRoot)
@@ -38,20 +71,21 @@ $qmlRoot = Join-Path $BuildRoot 'install\qml'
 foreach ($required in @($exe, "$QtPrefix\bin\Qt6Core.dll", "$qmlRoot\Caelestia\Config\qmldir", "$qmlRoot\Caelestia\Windows\qmldir")) {
     if (-not (Test-Path -LiteralPath $required -PathType Leaf)) { throw "Build prerequisite missing: $required" }
 }
-$kind = $(if ($Audio) { 'audio' } elseif ($Battery) { 'battery' } elseif ($Media) { 'media' } elseif ($Network) { 'network' } else { 'shell' })
-$marker = $(if ($Audio) { 'CAELESTIA_AUDIO' } elseif ($Battery) { 'CAELESTIA_BATTERY' } elseif ($Media) { 'CAELESTIA_MEDIA' } elseif ($Network) { 'CAELESTIA_NETWORK' } else { 'CAELESTIA_SHELL' })
+$kind = $(if ($selected.Count -eq 1) { $selected[0] } else { 'shell' })
+$stagePrototype = $(if ($kind -ne 'shell' -and $slices[$kind].Stage) { $slices[$kind].Stage } else { $kind })
+$marker = $(if ($kind -ne 'shell' -and $slices[$kind].Marker) { $slices[$kind].Marker } else { 'CAELESTIA_' + $kind.ToUpperInvariant() })
 $runName = $kind + '-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff')
 $profileRoot = Join-Path $BuildRoot "$kind-prototype-profile"
 # A fresh stage avoids stale QML types from a previous implementation.
 $stage = & (Join-Path $PSScriptRoot 'Stage-ShellPrototype.ps1') `
-    -Destination (Join-Path $BuildRoot "shell-runs\$runName") -ProfileRoot $profileRoot -Audio:$Audio -Battery:$Battery -Media:$Media -Network:$Network
+    -Destination (Join-Path $BuildRoot "shell-runs\$runName") -ProfileRoot $profileRoot -Prototype $stagePrototype
 foreach ($dir in @('config', 'state', 'runtime', 'cache', 'data')) {
     New-Item -ItemType Directory -Force -Path (Join-Path $profileRoot $dir) | Out-Null
 }
 # This dedicated prototype profile intentionally accepts only this audited slice.
 # Never read or write ordinary Caelestia configuration.
 $config = Join-Path $profileRoot 'config\shell.json'
-@'
+$configText = @'
 {
   "bar": {
     "persistent": false,
@@ -78,7 +112,25 @@ $config = Join-Path $profileRoot 'config\shell.json'
   "osd": {"enabled":false},
   "utilities": {"enabled":false}
 }
-'@ | Set-Content -LiteralPath $config -Encoding UTF8
+'@
+# Only the tray profile opts into icon recolouring; the upstream default stays
+# false for every other prototype slice.
+if ($Tray) {
+    $configObject = $configText | ConvertFrom-Json
+    $configObject.bar | Add-Member -NotePropertyName tray `
+        -NotePropertyValue ([pscustomobject]@{ recolour = $true }) -Force
+    $configText = $configObject | ConvertTo-Json -Depth 10
+}
+# Session runs bind the original buttons to the adapter's allowlisted command
+# names. The M1 default keeps empty commands. Dispatch still needs
+# CAELESTIA_WINDOWS_SESSION_ACTIONS, and destructive actions still stop at the
+# confirmation gate.
+if ($Session) {
+    $configText = $configText.Replace(
+        '"commands": {"logout":[],"shutdown":[],"hibernate":[],"reboot":[]}',
+        '"commands": {"logout":["logout"],"shutdown":["shutdown"],"hibernate":["hibernate"],"reboot":["reboot"]}')
+}
+$configText | Set-Content -LiteralPath $config -Encoding UTF8
 $logRoot = Join-Path $BuildRoot 'logs'
 New-Item -ItemType Directory -Force -Path $logRoot | Out-Null
 $screenshot = Join-Path $logRoot "$runName.png"
@@ -103,20 +155,39 @@ if ($TraceInput) {
     $info.EnvironmentVariables['QT_LOGGING_RULES'] = 'quickshell.windows.tracker.debug=false;quickshell.windows.inputmask.debug=true'
 }
 $info.EnvironmentVariables['CAELESTIA_SHELL_TRACE_INPUT'] = $(if ($TraceInput) { '1' } else { '0' })
-$info.EnvironmentVariables['CAELESTIA_WINDOWS_AUDIO'] = $(if ($Audio -and $AudioMode -ne 'Disabled') { '1' } else { '0' })
-# Smoke is always read-only, including when Interactive was requested.
-$info.EnvironmentVariables['CAELESTIA_WINDOWS_AUDIO_CONTROLS'] = $(if ($Audio -and $AudioMode -eq 'Interactive' -and -not $Smoke) { '1' } else { '0' })
-# Battery observation has no interactive mode: this slice performs no writes.
-$info.EnvironmentVariables['CAELESTIA_WINDOWS_BATTERY'] = $(if ($Battery -and $BatteryMode -ne 'Disabled') { '1' } else { '0' })
-# Media observation and explicit transport requests are separate opt-ins. Smoke
-# is always read-only, including when Interactive was requested.
-$info.EnvironmentVariables['CAELESTIA_WINDOWS_MEDIA'] = $(if ($Media -and $MediaMode -ne 'Disabled') { '1' } else { '0' })
-$info.EnvironmentVariables['CAELESTIA_WINDOWS_MEDIA_CONTROLS'] = $(if ($Media -and $MediaMode -eq 'Interactive' -and -not $Smoke) { '1' } else { '0' })
-# Network observation and radio/connect/disconnect/forget requests are
-# separate opt-ins. Smoke is always read-only and no-scan, including when
-# Interactive was requested.
-$info.EnvironmentVariables['CAELESTIA_WINDOWS_NETWORK'] = $(if ($Network -and $NetworkMode -ne 'Disabled') { '1' } else { '0' })
-$info.EnvironmentVariables['CAELESTIA_WINDOWS_NETWORK_CONTROLS'] = $(if ($Network -and $NetworkMode -eq 'Interactive' -and -not $Smoke) { '1' } else { '0' })
+# Tray runs surface the backend's construction line so the harness can prove
+# whether SystemTray was instantiated. It is an INFO record, not a warning.
+if ($Tray) {
+    $info.EnvironmentVariables['QT_LOGGING_RULES'] = $info.EnvironmentVariables['QT_LOGGING_RULES'] + ';quickshell.windows.systray.info=true'
+}
+# Every slice's opt-ins are written explicitly, so an inherited value never
+# enables a slice. Observation follows the selected mode; controls need their
+# control mode (or switch) and are always off during smoke.
+foreach ($name in $slices.Keys) {
+    $slice = $slices[$name]
+    $observe = $slice.On -and $slice.Mode -ne 'Disabled'
+    $controls = $false
+    if ($slice.Controls) {
+        $requested = $(if ($slice.ContainsKey('ControlSwitch')) { [bool]$slice.ControlSwitch } else { $slice.Mode -eq $slice.ControlMode })
+        $controls = $slice.On -and $requested -and -not $Smoke
+    }
+    # The tray fixture preview constructs no native backend at all.
+    if ($name -eq 'tray' -and $TrayFixture) { $observe = $false; $controls = $false }
+    $info.EnvironmentVariables[$slice.Observe] = $(if ($observe) { '1' } else { '0' })
+    if ($slice.Controls) { $info.EnvironmentVariables[$slice.Controls] = $(if ($controls) { '1' } else { '0' }) }
+}
+$info.EnvironmentVariables['CAELESTIA_APPS_SMOKE_QUERY'] = $(if ($Apps) { $AppsSearchQuery } else { '' })
+$info.EnvironmentVariables['CAELESTIA_TRAY_FIXTURE'] = $(if ($TrayFixture) { '1' } else { '0' })
+# Tray runs never enable the backend tray hook: with 0 the host skips
+# interception and Explorer snapshot scheduling, while SystemTray construction
+# still starts its 10 s prune timer. Interception ownership is a separate
+# review, so no launcher switch exposes it. Other prototypes keep the inherited
+# environment unchanged.
+if ($Tray) {
+    $info.EnvironmentVariables['QS_WINDOWS_TRAY_HOOK'] = '0'
+}
+$info.EnvironmentVariables['CAELESTIA_SHELL_SESSION'] = $(if ($Session) { '1' } else { '0' })
+$info.EnvironmentVariables['CAELESTIA_SHELL_SESSION_MODE'] = $SessionMode
 if ($ScaleFactor -ne 'native') {
     $info.EnvironmentVariables['QT_ENABLE_HIGHDPI_SCALING'] = '0'
     $info.EnvironmentVariables['QT_SCALE_FACTOR'] = $ScaleFactor
@@ -160,6 +231,12 @@ $elapsed.Stop()
 $stdout | Set-Content -LiteralPath $stdoutPath -Encoding UTF8
 $stderr | Set-Content -LiteralPath $stderrPath -Encoding UTF8
 $combined = "$stdout`n$stderr"
+$sessionButtonRecords = New-Object Collections.Generic.List[object]
+foreach ($buttonMatch in [regex]::Matches($combined, 'CAELESTIA_SESSION_BUTTONS (\[[^\r\n]+\])')) {
+    foreach ($button in ($buttonMatch.Groups[1].Value | ConvertFrom-Json)) {
+        $sessionButtonRecords.Add($button)
+    }
+}
 $runtimeDiagnostics = $combined -match '(?m)^(?:\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3})?\s*(WARN(?:ING)?|ERROR|FATAL|CRIT(?:ICAL)?)\b'
 $passed = -not $timedOut -and -not $runtimeDiagnostics -and
     $process.ExitCode -eq 0 -and $combined.Contains("${marker}_PASS") -and
@@ -168,24 +245,16 @@ Copy-Item -LiteralPath (Join-Path $stage 'sources.json') -Destination (Join-Path
 $result = [ordered]@{
     passed = $(if ($Smoke) { $passed } else { $null }); smoke = $Smoke.IsPresent
     prototype = $kind; audioMode = $AudioMode; batteryMode = $BatteryMode; mediaMode = $MediaMode; networkMode = $NetworkMode
+    bluetoothMode = $BluetoothMode; appsMode = $AppsMode; appsSearchQuery = $(if ($Apps) { $AppsSearchQuery } else { '' })
+    trayMode = $TrayMode; trayFixture = $TrayFixture.IsPresent
+    trayHookMode = $(if ($Tray) { $info.EnvironmentVariables['QS_WINDOWS_TRAY_HOOK'] } else { $null })
+    sessionMode = $SessionMode; sessionActions = $SessionActions.IsPresent
     timedOut = $timedOut; exitCode = $process.ExitCode
     scaleFactor = $ScaleFactor; screenIndex = $ScreenIndex
     monitorCycle = $MonitorCycle.IsPresent
     traceInput = $TraceInput.IsPresent
     actualScreens = @([regex]::Matches($combined, "${marker}_SCREEN (\{[^\r\n]+\})") | ForEach-Object { $_.Groups[1].Value | ConvertFrom-Json })
     captures = @([regex]::Matches($combined, "${marker}_CAPTURE ([^\r\n]+)") | ForEach-Object { $_.Groups[1].Value })
-    audioSnapshots = @([regex]::Matches($combined, 'CAELESTIA_AUDIO_(INITIAL|FINAL) (\{[^\r\n]+\})') | ForEach-Object {
-        [ordered]@{ phase = $_.Groups[1].Value; state = ($_.Groups[2].Value | ConvertFrom-Json) }
-    })
-    batterySnapshots = @([regex]::Matches($combined, 'CAELESTIA_BATTERY_(INITIAL|FINAL) (\{[^\r\n]+\})') | ForEach-Object {
-        [ordered]@{ phase = $_.Groups[1].Value; state = ($_.Groups[2].Value | ConvertFrom-Json) }
-    })
-    mediaSnapshots = @([regex]::Matches($combined, 'CAELESTIA_MEDIA_(INITIAL|FINAL) (\{[^\r\n]+\})') | ForEach-Object {
-        [ordered]@{ phase = $_.Groups[1].Value; state = ($_.Groups[2].Value | ConvertFrom-Json) }
-    })
-    networkSnapshots = @([regex]::Matches($combined, 'CAELESTIA_NETWORK_(INITIAL|FINAL) (\{[^\r\n]+\})') | ForEach-Object {
-        [ordered]@{ phase = $_.Groups[1].Value; state = ($_.Groups[2].Value | ConvertFrom-Json) }
-    })
     elapsedMilliseconds = $elapsed.ElapsedMilliseconds
     sourceRevision = (& git -C $repoRoot rev-parse HEAD).Trim()
     sourceDirty = [bool](& git -C $repoRoot status --porcelain)
@@ -197,7 +266,18 @@ $result = [ordered]@{
     stage = $stage; profile = $profileRoot
     sources = "$logRoot\$runName.sources.json"
     screenshot = $screenshot; stdout = $stdoutPath; stderr = $stderrPath
-} | ConvertTo-Json -Depth 12
+}
+foreach ($name in $slices.Keys) {
+    $prefix = 'CAELESTIA_' + $name.ToUpperInvariant()
+    $result["${name}Snapshots"] = @([regex]::Matches($combined, "${prefix}_(INITIAL|FINAL) (\{[^\r\n]+\})") | ForEach-Object {
+        [ordered]@{ phase = $_.Groups[1].Value; state = ($_.Groups[2].Value | ConvertFrom-Json) }
+    })
+}
+$result['appsSearches'] = @([regex]::Matches($combined, 'CAELESTIA_APPS_SEARCH (\{[^\r\n]+\})') | ForEach-Object {
+    $_.Groups[1].Value | ConvertFrom-Json
+})
+$result['sessionButtons'] = @($sessionButtonRecords.ToArray())
+$result = $result | ConvertTo-Json -Depth 12
 $result | Set-Content -LiteralPath (Join-Path $logRoot "$runName.json") -Encoding UTF8
 Write-Output $result
 if (($Smoke -and -not $passed) -or $process.ExitCode -ne 0) {
