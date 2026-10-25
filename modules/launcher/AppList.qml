@@ -18,6 +18,11 @@ StyledListView {
 
     property string displayText
 
+    // Windows-localized hook. The bounded Windows host has no launcher action,
+    // calculator, scheme or variant providers, so it keeps this list on
+    // applications only. Upstream Linux leaves it false and keeps every state.
+    property bool appsOnly
+
     readonly property string requestedState: stateForText(search.text)
     readonly property string displayState: stateForText(displayText)
 
@@ -27,6 +32,9 @@ StyledListView {
     }
 
     function stateForText(text: string): string {
+        if (appsOnly)
+            return "apps";
+
         const prefix = GlobalConfig.launcher.actionPrefix;
         if (text.startsWith(prefix)) {
             for (const action of ["calc", "scheme", "variant"])
@@ -40,6 +48,9 @@ StyledListView {
     }
 
     function resultsForText(text: string): var {
+        if (appsOnly)
+            return Apps.search(text);
+
         switch (stateForText(text)) {
         case "actions":
             return Actions.query(text);

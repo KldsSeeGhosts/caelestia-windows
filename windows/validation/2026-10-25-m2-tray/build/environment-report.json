@@ -1,0 +1,47 @@
+﻿{
+    "schemaVersion":  1,
+    "repository":  "C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-7111c72e",
+    "platform":  "Microsoft Windows NT 10.0.26300.0",
+    "source":  {
+                   "expectedBackendRevision":  "1401042969e4b7ab3cfb314fc76945ab081db3de",
+                   "actualBackendRevision":  "1401042969e4b7ab3cfb314fc76945ab081db3de",
+                   "matches":  true
+               },
+    "tools":  [
+                  {
+                      "name":  "git",
+                      "path":  "C:\\Users\\Ermin\\AppData\\Local\\Programs\\PortableGit-2.55.0.5\\cmd\\git.exe"
+                  },
+                  {
+                      "name":  "cmake",
+                      "path":  null
+                  },
+                  {
+                      "name":  "ninja",
+                      "path":  null
+                  },
+                  {
+                      "name":  "cxxCompiler",
+                      "path":  null
+                  },
+                  {
+                      "name":  "qtpaths",
+                      "path":  "C:\\Users\\Ermin\\AppData\\Local\\caelestia-dev\\Qt\\6.11.2\\msvc2022_64\\bin\\qtpaths6.exe"
+                  },
+                  {
+                      "name":  "quickshellRuntime",
+                      "path":  null
+                  }
+              ],
+    "nativeToolchainReady":  false,
+    "blockers":  [
+                     "cmake is not available on PATH.",
+                     "ninja is not available on PATH.",
+                     "No MSVC cl.exe or clang-cl.exe is available in this environment."
+                 ],
+    "notes":  [
+                  "This report does not validate a Caelestia build, Qt module coverage, SDK compatibility, or runtime behavior.",
+                  "No software was installed and no desktop, configuration, authentication, or environment settings were changed.",
+                  "The portable plugin build and component probe do not validate the full bar/drawer or Windows service adaptation."
+              ]
+}

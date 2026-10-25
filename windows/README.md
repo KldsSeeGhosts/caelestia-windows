@@ -52,6 +52,34 @@ For the next development session, start with [HANDOFF.md](HANDOFF.md).
   the isolated profile. Clean native 150%/175% runs observed no open sessions;
   [media evidence](validation/2026-10-25-m2-media/README.md) separates those
   results from fixture-only real-player behavior. ERM-498 remains open.
+- A default-off [app catalog prototype](apps-prototype/README.md) loads the
+  original launcher app list and search bar over the Windows AppsFolder
+  enumeration. Explicit disabled/scanning/empty/failed/ready states, the
+  original fzf/smart-case search prefixes and profile-local JSON launch
+  frequencies replace the excluded AppDb/SQLite store. Enumeration and search
+  never launch; `CAELESTIA_WINDOWS_APP_LAUNCH` is a separate opt-in and terminal
+  entries stay unsupported. Native smoke records a 153-application catalog and
+  a search sample without launching anything;
+  [apps evidence](validation/2026-10-25-m2-apps/README.md) records the fixture
+  and read-only limits, the backend scan/command gaps and the untested
+  interactive path. ERM-505 remains open.
+- A default-off [Windows session service](services/session/README.md) maps only
+  an explicit allowlist of lock/logout/shutdown/reboot/suspend/hibernate/
+  firmware commands, consumes unknown commands without a detached fallback, and
+  exposes requested-not-succeeded results. Observation and dispatch are
+  separate opt-ins; smoke forces dispatch off and destructive actions require
+  an explicit confirmation the original UI does not yet supply. Native
+  Disabled/Observe runs never invoke a session action.
+  [Session evidence](validation/2026-10-25-m2-session/README.md) records the
+  fixtures, both native modes and shared regressions.
+- A bounded, default-off [tray prototype](tray-prototype/README.md) stages the
+  original bar tray icons, `ColouredIcon` tinting and menu component. Read-only
+  observation keeps `QS_WINDOWS_TRAY_HOOK=0`, so the backend cannot enumerate
+  items and native smoke reports the tray as not observable; semantic menus are native-only and activation is a separate
+  opt-in. [Tray evidence](validation/2026-10-25-m2-tray/README.md) records 115
+  adapter assertions, Disabled/ReadOnly runs at 150%/175%, a three-icon fixture
+  preview, and unchanged Explorer/taskbar state. Live items, activation and
+  interception ownership remain unvalidated.
 
 ## Checkout and inspect
 
@@ -79,10 +107,14 @@ these commands. The submodule command downloads source only.
 ## Portable build and isolated prototype
 
 `CAELESTIA_PORTABLE_UI=ON` builds `Caelestia`, `Settings`, `Components`, `Config`,
-`State`, `Blobs`, `I18n`, and `Shaders`, plus `Caelestia.Windows` on Windows.
-It excludes the calculator, Models, upstream Services, Images, and Multimedia.
-The isolated session service is an unavailable QML adapter that consumes
-actions without executing them. Linux retains its default module set.
+`State`, `Blobs`, `Images`, `I18n`, and `Shaders`, plus `Caelestia.Windows` on
+Windows. It excludes the calculator, Models, upstream Services, and Multimedia.
+`Images` is Qt-only (Quick/Concurrent) and is retained because the original
+`ColouredIcon` tray icon tinting imports `Caelestia.Images`. The isolated
+session service defaults to unavailable; opt-in observation loads
+`Quickshell.Windows.Session` for capability reporting only, and a separate
+opt-in permits allowlisted non-destructive dispatch. Unknown commands are
+consumed without detached execution. Linux retains its default module set.
 Windows rejects installation of the unadapted upstream shell.
 
 Windows adaptations include DLL export/import declarations for shared Qt

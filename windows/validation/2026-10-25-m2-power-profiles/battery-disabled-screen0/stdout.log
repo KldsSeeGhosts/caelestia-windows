@@ -1,0 +1,18 @@
+﻿2026-10-25 18:21:03.862  INFO: Launching config: "D:/AiStack/caelestia-windows/windows/.local/build/shell-runs/battery-20261025-182103-545/shell.qml"
+2026-10-25 18:21:03.862  INFO: Shell ID: "8b30c58265d7cbafc1a4d0931dbeaba1" Path ID "8b30c58265d7cbafc1a4d0931dbeaba1"
+2026-10-25 18:21:03.883  INFO: Saving logs to "C:/Users/Ermin/AppData/Local/quickshell/run/by-id/seq33ihnt/log.qslog"
+2026-10-25 18:21:03.932  INFO quickshell.windows.blur: Blur behind panels is turned off by QS_WINDOWS_BLUR.
+2026-10-25 18:21:03.935  INFO quickshell.windows.blur: No layer rules file found (looked for D:/AiStack/caelestia-windows/windows/.local/build/shell-runs/battery-20261025-182103-545/defaults/windows/layerrules.json ), blur behind panels is off.
+2026-10-25 18:21:04.053 DEBUG quickshell.windows.desktops: Desktop list changed: 1 desktops
+2026-10-25 18:21:04.053 DEBUG quickshell.windows.desktops: Current desktop: 0
+2026-10-25 18:21:04.054 DEBUG quickshell.windows.panel: Placing qs::windows::WinPanelWindow(0x1e41cddeed0) at QRect(80,80 640x620) on "MAG321UX OLED"
+2026-10-25 18:21:04.063  INFO: Configuration Loaded
+2026-10-25 18:21:04.178 DEBUG quickshell.windows.startup: First panel frame presented
+2026-10-25 18:21:04.579 DEBUG quickshell.windows.startup: Startup settled, running 1 deferred tasks
+2026-10-25 18:21:04.579  INFO quickshell.windows.desktops: VirtualDesktopAccessor.dll not found next to the executable; desktop switching falls back to keyboard shortcuts.
+2026-10-25 18:21:05.181 DEBUG qml: CAELESTIA_BATTERY_SCREEN {"index":0,"name":"MAG321UX OLED","x":0,"y":0,"dpr":1.5,"width":640,"height":620}
+2026-10-25 18:21:05.181 DEBUG qml: CAELESTIA_BATTERY_INITIAL {"status":"disabled","reason":"Windows power status is disabled.","enabled":false,"backendLoaded":false,"nativeReadAvailable":false,"presenceKnown":false,"observationAvailable":false,"present":false,"absent":false,"laptopBattery":false,"hasBattery":false,"percentageKnown":false,"onBatteryKnown":false,"onBattery":false,"charging":false,"state":0,"percentage":0,"timeToEmpty":0,"iconName":"","profilesEnabled":false,"profileWritesRequested":false,"profileWritesEnabled":false,"profileStatusEnabled":false,"profileControlsEnabled":false,"profilesState":"disabled","profileReason":"Windows power profile observation is disabled.","profile":-1,"profileName":"Unknown","availableProfiles":[],"performanceMapped":false,"performanceClaim":false,"writeResultAvailable":false,"writeState":"idle","writeReason":"Power profile writes are disabled.","writeError":"","writeTimeoutMs":4000}
+2026-10-25 18:21:07.181 DEBUG qml: CAELESTIA_BATTERY_FINAL {"status":"disabled","reason":"Windows power status is disabled.","enabled":false,"backendLoaded":false,"nativeReadAvailable":false,"presenceKnown":false,"observationAvailable":false,"present":false,"absent":false,"laptopBattery":false,"hasBattery":false,"percentageKnown":false,"onBatteryKnown":false,"onBattery":false,"charging":false,"state":0,"percentage":0,"timeToEmpty":0,"iconName":"","profilesEnabled":false,"profileWritesRequested":false,"profileWritesEnabled":false,"profileStatusEnabled":false,"profileControlsEnabled":false,"profilesState":"disabled","profileReason":"Windows power profile observation is disabled.","profile":-1,"profileName":"Unknown","availableProfiles":[],"performanceMapped":false,"performanceClaim":false,"writeResultAvailable":false,"writeState":"idle","writeReason":"Power profile writes are disabled.","writeError":"","writeTimeoutMs":4000}
+2026-10-25 18:21:07.212 DEBUG qml: CAELESTIA_BATTERY_CAPTURE file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/battery-20261025-182103-545.png
+2026-10-25 18:21:07.212 DEBUG qml: CAELESTIA_BATTERY_PASS 6.11.2
+

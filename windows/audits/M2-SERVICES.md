@@ -1,4 +1,4 @@
-# M2 Windows service source audit
+﻿# M2 Windows service source audit
 
 Current media follow-up: clean root `d9cdcf9a` and backend `14010429` implement
 a default-off Players adapter and original dashboard player details. Native
@@ -418,17 +418,70 @@ root to deduplicate against Linear, each enabled and validated independently:
    hooks and their false-state rendering; upstream defaults are preserved.
    [Acceptance evidence](../validation/2026-10-25-m2-battery/README.md) covers
    the batteryless desktop path natively at clean `41cf6aae`; battery-present
-   behavior is fixture-validated only, and IdlePower/profile selection stays
-   out of scope.
+   behavior is fixture-validated only, and IdlePower stays out of scope. The
+   profile follow-up below adds observation and an explicitly opted-in write
+   path without changing ReadOnly semantics.
+   **Profile follow-up (2026-10-25):** clean `59cf7715`/backend `14010429` adds
+   a pure [PowerProfiles state object](../services/battery/PowerProfilesService.qml)
+   with explicit unknown/observing/mapped/write-pending/write-confirmed/
+   write-unconfirmed/unsupported capability, a thin native facade, read-only
+   `-BatteryMode Profiles`, separate `-BatteryMode ProfileWrites` and separate
+   environment opt-ins. Native 150%/175% Profiles smoke observed Performance
+   read-only with the base scheme and effective overlay unchanged; 96 profile
+   fixture assertions cover writes refused without the opt-in, timeout and
+   backend-loss denial. [Evidence](../validation/2026-10-25-m2-power-profiles/README.md).
+   The pinned backend's hard-coded performance availability, log-only failures,
+   missing read-success/write-result signals and notification-only refresh are
+   recorded with a fork fix outline in the
+   [battery README](../battery-prototype/README.md#pinned-backend-gaps).
+   Battery-present aggregate AC observation, native denied writes and a native
+   PowerSaver observation remain untested.
 4. **Windows Network adapter and original network UI:** define explicit
    AccessPoint/Ethernet boundaries instead of porting the nmcli process graph.
    Acceptance: absent adapter/location denial, bounded list-visible scans,
    action results, no credential logging and no privilege changes. Keep advanced
    Ethernet configuration outside the first network issue.
+   **Progress:** implemented as ERM-500's bounded slice on
+   `t3/network-service-ui` at clean `475c7a27` with backend `14010429`.
+   A Quickshell-free [NetworkService](../services/network/NetworkService.qml)
+   exposes disabled/initializing/no-adapter/location-denied/radio-off/
+   connecting/connected/disconnected states and hides lists when a WLAN query
+   cannot be truthful. [Nmcli.qml](../services/network/Nmcli.qml) is staged in
+   place of the upstream singleton and owns the typed `AccessPoint`/
+   `EthernetDevice` boundary; the original
+   [Network.qml](../../modules/bar/popouts/Network.qml) popout gained
+   upstream-preserving control/connect/status hooks. Scans are bounded to a
+   visible list, connect results come only from `wifiConnectResult`, and radio/
+   disconnect/forget stay requested/unverified because the backend has no
+   result. There is no password path; secure networks without a saved profile
+   point to Windows Settings. The pinned backend has no initialization/error
+   state (a WLAN failure looks like no adapter), performs one startup query
+   even while hidden, and trusts `connectToNetwork()` input; the adapter guards
+   membership and credentials. Ethernet remains a connected flag with no
+   control, speed or usage. [Evidence](../validation/2026-10-25-m2-network/README.md)
+   records 329 fixture assertions, native Disabled/ReadOnly smoke at 150%/175%
+   with 0 commands and 0 scans, the M1 regression and media/battery fixtures.
+   Interactive control, real access-point connect/forget, radio toggling and
+   location denial/recovery remain untested.
 5. **Bluetooth original status/popout integration:** preserve typed backend
    devices and unsupported-control states. Acceptance: null/blocked adapter,
    discovery lifecycle and denied pairing settle; unsupported pairing delegates
    to Windows Settings without implementing credential UI or repeated prompts.
+   **Progress:** implemented as ERM-501's bounded slice on
+   `t3/bluetooth-service-integration` (`ddba8d12`): a pure QtObject
+   [BluetoothService adapter](../services/bluetooth/BluetoothService.qml) with
+   explicit disabled/initializing/null-adapter/blocked/off/unknown states,
+   bounded discovery and connect/pair settling, and refusing unsupported
+   setters; the original status/popout components are instantiated only after
+   opt-in. The localized edits to
+   [Bluetooth.qml](../../modules/bar/popouts/Bluetooth.qml) add only
+   `controlsEnabled`, `settingsDelegatesToWindows` (explicit
+   `ms-settings:bluetooth`) and `settlingTimedOut` hooks; upstream defaults are
+   preserved. [Acceptance evidence](../validation/2026-10-25-m2-bluetooth/README.md)
+   covers 182 adapter assertions and native disabled/read-only runs at
+   150%/175% on a real Intel adapter with zero paired devices; interactive
+   controls, null/blocked/off hardware, paired devices, discovery and
+   PIN/passkey delegation remain untested.
 6. **Notification local delivery boundary:** isolate history/image-cache paths,
    disable system mirroring initially and account for session-bus ownership.
    Acceptance: fixture/local notifications, persistence and competing-owner
@@ -436,6 +489,26 @@ root to deduplicate against Linear, each enabled and validated independently:
    unexpectedly. **System notification mirroring** should be a dependent
    separate issue covering explicit consent, denied polling, app-open and
    Windows dismissal semantics.
+   **Progress:** implemented as ERM-502's bounded slice on
+   `windows/notifications-local-delivery`: a pure QtObject
+   [NotificationsService](../services/notifications/NotificationsService.qml)
+   with the original `Notifs`/`NotifData` contract, a thin
+   [native wrapper](../services/notifications/NativeNotificationBackend.qml)
+   that sets `mirrorSystemNotifications: false` at construction, and a
+   default-off facade writing history only under the isolated profile's
+   `state/notifs.json`. The bounded host stages the original
+   [popup list](../../modules/notifications/Content.qml) and
+   [sidebar notification center](../../modules/sidebar/NotifDock.qml); no file
+   under `modules/notifications` or `modules/sidebar` was edited. The pinned
+   backend's claim retry is not published to QML (`server.cpp` lines 55-91), so
+   native ownership is reported as `unknown`; the explicit `contended` and
+   `unconfirmed` states are fixture-covered and ready for a backend that
+   exposes the claim result. [Acceptance evidence](../validation/2026-10-25-m2-notifications/README.md)
+   covers 136 fixture assertions, disabled/local native smoke at two screens,
+   profile persistence across a separate process, expiry/dismissal, and
+   unchanged ordinary-history/desktop state. System notification mirroring,
+   denied access, Windows dismissal and native image-cache writing remain
+   outside this slice (ERM-503).
 7. **Brightness route policy:** adapt per-screen Monitor contract with explicit
    hardware versus software capability. Acceptance: absent/denied/DDC failures
    cause no automatic gamma write; querying and teardown side effects are
@@ -478,12 +551,72 @@ root to deduplicate against Linear, each enabled and validated independently:
    around DesktopEntries. Acceptance: original search handles empty/failed scan,
    names/icons and profile-local frequency state; enumeration never launches.
    Explicit app launch is separately tested; admin/uninstall actions stay out.
+   **Progress:** implemented as ERM-505's bounded slice on
+   `t3/windows-app-catalog-search` (topic worktree). A pure
+   [AppsService](../services/apps/AppsService.qml) imports no Quickshell and
+   separates disabled/scanning/empty/failed/ready states, the preserved
+   `search`/`query`/`list`/prefix contract (upstream fzf/fuzzysort), the original
+   favourite/frequency/name order and the launch policy. A thin
+   [NativeAppCatalog](../services/apps/NativeAppCatalog.qml) wraps
+   `DesktopEntries`; [AppFrequencyStore](../services/apps/AppFrequencyStore.qml)
+   replaces the excluded AppDb with atomic profile-local JSON
+   (`$CAELESTIA_STATE_DIR/apps-frequencies.json`, no SQLite/HOME/XDG) and
+   tolerates missing/corrupt documents. `CAELESTIA_WINDOWS_APPS=1` observes and
+   searches only; `CAELESTIA_WINDOWS_APP_LAUNCH=1` is a separate opt-in.
+   Terminal entries are an explicit unsupported launch instead of the missing
+   Linux terminal wrapper. The localized edit to
+   [AppList.qml](../../modules/launcher/AppList.qml) adds only `appsOnly`
+   (default false) and keeps upstream Linux behavior. A bounded host stages the
+   original list/search components; 173 offscreen assertions plus native
+   disabled/read-only smoke at 150%/175% cover the fixture and empty/ready paths
+   ([evidence](../validation/2026-10-25-m2-apps/README.md)). The backend exposes
+   no scan result or per-command outcome
+   ([gaps](M2-APPS-BACKEND-GAPS.md)), so native scan failure reads as `empty`,
+   and no native launch was performed. Real activation, Interactive mode and
+   terminal launch remain untested.
 9. **Native tray boundary:** define native context-menu behavior and review
    interception ownership before enabling it. Acceptance: null semantic menus,
    Explorer restart, stale owners, activation and shutdown are handled; no
    taskbar setting changes or competing tray takeover.
+   **Progress:** implemented as ERM-506's bounded read-only slice on
+   `t3/windows-native-tray-boundary` at `298fd125`: a pure QtObject
+   [TrayService](../services/tray/TrayService.qml) over an injected
+   [native facade](../services/tray/NativeTrayBackend.qml), a default-off
+   `Tray.qml`, a 115-assertion fixture, and a bounded
+   [host](../tray-prototype/README.md) staging the original
+   `Tray.qml`/`TrayItem.qml`/`TrayMenu.qml` with upstream-preserving hooks.
+   The launcher forces `QS_WINDOWS_TRAY_HOOK=0`; construction still starts the
+   native host's 10 s prune timer. Read-only smoke recorded 0 items on both
+   monitors because the pinned backend schedules Explorer snapshots only from
+   the hook path (host.cpp lines 172-201), so live items, activation and the
+   native context menu remain unvalidated. Semantic menus are absent
+   (`hasMenu=true`, `menu=null`, item.hpp lines 102-104); "open menu" routes to
+   `display()` only under the separate activation opt-in, and coordinates are
+   ignored (item.cpp lines 199-210). Scroll is an unsupported no-op.
+   Interception ownership needs its own review before the hook may be enabled.
+   [Evidence](../validation/2026-10-25-m2-tray/README.md).
 10. **Explicit Windows session actions:** retain unavailable behavior by default;
     map only allowlisted actions and expose capability/results. Acceptance:
     unknown commands are consumed without detached fallback, secure Windows lock
     is used, and unsupported sleep/hibernate/privilege-denied actions fail
     clearly. Destructive actions require a separately agreed live test.
+    **Progress:** implemented as ERM-507's bounded slice on
+    `t3/windows-session-actions`: a pure
+    [SessionService](../services/session/SessionService.qml) with an explicit
+    allowlist (secure lock, logout, shutdown/poweroff, reboot, suspend,
+    capability-gated hibernate, firmware reboot), `requested`-not-`succeeded`
+    results, and consumed-unsupported outcomes for arbitrary/unknown commands.
+    The [native facade](../services/session/NativeSessionBackend.qml) is loaded
+    only after `CAELESTIA_WINDOWS_SESSION=1`; dispatch additionally requires
+    `CAELESTIA_WINDOWS_SESSION_ACTIONS=1`. The localized
+    [session](../../modules/session/Content.qml) and
+    [launcher](../../modules/launcher/services/Actions.qml) hooks preserve Linux
+    fallback behavior and block detached execution in the Windows adapter.
+    Destructive actions stay behind an explicit confirmation gate; the original
+    UI has no confirmation flow at this revision, so they remain disabled
+    instead of being auto-confirmed. The backend methods return void and only log
+    failures (`windows/deps/quickshell/src/windows/system/session.cpp:45-115`).
+    Native Disabled/Observe smoke never invokes an action; no real session action
+    was executed. [Evidence](../validation/2026-10-25-m2-session/README.md)
+    covers fixtures, two native modes and shared regressions. Real
+    privilege-denied behavior and destructive live acceptance remain untested.

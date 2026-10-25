@@ -1,0 +1,205 @@
+﻿{
+    "passed":  true,
+    "smoke":  true,
+    "prototype":  "apps",
+    "audioMode":  "Disabled",
+    "batteryMode":  "Disabled",
+    "mediaMode":  "Disabled",
+    "appsMode":  "ReadOnly",
+    "appsSearchQuery":  "",
+    "timedOut":  false,
+    "exitCode":  0,
+    "scaleFactor":  "native",
+    "screenIndex":  0,
+    "monitorCycle":  false,
+    "traceInput":  false,
+    "actualScreens":  [
+                          {
+                              "index":  0,
+                              "name":  "MAG321UX OLED",
+                              "x":  0,
+                              "y":  0,
+                              "dpr":  1.5,
+                              "width":  560,
+                              "height":  560
+                          }
+                      ],
+    "captures":  [
+                     "file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/apps-20261025-180653-553.png"
+                 ],
+    "audioSnapshots":  [
+
+                       ],
+    "batterySnapshots":  [
+
+                         ],
+    "mediaSnapshots":  [
+
+                       ],
+    "appsSnapshots":  [
+                          {
+                              "phase":  "INITIAL",
+                              "state":  {
+                                            "status":  "ready",
+                                            "reason":  "153 application(s) observed. Read-only observation: launching is disabled.",
+                                            "enabled":  true,
+                                            "launchEnabled":  false,
+                                            "nativeRequested":  true,
+                                            "storeRequested":  true,
+                                            "backendLoaded":  true,
+                                            "scanning":  false,
+                                            "empty":  false,
+                                            "failed":  false,
+                                            "disabled":  false,
+                                            "ready":  true,
+                                            "lastError":  "",
+                                            "persistentFrequencies":  true,
+                                            "frequencyPath":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\apps-prototype-profile\\state\\apps-frequencies.json",
+                                            "count":  153,
+                                            "listLoaded":  true,
+                                            "listCount":  153,
+                                            "query":  "",
+                                            "queryCount":  153,
+                                            "queryNames":  [
+                                                               "Application Verifier (WOW)",
+                                                               "Application Verifier (X64)",
+                                                               "Bloodborne",
+                                                               "BlueBubbles",
+                                                               "Calculator",
+                                                               "Camera"
+                                                           ],
+                                            "queryIcons":  [
+                                                               "appicon:{d65231b0-b2f1-4857-a4ce-a8e7c6ea7d27}\\appverif.exe",
+                                                               "appicon:{1ac14e77-02e7-4e5d-b744-2eb1ae5198b7}\\appverif.exe",
+                                                               "appicon:d:\\games\\bloodborne\\bbport-windows\\bloodborne.exe",
+                                                               "appicon:23344bluebubbles.bluebubbles_2fva2ntdzvhtw!bluebubbles",
+                                                               "appicon:microsoft.windowscalculator_8wekyb3d8bbwe!app",
+                                                               "appicon:microsoft.windowscamera_8wekyb3d8bbwe!app"
+                                                           ],
+                                            "catalogNames":  [
+                                                                 "Application Verifier (WOW)",
+                                                                 "Application Verifier (X64)",
+                                                                 "Bloodborne",
+                                                                 "BlueBubbles",
+                                                                 "Calculator",
+                                                                 "Camera"
+                                                             ],
+                                            "catalogIds":  [
+                                                               "{d65231b0-b2f1-4857-a4ce-a8e7c6ea7d27}\\appverif.exe",
+                                                               "{1ac14e77-02e7-4e5d-b744-2eb1ae5198b7}\\appverif.exe",
+                                                               "d:\\games\\bloodborne\\bbport-windows\\bloodborne.exe",
+                                                               "23344bluebubbles.bluebubbles_2fva2ntdzvhtw!bluebubbles",
+                                                               "microsoft.windowscalculator_8wekyb3d8bbwe!app",
+                                                               "microsoft.windowscamera_8wekyb3d8bbwe!app"
+                                                           ],
+                                            "launchRequests":  0,
+                                            "launchesIssued":  0,
+                                            "lastLaunchError":  "",
+                                            "terminalLaunchSupported":  false,
+                                            "searchMatchesList":  true
+                                        }
+                          },
+                          {
+                              "phase":  "FINAL",
+                              "state":  {
+                                            "status":  "ready",
+                                            "reason":  "153 application(s) observed. Read-only observation: launching is disabled.",
+                                            "enabled":  true,
+                                            "launchEnabled":  false,
+                                            "nativeRequested":  true,
+                                            "storeRequested":  true,
+                                            "backendLoaded":  true,
+                                            "scanning":  false,
+                                            "empty":  false,
+                                            "failed":  false,
+                                            "disabled":  false,
+                                            "ready":  true,
+                                            "lastError":  "",
+                                            "persistentFrequencies":  true,
+                                            "frequencyPath":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\apps-prototype-profile\\state\\apps-frequencies.json",
+                                            "count":  153,
+                                            "listLoaded":  true,
+                                            "listCount":  19,
+                                            "query":  "A",
+                                            "queryCount":  19,
+                                            "queryNames":  [
+                                                               "NVIDIA App",
+                                                               "Quick Assist",
+                                                               "Power Automate",
+                                                               "MSI Afterburner",
+                                                               "Sample UWP Apps",
+                                                               "Tools for UWP Apps"
+                                                           ],
+                                            "queryIcons":  [
+                                                               "appicon:com.nvidia.nvapp",
+                                                               "appicon:microsoftcorporationii.quickassist_8wekyb3d8bbwe!app",
+                                                               "appicon:microsoft.powerautomatedesktop_8wekyb3d8bbwe!pad.console",
+                                                               "appicon:{7c5a40ef-a0fb-4bfc-874a-c0f2e0b9fa8e}\\msi afterburner\\msiafterburner.exe",
+                                                               "appicon:{7c5a40ef-a0fb-4bfc-874a-c0f2e0b9fa8e}\\windows kits\\10\\shortcuts\\uwpappssamples.url",
+                                                               "appicon:{7c5a40ef-a0fb-4bfc-874a-c0f2e0b9fa8e}\\windows kits\\10\\shortcuts\\uwpappstoolsdocumentation.url"
+                                                           ],
+                                            "catalogNames":  [
+                                                                 "Application Verifier (WOW)",
+                                                                 "Application Verifier (X64)",
+                                                                 "Bloodborne",
+                                                                 "BlueBubbles",
+                                                                 "Calculator",
+                                                                 "Camera"
+                                                             ],
+                                            "catalogIds":  [
+                                                               "{d65231b0-b2f1-4857-a4ce-a8e7c6ea7d27}\\appverif.exe",
+                                                               "{1ac14e77-02e7-4e5d-b744-2eb1ae5198b7}\\appverif.exe",
+                                                               "d:\\games\\bloodborne\\bbport-windows\\bloodborne.exe",
+                                                               "23344bluebubbles.bluebubbles_2fva2ntdzvhtw!bluebubbles",
+                                                               "microsoft.windowscalculator_8wekyb3d8bbwe!app",
+                                                               "microsoft.windowscamera_8wekyb3d8bbwe!app"
+                                                           ],
+                                            "launchRequests":  0,
+                                            "launchesIssued":  0,
+                                            "lastLaunchError":  "",
+                                            "terminalLaunchSupported":  false,
+                                            "searchMatchesList":  true
+                                        }
+                          }
+                      ],
+    "appsSearches":  [
+                         {
+                             "query":  "A",
+                             "queryCount":  19,
+                             "queryNames":  [
+                                                "NVIDIA App",
+                                                "Quick Assist",
+                                                "Power Automate",
+                                                "MSI Afterburner",
+                                                "Sample UWP Apps",
+                                                "Tools for UWP Apps"
+                                            ],
+                             "queryIcons":  [
+                                                "appicon:com.nvidia.nvapp",
+                                                "appicon:microsoftcorporationii.quickassist_8wekyb3d8bbwe!app",
+                                                "appicon:microsoft.powerautomatedesktop_8wekyb3d8bbwe!pad.console",
+                                                "appicon:{7c5a40ef-a0fb-4bfc-874a-c0f2e0b9fa8e}\\msi afterburner\\msiafterburner.exe",
+                                                "appicon:{7c5a40ef-a0fb-4bfc-874a-c0f2e0b9fa8e}\\windows kits\\10\\shortcuts\\uwpappssamples.url",
+                                                "appicon:{7c5a40ef-a0fb-4bfc-874a-c0f2e0b9fa8e}\\windows kits\\10\\shortcuts\\uwpappstoolsdocumentation.url"
+                                            ],
+                             "listCount":  19,
+                             "listMatchesQuery":  true,
+                             "totalCount":  153
+                         }
+                     ],
+    "elapsedMilliseconds":  3655,
+    "sourceRevision":  "7ae03d7106e9b0fc144ee9e51ebdf4d45db7db1d",
+    "sourceDirty":  false,
+    "backendRevision":  "1401042969e4b7ab3cfb314fc76945ab081db3de",
+    "buildRecordSha256":  "3FA201EE45FC755B663FF122090B617D222BBFD99352B18F490B003F0C14FED1",
+    "configSha256":  "6FC8F8B80AF9D45A49A4737AF51B8C43A11B97E1B59A82468F31AB4C779C6F65",
+    "command":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\quickshell\\qs.exe",
+    "arguments":  "--no-color --log-times --path \"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\apps-20261025-180653-553\\shell.qml\"",
+    "executableSha256":  "22B69FFE0523F8FFDB86C22E1669A36B2C8DCAEA97B19754000EC7455345AF22",
+    "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\apps-20261025-180653-553",
+    "profile":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\apps-prototype-profile",
+    "sources":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\apps-20261025-180653-553.sources.json",
+    "screenshot":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\apps-20261025-180653-553.png",
+    "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\apps-20261025-180653-553.stdout.log",
+    "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\apps-20261025-180653-553.stderr.log"
+}

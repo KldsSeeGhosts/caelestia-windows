@@ -1,0 +1,187 @@
+﻿[
+    {
+        "path":  "battery-profiles-screen0/capture.png",
+        "sha256":  "957016E37C53EDC9924F27EBA61F0FBEAF26B13E2494FCC1F5C1B2D7F380DFBE",
+        "bytes":  48550
+    },
+    {
+        "path":  "battery-profiles-screen0/result.json",
+        "sha256":  "9F04F15D927E7FB02D122023F2327A301FCA1D05B3B787CFF1CD16ACB942F495",
+        "bytes":  8552
+    },
+    {
+        "path":  "battery-profiles-screen0/sources.json",
+        "sha256":  "E273CB39AD6635CFF7A88B5AC56C04C95D4D0F65634F4F93ABCC05C707F4BB53",
+        "bytes":  18520
+    },
+    {
+        "path":  "battery-profiles-screen0/stderr.log",
+        "sha256":  "F01A374E9C81E3DB89B3A42940C4D6A5447684986A1296E42BF13F196EED6295",
+        "bytes":  5
+    },
+    {
+        "path":  "battery-profiles-screen0/stdout.log",
+        "sha256":  "6799198D3EBB36E1B534192832C3728D27E1D7091CCF634E79839E44B5ABAF38",
+        "bytes":  3891
+    },
+    {
+        "path":  "battery-profiles-screen1/capture.png",
+        "sha256":  "50E332F4AF384179AB45F95AAD14FD6DF60EEFBFCA3CB9613F5BF2DA61345FB9",
+        "bytes":  56634
+    },
+    {
+        "path":  "battery-profiles-screen1/result.json",
+        "sha256":  "E7752AC746629018D6119811C4D57BC2B73F9E08D0A1105264C4F19F30EEE657",
+        "bytes":  8556
+    },
+    {
+        "path":  "battery-profiles-screen1/sources.json",
+        "sha256":  "E273CB39AD6635CFF7A88B5AC56C04C95D4D0F65634F4F93ABCC05C707F4BB53",
+        "bytes":  18520
+    },
+    {
+        "path":  "battery-profiles-screen1/stderr.log",
+        "sha256":  "F01A374E9C81E3DB89B3A42940C4D6A5447684986A1296E42BF13F196EED6295",
+        "bytes":  5
+    },
+    {
+        "path":  "battery-profiles-screen1/stdout.log",
+        "sha256":  "4A9EA33A981A410DCF5879DFB71F58F577518F71CAF764A21B5D4ABD6D377111",
+        "bytes":  3897
+    },
+    {
+        "path":  "battery-readonly-screen0/capture.png",
+        "sha256":  "0B3B6D381A7B3F03BB4725386590305B9F50D9961151939CE24F0175F6FF7F7D",
+        "bytes":  36066
+    },
+    {
+        "path":  "battery-readonly-screen0/result.json",
+        "sha256":  "00744C4761D1B53F70EC54BF79D975E44180E689B0DC73DF35799E785A01805A",
+        "bytes":  8492
+    },
+    {
+        "path":  "battery-readonly-screen0/sources.json",
+        "sha256":  "E273CB39AD6635CFF7A88B5AC56C04C95D4D0F65634F4F93ABCC05C707F4BB53",
+        "bytes":  18520
+    },
+    {
+        "path":  "battery-readonly-screen0/stderr.log",
+        "sha256":  "F01A374E9C81E3DB89B3A42940C4D6A5447684986A1296E42BF13F196EED6295",
+        "bytes":  5
+    },
+    {
+        "path":  "battery-readonly-screen0/stdout.log",
+        "sha256":  "A1FCB05846390F9DFA90E6C3B39BB74C1A61BC57879C935D7098B92337D72941",
+        "bytes":  3831
+    },
+    {
+        "path":  "battery-readonly-screen1/capture.png",
+        "sha256":  "FBAC7A5549591F22F28473967247B7187A35EFDC3BC8FC7B11D7BC797D80D783",
+        "bytes":  41578
+    },
+    {
+        "path":  "battery-readonly-screen1/result.json",
+        "sha256":  "692484AD984EEED28E058C6B3E78991CE671EE931C01A4DEF838DA55A1148C42",
+        "bytes":  8496
+    },
+    {
+        "path":  "battery-readonly-screen1/sources.json",
+        "sha256":  "E273CB39AD6635CFF7A88B5AC56C04C95D4D0F65634F4F93ABCC05C707F4BB53",
+        "bytes":  18520
+    },
+    {
+        "path":  "battery-readonly-screen1/stderr.log",
+        "sha256":  "F01A374E9C81E3DB89B3A42940C4D6A5447684986A1296E42BF13F196EED6295",
+        "bytes":  5
+    },
+    {
+        "path":  "battery-readonly-screen1/stdout.log",
+        "sha256":  "7EF156E165F39FDCBA6064AB75F8D9CE56AB59FDA47342FB1EBD20A3177F1C21",
+        "bytes":  3837
+    },
+    {
+        "path":  "build/build.json",
+        "sha256":  "94F0834B7358EB3F0F6E254AFF6F70D60DF9259641E275A6162ADE96C4126333",
+        "bytes":  622
+    },
+    {
+        "path":  "desktop-after.json",
+        "sha256":  "2DE25AC6B54D9422DFB4BE34275777CED05C5A89B1EC354ED826EE8D3B9A4C28",
+        "bytes":  4676
+    },
+    {
+        "path":  "desktop-before.json",
+        "sha256":  "69F3E68F706CA315DD58A6E3A7DA4F0396D98FEE7DBF0CD4D3BC5A2DCC855CB6",
+        "bytes":  4676
+    },
+    {
+        "path":  "fixture/battery.stderr.log",
+        "sha256":  "8ACE9815912D051EC528DFB26428726C1DD3DA4659A0C7257BC8841B7E104484",
+        "bytes":  61
+    },
+    {
+        "path":  "fixture/battery.stdout.log",
+        "sha256":  "F01A374E9C81E3DB89B3A42940C4D6A5447684986A1296E42BF13F196EED6295",
+        "bytes":  5
+    },
+    {
+        "path":  "fixture/BatteryService.qml",
+        "sha256":  "6D548EC91299476175DF9567E1770B26DE172BC86CE110794CCF3DBAE3D30C68",
+        "bytes":  6557
+    },
+    {
+        "path":  "fixture/BatteryServiceTest.qml",
+        "sha256":  "293E71A0EF9891EEBBE8625C7846E34DD83FF7C72EC433391398FC7CFF85F312",
+        "bytes":  18729
+    },
+    {
+        "path":  "fixture/PowerProfilesBackend.qml",
+        "sha256":  "E368967694BE8EB4E837BA4538B63713E2BE97D2CF0A85F1EFDABDB34CD19262",
+        "bytes":  1899
+    },
+    {
+        "path":  "fixture/PowerProfilesService.qml",
+        "sha256":  "7215738FD9478DC70C42C2F594827C1D7139E6C4B47723D93EC1D999F29B0EEA",
+        "bytes":  11430
+    },
+    {
+        "path":  "fixture/PowerProfilesServiceTest.qml",
+        "sha256":  "557C1052E430CDA4738B1D39C61E0EED6111F41C531F585BA1E6DAFCFB94D197",
+        "bytes":  23003
+    },
+    {
+        "path":  "fixture/profiles.stderr.log",
+        "sha256":  "18AA69564A243867A7241A4FFFB6C24955BA0EC1F5D3A9AEFB96D72B24A097D7",
+        "bytes":  68
+    },
+    {
+        "path":  "fixture/profiles.stdout.log",
+        "sha256":  "F01A374E9C81E3DB89B3A42940C4D6A5447684986A1296E42BF13F196EED6295",
+        "bytes":  5
+    },
+    {
+        "path":  "fixture/result.json",
+        "sha256":  "F080714C776205C9B6863DAEF9D31A18C362E49E000D150D5F5D2DDF06076131",
+        "bytes":  4451
+    },
+    {
+        "path":  "isolated-shell.json",
+        "sha256":  "6FC8F8B80AF9D45A49A4737AF51B8C43A11B97E1B59A82468F31AB4C779C6F65",
+        "bytes":  874
+    },
+    {
+        "path":  "matrix.json",
+        "sha256":  "9F3033BD65C079FC8683DFBFDD748650A1911C355C2ED2B3AD87B0586DD8075A",
+        "bytes":  61684
+    },
+    {
+        "path":  "power-after.json",
+        "sha256":  "24639473E6604537FD652BFC7DA5FC47931852A45F86CA87EC7076786F99E954",
+        "bytes":  1947
+    },
+    {
+        "path":  "power-before.json",
+        "sha256":  "3D613498F65EEFD6A99E29B350CBF7FF5F61CED016EF817B06920D92F43D7910",
+        "bytes":  1947
+    }
+]

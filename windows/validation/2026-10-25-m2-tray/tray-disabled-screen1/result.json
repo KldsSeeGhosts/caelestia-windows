@@ -1,0 +1,193 @@
+﻿{
+    "passed":  true,
+    "smoke":  true,
+    "prototype":  "tray",
+    "audioMode":  "Disabled",
+    "batteryMode":  "Disabled",
+    "mediaMode":  "Disabled",
+    "trayMode":  "Disabled",
+    "trayFixture":  false,
+    "trayHookMode":  "0",
+    "timedOut":  false,
+    "exitCode":  0,
+    "scaleFactor":  "native",
+    "screenIndex":  1,
+    "monitorCycle":  false,
+    "traceInput":  false,
+    "actualScreens":  [
+                          {
+                              "index":  1,
+                              "name":  "DELL S2725QS",
+                              "x":  -3840,
+                              "y":  0,
+                              "dpr":  1.75,
+                              "width":  660,
+                              "height":  600
+                          }
+                      ],
+    "captures":  [
+                     "file:///D:/AiStack/caelestia-windows/windows/.local/build-tray/logs/tray-20261025-183143-385.png"
+                 ],
+    "audioSnapshots":  [
+
+                       ],
+    "batterySnapshots":  [
+
+                         ],
+    "mediaSnapshots":  [
+
+                       ],
+    "traySnapshots":  [
+                          {
+                              "phase":  "INITIAL",
+                              "state":  {
+                                            "smoke":  true,
+                                            "fixture":  false,
+                                            "status":  "disabled",
+                                            "reason":  "Windows tray observation is disabled.",
+                                            "enabled":  false,
+                                            "activationEnabled":  false,
+                                            "nativeRequested":  false,
+                                            "backendLoaded":  false,
+                                            "backendError":  "",
+                                            "lastError":  "",
+                                            "ready":  false,
+                                            "count":  0,
+                                            "titles":  [
+
+                                                       ],
+                                            "ids":  [
+
+                                                    ],
+                                            "interceptionEnabled":  false,
+                                            "hookMode":  "0",
+                                            "menuMode":  "native",
+                                            "menuCoordinatesSupported":  false,
+                                            "scrollSupported":  false,
+                                            "semanticMenuAvailable":  false,
+                                            "listGeneration":  0,
+                                            "listResets":  0,
+                                            "peakCount":  0,
+                                            "lastResetKind":  "",
+                                            "activationRequests":  0,
+                                            "activationRefusals":  0,
+                                            "lastActivationResult":  "",
+                                            "lastActivationReason":  "",
+                                            "menuRequests":  0,
+                                            "menuShown":  0,
+                                            "menuRefusals":  0,
+                                            "lastMenuResult":  "",
+                                            "lastMenuReason":  "",
+                                            "staleRequests":  0,
+                                            "scrollRequests":  0,
+                                            "firstId":  "",
+                                            "firstTitle":  "",
+                                            "firstHasMenu":  false,
+                                            "firstMenuHandleNull":  true,
+                                            "firstRenderableMenu":  false,
+                                            "trayLoaded":  false,
+                                            "trayActive":  false,
+                                            "renderedCount":  0,
+                                            "renderedTitles":  [
+
+                                                               ],
+                                            "firstDelegated":  false,
+                                            "firstItemInteractions":  null,
+                                            "firstItemNativeMenu":  null,
+                                            "firstIconReady":  null,
+                                            "firstIconLayer":  null,
+                                            "firstIconTint":  "",
+                                            "expectedTint":  "#e2bdc7",
+                                            "menuLoaded":  false,
+                                            "menuActive":  false,
+                                            "menuSemanticAvailable":  null,
+                                            "menuNotice":  "",
+                                            "menuNoticeColour":  "",
+                                            "expectedDisabledColour":  "#9e8c91"
+                                        }
+                          },
+                          {
+                              "phase":  "FINAL",
+                              "state":  {
+                                            "smoke":  true,
+                                            "fixture":  false,
+                                            "status":  "disabled",
+                                            "reason":  "Windows tray observation is disabled.",
+                                            "enabled":  false,
+                                            "activationEnabled":  false,
+                                            "nativeRequested":  false,
+                                            "backendLoaded":  false,
+                                            "backendError":  "",
+                                            "lastError":  "",
+                                            "ready":  false,
+                                            "count":  0,
+                                            "titles":  [
+
+                                                       ],
+                                            "ids":  [
+
+                                                    ],
+                                            "interceptionEnabled":  false,
+                                            "hookMode":  "0",
+                                            "menuMode":  "native",
+                                            "menuCoordinatesSupported":  false,
+                                            "scrollSupported":  false,
+                                            "semanticMenuAvailable":  false,
+                                            "listGeneration":  0,
+                                            "listResets":  0,
+                                            "peakCount":  0,
+                                            "lastResetKind":  "",
+                                            "activationRequests":  0,
+                                            "activationRefusals":  0,
+                                            "lastActivationResult":  "",
+                                            "lastActivationReason":  "",
+                                            "menuRequests":  0,
+                                            "menuShown":  0,
+                                            "menuRefusals":  0,
+                                            "lastMenuResult":  "",
+                                            "lastMenuReason":  "",
+                                            "staleRequests":  0,
+                                            "scrollRequests":  0,
+                                            "firstId":  "",
+                                            "firstTitle":  "",
+                                            "firstHasMenu":  false,
+                                            "firstMenuHandleNull":  true,
+                                            "firstRenderableMenu":  false,
+                                            "trayLoaded":  false,
+                                            "trayActive":  false,
+                                            "renderedCount":  0,
+                                            "renderedTitles":  [
+
+                                                               ],
+                                            "firstDelegated":  false,
+                                            "firstItemInteractions":  null,
+                                            "firstItemNativeMenu":  null,
+                                            "firstIconReady":  null,
+                                            "firstIconLayer":  null,
+                                            "firstIconTint":  "",
+                                            "expectedTint":  "#e2bdc7",
+                                            "menuLoaded":  false,
+                                            "menuActive":  false,
+                                            "menuSemanticAvailable":  null,
+                                            "menuNotice":  "",
+                                            "menuNoticeColour":  "",
+                                            "expectedDisabledColour":  "#9e8c91"
+                                        }
+                          }
+                      ],
+    "elapsedMilliseconds":  3440,
+    "sourceRevision":  "298fd12556a7330e1f8974fd54b871172f7220d1",
+    "sourceDirty":  false,
+    "backendRevision":  "1401042969e4b7ab3cfb314fc76945ab081db3de",
+    "buildRecordSha256":  "403AA4AB1B1A38B1A9838C24D2EB4608937F8F8F63F157D7CF75DA2CDE66CD46",
+    "configSha256":  "84EE899E2FE835A8153C86EA5CDD0C5071D5DB379FD35950CD7C41E205541412",
+    "command":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\quickshell\\qs.exe",
+    "arguments":  "--no-color --log-times --path \"D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\shell-runs\\tray-20261025-183143-385\\shell.qml\"",
+    "executableSha256":  "20710E5E2E5F36B96C49D67901FFD2BA24CD7193D28C4870937E77F673DAAE79",
+    "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\shell-runs\\tray-20261025-183143-385",
+    "profile":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\tray-prototype-profile",
+    "sources":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\logs\\tray-20261025-183143-385.sources.json",
+    "screenshot":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\logs\\tray-20261025-183143-385.png",
+    "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\logs\\tray-20261025-183143-385.stdout.log",
+    "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build-tray\\logs\\tray-20261025-183143-385.stderr.log"
+}

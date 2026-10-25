@@ -1,0 +1,23 @@
+﻿2026-10-25 18:31:55.004  INFO: Launching config: "D:/AiStack/caelestia-windows/windows/.local/build-tray/shell-runs/shell-20261025-183154-774/shell.qml"
+2026-10-25 18:31:55.004  INFO: Shell ID: "b470248fb25f8f09300fe813e248fc1a" Path ID "b470248fb25f8f09300fe813e248fc1a"
+2026-10-25 18:31:55.024  INFO: Saving logs to "C:/Users/Ermin/AppData/Local/quickshell/run/by-id/42u7lihnt/log.qslog"
+2026-10-25 18:31:55.084  INFO quickshell.windows.blur: Blur behind panels is turned off by QS_WINDOWS_BLUR.
+2026-10-25 18:31:55.089  INFO quickshell.windows.blur: No layer rules file found (looked for D:/AiStack/caelestia-windows/windows/.local/build-tray/shell-runs/shell-20261025-183154-774/defaults/windows/layerrules.json ), blur behind panels is off.
+2026-10-25 18:31:55.089  INFO caelestia.windows.focusguard: target-unavailable
+2026-10-25 18:31:55.089 DEBUG qml: CAELESTIA_SHELL_FOCUS target-unavailable
+2026-10-25 18:31:55.202 DEBUG quickshell.windows.desktops: Desktop list changed: 1 desktops
+2026-10-25 18:31:55.202 DEBUG quickshell.windows.desktops: Current desktop: 0
+2026-10-25 18:31:55.203 DEBUG quickshell.windows.panel: Placing qs::windows::WinPanelWindow(0x1ea8aac8c10) at QRect(80,80 900x620) on "MAG321UX OLED"
+2026-10-25 18:31:55.204  INFO caelestia.windows.focusguard: idle
+2026-10-25 18:31:55.204 DEBUG qml: CAELESTIA_SHELL_FOCUS idle
+2026-10-25 18:31:55.212  INFO: Configuration Loaded
+2026-10-25 18:31:55.380 DEBUG quickshell.windows.startup: First panel frame presented
+2026-10-25 18:31:55.780 DEBUG quickshell.windows.startup: Startup settled, running 1 deferred tasks
+2026-10-25 18:31:55.780  INFO quickshell.windows.desktops: VirtualDesktopAccessor.dll not found next to the executable; desktop switching falls back to keyboard shortcuts.
+2026-10-25 18:31:56.581 DEBUG qml: CAELESTIA_SHELL_SCREEN {"index":0,"name":"MAG321UX OLED","x":0,"y":0,"dpr":1.5}
+2026-10-25 18:31:56.581 DEBUG qml: CAELESTIA_SHELL_GEOMETRY MAG321UX OLED 0 0 900 620 1.5 4
+2026-10-25 18:31:56.581 DEBUG qml: CAELESTIA_SESSION_UNAVAILABLE: request consumed without executing a command.
+2026-10-25 18:31:57.781 DEBUG qml: CAELESTIA_SHELL_OPEN 40 155 102 400
+2026-10-25 18:31:57.824 DEBUG qml: CAELESTIA_SHELL_CAPTURE file:///D:/AiStack/caelestia-windows/windows/.local/build-tray/logs/shell-20261025-183154-774.png
+2026-10-25 18:31:58.981 DEBUG qml: CAELESTIA_SHELL_PASS 6.11.2
+

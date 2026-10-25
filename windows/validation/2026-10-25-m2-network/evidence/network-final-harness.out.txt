@@ -1,0 +1,6 @@
+{
+    "passed":  true,
+    "failure":  null,
+    "output":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\network-validation-20261025-180420-455",
+    "runs":  6
+}

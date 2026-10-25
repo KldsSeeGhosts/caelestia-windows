@@ -1,0 +1,3 @@
+# Keep the recorded build evidence despite the repository-wide build/ rule.
+!build/
+!build/**
