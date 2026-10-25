@@ -18,6 +18,12 @@ Column {
     property bool profileStatusEnabled: true
     property bool profileControlsEnabled: true
 
+    // Windows host: a native UPower read can fail, or report an unknown level
+    // instead of a percentage. Linux always supplies a usable level, so these
+    // defaults preserve upstream behavior.
+    property bool observationAvailable: true
+    property bool percentageKnown: true
+
     function formatSeconds(s: int): string {
         const day = Math.floor(s / 86400);
         const hr = Math.floor(s / 3600) % 24;
@@ -62,7 +68,15 @@ Column {
     width: Tokens.sizes.bar.batteryWidth
 
     StyledText {
-        text: UPower.displayDevice.isLaptopBattery ? Tr.trCtx("Remaining: %1%", "battery remaining").arg(Math.round(UPower.displayDevice.percentage * 100)) : Tr.tr("No battery detected")
+        text: {
+            if (!root.observationAvailable)
+                return Tr.tr("Battery status unavailable");
+            if (!UPower.displayDevice.isLaptopBattery)
+                return Tr.tr("No battery detected");
+            if (!root.percentageKnown)
+                return Tr.tr("Battery level unknown");
+            return Tr.trCtx("Remaining: %1%", "battery remaining").arg(Math.round(UPower.displayDevice.percentage * 100));
+        }
     }
 
     StyledText {
@@ -82,6 +96,8 @@ Column {
 
             if (dev.timeToFull > 0)
                 return Tr.tr("Time until charged: %1").arg(root.formatSeconds(dev.timeToFull));
+            if (!root.percentageKnown)
+                return Tr.tr("Battery level unknown");
             if (Math.round(dev.percentage * 100) === 100)
                 return Tr.tr("Fully charged!");
             return Tr.tr("Calculating time until charged...");

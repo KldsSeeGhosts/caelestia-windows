@@ -35,8 +35,13 @@ ShellRoot {
         return {
             status: Battery.status, reason: Battery.reason, enabled: Battery.enabled,
             backendLoaded: Battery.backend !== null,
-            present: Battery.present, laptopBattery: Battery.laptopBattery,
-            hasBattery: Battery.hasBattery, onBattery: Battery.onBattery,
+            nativeReadAvailable: Battery.nativeReadAvailable,
+            presenceKnown: Battery.presenceKnown,
+            observationAvailable: Battery.observationAvailable,
+            present: Battery.present, absent: Battery.absent,
+            laptopBattery: Battery.laptopBattery,
+            hasBattery: Battery.hasBattery, percentageKnown: Battery.percentageKnown,
+            onBatteryKnown: Battery.onBatteryKnown, onBattery: Battery.onBattery,
             charging: Battery.charging, state: Battery.state,
             percentage: Battery.percentage, timeToEmpty: Battery.timeToEmpty,
             iconName: Battery.iconName
@@ -98,6 +103,8 @@ ShellRoot {
                     sourceComponent: BarStatus.BatteryStatus {
                         colour: Colours.palette.m3onSurfaceVariant
                         profileStatusEnabled: false
+                        observationAvailable: Battery.observationAvailable
+                        percentageKnown: Battery.percentageKnown
                     }
                 }
             }
@@ -133,6 +140,8 @@ ShellRoot {
                         objectName: "windowsBatteryPopout"
                         profileStatusEnabled: false
                         profileControlsEnabled: false
+                        observationAvailable: Battery.observationAvailable
+                        percentageKnown: Battery.percentageKnown
                     }
                 }
             }
@@ -199,16 +208,6 @@ ShellRoot {
                     Qt.exit(1);
                     return;
                 }
-                // Truthful absence: no battery means no fake level, estimate,
-                // charging state or icon. Adapter constants mirror
-                // UPowerDeviceState; Charging/FullyCharged/PendingCharge are
-                // the upstream "charging" set.
-                if (!state.hasBattery && (state.percentage !== 0 || state.timeToEmpty !== 0
-                        || state.charging || state.iconName !== "" || state.state !== Battery.stateUnknown)) {
-                    console.error("CAELESTIA_BATTERY_FAIL: absent battery invented state");
-                    Qt.exit(1);
-                    return;
-                }
                 if (state.charging !== [Battery.stateCharging, Battery.stateFullyCharged, Battery.statePendingCharge].includes(state.state)) {
                     console.error("CAELESTIA_BATTERY_FAIL: charging gate");
                     Qt.exit(1);
@@ -220,13 +219,63 @@ ShellRoot {
                         Qt.exit(1);
                         return;
                     }
+                    if (state.observationAvailable !== (state.nativeReadAvailable && state.presenceKnown)
+                            || state.absent !== (state.observationAvailable && !state.present)) {
+                        console.error("CAELESTIA_BATTERY_FAIL: observation capability mismatch");
+                        Qt.exit(1);
+                        return;
+                    }
                     if (state.hasBattery !== (state.present && state.laptopBattery)) {
                         console.error("CAELESTIA_BATTERY_FAIL: battery gating");
                         Qt.exit(1);
                         return;
                     }
-                    if (state.onBattery && !state.hasBattery) {
+                    if (!state.observationAvailable) {
+                        // A failed or unknown native read proves neither presence
+                        // nor absence. No projection may invent either outcome.
+                        if (state.present || state.absent || state.hasBattery
+                                || state.percentage !== 0 || state.percentageKnown
+                                || state.timeToEmpty !== 0 || state.charging
+                                || state.iconName !== "" || state.state !== Battery.stateUnknown) {
+                            console.error("CAELESTIA_BATTERY_FAIL: unavailable read invented battery state");
+                            Qt.exit(1);
+                            return;
+                        }
+                    } else if (!state.present) {
+                        // Truthful absence: no fake level, estimate, charging
+                        // state or icon. Adapter constants mirror
+                        // UPowerDeviceState; Charging/FullyCharged/PendingCharge
+                        // are the upstream "charging" set.
+                        if (state.percentage !== 0 || state.timeToEmpty !== 0
+                                || state.percentageKnown || state.charging
+                                || state.iconName !== "" || state.state !== Battery.stateUnknown) {
+                            console.error("CAELESTIA_BATTERY_FAIL: absent battery invented state");
+                            Qt.exit(1);
+                            return;
+                        }
+                    } else if (!state.percentageKnown && state.percentage !== 0) {
+                        console.error("CAELESTIA_BATTERY_FAIL: unknown percentage retained a stale value");
+                        Qt.exit(1);
+                        return;
+                    }
+                    if (state.absent && state.onBattery) {
                         console.error("CAELESTIA_BATTERY_FAIL: battery power without a battery");
+                        Qt.exit(1);
+                        return;
+                    }
+                    // The original status icon must never consult PowerProfiles
+                    // here, and its glyph must state absence/unknown truthfully
+                    // instead of substituting a rocket or a zero-level battery.
+                    const icon = statusLoader.item?.text;
+                    if (statusLoader.item?.profileStatusEnabled !== false) {
+                        console.error("CAELESTIA_BATTERY_FAIL: status icon profile guard");
+                        Qt.exit(1);
+                        return;
+                    }
+                    if ((!state.observationAvailable && icon !== "battery_unknown")
+                            || (state.observationAvailable && !state.hasBattery && icon !== "battery_alert")
+                            || (state.hasBattery && !state.percentageKnown && icon !== "battery_unknown")) {
+                        console.error("CAELESTIA_BATTERY_FAIL: status icon truthfulness: " + icon);
                         Qt.exit(1);
                         return;
                     }

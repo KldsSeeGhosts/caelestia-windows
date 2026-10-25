@@ -5,6 +5,8 @@ import qs.services
 import qs.utils
 
 MaterialIcon {
+    id: root
+
     required property color colour
 
     // Windows host: the upstream power-profile icon reads PowerProfiles, whose
@@ -13,8 +15,16 @@ MaterialIcon {
     // unavailable battery status instead of substituting a profile state.
     property bool profileStatusEnabled: true
 
+    // Windows host: a native UPower read can fail, or report an unknown level
+    // instead of a percentage. Linux always supplies a usable level, so these
+    // defaults preserve upstream behavior.
+    property bool observationAvailable: true
+    property bool percentageKnown: true
+
     animate: true
     text: {
+        if (!root.observationAvailable)
+            return "battery_unknown";
         if (!UPower.displayDevice.isLaptopBattery) {
             if (!profileStatusEnabled)
                 return "battery_alert";
@@ -24,8 +34,10 @@ MaterialIcon {
                 return "rocket_launch";
             return "balance";
         }
+        if (!root.percentageKnown)
+            return "battery_unknown";
         return Icons.getBatteryIcon(UPower.displayDevice.percentage, [UPowerDeviceState.Charging, UPowerDeviceState.FullyCharged, UPowerDeviceState.PendingCharge].includes(UPower.displayDevice.state));
     }
-    color: !UPower.onBattery || UPower.displayDevice.percentage > 0.2 ? colour : Colours.palette.m3error
+    color: !root.observationAvailable || !root.percentageKnown || !UPower.onBattery || UPower.displayDevice.percentage > 0.2 ? colour : Colours.palette.m3error
     fill: 1
 }
