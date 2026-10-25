@@ -10,6 +10,8 @@ case observed below. No complete shell or Windows service integration is claimed
 - Implementation: `b9f07e34b74ed200aa262bc1e41d9bf54467d38a`.
 - Final startup handling: `b534ae2690f90e7252c165b4df042ad94a622ae2`.
   That patch changes only QML/launcher startup handling.
+- Monitor-cycle origin handling: `e2e5b69763a16c6fbd70f259f9a1591405787c06`.
+  The cycle explicitly returns to its selected starting screen.
 - Backend gitlink and lock: `e8ae0ef124b1c14b547c80d00422d2ffbd423d81`,
   unchanged and clean.
 - Native build: [build.json](build.json), clean `b9f07e34`, Qt 6.11.2,
@@ -40,6 +42,7 @@ session commands are consumed without execution, including the smoke probe.
 | Synthetic 150% | Pass, DPR 1.5 | [150.json](150.json), [image](150.png) |
 | Synthetic 175% | Pass, DPR 1.75 | [175.json](175.json), [image](175.png) |
 | Native same-window transfer | Pass: 150% primary, 175% secondary at x=-3840, then 150% primary | [native-cycle.json](native-cycle.json), [log](native-cycle.stdout.log) |
+| Native secondary-origin transfer | Pass: 175% negative origin, 150% primary, then original 175% screen | [native-secondary-cycle.json](native-secondary-cycle.json), [log](native-secondary-cycle.stdout.log) |
 | Missing screen 15 | Expected exit 1 before rendering, no runtime warnings | [assertion](invalid-screen-assertion.json), [log](invalid-screen.stdout.log) |
 | Initial transfer implementation | Failed correctly on binding-loop warnings, despite producing captures | [failed result](failed-transfer.json), [log](failed-transfer.stdout.log) |
 
@@ -50,6 +53,13 @@ The native cycle captured the [initial primary](native-cycle.png),
 [return to the primary](native-150-return.png). Each placement retained
 900 by 620 logical dimensions; the screenshots were inspected.
 Passing runs contain no runtime warnings/errors.
+
+The secondary-origin cycle passes on clean `e2e5b697`, using the same native
+build. It captures the [secondary start](native-secondary-cycle.png),
+[primary](native-secondary-primary.png), and
+[secondary return](native-secondary-return.png). The tested physical setup
+has two displays; the cycle selects a paired neighbor and explicitly restores
+its starting index rather than walking onward on larger setups.
 
 Smoke disables native input, focus grabs and keyboard activation through
 `interactionEnabled=false`. It programmatically opens/closes the original
@@ -70,8 +80,9 @@ These are earlier working-tree observations at native 150%, with cua-driver
 commit input certification. [manual-input.json](manual-input.json) records
 the dirty source state; [manual-input.sources.json](manual-input.sources.json)
 and [manual-source-comparison.json](manual-source-comparison.json) identify
-the bytes. All 47 staged files other than the later-revised host entry point
-match the final checkout. The original component and adapter files match.
+the bytes. The comparison was captured at `b534ae26`; all 47 staged files
+other than the later-revised host entry point still match the final checkout.
+The original component and adapter files match.
 
 - Continuous pointer movement into the left edge opened the bar to width 60;
   leaving closed it to width 10. See [hover capture](native-hover.png).
