@@ -15,6 +15,14 @@ Item {
 
     required property PopoutState popouts
 
+    // Hosts can disable unavailable platform operations without replacing controls.
+    property bool outputControlsEnabled: true
+    property bool outputSelectionEnabled: outputControlsEnabled
+    property bool inputControlsEnabled: true
+    property bool settingsEnabled: true
+    property bool volumeAvailable: true
+    property var nodeControlsAvailable: node => true
+
     implicitWidth: Tokens.sizes.bar.audioWidth
     implicitHeight: layout.implicitHeight + Tokens.padding.medium * 2
 
@@ -49,6 +57,7 @@ Item {
 
                 Layout.fillWidth: true
                 ButtonGroup.group: sinks
+                enabled: root.outputSelectionEnabled && root.nodeControlsAvailable(modelData)
                 checked: Audio.sink?.id === modelData.id
                 onClicked: Audio.setAudioSink(modelData)
                 text: modelData.description
@@ -69,6 +78,7 @@ Item {
 
                 Layout.fillWidth: true
                 ButtonGroup.group: sources
+                enabled: root.inputControlsEnabled && root.nodeControlsAvailable(modelData)
                 checked: Audio.source?.id === modelData.id
                 onClicked: Audio.setAudioSource(modelData)
                 text: modelData.description
@@ -77,11 +87,12 @@ Item {
 
         StyledText {
             Layout.topMargin: Tokens.spacing.medium
-            text: Audio.muted ? Tr.tr("Volume (muted)") : Tr.tr("Volume (%1%)").arg(Math.round(Audio.volume * 100))
+            text: !root.volumeAvailable ? Tr.tr("Volume unavailable") : Audio.muted ? Tr.tr("Volume (muted)") : Tr.tr("Volume (%1%)").arg(Math.round(Audio.volume * 100))
             font: Tokens.font.body.builders.medium.weight(Font.Medium).build()
         }
 
         CustomMouseArea {
+            enabled: root.outputControlsEnabled
             Layout.fillWidth: true
             implicitHeight: Tokens.padding.medium * 3
 
@@ -103,6 +114,7 @@ Item {
         }
 
         IconTextButton {
+            visible: root.settingsEnabled
             Layout.fillWidth: true
             Layout.topMargin: Tokens.spacing.medium
             inactiveColour: Colours.palette.m3primaryContainer

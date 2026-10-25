@@ -19,6 +19,8 @@ QtObject {
         readonly property color m3scrim: "#000000"
         readonly property color m3primary: "#ffb0ca"
         readonly property color m3onPrimary: "#541d34"
+        readonly property color m3primaryContainer: "#6f334a"
+        readonly property color m3onPrimaryContainer: "#ffd9e3"
         readonly property color m3secondary: "#e2bdc7"
         readonly property color m3onSecondary: "#422932"
         readonly property color m3secondaryContainer: "#5a3f48"

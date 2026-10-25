@@ -26,6 +26,10 @@ For the next development session, start with [HANDOFF.md](HANDOFF.md).
   evidence, limits and rejected preliminary KSG Shell notification failure.
 - The earlier ordinary-window [component probe](prototype/README.md) remains
   available, with [archived synthetic 100%, 150%, and 175% results](validation/2026-10-25-component-probe/README.md).
+- M2 has started with an [opt-in audio prototype](audio-prototype/README.md).
+  It preserves the original audio controls and core public service API.
+  Disabled/read-only modes, hardware/failure fixtures and native observation
+  are separate from live write/recovery validation. Other services remain off.
 - Inherited GitHub Actions are disabled at repository level during bootstrap.
   They are upstream Linux workflows, not validation of this port.
 
@@ -91,9 +95,10 @@ ERM-491's [dependency](audits/M1-DEPENDENCIES.md) and
 ERM-492's original bar/session loading and evidence archive are complete.
 ERM-493/494 are complete with clean native input and final acceptance evidence.
 The backend fork fixes mask handoff without replacing the original interaction
-paths. M2-M4 have not started; dynamic themes, hardware-denial handling and
-Windows services are not validated. Plan the next Windows service boundary
-from the completed dependency/API audits.
+paths. M2's [service audit](audits/M2-SERVICES.md) sequences ERM-495 through
+ERM-507. Audio integration and truthful backend control errors are the first
+slice; remaining services, actual hardware-denial/recovery, dynamic themes,
+M3 and M4 remain unvalidated.
 
 ## Toolchain direction
 
@@ -113,13 +118,18 @@ isolated prototype passes.
 ## Dependency maintenance
 
 The current backend pin is in the private
-[Caelestia backend fork](https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/tree/84604c258da92a004b46d62a89718ae615840b98).
+[Caelestia backend fork](https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/tree/8c71bdb8116dffeb274edb31c3803e1c28dbb270).
 It retains the audited `nunreasonable/quickshell` baseline `e8ae0ef1` and adds
-one native mask handoff change: reconcile Qt hover when `WS_EX_TRANSPARENT`
+a native mask handoff change: reconcile Qt hover when `WS_EX_TRANSPARENT`
 changes, because the move that triggered the hook can already have reached the
 underlying window. The patch queues only local Qt enter/leave notifications, avoids
 enter reconciliation while mouse buttons are held or another window covers
 the point, and injects no system input or focus changes.
+
+The M2 patch additionally reports Core Audio control/state capability and
+HRESULT failures. It retains snapshots on failed reads and reads back actual
+default routing after partial role failures. See
+[backend PR #1](https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/pull/1).
 
 Keep the source manifest and submodule revision in agreement. Review backend
 updates before moving the gitlink; keep backend patches in a dedicated fork

@@ -14,8 +14,9 @@ tracks the milestones and implementation issues.
   150%/175%, with transparency on and off, plus rendering and lifecycle checks.
   [Final evidence and limits](validation/2026-10-25-m1-acceptance/README.md)
   include the rejected preliminary desktop-wide notification test.
-- M2, M3, M4: not started. No Windows service integration, tiling validation,
-  or installable shell release is claimed.
+- M2: in progress. ERM-495 audits all service contracts; ERM-496/497 implement
+  isolated opt-in audio and truthful native control errors. Remaining service
+  integrations are ERM-498 through ERM-507. M3/M4 have not started.
 
 Continue from [HANDOFF.md](HANDOFF.md). Linear was connected and synchronized
 on 2026-10-25 under the Ermin Zeherovic (ERM) team. This roadmap owns detailed
@@ -103,6 +104,13 @@ access without retry loops or privilege changes.
 
 Gate: enable services individually, with explicit unavailable states and no
 unexpected startup side effects.
+
+Current slice: [original audio controls and Core Audio adapter](audio-prototype/README.md).
+Native observation, injected failure handling and real writes/recovery are
+distinct validation claims. The [source audit](audits/M2-SERVICES.md) records
+all service gaps, Linux process/path boundaries and staged acceptance work.
+Audio defaults disabled; observation and interactive controls require separate
+child-process opt-ins. Other services remain unavailable.
 
 ## M3: windows, workspaces, and tiling
 
