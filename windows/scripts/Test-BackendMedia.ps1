@@ -30,36 +30,49 @@ function Invoke-Recorded([string]$Name, [string[]]$CommandArguments) {
     if ($LASTEXITCODE -ne 0) { throw "$Name failed." }
 }
 
-# Lifecycle status fixtures. No GSMTC worker, hardware read or playback
-# write is performed. Microsoft link.exe avoids LLVM 20's Qt-manifest bug.
+# Lifecycle and isolated artwork-cache fixtures. No GSMTC worker, hardware read
+# or playback write is performed. Cache writes use temporary fixture directories.
+# Microsoft link.exe avoids LLVM 20's Qt-manifest bug.
 Invoke-Recorded 'configure' @('-S', "$backend\src\windows\test", '-B', $BuildRoot, '-G', 'Ninja',
     '-DCMAKE_BUILD_TYPE=Release', '-DCMAKE_CXX_COMPILER=clang-cl', '-DCMAKE_LINKER_TYPE=MSVC',
     "-DCMAKE_MT:FILEPATH=$manifestTool", "-DCMAKE_PREFIX_PATH=$QtPrefix")
-Invoke-Recorded 'build' @('--build', $BuildRoot, '--target', 'mpris_status_test', '--parallel', '4')
-$info = New-Object Diagnostics.ProcessStartInfo
-$info.FileName = Join-Path $BuildRoot 'mpris_status_test.exe'
-$info.Arguments = '-o "' + "$BuildRoot\fixtures.txt" + '",txt'
-$info.UseShellExecute = $false
-$info.CreateNoWindow = $true
-$process = [Diagnostics.Process]::Start($info)
-$timedOut = -not $process.WaitForExit(15000)
-if ($timedOut) {
-    $process.Kill()
-    $process.WaitForExit()
-}
-$text = $(if (Test-Path -LiteralPath "$BuildRoot\fixtures.txt") { Get-Content -LiteralPath "$BuildRoot\fixtures.txt" -Raw } else { '' })
-$passed = -not $timedOut -and $process.ExitCode -eq 0 -and $text -match 'Totals: \d+ passed, 0 failed'
+Invoke-Recorded 'build' @('--build', $BuildRoot, '--target', 'mpris_status_test', 'mpris_art_cache_test', '--parallel', '4')
+$tests = @(
+    foreach ($target in @('mpris_status_test', 'mpris_art_cache_test')) {
+        $log = Join-Path $BuildRoot "$target.txt"
+        $info = New-Object Diagnostics.ProcessStartInfo
+        $info.FileName = Join-Path $BuildRoot "$target.exe"
+        $info.Arguments = '-o "' + $log + '",txt'
+        $info.UseShellExecute = $false
+        $info.CreateNoWindow = $true
+        $process = [Diagnostics.Process]::Start($info)
+        $timedOut = -not $process.WaitForExit(15000)
+        if ($timedOut) {
+            $process.Kill()
+            $process.WaitForExit()
+        }
+        $text = $(if (Test-Path -LiteralPath $log) { Get-Content -LiteralPath $log -Raw } else { '' })
+        [ordered]@{
+            target = $target
+            passed = -not $timedOut -and $process.ExitCode -eq 0 -and $text -match 'Totals: \d+ passed, 0 failed'
+            timedOut = $timedOut; exitCode = $process.ExitCode
+            command = $info.FileName; arguments = $info.Arguments
+            executableSha256 = (Get-FileHash -LiteralPath $info.FileName).Hash
+            totals = ([regex]::Match($text, 'Totals: [^\r\n]+')).Value
+        }
+    }
+)
+$passed = @($tests | Where-Object { -not $_.passed }).Count -eq 0
 $result = [ordered]@{
-    passed = $passed; timedOut = $timedOut; exitCode = $process.ExitCode
+    passed = $passed
+    tests = $tests
+    totals = ($tests | ForEach-Object { $_.totals }) -join '; '
     backendRevision = (& git -C $backend rev-parse HEAD).Trim()
     backendDirty = [bool](& git -C $backend status --porcelain)
     qtVersion = (& "$QtPrefix\bin\qtpaths.exe" --qt-version).Trim()
     compiler = (& "$LlvmBin\clang-cl.exe" --version | Select-Object -First 1)
     manifestTool = $manifestTool; linker = 'MSVC'
-    command = $info.FileName; arguments = $info.Arguments
-    executableSha256 = (Get-FileHash -LiteralPath $info.FileName).Hash
-    totals = ([regex]::Match($text, 'Totals: [^\r\n]+')).Value
 }
-$result | ConvertTo-Json | Set-Content -LiteralPath "$BuildRoot\result.json" -Encoding UTF8
-$result | ConvertTo-Json
-if (-not $passed) { throw "Native media status fixtures failed. See $BuildRoot\fixtures.txt." }
+$result | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath "$BuildRoot\result.json" -Encoding UTF8
+$result | ConvertTo-Json -Depth 5
+if (-not $passed) { throw "Native media fixtures failed. See the per-target logs in $BuildRoot." }

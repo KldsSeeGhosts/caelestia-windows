@@ -1,4 +1,4 @@
-# M2 media backend status at pin `2dff3ef2` (ERM-498)
+# M2 media backend status and cache isolation (ERM-498)
 
 Task-owned audit of `Quickshell.Services.Mpris` in the pinned backend, recorded
 2026-10-25 on the media integration branch. Source paths are relative to
@@ -108,12 +108,27 @@ Two additional details affect adaptation rather than capability:
 - `dbusName` embeds a per-process monotonic session id
   (`gsmtc_worker.cpp`, line 247), so it is not stable across restarts and must
   not be persisted as a player selection.
-- Artwork thumbnails are decoded and written as PNGs under
+- At `2dff3ef2`, artwork thumbnails were decoded and written as PNGs under
   `QStandardPaths::CacheLocation/mpris-art`, pruned to 50 files
   ([`art_cache.cpp`](../deps/quickshell/src/windows/services/mpris/art_cache.cpp),
-  lines 26-40, 43-77). The prototype's `CacheDir` pragma keeps this under the
-  isolated profile cache; observing sessions may therefore write native
-  thumbnails even though this slice adds no artwork UI or capture code.
+  lines 26-40, 43-77). That path bypassed the prototype's `CacheDir` pragma;
+  the original draft's isolation claim was incorrect.
+
+## Cache isolation correction at `14010429`
+
+Backend PR #3 now resolves the artwork directory from
+`QsPaths::shellCacheDir()` on the frontend thread and passes the resulting
+immutable `mpris-art` path to the worker. Cache writes and pruning stay in
+that directory; no shared-cache fallback is used. Thumbnail decoding and
+pruning have injected-byte tests using temporary profile directories,
+including a separate-profile sentinel that must survive pruning. The newly
+written image is retained even when file timestamps tie.
+
+Observing sessions may still write native thumbnails inside the isolated
+profile even though this slice adds no artwork UI or audio/video capture.
+The lifecycle inventory above describes `2dff3ef2` and is retained by the
+updated pin. Cache fixtures establish directory ownership and pruning
+behavior; native thumbnail observation is a separate acceptance claim.
 
 ## Remaining gap: no per-command result
 

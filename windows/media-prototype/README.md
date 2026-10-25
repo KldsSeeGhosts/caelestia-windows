@@ -49,7 +49,8 @@ Five states distinguish lifecycle from session count:
 | `no-sessions` | successful scan, no media sessions open (healthy) |
 | `observed` | successful scan with one or more sessions |
 
-The backend pin `2dff3ef2` reports `Mpris.ready` and `Mpris.lastError`. Native
+The backend pin `14010429` retains `Mpris.ready` and `Mpris.lastError` from
+`2dff3ef2` and isolates artwork caching to the profile's CacheDir. Native
 player snapshots can remain in the model after a failed scan, so the adapter
 hides the entire list and every control whenever `ready` is false; object
 presence alone is never health. A successful scan clears stale errors.
@@ -69,7 +70,7 @@ evidence.
 
 The original `Details.qml` gained one Windows-localized property,
 `controlsEnabled`, defaulting to upstream `true`. The host wires it to
-`Players.controlsEnabled && Players.ready`, and the component additionally
+`Players.canControl(Players.active)`, and the component additionally
 checks it before the slider interaction writes a position. Every transport
 button keeps its existing native capability check, so read-only mode cannot send
 a request even if a stale capability snapshot says it could. No second

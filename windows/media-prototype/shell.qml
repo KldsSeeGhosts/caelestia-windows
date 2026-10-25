@@ -16,7 +16,7 @@ import qs.services
 import qs.modules.dashboard.media as PlayerUI
 
 // A separate bounded M2 host for the original dashboard player details. Other
-// services, global shortcuts, IPC mutations, lyrics, artwork capture and all
+// services, global shortcuts, IPC mutations, lyrics, audio capture and all
 // shell controllers stay unloaded.
 ShellRoot {
     id: root
@@ -96,7 +96,7 @@ ShellRoot {
                 root.fail("original player component did not load");
                 return;
             }
-            if (state.playerControlsEnabled !== (state.controlsEnabled && state.ready)) {
+            if (state.playerControlsEnabled !== state.canControl) {
                 root.fail("original component control hook is not guarded by the service");
                 return;
             }
@@ -284,7 +284,7 @@ ShellRoot {
                     sourceComponent: PlayerUI.Details {
                         objectName: "windowsMediaDetails"
                         width: parent ? parent.width : 0
-                        controlsEnabled: Players.controlsEnabled && Players.ready
+                        controlsEnabled: Players.canControl(Players.active)
                     }
                 }
             }

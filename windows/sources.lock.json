@@ -7,9 +7,9 @@
   },
   "quickshell": {
     "repository": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows.git",
-    "revision": "2dff3ef2bb50fdd4d5d24c18e4bc6cdd8b47966d",
+    "revision": "1401042969e4b7ab3cfb314fc76945ab081db3de",
     "path": "windows/deps/quickshell",
-    "role": "Windows backend and QML compatibility interfaces. Preserves nunreasonable/quickshell e8ae0ef124b1c14b547c80d00422d2ffbd423d81, native mask hover handoff, Core Audio capability/error reporting, UPower observation validity, and GSMTC initialization/session-scan status."
+    "role": "Windows backend and QML compatibility interfaces. Preserves nunreasonable/quickshell e8ae0ef124b1c14b547c80d00422d2ffbd423d81, native mask hover handoff, Core Audio capability/error reporting, UPower observation validity, GSMTC initialization/session-scan status and profile-isolated artwork caching."
   },
   "iiWindowsReference": {
     "repository": "https://github.com/nunreasonable/ii-windows.git",
