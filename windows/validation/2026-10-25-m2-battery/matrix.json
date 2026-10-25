@@ -1,0 +1,462 @@
+﻿{
+    "passed":  true,
+    "failure":  null,
+    "sourceRevision":  "41cf6aae28eb06baf6c87fcffbbdd84fce28223b",
+    "sourceDirty":  false,
+    "backendRevision":  "8c71bdb8116dffeb274edb31c3803e1c28dbb270",
+    "measurementSources":  [
+                               {
+                                   "source":  "windows/scripts/Get-PowerState.ps1",
+                                   "sha256":  "F03C8C7FB8E240C2BF0BEB64833021F744288186BEF4CB78DE1C586E68DF3DF5"
+                               },
+                               {
+                                   "source":  "windows/scripts/Get-DesktopState.ps1",
+                                   "sha256":  "44E06C706EE5A930A41EA723D9DFC104469D2019DDBC3BAEA71B240B71A401DE"
+                               },
+                               {
+                                   "source":  "windows/scripts/Test-BatteryService.ps1",
+                                   "sha256":  "52EDBB8CB8197B2AD85C4ED39E625718FC3889313B3B95069C1FB719910C0CF8"
+                               },
+                               {
+                                   "source":  "windows/scripts/Test-BatteryPrototype.ps1",
+                                   "sha256":  "1B8EE668C3312B946F6F46AB7FF9BAA2D27CC20666C0DD0832AB5F1625BC5379"
+                               }
+                           ],
+    "output":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\battery-validation-20261025-142652-517",
+    "records":  [
+                    {
+                        "kind":  "fixture",
+                        "result":  {
+                                       "passed":  true,
+                                       "timedOut":  false,
+                                       "exitCode":  0,
+                                       "fixture":  {
+                                                       "assertions":  94
+                                                   },
+                                       "sourceRevision":  "41cf6aae28eb06baf6c87fcffbbdd84fce28223b",
+                                       "sourceDirty":  false,
+                                       "qtVersion":  "6.11.2",
+                                       "runnerSha256":  "24994D434962751713F0C8932B356104B0849572B95765DAD50C13DA6BE3FA20",
+                                       "command":  "C:\\Users\\Ermin\\AppData\\Local\\caelestia-dev\\Qt\\6.11.2\\msvc2022_64\\bin\\qml.exe",
+                                       "arguments":  "\"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\battery-tests\\battery-fixture-20261025-142652-860\\BatteryServiceTest.qml\"",
+                                       "sources":  [
+                                                       {
+                                                           "source":  "windows/services/battery/BatteryService.qml",
+                                                           "sourceSha256":  "CE7F44F911C06DC550CFFA9C2D7ABD136332127CA82E9FD4EBBBF9DF2C1C16BB",
+                                                           "stagedSha256":  "CE7F44F911C06DC550CFFA9C2D7ABD136332127CA82E9FD4EBBBF9DF2C1C16BB"
+                                                       },
+                                                       {
+                                                           "source":  "windows/services/battery/BatteryServiceTest.qml",
+                                                           "sourceSha256":  "297CF300F8F975D4A0BD7EA576E0433A5E6F5EA2856F8466C4F0CD1DB803CC96",
+                                                           "stagedSha256":  "297CF300F8F975D4A0BD7EA576E0433A5E6F5EA2856F8466C4F0CD1DB803CC96"
+                                                       }
+                                                   ],
+                                       "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\battery-tests\\battery-fixture-20261025-142652-860",
+                                       "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\battery-fixture-20261025-142652-860.stdout.log",
+                                       "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\battery-fixture-20261025-142652-860.stderr.log"
+                                   }
+                    },
+                    {
+                        "kind":  "battery",
+                        "result":  {
+                                       "passed":  true,
+                                       "smoke":  true,
+                                       "prototype":  "battery",
+                                       "audioMode":  "Disabled",
+                                       "batteryMode":  "Disabled",
+                                       "timedOut":  false,
+                                       "exitCode":  0,
+                                       "scaleFactor":  "native",
+                                       "screenIndex":  0,
+                                       "monitorCycle":  false,
+                                       "traceInput":  false,
+                                       "actualScreens":  [
+                                                             {
+                                                                 "index":  0,
+                                                                 "name":  "MAG321UX OLED",
+                                                                 "x":  0,
+                                                                 "y":  0,
+                                                                 "dpr":  1.5,
+                                                                 "width":  640,
+                                                                 "height":  620
+                                                             }
+                                                         ],
+                                       "captures":  [
+                                                        "file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/battery-20261025-142653-108.png"
+                                                    ],
+                                       "audioSnapshots":  [
+
+                                                          ],
+                                       "batterySnapshots":  [
+                                                                {
+                                                                    "phase":  "INITIAL",
+                                                                    "state":  {
+                                                                                  "status":  "disabled",
+                                                                                  "reason":  "Windows power status is disabled.",
+                                                                                  "enabled":  false,
+                                                                                  "backendLoaded":  false,
+                                                                                  "present":  false,
+                                                                                  "laptopBattery":  false,
+                                                                                  "hasBattery":  false,
+                                                                                  "onBattery":  false,
+                                                                                  "charging":  false,
+                                                                                  "state":  0,
+                                                                                  "percentage":  0,
+                                                                                  "timeToEmpty":  0,
+                                                                                  "iconName":  ""
+                                                                              }
+                                                                },
+                                                                {
+                                                                    "phase":  "FINAL",
+                                                                    "state":  {
+                                                                                  "status":  "disabled",
+                                                                                  "reason":  "Windows power status is disabled.",
+                                                                                  "enabled":  false,
+                                                                                  "backendLoaded":  false,
+                                                                                  "present":  false,
+                                                                                  "laptopBattery":  false,
+                                                                                  "hasBattery":  false,
+                                                                                  "onBattery":  false,
+                                                                                  "charging":  false,
+                                                                                  "state":  0,
+                                                                                  "percentage":  0,
+                                                                                  "timeToEmpty":  0,
+                                                                                  "iconName":  ""
+                                                                              }
+                                                                }
+                                                            ],
+                                       "elapsedMilliseconds":  3430,
+                                       "sourceRevision":  "41cf6aae28eb06baf6c87fcffbbdd84fce28223b",
+                                       "sourceDirty":  false,
+                                       "backendRevision":  "8c71bdb8116dffeb274edb31c3803e1c28dbb270",
+                                       "buildRecordSha256":  "4037FE1848E2907DBFD85DD9A3A395DD9EEA72B6D8D11A7547F41B4A58DFD133",
+                                       "configSha256":  "6FC8F8B80AF9D45A49A4737AF51B8C43A11B97E1B59A82468F31AB4C779C6F65",
+                                       "command":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\quickshell\\qs.exe",
+                                       "arguments":  "--no-color --log-times --path \"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\battery-20261025-142653-108\\shell.qml\"",
+                                       "executableSha256":  "0742608F64E8BBC8F322DD97BC53693FDFA5DE46CA065488EB50979626DE3B16",
+                                       "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\battery-20261025-142653-108",
+                                       "profile":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\battery-prototype-profile",
+                                       "sources":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\battery-20261025-142653-108.sources.json",
+                                       "screenshot":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\battery-20261025-142653-108.png",
+                                       "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\battery-20261025-142653-108.stdout.log",
+                                       "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\battery-20261025-142653-108.stderr.log"
+                                   }
+                    },
+                    {
+                        "kind":  "battery",
+                        "result":  {
+                                       "passed":  true,
+                                       "smoke":  true,
+                                       "prototype":  "battery",
+                                       "audioMode":  "Disabled",
+                                       "batteryMode":  "ReadOnly",
+                                       "timedOut":  false,
+                                       "exitCode":  0,
+                                       "scaleFactor":  "native",
+                                       "screenIndex":  0,
+                                       "monitorCycle":  false,
+                                       "traceInput":  false,
+                                       "actualScreens":  [
+                                                             {
+                                                                 "index":  0,
+                                                                 "name":  "MAG321UX OLED",
+                                                                 "x":  0,
+                                                                 "y":  0,
+                                                                 "dpr":  1.5,
+                                                                 "width":  640,
+                                                                 "height":  620
+                                                             }
+                                                         ],
+                                       "captures":  [
+                                                        "file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/battery-20261025-142656-898.png"
+                                                    ],
+                                       "audioSnapshots":  [
+
+                                                          ],
+                                       "batterySnapshots":  [
+                                                                {
+                                                                    "phase":  "INITIAL",
+                                                                    "state":  {
+                                                                                  "status":  "ready",
+                                                                                  "reason":  "No battery detected on this system.",
+                                                                                  "enabled":  true,
+                                                                                  "backendLoaded":  true,
+                                                                                  "present":  false,
+                                                                                  "laptopBattery":  false,
+                                                                                  "hasBattery":  false,
+                                                                                  "onBattery":  false,
+                                                                                  "charging":  false,
+                                                                                  "state":  0,
+                                                                                  "percentage":  0,
+                                                                                  "timeToEmpty":  0,
+                                                                                  "iconName":  ""
+                                                                              }
+                                                                },
+                                                                {
+                                                                    "phase":  "FINAL",
+                                                                    "state":  {
+                                                                                  "status":  "ready",
+                                                                                  "reason":  "No battery detected on this system.",
+                                                                                  "enabled":  true,
+                                                                                  "backendLoaded":  true,
+                                                                                  "present":  false,
+                                                                                  "laptopBattery":  false,
+                                                                                  "hasBattery":  false,
+                                                                                  "onBattery":  false,
+                                                                                  "charging":  false,
+                                                                                  "state":  0,
+                                                                                  "percentage":  0,
+                                                                                  "timeToEmpty":  0,
+                                                                                  "iconName":  ""
+                                                                              }
+                                                                }
+                                                            ],
+                                       "elapsedMilliseconds":  3436,
+                                       "sourceRevision":  "41cf6aae28eb06baf6c87fcffbbdd84fce28223b",
+                                       "sourceDirty":  false,
+                                       "backendRevision":  "8c71bdb8116dffeb274edb31c3803e1c28dbb270",
+                                       "buildRecordSha256":  "4037FE1848E2907DBFD85DD9A3A395DD9EEA72B6D8D11A7547F41B4A58DFD133",
+                                       "configSha256":  "6FC8F8B80AF9D45A49A4737AF51B8C43A11B97E1B59A82468F31AB4C779C6F65",
+                                       "command":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\quickshell\\qs.exe",
+                                       "arguments":  "--no-color --log-times --path \"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\battery-20261025-142656-898\\shell.qml\"",
+                                       "executableSha256":  "0742608F64E8BBC8F322DD97BC53693FDFA5DE46CA065488EB50979626DE3B16",
+                                       "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\battery-20261025-142656-898",
+                                       "profile":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\battery-prototype-profile",
+                                       "sources":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\battery-20261025-142656-898.sources.json",
+                                       "screenshot":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\battery-20261025-142656-898.png",
+                                       "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\battery-20261025-142656-898.stdout.log",
+                                       "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\battery-20261025-142656-898.stderr.log"
+                                   }
+                    },
+                    {
+                        "kind":  "battery",
+                        "result":  {
+                                       "passed":  true,
+                                       "smoke":  true,
+                                       "prototype":  "battery",
+                                       "audioMode":  "Disabled",
+                                       "batteryMode":  "Disabled",
+                                       "timedOut":  false,
+                                       "exitCode":  0,
+                                       "scaleFactor":  "native",
+                                       "screenIndex":  1,
+                                       "monitorCycle":  false,
+                                       "traceInput":  false,
+                                       "actualScreens":  [
+                                                             {
+                                                                 "index":  1,
+                                                                 "name":  "DELL S2725QS",
+                                                                 "x":  -3840,
+                                                                 "y":  0,
+                                                                 "dpr":  1.75,
+                                                                 "width":  640,
+                                                                 "height":  620
+                                                             }
+                                                         ],
+                                       "captures":  [
+                                                        "file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/battery-20261025-142700-685.png"
+                                                    ],
+                                       "audioSnapshots":  [
+
+                                                          ],
+                                       "batterySnapshots":  [
+                                                                {
+                                                                    "phase":  "INITIAL",
+                                                                    "state":  {
+                                                                                  "status":  "disabled",
+                                                                                  "reason":  "Windows power status is disabled.",
+                                                                                  "enabled":  false,
+                                                                                  "backendLoaded":  false,
+                                                                                  "present":  false,
+                                                                                  "laptopBattery":  false,
+                                                                                  "hasBattery":  false,
+                                                                                  "onBattery":  false,
+                                                                                  "charging":  false,
+                                                                                  "state":  0,
+                                                                                  "percentage":  0,
+                                                                                  "timeToEmpty":  0,
+                                                                                  "iconName":  ""
+                                                                              }
+                                                                },
+                                                                {
+                                                                    "phase":  "FINAL",
+                                                                    "state":  {
+                                                                                  "status":  "disabled",
+                                                                                  "reason":  "Windows power status is disabled.",
+                                                                                  "enabled":  false,
+                                                                                  "backendLoaded":  false,
+                                                                                  "present":  false,
+                                                                                  "laptopBattery":  false,
+                                                                                  "hasBattery":  false,
+                                                                                  "onBattery":  false,
+                                                                                  "charging":  false,
+                                                                                  "state":  0,
+                                                                                  "percentage":  0,
+                                                                                  "timeToEmpty":  0,
+                                                                                  "iconName":  ""
+                                                                              }
+                                                                }
+                                                            ],
+                                       "elapsedMilliseconds":  3451,
+                                       "sourceRevision":  "41cf6aae28eb06baf6c87fcffbbdd84fce28223b",
+                                       "sourceDirty":  false,
+                                       "backendRevision":  "8c71bdb8116dffeb274edb31c3803e1c28dbb270",
+                                       "buildRecordSha256":  "4037FE1848E2907DBFD85DD9A3A395DD9EEA72B6D8D11A7547F41B4A58DFD133",
+                                       "configSha256":  "6FC8F8B80AF9D45A49A4737AF51B8C43A11B97E1B59A82468F31AB4C779C6F65",
+                                       "command":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\quickshell\\qs.exe",
+                                       "arguments":  "--no-color --log-times --path \"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\battery-20261025-142700-685\\shell.qml\"",
+                                       "executableSha256":  "0742608F64E8BBC8F322DD97BC53693FDFA5DE46CA065488EB50979626DE3B16",
+                                       "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\battery-20261025-142700-685",
+                                       "profile":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\battery-prototype-profile",
+                                       "sources":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\battery-20261025-142700-685.sources.json",
+                                       "screenshot":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\battery-20261025-142700-685.png",
+                                       "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\battery-20261025-142700-685.stdout.log",
+                                       "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\battery-20261025-142700-685.stderr.log"
+                                   }
+                    },
+                    {
+                        "kind":  "battery",
+                        "result":  {
+                                       "passed":  true,
+                                       "smoke":  true,
+                                       "prototype":  "battery",
+                                       "audioMode":  "Disabled",
+                                       "batteryMode":  "ReadOnly",
+                                       "timedOut":  false,
+                                       "exitCode":  0,
+                                       "scaleFactor":  "native",
+                                       "screenIndex":  1,
+                                       "monitorCycle":  false,
+                                       "traceInput":  false,
+                                       "actualScreens":  [
+                                                             {
+                                                                 "index":  1,
+                                                                 "name":  "DELL S2725QS",
+                                                                 "x":  -3840,
+                                                                 "y":  0,
+                                                                 "dpr":  1.75,
+                                                                 "width":  640,
+                                                                 "height":  620
+                                                             }
+                                                         ],
+                                       "captures":  [
+                                                        "file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/battery-20261025-142704-505.png"
+                                                    ],
+                                       "audioSnapshots":  [
+
+                                                          ],
+                                       "batterySnapshots":  [
+                                                                {
+                                                                    "phase":  "INITIAL",
+                                                                    "state":  {
+                                                                                  "status":  "ready",
+                                                                                  "reason":  "No battery detected on this system.",
+                                                                                  "enabled":  true,
+                                                                                  "backendLoaded":  true,
+                                                                                  "present":  false,
+                                                                                  "laptopBattery":  false,
+                                                                                  "hasBattery":  false,
+                                                                                  "onBattery":  false,
+                                                                                  "charging":  false,
+                                                                                  "state":  0,
+                                                                                  "percentage":  0,
+                                                                                  "timeToEmpty":  0,
+                                                                                  "iconName":  ""
+                                                                              }
+                                                                },
+                                                                {
+                                                                    "phase":  "FINAL",
+                                                                    "state":  {
+                                                                                  "status":  "ready",
+                                                                                  "reason":  "No battery detected on this system.",
+                                                                                  "enabled":  true,
+                                                                                  "backendLoaded":  true,
+                                                                                  "present":  false,
+                                                                                  "laptopBattery":  false,
+                                                                                  "hasBattery":  false,
+                                                                                  "onBattery":  false,
+                                                                                  "charging":  false,
+                                                                                  "state":  0,
+                                                                                  "percentage":  0,
+                                                                                  "timeToEmpty":  0,
+                                                                                  "iconName":  ""
+                                                                              }
+                                                                }
+                                                            ],
+                                       "elapsedMilliseconds":  3428,
+                                       "sourceRevision":  "41cf6aae28eb06baf6c87fcffbbdd84fce28223b",
+                                       "sourceDirty":  false,
+                                       "backendRevision":  "8c71bdb8116dffeb274edb31c3803e1c28dbb270",
+                                       "buildRecordSha256":  "4037FE1848E2907DBFD85DD9A3A395DD9EEA72B6D8D11A7547F41B4A58DFD133",
+                                       "configSha256":  "6FC8F8B80AF9D45A49A4737AF51B8C43A11B97E1B59A82468F31AB4C779C6F65",
+                                       "command":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\quickshell\\qs.exe",
+                                       "arguments":  "--no-color --log-times --path \"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\battery-20261025-142704-505\\shell.qml\"",
+                                       "executableSha256":  "0742608F64E8BBC8F322DD97BC53693FDFA5DE46CA065488EB50979626DE3B16",
+                                       "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\battery-20261025-142704-505",
+                                       "profile":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\battery-prototype-profile",
+                                       "sources":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\battery-20261025-142704-505.sources.json",
+                                       "screenshot":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\battery-20261025-142704-505.png",
+                                       "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\battery-20261025-142704-505.stdout.log",
+                                       "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\battery-20261025-142704-505.stderr.log"
+                                   }
+                    },
+                    {
+                        "kind":  "m1-regression",
+                        "result":  {
+                                       "passed":  true,
+                                       "smoke":  true,
+                                       "prototype":  "shell",
+                                       "audioMode":  "Disabled",
+                                       "batteryMode":  "Disabled",
+                                       "timedOut":  false,
+                                       "exitCode":  0,
+                                       "scaleFactor":  "native",
+                                       "screenIndex":  0,
+                                       "monitorCycle":  false,
+                                       "traceInput":  false,
+                                       "actualScreens":  [
+                                                             {
+                                                                 "index":  0,
+                                                                 "name":  "MAG321UX OLED",
+                                                                 "x":  0,
+                                                                 "y":  0,
+                                                                 "dpr":  1.5
+                                                             }
+                                                         ],
+                                       "captures":  [
+                                                        "file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/shell-20261025-142708-265.png"
+                                                    ],
+                                       "audioSnapshots":  [
+
+                                                          ],
+                                       "batterySnapshots":  [
+
+                                                            ],
+                                       "elapsedMilliseconds":  4065,
+                                       "sourceRevision":  "41cf6aae28eb06baf6c87fcffbbdd84fce28223b",
+                                       "sourceDirty":  false,
+                                       "backendRevision":  "8c71bdb8116dffeb274edb31c3803e1c28dbb270",
+                                       "buildRecordSha256":  "4037FE1848E2907DBFD85DD9A3A395DD9EEA72B6D8D11A7547F41B4A58DFD133",
+                                       "configSha256":  "6FC8F8B80AF9D45A49A4737AF51B8C43A11B97E1B59A82468F31AB4C779C6F65",
+                                       "command":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\quickshell\\qs.exe",
+                                       "arguments":  "--no-color --log-times --path \"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\shell-20261025-142708-265\\shell.qml\"",
+                                       "executableSha256":  "0742608F64E8BBC8F322DD97BC53693FDFA5DE46CA065488EB50979626DE3B16",
+                                       "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\shell-20261025-142708-265",
+                                       "profile":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-prototype-profile",
+                                       "sources":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\shell-20261025-142708-265.sources.json",
+                                       "screenshot":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\shell-20261025-142708-265.png",
+                                       "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\shell-20261025-142708-265.stdout.log",
+                                       "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\shell-20261025-142708-265.stderr.log"
+                                   }
+                    },
+                    {
+                        "kind":  "audio-regression",
+                        "result":  {
+                                       "passed":  true,
+                                       "failure":  null,
+                                       "output":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\audio-validation-20261025-142712-618",
+                                       "runs":  6
+                                   }
+                    }
+                ]
+}

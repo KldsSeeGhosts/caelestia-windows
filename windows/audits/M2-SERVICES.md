@@ -395,6 +395,21 @@ root to deduplicate against Linear, each enabled and validated independently:
    absent/unknown telemetry. Acceptance: desktop-without-battery and battery
    states handled; no profile or idle-plan writes. Profile selection and
    IdlePower settings remain a separate later issue if desired.
+   **Progress:** implemented as ERM-499's bounded slice on
+   `windows/m2-battery-service`: a pure QtObject
+   [UPower adapter](../services/battery/BatteryService.qml) with no mutating
+   methods, the original status/popout components with
+   `profileStatusEnabled`/`profileControlsEnabled` hooks that keep
+   PowerProfiles unreferenced and the overlay-scheme write path unreachable,
+   and a host that instantiates the original components only after the
+   read-only opt-in (they bind `UPower` directly). The localized edits to
+   [BatteryStatus.qml](../../modules/bar/components/status/BatteryStatus.qml)
+   and [Battery.qml](../../modules/bar/popouts/Battery.qml) add only those
+   hooks and their false-state rendering; upstream defaults are preserved.
+   [Acceptance evidence](../validation/2026-10-25-m2-battery/README.md) covers
+   the batteryless desktop path natively at clean `41cf6aae`; battery-present
+   behavior is fixture-validated only, and IdlePower/profile selection stays
+   out of scope.
 4. **Windows Network adapter and original network UI:** define explicit
    AccessPoint/Ethernet boundaries instead of porting the nmcli process graph.
    Acceptance: absent adapter/location denial, bounded list-visible scans,

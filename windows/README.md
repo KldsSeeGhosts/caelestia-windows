@@ -32,6 +32,15 @@ For the next development session, start with [HANDOFF.md](HANDOFF.md).
   are separate from live write/recovery validation. Other services remain off.
   The [first M2 acceptance archive](validation/2026-10-25-m2-audio/README.md)
   records clean-source two-monitor results and unchanged audio/desktop state.
+- A second M2 slice adds a strictly read-only
+  [battery status prototype](battery-prototype/README.md). It preserves the
+  original battery status icon and popout content, projects the native UPower
+  display device through a QtObject adapter with no mutating methods, and
+  keeps PowerProfiles and IdlePower writes out of the process. A system
+  without a battery renders the truthful absent state. The
+  [second M2 acceptance archive](validation/2026-10-25-m2-battery/README.md)
+  records the batteryless-desktop results, unchanged scheme/overlay/desktop
+  state and the limits of fixture-only battery-present coverage.
 - Inherited GitHub Actions are disabled at repository level during bootstrap.
   They are upstream Linux workflows, not validation of this port.
 

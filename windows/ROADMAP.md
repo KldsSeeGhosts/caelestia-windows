@@ -15,9 +15,11 @@ tracks the milestones and implementation issues.
   [Final evidence and limits](validation/2026-10-25-m1-acceptance/README.md)
   include the rejected preliminary desktop-wide notification test.
 - M2: in progress. ERM-495 audits all service contracts; ERM-496/497 implement
-  isolated opt-in audio and truthful native control errors. Remaining service
-  integrations are ERM-498 through ERM-507; ERM-508 owns real audio control/
-  denial/recovery. M3/M4 have not started.
+  isolated opt-in audio and truthful native control errors; ERM-499 adds the
+  read-only battery status slice with truthful absence on a batteryless
+  desktop. Remaining service integrations are ERM-498 and ERM-500 through
+  ERM-507; ERM-508 owns real audio control/denial/recovery. M3/M4 have not
+  started.
 
 Continue from [HANDOFF.md](HANDOFF.md). Linear was connected and synchronized
 on 2026-10-25 under the Ermin Zeherovic (ERM) team. This roadmap owns detailed
@@ -106,19 +108,31 @@ access without retry loops or privilege changes.
 Gate: enable services individually, with explicit unavailable states and no
 unexpected startup side effects.
 
-Current slice: [original audio controls and Core Audio adapter](audio-prototype/README.md).
+Current slice: [original audio controls and Core Audio adapter](audio-prototype/README.md),
+followed by the [read-only battery status slice](battery-prototype/README.md).
 Native observation, injected failure handling and real writes/recovery are
 distinct validation claims. The [source audit](audits/M2-SERVICES.md) records
 all service gaps, Linux process/path boundaries and staged acceptance work.
-Audio defaults disabled; observation and interactive controls require separate
-child-process opt-ins. Other services remain unavailable.
+Audio and battery default disabled; observation requires separate
+child-process opt-ins and the battery slice performs no writes. Other services
+remain unavailable.
 
-ERM-495/496/497 are complete for the bounded slice. Clean `fb6665ab` passes
-238 adapter assertions, 16 native fake-COM cases, native 150%/175%
+ERM-495/496/497 are complete for the bounded audio slice. Clean `fb6665ab`
+passes 238 adapter assertions, 16 native fake-COM cases, native 150%/175%
 disabled/read-only UI and M1 smoke regression with unchanged endpoint/default
 and shell/work-area/taskbar state.
 [Evidence and limits](validation/2026-10-25-m2-audio/README.md) distinguish
 those checks from ERM-508's remaining live controls/denial/recovery.
+
+ERM-499 is bounded-complete for read-only battery status. Clean `41cf6aae`
+passes 94 adapter assertions, native 150%/175% disabled/read-only UI on a
+batteryless desktop with truthful absence rendering, unchanged base scheme,
+overlay scheme and desktop state, the M1 smoke regression and a full audio
+harness re-run. Battery-present hardware, overlay/profile writes and
+IdlePower remain unvalidated by design;
+[evidence and limits](validation/2026-10-25-m2-battery/README.md) record the
+fixture-only coverage for battery-present behavior. M2 remains incomplete:
+ERM-498 (media) and the remaining service tickets are next.
 
 ## M3: windows, workspaces, and tiling
 

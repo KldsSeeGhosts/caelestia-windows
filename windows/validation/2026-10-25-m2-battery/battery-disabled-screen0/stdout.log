@@ -1,0 +1,18 @@
+﻿2026-10-25 14:26:53.403  INFO: Launching config: "D:/AiStack/caelestia-windows/windows/.local/build/shell-runs/battery-20261025-142653-108/shell.qml"
+2026-10-25 14:26:53.404  INFO: Shell ID: "9fee72022170129f46e182f4bc63a822" Path ID "9fee72022170129f46e182f4bc63a822"
+2026-10-25 14:26:53.421  INFO: Saving logs to "C:/Users/Ermin/AppData/Local/quickshell/run/by-id/s2it87hnt/log.qslog"
+2026-10-25 14:26:53.469  INFO quickshell.windows.blur: Blur behind panels is turned off by QS_WINDOWS_BLUR.
+2026-10-25 14:26:53.471  INFO quickshell.windows.blur: No layer rules file found (looked for D:/AiStack/caelestia-windows/windows/.local/build/shell-runs/battery-20261025-142653-108/defaults/windows/layerrules.json ), blur behind panels is off.
+2026-10-25 14:26:53.590 DEBUG quickshell.windows.desktops: Desktop list changed: 1 desktops
+2026-10-25 14:26:53.590 DEBUG quickshell.windows.desktops: Current desktop: 0
+2026-10-25 14:26:53.591 DEBUG quickshell.windows.panel: Placing qs::windows::WinPanelWindow(0x1e7f2110c30) at QRect(80,80 640x620) on "MAG321UX OLED"
+2026-10-25 14:26:53.599  INFO: Configuration Loaded
+2026-10-25 14:26:53.720 DEBUG quickshell.windows.startup: First panel frame presented
+2026-10-25 14:26:54.120 DEBUG quickshell.windows.startup: Startup settled, running 1 deferred tasks
+2026-10-25 14:26:54.120  INFO quickshell.windows.desktops: VirtualDesktopAccessor.dll not found next to the executable; desktop switching falls back to keyboard shortcuts.
+2026-10-25 14:26:54.720 DEBUG qml: CAELESTIA_BATTERY_SCREEN {"index":0,"name":"MAG321UX OLED","x":0,"y":0,"dpr":1.5,"width":640,"height":620}
+2026-10-25 14:26:54.720 DEBUG qml: CAELESTIA_BATTERY_INITIAL {"status":"disabled","reason":"Windows power status is disabled.","enabled":false,"backendLoaded":false,"present":false,"laptopBattery":false,"hasBattery":false,"onBattery":false,"charging":false,"state":0,"percentage":0,"timeToEmpty":0,"iconName":""}
+2026-10-25 14:26:56.722 DEBUG qml: CAELESTIA_BATTERY_FINAL {"status":"disabled","reason":"Windows power status is disabled.","enabled":false,"backendLoaded":false,"present":false,"laptopBattery":false,"hasBattery":false,"onBattery":false,"charging":false,"state":0,"percentage":0,"timeToEmpty":0,"iconName":""}
+2026-10-25 14:26:56.754 DEBUG qml: CAELESTIA_BATTERY_CAPTURE file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/battery-20261025-142653-108.png
+2026-10-25 14:26:56.755 DEBUG qml: CAELESTIA_BATTERY_PASS 6.11.2
+

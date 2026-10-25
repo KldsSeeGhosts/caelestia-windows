@@ -1,0 +1,247 @@
+﻿[
+    {
+        "path":  "audio-regression/result.json",
+        "sha256":  "B34B538DCA2FD49AF052AE9E496345AF467F0DC098E5E0D952EC4B5437D72FEB",
+        "bytes":  78571
+    },
+    {
+        "path":  "battery-disabled-screen0/capture.png",
+        "sha256":  "29ACAD117E76030DB44B74D7624AD2D55B9E579E174F06F6CD12CF0C70506CB5",
+        "bytes":  19419
+    },
+    {
+        "path":  "battery-disabled-screen0/result.json",
+        "sha256":  "DE9632E1A94B586623FE4D1768E064B2C2FD47BCF99B692AB46720CB5DBCE346",
+        "bytes":  4678
+    },
+    {
+        "path":  "battery-disabled-screen0/sources.json",
+        "sha256":  "A638AD481FDFDE0C7C71C27DE51B61A0E40CE83A6999920EEE759B98A54380B8",
+        "bytes":  17512
+    },
+    {
+        "path":  "battery-disabled-screen0/stderr.log",
+        "sha256":  "F01A374E9C81E3DB89B3A42940C4D6A5447684986A1296E42BF13F196EED6295",
+        "bytes":  5
+    },
+    {
+        "path":  "battery-disabled-screen0/stdout.log",
+        "sha256":  "2A35828108A9DFC52F282E53FD95F741570987E2A3A3791C4F59972FE66D1BAD",
+        "bytes":  2479
+    },
+    {
+        "path":  "battery-disabled-screen1/capture.png",
+        "sha256":  "D249199ECB39ED86C5CAB3DF04B8D77ACD48C4FB2DE404E4036C7756181566D1",
+        "bytes":  22971
+    },
+    {
+        "path":  "battery-disabled-screen1/result.json",
+        "sha256":  "E5AC02379E8204015A6F29125881A910969B2EF4F74CE1335D0FC6C678AFD261",
+        "bytes":  4682
+    },
+    {
+        "path":  "battery-disabled-screen1/sources.json",
+        "sha256":  "A638AD481FDFDE0C7C71C27DE51B61A0E40CE83A6999920EEE759B98A54380B8",
+        "bytes":  17512
+    },
+    {
+        "path":  "battery-disabled-screen1/stderr.log",
+        "sha256":  "F01A374E9C81E3DB89B3A42940C4D6A5447684986A1296E42BF13F196EED6295",
+        "bytes":  5
+    },
+    {
+        "path":  "battery-disabled-screen1/stdout.log",
+        "sha256":  "4CE82E195E05303F90B48E58D1E8926DE42647D5DDFE8A414025479E35B0E72E",
+        "bytes":  2485
+    },
+    {
+        "path":  "battery-readonly-screen0/capture.png",
+        "sha256":  "6253010A46F27BC0B134236433E0441D59103397D737BFC3022076CBD6F26E5E",
+        "bytes":  36669
+    },
+    {
+        "path":  "battery-readonly-screen0/result.json",
+        "sha256":  "F2321FE9FACB0F93F8A0F6F7DC273D7DC0B7F835974D7B80335BAD9B8D2746DC",
+        "bytes":  4672
+    },
+    {
+        "path":  "battery-readonly-screen0/sources.json",
+        "sha256":  "A638AD481FDFDE0C7C71C27DE51B61A0E40CE83A6999920EEE759B98A54380B8",
+        "bytes":  17512
+    },
+    {
+        "path":  "battery-readonly-screen0/stderr.log",
+        "sha256":  "F01A374E9C81E3DB89B3A42940C4D6A5447684986A1296E42BF13F196EED6295",
+        "bytes":  5
+    },
+    {
+        "path":  "battery-readonly-screen0/stdout.log",
+        "sha256":  "6006C4FA82CD8B23184D830EAC8018A3584B05E72E88F72629C923DF5DFA2315",
+        "bytes":  2473
+    },
+    {
+        "path":  "battery-readonly-screen1/capture.png",
+        "sha256":  "83691A13C3CFFE16D01DCB953924B071B31CFA860FDFC140EECA71ADA85C0AFC",
+        "bytes":  42393
+    },
+    {
+        "path":  "battery-readonly-screen1/result.json",
+        "sha256":  "2784D747FBCD6EEBFDDF4216FF128F7267A82BB6E8B1D12E6B50A4467D0B75E1",
+        "bytes":  4676
+    },
+    {
+        "path":  "battery-readonly-screen1/sources.json",
+        "sha256":  "A638AD481FDFDE0C7C71C27DE51B61A0E40CE83A6999920EEE759B98A54380B8",
+        "bytes":  17512
+    },
+    {
+        "path":  "battery-readonly-screen1/stderr.log",
+        "sha256":  "F01A374E9C81E3DB89B3A42940C4D6A5447684986A1296E42BF13F196EED6295",
+        "bytes":  5
+    },
+    {
+        "path":  "battery-readonly-screen1/stdout.log",
+        "sha256":  "ADE6AAD5446B8E8CFC2607D320CE621C641905965C817E78E2915498090326A4",
+        "bytes":  2479
+    },
+    {
+        "path":  "build/build.json",
+        "sha256":  "4037FE1848E2907DBFD85DD9A3A395DD9EEA72B6D8D11A7547F41B4A58DFD133",
+        "bytes":  622
+    },
+    {
+        "path":  "build/build-backend.log",
+        "sha256":  "944E9EF14B6627AF2CEF223C82ED1E045AE60DBC1FFABF6B9D43B769A8C9A98B",
+        "bytes":  88
+    },
+    {
+        "path":  "build/build-backend-command.json",
+        "sha256":  "99F6C28AF77C86EE1D7B5717472E331E751B5110034A6825AC259D9C7F7DCADB",
+        "bytes":  164
+    },
+    {
+        "path":  "build/build-plugins.log",
+        "sha256":  "C9D4A445BF901712E661B0DDDBE70A537A02E69B3FA4161A27C642B3E74EB455",
+        "bytes":  132
+    },
+    {
+        "path":  "build/build-plugins-command.json",
+        "sha256":  "9DB74E5875DAC15BFCC5E51A179C24FCE9AF3B1D616BA42C9E98302DB374DEBB",
+        "bytes":  127
+    },
+    {
+        "path":  "build/configure-backend.log",
+        "sha256":  "E0142AAC7DE1A25BE221710C456864B83DBAE8D1AC1D26F027E7B0738CC33635",
+        "bytes":  7424
+    },
+    {
+        "path":  "build/configure-backend-command.json",
+        "sha256":  "6596E9445D002CFECF0B66E630F3209E5A6B2DB176467A876B1F3A6993C485E6",
+        "bytes":  740
+    },
+    {
+        "path":  "build/configure-plugins.log",
+        "sha256":  "0751564FAC0E79A9DE07A1C55D6F73E5AF22C40844AE7B6E507B9B09DEE2A3A7",
+        "bytes":  6786
+    },
+    {
+        "path":  "build/configure-plugins-command.json",
+        "sha256":  "52EEDE91890AD23DD1A4FE41C77CC3A0E806A3592BBB5CF33DA819DFCE461325",
+        "bytes":  533
+    },
+    {
+        "path":  "build/environment.json",
+        "sha256":  "8ADCA87B7891F7118D55FDEC02499145B28B319ABB841D7E2511939B32A86A84",
+        "bytes":  2128
+    },
+    {
+        "path":  "build/install-plugins.log",
+        "sha256":  "28622786AE6A7885E7A13CB0C07EBE73CD90B977FACEBC3AA9712E1F1CC30322",
+        "bytes":  8314
+    },
+    {
+        "path":  "build/install-plugins-command.json",
+        "sha256":  "280B8D2AD2EAAE861CAB25862AA4B2C06E51FF42ED8E228748D9EC7AE4B1E74E",
+        "bytes":  100
+    },
+    {
+        "path":  "desktop-after.json",
+        "sha256":  "4FB4FBA938D41321AD835B7F2DDDA72F1F890694E446150A826DB9E82BA379AC",
+        "bytes":  4676
+    },
+    {
+        "path":  "desktop-before.json",
+        "sha256":  "6ED1A3CA1748EC04E36A665F589FC7698AC159DCA7318BDBFA03347276948F2D",
+        "bytes":  4676
+    },
+    {
+        "path":  "fixture/BatteryService.qml",
+        "sha256":  "CE7F44F911C06DC550CFFA9C2D7ABD136332127CA82E9FD4EBBBF9DF2C1C16BB",
+        "bytes":  4809
+    },
+    {
+        "path":  "fixture/BatteryServiceTest.qml",
+        "sha256":  "297CF300F8F975D4A0BD7EA576E0433A5E6F5EA2856F8466C4F0CD1DB803CC96",
+        "bytes":  12159
+    },
+    {
+        "path":  "fixture/result.json",
+        "sha256":  "E8FF4A3FB4171D6A567D91A15E1B29977C7DEE0BF649912DD3A5A6EB19276BF3",
+        "bytes":  1754
+    },
+    {
+        "path":  "fixture/stderr.log",
+        "sha256":  "C5C60D0FFF47DEF2C68259A7B940EF6B2C37E456D3ECA48E5EE80F7FDE24C038",
+        "bytes":  60
+    },
+    {
+        "path":  "fixture/stdout.log",
+        "sha256":  "F01A374E9C81E3DB89B3A42940C4D6A5447684986A1296E42BF13F196EED6295",
+        "bytes":  5
+    },
+    {
+        "path":  "isolated-shell.json",
+        "sha256":  "6FC8F8B80AF9D45A49A4737AF51B8C43A11B97E1B59A82468F31AB4C779C6F65",
+        "bytes":  874
+    },
+    {
+        "path":  "m1-regression/capture.png",
+        "sha256":  "585647A74B611CAC5BE046EE6DFD6C36417DADD50486B5BEC11DD970FB4E4194",
+        "bytes":  78382
+    },
+    {
+        "path":  "m1-regression/result.json",
+        "sha256":  "61F9B2F4E5742A63E7C857115E3F93E8F2E68F30521A9CD08E84ADC396ECAB9D",
+        "bytes":  2324
+    },
+    {
+        "path":  "m1-regression/sources.json",
+        "sha256":  "786ACFAE51A0D75341B24DC68DE73E9A140163142BDA9C8D77226C8A8EF186AD",
+        "bytes":  15320
+    },
+    {
+        "path":  "m1-regression/stderr.log",
+        "sha256":  "F01A374E9C81E3DB89B3A42940C4D6A5447684986A1296E42BF13F196EED6295",
+        "bytes":  5
+    },
+    {
+        "path":  "m1-regression/stdout.log",
+        "sha256":  "6AEC2AD3162F33630284C0E8F2C2E4D9CD1A89D3F617D1F70BAF45E59589A2FC",
+        "bytes":  2380
+    },
+    {
+        "path":  "matrix.json",
+        "sha256":  "E96EC0C3DEC12F23B4103E49422844CB27F515E5A177378E81ADB9FB5E427A6C",
+        "bytes":  39367
+    },
+    {
+        "path":  "power-after.json",
+        "sha256":  "86DAABA6C6CB4137CE765DB92C0780F9274120E4E588C4446202DA1E63CDF580",
+        "bytes":  1947
+    },
+    {
+        "path":  "power-before.json",
+        "sha256":  "1DB94BA2A51113F6E64ABC51A589FD96E457DD963ED667A91EB74E8575505203",
+        "bytes":  1947
+    }
+]
