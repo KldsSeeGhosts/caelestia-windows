@@ -44,7 +44,10 @@ if ($Prototype -eq 'combined') {
         'windows/shell-prototype/adapters/modules/bar/popouts/Wrapper.qml',
         'windows/shell-prototype/adapters/modules/bar/popouts/ClipWrapper.qml',
         'windows/shell-prototype/adapters/modules/drawers/Panels.qml',
-        'windows/shell-prototype/adapters/services/Hypr.qml'
+        'windows/shell-prototype/adapters/services/Hypr.qml',
+        'windows/shell-prototype/adapters/utils/Paths.qml',
+        'windows/shell-prototype/adapters/Caelestia/Services/qmldir',
+        'modules/session/Content.qml'
     )) { $files.Remove($baseAdapter) }
 }
 if ($Prototype -ne 'shell') {
@@ -63,7 +66,8 @@ if ($Prototype -eq 'combined') {
         'bluetooth' = @('modules/bar/popouts/Bluetooth.qml', 'windows/services/bluetooth/Bluetooth.qml')
         'brightness' = @('modules/osd/Content.qml')
         'network' = @('modules/bar/popouts/Network.qml')
-        'notifications' = @('windows/notifications-prototype/adapters/components/effects/ColouredIcon.qml')
+        'notifications' = @('windows/notifications-prototype/adapters/components/effects/ColouredIcon.qml', 'windows/notifications-prototype/adapters/modules/utilities/Wrapper.qml')
+        'apps' = @('windows/apps-prototype/adapters/modules/launcher/items/ActionItem.qml', 'windows/apps-prototype/adapters/modules/launcher/items/CalcItem.qml', 'windows/apps-prototype/adapters/modules/launcher/services/Actions.qml', 'windows/apps-prototype/adapters/modules/launcher/services/Schemes.qml', 'windows/apps-prototype/adapters/modules/launcher/services/M3Variants.qml')
         'tray' = @('modules/bar/components/Tray.qml', 'windows/services/tray/Tray.qml')
     }
     foreach ($slice in @('audio', 'battery', 'bluetooth', 'brightness', 'media', 'network', 'notifications', 'tray', 'apps')) {

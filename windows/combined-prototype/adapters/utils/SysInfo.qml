@@ -1,6 +1,8 @@
 pragma Singleton
 
 import QtQuick
+import Quickshell
+import Quickshell.Windows
 
 // Windows localized adapter for the original utils/SysInfo.qml singleton.
 // The original reads /etc/os-release, /proc and DMI files, none of which exist
@@ -17,9 +19,9 @@ QtObject {
     readonly property bool isDefaultLogo: true
 
     readonly property string uptime: ""
-    readonly property string uptimeShort: ""
-    readonly property string user: ""
-    readonly property string wm: ""
+    readonly property string uptimeShort: Math.floor(SystemMonitor.uptimeSeconds / 3600) + "h " + Math.floor(SystemMonitor.uptimeSeconds / 60) % 60 + "m"
+    readonly property string user: Quickshell.env("USERNAME")
+    readonly property string wm: "DWM"
     readonly property string shell: ""
     readonly property string kernel: ""
     readonly property string hostname: ""

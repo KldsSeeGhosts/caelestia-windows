@@ -146,13 +146,8 @@ if ($Session) {
         '"commands": {"logout":[],"shutdown":[],"hibernate":[],"reboot":[]}',
         '"commands": {"logout":["logout"],"shutdown":["shutdown"],"hibernate":["hibernate"],"reboot":["reboot"]}')
 }
-# The combined profile keeps every original bar entry that has a reviewed
-# facade (logo, tray, clock, status icons, power), enables the status-icon
-# popouts, the OSD, the hover-driven launcher and the media dashboard panel,
-# and leaves every write path out: empty session commands, no sidebar or
-# utilities panels and no scroll actions. The lock-status, microphone and
-# keyboard-layout status icons stay disabled; they need Hyprland input
-# events no Windows facade provides.
+# Combined enables all adapted panels. Service writes are separately gated by
+# -Live; smoke always suppresses them. Hypr-only status entries stay disabled.
 if ($Combined) {
     $configText = @'
 {
@@ -189,9 +184,9 @@ if ($Combined) {
   "paths": {"sessionGif":""},
   "dashboard": {"enabled":true,"showOnHover":true},
   "launcher": {"enabled":true,"showOnHover":true},
-  "sidebar": {"enabled":false,"showOnHover":false},
+  "sidebar": {"enabled":true,"showOnHover":true},
   "osd": {"enabled":true},
-  "utilities": {"enabled":false}
+  "utilities": {"enabled":true,"cards":{"keepAwake":false,"recorder":false,"quickToggles":true},"quickToggles":[{"id":"wifi","enabled":true},{"id":"bluetooth","enabled":true},{"id":"dnd","enabled":true}]}
 }
 '@
 }
@@ -274,12 +269,9 @@ $mirrorMode = $Notifications -and $NotificationsMode -eq 'Mirror' -and -not $Smo
 $info.EnvironmentVariables['CAELESTIA_WINDOWS_NOTIFICATION_MIRROR'] = $(if ($mirrorMode) { '1' } else { '0' })
 $info.EnvironmentVariables['CAELESTIA_WINDOWS_NOTIFICATION_MIRROR_DISMISS'] = $(if ($mirrorMode -and $NotificationDismiss) { '1' } else { '0' })
 $info.EnvironmentVariables['CAELESTIA_WINDOWS_NOTIFICATION_APP_OPEN'] = $(if ($mirrorMode -and $NotificationAppOpen) { '1' } else { '0' })
-# The combined prototype is the read-only union of every slice: each service's
-# observation opt-in is forced on (the session in Observe mode, with dispatch
-# still gated off) and every control, write, launch, activation, dispatch and
-# mirror opt-in is forced off, regardless of what the parent environment
-# contained. The backend tray hook stays off so observation never starts tray
-# interception, and software gamma brightness is never supplied.
+# Combined observes every reviewed facade. Live enables service controls and
+# tray interception outside smoke; notification consent remains user-initiated.
+# Software gamma remains a separate unsupported route in this host.
 if ($Combined) {
     foreach ($name in $slices.Keys) {
         $info.EnvironmentVariables[$slices[$name].Observe] = '1'
@@ -289,8 +281,8 @@ if ($Combined) {
     $info.EnvironmentVariables['CAELESTIA_WINDOWS_BRIGHTNESS_SOFTWARE'] = '0'
     $info.EnvironmentVariables['CAELESTIA_WINDOWS_NOTIFICATION_MIRROR'] = $(if ($Live -and -not $Smoke) { '1' } else { '0' })
     $info.EnvironmentVariables['CAELESTIA_WINDOWS_NOTIFICATION_MIRROR_DISMISS'] = $(if ($Live -and -not $Smoke) { '1' } else { '0' })
-    $info.EnvironmentVariables['CAELESTIA_WINDOWS_NOTIFICATION_APP_OPEN'] = '0'
-    $info.EnvironmentVariables['QS_WINDOWS_TRAY_HOOK'] = '0'
+    $info.EnvironmentVariables['CAELESTIA_WINDOWS_NOTIFICATION_APP_OPEN'] = $(if ($Live -and -not $Smoke) { '1' } else { '0' })
+    $info.EnvironmentVariables['QS_WINDOWS_TRAY_HOOK'] = $(if ($Live -and -not $Smoke) { '1' } else { '0' })
     $info.EnvironmentVariables['CAELESTIA_SHELL_SESSION'] = '1'
     $info.EnvironmentVariables['CAELESTIA_SHELL_SESSION_MODE'] = 'Observe'
     $info.EnvironmentVariables['CAELESTIA_COMBINED_LIVE'] = $(if ($Live) { '1' } else { '0' })
@@ -322,7 +314,7 @@ $outTask = $process.StandardOutput.ReadToEndAsync()
 $errTask = $process.StandardError.ReadToEndAsync()
 $timedOut = $false
 if ($Smoke) {
-    $timedOut = -not $process.WaitForExit(45000)
+    $timedOut = -not $process.WaitForExit(60000)
 } else {
     Write-Output "Started isolated $kind prototype (PID $($process.Id)); capturing logs until it exits."
     Write-Output "Staged source: $stage"

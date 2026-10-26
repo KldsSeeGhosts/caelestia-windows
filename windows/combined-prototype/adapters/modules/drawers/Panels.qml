@@ -1,5 +1,6 @@
 import QtQuick
 import Quickshell
+import Caelestia.Config
 import qs.components
 import qs.modules.bar as Bar
 import qs.modules.dashboard as Dashboard
@@ -7,14 +8,11 @@ import qs.modules.launcher as Launcher
 import qs.modules.notifications as Notifications
 import qs.modules.osd as Osd
 import qs.modules.session as Session
+import qs.modules.sidebar as Sidebar
+import qs.modules.utilities as Utilities
 import qs.modules.bar.popouts as BarPopouts
+import qs.modules.utilities.toasts as Toasts
 
-// Platform boundary derived from upstream modules/drawers/Panels.qml for the
-// combined prototype. The original OSD, notification list, session drawer,
-// launcher (apps-only) and dashboard (media-only) wrappers are instantiated
-// with their reviewed Windows service facades; utilities, toasts and the
-// sidebar stay nonvisual unavailable panels because no reviewed facade exists
-// for them yet. Layout, anchors and aliases follow the upstream file.
 Item {
     id: root
 
@@ -125,21 +123,32 @@ Item {
         borderThickness: root.borderThickness
     }
 
-    UnavailablePanel {
+    Utilities.Wrapper {
         id: utilities
+
+        screenState: root.screenState
+        sidebar: sidebar
+        popouts: popoutsWrapper.content
 
         anchors.bottom: parent.bottom
         anchors.right: parent.right
     }
 
-    UnavailablePanel {
+    Toasts.Toasts {
         id: toasts
+
+        anchors.bottom: sidebar.visible ? parent.bottom : utilities.top
+        anchors.right: sidebar.left
+        anchors.margins: Tokens.padding.medium
     }
 
-    UnavailablePanel {
+    Sidebar.Wrapper {
         id: sidebar
 
+        screenState: root.screenState
+
         anchors.top: notifications.bottom
+        anchors.bottom: utilities.top
         anchors.right: parent.right
         anchors.topMargin: -notifications.anchors.topMargin
     }

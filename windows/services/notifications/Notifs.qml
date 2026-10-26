@@ -50,6 +50,7 @@ Singleton {
     readonly property string shellAssetsDirectory: Quickshell.shellPath("assets")
 
     readonly property NotificationsService service: NotificationsService {
+        popupsSuppressed: root.doNotDisturb
         enabled: root.enabled
         mirrorOptIn: root.mirrorOptIn
         windowsDismissOptIn: root.windowsDismissOptIn
@@ -70,6 +71,7 @@ Singleton {
     // The bounded host sets this while the original notification center is
     // visible. Denied access polling is bounded to that window.
     property bool centerVisible: false
+    property bool doNotDisturb: false
 
     // Preserved original Notifs singleton surface consumed by
     // modules/notifications/* and the sidebar notification components.
