@@ -9,7 +9,10 @@ import qs.components.containers
 import qs.services
 
 Variants {
-    model: Screens.screens.filter(s => GlobalConfig.forScreen(s.name).background.enabled)
+    // Platform hosts can restrict the screen set without replacing the module.
+    property list<ShellScreen> screens: Screens.screens
+
+    model: screens.filter(s => GlobalConfig.forScreen(s.name).background.enabled)
 
     StyledWindow {
         id: win
@@ -18,7 +21,7 @@ Variants {
 
         screen: modelData
         name: "background"
-        WlrLayershell.exclusionMode: ExclusionMode.Ignore
+        exclusionMode: ExclusionMode.Ignore
         WlrLayershell.layer: contentItem.Config.background.wallpaperEnabled ? WlrLayer.Background : WlrLayer.Bottom
         color: contentItem.Config.background.wallpaperEnabled ? "black" : "transparent"
         surfaceFormat.opaque: false
@@ -156,6 +159,7 @@ Variants {
             }
 
             sourceComponent: DesktopClock {
+                objectName: "desktopClock"
                 wallpaper: behindClock
                 absX: clockLoader.x
                 absY: clockLoader.y
