@@ -57,6 +57,20 @@ ShellRoot {
         }
     }
 
+    // The original shortcut daemon resolves its target through ShellState,
+    // whose screens live on the shell root. The Windows adapter only needs the
+    // selected screen, which the prototype host owns.
+    Binding {
+        target: ShellState
+        property: "shellRoot"
+        value: root
+    }
+
+    // windows/combined-prototype/adapters/daemons/Shortcuts.qml keeps the
+    // original GlobalShortcut names over this host's ScreenState. The backend
+    // supplies the Windows key combinations from defaults/windows/keybinds.json.
+    Shortcuts {}
+
     // One line per service for the harness. The state is the facade status;
     // every control flag is asserted separately so "read-only" is proven, not
     // assumed.

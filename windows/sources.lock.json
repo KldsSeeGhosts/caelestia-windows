@@ -7,9 +7,9 @@
   },
   "quickshell": {
     "repository": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows.git",
-    "revision": "57163953a2efe8ee05288daabda5295e94c93404",
+    "revision": "13b2d0930f798e7a0c006258a3a68824e300b2d6",
     "path": "windows/deps/quickshell",
-    "role": "Windows backend and QML compatibility interfaces. Preserves nunreasonable/quickshell e8ae0ef124b1c14b547c80d00422d2ffbd423d81, native mask hover handoff, Core Audio capability/error reporting, UPower observation validity, GSMTC initialization/session-scan status, profile-isolated artwork caching, verified power profile results, confirm-only Bluetooth pairing, opt-in strict brightness routes with owned gamma restoration, explicit-consent notification mirroring, M3 tiling/Hypr window observation with allowlist scope and fitting outcomes, the single-desktop placeholder fix, 64-bit brightness query request ids, DPI-unaware tiling placement, and native virtual-desktop workspace dispatch. Branch windows/integration-2."
+    "role": "Windows backend and QML compatibility interfaces. Preserves nunreasonable/quickshell e8ae0ef124b1c14b547c80d00422d2ffbd423d81, native mask hover handoff, Core Audio capability/error reporting, UPower observation validity, GSMTC initialization/session-scan status, profile-isolated artwork caching, verified power profile results, confirm-only Bluetooth pairing, opt-in strict brightness routes with owned gamma restoration, explicit-consent notification mirroring, M3 tiling/Hypr window observation with allowlist scope and fitting outcomes, the single-desktop placeholder fix, 64-bit brightness query request ids, DPI-unaware tiling placement, and native virtual-desktop workspace dispatch, and global hotkeys. Branch windows/integration-3."
   },
   "m3shapes": {
     "repository": "https://github.com/soramanew/m3shapes.git",

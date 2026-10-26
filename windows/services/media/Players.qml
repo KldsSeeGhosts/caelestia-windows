@@ -3,6 +3,7 @@ pragma Singleton
 import QtQuick
 import Quickshell
 import Caelestia.Config
+import qs.components.misc
 
 PlayersService {
     id: root
@@ -28,4 +29,44 @@ PlayersService {
         active: root.enabled
         source: root.enabled ? Qt.resolvedUrl("NativeMediaBackend.qml") : ""
     }
+
+    // The original services/Players.qml global shortcuts over the Windows
+    // player facade. QtObject has no default property, so the shortcut objects
+    // live in an explicit list; each still registers itself on construction.
+    // Transport requires the separate controls opt-in through
+    // canControl()/canTogglePlaying() on the active player.
+    readonly property list<QtObject> _shortcuts: [
+        CustomShortcut {
+            name: "mediaToggle"
+            description: "Toggle media playback"
+            onPressed: {
+                const active = root.active;
+                if (active && active.canTogglePlaying)
+                    active.togglePlaying();
+            }
+        },
+        CustomShortcut {
+            name: "mediaPrev"
+            description: "Previous track"
+            onPressed: {
+                const active = root.active;
+                if (active && active.canGoPrevious)
+                    active.previous();
+            }
+        },
+        CustomShortcut {
+            name: "mediaNext"
+            description: "Next track"
+            onPressed: {
+                const active = root.active;
+                if (active && active.canGoNext)
+                    active.next();
+            }
+        },
+        CustomShortcut {
+            name: "mediaStop"
+            description: "Stop media playback"
+            onPressed: root.active?.stop()
+        }
+    ]
 }

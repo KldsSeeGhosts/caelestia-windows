@@ -3,6 +3,7 @@ pragma Singleton
 import QtQuick
 import Quickshell
 import Caelestia.Config
+import qs.components.misc
 
 // Windows facade for the bounded parts of services/Brightness.qml. It preserves
 // the original singleton surface for the staged UI: one typed Monitor object per
@@ -16,8 +17,9 @@ import Caelestia.Config
 // predates it, so Interactive is refused and the slider is read-only on this
 // build. With brightness disabled the native loader is inactive: no
 // NativeBrightnessBackend, no Brightness singleton, no query and no probe. The
-// original IPC handler, global shortcuts and Linux processes (asdbctl/ddcutil/
-// brightnessctl) are not staged.
+// original IPC handler and Linux processes (asdbctl/ddcutil/brightnessctl) are
+// not staged; the upstream brightnessUp/brightnessDown GlobalShortcuts are kept
+// and still require the controls gate before any native write.
 BrightnessService {
     id: root
 
@@ -159,4 +161,20 @@ BrightnessService {
         active: root.enabled
         source: root.enabled ? Qt.resolvedUrl("NativeBrightnessBackend.qml") : ""
     }
+
+    // The original services/Brightness.qml global shortcuts. The facade refuses
+    // every write while the controls opt-in is off, so these are inert in
+    // read-only observation runs instead of failing the native route.
+    readonly property list<QtObject> _shortcuts: [
+        CustomShortcut {
+            name: "brightnessUp"
+            description: "Increase brightness"
+            onPressed: root.increaseBrightness()
+        },
+        CustomShortcut {
+            name: "brightnessDown"
+            description: "Decrease brightness"
+            onPressed: root.decreaseBrightness()
+        }
+    ]
 }

@@ -126,5 +126,6 @@
   "windows/combined-prototype/helpers/KeepAwake.ps1": "helpers/KeepAwake.ps1",
   "windows/combined-prototype/adapters/services/Recorder.qml": "services/Recorder.qml",
   "windows/combined-prototype/adapters/modules/utilities/cards/IdleInhibit.qml": "modules/utilities/cards/IdleInhibit.qml",
-  "windows/combined-prototype/adapters/modules/utilities/cards/Record.qml": "modules/utilities/cards/Record.qml"
+  "windows/combined-prototype/adapters/modules/utilities/cards/Record.qml": "modules/utilities/cards/Record.qml",
+  "windows/combined-prototype/adapters/daemons/Shortcuts.qml": "daemons/Shortcuts.qml"
 }
