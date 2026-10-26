@@ -65,6 +65,22 @@ restores its owned desktop changes on exit, and never starts a second tiler.
 `Restore-Desktop.ps1` is the emergency recovery command; restarting Explorer
 requires its separate explicit flag.
 
+When enabled, an Explorer-process WinEvent show hook supplements the existing
+250 ms reconciliation timer. After five show events within two seconds it
+pauses event-driven hiding for five seconds, while the timer continues.
+The supervisor's `taskbar-actions.jsonl` records show observations, hide calls,
+hook installation/failure and event-backoff transitions. `Source` distinguishes
+event callbacks from timer polling and initial/broadcast reconciliation.
+`MonotonicTicks` and `TickFrequency` use `Stopwatch`; a hide's
+`ShowObservedTicks` and `ShowToHideMilliseconds` correlate it with its show
+observation. For event callbacks the interval starts on callback delivery, not
+when Windows first showed the window. Queued delivery, unobserved transitions,
+failed hides, and frame presentation mean it is not an exact exposure or
+zero-flicker measurement. Poll observations are sampled and have the same
+limitation. No autohide preference is changed by suppression.
+`powershell -NoProfile -File windows/scripts/Test-TaskbarEvents.ps1` compiles
+the production source and tests the event logic with fakes only.
+
 Tiling defaults off. `Start-Caelestia.ps1 -TilingMode Observe` enables observation;
 `-TilingMode Interactive -TilingIncluded '<application-patterns>'` opts into
 control. `-TilingExcluded` supplies the denylist. Coordinate with the existing
