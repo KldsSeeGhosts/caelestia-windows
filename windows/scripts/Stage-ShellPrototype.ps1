@@ -130,6 +130,21 @@ $hashes = foreach ($entry in $files.GetEnumerator()) {
             ForEach-Object { "//@ pragma $_" }
         [IO.File]::WriteAllText($target, (($header -join "`n") + "`n" + $shell), (New-Object Text.UTF8Encoding($false)))
     }
+    if ($entry.Value -eq 'modules/bar/components/workspaces/Workspace.qml') {
+        # Qt 6.11's QML font value exposes family, not families. The Windows
+        # helper preserves Rubik/configured primary and adds the bundled Nerd
+        # font explicitly, without changing system fallback or upstream QML.
+        $workspace = [IO.File]::ReadAllText($target)
+        $familyBinding = 'font.family: Tokens.font.workspaces'
+        if ([regex]::Matches($workspace, [regex]::Escape($familyBinding)).Count -ne 1) {
+            throw 'Expected one workspace font binding for the Windows fallback.'
+        }
+        $workspace = [regex]::Replace($workspace, '(?m)^import QtQuick\r?$',
+            "import Caelestia.Windows`nimport QtQuick")
+        $workspace = $workspace.Replace($familyBinding,
+            'font: WindowsFontFallback.workspaceFont(Tokens.font.body.small, Tokens.font.workspaces)')
+        [IO.File]::WriteAllText($target, $workspace, (New-Object Text.UTF8Encoding($false)))
+    }
     [ordered]@{
         source = $entry.Key; staged = $entry.Value
         sourceSha256 = (Get-FileHash -LiteralPath $source).Hash

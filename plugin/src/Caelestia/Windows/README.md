@@ -61,11 +61,12 @@ The parent task builds with `windows/scripts/Build-Prototype.ps1` and validates
 the native focus behavior. Adding this source does not establish runtime
 activation or focus-return compatibility.
 
-The module also provides a nonvisual `WindowsFontFallback` element.
-`WindowsFonts.qml` constructs it in every staged host to register
-`Symbols Nerd Font Mono` as a process-local Qt fallback for
-`QChar::Script_Common` (the Nerd private-use glyphs). The same loader supplies
-the bundled application fonts. This keeps Rubik as the workspace primary and
-preserves every mono token and font builder, without relying on installed
-fonts or Windows fallback discovery. No fonts or font settings are installed
-into Windows. Constructing this helper performs no native UI or input work.
+The module also provides the nonvisual `WindowsFontFallback` singleton.
+Windows staging adapts only the original workspace label font binding to
+`workspaceFont(Tokens.font.body.small, Tokens.font.workspaces)`. It preserves
+the font attributes and returns an explicit ordered family list containing
+the configured primary (Rubik by default) and Symbols Nerd Font Mono.
+Qt 6.11 exposes only `font.family` in QML; `font.families` is unavailable.
+`WindowsFonts.qml` supplies both the symbols font and CaskaydiaCove NF, so the
+original mono tokens and builders resolve directly to the patched font.
+No global fallback is changed and no fonts are installed into Windows.

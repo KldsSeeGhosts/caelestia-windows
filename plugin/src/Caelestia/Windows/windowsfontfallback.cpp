@@ -1,16 +1,13 @@
 #include "windowsfontfallback.hpp"
 
-#include <qfontdatabase.h>
-
 namespace caelestia::shell::windows {
 
-WindowsFontFallback::WindowsFontFallback(QObject* parent)
-    : QObject(parent) {
+QFont WindowsFontFallback::workspaceFont(QFont font, const QString& primary) const {
     // Application fonts are not reliably found by Windows system fallback.
-    // Nerd private-use glyphs have Script_Common in both BMP and plane 15.
-    // Qt's explicit process-local fallback keeps each text's primary font.
-    QFontDatabase::addApplicationFallbackFontFamily(
-        QChar::Script_Common, QStringLiteral("Symbols Nerd Font Mono"));
+    // QML 6.11 does not expose QFont::families. Keep all other font attributes
+    // and the configured primary, then explicitly try the bundled Nerd font.
+    font.setFamilies({primary, QStringLiteral("Symbols Nerd Font Mono")});
+    return font;
 }
 
 } // namespace caelestia::shell::windows

@@ -1,0 +1,3 @@
+# Preserve the release bytes used by sources.lock.json on every checkout.
+caskaydia-cove/* -text
+nerd-font-symbols/* -text

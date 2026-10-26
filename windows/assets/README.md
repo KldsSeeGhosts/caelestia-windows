@@ -25,6 +25,7 @@ every vendored font/license are in [`sources.lock.json`](../sources.lock.json).
 Staging checks these hashes and copies only the pinned files. Downloads happen
 at development time; startup and staging use the checked-in files.
 `WindowsFonts.qml` loads them into each prototype process. The Windows plugin
-explicitly registers Symbols Nerd Font Mono for Qt's Common-script fallback,
-covering both U+F444 and U+F0BAF while preserving Rubik workspace text and the
-original CaskaydiaCove NF mono tokens. No font is installed into Windows.
+supplies an explicit workspace family list (configured primary, then Symbols
+Nerd Font Mono), covering both U+F444 and U+F0BAF while preserving Rubik text.
+Original CaskaydiaCove NF mono tokens resolve to the bundled patched faces.
+No font is installed into Windows and no global font fallback is changed.

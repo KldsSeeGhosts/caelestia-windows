@@ -1,11 +1,8 @@
 import QtQuick
 import Quickshell
-import Caelestia.Windows
 
 // Process-local application fonts. Never install fonts or fetch at runtime.
 QtObject {
-    readonly property WindowsFontFallback fallback: WindowsFontFallback {}
-
     readonly property bool ready: symbols.status === FontLoader.Ready
         && regular.status === FontLoader.Ready && bold.status === FontLoader.Ready
         && italic.status === FontLoader.Ready && boldItalic.status === FontLoader.Ready
