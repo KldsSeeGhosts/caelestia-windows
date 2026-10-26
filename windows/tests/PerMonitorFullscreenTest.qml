@@ -30,6 +30,10 @@ Item {
         property var monitor: monitorB
         property var lastIpcObject: ({fullscreen: 2})
     }
+    property QtObject switcherOverlay: QtObject {
+        property var monitor: monitorA
+        property var lastIpcObject: ({fullscreen: 2})
+    }
     property QtObject hypr: QtObject {
         property var focusedMonitor: monitorA
         property var workspaces: ({values: [special]})
@@ -54,6 +58,18 @@ Item {
             check(hasFullscreen && hasFullscreenOnNormalWs && toastFullscreen, "fullscreen on A");
             monitor = monitorB;
             check(!hasFullscreen && !hasFullscreenOnNormalWs, "A does not hide B");
+            // The installed tracker accepted the explorer-owned Task Switching
+            // overlay on the primary display, so only DP-1's binding flipped.
+            // The backend classifier now rejects it before this model exists.
+            monitor = monitorA;
+            const savedWindow = window.lastIpcObject;
+            window.lastIpcObject = {fullscreen: 0};
+            normal.toplevels = {values: [window, switcherOverlay]};
+            check(hasFullscreenOnNormalWs, "tracked switcher overlay hides DP-1");
+            normal.toplevels = {values: [window]};
+            check(!hasFullscreenOnNormalWs, "rejected switcher overlay leaves DP-1 visible");
+            window.lastIpcObject = savedWindow;
+            monitor = monitorB;
             hypr.focusedMonitor = monitorB;
             check(!toastFullscreen, "A does not suppress B's focused toast");
             window.monitor = monitorB;
