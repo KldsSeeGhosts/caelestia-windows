@@ -556,7 +556,7 @@ QtObject {
             notification: notification,
             popup: !root.popupsSuppressed,
             local: !mirrored,
-            mirrored: mirrored
+            _wasMirrored: mirrored
         });
         if (!record)
             return false;
@@ -668,7 +668,7 @@ QtObject {
 
         root.list = root.list.filter(item => item !== record);
 
-        if (dismiss && record.notification && record.local) {
+        if (dismiss && record.notification && !record.mirrored && record.local) {
             // Local-only removal. The local path never reaches a Windows toast.
             root.localDismissals++;
             record.notification.dismiss();
@@ -906,7 +906,7 @@ QtObject {
                 hasActionIcons: entry.hasActionIcons === true,
                 historicalActions: actions,
                 local: entry.local !== false,
-                mirrored: false
+                _wasMirrored: false
             });
             if (record)
                 restored.push(record);
@@ -1224,15 +1224,20 @@ QtObject {
             return "";
         text = root.stripHtmlMediaTags(text);
         text = root.stripMarkdownReferenceDefinitions(text);
-        // An image alt may itself contain an image; a few passes handle the
-        // nesting without unbounded recursion.
+        // An image alt may itself contain an image, or stripping markup may
+        // expose another construct. Keep the work bounded, then fail closed.
         for (let pass = 0; pass < 8; pass++) {
-            const next = root.replaceMarkdownImages(text);
+            const next = root.stripMarkdownReferenceDefinitions(
+                root.stripHtmlMediaTags(root.replaceMarkdownImages(text)));
             if (next === text)
-                break;
+                return text;
             text = next;
         }
-        return text;
+        // Drop all possible image openers after the budget, including ones
+        // exposed by removing another opener. Removing every "!" and "<"
+        // prevents inline/reference images and all HTML media forms, regardless
+        // of remaining depth, escapes or incomplete delimiters.
+        return text.replace(/!/g, "").replace(/</g, "");
     }
 
     // Remove media-bearing HTML tags with a small scanner instead of a single

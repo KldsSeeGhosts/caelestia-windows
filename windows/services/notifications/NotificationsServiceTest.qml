@@ -155,9 +155,18 @@ QtObject {
     // Independent backends/services keep each mirroring policy isolated so a
     // consent or dismissal test cannot mask another.
     readonly property FakeBackend mirrorFixture: FakeBackend {}
+    readonly property FakeBackend replacementFixture: FakeBackend {}
     readonly property FakeBackend dismissFixture: FakeBackend {}
     readonly property FakeBackend appOpenFixture: FakeBackend {}
     readonly property FakeBackend deniedFixture: FakeBackend {}
+
+    readonly property NotificationsService replacementService: NotificationsService {
+        enabled: true
+        mirrorOptIn: true
+        profileRoot: "C:/fixtures/profile"
+        stateDirectory: "C:/fixtures/profile/state"
+        backend: replacementFixture
+    }
     readonly property FakeBackend autoFixture: FakeBackend {}
     readonly property FakeBackend recoveryFixture: FakeBackend {}
     readonly property FakeBackend reloadFixture: FakeBackend {}
@@ -754,6 +763,53 @@ QtObject {
                 entry[2] + ": " + JSON.stringify(sanitized) + " != " + JSON.stringify(entry[1]));
         }
 
+        // Exercise the pass boundary through every record ingress. Mixed forms
+        // include inline, full/collapsed/shortcut references and HTML media,
+        // so history and updates cannot retain images beyond the pass budget.
+        const nestedBodies = [];
+        for (const depth of [1, 8, 9, 50]) {
+            let inline = "marker";
+            let mixed = "<picture><source srcset='x'><IMG src='x'><svg><image href='x'/></svg>"
+                + "<object data='x'></object><embed src='x'><iframe src='x'></iframe>marker</picture>";
+            for (let level = 0; level < depth; level++) {
+                inline = "![" + inline + "](https://example.invalid/image.png)";
+                switch (level % 4) {
+                case 0: mixed = "![" + mixed + "](file:///C:/outside.png)"; break;
+                case 1: mixed = "![" + mixed + "][ref]"; break;
+                case 2: mixed = "![" + mixed + "][]"; break;
+                default: mixed = "![" + mixed + "]"; break;
+                }
+            }
+            nestedBodies.push({name: "inline depth " + depth, body: inline});
+            nestedBodies.push({name: "mixed depth " + depth,
+                body: mixed + "\n[ref]: https://example.invalid/image.png"});
+        }
+        // Removing a tag can itself expose another tag opener.
+        nestedBodies.push({name: "exposed HTML", body: "<im<img src='x'>g src='x'>marker"});
+        function checkNestedBody(body, name): void {
+            check(body.indexOf("marker") >= 0, name + " retains plain alt text");
+            check(!/!\[|<\/?(?:img|image|picture|source|svg|object|embed|iframe)\b/i.test(body),
+                name + " contains no image markup: " + body);
+            check(service.sanitizeBody(body) === body, name + " is stable after sanitizing");
+        }
+        for (let index = 0; index < nestedBodies.length; index++) {
+            const entry = nestedBodies[index];
+            const nested = makeNotification(12000 + index, entry.name);
+            nested.body = entry.body;
+            fixture.notificationReceived(nested);
+            const nestedRecord = service.recordForNotificationId(nested.id);
+            checkNestedBody(nestedRecord.body, entry.name + " live");
+            nested.body = "Updated " + entry.body;
+            checkNestedBody(nestedRecord.body, entry.name + " update");
+            check(restoredService.restoreHistory(JSON.stringify([{
+                time: 1000, recordId: "nested-" + index, notificationId: String(nested.id),
+                summary: entry.name, body: entry.body, local: true
+            }])), entry.name + " history restores");
+            checkNestedBody(restoredService.list[0].body, entry.name + " history");
+            nestedRecord.close();
+        }
+        restoredService.restoreHistory("[]");
+
         // Live records apply the app-icon allowlist, the encoded image URL and
         // the body filter, including on later property changes.
         const livePolicy = makeNotification(115, "Live policy");
@@ -1210,6 +1266,43 @@ QtObject {
             && mirrorService.protectedDismissals === 1,
             "local-only mirrored dismissal counters");
         check(mirrorService.list.length === 0, "local-only dismissal removed the UI record");
+
+        // A replacement is refused by the facade and the corrected backend.
+        // Also model the old backend mutating hints anyway, to independently
+        // prove the QML lifetime latch and dismissal guard with consent off.
+        stageMirror(replacementService, replacementFixture, 0);
+        grantMirror(replacementService, replacementFixture);
+        check(!replacementService.windowsDismissPermitted, "replacement dismissal consent is off");
+        for (const mode of ["hints signal", "full sync", "promoted local"]) {
+            const target = makeNotification(15001, "Protected replacement");
+            if (mode !== "promoted local")
+                target.hints = {"x-windows-toast-id": 77, "x-windows-aumid": "Fixture!App"};
+            replacementFixture.notificationReceived(target);
+            const targetRecord = replacementService.list[0];
+            if (mode === "promoted local") {
+                target.hints = {"x-windows-toast-id": 77};
+                check(targetRecord.mirrored, "a local record latches later mirrored identity");
+            }
+            check(replacementService.replacementSendRefusal(["-r", String(target.id)]) !== "",
+                mode + " refuses the local -r replacement");
+            target.summary = "Local replacement";
+            target.hints = {};
+            if (mode === "full sync")
+                replacementService.handleNotification(target);
+            check(targetRecord.mirrored && !targetRecord.local,
+                mode + " cannot reclassify the mirrored record after replacement");
+            check(JSON.parse(replacementService.serializeHistory()).length === 0,
+                mode + " cannot persist the replaced mirrored record");
+            // Even an inconsistent local flag must not bypass mirrored consent.
+            targetRecord.local = true;
+            targetRecord.close();
+            check(target.dismissCalls === 0 && replacementService.windowsDismissals === 0,
+                mode + " close never dismisses a real toast");
+        }
+        check(replacementService.protectedDismissals === 3
+            && replacementService.mirroredLocalDismissals === 3
+            && replacementService.localDismissals === 0,
+            "every replaced mirror is hidden locally with zero native dismissals");
 
         // An aumid-only record is mirrored too, and local delivery is unaffected.
         const aumidOnly = makeNotification(502, "Aumid only");

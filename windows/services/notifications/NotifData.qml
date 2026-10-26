@@ -43,10 +43,10 @@ QtObject {
     property var actions: []
     property var historicalActions: []
     property bool local: false
-    // True only for a record delivered from a real Windows toast, identified by
-    // the backend's x-windows-toast-id / x-windows-aumid hints. Its app name and
-    // icon are the original UI fields; no extra visual state is added.
-    property bool mirrored: false
+    // Latch Windows identity for this record's lifetime. Replacement hints
+    // cannot turn a native toast into a local record and bypass dismissal consent.
+    property bool _wasMirrored: false
+    readonly property bool mirrored: record._wasMirrored
     property bool imageSourceRejected: false
     property string imageSourceError: ""
     property bool hasFullscreen: false
@@ -118,8 +118,9 @@ QtObject {
         record.urgency = Number.isInteger(source.urgency) ? source.urgency : 1;
         record.resident = source.resident === true;
         record.hasActionIcons = source.hasActionIcons === true;
-        record.local = !record.service?.isSystemNotification(source);
-        record.mirrored = !record.local;
+        record._wasMirrored = record.mirrored
+            || (record.service?.isSystemNotification(source) ?? false);
+        record.local = !record.mirrored;
         record.syncActions();
     }
 
@@ -334,7 +335,8 @@ QtObject {
             if (!record.notification)
                 return;
             record.hints = record.notification.hints ?? ({});
-            record.mirrored = record.service?.isSystemNotification(record.notification) ?? false;
+            record._wasMirrored = record.mirrored
+                || (record.service?.isSystemNotification(record.notification) ?? false);
             record.local = !record.mirrored;
             record.syncActions();
         }
