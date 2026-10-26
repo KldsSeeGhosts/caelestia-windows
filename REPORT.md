@@ -1,126 +1,126 @@
-# Windows integration round 3
+# Windows integration round 4
 
-Branch: `t3/integration-3`, based on `origin/t3/integration-2` (`41ddcefc`).
-Backend: `windows/integration-3`, pushed merge
-`13b2d0930f798e7a0c006258a3a68824e300b2d6`, from `57163953` plus
-`caelestia/windows/global-shortcuts` (`d44760b`). The gitlink and
-`sources.lock.json` agree. M3Shapes remains pinned at
-`32ad9ce328bb77ed349b40a3be10ee9ea610b8ab`.
+Branch `t3/integration-4` starts at `origin/t3/integration-3` (`9b732a30`).
+Backend branch `windows/integration-4` starts at `13b2d093` and is pushed at
+`4a3e9a1426df6ca4c55e4dc1845940126b8f90b9`. The Quickshell gitlink and
+`windows/sources.lock.json` agree. Reviewed upstream is now `4b1dae84`;
+M3Shapes stays at `32ad9ce3`.
 
-## Merges and conflict resolutions
+## Commits and conflict resolutions
 
-- Production (`f0954432`), merge `203aa191`: unioned staging selections, retained
-  integrated documentation and combined capabilities. Production now stages the
-  integrated graph, not the round-0 graph: workspaces and dispatch, active window,
-  per-monitor AppBar reservation, background/clock, M3Shapes, utilities and shortcuts.
-- Takeover (`627006fb`), merge `63a97c86`: retained the background switches and
-  independent Combined+Tiling selection while adding supervisor switches. Production
-  uses the durable watchdog; `config/windows.json` defaults to taskbar hiding off
-  and bounded crash restart on. Recovery scripts are packaged beside the launcher.
-- Shortcuts (`d931193d` and `e62beea1`), merge `da7ba109`: unioned the background
-  and shortcut daemon plus both manifests; retained the M3Shapes pin and moved the
-  backend gitlink to the pushed merge. Restored volume/media/brightness/notification
-  service shortcut handlers remain intact. Production targets the focused monitor.
-- User guide (`34fb9fd6`), merge `3482604c`: clean docs merge. Resolved verifiable
-  installer flags, profile/log paths, IPC, monitor-name discovery and the full
-  default keybind table. Remaining TODOs concern unsupported/untested OS versions
-  and round-4 dynamic schemes, visualizer and tiling-config details.
-- REPORT conflicts are superseded by this integration report. No feature branch
-  implementation was discarded. No backend source conflict occurred.
+- Backend merges: `7efb8e9` adds `windows/tiling-config` (`6a17ae6`);
+  `4a3e9a1` adds `windows/leak-review` (`ffa7a77`). No source conflicts.
+- `6d26f8ee`: tiling config merge. Kept the integrated launcher/takeover paths;
+  added profile/config switches, watched `windows.tiling`, typed selectors,
+  gaps and rules. Took the updated importer, importer checks and migration guide.
+  Resolved the gitlink to the final backend, retaining the other dependency pins.
+- `d60d2e03`: Nerd fonts merge. Kept integrated staging and loaded the shared
+  WindowsFonts component in every host, including production. Preserved explicit
+  workspace fallback and all pinned font checksums/licenses.
+- `3074c664`: dynamic scheme merge. Kept background preview and Windows wallpaper
+  observation alongside the real CLI bridge, scheme/variant rows and generation.
+  Retained RunRoot for logs and the independent profile selection.
+- `008095f1`: Wallpaper Engine merge. Retained all-monitor background instances
+  and the hard-reload ownership fix while adding the fail-closed external-owner
+  guard and its live reconcile. Preserved the local notification fixture and
+  added the wallpaper-picker carousel smoke steps.
+- `5d54875f`: audio visualiser merge. Unioned the native CavaProvider/BeatTracker
+  loaders with existing volume shortcuts and retained both audio-analysis checks
+  and the integrated notification/picker smoke sequence.
+- `b7a0885c`: upstream/main merge, no conflicts. Includes locale-aware I18n,
+  Time/Weather/calendar/IdleInhibit changes and the flake.lock update.
+- `7a411513`: production integration, defaults, installer/runtime packaging and
+  documentation. Both entry points use the same integrated staged service graph.
+- `f5dbad02`: Windows Time adapter retains locale-aware samples through teardown.
+  A repeat installed quit exposed native binding-context invalidation despite
+  null guards. Imperative clock/locale sampling preserves formatting and avoids
+  bindings through destroyed clock objects. Final installed smoke is clean.
 
-## Production integration
+REPORT conflicts are replaced by this report. Combined README conflicts preserve
+integrated controller/utility documentation and incorporate the new services.
+Feature-branch validation archives were carried by their merges unchanged; no
+new evidence archive was created for this integration.
 
-`windows/shell/shell.json` matches the integrated Combined Live configuration,
-with production background and desktop clock enabled. First launch seeds
-`shell.json`, `keybinds.json` and `windows.json` once under the persistent profile.
-Existing files survive reinstall and restart. Tiling remains a separate opt-in:
-`-TilingMode Disabled|Observe|Interactive`, `-TilingIncluded`, `-TilingExcluded`.
-No shell.json tiling schema was added ahead of round 4.
+## Production behavior
 
-The installer packages the real M3Shapes module/helper DLL/license, all portable
-plugins, Qt/CRT, fonts and the watchdog/recovery scripts. Qt deployment's missing
-translation-catalog message is captured as text; native exit status remains the
-failure criterion. No autostart option was used in testing.
+The production profile defaults to `%LOCALAPPDATA%\caelestia-windows`.
+Its first launch provisions the pinned Caelestia CLI/Python packages into
+`scheme/venv` under that profile. The installer includes the provisioning script,
+bridge, fcntl compatibility shim and source pins. IPC commands do not provision.
+Python and a first-launch download are accepted dependencies; failed provisioning
+retains the fixed palette, and `-SkipSchemeRuntime` skips it explicitly.
 
-Installed smoke keeps AppBar reservations and all-monitor background enabled,
-but suppresses input, native service writes, dispatch, tiling, recording,
-keep-awake, notification mirroring, tray interception and physical hotkeys.
-After about 15 seconds of QML runtime it reports PASS and waits for exact-path
-IPC quit, with a 60-second recovery timeout. Local empty keybind fixtures protect
-other shell instances; combined notification smoke retains round 1's in-process
-fixture and does not depend on owning the system notification server.
+Production and Combined both use WE discovery, the engine/files/both picker and
+preview-based Material You generation. WE auto detection remains the default.
+The entire Caelestia desktop host yields while WE owns WorkerW; it does not cover
+or change the user's WE wallpaper. Production desktopClock.enabled is false.
+Tiling defaults disabled with 10/10 DIP gaps. Omitted launcher switches allow
+watched profile configuration to apply; explicit switches override environment,
+which overrides the profile. The real user's KSG settings summary reads 10/10
+and maps to Observe, without enabling the tiler or writing either user's config.
+The Windows IdleInhibit adapter uses Tr.formatDateTime.
 
-The first production quit exposed teardown-only clock/network binding warnings.
-Small Windows adapters now guard clock reads and retain the last network sample
-through native singleton destruction. The shared upstream Time.qml is unchanged.
-Background smoke checks each actual background instance and its monitor geometry.
-Hard reload also exposed an old generation disabling the new generation's
-process-wide DesktopLayer. The new wrapper now owns that setting at startup;
-old-wrapper destruction only removes its windows and does not disable the new
-owner. Process exit still removes the background and AppBars.
+## Build and smoke
 
-## Build and validation
-
-Build output is exclusively:
+Build output, exclusively in this worktree:
 
 ```text
-C:\Users\Ermin\.t3\worktrees\caelestia-windows\t3-488b52f1\windows\.local\build
+C:\Users\Ermin\.t3\worktrees\caelestia-windows\t3-9957da37\windows\.local\build
 ```
 
-No other worktree's build was modified. Full `Build-Prototype.ps1` passed for
-backend, M3Shapes, portable plugins and installation, with Qt 6.11.2, clang-cl
-20.1.8, MSVC 14.44.35207 and SDK 10.0.26100.0 on Windows build 26300. Build
-metadata records shell merge `3482604c` with integration edits present, backend
-`13b2d093`, and the unchanged M3Shapes revision. Final QML is staged from this
-integration commit; the C++ sources did not change after that build.
+Full Build-Prototype.ps1 passed: backend, M3Shapes, portable plugins (including
+Caelestia.Windows.Audio), and local plugin installation. Qt 6.11.2, clang-cl
+20.1.8, MSVC 14.44.35207, SDK 10.0.26100.0, CMake 4.4.4 and Ninja 1.13.2,
+Windows build 26300. Build metadata records merge b7a0885c with integration edits;
+no C++ source changed afterward. Final stages use f5dbad02.
+The ordinary environment report confirms both pins; tools absent from ordinary
+PATH are available in the build script's isolated VS environment, whose strict
+prerequisite check passed.
 
-- Strict build-environment report passed with both dependency pins matching.
-  The separate required ordinary `Test-Environment.ps1 -Json` also confirms pins;
-  tools absent from the ordinary PATH remain a prerequisite note, not a build failure.
-- Final `-Combined -Smoke`: PASS, exit 0, 32.551 seconds,
-  `combined-20261026-020841-631.json`.
-- Final `-Combined -Live -Smoke`: PASS, exit 0, 32.260 seconds,
-  `combined-20261026-020916-881.json`.
-- Installed production smoke: PASS on native 150% and 175% monitors, with
-  2560x1440 and 2194x1234 logical drawers/backgrounds and 60-DIP bars.
-  Service/write gates were all false and tiling mode was off.
-  Exact-path IPC State, hard Restart and Quit were exercised. The second
-  generation passed the same all-monitor smoke after Restart, with no QML
-  warnings/errors. A test-harness log-reader sharing race was corrected before
-  the passing restart run; the reader now allows concurrent watchdog appends.
-- AppBar reservations measured 90 and 105 physical pixels at the respective DPIs.
-  Work areas and taskbar flags matched the original pre-test baseline after
-  IPC quit and uninstall. No taskbar show/hide calls were recorded and no test
-  autostart entry was present. An earlier quit-only run also matched the exact
-  per-HWND snapshot. On the final shared-desktop run, taskbar visibility changed
-  independently while flags/work areas stayed equal; taskbar hiding was forced
-  off throughout, so this run does not claim exclusive visibility ownership.
-- Temporary package, profile and Start-menu shortcut were removed by uninstall
-  with `-Purge`. Explorer PID 9252, KSG Shell PID 24108 and the user's preview
-  PID 39652 remained. Another preview (PID 28224) started during testing and was
-  left alone. The old baseline's other preview PID 10400 ended independently;
-  none of this task's commands targeted it or either preview build.
+- File-only KSG importer smoke passed, including default 10/10 mapping and rule
+  preservation. Real KSG summary also confirms 10/10, Observe only.
+- Tiling config smoke passed: 10/10 initial profile, 12/14 live reload, exit 0.
+- Final `-Combined -Smoke`: PASS, exit 0, 35.710 seconds, primary 150%,
+  combined-20261026-023509-219.json.
+- Final `-Combined -Live -Smoke -ScreenIndex 1`: PASS, exit 0, 35.700 seconds,
+  secondary 175%, combined-20261026-023640-127.json. Both use f5dbad02; the
+  Live run has only this report edited. Both load the native 60-bar provider,
+  scheme/variant rows, 253-item WE carousel and generated #f9b7a3 palette, with
+  no runtime warnings/errors.
+- Final installed production: PASS on native 150% and 175% monitors. Drawers are
+  2560x1440 and 2194x1234 logical pixels with 60-DIP bars. WE is detected/running,
+  253 catalog items, 26 scheme rows, 9 variants, primary #f9b7a3. All native-write
+  gates are false and tiling is off. DesktopLayer is inactive with zero background
+  hosts on both monitors because WE owns the desktop.
+- Exact-path IPC State and Quit passed. Watchdog reports clean-exit, exit 0.
+  Uninstall -Purge removed the temporary payload, profile and Start-menu shortcut;
+  no autostart entry was created. Runtime has no WARN/ERROR/FATAL/CRITICAL records.
+  Initial harness exit-code bookkeeping was fixed before this passing run.
+- Work areas and taskbar flags equal the original baseline after quit and after
+  uninstall. Per-HWND taskbar owner, visibility, bounds and flags equal the
+  supervisor snapshot. Windows wallpaper path, both WE project selections and
+  current virtual-desktop GUID are unchanged. No desktop switching was requested.
 
-Logs, JSON and staged sources remain ignored under `windows/.local`; no new
-validation evidence archive was created. This is build/loading/install smoke,
-not live hardware, tiling, shortcut input, crash-restart, hotplug or release
-acceptance. Round-4 work remains separate.
+Logs/results remain ignored under windows/.local. No other worktree's build was
+modified. Smoke establishes build/loading/install compatibility; it does not
+certify live tiling, audio accuracy, hardware writes, hotplug or a shell release.
+Round-5 polish, review-followups and runtime-review branches were not merged.
 
-## User commands
+## Commands
 
-From this checkout, using its default build directory:
+From this checkout after the native build, without opting into autostart:
 
 ```powershell
 powershell -NoProfile -File windows/scripts/Install-Caelestia.ps1
 & "$env:LOCALAPPDATA\Programs\caelestia-windows\Start-Caelestia.ps1"
 & "$env:LOCALAPPDATA\Programs\caelestia-windows\Start-Caelestia.ps1" -Command State
-& "$env:LOCALAPPDATA\Programs\caelestia-windows\Start-Caelestia.ps1" -Command Restart
 & "$env:LOCALAPPDATA\Programs\caelestia-windows\Start-Caelestia.ps1" -Command Quit
 powershell -NoProfile -File windows/scripts/Uninstall-Caelestia.ps1
 ```
 
-Installation defaults to `%LOCALAPPDATA%\Programs\caelestia-windows` and the
-profile to `%LOCALAPPDATA%\caelestia-windows`. Add `-Autostart` only to opt into
-sign-in startup. Ordinary uninstall preserves the profile; add `-Purge` only
-when intentionally deleting it. Taskbar hiding defaults off. Coordinate existing
-shell/tiler ownership before enabling interactive tiling.
+Installation defaults to `%LOCALAPPDATA%\Programs\caelestia-windows`.
+Use -Prefix and -ProfileRoot for a separate temporary installation; -Purge removes
+its profile. Production smoke uses the installed launcher with -Smoke in another
+process, waits for CAELESTIA_SHELL_LIVE_PASS, then calls -Command Quit. Combined
+smoke uses Start-ShellPrototype.ps1 -QtPrefix <Qt> -Combined -Smoke; add -Live
+for the second mode. Final Live smoke selects -ScreenIndex 1.
