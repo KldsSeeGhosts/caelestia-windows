@@ -231,9 +231,12 @@ ShellRoot {
     WindowsFocusGuard {
         id: focusGuard
         target: win.contentItem
-        active: !root.smoke && (win.screenState?.session ?? false)
+        active: !root.smoke && ((win.screenState?.session ?? false) || (win.screenState?.launcher ?? false))
         onOutcome: status => console.log("CAELESTIA_SHELL_FOCUS", status)
-        onDismissRequested: win.screenState.session = false
+        onDismissRequested: {
+            win.screenState.session = false;
+            win.screenState.launcher = false;
+        }
     }
 
     ContentWindow {
