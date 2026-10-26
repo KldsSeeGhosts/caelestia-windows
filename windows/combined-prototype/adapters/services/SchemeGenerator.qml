@@ -103,7 +103,7 @@ Singleton {
             updateCurrent(data);
             status = "ready";
             lastError = "";
-            console.log(`CAELESTIA_SCHEME_APPLIED name=${currentName} flavour=${currentFlavour} mode=${currentMode} variant=${currentVariant}`);
+            console.log(`CAELESTIA_SCHEME_APPLIED name=${currentName} flavour=${currentFlavour} mode=${currentMode} variant=${currentVariant} primary=${data.colours?.primary ?? data.colours?.m3primary ?? ""}`);
             schemeChanged();
         }
         Qt.callLater(root.pump);

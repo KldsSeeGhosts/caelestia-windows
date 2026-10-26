@@ -1,0 +1,113 @@
+﻿{
+    "passed":  true,
+    "smoke":  true,
+    "prototype":  "combined",
+    "combined":  true,
+    "live":  false,
+    "audioMode":  "Disabled",
+    "batteryMode":  "Disabled",
+    "mediaMode":  "Disabled",
+    "brightnessMode":  "Disabled",
+    "networkMode":  "Disabled",
+    "bluetoothMode":  "Disabled",
+    "appsMode":  "Disabled",
+    "appsSearchQuery":  "",
+    "trayMode":  "Disabled",
+    "trayFixture":  false,
+    "trayHookMode":  null,
+    "sessionMode":  "Disabled",
+    "sessionActions":  false,
+    "notificationsMode":  "Disabled",
+    "notificationsMirror":  false,
+    "notificationsDismiss":  false,
+    "notificationsAppOpen":  false,
+    "mirrorSuppressedBySmoke":  false,
+    "timedOut":  false,
+    "exitCode":  0,
+    "scaleFactor":  "native",
+    "screenIndex":  0,
+    "monitorCycle":  false,
+    "traceInput":  false,
+    "schemeRuntime":  true,
+    "schemeRuntimeMessage":  "cached",
+    "schemeCliRevision":  "5e804b10c146c9f3278b2da37c8e4b5d8e9708d9",
+    "actualScreens":  [
+                          {
+                              "index":  0,
+                              "name":  "MAG321UX OLED",
+                              "x":  0,
+                              "y":  0,
+                              "dpr":  1.5
+                          }
+                      ],
+    "captures":  [
+                     "file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/combined-20261026-021408-289-session.png",
+                     "file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/combined-20261026-021408-289-popout-audio.png",
+                     "file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/combined-20261026-021408-289-popout-network.png",
+                     "file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/combined-20261026-021408-289-popout-bluetooth.png",
+                     "file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/combined-20261026-021408-289-popout-battery.png",
+                     "file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/combined-20261026-021408-289-osd.png",
+                     "file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/combined-20261026-021408-289-launcher.png",
+                     "file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/combined-20261026-021408-289-dashboard.png",
+                     "file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/combined-20261026-021408-289-dashboard-dash.png",
+                     "file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/combined-20261026-021408-289-dashboard-performance.png",
+                     "file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/combined-20261026-021408-289-dashboard-weather.png",
+                     "file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/combined-20261026-021408-289-utilities.png",
+                     "file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/combined-20261026-021408-289-notification.png",
+                     "file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/combined-20261026-021408-289-sidebar.png",
+                     "file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/combined-20261026-021408-289-wallpaper-picker.png",
+                     "file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/combined-20261026-021408-289-notification.png",
+                     "file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/combined-20261026-021408-289.png"
+                 ],
+    "elapsedMilliseconds":  35669,
+    "sourceRevision":  "27ae336c62ef4d85f178bc56827db8ad48129963",
+    "sourceDirty":  false,
+    "backendRevision":  "525786fc81f13346cb196dca5ab356f89ad707a5",
+    "buildRecordSha256":  "5DCDA9C00874708A2B2B2C0721C08F903766133AEF84110147051707F7EC5E4D",
+    "configSha256":  "EF5685887F60168F9F0515AB262819C1BC9F5F203A3B0DF9F3CBC78AC857167D",
+    "command":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\quickshell\\qs.exe",
+    "arguments":  "--no-color --log-times --path \"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\combined-20261026-021408-289\\shell.qml\"",
+    "executableSha256":  "9B518329FAC6B96973F4ECAA58A6CDFA5E413B6F9633A8F70345A706905F55AA",
+    "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\combined-20261026-021408-289",
+    "profile":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\combined-prototype-profile",
+    "sources":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\combined-20261026-021408-289.sources.json",
+    "screenshot":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\combined-20261026-021408-289.png",
+    "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\combined-20261026-021408-289.stdout.log",
+    "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\combined-20261026-021408-289.stderr.log",
+    "audioSnapshots":  [
+
+                       ],
+    "batterySnapshots":  [
+
+                         ],
+    "mediaSnapshots":  [
+
+                       ],
+    "brightnessSnapshots":  [
+
+                            ],
+    "networkSnapshots":  [
+
+                         ],
+    "bluetoothSnapshots":  [
+
+                           ],
+    "appsSnapshots":  [
+
+                      ],
+    "traySnapshots":  [
+
+                      ],
+    "sessionSnapshots":  [
+
+                         ],
+    "notificationsSnapshots":  [
+
+                               ],
+    "appsSearches":  [
+
+                     ],
+    "sessionButtons":  [
+
+                       ]
+}

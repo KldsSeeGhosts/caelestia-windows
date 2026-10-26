@@ -26,6 +26,8 @@ ShellRoot {
     readonly property bool live: Quickshell.env("CAELESTIA_COMBINED_LIVE") === "1"
     readonly property bool smoke: Quickshell.env("CAELESTIA_SHELL_SMOKE") === "1"
     readonly property bool backgroundSmoke: smoke && Quickshell.env("CAELESTIA_WINDOWS_BACKGROUND") === "1"
+    // Instantiate the watcher at shell startup, before the launcher is opened.
+    readonly property bool externalWallpaperActive: WallpaperEngine.ownsDesktop
     readonly property int initialScreenIndex: Number(Quickshell.env("CAELESTIA_SHELL_SCREEN") || "0")
     property int screenIndex: initialScreenIndex
     readonly property ShellScreen selectedScreen: Quickshell.screens[screenIndex] ?? null
@@ -761,6 +763,23 @@ ShellRoot {
                 root.capturePhase("dashboard");
                 win.screenState.dashboardTab = 0;
             } else if (step === 9) {
+                console.log("CAELESTIA_WE_PICKER", JSON.stringify({
+                    status: WallpaperEngine.status, running: WallpaperEngine.running,
+                    detected: WallpaperEngine.detected, monitor: WallpaperEngine.monitor,
+                    count: Wallpapers.list.length, engineCount: WallpaperEngine.items.length,
+                    picker: WallpaperEngine.picker, current: WallpaperEngine.current,
+                    primary: Colours.palette.m3primary, error: WallpaperEngine.lastError
+                }));
+                if (WallpaperEngine.python && !WallpaperEngine.snapshotReady) {
+                    root.fail("Wallpaper Engine discovery did not settle: " + WallpaperEngine.lastError);
+                    return;
+                }
+                if (WallpaperEngine.enabled && WallpaperEngine.running && WallpaperEngine.detected
+                    && (WallpaperEngine.items.length === 0
+                        || (WallpaperEngine.picker !== "files" && !Wallpapers.query("").some(item => item.engine)))) {
+                    root.fail("Wallpaper Engine picker catalog is empty");
+                    return;
+                }
                 // The launcher instantiated the scheme providers a few ticks
                 // ago; their asynchronous bridge refresh has populated the row
                 // models by now.
@@ -830,6 +849,24 @@ ShellRoot {
                 }
                 root.capturePhase("sidebar");
             } else if (step === 15) {
+                win.screenState.sidebar = false;
+                win.screenState.launcher = true;
+                const search = CUtils.findChild(win.contentItem, "launcherSearch");
+                if (!search) { root.fail("wallpaper search missing"); return; }
+                search.text = GlobalConfig.launcher.actionPrefix + "wallpaper ";
+            } else if (step === 16) {
+                const list = CUtils.findChild(win.contentItem, "launcherWallpaperList");
+                if (!list || list.count !== Wallpapers.list.length) {
+                    root.fail("wallpaper carousel did not load the catalog"); return;
+                }
+                console.log("CAELESTIA_WE_CAROUSEL count=" + list.count);
+                root.capturePhase("wallpaper-picker");
+            } else if (step === 17) {
+                // saveItem is asynchronous. Keep the picker visible for the
+                // capture instead of closing it in the capture's own frame.
+                win.screenState.launcher = false;
+                win.screenState.sidebar = true;
+            } else if (step === 18) {
                 if (!Notifs.list.some(record => record.notification === check.notification)) {
                     root.fail("notification history did not retain the fixture");
                     return;

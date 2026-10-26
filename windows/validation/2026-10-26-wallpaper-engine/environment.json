@@ -1,0 +1,48 @@
+﻿{
+    "schemaVersion":  1,
+    "repository":  "C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-757cd6ba",
+    "platform":  "Microsoft Windows NT 10.0.26300.0",
+    "source":  {
+                   "expectedBackendRevision":  "525786fc81f13346cb196dca5ab356f89ad707a5",
+                   "actualBackendRevision":  "525786fc81f13346cb196dca5ab356f89ad707a5",
+                   "matches":  true
+               },
+    "tools":  [
+                  {
+                      "name":  "git",
+                      "path":  "C:\\Users\\Ermin\\AppData\\Local\\Programs\\PortableGit-2.55.0.5\\cmd\\git.exe"
+                  },
+                  {
+                      "name":  "cmake",
+                      "path":  null
+                  },
+                  {
+                      "name":  "ninja",
+                      "path":  null
+                  },
+                  {
+                      "name":  "cxxCompiler",
+                      "path":  null
+                  },
+                  {
+                      "name":  "qtpaths",
+                      "path":  null
+                  },
+                  {
+                      "name":  "quickshellRuntime",
+                      "path":  null
+                  }
+              ],
+    "nativeToolchainReady":  false,
+    "blockers":  [
+                     "cmake is not available on PATH.",
+                     "ninja is not available on PATH.",
+                     "No MSVC cl.exe or clang-cl.exe is available in this environment.",
+                     "Qt development tools were not found; supply -QtPrefix or configure the Qt build environment."
+                 ],
+    "notes":  [
+                  "This report does not validate a Caelestia build, Qt module coverage, SDK compatibility, or runtime behavior.",
+                  "No software was installed and no desktop, configuration, authentication, or environment settings were changed.",
+                  "The portable plugin build and component probe do not validate the full bar/drawer or Windows service adaptation."
+              ]
+}

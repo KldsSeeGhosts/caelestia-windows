@@ -49,6 +49,8 @@ param(
     [switch]$NoRestartOnCrash,
     # Skips provisioning/using the profile-local Python scheme generator.
     [switch]$SkipSchemeRuntime,
+    # Optional Windows-only settings copied to the isolated windows.json.
+    [string]$WindowsConfigPath,
     [ValidateSet('native', '1', '1.5', '1.75')][string]$ScaleFactor = 'native',
     [ValidateRange(0, 15)][int]$ScreenIndex = 0
 )
@@ -292,6 +294,18 @@ if ($null -ne $tilingSettings) {
     $configObject | Add-Member -NotePropertyName windows -NotePropertyValue ([pscustomobject]@{ tiling = $tilingSettings }) -Force
     $configText = $configObject | ConvertTo-Json -Depth 20
 }
+if ($Combined) {
+    # The pinned C++ ConfigRoot rejects unknown top-level keys. Keep Windows
+    # facade settings in a separate watched file, without rebuilding that ABI.
+    $windowsConfig = Join-Path $profileRoot 'config\windows.json'
+    if ($WindowsConfigPath) {
+        $windowsOptions = Get-Content -LiteralPath $WindowsConfigPath -Raw | ConvertFrom-Json
+        @{ windows = $windowsOptions.windows } | ConvertTo-Json -Depth 20 |
+            Set-Content -LiteralPath $windowsConfig -Encoding UTF8
+    } elseif (-not (Test-Path -LiteralPath $windowsConfig)) {
+        '{"windows":{"wallpaperEngine":{}}}' | Set-Content -LiteralPath $windowsConfig -Encoding UTF8
+    }
+}
 $configText | Set-Content -LiteralPath $config -Encoding UTF8
 $logRoot = Join-Path $RunRoot 'logs'
 # Dynamic colours: the combined prototype uses the real caelestia CLI scheme
@@ -340,6 +354,13 @@ if ($Combined) {
 }
 $info.EnvironmentVariables['CAELESTIA_SCHEME_PYTHON'] = $(if ($schemeAvailable) { [string]$schemeRuntime.python } else { '' })
 $info.EnvironmentVariables['CAELESTIA_SCHEME_HELPER'] = $(if ($schemeAvailable) { [string]$schemeRuntime.helper } else { '' })
+$wePython = if ($schemeAvailable) { [string]$schemeRuntime.python } else {
+    # Discovery uses only the standard library and remains available when the
+    # user opts out of the Material scheme runtime.
+    $pythonLauncher = Get-Command py.exe -ErrorAction SilentlyContinue
+    if ($pythonLauncher) { & $pythonLauncher.Source -3 -c 'import sys; print(sys.executable)' }
+}
+$info.EnvironmentVariables['CAELESTIA_WE_PYTHON'] = [string]$wePython
 $info.EnvironmentVariables['QS_WINDOWS_BLUR'] = '0'
 $info.EnvironmentVariables['QT_LOGGING_RULES'] = 'quickshell.windows.tracker.debug=false;quickshell.windows.inputmask.debug=false'
 if ($TraceInput) {

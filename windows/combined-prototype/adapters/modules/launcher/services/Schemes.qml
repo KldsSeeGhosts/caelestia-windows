@@ -76,7 +76,7 @@ Searcher {
 
         function onClicked(list: AppList): void {
             list.screenState.launcher = false;
-            SchemeGenerator.setScheme(name, flavour, Wallpapers.actualCurrent);
+            SchemeGenerator.setScheme(name, flavour, Wallpapers.currentImage);
         }
     }
 }

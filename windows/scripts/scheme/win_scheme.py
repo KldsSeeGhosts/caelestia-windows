@@ -94,6 +94,7 @@ def _thumbnail(image: Path) -> Path:
     thumb = cache / "thumbnail.jpg"
     if not thumb.exists():
         with Image.open(image) as img:
+            img.seek(0)  # WE previews can be animated GIF/WebP. Sample frame 0.
             img = img.convert("RGB")
             img.thumbnail((128, 128), Image.Resampling.NEAREST)
             thumb.parent.mkdir(parents=True, exist_ok=True)
@@ -120,7 +121,11 @@ def _seed_wallpaper(image: Path) -> None:
 def _smart_options(image: Path) -> dict[str, str]:
     from caelestia.utils.wallpaper import get_smart_opts
 
-    return get_smart_opts(image, wallpapers_cache_dir / _hash(image))
+    # Feed the same decoded still frame to smart luminance analysis as to the
+    # quantizer. Some image-analysis libraries do not accept animated inputs.
+    with Image.open(image) as img:
+        animated = getattr(img, "is_animated", False)
+    return get_smart_opts(_thumbnail(image) if animated else image, wallpapers_cache_dir / _hash(image))
 
 
 def _validated(name: str, flavour: str | None, mode: str | None, variant: str | None, fallback_variant: str) -> tuple[str, str, str, str]:

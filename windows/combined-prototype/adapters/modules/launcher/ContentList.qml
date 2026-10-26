@@ -36,7 +36,6 @@ Item {
             PropertyChanges {
                 root.implicitWidth: root.Tokens.sizes.launcher.itemWidth
                 root.implicitHeight: Math.min(root.maxHeight, appList.implicitHeight > 0 ? appList.implicitHeight : empty.implicitHeight)
-                appList.active: true
             }
 
             AnchorChanges {
@@ -50,7 +49,6 @@ Item {
             PropertyChanges {
                 root.implicitWidth: Math.max(root.Tokens.sizes.launcher.itemWidth * 1.2, wallpaperList.implicitWidth)
                 root.implicitHeight: root.Tokens.sizes.launcher.wallpaperHeight
-                wallpaperList.active: true
             }
         }
     ]
@@ -78,7 +76,10 @@ Item {
     Loader {
         id: appList
 
-        active: false
+        // Bind lifetime directly instead of State PropertyChanges. Restoring
+        // a state's active value during parent destruction can otherwise
+        // incubate app delegates in an already-destroyed launcher context.
+        active: root.animState === "apps"
 
         anchors.fill: parent
 
@@ -87,6 +88,10 @@ Item {
 
             search: root.search
             screenState: root.screenState
+            // Freeze the app delegate state while the wallpaper view takes
+            // over. Otherwise "> wallpaper" starts the actions transition
+            // just as its Loader destroys that transition's QML context.
+            state: root.screenState.launcher && !root.showWallpapers ? requestedState : displayState
         }
     }
 
@@ -94,7 +99,7 @@ Item {
         id: wallpaperList
 
         asynchronous: true
-        active: false
+        active: root.animState === "wallpapers"
 
         anchors.top: parent.top
         anchors.bottom: parent.bottom

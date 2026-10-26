@@ -114,6 +114,8 @@
   "windows/combined-prototype/adapters/services/Wallpapers.qml": "services/Wallpapers.qml",
   "windows/combined-prototype/adapters/services/Colours.qml": "services/Colours.qml",
   "windows/combined-prototype/adapters/services/SchemeGenerator.qml": "services/SchemeGenerator.qml",
+  "windows/services/wallpaperengine/WallpaperEngine.qml": "services/WallpaperEngine.qml",
+  "windows/services/wallpaperengine/bridge.py": "services/wallpaperengine_bridge.py",
   "modules/launcher/items/SchemeItem.qml": "modules/launcher/items/SchemeItem.qml",
   "modules/launcher/items/VariantItem.qml": "modules/launcher/items/VariantItem.qml",
   "windows/combined-prototype/adapters/modules/launcher/services/Arithmetic.js": "modules/launcher/services/Arithmetic.js",

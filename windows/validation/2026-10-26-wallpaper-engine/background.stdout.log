@@ -1,0 +1,13 @@
+﻿2026-10-26 02:12:54.988  INFO: Launching config: "C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-757cd6ba/windows/.local/wallpaperengine-probe/stage/shell.qml"
+2026-10-26 02:12:54.989  INFO: Shell ID: "7a7de05f308f511ed9c261d1c599cf62" Path ID "7a7de05f308f511ed9c261d1c599cf62"
+2026-10-26 02:12:55.011  INFO: Saving logs to "C:/Users/Ermin/AppData/Local/quickshell/run/by-id/05uix3int/log.qslog"
+2026-10-26 02:12:55.113  INFO: Configuration Loaded
+2026-10-26 02:12:55.132 DEBUG qml: CAELESTIA_SCHEME_LOADED name=dynamic flavour=default mode=dark applied=74 primary=#f9b7a3
+2026-10-26 02:12:55.275 DEBUG qml: CAELESTIA_SCHEME_LOADED name=dynamic flavour=default mode=dark applied=74 primary=#f9b7a3
+2026-10-26 02:12:55.301 DEBUG qml: CAELESTIA_WE_CURRENT {"monitor":"Monitor0","title":"Autum In Japan Pixel Art","project":"C:/Program Files (x86)/Steam/steamapps/workshop/content/431960/2456741440/project.json","preview":"C:/Program Files (x86)/Steam/steamapps/workshop/content/431960/2456741440/preview.jpg"}
+2026-10-26 02:12:55.483 DEBUG qml: CAELESTIA_SCHEME_LOADED name=dynamic flavour=default mode=dark applied=74 primary=#f9b7a3
+2026-10-26 02:12:55.491 DEBUG qml: CAELESTIA_SCHEME_APPLIED name=dynamic flavour=default mode=dark variant=tonalspot primary=f9b7a3
+2026-10-26 02:12:55.494 DEBUG qml: CAELESTIA_SCHEME_LOADED name=dynamic flavour=default mode=dark applied=74 primary=#f9b7a3
+2026-10-26 02:12:55.533 DEBUG qml: CAELESTIA_BACKGROUND_STATE {"active":false,"ready":true,"owner":"wallpaper-engine","clock":false}
+2026-10-26 02:12:55.533 DEBUG qml: CAELESTIA_WE_PROBE_PASS {"count":253,"current":{"path":"C:/Program Files (x86)/Steam/steamapps/workshop/content/431960/2456741440/project.json","preview":"C:/Program Files (x86)/Steam/steamapps/workshop/content/431960/2456741440/preview.jpg","title":"Autum In Japan Pixel Art","relativePath":"Autum In Japan Pixel Art","type":"scene","engine":true},"primary":"#f9b7a3","backgroundScreens":0,"desktopActive":false,"clock":false}
+
