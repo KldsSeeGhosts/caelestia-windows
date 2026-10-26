@@ -11,6 +11,7 @@ QtObject {
     readonly property string home: Quickshell.env("USERPROFILE").replace(/\\/g, "/")
 
     readonly property string cache: Quickshell.cacheDir.replace(/\\/g, "/")
+    readonly property url configFile: "file:///" + Quickshell.env("CAELESTIA_CONFIG_DIR").replace(/\\/g, "/") + "/shell.json"
 
     readonly property string wallsdir: (Quickshell.env("CAELESTIA_WALLPAPER_DIR") || (home + "/Pictures/Wallpapers")).replace(/\\/g, "/")
     function shortenHome(path: string): string { return path.replace(home, "~"); }

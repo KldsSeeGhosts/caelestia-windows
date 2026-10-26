@@ -224,7 +224,7 @@ if ($Combined) {
   "launcher": {"enabled":true,"showOnHover":true},
   "sidebar": {"enabled":true,"showOnHover":true},
   "osd": {"enabled":true},
-  "utilities": {"enabled":true,"cards":{"keepAwake":true,"recorder":true,"quickToggles":true},"quickToggles":[{"id":"wifi","enabled":true},{"id":"bluetooth","enabled":true},{"id":"dnd","enabled":true}]}
+  "utilities": {"enabled":true,"cards":{"keepAwake":true,"recorder":true,"quickToggles":true},"quickToggles":[{"id":"wifi","enabled":true},{"id":"bluetooth","enabled":true},{"id":"mic","enabled":true},{"id":"dnd","enabled":true},{"id":"settings","enabled":true}]}
 }
 '@
 }
@@ -295,6 +295,7 @@ $info.EnvironmentVariables['QML_DISK_CACHE_PATH'] = Join-Path $profileRoot 'cach
 $info.EnvironmentVariables['CAELESTIA_CONFIG_DIR'] = Join-Path $profileRoot 'config'
 $info.EnvironmentVariables['CAELESTIA_STATE_DIR'] = Join-Path $profileRoot 'state'
 $info.EnvironmentVariables['CAELESTIA_RUNTIME_DIR'] = Join-Path $profileRoot 'runtime'
+
 $info.EnvironmentVariables['QS_WINDOWS_BLUR'] = '0'
 $info.EnvironmentVariables['QT_LOGGING_RULES'] = 'quickshell.windows.tracker.debug=false;quickshell.windows.inputmask.debug=false'
 if ($TraceInput) {
