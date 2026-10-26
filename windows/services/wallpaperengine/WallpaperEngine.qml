@@ -66,7 +66,7 @@ Singleton {
     Component.onCompleted: refresh()
 
     FileView {
-        path: Quickshell.env("CAELESTIA_CONFIG_DIR") + "/shell.json"
+        path: Quickshell.env("CAELESTIA_CONFIG_DIR") + "/windows.json"
         watchChanges: true
         printErrors: false
         onFileChanged: reload()

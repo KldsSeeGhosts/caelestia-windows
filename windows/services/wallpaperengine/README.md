@@ -14,7 +14,7 @@ read-only rescan also catches atomic replacements, process changes and workshop
 installs. Invalid/partially written configs retain the last good snapshot and
 report an error. Animated previews are sampled at frame zero with Pillow.
 
-Windows-only settings live in the isolated `config/shell.json`:
+Windows-only settings live in the isolated `config/windows.json` sidecar:
 
 ```json
 {
@@ -39,8 +39,10 @@ light/dark/variant selection.
 The prototype launcher regenerates its isolated config each run. To supply these
 settings at launch, pass `-WindowsConfigPath <json-file>` to
 `Start-ShellPrototype.ps1 -Combined`; it copies that file's `windows` object into
-the isolated config. Runtime edits to the isolated file are watched. No C++
-config plugin rebuild is required.
+the isolated sidecar. Runtime edits to that file are watched. The pinned C++
+config schema rejects unknown keys in `shell.json`, so the sidecar preserves
+the requested `windows.wallpaperEngine` namespace without a config plugin
+rebuild.
 
 The carousel keeps project identity separate from the preview image. Selecting
 an engine item requests the official

@@ -35,7 +35,7 @@ param(
     [switch]$Live,
     # Skips provisioning/using the profile-local Python scheme generator.
     [switch]$SkipSchemeRuntime,
-    # Optional Windows-only settings merged into the isolated shell.json.
+    # Optional Windows-only settings copied to the isolated windows.json.
     [string]$WindowsConfigPath,
     [ValidateSet('native', '1', '1.5', '1.75')][string]$ScaleFactor = 'native',
     [ValidateRange(0, 15)][int]$ScreenIndex = 0
@@ -199,11 +199,17 @@ if ($Combined -and $Live) {
         '"commands": {"logout":[],"shutdown":[],"hibernate":[],"reboot":[]}',
         '"commands": {"logout":["logout"],"shutdown":["shutdown"],"hibernate":["hibernate"],"reboot":["reboot"]}')
 }
-if ($Combined -and $WindowsConfigPath) {
-    $windowsOptions = Get-Content -LiteralPath $WindowsConfigPath -Raw | ConvertFrom-Json
-    $configObject = $configText | ConvertFrom-Json
-    $configObject | Add-Member -NotePropertyName windows -NotePropertyValue $windowsOptions.windows -Force
-    $configText = $configObject | ConvertTo-Json -Depth 20
+if ($Combined) {
+    # The pinned C++ ConfigRoot rejects unknown top-level keys. Keep Windows
+    # facade settings in a separate watched file, without rebuilding that ABI.
+    $windowsConfig = Join-Path $profileRoot 'config\windows.json'
+    if ($WindowsConfigPath) {
+        $windowsOptions = Get-Content -LiteralPath $WindowsConfigPath -Raw | ConvertFrom-Json
+        @{ windows = $windowsOptions.windows } | ConvertTo-Json -Depth 20 |
+            Set-Content -LiteralPath $windowsConfig -Encoding UTF8
+    } elseif (-not (Test-Path -LiteralPath $windowsConfig)) {
+        '{"windows":{"wallpaperEngine":{}}}' | Set-Content -LiteralPath $windowsConfig -Encoding UTF8
+    }
 }
 $configText | Set-Content -LiteralPath $config -Encoding UTF8
 # Dynamic colours: the combined prototype uses the real caelestia CLI scheme
