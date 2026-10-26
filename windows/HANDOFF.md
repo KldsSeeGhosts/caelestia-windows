@@ -13,7 +13,7 @@ same tile, with stable sampled work area and no sampled taskbar visibility.
 Perceived transition latency, frame-by-frame flicker and physical monitor
 power-off recovery still need verification. The earlier bounded component
 smoke timed out and is not passing acceptance. See
-[the follow-up evidence and limits](validation/2026-10-26-fullscreen-followup/README.md).
+[the follow-up evidence and limits](https://github.com/KldsSeeGhosts/caelestia-windows/pull/10#issuecomment-6426317248).
 This candidate is installed; its topic branches remain under review.
 
 ## Where the code is
