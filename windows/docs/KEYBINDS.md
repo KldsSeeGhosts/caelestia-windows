@@ -4,14 +4,14 @@ Back to the [Caelestia for Windows user guide](USER-GUIDE.md).
 
 On Linux, Caelestia relies on Hyprland (`hyprland.conf` or `keybinds.lua`) to capture global shortcuts and run window/workspace dispatchers. On Windows, the Quickshell backend provides a built-in `HotkeyManager` (`Quickshell.Windows.Hotkeys`) that registers Win32 hotkeys (`RegisterHotKey`) and a low-level keyboard hook (`WH_KEYBOARD_LL`) when needed for lone-modifier taps or `Win+<Key>` overrides.
 
-`TODO(verify): confirm the exact staged default path (defaults/windows/keybinds.json) and user override path (e.g., %LOCALAPPDATA%\caelestia-windows\config\keybinds.json) from branch t3/global-shortcuts.`
+Defaults are staged at `shell/defaults/windows/keybinds.json`. Production seeds `config/keybinds.json` under the recorded profile on first launch only.
 
 ---
 
 ## Where `keybinds.json` lives
 
 1. **Built-in defaults:** Shipped in the shell directory at `defaults/windows/keybinds.json`.
-2. **User overrides:** Configured via the `"userFile"` field in `defaults/windows/keybinds.json`, resolved relative to `%LOCALAPPDATA%` (or as an absolute path), typically `%LOCALAPPDATA%\caelestia-windows\config\keybinds.json` (`TODO(verify): confirm exact userFile value on branch t3/global-shortcuts`).
+2. **User overrides:** `CAELESTIA_WINDOWS_KEYBINDS` selects an explicit file first. Otherwise `"configFile":"keybinds.json"` resolves under `CAELESTIA_CONFIG_DIR` when that file exists, so production uses `%LOCALAPPDATA%\caelestia-windows\config\keybinds.json`. The legacy fallback `"userFile":"caelestia/windows/keybinds.json"` resolves under Qt GenericDataLocation.
 
 `HotkeyManager` watches your `keybinds.json` file and reloads bindings automatically within 200 ms whenever you save changes. It also re-evaluates punctuation keys automatically when your active Windows keyboard layout changes.
 
@@ -96,7 +96,6 @@ Available Caelestia global shortcut names:
 | `caelestia:sidebar` | Toggle right notification & sidebar drawer | `daemons/Shortcuts.qml` |
 | `caelestia:utilities` | Toggle utilities quick-toggles drawer | `daemons/Shortcuts.qml` |
 | `caelestia:showall` | Toggle launcher, dashboard, OSD, and utilities together | `daemons/Shortcuts.qml` |
-| `caelestia:nexus` | Open Caelestia settings window (Nexus) | `daemons/Shortcuts.qml` |
 | `caelestia:clearNotifs` | Close all active notifications | `services/Notifs.qml` |
 | `caelestia:toggleDnd` | Toggle Do Not Disturb | `services/Notifs.qml` |
 | `caelestia:mediaToggle` | Play/pause active GSMTC media player | `services/Players.qml` |
@@ -106,7 +105,36 @@ Available Caelestia global shortcut names:
 | `caelestia:brightnessUp` | Increase monitor brightness | `services/Brightness.qml` |
 | `caelestia:brightnessDown` | Decrease monitor brightness | `services/Brightness.qml` |
 
-`TODO(verify): confirm which of these CustomShortcut handlers are staged in the production Windows shell on branch t3/global-shortcuts.`
+All handlers in the table are staged in production, plus `caelestia:volumeUp`, `caelestia:volumeDown`, and `caelestia:volumeMute` from the audio adapter. Nexus is not staged. Service actions retain their control gates. Production targets the focused monitor; bounded previews target their selected screen.
+
+## Shipped default keys
+
+| Action | Default keys | Target |
+| --- | --- | --- |
+| Toggle the launcher (lone Super tap) | `Super` (tap on release) | `caelestia:launcher` |
+| Toggle the launcher, dashboard, OSD and utilities together | `Super+K` | `caelestia:showall` |
+| Toggle the dashboard | `Super+Shift+D` | `caelestia:dashboard` |
+| Toggle the notification sidebar | `Super+N` | `caelestia:sidebar` |
+| Toggle utilities | `Super+Shift+U` | `caelestia:utilities` |
+| Toggle the session menu (Ctrl+Alt+Delete is reserved by Windows) | `Ctrl+Alt+End` | `caelestia:session` |
+| Clear all notifications | `Ctrl+Alt+C` | `caelestia:clearNotifs` |
+| Toggle do not disturb | `Super+Shift+N` | `caelestia:toggleDnd` |
+| Play or pause the active player | `Ctrl+Super+Space` | `caelestia:mediaToggle` |
+| Play or pause the active player | `XF86AudioPlay` | `caelestia:mediaToggle` |
+| Next track | `Ctrl+Super+Equal` | `caelestia:mediaNext` |
+| Next track | `XF86AudioNext` | `caelestia:mediaNext` |
+| Previous track | `Ctrl+Super+Minus` | `caelestia:mediaPrev` |
+| Previous track | `XF86AudioPrev` | `caelestia:mediaPrev` |
+| Stop the active player when it supports stop | `Ctrl+Super+Backspace` | `caelestia:mediaStop` |
+| Stop the active player when it supports stop | `XF86AudioStop` | `caelestia:mediaStop` |
+| Raise the default output volume | `XF86AudioRaiseVolume` | `caelestia:volumeUp` |
+| Lower the default output volume | `XF86AudioLowerVolume` | `caelestia:volumeDown` |
+| Mute or unmute the default output | `XF86AudioMute` | `caelestia:volumeMute` |
+| Mute or unmute the default output | `Super+Shift+M` | `caelestia:volumeMute` |
+| Raise the active display brightness | `Ctrl+Alt+Page_Up` | `caelestia:brightnessUp` |
+| Lower the active display brightness | `Ctrl+Alt+Page_Down` | `caelestia:brightnessDown` |
+| Lock Windows | `Super+L` | `rundll32.exe user32.dll,LockWorkStation` |
+
 
 ### 2. `"dispatch"` — run a window or workspace dispatcher
 
@@ -121,7 +149,7 @@ Sends a Hyprland-style dispatcher string to the Windows backend:
 }
 ```
 
-Supported dispatch commands on Windows (`TODO(verify): confirm whether hotkeys.cpp invokes the backend dispatcher directly or goes through the HyprService allowlist on branch t3/global-shortcuts`):
+Hotkey `dispatch` actions invoke the backend `Hyprland.dispatch` directly, bypassing the QML HyprService allowlist. No dispatch bindings are shipped by default. Add them only after configuring the intended workspace/tiling behavior. The following backend dispatchers exist:
 
 | Dispatcher | Description |
 | --- | --- |

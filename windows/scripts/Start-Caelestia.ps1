@@ -3,6 +3,9 @@ param(
     [string]$Prefix,
     [ValidateSet('Start', 'State', 'Quit', 'Restart')][string]$Command = 'Start',
     [switch]$Smoke,
+    [ValidateSet('Disabled', 'Observe', 'Interactive')][string]$TilingMode = 'Disabled',
+    [string]$TilingIncluded = '',
+    [string]$TilingExcluded = '',
     [switch]$Wait
 )
 
@@ -21,10 +24,12 @@ if ($Command -eq 'Start') {
     foreach ($dir in @('config', 'state', 'cache', 'data', 'runtime', 'logs')) {
         New-Item -ItemType Directory -Force -Path (Join-Path $profile $dir) | Out-Null
     }
-    $config = Join-Path $profile 'config\shell.json'
-    # Seed once. Updates/restarts never overwrite user edits or malformed files.
-    if (-not (Test-Path -LiteralPath $config)) {
-        Copy-Item -LiteralPath (Join-Path $Prefix 'defaults\shell.json') -Destination $config
+    # Seed once; updates and restarts preserve user edits.
+    foreach ($name in @('shell.json', 'keybinds.json', 'windows.json')) {
+        $target = Join-Path $profile "config\$name"
+        if (-not (Test-Path -LiteralPath $target)) {
+            Copy-Item -LiteralPath (Join-Path $Prefix "defaults\$name") -Destination $target
+        }
     }
 }
 
@@ -62,10 +67,22 @@ $info.EnvironmentVariables['CAELESTIA_WINDOWS_BRIGHTNESS_SOFTWARE'] = '0'
 $info.EnvironmentVariables['CAELESTIA_SHELL_SESSION'] = '1'
 $info.EnvironmentVariables['CAELESTIA_SHELL_SESSION_MODE'] = 'Observe'
 $info.EnvironmentVariables['CAELESTIA_TRAY_FIXTURE'] = '0'
-# Reserved integration gates. Future controllers must honor their own opt-in;
-# this entry does not instantiate them or mutate Explorer/taskbar settings.
-$info.EnvironmentVariables['CAELESTIA_WINDOWS_TILING'] = '0'
-$info.EnvironmentVariables['CAELESTIA_WINDOWS_GLOBAL_SHORTCUTS'] = '0'
+$info.EnvironmentVariables['CAELESTIA_WINDOWS_HYPR'] = '1'
+$info.EnvironmentVariables['CAELESTIA_WINDOWS_HYPR_DISPATCH'] = $liveValue
+$info.EnvironmentVariables['CAELESTIA_WINDOWS_BACKGROUND'] = '1'
+$info.EnvironmentVariables['CAELESTIA_WINDOWS_DESKTOP_ICONS'] = 'Behind'
+$tiling = $TilingMode.ToLowerInvariant()
+if ($tiling -eq 'disabled') { $tiling = 'off' }
+if ($Smoke) { $tiling = 'off' }
+$info.EnvironmentVariables['CAELESTIA_WINDOWS_TILING'] = $tiling
+$info.EnvironmentVariables['CAELESTIA_WINDOWS_TILING_INCLUDED'] = $TilingIncluded
+$info.EnvironmentVariables['CAELESTIA_WINDOWS_TILING_EXCLUDED'] = $TilingExcluded
+# Smoke registers no physical shortcuts, leaving other desktop instances alone.
+if ($Smoke) {
+    $emptyKeys = Join-Path $profile 'runtime\smoke-keybinds.json'
+    '{"binds":[]}' | Set-Content -LiteralPath $emptyKeys -Encoding UTF8
+    $info.EnvironmentVariables['CAELESTIA_WINDOWS_KEYBINDS'] = $emptyKeys
+}
 # Do not inherit synthetic DPI or QPA settings from development/probe sessions.
 foreach ($name in @('QT_SCALE_FACTOR', 'QT_SCREEN_SCALE_FACTORS', 'QT_FONT_DPI', 'QT_ENABLE_HIGHDPI_SCALING', 'QT_QPA_PLATFORM')) {
     $info.EnvironmentVariables.Remove($name)
@@ -82,29 +99,49 @@ if ($Command -ne 'Start') {
     $output = $outTask.GetAwaiter().GetResult()
     $errors = $errTask.GetAwaiter().GetResult()
     if ($process.ExitCode -ne 0) { throw "Shell IPC failed: $output $errors" }
+    if ($Command -eq 'Quit') {
+        # Let the supervisor restore its owned AppBars/taskbar before uninstall.
+        foreach ($statusFile in @(Get-ChildItem -Path "$profile\runtime\supervisor-*\watchdog.json" -ErrorAction SilentlyContinue)) {
+            $status = Get-Content -LiteralPath $statusFile.FullName -Raw | ConvertFrom-Json
+            if ($status.phase -notin @('running', 'restart-backoff')) { continue }
+            $watchdog = Get-Process -Id $status.watchdogPid -ErrorAction SilentlyContinue
+            if ($watchdog -and -not $watchdog.WaitForExit(10000)) {
+                throw "Desktop supervisor has not finished restoring: $($statusFile.FullName)"
+            }
+        }
+    }
     Write-Output $output
     return
 }
 
 $info.Arguments = '--no-duplicate --no-color --log-times --path "' + (Join-Path $stage 'shell.qml') + '"'
-$info.RedirectStandardOutput = $Smoke.IsPresent -or $Wait.IsPresent
-$info.RedirectStandardError = $Smoke.IsPresent -or $Wait.IsPresent
-$process = [Diagnostics.Process]::Start($info)
-if (-not $Smoke -and -not $Wait) {
-    Write-Output "Started Caelestia (PID $($process.Id)). Profile: $profile"
-    return
+$stdoutPath = Join-Path $profile 'logs\shell.stdout.log'
+$stderrPath = Join-Path $profile 'logs\shell.stderr.log'
+foreach ($path in @($stdoutPath, $stderrPath)) { [IO.File]::WriteAllText($path, '') }
+$supervisorConfig = Join-Path $profile 'config\windows.json'
+if ($Smoke) {
+    # Even an edited user profile cannot hide the taskbar during smoke.
+    $supervisorConfig = Join-Path $profile 'runtime\smoke-windows.json'
+    '{"windows":{"hideTaskbar":false,"restartOnCrash":true}}' |
+        Set-Content -LiteralPath $supervisorConfig -Encoding UTF8
 }
-$outTask = $process.StandardOutput.ReadToEndAsync()
-$errTask = $process.StandardError.ReadToEndAsync()
+$supervised = & (Join-Path $PSScriptRoot 'Start-DesktopShell.ps1') -StartInfo $info `
+    -StateDirectory (Join-Path $profile ('runtime\supervisor-' + [guid]::NewGuid().ToString('N'))) `
+    -ConfigPath $supervisorConfig -StdoutPath $stdoutPath -StderrPath $stderrPath
+$process = $supervised.Watchdog
+Write-Output "Started supervised Caelestia. Profile: $profile; status: $($supervised.StatusPath)"
+if (-not $Smoke -and -not $Wait) { return }
 $timedOut = $false
-if ($Smoke) { $timedOut = -not $process.WaitForExit(30000) } else { $process.WaitForExit() }
-if ($timedOut) { $process.Kill(); $process.WaitForExit() }
-$output = $outTask.GetAwaiter().GetResult()
-$errors = $errTask.GetAwaiter().GetResult()
-$output | Set-Content -LiteralPath (Join-Path $profile 'logs\shell.stdout.log') -Encoding UTF8
-$errors | Set-Content -LiteralPath (Join-Path $profile 'logs\shell.stderr.log') -Encoding UTF8
+if ($Smoke) { $timedOut = -not $process.WaitForExit(60000) } else { $process.WaitForExit() }
+if ($timedOut) {
+    # This invocation owns the session supervisor. Signal recovery before failing.
+    & (Join-Path $PSScriptRoot 'Restore-Desktop.ps1') | Out-Null
+    throw "Caelestia smoke timed out awaiting IPC quit. See $profile\logs and $($supervised.StatusPath)."
+}
+$output = [IO.File]::ReadAllText($stdoutPath)
+$errors = [IO.File]::ReadAllText($stderrPath)
 Write-Output "$output`n$errors"
 $diagnostics = "$output`n$errors" -match '(?m)^(?:\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3})?\s*(WARN(?:ING)?|ERROR|FATAL|CRIT(?:ICAL)?)\b'
-if ($timedOut -or $process.ExitCode -ne 0 -or ($Smoke -and ($diagnostics -or -not $output.Contains('CAELESTIA_SHELL_LIVE_PASS')))) {
-    throw "Caelestia failed (exit $($process.ExitCode), timeout $timedOut). See $profile\logs."
+if ($process.ExitCode -ne 0 -or ($Smoke -and ($diagnostics -or -not $output.Contains('CAELESTIA_SHELL_LIVE_PASS')))) {
+    throw "Caelestia failed (exit $($process.ExitCode)). See $profile\logs."
 }

@@ -1,65 +1,76 @@
 # Windows shell entry
 
-`shell-live` reuses the combined manifest and Windows service facades, replacing
-only the entry point and screen-list service. `Variants` over
-`Quickshell.screens` owns one original `ContentWindow` per monitor, anchored to
-all four edges. Monitor arrival/removal updates windows and `ShellState`
-together. There is no preview control window. Live controls are the default;
-the session drawer contains explicit Confirm/Cancel controls.
+`shell-live` stages the integrated combined graph with one original
+`ContentWindow` on every Qt screen, including monitor arrival/removal. Each
+full-screen drawer has an AppBar reservation beside it. The original desktop
+background and clock are enabled on every monitor. Workspaces, native workspace
+dispatch, active-window display, utilities, M3Shapes, shortcuts, and service
+controls share the combined adapters. There is no preview control window.
 
-Use [REPORT.md](../../REPORT.md) for install, launch, IPC and uninstall commands.
-This entry is intended for daily use, but the quick smoke is not full shell
-release acceptance.
+This is a production entry with loading/install smoke, not a validated shell
+release. Hardware controls, hotplug, sleep/wake and daily use need acceptance.
 
-## Profile and runtime
+## Install and run
 
-The installer defaults to `%LOCALAPPDATA%\Programs\caelestia-windows`.
-`Start-Caelestia.ps1` runs its deployed `qs.exe`, Qt, CRT and portable plugins,
-without requiring the development build or Qt on PATH. Normal launches preserve
-the user's PATH for launched applications; smoke excludes developer PATH entries.
-Qt uses Direct3D 11.
+Build as described in [NATIVE-BUILD.md](../NATIVE-BUILD.md), then run from the
+repository root:
 
-The stable profile defaults to `%LOCALAPPDATA%\caelestia-windows`:
+```powershell
+powershell -NoProfile -File windows/scripts/Install-Caelestia.ps1
+& "$env:LOCALAPPDATA\Programs\caelestia-windows\Start-Caelestia.ps1"
+& "$env:LOCALAPPDATA\Programs\caelestia-windows\Start-Caelestia.ps1" -Command State
+& "$env:LOCALAPPDATA\Programs\caelestia-windows\Start-Caelestia.ps1" -Command Restart
+& "$env:LOCALAPPDATA\Programs\caelestia-windows\Start-Caelestia.ps1" -Command Quit
+powershell -NoProfile -File windows/scripts/Uninstall-Caelestia.ps1
+```
 
-- `config/shell.json`: seeded from the combined Live configuration on first
-  launch only. User edits survive restarts, updates and ordinary uninstall.
-  The native Config watcher reloads edits.
-- `state`, `cache`, `data`, `runtime`: explicit Caelestia/Quickshell overrides.
-- `logs`: captured stdout/stderr when using `-Wait` or `-Smoke`.
+Installer flags: `-BuildRoot`, `-QtPrefix`, `-VCRuntimeRoot`, `-Prefix`,
+`-ProfileRoot`, and opt-in `-Autostart`. Installation does not launch the shell.
+Uninstall accepts `-Prefix` and optional `-Purge`; ordinary uninstall preserves
+configuration. All IPC commands select this installation's exact QML path.
 
-An alternate `-ProfileRoot` is recorded at installation, including in the QML
-directory pragmas. Use a separate profile with a temporary `-Prefix` for smoke.
-Quickshell still keeps its native instance discovery/log bookkeeping under
-`%LOCALAPPDATA%\quickshell`; the shell does not write Linux `~/.config` paths.
+The deployed runtime includes Qt, CRT, portable Caelestia and M3Shapes plugins,
+fonts and license notices. Normal launches retain PATH for applications. Qt
+uses Direct3D 11; smoke excludes developer PATH entries.
 
-Normal startup observes the adapted services and enables their reviewed Live
-gates, including the tray hook and session requests. Notification access
-requires the existing explicit history-panel consent action. `-Smoke` disables
-all native write/launch/session/mirror gates and tray interception, disables
-window input, opens session/dashboard content on every monitor, checks geometry,
-prints `CAELESTIA_SHELL_LIVE_PASS`, and exits after about ten seconds of QML
-runtime. Initial QML compilation can add startup time.
+## Profile and controllers
 
-## Integration seams
+The stable profile defaults to `%LOCALAPPDATA%\caelestia-windows`. First launch
+seeds these files once, preserving edits across restart/update/uninstall:
 
-- **AppBar:** add the future per-monitor exclusion controller beside
-  `ContentWindow` in `shell.qml`, using `scope.modelData` and `content.bar`.
-  Preserve full-monitor drawer anchoring and its existing
-  `exclusionMode: ExclusionMode.Ignore`.
-- **Tiling:** no controller is constructed. The launcher explicitly sets
-  `CAELESTIA_WINDOWS_TILING=0`; the tiling branch owns its eventual opt-in and
-  coordination with other tilers.
-- **Global shortcuts:** no controller is constructed. The launcher sets
-  `CAELESTIA_WINDOWS_GLOBAL_SHORTCUTS=0`. Route future actions through the
-  `shell.panel(screenName, panelName)` IPC function or the matching
-  `ShellState.forScreen(screen)` state. Accepted panel names are `launcher`,
-  `dashboard`, `session`, `sidebar`, and `utilities`.
+- `config/shell.json`: integrated combined Live defaults, with background and
+  desktop clock on. Native Config watches edits.
+- `config/keybinds.json`: shipped `defaults/windows/keybinds.json`. The backend
+  watches edits; see [KEYBINDS.md](../docs/KEYBINDS.md).
+- `config/windows.json`: `{"windows":{"hideTaskbar":false,"restartOnCrash":true}}`.
+  These supervisor settings apply at the next launch.
 
-These are reserved integration points, not claims that the future controllers
-already consume those environment variables. The combined adapters retain their
-current unavailable workspaces/active-window contracts.
+State, cache, data, runtime and logs remain in that profile. Normal and smoke
+runs capture `logs/shell.stdout.log` and `logs/shell.stderr.log`; the watchdog
+records its durable snapshot/status under `runtime/supervisor-<id>/`.
+Quickshell also retains native instance bookkeeping under
+`%LOCALAPPDATA%\quickshell`.
 
-`shell.state()` reports all window/screen dimensions and service gates.
-`shell.restart()` performs a hard QML reload; `shell.quit()` exits the selected
-instance. The installed launcher selects the exact QML path for each IPC call
-and prevents duplicate launches of that path.
+Taskbar hiding is opt-in. The watchdog restarts crashes with bounded backoff,
+restores its owned desktop changes on exit, and never starts a second tiler.
+`Restore-Desktop.ps1` is the emergency recovery command; restarting Explorer
+requires its separate explicit flag.
+
+Tiling defaults off. `Start-Caelestia.ps1 -TilingMode Observe` enables observation;
+`-TilingMode Interactive -TilingIncluded '<application-patterns>'` opts into
+control. `-TilingExcluded` supplies the denylist. Coordinate with the existing
+tiler before enabling control. Tiling configuration in `shell.json` is deferred.
+
+## Temporary installed smoke
+
+Install with separate `-Prefix` and `-ProfileRoot` under a temporary directory.
+Run its `Start-Caelestia.ps1 -Smoke` in another PowerShell process. After roughly
+15 seconds of QML runtime it prints `CAELESTIA_SHELL_LIVE_PASS` and awaits
+`Start-Caelestia.ps1 -Command Quit`. The runner has a 60-second timeout. It checks
+all monitor-sized drawers and backgrounds while disabling input, hardware writes,
+workspace dispatch, tiling, recording, keep-awake, physical hotkeys, notification
+mirroring and tray interception. AppBar reservations remain enabled and must be
+released on quit. Smoke forces taskbar hiding off even with edited settings.
+
+Use the temporary uninstaller with `-Purge` afterward. This checks the deployed
+runtime without changing the user's profile or enabling autostart.

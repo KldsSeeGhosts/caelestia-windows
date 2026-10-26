@@ -46,7 +46,7 @@ foreach ($sourceRoot in @($BuildRoot, $QtPrefix, $VCRuntimeRoot, $repoRoot, $Pro
 }
 $qmlRoot = Join-Path $BuildRoot 'install\qml'
 $deploy = Join-Path $QtPrefix 'bin\windeployqt.exe'
-foreach ($file in @("$BuildRoot\quickshell\qs.exe", $deploy, "$qmlRoot\Caelestia\Windows\qmldir")) {
+foreach ($file in @("$BuildRoot\quickshell\qs.exe", $deploy, "$qmlRoot\Caelestia\Windows\qmldir", "$qmlRoot\M3Shapes\qmldir")) {
     if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw "Missing runtime prerequisite: $file" }
 }
 if (Test-Path -LiteralPath $Prefix) {
@@ -65,6 +65,8 @@ try {
     Copy-Item -LiteralPath "$BuildRoot\quickshell\qs.exe" -Destination $payload
     New-Item -ItemType Directory -Path "$payload\qml", "$payload\defaults" | Out-Null
     Copy-Item -LiteralPath "$qmlRoot\Caelestia" -Destination "$payload\qml" -Recurse
+    Copy-Item -LiteralPath "$qmlRoot\M3Shapes" -Destination "$payload\qml" -Recurse
+    Copy-Item -LiteralPath "$qmlRoot\M3Shapes\m3shapes.dll" -Destination $payload
     # The portable plugins have shared helper DLLs outside their QML modules.
     Copy-Item -Path "$qmlRoot\Caelestia\lib\*.dll" -Destination $payload
     # App-local CRT deployment requires neither elevation nor a vcredist
@@ -72,10 +74,13 @@ try {
     Copy-Item -Path "$VCRuntimeRoot\*.dll" -Destination $payload
     $stage = & (Join-Path $PSScriptRoot 'Stage-ShellPrototype.ps1') -Destination "$payload\shell" -ProfileRoot $ProfileRoot -Prototype shell-live
     Copy-Item -LiteralPath "$repoRoot\windows\shell\shell.json" -Destination "$payload\defaults\shell.json"
-    foreach ($script in @('Start-Caelestia.ps1', 'Uninstall-Caelestia.ps1', 'Caelestia-InstallCommon.ps1')) {
+    Copy-Item -LiteralPath "$repoRoot\windows\shell\windows.json" -Destination "$payload\defaults\windows.json"
+    Copy-Item -LiteralPath "$repoRoot\defaults\windows\keybinds.json" -Destination "$payload\defaults\keybinds.json"
+    foreach ($script in @('Start-Caelestia.ps1', 'Uninstall-Caelestia.ps1', 'Caelestia-InstallCommon.ps1', 'Start-DesktopShell.ps1', 'Watch-DesktopShell.ps1', 'Restore-Desktop.ps1', 'DesktopTakeover.cs')) {
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot $script) -Destination $payload
     }
     New-Item -ItemType Directory -Path "$payload\licenses" | Out-Null
+    Copy-Item -LiteralPath "$repoRoot\windows\deps\m3shapes\LICENSE" -Destination "$payload\licenses\M3Shapes-LICENSE"
     Copy-Item -LiteralPath "$repoRoot\LICENSE" -Destination "$payload\licenses\Caelestia-LICENSE"
     Copy-Item -LiteralPath "$repoRoot\windows\deps\quickshell\LICENSE" -Destination "$payload\licenses\Quickshell-LICENSE"
     Copy-Item -LiteralPath "$repoRoot\windows\deps\quickshell\LICENSE-GPL" -Destination "$payload\licenses\GPL-3.0.txt"
@@ -92,8 +97,11 @@ try {
     }
     # Resolve staged QML imports as well as DLL dependencies. Deployed Qt is
     # used at runtime; no development Qt prefix is recorded in the launcher.
-    & $deploy --verbose 0 --release --no-compiler-runtime --no-system-dxc-compiler --no-translations --dir $payload --plugindir "$payload\plugins" --qmldir $stage --qmlimport "$payload\qml" "$payload\qs.exe"
-    if ($LASTEXITCODE -ne 0) { throw "windeployqt failed with exit code $LASTEXITCODE" }
+    $ErrorActionPreference = 'Continue'
+    & $deploy --verbose 0 --release --no-compiler-runtime --no-system-dxc-compiler --no-translations --dir $payload --plugindir "$payload\plugins" --qmldir $stage --qmlimport "$payload\qml" "$payload\qs.exe" 2>&1 | ForEach-Object { "$_" }
+    $deployExit = $LASTEXITCODE
+    $ErrorActionPreference = 'Stop'
+    if ($deployExit -ne 0) { throw "windeployqt failed with exit code $deployExit" }
     @('[Paths]', 'Prefix=.', 'Plugins=plugins', 'QmlImports=qml') | Set-Content -LiteralPath "$payload\qt.conf" -Encoding ASCII
     $integration = Get-CaelestiaIntegration $Prefix
     [ordered]@{

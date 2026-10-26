@@ -15,7 +15,9 @@ Scope {
     id: root
 
     readonly property var screenState: {
-        const screen = ShellState.shellRoot?.selectedScreen ?? Quickshell.screens[0];
+        const screen = ShellState.shellRoot?.selectedScreen
+            ?? Quickshell.screens.find(s => Hypr.monitorFor(s) === Hypr.focusedMonitor)
+            ?? Quickshell.screens[0];
         return screen ? ShellState.forScreen(screen) : null;
     }
 

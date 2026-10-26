@@ -8,15 +8,19 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import Caelestia
+import Caelestia.Config
+import Caelestia.State
 import Caelestia.Services
 import Caelestia.Windows
 import Quickshell.Windows as Native
 import qs.services
+import qs.daemons
+import qs.modules.background
 import qs.modules.drawers
 import qs.modules.launcher.services
 
 // Original upstream drawer geometry and motion, with the combined Windows
-// facades. No preview window, taskbar controller, tiler or AppBar is created.
+// facades, per-monitor AppBar reservation and opt-in Windows controllers.
 ShellRoot {
     id: root
 
@@ -29,6 +33,10 @@ ShellRoot {
     FontLoader { source: Quickshell.shellPath("assets/material-symbols-rounded/MaterialSymbolsRounded.ttf") }
     FontLoader { source: Quickshell.shellPath("assets/rubik/Rubik.ttf") }
 
+    WindowsBackground { id: desktopBackground }
+    IdleInhibit { id: idleInhibitor }
+    Shortcuts {}
+
     Variants {
         id: drawers
         model: Quickshell.screens
@@ -38,9 +46,11 @@ ShellRoot {
             required property ShellScreen modelData
             readonly property alias window: content
 
-            // Integration seam: attach the future per-screen AppBar exclusion
-            // here using modelData and content.bar. Keep ContentWindow's own
-            // exclusionMode=Ignore and full-monitor anchors intact.
+            Exclusions {
+                screen: scope.modelData
+                zone: content.bar.exclusiveZone
+                active: true
+            }
             ContentWindow {
                 id: content
                 screen: scope.modelData
@@ -68,8 +78,7 @@ ShellRoot {
         value: ShellState.anySidebarOpen()
     }
 
-    // Integration seam: global shortcuts can route to panel(screenName, name).
-    // Tiling remains a separate explicit opt-in owned by its controller.
+    // IPC selects this installation; tiling retains its separate opt-in.
     IpcHandler {
         target: "shell"
         function quit(): void { Qt.quit(); }
@@ -97,6 +106,12 @@ ShellRoot {
                 screenWidth: scope.modelData.width, screenHeight: scope.modelData.height,
                 barWidth: scope.window.bar.implicitWidth
             })),
+            backgroundScreens: desktopBackground.screens.map(s => s.name),
+            backgroundWindows: desktopBackground.instances.map(w => ({
+                screen: w.screen?.name ?? "", modelScreen: w.modelData.name,
+                width: w.width, height: w.height
+            })),
+            tilingMode: Tiling.mode,
             controls: {
                 audio: Audio.controlsEnabled,
                 brightness: Brightness.controlsEnabled,
@@ -107,22 +122,28 @@ ShellRoot {
                 apps: Apps.launchEnabled,
                 tray: WindowsTray.activationEnabled,
                 notifications: Notifs.mirrorOptIn,
-                session: SessionManager.actionsEnabled
+                session: SessionManager.actionsEnabled,
+                dispatch: Hypr.dispatchEnabled,
+                tiling: Tiling.backendEnabled,
+                keepAwake: idleInhibitor.inhibiting,
+                recorder: Recorder.running
             }
         };
     }
 
     Component.onCompleted: {
         ShellState.shellRoot = root;
+        Hypr.logStartupStatus();
+        Tiling.logStartupStatus();
         Native.SystemMonitor.active = true;
         Native.SystemStats.networkEnabled = true;
     }
 
     // Quick install smoke: load the session and dashboard on every monitor,
-    // suppress input/native writes, verify monitor-sized windows, then exit.
+    // suppress input/native writes, verify monitor-sized windows, then await IPC quit.
     Timer {
         property int step: 0
-        interval: 2000
+        interval: 3000
         repeat: true
         running: root.smoke
         onTriggered: {
@@ -142,12 +163,21 @@ ShellRoot {
                 && state.windows.every(w => w.width === w.screenWidth
                     && w.height === w.screenHeight && w.barWidth > 0)
                 && Object.values(state.controls).every(value => value === false)
-                && Quickshell.env("QS_WINDOWS_TRAY_HOOK") === "0";
+                && Quickshell.env("QS_WINDOWS_TRAY_HOOK") === "0"
+                && state.backgroundWindows.length === state.screens
+                && state.backgroundWindows.every(w => {
+                    const screen = Quickshell.screens.find(s => s.name === w.modelScreen);
+                    return screen && w.screen === w.modelScreen
+                        && w.width === screen.width && w.height === screen.height;
+                })
+                && Quickshell.screens.every(s => desktopBackground.checkReady(s));
             if (valid)
                 console.log("CAELESTIA_SHELL_LIVE_PASS");
             else
                 console.error("CAELESTIA_SHELL_LIVE_FAIL");
-            Qt.exit(valid ? 0 : 1);
+            stop();
+            if (!valid)
+                Qt.exit(1);
         }
     }
 }

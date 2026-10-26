@@ -394,6 +394,11 @@ if ($ScaleFactor -ne 'native') {
 $info.EnvironmentVariables['CAELESTIA_SHELL_SCALE'] = $ScaleFactor
 $info.EnvironmentVariables['CAELESTIA_SHELL_SCREEN'] = [string]$ScreenIndex
 $info.EnvironmentVariables['CAELESTIA_SHELL_SMOKE'] = $(if ($Smoke) { '1' } else { '0' })
+if ($Smoke) {
+    $emptyKeys = Join-Path $profileRoot 'runtime\smoke-keybinds.json'
+    '{"binds":[]}' | Set-Content -LiteralPath $emptyKeys -Encoding UTF8
+    $info.EnvironmentVariables['CAELESTIA_WINDOWS_KEYBINDS'] = $emptyKeys
+}
 $info.EnvironmentVariables['CAELESTIA_SHELL_MONITOR_CYCLE'] = $(if ($MonitorCycle) { '1' } else { '0' })
 $info.EnvironmentVariables['CAELESTIA_SHELL_SCREENSHOT'] = ([Uri]$screenshot).AbsoluteUri
 $info.RedirectStandardOutput = $Smoke.IsPresent -or $Wait.IsPresent

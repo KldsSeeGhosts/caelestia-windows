@@ -20,7 +20,7 @@ You can override layout and panel options for a specific monitor by placing a `s
 %LOCALAPPDATA%\caelestia-windows\config\monitors\<monitor_name>\shell.json
 ```
 
-`TODO(verify): confirm the exact monitor naming convention used on Windows (e.g., \\.\DISPLAY1 vs monitor connector/model name) and the CLI/script command to list monitor names.`
+Use the exact Qt `ShellScreen.name` returned in `windows[].screen` by the installed `Start-Caelestia.ps1 -Command State`. This avoids confusing native device identifiers with Qt display names.
 
 For example, to auto-hide the bar on a secondary monitor:
 
@@ -370,7 +370,7 @@ The underlying `Quickshell.Windows.Tiling` singleton exposes the following layou
 - `scrollingColumnWidth` (`double`, default `0.5`, range `0.1`–`1.0`)
 - `scrollingCenter` (`string`, default `"overflow"`): `"never"`, `"always"`, `"on-overflow"` / `"overflow"`
 
-`TODO(verify): confirm whether branch t3/production-shell or t3/tiling-config adds launcher parameters, environment variables, or config fields to customize layout, gapsIn, and gapsOut beyond the backend defaults (gapsIn=4, gapsOut=5).`
+Production currently supports `-TilingMode Disabled|Observe|Interactive`, `-TilingIncluded`, and `-TilingExcluded`. Layout/gap configuration in `shell.json` is deferred to the tiling-config integration. `TODO(verify): confirm its final fields and defaults after that branch is merged.`
 
 ---
 

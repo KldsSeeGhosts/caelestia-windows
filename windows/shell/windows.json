@@ -1,0 +1,6 @@
+{
+  "windows": {
+    "hideTaskbar": false,
+    "restartOnCrash": true
+  }
+}

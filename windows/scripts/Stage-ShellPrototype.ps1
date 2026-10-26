@@ -52,6 +52,7 @@ if ($Prototype -eq 'combined') {
         'windows/shell-prototype/adapters/services/Hypr.qml',
         'windows/shell-prototype/adapters/utils/Paths.qml',
         'windows/shell-prototype/adapters/Caelestia/Services/qmldir',
+        'services/Time.qml',
         'modules/session/Content.qml'
     )) { $files.Remove($baseAdapter) }
 }
