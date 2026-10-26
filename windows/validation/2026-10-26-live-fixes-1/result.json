@@ -1,0 +1,29 @@
+﻿{
+    "passed":  true,
+    "shellRevision":  "28a9b7882c9488ccbaee769291b97cd21cd3c561",
+    "backendRevision":  "b5d60be7b600cb22045db8b72b62ed34d44079c2",
+    "qtVersion":  "6.11.2",
+    "compiler":  "clang-cl 20.1.8",
+    "executableSha256":  "F928364B8B4C943FBBC11B7FDCF8913E29D40726A89B9AB34EC7D03BCC7091D5",
+    "nativeScreenIndex":  1,
+    "nativeDpr":  1.75,
+    "nativeReservedPhysicalPixels":  {
+                                         "left":  105,
+                                         "top":  18,
+                                         "right":  18,
+                                         "bottom":  18
+                                     },
+    "keyboard":  {
+                     "layout":  "en",
+                     "name":  "English (United States)",
+                     "capsLock":  false,
+                     "numLock":  false
+                 },
+    "combined":  "combined/result.json",
+    "installedFrame":  "frame/result.json",
+    "fullscreenValidation":  "Actual exclusion component with an injected fullscreen flag, without a real fullscreen app or changing the live shell reservations.",
+    "limits":  [
+                   "Real foreground-language switches and lock-key toggles were not injected during live use.",
+                   "Actual application fullscreen transitions, crash/watchdog recovery, hotplug and DPI transfer were not exercised in this run."
+               ]
+}

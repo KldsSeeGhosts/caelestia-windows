@@ -2,33 +2,36 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import Quickshell
+import Caelestia.Config
 import qs.components.containers
 
 // Windows stand-in for modules/drawers/Exclusions.qml, staged only by the
-// combined prototype. Upstream reserves the bar strip through four Wayland
-// layer-shell exclusion windows; the Windows backend instead maps a
-// PanelWindow's exclusionMode/exclusiveZone to a native AppBar
-// (ABM_NEW/ABM_SETPOS, src/windows/appbar.cpp), so one left-anchored,
-// input-transparent window reserves the bar's width and maximized and tiled
-// windows stop at it. The host keeps this opt-in: the window is visible only
-// while the control window's Full screen is on, and hiding or destroying it
-// removes the AppBar and restores the work area.
+// combined and installed shell. Preserve upstream's four per-edge exclusions:
+// the left edge reserves the bar, the other edges reserve the border. Each
+// PanelWindow maps to the existing tracked native AppBar registration, including
+// normal removal and watchdog/stale-registration recovery after a crash.
 Scope {
     id: root
 
     required property ShellScreen screen
     required property int zone
     property bool active: true
+    property bool fullscreen: false
 
     ExclusionZone {
-        screen: root.screen
         exclusiveZone: root.zone
-        visible: root.active
         anchors.left: true
     }
 
+    ExclusionZone { anchors.top: true }
+    ExclusionZone { anchors.right: true }
+    ExclusionZone { anchors.bottom: true }
+
     component ExclusionZone: StyledWindow {
-        name: "combined-bar-reservation"
+        screen: root.screen
+        name: "border-exclusion"
+        exclusiveZone: contentItem.Config.border.thickness
+        visible: root.active && !root.fullscreen
         exclusionMode: ExclusionMode.Normal
         mask: Region {}
         implicitWidth: 1

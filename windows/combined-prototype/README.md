@@ -61,9 +61,10 @@ Omit `-Live` for read-only observation. The control window labels the mode and
 provides panel buttons, screen selection, wallpaper selection and preview exit.
 Hover the top edge for the dashboard, bottom edge for the launcher, and right
 edge for notification history. The logo also opens the launcher. Full screen is
-an explicit control-window toggle. It reserves the bar's width through a native
-AppBar and releases that reservation when full screen is turned off or the host
-exits. Tiling defaults off; profile configuration or explicit switches can enable it.
+an explicit control-window toggle. It reserves the bar's width on the left and
+the configured border thickness on the other three edges through four native
+AppBars. These release when full screen is turned off, an application enters
+fullscreen, or the host exits. Tiling defaults off; profile configuration or explicit switches can enable it.
 See [the tiling schema](../services/tiling/README.md) for live reload, typed rules
 and 10/10 DIP gap defaults.
 

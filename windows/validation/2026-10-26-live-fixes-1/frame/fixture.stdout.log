@@ -1,0 +1,43 @@
+  INFO: Launching config: "C:/Users/Ermin/AppData/Local/Temp/caelestia-frame-a1eedd30f76e40f980650c9667fa1949/install/shell/frame-test.qml"
+  INFO: Shell ID: "e0115156e439a73a0d60e27bd28c45cf" Path ID "e0115156e439a73a0d60e27bd28c45cf"
+  INFO: Saving logs to "C:/Users/Ermin/AppData/Local/quickshell/run/by-id/siidc6int/log.qslog"
+  INFO quickshell.windows.blur: Blur behind panels uses the host backdrop brush (Windows build 26300).
+  INFO quickshell.windows.blur: No layer rules file found (looked for C:/Users/Ermin/AppData/Local/Temp/caelestia-frame-a1eedd30f76e40f980650c9667fa1949/install/shell/defaults/windows/layerrules.json ), blur behind panels is off.
+ DEBUG quickshell.windows.desktops: Desktop list changed: 1 desktops
+ DEBUG quickshell.windows.desktops: Current desktop: 0
+ DEBUG quickshell.windows.panel: Placing qs::windows::WinPanelWindow(0x2851fd38d80) at QRect(-3780,617 1x1) on "DELL S2725QS"
+ DEBUG quickshell.windows.panel: Placing qs::windows::WinPanelWindow(0x2851fd1acf0) at QRect(-2713,0 1x1) on "DELL S2725QS"
+ DEBUG quickshell.windows.panel: Placing qs::windows::WinPanelWindow(0x2851fd147a0) at QRect(-1647,617 1x1) on "DELL S2725QS"
+ DEBUG quickshell.windows.panel: Placing qs::windows::WinPanelWindow(0x2851fee7490) at QRect(-2713,1233 1x1) on "DELL S2725QS"
+  INFO: Configuration Loaded
+ DEBUG quickshell.windows.inputmask: Mask for qs::windows::WinProxiedWindow(0x2851fedf8c0) set to QRegion(null)
+ DEBUG quickshell.windows.inputmask: Mouse hook thread started.
+ DEBUG quickshell.windows.inputmask: Mask for qs::windows::WinProxiedWindow(0x2851fee0f80) set to QRegion(null)
+ DEBUG quickshell.windows.inputmask: Mask for qs::windows::WinProxiedWindow(0x2851fee0e00) set to QRegion(null)
+ DEBUG quickshell.windows.inputmask: Mask for qs::windows::WinProxiedWindow(0x2851fed2580) set to QRegion(null)
+ DEBUG quickshell.windows.startup: First panel frame presented
+ DEBUG quickshell.windows.startup: Startup settled, running 5 deferred tasks
+  INFO quickshell.windows.desktops: VirtualDesktopAccessor.dll not found next to the executable; desktop switching and creation are unavailable.
+ DEBUG quickshell.windows.appbar: Reserved QRect(-3735,0 105x2160) on edge 0 for 0x4930ab6
+ DEBUG quickshell.windows.appbar: Reserved QRect(-3840,0 3840x18) on edge 1 for 0x4f0c68
+ DEBUG quickshell.windows.panel: Placing qs::windows::WinPanelWindow(0x2851fd1acf0) at QRect(-2683,0 1x1) on "DELL S2725QS"
+ DEBUG quickshell.windows.appbar: Reserved QRect(-18,18 18x2142) on edge 2 for 0x6610cc
+ DEBUG quickshell.windows.appbar: Reserved QRect(-3840,2142 3840x18) on edge 3 for 0x710edc
+ DEBUG quickshell.windows.panel: Placing qs::windows::WinPanelWindow(0x2851fee7490) at QRect(-2683,1233 1x1) on "DELL S2725QS"
+ DEBUG quickshell.windows.panel: Placing qs::windows::WinPanelWindow(0x2851fee7490) at QRect(-2688,1233 1x1) on "DELL S2725QS"
+ DEBUG quickshell.windows.appbar: Reserved QRect(-18,18 18x2124) on edge 2 for 0x6610cc
+ DEBUG quickshell.windows.panel: Placing qs::windows::WinPanelWindow(0x2851fd1acf0) at QRect(-2688,0 1x1) on "DELL S2725QS"
+ DEBUG quickshell.windows.appbar: Reserved QRect(-3735,18 105x2124) on edge 0 for 0x4930ab6
+ DEBUG quickshell.windows.panel: Placing qs::windows::WinPanelWindow(0x2851fee7490) at QRect(-2713,1233 1x1) on "DELL S2725QS"
+ DEBUG quickshell.windows.panel: Placing qs::windows::WinPanelWindow(0x2851fd1acf0) at QRect(-2713,0 1x1) on "DELL S2725QS"
+ DEBUG quickshell.windows.appbar: Reserved QRect(-3840,2142 3840x18) on edge 3 for 0x710edc
+ DEBUG quickshell.windows.appbar: Reserved QRect(-18,0 18x2142) on edge 2 for 0x6610cc
+ DEBUG quickshell.windows.panel: Placing qs::windows::WinPanelWindow(0x2851fd147a0) at QRect(-1647,612 1x1) on "DELL S2725QS"
+ DEBUG quickshell.windows.appbar: Reserved QRect(-3840,0 3840x18) on edge 1 for 0x4f0c68
+ DEBUG quickshell.windows.appbar: Reserved QRect(-3735,18 105x2124) on edge 0 for 0x4930ab6
+ DEBUG quickshell.windows.panel: Placing qs::windows::WinPanelWindow(0x2851fd38d80) at QRect(-3780,612 1x1) on "DELL S2725QS"
+ DEBUG quickshell.windows.panel: Placing qs::windows::WinPanelWindow(0x2851fd147a0) at QRect(-1647,617 1x1) on "DELL S2725QS"
+ DEBUG quickshell.windows.panel: Placing qs::windows::WinPanelWindow(0x2851fd1acf0) at QRect(-2688,0 1x1) on "DELL S2725QS"
+ DEBUG quickshell.windows.panel: Placing qs::windows::WinPanelWindow(0x2851fd38d80) at QRect(-3780,617 1x1) on "DELL S2725QS"
+ DEBUG quickshell.windows.panel: Placing qs::windows::WinPanelWindow(0x2851fee7490) at QRect(-2688,1233 1x1) on "DELL S2725QS"
+

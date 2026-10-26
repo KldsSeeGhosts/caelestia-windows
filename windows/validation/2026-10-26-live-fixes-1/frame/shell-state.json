@@ -1,0 +1,74 @@
+﻿{
+    "smoke":  true,
+    "smokeComplete":  true,
+    "screens":  1,
+    "keyboard":  {
+                     "layout":  "en",
+                     "name":  "English (United States)",
+                     "capsLock":  false,
+                     "numLock":  false
+                 },
+    "windows":  [
+                    {
+                        "screen":  "DELL S2725QS",
+                        "width":  2194,
+                        "height":  1234,
+                        "screenWidth":  2194,
+                        "screenHeight":  1234,
+                        "barWidth":  60,
+                        "barZone":  60,
+                        "borderZone":  10,
+                        "dpr":  1.75,
+                        "appFullscreen":  false
+                    }
+                ],
+    "backgroundScreens":  [
+
+                          ],
+    "backgroundWindows":  [
+
+                          ],
+    "tilingMode":  "off",
+    "wallpaperEngine":  {
+                            "ready":  true,
+                            "running":  true,
+                            "detected":  true,
+                            "count":  253,
+                            "current":  "C:/Program Files (x86)/Steam/steamapps/workshop/content/431960/2456741440/project.json"
+                        },
+    "scheme":  {
+                   "available":  false,
+                   "status":  "unavailable",
+                   "schemes":  0,
+                   "variants":  9,
+                   "primary":  {
+                                   "r":  1,
+                                   "g":  0.6901960968971252,
+                                   "b":  0.7921568751335144,
+                                   "a":  1,
+                                   "hsvHue":  0.9451388716697693,
+                                   "hsvSaturation":  0.30980393290519714,
+                                   "hsvValue":  1,
+                                   "hslHue":  0.9451388716697693,
+                                   "hslSaturation":  1,
+                                   "hslLightness":  0.8451056480407715,
+                                   "valid":  true
+                               }
+               },
+    "controls":  {
+                     "audio":  false,
+                     "brightness":  false,
+                     "media":  false,
+                     "network":  false,
+                     "bluetooth":  false,
+                     "profiles":  false,
+                     "apps":  false,
+                     "tray":  false,
+                     "notifications":  false,
+                     "session":  false,
+                     "dispatch":  false,
+                     "tiling":  false,
+                     "keepAwake":  false,
+                     "recorder":  false
+                 }
+}

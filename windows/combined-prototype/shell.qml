@@ -113,7 +113,8 @@ ShellRoot {
             hypr: {
                 enabled: Hypr.enabled, status: Hypr.status, dispatch: Hypr.dispatchEnabled,
                 monitors: Hypr.monitors.values.length, workspaces: Hypr.workspaces.values.length,
-                activeWsId: Hypr.activeWsId, activeTitle: Hypr.activeToplevel?.title ?? ""
+                activeWsId: Hypr.activeWsId, activeTitle: Hypr.activeToplevel?.title ?? "",
+                kbLayout: Hypr.kbLayout, capsLock: Hypr.capsLock, numLock: Hypr.numLock
             },
             tiling: {
                 mode: Tiling.mode, status: Tiling.status, backendEnabled: Tiling.backendEnabled,
@@ -357,15 +358,13 @@ ShellRoot {
 
     property bool fullScreen: false
 
-    // Full-screen bar reservation, opt-in: one left-anchored input-transparent
-    // window whose exclusiveZone the backend maps to a native AppBar, so
-    // maximized and tiled windows stop at the bar's width. Active only while
-    // Full screen is on; hiding or destroying the window removes the AppBar
-    // and restores the work area.
+    // Native equivalents of upstream's four exclusion windows, enabled only
+    // for the monitor-sized layout and released while an app is fullscreen.
     Exclusions {
         screen: root.selectedScreen
         zone: win.bar.exclusiveZone
         active: root.fullScreen && root.selectedScreen !== null
+        fullscreen: win.hasFullscreen
     }
 
     // The shell window is frameless and stays above other windows, so an
@@ -556,7 +555,9 @@ ShellRoot {
                 fullScreen: root.fullScreen, barZone: win.bar.exclusiveZone,
                 runtimeProbe: root.runtimeProbe,
                 statisticsActive: Native.SystemMonitor.active,
-                networkStatisticsActive: Native.SystemStats.active
+                networkStatisticsActive: Native.SystemStats.active,
+                borderZone: win.borderLayoutThickness,
+                appFullscreen: win.hasFullscreen
             });
         }
         function capture(): void {
@@ -741,6 +742,14 @@ ShellRoot {
                     return;
                 }
                 const statusIcons = CUtils.findChild(win.contentItem, "taskbarStatusIcons");
+                const keyboardLayout = CUtils.findChild(win.contentItem, "keyboardLayoutStatus");
+                if (!keyboardLayout || keyboardLayout.text !== Hypr.kbLayout
+                        || !/^[a-z]{2,3}$/.test(keyboardLayout.text)) {
+                    root.fail("native keyboard layout status did not render");
+                    return;
+                }
+                console.log("CAELESTIA_COMBINED_KEYBOARD", keyboardLayout.text,
+                    "capsLock=" + Hypr.capsLock, "numLock=" + Hypr.numLock);
                 if (!statusIcons || statusIcons.implicitWidth <= 0 || statusIcons.implicitHeight <= 0) {
                     root.fail("status icons container did not lay out");
                     return;

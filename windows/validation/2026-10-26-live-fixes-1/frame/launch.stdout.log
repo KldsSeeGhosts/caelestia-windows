@@ -1,0 +1,61 @@
+Started Caelestia smoke PID 5988. Profile: C:\Users\Ermin\AppData\Local\Temp\caelestia-frame-a1eedd30f76e40f980650c9667fa1949\profile
+2026-10-26 03:04:42.998  INFO: Launching config: "C:/Users/Ermin/AppData/Local/Temp/caelestia-frame-a1eedd30f76e40f980650c9667fa1949/install/shell/shell.qml"
+2026-10-26 03:04:43.008  INFO: Shell ID: "2b42e200f76b318dcea1070c7ee7c9ca" Path ID "2b42e200f76b318dcea1070c7ee7c9ca"
+2026-10-26 03:04:43.070  INFO: Saving logs to "C:/Users/Ermin/AppData/Local/quickshell/run/by-id/cm4ub6int/log.qslog"
+2026-10-26 03:04:44.340 DEBUG quickshell.windows.desktops: Desktop list changed: 1 desktops
+2026-10-26 03:04:44.340 DEBUG quickshell.windows.desktops: Current desktop: 0
+2026-10-26 03:04:44.341  INFO quickshell.windows.hotkeys: Loaded 0 binds from "C:\\Users\\Ermin\\AppData\\Local\\Temp\\caelestia-frame-a1eedd30f76e40f980650c9667fa1949\\profile\\runtime\\smoke-keybinds.json"
+2026-10-26 03:04:44.342  INFO quickshell.windows.blur: Blur behind panels is turned off by QS_WINDOWS_BLUR.
+2026-10-26 03:04:44.343  INFO caelestia.windows.focusguard: target-unavailable
+2026-10-26 03:04:44.346 DEBUG quickshell.hyprland.ipc.events: Event "focusedmon" "MAG321UX OLED,"
+2026-10-26 03:04:44.346 DEBUG quickshell.hyprland.ipc.events: Event "activewindowv2" ""
+2026-10-26 03:04:44.346 DEBUG quickshell.hyprland.ipc.events: Event "activewindow" ","
+2026-10-26 03:04:44.346  INFO quickshell.hyprland.ipc: Hyprland compatibility module ready: 2 monitors, 1 workspaces, 0 toplevels in 0 ms
+2026-10-26 03:04:44.346  INFO qml: CAELESTIA_HYPR_BACKEND_READY usingLua=false monitors=2 workspaces=1 toplevels=0
+2026-10-26 03:04:44.357  INFO quickshell.windows.blur: No layer rules file found (looked for C:/Users/Ermin/AppData/Local/Temp/caelestia-frame-a1eedd30f76e40f980650c9667fa1949/install/shell/defaults/windows/layerrules.json ), blur behind panels is off.
+2026-10-26 03:04:44.530 DEBUG qml: CAELESTIA_HYPR_STATUS hypr=1 dispatch=0
+2026-10-26 03:04:44.531 DEBUG qml: CAELESTIA_TILING_CONFIG tiling=off gapsIn=10 gapsOut=10 status=disabled
+2026-10-26 03:04:44.531 DEBUG qml: CAELESTIA_TILING_STATUS tiling=off included=0 excluded=0 gapsIn=10 gapsOut=10 status=disabled
+2026-10-26 03:04:44.533 DEBUG quickshell.windows.panel: Placing qs::windows::WinPanelWindow(0x217d0fb1810) at QRect(-3780,617 1x1) on "DELL S2725QS"
+2026-10-26 03:04:44.544 DEBUG quickshell.windows.panel: Placing qs::windows::WinPanelWindow(0x217d0fb2650) at QRect(-2713,0 1x1) on "DELL S2725QS"
+2026-10-26 03:04:44.552 DEBUG quickshell.windows.panel: Placing qs::windows::WinPanelWindow(0x217d0fb3490) at QRect(-1647,617 1x1) on "DELL S2725QS"
+2026-10-26 03:04:44.561 DEBUG quickshell.windows.panel: Placing qs::windows::WinPanelWindow(0x217d0fb2190) at QRect(-2713,1233 1x1) on "DELL S2725QS"
+2026-10-26 03:04:44.570 DEBUG quickshell.windows.panel: Placing qs::windows::WinPanelWindow(0x217d0fb2b10) at QRect(-3840,0 2194x1234) on "DELL S2725QS"
+2026-10-26 03:04:44.575  INFO caelestia.windows.focusguard: idle
+2026-10-26 03:04:44.593  INFO: Configuration Loaded
+2026-10-26 03:04:44.697 DEBUG quickshell.windows.appsfolder: Scanned 159 apps from the Windows Apps folder
+2026-10-26 03:04:44.895 DEBUG quickshell.windows.startup: First panel frame presented
+2026-10-26 03:04:45.296 DEBUG quickshell.windows.startup: Startup settled, running 11 deferred tasks
+2026-10-26 03:04:45.296  INFO quickshell.windows.desktops: VirtualDesktopAccessor.dll not found next to the executable; desktop switching and creation are unavailable.
+2026-10-26 03:04:45.298 DEBUG quickshell.hyprland.ipc.events: Event "openwindow" "509ca,1,TheBrowserCompany.Dia_ttt1ap7aakyb4!Dia,Home / X"
+2026-10-26 03:04:45.298 DEBUG quickshell.hyprland.ipc.events: Event "openwindow" "50936,1,zcode,ZCode"
+2026-10-26 03:04:45.298 DEBUG quickshell.hyprland.ipc.events: Event "openwindow" "20070,1,Raycast.Raycast_qypenmj9wpt2a!Raycast,Raycast"
+2026-10-26 03:04:45.301 DEBUG quickshell.hyprland.ipc.events: Event "openwindow" "2340bd8,1,ksg code,T3 Code (Nightly)"
+2026-10-26 03:04:45.302 DEBUG quickshell.hyprland.ipc.events: Event "openwindow" "3071c,1,Valve.Steam.Client,Steam"
+2026-10-26 03:04:45.302 DEBUG quickshell.hyprland.ipc.events: Event "activewindowv2" "2340bd8"
+2026-10-26 03:04:45.302 DEBUG quickshell.hyprland.ipc.events: Event "activewindow" "ksg code,T3 Code (Nightly)"
+2026-10-26 03:04:45.327 DEBUG quickshell.windows.appbar: Reserved QRect(-3735,0 105x2160) on edge 0 for 0x360fc4
+2026-10-26 03:04:45.345  INFO quickshell.windows.bluetooth.worker: Using Bluetooth adapter "Intel(R) Wireless Bluetooth(R)" "5C:B2:6D:F3:07:F4" "\\\\?\\USB#VID_8087&PID_0032#8&f2cb6fa&0&13#{92383b0e-f90e-4ac9-8d44-8c2d0d0ebda2}"
+2026-10-26 03:04:45.352 DEBUG quickshell.windows.bluetooth.worker: Started the paired classic device watcher
+2026-10-26 03:04:45.356 DEBUG quickshell.windows.bluetooth.worker: Started the paired LE device watcher
+2026-10-26 03:04:45.445 DEBUG quickshell.windows.appbar: Reserved QRect(-3840,0 3840x18) on edge 1 for 0x2070b5c
+2026-10-26 03:04:45.445 DEBUG quickshell.windows.panel: Placing qs::windows::WinPanelWindow(0x217d0fb2650) at QRect(-2683,0 1x1) on "DELL S2725QS"
+2026-10-26 03:04:45.447 DEBUG quickshell.windows.bluetooth: Tracked new adapter BluetoothAdapter(0x217d1842060, id="\\\\?\\USB#VID_8087&PID_0032#8&f2cb6fa&0&13#{92383b0e-f90e-4ac9-8d44-8c2d0d0ebda2}")
+2026-10-26 03:04:45.447 DEBUG quickshell.windows.bluetooth: Initial adapter lookup done, adapter present: true
+2026-10-26 03:04:45.499 DEBUG quickshell.windows.appbar: Reserved QRect(-18,18 18x2142) on edge 2 for 0x560e2e
+2026-10-26 03:04:45.608 DEBUG quickshell.windows.appbar: Reserved QRect(-3840,2142 3840x18) on edge 3 for 0x4a06da
+2026-10-26 03:04:45.611 DEBUG quickshell.windows.panel: Placing qs::windows::WinPanelWindow(0x217d0fb2190) at QRect(-2683,1233 1x1) on "DELL S2725QS"
+2026-10-26 03:04:45.633 DEBUG quickshell.windows.panel: Placing qs::windows::WinPanelWindow(0x217d0fb2650) at QRect(-2688,0 1x1) on "DELL S2725QS"
+2026-10-26 03:04:45.935 DEBUG quickshell.windows.panel: Placing qs::windows::WinPanelWindow(0x217d0fb2190) at QRect(-2688,1233 1x1) on "DELL S2725QS"
+2026-10-26 03:04:45.978 DEBUG quickshell.windows.appbar: Reserved QRect(-18,18 18x2124) on edge 2 for 0x560e2e
+2026-10-26 03:04:45.984 DEBUG quickshell.windows.appbar: Reserved QRect(-3735,18 105x2124) on edge 0 for 0x360fc4
+2026-10-26 03:04:50.950  INFO: qs:@/qs/components/controls/StyledProgressBar.qml: Object or context destroyed during incubation
+2026-10-26 03:04:50.950  INFO: qs:@/qs/components/controls/StyledProgressBar.qml: Object or context destroyed during incubation
+2026-10-26 03:04:50.951  INFO: qs:@/qs/modules/dashboard/Media.qml: Object or context destroyed during incubation
+2026-10-26 03:04:59.894 DEBUG qml: CAELESTIA_SHELL_LIVE_STATE {"smoke":true,"smokeComplete":true,"screens":1,"keyboard":{"layout":"en","name":"English (United States)","capsLock":false,"numLock":false},"windows":[{"screen":"DELL S2725QS","width":2194,"height":1234,"screenWidth":2194,"screenHeight":1234,"barWidth":60,"barZone":60,"borderZone":10,"dpr":1.75,"appFullscreen":false}],"backgroundScreens":[],"backgroundWindows":[],"tilingMode":"off","wallpaperEngine":{"ready":true,"running":true,"detected":true,"count":253,"current":"C:/Program Files (x86)/Steam/steamapps/workshop/content/431960/2456741440/project.json"},"scheme":{"available":false,"status":"unavailable","schemes":0,"variants":9,"primary":{"r":1,"g":0.6901960968971252,"b":0.7921568751335144,"a":1,"hsvHue":0.9451388716697693,"hsvSaturation":0.30980393290519714,"hsvValue":1,"hslHue":0.9451388716697693,"hslSaturation":1,"hslLightness":0.8451056480407715,"valid":true}},"controls":{"audio":false,"brightness":false,"media":false,"network":false,"bluetooth":false,"profiles":false,"apps":false,"tray":false,"notifications":false,"session":false,"dispatch":false,"tiling":false,"keepAwake":false,"recorder":false}}
+2026-10-26 03:04:59.894 DEBUG qml: CAELESTIA_BACKGROUND_STATE {"active":false,"ready":true,"owner":"wallpaper-engine","clock":false}
+2026-10-26 03:04:59.894 DEBUG qml: CAELESTIA_SHELL_LIVE_PASS
+2026-10-26 03:05:00.447  INFO caelestia.windows.focusguard: target-unavailable
+2026-10-26 03:05:00.449  INFO caelestia.windows.focusguard: target-unavailable
+
+

@@ -6,10 +6,9 @@ param(
     [string]$OutputRoot
 )
 
-# Live smoke check for the combined prototype's opt-in bar reservation:
-# while the control window's Full screen is on, one left-anchored AppBar
-# reserves the bar width, so the monitor's work area shrinks by that many
-# physical pixels; turning Full screen off (or quitting) restores it. The
+# Live check for the combined prototype's opt-in bar and border reservations:
+# Full screen reserves the bar on the left and the border on the other edges;
+# turning Full screen off (or quitting) restores the work area. The
 # run is short and the work area is restored even when an assertion fails.
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
@@ -66,6 +65,7 @@ try {
     $dpr = [double]$state.dpr
     $zoneLogical = [int]$state.barZone
     $expectedPhysical = [int][Math]::Round($zoneLogical * $dpr)
+    $expectedBorder = [int][Math]::Round([double]$state.borderZone * $dpr)
     Invoke-PrototypeIpc $prototypePid 'setFullScreen' @('true') | Set-Content -LiteralPath (Join-Path $OutputRoot 'set-fullscreen-true.log') -Encoding UTF8
 
     # Wait for the reservation to appear on exactly one monitor.
@@ -89,7 +89,9 @@ try {
     Assert ([Math]::Abs($delta - $expectedPhysical) -le 2) ("Work area shrank by $delta physical px; expected about $expectedPhysical ($zoneLogical logical at dpr $dpr).")
     $reservedMonitor = (Get-WorkAreas $reserved | Where-Object { $_.deviceName -eq $shrunk[0].deviceName })[0]
     $beforeMonitorWork = $beforeWork[$shrunk[0].deviceName]
-    Assert ($reservedMonitor.work.top -eq $beforeMonitorWork.top -and $reservedMonitor.work.height -eq $beforeMonitorWork.height) 'The reservation changed the work area height, not just its left edge.'
+    Assert ([Math]::Abs($reservedMonitor.work.top - $beforeMonitorWork.top - $expectedBorder) -le 2) 'The top border was not reserved.'
+    Assert ([Math]::Abs($beforeMonitorWork.right - $reservedMonitor.work.right - $expectedBorder) -le 2) 'The right border was not reserved.'
+    Assert ([Math]::Abs($beforeMonitorWork.bottom - $reservedMonitor.work.bottom - $expectedBorder) -le 2) 'The bottom border was not reserved.'
 
     Invoke-PrototypeIpc $prototypePid 'setFullScreen' @('false') | Set-Content -LiteralPath (Join-Path $OutputRoot 'set-fullscreen-false.log') -Encoding UTF8
     $allSame = $false
@@ -100,7 +102,7 @@ try {
         $allSame = $true
         foreach ($m in (Get-WorkAreas $restored)) {
             $base = $beforeWork[$m.deviceName]
-            if ($m.work.left -ne $base.left -or $m.work.width -ne $base.width) { $allSame = $false }
+            if (($m.work | ConvertTo-Json -Compress) -ne ($base | ConvertTo-Json -Compress)) { $allSame = $false }
         }
         if ($allSame) { break }
     }
@@ -120,6 +122,7 @@ try {
         dpr = $dpr
         reservedPhysicalDelta = $delta
         expectedPhysicalDelta = $expectedPhysical
+        expectedBorderPhysicalDelta = $expectedBorder
         reservedMonitor = $shrunk[0].deviceName
         output = $OutputRoot
     }
@@ -140,9 +143,9 @@ try {
     }
     $after = Get-DesktopSnapshot 'desktop-after'
     if ($summary.passed) {
-        $beforeIdentity = (@(Get-WorkAreas $before | ForEach-Object { "$($_.deviceName):$($_.work.left)+$($_.work.width)" }) -join ';') `
+        $beforeIdentity = (@(Get-WorkAreas $before | ForEach-Object { "$($_.deviceName):$($_.work | ConvertTo-Json -Compress)" }) -join ';') `
             + "|taskbarAutoHide=$($before.taskbar.autoHide)"
-        $afterIdentity = (@(Get-WorkAreas $after | ForEach-Object { "$($_.deviceName):$($_.work.left)+$($_.work.width)" }) -join ';') `
+        $afterIdentity = (@(Get-WorkAreas $after | ForEach-Object { "$($_.deviceName):$($_.work | ConvertTo-Json -Compress)" }) -join ';') `
             + "|taskbarAutoHide=$($after.taskbar.autoHide)"
         if ($beforeIdentity -ne $afterIdentity) {
             $summary.passed = $false

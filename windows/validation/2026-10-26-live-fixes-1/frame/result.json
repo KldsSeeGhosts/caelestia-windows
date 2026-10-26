@@ -1,0 +1,26 @@
+﻿{
+    "passed":  true,
+    "prefix":  "C:\\Users\\Ermin\\AppData\\Local\\Temp\\caelestia-frame-a1eedd30f76e40f980650c9667fa1949\\install",
+    "profile":  "C:\\Users\\Ermin\\AppData\\Local\\Temp\\caelestia-frame-a1eedd30f76e40f980650c9667fa1949\\profile",
+    "screenIndex":  1,
+    "monitor":  "\\\\.\\DISPLAY2",
+    "delta":  {
+                  "left":  105,
+                  "top":  18,
+                  "right":  18,
+                  "bottom":  18
+              },
+    "expected":  {
+                     "left":  105,
+                     "top":  18,
+                     "right":  18,
+                     "bottom":  18
+                 },
+    "keyboard":  {
+                     "layout":  "en",
+                     "name":  "English (United States)",
+                     "capsLock":  false,
+                     "numLock":  false
+                 },
+    "fullscreenFixture":  true
+}

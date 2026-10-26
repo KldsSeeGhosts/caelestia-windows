@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import Quickshell.Hyprland
+import Quickshell.Windows
 import Caelestia.Config
 
 // Loaded by URL only after CAELESTIA_WINDOWS_HYPR=1. Referencing Quickshell's
@@ -56,6 +57,12 @@ QtObject {
     readonly property var focusedWorkspace: Hyprland.focusedWorkspace
     readonly property var focusedMonitor: Hyprland.focusedMonitor
     readonly property bool usingLua: Hyprland.usingLua
+    // Native foreground-thread layout, refreshed on foreground changes and
+    // a 500 ms read-only poll for language switches within the same app.
+    readonly property string kbLayout: Keyboard.currentLayoutCode.split("-")[0].toLowerCase()
+    readonly property string kbLayoutFull: Keyboard.currentLayoutName
+    readonly property bool capsLock: Keyboard.capsLock
+    readonly property bool numLock: Keyboard.numLock
 
     // Feature-detected for older backends. A missing or refused native
     // provider reports false; the facade then refuses workspace actions.

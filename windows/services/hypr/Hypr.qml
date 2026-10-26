@@ -15,11 +15,9 @@ import Quickshell
 // allowlist and its refusals are implemented and fixture-tested in
 // HyprService.qml.
 //
-// Keyboard fields (capsLock, numLock, kbLayout, ...) and HyprExtras/options are
-// not supplied by the pinned Windows backend. They are present with truthful
-// unavailable defaults so consumers that statically reference them still load;
-// no Windows keyboard or Hyprland configuration state is measured. `extras` is
-// a no-op object because there is no Hyprland configuration socket to message.
+// Keyboard observation comes from the native Keyboard singleton through the
+// same observation gate. `extras` remains a no-op object because Windows has
+// no Hyprland configuration socket.
 HyprService {
     id: root
 
@@ -50,16 +48,17 @@ HyprService {
         }
     }
     readonly property var options: root.extras.options
-    readonly property var devices: ({
-        keyboards: []
-    })
-    readonly property var keyboard: null
-    readonly property bool capsLock: false
-    readonly property bool numLock: false
-    readonly property string defaultKbLayout: "??"
-    readonly property string kbLayoutFull: ""
-    readonly property string kbLayout: "??"
-    readonly property var kbMap: new Map()
+    readonly property var devices: ({ keyboards: keyboard ? [keyboard] : [] })
+    readonly property var keyboard: backend ? ({
+        main: true, layout: kbLayout, activeKeymap: kbLayoutFull,
+        capsLock: capsLock, numLock: numLock
+    }) : null
+    readonly property bool capsLock: backend?.capsLock ?? false
+    readonly property bool numLock: backend?.numLock ?? false
+    readonly property string defaultKbLayout: kbLayout
+    readonly property string kbLayoutFull: backend?.kbLayoutFull ?? ""
+    readonly property string kbLayout: backend?.kbLayout || "??"
+    readonly property var kbMap: new Map(kbLayoutFull ? [[kbLayoutFull, kbLayout]] : [])
 
     property string lastSpecialWorkspace: ""
     property bool statusLogged: false

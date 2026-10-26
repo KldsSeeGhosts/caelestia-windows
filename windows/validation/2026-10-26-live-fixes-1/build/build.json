@@ -1,0 +1,17 @@
+{
+    "sourceRevision":  "28a9b7882c9488ccbaee769291b97cd21cd3c561",
+    "sourceDirty":  false,
+    "backendRevision":  "b5d60be7b600cb22045db8b72b62ed34d44079c2",
+    "m3shapesRevision":  "32ad9ce328bb77ed349b40a3be10ee9ea610b8ab",
+    "windowsSdkVersion":  "10.0.26100.0\\",
+    "msvcToolsVersion":  "14.44.35207",
+    "qtVersion":  "6.11.2",
+    "qtPrefix":  "C:\\Users\\Ermin\\AppData\\Local\\caelestia-dev\\Qt\\6.11.2\\msvc2022_64",
+    "compiler":  "clang version 20.1.8",
+    "cmake":  "cmake version 4.4.4",
+    "ninja":  "1.13.2.git.kitware.jobserver-pipe-1",
+    "windows":  "Microsoft Windows NT 10.0.26300.0",
+    "builtAtUtc":  "2026-10-26T07:02:23.8226637Z",
+    "backendSource":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\qs-livefix",
+    "portablePluginsBuildRoot":  "C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-9957da37\\windows\\.local\\build"
+}
