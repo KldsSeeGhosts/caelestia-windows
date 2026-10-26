@@ -82,10 +82,23 @@ if ($git -and (Test-Path -LiteralPath (Join-Path $backendPath '.git'))) {
     if ($LASTEXITCODE -ne 0) { throw 'Could not read the initialized backend revision.' }
     $backendRevision = $backendRevision.Trim()
 }
-$sourceMatches = $backendRevision -eq $lock.quickshell.revision
-if (-not $sourceMatches) {
+$backendMatches = $backendRevision -eq $lock.quickshell.revision
+if (-not $backendMatches) {
     $blockers.Add('The backend is absent or does not match sources.lock.json; initialize the pinned submodule.')
 }
+
+$m3shapesPath = Join-Path $repoRoot $lock.m3shapes.path
+$m3shapesRevision = $null
+if ($git -and (Test-Path -LiteralPath (Join-Path $m3shapesPath '.git'))) {
+    $m3shapesRevision = & $git.Source -C $m3shapesPath rev-parse HEAD
+    if ($LASTEXITCODE -ne 0) { throw 'Could not read the initialized M3Shapes revision.' }
+    $m3shapesRevision = $m3shapesRevision.Trim()
+}
+$m3shapesMatches = $m3shapesRevision -eq $lock.m3shapes.revision
+if (-not $m3shapesMatches) {
+    $blockers.Add('M3Shapes is absent or does not match sources.lock.json; initialize the pinned submodule.')
+}
+$sourceMatches = $backendMatches -and $m3shapesMatches
 
 $report = [pscustomobject][ordered]@{
     schemaVersion = 1
@@ -94,6 +107,8 @@ $report = [pscustomobject][ordered]@{
     source = [pscustomobject]@{
         expectedBackendRevision = $lock.quickshell.revision
         actualBackendRevision = $backendRevision
+        expectedM3ShapesRevision = $lock.m3shapes.revision
+        actualM3ShapesRevision = $m3shapesRevision
         matches = $sourceMatches
     }
     tools = @($tools.ToArray())

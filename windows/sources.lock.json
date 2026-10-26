@@ -11,6 +11,12 @@
     "path": "windows/deps/quickshell",
     "role": "Windows backend and QML compatibility interfaces. Preserves nunreasonable/quickshell e8ae0ef124b1c14b547c80d00422d2ffbd423d81, native mask hover handoff, Core Audio capability/error reporting, UPower observation validity, GSMTC initialization/session-scan status, profile-isolated artwork caching, verified power profile results, confirm-only Bluetooth pairing, opt-in strict brightness routes with owned gamma restoration, explicit-consent notification mirroring, M3 tiling/Hypr window observation with allowlist scope and fitting outcomes, the single-desktop placeholder fix, 64-bit brightness query request ids, and DPI-unaware tiling placement. Branch windows/integration."
   },
+  "m3shapes": {
+    "repository": "https://github.com/soramanew/m3shapes.git",
+    "revision": "32ad9ce328bb77ed349b40a3be10ee9ea610b8ab",
+    "path": "windows/deps/m3shapes",
+    "role": "Material 3 Expressive shape QML plugin. Upstream Caelestia split it into this external project (caelestia-dots/shell 24aa15ee) and pins the same revision in flake.nix/flake.lock. The Windows portable plugin build compiles and installs the M3Shapes QML module."
+  },
   "iiWindowsReference": {
     "repository": "https://github.com/nunreasonable/ii-windows.git",
     "revision": "b59ac3b1389c1d562bec8a81aa3f6fb6480ca6b1",

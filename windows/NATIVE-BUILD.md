@@ -85,15 +85,19 @@ powershell -NoProfile -File windows/scripts/Build-Prototype.ps1 `
 The script:
 
 1. Runs `Test-Environment.ps1 -Json -Strict` in the development environment and
-   checks that the backend worktree is clean and matches the source manifest.
+   checks that the backend and M3Shapes worktrees are clean and match the source
+   manifest.
 2. Builds the pinned backend's `qs.exe` with crash handling and backend tests
    disabled. This does not execute the shell or enable autostart.
-3. Builds Caelestia with `CAELESTIA_PORTABLE_UI=ON` and `ENABLE_MODULES=plugin`.
-4. Installs the eight portable modules and Windows-only `Caelestia.Windows`
+3. Builds the pinned external `windows/deps/m3shapes` plugin and installs the
+   `M3Shapes` QML module (its `m3shapes.dll`, plugin DLL, `qmldir` and type
+   information) into the build directory's `install/qml`.
+4. Builds Caelestia with `CAELESTIA_PORTABLE_UI=ON` and `ENABLE_MODULES=plugin`.
+5. Installs the eight portable modules and Windows-only `Caelestia.Windows`
    module into the build directory's `install/qml`. The latter supplies
    WindowsFocusGuard for the native prototype.
-5. Records command arguments, logs, source revisions, and tool versions under
-   `logs/`. No packages are published.
+6. Records command arguments, logs, source revisions (including M3Shapes), and
+   tool versions under `logs/`. No packages are published.
 
 ## Native bar/session prototype
 

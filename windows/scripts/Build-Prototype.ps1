@@ -40,6 +40,20 @@ if (& git -C "$repoRoot\windows\deps\quickshell" status --porcelain) {
     throw 'The pinned backend has local changes. Backend patches must be committed in an appropriate fork before building.'
 }
 
+$lock = Get-Content -LiteralPath (Join-Path $repoRoot 'windows\sources.lock.json') -Raw |
+    ConvertFrom-Json
+$m3shapesPath = Join-Path $repoRoot $lock.m3shapes.path
+if (-not (Test-Path -LiteralPath (Join-Path $m3shapesPath 'CMakeLists.txt'))) {
+    throw 'The pinned M3Shapes dependency is absent; initialize windows/deps/m3shapes.'
+}
+$m3shapesRevision = (& git -C $m3shapesPath rev-parse HEAD).Trim()
+if ($m3shapesRevision -ne $lock.m3shapes.revision) {
+    throw "M3Shapes is at $m3shapesRevision but sources.lock.json pins $($lock.m3shapes.revision)."
+}
+if (& git -C $m3shapesPath status --porcelain) {
+    throw 'The pinned M3Shapes dependency has local changes. Patch and pin it upstream before building.'
+}
+
 function Invoke-BuildCommand([string]$Name, [string[]]$CommandArguments) {
     Write-Host "== $Name =="
     $CommandArguments | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $logRoot "$Name-command.json") -Encoding UTF8
@@ -61,6 +75,10 @@ Invoke-BuildCommand 'configure-backend' (@('-S', "$repoRoot\windows\deps\quicksh
     '-DQS_AUTOSTART_NAME=CaelestiaPrototype', '-DQS_AUTOSTART_ARGS=',
     '-DQS_AUTOSTART_DESCRIPTION=Caelestia compatibility prototype'))
 Invoke-BuildCommand 'build-backend' @('--build', "$BuildRoot\quickshell", '--target', 'quickshell', '--parallel', "$Jobs")
+Invoke-BuildCommand 'configure-m3shapes' (@('-S', $m3shapesPath, '-B', "$BuildRoot\m3shapes") + $common +
+    @('-DINSTALL_QMLDIR=qml', "-DCMAKE_INSTALL_PREFIX=$installRoot", '-DM3SHAPES_BUILD_EXAMPLES=OFF'))
+Invoke-BuildCommand 'build-m3shapes' @('--build', "$BuildRoot\m3shapes", '--parallel', "$Jobs")
+Invoke-BuildCommand 'install-m3shapes' @('--install', "$BuildRoot\m3shapes")
 Invoke-BuildCommand 'configure-plugins' (@('-S', $repoRoot, '-B', "$BuildRoot\caelestia") + $common +
     @('-DCAELESTIA_PORTABLE_UI=ON', '-DENABLE_MODULES=plugin', '-DINSTALL_QMLDIR=qml',
     "-DCMAKE_INSTALL_PREFIX=$installRoot"))
@@ -71,6 +89,7 @@ Invoke-BuildCommand 'install-plugins' @('--install', "$BuildRoot\caelestia")
     sourceRevision = (& git -C $repoRoot rev-parse HEAD).Trim()
     sourceDirty = [bool](& git -C $repoRoot status --porcelain)
     backendRevision = (& git -C "$repoRoot\windows\deps\quickshell" rev-parse HEAD).Trim()
+    m3shapesRevision = $m3shapesRevision
     windowsSdkVersion = $env:WindowsSDKVersion
     msvcToolsVersion = $env:VCToolsVersion
     qtVersion = (& "$QtPrefix\bin\qtpaths.exe" --qt-version).Trim()
