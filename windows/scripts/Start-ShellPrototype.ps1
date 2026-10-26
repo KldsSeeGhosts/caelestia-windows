@@ -262,7 +262,7 @@ if ($Combined) {
     $configObject | Add-Member -NotePropertyName background -NotePropertyValue ([pscustomobject]@{
         enabled = $Background.IsPresent
         wallpaperEnabled = $true
-        desktopClock = [pscustomobject]@{ enabled = $Background.IsPresent; position = 'bottom-right' }
+        desktopClock = [pscustomobject]@{ enabled = $false; position = 'bottom-right' }
         visualiser = [pscustomobject]@{ enabled = $false }
     }) -Force
     $configText = $configObject | ConvertTo-Json -Depth 10

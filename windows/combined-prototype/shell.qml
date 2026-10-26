@@ -46,11 +46,12 @@ ShellRoot {
         interval: 10000
         onTriggered: {
             if (!desktopBackground.checkReady(root.selectedScreen)) {
-                root.fail("desktop background or clock not ready");
+                root.fail("desktop background or configured clock state not ready");
                 return;
             }
             const path = Quickshell.env("CAELESTIA_SHELL_SCREENSHOT");
-            CUtils.saveItem(win.contentItem, Qt.resolvedUrl(path), () => {
+            const background = ShellState.componentsFor(root.selectedScreen)?.background;
+            CUtils.saveItem(background.contentItem, Qt.resolvedUrl(path), () => {
                 console.log("CAELESTIA_COMBINED_PASS background", CUtils.qtVersion);
                 Qt.quit();
             }, () => root.fail("background smoke screenshot"));
