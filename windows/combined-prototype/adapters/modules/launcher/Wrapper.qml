@@ -68,7 +68,7 @@ Item {
             // Sized from the list as upstream Content.qml does; the search bar
             // fills the panel, so it cannot size it.
             implicitWidth: listWrapper.width + Tokens.padding.large * 2
-            implicitHeight: listWrapper.height + search.implicitHeight + Tokens.padding.large
+            implicitHeight: listWrapper.height + search.implicitHeight + Tokens.padding.large * 2
 
             Item {
                 id: listWrapper

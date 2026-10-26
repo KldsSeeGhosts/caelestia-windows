@@ -155,7 +155,7 @@ if ($Combined) {
     $configText = @'
 {
   "bar": {
-    "persistent": false,
+    "persistent": true,
     "showOnHover": true,
     "entries": [
       {"id":"logo","enabled":true},

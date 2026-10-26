@@ -244,13 +244,17 @@ ShellRoot {
         screen: root.selectedScreen
         visible: root.selectedScreen !== null && root.shellShown
         interactionEnabled: !root.smoke
-        anchors.right: false
-        anchors.bottom: false
+        // Full screen is the upstream layout: anchored to every edge of the
+        // monitor, with only the bar, border and open panels taking input.
+        anchors.right: root.fullScreen
+        anchors.bottom: root.fullScreen
         implicitWidth: root.previewWidth
         implicitHeight: root.previewHeight
-        margins.left: root.inset
-        margins.top: root.inset
+        margins.left: root.fullScreen ? 0 : root.inset
+        margins.top: root.fullScreen ? 0 : root.inset
     }
+
+    property bool fullScreen: false
 
     // The shell window is frameless and stays above other windows, so an
     // ordinary window carries the preview's controls: it has a taskbar entry,
@@ -293,7 +297,6 @@ ShellRoot {
 
                     Repeater {
                         model: [
-                            { icon: "west", text: "Left edge opens the bar" },
                             { icon: "ads_click", text: "Bar icons open their details" },
                             { icon: "south", text: "Bottom edge opens the launcher" },
                             { icon: "north", text: "Top edge opens media" }
@@ -342,6 +345,12 @@ ShellRoot {
 
                 Row {
                     spacing: 8
+
+                    PreviewButton {
+                        text: "Full screen"
+                        selected: root.fullScreen
+                        onActivated: root.fullScreen = !root.fullScreen
+                    }
 
                     PreviewButton {
                         text: root.shellShown ? "Hide shell" : "Show shell"
