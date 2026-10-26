@@ -36,10 +36,123 @@ namespace Caelestia.Takeover {
         public List<Bar> Bars = new List<Bar>();
     }
     public sealed class TaskbarAction {
-        public string Operation, Device, Utc;
+        public string Operation, Device, Utc, Source;
         public long Handle;
         public uint Owner;
         public bool VisibleBefore, RequestedVisible, VisibleAfter;
+        // Ticks are Stopwatch/QPC ticks, not wall-clock or WinEvent's ms time.
+        public long MonotonicTicks, TickFrequency;
+        public long? ShowObservedTicks;
+        public double? ShowToHideMilliseconds;
+    }
+    // All timestamps are supplied by the caller, allowing deterministic tests.
+    // Count only rapid same-HWND recurrences after our hides. Twelve within
+    // two seconds trigger five seconds of polling-only operation.
+    public sealed class TaskbarShowPolicy {
+        sealed class WindowState {
+            public long LastHide;
+            public readonly Queue<long> Recurrences = new Queue<long>();
+        }
+        readonly long frequency;
+        readonly Dictionary<string, WindowState> windows = new Dictionary<string, WindowState>();
+        long backoffUntil;
+        public TaskbarShowPolicy(long frequency) { this.frequency = frequency; }
+        static string Key(Bar bar) { return bar.Owner.ToString() + ":" + bar.Handle.ToString(); }
+        void Prune(long now) {
+            var expired = new List<string>();
+            foreach (var entry in windows)
+                if (now - entry.Value.LastHide >= 2 * frequency) expired.Add(entry.Key);
+            foreach (var key in expired) windows.Remove(key);
+        }
+        public bool AllowImmediate(Bar bar, long now, out bool enteredBackoff) {
+            enteredBackoff = false;
+            if (now < backoffUntil) return false;
+            Prune(now);
+            WindowState state;
+            if (windows.TryGetValue(Key(bar), out state)) {
+                while (state.Recurrences.Count > 0 && now - state.Recurrences.Peek() >= 2 * frequency)
+                    state.Recurrences.Dequeue();
+                long elapsed = now - state.LastHide;
+                if (elapsed >= 0 && elapsed <= frequency * 75 / 1000) {
+                    state.Recurrences.Enqueue(now);
+                    if (state.Recurrences.Count >= 12) {
+                        windows.Clear();
+                        backoffUntil = now + 5 * frequency;
+                        enteredBackoff = true;
+                        return false;
+                    }
+                }
+            }
+            return true;
+        }
+        public void RememberHide(Bar bar, long ticks) {
+            WindowState state;
+            var key = Key(bar);
+            if (!windows.TryGetValue(key, out state)) {
+                state = new WindowState();
+                windows.Add(key, state);
+            }
+            state.LastHide = ticks;
+        }
+        public void Reset() { windows.Clear(); backoffUntil = 0; }
+    }
+    // Hook ownership and replacement are injectable, so restart/failure and
+    // disposal can be exercised without registering a real desktop hook.
+    public sealed class TaskbarHookBinding : IDisposable {
+        readonly Func<uint, IntPtr> install;
+        readonly Action<IntPtr> remove;
+        IntPtr hook;
+        public uint Owner { get; private set; }
+        public bool Matches(IntPtr value) { return hook != IntPtr.Zero && hook == value; }
+        public TaskbarHookBinding(Func<uint, IntPtr> install, Action<IntPtr> remove) {
+            this.install = install; this.remove = remove;
+        }
+        public void Refresh(uint owner, bool force) {
+            if (!force && owner == Owner && hook != IntPtr.Zero) return;
+            Dispose();
+            if (owner == 0) return;
+            hook = install(owner);
+            if (hook != IntPtr.Zero) Owner = owner;
+        }
+        public void Dispose() {
+            if (hook != IntPtr.Zero) remove(hook);
+            hook = IntPtr.Zero;
+            Owner = 0;
+        }
+    }
+    public sealed class TaskbarShowHandler {
+        readonly TaskbarShowPolicy policy;
+        readonly Func<IntPtr, uint, Bar> resolve;
+        readonly Func<Bar, long, TaskbarAction> hide;
+        readonly Action<TaskbarAction> record;
+        public TaskbarShowHandler(TaskbarShowPolicy policy, Func<IntPtr, uint, Bar> resolve,
+            Func<Bar, long, TaskbarAction> hide, Action<TaskbarAction> record) {
+            this.policy = policy; this.resolve = resolve; this.hide = hide; this.record = record;
+        }
+        public void Handle(uint owner, IntPtr window, int objectId, int childId, long ticks) {
+            if (owner == 0 || objectId != 0 || childId != 0) return;
+            var bar = resolve(window, owner);
+            if (bar == null) return;
+            var observed = Native.ObserveShow(bar, ticks);
+            observed.Source = "event";
+            bool enteredBackoff = false;
+            bool immediate = bar.Visible && policy.AllowImmediate(bar, ticks, out enteredBackoff);
+            // Hide before disk I/O. Delayed events can describe a window
+            // that is already hidden; record them without another hide.
+            var hidden = immediate && bar.Visible ? hide(bar, ticks) : null;
+            if (hidden != null) {
+                hidden.Source = "event";
+                policy.RememberHide(bar, hidden.MonotonicTicks);
+            }
+            record(observed);
+            if (hidden != null) record(hidden);
+            if (enteredBackoff) {
+                var backoff = Native.ObserveShow(bar, ticks);
+                backoff.Operation = "event-backoff";
+                backoff.Source = "event";
+                record(backoff);
+            }
+        }
     }
     public static class Native {
         // Per-process observer for the supervisor's own native calls. Another
@@ -79,6 +192,63 @@ namespace Caelestia.Takeover {
         [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern uint RegisterWindowMessage(string message);
         [DllImport("user32.dll")] static extern IntPtr GetDesktopWindow();
         [DllImport("user32.dll")] static extern bool RedrawWindow(IntPtr window, IntPtr update, IntPtr region, uint flags);
+        public delegate void WinEventCallback(IntPtr hook, uint eventType, IntPtr window,
+            int objectId, int childId, uint thread, uint eventTime);
+        [DllImport("user32.dll", SetLastError = true)] static extern IntPtr SetWinEventHook(
+            uint first, uint last, IntPtr module, WinEventCallback callback, uint process, uint thread, uint flags);
+        [DllImport("user32.dll")] static extern bool UnhookWinEvent(IntPtr hook);
+
+        public static IntPtr HookShows(uint owner, WinEventCallback callback) {
+            // EVENT_OBJECT_SHOW; out-of-context callbacks run on this UI thread.
+            return SetWinEventHook(0x8002, 0x8002, IntPtr.Zero, callback, owner, 0, 0x0002);
+        }
+        public static void UnhookShows(IntPtr hook) { UnhookWinEvent(hook); }
+        static bool Explorer(uint owner) {
+            if (owner == 0) return false;
+            try {
+                using (var process = Process.GetProcessById((int)owner))
+                    return String.Equals(process.ProcessName, "explorer", StringComparison.OrdinalIgnoreCase);
+            } catch (ArgumentException) { return false; }
+              catch (InvalidOperationException) { return false; }
+              catch (System.ComponentModel.Win32Exception) { return false; }
+        }
+        public static uint ExplorerTaskbarOwner() {
+            var window = FindWindow("Shell_TrayWnd", null);
+            uint owner;
+            GetWindowThreadProcessId(window, out owner);
+            return Explorer(owner) ? owner : 0;
+        }
+        public static Bar EventTaskbar(IntPtr window, uint expectedOwner) {
+            if (window == IntPtr.Zero || expectedOwner == 0 || !IsWindow(window)) return null;
+            uint owner;
+            GetWindowThreadProcessId(window, out owner);
+            var name = new StringBuilder(128);
+            GetClassName(window, name, name.Capacity);
+            if (!IsExplorerTaskbar(name.ToString(), owner, expectedOwner)) return null;
+            var info = new MonitorInfo { Size = Marshal.SizeOf(typeof(MonitorInfo)) };
+            GetMonitorInfo(MonitorFromWindow(window, 2), ref info);
+            return new Bar { Handle = window.ToInt64(), Owner = owner, Device = info.Device,
+                Visible = IsWindowVisible(window) };
+        }
+        public static bool IsExplorerTaskbar(string name, uint owner, uint expectedOwner) {
+            return expectedOwner != 0 && owner == expectedOwner &&
+                (name == "Shell_TrayWnd" || name == "Shell_SecondaryTrayWnd");
+        }
+        static TaskbarAction ActionFor(Bar bar, string operation, long ticks) {
+            return new TaskbarAction { Operation = operation, Handle = bar.Handle, Owner = bar.Owner,
+                Device = bar.Device, VisibleBefore = bar.Visible, MonotonicTicks = ticks,
+                TickFrequency = Stopwatch.Frequency, Utc = DateTime.UtcNow.ToString("o") };
+        }
+        public static TaskbarAction ObserveShow(Bar bar, long ticks) {
+            var action = ActionFor(bar, "show", ticks);
+            action.RequestedVisible = true;
+            action.VisibleAfter = bar.Visible;
+            action.ShowObservedTicks = ticks;
+            return action;
+        }
+        public static void Record(TaskbarAction action) {
+            if (RecordAction != null && action != null) RecordAction(action);
+        }
 
         static AppBarData AppBar(IntPtr window) {
             return new AppBarData { Size = (uint)Marshal.SizeOf(typeof(AppBarData)), Window = window };
@@ -118,21 +288,35 @@ namespace Caelestia.Takeover {
                 return result;
             } finally { if (previous != IntPtr.Zero) SetThreadDpiAwarenessContext(previous); }
         }
-        static void Visibility(Bar bar, bool visible, string operation) {
+        static TaskbarAction Visibility(Bar bar, bool visible, string operation, long? showTicks) {
             var window = new IntPtr(bar.Handle);
             uint owner;
             GetWindowThreadProcessId(window, out owner);
-            if (!IsWindow(window) || owner != bar.Owner) return;
+            if (!IsWindow(window) || owner != bar.Owner) return null;
             ShowWindow(window, visible ? 8 : 0); // SW_SHOWNA avoids taking focus
-            if (RecordAction != null) RecordAction(new TaskbarAction {
-                Operation = operation, Handle = bar.Handle, Owner = bar.Owner, Device = bar.Device,
-                VisibleBefore = bar.Visible, RequestedVisible = visible, VisibleAfter = IsWindowVisible(window),
-                Utc = DateTime.UtcNow.ToString("o")
-            });
+            long ticks = Stopwatch.GetTimestamp();
+            var action = ActionFor(bar, operation, ticks);
+            action.RequestedVisible = visible;
+            action.VisibleAfter = IsWindowVisible(window);
+            action.ShowObservedTicks = showTicks;
+            if (showTicks.HasValue) action.ShowToHideMilliseconds =
+                (ticks - showTicks.Value) * 1000.0 / Stopwatch.Frequency;
+            return action;
+        }
+        public static TaskbarAction HideObserved(Bar bar, long ticks) {
+            return Visibility(bar, false, "hide", ticks);
         }
         public static void Hide(bool recordUnchanged) {
-            foreach (var bar in Taskbars())
-                if (bar.Visible || recordUnchanged) Visibility(bar, false, "hide");
+            foreach (var bar in Taskbars()) {
+                if (!bar.Visible && !recordUnchanged) continue;
+                long ticks = Stopwatch.GetTimestamp();
+                var show = bar.Visible ? ObserveShow(bar, ticks) : null;
+                var action = Visibility(bar, false, "hide", bar.Visible ? (long?)ticks : null);
+                if (show != null) show.Source = recordUnchanged ? "reconcile" : "poll";
+                if (action != null) action.Source = recordUnchanged ? "reconcile" : "poll";
+                Record(show);
+                Record(action);
+            }
         }
         // The backend records AppBar HWND -> PID here. Never remove a live
         // registration or a registration belonging to a different live shell.
@@ -179,7 +363,7 @@ namespace Caelestia.Takeover {
                     }
                     foreach (var bar in Taskbars()) {
                         Bar original = saved == null ? null : saved.Bars.Find(b => b.Device == bar.Device);
-                        Visibility(bar, original == null || original.Visible, "restore");
+                        Record(Visibility(bar, original == null || original.Visible, "restore", null));
                     }
                 }
                 var current = Capture();
@@ -220,10 +404,15 @@ namespace Caelestia.Takeover {
         readonly Timer timer = new Timer();
         readonly JavaScriptSerializer json = new JavaScriptSerializer();
         readonly uint taskbarCreated = Native.RegisterWindowMessage("TaskbarCreated");
+        readonly TaskbarShowPolicy showPolicy = new TaskbarShowPolicy(Stopwatch.Frequency);
+        readonly Native.WinEventCallback showCallback;
+        readonly TaskbarHookBinding showHook;
+        readonly TaskbarShowHandler showHandler;
         Process child;
         DateTime started, nextStart;
         int quickCrashes;
         int ownedPid = -1;
+        uint lastHookFailure;
         bool done;
         public int ExitCode;
 
@@ -258,6 +447,11 @@ namespace Caelestia.Takeover {
         }
         Supervisor(Launch launch, bool hide, bool restart) {
             this.launch = launch; this.hide = hide; this.restart = restart;
+            showCallback = OnTaskbarShow; // Root the delegate for the entire hook lifetime.
+            showHook = new TaskbarHookBinding(
+                delegate(uint owner) { return Native.HookShows(owner, showCallback); },
+                Native.UnhookShows);
+            showHandler = new TaskbarShowHandler(showPolicy, Native.EventTaskbar, Native.HideObserved, Native.Record);
             Directory.CreateDirectory(launch.StateDirectory);
             saved = Native.Capture();
             // Durable before the first native change, usable if this helper is killed.
@@ -281,8 +475,44 @@ namespace Caelestia.Takeover {
             nextStart = DateTime.UtcNow;
         }
         protected override void WndProc(ref Message message) {
-            if (message.Msg == taskbarCreated && child != null && !child.HasExited && hide) Native.Hide(true);
+            if (message.Msg == taskbarCreated && child != null && !child.HasExited && hide) {
+                RefreshShowHook(true);
+                Native.Hide(true);
+            }
             base.WndProc(ref message);
+        }
+        void RefreshShowHook(bool force) {
+            uint owner = Native.ExplorerTaskbarOwner();
+            uint previous = showHook.Owner;
+            showHook.Refresh(owner, force);
+            if (previous != showHook.Owner) showPolicy.Reset();
+            if (showHook.Owner != 0 && (force || previous != showHook.Owner)) {
+                LogHook("hook-installed", showHook.Owner);
+                lastHookFailure = 0;
+            } else if (owner != 0 && showHook.Owner == 0 && owner != lastHookFailure) {
+                LogHook("hook-failed", owner);
+                lastHookFailure = owner;
+            } else if (owner == 0) lastHookFailure = 0;
+        }
+        void LogHook(string operation, uint owner) {
+            Native.Record(new TaskbarAction { Operation = operation, Source = "event", Owner = owner,
+                Utc = DateTime.UtcNow.ToString("o"), MonotonicTicks = Stopwatch.GetTimestamp(),
+                TickFrequency = Stopwatch.Frequency });
+        }
+        void OnTaskbarShow(IntPtr hook, uint eventType, IntPtr window, int objectId,
+            int childId, uint thread, uint eventTime) {
+            // This is the callback-delivery timestamp, not the actual show time.
+            long ticks = Stopwatch.GetTimestamp();
+            try {
+                if (done || !hide || child == null || child.HasExited || !showHook.Matches(hook)) return;
+                showHandler.Handle(showHook.Owner, window, objectId, childId, ticks);
+            } catch (Exception error) {
+                // Desktop switches or disappearing Explorer windows must not
+                // let an exception escape an unmanaged callback.
+                try { File.AppendAllText(Path.Combine(launch.StateDirectory, "watchdog-error.log"),
+                    "WinEvent: " + error + Environment.NewLine); }
+                catch (IOException) {} catch (UnauthorizedAccessException) {}
+            }
         }
         void Status(string phase, int pid) {
             var path = Path.Combine(launch.StateDirectory, "watchdog.json");
@@ -308,13 +538,16 @@ namespace Caelestia.Takeover {
                 process.OutputDataReceived += delegate(object sender, DataReceivedEventArgs e) { if (e.Data != null) Append(launch.StdoutPath, e.Data); };
             if (info.RedirectStandardError)
                 process.ErrorDataReceived += delegate(object sender, DataReceivedEventArgs e) { if (e.Data != null) Append(launch.StderrPath, e.Data); };
+            // Snapshot is durable and the supervisor owns restoration before
+            // the child can register its AppBars. Retain the post-start pass.
+            if (hide) { RefreshShowHook(false); Native.Hide(true); }
             process.Start();
             child = process;
             ownedPid = child.Id;
             if (info.RedirectStandardOutput) child.BeginOutputReadLine();
             if (info.RedirectStandardError) child.BeginErrorReadLine();
             started = DateTime.UtcNow;
-            if (hide) Native.Hide(true);
+            if (hide) { RefreshShowHook(false); Native.Hide(true); }
             Status("running", child.Id);
         }
         static readonly object logLock = new object();
@@ -329,7 +562,12 @@ namespace Caelestia.Takeover {
                     return;
                 }
                 if (child == null) { if (DateTime.UtcNow >= nextStart) Start(); return; }
-                if (!child.HasExited) { if (hide) Native.Hide(false); return; }
+                if (!child.HasExited) {
+                    if (hide) { RefreshShowHook(false); Native.Hide(false); }
+                    return;
+                }
+                showHook.Dispose();
+                showPolicy.Reset();
                 child.WaitForExit(); // drain redirected log callbacks
                 int code = child.ExitCode, pid = child.Id;
                 child.Dispose(); child = null;
@@ -354,6 +592,7 @@ namespace Caelestia.Takeover {
             if (done) return;
             done = true;
             timer.Stop(); timer.Dispose();
+            showHook.Dispose();
             // On helper failure do not leave an unsupervised shell reserving
             // space. Normal clean exit reaches here after qs has exited.
             if (child != null) {
