@@ -40,6 +40,7 @@ param(
     [switch]$NotificationDismiss,
     [switch]$NotificationAppOpen,
     [switch]$Combined,
+    [switch]$Transparency,
     [switch]$Background,
     [ValidateSet('Behind', 'Replace')][string]$DesktopIcons = 'Behind',
     [switch]$Live,
@@ -264,6 +265,15 @@ if ($Combined) {
         desktopClock = [pscustomobject]@{ enabled = $Background.IsPresent; position = 'bottom-right' }
         visualiser = [pscustomobject]@{ enabled = $false }
     }) -Force
+    $configText = $configObject | ConvertTo-Json -Depth 10
+}
+if ($Transparency) {
+    $configObject = $configText | ConvertFrom-Json
+    if (-not $configObject.appearance) {
+        $configObject | Add-Member -NotePropertyName appearance -NotePropertyValue ([pscustomobject]@{})
+    }
+    $configObject.appearance | Add-Member -NotePropertyName transparency `
+        -NotePropertyValue ([pscustomobject]@{ enabled = $true }) -Force
     $configText = $configObject | ConvertTo-Json -Depth 10
 }
 $configText | Set-Content -LiteralPath $config -Encoding UTF8
