@@ -6,22 +6,22 @@ with the profile kept. Earlier handoffs are in this file's git history.
 
 ## Where the code is
 
-Both repositories use the same branch model as the user's other forks:
+Both repositories use the conventional `main`, `dev` and `upstream` branch model:
 
 | Branch | Purpose |
 | --- | --- |
-| `ksg/dev` (default) | Integration line. Feature branches merge here. |
-| `main` | Stable: the build installed on the user's PC. Fast-forward it from `ksg/dev` after a live install is verified. |
+| `dev` (default) | Integration line. Feature branches merge here. |
+| `main` | Stable: the build installed on the user's PC. Fast-forward it from `dev` after a live install is verified. |
 | `upstream` | Mirror of the upstream project: caelestia-dots/shell `main`, or nunreasonable/quickshell `master` for the backend. |
-| `t3/<topic>`, backend `windows/<topic>` | Short-lived feature branches from `ksg/dev`. Delete them after merging. |
+| `t3/<topic>`, backend `windows/<topic>` | Short-lived feature branches from `dev`. Delete them after merging. |
 
-As of this handoff, both `main` and `ksg/dev` are at round 5b. The backend
+As of this handoff, both `main` and `dev` are at round 5b. The backend
 fork is KldsSeeGhosts/caelestia-quickshell-windows, remote `caelestia` in
 `windows/deps/quickshell`, at `c1177c2`. In progress: `t3/tiling-gaps`, with
 backend `windows/tiling-gaps`, for the tiling gaps and focused-window border.
 
-A merge into `ksg/dev` that changes the backend moves the Quickshell gitlink and
-`windows/sources.lock.json` together, to a commit on the backend's `ksg/dev`.
+A merge into `dev` that changes the backend moves the Quickshell gitlink and
+`windows/sources.lock.json` together, to a commit on the backend's `dev`.
 Unmerged experiments are kept as `archive/*` tags, not branches.
 
 Both repositories are private. They go public only when the user decides, as a
@@ -60,7 +60,7 @@ Checked live on round 5b:
 
 ## Open work, in order
 
-1. **Tiling gaps and focused-window border** (`t3/tiling-gaps`, based on the pre-cleanup `08c34968`; merge it into `ksg/dev`). This follows
+1. **Tiling gaps and focused-window border** (`t3/tiling-gaps`, based on the pre-cleanup `08c34968`; merge it into `dev`). This follows
    Caelestia's Hyprland defaults: a 20-DIP outer gap for a lone window,
    otherwise 10, with 10 between windows. It also adds a 1 px focused-window
    border in the scheme primary through `DWMWA_BORDER_COLOR`, restored on quit.
