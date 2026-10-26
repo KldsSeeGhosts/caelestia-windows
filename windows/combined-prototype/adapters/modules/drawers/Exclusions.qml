@@ -10,6 +10,9 @@ import qs.components.containers
 // the left edge reserves the bar, the other edges reserve the border. Each
 // PanelWindow maps to the existing tracked native AppBar registration, including
 // normal removal and watchdog/stale-registration recovery after a crash.
+// Fullscreen hides the visible frame separately. Keeping the empty AppBars
+// registered avoids changing the Windows work area while applications save
+// and restore their window placement.
 Scope {
     id: root
 
@@ -31,7 +34,7 @@ Scope {
         screen: root.screen
         name: "border-exclusion"
         exclusiveZone: contentItem.Config.border.thickness
-        visible: root.active && !root.fullscreen
+        visible: root.active
         exclusionMode: ExclusionMode.Normal
         mask: Region {}
         implicitWidth: 1

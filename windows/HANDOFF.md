@@ -4,6 +4,18 @@ Caelestia for Windows is the user's live desktop shell. It replaced ksg-shell
 on 2026-10-26 and runs round 5b, installed as an in-place update over round 4
 with the profile kept. Earlier handoffs are in this file's git history.
 
+Installed candidate since that baseline: `t3/fix-dia-fullscreen`,
+source `0439f806`, backend `207dcd5`, for ERM-543 / GitHub #9. It
+keeps AppBar reservations stable across fullscreen and defers classification
+of transient floating styles on exit. All 41 manager cases pass. Two GitHub
+video fullscreen cycles on the physical mixed-DPI Dell returned Dia to the
+same tile, with stable sampled work area and no sampled taskbar visibility.
+Perceived transition latency, frame-by-frame flicker and physical monitor
+power-off recovery still need verification. The earlier bounded component
+smoke timed out and is not passing acceptance. See
+[the follow-up evidence and limits](https://github.com/KldsSeeGhosts/caelestia-windows/pull/10#issuecomment-6426317248).
+This candidate is installed; its topic branches remain under review.
+
 ## Where the code is
 
 Both repositories use the conventional `main`, `dev` and `upstream` branch model:
@@ -49,8 +61,9 @@ reports. See `RELEASE-CHECKLIST.md`.
   user approves.
 
 Checked live on round 5b:
-- The bar (left) and border (top, right, bottom) are reserved as AppBars and
-  released for fullscreen.
+- At the round 5b baseline, the bar (left) and border (top, right, bottom)
+  were reserved as AppBars and released for fullscreen. The installed
+  fullscreen candidate keeps those reservations while hiding the frame.
 - The keyboard status shows `en` with Caps Lock and Num Lock.
 - Google Sans Flex is the UI font.
 - The dynamic scheme is ready (real caelestia CLI in the profile venv).
