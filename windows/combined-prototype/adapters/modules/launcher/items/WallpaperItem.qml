@@ -1,4 +1,5 @@
 import QtQuick
+import Quickshell
 import Caelestia.Config
 import Caelestia.State
 import qs.components
@@ -67,6 +68,11 @@ Item {
         Image {
             anchors.fill: parent
             source: "file:///" + root.modelData.path
+            asynchronous: true
+            sourceSize: {
+                const dpr = (QsWindow.window as QsWindow)?.devicePixelRatio ?? 1;
+                return Qt.size(width * dpr, height * dpr);
+            }
             fillMode: Image.PreserveAspectCrop
         }
     }

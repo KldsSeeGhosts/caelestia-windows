@@ -472,8 +472,8 @@ ShellRoot {
                 services: root.serviceStates(), focusStatus: focusGuard.status,
                 tiling: { mode: Tiling.mode, status: Tiling.status },
                 toastsLoaded: panels?.toasts !== null && panels?.toasts !== undefined,
-                fullScreen: root.fullScreen, barZone: win.bar.exclusiveZone
-                , runtimeProbe: root.runtimeProbe,
+                fullScreen: root.fullScreen, barZone: win.bar.exclusiveZone,
+                runtimeProbe: root.runtimeProbe,
                 statisticsActive: Native.SystemMonitor.active,
                 networkStatisticsActive: Native.SystemStats.active
             });
@@ -537,13 +537,31 @@ ShellRoot {
     Component.onCompleted: {
         Hypr.logStartupStatus();
         Tiling.logStartupStatus();
-        Native.SystemMonitor.active = true;
         Native.SystemStats.networkEnabled = true;
         if (!selectedScreen) {
             console.error("CAELESTIA_COMBINED_FAIL: requested screen does not exist", screenIndex);
             // Quickshell attaches the engine exit handler after creation.
             Qt.callLater(() => Qt.exit(1));
         }
+    }
+
+    // Only the dashboard consumes these samplers. Keep them through the close
+    // animation, then release native live counters and stop the stats timer.
+    // SystemStats retains its cumulative network counters across inactive gaps.
+    readonly property bool statisticsVisible: root.shellShown
+        && ((win.screenState?.dashboard ?? false)
+            || (ShellState.componentsFor(win.screen)?.panels?.dashboard.visible ?? false))
+
+    Binding {
+        target: Native.SystemMonitor
+        property: "active"
+        value: root.statisticsVisible
+    }
+
+    Binding {
+        target: Native.SystemStats
+        property: "active"
+        value: root.statisticsVisible
     }
 
     Binding {

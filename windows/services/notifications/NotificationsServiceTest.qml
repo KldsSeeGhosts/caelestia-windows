@@ -1732,6 +1732,7 @@ QtObject {
         check(test.asyncRecord.popup === true, "async record starts popped up");
         check(test.asyncRecord.timer.interval === 40, "async timer interval");
         check(test.asyncRecord.timer.running, "async timer is running");
+        check(test.asyncRecord.timeStrTimer.running, "visible popup updates its age");
         realExpiry.start();
         guard.start();
     }
@@ -1753,6 +1754,29 @@ QtObject {
         check(test.asyncRecord.popup === false, "real Timer expired the popup");
         check(service.popups.length === 0 && service.notClosed.length === 1,
             "expired popup remains a list notification");
+        check(!test.asyncRecord.timeStrTimer.running, "hidden history stops its age timer");
+        test.asyncRecord.time = new Date(Date.now() - 10 * 60000);
+        service.centerVisible = true;
+        check(test.asyncRecord.timeStrTimer.running, "opening history resumes age updates");
+        ageRefresh.start();
+    }
+
+    readonly property Timer ageRefresh: Timer {
+        interval: 50
+        onTriggered: {
+            try {
+                test.finishAgeRefresh();
+            } catch (error) {
+                console.error("CAELESTIA_NOTIFICATIONS_FIXTURE_FAIL " + error.message);
+                Qt.exit(1);
+            }
+        }
+    }
+
+    function finishAgeRefresh(): void {
+        check(test.asyncRecord.ageMins === 10, "opening history refreshes stale age immediately");
+        service.centerVisible = false;
+        check(!test.asyncRecord.timeStrTimer.running, "closing history stops age updates again");
         test.asyncRecord.close();
         check(service.list.length === 0, "async record can be dismissed after expiry");
         check(service.localDismissals >= test.dismissalsBeforeImages + 3, "async dismissal counted");
