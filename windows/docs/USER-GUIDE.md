@@ -1,0 +1,442 @@
+# Caelestia for Windows user guide
+
+Caelestia for Windows brings the original [Caelestia Shell](https://github.com/caelestia-dots/shell) QtQuick/QML desktop interface to Windows 11 on top of the Windows Quickshell backend (originally built for [ii-windows](https://github.com/nunreasonable/ii-windows)).
+
+If you have riced Hyprland with Caelestia on Linux—or customized Windows with tools like Komorebi, GlazeWM, Yasb, `ksg-shell`, or Seelen—this guide covers how to install, configure, and troubleshoot the shell without digging into repository internals.
+
+Detailed reference pages:
+
+- [Configuration reference (`shell.json` and tiling)](CONFIGURATION.md)
+- [Keybinds reference (`keybinds.json` and shortcuts)](KEYBINDS.md)
+
+---
+
+## What it is
+
+Caelestia for Windows replaces the day-to-day Windows shell chrome (`explorer.exe` taskbar, Start menu, Action Center, and manual window snapping) while keeping the Windows Desktop Window Manager (DWM) in charge of application rendering and composition.
+
+It runs the original Caelestia QML components, Material 3 Expressive shapes (`M3Shapes`), shaders, and spring/bezier motion curves natively on Windows, providing:
+
+- **Left vertical bar:** App launcher button (logo), workspace indicators, active window title, system tray icons, clock, status icons (audio, Wi-Fi/Ethernet, Bluetooth, battery), status popouts, and power button. In full-screen shell mode, the bar registers a native Windows AppBar so maximized and tiled windows stop at the bar edge.
+- **Launcher:** Instant app search over Windows `AppsFolder` and Start menu shortcuts (using Caelestia's original `fzf` smart-case and `fuzzysort` ranking), command actions (`>`), built-in math evaluator (`> calc`), and wallpaper switcher (`> wallpaper`).
+- **Dashboard:** Four-tab top drawer with user profile, calendar, weather forecast, media player controls (via Windows GSMTC), and live hardware performance graphs (CPU, GPU, RAM, storage, and network throughput sparklines).
+- **Desktop background:** Original Caelestia wallpaper surface (with shader transitions), desktop clock, and audio visualizer layer embedded directly into the Windows `Progman`/`WorkerW` desktop plane (either behind or above Explorer desktop icons).
+- **Notifications and sidebar:** Toast popups, core shell toasts, and a right-edge notification history drawer. Supports local shell notifications by default and opt-in Windows system toast mirroring.
+- **On-screen display (OSD) and utilities:** Volume and hardware monitor brightness sliders, quick toggles (Wi-Fi, Bluetooth, Do Not Disturb), keep-awake (idle inhibit), fullscreen `ffmpeg` screen recorder, and a session menu (lock, sign out, sleep, hibernate, reboot, shut down).
+- **Window tiling:** Automatic DWM window tiling (`dwindle`, `master`, and `scrolling` layouts) with configurable inner/outer gaps, window inclusion/exclusion rules, and automatic floating with toast explanations when an app refuses to fit its tile.
+- **Workspaces on virtual desktops:** Maps Caelestia's workspace bar and workspace dispatchers onto Windows 11 virtual desktops.
+
+---
+
+## Requirements
+
+- **Operating system:** Windows 11 64-bit (x64). Native virtual desktop switching, window-to-workspace moves, and `WorkerW` desktop background embedding are verified on Windows 11 24H2 build families `26100`, `26200`, and `26300` (using an in-process COM provider—no third-party `VirtualDesktopAccessor.dll` download is required on supported 24H2 builds). `TODO(verify): confirm whether earlier Windows 11 builds (such as 22H2/23H2 builds 22621/22631) are supported for bar/services with workspace dispatch disabled.`
+- **GPU and display:** Any Direct3D 11-capable GPU. Caelestia renders hardware-accelerated QtQuick 6 scenes and HLSL shaders via Direct3D 11. Works with Windows transparency effects turned on or off, and supports mixed-DPI multi-monitor setups (validated at 100%, 150%, and 175% scaling, including negative secondary monitor coordinates).
+- **Permissions:** Standard user account (**no administrator privileges required**). Everything installs per-user under `%LOCALAPPDATA%`. Caelestia does not patch system files, inject DLLs into `explorer.exe`, or require UAC elevation.
+- **Single active tiler:** If you enable Caelestia's window tiler, you must stop other tiling window managers (Komorebi, GlazeWM, FancyZones, `ksg-shell`, etc.) first.
+- **Optional `ffmpeg` for screen recording:** The utilities screen-recorder card uses `ffmpeg.exe` (`gdigrab`) if `ffmpeg` is available on your `PATH`. Without `ffmpeg`, the rest of the shell works normally and the recorder card reports `Unavailable`.
+- **Building from source (optional):** If you are compiling from a Git checkout instead of using a prebuilt package, see [NATIVE-BUILD.md](../NATIVE-BUILD.md) for the Visual Studio 2022 Build Tools, Qt 6.11.2 (`msvc2022_64`), and `clang-cl` 20.1.8 setup.
+
+---
+
+## Install, uninstall, and autostart
+
+`TODO(verify): the production installer scripts are being finalized on branch t3/production-shell; verify exact script paths, parameter names, and behavior once merged.`
+
+### Install
+
+From PowerShell (no admin prompt needed), run `Install-Caelestia.ps1` from the repository or release folder:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\windows\scripts\Install-Caelestia.ps1
+```
+
+`TODO(verify): confirm exact flags supported by Install-Caelestia.ps1 (for example: -InstallRoot, -BuildRoot, -QtPrefix, -Autostart, -NoLaunch, -Force).`
+
+What the installer does:
+
+1. Copies the packaged runtime (`qs.exe` / `qsw.exe`, Qt 6.11.2 runtime DLLs, Caelestia and `M3Shapes` QML plugins, staged QML tree, bundled Rubik / Material Symbols Rounded / Google Sans Flex fonts, and license notices) into `%LOCALAPPDATA%\caelestia-windows\app` (`TODO(verify): confirm exact binary subdirectory under %LOCALAPPDATA%\caelestia-windows`).
+2. Creates your user configuration, state, cache, and log directories under `%LOCALAPPDATA%\caelestia-windows` without overwriting existing config files.
+3. Leaves Windows autostart **off by default** unless you opt in.
+
+### Opt-in autostart
+
+Autostart is strictly opt-in so a fresh install cannot lock you into a broken session.
+
+To enable autostart at sign-in during installation or afterward:
+
+```powershell
+# Enable autostart at Windows sign-in
+powershell -NoProfile -ExecutionPolicy Bypass -File .\windows\scripts\Install-Caelestia.ps1 -Autostart
+```
+
+`TODO(verify): confirm exact autostart flag name (e.g., -Autostart / -EnableAutostart) and whether autostart registers an HKCU\Software\Microsoft\Windows\CurrentVersion\Run entry or a Startup folder shortcut.`
+
+To disable autostart without uninstalling:
+
+```powershell
+# Disable autostart while keeping Caelestia installed
+powershell -NoProfile -ExecutionPolicy Bypass -File .\windows\scripts\Uninstall-Caelestia.ps1 -AutostartOnly
+```
+
+`TODO(verify): confirm exact flag or command to remove only the autostart registration.`
+
+### Uninstall
+
+To stop Caelestia, restore the Windows taskbar and work area, remove autostart, and uninstall the runtime:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\windows\scripts\Uninstall-Caelestia.ps1
+```
+
+By default, uninstalling keeps your personal `shell.json` and `keybinds.json` so you do not lose your rice. `TODO(verify): confirm whether Uninstall-Caelestia.ps1 preserves config by default and uses a flag like -Purge or -RemoveConfig to delete %LOCALAPPDATA%\caelestia-windows completely.`
+
+### Migrating from `ksg-shell`
+
+If you previously used `ksg-shell`, you can preview or import your supported bar and OSD preferences from `%APPDATA%\com.ksg.shell\settings.json` into `%LOCALAPPDATA%\caelestia-windows\config\shell.json` using `windows/scripts/Import-KsgShellSettings.ps1`:
+
+```powershell
+# Preview mapped settings without writing any files
+powershell -NoProfile -File .\windows\scripts\Import-KsgShellSettings.ps1 -Summary
+
+# Write to your Caelestia config (backs up an existing shell.json when -Force is passed)
+$config = Join-Path $env:LOCALAPPDATA 'caelestia-windows\config\shell.json'
+powershell -NoProfile -File .\windows\scripts\Import-KsgShellSettings.ps1 -OutFile $config -Force
+```
+
+Disable `ksg-shell`'s tiler and exit `ksg-shell` before starting Caelestia in full shell or tiling mode.
+
+### Running from a developer build (combined preview)
+
+If you built from source using [NATIVE-BUILD.md](../NATIVE-BUILD.md) before the production installer branch is merged, launch the combined shell with:
+
+```powershell
+powershell -NoProfile -File windows/scripts/Start-ShellPrototype.ps1 `
+    -QtPrefix "$env:LOCALAPPDATA\caelestia-dev\Qt\6.11.2\msvc2022_64" `
+    -Combined -Live
+```
+
+- Omit `-Live` to run in read-only observation mode.
+- Add `-Background` (and optionally `-DesktopIcons Behind` or `-DesktopIcons Replace`) to enable the desktop wallpaper surface and desktop clock.
+- Add `-Tiling -TilingMode Observe` or `-Tiling -TilingMode Interactive` (with `CAELESTIA_WINDOWS_TILING_INCLUDED` set) to run the M3 tiling slice inside the combined preview.
+
+---
+
+## First run and where config lives
+
+### Directory layout
+
+All user files live under `%LOCALAPPDATA%\caelestia-windows` (`C:\Users\<You>\AppData\Local\caelestia-windows`):
+
+```text
+%LOCALAPPDATA%\caelestia-windows\
+├── config\
+│   ├── shell.json                         # Main shell configuration (optional; created by user or installer)
+│   ├── shell-tokens.json                  # Advanced design token overrides (optional)
+│   ├── keybinds.json                      # User keybind overrides (optional)
+│   └── monitors\
+│       └── <monitor_name>\
+│           ├── shell.json                 # Per-monitor config overrides
+│           └── shell-tokens.json          # Per-monitor token overrides
+├── state\
+│   ├── notifs.json                        # Persisted local notification history
+│   └── apps-frequencies.json              # Launcher app launch frequency counts
+├── cache\
+│   └── ...                                # Media artwork thumbnails, weather cache, QML cache
+└── logs\
+    └── ...                                # Runtime stdout/stderr logs and diagnostics
+```
+
+`TODO(verify): confirm exact subdirectory names under %LOCALAPPDATA%\caelestia-windows created by the production launcher (specifically whether keybinds.json lives at config\keybinds.json or another relative path via HotkeyManager userFile).`
+
+The launcher sets `CAELESTIA_CONFIG_DIR`, `CAELESTIA_STATE_DIR`, `CAELESTIA_CACHE_DIR`, `CAELESTIA_DATA_DIR`, and `CAELESTIA_RUNTIME_DIR` automatically for the shell process so all paths stay inside `%LOCALAPPDATA%\caelestia-windows`.
+
+### What to expect on first launch
+
+1. **Bar and work area:** The vertical bar appears along the left edge of your screen. When full-screen shell mode is active, Caelestia reserves the bar's width via a Windows AppBar so maximized and tiled windows do not sit underneath the bar. `TODO(verify): confirm whether the production shell hides the native Windows taskbar automatically on startup or requires an opt-in config/flag.`
+2. **Opening drawers with the mouse:**
+   - **Left edge hover/drag:** Shows or pins the bar (when `bar.persistent` is `false`).
+   - **Top edge hover/drag:** Opens the **Dashboard** (user card, calendar, weather, media player, system performance).
+   - **Bottom edge drag or clicking the top-left logo:** Opens the **Launcher**.
+   - **Right edge drag:** Opens the **Notification sidebar** and **Utilities** drawer.
+   - **Bottom-left power button:** Opens the **Session** menu.
+   - **Clicking outside or pressing `Escape`:** Dismisses the active drawer and returns keyboard focus to your previous window.
+3. **Notification mirroring consent:** Caelestia never triggers a Windows permission prompt at startup. If you want Windows system notifications mirrored into Caelestia's popups and sidebar, open the right-edge notification sidebar and click the explicit **Request access** button once.
+
+---
+
+## Configuration
+
+Caelestia reads `%LOCALAPPDATA%\caelestia-windows\config\shell.json`. Like upstream Caelestia, **only put the keys you want to change in `shell.json`**—omitted keys automatically fall back to defaults, and unknown keys are quarantined with a warning toast.
+
+When you save `shell.json`, Caelestia hot-reloads it and shows a `Config loaded` toast (if `utilities.toasts.configLoaded` is enabled) or warns you if there is a JSON syntax or schema issue.
+
+See [CONFIGURATION.md](CONFIGURATION.md) for a full annotated reference. Below are the sections that matter most on Windows.
+
+### Minimal starter `shell.json`
+
+```json
+{
+    "appearance": {
+        "transparency": {
+            "enabled": false,
+            "base": 0.85,
+            "layers": 0.4
+        }
+    },
+    "background": {
+        "enabled": true,
+        "wallpaperEnabled": true,
+        "desktopClock": {
+            "enabled": false,
+            "position": "bottom-right"
+        }
+    },
+    "bar": {
+        "persistent": true,
+        "showOnHover": true,
+        "workspaces": {
+            "shown": 5,
+            "showUnoccupied": true,
+            "displayType": "shapes",
+            "showWindows": true
+        },
+        "clock": {
+            "showDate": true,
+            "showIcon": true
+        },
+        "statusIcons": [
+            { "id": "audio", "enabled": true },
+            { "id": "network", "enabled": true },
+            { "id": "bluetooth", "enabled": true },
+            { "id": "battery", "enabled": true }
+        ]
+    },
+    "dashboard": {
+        "enabled": true,
+        "showOnHover": true
+    },
+    "launcher": {
+        "enabled": true,
+        "vimKeybinds": false,
+        "favouriteApps": ["Windows Terminal", "Firefox"]
+    },
+    "services": {
+        "weatherLocation": "",
+        "weatherUnits": "Auto",
+        "clockFormat": "Auto",
+        "defaultPlayer": "Spotify"
+    },
+    "paths": {
+        "wallpaperDir": "~/Pictures/Wallpapers"
+    }
+}
+```
+
+### Bar entries (`bar`)
+
+- `bar.entries`: Reorder or toggle `"logo"`, `"workspaces"`, `"spacer"`, `"activeWindow"`, `"tray"`, `"clock"`, `"statusIcons"`, and `"power"`.
+- `bar.statusIcons`: Enable or reorder status icons. On Windows, `"audio"`, `"network"`, `"bluetooth"`, and `"battery"` are backed by native Windows services. `"lockStatus"`, `"microphone"`, and `"kbLayout"` default to disabled because the Windows backend does not emit Hyprland keyboard/lock input events.
+- `bar.workspaces`: Controls how many workspaces are shown (`shown`: `5`, which also sets the `1..20` ceiling for creating new virtual desktops on numeric/relative workspace switches), whether empty ones stay visible (`showUnoccupied`: `true`), and how indicators render (`displayType`: `"shapes"` or `"Text"`). Note that `bar.workspaces.perMonitor` only affects bar display—Windows virtual desktops switch globally across all monitors.
+- `bar.tray`: Controls system tray icon rendering (`recolour`, `compact`, `hiddenIcons`, `iconSubs`).
+
+### Launcher (`launcher` and `paths`)
+
+- **Apps:** Indexed automatically from Windows `shell:AppsFolder` and Start menu directories. Use `launcher.favouriteApps` to pin apps to the top and `launcher.hiddenApps` (exact names or regexes) to hide clutter like uninstallers.
+- **Search prefixes:** Type `@` (`launcher.specialPrefix`) to filter by category/field, or `>` (`launcher.actionPrefix`) to run shell actions:
+  - `> calc 2*(3+4)^2` evaluates math expressions (click or press `Enter` to copy the result, or click the calculator icon to open Windows Calculator).
+  - `> wallpaper` opens the horizontal wallpaper carousel reading images from `paths.wallpaperDir` (defaults to `%USERPROFILE%\Pictures\Wallpapers`, or override via `CAELESTIA_WALLPAPER_DIR`). Note: the carousel displays an odd number of wallpapers at a time, so keep 1 or 3+ images in the folder.
+  - `> light` / `> dark` switches color mode; `> scheme` / `> variant` selects color schemes (`TODO(verify): confirm dynamic wallpaper scheme generation behavior from branch t3/dynamic-scheme`).
+- **Vim navigation:** Set `"vimKeybinds": true` under `launcher` (and `session`) to navigate lists with `Ctrl+J`/`Ctrl+K` or `Tab`.
+
+### Dashboard and desktop background (`dashboard`, `background`, and `services`)
+
+- **Dashboard:** Toggle individual tabs with `showDashboard`, `showMedia`, `showPerformance`, and `showWeather`. Under `dashboard.performance`, toggle `showBattery`, `showGpu`, `showCpu`, `showMemory`, `showStorage`, and `showNetwork`. On desktops without a battery or sensors that do not report temperatures without a kernel driver, Caelestia cleanly displays absent/unavailable states instead of fake zeros.
+- **Background:** Configure `background.wallpaperEnabled`, `background.desktopClock` (`enabled`, `scale`, `position`), and `background.visualiser` (`TODO(verify): confirm audio visualizer provider integration from branch t3/audio-visualizer`). Static wallpaper images are supported with shader transitions; video wallpapers are not supported because the portable build excludes native Qt Multimedia.
+- **Weather:** Set `services.weatherLocation` to a city or coordinates, or leave `""` for automatic IP geolocation.
+
+### Tiling and gaps
+
+Caelestia's Windows backend includes a native DWM tiler (`Quickshell.Windows.Tiling`) supporting three layouts:
+
+- `"dwindle"` (default): Binary space partitioning that alternates split directions as you open windows.
+- `"master"`: Master-stack layout (`masterFactor`: `0.55`, `masterOrientation`: `"left"`, `"right"`, `"top"`, `"bottom"`).
+- `"scrolling"`: Niri/PaperWM-style horizontal scrolling strip (`scrollingColumnWidth`: `0.5`, `scrollingCenter`: `"overflow"`).
+
+Important: `shell.json` is validated by `Caelestia.Config` (`ConfigRoot`), which does **not** have a `tiling` key and quarantines unknown fields. Tiling is controlled through launcher switches and environment variables:
+
+- `CAELESTIA_WINDOWS_TILING`: `off` (default), `observe`, or `interactive`
+- `CAELESTIA_WINDOWS_TILING_INCLUDED`: Semicolon-separated wildcard patterns (for example `WindowsTerminal.exe;Code.exe;firefox.exe` or `title:*Visual Studio*`). Interactive mode requires a non-empty inclusion list so enabling the tiler does not unexpectedly rearrange every open window on your desktop.
+- `CAELESTIA_WINDOWS_TILING_EXCLUDED`: Semicolon-separated wildcard patterns that always float and override inclusions (for example `Taskmgr.exe;calc.exe;title:Picture-in-Picture`).
+
+Backend tiling parameters and defaults:
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `layout` | `"dwindle"` | `"dwindle"`, `"master"`, or `"scrolling"` |
+| `gapsIn` | `4` | Inner gap (logical pixels) between adjacent tiled windows |
+| `gapsOut` | `5` | Outer gap (logical pixels) between tiled windows and the monitor work area |
+| `preserveSplit` | `true` | Keep split direction when windows close (`dwindle`) |
+| `smartSplit` | `false` | Split based on cursor position or aspect ratio (`dwindle`) |
+| `defaultSplitRatio` | `1.0` | Initial split ratio (`0.1`–`1.9`) |
+| `masterFactor` | `0.55` | Fraction of screen width/height given to the master pane (`master`) |
+| `scrollingColumnWidth` | `0.5` | Default column width as a fraction of the monitor (`scrolling`) |
+
+`TODO(verify): confirm whether branch t3/production-shell or t3/tiling-config adds launcher flags, environment variables, or config fields for overriding layout, gapsIn, and gapsOut (which default to gapsIn=4 and gapsOut=5).`
+
+### Per-monitor configuration
+
+To override settings on a specific display, create:
+
+```text
+%LOCALAPPDATA%\caelestia-windows\config\monitors\<monitor_name>\shell.json
+```
+
+`TODO(verify): confirm how users should list <monitor_name> values on Windows (e.g., \\.\DISPLAY1 from Get-DesktopState.ps1 vs Qt ShellScreen.name).`
+
+---
+
+## Default keybinds
+
+On Linux, Caelestia relies on Hyprland's `hyprland.conf` / `keybinds.lua` to bind keys to `global` shortcuts and `hyprctl dispatch`. On Windows, `shell.json` does not store keybinds; instead, the Quickshell backend runs its own `HotkeyManager` (`Quickshell.Windows.Hotkeys`), which reads defaults from `defaults/windows/keybinds.json` and your personal overrides from `%LOCALAPPDATA%\caelestia-windows\config\keybinds.json` (`TODO(verify): confirm exact user keybinds.json path from branch t3/global-shortcuts`).
+
+`TODO(verify): fill and confirm the default key combination column below once branch t3/global-shortcuts is merged.`
+
+| Action | Shortcut / dispatcher | Default keybind (`TODO(verify)`) | Notes |
+| --- | --- | --- | --- |
+| Toggle launcher | `global` → `caelestia:launcher` | `TODO(verify): Super` (tap) or `Alt+Space` | Opens/closes app & action launcher |
+| Toggle dashboard | `global` → `caelestia:dashboard` | `TODO(verify)` | Opens/closes top dashboard drawer |
+| Toggle session menu | `global` → `caelestia:session` | `TODO(verify): Super+Shift+E` | Lock, logout, reboot, shutdown |
+| Toggle notification sidebar | `global` → `caelestia:sidebar` | `TODO(verify): Super+N` | Opens/closes notification center |
+| Toggle utilities drawer | `global` → `caelestia:utilities` | `TODO(verify)` | Quick toggles, keep-awake, recorder |
+| Toggle all panels | `global` → `caelestia:showall` | `TODO(verify)` | Toggles launcher, dashboard, OSD, utilities |
+| Open settings (Nexus) | `global` → `caelestia:nexus` | `TODO(verify): Super+I` or `Super+Comma` | Opens Caelestia settings window |
+| Clear notifications | `global` → `caelestia:clearNotifs` | `TODO(verify)` | Dismisses active notifications |
+| Toggle Do Not Disturb | `global` → `caelestia:toggleDnd` | `TODO(verify)` | Suppresses notification popups |
+| Lock session | `Session.lock()` / native Windows | `Win+L` (native Windows) | Always uses the native Windows lock screen |
+| Close active window | `dispatch` → `killwindow` / `closewindow` | `TODO(verify): Super+Q` or `Alt+F4` | Sends polite `WM_CLOSE` to focused window |
+| Toggle floating | `dispatch` → `togglefloating` | `TODO(verify): Super+V` or `Super+Space` | Floats or retiles active window |
+| Focus window left/right/up/down | `dispatch` → `movefocus l/r/u/d` | `TODO(verify): Super+Left/Right/Up/Down` or `H/J/K/L` | Moves focus between tiled neighbors |
+| Move window left/right/up/down | `dispatch` → `movewindow l/r/u/d` | `TODO(verify): Super+Shift+Left/Right/Up/Down` | Swaps or moves tiled window |
+| Switch to workspace 1–10 | `dispatch` → `workspace 1..10` | `TODO(verify): Super+1..0` | Switches Windows virtual desktop |
+| Move active window to workspace 1–10 | `dispatch` → `movetoworkspace 1..10` | `TODO(verify): Super+Shift+1..0` | Moves active window to virtual desktop and follows it |
+| Previous / next workspace | `dispatch` → `workspace r-1` / `r+1` | `TODO(verify): Super+Ctrl+Left/Right` | Cycles adjacent virtual desktops |
+| Media play/pause, next, prev | `global` → `mediaToggle`, `mediaNext`, `mediaPrev` | `MediaPlayPause`, `MediaNext`, `MediaPrev` (`TODO(verify)`) | Controls active GSMTC media session |
+| Brightness up / down | `global` → `brightnessUp`, `brightnessDown` | `TODO(verify)` | Steps hardware monitor brightness |
+
+For custom keybind syntax (`global`, `dispatch`, `ipc`, `exec`, `key`, `reload`, and `extends: "defaults"`), see [KEYBINDS.md](KEYBINDS.md).
+
+---
+
+## What differs from Linux Caelestia and why
+
+Because Windows 11 uses the Desktop Window Manager (DWM) and Win32/WinRT APIs rather than a Wayland compositor that Caelestia controls directly, several behaviors differ intentionally from Linux Hyprland:
+
+### 1. Windows lock screen instead of Caelestia's custom lock surface
+
+On Linux, Caelestia renders its own `ext-session-lock-v1` lock surface (`modules/lock/`) and authenticates via PAM, `fprintd`, or Howdy. On Windows, the secure desktop (`Winlogon` / `LogonUI.exe`) is isolated by the OS kernel, and any user-space window can be bypassed or killed if used as a lock screen.
+
+- Locking from Caelestia's session menu or launcher (`Lock`) calls `LockWorkStation()` (`Quickshell.Windows.Session.lock()`), handing off immediately to the native Windows lock screen and Windows Hello.
+- The `lock` section in `shell.json` is ignored on Windows.
+
+### 2. Virtual desktops for workspaces
+
+On Hyprland, each monitor has independent workspaces and named `special:` scratchpad workspaces. On Windows, workspaces map onto native Windows 11 Virtual Desktops:
+
+- **Global across monitors:** Switching to workspace 2 switches all connected monitors to virtual desktop 2, because Windows virtual desktops span the entire desktop session. Every monitor's bar indicator reflects the same active global workspace.
+- **No `special:` scratchpad workspaces:** `togglespecialworkspace` and `cycleSpecialWorkspace` are safe no-ops on Windows.
+- **In-process COM desktop control on Windows 11 24H2:** Switching workspaces (`workspace <n>`, `workspace r+1`/`r-1`, `workspace name:<name>`), creating missing desktops up to `bar.workspaces.shown` (clamped `1..20`), and moving windows (`movetoworkspace <n>`) use an in-process COM provider verified for Windows 11 24H2 build families `26100`, `26200`, and `26300`. On unsupported Windows builds where the COM interface GUIDs do not match, workspace dispatch is refused safely rather than injecting synthetic keyboard shortcuts.
+
+### 3. Apps that resist tiling float automatically
+
+A Wayland compositor can tell a client what size to render at and clip its surface. On Windows, applications manage their own Win32 `WM_GETMINMAXINFO` constraints, DWM invisible shadow borders, and modal resize loops:
+
+- If a window's minimum size is larger than its assigned tile (`min-size`), if it repeatedly fights repositioning (`off-target`), or if it does not respond to move requests (`unresponsive`), Caelestia **floats the window automatically** instead of overlapping neighbors or entering an infinite resize loop.
+- If a window settles slightly off its target frame after the correction limit (`correction-limit`), Caelestia leaves it in place with a small gap rather than jittering.
+- Whenever a window cannot be tiled cleanly, Caelestia displays a rate-limited toast (`Couldn't tile <App>`) explaining the exact reason.
+- **DPI-unaware windows:** `TODO(verify): confirm status of DPI-unaware window placement (ERM-512) on mixed-DPI monitors.`
+- **Administrator (elevated) windows:** Because Caelestia runs as a standard user without admin rights, Windows User Interface Privilege Isolation (UIPI) prevents Caelestia from moving or closing elevated windows (such as an Administrator PowerShell or Registry Editor). Elevated windows remain unmanaged/floating.
+
+### 4. System tray interception and native context menus
+
+On Linux, StatusNotifierItem (`SNI`) apps send icon pixmaps and semantic `dbusmenu` trees over DBus directly to the bar. On Windows, `explorer.exe` owns the notification area (`Shell_TrayWnd` / `TrayNotifyWnd`):
+
+- **Tray hook:** To show live tray icons in Caelestia's bar, the backend uses a tray hook (`QS_WINDOWS_TRAY_HOOK=1`, enabled in Live mode) to observe Explorer's tray items. When running in read-only modes with the hook disabled (`QS_WINDOWS_TRAY_HOOK=0`), the tray appears empty.
+- **Native popup menus:** Windows tray icons draw their own Win32 popup menus when clicked rather than exporting a menu structure (`hasMenu` is `true`, `menu` is `null`). Clicking or right-clicking a tray icon in Caelestia invokes the application's native context menu (`display()`) rather than Caelestia's QML `TrayMenu` popout.
+- **No scroll actions on tray icons:** Win32 tray icons do not have a standard scroll-wheel protocol, so scrolling over a tray item is a no-op.
+
+### 5. Other service differences
+
+- **Keep-awake and screen recorder (`utilities`):**
+  - Keep-awake holds `SetThreadExecutionState(ES_CONTINUOUS | ES_DISPLAY_REQUIRED | ES_SYSTEM_REQUIRED)` in a helper process that exits automatically when toggled off or when Caelestia closes, replacing Wayland's `IdleInhibitor`.
+  - The screen recorder card runs `ffmpeg -f gdigrab` (when `ffmpeg.exe` is on `PATH`) and saves fullscreen recordings to `%USERPROFILE%\Videos\Caelestia\recording_<timestamp>.mp4`. Region capture, audio capture, and pause are not supported on Windows.
+- **Audio volume cap:** Windows Core Audio scalar volume ranges from `0%` to `100%` (`0.0`–`1.0`). Setting `services.maxVolume` above `1.0` in `shell.json` will not over-amplify past 100% as PipeWire does on Linux.
+- **Brightness routes:** Uses WMI/ACPI (laptop panels), `\\.\LCD`, or DDC/CI (external monitors). If a monitor does not support DDC/CI or WMI, the brightness slider disables itself cleanly rather than silently applying a software gamma tint (software gamma dimming is off unless explicitly opted into via `CAELESTIA_WINDOWS_BRIGHTNESS_SOFTWARE=1`).
+- **Wi-Fi passwords and Bluetooth PIN pairing:** Connecting to an already-saved Wi-Fi profile or confirm-only Bluetooth device works directly from the bar popout. Connecting to a new password-protected Wi-Fi network or pairing a Bluetooth device that requires PIN entry delegates to Windows Settings (`ms-settings:network-wifi` / `ms-settings:bluetooth`) so Caelestia never handles raw credentials. Note: Windows requires **Location services** to be enabled for apps to read Wi-Fi SSIDs; if Location permission is off, the network popout reports `location-denied` and hides the SSID list.
+- **Calculator:** Uses a built-in math expression parser (arithmetic, exponents, parentheses, `pi`/`e`, and standard trig/log functions) plus a button to launch Windows Calculator, rather than Linux `libqalculate` unit conversions.
+
+---
+
+## Troubleshooting
+
+### Where logs live
+
+- **Installed shell:** Check `%LOCALAPPDATA%\caelestia-windows\logs\` (`TODO(verify): confirm exact log file naming in the production shell, e.g., caelestia.log or shell-stdout.log / shell-stderr.log`).
+- **Prototype / source builds:** Logs, JSON run summaries, and screenshots are written under `windows\.local\build\logs\` (and `windows\.local\build\shell-runs\`).
+- **Inspecting live desktop state:** Run the included read-only diagnostic script from the repo to inspect monitor work areas, DPI scaling, taskbar auto-hide flags, and running shell PIDs:
+  ```powershell
+  powershell -NoProfile -File .\windows\scripts\Get-DesktopState.ps1
+  ```
+
+### How to quit or restart Caelestia
+
+- **Restart / reload config:** Editing `shell.json` or `keybinds.json` hot-reloads automatically.
+- **Quit cleanly:**
+  - In the combined preview, close the **Caelestia Preview Control** window or click its **Exit preview** button.
+  - `TODO(verify): confirm the exact production quit/restart command or script on branch t3/production-shell (for example: Stop-Caelestia.ps1 / Restart-Caelestia.ps1 or qs ipc call).`
+  - From PowerShell, you can stop the Quickshell process at any time:
+    ```powershell
+    Stop-Process -Name qsw, qs -ErrorAction SilentlyContinue
+    ```
+
+### Restoring the taskbar, work area, or off-screen windows after a crash
+
+If `qs.exe` / `qsw.exe` is force-killed or crashes, the Windows backend is designed to self-heal on the next launch, and every change can also be reversed manually:
+
+1. **Shrunk monitor work area (stale AppBar strip on the left):**
+   - **Automatic fix:** Start Caelestia again (even briefly) and close it cleanly. On startup, the backend runs `WinAppBar::removeStale()`, which checks `HKCU\Software\Quickshell\AppBars`, removes any `SHAppBarMessage(ABM_REMOVE)` registrations left behind by dead PIDs, and restores your full monitor work area.
+   - **Manual fix:** Restart Windows Explorer (`Stop-Process -Name explorer` in PowerShell) or sign out and back in.
+2. **Missing or stuck auto-hide Windows taskbar:**
+   - **Automatic fix:** The backend tracks taskbar auto-hide ownership in `HKCU\Software\Quickshell` (`TaskbarAutoHideOwned`) and automatically releases stale auto-hide 15 seconds after startup if taskbar takeover is off.
+   - **Manual fix:** If the taskbar window (`Shell_TrayWnd`) was hidden during a crash, restore it and clear the ownership marker in PowerShell:
+     ```powershell
+     Remove-ItemProperty -Path 'HKCU:\Software\Quickshell' -Name 'TaskbarAutoHideOwned' -ErrorAction SilentlyContinue
+     Stop-Process -Name explorer
+     ```
+     Then toggle **Settings → Personalization → Taskbar → Taskbar behaviors → Automatically hide the taskbar** if auto-hide is still enabled.
+3. **Windows missing after a crash while tiling across workspaces:**
+   - When the tiler parks windows off-screen, it attaches a `QuickshellTilingParked` Win32 window property atom storing the window's original restore rectangle.
+   - **Automatic fix:** Launch Caelestia again (even with tiling in `observe` mode). `TilingManager::rescueParked()` runs automatically on construction and moves all parked windows back onto the visible monitor work area.
+4. **Dimmed screen (software gamma):**
+   - If you opted into software brightness dimming (`CAELESTIA_WINDOWS_BRIGHTNESS_SOFTWARE=1`) and the process was hard-killed, launching and cleanly quitting Caelestia (or locking/unlocking Windows with `Win+L`) restores the default gamma ramp.
+
+### Running alongside another tiler is unsupported
+
+Do **not** enable Caelestia's tiler while another tiling window manager (Komorebi, GlazeWM, FancyZones, `ksg-shell`, or another Quickshell instance) is actively tiling your desktop:
+
+- While Caelestia uses a session mutex (`tiler-mutex-held`) to block a second Quickshell tiler from starting, external tilers do not share this mutex.
+- Two active tilers will fight over `SetWindowPos` and foreground focus on every window event, causing windows to flicker, lose focus, or hit Caelestia's `off-target` / `correction-limit` guards and float.
+- Either stop your existing tiler before enabling Caelestia tiling, or keep Caelestia's tiler set to `off` if you only want Caelestia's bar, launcher, dashboard, and notifications.
+
+---
+
+## Credits and licenses
+
+- **Caelestia Shell (upstream):** Designed and written by [@soramanew](https://github.com/soramanew) and the [caelestia-dots/shell](https://github.com/caelestia-dots/shell) contributors. Licensed under the **GNU General Public License v3.0 (GPL-3.0)** — see [`LICENSE`](../../LICENSE).
+- **M3Shapes (`qt6-m3shapes`):** Material 3 Expressive shapes QML plugin by [@soramanew](https://github.com/soramanew) ([`soramanew/m3shapes`](https://github.com/soramanew/m3shapes)), pinned at `windows/deps/m3shapes`.
+- **Quickshell and Windows Quickshell backend:** Original [Quickshell](https://quickshell.outfoxxed.me) toolkit by [@outfoxxed](https://github.com/outfoxxed). Windows platform backend (`src/windows/`) developed by [@nunreasonable](https://github.com/nunreasonable) for [ii-windows](https://github.com/nunreasonable/ii-windows), with Caelestia Windows service, workspace, tiling, and input-mask adaptations in [`KldsSeeGhosts/caelestia-quickshell-windows`](https://github.com/KldsSeeGhosts/caelestia-quickshell-windows). Licensed under the **GNU Lesser General Public License v3.0 (LGPL-3.0)** — see [`windows/deps/quickshell/LICENSE`](../deps/quickshell/LICENSE).
+- **ii-windows:** Windows porting architecture and reference by [@nunreasonable](https://github.com/nunreasonable) ([`nunreasonable/ii-windows`](https://github.com/nunreasonable/ii-windows)), originally adapting [@end-4's dots-hyprland](https://github.com/end-4/dots-hyprland).
+- **Bundled fonts:**
+  - **Material Symbols Rounded** by Google — **Apache License 2.0** ([`windows/assets/material-symbols-rounded/LICENSE`](../assets/material-symbols-rounded/LICENSE)).
+  - **Rubik** by Hubert and Fischer, Meir Sadan, and Cyreal — **SIL Open Font License 1.1** ([`windows/assets/rubik/OFL.txt`](../assets/rubik/OFL.txt)).
+  - **Google Sans Flex** by Google — **SIL Open Font License 1.1** ([`assets/google-sans-flex/OFL.txt`](../../assets/google-sans-flex/OFL.txt)).
