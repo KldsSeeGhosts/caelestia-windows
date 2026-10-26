@@ -31,7 +31,10 @@ function Assert-OwnedActions([string]$Path) {
         $expected = if ($original.Count) { $original[0].Visible } else { $true }
         if ($restores[-1].RequestedVisible -ne $expected) { throw 'Restore did not request the saved visibility.' }
     }
-    $races = @($actions | Where-Object { $_.RequestedVisible -ne $_.VisibleAfter }).Count
+    $races = @($actions | Where-Object {
+        $_.Operation -in @('hide', 'restore') -and
+            $_.RequestedVisible -ne $_.VisibleAfter
+    }).Count
     return "hide calls=$($hides.Count), restore calls=$(@($actions | Where-Object Operation -eq restore).Count), immediate observations contested=$races"
 }
 function Wait-TestExit([string]$Path, [string]$Phase) {

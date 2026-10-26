@@ -46,25 +46,55 @@ namespace Caelestia.Takeover {
         public double? ShowToHideMilliseconds;
     }
     // All timestamps are supplied by the caller, allowing deterministic tests.
-    // At most five event-driven hides in two seconds, then five seconds of
-    // polling-only operation. A new fight can trigger another bounded backoff.
+    // Count only rapid same-HWND recurrences after our hides. Twelve within
+    // two seconds trigger five seconds of polling-only operation.
     public sealed class TaskbarShowPolicy {
+        sealed class WindowState {
+            public long LastHide;
+            public readonly Queue<long> Recurrences = new Queue<long>();
+        }
         readonly long frequency;
-        readonly Queue<long> shows = new Queue<long>();
+        readonly Dictionary<string, WindowState> windows = new Dictionary<string, WindowState>();
         long backoffUntil;
         public TaskbarShowPolicy(long frequency) { this.frequency = frequency; }
-        public bool AllowImmediate(long now, out bool enteredBackoff) {
+        static string Key(Bar bar) { return bar.Owner.ToString() + ":" + bar.Handle.ToString(); }
+        void Prune(long now) {
+            var expired = new List<string>();
+            foreach (var entry in windows)
+                if (now - entry.Value.LastHide >= 2 * frequency) expired.Add(entry.Key);
+            foreach (var key in expired) windows.Remove(key);
+        }
+        public bool AllowImmediate(Bar bar, long now, out bool enteredBackoff) {
             enteredBackoff = false;
             if (now < backoffUntil) return false;
-            while (shows.Count > 0 && now - shows.Peek() >= 2 * frequency) shows.Dequeue();
-            shows.Enqueue(now);
-            if (shows.Count <= 5) return true;
-            shows.Clear();
-            backoffUntil = now + 5 * frequency;
-            enteredBackoff = true;
-            return false;
+            Prune(now);
+            WindowState state;
+            if (windows.TryGetValue(Key(bar), out state)) {
+                while (state.Recurrences.Count > 0 && now - state.Recurrences.Peek() >= 2 * frequency)
+                    state.Recurrences.Dequeue();
+                long elapsed = now - state.LastHide;
+                if (elapsed >= 0 && elapsed <= frequency * 75 / 1000) {
+                    state.Recurrences.Enqueue(now);
+                    if (state.Recurrences.Count >= 12) {
+                        windows.Clear();
+                        backoffUntil = now + 5 * frequency;
+                        enteredBackoff = true;
+                        return false;
+                    }
+                }
+            }
+            return true;
         }
-        public void Reset() { shows.Clear(); backoffUntil = 0; }
+        public void RememberHide(Bar bar, long ticks) {
+            WindowState state;
+            var key = Key(bar);
+            if (!windows.TryGetValue(key, out state)) {
+                state = new WindowState();
+                windows.Add(key, state);
+            }
+            state.LastHide = ticks;
+        }
+        public void Reset() { windows.Clear(); backoffUntil = 0; }
     }
     // Hook ownership and replacement are injectable, so restart/failure and
     // disposal can be exercised without registering a real desktop hook.
@@ -106,11 +136,14 @@ namespace Caelestia.Takeover {
             var observed = Native.ObserveShow(bar, ticks);
             observed.Source = "event";
             bool enteredBackoff = false;
-            bool immediate = bar.Visible && policy.AllowImmediate(ticks, out enteredBackoff);
+            bool immediate = bar.Visible && policy.AllowImmediate(bar, ticks, out enteredBackoff);
             // Hide before disk I/O. Delayed events can describe a window
             // that is already hidden; record them without another hide.
             var hidden = immediate && bar.Visible ? hide(bar, ticks) : null;
-            if (hidden != null) hidden.Source = "event";
+            if (hidden != null) {
+                hidden.Source = "event";
+                policy.RememberHide(bar, hidden.MonotonicTicks);
+            }
             record(observed);
             if (hidden != null) record(hidden);
             if (enteredBackoff) {
@@ -505,6 +538,9 @@ namespace Caelestia.Takeover {
                 process.OutputDataReceived += delegate(object sender, DataReceivedEventArgs e) { if (e.Data != null) Append(launch.StdoutPath, e.Data); };
             if (info.RedirectStandardError)
                 process.ErrorDataReceived += delegate(object sender, DataReceivedEventArgs e) { if (e.Data != null) Append(launch.StderrPath, e.Data); };
+            // Snapshot is durable and the supervisor owns restoration before
+            // the child can register its AppBars. Retain the post-start pass.
+            if (hide) { RefreshShowHook(false); Native.Hide(true); }
             process.Start();
             child = process;
             ownedPid = child.Id;
