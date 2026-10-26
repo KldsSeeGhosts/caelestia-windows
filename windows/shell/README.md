@@ -90,10 +90,16 @@ When another shell is live, add `-ScreenIndex 1` (verify the secondary Qt screen
 index first) to limit the temporary smoke's drawers, backgrounds and reservations
 to that display. This flag requires `-Smoke`. Normal starts still use all screens.
 The repeatable `windows/scripts/Test-InstalledFrame.ps1 -QtPrefix <Qt-prefix>`
-creates a temporary install/profile, measures all four work-area deltas on the
-secondary display, verifies stable fullscreen reservations with an isolated component
-fixture, quits its children, and checks that both starting work areas, taskbar
-flags and existing shell processes are preserved.
+creates a temporary install/profile, verifies the installed smoke loaded one
+read-only drawer without changing any work area, measures the four work-area
+deltas the isolated component fixture reserves on the secondary display, keeps
+those reservations stable through its fullscreen input, quits its children, and
+checks that both starting work areas, taskbar flags and existing shell processes
+are preserved. A fresh temporary deployment plus the 15-second smoke dominates
+its runtime, so the run is bounded at 240 seconds and reports its last phase in
+`result.json`; use `-ReusePrefix` for a fixture-only rerun of an interrupted
+temporary install and `-SkipSmoke` to omit the installed runtime smoke. Neither
+option points at the live installation.
 
 Use the temporary uninstaller with `-Purge` afterward. This checks the deployed
 runtime without changing the user's profile or enabling autostart.
