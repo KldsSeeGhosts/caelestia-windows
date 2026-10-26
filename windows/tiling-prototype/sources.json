@@ -1,0 +1,13 @@
+{
+  "windows/services/tiling/Tiling.qml": "services/Tiling.qml",
+  "windows/services/tiling/TilingService.qml": "services/TilingService.qml",
+  "windows/services/tiling/NativeTilingBackend.qml": "services/NativeTilingBackend.qml",
+  "windows/services/hypr/Hypr.qml": "services/Hypr.qml",
+  "windows/services/hypr/HyprService.qml": "services/HyprService.qml",
+  "windows/services/hypr/NativeHyprBackend.qml": "services/NativeHyprBackend.qml",
+  "windows/tiling-prototype/adapters/services/Notifs.qml": "services/Notifs.qml",
+  "windows/tiling-prototype/components/ToastsHost.qml": "components/ToastsHost.qml",
+  "modules/utilities/toasts/Toasts.qml": "modules/utilities/toasts/Toasts.qml",
+  "modules/utilities/toasts/ToastItem.qml": "modules/utilities/toasts/ToastItem.qml",
+  "components/effects/Elevation.qml": "components/effects/Elevation.qml"
+}

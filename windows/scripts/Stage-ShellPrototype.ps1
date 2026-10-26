@@ -5,7 +5,7 @@ param(
     # 'shell' is the M1 bar/session host. Every other value names one bounded
     # slice under windows/<name>-prototype with its own shell.qml and
     # sources.json manifest. One slice per stage.
-    [ValidateSet('shell', 'audio', 'battery', 'media', 'network', 'bluetooth', 'apps', 'tray', 'hypr')]
+    [ValidateSet('shell', 'audio', 'battery', 'media', 'network', 'bluetooth', 'apps', 'tray', 'hypr', 'tiling')]
     [string]$Prototype = 'shell'
 )
 
@@ -40,6 +40,13 @@ if ($Prototype -eq 'hypr') {
     $files.Remove('windows/shell-prototype/adapters/services/Hypr.qml')
     $files.Remove('windows/shell-prototype/adapters/modules/bar/components/workspaces/Workspaces.qml')
     $files.Remove('windows/shell-prototype/adapters/modules/bar/components/ActiveWindow.qml')
+}
+if ($Prototype -eq 'tiling') {
+    # The base manifest stages the contract-only Hypr adapter. This slice
+    # stages the real Hypr facade (failure records resolve window names when
+    # Hypr observation is separately opted in) plus the tiling service and
+    # the original toast surface with its Notifs adapter.
+    $files.Remove('windows/shell-prototype/adapters/services/Hypr.qml')
 }
 if ($Prototype -ne 'shell') {
     $sliceManifest = Get-Content -LiteralPath (Join-Path $repoRoot "windows\$Prototype-prototype\sources.json") -Raw | ConvertFrom-Json

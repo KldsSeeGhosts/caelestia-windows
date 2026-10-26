@@ -16,6 +16,10 @@ param(
     [ValidateSet('Disabled', 'ReadOnly', 'Interactive')][string]$NetworkMode = 'Disabled',
     [switch]$Hypr,
     [ValidateSet('Disabled', 'Observe', 'Dispatch')][string]$HyprMode = 'Disabled',
+    [switch]$Tiling,
+    [ValidateSet('Disabled', 'Observe', 'Interactive')][string]$TilingMode = 'Disabled',
+    [string]$TilingIncluded = '',
+    [string]$TilingExcluded = '',
     [switch]$Bluetooth,
     [ValidateSet('Disabled', 'ReadOnly', 'Interactive')][string]$BluetoothMode = 'Disabled',
     [switch]$Apps,
@@ -49,6 +53,7 @@ $slices = [ordered]@{
     bluetooth = @{ On = $Bluetooth; Mode = $BluetoothMode; Observe = 'CAELESTIA_WINDOWS_BLUETOOTH'; Controls = 'CAELESTIA_WINDOWS_BLUETOOTH_CONTROLS'; ControlMode = 'Interactive' }
     apps      = @{ On = $Apps; Mode = $AppsMode; Observe = 'CAELESTIA_WINDOWS_APPS'; Controls = 'CAELESTIA_WINDOWS_APP_LAUNCH'; ControlMode = 'Interactive' }
     tray      = @{ On = $Tray; Mode = $TrayMode; Observe = 'CAELESTIA_WINDOWS_TRAY'; Controls = 'CAELESTIA_WINDOWS_TRAY_ACTIVATION'; ControlMode = 'Interactive' }
+    tiling    = @{ On = $Tiling; Mode = $TilingMode; Custom = $true }
     session   = @{ On = $Session; Mode = $SessionMode; Observe = 'CAELESTIA_WINDOWS_SESSION'; Controls = 'CAELESTIA_WINDOWS_SESSION_ACTIONS'; ControlSwitch = $SessionActions; Stage = 'shell'; Marker = 'CAELESTIA_SHELL' }
 }
 $selected = @($slices.Keys | Where-Object { $slices[$_].On })
@@ -59,6 +64,7 @@ foreach ($name in $slices.Keys) {
 }
 if ($selected.Count -gt 0 -and $MonitorCycle) { throw 'Only the M1 shell prototype implements monitor cycling.' }
 if (-not $Apps -and $AppsSearchQuery) { throw '-AppsSearchQuery requires -Apps.' }
+if (-not $Tiling -and ($TilingIncluded -or $TilingExcluded)) { throw '-TilingIncluded/-TilingExcluded require -Tiling.' }
 # The fixture preview must never run with native observation or activation.
 if ($TrayFixture -and (-not $Tray -or -not $Smoke -or $TrayMode -ne 'Disabled')) {
     throw '-TrayFixture requires -Tray -TrayMode Disabled -Smoke.'
@@ -190,6 +196,7 @@ if ($Tray) {
 # control mode (or switch) and are always off during smoke.
 foreach ($name in $slices.Keys) {
     $slice = $slices[$name]
+    if ($slice.Custom) { continue }
     $observe = $slice.On -and $slice.Mode -ne 'Disabled'
     $controls = $false
     if ($slice.Controls) {
@@ -201,6 +208,19 @@ foreach ($name in $slices.Keys) {
     $info.EnvironmentVariables[$slice.Observe] = $(if ($observe) { '1' } else { '0' })
     if ($slice.Controls) { $info.EnvironmentVariables[$slice.Controls] = $(if ($controls) { '1' } else { '0' }) }
 }
+# Tiling takes a mode word rather than two flags, so its opt-ins are written
+# explicitly instead of through the generic loop: off|observe|interactive,
+# and smoke always forces Interactive down to observe before the child can
+# construct anything. The allowlist/denylist are written explicitly too, so
+# an inherited value can never widen a run.
+$tilingEnvMode = 'off'
+if ($Tiling -and $TilingMode -ne 'Disabled') {
+    $tilingEnvMode = $TilingMode.ToLowerInvariant()
+    if ($tilingEnvMode -eq 'interactive' -and $Smoke) { $tilingEnvMode = 'observe' }
+}
+$info.EnvironmentVariables['CAELESTIA_WINDOWS_TILING'] = $tilingEnvMode
+$info.EnvironmentVariables['CAELESTIA_WINDOWS_TILING_INCLUDED'] = $(if ($Tiling) { $TilingIncluded } else { '' })
+$info.EnvironmentVariables['CAELESTIA_WINDOWS_TILING_EXCLUDED'] = $(if ($Tiling) { $TilingExcluded } else { '' })
 # Battery observation stays read-only; Profiles adds read-only PowerProfiles
 # observation, and ProfileWrites (the battery control mode above) additionally
 # permits explicit profile selection outside smoke.
@@ -275,6 +295,9 @@ $result = [ordered]@{
     passed = $(if ($Smoke) { $passed } else { $null }); smoke = $Smoke.IsPresent
     prototype = $kind; audioMode = $AudioMode; batteryMode = $BatteryMode; mediaMode = $MediaMode; networkMode = $NetworkMode
     hyprMode = $HyprMode
+    tilingMode = $TilingMode; tilingEnvMode = $tilingEnvMode
+    tilingIncluded = $(if ($Tiling) { $TilingIncluded } else { '' })
+    tilingExcluded = $(if ($Tiling) { $TilingExcluded } else { '' })
     bluetoothMode = $BluetoothMode; appsMode = $AppsMode; appsSearchQuery = $(if ($Apps) { $AppsSearchQuery } else { '' })
     trayMode = $TrayMode; trayFixture = $TrayFixture.IsPresent
     trayHookMode = $(if ($Tray) { $info.EnvironmentVariables['QS_WINDOWS_TRAY_HOOK'] } else { $null })
