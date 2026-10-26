@@ -242,7 +242,7 @@ ShellRoot {
         id: win
 
         screen: root.selectedScreen
-        visible: root.selectedScreen !== null
+        visible: root.selectedScreen !== null && root.shellShown
         interactionEnabled: !root.smoke
         anchors.right: false
         anchors.bottom: false
@@ -250,14 +250,142 @@ ShellRoot {
         implicitHeight: root.previewHeight
         margins.left: root.inset
         margins.top: root.inset
+    }
+
+    // The shell window is frameless and stays above other windows, so an
+    // ordinary window carries the preview's controls: it has a taskbar entry,
+    // moves, and closing it ends the preview.
+    property bool shellShown: true
+
+    LazyLoader {
+        active: !root.smoke
+
+        FloatingWindow {
+            title: "Caelestia preview"
+            implicitWidth: 360
+            implicitHeight: controls.implicitHeight + 40
+            color: Colours.palette.m3surface
+            onClosed: Qt.quit()
+
+            Column {
+                id: controls
+
+                x: 20
+                y: 20
+                width: parent.width - 40
+                spacing: 16
+
+                StyledText {
+                    text: "Caelestia preview"
+                    font: Tokens.font.title.medium
+                    color: Colours.palette.m3onSurface
+                }
+
+                StyledText {
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                    text: "Look around freely. Everything is read-only, so nothing on this PC changes."
+                    color: Colours.palette.m3onSurfaceVariant
+                }
+
+                Column {
+                    spacing: 8
+
+                    Repeater {
+                        model: [
+                            { icon: "west", text: "Left edge opens the bar" },
+                            { icon: "ads_click", text: "Bar icons open their details" },
+                            { icon: "south", text: "Bottom edge opens the launcher" },
+                            { icon: "north", text: "Top edge opens media" }
+                        ]
+
+                        Row {
+                            required property var modelData
+
+                            spacing: 10
+
+                            MaterialIcon {
+                                text: parent.modelData.icon
+                                color: Colours.palette.m3primary
+                            }
+
+                            StyledText {
+                                text: parent.modelData.text
+                                color: Colours.palette.m3onSurface
+                            }
+                        }
+                    }
+                }
+
+                Row {
+                    spacing: 8
+                    visible: Quickshell.screens.length > 1
+
+                    StyledText {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: "Show on"
+                        color: Colours.palette.m3onSurfaceVariant
+                    }
+
+                    Repeater {
+                        model: Quickshell.screens.length
+
+                        PreviewButton {
+                            required property int index
+
+                            text: `Screen ${index + 1}`
+                            selected: root.screenIndex === index
+                            onActivated: root.screenIndex = index
+                        }
+                    }
+                }
+
+                Row {
+                    spacing: 8
+
+                    PreviewButton {
+                        text: root.shellShown ? "Hide shell" : "Show shell"
+                        onActivated: root.shellShown = !root.shellShown
+                    }
+
+                    PreviewButton {
+                        text: "Close preview"
+                        primary: true
+                        onActivated: Qt.quit()
+                    }
+                }
+            }
+        }
+    }
+
+    component PreviewButton: StyledRect {
+        id: button
+
+        property alias text: label.text
+        property bool primary
+        property bool selected
+
+        signal activated
+
+        implicitWidth: label.implicitWidth + 28
+        implicitHeight: label.implicitHeight + 16
+        radius: Tokens.rounding.full
+        color: primary ? Colours.palette.m3primary
+            : selected ? Colours.palette.m3secondaryContainer
+            : Colours.palette.m3surfaceContainerHigh
+
+        StateLayer {
+            color: button.primary ? Colours.palette.m3onPrimary : Colours.palette.m3onSurface
+            onClicked: button.activated()
+        }
 
         StyledText {
-            x: 130
-            y: 80
-            width: Math.max(200, root.previewWidth - 300)
-            wrapMode: Text.WordWrap
-            text: "Caelestia for Windows, combined prototype\n\nThe original bar with status icons, tray and popouts, the session drawer, OSD, notification list, apps launcher and the media dashboard panel, on the reviewed Windows services.\nHover the left edge for the bar; hover an icon for its popout; hover the bottom edge for the launcher and the top edge for the media panel.\n\nEvery service is read-only. Controls, app launches, session actions, notification mirroring and tiling are unavailable in this isolated profile."
-            color: Colours.palette.m3onSurfaceVariant
+            id: label
+
+            anchors.centerIn: parent
+            color: button.primary ? Colours.palette.m3onPrimary
+                : button.selected ? Colours.palette.m3onSecondaryContainer
+                : Colours.palette.m3onSurface
         }
     }
 

@@ -65,7 +65,9 @@ Item {
         sourceComponent: Item {
             id: panel
 
-            implicitWidth: search.width
+            // Sized from the list as upstream Content.qml does; the search bar
+            // fills the panel, so it cannot size it.
+            implicitWidth: listWrapper.width + Tokens.padding.large * 2
             implicitHeight: listWrapper.height + search.implicitHeight + Tokens.padding.large
 
             Item {
@@ -82,7 +84,7 @@ Item {
                     id: list
 
                     objectName: "combinedLauncherAppList"
-                    width: panel.width
+                    width: Tokens.sizes.launcher.itemWidth
                     height: Math.min(root.maxHeight - search.implicitHeight - Tokens.padding.large * 3, implicitHeight)
                     search: search
                     screenState: root.screenState
