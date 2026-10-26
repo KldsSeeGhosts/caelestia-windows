@@ -290,18 +290,30 @@ try {
     } 10 'The frame fixture did not answer IPC.'
     $expected = $script:fixtureExpected
     Assert ($null -ne $expected -and $expected.screen) 'The frame fixture reported no screen.'
+    Assert (-not $expected.reservations) 'The frame fixture reserved a work area before validation.'
     if ($smokeScreen) {
         Assert ($expected.screen -eq $smokeScreen) `
             "The fixture selected '$($expected.screen)' but the smoke measured '$smokeScreen'."
     }
     $target = @($before.monitors | Where-Object deviceName -eq $expected.screen)
     Assert ($target.Count -eq 1) "The fixture screen '$($expected.screen)' is not a monitor."
+    # The fixture starts with its exclusions inactive. Refuse to reserve (or let
+    # an application be moved by a temporary work-area change) on the primary
+    # display, including with -SkipSmoke, where there is no smoke screen to
+    # cross-check against.
     Assert (-not $target[0].primary) 'The frame fixture must reserve a secondary monitor only.'
+    $idle = Snapshot 'fixture-idle'
+    Assert ((WorkIdentity $idle) -eq (WorkIdentity $before)) `
+        'The frame fixture changed a work area before its reservations were enabled.'
     $summary.fixtureScreen = $expected.screen
     $summary.expected = [ordered]@{
         left = $expected.left; top = $expected.top; right = $expected.right; bottom = $expected.bottom
         dpr = $expected.dpr; barZone = $expected.barZone; borderZone = $expected.borderZone
     }
+
+    $reserve = Invoke-QsIpc @('ipc', '--pid', "$($fixture.Id)", 'call', 'frameTest', 'setReservations', 'true') 4000
+    Assert ($reserve.exitCode -eq 0) "Could not enable the fixture reservations: $($reserve.stderr)"
+    Set-Phase 'fixture-validated'
 
     $delta = $null
     Wait-Condition {

@@ -112,12 +112,15 @@ index first) to limit the temporary smoke's drawers, backgrounds and reservation
 to that display. This flag requires `-Smoke`. Normal starts still use all screens.
 The repeatable `windows/scripts/Test-InstalledFrame.ps1 -QtPrefix <Qt-prefix>`
 creates a temporary install/profile, verifies the installed smoke loaded one
-read-only drawer without changing any work area, measures the four work-area
-deltas the isolated component fixture reserves on the secondary display, keeps
-those reservations stable through its fullscreen input, quits its children, and
-checks that both starting work areas, taskbar flags and existing shell processes
-are preserved. A fresh temporary deployment plus the 15-second smoke dominates
-its runtime, so the run is bounded at 240 seconds and reports its last phase in
+read-only drawer without changing any work area, then starts the isolated
+component fixture with its exclusions inactive. It validates the reported screen
+over IPC (the secondary monitor, and the same screen as the smoke when that ran)
+before enabling the four reservations, so a wrong `-ScreenIndex` cannot move
+application windows. It measures the physical work-area deltas, keeps those
+reservations stable through its fullscreen input, quits its children, and checks
+that both starting work areas, taskbar flags and existing shell processes are
+preserved. A fresh temporary deployment plus the 15-second smoke dominates its
+runtime, so the run is bounded at 240 seconds and reports its last phase in
 `result.json`; use `-ReusePrefix` for a fixture-only rerun of an interrupted
 temporary install and `-SkipSmoke` to omit the installed runtime smoke. Neither
 option points at the live installation.

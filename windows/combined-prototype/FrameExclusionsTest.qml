@@ -8,9 +8,13 @@ import qs.modules.drawers
 // fullscreen application that would also affect the user's live shell. The
 // zones are fixed so the runner can compare the native work area against the
 // expected reservation instead of the user's profile configuration.
+// Reservations start inactive: the runner validates the selected screen over
+// IPC first, so a wrong screen index cannot change a work area (and move
+// application windows) before the isolation check has passed.
 ShellRoot {
     id: root
     property bool appFullscreen: false
+    property bool reservations: false
     readonly property int barZone: 60
     readonly property int borderZone: 3
     readonly property var selectedScreen:
@@ -21,12 +25,14 @@ ShellRoot {
         screen: root.selectedScreen
         zone: root.barZone
         borderZone: root.borderZone
+        active: root.reservations
         fullscreen: root.appFullscreen
     }
 
     IpcHandler {
         target: "frameTest"
         function setFullscreen(on: bool): void { root.appFullscreen = on; }
+        function setReservations(on: bool): void { root.reservations = on; }
         // Report the reservation this fixture asks for. The runner compares it
         // with the measured physical work area; the DPI scaling must use the
         // same rounding as the backend, which rounds half away from zero.
@@ -35,6 +41,7 @@ ShellRoot {
             return JSON.stringify({
                 screen: root.selectedScreen ? root.selectedScreen.name : "",
                 dpr: dpr,
+                reservations: root.reservations,
                 barZone: root.barZone,
                 borderZone: root.borderZone,
                 left: Math.round(root.barZone * dpr),
