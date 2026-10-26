@@ -1,0 +1,14 @@
+﻿2026-10-26 01:52:23.191  INFO: Launching config: "C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-ef58734c/windows/.local/tiling-config-smoke/20261026-015222-653/stage/config-smoke.qml"
+2026-10-26 01:52:23.198  INFO: Shell ID: "5c34620eb40c894cb4d216c2d5e1cf4d" Path ID "5c34620eb40c894cb4d216c2d5e1cf4d"
+2026-10-26 01:52:23.220  INFO: Saving logs to "C:/Users/Ermin/AppData/Local/quickshell/run/by-id/8gxbz2int/log.qslog"
+2026-10-26 01:52:23.249  INFO: Configuration Loaded
+2026-10-26 01:52:23.854  INFO qml: CAELESTIA_TILING_BACKEND_READY supportsIncluded=1 supportsTelemetry=1
+2026-10-26 01:52:23.854 DEBUG quickshell.windows.tiling: Tiling allowlist changed to QList("exe:fixture.exe") ; re-evaluating window membership.
+2026-10-26 01:52:23.854  INFO qml: CAELESTIA_TILING_OPTIONS gapsIn=10 gapsOut=10
+2026-10-26 01:52:23.854 DEBUG qml: CAELESTIA_TILING_CONFIG tiling=observe gapsIn=10 gapsOut=10 status=observing
+2026-10-26 01:52:23.922 DEBUG quickshell.windows.tiling: Tiling allowlist changed to QList("class:FixtureClass") ; re-evaluating window membership.
+2026-10-26 01:52:23.922  INFO qml: CAELESTIA_TILING_OPTIONS gapsIn=12 gapsOut=14
+2026-10-26 01:52:23.922 DEBUG qml: CAELESTIA_TILING_CONFIG tiling=observe gapsIn=12 gapsOut=14 status=observing
+2026-10-26 01:52:24.510 DEBUG qml: CAELESTIA_TILING_CONFIG tiling=off gapsIn=10 gapsOut=10 status=disabled
+2026-10-26 01:52:25.050 DEBUG qml: CAELESTIA_TILING_CONFIG_SMOKE_PASS
+

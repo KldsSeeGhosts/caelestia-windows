@@ -1,0 +1,325 @@
+﻿{
+    "passed":  true,
+    "implementationRevision":  "8e1af8df9a1960353d5102850b408b39c7fb01e6",
+    "sourceNote":  "Runs began on 4697ffa8 with implementation edits; all 221 final combined staged source hashes match implementation commit 8e1af8df. No staged sources/manifests archived.",
+    "verifiedCombinedSourceCount":  221,
+    "sourceHashMismatches":  [
+
+                             ],
+    "backendRevision":  "6a17ae6019d6606cc2d3e8178623bfe53b227515",
+    "backendPublished":  false,
+    "combinedDefault":  {
+                            "passed":  true,
+                            "smoke":  true,
+                            "prototype":  "combined",
+                            "combined":  true,
+                            "live":  false,
+                            "audioMode":  "Disabled",
+                            "batteryMode":  "Disabled",
+                            "mediaMode":  "Disabled",
+                            "brightnessMode":  "Disabled",
+                            "networkMode":  "Disabled",
+                            "hyprMode":  "Disabled",
+                            "tilingMode":  "Disabled",
+                            "tilingEnvMode":  null,
+                            "tilingIncluded":  "",
+                            "tilingExcluded":  "",
+                            "bluetoothMode":  "Disabled",
+                            "appsMode":  "Disabled",
+                            "appsSearchQuery":  "",
+                            "trayMode":  "Disabled",
+                            "trayFixture":  false,
+                            "trayHookMode":  null,
+                            "sessionMode":  "Disabled",
+                            "sessionActions":  false,
+                            "notificationsMode":  "Disabled",
+                            "notificationsMirror":  false,
+                            "notificationsDismiss":  false,
+                            "notificationsAppOpen":  false,
+                            "mirrorSuppressedBySmoke":  false,
+                            "timedOut":  false,
+                            "exitCode":  0,
+                            "scaleFactor":  "native",
+                            "screenIndex":  0,
+                            "monitorCycle":  false,
+                            "traceInput":  false,
+                            "actualScreens":  [
+                                                  {
+                                                      "index":  0,
+                                                      "name":  "MAG321UX OLED",
+                                                      "x":  0,
+                                                      "y":  0,
+                                                      "dpr":  1.5
+                                                  }
+                                              ],
+                            "captures":  [
+                                             "file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-ef58734c/windows/.local/build/logs/combined-20261026-014929-759-session.png",
+                                             "file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-ef58734c/windows/.local/build/logs/combined-20261026-014929-759-popout-audio.png",
+                                             "file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-ef58734c/windows/.local/build/logs/combined-20261026-014929-759-popout-network.png",
+                                             "file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-ef58734c/windows/.local/build/logs/combined-20261026-014929-759-popout-bluetooth.png",
+                                             "file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-ef58734c/windows/.local/build/logs/combined-20261026-014929-759-popout-battery.png",
+                                             "file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-ef58734c/windows/.local/build/logs/combined-20261026-014929-759-osd.png",
+                                             "file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-ef58734c/windows/.local/build/logs/combined-20261026-014929-759-launcher.png",
+                                             "file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-ef58734c/windows/.local/build/logs/combined-20261026-014929-759-dashboard.png",
+                                             "file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-ef58734c/windows/.local/build/logs/combined-20261026-014929-759-dashboard-dash.png",
+                                             "file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-ef58734c/windows/.local/build/logs/combined-20261026-014929-759-dashboard-performance.png",
+                                             "file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-ef58734c/windows/.local/build/logs/combined-20261026-014929-759-dashboard-weather.png",
+                                             "file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-ef58734c/windows/.local/build/logs/combined-20261026-014929-759-utilities.png",
+                                             "file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-ef58734c/windows/.local/build/logs/combined-20261026-014929-759-notification.png",
+                                             "file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-ef58734c/windows/.local/build/logs/combined-20261026-014929-759-sidebar.png",
+                                             "file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-ef58734c/windows/.local/build/logs/combined-20261026-014929-759-notification.png",
+                                             "file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-ef58734c/windows/.local/build/logs/combined-20261026-014929-759.png"
+                                         ],
+                            "elapsedMilliseconds":  40266,
+                            "sourceRevision":  "4697ffa858fb099cc2edd96c86ce2479670f33b3",
+                            "sourceDirty":  true,
+                            "backendRevision":  "6a17ae6019d6606cc2d3e8178623bfe53b227515",
+                            "buildRecordSha256":  "FEB3C29629C78FBD5C7094140D7768021F8B820B8DFA70E26C5F0D8DB8E09992",
+                            "configSha256":  "0F6C1C1ABADBA3E5CA40FBD36C9AD929241043C7B0EDA7BE77CEE0F407F78928",
+                            "command":  "C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-ef58734c\\windows\\.local\\build\\quickshell\\qs.exe",
+                            "arguments":  "--no-color --log-times --path \"C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-ef58734c\\windows\\.local\\build\\shell-runs\\combined-20261026-014929-759\\shell.qml\"",
+                            "executableSha256":  "83667DD0C40566FB8889367CB0A89228D4BD8399C9BFDFE98B2F2D7E0577933F",
+                            "stage":  "C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-ef58734c\\windows\\.local\\build\\shell-runs\\combined-20261026-014929-759",
+                            "profile":  "C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-ef58734c\\windows\\.local\\build\\combined-prototype-profile",
+                            "sources":  "C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-ef58734c\\windows\\.local\\build\\logs\\combined-20261026-014929-759.sources.json",
+                            "screenshot":  "C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-ef58734c\\windows\\.local\\build\\logs\\combined-20261026-014929-759.png",
+                            "stdout":  "C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-ef58734c\\windows\\.local\\build\\logs\\combined-20261026-014929-759.stdout.log",
+                            "stderr":  "C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-ef58734c\\windows\\.local\\build\\logs\\combined-20261026-014929-759.stderr.log",
+                            "audioSnapshots":  [
+
+                                               ],
+                            "batterySnapshots":  [
+
+                                                 ],
+                            "mediaSnapshots":  [
+
+                                               ],
+                            "brightnessSnapshots":  [
+
+                                                    ],
+                            "networkSnapshots":  [
+
+                                                 ],
+                            "hyprSnapshots":  [
+
+                                              ],
+                            "bluetoothSnapshots":  [
+
+                                                   ],
+                            "appsSnapshots":  [
+
+                                              ],
+                            "traySnapshots":  [
+
+                                              ],
+                            "tilingSnapshots":  [
+
+                                                ],
+                            "sessionSnapshots":  [
+
+                                                 ],
+                            "notificationsSnapshots":  [
+
+                                                       ],
+                            "appsSearches":  [
+
+                                             ],
+                            "sessionButtons":  [
+
+                                               ]
+                        },
+    "combinedObserve":  {
+                            "passed":  true,
+                            "smoke":  true,
+                            "prototype":  "combined",
+                            "combined":  true,
+                            "live":  false,
+                            "audioMode":  "Disabled",
+                            "batteryMode":  "Disabled",
+                            "mediaMode":  "Disabled",
+                            "brightnessMode":  "Disabled",
+                            "networkMode":  "Disabled",
+                            "hyprMode":  "Disabled",
+                            "tilingMode":  "Disabled",
+                            "tilingEnvMode":  null,
+                            "tilingIncluded":  "",
+                            "tilingExcluded":  "",
+                            "bluetoothMode":  "Disabled",
+                            "appsMode":  "Disabled",
+                            "appsSearchQuery":  "",
+                            "trayMode":  "Disabled",
+                            "trayFixture":  false,
+                            "trayHookMode":  null,
+                            "sessionMode":  "Disabled",
+                            "sessionActions":  false,
+                            "notificationsMode":  "Disabled",
+                            "notificationsMirror":  false,
+                            "notificationsDismiss":  false,
+                            "notificationsAppOpen":  false,
+                            "mirrorSuppressedBySmoke":  false,
+                            "timedOut":  false,
+                            "exitCode":  0,
+                            "scaleFactor":  "native",
+                            "screenIndex":  0,
+                            "monitorCycle":  false,
+                            "traceInput":  false,
+                            "actualScreens":  [
+                                                  {
+                                                      "index":  0,
+                                                      "name":  "MAG321UX OLED",
+                                                      "x":  0,
+                                                      "y":  0,
+                                                      "dpr":  1.5
+                                                  }
+                                              ],
+                            "captures":  [
+                                             "file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-ef58734c/windows/.local/build/logs/combined-20261026-015235-924-session.png",
+                                             "file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-ef58734c/windows/.local/build/logs/combined-20261026-015235-924-popout-audio.png",
+                                             "file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-ef58734c/windows/.local/build/logs/combined-20261026-015235-924-popout-network.png",
+                                             "file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-ef58734c/windows/.local/build/logs/combined-20261026-015235-924-popout-bluetooth.png",
+                                             "file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-ef58734c/windows/.local/build/logs/combined-20261026-015235-924-popout-battery.png",
+                                             "file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-ef58734c/windows/.local/build/logs/combined-20261026-015235-924-osd.png",
+                                             "file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-ef58734c/windows/.local/build/logs/combined-20261026-015235-924-launcher.png",
+                                             "file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-ef58734c/windows/.local/build/logs/combined-20261026-015235-924-dashboard.png",
+                                             "file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-ef58734c/windows/.local/build/logs/combined-20261026-015235-924-dashboard-dash.png",
+                                             "file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-ef58734c/windows/.local/build/logs/combined-20261026-015235-924-dashboard-performance.png",
+                                             "file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-ef58734c/windows/.local/build/logs/combined-20261026-015235-924-dashboard-weather.png",
+                                             "file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-ef58734c/windows/.local/build/logs/combined-20261026-015235-924-utilities.png",
+                                             "file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-ef58734c/windows/.local/build/logs/combined-20261026-015235-924-notification.png",
+                                             "file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-ef58734c/windows/.local/build/logs/combined-20261026-015235-924-sidebar.png",
+                                             "file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-ef58734c/windows/.local/build/logs/combined-20261026-015235-924-notification.png",
+                                             "file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-ef58734c/windows/.local/build/logs/combined-20261026-015235-924.png"
+                                         ],
+                            "elapsedMilliseconds":  32284,
+                            "sourceRevision":  "4697ffa858fb099cc2edd96c86ce2479670f33b3",
+                            "sourceDirty":  true,
+                            "backendRevision":  "6a17ae6019d6606cc2d3e8178623bfe53b227515",
+                            "buildRecordSha256":  "FEB3C29629C78FBD5C7094140D7768021F8B820B8DFA70E26C5F0D8DB8E09992",
+                            "configSha256":  "3E096A4AE21E54784AA06CD494B1C3C8A67C166381FA507E832F8EB0A11C1FC0",
+                            "command":  "C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-ef58734c\\windows\\.local\\build\\quickshell\\qs.exe",
+                            "arguments":  "--no-color --log-times --path \"C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-ef58734c\\windows\\.local\\build\\shell-runs\\combined-20261026-015235-924\\shell.qml\"",
+                            "executableSha256":  "83667DD0C40566FB8889367CB0A89228D4BD8399C9BFDFE98B2F2D7E0577933F",
+                            "stage":  "C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-ef58734c\\windows\\.local\\build\\shell-runs\\combined-20261026-015235-924",
+                            "profile":  "C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-ef58734c\\windows\\.local\\build\\combined-prototype-profile",
+                            "sources":  "C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-ef58734c\\windows\\.local\\build\\logs\\combined-20261026-015235-924.sources.json",
+                            "screenshot":  "C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-ef58734c\\windows\\.local\\build\\logs\\combined-20261026-015235-924.png",
+                            "stdout":  "C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-ef58734c\\windows\\.local\\build\\logs\\combined-20261026-015235-924.stdout.log",
+                            "stderr":  "C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-ef58734c\\windows\\.local\\build\\logs\\combined-20261026-015235-924.stderr.log",
+                            "audioSnapshots":  [
+
+                                               ],
+                            "batterySnapshots":  [
+
+                                                 ],
+                            "mediaSnapshots":  [
+
+                                               ],
+                            "brightnessSnapshots":  [
+
+                                                    ],
+                            "networkSnapshots":  [
+
+                                                 ],
+                            "hyprSnapshots":  [
+
+                                              ],
+                            "bluetoothSnapshots":  [
+
+                                                   ],
+                            "appsSnapshots":  [
+
+                                              ],
+                            "traySnapshots":  [
+
+                                              ],
+                            "tilingSnapshots":  [
+
+                                                ],
+                            "sessionSnapshots":  [
+
+                                                 ],
+                            "notificationsSnapshots":  [
+
+                                                       ],
+                            "appsSearches":  [
+
+                                             ],
+                            "sessionButtons":  [
+
+                                               ]
+                        },
+    "profileReload":  {
+                          "passed":  true,
+                          "timedOut":  false,
+                          "exitCode":  0,
+                          "sourceRevision":  "4697ffa858fb099cc2edd96c86ce2479670f33b3",
+                          "sourceDirty":  true,
+                          "backendRevision":  "6a17ae6019d6606cc2d3e8178623bfe53b227515",
+                          "executableSha256":  "83667DD0C40566FB8889367CB0A89228D4BD8399C9BFDFE98B2F2D7E0577933F",
+                          "qtVersion":  "6.11.2",
+                          "command":  "C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-ef58734c\\windows\\.local\\build\\quickshell\\qs.exe",
+                          "arguments":  "--no-color --log-times --path \"C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-ef58734c\\windows\\.local\\tiling-config-smoke\\20261026-015222-653\\stage\\config-smoke.qml\"",
+                          "stage":  "C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-ef58734c\\windows\\.local\\tiling-config-smoke\\20261026-015222-653\\stage",
+                          "profile":  "C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-ef58734c\\windows\\.local\\tiling-config-smoke\\20261026-015222-653\\profile",
+                          "stdout":  "C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-ef58734c\\windows\\.local\\tiling-config-smoke\\20261026-015222-653\\stdout.log",
+                          "stderr":  "C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-ef58734c\\windows\\.local\\tiling-config-smoke\\20261026-015222-653\\stderr.log"
+                      },
+    "qmlFixture":  {
+                       "passed":  true,
+                       "timedOut":  false,
+                       "exitCode":  0,
+                       "fixture":  {
+                                       "assertions":  180
+                                   },
+                       "nativeImports":  0,
+                       "hashMismatch":  [
+
+                                        ],
+                       "diagnostics":  [
+
+                                       ],
+                       "sourceRevision":  "4697ffa858fb099cc2edd96c86ce2479670f33b3",
+                       "sourceDirty":  true,
+                       "qtVersion":  "6.11.2",
+                       "runnerSha256":  "24994D434962751713F0C8932B356104B0849572B95765DAD50C13DA6BE3FA20",
+                       "command":  "C:\\Users\\Ermin\\AppData\\Local\\caelestia-dev\\Qt\\6.11.2\\msvc2022_64\\bin\\qml.exe",
+                       "arguments":  "\"C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-ef58734c\\windows\\.local\\build\\tiling-tests\\tiling-fixture-20261026-015851-694\\TilingServiceTest.qml\"",
+                       "sources":  [
+                                       {
+                                           "source":  "windows/services/tiling/TilingService.qml",
+                                           "sourceSha256":  "A3FDC54A92315D30E28CB9CBEF1EB1204C15DCE2C2CFD31D9C8F06FBC752579F",
+                                           "stagedSha256":  "A3FDC54A92315D30E28CB9CBEF1EB1204C15DCE2C2CFD31D9C8F06FBC752579F"
+                                       },
+                                       {
+                                           "source":  "windows/services/tiling/TilingServiceTest.qml",
+                                           "sourceSha256":  "3F586E3FD8089BF51DE057B51D9FD8CBC6DE6575BCCBE30464C4BC7D7505B8F7",
+                                           "stagedSha256":  "3F586E3FD8089BF51DE057B51D9FD8CBC6DE6575BCCBE30464C4BC7D7505B8F7"
+                                       }
+                                   ],
+                       "stage":  "C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-ef58734c\\windows\\.local\\build\\tiling-tests\\tiling-fixture-20261026-015851-694",
+                       "stdout":  "C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-ef58734c\\windows\\.local\\build\\logs\\tiling-fixture-20261026-015851-694.stdout.log",
+                       "stderr":  "C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-ef58734c\\windows\\.local\\build\\logs\\tiling-fixture-20261026-015851-694.stderr.log"
+                   },
+    "nativePolicyTests":  {
+                              "passed":  28,
+                              "failed":  0
+                          },
+    "importer":  {
+                     "passed":  true,
+                     "scope":  "file-only importer smoke",
+                     "checks":  [
+                                    "dry-run",
+                                    "false values",
+                                    "id-based list merge",
+                                    "unknown data preservation",
+                                    "source value filtering",
+                                    "tiling report",
+                                    "overwrite refusal",
+                                    "byte-identical backup",
+                                    "idempotence",
+                                    "source protection"
+                                ]
+                 },
+    "interactiveNativeTested":  false,
+    "existingKsgProcessId":  24108
+}

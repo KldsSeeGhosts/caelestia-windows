@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "implementationRevision": "8e1af8df9a1960353d5102850b408b39c7fb01e6",
+  "checks": [
+    {"name": "combined-default", "passed": true, "nativeMode": "off"},
+    {"name": "combined-profile-observe", "passed": true, "nativeMode": "observe", "gapsIn": 10, "gapsOut": 10},
+    {"name": "profile-reload", "passed": true, "nativeModes": ["observe", "off"], "reloadGapsIn": 12, "reloadGapsOut": 14},
+    {"name": "qml-policy", "passed": true, "assertions": 180},
+    {"name": "native-policy", "passed": true, "tests": 28},
+    {"name": "file-only-importer", "passed": true}
+  ],
+  "nativeInteractiveTested": false,
+  "liveMutexContentionTested": false
+}

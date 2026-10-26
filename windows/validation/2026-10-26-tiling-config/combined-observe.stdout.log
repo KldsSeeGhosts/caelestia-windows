@@ -1,0 +1,102 @@
+﻿2026-10-26 01:52:37.155  INFO: Launching config: "C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-ef58734c/windows/.local/build/shell-runs/combined-20261026-015235-924/shell.qml"
+2026-10-26 01:52:37.156  INFO: Shell ID: "b2f33aa3ba50f0f87a8f3dc37c90e68c" Path ID "b2f33aa3ba50f0f87a8f3dc37c90e68c"
+2026-10-26 01:52:37.176  INFO: Saving logs to "C:/Users/Ermin/AppData/Local/quickshell/run/by-id/s5wpz2int/log.qslog"
+2026-10-26 01:52:37.518  INFO quickshell.windows.blur: Blur behind panels is turned off by QS_WINDOWS_BLUR.
+2026-10-26 01:52:37.532  INFO quickshell.windows.blur: No layer rules file found (looked for C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-ef58734c/windows/.local/build/shell-runs/combined-20261026-015235-924/defaults/windows/layerrules.json ), blur behind panels is off.
+2026-10-26 01:52:37.535 DEBUG quickshell.windows.desktops: Desktop list changed: 1 desktops
+2026-10-26 01:52:37.535 DEBUG quickshell.windows.desktops: Current desktop: 0
+2026-10-26 01:52:37.539 DEBUG quickshell.hyprland.ipc.events: Event "focusedmon" "MAG321UX OLED,"
+2026-10-26 01:52:37.539 DEBUG quickshell.hyprland.ipc.events: Event "activewindowv2" ""
+2026-10-26 01:52:37.539 DEBUG quickshell.hyprland.ipc.events: Event "activewindow" ","
+2026-10-26 01:52:37.539  INFO quickshell.hyprland.ipc: Hyprland compatibility module ready: 2 monitors, 1 workspaces, 0 toplevels in 3 ms
+2026-10-26 01:52:37.539  INFO qml: CAELESTIA_HYPR_BACKEND_READY usingLua=false monitors=2 workspaces=1 toplevels=0
+2026-10-26 01:52:37.555  INFO caelestia.windows.focusguard: target-unavailable
+2026-10-26 01:52:37.555 DEBUG qml: CAELESTIA_SHELL_FOCUS target-unavailable
+2026-10-26 01:52:37.757 DEBUG qml: CAELESTIA_HYPR_STATUS hypr=1 dispatch=0
+2026-10-26 01:52:37.759  INFO qml: CAELESTIA_TILING_BACKEND_READY supportsIncluded=1 supportsTelemetry=1
+2026-10-26 01:52:37.759 DEBUG quickshell.windows.tiling: Tiling allowlist changed to QList("exe:caelestia-config-fixture.exe") ; re-evaluating window membership.
+2026-10-26 01:52:37.759  INFO qml: CAELESTIA_TILING_OPTIONS gapsIn=10 gapsOut=10
+2026-10-26 01:52:37.759 DEBUG qml: CAELESTIA_TILING_CONFIG tiling=observe gapsIn=10 gapsOut=10 status=observing
+2026-10-26 01:52:37.759 DEBUG qml: CAELESTIA_TILING_STATUS tiling=observe included=1 excluded=2 gapsIn=10 gapsOut=10 status=observing
+2026-10-26 01:52:37.761 DEBUG quickshell.windows.panel: Placing qs::windows::WinPanelWindow(0x1b447dc8090) at QRect(80,80 900x620) on "MAG321UX OLED"
+2026-10-26 01:52:37.763  INFO caelestia.windows.focusguard: idle
+2026-10-26 01:52:37.763 DEBUG qml: CAELESTIA_SHELL_FOCUS idle
+2026-10-26 01:52:37.800  INFO: Configuration Loaded
+2026-10-26 01:52:38.005 DEBUG quickshell.windows.appsfolder: Scanned 153 apps from the Windows Apps folder
+2026-10-26 01:52:38.051 DEBUG quickshell.windows.startup: First panel frame presented
+2026-10-26 01:52:38.452 DEBUG quickshell.windows.startup: Startup settled, running 6 deferred tasks
+2026-10-26 01:52:38.452  INFO quickshell.windows.desktops: VirtualDesktopAccessor.dll not found next to the executable; desktop switching and creation are unavailable.
+2026-10-26 01:52:38.452 DEBUG quickshell.hyprland.ipc.events: Event "openwindow" "90fb2,1,qs,Caelestia preview"
+2026-10-26 01:52:38.457 DEBUG quickshell.hyprland.ipc.events: Event "openwindow" "20070,1,Raycast.Raycast_qypenmj9wpt2a!Raycast,Raycast"
+2026-10-26 01:52:38.457 DEBUG quickshell.hyprland.ipc.events: Event "openwindow" "50936,1,zcode,ZCode"
+2026-10-26 01:52:38.458 DEBUG quickshell.hyprland.ipc.events: Event "openwindow" "509ca,1,TheBrowserCompany.Dia_ttt1ap7aakyb4!Dia,CPA Manager Plus"
+2026-10-26 01:52:38.458 DEBUG quickshell.hyprland.ipc.events: Event "openwindow" "3071c,1,Valve.Steam.Client,Steam"
+2026-10-26 01:52:38.458 DEBUG quickshell.hyprland.ipc.events: Event "openwindow" "40900,1,ksg code,T3 Code (Nightly)"
+2026-10-26 01:52:38.458 DEBUG quickshell.hyprland.ipc.events: Event "activewindowv2" "90fb2"
+2026-10-26 01:52:38.458 DEBUG quickshell.hyprland.ipc.events: Event "activewindow" "qs,Caelestia preview"
+2026-10-26 01:52:38.498  INFO quickshell.windows.bluetooth.worker: Using Bluetooth adapter "Intel(R) Wireless Bluetooth(R)" "5C:B2:6D:F3:07:F4" "\\\\?\\USB#VID_8087&PID_0032#8&f2cb6fa&0&13#{92383b0e-f90e-4ac9-8d44-8c2d0d0ebda2}"
+2026-10-26 01:52:38.501 DEBUG quickshell.windows.bluetooth.worker: Started the paired classic device watcher
+2026-10-26 01:52:38.505 DEBUG quickshell.windows.bluetooth.worker: Started the paired LE device watcher
+2026-10-26 01:52:38.525 DEBUG quickshell.windows.bluetooth: Tracked new adapter BluetoothAdapter(0x1b44c6c36c0, id="\\\\?\\USB#VID_8087&PID_0032#8&f2cb6fa&0&13#{92383b0e-f90e-4ac9-8d44-8c2d0d0ebda2}")
+2026-10-26 01:52:38.525 DEBUG quickshell.windows.bluetooth: Initial adapter lookup done, adapter present: true
+2026-10-26 01:52:38.983 DEBUG quickshell.hyprland.ipc.events: Event "windowgeometry" ""
+2026-10-26 01:52:39.254 DEBUG qml: CAELESTIA_COMBINED_SCREEN {"index":0,"name":"MAG321UX OLED","x":0,"y":0,"dpr":1.5}
+2026-10-26 01:52:39.255 DEBUG qml: CAELESTIA_COMBINED_GEOMETRY MAG321UX OLED 0 0 900 620 1.5 4
+2026-10-26 01:52:39.255 DEBUG qml: CAELESTIA_COMBINED_SERVICE name=audio enabled=true status=ready controls=false output=true
+2026-10-26 01:52:39.255 DEBUG qml: CAELESTIA_COMBINED_SERVICE name=battery enabled=true status=ready hasBattery=false profiles=true profileWrites=false
+2026-10-26 01:52:39.256 DEBUG qml: CAELESTIA_COMBINED_SERVICE name=bluetooth enabled=true status=on controls=false
+2026-10-26 01:52:39.256 DEBUG qml: CAELESTIA_COMBINED_SERVICE name=brightness enabled=true status=observing controls=false monitors=2 firstMonitorRoute= firstMonitorKnown=false
+2026-10-26 01:52:39.256 DEBUG qml: CAELESTIA_COMBINED_SERVICE name=media enabled=true status=loading controls=false players=0
+2026-10-26 01:52:39.256 DEBUG qml: CAELESTIA_COMBINED_SERVICE name=network enabled=true status=disconnected controls=false commandsSent=0
+2026-10-26 01:52:39.256 DEBUG qml: CAELESTIA_COMBINED_SERVICE name=apps enabled=true status=ready launch=false count=153
+2026-10-26 01:52:39.256 DEBUG qml: CAELESTIA_COMBINED_SERVICE name=hypr enabled=true status=ready dispatch=false monitors=2 workspaces=1 activeWsId=1 activeTitle=
+2026-10-26 01:52:39.256 DEBUG qml: CAELESTIA_COMBINED_SERVICE name=tiling mode=observe status=observing backendEnabled=false managed=0 failed=0 included=1 excluded=2
+2026-10-26 01:52:39.256 DEBUG qml: CAELESTIA_COMBINED_SERVICE name=tray enabled=true status=not-observable activation=false hook=0
+2026-10-26 01:52:39.256 DEBUG qml: CAELESTIA_COMBINED_SERVICE name=notifications enabled=true status=local mirror=false popups=0
+2026-10-26 01:52:39.256 DEBUG qml: CAELESTIA_COMBINED_SERVICE name=session mode=Observe enabled=true actions=false
+2026-10-26 01:52:40.445 DEBUG qml: CAELESTIA_COMBINED_SESSION_BUTTONS [{"icon":"logout","disabled":true},{"icon":"power_settings_new","disabled":true},{"icon":"downloading","disabled":true},{"icon":"cached","disabled":true}]
+2026-10-26 01:52:40.488 DEBUG qml: CAELESTIA_COMBINED_CAPTURE file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-ef58734c/windows/.local/build/logs/combined-20261026-015235-924-session.png
+2026-10-26 01:52:41.393 DEBUG quickshell.hyprland.ipc.events: Event "activewindowv2" ""
+2026-10-26 01:52:41.394 DEBUG quickshell.hyprland.ipc.events: Event "activewindow" ","
+2026-10-26 01:52:41.654 DEBUG quickshell.hyprland.ipc.events: Event "openwindow" "1850af6,1,qs,Caelestia preview"
+2026-10-26 01:52:41.655 DEBUG quickshell.hyprland.ipc.events: Event "activewindowv2" "1850af6"
+2026-10-26 01:52:41.655 DEBUG quickshell.hyprland.ipc.events: Event "activewindow" "qs,Caelestia preview"
+2026-10-26 01:52:42.227 DEBUG quickshell.hyprland.ipc.events: Event "windowgeometry" ""
+2026-10-26 01:52:43.693 DEBUG quickshell.hyprland.ipc.events: Event "focusedmon" "DELL S2725QS,1"
+2026-10-26 01:52:44.044 DEBUG qml: CAELESTIA_COMBINED_POPOUT audio 320 349
+2026-10-26 01:52:44.081 DEBUG qml: CAELESTIA_COMBINED_CAPTURE file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-ef58734c/windows/.local/build/logs/combined-20261026-015235-924-popout-audio.png
+2026-10-26 01:52:47.031 DEBUG quickshell.hyprland.ipc.events: Event "activewindowv2" "509ca"
+2026-10-26 01:52:47.032 DEBUG quickshell.hyprland.ipc.events: Event "activewindow" "TheBrowserCompany.Dia_ttt1ap7aakyb4!Dia,CPA Manager Plus"
+2026-10-26 01:52:47.645 DEBUG qml: CAELESTIA_COMBINED_POPOUT network 154 106
+2026-10-26 01:52:47.698 DEBUG qml: CAELESTIA_COMBINED_CAPTURE file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-ef58734c/windows/.local/build/logs/combined-20261026-015235-924-popout-network.png
+2026-10-26 01:52:51.245 DEBUG qml: CAELESTIA_COMBINED_POPOUT bluetooth 149 197
+2026-10-26 01:52:51.283 DEBUG qml: CAELESTIA_COMBINED_CAPTURE file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-ef58734c/windows/.local/build/logs/combined-20261026-015235-924-popout-bluetooth.png
+2026-10-26 01:52:54.845 DEBUG qml: CAELESTIA_COMBINED_POPOUT battery 202 116
+2026-10-26 01:52:54.880 DEBUG qml: CAELESTIA_COMBINED_CAPTURE file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-ef58734c/windows/.local/build/logs/combined-20261026-015235-924-popout-battery.png
+2026-10-26 01:52:58.494 DEBUG qml: CAELESTIA_COMBINED_CAPTURE file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-ef58734c/windows/.local/build/logs/combined-20261026-015235-924-osd.png
+2026-10-26 01:52:59.688  INFO: qs:@/qs/components/controls/StyledProgressBar.qml: Object or context destroyed during incubation
+2026-10-26 01:52:59.688  INFO: qs:@/qs/components/controls/StyledProgressBar.qml: Object or context destroyed during incubation
+2026-10-26 01:52:59.727 DEBUG qml: CAELESTIA_COMBINED_CAPTURE file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-ef58734c/windows/.local/build/logs/combined-20261026-015235-924-launcher.png
+2026-10-26 01:53:00.907 DEBUG qml: CAELESTIA_COMBINED_CAPTURE file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-ef58734c/windows/.local/build/logs/combined-20261026-015235-924-dashboard.png
+2026-10-26 01:53:02.111 DEBUG qml: CAELESTIA_COMBINED_CAPTURE file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-ef58734c/windows/.local/build/logs/combined-20261026-015235-924-dashboard-dash.png
+2026-10-26 01:53:03.299 DEBUG qml: CAELESTIA_COMBINED_CAPTURE file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-ef58734c/windows/.local/build/logs/combined-20261026-015235-924-dashboard-performance.png
+2026-10-26 01:53:04.487 DEBUG qml: CAELESTIA_COMBINED_CAPTURE file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-ef58734c/windows/.local/build/logs/combined-20261026-015235-924-dashboard-weather.png
+2026-10-26 01:53:05.683 DEBUG qml: CAELESTIA_COMBINED_CAPTURE file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-ef58734c/windows/.local/build/logs/combined-20261026-015235-924-utilities.png
+2026-10-26 01:53:06.885 DEBUG qml: CAELESTIA_COMBINED_CAPTURE file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-ef58734c/windows/.local/build/logs/combined-20261026-015235-924-notification.png
+2026-10-26 01:53:08.082 DEBUG qml: CAELESTIA_COMBINED_CAPTURE file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-ef58734c/windows/.local/build/logs/combined-20261026-015235-924-sidebar.png
+2026-10-26 01:53:09.245 DEBUG qml: CAELESTIA_COMBINED_SERVICE name=audio enabled=true status=ready controls=false output=true
+2026-10-26 01:53:09.245 DEBUG qml: CAELESTIA_COMBINED_SERVICE name=battery enabled=true status=ready hasBattery=false profiles=true profileWrites=false
+2026-10-26 01:53:09.245 DEBUG qml: CAELESTIA_COMBINED_SERVICE name=bluetooth enabled=true status=on controls=false
+2026-10-26 01:53:09.245 DEBUG qml: CAELESTIA_COMBINED_SERVICE name=brightness enabled=true status=observing controls=false monitors=2 firstMonitorRoute= firstMonitorKnown=false
+2026-10-26 01:53:09.245 DEBUG qml: CAELESTIA_COMBINED_SERVICE name=media enabled=true status=no-sessions controls=false players=0
+2026-10-26 01:53:09.245 DEBUG qml: CAELESTIA_COMBINED_SERVICE name=network enabled=true status=disconnected controls=false commandsSent=0
+2026-10-26 01:53:09.245 DEBUG qml: CAELESTIA_COMBINED_SERVICE name=apps enabled=true status=ready launch=false count=153
+2026-10-26 01:53:09.245 DEBUG qml: CAELESTIA_COMBINED_SERVICE name=hypr enabled=true status=ready dispatch=false monitors=2 workspaces=1 activeWsId=1 activeTitle=
+2026-10-26 01:53:09.245 DEBUG qml: CAELESTIA_COMBINED_SERVICE name=tiling mode=observe status=observing backendEnabled=false managed=0 failed=0 included=1 excluded=2
+2026-10-26 01:53:09.245 DEBUG qml: CAELESTIA_COMBINED_SERVICE name=tray enabled=true status=not-observable activation=false hook=0
+2026-10-26 01:53:09.245 DEBUG qml: CAELESTIA_COMBINED_SERVICE name=notifications enabled=true status=local mirror=false popups=0
+2026-10-26 01:53:09.245 DEBUG qml: CAELESTIA_COMBINED_SERVICE name=session mode=Observe enabled=true actions=false
+2026-10-26 01:53:09.284 DEBUG qml: CAELESTIA_COMBINED_CAPTURE file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-ef58734c/windows/.local/build/logs/combined-20261026-015235-924-notification.png
+2026-10-26 01:53:09.285 DEBUG qml: CAELESTIA_COMBINED_CAPTURE file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-ef58734c/windows/.local/build/logs/combined-20261026-015235-924.png
+2026-10-26 01:53:09.285 DEBUG qml: CAELESTIA_COMBINED_PASS 6.11.2
+
