@@ -620,9 +620,24 @@ ShellRoot {
                     root.fail("original media details did not load");
                     return;
                 }
+                // The restored original CoverVisualiser must receive the native
+                // CavaProvider (bars property) rather than the unavailable
+                // compatibility object, and the beat tracker must start at its
+                // real default instead of the disabled zero.
+                if (Audio.cava.bars !== GlobalConfig.services.visualiserBars
+                        || Audio.cava.values.length !== GlobalConfig.services.visualiserBars
+                        || !(Audio.beatTracker.bpm >= 60)) {
+                    root.fail("audio analysis providers did not load");
+                    return;
+                }
+                console.log("CAELESTIA_COMBINED_AUDIO_ANALYSIS", JSON.stringify({
+                    bars: Audio.cava.bars, values: Audio.cava.values.length,
+                    bpm: Audio.beatTracker.bpm
+                }));
                 root.capturePhase("dashboard");
                 win.screenState.dashboardTab = 0;
             } else if (step === 9) {
+                console.log("CAELESTIA_COMBINED_BEAT", Audio.beatTracker.bpm);
                 root.capturePhase("dashboard-dash");
                 win.screenState.dashboardTab = 2;
             } else if (step === 10) {
@@ -651,6 +666,17 @@ ShellRoot {
                 }
                 root.capturePhase("sidebar");
             } else if (step === 15) {
+                // A second Quickshell process can own the per-session
+                // notification bus claim, so this records the delivery state
+                // instead of reporting an unexplained empty list.
+                const notificationState = {
+                    enabled: Notifs.enabled, status: Notifs.status,
+                    serviceStatus: Notifs.service.status, list: Notifs.list.length,
+                    popups: Notifs.popups.length, backend: !!Notifs.backend,
+                    ready: Notifs.backend?.ready, contended: Notifs.service.contended,
+                    refusal: Notifs.lastSendRefusal
+                };
+                console.log("CAELESTIA_COMBINED_NOTIFICATION", JSON.stringify(notificationState));
                 if (Notifs.enabled && Notifs.list.length < 1) {
                     root.fail("notification popup did not render");
                     return;

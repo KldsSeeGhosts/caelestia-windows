@@ -44,6 +44,15 @@ notifications and a toast, and exit. The supplied build is reused unchanged.
 - Original utilities wrapper and quick-toggle layout, limited to Wi-Fi,
   Bluetooth and shell-local do-not-disturb. Hardware controls follow their
   facade's availability and write gate.
+- Original cover visualiser, media progress wave, track details and the
+  beat-driven media GIF. `Audio.cava` and `Audio.beatTracker` are the original
+  `CavaProvider`/`BeatTracker` types (`Caelestia.Windows.Audio`), fed by WASAPI
+  loopback capture of the default render endpoint instead of PipeWire. Capture
+  starts only when an original `ServiceRef` references the provider, follows
+  default-output changes, and analysis is a local FFT/bar plan with a
+  spectral-flux onset/tempo detector because libcava and aubio are not built.
+  The original `modules/background/Visualiser.qml` consumes the same
+  `Audio.cava.values`, though the bounded host does not stage the background.
 - Original sidebar notification history, grouping, dismissal and mirror-access
   UI, plus original notification popups and core `Toaster` rendering.
 - Original launcher search, keyboard navigation, app rows, action rows and
@@ -68,8 +77,9 @@ notifications and a toast, and exit. The supplied build is reused unchanged.
 - Expressive M3 shape outlines and morphing require the native M3Shapes plugin,
   which is absent from the supplied build. A combined-only round-surface shim
   keeps the original layout and children; it does not claim the original shapes.
-- Lyrics, beat tracking and audio visualisation depend on excluded upstream
-  native services. Cover art, metadata, player selection and transport remain.
+- Lyrics still depend on the excluded upstream lyrics service. Cover art,
+  metadata, player selection, transport, the cover visualiser and the beat-driven
+  media GIF are available over the Windows audio analysis (see below).
 - Profile picture editing is unavailable; its click reports this in a toast.
 - Idle inhibition lacks a lifetime-scoped inhibition API in the existing backend.
   Recorder, VPN and Linux-specific quick toggles are hidden.
