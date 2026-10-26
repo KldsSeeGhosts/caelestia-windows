@@ -162,10 +162,18 @@ Singleton {
     readonly property string lastRejectedImageSource: service.lastRejectedImageSource
     readonly property string lastImageSourceError: service.lastImageSourceError
 
-    // A bounded previous-slice UI calls these helpers. Windows has no Hyprland
-    // fullscreen toplevels in this slice, and do-not-disturb is not staged.
+    // Toasts follow the focused monitor, not the Windows virtual desktop,
+    // which is shared by all monitors. Special workspaces are currently
+    // unsupported on Windows but retain the upstream focused-workspace rule.
     function hasFullscreen(): bool {
-        return false;
+        const monitor = Hypr.focusedMonitor;
+        if (!monitor)
+            return false;
+        const specialName = monitor.lastIpcObject?.specialWorkspace?.name;
+        const workspace = specialName
+            ? Hypr.workspaces.values.find(ws => ws.name === specialName)
+            : monitor.activeWorkspace;
+        return workspace?.toplevels.values.some(t => t.monitor === monitor && t.lastIpcObject.fullscreen > 1) ?? false;
     }
 
     function shouldShowPopup(): bool {
