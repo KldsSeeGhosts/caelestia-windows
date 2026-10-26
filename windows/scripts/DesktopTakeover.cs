@@ -178,6 +178,7 @@ namespace Caelestia.Takeover {
         [DllImport("user32.dll")] static extern bool EnumWindows(WindowCallback callback, IntPtr data);
         [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassName(IntPtr window, StringBuilder name, int size);
         [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr FindWindow(string name, string title);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr FindWindowEx(IntPtr parent, IntPtr after, string name, string title);
         [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr window, out Rect rect);
         [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr window);
         [DllImport("user32.dll")] static extern bool IsWindow(IntPtr window);
@@ -213,10 +214,15 @@ namespace Caelestia.Takeover {
               catch (System.ComponentModel.Win32Exception) { return false; }
         }
         public static uint ExplorerTaskbarOwner() {
-            var window = FindWindow("Shell_TrayWnd", null);
-            uint owner;
-            GetWindowThreadProcessId(window, out owner);
-            return Explorer(owner) ? owner : 0;
+            // FindWindow can return Quickshell's tray hook, which shares the
+            // Shell_TrayWnd class and moves itself to the front.
+            var window = IntPtr.Zero;
+            while ((window = FindWindowEx(IntPtr.Zero, window, "Shell_TrayWnd", null)) != IntPtr.Zero) {
+                uint owner;
+                GetWindowThreadProcessId(window, out owner);
+                if (Explorer(owner)) return owner;
+            }
+            return 0;
         }
         public static Bar EventTaskbar(IntPtr window, uint expectedOwner) {
             if (window == IntPtr.Zero || expectedOwner == 0 || !IsWindow(window)) return null;
@@ -261,6 +267,8 @@ namespace Caelestia.Takeover {
                 if (name.ToString() != "Shell_TrayWnd" && name.ToString() != "Shell_SecondaryTrayWnd") return true;
                 uint owner;
                 GetWindowThreadProcessId(window, out owner);
+                // Quickshell's tray hook also registers a Shell_TrayWnd window.
+                if (!Explorer(owner)) return true;
                 var info = new MonitorInfo { Size = Marshal.SizeOf(typeof(MonitorInfo)) };
                 GetMonitorInfo(MonitorFromWindow(window, 2), ref info);
                 Rect rect;
@@ -476,7 +484,9 @@ namespace Caelestia.Takeover {
         }
         protected override void WndProc(ref Message message) {
             if (message.Msg == taskbarCreated && child != null && !child.HasExited && hide) {
-                RefreshShowHook(true);
+                // Quickshell's tray hook also sends TaskbarCreated to re-announce
+                // icons. Rebind only when Explorer's process actually changed.
+                RefreshShowHook(false);
                 Native.Hide(true);
             }
             base.WndProc(ref message);
