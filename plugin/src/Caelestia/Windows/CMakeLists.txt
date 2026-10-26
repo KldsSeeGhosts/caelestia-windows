@@ -8,3 +8,7 @@ qml_module(caelestia-windows
         Qt::Quick
         user32
 )
+
+# WASAPI loopback analysis: CavaProvider/BeatTracker/ServiceRef for the
+# original visualiser and media components.
+add_subdirectory(Audio)

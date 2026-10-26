@@ -2,7 +2,15 @@
 
 #include <qqmlintegration.h>
 
+#ifdef CAELESTIA_WINDOWS_AUDIO
+// aubio is not part of the Windows toolchain; the Windows module provides a
+// spectral-flux onset/tempo detector behind the same QML contract.
+#include "onsetdetector.hpp"
+
+using smpl_t = float;
+#else
 #include <aubio/aubio.h>
+#endif
 
 #include "audioprovider.hpp"
 
@@ -22,9 +30,14 @@ protected:
     void process() override;
 
 private:
+#ifdef CAELESTIA_WINDOWS_AUDIO
+    ::caelestia::shell::windows::OnsetDetector m_detector;
+    float* m_in;
+#else
     aubio_tempo_t* m_tempo;
     fvec_t* m_in;
     fvec_t* m_out;
+#endif
 };
 
 class BeatTracker : public AudioProvider {

@@ -3,8 +3,12 @@
 #include <qmutex.h>
 #include <qqmlintegration.h>
 
+#ifndef CAELESTIA_WINDOWS_AUDIO
+// Windows capture uses WASAPI loopback instead of PipeWire. The ring buffer,
+// refcounting and per-chunk readers stay identical on both platforms.
 #include <pipewire/pipewire.h>
 #include <spa/param/audio/format-utils.h>
+#endif
 
 #include <atomic>
 #include <stop_token>
@@ -44,6 +48,16 @@ private:
 
 class AudioCollector;
 
+#ifdef CAELESTIA_WINDOWS_AUDIO
+
+namespace caelestia::shell::windows {
+// Default-render-endpoint WASAPI loopback capture. Defined in
+// Windows/Audio/wasapiloopback.cpp.
+class WasapiLoopbackWorker;
+} // namespace caelestia::shell::windows
+
+#else
+
 class PipeWireWorker {
 public:
     explicit PipeWireWorker(std::stop_token token, AudioCollector* collector);
@@ -64,6 +78,8 @@ private:
     void processStream();
 };
 
+#endif
+
 class AudioCollector : public Service {
     Q_OBJECT
 
@@ -75,6 +91,11 @@ public:
 
     void clearBuffer();
     void loadChunk(const qint16* samples, quint32 count);
+#ifdef CAELESTIA_WINDOWS_AUDIO
+    // WASAPI shared-mode mixes are usually 32-bit float; skip the qint16
+    // conversion the PipeWire S16 stream needs.
+    void loadChunk(const float* samples, quint32 count);
+#endif
     quint32 readChunk(float* out, quint32 count = 0);
     quint32 readChunk(double* out, quint32 count = 0);
 

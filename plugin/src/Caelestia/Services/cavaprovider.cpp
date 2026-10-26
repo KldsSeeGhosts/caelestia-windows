@@ -2,7 +2,9 @@
 
 #include <qloggingcategory.h>
 
+#ifndef CAELESTIA_WINDOWS_AUDIO
 #include <cava/cavacore.h>
+#endif
 
 #include <cstddef>
 
@@ -37,8 +39,13 @@ void CavaProcessor::process() {
 
     const int count = static_cast<int>(AudioCollector::instance().readChunk(m_in));
 
+#ifdef CAELESTIA_WINDOWS_AUDIO
+    // Windows: run the ported FFT/bar plan instead of libcava.
+    m_plan->execute(m_in, count, m_out);
+#else
     // Process in data via cava
     cava_execute(m_in, count, m_out, m_plan);
+#endif
 
     // Apply monstercat filter
     QVector<double> values(m_bars);
@@ -84,7 +91,11 @@ void CavaProcessor::reload() {
 
 void CavaProcessor::cleanup() {
     if (m_plan) {
+#ifdef CAELESTIA_WINDOWS_AUDIO
+        delete m_plan;
+#else
         cava_destroy(m_plan);
+#endif
         m_plan = nullptr;
     }
 
@@ -99,7 +110,12 @@ void CavaProcessor::initCava() {
         return;
     }
 
+#ifdef CAELESTIA_WINDOWS_AUDIO
+    m_plan = new ::caelestia::shell::windows::CavaPlan();
+    m_plan->init(m_bars, ac::k_sampleRate, 0.85, 50, 10000);
+#else
     m_plan = cava_init(m_bars, ac::k_sampleRate, 1, 1, 0.85, 50, 10000);
+#endif
     m_out = new double[static_cast<size_t>(m_bars)];
 }
 

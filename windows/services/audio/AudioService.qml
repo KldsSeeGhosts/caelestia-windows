@@ -75,14 +75,21 @@ QtObject {
     readonly property real sourceVolume: getStreamVolume(source)
     readonly property real effectiveMaxVolume: Number.isFinite(maxVolume) ? Math.max(0, Math.min(1, maxVolume)) : 1
 
-    // Compatibility shapes only. No CavaProvider/BeatTracker is constructed, no
-    // spectrum or tempo is claimed, and consumers must gate their creation on
-    // available. These QtObjects cannot be passed to native ServiceRef.
-    readonly property QtObject cava: QtObject {
+    // Native analysis providers are injected by Audio.qml after its explicit
+    // opt-in. This facade never constructs capture or analysis itself; disabled
+    // and unavailable reads keep the same read-only compatibility shape.
+    property var cavaProvider: null
+    property var beatProvider: null
+    property int visualiserBars: 0
+
+    readonly property QtObject cava: enabled && cavaProvider ? cavaProvider : unavailableCava
+    readonly property QtObject beatTracker: enabled && beatProvider ? beatProvider : unavailableBeat
+
+    readonly property QtObject unavailableCava: QtObject {
         readonly property bool available: false
-        readonly property var values: []
+        readonly property var values: Array(root.visualiserBars).fill(0)
     }
-    readonly property QtObject beatTracker: QtObject {
+    readonly property QtObject unavailableBeat: QtObject {
         readonly property bool available: false
         readonly property real bpm: 0
     }
