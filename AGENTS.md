@@ -25,6 +25,10 @@ and `windows/ROADMAP.md` before implementation.
 - Keep status honest: an importable component, a running prototype, and a
   validated shell release are separate milestones. Record the runtime, source
   revisions, commands, and observed results for each compatibility claim.
+- Archive evidence under `windows/validation/` as the README, `result.json`
+  and matrix files, logs, and screenshots. Do not copy staged QML sources or
+  per-run `sources.json` manifests; the recorded source revision reproduces
+  them. Leave existing archives unchanged, since their records reference them.
 - Run the environment check after changing pins or setup instructions:
   `powershell -NoProfile -File windows/scripts/Test-Environment.ps1 -Json`.
   It is a prerequisite report, not a successful build or runtime test.
