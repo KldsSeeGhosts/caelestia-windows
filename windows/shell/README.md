@@ -91,7 +91,7 @@ index first) to limit the temporary smoke's drawers, backgrounds and reservation
 to that display. This flag requires `-Smoke`. Normal starts still use all screens.
 The repeatable `windows/scripts/Test-InstalledFrame.ps1 -QtPrefix <Qt-prefix>`
 creates a temporary install/profile, measures all four work-area deltas on the
-secondary display, verifies fullscreen release with an isolated component
+secondary display, verifies stable fullscreen reservations with an isolated component
 fixture, quits its children, and checks that both starting work areas, taskbar
 flags and existing shell processes are preserved.
 

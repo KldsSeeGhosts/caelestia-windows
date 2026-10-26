@@ -359,7 +359,7 @@ ShellRoot {
     property bool fullScreen: false
 
     // Native equivalents of upstream's four exclusion windows, enabled only
-    // for the monitor-sized layout and released while an app is fullscreen.
+    // for the monitor-sized layout, including during app fullscreen.
     Exclusions {
         screen: root.selectedScreen
         zone: win.bar.exclusiveZone

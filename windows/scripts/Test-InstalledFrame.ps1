@@ -98,7 +98,7 @@ try {
     Assert ($launcher.WaitForExit(15000)) 'Smoke launcher did not finish after quit.'
     Assert ($launcher.ExitCode -eq 0) 'Installed smoke failed; inspect launch logs.'
 
-    # Exercise fullscreen release/reacquisition using the actual exclusions.
+    # Exercise stable fullscreen reservations using the actual exclusions.
     # A real fullscreen target would also change the installed live shell.
     Copy-Item -LiteralPath "$repoRoot\windows\combined-prototype\FrameExclusionsTest.qml" -Destination "$prefix\shell\frame-test.qml"
     $info = New-Object Diagnostics.ProcessStartInfo
@@ -127,13 +127,12 @@ try {
     Assert ((WorkIdentity $snapshot) -eq (WorkIdentity $reserved)) 'The fullscreen fixture did not reserve the same four edges.'
     & "$prefix\qs.exe" ipc --pid $fixture.Id call frameTest setFullscreen true | Out-Null
     Assert ($LASTEXITCODE -eq 0) 'Could not set the fixture fullscreen input.'
-    $deadline = [DateTime]::UtcNow.AddSeconds(3)
+    $deadline = [DateTime]::UtcNow.AddSeconds(2)
     do {
-        Start-Sleep -Milliseconds 200
+        Start-Sleep -Milliseconds 100
         $snapshot = Snapshot 'fixture-fullscreen'
-        if ((WorkIdentity $snapshot) -eq (WorkIdentity $before)) { break }
+        Assert ((WorkIdentity $snapshot) -eq (WorkIdentity $reserved)) 'Fullscreen changed the reserved work area.'
     } while ([DateTime]::UtcNow -lt $deadline)
-    Assert ((WorkIdentity $snapshot) -eq (WorkIdentity $before)) 'Fullscreen did not release all four exclusions.'
     & "$prefix\qs.exe" ipc --pid $fixture.Id call frameTest setFullscreen false | Out-Null
     Assert ($LASTEXITCODE -eq 0) 'Could not clear the fixture fullscreen input.'
     $deadline = [DateTime]::UtcNow.AddSeconds(3)
@@ -142,7 +141,7 @@ try {
         $snapshot = Snapshot 'fixture-restored-frame'
         if ((WorkIdentity $snapshot) -eq (WorkIdentity $reserved)) { break }
     } while ([DateTime]::UtcNow -lt $deadline)
-    Assert ((WorkIdentity $snapshot) -eq (WorkIdentity $reserved)) 'Leaving fullscreen did not restore all four exclusions.'
+    Assert ((WorkIdentity $snapshot) -eq (WorkIdentity $reserved)) 'Leaving fullscreen changed the reserved work area.'
     & "$prefix\qs.exe" ipc --pid $fixture.Id call frameTest quit | Out-Null
     Assert ($fixture.WaitForExit(3000)) 'The fullscreen fixture did not quit.'
     $summary.fullscreenFixture = $fixture.ExitCode -eq 0
