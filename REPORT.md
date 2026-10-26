@@ -99,3 +99,42 @@ Remaining limits: dynamic schemes, lyrics/beat tracking and the other
 previously documented combined-shell limitations are unchanged. This smoke
 validates module loading, shape rendering and morph-capable component staging,
 not interactive morph animation under pointer input.
+
+## Utilities slice: idle inhibitor, recorder, lock
+
+Implemented on `t3/utilities-native`, branched from `origin/t3/combined-modules`
+(`6026f947`). No backend C++ change, dependency pin change, push or PR. The
+supplied build was reused unchanged (backend gitlink `525786fc`).
+
+- **Idle inhibitor.** The original `IdleInhibit` card keeps
+  `RuntimeState.inhibitIdle` and the "Active since" chip. Windows has no Wayland
+  `IdleInhibitor`, so `daemons/IdleInhibit.qml` runs
+  `helpers/KeepAwake.ps1` as a child while the toggle is on. The helper holds
+  `SetThreadExecutionState(ES_CONTINUOUS | ES_DISPLAY_REQUIRED |
+  ES_SYSTEM_REQUIRED)` on its own thread, exits when the toggle stops (Quickshell
+  kills its children) or when the shell PID is gone, and an unexpected exit
+  clears the toggle instead of leaving a false "active" state.
+- **Screen recorder.** `services/Recorder.qml` keeps the upstream
+  `start/stop/togglePause/running/paused/elapsed` contract and drives ffmpeg:
+  `where ffmpeg` availability, `%USERPROFILE%\Videos\Caelestia`, gdigrab
+  `desktop` at 30 fps into H.264 MP4, and `q` on ffmpeg's stdin to finalise the
+  file (6 s bounded kill fallback). The original card layout is kept; region and
+  audio capture, pause, and the Linux recordings list/delete modal are not
+  offered, and a missing ffmpeg shows `Unavailable: ffmpeg was not found on
+  PATH.` in the card's one-line status.
+- **Lock.** No gap: the pinned backend's `Session::lock()` already calls
+  `LockWorkStation()` (`windows/deps/quickshell/src/windows/system/session.cpp`),
+  and the combined launcher's `Lock` action resolves `["lock"]` through the
+  original session adapter, only with Live session actions. No lock screen,
+  credential UI or extra process was added.
+
+Both cards are enabled in the combined profile and visible in read-only runs,
+but act only with `CAELESTIA_COMBINED_LIVE=1` outside smoke; smoke asserts that
+neither process exists. `-Combined -Smoke` and `-Combined -Live -Smoke` both
+passed (exit 0, 32.6 s / 32.2 s, no QML warnings). Direct checks outside smoke:
+the helper stayed alive with the execution state set; the exact ffmpeg command
+with `-t 2` produced a valid MP4; a throwaway harness drove the real Recorder
+singleton through probe → mkdir → start → stop, and `ffprobe` confirmed a
+finalised clip (test file deleted). Limitations: fullscreen-only capture, no
+recordings list, keep-awake verified by process lifetime rather than an elevated
+`powercfg /requests` read, and no real lock was performed.

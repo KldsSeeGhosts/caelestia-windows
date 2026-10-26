@@ -209,7 +209,7 @@ if ($Combined) {
   "launcher": {"enabled":true,"showOnHover":true},
   "sidebar": {"enabled":true,"showOnHover":true},
   "osd": {"enabled":true},
-  "utilities": {"enabled":true,"cards":{"keepAwake":false,"recorder":false,"quickToggles":true},"quickToggles":[{"id":"wifi","enabled":true},{"id":"bluetooth","enabled":true},{"id":"dnd","enabled":true}]}
+  "utilities": {"enabled":true,"cards":{"keepAwake":true,"recorder":true,"quickToggles":true},"quickToggles":[{"id":"wifi","enabled":true},{"id":"bluetooth","enabled":true},{"id":"dnd","enabled":true}]}
 }
 '@
 }
