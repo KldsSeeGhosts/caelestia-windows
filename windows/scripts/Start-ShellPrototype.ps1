@@ -154,12 +154,14 @@ if ($Session) {
         '"commands": {"logout":["logout"],"shutdown":["shutdown"],"hibernate":["hibernate"],"reboot":["reboot"]}')
 }
 # The combined profile keeps every original bar entry that has a reviewed
-# facade (logo, tray, clock, status icons, power), enables the status-icon
-# popouts, the OSD, the hover-driven launcher and the media dashboard panel,
-# and leaves every write path out: empty session commands, no sidebar or
-# utilities panels and no scroll actions. The lock-status, microphone and
-# keyboard-layout status icons stay disabled; they need Hyprland input
-# events no Windows facade provides.
+# facade (logo, workspaces, active window, tray, clock, status icons, power),
+# enables the status-icon popouts, the OSD, the hover-driven launcher and the
+# media dashboard panel, and leaves every write path out: empty session
+# commands, no sidebar or utilities panels and no scroll actions. Workspaces
+# and the active-window indicator observe through the Hypr facade with
+# dispatch off, staged exactly as the hypr prototype stages them. The
+# lock-status, microphone and keyboard-layout status icons stay disabled;
+# they need Hyprland input events no Windows facade provides.
 if ($Combined) {
     $configText = @'
 {
@@ -168,6 +170,9 @@ if ($Combined) {
     "showOnHover": true,
     "entries": [
       {"id":"logo","enabled":true},
+      {"id":"workspaces","enabled":true},
+      {"id":"spacer","enabled":true},
+      {"id":"activeWindow","enabled":true},
       {"id":"spacer","enabled":true},
       {"id":"tray","enabled":true},
       {"id":"clock","enabled":true},
@@ -177,6 +182,8 @@ if ($Combined) {
     "clock": {"showIcon":true,"showDate":true,"showSeconds":true},
     "scrollActions": {"workspaces":false,"volume":false,"brightness":false},
     "popouts": {"activeWindow":false,"tray":false,"statusIcons":true},
+    "workspaces": {"shown":5,"showUnoccupied":true,"perMonitor":true,"displayType":"Text","showWindows":true},
+    "activeWindow": {"showOnHover":false,"compact":false,"inverted":false},
     "statusIcons": [
       {"id":"lockStatus","enabled":false},
       {"id":"audio","enabled":true},

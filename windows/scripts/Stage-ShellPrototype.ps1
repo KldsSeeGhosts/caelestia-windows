@@ -41,6 +41,8 @@ if ($Prototype -eq 'combined') {
         'windows/shell-prototype/adapters/modules/bar/components/OsIcon.qml',
         'windows/shell-prototype/adapters/modules/bar/components/Tray.qml',
         'windows/shell-prototype/adapters/modules/bar/components/StatusIcons.qml',
+        'windows/shell-prototype/adapters/modules/bar/components/workspaces/Workspaces.qml',
+        'windows/shell-prototype/adapters/modules/bar/components/ActiveWindow.qml',
         'windows/shell-prototype/adapters/modules/bar/popouts/Wrapper.qml',
         'windows/shell-prototype/adapters/modules/bar/popouts/ClipWrapper.qml',
         'windows/shell-prototype/adapters/modules/drawers/Panels.qml',

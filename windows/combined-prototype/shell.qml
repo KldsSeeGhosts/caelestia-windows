@@ -69,6 +69,11 @@ ShellRoot {
             apps: {
                 enabled: Apps.enabled, status: Apps.status, launch: Apps.launchEnabled, count: Apps.count
             },
+            hypr: {
+                enabled: Hypr.enabled, status: Hypr.status, dispatch: Hypr.dispatchEnabled,
+                monitors: Hypr.monitors.values.length, workspaces: Hypr.workspaces.values.length,
+                activeWsId: Hypr.activeWsId, activeTitle: Hypr.activeToplevel?.title ?? ""
+            },
             tray: {
                 enabled: WindowsTray.enabled, status: WindowsTray.status, activation: WindowsTray.activationEnabled,
                 hook: Quickshell.env("QS_WINDOWS_TRAY_HOOK") ?? ""
@@ -146,6 +151,8 @@ ShellRoot {
         ];
         if (controls.some(control => control === true))
             return false;
+        if (states.hypr.dispatch !== false)
+            return false;
         if (states.tray.hook !== "0")
             return false;
         if (states.network.commandsSent !== 0)
@@ -180,7 +187,7 @@ ShellRoot {
     // Every facade must be constructed through its observation opt-in and have
     // settled past its bounded initializing phase before any state is judged.
     function checkObservation(states): bool {
-        for (const name of ["audio", "battery", "bluetooth", "brightness", "media", "network", "apps", "tray", "notifications"])
+        for (const name of ["audio", "battery", "bluetooth", "brightness", "media", "network", "apps", "tray", "notifications", "hypr"])
             if (states[name].enabled !== true)
                 return false;
         if (states.audio.status === "initializing" || states.audio.status === "disabled")
@@ -200,6 +207,9 @@ ShellRoot {
         if (states.tray.status === "initializing" || states.tray.status === "disabled")
             return false;
         if (states.notifications.status === "initializing" || states.notifications.status === "disabled")
+            return false;
+        if (states.hypr.status === "initializing" || states.hypr.status === "disabled"
+                || states.hypr.status === "unavailable")
             return false;
         return true;
     }
@@ -435,6 +445,7 @@ ShellRoot {
     }
 
     Component.onCompleted: {
+        Hypr.logStartupStatus();
         if (!selectedScreen) {
             console.error("CAELESTIA_COMBINED_FAIL: requested screen does not exist", screenIndex);
             // Quickshell attaches the engine exit handler after creation.
@@ -490,12 +501,24 @@ ShellRoot {
                 win.bar.isHovered = true;
                 win.screenState.session = true;
             } else if (step === 1) {
-                const entries = ["taskbarLogo", "taskbarClock", "taskbarTray", "taskbarStatusIcons", "taskbarPowerButton"]
+                const entries = ["taskbarLogo", "taskbarWorkspaces", "taskbarActiveWindow", "taskbarClock", "taskbarTray", "taskbarStatusIcons", "taskbarPowerButton"]
                     .map(name => CUtils.findChild(win.contentItem, name));
                 if (entries.some(entry => !entry) || win.bar.implicitWidth < win.bar.contentWidth - 1
                         || panels.session.offsetScale > 0.01
                         || panels.session.width <= 0 || panels.session.height <= 0) {
                     root.fail("original bar entries or session drawer did not open");
+                    return;
+                }
+                const workspaces = CUtils.findChild(win.contentItem, "taskbarWorkspaces");
+                const activeWindow = CUtils.findChild(win.contentItem, "taskbarActiveWindow");
+                if (workspaces.implicitWidth <= 0 || workspaces.implicitHeight <= 0
+                        || activeWindow.implicitWidth <= 0 || activeWindow.implicitHeight <= 0) {
+                    root.fail("workspaces or active window entry did not lay out");
+                    return;
+                }
+                const liveStates = root.serviceStates();
+                if (liveStates.hypr.monitors < 1 || liveStates.hypr.activeWsId < 1) {
+                    root.fail("Hypr observation did not settle behind the bar entries");
                     return;
                 }
                 const statusIcons = CUtils.findChild(win.contentItem, "taskbarStatusIcons");
