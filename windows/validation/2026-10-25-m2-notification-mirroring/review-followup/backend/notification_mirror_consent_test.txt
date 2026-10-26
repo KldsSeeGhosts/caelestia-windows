@@ -1,0 +1,16 @@
+********* Start testing of qs::windows::services::notifications::NotificationMirrorConsentTest *********
+Config: Using QtTest library 6.11.2, Qt 6.11.2 (x86_64-little_endian-llp64 shared (dynamic) release build; by MSVC 2022), windows 11
+PASS   : qs::windows::services::notifications::NotificationMirrorConsentTest::initTestCase()
+PASS   : qs::windows::services::notifications::NotificationMirrorConsentTest::enableNeverPrompts()
+PASS   : qs::windows::services::notifications::NotificationMirrorConsentTest::explicitRequestPromptsOnce()
+PASS   : qs::windows::services::notifications::NotificationMirrorConsentTest::refreshAccessStatusNeverPrompts()
+PASS   : qs::windows::services::notifications::NotificationMirrorConsentTest::ownershipAcquisitionEnablesWithoutPrompting()
+PASS   : qs::windows::services::notifications::NotificationMirrorConsentTest::mirroredActivationDoesNotDismissOrRemove()
+QWARN  : qs::windows::services::notifications::NotificationMirrorConsentTest::localReplacementOfMirroredRecordIsRefused() quickshell.windows.notifications: notifySend: refusing replacement of a mirrored notification
+QWARN  : qs::windows::services::notifications::NotificationMirrorConsentTest::localReplacementOfMirroredRecordIsRefused() quickshell.windows.notifications: notifySend: refusing replacement of a mirrored notification
+QWARN  : qs::windows::services::notifications::NotificationMirrorConsentTest::localReplacementOfMirroredRecordIsRefused() quickshell.windows.notifications: Refusing local replacement of a mirrored notification
+QWARN  : qs::windows::services::notifications::NotificationMirrorConsentTest::localReplacementOfMirroredRecordIsRefused() quickshell.windows.notifications: Refusing local replacement of a mirrored notification
+PASS   : qs::windows::services::notifications::NotificationMirrorConsentTest::localReplacementOfMirroredRecordIsRefused()
+PASS   : qs::windows::services::notifications::NotificationMirrorConsentTest::cleanupTestCase()
+Totals: 8 passed, 0 failed, 0 skipped, 0 blacklisted, 962ms
+********* Finished testing of qs::windows::services::notifications::NotificationMirrorConsentTest *********

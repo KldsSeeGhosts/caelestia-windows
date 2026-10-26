@@ -1,0 +1,43 @@
+﻿{
+    "passed":  true,
+    "tests":  [
+                  {
+                      "target":  "notification_mirror_consent_test",
+                      "passed":  true,
+                      "timedOut":  false,
+                      "exitCode":  0,
+                      "command":  "C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-4d1d1d32\\windows\\.local\\build\\nc\\notification_mirror_consent_test.exe",
+                      "arguments":  "-o \"C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-4d1d1d32\\windows\\.local\\build\\nc\\notification_mirror_consent_test.txt\",txt",
+                      "executableSha256":  "EEA09EB73E561D808A5ABB637175A4036926D45F0DDEB69D893FA9BE2827FBC3",
+                      "totals":  "Totals: 8 passed, 0 failed, 0 skipped, 0 blacklisted, 962ms"
+                  },
+                  {
+                      "target":  "mpris_status_test",
+                      "passed":  true,
+                      "timedOut":  false,
+                      "exitCode":  0,
+                      "command":  "C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-4d1d1d32\\windows\\.local\\build\\nc\\mpris_status_test.exe",
+                      "arguments":  "-o \"C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-4d1d1d32\\windows\\.local\\build\\nc\\mpris_status_test.txt\",txt",
+                      "executableSha256":  "A67BA4E6C01AFA0B400C3FE6533116753942C94FADF424DF486B16197533EDC2",
+                      "totals":  "Totals: 6 passed, 0 failed, 0 skipped, 0 blacklisted, 2ms"
+                  },
+                  {
+                      "target":  "upower_status_test",
+                      "passed":  true,
+                      "timedOut":  false,
+                      "exitCode":  0,
+                      "command":  "C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-4d1d1d32\\windows\\.local\\build\\nc\\upower_status_test.exe",
+                      "arguments":  "-o \"C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-4d1d1d32\\windows\\.local\\build\\nc\\upower_status_test.txt\",txt",
+                      "executableSha256":  "BB405D6092BAE8EF4B5E43C466FC08287E036BF560BFB06C73DB90DD7190009D",
+                      "totals":  "Totals: 9 passed, 0 failed, 0 skipped, 0 blacklisted, 2ms"
+                  }
+              ],
+    "totals":  "Totals: 8 passed, 0 failed, 0 skipped, 0 blacklisted, 962ms; Totals: 6 passed, 0 failed, 0 skipped, 0 blacklisted, 2ms; Totals: 9 passed, 0 failed, 0 skipped, 0 blacklisted, 2ms",
+    "backendRevision":  "3da2296a8f9a27e131425c511401a67b5a514a45",
+    "backendBranch":  "windows/m2-notification-mirror-consent",
+    "backendDirty":  false,
+    "qtVersion":  "6.11.2",
+    "compiler":  "clang version 20.1.8",
+    "manifestTool":  "C:\\Program Files (x86)\\Windows Kits\\10\\bin\\10.0.26100.0\\x64\\mt.exe",
+    "linker":  "MSVC"
+}

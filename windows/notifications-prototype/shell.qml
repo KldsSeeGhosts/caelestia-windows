@@ -18,10 +18,11 @@ import qs.modules.sidebar as Sidebar
 
 // A separate bounded M2 host for the original Caelestia notification popup
 // list. It stages the original modules/notifications Content/Notification
-// components and the original NotifData contract, but only with the local
-// delivery opt-in. System notification mirroring, access requests, IPC
-// mutations, shortcuts, DnD state and every other shell controller stay
-// unloaded.
+// components and the original NotifData contract with the local delivery
+// opt-in. System notification mirroring is a second opt-in whose only consent
+// entry point is the button in the original notification center; smoke forces
+// it off. IPC mutations, shortcuts, DnD state and every other shell controller
+// stay unloaded.
 ShellRoot {
     id: root
 
@@ -93,6 +94,29 @@ ShellRoot {
             ownershipKnown: Notifs.ownershipKnown,
             contended: Notifs.contended,
             deliveryUnconfirmed: Notifs.deliveryUnconfirmed,
+            mirrorOptIn: Notifs.mirrorOptIn,
+            mirrorControlEnabled: Notifs.mirrorControlEnabled,
+            mirrorStatus: Notifs.mirrorStatus,
+            mirrorStatusText: Notifs.mirrorStatusText,
+            mirrorAccessState: Notifs.mirrorAccessState,
+            canRequestMirrorAccess: Notifs.canRequestMirrorAccess,
+            mirrorConsentRequested: Notifs.mirrorConsentRequested,
+            mirrorConsentPending: Notifs.mirrorConsentPending,
+            mirrorSettingsActionRequired: Notifs.mirrorSettingsActionRequired,
+            mirrorAccessRequests: Notifs.mirrorAccessRequests,
+            mirrorAccessRequestRefusals: Notifs.mirrorAccessRequestRefusals,
+            mirrorWrites: Notifs.mirrorWrites,
+            windowsDismissEnabled: Notifs.windowsDismissEnabled,
+            appOpenEnabled: Notifs.appOpenEnabled,
+            mirroredCount: Notifs.mirroredCount,
+            windowsDismissals: Notifs.windowsDismissals,
+            mirroredLocalDismissals: Notifs.mirroredLocalDismissals,
+            appOpenRefusals: Notifs.appOpenRefusals,
+            appOpenInvocations: Notifs.appOpenInvocations,
+            deniedPolls: Notifs.deniedPolls,
+            deniedPollingActive: Notifs.deniedPollingActive,
+            centerVisible: Notifs.centerVisible,
+            settingsOpenRequests: Notifs.settingsOpenRequests,
             historyLoaded: Notifs.loaded,
             historyError: Notifs.historyError,
             pathConfined: Notifs.pathConfined,
@@ -144,6 +168,22 @@ ShellRoot {
         const accessOk = state.enabled
             ? state.systemNotificationAccess === 0
             : state.systemNotificationAccess === -1;
+        // Smoke never stages mirroring, dismissal or app-open, and the service
+        // must not have requested access on any path.
+        const mirrorOff = state.mirrorOptIn === false
+            && state.mirrorControlEnabled === false
+            && state.mirrorAccessState === "Unknown"
+            && state.mirrorStatus === "disabled"
+            && state.mirrorConsentRequested === false
+            && state.mirrorConsentPending === false
+            && state.mirrorAccessRequests === 0
+            && state.mirrorWrites === 0
+            && state.windowsDismissEnabled === false
+            && state.appOpenEnabled === false
+            && state.mirroredCount === 0
+            && state.windowsDismissals === 0
+            && state.mirrorSettingsActionRequired === false
+            && state.settingsOpenRequests === 0;
         if ((requested !== "native" && Math.abs(win.devicePixelRatio - Number(requested)) > 0.01)
                 || win.width !== root.previewWidth || win.height !== root.previewHeight
                 || bodyFont.status !== FontLoader.Ready || iconFont.status !== FontLoader.Ready
@@ -152,6 +192,23 @@ ShellRoot {
                 || state.systemMirrorActive !== false || !accessOk) {
             root.fail("UI, fonts, DPI, opt-in or mirroring policy");
             return;
+        }
+        if (!mirrorOff) {
+            root.fail("smoke staged notification mirroring, access or side effects: "
+                + JSON.stringify({
+                    mirrorOptIn: state.mirrorOptIn,
+                    mirrorControlEnabled: state.mirrorControlEnabled,
+                    access: state.mirrorAccessState,
+                    status: state.mirrorStatus,
+                    consent: state.mirrorConsentRequested,
+                    requests: state.mirrorAccessRequests,
+                    writes: state.mirrorWrites,
+                    dismiss: state.windowsDismissEnabled,
+                    appOpen: state.appOpenEnabled,
+                    mirrored: state.mirroredCount,
+                    dismissals: state.windowsDismissals,
+                    settings: state.settingsOpenRequests
+                }));
         }
     }
 
@@ -397,7 +454,14 @@ ShellRoot {
                         sourceComponent: Sidebar.NotifDock {
                             props: root.notificationProps
                             screenState: root.notificationScreenState
+                            // The original notification center owns the only
+                            // consent control. It is supplied only with the
+                            // mirroring opt-in; otherwise the original layout is
+                            // unchanged and no access request is reachable.
+                            mirrorControl: Notifs.mirrorControlEnabled ? Notifs : null
                         }
+                        onLoaded: Notifs.centerVisible = true
+                        onActiveChanged: Notifs.centerVisible = active && item !== null
                     }
                 }
 

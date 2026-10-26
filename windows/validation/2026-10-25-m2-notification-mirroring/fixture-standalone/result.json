@@ -1,0 +1,612 @@
+﻿{
+    "passed":  true,
+    "timedOut":  false,
+    "exitCode":  0,
+    "fixture":  {
+                    "assertions":  221
+                },
+    "nativeImports":  [
+
+                      ],
+    "servicePathFallbacks":  [
+
+                             ],
+    "recordPathFallbacks":  [
+
+                            ],
+    "facadePathFallbacks":  [
+
+                            ],
+    "serviceImageCacheReferences":  [
+
+                                    ],
+    "mirrorSetting":  [
+                          {
+                              "IgnoreCase":  true,
+                              "LineNumber":  50,
+                              "Line":  "        mirrorSystemNotifications: false",
+                              "Filename":  "NativeNotificationBackend.qml",
+                              "Path":  "C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-baa5f880\\windows\\services\\notifications\\NativeNotificationBackend.qml",
+                              "Pattern":  "mirrorSystemNotifications:\\s*false",
+                              "Context":  null,
+                              "Matches":  [
+                                              {
+                                                  "Groups":  [
+                                                                 {
+                                                                     "Groups":  [
+                                                                                    {
+                                                                                        "Groups":  "mirrorSystemNotifications: false",
+                                                                                        "Success":  true,
+                                                                                        "Name":  "0",
+                                                                                        "Captures":  "mirrorSystemNotifications: false",
+                                                                                        "Index":  8,
+                                                                                        "Length":  32,
+                                                                                        "Value":  "mirrorSystemNotifications: false"
+                                                                                    }
+                                                                                ],
+                                                                     "Success":  true,
+                                                                     "Name":  "0",
+                                                                     "Captures":  [
+                                                                                      {
+                                                                                          "Groups":  "mirrorSystemNotifications: false",
+                                                                                          "Success":  true,
+                                                                                          "Name":  "0",
+                                                                                          "Captures":  "mirrorSystemNotifications: false",
+                                                                                          "Index":  8,
+                                                                                          "Length":  32,
+                                                                                          "Value":  "mirrorSystemNotifications: false"
+                                                                                      }
+                                                                                  ],
+                                                                     "Index":  8,
+                                                                     "Length":  32,
+                                                                     "Value":  "mirrorSystemNotifications: false"
+                                                                 }
+                                                             ],
+                                                  "Success":  true,
+                                                  "Name":  "0",
+                                                  "Captures":  [
+                                                                   {
+                                                                       "Groups":  [
+                                                                                      {
+                                                                                          "Groups":  "mirrorSystemNotifications: false",
+                                                                                          "Success":  true,
+                                                                                          "Name":  "0",
+                                                                                          "Captures":  "mirrorSystemNotifications: false",
+                                                                                          "Index":  8,
+                                                                                          "Length":  32,
+                                                                                          "Value":  "mirrorSystemNotifications: false"
+                                                                                      }
+                                                                                  ],
+                                                                       "Success":  true,
+                                                                       "Name":  "0",
+                                                                       "Captures":  [
+                                                                                        {
+                                                                                            "Groups":  "mirrorSystemNotifications: false",
+                                                                                            "Success":  true,
+                                                                                            "Name":  "0",
+                                                                                            "Captures":  "mirrorSystemNotifications: false",
+                                                                                            "Index":  8,
+                                                                                            "Length":  32,
+                                                                                            "Value":  "mirrorSystemNotifications: false"
+                                                                                        }
+                                                                                    ],
+                                                                       "Index":  8,
+                                                                       "Length":  32,
+                                                                       "Value":  "mirrorSystemNotifications: false"
+                                                                   }
+                                                               ],
+                                                  "Index":  8,
+                                                  "Length":  32,
+                                                  "Value":  "mirrorSystemNotifications: false"
+                                              }
+                                          ]
+                          }
+                      ],
+    "mirrorEnabled":  [
+
+                      ],
+    "nativeAccessRequests":  [
+                                 {
+                                     "Groups":  [
+                                                    {
+                                                        "Groups":  [
+                                                                       {
+                                                                           "Groups":  [
+                                                                                          {
+                                                                                              "Groups":  "requestSystemNotificationAccess",
+                                                                                              "Success":  true,
+                                                                                              "Name":  "0",
+                                                                                              "Captures":  "requestSystemNotificationAccess",
+                                                                                              "Index":  1150,
+                                                                                              "Length":  31,
+                                                                                              "Value":  "requestSystemNotificationAccess"
+                                                                                          }
+                                                                                      ],
+                                                                           "Success":  true,
+                                                                           "Name":  "0",
+                                                                           "Captures":  [
+                                                                                            {
+                                                                                                "Groups":  "requestSystemNotificationAccess",
+                                                                                                "Success":  true,
+                                                                                                "Name":  "0",
+                                                                                                "Captures":  "requestSystemNotificationAccess",
+                                                                                                "Index":  1150,
+                                                                                                "Length":  31,
+                                                                                                "Value":  "requestSystemNotificationAccess"
+                                                                                            }
+                                                                                        ],
+                                                                           "Index":  1150,
+                                                                           "Length":  31,
+                                                                           "Value":  "requestSystemNotificationAccess"
+                                                                       }
+                                                                   ],
+                                                        "Success":  true,
+                                                        "Name":  "0",
+                                                        "Captures":  [
+                                                                         {
+                                                                             "Groups":  [
+                                                                                            {
+                                                                                                "Groups":  "requestSystemNotificationAccess",
+                                                                                                "Success":  true,
+                                                                                                "Name":  "0",
+                                                                                                "Captures":  "requestSystemNotificationAccess",
+                                                                                                "Index":  1150,
+                                                                                                "Length":  31,
+                                                                                                "Value":  "requestSystemNotificationAccess"
+                                                                                            }
+                                                                                        ],
+                                                                             "Success":  true,
+                                                                             "Name":  "0",
+                                                                             "Captures":  [
+                                                                                              {
+                                                                                                  "Groups":  "requestSystemNotificationAccess",
+                                                                                                  "Success":  true,
+                                                                                                  "Name":  "0",
+                                                                                                  "Captures":  "requestSystemNotificationAccess",
+                                                                                                  "Index":  1150,
+                                                                                                  "Length":  31,
+                                                                                                  "Value":  "requestSystemNotificationAccess"
+                                                                                              }
+                                                                                          ],
+                                                                             "Index":  1150,
+                                                                             "Length":  31,
+                                                                             "Value":  "requestSystemNotificationAccess"
+                                                                         }
+                                                                     ],
+                                                        "Index":  1150,
+                                                        "Length":  31,
+                                                        "Value":  "requestSystemNotificationAccess"
+                                                    }
+                                                ],
+                                     "Success":  true,
+                                     "Name":  "0",
+                                     "Captures":  [
+                                                      {
+                                                          "Groups":  [
+                                                                         {
+                                                                             "Groups":  [
+                                                                                            {
+                                                                                                "Groups":  "requestSystemNotificationAccess",
+                                                                                                "Success":  true,
+                                                                                                "Name":  "0",
+                                                                                                "Captures":  "requestSystemNotificationAccess",
+                                                                                                "Index":  1150,
+                                                                                                "Length":  31,
+                                                                                                "Value":  "requestSystemNotificationAccess"
+                                                                                            }
+                                                                                        ],
+                                                                             "Success":  true,
+                                                                             "Name":  "0",
+                                                                             "Captures":  [
+                                                                                              {
+                                                                                                  "Groups":  "requestSystemNotificationAccess",
+                                                                                                  "Success":  true,
+                                                                                                  "Name":  "0",
+                                                                                                  "Captures":  "requestSystemNotificationAccess",
+                                                                                                  "Index":  1150,
+                                                                                                  "Length":  31,
+                                                                                                  "Value":  "requestSystemNotificationAccess"
+                                                                                              }
+                                                                                          ],
+                                                                             "Index":  1150,
+                                                                             "Length":  31,
+                                                                             "Value":  "requestSystemNotificationAccess"
+                                                                         }
+                                                                     ],
+                                                          "Success":  true,
+                                                          "Name":  "0",
+                                                          "Captures":  [
+                                                                           {
+                                                                               "Groups":  [
+                                                                                              {
+                                                                                                  "Groups":  "requestSystemNotificationAccess",
+                                                                                                  "Success":  true,
+                                                                                                  "Name":  "0",
+                                                                                                  "Captures":  "requestSystemNotificationAccess",
+                                                                                                  "Index":  1150,
+                                                                                                  "Length":  31,
+                                                                                                  "Value":  "requestSystemNotificationAccess"
+                                                                                              }
+                                                                                          ],
+                                                                               "Success":  true,
+                                                                               "Name":  "0",
+                                                                               "Captures":  [
+                                                                                                {
+                                                                                                    "Groups":  "requestSystemNotificationAccess",
+                                                                                                    "Success":  true,
+                                                                                                    "Name":  "0",
+                                                                                                    "Captures":  "requestSystemNotificationAccess",
+                                                                                                    "Index":  1150,
+                                                                                                    "Length":  31,
+                                                                                                    "Value":  "requestSystemNotificationAccess"
+                                                                                                }
+                                                                                            ],
+                                                                               "Index":  1150,
+                                                                               "Length":  31,
+                                                                               "Value":  "requestSystemNotificationAccess"
+                                                                           }
+                                                                       ],
+                                                          "Index":  1150,
+                                                          "Length":  31,
+                                                          "Value":  "requestSystemNotificationAccess"
+                                                      }
+                                                  ],
+                                     "Index":  1150,
+                                     "Length":  31,
+                                     "Value":  "requestSystemNotificationAccess"
+                                 }
+                             ],
+    "otherAccessRequests":  [
+
+                            ],
+    "serviceRequestCalls":  [
+                                {
+                                    "Groups":  [
+                                                   {
+                                                       "Groups":  [
+                                                                      {
+                                                                          "Groups":  [
+                                                                                         {
+                                                                                             "Groups":  "requestAccess(",
+                                                                                             "Success":  true,
+                                                                                             "Name":  "0",
+                                                                                             "Captures":  "requestAccess(",
+                                                                                             "Index":  10193,
+                                                                                             "Length":  14,
+                                                                                             "Value":  "requestAccess("
+                                                                                         }
+                                                                                     ],
+                                                                          "Success":  true,
+                                                                          "Name":  "0",
+                                                                          "Captures":  [
+                                                                                           {
+                                                                                               "Groups":  "requestAccess(",
+                                                                                               "Success":  true,
+                                                                                               "Name":  "0",
+                                                                                               "Captures":  "requestAccess(",
+                                                                                               "Index":  10193,
+                                                                                               "Length":  14,
+                                                                                               "Value":  "requestAccess("
+                                                                                           }
+                                                                                       ],
+                                                                          "Index":  10193,
+                                                                          "Length":  14,
+                                                                          "Value":  "requestAccess("
+                                                                      }
+                                                                  ],
+                                                       "Success":  true,
+                                                       "Name":  "0",
+                                                       "Captures":  [
+                                                                        {
+                                                                            "Groups":  [
+                                                                                           {
+                                                                                               "Groups":  "requestAccess(",
+                                                                                               "Success":  true,
+                                                                                               "Name":  "0",
+                                                                                               "Captures":  "requestAccess(",
+                                                                                               "Index":  10193,
+                                                                                               "Length":  14,
+                                                                                               "Value":  "requestAccess("
+                                                                                           }
+                                                                                       ],
+                                                                            "Success":  true,
+                                                                            "Name":  "0",
+                                                                            "Captures":  [
+                                                                                             {
+                                                                                                 "Groups":  "requestAccess(",
+                                                                                                 "Success":  true,
+                                                                                                 "Name":  "0",
+                                                                                                 "Captures":  "requestAccess(",
+                                                                                                 "Index":  10193,
+                                                                                                 "Length":  14,
+                                                                                                 "Value":  "requestAccess("
+                                                                                             }
+                                                                                         ],
+                                                                            "Index":  10193,
+                                                                            "Length":  14,
+                                                                            "Value":  "requestAccess("
+                                                                        }
+                                                                    ],
+                                                       "Index":  10193,
+                                                       "Length":  14,
+                                                       "Value":  "requestAccess("
+                                                   }
+                                               ],
+                                    "Success":  true,
+                                    "Name":  "0",
+                                    "Captures":  [
+                                                     {
+                                                         "Groups":  [
+                                                                        {
+                                                                            "Groups":  [
+                                                                                           {
+                                                                                               "Groups":  "requestAccess(",
+                                                                                               "Success":  true,
+                                                                                               "Name":  "0",
+                                                                                               "Captures":  "requestAccess(",
+                                                                                               "Index":  10193,
+                                                                                               "Length":  14,
+                                                                                               "Value":  "requestAccess("
+                                                                                           }
+                                                                                       ],
+                                                                            "Success":  true,
+                                                                            "Name":  "0",
+                                                                            "Captures":  [
+                                                                                             {
+                                                                                                 "Groups":  "requestAccess(",
+                                                                                                 "Success":  true,
+                                                                                                 "Name":  "0",
+                                                                                                 "Captures":  "requestAccess(",
+                                                                                                 "Index":  10193,
+                                                                                                 "Length":  14,
+                                                                                                 "Value":  "requestAccess("
+                                                                                             }
+                                                                                         ],
+                                                                            "Index":  10193,
+                                                                            "Length":  14,
+                                                                            "Value":  "requestAccess("
+                                                                        }
+                                                                    ],
+                                                         "Success":  true,
+                                                         "Name":  "0",
+                                                         "Captures":  [
+                                                                          {
+                                                                              "Groups":  [
+                                                                                             {
+                                                                                                 "Groups":  "requestAccess(",
+                                                                                                 "Success":  true,
+                                                                                                 "Name":  "0",
+                                                                                                 "Captures":  "requestAccess(",
+                                                                                                 "Index":  10193,
+                                                                                                 "Length":  14,
+                                                                                                 "Value":  "requestAccess("
+                                                                                             }
+                                                                                         ],
+                                                                              "Success":  true,
+                                                                              "Name":  "0",
+                                                                              "Captures":  [
+                                                                                               {
+                                                                                                   "Groups":  "requestAccess(",
+                                                                                                   "Success":  true,
+                                                                                                   "Name":  "0",
+                                                                                                   "Captures":  "requestAccess(",
+                                                                                                   "Index":  10193,
+                                                                                                   "Length":  14,
+                                                                                                   "Value":  "requestAccess("
+                                                                                               }
+                                                                                           ],
+                                                                              "Index":  10193,
+                                                                              "Length":  14,
+                                                                              "Value":  "requestAccess("
+                                                                          }
+                                                                      ],
+                                                         "Index":  10193,
+                                                         "Length":  14,
+                                                         "Value":  "requestAccess("
+                                                     }
+                                                 ],
+                                    "Index":  10193,
+                                    "Length":  14,
+                                    "Value":  "requestAccess("
+                                },
+                                {
+                                    "Groups":  [
+                                                   {
+                                                       "Groups":  [
+                                                                      {
+                                                                          "Groups":  [
+                                                                                         {
+                                                                                             "Groups":  "requestAccess(",
+                                                                                             "Success":  true,
+                                                                                             "Name":  "0",
+                                                                                             "Captures":  "requestAccess(",
+                                                                                             "Index":  10666,
+                                                                                             "Length":  14,
+                                                                                             "Value":  "requestAccess("
+                                                                                         }
+                                                                                     ],
+                                                                          "Success":  true,
+                                                                          "Name":  "0",
+                                                                          "Captures":  [
+                                                                                           {
+                                                                                               "Groups":  "requestAccess(",
+                                                                                               "Success":  true,
+                                                                                               "Name":  "0",
+                                                                                               "Captures":  "requestAccess(",
+                                                                                               "Index":  10666,
+                                                                                               "Length":  14,
+                                                                                               "Value":  "requestAccess("
+                                                                                           }
+                                                                                       ],
+                                                                          "Index":  10666,
+                                                                          "Length":  14,
+                                                                          "Value":  "requestAccess("
+                                                                      }
+                                                                  ],
+                                                       "Success":  true,
+                                                       "Name":  "0",
+                                                       "Captures":  [
+                                                                        {
+                                                                            "Groups":  [
+                                                                                           {
+                                                                                               "Groups":  "requestAccess(",
+                                                                                               "Success":  true,
+                                                                                               "Name":  "0",
+                                                                                               "Captures":  "requestAccess(",
+                                                                                               "Index":  10666,
+                                                                                               "Length":  14,
+                                                                                               "Value":  "requestAccess("
+                                                                                           }
+                                                                                       ],
+                                                                            "Success":  true,
+                                                                            "Name":  "0",
+                                                                            "Captures":  [
+                                                                                             {
+                                                                                                 "Groups":  "requestAccess(",
+                                                                                                 "Success":  true,
+                                                                                                 "Name":  "0",
+                                                                                                 "Captures":  "requestAccess(",
+                                                                                                 "Index":  10666,
+                                                                                                 "Length":  14,
+                                                                                                 "Value":  "requestAccess("
+                                                                                             }
+                                                                                         ],
+                                                                            "Index":  10666,
+                                                                            "Length":  14,
+                                                                            "Value":  "requestAccess("
+                                                                        }
+                                                                    ],
+                                                       "Index":  10666,
+                                                       "Length":  14,
+                                                       "Value":  "requestAccess("
+                                                   }
+                                               ],
+                                    "Success":  true,
+                                    "Name":  "0",
+                                    "Captures":  [
+                                                     {
+                                                         "Groups":  [
+                                                                        {
+                                                                            "Groups":  [
+                                                                                           {
+                                                                                               "Groups":  "requestAccess(",
+                                                                                               "Success":  true,
+                                                                                               "Name":  "0",
+                                                                                               "Captures":  "requestAccess(",
+                                                                                               "Index":  10666,
+                                                                                               "Length":  14,
+                                                                                               "Value":  "requestAccess("
+                                                                                           }
+                                                                                       ],
+                                                                            "Success":  true,
+                                                                            "Name":  "0",
+                                                                            "Captures":  [
+                                                                                             {
+                                                                                                 "Groups":  "requestAccess(",
+                                                                                                 "Success":  true,
+                                                                                                 "Name":  "0",
+                                                                                                 "Captures":  "requestAccess(",
+                                                                                                 "Index":  10666,
+                                                                                                 "Length":  14,
+                                                                                                 "Value":  "requestAccess("
+                                                                                             }
+                                                                                         ],
+                                                                            "Index":  10666,
+                                                                            "Length":  14,
+                                                                            "Value":  "requestAccess("
+                                                                        }
+                                                                    ],
+                                                         "Success":  true,
+                                                         "Name":  "0",
+                                                         "Captures":  [
+                                                                          {
+                                                                              "Groups":  [
+                                                                                             {
+                                                                                                 "Groups":  "requestAccess(",
+                                                                                                 "Success":  true,
+                                                                                                 "Name":  "0",
+                                                                                                 "Captures":  "requestAccess(",
+                                                                                                 "Index":  10666,
+                                                                                                 "Length":  14,
+                                                                                                 "Value":  "requestAccess("
+                                                                                             }
+                                                                                         ],
+                                                                              "Success":  true,
+                                                                              "Name":  "0",
+                                                                              "Captures":  [
+                                                                                               {
+                                                                                                   "Groups":  "requestAccess(",
+                                                                                                   "Success":  true,
+                                                                                                   "Name":  "0",
+                                                                                                   "Captures":  "requestAccess(",
+                                                                                                   "Index":  10666,
+                                                                                                   "Length":  14,
+                                                                                                   "Value":  "requestAccess("
+                                                                                               }
+                                                                                           ],
+                                                                              "Index":  10666,
+                                                                              "Length":  14,
+                                                                              "Value":  "requestAccess("
+                                                                          }
+                                                                      ],
+                                                         "Index":  10666,
+                                                         "Length":  14,
+                                                         "Value":  "requestAccess("
+                                                     }
+                                                 ],
+                                    "Index":  10666,
+                                    "Length":  14,
+                                    "Value":  "requestAccess("
+                                }
+                            ],
+    "hashMismatch":  [
+
+                     ],
+    "diagnostics":  [
+
+                    ],
+    "staticChecks":  {
+                         "serviceImportsNoQuickshell":  true,
+                         "serviceImportsNoPaths":  true,
+                         "recordIsPure":  true,
+                         "recordNeverConstructsServer":  true,
+                         "facadeImportsNoPaths":  true,
+                         "serviceUsesNoUpstreamImageCache":  true,
+                         "serviceNeverConstructsServer":  true,
+                         "wrapperMirroringFalseAtConstruction":  true,
+                         "wrapperNeverEnablesMirroringAtConstruction":  true,
+                         "singleNativeAccessRequestFunction":  true,
+                         "noFacadeRecordAccessRequest":  true,
+                         "serviceHasOneExplicitRequestFunction":  true,
+                         "serviceCallsBackendRequestOnce":  true,
+                         "serviceHasNoOtherRequestCallSites":  true,
+                         "facadeExposesOneUserAction":  true,
+                         "originalCenterIsTheOnlyConsentButton":  true
+                     },
+    "sourceRevision":  "0299e4daf4d002f88769fe43aa4d5b00cd915e38",
+    "sourceDirty":  false,
+    "qtVersion":  "6.11.2",
+    "runnerSha256":  "24994D434962751713F0C8932B356104B0849572B95765DAD50C13DA6BE3FA20",
+    "command":  "C:\\Users\\Ermin\\AppData\\Local\\caelestia-dev\\Qt\\6.11.2\\msvc2022_64\\bin\\qml.exe",
+    "arguments":  "\"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\notification-tests\\notifications-fixture-20261025-184204-996\\NotificationsServiceTest.qml\"",
+    "sources":  [
+                    {
+                        "source":  "windows/services/notifications/NotificationsService.qml",
+                        "sourceSha256":  "A49F579F744F10BC6684F2FEB1BE291AFDF28FCFCBBA2DEF2FB8E23F2313C019",
+                        "stagedSha256":  "A49F579F744F10BC6684F2FEB1BE291AFDF28FCFCBBA2DEF2FB8E23F2313C019"
+                    },
+                    {
+                        "source":  "windows/services/notifications/NotifData.qml",
+                        "sourceSha256":  "4615D82985483E085C83CE32F9F665D3478047A5DF86C62CE2FCB553B2B74007",
+                        "stagedSha256":  "4615D82985483E085C83CE32F9F665D3478047A5DF86C62CE2FCB553B2B74007"
+                    },
+                    {
+                        "source":  "windows/services/notifications/NotificationsServiceTest.qml",
+                        "sourceSha256":  "57D38735967BFA4EDB1656E2BE0AB56118808A755267C452030C0CDC9F47B45D",
+                        "stagedSha256":  "57D38735967BFA4EDB1656E2BE0AB56118808A755267C452030C0CDC9F47B45D"
+                    }
+                ],
+    "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\notification-tests\\notifications-fixture-20261025-184204-996",
+    "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\notifications-fixture-20261025-184204-996.stdout.log",
+    "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\notifications-fixture-20261025-184204-996.stderr.log"
+}

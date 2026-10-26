@@ -4,23 +4,37 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import Quickshell.Windows
+import Caelestia
 import Caelestia.Config
 import Caelestia.I18n
 
 // Windows replacement for the original services/Notifs.qml singleton contract.
 // The pure NotificationsService owns records, expiry, dismissal, image source
-// trust and history serialization; this facade adds only the opt-in, the native
-// loader, the isolated-profile FileView and the local send helper. It
-// intentionally imports no HOME/XDG path object and never constructs the native
-// server while disabled. No notification image is copied, written, listed or
-// deleted: only allowlisted image://icon theme names and files already inside
-// the staged shell assets directory are used.
+// trust, mirroring consent and history serialization; this facade adds only the
+// opt-ins, the native loader, the Windows settings action, the isolated-profile
+// FileView and the local send helper. It intentionally imports no HOME/XDG path
+// object and never constructs the native server while disabled. No notification
+// image is copied, written, listed or deleted: only allowlisted image://icon
+// theme names and files already inside the staged shell assets directory are
+// used.
 Singleton {
     id: root
 
-    // Local delivery only. -NotificationsMode Local maps to this single opt-in;
-    // there is no mirroring/interactive mode in this slice.
+    // Local delivery opt-in. -NotificationsMode Local maps to this single
+    // variable; mirrored delivery additionally needs the mirror opt-in below.
     readonly property bool enabled: Quickshell.env("CAELESTIA_WINDOWS_NOTIFICATIONS") === "1"
+
+    // Mirroring is off unless explicitly opted into. It still starts
+    // unrequested: the service must never ask for notification-listener access
+    // until the user presses the notification-center button.
+    readonly property bool mirrorOptIn: enabled
+        && Quickshell.env("CAELESTIA_WINDOWS_NOTIFICATION_MIRROR") === "1"
+    // Separate opt-ins for the two side effects a mirrored record can cause.
+    readonly property bool windowsDismissOptIn: mirrorOptIn
+        && Quickshell.env("CAELESTIA_WINDOWS_NOTIFICATION_MIRROR_DISMISS") === "1"
+    readonly property bool appOpenOptIn: mirrorOptIn
+        && Quickshell.env("CAELESTIA_WINDOWS_NOTIFICATION_APP_OPEN") === "1"
 
     // Quickshell's state directory is the staged //@ pragma value
     // (profile/state). The profile root is its parent, and the service refuses
@@ -37,6 +51,10 @@ Singleton {
 
     readonly property NotificationsService service: NotificationsService {
         enabled: root.enabled
+        mirrorOptIn: root.mirrorOptIn
+        windowsDismissOptIn: root.windowsDismissOptIn
+        appOpenOptIn: root.appOpenOptIn
+        centerVisible: root.centerVisible
         translator: Tr
         defaultExpireTimeout: GlobalConfig.notifs.defaultExpireTimeout
         fullscreenExpireTimeout: GlobalConfig.notifs.fullscreenExpireTimeout
@@ -48,6 +66,10 @@ Singleton {
         backendError: nativeLoader.status === Loader.Error
             ? "The Windows notification backend component failed to load." : ""
     }
+
+    // The bounded host sets this while the original notification center is
+    // visible. Denied access polling is bounded to that window.
+    property bool centerVisible: false
 
     // Preserved original Notifs singleton surface consumed by
     // modules/notifications/* and the sidebar notification components.
@@ -72,6 +94,51 @@ Singleton {
     readonly property bool contended: service.contended
     readonly property bool deliveryUnconfirmed: service.deliveryUnconfirmed
     readonly property string deliveryConfirmation: service.deliveryConfirmation
+
+    // ---- Mirroring control surface consumed by the notification center -----
+    readonly property bool mirrorControlEnabled: service.mirrorStaged
+    readonly property bool mirrorStaged: service.mirrorStaged
+    readonly property string mirrorAccessState: service.accessState
+    readonly property string mirrorStatus: service.mirrorStatus
+    readonly property string mirrorStatusText: {
+        switch (service.mirrorStatus) {
+        case "consent-required":
+            return "Windows notifications can be mirrored here after you allow access. They are requested only when you choose it.";
+        case "pending":
+            return "Waiting for Windows to answer the access request.";
+        case "allowed":
+            return "Windows notifications are mirrored here.";
+        case "denied":
+            return "Windows notification access is denied.";
+        case "unavailable":
+            return "Windows notification-listener access is unavailable on this system.";
+        case "timed-out":
+            return "Windows did not answer the access request. Use Windows settings; it is not asked again.";
+        case "blocked":
+            return "Another notification owner is active; mirroring stays off.";
+        default:
+            return "Windows notification access has not been reported yet.";
+        }
+    }
+    readonly property bool canRequestMirrorAccess: service.canRequestAccess
+    readonly property bool mirrorConsentRequested: service.consentRequested
+    readonly property bool mirrorConsentPending: service.consentPending
+    readonly property bool mirrorSettingsActionRequired: service.settingsActionRequired
+    readonly property bool windowsDismissEnabled: service.windowsDismissPermitted
+    readonly property bool appOpenEnabled: service.appOpenPermitted
+    readonly property int mirroredCount: service.mirroredCount
+    readonly property int windowsDismissals: service.windowsDismissals
+    readonly property int mirroredLocalDismissals: service.mirroredLocalDismissals
+    readonly property int appOpenRefusals: service.appOpenRefusals
+    readonly property int appOpenInvocations: service.appOpenInvocations
+    readonly property int mirrorAccessRequests: service.accessRequestsIssued
+    readonly property int mirrorAccessRequestRefusals: service.accessRequestRefusals
+    readonly property int mirrorWrites: service.mirrorWrites
+    readonly property int mirrorDisables: service.mirrorDisables
+    readonly property int deniedPolls: service.deniedPolls
+    readonly property bool deniedPollExhausted: service.deniedPollExhausted
+    readonly property bool deniedPollingActive: service.deniedPollingActive
+    readonly property int settingsOpenRequests: service.settingsOpenRequests
 
     // Set when a local send is refused before reaching the backend. A
     // replacement send (-r/--replace-id) is refused here because this slice has
@@ -151,6 +218,20 @@ Singleton {
         const id = root.backend.notifySend(summary, body, args ?? []);
         root.service.expectDelivery(id, summary, body);
         return id;
+    }
+
+    // The notification center's explicit consent button calls this. It is
+    // refused unless the access state is Unspecified and no request exists in
+    // this process, and it is never called from a timer, binding or startup.
+    function requestMirrorAccess(): bool {
+        return root.service.requestAccess();
+    }
+
+    // Explicit user action from the denied state. It opens Windows' notification
+    // access settings page; no access request is issued from here.
+    function openNotificationAccessSettings(): void {
+        root.service.noteSettingsOpened();
+        NotificationSettings.openAccessSettings();
     }
 
     function normalize(value): string {

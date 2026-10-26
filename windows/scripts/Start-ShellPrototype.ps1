@@ -28,7 +28,9 @@ param(
     [ValidateSet('Disabled', 'Observe')][string]$SessionMode = 'Disabled',
     [switch]$SessionActions,
     [switch]$Notifications,
-    [ValidateSet('Disabled', 'Local')][string]$NotificationsMode = 'Disabled',
+    [ValidateSet('Disabled', 'Local', 'Mirror')][string]$NotificationsMode = 'Disabled',
+    [switch]$NotificationDismiss,
+    [switch]$NotificationAppOpen,
     [ValidateSet('native', '1', '1.5', '1.75')][string]$ScaleFactor = 'native',
     [ValidateRange(0, 15)][int]$ScreenIndex = 0
 )
@@ -52,7 +54,7 @@ $slices = [ordered]@{
     apps      = @{ On = $Apps; Mode = $AppsMode; Observe = 'CAELESTIA_WINDOWS_APPS'; Controls = 'CAELESTIA_WINDOWS_APP_LAUNCH'; ControlMode = 'Interactive' }
     tray      = @{ On = $Tray; Mode = $TrayMode; Observe = 'CAELESTIA_WINDOWS_TRAY'; Controls = 'CAELESTIA_WINDOWS_TRAY_ACTIVATION'; ControlMode = 'Interactive' }
     session   = @{ On = $Session; Mode = $SessionMode; Observe = 'CAELESTIA_WINDOWS_SESSION'; Controls = 'CAELESTIA_WINDOWS_SESSION_ACTIONS'; ControlSwitch = $SessionActions; Stage = 'shell'; Marker = 'CAELESTIA_SHELL' }
-    # Local delivery only: mirroring and system access have their own review.
+    # Mirror mode adds its own opt-ins below; smoke never mirrors.
     notifications = @{ On = $Notifications; Mode = $NotificationsMode; Observe = 'CAELESTIA_WINDOWS_NOTIFICATIONS' }
 }
 $selected = @($slices.Keys | Where-Object { $slices[$_].On })
@@ -70,6 +72,8 @@ if ($TrayFixture -and (-not $Tray -or -not $Smoke -or $TrayMode -ne 'Disabled'))
 if ($SessionActions -and (-not $Session -or $SessionMode -ne 'Observe')) {
     throw '-SessionActions requires -Session -SessionMode Observe.'
 }
+if ($NotificationDismiss -and $NotificationsMode -ne 'Mirror') { throw '-NotificationDismiss requires -NotificationsMode Mirror.' }
+if ($NotificationAppOpen -and $NotificationsMode -ne 'Mirror') { throw '-NotificationAppOpen requires -NotificationsMode Mirror.' }
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
 if (-not $BuildRoot) { $BuildRoot = Join-Path $repoRoot 'windows\.local\build' }
 $BuildRoot = [IO.Path]::GetFullPath($BuildRoot)
@@ -203,6 +207,14 @@ if ($Tray) {
 }
 $info.EnvironmentVariables['CAELESTIA_SHELL_SESSION'] = $(if ($Session) { '1' } else { '0' })
 $info.EnvironmentVariables['CAELESTIA_SHELL_SESSION_MODE'] = $SessionMode
+# Mirroring and its two side effects are separate opt-ins that only exist in
+# Mirror mode. Smoke always forces all three off, so a smoke run never
+# constructs the mirror worker, never requests notification-listener access and
+# never enables Windows dismissal or app-open.
+$mirrorMode = $Notifications -and $NotificationsMode -eq 'Mirror' -and -not $Smoke
+$info.EnvironmentVariables['CAELESTIA_WINDOWS_NOTIFICATION_MIRROR'] = $(if ($mirrorMode) { '1' } else { '0' })
+$info.EnvironmentVariables['CAELESTIA_WINDOWS_NOTIFICATION_MIRROR_DISMISS'] = $(if ($mirrorMode -and $NotificationDismiss) { '1' } else { '0' })
+$info.EnvironmentVariables['CAELESTIA_WINDOWS_NOTIFICATION_APP_OPEN'] = $(if ($mirrorMode -and $NotificationAppOpen) { '1' } else { '0' })
 if ($ScaleFactor -ne 'native') {
     $info.EnvironmentVariables['QT_ENABLE_HIGHDPI_SCALING'] = '0'
     $info.EnvironmentVariables['QT_SCALE_FACTOR'] = $ScaleFactor
@@ -265,6 +277,10 @@ $result = [ordered]@{
     trayMode = $TrayMode; trayFixture = $TrayFixture.IsPresent
     trayHookMode = $(if ($Tray) { $info.EnvironmentVariables['QS_WINDOWS_TRAY_HOOK'] } else { $null })
     sessionMode = $SessionMode; sessionActions = $SessionActions.IsPresent; notificationsMode = $NotificationsMode
+    notificationsMirror = $mirrorMode
+    notificationsDismiss = [bool]($mirrorMode -and $NotificationDismiss)
+    notificationsAppOpen = [bool]($mirrorMode -and $NotificationAppOpen)
+    mirrorSuppressedBySmoke = [bool]($Notifications -and $NotificationsMode -eq 'Mirror' -and $Smoke)
     timedOut = $timedOut; exitCode = $process.ExitCode
     scaleFactor = $ScaleFactor; screenIndex = $ScreenIndex
     monitorCycle = $MonitorCycle.IsPresent

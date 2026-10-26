@@ -16,11 +16,28 @@ import QtQuick
 // popup/closed, lock()/unlock()/close() and a timer that can be stopped by the
 // original hover state.
 //
-// This slice only delivers notifications sent through the server's local path
-// (notifySend / the fixture). System toast mirroring stays off, so a close or
-// dismiss here only ever reaches a local backend object. The guards below also
-// refuse to dismiss anything carrying a Windows toast identity, so a future
-// mirroring slice cannot turn a local close into a Windows notification removal.
+// Local delivery is unchanged from the first slice. System toast mirroring is a
+// separate, opt-in state machine layered on top:
+//
+// - Nothing here requests Windows notification-listener access by itself. The
+//   only path is requestAccess(), which the original notification-center UI
+//   invokes from an explicit button and only while the state is Unspecified.
+// - The pinned backend reports Unknown until its mirror worker exists, so while
+//   mirroring is staged and no request has been made the service labels the
+//   un-queried consent state Unspecified. The backend only shows an OS prompt
+//   when Windows itself reports Unspecified.
+// - Mirroring is enabled on the backend only after Windows reports Allowed, and
+//   at most once per process. Denied/Unavailable never retry a prompt. The
+//   consent-fix backend also keeps a process-lifetime request latch
+//   (accessRequested); this object reconciles with it after a QML reload
+//   instead of re-asking, and mirrored enable is withdrawn when access is
+//   lost, the mirror opt-in is removed or the service becomes unavailable.
+// - A mirrored record is identified only by the backend's x-windows-toast-id /
+//   x-windows-aumid hints. Its dismissal removes the real Windows toast only
+//   with the separate dismiss opt-in; app-open is a third opt-in that goes
+//   through the backend's mirrored activation member, never the generic
+//   action path whose native auto-close would dismiss the toast. Mirrored
+//   records are never serialized to history.
 QtObject {
     id: root
 
@@ -28,8 +45,44 @@ QtObject {
     // fake) exposing: ready (bool), ownership (string), mirrorSystemNotifications
     // (bool), systemMirrorActive (bool), systemNotificationAccess (int),
     // notifySend(summary, body, args), and notificationReceived(notification).
+    // The consent-fix revision additionally exposes accessRequested (bool),
+    // refreshAccessStatus() and activateMirrored(id); every use of those is
+    // feature-detected so the shared build at the pinned revision still works.
     property var backend: null
     property bool enabled: false
+
+    // ---- Mirroring opt-ins and consent state ------------------------------
+    // Injected by the facade from the child-process variables. Local delivery
+    // works without them; mirroring, Windows dismissal of mirrored records and
+    // app-open each stay independent and default off.
+    property bool mirrorOptIn: false
+    property bool windowsDismissOptIn: false
+    property bool appOpenOptIn: false
+    property bool centerVisible: false
+    property int consentTimeout: 60000
+    property int accessPollInterval: 5000
+    property int accessPollBudget: 5
+
+    // The last access value published by the backend. The service caches it so
+    // denied polling is counted and bounded instead of following a binding.
+    property int reportedAccess: -1
+    property bool consentRequested: false
+    property bool consentPending: false
+    property bool consentTimedOut: false
+    property int consentAttempts: 0
+    property int accessRequestsIssued: 0
+    property int accessRequestRefusals: 0
+    property int settingsOpenRequests: 0
+    property int mirrorWrites: 0
+    property int mirrorDisables: 0
+    property bool mirroringApplied: false
+    property int deniedPolls: 0
+    property bool deniedPollExhausted: false
+    property int mirroredCount: 0
+    property int mirroredLocalDismissals: 0
+    property int windowsDismissals: 0
+    property int appOpenRefusals: 0
+    property int appOpenInvocations: 0
 
     // A loader can supply a known component failure. Native delivery problems
     // are observed through status/deliveryUnconfirmed instead.
@@ -80,8 +133,11 @@ QtObject {
     signal historyChanged()
 
     onEnabledChanged: {
-        if (root.enabled)
+        if (root.enabled) {
+            root.refreshAccess();
             return;
+        }
+        root.disableMirroring();
         for (const record of root.list.slice()) {
             record.closed = true;
             record.notification = null;
@@ -141,15 +197,229 @@ QtObject {
 
     readonly property bool backendPresent: enabled && !backendError && !!backend
 
-    // Mirroring defaults true in the pinned backend. This slice must never
-    // request, enable or rely on it; a backend reporting true is refused rather
-    // than allowed to deliver system notifications through the original UI.
+    // Mirroring defaults true in the pinned backend, so the wrapper sets it
+    // false at construction. Only the staged, consented path below may turn it
+    // on. A true flag without the opt-in is refused rather than allowed to
+    // deliver system notifications through the original UI.
     readonly property bool mirroringRequested: backend?.mirrorSystemNotifications === true
     readonly property bool mirroringOff: !mirroringRequested
+    // With mirroring staged, a true backend flag is this service's own gated
+    // write. Without the opt-in it is unexpected and refused, exactly as in the
+    // local-delivery slice.
+    readonly property bool mirroringUnexpected: mirroringRequested && !mirrorStaged
     readonly property bool systemMirrorActive: backend?.systemMirrorActive === true
     readonly property int systemNotificationAccess: {
         const value = backend?.systemNotificationAccess;
         return Number.isInteger(value) ? value : -1;
+    }
+    // Process-lifetime consent latch published by the consent-fix backend: an
+    // explicit request made earlier in this process stays made. A reloaded QML
+    // object reconciles with it (cached Allowed is usable without a new
+    // request; an unanswered request is not repeatable). The pinned revision
+    // publishes nothing, so this stays false there and only this object's own
+    // latch applies.
+    readonly property bool backendAccessRequested: backend?.accessRequested === true
+
+    // ---- Mirroring state machine ------------------------------------------
+
+    // Staged means the opt-in is present and a usable backend exists. It does
+    // not mean access was requested or granted.
+    readonly property bool mirrorStaged: enabled && mirrorOptIn && backendPresent && !contended
+    readonly property bool windowsDismissPermitted: mirrorStaged && windowsDismissOptIn
+    readonly property bool appOpenPermitted: mirrorStaged && appOpenOptIn
+
+    // Unknown/Unspecified/Allowed/Denied/Unavailable, as required by the
+    // backend contract. Without a staged mirror there is no measurement.
+    readonly property string accessState: root.computeAccessState()
+
+    readonly property bool canRequestAccess: mirrorStaged && backend?.ready === true
+        && accessState === "Unspecified" && !consentRequested && !consentPending
+        && !backendAccessRequested
+    readonly property bool settingsActionRequired: mirrorStaged
+        && (accessState === "Denied" || consentTimedOut)
+    readonly property bool deniedPollingActive: mirrorStaged && accessState === "Denied"
+        && centerVisible && !deniedPollExhausted && deniedPolls < accessPollBudget
+    readonly property int deniedPollsRemaining: Math.max(0, accessPollBudget - deniedPolls)
+
+    readonly property string mirrorStatus: {
+        if (!enabled || !mirrorOptIn)
+            return "disabled";
+        if (backendError)
+            return "unavailable";
+        if (!backend || backend.ready !== true)
+            return "initializing";
+        if (contended)
+            return "blocked";
+        if (mirroringUnexpected)
+            return "blocked";
+        if (accessState === "Unavailable")
+            return "unavailable";
+        if (accessState === "Denied")
+            return "denied";
+        if (accessState === "Allowed")
+            return "allowed";
+        if (consentPending)
+            return "pending";
+        if (consentTimedOut)
+            return "timed-out";
+        if (accessState === "Unspecified")
+            return "consent-required";
+        return "unknown";
+    }
+
+    readonly property string mirrorReason: {
+        switch (root.mirrorStatus) {
+        case "disabled":
+            return "System notification mirroring is off.";
+        case "unavailable":
+            return "Windows notification-listener access is unavailable on this system.";
+        case "initializing":
+            return "Waiting for the Windows notification server before mirroring can be offered.";
+        case "blocked":
+            return "Another notification owner is active. Mirroring and access requests stay disabled.";
+        case "denied":
+            return "Windows notification access is denied. No prompt is retried; open Windows settings to change it.";
+        case "allowed":
+            return "Windows notifications are mirrored here. Local notifications continue to work.";
+        case "pending":
+            return "Waiting for Windows to answer the explicit access request.";
+        case "timed-out":
+            return "Windows did not answer the access request. It is not retried automatically.";
+        case "consent-required":
+            return "Windows notifications can be mirrored after you allow access. Access is requested only from the button; it is never requested automatically.";
+        default:
+            return "Windows notification access has not been reported yet.";
+        }
+    }
+
+    function computeAccessState(): string {
+        if (!root.mirrorStaged)
+            return "Unknown";
+
+        switch (root.reportedAccess) {
+        case 2:
+            return "Allowed";
+        case 3:
+            return "Denied";
+        case 4:
+            return "Unavailable";
+        case 1:
+            return "Unspecified";
+        case 0:
+            // The pinned backend cannot publish Unspecified without creating
+            // its mirror worker, which may prompt. Staged mirroring treats the
+            // un-queried/unanswered value as undecided consent; an actual
+            // request is still gated by consentRequested below.
+            return "Unspecified";
+        default:
+            return "Unknown";
+        }
+    }
+
+    function refreshAccess(): void {
+        const value = root.backend?.systemNotificationAccess;
+        root.reportedAccess = Number.isInteger(value) ? value : -1;
+
+        if (root.consentPending && root.accessState !== "Unspecified") {
+            root.consentPending = false;
+            consentTimer.stop();
+        }
+
+        root.applyMirroring();
+    }
+
+    // The single, explicit consent action. It refuses unless the state is
+    // Unspecified and no attempt was made in this process, so Windows is never
+    // asked twice and Denied/Allowed/Unavailable never prompt again.
+    function requestAccess(): bool {
+        if (!root.canRequestAccess || !root.backend
+                || typeof root.backend.requestAccess !== "function") {
+            root.accessRequestRefusals++;
+            return false;
+        }
+
+        root.consentRequested = true;
+        root.consentPending = true;
+        root.consentTimedOut = false;
+        root.consentAttempts++;
+        root.accessRequestsIssued++;
+        consentTimer.restart();
+        root.backend.requestAccess();
+        root.refreshAccess();
+        return true;
+    }
+
+    function checkConsentTimeout(): void {
+        if (!root.consentPending)
+            return;
+        if (root.accessState !== "Unspecified") {
+            root.consentPending = false;
+            return;
+        }
+        root.consentPending = false;
+        root.consentTimedOut = true;
+    }
+
+    // Bounded denied polling. The timer is bound to deniedPollingActive, which
+    // includes centerVisible, so hiding the center stops it immediately. Each
+    // poll asks the consent-fix backend to re-query Windows without prompting
+    // (refreshAccessStatus), so recovery is observable; the pinned revision has
+    // no such member and the poll only re-reads the published value. It never
+    // calls a native request API.
+    function pollAccess(): bool {
+        if (!root.deniedPollingActive)
+            return false;
+        root.deniedPolls++;
+        if (typeof root.backend?.refreshAccessStatus === "function")
+            root.backend.refreshAccessStatus();
+        root.refreshAccess();
+        if (root.deniedPolls >= root.accessPollBudget)
+            root.deniedPollExhausted = true;
+        return true;
+    }
+
+    function noteSettingsOpened(): void {
+        root.settingsOpenRequests++;
+    }
+
+    // Mirroring is reconciled in both directions. An applied mirror is
+    // withdrawn when access is lost, the mirror opt-in is removed, the backend
+    // becomes unavailable or the service is disabled — the disable write also
+    // stops the backend's own ten-second access polling. Re-granted access
+    // re-enables it with one fresh write, and no state writes repeatedly.
+    //
+    // Property-change handlers can run before dependent bindings (mirrorStaged,
+    // accessState) have re-evaluated, so the desired state is recomputed from
+    // the raw inputs instead of reading those bindings.
+    function applyMirroring(): void {
+        const backend = root.backend;
+        const staged = root.enabled && root.mirrorOptIn && root.backendError === ""
+            && !!backend && backend?.ownership !== "contended";
+        const desired = staged && backend?.ready === true
+            && root.reportedAccess === 2
+            && (root.consentRequested || backend?.accessRequested === true);
+
+        if (!desired) {
+            root.disableMirroring();
+            return;
+        }
+        if (root.mirroringApplied)
+            return;
+        if (!backend || typeof backend.setMirroring !== "function")
+            return;
+
+        root.mirrorWrites++;
+        root.mirroringApplied = true;
+        backend.setMirroring(true);
+    }
+
+    function disableMirroring(): void {
+        if (!root.mirroringApplied)
+            return;
+        root.mirroringApplied = false;
+        root.mirrorDisables++;
+        if (root.backend && typeof root.backend.setMirroring === "function")
+            root.backend.setMirroring(false);
     }
 
     // The pinned backend performs the bounded five-second claim retry in C++
@@ -170,7 +440,7 @@ QtObject {
             return "disabled";
         if (backendError)
             return "unavailable";
-        if (mirroringRequested)
+        if (mirroringUnexpected)
             return "mirroring-blocked";
         if (!backend)
             return "initializing";
@@ -188,8 +458,8 @@ QtObject {
             return "Windows notifications are disabled.";
         if (backendError)
             return backendError;
-        if (mirroringRequested)
-            return "System notification mirroring is on; this slice only delivers local notifications and refuses to run with mirroring enabled.";
+        if (mirroringUnexpected)
+            return "System notification mirroring is on before any explicit consent; records are refused and no Windows notification is read or removed.";
         if (!backend)
             return "Waiting for the Windows notification server.";
         if (backend.ready !== true)
@@ -198,7 +468,27 @@ QtObject {
             return "Another notification owner is active. This shell is not delivering notifications and leaves the backend's bounded ownership retry alone.";
         if (deliveryUnconfirmed)
             return "The send was forwarded to another notification owner or was not delivered by this shell, so it is unconfirmed. No system notification was requested or dismissed.";
+        if (root.mirrorStaged)
+            return root.mirrorReason + " " + root.mirroringStateNote;
         return "Windows local notifications are delivered to this shell only. System notification mirroring is off; real Windows notifications are neither read nor removed.";
+    }
+
+    readonly property string mirroringStateNote: {
+        if (!root.mirrorStaged)
+            return "";
+        switch (root.accessState) {
+        case "Allowed":
+            return "Mirrored records are shown with their original app name and icon and are not saved to history."
+                + (root.windowsDismissPermitted
+                    ? "" : " Dismissing one hides it here only.")
+                + (root.appOpenPermitted ? "" : " Opening the source app stays disabled.");
+        case "Denied":
+            return "No access prompt is retried; use Windows settings.";
+        case "Unavailable":
+            return "This system does not offer notification-listener access.";
+        default:
+            return "Access is requested only from the mirroring button in the notification center.";
+        }
     }
 
     readonly property string ownershipNote: ownershipKnown
@@ -230,7 +520,21 @@ QtObject {
         function onNotificationReceived(notification): void {
             root.handleNotification(notification);
         }
+
+        function onSystemNotificationAccessChanged(): void {
+            root.refreshAccess();
+        }
+
+        function onReadyChanged(): void {
+            root.refreshAccess();
+        }
     }
+
+    onBackendChanged: root.refreshAccess()
+    // Removing the mirror opt-in or a backend component failure must reconcile
+    // mirroring immediately, not only on the next access signal.
+    onMirrorOptInChanged: root.refreshAccess()
+    onBackendErrorChanged: root.refreshAccess()
 
     function handleNotification(notification): bool {
         if (!deliveryAllowed() || !notification || typeof notification !== "object")
@@ -245,16 +549,20 @@ QtObject {
             return true;
         }
 
+        const mirrored = root.isSystemNotification(notification);
         const record = root._recordComponent.createObject(root, {
             service: root,
             recordId: root.nextRecordId++ + "-" + Date.now(),
             notification: notification,
             popup: !root.popupsSuppressed,
-            local: !root.isSystemNotification(notification)
+            local: !mirrored,
+            _wasMirrored: mirrored
         });
         if (!record)
             return false;
 
+        if (mirrored)
+            root.mirroredCount++;
         record.arrivalSequence = root.arrivalSequence;
         root.list = [record, ...root.list];
         root.deliveredNotifications++;
@@ -265,18 +573,59 @@ QtObject {
 
     function deliveryAllowed(): bool {
         return root.enabled && root.backendPresent && root.backend.ready === true
-            && !root.mirroringRequested && !root.contended;
+            && !root.mirroringUnexpected && !root.contended;
     }
 
     // A mirrored/toast-backed notification carries the backend's Windows toast
-    // hints. This slice never dismisses one, even if a future backend hands one
-    // to the original UI.
+    // hints (server.cpp onToastAdded). Only those two hints mark a record as a
+    // real Windows notification; the app name/icon are ordinary fields.
     function isSystemNotification(notification): bool {
         const hints = notification?.hints;
         if (!hints || typeof hints !== "object")
             return false;
         return Object.prototype.hasOwnProperty.call(hints, "x-windows-toast-id")
             || Object.prototype.hasOwnProperty.call(hints, "x-windows-aumid");
+    }
+
+    // App-open on a mirrored record activates or launches another application.
+    // It needs the separate opt-in, so the action object reports itself disabled
+    // and invokeAction refuses even if a caller bypasses the button.
+    function isActionDisabled(record, identifier): bool {
+        return !!record && record.mirrored === true
+            && String(identifier) === "default" && !root.appOpenPermitted;
+    }
+
+    function invokeAction(record, action): bool {
+        if (!record || !action || typeof action.invoke !== "function")
+            return false;
+
+        if (String(action.identifier) !== "default") {
+            action.invoke();
+            return true;
+        }
+
+        if (record.mirrored !== true) {
+            action.invoke();
+            return true;
+        }
+
+        // App-open on a mirrored record must activate the source app without
+        // dismissing the real Windows toast. The native action's own invoke
+        // auto-closes as dismissed, which removes the toast, so the opt-in is
+        // only honored through the backend's mirrored-activation member; when
+        // the backend (at the pinned revision) does not expose it, app-open is
+        // refused instead of bypassing the separate dismissal opt-in.
+        if (!root.appOpenPermitted) {
+            root.appOpenRefusals++;
+            return false;
+        }
+        if (typeof root.backend?.activateMirrored !== "function") {
+            root.appOpenRefusals++;
+            return false;
+        }
+
+        root.appOpenInvocations++;
+        return root.backend.activateMirrored(record.notificationId) === true;
     }
 
     function recordForNotificationId(notificationId): var {
@@ -319,14 +668,22 @@ QtObject {
 
         root.list = root.list.filter(item => item !== record);
 
-        if (dismiss && record.notification && record.local) {
-            // Local-only removal. This is the only place that calls into the
-            // backend notification's close path.
+        if (dismiss && record.notification && !record.mirrored && record.local) {
+            // Local-only removal. The local path never reaches a Windows toast.
             root.localDismissals++;
             record.notification.dismiss();
         } else if (dismiss && record.notification) {
-            // Never remove a real Windows notification from this slice.
-            root.protectedDismissals++;
+            // A mirrored record. The backend's Notification.dismiss() removes
+            // the real Windows toast (server.cpp deleteNotification), so it is
+            // gated by the separate dismiss opt-in. Without it the record is
+            // hidden locally and the Windows toast is left untouched.
+            if (root.windowsDismissPermitted) {
+                root.windowsDismissals++;
+                record.notification.dismiss();
+            } else {
+                root.protectedDismissals++;
+                root.mirroredLocalDismissals++;
+            }
         }
 
         record.notification = null;
@@ -422,10 +779,33 @@ QtObject {
         onTriggered: root.checkPendingDelivery()
     }
 
+    // Bounded wait for Windows to answer the explicit access request. It never
+    // re-requests; after the timeout the UI states that no answer arrived.
+    readonly property Timer _consentTimer: Timer {
+        id: consentTimer
+        interval: root.consentTimeout
+        onTriggered: root.checkConsentTimeout()
+    }
+
+    // Denied polling runs only while the notification center is visible and
+    // stops at the budget even if it stays visible.
+    readonly property Timer _accessPollTimer: Timer {
+        interval: root.accessPollInterval
+        repeat: true
+        running: root.deniedPollingActive
+        onTriggered: root.pollAccess()
+    }
+
     // ---- History -----------------------------------------------------------
 
     function serializeHistory(): string {
-        const entries = root.list.filter(record => !record.closed).map(record => ({
+        // Mirrored Windows toasts are live system state, not this shell's
+        // history: they are re-read from Windows on the next mirror start and
+        // persisting them would show stale records after the source app or
+        // Windows removed the toast. Only records this shell owns are saved.
+        const entries = root.list
+            .filter(record => !record.closed && record.mirrored !== true)
+            .map(record => ({
             time: new Date(record.time).getTime(),
             recordId: String(record.recordId ?? ""),
             notificationId: String(record.notificationId ?? ""),
@@ -525,7 +905,8 @@ QtObject {
                 resident: entry.resident === true,
                 hasActionIcons: entry.hasActionIcons === true,
                 historicalActions: actions,
-                local: entry.local !== false
+                local: entry.local !== false,
+                _wasMirrored: false
             });
             if (record)
                 restored.push(record);
@@ -843,15 +1224,20 @@ QtObject {
             return "";
         text = root.stripHtmlMediaTags(text);
         text = root.stripMarkdownReferenceDefinitions(text);
-        // An image alt may itself contain an image; a few passes handle the
-        // nesting without unbounded recursion.
+        // An image alt may itself contain an image, or stripping markup may
+        // expose another construct. Keep the work bounded, then fail closed.
         for (let pass = 0; pass < 8; pass++) {
-            const next = root.replaceMarkdownImages(text);
+            const next = root.stripMarkdownReferenceDefinitions(
+                root.stripHtmlMediaTags(root.replaceMarkdownImages(text)));
             if (next === text)
-                break;
+                return text;
             text = next;
         }
-        return text;
+        // Drop all possible image openers after the budget, including ones
+        // exposed by removing another opener. Removing every "!" and "<"
+        // prevents inline/reference images and all HTML media forms, regardless
+        // of remaining depth, escapes or incomplete delimiters.
+        return text.replace(/!/g, "").replace(/</g, "");
     }
 
     // Remove media-bearing HTML tags with a small scanner instead of a single

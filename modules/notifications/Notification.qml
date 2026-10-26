@@ -487,6 +487,10 @@ StyledRect {
                         inactiveColour: root.modelData.urgency === NotificationUrgency.Critical ? Colours.palette.m3secondary : Colours.layer(Colours.palette.m3surfaceContainerHighest, 2)
                         inactiveOnColour: root.modelData.urgency === NotificationUrgency.Critical ? Colours.palette.m3onSecondary : Colours.palette.m3onSurfaceVariant
                         text: modelData.text
+                        // Windows: app-open on a mirrored toast is a separate
+                        // opt-in; until it is present the original action uses
+                        // the existing disabled styling.
+                        disabled: modelData.disabled === true
                         onClicked: modelData.invoke()
 
                         label.horizontalAlignment: Text.AlignHCenter

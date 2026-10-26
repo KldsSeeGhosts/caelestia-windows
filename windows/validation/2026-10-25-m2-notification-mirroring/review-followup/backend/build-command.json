@@ -1,0 +1,10 @@
+﻿[
+    "--build",
+    "C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-4d1d1d32\\windows\\.local\\build\\nc",
+    "--target",
+    "notification_mirror_consent_test",
+    "mpris_status_test",
+    "upower_status_test",
+    "--parallel",
+    "4"
+]

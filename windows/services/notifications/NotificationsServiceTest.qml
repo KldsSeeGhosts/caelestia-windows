@@ -15,10 +15,17 @@ QtObject {
     component FakeAction: QtObject {
         property string identifier: ""
         property string text: ""
+        property var notification: null
         property int invokeCalls: 0
 
+        // Models the native action invoke: a non-resident notification is
+        // closed as dismissed, which for a mirrored record removes the real
+        // Windows toast. The notification is wired per test so local-action
+        // contracts stay observable independently of the auto-close.
         function invoke(): void {
             invokeCalls++;
+            if (notification && !notification.resident)
+                notification.dismiss();
         }
     }
 
@@ -60,7 +67,69 @@ QtObject {
         property bool mirrorSystemNotifications: false
         property bool systemMirrorActive: false
         property int systemNotificationAccess: 0
+        // Process-lifetime consent latch, as the consent-fix backend keeps it.
+        property bool accessRequested: false
+        property int requestAccessCalls: 0
+        property int setMirroringCalls: 0
+        property bool lastMirroringValue: false
+        property int refreshAccessStatusCalls: 0
+        property int activateMirroredCalls: 0
+        property var activateMirroredIds: []
+        property var refreshHandler: null
         signal notificationReceived(var notification)
+
+        // Mirrors the native wrapper's explicit consent/enable path so the
+        // fixture can prove when and how often the service reaches it. The
+        // request latches, exactly as the process-lifetime backend latch.
+        function requestAccess(): void {
+            requestAccessCalls++;
+            accessRequested = true;
+        }
+
+        function setMirroring(enabled): void {
+            setMirroringCalls++;
+            lastMirroringValue = enabled === true;
+            mirrorSystemNotifications = enabled === true;
+        }
+
+        // The consent-fix revision's non-prompting status query.
+        function refreshAccessStatus(): void {
+            refreshAccessStatusCalls++;
+            if (typeof refreshHandler === "function")
+                refreshHandler();
+        }
+
+        // The consent-fix revision's mirrored activation without dismissal.
+        function activateMirrored(id): bool {
+            activateMirroredCalls++;
+            activateMirroredIds.push(String(id));
+            return true;
+        }
+    }
+
+    // The pinned backend revision: no process latch, no non-prompting query
+    // and no mirrored activation member. The service must feature-detect all
+    // three and stay consent-safe against it.
+    component PinnedFakeBackend: QtObject {
+        property bool ready: true
+        property string ownership: "owner"
+        property bool mirrorSystemNotifications: false
+        property bool systemMirrorActive: false
+        property int systemNotificationAccess: 0
+        property int requestAccessCalls: 0
+        property int setMirroringCalls: 0
+        property bool lastMirroringValue: false
+        signal notificationReceived(var notification)
+
+        function requestAccess(): void {
+            requestAccessCalls++;
+        }
+
+        function setMirroring(enabled): void {
+            setMirroringCalls++;
+            lastMirroringValue = enabled === true;
+            mirrorSystemNotifications = enabled === true;
+        }
     }
 
     readonly property FakeBackend fixture: FakeBackend {}
@@ -81,6 +150,103 @@ QtObject {
         stateDirectory: "C:/fixtures/profile/state"
         shellAssetsDirectory: "C:/fixtures/shell/assets"
         defaultExpireTimeout: 5000
+    }
+
+    // Independent backends/services keep each mirroring policy isolated so a
+    // consent or dismissal test cannot mask another.
+    readonly property FakeBackend mirrorFixture: FakeBackend {}
+    readonly property FakeBackend replacementFixture: FakeBackend {}
+    readonly property FakeBackend dismissFixture: FakeBackend {}
+    readonly property FakeBackend appOpenFixture: FakeBackend {}
+    readonly property FakeBackend deniedFixture: FakeBackend {}
+
+    readonly property NotificationsService replacementService: NotificationsService {
+        enabled: true
+        mirrorOptIn: true
+        profileRoot: "C:/fixtures/profile"
+        stateDirectory: "C:/fixtures/profile/state"
+        backend: replacementFixture
+    }
+    readonly property FakeBackend autoFixture: FakeBackend {}
+    readonly property FakeBackend recoveryFixture: FakeBackend {}
+    readonly property FakeBackend reloadFixture: FakeBackend {}
+    readonly property PinnedFakeBackend pinnedFixture: PinnedFakeBackend {}
+
+    readonly property NotificationsService mirrorService: NotificationsService {
+        enabled: true
+        mirrorOptIn: true
+        profileRoot: "C:/fixtures/profile"
+        stateDirectory: "C:/fixtures/profile/state"
+        defaultExpireTimeout: 5000
+        backend: mirrorFixture
+        accessPollBudget: 5
+    }
+
+    readonly property NotificationsService dismissService: NotificationsService {
+        enabled: true
+        mirrorOptIn: true
+        windowsDismissOptIn: true
+        profileRoot: "C:/fixtures/profile"
+        stateDirectory: "C:/fixtures/profile/state"
+        backend: dismissFixture
+    }
+
+    readonly property NotificationsService appOpenService: NotificationsService {
+        enabled: true
+        mirrorOptIn: true
+        appOpenOptIn: true
+        profileRoot: "C:/fixtures/profile"
+        stateDirectory: "C:/fixtures/profile/state"
+        backend: appOpenFixture
+    }
+
+    readonly property NotificationsService deniedService: NotificationsService {
+        enabled: true
+        mirrorOptIn: true
+        profileRoot: "C:/fixtures/profile"
+        stateDirectory: "C:/fixtures/profile/state"
+        backend: deniedFixture
+        accessPollBudget: 5
+    }
+
+    readonly property NotificationsService autoService: NotificationsService {
+        enabled: true
+        mirrorOptIn: true
+        profileRoot: "C:/fixtures/profile"
+        stateDirectory: "C:/fixtures/profile/state"
+        backend: autoFixture
+    }
+
+    // Finding 4: a bounded denied poll observes recovery through the
+    // non-prompting access query.
+    readonly property NotificationsService recoveryService: NotificationsService {
+        enabled: true
+        mirrorOptIn: true
+        profileRoot: "C:/fixtures/profile"
+        stateDirectory: "C:/fixtures/profile/state"
+        backend: recoveryFixture
+        accessPollBudget: 5
+    }
+
+    // Finding 5: a fresh service object reconciling with the process-lifetime
+    // consent latch of an already-used backend, as after a QML reload.
+    readonly property NotificationsService reloadService: NotificationsService {
+        enabled: true
+        mirrorOptIn: true
+        profileRoot: "C:/fixtures/profile"
+        stateDirectory: "C:/fixtures/profile/state"
+        backend: reloadFixture
+    }
+
+    // The shared build at the pinned backend revision: no latch, no query and
+    // no mirrored activation member may ever be assumed.
+    readonly property NotificationsService pinnedService: NotificationsService {
+        enabled: true
+        mirrorOptIn: true
+        appOpenOptIn: true
+        profileRoot: "C:/fixtures/profile"
+        stateDirectory: "C:/fixtures/profile/state"
+        backend: pinnedFixture
     }
 
     // Third isolated instance used only for the startup-history merge case: it
@@ -123,6 +289,11 @@ QtObject {
             message + ": status " + service.status + " != " + expected + " (" + service.reason + ")");
     }
 
+    function expectStatusFor(target, expected, message): void {
+        check(target.status === expected,
+            message + ": status " + target.status + " != " + expected + " (" + target.reason + ")");
+    }
+
     function makeNotification(id, summary, hints): FakeNotification {
         return notificationComponent.createObject(test, {
             id: id,
@@ -133,6 +304,38 @@ QtObject {
 
     readonly property Component notificationComponent: Component {
         FakeNotification {}
+    }
+
+    readonly property Component actionComponent: Component {
+        FakeAction {}
+    }
+
+    function makeAction(identifier, text): FakeAction {
+        return actionComponent.createObject(test, {
+            identifier: identifier,
+            text: text
+        });
+    }
+
+    function stageMirror(service, backend, access): void {
+        backend.ready = true;
+        backend.ownership = "owner";
+        backend.mirrorSystemNotifications = false;
+        backend.systemNotificationAccess = access;
+        service.refreshAccess();
+    }
+
+    // The only supported consent path: an explicit call from Unspecified, then
+    // Windows answering Allowed.
+    function grantMirror(service, backend): void {
+        backend.systemNotificationAccess = 0;
+        service.refreshAccess();
+        check(service.requestAccess(), "explicit consent request accepted");
+        check(service.accessRequestsIssued === 1, "consent is requested exactly once");
+        backend.systemNotificationAccess = 2;
+        service.refreshAccess();
+        check(service.accessState === "Allowed", "consent result is Allowed");
+        check(service.mirrorWrites === 1, "mirroring is enabled once after Allowed");
     }
 
     function run(): void {
@@ -212,6 +415,10 @@ QtObject {
         expectStatus("local", "ready owner backend delivers locally");
         check(service.mirroringOff && service.ownership === "owner"
             && service.ownershipKnown, "owner backend is observable");
+        check(service.accessRequestsIssued === 0 && service.mirrorWrites === 0
+            && fixture.requestAccessCalls === 0, "local mode never requests access");
+        check(service.mirrorStatus === "disabled" && service.accessState === "Unknown",
+            "mirroring stays disabled without its opt-in");
 
         // --- Mirroring refusal -----------------------------------------------
         fixture.mirrorSystemNotifications = true;
@@ -556,6 +763,53 @@ QtObject {
                 entry[2] + ": " + JSON.stringify(sanitized) + " != " + JSON.stringify(entry[1]));
         }
 
+        // Exercise the pass boundary through every record ingress. Mixed forms
+        // include inline, full/collapsed/shortcut references and HTML media,
+        // so history and updates cannot retain images beyond the pass budget.
+        const nestedBodies = [];
+        for (const depth of [1, 8, 9, 50]) {
+            let inline = "marker";
+            let mixed = "<picture><source srcset='x'><IMG src='x'><svg><image href='x'/></svg>"
+                + "<object data='x'></object><embed src='x'><iframe src='x'></iframe>marker</picture>";
+            for (let level = 0; level < depth; level++) {
+                inline = "![" + inline + "](https://example.invalid/image.png)";
+                switch (level % 4) {
+                case 0: mixed = "![" + mixed + "](file:///C:/outside.png)"; break;
+                case 1: mixed = "![" + mixed + "][ref]"; break;
+                case 2: mixed = "![" + mixed + "][]"; break;
+                default: mixed = "![" + mixed + "]"; break;
+                }
+            }
+            nestedBodies.push({name: "inline depth " + depth, body: inline});
+            nestedBodies.push({name: "mixed depth " + depth,
+                body: mixed + "\n[ref]: https://example.invalid/image.png"});
+        }
+        // Removing a tag can itself expose another tag opener.
+        nestedBodies.push({name: "exposed HTML", body: "<im<img src='x'>g src='x'>marker"});
+        function checkNestedBody(body, name): void {
+            check(body.indexOf("marker") >= 0, name + " retains plain alt text");
+            check(!/!\[|<\/?(?:img|image|picture|source|svg|object|embed|iframe)\b/i.test(body),
+                name + " contains no image markup: " + body);
+            check(service.sanitizeBody(body) === body, name + " is stable after sanitizing");
+        }
+        for (let index = 0; index < nestedBodies.length; index++) {
+            const entry = nestedBodies[index];
+            const nested = makeNotification(12000 + index, entry.name);
+            nested.body = entry.body;
+            fixture.notificationReceived(nested);
+            const nestedRecord = service.recordForNotificationId(nested.id);
+            checkNestedBody(nestedRecord.body, entry.name + " live");
+            nested.body = "Updated " + entry.body;
+            checkNestedBody(nestedRecord.body, entry.name + " update");
+            check(restoredService.restoreHistory(JSON.stringify([{
+                time: 1000, recordId: "nested-" + index, notificationId: String(nested.id),
+                summary: entry.name, body: entry.body, local: true
+            }])), entry.name + " history restores");
+            checkNestedBody(restoredService.list[0].body, entry.name + " history");
+            nestedRecord.close();
+        }
+        restoredService.restoreHistory("[]");
+
         // Live records apply the app-icon allowlist, the encoded image URL and
         // the body filter, including on later property changes.
         const livePolicy = makeNotification(115, "Live policy");
@@ -896,7 +1150,449 @@ QtObject {
             && service.unconfirmedDeliveries === 0,
             "a refused replacement never starts or fails a delivery check");
 
-        // Clear the open records before the delivery-confirmation tests.
+        // --- Mirroring: every access state -----------------------------------
+        stageMirror(mirrorService, mirrorFixture, 0);
+        check(mirrorService.mirrorStaged, "the mirror opt-in stages mirroring");
+        check(mirrorService.accessState === "Unspecified",
+            "un-queried access is the undecided consent state");
+        check(mirrorService.canRequestAccess, "consent is available from Unspecified");
+        check(mirrorService.accessRequestsIssued === 0 && mirrorFixture.requestAccessCalls === 0,
+            "staging issued no access request");
+
+        const accessStates = [
+            [0, "Unspecified", true],
+            [1, "Unspecified", true],
+            [2, "Allowed", false],
+            [3, "Denied", false],
+            [4, "Unavailable", false],
+            [9, "Unknown", false],
+            [-1, "Unknown", false]
+        ];
+        for (const entry of accessStates) {
+            mirrorFixture.systemNotificationAccess = entry[0];
+            mirrorService.refreshAccess();
+            check(mirrorService.accessState === entry[1],
+                "access " + entry[0] + " maps to " + entry[1] + ": " + mirrorService.accessState);
+            check(mirrorService.canRequestAccess === entry[2],
+                "consent availability for " + entry[1]);
+        }
+
+        // Refusal for every state except Unspecified, without a single request.
+        for (const deniedValue of [2, 3, 4, 9]) {
+            mirrorFixture.systemNotificationAccess = deniedValue;
+            mirrorService.refreshAccess();
+            check(!mirrorService.requestAccess(),
+                "access " + deniedValue + " refuses the consent call");
+        }
+        check(mirrorService.accessRequestsIssued === 0
+            && mirrorService.accessRequestRefusals === 4
+            && mirrorFixture.requestAccessCalls === 0,
+            "refused consent never reaches the backend");
+
+        mirrorFixture.systemNotificationAccess = 3;
+        mirrorService.refreshAccess();
+        check(mirrorService.mirrorStatus === "denied"
+            && mirrorService.settingsActionRequired,
+            "denied access exposes the settings action");
+
+        // One explicit request from Unspecified, then no retry.
+        mirrorFixture.systemNotificationAccess = 0;
+        mirrorService.refreshAccess();
+        check(mirrorService.requestAccess(), "the explicit consent call is accepted once");
+        check(mirrorService.accessRequestsIssued === 1 && mirrorService.consentAttempts === 1
+            && mirrorFixture.requestAccessCalls === 1,
+            "exactly one access request reaches the backend");
+        check(mirrorService.consentPending && !mirrorService.canRequestAccess,
+            "a pending request hides the consent button");
+        mirrorService.checkConsentTimeout();
+        check(!mirrorService.consentPending && mirrorService.consentTimedOut
+            && mirrorService.mirrorStatus === "timed-out",
+            "an unanswered request times out instead of retrying");
+        check(!mirrorService.requestAccess() && mirrorService.accessRequestsIssued === 1
+            && mirrorFixture.requestAccessCalls === 1,
+            "consent is never requested repeatedly");
+
+        // Allowed enables mirroring exactly once and leaves local delivery on.
+        mirrorFixture.systemNotificationAccess = 2;
+        mirrorService.refreshAccess();
+        check(mirrorService.accessState === "Allowed" && mirrorService.mirrorStatus === "allowed",
+            "allowed is exposed");
+        check(mirrorService.mirrorWrites === 1 && mirrorFixture.setMirroringCalls === 1
+            && mirrorFixture.lastMirroringValue === true,
+            "mirroring is enabled once after Allowed");
+        check(mirrorService.mirroringApplied && mirrorService.mirroringRequested
+            && !mirrorService.mirroringUnexpected,
+            "the staged enable is not treated as unexpected mirroring");
+        mirrorService.refreshAccess();
+        mirrorService.refreshAccess();
+        check(mirrorService.mirrorWrites === 1 && mirrorFixture.setMirroringCalls === 1,
+            "mirroring is never written repeatedly");
+        expectStatusFor(mirrorService, "local", "local delivery continues with mirroring allowed");
+
+        // Mirrored record identification uses only the toast hints.
+        const mirroredNotification = makeNotification(501, "Windows toast");
+        mirroredNotification.appName = "Windows Terminal";
+        mirroredNotification.appIcon = "terminal";
+        mirroredNotification.hints = {
+            "x-windows-toast-id": 7,
+            "x-windows-aumid": "Microsoft.WindowsTerminal_8wekyb3d8bbwe!App"
+        };
+        const mirroredAction = makeAction("default", "Open");
+        mirroredNotification.actions = [mirroredAction];
+        mirrorFixture.notificationReceived(mirroredNotification);
+        const mirroredRecord = mirrorService.list[0];
+        check(mirroredRecord.mirrored === true && mirroredRecord.local === false,
+            "toast hints identify a mirrored record");
+        check(mirroredRecord.appName === "Windows Terminal"
+            && mirroredRecord.appIcon === "terminal",
+            "mirrored records use the original app name/icon fields");
+        check(mirroredRecord.hints["x-windows-toast-id"] === 7, "toast identity is preserved");
+        check(mirrorService.mirroredCount === 1, "mirrored records are counted");
+        check(mirroredRecord.actions[0].disabled === true,
+            "app-open is disabled without its opt-in");
+
+        const beforeRefusal = mirroredAction.invokeCalls;
+        mirroredRecord.actions[0].invoke();
+        check(mirroredAction.invokeCalls === beforeRefusal,
+            "app-open refusal does not invoke the native action");
+        check(mirrorService.appOpenRefusals === 1, "app-open refusal is counted");
+
+        // Dismissing a mirrored record without the opt-in stays local.
+        mirroredRecord.close();
+        check(mirroredNotification.dismissCalls === 0,
+            "mirrored dismissal is local-only without the opt-in");
+        check(mirrorService.mirroredLocalDismissals === 1
+            && mirrorService.windowsDismissals === 0
+            && mirrorService.protectedDismissals === 1,
+            "local-only mirrored dismissal counters");
+        check(mirrorService.list.length === 0, "local-only dismissal removed the UI record");
+
+        // A replacement is refused by the facade and the corrected backend.
+        // Also model the old backend mutating hints anyway, to independently
+        // prove the QML lifetime latch and dismissal guard with consent off.
+        stageMirror(replacementService, replacementFixture, 0);
+        grantMirror(replacementService, replacementFixture);
+        check(!replacementService.windowsDismissPermitted, "replacement dismissal consent is off");
+        for (const mode of ["hints signal", "full sync", "promoted local"]) {
+            const target = makeNotification(15001, "Protected replacement");
+            if (mode !== "promoted local")
+                target.hints = {"x-windows-toast-id": 77, "x-windows-aumid": "Fixture!App"};
+            replacementFixture.notificationReceived(target);
+            const targetRecord = replacementService.list[0];
+            if (mode === "promoted local") {
+                target.hints = {"x-windows-toast-id": 77};
+                check(targetRecord.mirrored, "a local record latches later mirrored identity");
+            }
+            check(replacementService.replacementSendRefusal(["-r", String(target.id)]) !== "",
+                mode + " refuses the local -r replacement");
+            target.summary = "Local replacement";
+            target.hints = {};
+            if (mode === "full sync")
+                replacementService.handleNotification(target);
+            check(targetRecord.mirrored && !targetRecord.local,
+                mode + " cannot reclassify the mirrored record after replacement");
+            check(JSON.parse(replacementService.serializeHistory()).length === 0,
+                mode + " cannot persist the replaced mirrored record");
+            // Even an inconsistent local flag must not bypass mirrored consent.
+            targetRecord.local = true;
+            targetRecord.close();
+            check(target.dismissCalls === 0 && replacementService.windowsDismissals === 0,
+                mode + " close never dismisses a real toast");
+        }
+        check(replacementService.protectedDismissals === 3
+            && replacementService.mirroredLocalDismissals === 3
+            && replacementService.localDismissals === 0,
+            "every replaced mirror is hidden locally with zero native dismissals");
+
+        // An aumid-only record is mirrored too, and local delivery is unaffected.
+        const aumidOnly = makeNotification(502, "Aumid only");
+        aumidOnly.hints = {"x-windows-aumid": "Contoso!App"};
+        mirrorFixture.notificationReceived(aumidOnly);
+        check(mirrorService.list[0].mirrored === true,
+            "the aumid hint alone identifies a mirrored record");
+        const localAlongside = makeNotification(503, "Local alongside mirror");
+        mirrorFixture.notificationReceived(localAlongside);
+        check(mirrorService.list[0].mirrored === false
+            && mirrorService.list[0].local === true,
+            "a notification without toast hints stays local");
+
+        // Mirrored records are not persisted; local records are.
+        const mirrorHistory = mirrorService.serializeHistory();
+        const mirrorHistoryEntries = JSON.parse(mirrorHistory);
+        check(mirrorHistoryEntries.length === 1
+            && mirrorHistoryEntries[0].notificationId === "503",
+            "mirrored records are not serialized to history");
+        check(mirrorHistory.indexOf("x-windows") < 0,
+            "history carries no Windows toast identity");
+        check(restoredService.restoreHistory(mirrorHistory)
+            && restoredService.list.length === 1
+            && restoredService.list[0].mirrored === false,
+            "restored history is never marked mirrored");
+
+        // --- Opted-in Windows dismissal ---------------------------------------
+        stageMirror(dismissService, dismissFixture, 0);
+        grantMirror(dismissService, dismissFixture);
+        check(dismissService.windowsDismissPermitted, "dismiss opt-in is staged");
+        const dismissToast = makeNotification(601, "Dismissible toast");
+        dismissToast.hints = {"x-windows-toast-id": 11};
+        dismissFixture.notificationReceived(dismissToast);
+        check(dismissService.list.length === 1, "dismissal fixture record arrived");
+        dismissService.list[0].close();
+        check(dismissToast.dismissCalls === 1,
+            "opted-in dismissal removes the real Windows toast");
+        check(dismissService.windowsDismissals === 1
+            && dismissService.protectedDismissals === 0
+            && dismissService.mirroredLocalDismissals === 0,
+            "opted-in dismissal counters");
+
+        // --- Opted-in app-open goes through mirrored activation ----------------
+        stageMirror(appOpenService, appOpenFixture, 0);
+        grantMirror(appOpenService, appOpenFixture);
+        check(appOpenService.appOpenPermitted, "app-open opt-in is staged");
+        const openToast = makeNotification(602, "Openable toast");
+        openToast.hints = {"x-windows-toast-id": 12};
+        const openAction = makeAction("default", "Open");
+        // The fake action models the native auto-close: invoking it dismisses
+        // the non-resident notification, removing the real Windows toast.
+        openAction.notification = openToast;
+        openToast.actions = [openAction];
+        appOpenFixture.notificationReceived(openToast);
+        const openRecord = appOpenService.list[0];
+        check(openRecord.actions[0].disabled === false,
+            "app-open is enabled with its opt-in");
+        openRecord.actions[0].invoke();
+        check(appOpenFixture.activateMirroredCalls === 1
+            && appOpenFixture.activateMirroredIds[0] === "602",
+            "opted-in app-open activates through the mirrored-activation path");
+        check(openAction.invokeCalls === 0 && openToast.dismissCalls === 0,
+            "app-open never reaches the auto-closing native action");
+        check(appOpenService.list.length === 1 && !openRecord.closed,
+            "activation leaves the mirrored record in place");
+        check(appOpenService.appOpenInvocations === 1
+            && appOpenService.appOpenRefusals === 0,
+            "opted-in app-open counters");
+        // Dismissal consent is enforced separately: hiding the activated
+        // record without the dismiss opt-in never touches the real toast.
+        openRecord.close();
+        check(openToast.dismissCalls === 0
+            && appOpenService.mirroredLocalDismissals === 1
+            && appOpenService.protectedDismissals === 1,
+            "activation does not smuggle in a Windows dismissal");
+
+        // A local action is never gated by the app-open opt-in.
+        const localAction = makeAction("default", "Open");
+        const localOpen = makeNotification(603, "Local action");
+        localOpen.actions = [localAction];
+        mirrorFixture.notificationReceived(localOpen);
+        const localOpenRecord = mirrorService.recordForNotificationId(603);
+        check(localOpenRecord.actions[0].disabled === false,
+            "local actions are never disabled");
+        localOpenRecord.actions[0].invoke();
+        check(localAction.invokeCalls === 1, "local action remains invokable");
+
+        // --- Finding 3: revocation is reconciled in both directions -----------
+        // mirrorService is Allowed with mirroring applied once here.
+        mirrorFixture.systemNotificationAccess = 3;
+        mirrorService.refreshAccess();
+        check(mirrorService.accessState === "Denied"
+            && mirrorService.mirrorStatus === "denied",
+            "revoked access is observed");
+        check(mirrorService.mirrorWrites === 1 && mirrorService.mirrorDisables === 1
+            && mirrorFixture.setMirroringCalls === 2
+            && mirrorFixture.lastMirroringValue === false,
+            "lost access withdraws the applied mirror with one disable write");
+        check(!mirrorService.mirroringApplied && !mirrorService.systemMirrorActive,
+            "the withdrawal is recorded in the service state");
+
+        // Re-granted access re-enables with exactly one fresh write.
+        mirrorFixture.systemNotificationAccess = 2;
+        mirrorService.refreshAccess();
+        check(mirrorService.mirrorWrites === 2 && mirrorService.mirrorDisables === 1
+            && mirrorFixture.setMirroringCalls === 3
+            && mirrorFixture.lastMirroringValue === true,
+            "re-granted access re-enables mirroring once");
+        mirrorService.refreshAccess();
+        mirrorService.refreshAccess();
+        check(mirrorService.mirrorWrites === 2 && mirrorFixture.setMirroringCalls === 3,
+            "the re-enabled mirror is never written repeatedly");
+
+        // Removing the mirror opt-in disables immediately; restoring it
+        // re-enables while the cached consent still holds.
+        mirrorService.mirrorOptIn = false;
+        check(mirrorService.mirrorDisables === 2 && mirrorFixture.setMirroringCalls === 4
+            && mirrorFixture.lastMirroringValue === false
+            && mirrorService.mirrorStatus === "disabled",
+            "removing the mirror opt-in withdraws the mirror: disables="
+            + mirrorService.mirrorDisables + " calls=" + mirrorFixture.setMirroringCalls
+            + " last=" + mirrorFixture.lastMirroringValue
+            + " applied=" + mirrorService.mirroringApplied
+            + " status=" + mirrorService.mirrorStatus
+            + " writes=" + mirrorService.mirrorWrites);
+        mirrorService.mirrorOptIn = true;
+        check(mirrorService.mirrorWrites === 3 && mirrorFixture.setMirroringCalls === 5
+            && mirrorFixture.lastMirroringValue === true,
+            "restoring the opt-in re-enables the cached mirror");
+
+        // A backend component failure is service unavailability; the disable
+        // write also stops the backend's own access polling.
+        mirrorService.backendError = "Fixture component failure";
+        check(mirrorService.mirrorDisables === 3 && mirrorFixture.setMirroringCalls === 6
+            && mirrorFixture.lastMirroringValue === false,
+            "backend unavailability withdraws the mirror");
+        mirrorService.backendError = "";
+        check(mirrorService.mirrorWrites === 4 && mirrorFixture.setMirroringCalls === 7
+            && mirrorFixture.lastMirroringValue === true,
+            "recovered availability re-enables the mirror");
+        mirrorService.enabled = false;
+        check(mirrorService.mirrorDisables === 4 && mirrorFixture.setMirroringCalls === 8,
+            "disabling the service withdraws the mirror once");
+
+        // --- Bounded denied polling -------------------------------------------
+        stageMirror(deniedService, deniedFixture, 0);
+        check(deniedService.requestAccess(), "denied path starts with one explicit request");
+        check(deniedFixture.accessRequested === true,
+            "the explicit request latches at process lifetime");
+        deniedFixture.systemNotificationAccess = 3;
+        deniedService.refreshAccess();
+        check(deniedService.accessState === "Denied" && deniedService.mirrorStatus === "denied",
+            "denied access state is exposed");
+        check(deniedService.mirrorWrites === 0 && deniedFixture.setMirroringCalls === 0,
+            "denied access never enables mirroring");
+        check(!deniedService.deniedPollingActive,
+            "denied polling stays off while the center is hidden");
+        deniedService.centerVisible = true;
+        check(deniedService.deniedPollingActive,
+            "denied polling starts while the center is visible");
+        check(deniedService.pollAccess() && deniedService.pollAccess(),
+            "denied polls within the budget succeed");
+        check(deniedService.deniedPolls === 2, "denied polls are counted");
+        check(deniedFixture.refreshAccessStatusCalls === 2,
+            "each bounded poll issues the non-prompting access query");
+        deniedService.centerVisible = false;
+        check(!deniedService.deniedPollingActive && !deniedService.pollAccess(),
+            "hiding the center stops denied polling immediately");
+        check(deniedService.deniedPolls === 2
+            && deniedFixture.refreshAccessStatusCalls === 2,
+            "hidden center issues no poll");
+        deniedService.centerVisible = true;
+        while (deniedService.pollAccess()) {}
+        check(deniedService.deniedPolls === deniedService.accessPollBudget,
+            "denied polling is bounded to its budget");
+        check(deniedFixture.refreshAccessStatusCalls === deniedService.accessPollBudget,
+            "every poll used the query member exactly once");
+        check(deniedService.deniedPollExhausted && !deniedService.deniedPollingActive,
+            "denied polling stops at the budget");
+        deniedService.centerVisible = false;
+        deniedService.centerVisible = true;
+        check(!deniedService.deniedPollingActive, "visibility does not reset the budget");
+        check(deniedService.accessRequestsIssued === 1
+            && deniedFixture.requestAccessCalls === 1,
+            "denied access never retries the prompt");
+        deniedService.noteSettingsOpened();
+        check(deniedService.settingsOpenRequests === 1,
+            "the settings action is recorded as explicit");
+
+        // --- Finding 4: a bounded poll observes denied-to-allowed recovery ----
+        stageMirror(recoveryService, recoveryFixture, 0);
+        check(recoveryService.requestAccess(), "recovery path starts with one explicit request");
+        recoveryFixture.systemNotificationAccess = 3;
+        recoveryService.refreshAccess();
+        recoveryService.centerVisible = true;
+        check(recoveryService.deniedPollingActive,
+            "recovery polling is active while the center is visible");
+        // Windows settings changed while the center is open: the next
+        // non-prompting query observes the grant.
+        recoveryFixture.refreshHandler = () => {
+            recoveryFixture.systemNotificationAccess = 2;
+        };
+        check(recoveryService.pollAccess(), "the recovery poll runs within its budget");
+        check(recoveryFixture.refreshAccessStatusCalls === 1,
+            "the poll issued exactly one non-prompting query");
+        check(recoveryService.accessState === "Allowed"
+            && recoveryService.mirrorStatus === "allowed",
+            "recovery is observed through the non-prompting query");
+        check(recoveryService.mirrorWrites === 1
+            && recoveryFixture.lastMirroringValue === true,
+            "recovered access re-enables mirroring without a new request");
+        check(!recoveryService.deniedPollingActive && recoveryService.deniedPolls === 1,
+            "recovery stops denied polling immediately");
+        check(recoveryService.accessRequestsIssued === 1
+            && recoveryFixture.requestAccessCalls === 1,
+            "recovery never issues another prompt");
+
+        // --- Finding 5: a reloaded QML object reconciles with process consent -
+        // Cached Allowed: a fresh service object uses it without a new request.
+        reloadFixture.accessRequested = true;
+        reloadFixture.systemNotificationAccess = 2;
+        reloadService.refreshAccess();
+        check(reloadService.accessState === "Allowed",
+            "the reloaded object observes the cached grant");
+        check(reloadService.mirrorWrites === 1 && reloadFixture.setMirroringCalls === 1
+            && reloadFixture.lastMirroringValue === true,
+            "the cached grant re-enables mirroring without a request");
+        check(reloadService.accessRequestsIssued === 0
+            && reloadFixture.requestAccessCalls === 0,
+            "no request is issued after the reload");
+        check(reloadService.consentRequested === false
+            && reloadService.backendAccessRequested === true
+            && !reloadService.canRequestAccess,
+            "the process latch satisfies the consent gate on its own");
+        reloadService.mirrorOptIn = false;
+        check(reloadService.mirrorDisables === 1
+            && reloadFixture.lastMirroringValue === false,
+            "the reloaded object still reconciles revocation");
+        reloadService.mirrorOptIn = true;
+
+        // An unanswered request is not repeatable in the same process.
+        reloadFixture.systemNotificationAccess = 0;
+        reloadService.refreshAccess();
+        check(reloadService.accessState === "Unspecified"
+            && !reloadService.canRequestAccess,
+            "the unanswered request keeps consent unavailable");
+        check(!reloadService.requestAccess()
+            && reloadService.accessRequestsIssued === 0
+            && reloadFixture.requestAccessCalls === 0
+            && reloadService.accessRequestRefusals === 1,
+            "the unanswered request is not repeated in this process");
+
+        // --- The pinned backend revision stays feature-detected and safe -----
+        stageMirror(pinnedService, pinnedFixture, 0);
+        check(pinnedService.requestAccess(), "the pinned path still starts explicitly");
+        pinnedFixture.systemNotificationAccess = 2;
+        pinnedService.refreshAccess();
+        check(pinnedService.mirrorWrites === 1
+            && pinnedFixture.lastMirroringValue === true,
+            "the pinned revision still enables after an explicit Allowed");
+        const pinnedToast = makeNotification(604, "Pinned toast");
+        pinnedToast.hints = {"x-windows-toast-id": 13};
+        const pinnedAction = makeAction("default", "Open");
+        pinnedAction.notification = pinnedToast;
+        pinnedToast.actions = [pinnedAction];
+        pinnedFixture.notificationReceived(pinnedToast);
+        const pinnedRecord = pinnedService.list[0];
+        check(pinnedRecord.actions[0].disabled === false,
+            "app-open appears enabled with its opt-in at the pinned revision");
+        pinnedRecord.actions[0].invoke();
+        check(pinnedService.appOpenRefusals === 1
+            && pinnedService.appOpenInvocations === 0,
+            "app-open is refused at the pinned revision instead of dismissing");
+        check(pinnedAction.invokeCalls === 0 && pinnedToast.dismissCalls === 0,
+            "the auto-closing native action is never reached at the pinned revision");
+        check(pinnedService.list.length === 1,
+            "the pinned refusal leaves the record and toast untouched");
+        // Without the query member a denied poll only re-reads the published
+        // value, and revocation still reconciles.
+        pinnedFixture.systemNotificationAccess = 3;
+        pinnedService.refreshAccess();
+        check(pinnedService.mirrorDisables === 1,
+            "the pinned revision still reconciles revocation");
+        pinnedService.centerVisible = true;
+        check(pinnedService.pollAccess() && pinnedService.deniedPolls === 1,
+            "denied polling still counts without the query member");
+        check(typeof pinnedFixture.refreshAccessStatus !== "function",
+            "the pinned backend exposes no query member");
+
+        // --- Clear the open records before the delivery-confirmation tests.
         for (const open of service.list.slice())
             open.close();
         check(service.list.length === 0, "all local records can be closed");
@@ -1041,6 +1737,17 @@ QtObject {
     }
 
     function finishAsync(): void {
+        // A staged service that was never asked must not have requested access
+        // after the event loop ran: consent cannot come from timers or startup.
+        check(test.autoService.accessRequestsIssued === 0
+            && test.autoFixture.requestAccessCalls === 0
+            && test.autoService.mirrorWrites === 0,
+            "staging never triggers an automatic access request");
+        check(test.autoService.accessState === "Unspecified"
+            && test.autoService.canRequestAccess
+            && !test.autoService.consentPending,
+            "the un-requested state stays consent-eligible and idle");
+
         check(test.asyncRecord !== null && !test.asyncRecord.closed,
             "async record remains in the list");
         check(test.asyncRecord.popup === false, "real Timer expired the popup");

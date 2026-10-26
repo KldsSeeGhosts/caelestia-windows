@@ -13,8 +13,10 @@ import QtQuick
 //
 // close() keeps the original hover lock contract: a locked card is marked
 // closed but is only removed (and only then dismissed) when the last lock is
-// released. Dismissal is delegated to the service, which refuses to touch a
-// Windows toast-backed notification.
+// released. Dismissal is delegated to the service: a local record is closed
+// locally, and a Windows-toast-backed record removes the real toast only when
+// the separate dismissal opt-in is present. Actions are routed through the
+// service so app-open on a mirrored record can stay disabled.
 QtObject {
     id: record
 
@@ -41,6 +43,10 @@ QtObject {
     property var actions: []
     property var historicalActions: []
     property bool local: false
+    // Latch Windows identity for this record's lifetime. Replacement hints
+    // cannot turn a native toast into a local record and bypass dismissal consent.
+    property bool _wasMirrored: false
+    readonly property bool mirrored: record._wasMirrored
     property bool imageSourceRejected: false
     property string imageSourceError: ""
     property bool hasFullscreen: false
@@ -112,7 +118,9 @@ QtObject {
         record.urgency = Number.isInteger(source.urgency) ? source.urgency : 1;
         record.resident = source.resident === true;
         record.hasActionIcons = source.hasActionIcons === true;
-        record.local = !record.service?.isSystemNotification(source);
+        record._wasMirrored = record.mirrored
+            || (record.service?.isSystemNotification(source) ?? false);
+        record.local = !record.mirrored;
         record.syncActions();
     }
 
@@ -171,17 +179,27 @@ QtObject {
     function syncActions(): void {
         if (record.notification) {
             const sourceActions = record.notification.actions ?? [];
-            record.actions = Array.prototype.map.call(sourceActions, action => ({
-                identifier: String(action.identifier ?? ""),
-                text: String(action.text ?? ""),
-                invoke: () => action.invoke()
-            }));
+            record.actions = Array.prototype.map.call(sourceActions, action => {
+                const identifier = String(action.identifier ?? "");
+                return {
+                    identifier: identifier,
+                    text: String(action.text ?? ""),
+                    // App-open on a mirrored toast activates/launches the source
+                    // app, so the original action row shows it with the existing
+                    // disabled styling until that separate opt-in is present.
+                    disabled: record.service?.isActionDisabled(record, identifier) ?? false,
+                    invoke: () => record.service
+                        ? record.service.invokeAction(record, action)
+                        : action.invoke()
+                };
+            });
             return;
         }
 
         record.actions = (record.historicalActions ?? []).map(action => ({
             identifier: String(action.identifier ?? ""),
             text: String(action.text ?? ""),
+            disabled: false,
             invoke: () => record.service?.invokeHistoricalAction(record, action.identifier)
         }));
     }
@@ -314,8 +332,13 @@ QtObject {
         }
 
         function onHintsChanged(): void {
-            if (record.notification)
-                record.hints = record.notification.hints ?? ({});
+            if (!record.notification)
+                return;
+            record.hints = record.notification.hints ?? ({});
+            record._wasMirrored = record.mirrored
+                || (record.service?.isSystemNotification(record.notification) ?? false);
+            record.local = !record.mirrored;
+            record.syncActions();
         }
     }
 }
