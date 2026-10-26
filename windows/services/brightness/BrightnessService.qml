@@ -116,16 +116,34 @@ QtObject {
     // Per-screen record generations survive a screen removal so a late query
     // result cannot authorize the reconnected monitor.
     property var _generations: ({})
+    // Outstanding query requests per screen, tracked independently of the
+    // screen records. Every backend.query() call pushes its record's globally
+    // unique request token; every queried() completion consumes the oldest
+    // outstanding token and is accepted only when it answers the token the
+    // current record issued. The queues survive record replacement, so a
+    // completion answering a request made against an older record is consumed
+    // and discarded instead of authorizing the reconnected monitor. The native
+    // backend answers one screen's queries in request order (a single worker
+    // thread delivering queued connections), so the oldest outstanding
+    // request is the one a completion answers.
+    property var _queryRequests: ({})
+    property int _querySerial: 0
     property Component _stateFactory: Component {
         MonitorState {}
     }
 
     component MonitorState: QtObject {
         property string screenName: ""
-        // Bumped when the screen is removed; a result is accepted only for the
-        // generation that requested the outstanding query.
+        // Bumped when the screen is removed; a fresh record for the same name
+        // is created with the bumped value.
         property int generation: 0
-        property int queryGeneration: -1
+        // Globally unique token of the query request this record issued. A
+        // queried() completion is accepted only when it answers that token.
+        property int queryToken: 0
+        // Bumped after a terminal write failure. The drag removed the host
+        // slider's value binding, so reassigning the unchanged confirmed level
+        // emits nothing; hosts rebind the displayed value on this serial.
+        property int resyncSerial: 0
         // unknown | querying | hardware | software-only | unsupported | failed
         property string state: "unknown"
         // wmi | lcd | ddc | software | ""
@@ -256,6 +274,36 @@ QtObject {
         _generations = map;
     }
 
+    function _pushQueryRequest(name, token): void {
+        const map = Object.assign({}, _queryRequests);
+        const queue = map[name] ?? [];
+        map[name] = queue.concat([token]);
+        _queryRequests = map;
+    }
+
+    // Consumes the oldest outstanding request token for a screen: the request
+    // a queried() completion answers.
+    function _popQueryRequest(name): int {
+        const queue = _queryRequests[name];
+        if (!Array.isArray(queue) || queue.length === 0)
+            return -1;
+        const map = Object.assign({}, _queryRequests);
+        map[name] = queue.slice(1);
+        _queryRequests = map;
+        return queue[0];
+    }
+
+    // Drops the newest outstanding request token; a query() call that threw
+    // synchronously can never complete.
+    function _discardQueryRequest(name): void {
+        const queue = _queryRequests[name];
+        if (!Array.isArray(queue) || queue.length === 0)
+            return;
+        const map = Object.assign({}, _queryRequests);
+        map[name] = queue.slice(0, queue.length - 1);
+        _queryRequests = map;
+    }
+
     function _syncStates(): void {
         const previous = _states;
         const next = [];
@@ -308,6 +356,9 @@ QtObject {
             state.lastError = "";
         }
         _generations = ({});
+        // The backend connection is gone while disabled; the outstanding
+        // requests can never complete and must not consume later ones.
+        _queryRequests = ({});
         policyError = "";
         strictRoutesEnabled = false;
     }
@@ -347,7 +398,8 @@ QtObject {
             return false;
         }
         state.querying = true;
-        state.queryGeneration = state.generation;
+        _querySerial++;
+        state.queryToken = _querySerial;
         state.state = "querying";
         state.route = "";
         state.available = false;
@@ -363,8 +415,10 @@ QtObject {
         state.lastError = "";
         queryRequests++;
         try {
+            _pushQueryRequest(state.screenName, state.queryToken);
             backend.query(state.screenName);
         } catch (error) {
+            _discardQueryRequest(state.screenName);
             state.querying = false;
             state.state = "failed";
             state.lastOutcome = "failed";
@@ -536,6 +590,28 @@ QtObject {
             state.brightness = 0;
             state.brightnessKnown = false;
         }
+        // The drag already removed the slider's value binding, so reassigning
+        // an unchanged confirmed level emits no change signal. Bump a serial
+        // the Windows host and the OSD hook use to rebind the displayed value;
+        // it is monotonically increasing and never reset.
+        state.resyncSerial++;
+    }
+
+    // A queued drag target is kept only while the authorization that accepted
+    // it still holds. When the controls opt-in is revoked or a strict-route
+    // policy failure latches while the first write is in flight, the queue is
+    // dropped at that moment, so the terminal result of the in-flight write
+    // settles the record without dispatching anything further. Disabling the
+    // service resets the records and removing the screen drops the record with
+    // its queue; those paths need no extra handling here. The dropped drag
+    // target will never be applied, so the displayed value is also resynced.
+    function _dropQueuedWrites(): void {
+        for (const state of _states) {
+            if (!state.hasQueuedWrite)
+                continue;
+            state.hasQueuedWrite = false;
+            state.resyncSerial++;
+        }
     }
 
     function _clearSoftwareDimming(): int {
@@ -555,14 +631,15 @@ QtObject {
     }
 
     function _onQueried(screenName, available, isDdc, brightness): void {
+        // Match the completion to the request it answers: the oldest
+        // outstanding token for this screen. The token queue is kept across
+        // record replacement, so a completion answering a request issued to an
+        // older record is consumed here and discarded; it never authorizes the
+        // current record, whose own completion is still outstanding.
+        const token = _popQueryRequest(screenName);
         const state = stateFor(screenName);
-        if (!state || !state.querying)
+        if (token < 0 || !state || !state.querying || state.queryToken !== token)
             return;
-        if (state.queryGeneration !== state.generation) {
-            // The record was dropped and reconnected after this query started.
-            state.querying = false;
-            return;
-        }
         // The backend also sets isDdc for the software route (brightness.cpp:
         // 1230-1236); methodFor() is the only route source.
         const route = _currentRoute(screenName);
@@ -646,7 +723,15 @@ QtObject {
         if (state.hasQueuedWrite) {
             const next = state.queuedValue;
             state.hasQueuedWrite = false;
-            _startWrite(state, next);
+            // The queued dispatch goes through write()'s authorization of the
+            // current state, exactly like an initial dispatch: the controls
+            // opt-in can have been revoked, the service disabled or a policy
+            // failure latched while the first write was in flight, and write()
+            // re-checks the route and pending state on the live record. A
+            // refused or dropped queue sends no backend call.
+            if (_states.indexOf(state) >= 0
+                && state.generation === _generationFor(state.screenName))
+                write(state.screenName, next);
         }
     }
 
@@ -715,8 +800,20 @@ QtObject {
     onBackendChanged: {
         strictRoutesEnabled = false;
         policyError = "";
+        // The previous backend's completions will never arrive; its
+        // outstanding query tokens must not consume the next backend's
+        // completions.
+        _queryRequests = ({});
     }
     onScreensChanged: _syncStates()
+    onControlsEnabledChanged: {
+        if (!controlsEnabled)
+            _dropQueuedWrites();
+    }
+    onPolicyErrorChanged: {
+        if (policyError.length > 0)
+            _dropQueuedWrites();
+    }
     onEnabledChanged: {
         if (!enabled)
             _resetStates();

@@ -28,6 +28,12 @@ Item {
     // dimmed instead of issuing a write.
     property bool audioControlsEnabled: true
     property bool brightnessControlsEnabled: true
+    // Windows hook: monotonic serial bumped by the bounded brightness host
+    // after a denied or failed write. A drag removed the slider's value
+    // binding, so reassigning the unchanged confirmed value alone never moves
+    // the handle; this serial is what restores the displayed value. It stays 0
+    // and inert on Linux, keeping the upstream behavior unchanged.
+    property int brightnessResyncSerial: 0
 
     implicitWidth: layout.implicitWidth + Tokens.padding.large + layout.anchors.horizontalCenterOffset * 2
     implicitHeight: layout.implicitHeight + Tokens.padding.large * 2
@@ -117,12 +123,26 @@ Item {
                 opacity: root.brightnessControlsEnabled ? 1 : 0.38
 
                 FilledSlider {
+                    id: brightnessSlider
+
                     anchors.fill: parent
 
                     enabled: root.brightnessControlsEnabled
                     icon: `brightness_${(Math.round(value * 6) + 1)}`
                     value: root.brightness
                     onMoved: root.monitor?.setBrightness(value)
+
+                    // Windows hook: the serial is 0 and never changes on
+                    // Linux, so this never runs there. After a denied write the
+                    // drag has already broken the value binding above; the
+                    // serial bump restores it and snaps the handle to the
+                    // confirmed level.
+                    Connections {
+                        target: root
+                        function onBrightnessResyncSerialChanged(): void {
+                            brightnessSlider.value = Qt.binding(() => root.brightness);
+                        }
+                    }
                 }
             }
         }

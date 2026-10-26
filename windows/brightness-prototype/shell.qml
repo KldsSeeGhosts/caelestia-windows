@@ -49,6 +49,7 @@ ShellRoot {
             available: monitor.record?.available ?? false,
             brightness: monitor.brightness,
             brightnessKnown: monitor.brightnessKnown,
+            resyncSerial: monitor.record?.resyncSerial ?? 0,
             interactive: monitor.interactive,
             writeReady: monitor.writeReady,
             writable: monitor.writable,
@@ -87,10 +88,12 @@ ShellRoot {
             selectedInteractive: selected?.interactive ?? false,
             selectedWritable: selected?.writable ?? false,
             selectedBrightnessKnown: selected?.brightnessKnown ?? false,
+            selectedResyncSerial: selected?.resyncSerial ?? 0,
             screenStatePresent: root.screenState !== null,
             osdLoaded: osdHost.item !== null,
             osdControlsEnabled: osdHost.item?.brightnessControlsEnabled ?? false,
-            osdAudioControlsEnabled: osdHost.item?.audioControlsEnabled ?? true
+            osdAudioControlsEnabled: osdHost.item?.audioControlsEnabled ?? true,
+            osdResyncSerial: osdHost.item?.brightnessResyncSerial ?? 0
         };
     }
 
@@ -137,6 +140,10 @@ ShellRoot {
             }
             if (state.osdControlsEnabled !== state.selectedInteractive) {
                 root.fail("original OSD control hook is not guarded by the service");
+                return;
+            }
+            if (state.osdResyncSerial !== state.selectedResyncSerial) {
+                root.fail("original OSD resync hook is not bound to the service serial");
                 return;
             }
         } else if (state.status !== "disabled" || state.nativeRequested
@@ -379,6 +386,8 @@ ShellRoot {
                         audioControlsEnabled: false
                         brightnessControlsEnabled: root.selectedMonitor
                             ? root.selectedMonitor.interactive : false
+                        brightnessResyncSerial: root.selectedMonitor
+                            ? root.selectedMonitor.resyncSerial : 0
                     }
                 }
 
