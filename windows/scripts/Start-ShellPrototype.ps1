@@ -31,6 +31,7 @@ param(
     [ValidateSet('Disabled', 'Local', 'Mirror')][string]$NotificationsMode = 'Disabled',
     [switch]$NotificationDismiss,
     [switch]$NotificationAppOpen,
+    [switch]$Combined,
     [ValidateSet('native', '1', '1.5', '1.75')][string]$ScaleFactor = 'native',
     [ValidateRange(0, 15)][int]$ScreenIndex = 0
 )
@@ -59,6 +60,8 @@ $slices = [ordered]@{
 }
 $selected = @($slices.Keys | Where-Object { $slices[$_].On })
 if ($selected.Count -gt 1) { throw 'Select one prototype entry point per run.' }
+if ($Combined -and $selected.Count -gt 0) { throw '-Combined cannot be combined with a single-slice entry point.' }
+if ($Combined -and $MonitorCycle) { throw 'Only the M1 shell prototype implements monitor cycling.' }
 foreach ($name in $slices.Keys) {
     $label = (Get-Culture).TextInfo.ToTitleCase($name)
     if (-not $slices[$name].On -and $slices[$name].Mode -ne 'Disabled') { throw "-${label}Mode requires -$label." }
@@ -82,7 +85,7 @@ $qmlRoot = Join-Path $BuildRoot 'install\qml'
 foreach ($required in @($exe, "$QtPrefix\bin\Qt6Core.dll", "$qmlRoot\Caelestia\Config\qmldir", "$qmlRoot\Caelestia\Windows\qmldir")) {
     if (-not (Test-Path -LiteralPath $required -PathType Leaf)) { throw "Build prerequisite missing: $required" }
 }
-$kind = $(if ($selected.Count -eq 1) { $selected[0] } else { 'shell' })
+$kind = $(if ($selected.Count -eq 1) { $selected[0] } elseif ($Combined) { 'combined' } else { 'shell' })
 $stagePrototype = $(if ($kind -ne 'shell' -and $slices[$kind].Stage) { $slices[$kind].Stage } else { $kind })
 $marker = $(if ($kind -ne 'shell' -and $slices[$kind].Marker) { $slices[$kind].Marker } else { 'CAELESTIA_' + $kind.ToUpperInvariant() })
 $runName = $kind + '-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff')
@@ -140,6 +143,55 @@ if ($Session) {
     $configText = $configText.Replace(
         '"commands": {"logout":[],"shutdown":[],"hibernate":[],"reboot":[]}',
         '"commands": {"logout":["logout"],"shutdown":["shutdown"],"hibernate":["hibernate"],"reboot":["reboot"]}')
+}
+# The combined profile keeps every original bar entry that has a reviewed
+# facade (logo, tray, clock, status icons, power), enables the status-icon
+# popouts, the OSD, the hover-driven launcher and the media dashboard panel,
+# and leaves every write path out: empty session commands, no sidebar or
+# utilities panels and no scroll actions. The lock-status, microphone and
+# keyboard-layout status icons stay disabled; they need Hyprland input
+# events no Windows facade provides.
+if ($Combined) {
+    $configText = @'
+{
+  "bar": {
+    "persistent": false,
+    "showOnHover": true,
+    "entries": [
+      {"id":"logo","enabled":true},
+      {"id":"spacer","enabled":true},
+      {"id":"tray","enabled":true},
+      {"id":"clock","enabled":true},
+      {"id":"statusIcons","enabled":true},
+      {"id":"power","enabled":true}
+    ],
+    "clock": {"showIcon":true,"showDate":true,"showSeconds":true},
+    "scrollActions": {"workspaces":false,"volume":false,"brightness":false},
+    "popouts": {"activeWindow":false,"tray":false,"statusIcons":true},
+    "statusIcons": [
+      {"id":"lockStatus","enabled":false},
+      {"id":"audio","enabled":true},
+      {"id":"microphone","enabled":false},
+      {"id":"kbLayout","enabled":false},
+      {"id":"network","enabled":true},
+      {"id":"bluetooth","enabled":true},
+      {"id":"battery","enabled":true}
+    ],
+    "tray": {"recolour": true}
+  },
+  "session": {
+    "enabled": true,
+    "vimKeybinds": true,
+    "commands": {"logout":[],"shutdown":[],"hibernate":[],"reboot":[]}
+  },
+  "paths": {"sessionGif":""},
+  "dashboard": {"enabled":true,"showOnHover":true},
+  "launcher": {"enabled":true,"showOnHover":true},
+  "sidebar": {"enabled":false,"showOnHover":false},
+  "osd": {"enabled":true},
+  "utilities": {"enabled":false}
+}
+'@
 }
 $configText | Set-Content -LiteralPath $config -Encoding UTF8
 $logRoot = Join-Path $BuildRoot 'logs'
@@ -215,6 +267,26 @@ $mirrorMode = $Notifications -and $NotificationsMode -eq 'Mirror' -and -not $Smo
 $info.EnvironmentVariables['CAELESTIA_WINDOWS_NOTIFICATION_MIRROR'] = $(if ($mirrorMode) { '1' } else { '0' })
 $info.EnvironmentVariables['CAELESTIA_WINDOWS_NOTIFICATION_MIRROR_DISMISS'] = $(if ($mirrorMode -and $NotificationDismiss) { '1' } else { '0' })
 $info.EnvironmentVariables['CAELESTIA_WINDOWS_NOTIFICATION_APP_OPEN'] = $(if ($mirrorMode -and $NotificationAppOpen) { '1' } else { '0' })
+# The combined prototype is the read-only union of every slice: each service's
+# observation opt-in is forced on (the session in Observe mode, with dispatch
+# still gated off) and every control, write, launch, activation, dispatch and
+# mirror opt-in is forced off, regardless of what the parent environment
+# contained. The backend tray hook stays off so observation never starts tray
+# interception, and software gamma brightness is never supplied.
+if ($Combined) {
+    foreach ($name in $slices.Keys) {
+        $info.EnvironmentVariables[$slices[$name].Observe] = '1'
+        if ($slices[$name].Controls) { $info.EnvironmentVariables[$slices[$name].Controls] = '0' }
+    }
+    $info.EnvironmentVariables['CAELESTIA_WINDOWS_POWER_PROFILES'] = '1'
+    $info.EnvironmentVariables['CAELESTIA_WINDOWS_BRIGHTNESS_SOFTWARE'] = '0'
+    $info.EnvironmentVariables['CAELESTIA_WINDOWS_NOTIFICATION_MIRROR'] = '0'
+    $info.EnvironmentVariables['CAELESTIA_WINDOWS_NOTIFICATION_MIRROR_DISMISS'] = '0'
+    $info.EnvironmentVariables['CAELESTIA_WINDOWS_NOTIFICATION_APP_OPEN'] = '0'
+    $info.EnvironmentVariables['QS_WINDOWS_TRAY_HOOK'] = '0'
+    $info.EnvironmentVariables['CAELESTIA_SHELL_SESSION'] = '1'
+    $info.EnvironmentVariables['CAELESTIA_SHELL_SESSION_MODE'] = 'Observe'
+}
 if ($ScaleFactor -ne 'native') {
     $info.EnvironmentVariables['QT_ENABLE_HIGHDPI_SCALING'] = '0'
     $info.EnvironmentVariables['QT_SCALE_FACTOR'] = $ScaleFactor
@@ -257,21 +329,24 @@ $stderr = $errTask.GetAwaiter().GetResult()
 $elapsed.Stop()
 $stdout | Set-Content -LiteralPath $stdoutPath -Encoding UTF8
 $stderr | Set-Content -LiteralPath $stderrPath -Encoding UTF8
-$combined = "$stdout`n$stderr"
+# Named runOutput: the -Combined switch parameter is type-constrained, and
+# PowerShell variable names are case-insensitive, so this log text must not be
+# assigned to a variable spelled $combined.
+$runOutput = "$stdout`n$stderr"
 $sessionButtonRecords = New-Object Collections.Generic.List[object]
-foreach ($buttonMatch in [regex]::Matches($combined, 'CAELESTIA_SESSION_BUTTONS (\[[^\r\n]+\])')) {
+foreach ($buttonMatch in [regex]::Matches($runOutput, 'CAELESTIA_SESSION_BUTTONS (\[[^\r\n]+\])')) {
     foreach ($button in ($buttonMatch.Groups[1].Value | ConvertFrom-Json)) {
         $sessionButtonRecords.Add($button)
     }
 }
-$runtimeDiagnostics = $combined -match '(?m)^(?:\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3})?\s*(WARN(?:ING)?|ERROR|FATAL|CRIT(?:ICAL)?)\b'
+$runtimeDiagnostics = $runOutput -match '(?m)^(?:\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3})?\s*(WARN(?:ING)?|ERROR|FATAL|CRIT(?:ICAL)?)\b'
 $passed = -not $timedOut -and -not $runtimeDiagnostics -and
-    $process.ExitCode -eq 0 -and $combined.Contains("${marker}_PASS") -and
+    $process.ExitCode -eq 0 -and $runOutput.Contains("${marker}_PASS") -and
     (Test-Path -LiteralPath $screenshot)
 Copy-Item -LiteralPath (Join-Path $stage 'sources.json') -Destination (Join-Path $logRoot "$runName.sources.json")
 $result = [ordered]@{
     passed = $(if ($Smoke) { $passed } else { $null }); smoke = $Smoke.IsPresent
-    prototype = $kind; audioMode = $AudioMode; batteryMode = $BatteryMode; mediaMode = $MediaMode; brightnessMode = $BrightnessMode
+    prototype = $kind; combined = $Combined.IsPresent; audioMode = $AudioMode; batteryMode = $BatteryMode; mediaMode = $MediaMode; brightnessMode = $BrightnessMode
     networkMode = $NetworkMode
     bluetoothMode = $BluetoothMode; appsMode = $AppsMode; appsSearchQuery = $(if ($Apps) { $AppsSearchQuery } else { '' })
     trayMode = $TrayMode; trayFixture = $TrayFixture.IsPresent
@@ -285,8 +360,8 @@ $result = [ordered]@{
     scaleFactor = $ScaleFactor; screenIndex = $ScreenIndex
     monitorCycle = $MonitorCycle.IsPresent
     traceInput = $TraceInput.IsPresent
-    actualScreens = @([regex]::Matches($combined, "${marker}_SCREEN (\{[^\r\n]+\})") | ForEach-Object { $_.Groups[1].Value | ConvertFrom-Json })
-    captures = @([regex]::Matches($combined, "${marker}_CAPTURE ([^\r\n]+)") | ForEach-Object { $_.Groups[1].Value })
+    actualScreens = @([regex]::Matches($runOutput, "${marker}_SCREEN (\{[^\r\n]+\})") | ForEach-Object { $_.Groups[1].Value | ConvertFrom-Json })
+    captures = @([regex]::Matches($runOutput, "${marker}_CAPTURE ([^\r\n]+)") | ForEach-Object { $_.Groups[1].Value })
     elapsedMilliseconds = $elapsed.ElapsedMilliseconds
     sourceRevision = (& git -C $repoRoot rev-parse HEAD).Trim()
     sourceDirty = [bool](& git -C $repoRoot status --porcelain)
@@ -301,17 +376,17 @@ $result = [ordered]@{
 }
 foreach ($name in $slices.Keys) {
     $prefix = 'CAELESTIA_' + $name.ToUpperInvariant()
-    $result["${name}Snapshots"] = @([regex]::Matches($combined, "${prefix}_(INITIAL|FINAL) (\{[^\r\n]+\})") | ForEach-Object {
+    $result["${name}Snapshots"] = @([regex]::Matches($runOutput, "${prefix}_(INITIAL|FINAL) (\{[^\r\n]+\})") | ForEach-Object {
         [ordered]@{ phase = $_.Groups[1].Value; state = ($_.Groups[2].Value | ConvertFrom-Json) }
     })
 }
 if ($Brightness) {
     # Route probes are a plain array, not a phase-tagged snapshot.
-    $result['brightnessRoutes'] = @([regex]::Matches($combined, 'CAELESTIA_BRIGHTNESS_ROUTES (\[[^\r\n]+\])') | ForEach-Object {
+    $result['brightnessRoutes'] = @([regex]::Matches($runOutput, 'CAELESTIA_BRIGHTNESS_ROUTES (\[[^\r\n]+\])') | ForEach-Object {
         $_.Groups[1].Value | ConvertFrom-Json
     } | ForEach-Object { $_ })
 }
-$result['appsSearches'] = @([regex]::Matches($combined, 'CAELESTIA_APPS_SEARCH (\{[^\r\n]+\})') | ForEach-Object {
+$result['appsSearches'] = @([regex]::Matches($runOutput, 'CAELESTIA_APPS_SEARCH (\{[^\r\n]+\})') | ForEach-Object {
     $_.Groups[1].Value | ConvertFrom-Json
 })
 $result['sessionButtons'] = @($sessionButtonRecords.ToArray())

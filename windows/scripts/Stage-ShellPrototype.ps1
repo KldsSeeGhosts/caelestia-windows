@@ -4,8 +4,9 @@ param(
     [Parameter(Mandatory)][string]$ProfileRoot,
     # 'shell' is the M1 bar/session host. Every other value names one bounded
     # slice under windows/<name>-prototype with its own shell.qml and
-    # sources.json manifest. One slice per stage.
-    [ValidateSet('shell', 'audio', 'battery', 'media', 'brightness', 'network', 'bluetooth', 'apps', 'tray', 'notifications')]
+    # sources.json manifest. One slice per stage. 'combined' unions the M1
+    # manifest with every service slice manifest plus the combined adapters.
+    [ValidateSet('shell', 'audio', 'battery', 'media', 'brightness', 'network', 'bluetooth', 'apps', 'tray', 'notifications', 'combined')]
     [string]$Prototype = 'shell'
 )
 
@@ -33,9 +34,48 @@ if ($Prototype -eq 'tray') {
     # the original component plus its item/menu dependencies instead.
     $files.Remove('windows/shell-prototype/adapters/modules/bar/components/Tray.qml')
 }
+# The combined prototype replaces the base manifest's unavailable adapters for
+# every target that now has the original component or a combined adapter.
+if ($Prototype -eq 'combined') {
+    foreach ($baseAdapter in @(
+        'windows/shell-prototype/adapters/modules/bar/components/OsIcon.qml',
+        'windows/shell-prototype/adapters/modules/bar/components/Tray.qml',
+        'windows/shell-prototype/adapters/modules/bar/components/StatusIcons.qml',
+        'windows/shell-prototype/adapters/modules/bar/popouts/Wrapper.qml',
+        'windows/shell-prototype/adapters/modules/bar/popouts/ClipWrapper.qml',
+        'windows/shell-prototype/adapters/modules/drawers/Panels.qml',
+        'windows/shell-prototype/adapters/services/Hypr.qml'
+    )) { $files.Remove($baseAdapter) }
+}
 if ($Prototype -ne 'shell') {
     $sliceManifest = Get-Content -LiteralPath (Join-Path $repoRoot "windows\$Prototype-prototype\sources.json") -Raw | ConvertFrom-Json
     foreach ($entry in $sliceManifest.PSObject.Properties) { $files.Add($entry.Name, $entry.Value) }
+}
+# The combined prototype unions every service slice onto the base manifest.
+# Slice entries whose staged target is provided by the combined adapters are
+# skipped; the tray slice's original ColouredIcon over the notifications
+# slice's lightness-only adapter is the one deliberate overwrite, so the
+# notifications adapter is skipped explicitly to keep a single source of truth.
+if ($Prototype -eq 'combined') {
+    $combinedSkips = @{
+        'audio' = @('modules/bar/popouts/AudioPopout.qml')
+        'battery' = @('modules/bar/components/status/BatteryStatus.qml', 'modules/bar/popouts/Battery.qml', 'windows/services/battery/Battery.qml')
+        'bluetooth' = @('modules/bar/popouts/Bluetooth.qml', 'windows/services/bluetooth/Bluetooth.qml')
+        'brightness' = @('modules/osd/Content.qml')
+        'network' = @('modules/bar/popouts/Network.qml')
+        'notifications' = @('windows/notifications-prototype/adapters/components/effects/ColouredIcon.qml')
+        'tray' = @('modules/bar/components/Tray.qml', 'windows/services/tray/Tray.qml')
+    }
+    foreach ($slice in @('audio', 'battery', 'bluetooth', 'brightness', 'media', 'network', 'notifications', 'tray', 'apps')) {
+        $sliceManifest = Get-Content -LiteralPath (Join-Path $repoRoot "windows\$slice-prototype\sources.json") -Raw | ConvertFrom-Json
+        foreach ($entry in $sliceManifest.PSObject.Properties) {
+            if ($combinedSkips[$slice] -contains $entry.Name) { continue }
+            # Several slices stage the identical upstream file (PopoutState,
+            # Icons, shared controls). The first staging of a source wins; the
+            # recorded hashes prove the bytes are the same upstream file.
+            if (-not $files.Contains($entry.Name)) { $files.Add($entry.Name, $entry.Value) }
+        }
+    }
 }
 $hashes = foreach ($entry in $files.GetEnumerator()) {
     $source = [IO.Path]::GetFullPath((Join-Path $repoRoot $entry.Key))
