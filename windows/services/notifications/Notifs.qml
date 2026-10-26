@@ -8,6 +8,7 @@ import Quickshell.Windows
 import Caelestia
 import Caelestia.Config
 import Caelestia.I18n
+import qs.components.misc
 
 // Windows replacement for the original services/Notifs.qml singleton contract.
 // The pure NotificationsService owns records, expiry, dismissal, image source
@@ -293,4 +294,20 @@ Singleton {
             saveTimer.restart();
         }
     }
+
+    // The original global shortcuts over the local Windows notification facade.
+    // Both are shell-local actions: clearing dismisses records already held by
+    // the service, and do not disturb only suppresses this shell's popups.
+    readonly property list<QtObject> _shortcuts: [
+        CustomShortcut {
+            name: "clearNotifs"
+            description: "Clear all notifications"
+            onPressed: root.clearAll()
+        },
+        CustomShortcut {
+            name: "toggleDnd"
+            description: "Toggle do not disturb"
+            onPressed: root.doNotDisturb = !root.doNotDisturb
+        }
+    ]
 }

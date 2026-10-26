@@ -12,6 +12,7 @@ import Caelestia.Windows
 import Quickshell.Windows as Native
 import qs.components
 import qs.services
+import qs.daemons
 import qs.modules.drawers
 import qs.modules.launcher.services
 
@@ -31,6 +32,20 @@ ShellRoot {
     readonly property int previewHeight: Math.min(620, (selectedScreen?.height ?? 780) - inset * 2)
 
     settings.watchFiles: false
+
+    // The original shortcut daemon resolves its target through ShellState,
+    // whose screens live on the shell root. The Windows adapter only needs the
+    // selected screen, which the prototype host owns.
+    Binding {
+        target: ShellState
+        property: "shellRoot"
+        value: root
+    }
+
+    // windows/combined-prototype/adapters/daemons/Shortcuts.qml keeps the
+    // original GlobalShortcut names over this host's ScreenState. The backend
+    // supplies the Windows key combinations from defaults/windows/keybinds.json.
+    Shortcuts {}
 
     // One line per service for the harness. The state is the facade status;
     // every control flag is asserted separately so "read-only" is proven, not

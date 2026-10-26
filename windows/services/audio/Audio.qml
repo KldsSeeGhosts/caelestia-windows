@@ -3,6 +3,7 @@ pragma Singleton
 import QtQuick
 import Quickshell
 import Caelestia.Config
+import qs.components.misc
 
 AudioService {
     id: root
@@ -22,4 +23,26 @@ AudioService {
         active: root.enabled
         source: root.enabled ? Qt.resolvedUrl("NativeAudioBackend.qml") : ""
     }
+
+    // Caelestia's volume keys are Hyprland exec binds on Linux. On Windows the
+    // same XF86 keys become shell GlobalShortcuts over the default output, so
+    // the OSD and the audio facade observe one write path. Every action still
+    // requires CAELESTIA_WINDOWS_AUDIO_CONTROLS=1.
+    readonly property list<QtObject> _shortcuts: [
+        CustomShortcut {
+            name: "volumeUp"
+            description: "Raise the output volume"
+            onPressed: root.incrementVolume(root.audioIncrement)
+        },
+        CustomShortcut {
+            name: "volumeDown"
+            description: "Lower the output volume"
+            onPressed: root.decrementVolume(root.audioIncrement)
+        },
+        CustomShortcut {
+            name: "volumeMute"
+            description: "Mute or unmute the output"
+            onPressed: root.setMuted(!root.muted)
+        }
+    ]
 }

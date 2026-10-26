@@ -31,6 +31,35 @@ launches, session dispatch, tray interception and notification mirroring. They
 load all dashboard tabs, utilities, history, the launcher, status popouts,
 notifications and a toast, and exit. The supplied build is reused unchanged.
 
+## Keyboard shortcuts
+
+The staged shell instantiates the original `GlobalShortcut` daemon over the
+Windows backend's native hotkey manager. `defaults/windows/keybinds.json` is
+the default Windows map and mirrors Caelestia's Hyprland binds where Windows
+allows it: a lone Super tap opens the launcher, Super+K shows all panels,
+Super+Shift+D opens the dashboard, Super+N the sidebar, Super+Shift+U
+utilities, Ctrl+Alt+End the session menu (Ctrl+Alt+Delete is reserved), Ctrl+Alt+C
+clears notifications, Super+Shift+N toggles do not disturb, Ctrl+Super+Space and
+the media keys control playback, the XF86 volume keys control the output,
+Ctrl+Alt+Page Up/Down adjust brightness, and Super+L locks Windows. The media,
+volume and brightness actions still require the matching Live control gate;
+in read-only observation they are inert rather than failing a native route.
+
+A lone Super tap is delivered by a low-level keyboard hook, which also keeps the
+Start menu from opening while the shell owns the tap. Other combinations use
+`RegisterHotKey`, falling back to the same hook where Windows reserves them; the
+hook is only installed while at least one hook-backed bind exists. Both the
+registered hotkeys and the hook are removed when the shell exits, so the Start
+menu works normally again.
+
+To change the map, place a `keybinds.json` in the shell configuration directory
+(`CAELESTIA_CONFIG_DIR`, next to `shell.json`) or at
+`%LOCALAPPDATA%\caelestia\windows\keybinds.json`. Start from
+`{"extends": "defaults", "binds": [...]}` and override a default entry with
+`"base": "global:caelestia:launcher"`, or set
+`CAELESTIA_WINDOWS_KEYBINDS` to an explicit file for isolated runs. Changes are
+watched and reload the binds without restarting the shell.
+
 ## Available components
 
 - Original bar logo, clock, tray, status icons, popouts, session drawer and OSD.

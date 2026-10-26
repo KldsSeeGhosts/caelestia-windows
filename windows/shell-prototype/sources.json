@@ -22,6 +22,8 @@
   "components/controls/CustomMouseArea.qml": "components/controls/CustomMouseArea.qml",
   "services/ShellState.qml": "services/ShellState.qml",
   "services/Screens.qml": "services/Screens.qml",
+  "components/misc/CustomShortcut.qml": "components/misc/CustomShortcut.qml",
+  "defaults/windows/keybinds.json": "defaults/windows/keybinds.json",
   "services/Time.qml": "services/Time.qml",
   "utils/Strings.qml": "utils/Strings.qml",
   "windows/shell-prototype/adapters/services/Colours.qml": "services/Colours.qml",

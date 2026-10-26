@@ -94,5 +94,6 @@
   "windows/combined-prototype/adapters/imports/Caelestia/Services/NetworkUsage.qml": "imports/Caelestia/Services/NetworkUsage.qml",
   "modules/dashboard/performance/NetworkCard.qml": "modules/dashboard/performance/NetworkCard.qml",
   "windows/combined-prototype/adapters/modules/session/Content.qml": "modules/session/Content.qml",
-  "windows/combined-prototype/adapters/modules/dashboard/performance/HeroCard.qml": "modules/dashboard/performance/HeroCard.qml"
+  "windows/combined-prototype/adapters/modules/dashboard/performance/HeroCard.qml": "modules/dashboard/performance/HeroCard.qml",
+  "windows/combined-prototype/adapters/daemons/Shortcuts.qml": "daemons/Shortcuts.qml"
 }
