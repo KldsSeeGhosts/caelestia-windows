@@ -5,8 +5,8 @@ Describe the problem and resulting Windows behavior. Link related issues.
 ## Validation
 
 List commands and observed results, shell/backend pins, Windows build, Qt
-version and relevant monitors/DPI. Link evidence under `windows/validation/`
-and identify untested cases.
+version and relevant monitors/DPI. Attach logs and screenshots here rather
+than committing them, and identify untested cases.
 
 ## Compatibility and attribution
 

@@ -13,8 +13,9 @@ and `windows/ROADMAP.md` before implementation.
 - Treat `windows/sources.lock.json` and the Quickshell gitlink as the dependency
   pins. Update them together after reviewing the change. Do not edit the
   dependency without committing its changes to an appropriate backend fork.
-- Use topic branches. Do not force-push `main`. Do not enable inherited Linux
-  release workflows or publish packages as part of routine repository work.
+- Use topic branches. Do not force-push `main` or publish packages as part of
+  routine repository work. The upstream Linux workflows were removed; add
+  Windows CI rather than restoring them, and keep them deleted during merges.
 - Run native Windows tooling in PowerShell. Linux cross-compilation belongs in
   Ubuntu-24.04 under WSL2. Read upstream commands before adapting them.
 - Initial prototypes must use isolated configuration and state. Desktop takeover,
@@ -25,10 +26,10 @@ and `windows/ROADMAP.md` before implementation.
 - Keep status honest: an importable component, a running prototype, and a
   validated shell release are separate milestones. Record the runtime, source
   revisions, commands, and observed results for each compatibility claim.
-- Archive evidence under `windows/validation/` as the README, `result.json`
-  and matrix files, logs, and screenshots. Do not copy staged QML sources or
-  per-run `sources.json` manifests; the recorded source revision reproduces
-  them. Leave existing archives unchanged, since their records reference them.
+- Do not commit new logs, screenshots or run archives. Attach evidence to the
+  pull request and keep only a short note of the commands, revisions and
+  results in the repository. Leave existing `windows/validation/` archives
+  unchanged until the pre-publication cleanup.
 - Run the environment check after changing pins or setup instructions:
   `powershell -NoProfile -File windows/scripts/Test-Environment.ps1 -Json`.
   It is a prerequisite report, not a successful build or runtime test.

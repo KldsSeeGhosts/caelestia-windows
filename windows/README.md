@@ -109,8 +109,8 @@ for commands and the limits of its quick installation smoke.
   Native read, presence, charge and AC-source validity distinguish unknown
   observations from a measured zero or proven absence. Real battery
   hardware and the remaining profile/write gates keep ERM-499 open.
-- Inherited GitHub Actions are disabled at repository level during bootstrap.
-  They are upstream Linux workflows, not validation of this port.
+- The inherited upstream Linux GitHub workflows were removed; they did not
+  validate this port. Windows CI is planned before publication.
 - An opt-in [media prototype](media-prototype/README.md) loads the original
   dashboard player details. Native lifecycle status distinguishes unavailable
   observations from a healthy empty session list, and artwork caching honors

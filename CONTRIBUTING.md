@@ -49,9 +49,8 @@ and uninstalls it without launching the shell or enabling autostart.
 
 Record exact commands, source/runtime revisions, results and limitations.
 Logs normally live under `windows/.local/build/logs/` or the harness-specific
-validation directory. Archive reviewable evidence under `windows/validation/`
-as a README, `result.json`, applicable matrices, logs and screenshots. Do not
-copy staged QML or per-run `sources.json`, and leave existing archives intact.
+validation directory. Attach logs and screenshots to the pull request instead
+of committing them, and leave existing `windows/validation/` archives intact.
 Smoke is not proof of live input, device control, mixed-DPI motion or a complete
 release. Desktop takeover, autostart and tiling require explicit opt-in; use
 isolated profiles and one active tiler, preserving other application sessions.
@@ -63,8 +62,9 @@ against it. `main` follows the latest verified release, and `upstream` mirrors
 the upstream project. Use `windows: <description>` commit subjects for this port.
 Keep changes focused, follow nearby QML/C++/PowerShell style, and include
 behavior, validation, side effects and known gaps in the pull request.
-Do not force-push `main`, enable inherited Linux release workflows or publish
-packages as part of routine development.
+Do not force-push `main` or publish packages as part of routine development.
+The upstream Linux workflows were removed; add Windows CI rather than
+restoring them.
 
 - [caelestia-windows](https://github.com/KldsSeeGhosts/caelestia-windows)
   contains the preserved upstream UI, Windows adapters, plugins, tooling and
