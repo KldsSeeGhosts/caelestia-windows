@@ -2,6 +2,8 @@
 param(
     [Parameter(Mandatory)][string]$QtPrefix,
     [string]$BuildRoot,
+    # Keep stages, profiles and logs separate when reusing another checkout's build.
+    [string]$RunRoot,
     [switch]$Smoke,
     [switch]$Wait,
     [switch]$MonitorCycle,
@@ -38,6 +40,7 @@ param(
     [switch]$NotificationDismiss,
     [switch]$NotificationAppOpen,
     [switch]$Combined,
+    [switch]$RuntimeProbe,
     [switch]$Live,
     [ValidateSet('native', '1', '1.5', '1.75')][string]$ScaleFactor = 'native',
     [ValidateRange(0, 15)][int]$ScreenIndex = 0
@@ -68,6 +71,7 @@ $slices = [ordered]@{
     notifications = @{ On = $Notifications; Mode = $NotificationsMode; Observe = 'CAELESTIA_WINDOWS_NOTIFICATIONS' }
 }
 if ($Live -and -not $Combined) { throw '-Live requires -Combined.' }
+if ($RuntimeProbe -and (-not $Combined -or $Live -or $Smoke)) { throw '-RuntimeProbe requires read-only -Combined without -Smoke.' }
 # -Tiling selects the tiling prototype entry point on its own, but with
 # -Combined it is an add-on observation/control switch for the combined shell
 # rather than a second entry point.
@@ -94,6 +98,8 @@ if ($NotificationAppOpen -and $NotificationsMode -ne 'Mirror') { throw '-Notific
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
 if (-not $BuildRoot) { $BuildRoot = Join-Path $repoRoot 'windows\.local\build' }
 $BuildRoot = [IO.Path]::GetFullPath($BuildRoot)
+if (-not $RunRoot) { $RunRoot = $BuildRoot }
+$RunRoot = [IO.Path]::GetFullPath($RunRoot)
 $exe = Join-Path $BuildRoot 'quickshell\qs.exe'
 $qmlRoot = Join-Path $BuildRoot 'install\qml'
 foreach ($required in @($exe, "$QtPrefix\bin\Qt6Core.dll", "$qmlRoot\Caelestia\Config\qmldir", "$qmlRoot\Caelestia\Windows\qmldir")) {
@@ -103,10 +109,10 @@ $kind = $(if ($selected.Count -eq 1) { $selected[0] } elseif ($Combined) { 'comb
 $stagePrototype = $(if ($kind -ne 'shell' -and $slices[$kind].Stage) { $slices[$kind].Stage } else { $kind })
 $marker = $(if ($kind -ne 'shell' -and $slices[$kind].Marker) { $slices[$kind].Marker } else { 'CAELESTIA_' + $kind.ToUpperInvariant() })
 $runName = $kind + '-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff')
-$profileRoot = Join-Path $BuildRoot "$kind-prototype-profile"
+$profileRoot = Join-Path $RunRoot "$kind-prototype-profile"
 # A fresh stage avoids stale QML types from a previous implementation.
 $stage = & (Join-Path $PSScriptRoot 'Stage-ShellPrototype.ps1') `
-    -Destination (Join-Path $BuildRoot "shell-runs\$runName") -ProfileRoot $profileRoot -Prototype $stagePrototype
+    -Destination (Join-Path $RunRoot "shell-runs\$runName") -ProfileRoot $profileRoot -Prototype $stagePrototype
 foreach ($dir in @('config', 'state', 'runtime', 'cache', 'data')) {
     New-Item -ItemType Directory -Force -Path (Join-Path $profileRoot $dir) | Out-Null
 }
@@ -237,7 +243,7 @@ if ($Combined -and $Live) {
         '"commands": {"logout":["logout"],"shutdown":["shutdown"],"hibernate":["hibernate"],"reboot":["reboot"]}')
 }
 $configText | Set-Content -LiteralPath $config -Encoding UTF8
-$logRoot = Join-Path $BuildRoot 'logs'
+$logRoot = Join-Path $RunRoot 'logs'
 New-Item -ItemType Directory -Force -Path $logRoot | Out-Null
 $screenshot = Join-Path $logRoot "$runName.png"
 $stdoutPath = Join-Path $logRoot "$runName.stdout.log"
@@ -356,6 +362,7 @@ if ($ScaleFactor -ne 'native') {
 $info.EnvironmentVariables['CAELESTIA_SHELL_SCALE'] = $ScaleFactor
 $info.EnvironmentVariables['CAELESTIA_SHELL_SCREEN'] = [string]$ScreenIndex
 $info.EnvironmentVariables['CAELESTIA_SHELL_SMOKE'] = $(if ($Smoke) { '1' } else { '0' })
+$info.EnvironmentVariables['CAELESTIA_RUNTIME_PROBE'] = $(if ($RuntimeProbe) { '1' } else { '0' })
 $info.EnvironmentVariables['CAELESTIA_SHELL_MONITOR_CYCLE'] = $(if ($MonitorCycle) { '1' } else { '0' })
 $info.EnvironmentVariables['CAELESTIA_SHELL_SCREENSHOT'] = ([Uri]$screenshot).AbsoluteUri
 $info.RedirectStandardOutput = $Smoke.IsPresent -or $Wait.IsPresent
@@ -429,7 +436,7 @@ $result = [ordered]@{
     sourceRevision = (& git -C $repoRoot rev-parse HEAD).Trim()
     sourceDirty = [bool](& git -C $repoRoot status --porcelain)
     backendRevision = (& git -C (Join-Path $repoRoot 'windows\deps\quickshell') rev-parse HEAD).Trim()
-    buildRecordSha256 = (Get-FileHash -LiteralPath (Join-Path $logRoot 'build.json')).Hash
+    buildRecordSha256 = (Get-FileHash -LiteralPath (Join-Path $BuildRoot 'logs\build.json')).Hash
     configSha256 = (Get-FileHash -LiteralPath $config).Hash
     command = $info.FileName; arguments = $info.Arguments
     executableSha256 = (Get-FileHash -LiteralPath $exe).Hash
