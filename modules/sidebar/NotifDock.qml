@@ -84,14 +84,15 @@ Item {
 
     // Windows mirroring status and its single explicit consent action. With no
     // mirrorControl injected (Linux and the existing callers) this area has no
-    // height and the original layout is unchanged.
+    // height and the list anchors exactly as upstream: title.bottom plus the
+    // original medium spacing, with no hidden-row gap above it.
     RowLayout {
         id: mirrorArea
 
         anchors.top: title.bottom
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.topMargin: Tokens.spacing.small
+        anchors.topMargin: root.mirrorControlVisible ? Tokens.spacing.small : 0
 
         visible: root.mirrorControlVisible
         height: visible ? implicitHeight : 0
@@ -123,7 +124,7 @@ Item {
 
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.top: mirrorArea.bottom
+        anchors.top: root.mirrorControlVisible ? mirrorArea.bottom : title.bottom
         anchors.bottom: parent.bottom
         anchors.topMargin: Tokens.spacing.medium
 

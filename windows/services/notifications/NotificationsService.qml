@@ -24,10 +24,16 @@ import QtQuick
 //   un-queried consent state Unspecified. The backend only shows an OS prompt
 //   when Windows itself reports Unspecified.
 // - Mirroring is enabled on the backend only after Windows reports Allowed, and
-//   at most once per process. Denied/Unavailable never retry a prompt.
+//   at most once per process. Denied/Unavailable never retry a prompt. The
+//   consent-fix backend also keeps a process-lifetime request latch
+//   (accessRequested); this object reconciles with it after a QML reload
+//   instead of re-asking, and mirrored enable is withdrawn when access is
+//   lost, the mirror opt-in is removed or the service becomes unavailable.
 // - A mirrored record is identified only by the backend's x-windows-toast-id /
 //   x-windows-aumid hints. Its dismissal removes the real Windows toast only
-//   with the separate dismiss opt-in; app-open is a third opt-in. Mirrored
+//   with the separate dismiss opt-in; app-open is a third opt-in that goes
+//   through the backend's mirrored activation member, never the generic
+//   action path whose native auto-close would dismiss the toast. Mirrored
 //   records are never serialized to history.
 QtObject {
     id: root
@@ -36,6 +42,9 @@ QtObject {
     // fake) exposing: ready (bool), ownership (string), mirrorSystemNotifications
     // (bool), systemMirrorActive (bool), systemNotificationAccess (int),
     // notifySend(summary, body, args), and notificationReceived(notification).
+    // The consent-fix revision additionally exposes accessRequested (bool),
+    // refreshAccessStatus() and activateMirrored(id); every use of those is
+    // feature-detected so the shared build at the pinned revision still works.
     property var backend: null
     property bool enabled: false
 
@@ -62,6 +71,7 @@ QtObject {
     property int accessRequestRefusals: 0
     property int settingsOpenRequests: 0
     property int mirrorWrites: 0
+    property int mirrorDisables: 0
     property bool mirroringApplied: false
     property int deniedPolls: 0
     property bool deniedPollExhausted: false
@@ -127,6 +137,7 @@ QtObject {
             root.refreshAccess();
             return;
         }
+        root.disableMirroring();
         for (const record of root.list.slice()) {
             record.closed = true;
             record.notification = null;
@@ -215,6 +226,13 @@ QtObject {
         const value = backend?.systemNotificationAccess;
         return Number.isInteger(value) ? value : -1;
     }
+    // Process-lifetime consent latch published by the consent-fix backend: an
+    // explicit request made earlier in this process stays made. A reloaded QML
+    // object reconciles with it (cached Allowed is usable without a new
+    // request; an unanswered request is not repeatable). The pinned revision
+    // publishes nothing, so this stays false there and only this object's own
+    // latch applies.
+    readonly property bool backendAccessRequested: backend?.accessRequested === true
 
     // ---- Mirroring state machine ------------------------------------------
 
@@ -230,6 +248,7 @@ QtObject {
 
     readonly property bool canRequestAccess: mirrorStaged && backend?.ready === true
         && accessState === "Unspecified" && !consentRequested && !consentPending
+        && !backendAccessRequested
     readonly property bool settingsActionRequired: mirrorStaged
         && (accessState === "Denied" || consentTimedOut)
     readonly property bool deniedPollingActive: mirrorStaged && accessState === "Denied"
@@ -356,13 +375,17 @@ QtObject {
     }
 
     // Bounded denied polling. The timer is bound to deniedPollingActive, which
-    // includes centerVisible, so hiding the center stops it immediately. It
-    // only re-reads the state the backend published; it never calls a native
-    // request API.
+    // includes centerVisible, so hiding the center stops it immediately. Each
+    // poll asks the consent-fix backend to re-query Windows without prompting
+    // (refreshAccessStatus), so recovery is observable; the pinned revision has
+    // no such member and the poll only re-reads the published value. It never
+    // calls a native request API.
     function pollAccess(): bool {
         if (!root.deniedPollingActive)
             return false;
         root.deniedPolls++;
+        if (typeof root.backend?.refreshAccessStatus === "function")
+            root.backend.refreshAccessStatus();
         root.refreshAccess();
         if (root.deniedPolls >= root.accessPollBudget)
             root.deniedPollExhausted = true;
@@ -373,17 +396,44 @@ QtObject {
         root.settingsOpenRequests++;
     }
 
+    // Mirroring is reconciled in both directions. An applied mirror is
+    // withdrawn when access is lost, the mirror opt-in is removed, the backend
+    // becomes unavailable or the service is disabled — the disable write also
+    // stops the backend's own ten-second access polling. Re-granted access
+    // re-enables it with one fresh write, and no state writes repeatedly.
+    //
+    // Property-change handlers can run before dependent bindings (mirrorStaged,
+    // accessState) have re-evaluated, so the desired state is recomputed from
+    // the raw inputs instead of reading those bindings.
     function applyMirroring(): void {
-        if (!root.mirrorStaged || root.accessState !== "Allowed" || !root.consentRequested)
+        const backend = root.backend;
+        const staged = root.enabled && root.mirrorOptIn && root.backendError === ""
+            && !!backend && backend?.ownership !== "contended";
+        const desired = staged && backend?.ready === true
+            && root.reportedAccess === 2
+            && (root.consentRequested || backend?.accessRequested === true);
+
+        if (!desired) {
+            root.disableMirroring();
             return;
-        if (root.mirrorWrites > 0)
+        }
+        if (root.mirroringApplied)
             return;
-        if (!root.backend || typeof root.backend.setMirroring !== "function")
+        if (!backend || typeof backend.setMirroring !== "function")
             return;
 
         root.mirrorWrites++;
         root.mirroringApplied = true;
-        root.backend.setMirroring(true);
+        backend.setMirroring(true);
+    }
+
+    function disableMirroring(): void {
+        if (!root.mirroringApplied)
+            return;
+        root.mirroringApplied = false;
+        root.mirrorDisables++;
+        if (root.backend && typeof root.backend.setMirroring === "function")
+            root.backend.setMirroring(false);
     }
 
     // The pinned backend performs the bounded five-second claim retry in C++
@@ -495,6 +545,10 @@ QtObject {
     }
 
     onBackendChanged: root.refreshAccess()
+    // Removing the mirror opt-in or a backend component failure must reconcile
+    // mirroring immediately, not only on the next access signal.
+    onMirrorOptInChanged: root.refreshAccess()
+    onBackendErrorChanged: root.refreshAccess()
 
     function handleNotification(notification): bool {
         if (!deliveryAllowed() || !notification || typeof notification !== "object")
@@ -561,15 +615,33 @@ QtObject {
         if (!record || !action || typeof action.invoke !== "function")
             return false;
 
-        if (root.isActionDisabled(record, action.identifier)) {
+        if (String(action.identifier) !== "default") {
+            action.invoke();
+            return true;
+        }
+
+        if (record.mirrored !== true) {
+            action.invoke();
+            return true;
+        }
+
+        // App-open on a mirrored record must activate the source app without
+        // dismissing the real Windows toast. The native action's own invoke
+        // auto-closes as dismissed, which removes the toast, so the opt-in is
+        // only honored through the backend's mirrored-activation member; when
+        // the backend (at the pinned revision) does not expose it, app-open is
+        // refused instead of bypassing the separate dismissal opt-in.
+        if (!root.appOpenPermitted) {
+            root.appOpenRefusals++;
+            return false;
+        }
+        if (typeof root.backend?.activateMirrored !== "function") {
             root.appOpenRefusals++;
             return false;
         }
 
-        if (record.mirrored === true && String(action.identifier) === "default")
-            root.appOpenInvocations++;
-        action.invoke();
-        return true;
+        root.appOpenInvocations++;
+        return root.backend.activateMirrored(record.notificationId) === true;
     }
 
     function recordForNotificationId(notificationId): var {

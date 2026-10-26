@@ -136,6 +136,7 @@ Singleton {
     readonly property int mirrorAccessRequests: service.accessRequestsIssued
     readonly property int mirrorAccessRequestRefusals: service.accessRequestRefusals
     readonly property int mirrorWrites: service.mirrorWrites
+    readonly property int mirrorDisables: service.mirrorDisables
     readonly property int deniedPolls: service.deniedPolls
     readonly property bool deniedPollExhausted: service.deniedPollExhausted
     readonly property bool deniedPollingActive: service.deniedPollingActive
