@@ -6,6 +6,7 @@ param(
     [ValidateSet('Disabled', 'Observe', 'Interactive')][string]$TilingMode = 'Disabled',
     [string]$TilingIncluded = '',
     [string]$TilingExcluded = '',
+    [switch]$SkipSchemeRuntime,
     [switch]$Wait
 )
 
@@ -33,6 +34,17 @@ if ($Command -eq 'Start') {
     }
 }
 
+$schemeRuntime = $null
+if ($Command -eq 'Start' -and -not $SkipSchemeRuntime) {
+    $schemeRuntime = & (Join-Path $PSScriptRoot 'Install-SchemeRuntime.ps1') -ProfileRoot $profile |
+        Select-Object -Last 1 | ConvertFrom-Json
+}
+$schemeAvailable = $null -ne $schemeRuntime -and $schemeRuntime.available -eq $true
+$wePython = if ($schemeAvailable) { [string]$schemeRuntime.python } elseif ($Command -eq 'Start') {
+    $pythonLauncher = Get-Command py.exe -ErrorAction SilentlyContinue
+    if ($pythonLauncher) { & $pythonLauncher.Source -3 -c 'import sys; print(sys.executable)' }
+}
+
 $info = New-Object Diagnostics.ProcessStartInfo
 $info.FileName = $exe
 $info.WorkingDirectory = $Prefix
@@ -49,6 +61,13 @@ $info.EnvironmentVariables['QML_DISK_CACHE_PATH'] = Join-Path $profile 'cache\qm
 $info.EnvironmentVariables['CAELESTIA_CONFIG_DIR'] = Join-Path $profile 'config'
 $info.EnvironmentVariables['CAELESTIA_STATE_DIR'] = Join-Path $profile 'state'
 $info.EnvironmentVariables['CAELESTIA_RUNTIME_DIR'] = Join-Path $profile 'runtime'
+$info.EnvironmentVariables['CAELESTIA_PROFILE_ROOT'] = $profile
+foreach ($directory in @('config', 'state', 'data', 'cache')) {
+    $info.EnvironmentVariables["XDG_$($directory.ToUpperInvariant())_HOME"] = Join-Path $profile $directory
+}
+$info.EnvironmentVariables['CAELESTIA_SCHEME_PYTHON'] = $(if ($schemeAvailable) { [string]$schemeRuntime.python } else { '' })
+$info.EnvironmentVariables['CAELESTIA_SCHEME_HELPER'] = $(if ($schemeAvailable) { [string]$schemeRuntime.helper } else { '' })
+$info.EnvironmentVariables['CAELESTIA_WE_PYTHON'] = [string]$wePython
 $info.EnvironmentVariables['QS_WINDOWS_BLUR'] = '0'
 $info.EnvironmentVariables['QSG_RHI_BACKEND'] = 'd3d11'
 $info.EnvironmentVariables['QT_LOGGING_RULES'] = 'quickshell.windows.tracker.debug=false;quickshell.windows.inputmask.debug=false'
@@ -71,12 +90,21 @@ $info.EnvironmentVariables['CAELESTIA_WINDOWS_HYPR'] = '1'
 $info.EnvironmentVariables['CAELESTIA_WINDOWS_HYPR_DISPATCH'] = $liveValue
 $info.EnvironmentVariables['CAELESTIA_WINDOWS_BACKGROUND'] = '1'
 $info.EnvironmentVariables['CAELESTIA_WINDOWS_DESKTOP_ICONS'] = 'Behind'
-$tiling = $TilingMode.ToLowerInvariant()
-if ($tiling -eq 'disabled') { $tiling = 'off' }
+$tiling = $env:CAELESTIA_WINDOWS_TILING
+if ($PSBoundParameters.ContainsKey('TilingMode')) {
+    $tiling = $TilingMode.ToLowerInvariant()
+    if ($tiling -eq 'disabled') { $tiling = 'off' }
+}
 if ($Smoke) { $tiling = 'off' }
-$info.EnvironmentVariables['CAELESTIA_WINDOWS_TILING'] = $tiling
-$info.EnvironmentVariables['CAELESTIA_WINDOWS_TILING_INCLUDED'] = $TilingIncluded
-$info.EnvironmentVariables['CAELESTIA_WINDOWS_TILING_EXCLUDED'] = $TilingExcluded
+$info.EnvironmentVariables['CAELESTIA_WINDOWS_TILING'] = [string]$tiling
+$info.EnvironmentVariables['CAELESTIA_WINDOWS_TILING_OVERRIDE'] = $(if ($Smoke -or $PSBoundParameters.ContainsKey('TilingMode')) { '1' } else { '0' })
+foreach ($field in @('Included', 'Excluded')) {
+    $variable = 'CAELESTIA_WINDOWS_TILING_' + $field.ToUpperInvariant()
+    $explicit = $PSBoundParameters.ContainsKey("Tiling$field")
+    $value = $(if ($explicit) { Get-Variable -Name "Tiling$field" -ValueOnly } else { [Environment]::GetEnvironmentVariable($variable) })
+    $info.EnvironmentVariables[$variable] = [string]$value
+    $info.EnvironmentVariables[$variable + '_OVERRIDE'] = $(if ($explicit) { '1' } else { '0' })
+}
 # Smoke registers no physical shortcuts, leaving other desktop instances alone.
 if ($Smoke) {
     $emptyKeys = Join-Path $profile 'runtime\smoke-keybinds.json'

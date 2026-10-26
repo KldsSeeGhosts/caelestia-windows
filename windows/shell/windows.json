@@ -1,6 +1,9 @@
 {
   "windows": {
     "hideTaskbar": false,
-    "restartOnCrash": true
+    "restartOnCrash": true,
+    "wallpaperEngine": {
+      "enabled": "auto"
+    }
   }
 }

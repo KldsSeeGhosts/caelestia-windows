@@ -152,6 +152,12 @@ First launch seeds `config/shell.json`, `config/keybinds.json` and `config/windo
 
 The launcher sets `CAELESTIA_CONFIG_DIR`, `CAELESTIA_STATE_DIR`, and `CAELESTIA_RUNTIME_DIR`; staged QML DataDir/StateDir/CacheDir pragmas and `QML_DISK_CACHE_PATH` confine the remaining paths to the recorded profile.
 
+The first launch provisions `scheme/venv` inside this profile with pinned Python
+packages and the Caelestia CLI. Python is an accepted runtime dependency;
+`-SkipSchemeRuntime` keeps the fixed palette. Wallpaper Engine is detected
+automatically, supplies the launcher picker and palette preview, and retains
+ownership of the desktop background. The desktop clock defaults off.
+
 ### What to expect on first launch
 
 1. **Bar and work area:** The vertical bar appears along the left edge of your screen. When full-screen shell mode is active, Caelestia reserves the bar's width via a Windows AppBar so maximized and tiled windows do not sit underneath the bar. Taskbar hiding is off by default. Opt in with `{"windows":{"hideTaskbar":true,"restartOnCrash":true}}` in `config/windows.json`, then quit and start the shell. Crash restart defaults on; `Restore-Desktop.ps1` provides emergency recovery.
@@ -247,13 +253,13 @@ See [CONFIGURATION.md](CONFIGURATION.md) for a full annotated reference. Below a
 - **Search prefixes:** Type `@` (`launcher.specialPrefix`) to filter by category/field, or `>` (`launcher.actionPrefix`) to run shell actions:
   - `> calc 2*(3+4)^2` evaluates math expressions (click or press `Enter` to copy the result, or click the calculator icon to open Windows Calculator).
   - `> wallpaper` opens the horizontal wallpaper carousel reading images from `paths.wallpaperDir` (defaults to `%USERPROFILE%\Pictures\Wallpapers`, or override via `CAELESTIA_WALLPAPER_DIR`). Note: the carousel displays an odd number of wallpapers at a time, so keep 1 or 3+ images in the folder.
-  - `> light` / `> dark` switches color mode; `> scheme` / `> variant` selects color schemes (`TODO(verify): confirm dynamic wallpaper scheme generation behavior from branch t3/dynamic-scheme`).
+  - `> light` / `> dark` switches color mode; `> scheme` / `> variant` selects color schemes using the profile-local pinned Caelestia CLI generator. Python and network access are required for its first-launch provision.
 - **Vim navigation:** Set `"vimKeybinds": true` under `launcher` (and `session`) to navigate lists with `Ctrl+J`/`Ctrl+K` or `Tab`.
 
 ### Dashboard and desktop background (`dashboard`, `background`, and `services`)
 
 - **Dashboard:** Toggle individual tabs with `showDashboard`, `showMedia`, `showPerformance`, and `showWeather`. Under `dashboard.performance`, toggle `showBattery`, `showGpu`, `showCpu`, `showMemory`, `showStorage`, and `showNetwork`. On desktops without a battery or sensors that do not report temperatures without a kernel driver, Caelestia cleanly displays absent/unavailable states instead of fake zeros.
-- **Background:** Configure `background.wallpaperEnabled`, `background.desktopClock` (`enabled`, `scale`, `position`), and `background.visualiser` (`TODO(verify): confirm audio visualizer provider integration from branch t3/audio-visualizer`). Static wallpaper images are supported with shader transitions; video wallpapers are not supported because the portable build excludes native Qt Multimedia.
+- **Background:** Configure `background.wallpaperEnabled`, `background.desktopClock` (`enabled`, `scale`, `position`), and `background.visualiser` using the native WASAPI loopback provider. Static wallpaper images are supported with shader transitions; video wallpapers are not supported because the portable build excludes native Qt Multimedia.
 - **Weather:** Set `services.weatherLocation` to a city or coordinates, or leave `""` for automatic IP geolocation.
 
 ### Tiling and gaps
@@ -264,26 +270,25 @@ Caelestia's Windows backend includes a native DWM tiler (`Quickshell.Windows.Til
 - `"master"`: Master-stack layout (`masterFactor`: `0.55`, `masterOrientation`: `"left"`, `"right"`, `"top"`, `"bottom"`).
 - `"scrolling"`: Niri/PaperWM-style horizontal scrolling strip (`scrollingColumnWidth`: `0.5`, `scrollingCenter`: `"overflow"`).
 
-Important: `shell.json` is validated by `Caelestia.Config` (`ConfigRoot`), which does **not** have a `tiling` key and quarantines unknown fields. Tiling is controlled through launcher switches and environment variables:
+Tiling defaults off. Configure `windows.tiling` in `config/shell.json`:
 
-- `CAELESTIA_WINDOWS_TILING`: `off` (default), `observe`, or `interactive`
-- `CAELESTIA_WINDOWS_TILING_INCLUDED`: Semicolon-separated wildcard patterns (for example `WindowsTerminal.exe;Code.exe;firefox.exe` or `title:*Visual Studio*`). Interactive mode requires a non-empty inclusion list so enabling the tiler does not unexpectedly rearrange every open window on your desktop.
-- `CAELESTIA_WINDOWS_TILING_EXCLUDED`: Semicolon-separated wildcard patterns that always float and override inclusions (for example `Taskmgr.exe;calc.exe;title:Picture-in-Picture`).
+```json
+{"windows":{"tiling":{"enabled":false,"mode":"observe","gapsIn":10,"gapsOut":10,"include":["exe:notepad.exe"],"exclude":[],"float":["title:*Dialog*"],"monitors":{}}}}
+```
 
-Backend tiling parameters and defaults:
+Set `enabled=true` and choose `observe` or `interactive` after reviewing the
+application allowlist. Interactive requires a non-empty `include`. Rules accept
+arrays or semicolon-separated wildcards; `exe:`, `class:` and `title:` select
+specific window facts. Monitor-name wildcards map to booleans. Exclude, float
+and disabled-monitor rules take precedence. Changes reload live. The KSG importer
+maps its gap and padding preferences, defaulting to 10/10 DIPs, and selects Observe.
+See [the complete tiling schema](../services/tiling/README.md).
 
-| Option | Default | Description |
-| --- | --- | --- |
-| `layout` | `"dwindle"` | `"dwindle"`, `"master"`, or `"scrolling"` |
-| `gapsIn` | `4` | Inner gap (logical pixels) between adjacent tiled windows |
-| `gapsOut` | `5` | Outer gap (logical pixels) between tiled windows and the monitor work area |
-| `preserveSplit` | `true` | Keep split direction when windows close (`dwindle`) |
-| `smartSplit` | `false` | Split based on cursor position or aspect ratio (`dwindle`) |
-| `defaultSplitRatio` | `1.0` | Initial split ratio (`0.1`–`1.9`) |
-| `masterFactor` | `0.55` | Fraction of screen width/height given to the master pane (`master`) |
-| `scrollingColumnWidth` | `0.5` | Default column width as a fraction of the monitor (`scrolling`) |
-
-Production supports `-TilingMode Disabled|Observe|Interactive`, `-TilingIncluded` and `-TilingExcluded`; mode defaults to Disabled. Layout/gap configuration in `shell.json` remains in flight. `TODO(verify): confirm the final tiling-config fields and defaults after integration.`
+Production supports `-TilingMode Disabled|Observe|Interactive`, `-TilingIncluded`
+and `-TilingExcluded`. Explicit switches override environment, which overrides
+profile values. Without an override, the profile applies. Smoke forces tiling off.
+Native layout choices remain backend options; this profile schema configures
+admission and gaps.
 
 ### Per-monitor configuration
 

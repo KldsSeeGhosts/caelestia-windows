@@ -163,11 +163,19 @@
     "enabled": true,
     "wallpaperEnabled": true,
     "desktopClock": {
-      "enabled": true,
+      "enabled": false,
       "position": "bottom-right"
     },
     "visualiser": {
       "enabled": false
+    }
+  },
+  "windows": {
+    "tiling": {
+      "enabled": false,
+      "mode": "observe",
+      "gapsIn": 10,
+      "gapsOut": 10
     }
   }
 }

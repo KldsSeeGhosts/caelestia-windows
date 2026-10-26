@@ -63,7 +63,9 @@ Hover the top edge for the dashboard, bottom edge for the launcher, and right
 edge for notification history. The logo also opens the launcher. Full screen is
 an explicit control-window toggle. It reserves the bar's width through a native
 AppBar and releases that reservation when full screen is turned off or the host
-exits. Tiling stays off unless separately requested.
+exits. Tiling defaults off; profile configuration or explicit switches can enable it.
+See [the tiling schema](../services/tiling/README.md) for live reload, typed rules
+and 10/10 DIP gap defaults.
 
 Build with [NATIVE-BUILD.md](../NATIVE-BUILD.md) from this checkout. Build and
 launch default to this checkout's `windows/.local/build`; `-BuildRoot` overrides
@@ -281,16 +283,48 @@ watched and reload the binds without restarting the shell.
   functions. Clicking/accepting copies the result in Live mode. Its external
   calculator button opens Windows Calculator in Live mode.
 
+## Dynamic colours and the profile-local scheme runtime
+
+`Start-ShellPrototype.ps1 -Combined` calls `Install-SchemeRuntime.ps1`, which
+provisions `scheme/venv` under the combined profile (never the repository or the
+user's ordinary Python packages) with `pillow==13.0.0`,
+`materialyoucolor==3.0.4` and the upstream `caelestia` CLI pinned at
+`5e804b10`. The installer also places a Windows `fcntl` shim in the venv and
+copies `win_scheme.py` into the profile. Use `-SkipSchemeRuntime` to skip
+provisioning and the generator entirely. A failed provision is cached in
+`scheme/runtime.json`; delete that file or run `Install-SchemeRuntime.ps1
+-ProfileRoot <profile> -Force` to retry.
+
+`win_scheme.py` imports the CLI's scheme/material modules but deliberately skips
+its theme writer (Linux-only `fcntl`, Hyprland sockets, dconf, `/dev/pts` and
+`killall`). The Windows shell is the only theme consumer. Upstream's symlink
+wallpaper state is replaced with ordinary `path.txt`/`thumbnail.jpg` files
+because Windows symlinks need extra privileges. All state, cache and config
+writes are forced below `combined-prototype-profile`; the bridge refuses to run
+without `CAELESTIA_PROFILE_ROOT`.
+
+If provisioning or generation fails, `schemeRuntime` is false in the run result
+and the shell keeps its fixed Caelestia palette. Switching variant or mode while
+a static scheme is selected switches to the wallpaper-derived dynamic palette
+when a wallpaper is known, so those rows always do something visible.
+
+## Wallpaper Engine
+
+Discovery, picker and palette matching use the running Wallpaper Engine instance.
+The Caelestia desktop host, including its clock, yields while Wallpaper Engine
+owns the desktop. `windows.wallpaperEngine` in `config/windows.json` defaults to
+auto detection. See [the service guide](../services/wallpaperengine/README.md).
+The production entry uses the same services and provisions its scheme venv under
+`%LOCALAPPDATA%\caelestia-windows\scheme`; its desktop clock defaults off.
+
 ## Still unavailable, and why
 
-- Workspace dispatch remains unavailable in this host. The five visible slots
-  use the original Text display; per-monitor workspace ownership is unclaimed.
-- Dynamic schemes and variants require the upstream `caelestia scheme` CLI and
-  matugen. Neither exists in the supplied runtime. Scheme/variant searches have
-  no generated entries, and action descriptions identify the missing generator.
-  Wallpaper changes therefore retain the fixed Caelestia palette.
-- Lyrics, beat tracking and audio visualisation depend on excluded upstream
-  native services. Cover art, metadata, player selection and transport remain.
+- Dynamic colours require Python and a successful first-launch dependency download.
+  Failed provisioning keeps the fixed palette. Only the Windows shell receives
+  generated colours; Linux theme targets are not applied.
+- Lyrics still require the excluded native lyrics service. Audio analysis uses
+  WASAPI loopback in `Caelestia.Windows.Audio`; the original cover visualiser,
+  background visualiser and beat-driven GIF consume its providers.
 - Profile picture editing is unavailable; its click reports this in a toast.
 - Idle inhibition is not the upstream Wayland `IdleInhibitor`; Windows holds the
   execution state in a child process instead (see the utilities card above). The

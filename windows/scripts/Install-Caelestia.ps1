@@ -76,9 +76,10 @@ try {
     Copy-Item -LiteralPath "$repoRoot\windows\shell\shell.json" -Destination "$payload\defaults\shell.json"
     Copy-Item -LiteralPath "$repoRoot\windows\shell\windows.json" -Destination "$payload\defaults\windows.json"
     Copy-Item -LiteralPath "$repoRoot\defaults\windows\keybinds.json" -Destination "$payload\defaults\keybinds.json"
-    foreach ($script in @('Start-Caelestia.ps1', 'Uninstall-Caelestia.ps1', 'Caelestia-InstallCommon.ps1', 'Start-DesktopShell.ps1', 'Watch-DesktopShell.ps1', 'Restore-Desktop.ps1', 'DesktopTakeover.cs')) {
+    foreach ($script in @('Start-Caelestia.ps1', 'Uninstall-Caelestia.ps1', 'Caelestia-InstallCommon.ps1', 'Start-DesktopShell.ps1', 'Watch-DesktopShell.ps1', 'Restore-Desktop.ps1', 'DesktopTakeover.cs', 'Install-SchemeRuntime.ps1')) {
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot $script) -Destination $payload
     }
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'scheme') -Destination $payload -Recurse
     New-Item -ItemType Directory -Path "$payload\licenses" | Out-Null
     Copy-Item -LiteralPath "$repoRoot\windows\deps\m3shapes\LICENSE" -Destination "$payload\licenses\M3Shapes-LICENSE"
     Copy-Item -LiteralPath "$repoRoot\LICENSE" -Destination "$payload\licenses\Caelestia-LICENSE"

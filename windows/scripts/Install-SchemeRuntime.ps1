@@ -12,7 +12,11 @@ param(
 # reported as available=false so the shell still starts with its fixed palette.
 $ErrorActionPreference = 'Stop'
 if (-not $CliRevision) {
-    $lock = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..\sources.lock.json') -Raw | ConvertFrom-Json
+    $lockPath = Join-Path $PSScriptRoot '..\sources.lock.json'
+    if (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'install.json')) {
+        $lockPath = Join-Path $PSScriptRoot 'licenses\sources.lock.json'
+    }
+    $lock = Get-Content -LiteralPath $lockPath -Raw | ConvertFrom-Json
     $CliRevision = [string]$lock.schemeCli.revision
     if (-not $CliRevision) {
         throw 'sources.lock.json does not pin the scheme CLI revision'

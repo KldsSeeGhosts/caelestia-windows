@@ -3,7 +3,8 @@
 `shell-live` stages the integrated combined graph with one original
 `ContentWindow` on every Qt screen, including monitor arrival/removal. Each
 full-screen drawer has an AppBar reservation beside it. The original desktop
-background and clock are enabled on every monitor. Workspaces, native workspace
+background is enabled on every monitor and yields to Wallpaper Engine. The
+desktop clock defaults off. Workspaces, native workspace
 dispatch, active-window display, utilities, M3Shapes, shortcuts, and service
 controls share the combined adapters. There is no preview control window.
 
@@ -39,11 +40,17 @@ The stable profile defaults to `%LOCALAPPDATA%\caelestia-windows`. First launch
 seeds these files once, preserving edits across restart/update/uninstall:
 
 - `config/shell.json`: integrated combined Live defaults, with background and
-  desktop clock on. Native Config watches edits.
+  desktop clock off and tiling disabled with 10/10 DIP gaps. Native Config watches edits.
 - `config/keybinds.json`: shipped `defaults/windows/keybinds.json`. The backend
   watches edits; see [KEYBINDS.md](../docs/KEYBINDS.md).
 - `config/windows.json`: `{"windows":{"hideTaskbar":false,"restartOnCrash":true}}`.
   These supervisor settings apply at the next launch.
+
+The first launch provisions the pinned Caelestia CLI and Python dependencies in
+`scheme/venv` under this profile. Use `-SkipSchemeRuntime` to keep the fixed
+palette. Wallpaper Engine discovery and preview colour matching share the
+combined services; its options are watched under `windows.wallpaperEngine` in
+`config/windows.json`.
 
 State, cache, data, runtime and logs remain in that profile. Normal and smoke
 runs capture `logs/shell.stdout.log` and `logs/shell.stderr.log`; the watchdog
@@ -59,7 +66,9 @@ requires its separate explicit flag.
 Tiling defaults off. `Start-Caelestia.ps1 -TilingMode Observe` enables observation;
 `-TilingMode Interactive -TilingIncluded '<application-patterns>'` opts into
 control. `-TilingExcluded` supplies the denylist. Coordinate with the existing
-tiler before enabling control. Tiling configuration in `shell.json` is deferred.
+tiler before enabling control. `windows.tiling` in `shell.json` supports live rules/gaps/mode reload; see
+[the schema](../services/tiling/README.md). Omitted launcher switches allow the
+profile to apply.
 
 ## Temporary installed smoke
 
@@ -67,7 +76,8 @@ Install with separate `-Prefix` and `-ProfileRoot` under a temporary directory.
 Run its `Start-Caelestia.ps1 -Smoke` in another PowerShell process. After roughly
 15 seconds of QML runtime it prints `CAELESTIA_SHELL_LIVE_PASS` and awaits
 `Start-Caelestia.ps1 -Command Quit`. The runner has a 60-second timeout. It checks
-all monitor-sized drawers and backgrounds while disabling input, hardware writes,
+all monitor-sized drawers and backgrounds (or zero background hosts while
+Wallpaper Engine owns the desktop) while disabling input, hardware writes,
 workspace dispatch, tiling, recording, keep-awake, physical hotkeys, notification
 mirroring and tray interception. AppBar reservations remain enabled and must be
 released on quit. Smoke forces taskbar hiding off even with edited settings.

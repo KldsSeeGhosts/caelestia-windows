@@ -59,7 +59,7 @@ Controls scaling, rounding, spacing, padding, fonts, animation durations, transp
 - **Bundled fonts:** `GoogleSansFlex` (headline, title, body, label), `Rubik` (clock, workspaces), and `Material Symbols Rounded` (icons) are bundled and loaded into the Caelestia process automatically—you do not need to install them into `C:\Windows\Fonts`.
 - **Monospace font (`appearance.font.mono`):** Defaults to `"CaskaydiaCove NF"`. Install Cascadia Code Nerd Font in Windows or change `appearance.font.mono.family` to `"Cascadia Mono"` or `"Consolas"`.
 - **Transparency (`appearance.transparency`):** Set `"enabled": true` to use semi-transparent surfaces (`base`: `0.85`, `layers`: `0.4`). Works whether Windows system transparency effects are on or off.
-- **Dynamic color schemes:** `TODO(verify): confirm how branch t3/dynamic-scheme configures wallpaper-derived Material 3 palettes and whether smartScheme in services is used.`
+- **Dynamic color schemes:** The profile-local pinned Caelestia CLI generates Material You palettes. `services.smartScheme` selects smart mode/variant. Python and a first-launch download are required; failure retains the fixed palette. Wallpaper Engine previews drive the same generator.
 - **Expressive Material 3 shapes:** The native `M3Shapes` QML plugin (`windows/deps/m3shapes`) is compiled and staged on Windows, providing authentic `M3Shapes.MaterialShape` ambient media shapes, cover-art masking, loading indicators, and morph animations.
 
 ### `bar`
@@ -244,7 +244,7 @@ Controls the top dashboard drawer and platform service intervals/units.
 
 - **Media (`Players`):** Backed by Windows GSMTC (`GlobalSystemMediaTransportControlsSessionManager`). Per-player volume, window raise/quit, and URI opening are not part of GSMTC.
 - **Audio (`maxVolume`):** Capped at `1.0` (100%) by Windows Core Audio.
-- **Lyrics and audio visualizer:** `TODO(verify): confirm whether branch t3/audio-visualizer wires Quickshell.Windows.AudioVisualizer to the dashboard/background visualizer bars.`
+- **Audio visualizer:** `Caelestia.Windows.Audio` supplies WASAPI loopback analysis to the original `Audio.cava` and `Audio.beatTracker` contracts. Lyrics remain unavailable.
 - **Profile picture:** Clicking the avatar in the dashboard shows a toast on Windows rather than copying to `~/.face`.
 
 ### `notifs`, `sidebar`, `osd`, and `utilities`
@@ -300,6 +300,11 @@ Controls the top dashboard drawer and platform service intervals/units.
 - `general.apps` and `general.idle`: Linux terminal/explorer app arrays (`foot`, `thunar`) and Linux `dpms`/`idle` command arrays are not used on Windows.
 - `lock`: Ignored on Windows; locking always invokes the native Windows lock screen (`Win+L`).
 
+Wallpaper Engine settings live in `config/windows.json` under
+`windows.wallpaperEngine`: `enabled` defaults to `"auto"`, `picker` accepts
+`"engine"`, `"files"` or `"both"`, and `monitor` defaults to `"Monitor0"`.
+The background yields completely while Wallpaper Engine owns the desktop.
+
 ### `background`
 
 Controls the desktop wallpaper surface, desktop clock, and desktop audio visualizer:
@@ -341,17 +346,31 @@ Controls the desktop wallpaper surface, desktop clock, and desktop audio visuali
 - Embedded into the Windows desktop (`Progman` / `WorkerW`, including the Windows 11 24H2 child `WorkerW` hierarchy) via `Quickshell.Windows.DesktopLayer`.
 - Supports placing the surface either behind desktop icons (`Behind`, default) or above desktop icons (`Replace`) without altering Explorer's persistent icon settings.
 - Supports static wallpaper images with original shader transitions; video wallpapers are not supported because the portable build excludes Qt Multimedia.
-- `background.visualiser` loads when an `Audio.cava` provider is present (`TODO(verify): confirm audio visualizer provider integration from branch t3/audio-visualizer`).
+- `background.visualiser` loads when an `Audio.cava` provider is present from the native WASAPI analysis plugin.
 
 ---
 
 ## Tiling and gaps configuration
 
-Because `shell.json` is validated against the upstream `ConfigRoot` schema (which has no `tiling` block), tiling mode and window rules are configured via launcher options and environment variables:
+The Windows extension `windows.tiling` is validated by the tiling facade and
+watched through `GlobalConfig`. Defaults are disabled, Observe mode when enabled,
+and 10/10 DIP gaps. Example:
 
-- `CAELESTIA_WINDOWS_TILING`: `off` (default), `observe`, or `interactive`
-- `CAELESTIA_WINDOWS_TILING_INCLUDED`: Semicolon-separated wildcard patterns for windows to tile (e.g. `WindowsTerminal.exe;Code.exe;title:*Visual Studio*`). Interactive mode refuses to enable if this list is empty.
-- `CAELESTIA_WINDOWS_TILING_EXCLUDED`: Semicolon-separated wildcard patterns for windows that should never be tiled (e.g. `Taskmgr.exe;calc.exe`). Exclusions always take precedence over inclusions.
+```json
+{"windows":{"tiling":{"enabled":false,"mode":"observe","gapsIn":10,"gapsOut":10,"include":["exe:notepad.exe"],"exclude":[],"float":["title:*Dialog*"],"monitors":{"*DISPLAY2":false}}}}
+```
+
+Rules are wildcard arrays or semicolon-separated strings. `exe:`, `class:` and
+`title:` select individual window facts. `float` and disabled-monitor patterns
+are exclusions and win over inclusions. Interactive requires a non-empty include
+list; live changes stop the session before applying new rules/gaps.
+See [the full schema](../services/tiling/README.md).
+
+Explicit launcher switches override environment variables, which override profile
+values. `CAELESTIA_WINDOWS_TILING=off|observe|interactive`,
+`CAELESTIA_WINDOWS_TILING_INCLUDED` and `CAELESTIA_WINDOWS_TILING_EXCLUDED`
+remain available. Production accepts `-TilingMode`, `-TilingIncluded` and
+`-TilingExcluded`; omitted switches allow the profile to apply. Smoke forces off.
 
 The underlying `Quickshell.Windows.Tiling` singleton exposes the following layout and gap properties:
 
@@ -370,7 +389,8 @@ The underlying `Quickshell.Windows.Tiling` singleton exposes the following layou
 - `scrollingColumnWidth` (`double`, default `0.5`, range `0.1`–`1.0`)
 - `scrollingCenter` (`string`, default `"overflow"`): `"never"`, `"always"`, `"on-overflow"` / `"overflow"`
 
-Production currently supports `-TilingMode Disabled|Observe|Interactive`, `-TilingIncluded`, and `-TilingExcluded`. Layout/gap configuration in `shell.json` is deferred to the tiling-config integration. `TODO(verify): confirm its final fields and defaults after that branch is merged.`
+The table above lists native backend defaults; the Windows facade overrides gaps
+to 10/10 DIPs. Layout selection remains a backend option outside this profile schema.
 
 ---
 

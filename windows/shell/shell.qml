@@ -24,6 +24,7 @@ import qs.modules.launcher.services
 ShellRoot {
     id: root
 
+    readonly property bool externalWallpaperActive: WallpaperEngine.ownsDesktop
     readonly property bool smoke: Quickshell.env("CAELESTIA_SHELL_SMOKE") === "1"
     settings.watchFiles: false
 
@@ -112,6 +113,20 @@ ShellRoot {
                 width: w.width, height: w.height
             })),
             tilingMode: Tiling.mode,
+            wallpaperEngine: {
+                ready: WallpaperEngine.snapshotReady,
+                running: WallpaperEngine.running,
+                detected: WallpaperEngine.detected,
+                count: WallpaperEngine.items.length,
+                current: WallpaperEngine.current?.path ?? ""
+            },
+            scheme: {
+                available: SchemeGenerator.available,
+                status: SchemeGenerator.status,
+                schemes: Schemes.list.length,
+                variants: M3Variants.list.length,
+                primary: Colours.palette.m3primary
+            },
             controls: {
                 audio: Audio.controlsEnabled,
                 brightness: Brightness.controlsEnabled,
@@ -135,6 +150,7 @@ ShellRoot {
         ShellState.shellRoot = root;
         Hypr.logStartupStatus();
         Tiling.logStartupStatus();
+        SchemeGenerator.refresh();
         Native.SystemMonitor.active = true;
         Native.SystemStats.networkEnabled = true;
     }
@@ -163,8 +179,11 @@ ShellRoot {
                 && state.windows.every(w => w.width === w.screenWidth
                     && w.height === w.screenHeight && w.barWidth > 0)
                 && Object.values(state.controls).every(value => value === false)
+                && (!WallpaperEngine.python || state.wallpaperEngine.ready)
+                && (!state.scheme.available || (state.scheme.status === "ready"
+                    && state.scheme.schemes > 0 && state.scheme.variants > 0))
                 && Quickshell.env("QS_WINDOWS_TRAY_HOOK") === "0"
-                && state.backgroundWindows.length === state.screens
+                && state.backgroundWindows.length === (root.externalWallpaperActive ? 0 : state.screens)
                 && state.backgroundWindows.every(w => {
                     const screen = Quickshell.screens.find(s => s.name === w.modelScreen);
                     return screen && w.screen === w.modelScreen

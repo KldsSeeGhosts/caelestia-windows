@@ -20,7 +20,7 @@ Singleton {
     readonly property string amPmStr: timeComponents[2] ?? ""
 
     function format(fmt: string): string {
-        return Qt.formatDateTime((clock?.date ?? new Date(0)), fmt);
+        return Tr.formatDateTime((clock?.date ?? new Date(0)), fmt);
     }
 
     SystemClock {

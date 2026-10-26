@@ -57,6 +57,7 @@ Singleton {
         const ok = Native.Wallpaper.setWallpaper(local, false);
         if (ok) {
             fileCurrent = local;
+            stopPreview();
             if (SchemeGenerator.available) {
                 // The picker always produces the wallpaper-derived dynamic
                 // scheme; the bridge writes scheme.json and Colours reloads it.
@@ -79,7 +80,7 @@ Singleton {
     Connections {
         target: Native.DesktopLayer
         function onWallpaperChanged(): void {
-            root.actualCurrent = Native.Wallpaper.currentWallpaper().replace(/\\/g, "/") || fallback || root.fallback;
+            root.fileCurrent = Native.Wallpaper.currentWallpaper().replace(/\\/g, "/") || root.fallback;
         }
     }
     NativeDialogs.FileDialog {

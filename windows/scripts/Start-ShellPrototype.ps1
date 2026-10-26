@@ -284,27 +284,19 @@ if ($Combined) {
     # Supervisor-only settings stay separate from upstream's compiled Qt
     # configuration schema, including when reusing an older portable build.
     $takeoverConfig = Join-Path $profileRoot 'config\windows.json'
-    @{ windows = @{
-        hideTaskbar = $HideTaskbar.IsPresent
-        restartOnCrash = -not $NoRestartOnCrash.IsPresent
-    } } | ConvertTo-Json | Set-Content -LiteralPath $takeoverConfig -Encoding UTF8
+    $platformOptions = if ($WindowsConfigPath) {
+        (Get-Content -LiteralPath $WindowsConfigPath -Raw | ConvertFrom-Json).windows
+    } elseif (Test-Path -LiteralPath $takeoverConfig) {
+        (Get-Content -LiteralPath $takeoverConfig -Raw | ConvertFrom-Json).windows
+    } else { [pscustomobject]@{} }
+    $platformOptions | Add-Member -NotePropertyName hideTaskbar -NotePropertyValue $HideTaskbar.IsPresent -Force
+    $platformOptions | Add-Member -NotePropertyName restartOnCrash -NotePropertyValue (-not $NoRestartOnCrash.IsPresent) -Force
+    @{ windows = $platformOptions } | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $takeoverConfig -Encoding UTF8
 }
 if ($null -ne $tilingSettings) {
     $configObject = $configText | ConvertFrom-Json
     $configObject | Add-Member -NotePropertyName windows -NotePropertyValue ([pscustomobject]@{ tiling = $tilingSettings }) -Force
     $configText = $configObject | ConvertTo-Json -Depth 20
-}
-if ($Combined) {
-    # The pinned C++ ConfigRoot rejects unknown top-level keys. Keep Windows
-    # facade settings in a separate watched file, without rebuilding that ABI.
-    $windowsConfig = Join-Path $profileRoot 'config\windows.json'
-    if ($WindowsConfigPath) {
-        $windowsOptions = Get-Content -LiteralPath $WindowsConfigPath -Raw | ConvertFrom-Json
-        @{ windows = $windowsOptions.windows } | ConvertTo-Json -Depth 20 |
-            Set-Content -LiteralPath $windowsConfig -Encoding UTF8
-    } elseif (-not (Test-Path -LiteralPath $windowsConfig)) {
-        '{"windows":{"wallpaperEngine":{}}}' | Set-Content -LiteralPath $windowsConfig -Encoding UTF8
-    }
 }
 $configText | Set-Content -LiteralPath $config -Encoding UTF8
 $logRoot = Join-Path $RunRoot 'logs'
@@ -325,7 +317,7 @@ if ($Combined -and -not $SkipSchemeRuntime) {
     }
 }
 $schemeAvailable = $null -ne $schemeRuntime -and $schemeRuntime.available -eq $true
-$logRoot = Join-Path $BuildRoot 'logs'
+$logRoot = Join-Path $RunRoot 'logs'
 New-Item -ItemType Directory -Force -Path $logRoot | Out-Null
 $screenshot = Join-Path $logRoot "$runName.png"
 $stdoutPath = Join-Path $logRoot "$runName.stdout.log"

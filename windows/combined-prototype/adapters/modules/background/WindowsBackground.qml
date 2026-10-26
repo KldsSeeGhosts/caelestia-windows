@@ -50,7 +50,7 @@ Background {
         const clock = window ? CUtils.findChild(window.contentItem, "desktopClock") : null;
         const wallpaper = window ? CUtils.findChild(window.contentItem, "desktopWallpaper") : null;
         const ready = Native.DesktopLayer.active && window && window.visible
-            && clock && clock.width > 0 && clock.height > 0
+            && (!GlobalConfig.background.desktopClock.enabled || (clock && clock.width > 0 && clock.height > 0))
             && wallpaper && wallpaper.source.length > 0 && wallpaper.transitionProgress >= 1;
         console.log("CAELESTIA_BACKGROUND_STATE", JSON.stringify({
             active: Native.DesktopLayer.active, icons: desktopIcons,
