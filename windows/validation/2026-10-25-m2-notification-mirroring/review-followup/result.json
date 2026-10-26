@@ -1,0 +1,30 @@
+﻿{
+    "passed":  true,
+    "sourceRevision":  "43e12f1e772b3fdfb6c9d817d042a3da8b6a24b9",
+    "backendRevision":  "3da2296a8f9a27e131425c511401a67b5a514a45",
+    "rootGitlinkUnchanged":  "160000 commit 1401042969e4b7ab3cfb314fc76945ab081db3de\twindows/deps/quickshell",
+    "sourceDirtyReason":  "Only the intentionally unpinned backend checkout differs from the root gitlink during the prototype run.",
+    "backendTests":  [
+                         {
+                             "target":  "notification_mirror_consent_test",
+                             "totals":  "Totals: 8 passed, 0 failed, 0 skipped, 0 blacklisted, 962ms"
+                         },
+                         {
+                             "target":  "mpris_status_test",
+                             "totals":  "Totals: 6 passed, 0 failed, 0 skipped, 0 blacklisted, 2ms"
+                         },
+                         {
+                             "target":  "upower_status_test",
+                             "totals":  "Totals: 9 passed, 0 failed, 0 skipped, 0 blacklisted, 2ms"
+                         }
+                     ],
+    "fixtureAssertions":  558,
+    "prototypeEntries":  9,
+    "prototypeRun":  "notifications-validation-20261025-205455-141",
+    "evidence":  [
+                     "backend/result.json",
+                     "fixture-standalone/result.json",
+                     "prototype/result.json"
+                 ],
+    "limits":  "Native Disabled/Local only, using the unchanged shared qs.exe. Mirroring, listener consent, app activation and Windows toast removal are faked only."
+}

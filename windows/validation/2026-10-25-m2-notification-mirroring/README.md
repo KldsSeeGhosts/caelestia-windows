@@ -344,3 +344,71 @@ facade and the service refuses the unsafe paths instead of using them.
 Real Windows access prompts, real toast mirroring/dismissal/removal, real app
 activation and the backend's ten-second access timer remain fixture/seam-only;
 native evidence still covers Disabled and Local smoke only.
+
+## Second independent review addendum
+
+Both follow-up findings are fixed in root implementation revision
+`43e12f1e772b3fdfb6c9d817d042a3da8b6a24b9` on
+`t3/notification-mirroring-fix`, with backend
+`3da2296a8f9a27e131425c511401a67b5a514a45` on
+`windows/m2-notification-mirror-consent`. The root gitlink remains
+`1401042969e4b7ab3cfb314fc76945ab081db3de`; `windows/sources.lock.json`
+is unchanged.
+
+- **P1 replacement dismissal bypass:** the backend refuses a local replacement
+  targeting a mirrored record, returning ID `0` without changing the record or
+  emitting a new notification. This matches the facade's existing refusal of
+  replacement sends. Both `notifySend` and the common delivery path enforce
+  the boundary using the native toast ID, rather than mutable hints;
+  local-to-local backend replacement retains its existing behavior. QML latches
+  mirrored identity for the record's lifetime, including full resynchronization
+  and later removal of all toast hints. Mirrored dismissal always requires the
+  separate opt-in, even if the local flag is inconsistent. Backend and QML
+  fakes cover replacement followed by local-only close with zero toast removals.
+- **P2 nested body images:** each bounded sanitizer pass also removes exposed
+  HTML media tags and reference definitions. Exhausting eight passes drops all
+  remaining `!` and `<` openers, preventing deeper image markup from surviving.
+  Fixtures cover inline and mixed inline/reference/HTML bodies at depths
+  **1, 8, 9 and 50**, plus HTML exposed by stripping another tag, through live
+  delivery, property updates and restored history.
+
+Commands (native PowerShell, Qt 6.11.2 and clang-cl 20.1.8):
+
+```powershell
+$qtPrefix = "$env:LOCALAPPDATA\caelestia-dev\Qt\6.11.2\msvc2022_64"
+$buildRoot = 'D:\AiStack\caelestia-windows\windows\.local\build'
+powershell -NoProfile -File windows/scripts/Test-BackendNotifications.ps1 `
+    -QtPrefix $qtPrefix `
+    -LlvmBin "$env:LOCALAPPDATA\caelestia-dev\clang+llvm-20.1.8-x86_64-pc-windows-msvc\bin" `
+    -ToolsBin "$env:LOCALAPPDATA\caelestia-dev\tools\Scripts" `
+    -BuildRoot windows/.local/build/nc
+powershell -NoProfile -File windows/scripts/Test-NotificationService.ps1 `
+    -QtPrefix $qtPrefix -BuildRoot $buildRoot
+powershell -NoProfile -File windows/scripts/Test-NotificationsPrototype.ps1 `
+    -QtPrefix $qtPrefix -BuildRoot $buildRoot
+```
+
+[Follow-up evidence](review-followup/result.json) records:
+
+- Backend Qt Test totals: **8 notification consent + 6 MPRIS + 9 UPower passed,
+  0 failed**, from the clean committed backend revision above.
+- QML: **558 assertions passed**, preserving all 449 previous assertions.
+  The standalone run tested the working changes based on `c0947744`; its source
+  hashes match implementation commit `43e12f1e`. The prototype reran the same
+  558 assertions from that commit.
+- Prototype `notifications-validation-20261025-205455-141`: **9/9 entries passed**,
+  including Disabled/Local at native 150%/175%, M1 smoke, 148 media assertions
+  and 128 battery assertions. Desktop and legacy-history identity were unchanged;
+  native mirror, access-request, Windows-dismissal and app-open counters stayed
+  zero. `sourceDirty: true` reflects only the intentionally unpinned backend
+  checkout. The runtime was the unchanged shared `qs.exe` (SHA256
+  `22B69FFE0523F8FFDB86C22E1669A36B2C8DCAEA97B19754000EC7455345AF22`),
+  built from root `7f73b5f1` and backend `14010429`, as recorded in
+  `review-followup/prototype/native-build.json`. Runtime result metadata's
+  `backendRevision` identifies the checkout, not that executable's source.
+
+New results, logs and screenshots are confined to `review-followup/`; earlier
+evidence files are unchanged. No staged QML copies or per-run source manifests
+were archived. Native Mirror mode, real listener access/consent, real toast
+replacement/removal, real app activation and the backend access timer remain
+untested. These changes' mirrored behavior is validated only with fakes.
