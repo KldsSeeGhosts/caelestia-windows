@@ -39,19 +39,18 @@ namespace Caelestia.Takeover {
         public string Operation, Device, Utc, Source;
         public long Handle;
         public uint Owner;
-        public bool VisibleBefore, RequestedVisible, Asynchronous;
-        public bool? VisibleAfter, RequestAccepted;
+        public bool VisibleBefore, RequestedVisible, VisibleAfter;
         // Ticks are Stopwatch/QPC ticks, not wall-clock or WinEvent's ms time.
         public long MonotonicTicks, TickFrequency;
         public long? ShowObservedTicks;
-        public double? ShowToHideMilliseconds, ShowToRequestMilliseconds;
+        public double? ShowToHideMilliseconds;
     }
     // All timestamps are supplied by the caller, allowing deterministic tests.
-    // Count only rapid same-HWND recurrences after our requests. Twelve within
+    // Count only rapid same-HWND recurrences after our hides. Twelve within
     // two seconds trigger five seconds of polling-only operation.
     public sealed class TaskbarShowPolicy {
         sealed class WindowState {
-            public long LastRequest;
+            public long LastHide;
             public readonly Queue<long> Recurrences = new Queue<long>();
         }
         readonly long frequency;
@@ -62,7 +61,7 @@ namespace Caelestia.Takeover {
         void Prune(long now) {
             var expired = new List<string>();
             foreach (var entry in windows)
-                if (now - entry.Value.LastRequest >= 2 * frequency) expired.Add(entry.Key);
+                if (now - entry.Value.LastHide >= 2 * frequency) expired.Add(entry.Key);
             foreach (var key in expired) windows.Remove(key);
         }
         public bool AllowImmediate(Bar bar, long now, out bool enteredBackoff) {
@@ -73,7 +72,7 @@ namespace Caelestia.Takeover {
             if (windows.TryGetValue(Key(bar), out state)) {
                 while (state.Recurrences.Count > 0 && now - state.Recurrences.Peek() >= 2 * frequency)
                     state.Recurrences.Dequeue();
-                long elapsed = now - state.LastRequest;
+                long elapsed = now - state.LastHide;
                 if (elapsed >= 0 && elapsed <= frequency * 75 / 1000) {
                     state.Recurrences.Enqueue(now);
                     if (state.Recurrences.Count >= 12) {
@@ -86,14 +85,14 @@ namespace Caelestia.Takeover {
             }
             return true;
         }
-        public void RememberRequest(Bar bar, long ticks) {
+        public void RememberHide(Bar bar, long ticks) {
             WindowState state;
             var key = Key(bar);
             if (!windows.TryGetValue(key, out state)) {
                 state = new WindowState();
                 windows.Add(key, state);
             }
-            state.LastRequest = ticks;
+            state.LastHide = ticks;
         }
         public void Reset() { windows.Clear(); backoffUntil = 0; }
     }
@@ -143,7 +142,7 @@ namespace Caelestia.Takeover {
             var hidden = immediate && bar.Visible ? hide(bar, ticks) : null;
             if (hidden != null) {
                 hidden.Source = "event";
-                policy.RememberRequest(bar, hidden.MonotonicTicks);
+                policy.RememberHide(bar, hidden.MonotonicTicks);
             }
             record(observed);
             if (hidden != null) record(hidden);
@@ -184,7 +183,6 @@ namespace Caelestia.Takeover {
         [DllImport("user32.dll")] static extern bool IsWindow(IntPtr window);
         [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr window, out uint pid);
         [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr window, int command);
-        [DllImport("user32.dll")] static extern bool ShowWindowAsync(IntPtr window, int command);
         [DllImport("user32.dll")] static extern bool EnumDisplayMonitors(IntPtr dc, IntPtr clip, MonitorCallback callback, IntPtr data);
         [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern bool GetMonitorInfo(IntPtr monitor, ref MonitorInfo info);
         [DllImport("user32.dll")] static extern IntPtr MonitorFromWindow(IntPtr window, uint flags);
@@ -306,26 +304,7 @@ namespace Caelestia.Takeover {
             return action;
         }
         public static TaskbarAction HideObserved(Bar bar, long ticks) {
-            return AsyncHide(bar, ticks, delegate(Bar target) {
-                var window = new IntPtr(target.Handle);
-                uint owner;
-                GetWindowThreadProcessId(window, out owner);
-                if (!IsWindow(window) || owner != target.Owner) return null;
-                return ShowWindowAsync(window, 0); // SW_HIDE; request only
-            }, Stopwatch.GetTimestamp);
-        }
-        // Injectable request and clock permit testing without a native window.
-        public static TaskbarAction AsyncHide(Bar bar, long ticks, Func<Bar, bool?> post, Func<long> clock) {
-            bool? accepted = post(bar);
-            if (!accepted.HasValue) return null;
-            long requested = clock();
-            var action = ActionFor(bar, "hide", requested);
-            action.Asynchronous = true;
-            action.RequestAccepted = accepted;
-            action.VisibleAfter = null; // Completion is not known at return.
-            action.ShowObservedTicks = ticks;
-            action.ShowToRequestMilliseconds = (requested - ticks) * 1000.0 / Stopwatch.Frequency;
-            return action;
+            return Visibility(bar, false, "hide", ticks);
         }
         public static void Hide(bool recordUnchanged) {
             foreach (var bar in Taskbars()) {

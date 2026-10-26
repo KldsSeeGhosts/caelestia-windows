@@ -67,26 +67,22 @@ requires its separate explicit flag.
 
 When enabled, an Explorer-process WinEvent show hook supplements the existing
 250 ms reconciliation timer. After twelve shows on the same Explorer-owned
-window within 75 ms of our preceding hide requests, all within two seconds,
+window within 75 ms of our preceding event hide returns, all within two seconds,
 it pauses event-driven hiding for five seconds while the timer continues.
 Separate, slower relayouts and shows on different windows do not share a count.
 The supervisor's `taskbar-actions.jsonl` records show observations, hide calls,
 hook installation/failure and event-backoff transitions. `Source` distinguishes
 event callbacks from timer polling and initial/broadcast reconciliation.
 `MonotonicTicks` and `TickFrequency` use `Stopwatch`; a hide's
-`ShowObservedTicks` correlates it with its show observation. Event hides are
-asynchronous: `RequestAccepted` reports whether Windows accepted the request,
-`ShowToRequestMilliseconds` measures callback-to-request return, and
-`VisibleAfter` and `ShowToHideMilliseconds` are null because completion is not
-known. Poll and reconciliation hides are synchronous and report their immediate
-visibility and `ShowToHideMilliseconds`. A callback can arrive after Windows
-first showed the window; queued delivery, asynchronous completion, unobserved
-transitions, failed hides, and frame presentation mean none of these intervals
-is exact exposure or a zero-flicker measurement. No autohide preference is
-changed by suppression.
-Restoration still uses synchronous `ShowWindow`. An accepted asynchronous hide
-may still be queued when restoration runs; its completion and ordering relative
-to restoration are not confirmed by these logs and require live validation.
+`ShowObservedTicks` correlates it with its show observation.
+`ShowToHideMilliseconds` measures from callback delivery or a polling timestamp
+captured after taskbar enumeration to the return of synchronous
+`ShowWindow(SW_HIDE)`. `VisibleAfter` is an immediate subsequent visibility
+check, not a guarantee of lasting state. A
+callback can arrive after Windows first showed the window; queued delivery,
+unobserved transitions, failed hides, and frame presentation mean these
+intervals are not exact exposure or a zero-flicker measurement. No autohide
+preference is changed by suppression.
 `powershell -NoProfile -File windows/scripts/Test-TaskbarEvents.ps1` compiles
 the production source and tests the event logic with fakes only.
 

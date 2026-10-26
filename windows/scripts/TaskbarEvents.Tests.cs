@@ -56,8 +56,7 @@ public static class TaskbarEventsTests {
             hides++;
             order.Add("hide");
             return new TaskbarAction { Operation = "hide", ShowObservedTicks = ticks,
-                MonotonicTicks = ticks + 3, Asynchronous = true, RequestAccepted = true,
-                VisibleAfter = null, ShowToRequestMilliseconds = 3 };
+                MonotonicTicks = ticks + 3, VisibleAfter = false, ShowToHideMilliseconds = 3 };
         }, delegate(TaskbarAction action) { order.Add(action.Operation); actions.Add(action); });
         handler.Handle(0, new IntPtr(1), 0, 0, 0);
         handler.Handle(42, new IntPtr(1), -4, 0, 0);
@@ -72,9 +71,8 @@ public static class TaskbarEventsTests {
         Check(actions[0].MonotonicTicks == 100 && actions[0].ShowObservedTicks == 100 &&
             actions[0].TickFrequency == System.Diagnostics.Stopwatch.Frequency && actions[0].Utc != null &&
             actions[0].Source == "event" && actions[1].Source == "event" &&
-            actions[1].ShowObservedTicks == 100 && actions[1].ShowToRequestMilliseconds == 3 &&
-            actions[1].Asynchronous && actions[1].VisibleAfter == null &&
-            actions[1].ShowToHideMilliseconds == null,
+            actions[1].ShowObservedTicks == 100 && actions[1].ShowToHideMilliseconds == 3 &&
+            !actions[1].VisibleAfter,
             "correlated monotonic and UTC records");
         // Many separate relayouts and both taskbars must not trip the guard.
         for (int i = 1; i <= 30; i++)
@@ -87,8 +85,7 @@ public static class TaskbarEventsTests {
             handler.Handle(42, new IntPtr(2), 0, 0, 3101 + i * 10);
         Check(hides == beforeBurst + 9 && actions.FindAll(a => a.Operation == "event-backoff").Count == 0,
             "brief same-window startup burst remains event-driven");
-        // A sustained same-window fight is bounded, even when asynchronous
-        // requests have not completed and duplicate shows remain visible.
+        // A sustained same-window fight is bounded.
         policy.Reset();
         int beforeFight = hides;
         for (int i = 1; i <= 14; i++)
@@ -114,55 +111,54 @@ public static class TaskbarEventsTests {
         for (int i = 0; i < 20; i++) {
             long tick = i * 90;
             Check(policy.AllowImmediate(first, tick, out entered) && !entered, "non-rapid repeated relayout");
-            policy.RememberRequest(first, tick + 1);
+            policy.RememberHide(first, tick + 1);
         }
         policy.Reset();
         for (int i = 0; i < 11; i++) {
-            policy.RememberRequest(first, i * 10);
+            policy.RememberHide(first, i * 10);
             Check(policy.AllowImmediate(first, i * 10 + 1, out entered) && !entered, "bounded rapid recurrence");
         }
-        policy.RememberRequest(other, 111);
+        policy.RememberHide(other, 111);
         Check(policy.AllowImmediate(other, 112, out entered) && !entered, "other HWND has its own counter");
         Check(policy.AllowImmediate(newOwner, 112, out entered) && !entered, "owner change has its own counter");
-        policy.RememberRequest(first, 120);
+        policy.RememberHide(first, 120);
         Check(!policy.AllowImmediate(first, 121, out entered) && entered, "twelfth recurrence enters backoff");
         Check(!policy.AllowImmediate(other, 122, out entered) && !entered, "global backoff is quiet");
         Check(policy.AllowImmediate(other, 5121, out entered) && !entered, "backoff ends at deadline");
         policy.Reset();
-        policy.RememberRequest(first, 0);
+        policy.RememberHide(first, 0);
         Check(policy.AllowImmediate(first, 76, out entered) && !entered, "75 ms boundary excludes slower events");
-        policy.RememberRequest(first, 200);
+        policy.RememberHide(first, 200);
         Check(policy.AllowImmediate(first, 275, out entered) && !entered, "75 ms boundary includes rapid event");
         policy.Reset();
+        policy.RememberHide(first, 300);
+        Check(policy.AllowImmediate(first, 299, out entered) && !entered,
+            "an event observed before hide return is not a recurrence");
+        policy.Reset();
         for (int i = 0; i < 11; i++) {
-            policy.RememberRequest(first, i * 10);
+            policy.RememberHide(first, i * 10);
             Check(policy.AllowImmediate(first, i * 10 + 1, out entered), "rolling window setup");
         }
-        policy.RememberRequest(first, 2200);
+        policy.RememberHide(first, 2200);
         Check(policy.AllowImmediate(first, 2201, out entered) && !entered, "old recurrences expire");
 
-        var asyncAction = Native.AsyncHide(first, 100,
-            delegate(Bar bar) { return true; }, delegate { return 110; });
-        Check(asyncAction.Asynchronous && asyncAction.RequestAccepted == true &&
-            asyncAction.VisibleAfter == null && asyncAction.ShowToHideMilliseconds == null &&
-            asyncAction.ShowObservedTicks == 100 && asyncAction.MonotonicTicks == 110 &&
-            asyncAction.ShowToRequestMilliseconds == 10 * 1000.0 / System.Diagnostics.Stopwatch.Frequency,
-            "async request records acceptance and request timing, not completion");
-        var rejected = Native.AsyncHide(first, 100, delegate(Bar bar) { return false; }, delegate { return 110; });
-        Check(rejected.RequestAccepted == false && rejected.VisibleAfter == null, "failed post remains unconfirmed");
-        Check(Native.AsyncHide(first, 100, delegate(Bar bar) { return null; }, delegate { return 110; }) == null,
-            "owner recheck failure issues no action");
-        int rejectedRequests = 0, backoffs = 0;
+        int failedHides = 0, backoffs = 0;
         var failedHandler = new TaskbarShowHandler(new TaskbarShowPolicy(1000),
             delegate(IntPtr hwnd, uint owner) { return first; },
             delegate(Bar bar, long ticks) {
-                rejectedRequests++;
-                return new TaskbarAction { Operation = "hide", Asynchronous = true,
-                    RequestAccepted = false, MonotonicTicks = ticks };
+                failedHides++;
+                return new TaskbarAction { Operation = "hide", VisibleAfter = true, MonotonicTicks = ticks };
             },
             delegate(TaskbarAction action) { if (action.Operation == "event-backoff") backoffs++; });
         for (int i = 0; i < 20; i++) failedHandler.Handle(42, new IntPtr(1), 0, 0, i * 10);
-        Check(rejectedRequests == 12 && backoffs == 1, "failed async requests are bounded too");
+        Check(failedHides == 12 && backoffs == 1, "ineffective synchronous hides are bounded too");
+        int refusedHides = 0;
+        var refusedHandler = new TaskbarShowHandler(new TaskbarShowPolicy(1000),
+            delegate(IntPtr hwnd, uint owner) { return first; },
+            delegate(Bar bar, long ticks) { refusedHides++; return null; },
+            delegate(TaskbarAction action) { if (action.Operation == "event-backoff") backoffs++; });
+        for (int i = 0; i < 20; i++) refusedHandler.Handle(42, new IntPtr(1), 0, 0, i * 10);
+        Check(refusedHides == 20 && backoffs == 1, "owner recheck failures are not counted as hides");
         return assertions;
     }
 }
