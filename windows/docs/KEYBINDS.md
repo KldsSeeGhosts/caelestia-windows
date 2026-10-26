@@ -135,6 +135,14 @@ All handlers in the table are staged in production, plus `caelestia:volumeUp`, `
 | Lower the active display brightness | `Ctrl+Alt+Page_Down` | `caelestia:brightnessDown` |
 | Lock Windows | `Super+L` | `rundll32.exe user32.dll,LockWorkStation` |
 
+> [!NOTE]
+> Explorer taskbar shortcuts are not keybind entries. While
+> `windows.hideTaskbar` is true, the desktop supervisor consumes Win+T,
+> Win+Shift+T, Win+B, Win+digit, Win+Shift+digit, Win+Ctrl+digit,
+> Win+Alt+digit and Win+Alt+Enter with a low-level hook so they cannot reveal
+> the hidden taskbar. They cannot be changed in `keybinds.json`; a lone Super
+> tap and Super+L are unchanged.
+
 
 ### 2. `"dispatch"` — run a window or workspace dispatcher
 

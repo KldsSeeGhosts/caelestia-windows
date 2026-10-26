@@ -242,6 +242,106 @@ namespace Caelestia.Takeover {
             }
         }
     }
+    // Explorer taskbar shortcuts that would reveal or focus a hidden taskbar.
+    // Matching is exact: a chord with an extra modifier is left alone, so
+    // unrelated Win chords (Win+A, Win+N, Win+L, a lone Win tap) keep working.
+    public static class TaskbarShortcutPolicy {
+        public static bool IsDigit(int vk) { return vk >= 0x30 && vk <= 0x39; }
+        public static bool Matches(int vk, bool shift, bool ctrl, bool alt, bool win) {
+            if (!win) return false;
+            switch (vk) {
+            case 0x54: // T: Win+T cycles, Win+Shift+T cycles backward.
+                return !ctrl && !alt;
+            case 0x42: // B: set focus to the first notification-area icon.
+                return !shift && !ctrl && !alt;
+            case 0x0D: // Enter: Win+Alt+Enter opens taskbar settings.
+                return alt && !shift && !ctrl;
+            }
+            if (!IsDigit(vk)) return false;
+            if (alt) return !shift && !ctrl; // Win+Alt+digit opens a jump list.
+            // Win+digit, Win+Shift+digit and Win+Ctrl+digit. The combined
+            // Ctrl+Shift variant is not one of the documented taskbar chords.
+            return !(shift && ctrl);
+        }
+    }
+    // Tracks swallowed key-downs so their matching key-up is consumed even
+    // when the Windows key was released first. 256 bits, no hook allocation.
+    public sealed class TaskbarShortcutFilter {
+        readonly ulong[] down = new ulong[4];
+        public bool Handle(int vk, bool up, bool injected, bool shift, bool ctrl, bool alt, bool win) {
+            if (injected || vk < 0 || vk > 255) return false;
+            int index = vk >> 6;
+            ulong bit = 1UL << (vk & 63);
+            if (up) {
+                if ((down[index] & bit) == 0) return false;
+                down[index] &= ~bit;
+                return true;
+            }
+            if ((down[index] & bit) != 0) return true; // Auto-repeat.
+            if (!TaskbarShortcutPolicy.Matches(vk, shift, ctrl, alt, win)) return false;
+            down[index] |= bit;
+            return true;
+        }
+        public void Reset() { Array.Clear(down, 0, down.Length); }
+    }
+    // Install before the shell child starts. The shell installs its own
+    // low-level hook later; Windows calls the most recently installed hook
+    // first, so the shell still clears its lone-Super tap candidate before
+    // this hook consumes a chord. Active only while the supervised child runs.
+    public sealed class TaskbarShortcutHook : IDisposable {
+        readonly Func<Native.LowLevelKeyboardProc, IntPtr> install;
+        readonly Action<IntPtr> remove;
+        readonly TaskbarShortcutFilter filter = new TaskbarShortcutFilter();
+        readonly Native.LowLevelKeyboardProc callback;
+        IntPtr hook;
+        volatile bool active;
+        public bool Installed { get { return hook != IntPtr.Zero; } }
+        public bool Active { get { return active; } }
+        public TaskbarShortcutHook(Func<Native.LowLevelKeyboardProc, IntPtr> install, Action<IntPtr> remove) {
+            this.install = install;
+            this.remove = remove;
+            callback = OnKeyboard; // Root the delegate for the hook lifetime.
+        }
+        public bool Install() {
+            if (hook != IntPtr.Zero) return true;
+            hook = install(callback);
+            return hook != IntPtr.Zero;
+        }
+        public void Activate() {
+            if (hook == IntPtr.Zero) return;
+            filter.Reset();
+            active = true;
+        }
+        public void Deactivate() { active = false; }
+        public bool Handle(int vk, bool up, bool injected, bool shift, bool ctrl, bool alt, bool win) {
+            return active && filter.Handle(vk, up, injected, shift, ctrl, alt, win);
+        }
+        IntPtr OnKeyboard(int code, IntPtr wParam, IntPtr lParam) {
+            if (code < 0) return Native.NextKeyboardHook(code, wParam, lParam);
+            int message = wParam.ToInt32();
+            if (message != Native.WmKeyDown && message != Native.WmKeyUp &&
+                message != Native.WmSysKeyDown && message != Native.WmSysKeyUp)
+                return Native.NextKeyboardHook(code, wParam, lParam);
+            // This callback runs on the supervisor's message thread. Keep it
+            // to struct reads, four key-state queries on key-down and a match.
+            var info = (Native.KbdLlHookStruct)Marshal.PtrToStructure(lParam, typeof(Native.KbdLlHookStruct));
+            bool up = message == Native.WmKeyUp || message == Native.WmSysKeyUp;
+            bool shift = !up && Native.KeyDown(Native.VkShift);
+            bool ctrl = !up && Native.KeyDown(Native.VkControl);
+            bool alt = !up && Native.KeyDown(Native.VkMenu);
+            bool win = !up && (Native.KeyDown(Native.VkLWin) || Native.KeyDown(Native.VkRWin));
+            if (Handle((int)info.VirtualKey, up, (info.Flags & Native.LlkhfInjected) != 0,
+                shift, ctrl, alt, win))
+                return new IntPtr(1);
+            return Native.NextKeyboardHook(code, wParam, lParam);
+        }
+        public void Dispose() {
+            active = false;
+            filter.Reset();
+            if (hook != IntPtr.Zero) remove(hook);
+            hook = IntPtr.Zero;
+        }
+    }
     public static class Native {
         // Per-process observer for the supervisor's own native calls. Another
         // shell can immediately change global state after these observations.
@@ -286,6 +386,32 @@ namespace Caelestia.Takeover {
         [DllImport("user32.dll", SetLastError = true)] static extern IntPtr SetWinEventHook(
             uint first, uint last, IntPtr module, WinEventCallback callback, uint process, uint thread, uint flags);
         [DllImport("user32.dll")] static extern bool UnhookWinEvent(IntPtr hook);
+        public delegate IntPtr LowLevelKeyboardProc(int code, IntPtr wParam, IntPtr lParam);
+        [StructLayout(LayoutKind.Sequential)]
+        public struct KbdLlHookStruct {
+            public uint VirtualKey, ScanCode, Flags, Time;
+            public IntPtr ExtraInfo;
+        }
+        [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        static extern IntPtr SetWindowsHookEx(int idHook, LowLevelKeyboardProc callback, IntPtr module, uint threadId);
+        [DllImport("user32.dll", SetLastError = true)] static extern bool UnhookWindowsHookEx(IntPtr hook);
+        [DllImport("user32.dll")] static extern IntPtr CallNextHookEx(IntPtr hook, int code, IntPtr wParam, IntPtr lParam);
+        [DllImport("user32.dll")] static extern short GetAsyncKeyState(int key);
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] static extern IntPtr GetModuleHandle(string name);
+        public const int WhKeyboardLl = 13;
+        public const int WmKeyDown = 0x0100, WmKeyUp = 0x0101, WmSysKeyDown = 0x0104, WmSysKeyUp = 0x0105;
+        public const int VkShift = 0x10, VkControl = 0x11, VkMenu = 0x12, VkLWin = 0x5B, VkRWin = 0x5C;
+        public const uint LlkhfInjected = 0x10;
+        public static IntPtr InstallKeyboardHook(LowLevelKeyboardProc callback) {
+            return SetWindowsHookEx(WhKeyboardLl, callback, GetModuleHandle(null), 0);
+        }
+        public static void RemoveKeyboardHook(IntPtr hook) {
+            if (hook != IntPtr.Zero) UnhookWindowsHookEx(hook);
+        }
+        public static IntPtr NextKeyboardHook(int code, IntPtr wParam, IntPtr lParam) {
+            return CallNextHookEx(IntPtr.Zero, code, wParam, lParam);
+        }
+        public static bool KeyDown(int key) { return (GetAsyncKeyState(key) & 0x8000) != 0; }
         [DllImport("user32.dll", SetLastError = true)] static extern int GetWindowRgn(IntPtr window, IntPtr region);
         [DllImport("user32.dll", SetLastError = true)] static extern int SetWindowRgn(IntPtr window, IntPtr region, bool redraw);
         [DllImport("gdi32.dll", SetLastError = true)] static extern IntPtr CreateRectRgn(int left, int top, int right, int bottom);
@@ -638,10 +764,12 @@ namespace Caelestia.Takeover {
         readonly TaskbarHookBinding showHook;
         readonly TaskbarShowHandler showHandler;
         readonly RegionSuppression regions;
+        readonly TaskbarShortcutHook shortcutHook;
         Process child;
         DateTime started, nextStart;
         int quickCrashes;
         int ownedPid = -1;
+        volatile int startGeneration;
         uint lastHookFailure;
         bool done;
         public int ExitCode;
@@ -700,6 +828,14 @@ namespace Caelestia.Takeover {
             // A hidden top-level window receives Explorer's broadcast. A
             // message-only HWND would not receive TaskbarCreated.
             CreateHandle(new CreateParams { Caption = "Caelestia desktop watchdog", Style = unchecked((int)0x80000000) });
+            // Install before the shell child exists so the shell's own hook is
+            // later in the chain and receives every chord first. The hook stays
+            // installed but inactive outside a supervised run.
+            shortcutHook = new TaskbarShortcutHook(Native.InstallKeyboardHook, Native.RemoveKeyboardHook);
+            if (hide) {
+                if (shortcutHook.Install()) LogHook("shortcut-hook-installed", 0);
+                else LogHook("shortcut-hook-failed", 0);
+            }
             timer.Interval = 250;
             timer.Tick += Tick;
             timer.Start();
@@ -774,6 +910,12 @@ namespace Caelestia.Takeover {
             });
         }
         void Start() {
+            // Retry a hook that failed before the message loop was running.
+            // This still happens before the shell's own hook is installed.
+            if (hide && !shortcutHook.Installed) {
+                if (shortcutHook.Install()) LogHook("shortcut-hook-installed", 0);
+                else LogHook("shortcut-hook-failed", 0);
+            }
             var info = new ProcessStartInfo(launch.Executable, launch.Arguments) {
                 WorkingDirectory = launch.WorkingDirectory, UseShellExecute = false, CreateNoWindow = true
             };
@@ -791,9 +933,21 @@ namespace Caelestia.Takeover {
             // Snapshot is durable and the supervisor owns restoration before
             // the child can register its AppBars. Retain the post-start pass.
             if (hide) { RefreshShowHook(false); SuppressRegions(); Native.Hide(true); }
+            int generation = ++startGeneration;
+            // Subscribe before start so a shell that exits immediately still
+            // deactivates the shortcut hook. The generation check keeps a
+            // stale Exited event from deactivating a later restart.
+            process.EnableRaisingEvents = true;
+            process.Exited += delegate {
+                if (startGeneration == generation) shortcutHook.Deactivate();
+            };
             process.Start();
             child = process;
             ownedPid = child.Id;
+            if (hide) {
+                shortcutHook.Activate();
+                if (process.HasExited) shortcutHook.Deactivate();
+            }
             if (info.RedirectStandardOutput) child.BeginOutputReadLine();
             if (info.RedirectStandardError) child.BeginErrorReadLine();
             started = DateTime.UtcNow;
@@ -817,6 +971,7 @@ namespace Caelestia.Takeover {
                     return;
                 }
                 showHook.Dispose();
+                shortcutHook.Deactivate();
                 showPolicy.Reset();
                 child.WaitForExit(); // drain redirected log callbacks
                 int code = child.ExitCode, pid = child.Id;
@@ -851,6 +1006,7 @@ namespace Caelestia.Takeover {
             done = true;
             timer.Stop(); timer.Dispose();
             showHook.Dispose();
+            shortcutHook.Dispose();
             // On helper failure do not leave an unsupervised shell reserving
             // space. Normal clean exit reaches here after qs has exited.
             try {

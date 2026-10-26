@@ -160,7 +160,7 @@ ownership of the desktop background. The desktop clock defaults off.
 
 ### What to expect on first launch
 
-1. **Bar and work area:** The vertical bar appears along the left edge of your screen. When full-screen shell mode is active, Caelestia reserves the bar's width via a Windows AppBar so maximized and tiled windows do not sit underneath the bar. Taskbar hiding is off by default. Opt in with `{"windows":{"hideTaskbar":true,"restartOnCrash":true}}` in `config/windows.json`, then quit and start the shell. Crash restart defaults on; `Restore-Desktop.ps1` provides emergency recovery.
+1. **Bar and work area:** The vertical bar appears along the left edge of your screen. When full-screen shell mode is active, Caelestia reserves the bar's width via a Windows AppBar so maximized and tiled windows do not sit underneath the bar. Taskbar hiding is off by default. Opt in with `{"windows":{"hideTaskbar":true,"restartOnCrash":true}}` in `config/windows.json`, then quit and start the shell. While the taskbar is hidden, the supervisor consumes Explorer's taskbar shortcuts (Win+T, Win+Shift+T, Win+B, Win+digit, Win+Shift+digit, Win+Ctrl+digit, Win+Alt+digit and Win+Alt+Enter) so they cannot reveal it; a lone Win tap and Win+L keep working. Crash restart defaults on; `Restore-Desktop.ps1` provides emergency recovery.
 2. **Opening drawers with the mouse:**
    - **Left edge hover/drag:** Shows or pins the bar (when `bar.persistent` is `false`).
    - **Top edge hover/drag:** Opens the **Dashboard** (user card, calendar, weather, media player, system performance).

@@ -326,6 +326,79 @@ public static class TaskbarEventsTests {
             if (File.Exists(snapshotPath)) File.Delete(snapshotPath);
             if (File.Exists(snapshotPath + ".tmp")) File.Delete(snapshotPath + ".tmp");
         }
+
+        // Explorer taskbar shortcut matcher. Exact matching keeps unrelated
+        // Win chords and a lone Win tap out of the suppression path.
+        Check(TaskbarShortcutPolicy.Matches(0x54, false, false, false, true), "Win+T");
+        Check(TaskbarShortcutPolicy.Matches(0x54, true, false, false, true), "Win+Shift+T");
+        Check(!TaskbarShortcutPolicy.Matches(0x54, false, true, false, true), "Win+Ctrl+T is not a taskbar chord");
+        Check(!TaskbarShortcutPolicy.Matches(0x54, false, false, true, true), "Win+Alt+T is not a taskbar chord");
+        Check(TaskbarShortcutPolicy.Matches(0x42, false, false, false, true), "Win+B");
+        Check(!TaskbarShortcutPolicy.Matches(0x42, true, false, false, true), "Win+Shift+B is left alone");
+        for (int i = 0; i <= 9; i++) {
+            int digit = 0x30 + i;
+            Check(TaskbarShortcutPolicy.Matches(digit, false, false, false, true), "Win+digit");
+            Check(TaskbarShortcutPolicy.Matches(digit, true, false, false, true), "Win+Shift+digit");
+            Check(TaskbarShortcutPolicy.Matches(digit, false, true, false, true), "Win+Ctrl+digit");
+            Check(TaskbarShortcutPolicy.Matches(digit, false, false, true, true), "Win+Alt+digit");
+            Check(!TaskbarShortcutPolicy.Matches(digit, true, true, false, true),
+                "Win+Ctrl+Shift+digit is not a listed taskbar chord");
+            Check(!TaskbarShortcutPolicy.Matches(digit, true, false, true, true),
+                "Win+Shift+Alt+digit is not a listed taskbar chord");
+            Check(!TaskbarShortcutPolicy.Matches(digit, false, true, true, true),
+                "Win+Ctrl+Alt+digit is not a listed taskbar chord");
+            Check(!TaskbarShortcutPolicy.Matches(digit, true, true, true, true),
+                "three modifiers are not a listed taskbar chord");
+            Check(!TaskbarShortcutPolicy.Matches(digit, false, false, false, false), "digit without Win");
+        }
+        Check(TaskbarShortcutPolicy.Matches(0x0D, false, false, true, true), "Win+Alt+Enter");
+        Check(!TaskbarShortcutPolicy.Matches(0x0D, false, false, false, true), "Win+Enter is left alone");
+        Check(!TaskbarShortcutPolicy.Matches(0x0D, true, false, true, true), "Win+Shift+Alt+Enter is left alone");
+        Check(!TaskbarShortcutPolicy.Matches(0x41, false, false, false, true), "Win+A is left alone");
+        Check(!TaskbarShortcutPolicy.Matches(0x4E, false, false, false, true), "Win+N is left alone");
+        Check(!TaskbarShortcutPolicy.Matches(0x4C, false, false, false, true), "Win+L is left alone");
+        Check(!TaskbarShortcutPolicy.Matches(0x5B, false, false, false, true), "lone Win is left alone");
+
+        var filter = new TaskbarShortcutFilter();
+        Check(filter.Handle(0x54, false, false, false, false, false, true), "filter swallows a Win+T key-down");
+        Check(filter.Handle(0x54, false, false, false, false, false, true), "filter swallows a Win+T auto-repeat");
+        Check(filter.Handle(0x54, true, false, false, false, false, false),
+            "filter swallows the key-up after Win was released first");
+        Check(!filter.Handle(0x54, true, false, false, false, false, true), "unstored key-up passes");
+        Check(!filter.Handle(0x54, false, true, false, false, false, true), "injected chord passes");
+        Check(!filter.Handle(0x41, false, false, false, false, false, true), "unrelated chord passes");
+        Check(filter.Handle(0x31, false, false, false, false, false, true), "filter swallows Win+1 down");
+        Check(filter.Handle(0x31, true, false, false, false, false, false), "filter swallows Win+1 up");
+        filter.Reset();
+        Check(!filter.Handle(0x31, true, false, false, false, false, false), "reset forgets swallowed keys");
+
+        int installs = 0, removes = 0;
+        var shortcutHook = new TaskbarShortcutHook(
+            delegate(Native.LowLevelKeyboardProc callback) { installs++; return new IntPtr(7); },
+            delegate(IntPtr hook) { removes++; Check(hook == new IntPtr(7), "unhook identity"); });
+        Check(!shortcutHook.Active && !shortcutHook.Installed, "shortcut hook starts uninstalled");
+        Check(!shortcutHook.Handle(0x54, false, false, false, false, false, true),
+            "inactive shortcut hook passes");
+        Check(shortcutHook.Install() && shortcutHook.Installed && installs == 1, "shortcut hook install");
+        Check(!shortcutHook.Active, "installed but inactive shortcut hook passes");
+        shortcutHook.Activate();
+        Check(shortcutHook.Active && shortcutHook.Handle(0x54, false, false, false, false, false, true),
+            "active shortcut hook swallows");
+        shortcutHook.Deactivate();
+        Check(!shortcutHook.Active && !shortcutHook.Handle(0x54, false, false, false, false, false, true),
+            "deactivation stops swallowing");
+        shortcutHook.Activate();
+        shortcutHook.Dispose();
+        Check(!shortcutHook.Active && !shortcutHook.Installed && removes == 1, "dispose removes shortcut hook");
+        shortcutHook.Dispose();
+        Check(removes == 1, "shortcut hook dispose is idempotent");
+        var failedHook = new TaskbarShortcutHook(
+            delegate(Native.LowLevelKeyboardProc callback) { return IntPtr.Zero; },
+            delegate(IntPtr hook) { throw new Exception("failed hook must not be removed"); });
+        Check(!failedHook.Install() && !failedHook.Installed, "failed shortcut hook install stays unbound");
+        failedHook.Activate();
+        Check(!failedHook.Active, "failed shortcut hook cannot activate");
+        failedHook.Dispose();
         return assertions;
     }
 }

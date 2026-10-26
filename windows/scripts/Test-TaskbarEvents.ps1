@@ -12,4 +12,4 @@ Add-Type -Path @((Join-Path $PSScriptRoot 'DesktopTakeover.cs'),
     (Join-Path $PSScriptRoot 'TaskbarEvents.Tests.cs')) `
     -ReferencedAssemblies System.Windows.Forms, System.Web.Extensions
 $count = [TaskbarEventsTests]::Run()
-Write-Output "PASS taskbar event logic: $count assertions; production Add-Type compilation passed."
+Write-Output "PASS taskbar event and shortcut logic: $count assertions; production Add-Type compilation passed."
