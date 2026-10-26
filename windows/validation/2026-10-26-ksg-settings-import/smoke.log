@@ -1,0 +1,1 @@
+{"passed":true,"scope":"file-only importer smoke","checks":["dry-run","false values","id-based list merge","unknown data preservation","source value filtering","tiling report","overwrite refusal","byte-identical backup","idempotence","source protection"]}
