@@ -14,10 +14,10 @@ import QtQuick
 //   lastError            string, guarded read ("" when unsupported)
 //   managedCount         int, guarded read (0 when unsupported)
 //   failedCount          int, guarded read (0 when unsupported)
-//   applyOptions(excluded, included)
-//                        applies both pattern lists; included only takes effect
-//                        on a backend that supports it
+//   applyOptions(excluded, included, gapsIn, gapsOut)
+//                        applies pattern lists and integer DIP gaps
 //   requestEnable()      the only path that may set the backend tiler enabled
+//   requestDisable()     stops the session on config reload/disable
 //   enableRefused(reason)              signal (tiler-mutex-held, no-screen)
 //   windowTilingFailed(address, reason)
 //                        signal; address is lowercase hex without 0x, matching
@@ -31,10 +31,9 @@ import QtQuick
 // `enabled` stays false. `interactive` may request enabling ONLY when the
 // parsed inclusion list is non-empty AND the backend supports `included`;
 // otherwise the mode refuses with a clear status reason and never enables.
-// Smoke runs force interactive down to observe. The shared build pins the
-// backend WITHOUT the allowlist/telemetry members, so everything beyond
-// enabled/excluded is feature-detected with typeof and reports truthful
-// defaults when absent.
+// Smoke runs force interactive down to observe. Older backends are
+// feature-detected; missing inclusion or typed-selector support refuses
+// interactive rather than broadening its scope.
 //
 // Toasts. Fitting failures are explained on Caelestia's original toast
 // surface: the service decides title/message/icon/type and emits
@@ -76,6 +75,8 @@ QtObject {
     readonly property bool smoke: root._smoke
     readonly property var includedPatterns: root._includedPatterns
     readonly property var excludedPatterns: root._excludedPatterns
+    readonly property int gapsIn: root._gapsIn
+    readonly property int gapsOut: root._gapsOut
 
     // The facade binds its native Loader to this flag: `off` never loads the
     // wrapper file, so the Tiling singleton is never imported or constructed.
@@ -130,9 +131,11 @@ QtObject {
             return "The tiler is managing the included windows.";
         if (root.status === "refused") {
             if (root._policyRefusal === "included-empty")
-                return "Interactive tiling requires CAELESTIA_WINDOWS_TILING_INCLUDED to name the windows it may manage.";
+                return "Interactive tiling requires an include list in windows.tiling or CAELESTIA_WINDOWS_TILING_INCLUDED.";
             if (root._policyRefusal === "included-unsupported")
                 return "The pinned Windows backend does not support an inclusion allowlist; interactive tiling stays off.";
+            if (root._policyRefusal === "scoped-rules-unsupported")
+                return "This Windows backend cannot enforce exe, class or monitor selectors; interactive tiling stays off.";
             return root._enableRefusalText(root._backendRefusal);
         }
         if (root._requestedMode === "interactive" && root._smoke)
@@ -153,6 +156,9 @@ QtObject {
     property bool _smoke: false
     property var _includedPatterns: []
     property var _excludedPatterns: []
+    property int _gapsIn: 10
+    property int _gapsOut: 10
+    property bool _configuring: false
     property string _backendRefusal: ""
     property var _recentFailures: []
     property var _notifiedKeys: new Set()
@@ -170,6 +176,10 @@ QtObject {
             return "included-empty";
         if (backend !== null && backend.supportsIncluded !== true)
             return "included-unsupported";
+        if (backend !== null && backend.supportsScopedRules !== true
+                && root._includedPatterns.concat(root._excludedPatterns)
+                    .some(pattern => /^(exe|class|screen):/i.test(pattern)))
+            return "scoped-rules-unsupported";
         return "";
     }
 
@@ -182,37 +192,69 @@ QtObject {
     // as an inclusion rule (tiling_scope.cpp ScopeRules::compile). The backend
     // compiles the wildcards itself. Non-string input yields an empty list.
     function parsePatternList(text): var {
+        if (Array.isArray(text))
+            return text.filter(entry => typeof entry === "string")
+                .map(entry => entry.trim()).filter(entry =>
+                    entry.replace(/^(title|exe|class|screen):/i, "").trim().length > 0);
         if (typeof text !== "string")
             return [];
-        return text.split(";").map(entry => entry.trim()).filter(entry => {
-            const pattern = /^title:/i.test(entry) ? entry.slice(6).trim() : entry;
-            return pattern.length > 0;
-        });
+        return root.parsePatternList(text.split(";"));
     }
 
-    // Called once by the facade before the native Loader becomes active.
-    function configure(modeText, includedText, excludedText, smoke): void {
+    function normalizedGap(value): int {
+        return typeof value === "number" && Number.isFinite(value)
+            ? Math.round(Math.max(0, Math.min(100, value))) : 10;
+    }
+
+    // Profile config is read by the facade so the existing portable Config
+    // plugin can be reused. Environment entries that are present override
+    // their corresponding profile fields, including deliberately empty lists.
+    function configureProfile(config, overrides, smoke): void {
+        const settings = config && typeof config === "object" && !Array.isArray(config) ? config : {};
+        let mode = settings.enabled === true ? (settings.mode ?? "observe") : "off";
+        if (overrides.mode !== undefined)
+            mode = overrides.mode;
+        const included = overrides.included !== undefined ? overrides.included : (settings.include ?? []);
+        let excluded = root.parsePatternList(overrides.excluded !== undefined ? overrides.excluded : (settings.exclude ?? []));
+        // Float rules leave matching windows unmanaged, just like exclusions.
+        excluded = excluded.concat(root.parsePatternList(settings.float ?? []));
+        const monitors = settings.monitors;
+        if (monitors && typeof monitors === "object" && !Array.isArray(monitors)) {
+            for (const name of Object.keys(monitors)) {
+                if (name.trim() !== "" && monitors[name] === false)
+                    excluded.push("screen:" + name);
+            }
+        }
+        root.configure(mode, included, excluded, smoke,
+            settings.gapsIn, settings.gapsOut);
+    }
+
+    // Also used for live reload. Stop the active session before changing any
+    // admission rules; all enables continue through the native mutex gate.
+    function configure(modeText, includedText, excludedText, smoke, innerGap, outerGap): void {
+        root._configuring = true;
+        if (root.backend !== null && typeof root.backend.requestDisable === "function")
+            root.backend.requestDisable();
         let requested = "off";
         if (modeText === "observe" || modeText === "interactive") {
             requested = modeText;
         } else if (typeof modeText === "string" && modeText.length > 0 && modeText !== "off") {
-            console.warn("Caelestia: unknown CAELESTIA_WINDOWS_TILING value '"
+            console.warn("Caelestia: unknown tiling mode '"
                 + modeText + "'; tiling stays off.");
         }
         root._requestedMode = requested;
         root._smoke = smoke === true;
         root._includedPatterns = root.parsePatternList(includedText);
         root._excludedPatterns = root.parsePatternList(excludedText);
+        root._gapsIn = root.normalizedGap(innerGap);
+        root._gapsOut = root.normalizedGap(outerGap);
         root._backendRefusal = "";
         root._resetToastSession();
         // The mode is assigned last: it activates the facade's native Loader
         // synchronously, and the attached backend must see the final lists.
         root._mode = requested === "interactive" && root._smoke ? "observe" : requested;
-        // A backend attached before configuration still receives the new
-        // options; enabling is decided once at attach time.
-        if (root.backend !== null && root._mode !== "off"
-                && typeof root.backend.applyOptions === "function")
-            root.backend.applyOptions(root._excludedPatterns, root._includedPatterns);
+        root._configuring = false;
+        root._applyBackend();
     }
 
     // --- Backend lifecycle -------------------------------------------------------
@@ -220,11 +262,16 @@ QtObject {
     onBackendChanged: {
         // A swapped or removed backend starts a fresh refusal bookkeeping.
         root._backendRefusal = "";
+        if (!root._configuring)
+            root._applyBackend();
+    }
+
+    function _applyBackend(): void {
         const backend = root.backend;
         if (backend === null || root._mode === "off")
             return;
         if (typeof backend.applyOptions === "function")
-            backend.applyOptions(root._excludedPatterns, root._includedPatterns);
+            backend.applyOptions(root._excludedPatterns, root._includedPatterns, root.gapsIn, root.gapsOut);
         // Interactive enabling is requested only when the policy allows it;
         // the backend then either reports enabled or refuses through its
         // enableRefused signal. A policy refusal is explained here, once per
@@ -271,6 +318,8 @@ QtObject {
     function _policyRefusalText(refusal): string {
         if (refusal === "included-empty")
             return "Add apps to the tiling list to turn it on.";
+        if (refusal === "scoped-rules-unsupported")
+            return "This version can't enforce the configured app or monitor rules.";
         return "This version can't limit tiling to chosen apps.";
     }
 

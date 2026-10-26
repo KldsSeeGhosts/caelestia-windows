@@ -7,9 +7,9 @@
   },
   "quickshell": {
     "repository": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows.git",
-    "revision": "cc2cf04d8efbb196c1e6d96c2079970432f71851",
+    "revision": "6a17ae6019d6606cc2d3e8178623bfe53b227515",
     "path": "windows/deps/quickshell",
-    "role": "Windows backend and QML compatibility interfaces. Preserves nunreasonable/quickshell e8ae0ef124b1c14b547c80d00422d2ffbd423d81, native mask hover handoff, Core Audio capability/error reporting, UPower observation validity, GSMTC initialization/session-scan status, profile-isolated artwork caching, verified power profile results, confirm-only Bluetooth pairing, opt-in strict brightness routes with owned gamma restoration, explicit-consent notification mirroring, M3 tiling/Hypr window observation with allowlist scope and fitting outcomes, the single-desktop placeholder fix, 64-bit brightness query request ids, and DPI-unaware tiling placement. Branch windows/integration."
+    "role": "Windows backend and QML compatibility interfaces. Preserves nunreasonable/quickshell e8ae0ef124b1c14b547c80d00422d2ffbd423d81 and windows/integration cc2cf04, adding typed exe/class/screen tiling selectors and capability reporting. Local branch windows/tiling-config; not pushed."
   },
   "iiWindowsReference": {
     "repository": "https://github.com/nunreasonable/ii-windows.git",

@@ -9,11 +9,8 @@ import Quickshell.Windows
 // can move windows a previous run parked off-screen, so this file must only
 // resolve behind the explicit opt-in. `off` never loads it.
 //
-// The shared build pins the backend WITHOUT the M3 allowlist and telemetry
-// members (`included`, `lastError`, `managedCount`, `failedCount`,
-// `enableRefused`, `windowTilingFailed` exist only on the
-// windows/m3-windows-stack fork branch cd170acf). Every new member is
-// feature-detected with typeof: on the pinned build the allowlist reports
+// Older builds lack the M3 allowlist/telemetry or typed-selector capability.
+// Each capability is feature-detected: on old builds the allowlist reports
 // unsupported, telemetry reports defaults, and the signal forwarding stays
 // disconnected. The service layer never writes `Tiling.enabled` directly;
 // requestEnable() is the only path.
@@ -25,6 +22,8 @@ QtObject {
     // `included` arrives as a QStringList (typeof "object") on the fork;
     // the pinned build has no such property (typeof "undefined").
     readonly property bool supportsIncluded: typeof Tiling.included === "object"
+    readonly property bool supportsScopedRules: typeof Tiling.supportsScopedRules === "boolean"
+        && Tiling.supportsScopedRules
 
     // The telemetry surface is only trusted when both signals and the error
     // string exist; a partial backend reports unsupported.
@@ -57,15 +56,25 @@ QtObject {
     // The service owns the policy; the wrapper applies what the pinned
     // backend accepts. An unsupported `included` list is dropped here, which
     // the service has already refused interactive enabling for.
-    function applyOptions(excluded, included): void {
+    function applyOptions(excluded, included, gapsIn, gapsOut): void {
         Tiling.excluded = excluded;
         if (root.supportsIncluded)
             Tiling.included = included;
+        Tiling.gapsIn = gapsIn;
+        Tiling.gapsOut = gapsOut;
+        console.info("CAELESTIA_TILING_OPTIONS gapsIn=" + Tiling.gapsIn
+            + " gapsOut=" + Tiling.gapsOut);
     }
 
     function requestEnable(): void {
         Tiling.enabled = true;
     }
+
+    function requestDisable(): void {
+        Tiling.enabled = false;
+    }
+
+    Component.onDestruction: root.requestDisable()
 
     Component.onCompleted: {
         console.info("CAELESTIA_TILING_BACKEND_READY supportsIncluded="

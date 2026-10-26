@@ -31,6 +31,11 @@ class CAELESTIA_CONFIG_API ConfigRoot : public settings::RootNode {
     QML_ANONYMOUS
 
     CONFIG_PROPERTY(bool, enabled, true)
+#ifdef Q_OS_WIN
+    // Windows service extensions use the same watched/persisted profile.
+    // Their facades validate individual service fields.
+    CONFIG_GLOBAL_PROPERTY(QVariantMap, windows, {})
+#endif
     CONFIG_SUBOBJECT(AppearanceConfig, appearance)
     CONFIG_SUBOBJECT(GeneralConfig, general)
     CONFIG_SUBOBJECT(BackgroundConfig, background)
