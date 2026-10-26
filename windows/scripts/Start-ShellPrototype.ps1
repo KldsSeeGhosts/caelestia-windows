@@ -32,6 +32,7 @@ param(
     [switch]$NotificationDismiss,
     [switch]$NotificationAppOpen,
     [switch]$Combined,
+    [switch]$Live,
     [ValidateSet('native', '1', '1.5', '1.75')][string]$ScaleFactor = 'native',
     [ValidateRange(0, 15)][int]$ScreenIndex = 0
 )
@@ -58,6 +59,7 @@ $slices = [ordered]@{
     # Mirror mode adds its own opt-ins below; smoke never mirrors.
     notifications = @{ On = $Notifications; Mode = $NotificationsMode; Observe = 'CAELESTIA_WINDOWS_NOTIFICATIONS' }
 }
+if ($Live -and -not $Combined) { throw '-Live requires -Combined.' }
 $selected = @($slices.Keys | Where-Object { $slices[$_].On })
 if ($selected.Count -gt 1) { throw 'Select one prototype entry point per run.' }
 if ($Combined -and $selected.Count -gt 0) { throw '-Combined cannot be combined with a single-slice entry point.' }
@@ -193,6 +195,11 @@ if ($Combined) {
 }
 '@
 }
+if ($Combined -and $Live) {
+    $configText = $configText.Replace(
+        '"commands": {"logout":[],"shutdown":[],"hibernate":[],"reboot":[]}',
+        '"commands": {"logout":["logout"],"shutdown":["shutdown"],"hibernate":["hibernate"],"reboot":["reboot"]}')
+}
 $configText | Set-Content -LiteralPath $config -Encoding UTF8
 $logRoot = Join-Path $BuildRoot 'logs'
 New-Item -ItemType Directory -Force -Path $logRoot | Out-Null
@@ -276,16 +283,17 @@ $info.EnvironmentVariables['CAELESTIA_WINDOWS_NOTIFICATION_APP_OPEN'] = $(if ($m
 if ($Combined) {
     foreach ($name in $slices.Keys) {
         $info.EnvironmentVariables[$slices[$name].Observe] = '1'
-        if ($slices[$name].Controls) { $info.EnvironmentVariables[$slices[$name].Controls] = '0' }
+        if ($slices[$name].Controls) { $info.EnvironmentVariables[$slices[$name].Controls] = $(if ($Live -and -not $Smoke) { '1' } else { '0' }) }
     }
     $info.EnvironmentVariables['CAELESTIA_WINDOWS_POWER_PROFILES'] = '1'
     $info.EnvironmentVariables['CAELESTIA_WINDOWS_BRIGHTNESS_SOFTWARE'] = '0'
-    $info.EnvironmentVariables['CAELESTIA_WINDOWS_NOTIFICATION_MIRROR'] = '0'
-    $info.EnvironmentVariables['CAELESTIA_WINDOWS_NOTIFICATION_MIRROR_DISMISS'] = '0'
+    $info.EnvironmentVariables['CAELESTIA_WINDOWS_NOTIFICATION_MIRROR'] = $(if ($Live -and -not $Smoke) { '1' } else { '0' })
+    $info.EnvironmentVariables['CAELESTIA_WINDOWS_NOTIFICATION_MIRROR_DISMISS'] = $(if ($Live -and -not $Smoke) { '1' } else { '0' })
     $info.EnvironmentVariables['CAELESTIA_WINDOWS_NOTIFICATION_APP_OPEN'] = '0'
     $info.EnvironmentVariables['QS_WINDOWS_TRAY_HOOK'] = '0'
     $info.EnvironmentVariables['CAELESTIA_SHELL_SESSION'] = '1'
     $info.EnvironmentVariables['CAELESTIA_SHELL_SESSION_MODE'] = 'Observe'
+    $info.EnvironmentVariables['CAELESTIA_COMBINED_LIVE'] = $(if ($Live) { '1' } else { '0' })
 }
 if ($ScaleFactor -ne 'native') {
     $info.EnvironmentVariables['QT_ENABLE_HIGHDPI_SCALING'] = '0'
@@ -346,7 +354,7 @@ $passed = -not $timedOut -and -not $runtimeDiagnostics -and
 Copy-Item -LiteralPath (Join-Path $stage 'sources.json') -Destination (Join-Path $logRoot "$runName.sources.json")
 $result = [ordered]@{
     passed = $(if ($Smoke) { $passed } else { $null }); smoke = $Smoke.IsPresent
-    prototype = $kind; combined = $Combined.IsPresent; audioMode = $AudioMode; batteryMode = $BatteryMode; mediaMode = $MediaMode; brightnessMode = $BrightnessMode
+    prototype = $kind; combined = $Combined.IsPresent; live = $Live.IsPresent; audioMode = $AudioMode; batteryMode = $BatteryMode; mediaMode = $MediaMode; brightnessMode = $BrightnessMode
     networkMode = $NetworkMode
     bluetoothMode = $BluetoothMode; appsMode = $AppsMode; appsSearchQuery = $(if ($Apps) { $AppsSearchQuery } else { '' })
     trayMode = $TrayMode; trayFixture = $TrayFixture.IsPresent

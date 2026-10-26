@@ -23,6 +23,7 @@ import qs.modules.launcher.services
 ShellRoot {
     id: root
 
+    readonly property bool live: Quickshell.env("CAELESTIA_COMBINED_LIVE") === "1"
     readonly property bool smoke: Quickshell.env("CAELESTIA_SHELL_SMOKE") === "1"
     readonly property int initialScreenIndex: Number(Quickshell.env("CAELESTIA_SHELL_SCREEN") || "0")
     property int screenIndex: initialScreenIndex
@@ -288,7 +289,7 @@ ShellRoot {
                 StyledText {
                     width: parent.width
                     wrapMode: Text.WordWrap
-                    text: "Look around freely. Everything is read-only, so nothing on this PC changes."
+                    text: root.live ? "Live controls" : "Read-only"
                     color: Colours.palette.m3onSurfaceVariant
                 }
 
