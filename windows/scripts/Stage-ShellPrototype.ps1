@@ -6,7 +6,7 @@ param(
     # slice under windows/<name>-prototype with its own shell.qml and
     # sources.json manifest. One slice per stage. 'combined' unions the M1
     # manifest with every service slice manifest plus the combined adapters.
-    [ValidateSet('shell', 'audio', 'battery', 'media', 'brightness', 'network', 'bluetooth', 'apps', 'tray', 'notifications', 'combined')]
+    [ValidateSet('shell', 'audio', 'battery', 'media', 'brightness', 'network', 'bluetooth', 'apps', 'tray', 'notifications', 'combined', 'shell-live')]
     [string]$Prototype = 'shell'
 )
 
@@ -14,6 +14,9 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
 $Destination = [IO.Path]::GetFullPath($Destination)
 $ProfileRoot = [IO.Path]::GetFullPath($ProfileRoot)
+# Production uses exactly the combined graph, with a separate lifecycle entry.
+$shellLive = $Prototype -eq 'shell-live'
+if ($shellLive) { $Prototype = 'combined' }
 New-Item -ItemType Directory -Force -Path $Destination | Out-Null
 $files = [ordered]@{
     'windows/shell-prototype/shell.qml' = 'shell.qml'
@@ -80,6 +83,12 @@ if ($Prototype -eq 'combined') {
             if (-not $files.Contains($entry.Name)) { $files.Add($entry.Name, $entry.Value) }
         }
     }
+}
+if ($shellLive) {
+    $files.Remove('windows/combined-prototype/shell.qml')
+    $files.Add('windows/shell/shell.qml', 'shell.qml')
+    $files.Remove('services/Screens.qml')
+    $files.Add('windows/shell/Screens.qml', 'services/Screens.qml')
 }
 $hashes = foreach ($entry in $files.GetEnumerator()) {
     $source = [IO.Path]::GetFullPath((Join-Path $repoRoot $entry.Key))

@@ -9,6 +9,10 @@ Wayland compositor; Windows continues to own application composition through DWM
 
 For the next development session, start with [HANDOFF.md](HANDOFF.md).
 
+The combined graph now also has an [all-monitor Windows shell entry](shell/README.md)
+with persistent profiles and per-user installation. See [REPORT.md](../REPORT.md)
+for commands and the limits of its quick installation smoke.
+
 - The full Caelestia source history is retained, based on the revision in
   [sources.lock.json](sources.lock.json).
 - The Windows Quickshell source is pinned as `windows/deps/quickshell`.
