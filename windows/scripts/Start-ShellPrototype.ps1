@@ -569,7 +569,6 @@ $result = [ordered]@{
     passed = $(if ($Smoke) { $passed } else { $null }); smoke = $Smoke.IsPresent
     prototype = $kind; combined = $Combined.IsPresent; live = $Live.IsPresent
     background = $Background.IsPresent; desktopIcons = $DesktopIcons
-    schemeRuntime = $(if ($Combined) { $schemeRuntime } else { $null })
     audioMode = $AudioMode; batteryMode = $BatteryMode; mediaMode = $MediaMode; brightnessMode = $BrightnessMode
     networkMode = $NetworkMode
     hyprMode = $HyprMode

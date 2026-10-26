@@ -156,18 +156,37 @@ if ($Smoke) {
     '{"windows":{"hideTaskbar":false,"restartOnCrash":true}}' |
         Set-Content -LiteralPath $supervisorConfig -Encoding UTF8
 }
-$supervised = & (Join-Path $PSScriptRoot 'Start-DesktopShell.ps1') -StartInfo $info `
-    -StateDirectory (Join-Path $profile ('runtime\supervisor-' + [guid]::NewGuid().ToString('N'))) `
-    -ConfigPath $supervisorConfig -StdoutPath $stdoutPath -StderrPath $stderrPath
-$process = $supervised.Watchdog
-Write-Output "Started supervised Caelestia. Profile: $profile; status: $($supervised.StatusPath)"
+$supervised = $null
+if ($Smoke) {
+    # Smoke owns no desktop state and may run beside an installed supervisor.
+    # In particular, timeout recovery must never signal that other session.
+    $info.EnvironmentVariables['QS_DISABLE_CRASH_HANDLER'] = '1'
+    $info.RedirectStandardOutput = $true
+    $info.RedirectStandardError = $true
+    $process = [Diagnostics.Process]::Start($info)
+    $outTask = $process.StandardOutput.ReadToEndAsync()
+    $errTask = $process.StandardError.ReadToEndAsync()
+    Write-Output "Started isolated Caelestia smoke (PID $($process.Id)). Profile: $profile"
+} else {
+    $supervised = & (Join-Path $PSScriptRoot 'Start-DesktopShell.ps1') -StartInfo $info `
+        -StateDirectory (Join-Path $profile ('runtime\supervisor-' + [guid]::NewGuid().ToString('N'))) `
+        -ConfigPath $supervisorConfig -StdoutPath $stdoutPath -StderrPath $stderrPath
+    $process = $supervised.Watchdog
+    Write-Output "Started supervised Caelestia. Profile: $profile; status: $($supervised.StatusPath)"
+}
 if (-not $Smoke -and -not $Wait) { return }
 $timedOut = $false
 if ($Smoke) { $timedOut = -not $process.WaitForExit(60000) } else { $process.WaitForExit() }
 if ($timedOut) {
-    # This invocation owns the session supervisor. Signal recovery before failing.
-    & (Join-Path $PSScriptRoot 'Restore-Desktop.ps1') | Out-Null
-    throw "Caelestia smoke timed out awaiting IPC quit. See $profile\logs and $($supervised.StatusPath)."
+    $process.Kill()
+    $process.WaitForExit()
+}
+if ($Smoke) {
+    [IO.File]::WriteAllText($stdoutPath, $outTask.GetAwaiter().GetResult())
+    [IO.File]::WriteAllText($stderrPath, $errTask.GetAwaiter().GetResult())
+}
+if ($timedOut) {
+    throw "Caelestia smoke timed out awaiting IPC quit. See $profile\logs."
 }
 $output = [IO.File]::ReadAllText($stdoutPath)
 $errors = [IO.File]::ReadAllText($stderrPath)
