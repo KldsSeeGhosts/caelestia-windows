@@ -295,7 +295,10 @@ $info.EnvironmentVariables['QML_DISK_CACHE_PATH'] = Join-Path $profileRoot 'cach
 $info.EnvironmentVariables['CAELESTIA_CONFIG_DIR'] = Join-Path $profileRoot 'config'
 $info.EnvironmentVariables['CAELESTIA_STATE_DIR'] = Join-Path $profileRoot 'state'
 $info.EnvironmentVariables['CAELESTIA_RUNTIME_DIR'] = Join-Path $profileRoot 'runtime'
-
+if ($Combined) {
+    $info.EnvironmentVariables['CAELESTIA_ACCOUNT_PICTURE'] = & "$PSScriptRoot\Get-AccountPicture.ps1" `
+        -CacheRoot (Join-Path $profileRoot 'cache')
+}
 $info.EnvironmentVariables['QS_WINDOWS_BLUR'] = '0'
 $info.EnvironmentVariables['QT_LOGGING_RULES'] = 'quickshell.windows.tracker.debug=false;quickshell.windows.inputmask.debug=false'
 if ($TraceInput) {

@@ -1,6 +1,7 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import Quickshell
 import M3Shapes
 import Caelestia.Config
 import Caelestia.I18n
@@ -90,7 +91,7 @@ Item {
                 id: pfp
 
                 anchors.fill: parent
-                source: ""
+                source: Quickshell.env("CAELESTIA_ACCOUNT_PICTURE") || ""
             }
 
             StyledRect {
