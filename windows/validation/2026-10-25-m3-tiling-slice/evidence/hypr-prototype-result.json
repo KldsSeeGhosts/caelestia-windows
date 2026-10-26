@@ -1,0 +1,695 @@
+﻿{
+    "passed":  true,
+    "failure":  null,
+    "sourceRevision":  "2dd2794f6e25b31263010388b725942effed106a",
+    "sourceDirty":  false,
+    "backendRevision":  "1401042969e4b7ab3cfb314fc76945ab081db3de",
+    "measurementSources":  [
+                               {
+                                   "source":  "windows/scripts/Get-DesktopState.ps1",
+                                   "sha256":  "44E06C706EE5A930A41EA723D9DFC104469D2019DDBC3BAEA71B240B71A401DE"
+                               },
+                               {
+                                   "source":  "windows/scripts/Test-HyprService.ps1",
+                                   "sha256":  "C008E416E1CA0456BACF6BF7CB51734BE5228BDE1ED3AC48691D261E63A404E8"
+                               },
+                               {
+                                   "source":  "windows/scripts/Test-HyprPrototype.ps1",
+                                   "sha256":  "CF7E6A59A70D00F118B39FBD6A72703DD17FB60DB534D9CE993DE110AE715C73"
+                               }
+                           ],
+    "output":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\hypr-validation-20261025-212704-270",
+    "records":  [
+                    {
+                        "kind":  "fixture",
+                        "result":  {
+                                       "passed":  true,
+                                       "timedOut":  false,
+                                       "exitCode":  0,
+                                       "fixture":  {
+                                                       "assertions":  640
+                                                   },
+                                       "nativeImports":  0,
+                                       "hashMismatch":  [
+
+                                                        ],
+                                       "diagnostics":  [
+
+                                                       ],
+                                       "sourceRevision":  "2dd2794f6e25b31263010388b725942effed106a",
+                                       "sourceDirty":  false,
+                                       "qtVersion":  "6.11.2",
+                                       "runnerSha256":  "24994D434962751713F0C8932B356104B0849572B95765DAD50C13DA6BE3FA20",
+                                       "command":  "C:\\Users\\Ermin\\AppData\\Local\\caelestia-dev\\Qt\\6.11.2\\msvc2022_64\\bin\\qml.exe",
+                                       "arguments":  "\"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\hypr-tests\\hypr-fixture-20261025-212704-452\\HyprServiceTest.qml\"",
+                                       "sources":  [
+                                                       {
+                                                           "source":  "windows/services/hypr/HyprService.qml",
+                                                           "sourceSha256":  "60C2C19570C6CC5DF3BD88BF9027629B94F74D897ED7C0B01503768D7F71042E",
+                                                           "stagedSha256":  "60C2C19570C6CC5DF3BD88BF9027629B94F74D897ED7C0B01503768D7F71042E"
+                                                       },
+                                                       {
+                                                           "source":  "windows/services/hypr/HyprServiceTest.qml",
+                                                           "sourceSha256":  "4ABF1FD2AFADD67C865337CCFA4D569D510C7201867D06DC0DDA435B8F240CAD",
+                                                           "stagedSha256":  "4ABF1FD2AFADD67C865337CCFA4D569D510C7201867D06DC0DDA435B8F240CAD"
+                                                       }
+                                                   ],
+                                       "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\hypr-tests\\hypr-fixture-20261025-212704-452",
+                                       "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\hypr-fixture-20261025-212704-452.stdout.log",
+                                       "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\hypr-fixture-20261025-212704-452.stderr.log"
+                                   }
+                    },
+                    {
+                        "kind":  "hypr-disabled",
+                        "result":  {
+                                       "passed":  true,
+                                       "smoke":  true,
+                                       "prototype":  "hypr",
+                                       "audioMode":  "Disabled",
+                                       "batteryMode":  "Disabled",
+                                       "mediaMode":  "Disabled",
+                                       "networkMode":  "Disabled",
+                                       "hyprMode":  "Disabled",
+                                       "tilingMode":  "Disabled",
+                                       "tilingEnvMode":  "off",
+                                       "tilingIncluded":  "",
+                                       "tilingExcluded":  "",
+                                       "bluetoothMode":  "Disabled",
+                                       "appsMode":  "Disabled",
+                                       "appsSearchQuery":  "",
+                                       "trayMode":  "Disabled",
+                                       "trayFixture":  false,
+                                       "trayHookMode":  null,
+                                       "sessionMode":  "Disabled",
+                                       "sessionActions":  false,
+                                       "timedOut":  false,
+                                       "exitCode":  0,
+                                       "scaleFactor":  "native",
+                                       "screenIndex":  0,
+                                       "monitorCycle":  false,
+                                       "traceInput":  false,
+                                       "actualScreens":  [
+                                                             {
+                                                                 "index":  0,
+                                                                 "name":  "MAG321UX OLED",
+                                                                 "x":  0,
+                                                                 "y":  0,
+                                                                 "dpr":  1.5,
+                                                                 "width":  620,
+                                                                 "height":  700
+                                                             }
+                                                         ],
+                                       "captures":  [
+                                                        "file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/hypr-20261025-212704-746.png"
+                                                    ],
+                                       "elapsedMilliseconds":  3406,
+                                       "sourceRevision":  "2dd2794f6e25b31263010388b725942effed106a",
+                                       "sourceDirty":  false,
+                                       "backendRevision":  "1401042969e4b7ab3cfb314fc76945ab081db3de",
+                                       "buildRecordSha256":  "5DCDA9C00874708A2B2B2C0721C08F903766133AEF84110147051707F7EC5E4D",
+                                       "configSha256":  "0C7BA77BF53BE3940BEC10B4CDE292C9AFD25335BC0293A287D56ECBBF13DF01",
+                                       "command":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\quickshell\\qs.exe",
+                                       "arguments":  "--no-color --log-times --path \"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\hypr-20261025-212704-746\\shell.qml\"",
+                                       "executableSha256":  "9B518329FAC6B96973F4ECAA58A6CDFA5E413B6F9633A8F70345A706905F55AA",
+                                       "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\hypr-20261025-212704-746",
+                                       "profile":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\hypr-prototype-profile",
+                                       "sources":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\hypr-20261025-212704-746.sources.json",
+                                       "screenshot":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\hypr-20261025-212704-746.png",
+                                       "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\hypr-20261025-212704-746.stdout.log",
+                                       "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\hypr-20261025-212704-746.stderr.log",
+                                       "audioSnapshots":  [
+
+                                                          ],
+                                       "batterySnapshots":  [
+
+                                                            ],
+                                       "mediaSnapshots":  [
+
+                                                          ],
+                                       "networkSnapshots":  [
+
+                                                            ],
+                                       "hyprSnapshots":  [
+                                                             {
+                                                                 "phase":  "INITIAL",
+                                                                 "state":  {
+                                                                               "status":  "disabled",
+                                                                               "reason":  "Hyprland observation is disabled.",
+                                                                               "enabled":  false,
+                                                                               "dispatchEnabled":  false,
+                                                                               "backendRequested":  false,
+                                                                               "backendLoaded":  false,
+                                                                               "initialized":  false,
+                                                                               "usingLua":  false,
+                                                                               "monitorCount":  0,
+                                                                               "workspaceCount":  0,
+                                                                               "toplevelCount":  0,
+                                                                               "focusedMonitorId":  -1,
+                                                                               "focusedMonitorName":  "",
+                                                                               "focusedWorkspaceId":  -1,
+                                                                               "focusedWorkspaceName":  "",
+                                                                               "activeWsId":  1,
+                                                                               "activeToplevelTitle":  "",
+                                                                               "activeToplevelClass":  "",
+                                                                               "specialWorkspaceName":  "",
+                                                                               "specialCount":  0,
+                                                                               "monitorActiveWorkspaceIds":  [
+
+                                                                                                             ],
+                                                                               "globalFocusMatch":  true,
+                                                                               "workspaceMonitorIds":  [
+
+                                                                                                       ],
+                                                                               "workspacesLoaded":  false,
+                                                                               "workspacesMonitorId":  -1,
+                                                                               "workspaceIds":  [
+
+                                                                                                ],
+                                                                               "specialLoaded":  false,
+                                                                               "specialWsIds":  [
+
+                                                                                                ],
+                                                                               "specialActiveId":  -1,
+                                                                               "activeWindowLoaded":  false,
+                                                                               "activeWindowTitle":  "",
+                                                                               "commandsSent":  0,
+                                                                               "refusals":  0,
+                                                                               "consumed":  0,
+                                                                               "lastRefusalReason":  "",
+                                                                               "lastDispatch":  ""
+                                                                           }
+                                                             },
+                                                             {
+                                                                 "phase":  "FINAL",
+                                                                 "state":  {
+                                                                               "status":  "disabled",
+                                                                               "reason":  "Hyprland observation is disabled.",
+                                                                               "enabled":  false,
+                                                                               "dispatchEnabled":  false,
+                                                                               "backendRequested":  false,
+                                                                               "backendLoaded":  false,
+                                                                               "initialized":  false,
+                                                                               "usingLua":  false,
+                                                                               "monitorCount":  0,
+                                                                               "workspaceCount":  0,
+                                                                               "toplevelCount":  0,
+                                                                               "focusedMonitorId":  -1,
+                                                                               "focusedMonitorName":  "",
+                                                                               "focusedWorkspaceId":  -1,
+                                                                               "focusedWorkspaceName":  "",
+                                                                               "activeWsId":  1,
+                                                                               "activeToplevelTitle":  "",
+                                                                               "activeToplevelClass":  "",
+                                                                               "specialWorkspaceName":  "",
+                                                                               "specialCount":  0,
+                                                                               "monitorActiveWorkspaceIds":  [
+
+                                                                                                             ],
+                                                                               "globalFocusMatch":  true,
+                                                                               "workspaceMonitorIds":  [
+
+                                                                                                       ],
+                                                                               "workspacesLoaded":  false,
+                                                                               "workspacesMonitorId":  -1,
+                                                                               "workspaceIds":  [
+
+                                                                                                ],
+                                                                               "specialLoaded":  false,
+                                                                               "specialWsIds":  [
+
+                                                                                                ],
+                                                                               "specialActiveId":  -1,
+                                                                               "activeWindowLoaded":  false,
+                                                                               "activeWindowTitle":  "",
+                                                                               "commandsSent":  0,
+                                                                               "refusals":  0,
+                                                                               "consumed":  0,
+                                                                               "lastRefusalReason":  "",
+                                                                               "lastDispatch":  ""
+                                                                           }
+                                                             }
+                                                         ],
+                                       "bluetoothSnapshots":  [
+
+                                                              ],
+                                       "appsSnapshots":  [
+
+                                                         ],
+                                       "traySnapshots":  [
+
+                                                         ],
+                                       "tilingSnapshots":  [
+
+                                                           ],
+                                       "sessionSnapshots":  [
+
+                                                            ],
+                                       "appsSearches":  [
+
+                                                        ],
+                                       "sessionButtons":  [
+
+                                                          ]
+                                   }
+                    },
+                    {
+                        "kind":  "hypr-disabled",
+                        "result":  {
+                                       "passed":  true,
+                                       "smoke":  true,
+                                       "prototype":  "hypr",
+                                       "audioMode":  "Disabled",
+                                       "batteryMode":  "Disabled",
+                                       "mediaMode":  "Disabled",
+                                       "networkMode":  "Disabled",
+                                       "hyprMode":  "Disabled",
+                                       "tilingMode":  "Disabled",
+                                       "tilingEnvMode":  "off",
+                                       "tilingIncluded":  "",
+                                       "tilingExcluded":  "",
+                                       "bluetoothMode":  "Disabled",
+                                       "appsMode":  "Disabled",
+                                       "appsSearchQuery":  "",
+                                       "trayMode":  "Disabled",
+                                       "trayFixture":  false,
+                                       "trayHookMode":  null,
+                                       "sessionMode":  "Disabled",
+                                       "sessionActions":  false,
+                                       "timedOut":  false,
+                                       "exitCode":  0,
+                                       "scaleFactor":  "native",
+                                       "screenIndex":  1,
+                                       "monitorCycle":  false,
+                                       "traceInput":  false,
+                                       "actualScreens":  [
+                                                             {
+                                                                 "index":  1,
+                                                                 "name":  "DELL S2725QS",
+                                                                 "x":  -3840,
+                                                                 "y":  0,
+                                                                 "dpr":  1.75,
+                                                                 "width":  620,
+                                                                 "height":  700
+                                                             }
+                                                         ],
+                                       "captures":  [
+                                                        "file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/hypr-20261025-212708-586.png"
+                                                    ],
+                                       "elapsedMilliseconds":  3459,
+                                       "sourceRevision":  "2dd2794f6e25b31263010388b725942effed106a",
+                                       "sourceDirty":  false,
+                                       "backendRevision":  "1401042969e4b7ab3cfb314fc76945ab081db3de",
+                                       "buildRecordSha256":  "5DCDA9C00874708A2B2B2C0721C08F903766133AEF84110147051707F7EC5E4D",
+                                       "configSha256":  "0C7BA77BF53BE3940BEC10B4CDE292C9AFD25335BC0293A287D56ECBBF13DF01",
+                                       "command":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\quickshell\\qs.exe",
+                                       "arguments":  "--no-color --log-times --path \"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\hypr-20261025-212708-586\\shell.qml\"",
+                                       "executableSha256":  "9B518329FAC6B96973F4ECAA58A6CDFA5E413B6F9633A8F70345A706905F55AA",
+                                       "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\hypr-20261025-212708-586",
+                                       "profile":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\hypr-prototype-profile",
+                                       "sources":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\hypr-20261025-212708-586.sources.json",
+                                       "screenshot":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\hypr-20261025-212708-586.png",
+                                       "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\hypr-20261025-212708-586.stdout.log",
+                                       "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\hypr-20261025-212708-586.stderr.log",
+                                       "audioSnapshots":  [
+
+                                                          ],
+                                       "batterySnapshots":  [
+
+                                                            ],
+                                       "mediaSnapshots":  [
+
+                                                          ],
+                                       "networkSnapshots":  [
+
+                                                            ],
+                                       "hyprSnapshots":  [
+                                                             {
+                                                                 "phase":  "INITIAL",
+                                                                 "state":  {
+                                                                               "status":  "disabled",
+                                                                               "reason":  "Hyprland observation is disabled.",
+                                                                               "enabled":  false,
+                                                                               "dispatchEnabled":  false,
+                                                                               "backendRequested":  false,
+                                                                               "backendLoaded":  false,
+                                                                               "initialized":  false,
+                                                                               "usingLua":  false,
+                                                                               "monitorCount":  0,
+                                                                               "workspaceCount":  0,
+                                                                               "toplevelCount":  0,
+                                                                               "focusedMonitorId":  -1,
+                                                                               "focusedMonitorName":  "",
+                                                                               "focusedWorkspaceId":  -1,
+                                                                               "focusedWorkspaceName":  "",
+                                                                               "activeWsId":  1,
+                                                                               "activeToplevelTitle":  "",
+                                                                               "activeToplevelClass":  "",
+                                                                               "specialWorkspaceName":  "",
+                                                                               "specialCount":  0,
+                                                                               "monitorActiveWorkspaceIds":  [
+
+                                                                                                             ],
+                                                                               "globalFocusMatch":  true,
+                                                                               "workspaceMonitorIds":  [
+
+                                                                                                       ],
+                                                                               "workspacesLoaded":  false,
+                                                                               "workspacesMonitorId":  -1,
+                                                                               "workspaceIds":  [
+
+                                                                                                ],
+                                                                               "specialLoaded":  false,
+                                                                               "specialWsIds":  [
+
+                                                                                                ],
+                                                                               "specialActiveId":  -1,
+                                                                               "activeWindowLoaded":  false,
+                                                                               "activeWindowTitle":  "",
+                                                                               "commandsSent":  0,
+                                                                               "refusals":  0,
+                                                                               "consumed":  0,
+                                                                               "lastRefusalReason":  "",
+                                                                               "lastDispatch":  ""
+                                                                           }
+                                                             },
+                                                             {
+                                                                 "phase":  "FINAL",
+                                                                 "state":  {
+                                                                               "status":  "disabled",
+                                                                               "reason":  "Hyprland observation is disabled.",
+                                                                               "enabled":  false,
+                                                                               "dispatchEnabled":  false,
+                                                                               "backendRequested":  false,
+                                                                               "backendLoaded":  false,
+                                                                               "initialized":  false,
+                                                                               "usingLua":  false,
+                                                                               "monitorCount":  0,
+                                                                               "workspaceCount":  0,
+                                                                               "toplevelCount":  0,
+                                                                               "focusedMonitorId":  -1,
+                                                                               "focusedMonitorName":  "",
+                                                                               "focusedWorkspaceId":  -1,
+                                                                               "focusedWorkspaceName":  "",
+                                                                               "activeWsId":  1,
+                                                                               "activeToplevelTitle":  "",
+                                                                               "activeToplevelClass":  "",
+                                                                               "specialWorkspaceName":  "",
+                                                                               "specialCount":  0,
+                                                                               "monitorActiveWorkspaceIds":  [
+
+                                                                                                             ],
+                                                                               "globalFocusMatch":  true,
+                                                                               "workspaceMonitorIds":  [
+
+                                                                                                       ],
+                                                                               "workspacesLoaded":  false,
+                                                                               "workspacesMonitorId":  -1,
+                                                                               "workspaceIds":  [
+
+                                                                                                ],
+                                                                               "specialLoaded":  false,
+                                                                               "specialWsIds":  [
+
+                                                                                                ],
+                                                                               "specialActiveId":  -1,
+                                                                               "activeWindowLoaded":  false,
+                                                                               "activeWindowTitle":  "",
+                                                                               "commandsSent":  0,
+                                                                               "refusals":  0,
+                                                                               "consumed":  0,
+                                                                               "lastRefusalReason":  "",
+                                                                               "lastDispatch":  ""
+                                                                           }
+                                                             }
+                                                         ],
+                                       "bluetoothSnapshots":  [
+
+                                                              ],
+                                       "appsSnapshots":  [
+
+                                                         ],
+                                       "traySnapshots":  [
+
+                                                         ],
+                                       "tilingSnapshots":  [
+
+                                                           ],
+                                       "sessionSnapshots":  [
+
+                                                            ],
+                                       "appsSearches":  [
+
+                                                        ],
+                                       "sessionButtons":  [
+
+                                                          ]
+                                   }
+                    },
+                    {
+                        "kind":  "m1-regression",
+                        "result":  {
+                                       "passed":  true,
+                                       "smoke":  true,
+                                       "prototype":  "shell",
+                                       "audioMode":  "Disabled",
+                                       "batteryMode":  "Disabled",
+                                       "mediaMode":  "Disabled",
+                                       "networkMode":  "Disabled",
+                                       "hyprMode":  "Disabled",
+                                       "tilingMode":  "Disabled",
+                                       "tilingEnvMode":  "off",
+                                       "tilingIncluded":  "",
+                                       "tilingExcluded":  "",
+                                       "bluetoothMode":  "Disabled",
+                                       "appsMode":  "Disabled",
+                                       "appsSearchQuery":  "",
+                                       "trayMode":  "Disabled",
+                                       "trayFixture":  false,
+                                       "trayHookMode":  null,
+                                       "sessionMode":  "Disabled",
+                                       "sessionActions":  false,
+                                       "timedOut":  false,
+                                       "exitCode":  0,
+                                       "scaleFactor":  "native",
+                                       "screenIndex":  0,
+                                       "monitorCycle":  false,
+                                       "traceInput":  false,
+                                       "actualScreens":  [
+                                                             {
+                                                                 "index":  0,
+                                                                 "name":  "MAG321UX OLED",
+                                                                 "x":  0,
+                                                                 "y":  0,
+                                                                 "dpr":  1.5
+                                                             }
+                                                         ],
+                                       "captures":  [
+                                                        "file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/shell-20261025-212712-464.png"
+                                                    ],
+                                       "elapsedMilliseconds":  4117,
+                                       "sourceRevision":  "2dd2794f6e25b31263010388b725942effed106a",
+                                       "sourceDirty":  false,
+                                       "backendRevision":  "1401042969e4b7ab3cfb314fc76945ab081db3de",
+                                       "buildRecordSha256":  "5DCDA9C00874708A2B2B2C0721C08F903766133AEF84110147051707F7EC5E4D",
+                                       "configSha256":  "6FC8F8B80AF9D45A49A4737AF51B8C43A11B97E1B59A82468F31AB4C779C6F65",
+                                       "command":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\quickshell\\qs.exe",
+                                       "arguments":  "--no-color --log-times --path \"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\shell-20261025-212712-464\\shell.qml\"",
+                                       "executableSha256":  "9B518329FAC6B96973F4ECAA58A6CDFA5E413B6F9633A8F70345A706905F55AA",
+                                       "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\shell-20261025-212712-464",
+                                       "profile":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-prototype-profile",
+                                       "sources":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\shell-20261025-212712-464.sources.json",
+                                       "screenshot":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\shell-20261025-212712-464.png",
+                                       "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\shell-20261025-212712-464.stdout.log",
+                                       "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\shell-20261025-212712-464.stderr.log",
+                                       "audioSnapshots":  [
+
+                                                          ],
+                                       "batterySnapshots":  [
+
+                                                            ],
+                                       "mediaSnapshots":  [
+
+                                                          ],
+                                       "networkSnapshots":  [
+
+                                                            ],
+                                       "hyprSnapshots":  [
+
+                                                         ],
+                                       "bluetoothSnapshots":  [
+
+                                                              ],
+                                       "appsSnapshots":  [
+
+                                                         ],
+                                       "traySnapshots":  [
+
+                                                         ],
+                                       "tilingSnapshots":  [
+
+                                                           ],
+                                       "sessionSnapshots":  [
+                                                                {
+                                                                    "phase":  "INITIAL",
+                                                                    "state":  {
+                                                                                  "mode":  "Disabled",
+                                                                                  "run":  false,
+                                                                                  "enabled":  false,
+                                                                                  "actionsEnabled":  false,
+                                                                                  "available":  false,
+                                                                                  "status":  "disabled",
+                                                                                  "nativeRequested":  false,
+                                                                                  "backendLoaded":  false,
+                                                                                  "backendError":  "",
+                                                                                  "hibernateCapabilityKnown":  false,
+                                                                                  "canHibernate":  false,
+                                                                                  "hibernateSupported":  false,
+                                                                                  "actionGating":  true,
+                                                                                  "fallbackBlocked":  true,
+                                                                                  "actions":  {
+                                                                                                  "lock":  {
+                                                                                                               "supported":  true,
+                                                                                                               "capability":  false,
+                                                                                                               "available":  false,
+                                                                                                               "requiresConfirmation":  false
+                                                                                                           },
+                                                                                                  "logout":  {
+                                                                                                                 "supported":  true,
+                                                                                                                 "capability":  false,
+                                                                                                                 "available":  false,
+                                                                                                                 "requiresConfirmation":  true
+                                                                                                             },
+                                                                                                  "shutdown":  {
+                                                                                                                   "supported":  true,
+                                                                                                                   "capability":  false,
+                                                                                                                   "available":  false,
+                                                                                                                   "requiresConfirmation":  true
+                                                                                                               },
+                                                                                                  "reboot":  {
+                                                                                                                 "supported":  true,
+                                                                                                                 "capability":  false,
+                                                                                                                 "available":  false,
+                                                                                                                 "requiresConfirmation":  true
+                                                                                                             },
+                                                                                                  "suspend":  {
+                                                                                                                  "supported":  true,
+                                                                                                                  "capability":  false,
+                                                                                                                  "available":  false,
+                                                                                                                  "requiresConfirmation":  false
+                                                                                                              },
+                                                                                                  "hibernate":  {
+                                                                                                                    "supported":  true,
+                                                                                                                    "capability":  false,
+                                                                                                                    "available":  false,
+                                                                                                                    "requiresConfirmation":  false
+                                                                                                                },
+                                                                                                  "firmware":  {
+                                                                                                                   "supported":  true,
+                                                                                                                   "capability":  false,
+                                                                                                                   "available":  false,
+                                                                                                                   "requiresConfirmation":  true
+                                                                                                               }
+                                                                                              },
+                                                                                  "lastOutcome":  "disabled",
+                                                                                  "lastAction":  "",
+                                                                                  "lastConsumed":  true,
+                                                                                  "lastDispatched":  false,
+                                                                                  "lastRequested":  false,
+                                                                                  "lastSucceeded":  false
+                                                                              }
+                                                                },
+                                                                {
+                                                                    "phase":  "FINAL",
+                                                                    "state":  {
+                                                                                  "mode":  "Disabled",
+                                                                                  "run":  false,
+                                                                                  "enabled":  false,
+                                                                                  "actionsEnabled":  false,
+                                                                                  "available":  false,
+                                                                                  "status":  "disabled",
+                                                                                  "nativeRequested":  false,
+                                                                                  "backendLoaded":  false,
+                                                                                  "backendError":  "",
+                                                                                  "hibernateCapabilityKnown":  false,
+                                                                                  "canHibernate":  false,
+                                                                                  "hibernateSupported":  false,
+                                                                                  "actionGating":  true,
+                                                                                  "fallbackBlocked":  true,
+                                                                                  "actions":  {
+                                                                                                  "lock":  {
+                                                                                                               "supported":  true,
+                                                                                                               "capability":  false,
+                                                                                                               "available":  false,
+                                                                                                               "requiresConfirmation":  false
+                                                                                                           },
+                                                                                                  "logout":  {
+                                                                                                                 "supported":  true,
+                                                                                                                 "capability":  false,
+                                                                                                                 "available":  false,
+                                                                                                                 "requiresConfirmation":  true
+                                                                                                             },
+                                                                                                  "shutdown":  {
+                                                                                                                   "supported":  true,
+                                                                                                                   "capability":  false,
+                                                                                                                   "available":  false,
+                                                                                                                   "requiresConfirmation":  true
+                                                                                                               },
+                                                                                                  "reboot":  {
+                                                                                                                 "supported":  true,
+                                                                                                                 "capability":  false,
+                                                                                                                 "available":  false,
+                                                                                                                 "requiresConfirmation":  true
+                                                                                                             },
+                                                                                                  "suspend":  {
+                                                                                                                  "supported":  true,
+                                                                                                                  "capability":  false,
+                                                                                                                  "available":  false,
+                                                                                                                  "requiresConfirmation":  false
+                                                                                                              },
+                                                                                                  "hibernate":  {
+                                                                                                                    "supported":  true,
+                                                                                                                    "capability":  false,
+                                                                                                                    "available":  false,
+                                                                                                                    "requiresConfirmation":  false
+                                                                                                                },
+                                                                                                  "firmware":  {
+                                                                                                                   "supported":  true,
+                                                                                                                   "capability":  false,
+                                                                                                                   "available":  false,
+                                                                                                                   "requiresConfirmation":  true
+                                                                                                               }
+                                                                                              },
+                                                                                  "lastOutcome":  "disabled",
+                                                                                  "lastAction":  "",
+                                                                                  "lastConsumed":  true,
+                                                                                  "lastDispatched":  false,
+                                                                                  "lastRequested":  false,
+                                                                                  "lastSucceeded":  false
+                                                                              }
+                                                                }
+                                                            ],
+                                       "appsSearches":  [
+
+                                                        ],
+                                       "sessionButtons":  [
+                                                              {
+                                                                  "icon":  "logout",
+                                                                  "disabled":  true
+                                                              },
+                                                              {
+                                                                  "icon":  "power_settings_new",
+                                                                  "disabled":  true
+                                                              },
+                                                              {
+                                                                  "icon":  "downloading",
+                                                                  "disabled":  true
+                                                              },
+                                                              {
+                                                                  "icon":  "cached",
+                                                                  "disabled":  true
+                                                              }
+                                                          ]
+                                   }
+                    }
+                ]
+}

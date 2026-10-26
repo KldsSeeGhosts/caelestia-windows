@@ -165,6 +165,20 @@ Gate: no overlapping tiled windows, accidental size floating, lost focus, or
 unbounded correction loop during the recorded scenarios. When fitting is
 impossible, the UI must explain the outcome.
 
+M3-2 stages 0-3 have a default-off [Hypr adapter and prototype](hypr-prototype/README.md):
+observation maps the backend's monitors/workspaces/toplevels/focused data,
+dispatch is a separate allowlist opt-in, special-workspace UI is inactive and
+per-monitor ownership is explicitly not claimed. Only the native Disabled mode
+is recorded so far. Stages 4/5 have bounded
+[groundwork](tiling-prototype/README.md): a pure tiling service with an
+off/observe/interactive opt-in, an allowlist-gated interactive mode, a
+feature-detected wrapper for the backend `Tiling` controller, and the
+fitting-failure explanation decided on the original toast surface. The
+fixture covers both backend pin shapes; only the native Disabled mode is
+recorded. Native Observe/Dispatch/Interactive, live tiling against real
+windows, the remaining M3-2 stages (decorations, taskbar) and the full M3
+scenario matrix remain unvalidated.
+
 ## M4: complete shell and packaging
 
 Expand to dashboard, launcher, sidebar, notifications, OSD, and the remaining

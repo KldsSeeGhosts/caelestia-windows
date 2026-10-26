@@ -1,0 +1,19 @@
+﻿2026-10-25 19:55:13.801  INFO: Launching config: "D:/AiStack/caelestia-windows/windows/.local/build/shell-runs/hypr-20261025-195513-435/shell.qml"
+2026-10-25 19:55:13.802  INFO: Shell ID: "dc74e7bd637598038e63debdae97c3a5" Path ID "dc74e7bd637598038e63debdae97c3a5"
+2026-10-25 19:55:13.823  INFO: Saving logs to "C:/Users/Ermin/AppData/Local/quickshell/run/by-id/kep1gmhnt/log.qslog"
+2026-10-25 19:55:13.854  INFO quickshell.windows.blur: Blur behind panels is turned off by QS_WINDOWS_BLUR.
+2026-10-25 19:55:13.858  INFO quickshell.windows.blur: No layer rules file found (looked for D:/AiStack/caelestia-windows/windows/.local/build/shell-runs/hypr-20261025-195513-435/defaults/windows/layerrules.json ), blur behind panels is off.
+2026-10-25 19:55:13.981 DEBUG qml: CAELESTIA_HYPR_STATUS hypr=0 dispatch=0
+2026-10-25 19:55:13.982 DEBUG quickshell.windows.desktops: Desktop list changed: 1 desktops
+2026-10-25 19:55:13.982 DEBUG quickshell.windows.desktops: Current desktop: 0
+2026-10-25 19:55:13.982 DEBUG quickshell.windows.panel: Placing qs::windows::WinPanelWindow(0x15932df4fd0) at QRect(-3760,80 620x700) on "DELL S2725QS"
+2026-10-25 19:55:13.991  INFO: Configuration Loaded
+2026-10-25 19:55:14.122 DEBUG quickshell.windows.startup: First panel frame presented
+2026-10-25 19:55:14.523 DEBUG quickshell.windows.startup: Startup settled, running 1 deferred tasks
+2026-10-25 19:55:14.523  INFO quickshell.windows.desktops: VirtualDesktopAccessor.dll not found next to the executable; desktop switching falls back to keyboard shortcuts.
+2026-10-25 19:55:15.123 DEBUG qml: CAELESTIA_HYPR_SCREEN {"index":1,"name":"DELL S2725QS","x":-3840,"y":0,"dpr":1.75,"width":620,"height":700}
+2026-10-25 19:55:15.123 DEBUG qml: CAELESTIA_HYPR_INITIAL {"status":"disabled","reason":"Hyprland observation is disabled.","enabled":false,"dispatchEnabled":false,"backendRequested":false,"backendLoaded":false,"initialized":false,"usingLua":false,"monitorCount":0,"workspaceCount":0,"toplevelCount":0,"focusedMonitorId":-1,"focusedMonitorName":"","focusedWorkspaceId":-1,"focusedWorkspaceName":"","activeWsId":1,"activeToplevelTitle":"","activeToplevelClass":"","specialWorkspaceName":"","specialCount":0,"monitorActiveWorkspaceIds":[],"globalFocusMatch":true,"workspaceMonitorIds":[],"workspacesLoaded":false,"workspacesMonitorId":-1,"workspaceIds":[],"specialLoaded":false,"specialWsIds":[],"specialActiveId":-1,"activeWindowLoaded":false,"activeWindowTitle":"","commandsSent":0,"refusals":0,"consumed":0,"lastRefusalReason":"","lastDispatch":""}
+2026-10-25 19:55:17.123 DEBUG qml: CAELESTIA_HYPR_FINAL {"status":"disabled","reason":"Hyprland observation is disabled.","enabled":false,"dispatchEnabled":false,"backendRequested":false,"backendLoaded":false,"initialized":false,"usingLua":false,"monitorCount":0,"workspaceCount":0,"toplevelCount":0,"focusedMonitorId":-1,"focusedMonitorName":"","focusedWorkspaceId":-1,"focusedWorkspaceName":"","activeWsId":1,"activeToplevelTitle":"","activeToplevelClass":"","specialWorkspaceName":"","specialCount":0,"monitorActiveWorkspaceIds":[],"globalFocusMatch":true,"workspaceMonitorIds":[],"workspacesLoaded":false,"workspacesMonitorId":-1,"workspaceIds":[],"specialLoaded":false,"specialWsIds":[],"specialActiveId":-1,"activeWindowLoaded":false,"activeWindowTitle":"","commandsSent":0,"refusals":0,"consumed":0,"lastRefusalReason":"","lastDispatch":""}
+2026-10-25 19:55:17.167 DEBUG qml: CAELESTIA_HYPR_CAPTURE file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/hypr-20261025-195513-435.png
+2026-10-25 19:55:17.167 DEBUG qml: CAELESTIA_HYPR_PASS 6.11.2
+

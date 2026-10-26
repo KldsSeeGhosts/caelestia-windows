@@ -6,7 +6,7 @@ param(
     # slice under windows/<name>-prototype with its own shell.qml and
     # sources.json manifest. One slice per stage. 'combined' unions the M1
     # manifest with every service slice manifest plus the combined adapters.
-    [ValidateSet('shell', 'audio', 'battery', 'media', 'brightness', 'network', 'bluetooth', 'apps', 'tray', 'notifications', 'combined')]
+    [ValidateSet('shell', 'audio', 'battery', 'media', 'brightness', 'network', 'bluetooth', 'apps', 'tray', 'notifications', 'hypr', 'tiling', 'combined')]
     [string]$Prototype = 'shell'
 )
 
@@ -46,6 +46,21 @@ if ($Prototype -eq 'combined') {
         'windows/shell-prototype/adapters/modules/drawers/Panels.qml',
         'windows/shell-prototype/adapters/services/Hypr.qml'
     )) { $files.Remove($baseAdapter) }
+}
+if ($Prototype -eq 'hypr') {
+    # The base manifest stages contract-only Hypr, Workspaces and ActiveWindow
+    # adapters. This slice stages the real facade and the original components
+    # (plus their dependencies) instead.
+    $files.Remove('windows/shell-prototype/adapters/services/Hypr.qml')
+    $files.Remove('windows/shell-prototype/adapters/modules/bar/components/workspaces/Workspaces.qml')
+    $files.Remove('windows/shell-prototype/adapters/modules/bar/components/ActiveWindow.qml')
+}
+if ($Prototype -eq 'tiling') {
+    # The base manifest stages the contract-only Hypr adapter. This slice
+    # stages the real Hypr facade (failure records resolve window names when
+    # Hypr observation is separately opted in) plus the tiling service and
+    # the original toast surface with its Notifs adapter.
+    $files.Remove('windows/shell-prototype/adapters/services/Hypr.qml')
 }
 if ($Prototype -ne 'shell') {
     $sliceManifest = Get-Content -LiteralPath (Join-Path $repoRoot "windows\$Prototype-prototype\sources.json") -Raw | ConvertFrom-Json

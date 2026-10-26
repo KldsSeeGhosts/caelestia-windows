@@ -1,0 +1,139 @@
+{
+    "passed":  true,
+    "smoke":  true,
+    "prototype":  "tiling",
+    "audioMode":  "Disabled",
+    "batteryMode":  "Disabled",
+    "mediaMode":  "Disabled",
+    "networkMode":  "Disabled",
+    "hyprMode":  "Disabled",
+    "tilingMode":  "Observe",
+    "tilingEnvMode":  "observe",
+    "tilingIncluded":  "",
+    "tilingExcluded":  "ksg-shell;explorer",
+    "bluetoothMode":  "Disabled",
+    "appsMode":  "Disabled",
+    "appsSearchQuery":  "",
+    "trayMode":  "Disabled",
+    "trayFixture":  false,
+    "trayHookMode":  null,
+    "sessionMode":  "Disabled",
+    "sessionActions":  false,
+    "timedOut":  false,
+    "exitCode":  0,
+    "scaleFactor":  "native",
+    "screenIndex":  1,
+    "monitorCycle":  false,
+    "traceInput":  false,
+    "actualScreens":  [
+                          {
+                              "index":  1,
+                              "name":  "DELL S2725QS",
+                              "x":  -3840,
+                              "y":  0,
+                              "dpr":  1.75,
+                              "width":  620,
+                              "height":  700
+                          }
+                      ],
+    "captures":  [
+                     "file:///D:/AiStack/caelestia-windows/windows/.local/m3/logs/tiling-20261025-215640-088.png"
+                 ],
+    "elapsedMilliseconds":  3439,
+    "sourceRevision":  "332a2b3868dd9fef2299f11311d3e2e4ee820629",
+    "sourceDirty":  true,
+    "backendRevision":  "d10ece6ea5863667371c9863802aa8c38ac581f2",
+    "buildRecordSha256":  "4977568B7860F1BDC1D6289294D3B05C938BF0C61EF6686CBF2C55B8113A2A69",
+    "configSha256":  "6FC8F8B80AF9D45A49A4737AF51B8C43A11B97E1B59A82468F31AB4C779C6F65",
+    "command":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\m3\\quickshell\\qs.exe",
+    "arguments":  "--no-color --log-times --path \"D:\\AiStack\\caelestia-windows\\windows\\.local\\m3\\shell-runs\\tiling-20261025-215640-088\\shell.qml\"",
+    "executableSha256":  "AE8B0D9C296ED256B08575047F1B6E4811A202D2E531EF88A44679DCF4F5B115",
+    "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\m3\\shell-runs\\tiling-20261025-215640-088",
+    "profile":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\m3\\tiling-prototype-profile",
+    "sources":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\m3\\logs\\tiling-20261025-215640-088.sources.json",
+    "screenshot":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\m3\\logs\\tiling-20261025-215640-088.png",
+    "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\m3\\logs\\tiling-20261025-215640-088.stdout.log",
+    "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\m3\\logs\\tiling-20261025-215640-088.stderr.log",
+    "audioSnapshots":  [
+
+                       ],
+    "batterySnapshots":  [
+
+                         ],
+    "mediaSnapshots":  [
+
+                       ],
+    "networkSnapshots":  [
+
+                         ],
+    "hyprSnapshots":  [
+
+                      ],
+    "bluetoothSnapshots":  [
+
+                           ],
+    "appsSnapshots":  [
+
+                      ],
+    "traySnapshots":  [
+
+                      ],
+    "tilingSnapshots":  [
+                            {
+                                "phase":  "INITIAL",
+                                "state":  {
+                                              "requestedMode":  "observe",
+                                              "mode":  "observe",
+                                              "smoke":  true,
+                                              "status":  "observing",
+                                              "reason":  "The tiler is constructed with its options applied and stays disabled.",
+                                              "backendRequested":  true,
+                                              "backendLoaded":  true,
+                                              "backendEnabled":  false,
+                                              "includedSupported":  true,
+                                              "managedCount":  0,
+                                              "failedCount":  0,
+                                              "lastError":  "",
+                                              "includedCount":  0,
+                                              "excludedCount":  2,
+                                              "recentFailureCount":  0,
+                                              "toastCount":  0,
+                                              "toastsLoaded":  true,
+                                              "toastSurfaceWidth":  406
+                                          }
+                            },
+                            {
+                                "phase":  "FINAL",
+                                "state":  {
+                                              "requestedMode":  "observe",
+                                              "mode":  "observe",
+                                              "smoke":  true,
+                                              "status":  "observing",
+                                              "reason":  "The tiler is constructed with its options applied and stays disabled.",
+                                              "backendRequested":  true,
+                                              "backendLoaded":  true,
+                                              "backendEnabled":  false,
+                                              "includedSupported":  true,
+                                              "managedCount":  0,
+                                              "failedCount":  0,
+                                              "lastError":  "",
+                                              "includedCount":  0,
+                                              "excludedCount":  2,
+                                              "recentFailureCount":  0,
+                                              "toastCount":  0,
+                                              "toastsLoaded":  true,
+                                              "toastSurfaceWidth":  406
+                                          }
+                            }
+                        ],
+    "sessionSnapshots":  [
+
+                         ],
+    "appsSearches":  [
+
+                     ],
+    "sessionButtons":  [
+
+                       ]
+}
+

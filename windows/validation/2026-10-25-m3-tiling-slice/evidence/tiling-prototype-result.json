@@ -1,0 +1,591 @@
+﻿{
+    "passed":  true,
+    "failure":  null,
+    "sourceRevision":  "2dd2794f6e25b31263010388b725942effed106a",
+    "sourceDirty":  false,
+    "backendRevision":  "1401042969e4b7ab3cfb314fc76945ab081db3de",
+    "measurementSources":  [
+                               {
+                                   "source":  "windows/scripts/Get-DesktopState.ps1",
+                                   "sha256":  "44E06C706EE5A930A41EA723D9DFC104469D2019DDBC3BAEA71B240B71A401DE"
+                               },
+                               {
+                                   "source":  "windows/scripts/Test-TilingService.ps1",
+                                   "sha256":  "1FFDA444E29F042C2711185B1B28DCB5CC949D4985024CE5831DB516022431E9"
+                               },
+                               {
+                                   "source":  "windows/scripts/Test-TilingPrototype.ps1",
+                                   "sha256":  "0F1314A36C98C2C9AF855079A13C3C7286CD7F87C9BA56833A41FCE70982D6A5"
+                               }
+                           ],
+    "output":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\tiling-validation-20261025-212651-453",
+    "records":  [
+                    {
+                        "kind":  "fixture",
+                        "result":  {
+                                       "passed":  true,
+                                       "timedOut":  false,
+                                       "exitCode":  0,
+                                       "fixture":  {
+                                                       "assertions":  139
+                                                   },
+                                       "nativeImports":  0,
+                                       "hashMismatch":  [
+
+                                                        ],
+                                       "diagnostics":  [
+
+                                                       ],
+                                       "sourceRevision":  "2dd2794f6e25b31263010388b725942effed106a",
+                                       "sourceDirty":  false,
+                                       "qtVersion":  "6.11.2",
+                                       "runnerSha256":  "24994D434962751713F0C8932B356104B0849572B95765DAD50C13DA6BE3FA20",
+                                       "command":  "C:\\Users\\Ermin\\AppData\\Local\\caelestia-dev\\Qt\\6.11.2\\msvc2022_64\\bin\\qml.exe",
+                                       "arguments":  "\"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\tiling-tests\\tiling-fixture-20261025-212651-654\\TilingServiceTest.qml\"",
+                                       "sources":  [
+                                                       {
+                                                           "source":  "windows/services/tiling/TilingService.qml",
+                                                           "sourceSha256":  "E810435736D6F19D7978CEF9602A47FD813A274702D3B6149D563BE4BDB85EFB",
+                                                           "stagedSha256":  "E810435736D6F19D7978CEF9602A47FD813A274702D3B6149D563BE4BDB85EFB"
+                                                       },
+                                                       {
+                                                           "source":  "windows/services/tiling/TilingServiceTest.qml",
+                                                           "sourceSha256":  "BC8D89775DC5E682552DDAE5F436F3ADE5567503E2D50399CA50E4439BE910F5",
+                                                           "stagedSha256":  "BC8D89775DC5E682552DDAE5F436F3ADE5567503E2D50399CA50E4439BE910F5"
+                                                       }
+                                                   ],
+                                       "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\tiling-tests\\tiling-fixture-20261025-212651-654",
+                                       "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\tiling-fixture-20261025-212651-654.stdout.log",
+                                       "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\tiling-fixture-20261025-212651-654.stderr.log"
+                                   }
+                    },
+                    {
+                        "kind":  "tiling-disabled",
+                        "result":  {
+                                       "passed":  true,
+                                       "smoke":  true,
+                                       "prototype":  "tiling",
+                                       "audioMode":  "Disabled",
+                                       "batteryMode":  "Disabled",
+                                       "mediaMode":  "Disabled",
+                                       "networkMode":  "Disabled",
+                                       "hyprMode":  "Disabled",
+                                       "tilingMode":  "Disabled",
+                                       "tilingEnvMode":  "off",
+                                       "tilingIncluded":  "",
+                                       "tilingExcluded":  "",
+                                       "bluetoothMode":  "Disabled",
+                                       "appsMode":  "Disabled",
+                                       "appsSearchQuery":  "",
+                                       "trayMode":  "Disabled",
+                                       "trayFixture":  false,
+                                       "trayHookMode":  null,
+                                       "sessionMode":  "Disabled",
+                                       "sessionActions":  false,
+                                       "timedOut":  false,
+                                       "exitCode":  0,
+                                       "scaleFactor":  "native",
+                                       "screenIndex":  0,
+                                       "monitorCycle":  false,
+                                       "traceInput":  false,
+                                       "actualScreens":  [
+                                                             {
+                                                                 "index":  0,
+                                                                 "name":  "MAG321UX OLED",
+                                                                 "x":  0,
+                                                                 "y":  0,
+                                                                 "dpr":  1.5,
+                                                                 "width":  620,
+                                                                 "height":  700
+                                                             }
+                                                         ],
+                                       "captures":  [
+                                                        "file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/tiling-20261025-212651-962.png"
+                                                    ],
+                                       "elapsedMilliseconds":  3431,
+                                       "sourceRevision":  "2dd2794f6e25b31263010388b725942effed106a",
+                                       "sourceDirty":  false,
+                                       "backendRevision":  "1401042969e4b7ab3cfb314fc76945ab081db3de",
+                                       "buildRecordSha256":  "5DCDA9C00874708A2B2B2C0721C08F903766133AEF84110147051707F7EC5E4D",
+                                       "configSha256":  "6FC8F8B80AF9D45A49A4737AF51B8C43A11B97E1B59A82468F31AB4C779C6F65",
+                                       "command":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\quickshell\\qs.exe",
+                                       "arguments":  "--no-color --log-times --path \"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\tiling-20261025-212651-962\\shell.qml\"",
+                                       "executableSha256":  "9B518329FAC6B96973F4ECAA58A6CDFA5E413B6F9633A8F70345A706905F55AA",
+                                       "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\tiling-20261025-212651-962",
+                                       "profile":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\tiling-prototype-profile",
+                                       "sources":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\tiling-20261025-212651-962.sources.json",
+                                       "screenshot":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\tiling-20261025-212651-962.png",
+                                       "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\tiling-20261025-212651-962.stdout.log",
+                                       "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\tiling-20261025-212651-962.stderr.log",
+                                       "audioSnapshots":  [
+
+                                                          ],
+                                       "batterySnapshots":  [
+
+                                                            ],
+                                       "mediaSnapshots":  [
+
+                                                          ],
+                                       "networkSnapshots":  [
+
+                                                            ],
+                                       "hyprSnapshots":  [
+
+                                                         ],
+                                       "bluetoothSnapshots":  [
+
+                                                              ],
+                                       "appsSnapshots":  [
+
+                                                         ],
+                                       "traySnapshots":  [
+
+                                                         ],
+                                       "tilingSnapshots":  [
+                                                               {
+                                                                   "phase":  "INITIAL",
+                                                                   "state":  {
+                                                                                 "requestedMode":  "off",
+                                                                                 "mode":  "off",
+                                                                                 "smoke":  true,
+                                                                                 "status":  "disabled",
+                                                                                 "reason":  "Window tiling is off.",
+                                                                                 "backendRequested":  false,
+                                                                                 "backendLoaded":  false,
+                                                                                 "backendEnabled":  false,
+                                                                                 "includedSupported":  false,
+                                                                                 "managedCount":  0,
+                                                                                 "failedCount":  0,
+                                                                                 "lastError":  "",
+                                                                                 "includedCount":  0,
+                                                                                 "excludedCount":  0,
+                                                                                 "recentFailureCount":  0,
+                                                                                 "toastCount":  0,
+                                                                                 "toastsLoaded":  true,
+                                                                                 "toastSurfaceWidth":  406
+                                                                             }
+                                                               },
+                                                               {
+                                                                   "phase":  "FINAL",
+                                                                   "state":  {
+                                                                                 "requestedMode":  "off",
+                                                                                 "mode":  "off",
+                                                                                 "smoke":  true,
+                                                                                 "status":  "disabled",
+                                                                                 "reason":  "Window tiling is off.",
+                                                                                 "backendRequested":  false,
+                                                                                 "backendLoaded":  false,
+                                                                                 "backendEnabled":  false,
+                                                                                 "includedSupported":  false,
+                                                                                 "managedCount":  0,
+                                                                                 "failedCount":  0,
+                                                                                 "lastError":  "",
+                                                                                 "includedCount":  0,
+                                                                                 "excludedCount":  0,
+                                                                                 "recentFailureCount":  0,
+                                                                                 "toastCount":  0,
+                                                                                 "toastsLoaded":  true,
+                                                                                 "toastSurfaceWidth":  406
+                                                                             }
+                                                               }
+                                                           ],
+                                       "sessionSnapshots":  [
+
+                                                            ],
+                                       "appsSearches":  [
+
+                                                        ],
+                                       "sessionButtons":  [
+
+                                                          ]
+                                   }
+                    },
+                    {
+                        "kind":  "tiling-disabled",
+                        "result":  {
+                                       "passed":  true,
+                                       "smoke":  true,
+                                       "prototype":  "tiling",
+                                       "audioMode":  "Disabled",
+                                       "batteryMode":  "Disabled",
+                                       "mediaMode":  "Disabled",
+                                       "networkMode":  "Disabled",
+                                       "hyprMode":  "Disabled",
+                                       "tilingMode":  "Disabled",
+                                       "tilingEnvMode":  "off",
+                                       "tilingIncluded":  "",
+                                       "tilingExcluded":  "",
+                                       "bluetoothMode":  "Disabled",
+                                       "appsMode":  "Disabled",
+                                       "appsSearchQuery":  "",
+                                       "trayMode":  "Disabled",
+                                       "trayFixture":  false,
+                                       "trayHookMode":  null,
+                                       "sessionMode":  "Disabled",
+                                       "sessionActions":  false,
+                                       "timedOut":  false,
+                                       "exitCode":  0,
+                                       "scaleFactor":  "native",
+                                       "screenIndex":  1,
+                                       "monitorCycle":  false,
+                                       "traceInput":  false,
+                                       "actualScreens":  [
+                                                             {
+                                                                 "index":  1,
+                                                                 "name":  "DELL S2725QS",
+                                                                 "x":  -3840,
+                                                                 "y":  0,
+                                                                 "dpr":  1.75,
+                                                                 "width":  620,
+                                                                 "height":  700
+                                                             }
+                                                         ],
+                                       "captures":  [
+                                                        "file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/tiling-20261025-212655-814.png"
+                                                    ],
+                                       "elapsedMilliseconds":  3423,
+                                       "sourceRevision":  "2dd2794f6e25b31263010388b725942effed106a",
+                                       "sourceDirty":  false,
+                                       "backendRevision":  "1401042969e4b7ab3cfb314fc76945ab081db3de",
+                                       "buildRecordSha256":  "5DCDA9C00874708A2B2B2C0721C08F903766133AEF84110147051707F7EC5E4D",
+                                       "configSha256":  "6FC8F8B80AF9D45A49A4737AF51B8C43A11B97E1B59A82468F31AB4C779C6F65",
+                                       "command":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\quickshell\\qs.exe",
+                                       "arguments":  "--no-color --log-times --path \"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\tiling-20261025-212655-814\\shell.qml\"",
+                                       "executableSha256":  "9B518329FAC6B96973F4ECAA58A6CDFA5E413B6F9633A8F70345A706905F55AA",
+                                       "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\tiling-20261025-212655-814",
+                                       "profile":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\tiling-prototype-profile",
+                                       "sources":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\tiling-20261025-212655-814.sources.json",
+                                       "screenshot":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\tiling-20261025-212655-814.png",
+                                       "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\tiling-20261025-212655-814.stdout.log",
+                                       "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\tiling-20261025-212655-814.stderr.log",
+                                       "audioSnapshots":  [
+
+                                                          ],
+                                       "batterySnapshots":  [
+
+                                                            ],
+                                       "mediaSnapshots":  [
+
+                                                          ],
+                                       "networkSnapshots":  [
+
+                                                            ],
+                                       "hyprSnapshots":  [
+
+                                                         ],
+                                       "bluetoothSnapshots":  [
+
+                                                              ],
+                                       "appsSnapshots":  [
+
+                                                         ],
+                                       "traySnapshots":  [
+
+                                                         ],
+                                       "tilingSnapshots":  [
+                                                               {
+                                                                   "phase":  "INITIAL",
+                                                                   "state":  {
+                                                                                 "requestedMode":  "off",
+                                                                                 "mode":  "off",
+                                                                                 "smoke":  true,
+                                                                                 "status":  "disabled",
+                                                                                 "reason":  "Window tiling is off.",
+                                                                                 "backendRequested":  false,
+                                                                                 "backendLoaded":  false,
+                                                                                 "backendEnabled":  false,
+                                                                                 "includedSupported":  false,
+                                                                                 "managedCount":  0,
+                                                                                 "failedCount":  0,
+                                                                                 "lastError":  "",
+                                                                                 "includedCount":  0,
+                                                                                 "excludedCount":  0,
+                                                                                 "recentFailureCount":  0,
+                                                                                 "toastCount":  0,
+                                                                                 "toastsLoaded":  true,
+                                                                                 "toastSurfaceWidth":  406
+                                                                             }
+                                                               },
+                                                               {
+                                                                   "phase":  "FINAL",
+                                                                   "state":  {
+                                                                                 "requestedMode":  "off",
+                                                                                 "mode":  "off",
+                                                                                 "smoke":  true,
+                                                                                 "status":  "disabled",
+                                                                                 "reason":  "Window tiling is off.",
+                                                                                 "backendRequested":  false,
+                                                                                 "backendLoaded":  false,
+                                                                                 "backendEnabled":  false,
+                                                                                 "includedSupported":  false,
+                                                                                 "managedCount":  0,
+                                                                                 "failedCount":  0,
+                                                                                 "lastError":  "",
+                                                                                 "includedCount":  0,
+                                                                                 "excludedCount":  0,
+                                                                                 "recentFailureCount":  0,
+                                                                                 "toastCount":  0,
+                                                                                 "toastsLoaded":  true,
+                                                                                 "toastSurfaceWidth":  406
+                                                                             }
+                                                               }
+                                                           ],
+                                       "sessionSnapshots":  [
+
+                                                            ],
+                                       "appsSearches":  [
+
+                                                        ],
+                                       "sessionButtons":  [
+
+                                                          ]
+                                   }
+                    },
+                    {
+                        "kind":  "m1-regression",
+                        "result":  {
+                                       "passed":  true,
+                                       "smoke":  true,
+                                       "prototype":  "shell",
+                                       "audioMode":  "Disabled",
+                                       "batteryMode":  "Disabled",
+                                       "mediaMode":  "Disabled",
+                                       "networkMode":  "Disabled",
+                                       "hyprMode":  "Disabled",
+                                       "tilingMode":  "Disabled",
+                                       "tilingEnvMode":  "off",
+                                       "tilingIncluded":  "",
+                                       "tilingExcluded":  "",
+                                       "bluetoothMode":  "Disabled",
+                                       "appsMode":  "Disabled",
+                                       "appsSearchQuery":  "",
+                                       "trayMode":  "Disabled",
+                                       "trayFixture":  false,
+                                       "trayHookMode":  null,
+                                       "sessionMode":  "Disabled",
+                                       "sessionActions":  false,
+                                       "timedOut":  false,
+                                       "exitCode":  0,
+                                       "scaleFactor":  "native",
+                                       "screenIndex":  0,
+                                       "monitorCycle":  false,
+                                       "traceInput":  false,
+                                       "actualScreens":  [
+                                                             {
+                                                                 "index":  0,
+                                                                 "name":  "MAG321UX OLED",
+                                                                 "x":  0,
+                                                                 "y":  0,
+                                                                 "dpr":  1.5
+                                                             }
+                                                         ],
+                                       "captures":  [
+                                                        "file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/shell-20261025-212659-594.png"
+                                                    ],
+                                       "elapsedMilliseconds":  4082,
+                                       "sourceRevision":  "2dd2794f6e25b31263010388b725942effed106a",
+                                       "sourceDirty":  false,
+                                       "backendRevision":  "1401042969e4b7ab3cfb314fc76945ab081db3de",
+                                       "buildRecordSha256":  "5DCDA9C00874708A2B2B2C0721C08F903766133AEF84110147051707F7EC5E4D",
+                                       "configSha256":  "6FC8F8B80AF9D45A49A4737AF51B8C43A11B97E1B59A82468F31AB4C779C6F65",
+                                       "command":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\quickshell\\qs.exe",
+                                       "arguments":  "--no-color --log-times --path \"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\shell-20261025-212659-594\\shell.qml\"",
+                                       "executableSha256":  "9B518329FAC6B96973F4ECAA58A6CDFA5E413B6F9633A8F70345A706905F55AA",
+                                       "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\shell-20261025-212659-594",
+                                       "profile":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-prototype-profile",
+                                       "sources":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\shell-20261025-212659-594.sources.json",
+                                       "screenshot":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\shell-20261025-212659-594.png",
+                                       "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\shell-20261025-212659-594.stdout.log",
+                                       "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\shell-20261025-212659-594.stderr.log",
+                                       "audioSnapshots":  [
+
+                                                          ],
+                                       "batterySnapshots":  [
+
+                                                            ],
+                                       "mediaSnapshots":  [
+
+                                                          ],
+                                       "networkSnapshots":  [
+
+                                                            ],
+                                       "hyprSnapshots":  [
+
+                                                         ],
+                                       "bluetoothSnapshots":  [
+
+                                                              ],
+                                       "appsSnapshots":  [
+
+                                                         ],
+                                       "traySnapshots":  [
+
+                                                         ],
+                                       "tilingSnapshots":  [
+
+                                                           ],
+                                       "sessionSnapshots":  [
+                                                                {
+                                                                    "phase":  "INITIAL",
+                                                                    "state":  {
+                                                                                  "mode":  "Disabled",
+                                                                                  "run":  false,
+                                                                                  "enabled":  false,
+                                                                                  "actionsEnabled":  false,
+                                                                                  "available":  false,
+                                                                                  "status":  "disabled",
+                                                                                  "nativeRequested":  false,
+                                                                                  "backendLoaded":  false,
+                                                                                  "backendError":  "",
+                                                                                  "hibernateCapabilityKnown":  false,
+                                                                                  "canHibernate":  false,
+                                                                                  "hibernateSupported":  false,
+                                                                                  "actionGating":  true,
+                                                                                  "fallbackBlocked":  true,
+                                                                                  "actions":  {
+                                                                                                  "lock":  {
+                                                                                                               "supported":  true,
+                                                                                                               "capability":  false,
+                                                                                                               "available":  false,
+                                                                                                               "requiresConfirmation":  false
+                                                                                                           },
+                                                                                                  "logout":  {
+                                                                                                                 "supported":  true,
+                                                                                                                 "capability":  false,
+                                                                                                                 "available":  false,
+                                                                                                                 "requiresConfirmation":  true
+                                                                                                             },
+                                                                                                  "shutdown":  {
+                                                                                                                   "supported":  true,
+                                                                                                                   "capability":  false,
+                                                                                                                   "available":  false,
+                                                                                                                   "requiresConfirmation":  true
+                                                                                                               },
+                                                                                                  "reboot":  {
+                                                                                                                 "supported":  true,
+                                                                                                                 "capability":  false,
+                                                                                                                 "available":  false,
+                                                                                                                 "requiresConfirmation":  true
+                                                                                                             },
+                                                                                                  "suspend":  {
+                                                                                                                  "supported":  true,
+                                                                                                                  "capability":  false,
+                                                                                                                  "available":  false,
+                                                                                                                  "requiresConfirmation":  false
+                                                                                                              },
+                                                                                                  "hibernate":  {
+                                                                                                                    "supported":  true,
+                                                                                                                    "capability":  false,
+                                                                                                                    "available":  false,
+                                                                                                                    "requiresConfirmation":  false
+                                                                                                                },
+                                                                                                  "firmware":  {
+                                                                                                                   "supported":  true,
+                                                                                                                   "capability":  false,
+                                                                                                                   "available":  false,
+                                                                                                                   "requiresConfirmation":  true
+                                                                                                               }
+                                                                                              },
+                                                                                  "lastOutcome":  "disabled",
+                                                                                  "lastAction":  "",
+                                                                                  "lastConsumed":  true,
+                                                                                  "lastDispatched":  false,
+                                                                                  "lastRequested":  false,
+                                                                                  "lastSucceeded":  false
+                                                                              }
+                                                                },
+                                                                {
+                                                                    "phase":  "FINAL",
+                                                                    "state":  {
+                                                                                  "mode":  "Disabled",
+                                                                                  "run":  false,
+                                                                                  "enabled":  false,
+                                                                                  "actionsEnabled":  false,
+                                                                                  "available":  false,
+                                                                                  "status":  "disabled",
+                                                                                  "nativeRequested":  false,
+                                                                                  "backendLoaded":  false,
+                                                                                  "backendError":  "",
+                                                                                  "hibernateCapabilityKnown":  false,
+                                                                                  "canHibernate":  false,
+                                                                                  "hibernateSupported":  false,
+                                                                                  "actionGating":  true,
+                                                                                  "fallbackBlocked":  true,
+                                                                                  "actions":  {
+                                                                                                  "lock":  {
+                                                                                                               "supported":  true,
+                                                                                                               "capability":  false,
+                                                                                                               "available":  false,
+                                                                                                               "requiresConfirmation":  false
+                                                                                                           },
+                                                                                                  "logout":  {
+                                                                                                                 "supported":  true,
+                                                                                                                 "capability":  false,
+                                                                                                                 "available":  false,
+                                                                                                                 "requiresConfirmation":  true
+                                                                                                             },
+                                                                                                  "shutdown":  {
+                                                                                                                   "supported":  true,
+                                                                                                                   "capability":  false,
+                                                                                                                   "available":  false,
+                                                                                                                   "requiresConfirmation":  true
+                                                                                                               },
+                                                                                                  "reboot":  {
+                                                                                                                 "supported":  true,
+                                                                                                                 "capability":  false,
+                                                                                                                 "available":  false,
+                                                                                                                 "requiresConfirmation":  true
+                                                                                                             },
+                                                                                                  "suspend":  {
+                                                                                                                  "supported":  true,
+                                                                                                                  "capability":  false,
+                                                                                                                  "available":  false,
+                                                                                                                  "requiresConfirmation":  false
+                                                                                                              },
+                                                                                                  "hibernate":  {
+                                                                                                                    "supported":  true,
+                                                                                                                    "capability":  false,
+                                                                                                                    "available":  false,
+                                                                                                                    "requiresConfirmation":  false
+                                                                                                                },
+                                                                                                  "firmware":  {
+                                                                                                                   "supported":  true,
+                                                                                                                   "capability":  false,
+                                                                                                                   "available":  false,
+                                                                                                                   "requiresConfirmation":  true
+                                                                                                               }
+                                                                                              },
+                                                                                  "lastOutcome":  "disabled",
+                                                                                  "lastAction":  "",
+                                                                                  "lastConsumed":  true,
+                                                                                  "lastDispatched":  false,
+                                                                                  "lastRequested":  false,
+                                                                                  "lastSucceeded":  false
+                                                                              }
+                                                                }
+                                                            ],
+                                       "appsSearches":  [
+
+                                                        ],
+                                       "sessionButtons":  [
+                                                              {
+                                                                  "icon":  "logout",
+                                                                  "disabled":  true
+                                                              },
+                                                              {
+                                                                  "icon":  "power_settings_new",
+                                                                  "disabled":  true
+                                                              },
+                                                              {
+                                                                  "icon":  "downloading",
+                                                                  "disabled":  true
+                                                              },
+                                                              {
+                                                                  "icon":  "cached",
+                                                                  "disabled":  true
+                                                              }
+                                                          ]
+                                   }
+                    }
+                ]
+}

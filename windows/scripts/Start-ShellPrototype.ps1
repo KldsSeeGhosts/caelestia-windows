@@ -16,6 +16,12 @@ param(
     [ValidateSet('Disabled', 'ReadOnly', 'Interactive')][string]$BrightnessMode = 'Disabled',
     [switch]$Network,
     [ValidateSet('Disabled', 'ReadOnly', 'Interactive')][string]$NetworkMode = 'Disabled',
+    [switch]$Hypr,
+    [ValidateSet('Disabled', 'Observe', 'Dispatch')][string]$HyprMode = 'Disabled',
+    [switch]$Tiling,
+    [ValidateSet('Disabled', 'Observe', 'Interactive')][string]$TilingMode = 'Disabled',
+    [string]$TilingIncluded = '',
+    [string]$TilingExcluded = '',
     [switch]$Bluetooth,
     [ValidateSet('Disabled', 'ReadOnly', 'Interactive')][string]$BluetoothMode = 'Disabled',
     [switch]$Apps,
@@ -51,9 +57,11 @@ $slices = [ordered]@{
     media     = @{ On = $Media; Mode = $MediaMode; Observe = 'CAELESTIA_WINDOWS_MEDIA'; Controls = 'CAELESTIA_WINDOWS_MEDIA_CONTROLS'; ControlMode = 'Interactive' }
     brightness = @{ On = $Brightness; Mode = $BrightnessMode; Observe = 'CAELESTIA_WINDOWS_BRIGHTNESS'; Controls = 'CAELESTIA_WINDOWS_BRIGHTNESS_CONTROLS'; ControlMode = 'Interactive' }
     network   = @{ On = $Network; Mode = $NetworkMode; Observe = 'CAELESTIA_WINDOWS_NETWORK'; Controls = 'CAELESTIA_WINDOWS_NETWORK_CONTROLS'; ControlMode = 'Interactive' }
+    hypr      = @{ On = $Hypr; Mode = $HyprMode; Observe = 'CAELESTIA_WINDOWS_HYPR'; Controls = 'CAELESTIA_WINDOWS_HYPR_DISPATCH'; ControlMode = 'Dispatch' }
     bluetooth = @{ On = $Bluetooth; Mode = $BluetoothMode; Observe = 'CAELESTIA_WINDOWS_BLUETOOTH'; Controls = 'CAELESTIA_WINDOWS_BLUETOOTH_CONTROLS'; ControlMode = 'Interactive' }
     apps      = @{ On = $Apps; Mode = $AppsMode; Observe = 'CAELESTIA_WINDOWS_APPS'; Controls = 'CAELESTIA_WINDOWS_APP_LAUNCH'; ControlMode = 'Interactive' }
     tray      = @{ On = $Tray; Mode = $TrayMode; Observe = 'CAELESTIA_WINDOWS_TRAY'; Controls = 'CAELESTIA_WINDOWS_TRAY_ACTIVATION'; ControlMode = 'Interactive' }
+    tiling    = @{ On = $Tiling; Mode = $TilingMode; Custom = $true }
     session   = @{ On = $Session; Mode = $SessionMode; Observe = 'CAELESTIA_WINDOWS_SESSION'; Controls = 'CAELESTIA_WINDOWS_SESSION_ACTIONS'; ControlSwitch = $SessionActions; Stage = 'shell'; Marker = 'CAELESTIA_SHELL' }
     # Mirror mode adds its own opt-ins below; smoke never mirrors.
     notifications = @{ On = $Notifications; Mode = $NotificationsMode; Observe = 'CAELESTIA_WINDOWS_NOTIFICATIONS' }
@@ -68,6 +76,7 @@ foreach ($name in $slices.Keys) {
 }
 if ($selected.Count -gt 0 -and $MonitorCycle) { throw 'Only the M1 shell prototype implements monitor cycling.' }
 if (-not $Apps -and $AppsSearchQuery) { throw '-AppsSearchQuery requires -Apps.' }
+if (-not $Tiling -and ($TilingIncluded -or $TilingExcluded)) { throw '-TilingIncluded/-TilingExcluded require -Tiling.' }
 # The fixture preview must never run with native observation or activation.
 if ($TrayFixture -and (-not $Tray -or -not $Smoke -or $TrayMode -ne 'Disabled')) {
     throw '-TrayFixture requires -Tray -TrayMode Disabled -Smoke.'
@@ -193,6 +202,28 @@ if ($Combined) {
 }
 '@
 }
+# Hypr runs stage the original bar workspace and active-window components. The
+# original Text display type is selected because the external M3Shapes module
+# is not part of the portable build; the prototype ships only a compatibility
+# stand-in for its type. Per-monitor workspace ownership stays unclaimed, so
+# perMonitor keeps the upstream default while showUnoccupied keeps the five
+# configured slots visible on both monitors.
+if ($Hypr) {
+    $configObject = $configText | ConvertFrom-Json
+    $configObject.bar | Add-Member -NotePropertyName workspaces -NotePropertyValue ([pscustomobject]@{
+        shown = 5
+        showUnoccupied = $true
+        perMonitor = $true
+        displayType = 'Text'
+        showWindows = $true
+    }) -Force
+    $configObject.bar | Add-Member -NotePropertyName activeWindow -NotePropertyValue ([pscustomobject]@{
+        showOnHover = $false
+        compact = $false
+        inverted = $false
+    }) -Force
+    $configText = $configObject | ConvertTo-Json -Depth 10
+}
 $configText | Set-Content -LiteralPath $config -Encoding UTF8
 $logRoot = Join-Path $BuildRoot 'logs'
 New-Item -ItemType Directory -Force -Path $logRoot | Out-Null
@@ -228,6 +259,7 @@ if ($Tray) {
 # control mode (or switch) and are always off during smoke.
 foreach ($name in $slices.Keys) {
     $slice = $slices[$name]
+    if ($slice.Custom) { continue }
     $observe = $slice.On -and $slice.Mode -ne 'Disabled'
     $controls = $false
     if ($slice.Controls) {
@@ -243,6 +275,19 @@ foreach ($name in $slices.Keys) {
 # neither supplies it nor forwards it to a smoke run.
 $softwareOptIn = $env:CAELESTIA_WINDOWS_BRIGHTNESS_SOFTWARE -eq '1'
 $info.EnvironmentVariables['CAELESTIA_WINDOWS_BRIGHTNESS_SOFTWARE'] = $(if ($Brightness -and $BrightnessMode -eq 'Interactive' -and -not $Smoke -and $softwareOptIn) { '1' } else { '0' })
+# Tiling takes a mode word rather than two flags, so its opt-ins are written
+# explicitly instead of through the generic loop: off|observe|interactive,
+# and smoke always forces Interactive down to observe before the child can
+# construct anything. The allowlist/denylist are written explicitly too, so
+# an inherited value can never widen a run.
+$tilingEnvMode = 'off'
+if ($Tiling -and $TilingMode -ne 'Disabled') {
+    $tilingEnvMode = $TilingMode.ToLowerInvariant()
+    if ($tilingEnvMode -eq 'interactive' -and $Smoke) { $tilingEnvMode = 'observe' }
+}
+$info.EnvironmentVariables['CAELESTIA_WINDOWS_TILING'] = $tilingEnvMode
+$info.EnvironmentVariables['CAELESTIA_WINDOWS_TILING_INCLUDED'] = $(if ($Tiling) { $TilingIncluded } else { '' })
+$info.EnvironmentVariables['CAELESTIA_WINDOWS_TILING_EXCLUDED'] = $(if ($Tiling) { $TilingExcluded } else { '' })
 # Battery observation stays read-only; Profiles adds read-only PowerProfiles
 # observation, and ProfileWrites (the battery control mode above) additionally
 # permits explicit profile selection outside smoke.
@@ -348,6 +393,10 @@ $result = [ordered]@{
     passed = $(if ($Smoke) { $passed } else { $null }); smoke = $Smoke.IsPresent
     prototype = $kind; combined = $Combined.IsPresent; audioMode = $AudioMode; batteryMode = $BatteryMode; mediaMode = $MediaMode; brightnessMode = $BrightnessMode
     networkMode = $NetworkMode
+    hyprMode = $HyprMode
+    tilingMode = $TilingMode; tilingEnvMode = $tilingEnvMode
+    tilingIncluded = $(if ($Tiling) { $TilingIncluded } else { '' })
+    tilingExcluded = $(if ($Tiling) { $TilingExcluded } else { '' })
     bluetoothMode = $BluetoothMode; appsMode = $AppsMode; appsSearchQuery = $(if ($Apps) { $AppsSearchQuery } else { '' })
     trayMode = $TrayMode; trayFixture = $TrayFixture.IsPresent
     trayHookMode = $(if ($Tray) { $info.EnvironmentVariables['QS_WINDOWS_TRAY_HOOK'] } else { $null })

@@ -1,0 +1,19 @@
+﻿2026-10-25 21:26:52.316  INFO: Launching config: "D:/AiStack/caelestia-windows/windows/.local/build/shell-runs/tiling-20261025-212651-962/shell.qml"
+2026-10-25 21:26:52.316  INFO: Shell ID: "b5eb41ea65bf5b6561fb199357b6e506" Path ID "b5eb41ea65bf5b6561fb199357b6e506"
+2026-10-25 21:26:52.335  INFO: Saving logs to "C:/Users/Ermin/AppData/Local/quickshell/run/by-id/simsoqhnt/log.qslog"
+2026-10-25 21:26:52.364  INFO quickshell.windows.blur: Blur behind panels is turned off by QS_WINDOWS_BLUR.
+2026-10-25 21:26:52.367  INFO quickshell.windows.blur: No layer rules file found (looked for D:/AiStack/caelestia-windows/windows/.local/build/shell-runs/tiling-20261025-212651-962/defaults/windows/layerrules.json ), blur behind panels is off.
+2026-10-25 21:26:52.485 DEBUG qml: CAELESTIA_TILING_STATUS tiling=off included=0 excluded=0 status=disabled
+2026-10-25 21:26:52.495 DEBUG quickshell.windows.desktops: Desktop list changed: 1 desktops
+2026-10-25 21:26:52.495 DEBUG quickshell.windows.desktops: Current desktop: 0
+2026-10-25 21:26:52.496 DEBUG quickshell.windows.panel: Placing qs::windows::WinPanelWindow(0x2babcefea90) at QRect(80,80 620x700) on "MAG321UX OLED"
+2026-10-25 21:26:52.505  INFO: Configuration Loaded
+2026-10-25 21:26:52.629 DEBUG quickshell.windows.startup: First panel frame presented
+2026-10-25 21:26:53.030 DEBUG quickshell.windows.startup: Startup settled, running 1 deferred tasks
+2026-10-25 21:26:53.030  INFO quickshell.windows.desktops: VirtualDesktopAccessor.dll not found next to the executable; desktop switching falls back to keyboard shortcuts.
+2026-10-25 21:26:53.631 DEBUG qml: CAELESTIA_TILING_SCREEN {"index":0,"name":"MAG321UX OLED","x":0,"y":0,"dpr":1.5,"width":620,"height":700}
+2026-10-25 21:26:53.631 DEBUG qml: CAELESTIA_TILING_INITIAL {"requestedMode":"off","mode":"off","smoke":true,"status":"disabled","reason":"Window tiling is off.","backendRequested":false,"backendLoaded":false,"backendEnabled":false,"includedSupported":false,"managedCount":0,"failedCount":0,"lastError":"","includedCount":0,"excludedCount":0,"recentFailureCount":0,"toastCount":0,"toastsLoaded":true,"toastSurfaceWidth":406}
+2026-10-25 21:26:55.630 DEBUG qml: CAELESTIA_TILING_FINAL {"requestedMode":"off","mode":"off","smoke":true,"status":"disabled","reason":"Window tiling is off.","backendRequested":false,"backendLoaded":false,"backendEnabled":false,"includedSupported":false,"managedCount":0,"failedCount":0,"lastError":"","includedCount":0,"excludedCount":0,"recentFailureCount":0,"toastCount":0,"toastsLoaded":true,"toastSurfaceWidth":406}
+2026-10-25 21:26:55.667 DEBUG qml: CAELESTIA_TILING_CAPTURE file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/tiling-20261025-212651-962.png
+2026-10-25 21:26:55.667 DEBUG qml: CAELESTIA_TILING_PASS 6.11.2
+

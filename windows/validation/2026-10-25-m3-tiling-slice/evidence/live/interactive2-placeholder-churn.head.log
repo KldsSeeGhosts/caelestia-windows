@@ -1,0 +1,40 @@
+2026-10-25 22:03:03.149  INFO: Launching config: "D:/AiStack/caelestia-windows/windows/.local/m3/shell-runs/tiling-20261025-220302-667/shell.qml"
+2026-10-25 22:03:03.149  INFO: Shell ID: "8f3ff2da5fa87324ea527e12a06392d9" Path ID "8f3ff2da5fa87324ea527e12a06392d9"
+2026-10-25 22:03:03.171  INFO: Saving logs to "C:/Users/Ermin/AppData/Local/quickshell/run/by-id/g6w3dshnt/log.qslog"
+2026-10-25 22:03:03.201  INFO quickshell.windows.blur: Blur behind panels is turned off by QS_WINDOWS_BLUR.
+2026-10-25 22:03:03.205  INFO qml: CAELESTIA_TILING_BACKEND_READY supportsIncluded=1 supportsTelemetry=1
+2026-10-25 22:03:03.205 DEBUG quickshell.windows.tiling: Tiling allowlist changed to QList("title:Caelestia Tiling Test*") ; re-evaluating window membership.
+2026-10-25 22:03:03.206 DEBUG quickshell.windows.desktops: Desktop list changed: 1 desktops
+2026-10-25 22:03:03.206 DEBUG quickshell.windows.desktops: Current desktop: 0
+2026-10-25 22:03:03.207  INFO quickshell.windows.blur: No layer rules file found (looked for D:/AiStack/caelestia-windows/windows/.local/m3/shell-runs/tiling-20261025-220302-667/defaults/windows/layerrules.json ), blur behind panels is off.
+2026-10-25 22:03:03.335 DEBUG qml: CAELESTIA_TILING_STATUS tiling=interactive included=1 excluded=2 status=tiling
+2026-10-25 22:03:03.345 DEBUG quickshell.windows.panel: Placing qs::windows::WinPanelWindow(0x1cc12de99d0) at QRect(80,80 620x700) on "MAG321UX OLED"
+2026-10-25 22:03:03.356  INFO: Configuration Loaded
+2026-10-25 22:03:03.478 DEBUG quickshell.windows.panel: Taking keyboard focus for qs::windows::WinPanelWindow(0x1cc12de99d0) as it is shown
+2026-10-25 22:03:03.489 DEBUG quickshell.windows.startup: First panel frame presented
+2026-10-25 22:03:03.890 DEBUG quickshell.windows.startup: Startup settled, running 2 deferred tasks
+2026-10-25 22:03:03.890  INFO quickshell.windows.desktops: VirtualDesktopAccessor.dll not found next to the executable; desktop switching and creation are unavailable.
+2026-10-25 22:03:03.915 DEBUG quickshell.windows.tiling: Tiling "1500b78" "powershell" on "{00000000-0000-0000-0000-000000000000}" "MAG321UX OLED"
+2026-10-25 22:03:03.915 DEBUG quickshell.windows.tiling: Tiling "1cb0cbc" "powershell" on "{00000000-0000-0000-0000-000000000000}" "MAG321UX OLED"
+2026-10-25 22:03:03.947 DEBUG quickshell.windows.tiling: Tiling "1500b78" "powershell" on "{00000000-0000-0000-0000-000000000000}" "MAG321UX OLED"
+2026-10-25 22:03:03.947 DEBUG quickshell.windows.tiling: Tiling "1cb0cbc" "powershell" on "{00000000-0000-0000-0000-000000000000}" "MAG321UX OLED"
+2026-10-25 22:03:03.979 DEBUG quickshell.windows.tiling: Tiling "1500b78" "powershell" on "{00000000-0000-0000-0000-000000000000}" "MAG321UX OLED"
+2026-10-25 22:03:03.979 DEBUG quickshell.windows.tiling: Tiling "1cb0cbc" "powershell" on "{00000000-0000-0000-0000-000000000000}" "MAG321UX OLED"
+2026-10-25 22:03:04.010 DEBUG quickshell.windows.tiling: Tiling "1500b78" "powershell" on "{00000000-0000-0000-0000-000000000000}" "MAG321UX OLED"
+2026-10-25 22:03:04.010 DEBUG quickshell.windows.tiling: Tiling "1cb0cbc" "powershell" on "{00000000-0000-0000-0000-000000000000}" "MAG321UX OLED"
+2026-10-25 22:03:04.042 DEBUG quickshell.windows.tiling: Tiling "1500b78" "powershell" on "{00000000-0000-0000-0000-000000000000}" "MAG321UX OLED"
+2026-10-25 22:03:04.042 DEBUG quickshell.windows.tiling: Tiling "1cb0cbc" "powershell" on "{00000000-0000-0000-0000-000000000000}" "MAG321UX OLED"
+2026-10-25 22:03:04.074 DEBUG quickshell.windows.tiling: Tiling "1500b78" "powershell" on "{00000000-0000-0000-0000-000000000000}" "MAG321UX OLED"
+2026-10-25 22:03:04.074 DEBUG quickshell.windows.tiling: Tiling "1cb0cbc" "powershell" on "{00000000-0000-0000-0000-000000000000}" "MAG321UX OLED"
+2026-10-25 22:03:04.105 DEBUG quickshell.windows.tiling: Tiling "1500b78" "powershell" on "{00000000-0000-0000-0000-000000000000}" "MAG321UX OLED"
+2026-10-25 22:03:04.105 DEBUG quickshell.windows.tiling: Tiling "1cb0cbc" "powershell" on "{00000000-0000-0000-0000-000000000000}" "MAG321UX OLED"
+2026-10-25 22:03:04.136 DEBUG quickshell.windows.tiling: Tiling "1500b78" "powershell" on "{00000000-0000-0000-0000-000000000000}" "MAG321UX OLED"
+2026-10-25 22:03:04.136 DEBUG quickshell.windows.tiling: Tiling "1cb0cbc" "powershell" on "{00000000-0000-0000-0000-000000000000}" "MAG321UX OLED"
+2026-10-25 22:03:04.167 DEBUG quickshell.windows.tiling: Tiling "1500b78" "powershell" on "{00000000-0000-0000-0000-000000000000}" "MAG321UX OLED"
+2026-10-25 22:03:04.167 DEBUG quickshell.windows.tiling: Tiling "1cb0cbc" "powershell" on "{00000000-0000-0000-0000-000000000000}" "MAG321UX OLED"
+2026-10-25 22:03:04.198 DEBUG quickshell.windows.tiling: Tiling "1500b78" "powershell" on "{00000000-0000-0000-0000-000000000000}" "MAG321UX OLED"
+2026-10-25 22:03:04.198 DEBUG quickshell.windows.tiling: Tiling "1cb0cbc" "powershell" on "{00000000-0000-0000-0000-000000000000}" "MAG321UX OLED"
+2026-10-25 22:03:04.229 DEBUG quickshell.windows.tiling: Tiling "1500b78" "powershell" on "{00000000-0000-0000-0000-000000000000}" "MAG321UX OLED"
+2026-10-25 22:03:04.229 DEBUG quickshell.windows.tiling: Tiling "1cb0cbc" "powershell" on "{00000000-0000-0000-0000-000000000000}" "MAG321UX OLED"
+2026-10-25 22:03:04.260 DEBUG quickshell.windows.tiling: Tiling "1500b78" "powershell" on "{00000000-0000-0000-0000-000000000000}" "MAG321UX OLED"
+2026-10-25 22:03:04.260 DEBUG quickshell.windows.tiling: Tiling "1cb0cbc" "powershell" on "{00000000-0000-0000-0000-000000000000}" "MAG321UX OLED"

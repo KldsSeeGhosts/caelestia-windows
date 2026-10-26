@@ -80,6 +80,32 @@ For the next development session, start with [HANDOFF.md](HANDOFF.md).
   adapter assertions, Disabled/ReadOnly runs at 150%/175%, a three-icon fixture
   preview, and unchanged Explorer/taskbar state. Live items, activation and
   interception ownership remain unvalidated.
+- A default-off [Hyprland adapter prototype](hypr-prototype/README.md) covers
+  M3-2 stages 0-3 for the bar workspace and active-window components.
+  `CAELESTIA_WINDOWS_HYPR=1` observes the pinned backend's Hyprland data;
+  `CAELESTIA_WINDOWS_HYPR_DISPATCH=1` separately permits an allowlist of
+  workspace/move/graceful-close dispatches. Special-workspace UI stays inactive,
+  the backend's global focused workspace is documented per monitor, and the
+  `killwindow` translation is a graceful `WM_CLOSE`. No `Tiling`, `WindowManager`
+  or `Taskbar` object is constructed. The fixture covers default-off
+  construction, mapping, the global-focus limitation, every allowlisted and
+  refused dispatch form and injection attempts. Only the native Disabled mode
+  is recorded; native Observe/Dispatch and the original components against a
+  live desktop remain untested.
+- A default-off [tiling slice](tiling-prototype/README.md) grounds M3-2 stages
+  4/5 and the M3-3 fitting-failure explanation.
+  `CAELESTIA_WINDOWS_TILING=off|observe|interactive` gates everything: `off`
+  never imports the backend `Tiling` singleton, `observe` constructs and
+  applies `included`/`excluded` options with `enabled` false, and `interactive`
+  may enable only with a non-empty allowlist (`CAELESTIA_WINDOWS_TILING_INCLUDED`)
+  on a backend that supports one — smoke forces it down to observe. Fitting
+  failures are explained through the original toast surface with per-reason
+  copy and both rate limits. The shared build pins a backend without the
+  allowlist/telemetry members, so every new member is feature-detected and
+  interactive truthfully refuses. The fixture covers both backend shapes
+  (139 assertions); [tiling evidence](validation/2026-10-25-m3-tiling-slice/README.md)
+  records the Disabled-only native runs and leaves all Observe/Interactive
+  native behavior to the orchestrator's live plan.
 
 ## Checkout and inspect
 
