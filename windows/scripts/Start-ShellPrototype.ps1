@@ -219,7 +219,7 @@ if ($Combined) {
     "vimKeybinds": true,
     "commands": {"logout":[],"shutdown":[],"hibernate":[],"reboot":[]}
   },
-  "paths": {"sessionGif":""},
+  "paths": {"sessionGif":"root:/assets/kurukuru.gif"},
   "dashboard": {"enabled":true,"showOnHover":true},
   "launcher": {"enabled":true,"showOnHover":true},
   "sidebar": {"enabled":true,"showOnHover":true},
