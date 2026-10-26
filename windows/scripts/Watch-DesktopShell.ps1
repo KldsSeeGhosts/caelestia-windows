@@ -7,6 +7,7 @@ Add-Type -Path (Join-Path $PSScriptRoot 'DesktopTakeover.cs') -ReferencedAssembl
 $spec = Get-Content -LiteralPath $LaunchSpec -Raw | ConvertFrom-Json
 $hideTaskbar = $false
 $restartOnCrash = $true
+$suppression = 'hide'
 if ($spec.ConfigPath -and (Test-Path -LiteralPath $spec.ConfigPath)) {
     $config = Get-Content -LiteralPath $spec.ConfigPath -Raw | ConvertFrom-Json
     foreach ($setting in @('hideTaskbar', 'restartOnCrash')) {
@@ -16,5 +17,11 @@ if ($spec.ConfigPath -and (Test-Path -LiteralPath $spec.ConfigPath)) {
             else { $restartOnCrash = $config.windows.$setting }
         }
     }
+    if ($config.windows -and $config.windows.PSObject.Properties['taskbarSuppression']) {
+        $suppression = $config.windows.taskbarSuppression
+        if ($suppression -isnot [string] -or $suppression -cnotin @('hide', 'invisible')) {
+            throw 'windows.taskbarSuppression must be "hide" or "invisible".'
+        }
+    }
 }
-exit [Caelestia.Takeover.Supervisor]::Run([IO.Path]::GetFullPath($LaunchSpec), $hideTaskbar, $restartOnCrash)
+exit [Caelestia.Takeover.Supervisor]::Run([IO.Path]::GetFullPath($LaunchSpec), $hideTaskbar, $restartOnCrash, ($suppression -ceq 'invisible'))

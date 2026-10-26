@@ -65,10 +65,75 @@ restores its owned desktop changes on exit, and never starts a second tiler.
 `Restore-Desktop.ps1` is the emergency recovery command; restarting Explorer
 requires its separate explicit flag.
 
+### Experimental invisible taskbar
+
+With `hideTaskbar: true`, setting `windows.taskbarSuppression` to `"invisible"`
+adds an empty window region to Explorer's primary and secondary taskbar HWNDs
+before the existing hides. The default, `"hide"`, does not change regions.
+This is an unvalidated experiment, not a guarantee of zero visible frames or
+input transparency. No window styles, layered attributes, keyboard hooks, or
+Windows auto-hide preferences are changed. New Explorer windows are discovered
+on show, broadcast and polling; a new window can paint before discovery, and
+Explorer can change its region between checks. TaskbarCreated is not trusted
+as proof of an Explorer restart because Quickshell also broadcasts it.
+
+[SetWindowRgn](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setwindowrgn)
+documents clipping to the window region and transfer of region ownership.
+[TaskbarXI's Windows 11 source](https://github.com/TaskbarXI/TaskbarXI/blob/main/Taskbar11.cpp)
+uses an empty taskbar region, but this does not establish correctness on build
+26300 or across Explorer relayouts. The experiment avoids layered alpha because
+it would also require preserving potentially pre-existing layered attributes;
+[Microsoft's layered-window documentation](https://learn.microsoft.com/en-us/windows/win32/winmsg/window-features)
+describes alpha and `WS_EX_TRANSPARENT` hit testing for layered windows, not
+whether Explorer's composition-hosted taskbar obeys it. Region hit testing,
+composed pixels, and reapplication must be checked live.
+
+Win and Win+T are not intercepted. Start is a separate window and should remain
+available; Win+T may focus an invisible taskbar, and its keyboard navigation
+can be confusing. Neither behavior has been validated here. If keyboard focus
+or pointer input is captured, stop the experiment; do not interpret it as
+acceptance.
+
+Each HWND's original region is recorded in `desktop-before.json` before
+mutation, including taskbars discovered later. Recovery verifies the HWND,
+Explorer PID and process creation time before restoring it, not just monitor
+identity. Clean quit, crash give-up, watchdog recovery and restart backoff
+restore regions along with the existing desktop state. If the supervisor is
+forcibly killed, run `Restore-Desktop.ps1 -SnapshotPath <desktop-before.json>`;
+without that snapshot exact prior regions cannot be reconstructed. Restarting
+Explorer is a disruptive last resort and creates new taskbar HWNDs. As with all
+external HWND modifications, a same-process HWND reuse cannot be perfectly
+distinguished. `GetWindowRgn` also reports both no region and some failures as
+ERROR, so exact recovery on every API failure cannot be guaranteed.
+
+For a controlled live test only, stop the supervisor and make all Explorer
+taskbars visible, then run:
+
+```powershell
+powershell -NoProfile -File windows/scripts/Test-InvisibleTaskbarProbe.ps1 -OutputDirectory "$env:TEMP\caelestia-taskbar-probe-unique" -Seconds 5 -IntervalMilliseconds 100
+```
+
+The probe refuses an active supervisor, records a durable recovery snapshot,
+captures a baseline and sampled screen pixels for each full taskbar monitor, and
+restores and verifies regions in `finally`. Full-monitor captures cover both
+the auto-hide edge strip and slide-up area without guessing the revealed size.
+They include private screen content and can make sampling substantially slower.
+It does not force the taskbars to show or generate edge hover. During a controlled
+run the tester must exercise edge hover and separately test pointer click-through.
+Inspect the PNGs against the baseline: hashes and `IsWindowVisible` do not prove
+that taskbar pixels are absent or input passes through. Sampling is not a
+frame-perfect or 5 ms exposure measurement.
+If interrupted by forced termination, use its snapshot for emergency recovery.
+Then test the installed experimental configuration under orchestrator control,
+including transitions, startup, multiple monitors, Explorer restart, pointer
+click-through, Win and Win+T, clean exit and crash recovery. Do not run the probe
+concurrently with the supervisor.
+
 When enabled, an Explorer-process WinEvent show hook supplements the existing
 250 ms reconciliation timer. After twelve shows on the same Explorer-owned
 window within 75 ms of our preceding event hide returns, all within two seconds,
-it pauses event-driven hiding for five seconds while the timer continues.
+it pauses event-driven hiding and region reapplication for five seconds while
+the timer continues to reconcile both.
 Separate, slower relayouts and shows on different windows do not share a count.
 The supervisor's `taskbar-actions.jsonl` records show observations, hide calls,
 hook installation/failure and event-backoff transitions. `Source` distinguishes
