@@ -17,6 +17,15 @@
     "path": "windows/deps/m3shapes",
     "role": "Material 3 Expressive shape QML plugin. Upstream Caelestia split it into this external project (caelestia-dots/shell 24aa15ee) and pins the same revision in flake.nix/flake.lock. The Windows portable plugin build compiles and installs the M3Shapes QML module."
   },
+  "schemeCli": {
+    "repository": "https://github.com/caelestia-dots/cli.git",
+    "revision": "5e804b10c146c9f3278b2da37c8e4b5d8e9708d9",
+    "pythonPackages": {
+      "materialyoucolor": "3.0.4",
+      "pillow": "13.0.0"
+    },
+    "role": "Dynamic Material You scheme generation. Installed into a virtual environment under the isolated combined profile, never into the repository; only its scheme/material modules are used, not the Linux theme writer."
+  },
   "iiWindowsReference": {
     "repository": "https://github.com/nunreasonable/ii-windows.git",
     "revision": "b59ac3b1389c1d562bec8a81aa3f6fb6480ca6b1",
