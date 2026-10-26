@@ -158,23 +158,31 @@ struct FontConfig {
         CONFIG_SUBOBJECT(FontConfig##Style##Small, small)                                                              \
     };
 
+// Windows registers the bundled font under its display family name. Keep this
+// default in the platform boundary so existing profiles need no config rewrite.
+#ifdef Q_OS_WIN
+#define CAELESTIA_SANS_FAMILY u"Google Sans Flex"_s
+#else
+#define CAELESTIA_SANS_FAMILY u"GoogleSansFlex"_s
+#endif
+
 // clang-format off
-FONT_STYLE(Headline, u"GoogleSansFlex"_s,
+FONT_STYLE(Headline, CAELESTIA_SANS_FAMILY,
     FONT({ .size = 32, .weight = QFont::Medium }),
     FONT({ .size = 28, .weight = QFont::Medium }),
     FONT({ .size = 24, .weight = QFont::Medium })
 )
-FONT_STYLE(Title, u"GoogleSansFlex"_s,
+FONT_STYLE(Title, CAELESTIA_SANS_FAMILY,
     FONT({ .size = 22, .weight = QFont::Medium }),
     FONT({ .size = 16, .weight = QFont::Medium }),
     FONT({ .size = 14, .weight = QFont::Medium })
 )
-FONT_STYLE(Body, u"GoogleSansFlex"_s,
+FONT_STYLE(Body, CAELESTIA_SANS_FAMILY,
     FONT({ .size = 16 }),
     FONT({ .size = 14 }),
     FONT({ .size = 12 })
 )
-FONT_STYLE(Label, u"GoogleSansFlex"_s,
+FONT_STYLE(Label, CAELESTIA_SANS_FAMILY,
     FONT({ .size = 14, .weight = QFont::Medium }),
     FONT({ .size = 12, .weight = QFont::Medium }),
     FONT({ .size = 11 })
@@ -205,6 +213,7 @@ class CAELESTIA_CONFIG_API FontStyleIcon : public settings::ObjectNode {
 #undef FONT
 #undef FONT_CONFIG
 #undef FONT_STYLE
+#undef CAELESTIA_SANS_FAMILY
 
 class CAELESTIA_CONFIG_API AppearanceFont : public settings::ObjectNode {
     CONFIG_NODE(AppearanceFont, settings::ObjectNode)

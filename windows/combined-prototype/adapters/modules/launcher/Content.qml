@@ -110,11 +110,9 @@ Item {
         Component.onCompleted: forceActiveFocus()
 
         Connections {
-            function onLauncherChanged(): void {
-                if (!root.screenState.launcher)
-                    search.text = "";
-            }
-
+            // The wrapper destroys this content after its close animation.
+            // Retain the search until then so closing the wallpaper picker
+            // cannot start an app-list incubation in the dying context.
             function onSessionChanged(): void {
                 if (!root.screenState.session)
                     search.forceActiveFocus();
