@@ -2,6 +2,8 @@
 param(
     [Parameter(Mandatory)][string]$QtPrefix,
     [string]$BuildRoot,
+    # Separate writable staging/profile/log location when reusing a shared build.
+    [string]$RunRoot,
     [switch]$Smoke,
     [switch]$Wait,
     [switch]$MonitorCycle,
@@ -33,6 +35,9 @@ param(
     [switch]$NotificationAppOpen,
     [switch]$Combined,
     [switch]$Live,
+    [switch]$Takeover,
+    [switch]$HideTaskbar,
+    [switch]$NoRestartOnCrash,
     [ValidateSet('native', '1', '1.5', '1.75')][string]$ScaleFactor = 'native',
     [ValidateRange(0, 15)][int]$ScreenIndex = 0
 )
@@ -60,6 +65,9 @@ $slices = [ordered]@{
     notifications = @{ On = $Notifications; Mode = $NotificationsMode; Observe = 'CAELESTIA_WINDOWS_NOTIFICATIONS' }
 }
 if ($Live -and -not $Combined) { throw '-Live requires -Combined.' }
+if (($Takeover -or $HideTaskbar -or $NoRestartOnCrash) -and -not $Combined) {
+    throw 'Desktop supervision switches require -Combined.'
+}
 $selected = @($slices.Keys | Where-Object { $slices[$_].On })
 if ($selected.Count -gt 1) { throw 'Select one prototype entry point per run.' }
 if ($Combined -and $selected.Count -gt 0) { throw '-Combined cannot be combined with a single-slice entry point.' }
@@ -82,6 +90,8 @@ if ($NotificationAppOpen -and $NotificationsMode -ne 'Mirror') { throw '-Notific
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
 if (-not $BuildRoot) { $BuildRoot = Join-Path $repoRoot 'windows\.local\build' }
 $BuildRoot = [IO.Path]::GetFullPath($BuildRoot)
+if (-not $RunRoot) { $RunRoot = $BuildRoot }
+$RunRoot = [IO.Path]::GetFullPath($RunRoot)
 $exe = Join-Path $BuildRoot 'quickshell\qs.exe'
 $qmlRoot = Join-Path $BuildRoot 'install\qml'
 foreach ($required in @($exe, "$QtPrefix\bin\Qt6Core.dll", "$qmlRoot\Caelestia\Config\qmldir", "$qmlRoot\Caelestia\Windows\qmldir")) {
@@ -91,10 +101,10 @@ $kind = $(if ($selected.Count -eq 1) { $selected[0] } elseif ($Combined) { 'comb
 $stagePrototype = $(if ($kind -ne 'shell' -and $slices[$kind].Stage) { $slices[$kind].Stage } else { $kind })
 $marker = $(if ($kind -ne 'shell' -and $slices[$kind].Marker) { $slices[$kind].Marker } else { 'CAELESTIA_' + $kind.ToUpperInvariant() })
 $runName = $kind + '-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff')
-$profileRoot = Join-Path $BuildRoot "$kind-prototype-profile"
+$profileRoot = Join-Path $RunRoot "$kind-prototype-profile"
 # A fresh stage avoids stale QML types from a previous implementation.
 $stage = & (Join-Path $PSScriptRoot 'Stage-ShellPrototype.ps1') `
-    -Destination (Join-Path $BuildRoot "shell-runs\$runName") -ProfileRoot $profileRoot -Prototype $stagePrototype
+    -Destination (Join-Path $RunRoot "shell-runs\$runName") -ProfileRoot $profileRoot -Prototype $stagePrototype
 foreach ($dir in @('config', 'state', 'runtime', 'cache', 'data')) {
     New-Item -ItemType Directory -Force -Path (Join-Path $profileRoot $dir) | Out-Null
 }
@@ -195,8 +205,17 @@ if ($Combined -and $Live) {
         '"commands": {"logout":[],"shutdown":[],"hibernate":[],"reboot":[]}',
         '"commands": {"logout":["logout"],"shutdown":["shutdown"],"hibernate":["hibernate"],"reboot":["reboot"]}')
 }
+if ($Combined) {
+    # Supervisor-only settings stay separate from upstream's compiled Qt
+    # configuration schema, including when reusing an older portable build.
+    $takeoverConfig = Join-Path $profileRoot 'config\windows.json'
+    @{ windows = @{
+        hideTaskbar = $HideTaskbar.IsPresent
+        restartOnCrash = -not $NoRestartOnCrash.IsPresent
+    } } | ConvertTo-Json | Set-Content -LiteralPath $takeoverConfig -Encoding UTF8
+}
 $configText | Set-Content -LiteralPath $config -Encoding UTF8
-$logRoot = Join-Path $BuildRoot 'logs'
+$logRoot = Join-Path $RunRoot 'logs'
 New-Item -ItemType Directory -Force -Path $logRoot | Out-Null
 $screenshot = Join-Path $logRoot "$runName.png"
 $stdoutPath = Join-Path $logRoot "$runName.stdout.log"
@@ -303,15 +322,30 @@ $info.RedirectStandardOutput = $Smoke.IsPresent -or $Wait.IsPresent
 $info.RedirectStandardError = $Smoke.IsPresent -or $Wait.IsPresent
 
 $elapsed = [Diagnostics.Stopwatch]::StartNew()
-$process = [Diagnostics.Process]::Start($info)
+$supervised = $null
+if ($Takeover -or $HideTaskbar) {
+    $supervised = & (Join-Path $PSScriptRoot 'Start-DesktopShell.ps1') -StartInfo $info `
+        -StateDirectory (Join-Path $profileRoot "runtime\$runName-takeover") -ConfigPath $takeoverConfig `
+        -StdoutPath $stdoutPath -StderrPath $stderrPath
+    $process = $supervised.Watchdog
+} else {
+    $process = [Diagnostics.Process]::Start($info)
+}
 if (-not $Smoke -and -not $Wait) {
+    if ($supervised) {
+        Write-Output "Started supervised $kind prototype. Status: $($supervised.StatusPath)"
+        Write-Output "Recovery: powershell -NoProfile -File `"$PSScriptRoot\Restore-Desktop.ps1`""
+        return
+    }
     Write-Output "Started isolated $kind prototype (PID $($process.Id))."
     Write-Output "Staged source: $stage"
     Write-Output "Stop only this process when finished: Stop-Process -Id $($process.Id)"
     return
 }
-$outTask = $process.StandardOutput.ReadToEndAsync()
-$errTask = $process.StandardError.ReadToEndAsync()
+if (-not $supervised) {
+    $outTask = $process.StandardOutput.ReadToEndAsync()
+    $errTask = $process.StandardError.ReadToEndAsync()
+}
 $timedOut = $false
 if ($Smoke) {
     $timedOut = -not $process.WaitForExit(60000)
@@ -321,11 +355,25 @@ if ($Smoke) {
     $process.WaitForExit()
 }
 if ($timedOut) {
-    $process.Kill()
+    if ($supervised) {
+        & (Join-Path $PSScriptRoot 'Restore-Desktop.ps1') | Out-Null
+    } else {
+        $process.Kill()
+    }
     $process.WaitForExit()
 }
-$stdout = $outTask.GetAwaiter().GetResult()
-$stderr = $errTask.GetAwaiter().GetResult()
+if ($supervised) {
+    $supervisorStatus = Get-Content -LiteralPath $supervised.StatusPath -Raw | ConvertFrom-Json
+    $exitCode = if ($supervisorStatus.phase -in @('clean-exit', 'recovered', 'crash-give-up', 'watchdog-error')) {
+        $supervisorStatus.exitCode
+    } else { 1 }
+    $stdout = if (Test-Path -LiteralPath $stdoutPath) { [IO.File]::ReadAllText($stdoutPath) } else { '' }
+    $stderr = if (Test-Path -LiteralPath $stderrPath) { [IO.File]::ReadAllText($stderrPath) } else { '' }
+} else {
+    $exitCode = $process.ExitCode
+    $stdout = $outTask.GetAwaiter().GetResult()
+    $stderr = $errTask.GetAwaiter().GetResult()
+}
 $elapsed.Stop()
 $stdout | Set-Content -LiteralPath $stdoutPath -Encoding UTF8
 $stderr | Set-Content -LiteralPath $stderrPath -Encoding UTF8
@@ -341,7 +389,7 @@ foreach ($buttonMatch in [regex]::Matches($runOutput, 'CAELESTIA_SESSION_BUTTONS
 }
 $runtimeDiagnostics = $runOutput -match '(?m)^(?:\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3})?\s*(WARN(?:ING)?|ERROR|FATAL|CRIT(?:ICAL)?)\b'
 $passed = -not $timedOut -and -not $runtimeDiagnostics -and
-    $process.ExitCode -eq 0 -and $runOutput.Contains("${marker}_PASS") -and
+    $exitCode -eq 0 -and $runOutput.Contains("${marker}_PASS") -and
     (Test-Path -LiteralPath $screenshot)
 Copy-Item -LiteralPath (Join-Path $stage 'sources.json') -Destination (Join-Path $logRoot "$runName.sources.json")
 $result = [ordered]@{
@@ -356,7 +404,7 @@ $result = [ordered]@{
     notificationsDismiss = [bool]($mirrorMode -and $NotificationDismiss)
     notificationsAppOpen = [bool]($mirrorMode -and $NotificationAppOpen)
     mirrorSuppressedBySmoke = [bool]($Notifications -and $NotificationsMode -eq 'Mirror' -and $Smoke)
-    timedOut = $timedOut; exitCode = $process.ExitCode
+    timedOut = $timedOut; exitCode = $exitCode
     scaleFactor = $ScaleFactor; screenIndex = $ScreenIndex
     monitorCycle = $MonitorCycle.IsPresent
     traceInput = $TraceInput.IsPresent
@@ -366,7 +414,7 @@ $result = [ordered]@{
     sourceRevision = (& git -C $repoRoot rev-parse HEAD).Trim()
     sourceDirty = [bool](& git -C $repoRoot status --porcelain)
     backendRevision = (& git -C (Join-Path $repoRoot 'windows\deps\quickshell') rev-parse HEAD).Trim()
-    buildRecordSha256 = (Get-FileHash -LiteralPath (Join-Path $logRoot 'build.json')).Hash
+    buildRecordSha256 = (Get-FileHash -LiteralPath (Join-Path $BuildRoot 'logs\build.json')).Hash
     configSha256 = (Get-FileHash -LiteralPath $config).Hash
     command = $info.FileName; arguments = $info.Arguments
     executableSha256 = (Get-FileHash -LiteralPath $exe).Hash
@@ -393,6 +441,6 @@ $result['sessionButtons'] = @($sessionButtonRecords.ToArray())
 $result = $result | ConvertTo-Json -Depth 12
 $result | Set-Content -LiteralPath (Join-Path $logRoot "$runName.json") -Encoding UTF8
 Write-Output $result
-if (($Smoke -and -not $passed) -or $process.ExitCode -ne 0) {
+if (($Smoke -and -not $passed) -or $exitCode -ne 0) {
     throw "$kind prototype failed. See $stdoutPath and $stderrPath."
 }
