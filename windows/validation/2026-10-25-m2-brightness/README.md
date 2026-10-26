@@ -206,3 +206,110 @@ both backend shapes; no native strict build exists in the shared tree.
   strict write, and recovery after a strict failure on hardware.
 - The caveat that a strict success means the backend accepted the write through
   the stored route, not that a read-back confirmed the level.
+
+## Review addendum (pinned backend)
+
+This addendum records the second review's fixes on branch
+`t3/m2-brightness-adapter-v3` (based on `windows/m2-services-integration` at
+`187d3f4f`; code changes in `7a2df8f1`). The backend gitlink was already at
+`525786f`, which carries the strict brightness API, so the fake could finally
+be written against the real completion semantics read from
+`windows/deps/quickshell/src/windows/system/brightness.cpp`. The final runs
+below were made on a clean tree at `7a2df8f1` and report `sourceDirty=false`
+against backend `525786f`.
+
+Reviewed behavior that changed:
+
+1. **Stale queries no longer authorize a reconnected monitor.** Query
+   completions are matched to the request they answer through a per-screen
+   FIFO of globally unique request tokens (`_queryRequests`), kept across
+   record replacement. A completion consumes the oldest outstanding token and
+   is accepted only when it answers the token the current record issued; the
+   pinned backend answers one screen's queries in request order on a single
+   worker thread, so the oldest request is the one a completion answers. A
+   completion for a pre-reconnect request is consumed and discarded. The
+   fixture drives the review's exact ordering (query A, reconnect, query B,
+   deliver A's completion) plus a double reconnect and an
+   A,B-delivered-in-order pass.
+2. **Queued writes can no longer bypass revoked controls.** Every queued
+   dispatch goes through `write()`'s authorization of the current state, and
+   the queue is dropped the moment authorization changes: the controls opt-in
+   revoked or a strict-route policy failure latched drop it immediately
+   (disabling the service resets the records and removing the screen drops
+   the record with its queue). The fixture covers the review's case — queue
+   a target, clear `controlsEnabled`, complete the first write OK, zero
+   further backend calls — plus the policy-latch and disable drops.
+3. **A denied write snaps the displayed slider back.** A terminal failure
+   bumps a monotonic `resyncSerial` on the record (also when a queued drag
+   target is dropped). The OSD content gained a `brightnessResyncSerial`
+   hook that restores the slider's `value` binding when the serial changes;
+   it defaults to `0` and never fires on Linux, so the upstream
+   `modules/osd/Content.qml` behavior is unchanged. The facade exposes the
+   serial per monitor and the brightness prototype passes it through; its
+   smoke now asserts the hook is bound to the service serial.
+4. **The fake models the pinned backend.** Queued query completion in request
+   order (`routeChanged` then `queried`, `isDdc` true only for ddc and
+   software), queued hardware completion with per-screen in-flight state
+   finalized before `brightnessSetFinished` and exactly one
+   `brightnessWriteResult`, direct synchronous rejection of unresolved-route
+   and overlapping writes with the native error text, direct software-route
+   completion, idle-only one-way `strictRoutes` (refused while a write is
+   active, disable attempts counted and refused), and `clearSoftwareDimming`
+   that emits nothing. The fixture checks the model directly, including the
+   native argument order and strings.
+
+Assertions that were updated because they depended on the old fake's
+synchronous write completion: the strict-write, clamp, coalescing, failure and
+blocked-fixture sequences now assert `pending`/`writePending` after `write()`
+and settle through an explicit `completeWrite()`; the `emitResult`,
+`emitFinish` and `respondToQuery` knobs are gone (a withheld completion is an
+undelivered queued one); the old `queryGeneration` field comparison was
+replaced by the token-ordering scenarios above; the mid-write unplug test now
+also carries a queued target. The old-pin `OldBackend` still answers
+synchronously — only feature detection and write refusal are asserted against
+it, and neither depends on completion timing.
+
+The displayed-value test for item 3 runs offscreen: a `DisplayProbe` in the
+fixture carries the same value binding and resync-serial hook as the staged
+OSD slider (an imperative drag assignment breaks the binding; the serial
+restores it), asserted through the failure, wrong-route, controls-revocation
+and policy-latch sequences. The native prototype smoke verifies the
+host-to-hook serial plumbing read-only (`osdResyncSerial` equals the selected
+monitor's serial); the FilledSlider rebind after a real denied write needs an
+`Interactive` run and remains untested.
+
+Commands (native PowerShell from the repository root):
+
+```powershell
+$qtPrefix = "$env:LOCALAPPDATA\caelestia-dev\Qt\6.11.2\msvc2022_64"
+$buildRoot = 'D:\AiStack\caelestia-windows\windows\.local\build'
+powershell -NoProfile -File windows/scripts/Test-BrightnessService.ps1 `
+    -QtPrefix $qtPrefix -BuildRoot $buildRoot
+powershell -NoProfile -File windows/scripts/Test-BrightnessPrototype.ps1 `
+    -QtPrefix $qtPrefix -BuildRoot $buildRoot
+```
+
+| Check | Observed result |
+| --- | --- |
+| Offscreen strict-route fixture | Pass; **394 assertions**; no native imports, staging hash mismatch or QML diagnostic; `brightness-fixture-20261025-221440-912` |
+| Brightness prototype harness | Pass; 6 runs (fixture, `Disabled`/`ReadOnly` on each of the two measured screens, M1 regression); desktop identity, gamma ramp hashes and the leaked-process check all clean; `brightness-validation-20261025-221440-634` |
+
+No shared script under `windows/scripts/` changed, so
+`Test-NetworkPrototype.ps1` was not re-run; the M1 regression above covers the
+staged shell closure that includes the `Content.qml` hook.
+
+### Untested in this addendum
+
+- Every native write path: `Disabled` and `ReadOnly` remain the only native
+  smoke modes; no real monitor brightness or gamma ramp was written, so the
+  native `brightnessWriteResult` paths, real DDC/CI denial, overlap rejection
+  and recovery are still fixture-only claims.
+- The native OSD `FilledSlider` rebind after a real denied write (needs
+  `Interactive`); the offscreen probe and the read-only host plumbing are the
+  evidence for the hook.
+- The fake's legacy (non-strict) path is a minimal occupancy model without the
+  old pin's fallback chains; it exists only for the direct model checks, and
+  the adapter is asserted never to reach it (`legacySetCalls === 0` on every
+  fake).
+- `systemBrightnessChanged` (read-back and WMI events) is still not modeled;
+  no adapter behavior depends on its timing.
