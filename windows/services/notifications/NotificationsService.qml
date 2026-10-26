@@ -2,10 +2,13 @@ import QtQuick
 
 // Windows adaptation of the bounded parts of services/Notifs.qml and
 // services/NotifData.qml. This object has no Quickshell import, constructs no
-// native server, and performs no file or image reads or writes itself: the
-// singleton facade owns FileView persistence and the injected directory
-// listing/removal, and the host owns the bounded image-cache writer. Backends,
-// paths and translations may be injected in tests.
+// native server, and performs no file or image reads, writes, listings or
+// deletions: the singleton facade owns FileView persistence. A notification
+// image is only ever accepted as an allowlisted image://icon theme name or as a
+// file already inside the staged shell assets directory; no image is copied or
+// cached. Bodies are sanitized of Markdown and HTML images before the original
+// Markdown-rendering popup/sidebar can load them.
+// Backends, paths and translations may be injected in tests.
 //
 // The notification list is the original NotifData contract consumed by
 // modules/notifications/*: summary, body, appName, appIcon, image, urgency,
@@ -95,13 +98,11 @@ QtObject {
     // that does can suppress popups without inventing a Windows notification.
     property bool popupsSuppressed: false
 
-    // Confinement roots injected by the facade. The history path is built from
-    // stateDirectory, the image-cache path from cacheDirectory, and both must be
-    // strict descendants of profileRoot. There is deliberately no HOME, XDG or
-    // upstream Paths fallback in this object.
+    // Confinement root injected by the facade. The history path is built from
+    // stateDirectory and must be a strict descendant of profileRoot. There is
+    // deliberately no HOME, XDG or upstream Paths fallback in this object.
     property string profileRoot: ""
     property string stateDirectory: ""
-    property string cacheDirectory: ""
 
     property bool historyLoaded: false
     property string historyError: ""
@@ -113,7 +114,6 @@ QtObject {
     property int protectedDismissals: 0
     property int unconfirmedDeliveries: 0
     property int confirmedDeliveries: 0
-    property int imageCacheErrors: 0
     property int pendingDeliveryId: 0
     property bool deliveryUnconfirmed: false
     property int nextRecordId: 1
@@ -144,8 +144,6 @@ QtObject {
             record.destroy();
         }
         root.list = [];
-        root.imageCacheSlots = [];
-        root.imageCacheQueue = [];
         root.historyLoaded = false;
         root.historyError = "";
         root.pendingDeliveryId = 0;
@@ -159,23 +157,17 @@ QtObject {
 
     readonly property string normalizedProfileRoot: normalizePath(profileRoot)
     readonly property string normalizedStateDirectory: normalizePath(stateDirectory)
-    readonly property string normalizedCacheDirectory: normalizePath(cacheDirectory)
 
     readonly property bool pathConfined: {
-        if (root.normalizedProfileRoot === "" || root.normalizedStateDirectory === ""
-                || root.normalizedCacheDirectory === "")
+        if (root.normalizedProfileRoot === "" || root.normalizedStateDirectory === "")
             return false;
         if (!isAbsolutePath(root.normalizedProfileRoot)
-                || !isAbsolutePath(root.normalizedStateDirectory)
-                || !isAbsolutePath(root.normalizedCacheDirectory))
+                || !isAbsolutePath(root.normalizedStateDirectory))
             return false;
-        if (root.normalizedStateDirectory === root.normalizedCacheDirectory)
-            return false;
-        if (!isUnder(root.normalizedStateDirectory, root.normalizedProfileRoot)
-                || !isUnder(root.normalizedCacheDirectory, root.normalizedProfileRoot))
+        if (!isUnder(root.normalizedStateDirectory, root.normalizedProfileRoot))
             return false;
 
-        const combined = (root.profileRoot + "|" + root.stateDirectory + "|" + root.cacheDirectory).toLowerCase();
+        const combined = (root.profileRoot + "|" + root.stateDirectory).toLowerCase();
         if (combined.indexOf("/home/") >= 0 || combined.indexOf("xdg_") >= 0
                 || combined.indexOf("$home") >= 0 || combined.indexOf("${home}") >= 0
                 || combined.indexOf("paths.state") >= 0 || combined.indexOf("paths.cache") >= 0)
@@ -187,25 +179,19 @@ QtObject {
     readonly property string pathError: {
         if (root.normalizedProfileRoot === "")
             return "The isolated profile root is missing.";
-        if (root.normalizedStateDirectory === "" || root.normalizedCacheDirectory === "")
-            return "The isolated profile state or cache directory is missing.";
+        if (root.normalizedStateDirectory === "")
+            return "The isolated profile state directory is missing.";
         if (!isAbsolutePath(root.normalizedProfileRoot)
-                || !isAbsolutePath(root.normalizedStateDirectory)
-                || !isAbsolutePath(root.normalizedCacheDirectory))
+                || !isAbsolutePath(root.normalizedStateDirectory))
             return "The isolated profile paths must be absolute local paths.";
-        if (root.normalizedStateDirectory === root.normalizedCacheDirectory)
-            return "The state and cache directories must be distinct.";
         if (!isUnder(root.normalizedStateDirectory, root.normalizedProfileRoot))
             return "The notification history directory is outside the isolated profile.";
-        if (!isUnder(root.normalizedCacheDirectory, root.normalizedProfileRoot))
-            return "The notification image-cache directory is outside the isolated profile.";
         if (!root.pathConfined)
             return "The notification paths use a HOME/XDG fallback; only the isolated profile is allowed.";
         return "";
     }
 
     readonly property string historyPath: pathConfined ? normalizedStateDirectory + "/notifs.json" : ""
-    readonly property string imageCacheDirectory: pathConfined ? normalizedCacheDirectory + "/notifs" : ""
 
     // ---- Backend and ownership state --------------------------------------
 
@@ -580,8 +566,6 @@ QtObject {
         record.arrivalSequence = root.arrivalSequence;
         root.list = [record, ...root.list];
         root.deliveredNotifications++;
-        if (record.imageCachePending)
-            root.scheduleImageCache(record);
         root.settlePendingDelivery();
         root.historyChanged();
         return true;
@@ -683,7 +667,6 @@ QtObject {
             return;
 
         root.list = root.list.filter(item => item !== record);
-        root.releaseImageCache(record);
 
         if (dismiss && record.notification && record.local) {
             // Local-only removal. The local path never reaches a Windows toast.
@@ -705,7 +688,6 @@ QtObject {
 
         record.notification = null;
         record.destroy();
-        root.pruneImageCacheFiles();
         root.historyChanged();
     }
 
@@ -740,7 +722,9 @@ QtObject {
         root.pendingDeliveryContentKnown = summary !== undefined && summary !== null
             && body !== undefined && body !== null;
         root.pendingDeliverySummary = root.pendingDeliveryContentKnown ? String(summary) : "";
-        root.pendingDeliveryBody = root.pendingDeliveryContentKnown ? String(body) : "";
+        // The record exposes a sanitized body, so the expectation must compare
+        // against the same sanitized text.
+        root.pendingDeliveryBody = root.pendingDeliveryContentKnown ? root.sanitizeBody(String(body)) : "";
         root.deliveryUnconfirmed = false;
         root.deliveryConfirmation = root.pendingDeliveryId === 0 ? "idle" : "pending";
         deliveryTimer.stop();
@@ -898,6 +882,9 @@ QtObject {
             const image = root.validateImageSource(rawImage);
             if (rawImage !== "" && !image.accepted)
                 root.reportRejectedImageSource(rawImage, image.reason);
+            // Persisted history can be edited outside this process, so the app
+            // icon and body are re-validated exactly like a live one.
+            const appIcon = root.validateAppIcon(String(entry.appIcon ?? ""));
 
             const record = root._recordComponent.createObject(root, {
                 service: root,
@@ -907,11 +894,10 @@ QtObject {
                 time: new Date(Number.isFinite(time) && time > 0 ? time : Date.now()),
                 notificationId: String(entry.notificationId ?? entry.id ?? ""),
                 summary: String(entry.summary ?? ""),
-                body: String(entry.body ?? ""),
-                appIcon: String(entry.appIcon ?? ""),
+                body: root.sanitizeBody(String(entry.body ?? "")),
+                appIcon: appIcon.value,
                 appName: String(entry.appName ?? ""),
                 image: image.accepted ? image.canonical : "",
-                imageCachePending: image.accepted && root.imageSourceNeedsCache(image.canonical),
                 imageSourceRejected: rawImage !== "" && !image.accepted,
                 imageSourceError: image.accepted ? "" : image.reason,
                 expireTimeout: Number.isFinite(Number(entry.expireTimeout)) ? Number(entry.expireTimeout) : root.defaultExpireTimeout,
@@ -964,12 +950,6 @@ QtObject {
 
         merged.sort((a, b) => b.time.getTime() - a.time.getTime());
         root.list = merged;
-        for (const record of merged) {
-            if (record.imageCachePending)
-                root.scheduleImageCache(record);
-        }
-        root.pumpImageCache();
-        root.pruneImageCacheFiles();
         root.historyChanged();
     }
 
@@ -987,87 +967,97 @@ QtObject {
         return recordForNotificationId(notificationId) !== null;
     }
 
-    // ---- Image-cache boundary ---------------------------------------------
+    // ---- Image source policy ----------------------------------------------
 
-    // The original NotifData cached remote images through a hidden native
-    // window under the upstream image-cache path. This object performs no
-    // reads, stats, writes or deletions itself. It owns the source-trust
-    // decision, the hash key and the bounded writer pool; the host owns the
-    // actual window, and the facade supplies the directory listing/removal.
+    // Upstream rasterised notification images into a cache and the previous
+    // revision of this slice copied them into the profile cache. That cache is
+    // removed: this slice never copies, writes, lists, prunes or deletes a
+    // notification image file. A notification image is used only when it is the
+    // allowlisted image://icon theme provider or a file already inside the
+    // staged shell assets directory; anything else is cleared so the original
+    // card shows its existing fallback icon.
     //
-    // Trusted sources are exactly: image:// provider icons, and local absolute
-    // non-UNC files that canonicalise (separators, "." and ".." resolved,
-    // case-insensitive containment) inside the isolated profile cache or state
-    // directory, or the staged shell assets directory. Everything else is
-    // rejected before any writer or UI image sees it, so a rejected path is
-    // never opened.
+    // Providers are allowlisted, not merely prefixed. QIcon::fromTheme (the
+    // image://icon provider) loads an absolute path and honours a fallback name,
+    // so image://icon/C:/outside.png and image://icon/x?fallback=C:/outside.png
+    // were confinement bypasses. Only image://icon/<name> is accepted, where
+    // <name> is a bare theme name matching ^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$:
+    // no slash, backslash, colon, "?", "#", "%", whitespace or authority. Every
+    // other provider (image://, image:///path, image://other/..., query or
+    // fragment forms) is rejected.
+    //
+    // The local-file decision is purely lexical (no filesystem access), so a
+    // rejected source is never opened by the UI:
+    //   - percent encoding is refused everywhere (%2e%2e and %5c would
+    //     otherwise bypass the component checks after a decoder ran),
+    //   - UNC, \\?\, \\.\, // and file://host sources are refused,
+    //   - alternate data streams (any ":" beyond the drive letter) are refused,
+    //   - relative and drive-relative paths are refused,
+    //   - any component ending in "." or a space, containing "~" (an 8.3
+    //     short-name alias) or equal to "." or ".." is refused,
+    //   - the remaining absolute path must be a strict case-insensitive child
+    //     of the injected staged assets directory.
+    // The UI image URL is rebuilt from the validated path, never from the raw
+    // input, and each path segment is percent-encoded so "#", "?" and other URL
+    // delimiters in a staged file name cannot become a fragment or query.
+    //
+    // The staged assets root comes from Quickshell.shellPath("assets") and is
+    // trusted staging, not notification input. The validator is lexical: it does
+    // not detect a reparse point (junction/symlink) placed inside that trusted
+    // root, and physical containment relies on the staging step.
 
     // Injected by the facade: the staged shell's assets directory.
     property string shellAssetsDirectory: ""
-
-    // Injected by the facade: directory listing and deletion. The service only
-    // ever hands them canonical paths inside imageCacheDirectory.
-    property var imageCacheLister: null
-    property var imageCacheRemover: null
-
-    // Bounded writer pool. A host instantiates maxConcurrentImageWriters
-    // writers and binds each to imageCacheSlot(index); the service hands slots
-    // out FIFO, caps the waiting queue and records every drop.
-    readonly property int maxConcurrentImageWriters: 2
-    property int maxQueuedImageWriters: 8
-    property int maxImageCacheFiles: 64
-    property var imageCacheSlots: []
-    property var imageCacheQueue: []
-    property var imageCacheFiles: []
-    property int imageCacheCompleted: 0
-    property int imageCacheDropped: 0
-    property int imageCacheEvicted: 0
-    property int imageCachePruned: 0
-    property string lastImageCacheDropReason: ""
-    property string lastImageCacheError: ""
 
     property int rejectedImageSources: 0
     property string lastRejectedImageSource: ""
     property string lastImageSourceError: ""
 
-    readonly property string canonicalStateDirectory: canonicalImagePath(normalizedStateDirectory)
-    readonly property string canonicalCacheDirectory: canonicalImagePath(normalizedCacheDirectory)
-    readonly property string canonicalImageCacheDirectory: canonicalImagePath(imageCacheDirectory)
-    readonly property string canonicalShellAssetsDirectory: canonicalImagePath(shellAssetsDirectory)
+    readonly property string canonicalShellAssetsDirectory: canonicalLocalPath(shellAssetsDirectory)
 
-    readonly property int activeImageWriters: imageCacheSlots.filter(record => record !== null && record !== undefined).length
-    readonly property int queuedImageWriters: imageCacheQueue.length
-    readonly property var imageCacheRequests: imageCacheSlots.filter(record => record !== null && record !== undefined).concat(imageCacheQueue)
+    // A theme icon name and a provider id share one shape. The name must start
+    // alphanumerically (so no "."/".." or leading punctuation) and may contain
+    // only characters that cannot introduce a path, query, fragment, authority
+    // or percent escape.
+    function isThemeIconName(value): bool {
+        return /^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$/.test(String(value ?? ""));
+    }
 
     // Pure, Quickshell-free source validation. Returns
-    // { accepted, kind, canonical, reason } where kind is one of "provider",
-    // "cache", "data", "assets" or "rejected". No filesystem access happens
-    // here, so a rejected source is never opened by callers.
+    // { accepted, kind, canonical, path, reason } where kind is "provider",
+    // "assets" or "rejected", canonical is the URL handed to the UI and path is
+    // the validated local path (empty for providers and rejections).
     function validateImageSource(source): var {
         const reject = reason => ({
-            accepted: false, kind: "rejected", canonical: "", reason: reason
+            accepted: false, kind: "rejected", canonical: "", path: "", reason: reason
         });
 
         if (source === undefined || source === null)
             return reject("The notification image source is missing.");
-        const raw = String(source).trim();
-        if (raw === "")
+        const raw = String(source);
+        if (raw.trim() === "")
             return reject("The notification image source is empty.");
+        if (raw.indexOf("%") >= 0)
+            return reject("Percent-encoded notification image sources are not allowed.");
 
         const normalized = raw.replace(/\\/g, "/");
-        if (normalized.toLowerCase().startsWith("image://")) {
-            const provider = normalized.slice("image://".length);
-            if (provider === "" || provider.startsWith("/") || provider.indexOf("..") >= 0)
-                return reject("The notification image provider URL is invalid.");
+        if (normalized.startsWith("image://")) {
+            const prefix = "image://icon/";
+            if (!normalized.startsWith(prefix))
+                return reject("Only image://icon/<theme-name> provider URLs are allowed.");
+            const name = normalized.slice(prefix.length);
+            if (!root.isThemeIconName(name))
+                return reject("The image provider name is not a bare theme icon name.");
             return {
-                accepted: true, kind: "provider", canonical: "image://" + provider, reason: ""
+                accepted: true, kind: "provider", canonical: prefix + name,
+                path: "", reason: ""
             };
         }
 
-        // A leading // is a UNC share or a protocol-relative URL on every
-        // platform this object runs on. Neither is ever local to the profile.
+        // A leading // is a UNC share, a \\?\ or \\.\ device path, or a
+        // protocol-relative URL. None is ever a local staged asset.
         if (normalized.startsWith("//"))
-            return reject("UNC and protocol-relative sources are not allowed.");
+            return reject("UNC, device and protocol-relative sources are not allowed.");
 
         let path = normalized;
         const scheme = /^([A-Za-z][A-Za-z0-9+.\-]*):/.exec(normalized);
@@ -1090,30 +1080,61 @@ QtObject {
                 path = path.slice(1);
         }
 
-        const canonical = canonicalImagePath(path);
-        if (canonical === "")
+        const validated = root.canonicalLocalPath(path);
+        if (validated === "")
             return reject("The notification image is not an absolute local path.");
 
-        if (root.canonicalImageCacheDirectory !== ""
-                && isUnder(canonical, root.canonicalImageCacheDirectory))
-            return { accepted: true, kind: "cache", canonical: canonical, reason: "" };
-        if (root.canonicalCacheDirectory !== "" && isUnder(canonical, root.canonicalCacheDirectory))
-            return { accepted: true, kind: "cache", canonical: canonical, reason: "" };
-        if (root.canonicalStateDirectory !== "" && isUnder(canonical, root.canonicalStateDirectory))
-            return { accepted: true, kind: "data", canonical: canonical, reason: "" };
-        if (root.canonicalShellAssetsDirectory !== ""
-                && isUnder(canonical, root.canonicalShellAssetsDirectory))
-            return { accepted: true, kind: "assets", canonical: canonical, reason: "" };
-        return reject("The notification image is outside the isolated profile cache/state and the staged shell assets.");
+        const assets = root.canonicalShellAssetsDirectory;
+        if (assets === "" || !root.isUnder(validated, assets))
+            return reject("The notification image is outside the staged shell assets directory.");
+        const resolved = assets + "/" + validated.slice(assets.length + 1);
+        const canonical = root.imageUrlForPath(resolved);
+        if (canonical === "")
+            return reject("The notification image path cannot be represented as a file URL.");
+        return {
+            accepted: true, kind: "assets", canonical: canonical,
+            path: resolved, reason: ""
+        };
+    }
+
+    // App icons reach Quickshell.iconPath(), which turns the value into
+    // image://icon/<value> and therefore also reaches QIcon::fromTheme. The same
+    // allowlist applies: a bare theme name, or a staged asset file (returned as
+    // the validated local path, not a URL, because iconPath builds the provider
+    // URL itself). Anything else becomes "" so the original fallback renders.
+    function validateAppIcon(source): var {
+        const reject = reason => ({
+            accepted: false, kind: "rejected", value: "", reason: reason
+        });
+
+        if (source === undefined || source === null)
+            return { accepted: true, kind: "empty", value: "", reason: "" };
+        const raw = String(source);
+        if (raw === "")
+            return { accepted: true, kind: "empty", value: "", reason: "" };
+        if (root.isThemeIconName(raw))
+            return { accepted: true, kind: "theme", value: raw, reason: "" };
+
+        const image = root.validateImageSource(raw);
+        if (image.accepted && image.kind === "assets")
+            return { accepted: true, kind: "assets", value: image.path, reason: "" };
+        return reject("The app icon is neither a theme icon name nor a staged asset.");
     }
 
     // Lexical canonicalisation only: no filesystem access. Returns "" for a
-    // relative, drive-relative, UNC or traversal-above-root path, an
-    // alternate-data-stream name or a bare directory root.
-    function canonicalImagePath(value): string {
+    // rejected source. Windows resolves ":" as an alternate data stream and
+    // treats trailing dots/spaces and "~" short names as the same file, so the
+    // raw input must be exact before it is accepted.
+    function canonicalLocalPath(value): string {
         if (value === undefined || value === null)
             return "";
-        const path = String(value).trim().replace(/\\/g, "/");
+        const text = String(value);
+        if (text === "" || text.indexOf("%") >= 0)
+            return "";
+        const path = text.replace(/\\/g, "/");
+        if (path.startsWith("//"))
+            return "";
+
         const match = /^([A-Za-z]):\/(.*)$/.exec(path);
         if (!match)
             return "";
@@ -1121,15 +1142,19 @@ QtObject {
         const segments = match[2].split("/");
         const parts = [];
         for (const segment of segments) {
-            if (segment === "" || segment === ".")
+            if (segment === "")
                 continue;
-            if (segment === "..") {
-                if (parts.length === 0)
-                    return "";
-                parts.pop();
-                continue;
-            }
+            if (segment === "." || segment === "..")
+                return "";
+            if (segment.endsWith(".") || segment.endsWith(" "))
+                return "";
+            if (segment.indexOf("~") >= 0)
+                return "";
             if (segment.indexOf(":") >= 0)
+                return "";
+            // A lone surrogate cannot be percent-encoded and is not a real
+            // Windows file name.
+            if (/[\uD800-\uDFFF]/.test(segment))
                 return "";
             parts.push(segment);
         }
@@ -1138,266 +1163,317 @@ QtObject {
         return match[1].toUpperCase() + ":/" + parts.join("/");
     }
 
+    // Build the UI URL only from the validated path. Each segment is
+    // percent-encoded so a staged file named "banner#v2.png" keeps its "#"
+    // instead of turning it into a URL fragment (and "?" cannot become a
+    // query). encodeURIComponent leaves the unreserved characters, including
+    // the "." used by ordinary extensions, untouched.
+    function imageUrlForPath(path): string {
+        const normalized = normalizePath(path);
+        const match = /^([A-Za-z]):\/(.*)$/.exec(normalized);
+        if (!match)
+            return "";
+        const segments = [];
+        for (const segment of match[2].split("/")) {
+            if (segment === "")
+                continue;
+            let encoded = "";
+            try {
+                encoded = encodeURIComponent(segment);
+            } catch (error) {
+                return "";
+            }
+            if (encoded === "")
+                return "";
+            segments.push(encoded);
+        }
+        if (segments.length === 0)
+            return "";
+        return "file:///" + match[1].toUpperCase() + ":/" + segments.join("/");
+    }
+
     function reportRejectedImageSource(source, reason): void {
         root.rejectedImageSources++;
         root.lastRejectedImageSource = String(source ?? "");
         root.lastImageSourceError = String(reason ?? "");
     }
 
-    function imageSourceNeedsCache(source): bool {
-        if (!root.pathConfined)
-            return false;
-        const validation = root.validateImageSource(source);
-        if (!validation.accepted || validation.kind === "provider")
-            return false;
-        return !isUnder(validation.canonical, root.canonicalImageCacheDirectory);
-    }
+    // ---- Body sanitization ------------------------------------------------
 
-    function needsImageCache(record): bool {
-        return !!record && !record.closed && root.imageSourceNeedsCache(record.image);
-    }
-
-    // The destination is keyed by a hash of the canonical source, so a repeat
-    // of the same image always shares one cache file.
-    function imageCachePath(record): string {
-        if (!root.needsImageCache(record) || root.imageCacheDirectory === "")
+    // The original popup and sidebar render the body as Markdown when it
+    // contains Markdown punctuation, and Qt's Markdown importer loads image
+    // resources from inline images, reference images and raw HTML. A
+    // notification body is untrusted text, so image-bearing constructs are
+    // reduced to their alt text (or removed) before the record exposes it:
+    //   - ![alt](destination "title") and ![alt](<destination>) -> alt,
+    //   - ![alt][reference] and ![alt] -> alt,
+    //   - reference definition lines "[ref]: url ..." -> removed,
+    //   - <img>, <picture>, <source>, <svg>, <image>, <object>, <embed> and
+    //     <iframe> tags (case-insensitive, multi-line attributes, quoted ">")
+    //     -> removed.
+    // Ordinary text and ordinary links are kept. This is a lexical filter, not
+    // a Markdown parser: fenced code blocks and multi-line reference titles are
+    // not modelled, and a definition-looking line is removed even without a
+    // matching image reference. NotifData applies it to live bodies, body
+    // updates and restored history, so the UI only ever sees the result.
+    function sanitizeBody(value): string {
+        if (value === undefined || value === null)
             return "";
-        const validation = root.validateImageSource(record.image);
-        if (!validation.accepted)
+        let text = String(value);
+        if (text === "")
             return "";
-        const hash = notificationHash(validation.canonical.toLowerCase());
-        return root.imageCacheDirectory + "/" + hash + ".png";
+        text = root.stripHtmlMediaTags(text);
+        text = root.stripMarkdownReferenceDefinitions(text);
+        // An image alt may itself contain an image; a few passes handle the
+        // nesting without unbounded recursion.
+        for (let pass = 0; pass < 8; pass++) {
+            const next = root.replaceMarkdownImages(text);
+            if (next === text)
+                break;
+            text = next;
+        }
+        return text;
     }
 
-    function imageCacheSlot(index): var {
-        const slots = root.imageCacheSlots;
-        if (index < 0 || index >= slots.length)
-            return null;
-        return slots[index] ?? null;
-    }
-
-    function scheduleImageCache(record): void {
-        if (!record || record.closed || !root.list.includes(record) || !root.needsImageCache(record))
-            return;
-        if (root.imageCacheSlots.indexOf(record) >= 0 || root.imageCacheQueue.indexOf(record) >= 0)
-            return;
-
-        const queue = root.imageCacheQueue.slice();
-        if (queue.length >= root.maxQueuedImageWriters) {
-            const dropped = queue.shift();
-            if (dropped) {
-                dropped.imageCachePending = false;
-                dropped.imageCacheDropped = true;
-                dropped.imageCacheError = "The notification image-cache queue was full.";
-                root.imageCacheDropped++;
-                root.lastImageCacheDropReason = "The notification image-cache queue is full; the oldest waiting image was dropped.";
-            }
-        }
-        queue.push(record);
-        root.imageCacheQueue = queue;
-        root.pumpImageCache();
-    }
-
-    function pumpImageCache(): void {
-        if (!root.pathConfined) {
-            root.imageCacheQueue = [];
-            root.imageCacheSlots = [];
-            return;
-        }
-
-        const slots = root.imageCacheSlots.slice();
-        while (slots.length < root.maxConcurrentImageWriters)
-            slots.push(null);
-
-        const queue = [];
-        for (const record of root.imageCacheQueue) {
-            if (record && !record.closed && root.needsImageCache(record) && queue.indexOf(record) < 0)
-                queue.push(record);
-        }
-
-        for (let i = 0; i < slots.length; i++) {
-            if (slots[i] && (slots[i].closed || !root.needsImageCache(slots[i])))
-                slots[i] = null;
-            if (slots[i] === null && queue.length > 0) {
-                const next = queue.shift();
-                if (slots.indexOf(next) < 0) {
-                    slots[i] = next;
-                    next.imageCachePending = true;
+    // Remove media-bearing HTML tags with a small scanner instead of a single
+    // regex: quoted attribute values may contain ">", and an unterminated tag is
+    // dropped to the end of the text because a tolerant HTML parser could still
+    // treat it as an image. Ordinary "<" text is left alone.
+    function stripHtmlMediaTags(text): string {
+        const source = String(text ?? "");
+        const opener = /^<\/?(?:img|image|picture|source|svg|object|embed|iframe)\b/i;
+        let output = "";
+        let i = 0;
+        while (i < source.length) {
+            if (source.charAt(i) === "<") {
+                const match = opener.exec(source.slice(i, i + 12));
+                if (match) {
+                    let j = i + match[0].length;
+                    let quote = "";
+                    while (j < source.length) {
+                        const ch = source.charAt(j);
+                        if (quote !== "") {
+                            if (ch === quote)
+                                quote = "";
+                        } else if (ch === "\"" || ch === "'") {
+                            quote = ch;
+                        } else if (ch === ">") {
+                            j++;
+                            break;
+                        }
+                        j++;
+                    }
+                    i = j;
+                    continue;
                 }
             }
+            output += source.charAt(i);
+            i++;
         }
-
-        root.imageCacheQueue = queue;
-        root.imageCacheSlots = slots.slice(0, root.maxConcurrentImageWriters);
+        return output;
     }
 
-    function completeImageCache(record): void {
-        const index = root.imageCacheSlots.indexOf(record);
-        if (index < 0)
-            return;
-        const slots = root.imageCacheSlots.slice();
-        slots[index] = null;
-        root.imageCacheSlots = slots;
-        root.imageCacheCompleted++;
-        root.pumpImageCache();
+    function stripMarkdownReferenceDefinitions(text): string {
+        return String(text ?? "").replace(/^[ \t]{0,3}\[[^\]\n]+\]:[^\n]*(?:\r?\n|$)/gm, "");
     }
 
-    function abortImageCache(record, reason): void {
-        const message = String(reason ?? "The notification image could not be written.");
-        const slots = root.imageCacheSlots.slice();
-        const index = slots.indexOf(record);
-        if (index >= 0)
-            slots[index] = null;
-        const queue = root.imageCacheQueue.filter(item => item !== record);
-        const wasQueued = queue.length !== root.imageCacheQueue.length;
-        root.imageCacheSlots = slots;
-        root.imageCacheQueue = queue;
-        if (record) {
-            record.imageCachePending = false;
-            record.imageCacheError = message;
-        }
-        root.imageCacheErrors++;
-        root.lastImageCacheError = message;
-        if (index >= 0 || wasQueued)
-            root.pumpImageCache();
-    }
-
-    function releaseImageCache(record): void {
-        const slots = root.imageCacheSlots.slice();
-        const index = slots.indexOf(record);
-        if (index >= 0)
-            slots[index] = null;
-        const queue = root.imageCacheQueue.filter(item => item !== record);
-        if (index < 0 && queue.length === root.imageCacheQueue.length)
-            return;
-        root.imageCacheSlots = slots;
-        root.imageCacheQueue = queue;
-        root.pumpImageCache();
-    }
-
-    function applyCachedImage(record, path): bool {
-        if (!root.pathConfined || !record || !root.list.includes(record))
-            return false;
-
-        const validation = root.validateImageSource(path);
-        if (!validation.accepted || validation.kind !== "cache" || validation.canonical === "")
-            return false;
-        if (!isUnder(validation.canonical, root.canonicalImageCacheDirectory)
-                || !/\.png$/i.test(validation.canonical))
-            return false;
-
-        record.image = validation.canonical;
-        record.imageCachePending = false;
-        record.imageCacheError = "";
-        root.registerImageCacheFile(validation.canonical);
-        root.completeImageCache(record);
-        return true;
-    }
-
-    function markImageCacheFailed(record): void {
-        root.abortImageCache(record, root.lastImageCacheError !== ""
-            ? root.lastImageCacheError : "The notification image could not be written.");
-    }
-
-    function registerImageCacheFile(path): void {
-        const canonical = root.canonicalImagePath(path);
-        if (canonical === "" || !root.pathConfined
-                || !isUnder(canonical, root.canonicalImageCacheDirectory))
-            return;
-        const key = canonical.toLowerCase();
-        const files = root.imageCacheFiles.filter(file => file && String(file.key ?? "").toLowerCase() !== key);
-        files.push({ path: canonical, key: key, savedAt: Date.now() });
-        root.imageCacheFiles = files;
-        root.pruneImageCacheFiles();
-    }
-
-    function removeImageCacheFile(path): bool {
-        if (typeof root.imageCacheRemover !== "function")
-            return false;
-        const canonical = root.canonicalImagePath(path);
-        if (canonical === "" || root.canonicalImageCacheDirectory === ""
-                || !isUnder(canonical, root.canonicalImageCacheDirectory))
-            return false;
-        return root.imageCacheRemover(canonical) === true;
-    }
-
-    function forgetImageCacheFile(path): void {
-        const key = root.canonicalImagePath(path).toLowerCase();
-        if (key === "")
-            return;
-        for (const record of root.list) {
-            if (record && record.image && root.canonicalImagePath(record.image).toLowerCase() === key) {
-                record.image = "";
-                record.imageCachePending = false;
-            }
-        }
-    }
-
-    // Deletes cache files no retained record references, then enforces the hard
-    // file quota oldest-first. Deletion only ever targets canonical paths under
-    // imageCacheDirectory; a rejected or outside entry is skipped unread.
-    function pruneImageCacheFiles(): void {
-        if (!root.pathConfined || root.imageCacheDirectory === ""
-                || typeof root.imageCacheRemover !== "function")
-            return;
-
-        const referenced = [];
-        const addReference = value => {
-            const canonical = root.canonicalImagePath(value);
-            if (canonical !== "" && isUnder(canonical, root.canonicalImageCacheDirectory))
-                referenced.push(canonical.toLowerCase());
-        };
-        for (const record of root.list) {
-            if (record && !record.closed)
-                addReference(record.image);
-        }
-        for (const record of root.imageCacheQueue)
-            addReference(root.imageCachePath(record));
-        for (const record of root.imageCacheSlots) {
-            if (record)
-                addReference(root.imageCachePath(record));
-        }
-
-        const listing = typeof root.imageCacheLister === "function" ? root.imageCacheLister() : null;
-        const source = Array.isArray(listing) ? listing.concat(root.imageCacheFiles) : root.imageCacheFiles;
-        const known = [];
-        const seen = [];
-        for (const entry of source) {
-            const raw = typeof entry === "string" ? entry : String(entry?.path ?? "");
-            const canonical = root.canonicalImagePath(raw);
-            if (canonical === "" || !isUnder(canonical, root.canonicalImageCacheDirectory))
-                continue;
-            const key = canonical.toLowerCase();
-            if (seen.indexOf(key) >= 0)
-                continue;
-            seen.push(key);
-            const savedAt = entry && typeof entry === "object" ? Number(entry.savedAt ?? 0) : 0;
-            known.push({ path: canonical, key: key, savedAt: Number.isFinite(savedAt) ? savedAt : 0 });
-        }
-
-        const retained = [];
-        for (const file of known) {
-            if (referenced.indexOf(file.key) >= 0) {
-                retained.push(file);
+    // Replace every Markdown image with its alt text. Destinations are skipped
+    // with escape-aware delimiter matching, so "![x](file:///C:/a(b).png)" and
+    // nested alt brackets do not leave a partial destination behind.
+    function replaceMarkdownImages(text): string {
+        const source = String(text ?? "");
+        let output = "";
+        let i = 0;
+        while (i < source.length) {
+            const ch = source.charAt(i);
+            if (ch === "\\") {
+                output += source.slice(i, i + 2);
+                i += 2;
                 continue;
             }
-            if (root.removeImageCacheFile(file.path))
-                root.imageCachePruned++;
-        }
-
-        retained.sort((a, b) => a.savedAt - b.savedAt);
-        if (retained.length > root.maxImageCacheFiles) {
-            const excess = retained.length - root.maxImageCacheFiles;
-            for (let i = 0; i < excess; i++) {
-                const file = retained[i];
-                if (!root.removeImageCacheFile(file.path))
-                    continue;
-                root.imageCacheEvicted++;
-                root.forgetImageCacheFile(file.path);
+            if (ch === "!" && source.charAt(i + 1) === "[") {
+                const altEnd = root.findClosingDelimiter(source, i + 2, "[", "]");
+                if (altEnd >= 0) {
+                    const alt = source.slice(i + 2, altEnd);
+                    const marker = source.charAt(altEnd + 1);
+                    if (marker === "(") {
+                        const destinationEnd = root.findClosingDelimiter(source, altEnd + 2, "(", ")");
+                        if (destinationEnd >= 0) {
+                            output += alt;
+                            i = destinationEnd + 1;
+                            continue;
+                        }
+                    } else if (marker === "[") {
+                        const referenceEnd = root.findClosingDelimiter(source, altEnd + 2, "[", "]");
+                        if (referenceEnd >= 0) {
+                            output += alt;
+                            i = referenceEnd + 1;
+                            continue;
+                        }
+                    } else {
+                        output += alt;
+                        i = altEnd + 1;
+                        continue;
+                    }
+                }
             }
-            retained.splice(0, excess);
+            output += ch;
+            i++;
         }
-        root.imageCacheFiles = retained;
+        return output;
+    }
+
+    // Find the closing delimiter for an opening one just before start.
+    // Backslash escapes are skipped. In a "(" destination, leading whitespace
+    // is skipped and a "<...>" destination is opaque, so a ")" inside it does
+    // not end the image.
+    function findClosingDelimiter(text, start, open, close): int {
+        let depth = 1;
+        let i = start;
+        let atDestinationStart = open === "(";
+        while (i < text.length) {
+            const ch = text.charAt(i);
+            if (ch === "\\") {
+                i += 2;
+                atDestinationStart = false;
+                continue;
+            }
+            if (atDestinationStart && (ch === " " || ch === "\t" || ch === "\n" || ch === "\r")) {
+                i++;
+                continue;
+            }
+            if (atDestinationStart) {
+                atDestinationStart = false;
+                if (ch === "<") {
+                    const angleEnd = text.indexOf(">", i + 1);
+                    if (angleEnd >= 0) {
+                        i = angleEnd + 1;
+                        continue;
+                    }
+                }
+            }
+            if (ch === open) {
+                depth++;
+            } else if (ch === close) {
+                depth--;
+                if (depth === 0)
+                    return i;
+            }
+            i++;
+        }
+        return -1;
+    }
+
+    // ---- Replacement sends -------------------------------------------------
+
+    // The pinned backend parses -r/--replace-id and reports a new notification
+    // with its own id; this slice has no local replace path, so a replacement
+    // send would never confirm. It is refused before notifySend and before
+    // expectDelivery, so it cannot be reported as forwarded/unconfirmed.
+    //
+    // This mirrors notify_send.cpp option consumption exactly: every option in
+    // the backend's table is recognised (case-sensitive long names, the first
+    // character after "-"), only u/t/a/i/c/h/A/r take a following argument, and
+    // an unknown option consumes nothing. That is why ["-a", "-r", "42"] is an
+    // app name and is NOT refused, while ["-r", "+42"] is a replacement.
+    //
+    // The value goes through QString::toUInt (base 10), whose observed rules are
+    // mirrored by backendReplaceId(): optional ASCII whitespace, optional "+",
+    // decimal digits, optional ASCII whitespace, and a result <= UINT_MAX.
+    // Unicode whitespace, a negative sign, fractional values and overflow are
+    // not parsed by the backend and are not treated as replacements.
+    readonly property var notifySendShortOptions: ["u", "t", "a", "i", "c", "h", "A", "r", "e", "p", "w"]
+    readonly property var notifySendValueOptions: ["u", "t", "a", "i", "c", "h", "A", "r"]
+    readonly property var notifySendLongOptions: ({
+        "urgency": "u",
+        "expire-time": "t",
+        "app-name": "a",
+        "icon": "i",
+        "category": "c",
+        "hint": "h",
+        "action": "A",
+        "replace-id": "r",
+        "transient": "e",
+        "print-id": "p",
+        "wait": "w"
+    })
+
+    function notifySendOptionTakesValue(option): bool {
+        return root.notifySendValueOptions.indexOf(String(option)) >= 0;
+    }
+
+    // Returns the unsigned 32-bit value the backend would parse, or -1 when
+    // toUInt() would fail. Zero is a valid parsed value but means "no replace".
+    function backendReplaceId(value): int {
+        const text = String(value ?? "");
+        if (!/^[\t\n\v\f\r ]*\+?[0-9]+[\t\n\v\f\r ]*$/.test(text))
+            return -1;
+        const digits = text.replace(/^[\t\n\v\f\r ]*\+?/, "").replace(/[\t\n\v\f\r ]*$/, "");
+        const id = Number(digits);
+        if (!Number.isSafeInteger(id) || id > 4294967295)
+            return -1;
+        return id;
+    }
+
+    function replacementIdFromArgs(args): int {
+        if (!args || typeof args.length !== "number")
+            return 0;
+
+        let replacesId = 0;
+        for (let i = 0; i < args.length; i++) {
+            const arg = String(args[i] ?? "");
+            let option = "";
+            let value = "";
+            let hasValue = false;
+
+            if (arg.startsWith("--") && arg.length > 2) {
+                const eq = arg.indexOf("=");
+                const name = eq < 0 ? arg.slice(2) : arg.slice(2, eq);
+                // Long names are compared case-sensitively by the backend. Use
+                // an own-property test so inherited names are not mistaken for
+                // options.
+                const longNames = root.notifySendLongOptions;
+                option = Object.prototype.hasOwnProperty.call(longNames, name)
+                    ? String(longNames[name]) : "";
+                if (eq >= 0) {
+                    value = arg.slice(eq + 1);
+                    hasValue = true;
+                }
+            } else if (arg.startsWith("-") && arg.length > 1) {
+                const shortName = arg.charAt(1);
+                option = root.notifySendShortOptions.indexOf(shortName) >= 0 ? shortName : "";
+                if (arg.length > 2) {
+                    value = arg.slice(arg.charAt(2) === "=" ? 3 : 2);
+                    hasValue = true;
+                }
+            }
+
+            // Unknown arguments are logged and ignored by the backend; they do
+            // not consume the next argument.
+            if (option === "")
+                continue;
+
+            if (root.notifySendOptionTakesValue(option) && !hasValue) {
+                if (i + 1 >= args.length)
+                    break;
+                value = String(args[++i] ?? "");
+            }
+
+            if (option !== "r")
+                continue;
+            const parsed = root.backendReplaceId(value);
+            // A later valid -r wins; an invalid later value keeps the previous
+            // one, exactly like the backend's apply().
+            if (parsed >= 0)
+                replacesId = parsed;
+        }
+        return replacesId;
+    }
+
+    function replacementSendRefusal(args): string {
+        if (root.replacementIdFromArgs(args) <= 0)
+            return "";
+        return "Replacement notifications are not supported by this slice; the local send was refused.";
     }
 
     // ---- Small path helpers ------------------------------------------------
@@ -1421,23 +1497,6 @@ QtObject {
         if (candidate === "" || base === "")
             return false;
         return candidate.length > base.length && candidate.startsWith(base + "/");
-    }
-
-    function notificationHash(key): string {
-        let h1 = 0xdeadbeef;
-        let h2 = 0x41c6ce57;
-
-        for (let i = 0; i < key.length; i++) {
-            const ch = key.charCodeAt(i);
-            h1 = Math.imul(h1 ^ ch, 2654435761);
-            h2 = Math.imul(h2 ^ ch, 1597334677);
-        }
-        h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507);
-        h1 ^= Math.imul(h2 ^ (h2 >>> 13), 3266489909);
-        h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507);
-        h2 ^= Math.imul(h1 ^ (h1 >>> 13), 3266489909);
-        return (h2 >>> 0).toString(16).padStart(8, "0")
-            + (h1 >>> 0).toString(16).padStart(8, "0");
     }
 
     function invokeHistoricalAction(record, identifier): void {

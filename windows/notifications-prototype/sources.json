@@ -23,6 +23,5 @@
   "windows/services/notifications/NotificationsService.qml": "services/NotificationsService.qml",
   "windows/services/notifications/NotifData.qml": "services/NotifData.qml",
   "windows/services/notifications/NativeNotificationBackend.qml": "services/NativeNotificationBackend.qml",
-  "windows/services/notifications/NotifImageCache.qml": "services/NotifImageCache.qml",
   "windows/services/notifications/Notifs.qml": "services/Notifs.qml"
 }

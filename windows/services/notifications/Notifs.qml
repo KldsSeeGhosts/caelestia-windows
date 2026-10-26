@@ -2,7 +2,6 @@ pragma Singleton
 pragma ComponentBehavior: Bound
 
 import QtQuick
-import Qt.labs.folderlistmodel
 import Quickshell
 import Quickshell.Io
 import Quickshell.Windows
@@ -11,11 +10,14 @@ import Caelestia.Config
 import Caelestia.I18n
 
 // Windows replacement for the original services/Notifs.qml singleton contract.
-// The pure NotificationsService owns records, expiry, dismissal, source trust,
-// the bounded writer pool, mirroring consent and history serialization; this
-// facade adds only the opt-ins, the native loader, the Windows settings action
-// and the isolated-profile FileView. It intentionally imports no HOME/XDG path
-// object and never constructs the native server while disabled.
+// The pure NotificationsService owns records, expiry, dismissal, image source
+// trust, mirroring consent and history serialization; this facade adds only the
+// opt-ins, the native loader, the Windows settings action, the isolated-profile
+// FileView and the local send helper. It intentionally imports no HOME/XDG path
+// object and never constructs the native server while disabled. No notification
+// image is copied, written, listed or deleted: only allowlisted image://icon
+// theme names and files already inside the staged shell assets directory are
+// used.
 Singleton {
     id: root
 
@@ -34,17 +36,16 @@ Singleton {
     readonly property bool appOpenOptIn: mirrorOptIn
         && Quickshell.env("CAELESTIA_WINDOWS_NOTIFICATION_APP_OPEN") === "1"
 
-    // Quickshell's state/cache directories are the staged //@ pragma values
-    // (profile/state and profile/cache). The profile root is their parent, and
-    // the service refuses any state/cache path outside it. No upstream path
-    // fallback exists here.
+    // Quickshell's state directory is the staged //@ pragma value
+    // (profile/state). The profile root is its parent, and the service refuses
+    // a state path outside it. No upstream path fallback exists here.
     readonly property string profileRoot: {
         const state = root.normalize(Quickshell.stateDir);
         const slash = state.lastIndexOf("/");
         return slash > 0 ? state.substring(0, slash) : "";
     }
 
-    // The staged shell's assets directory is the only non-profile location a
+    // The staged shell's assets directory is the only local location a
     // notification image may come from.
     readonly property string shellAssetsDirectory: Quickshell.shellPath("assets")
 
@@ -60,10 +61,7 @@ Singleton {
         expirePopups: GlobalConfig.notifs.expire
         profileRoot: root.profileRoot
         stateDirectory: Quickshell.stateDir
-        cacheDirectory: Quickshell.cacheDir
         shellAssetsDirectory: root.shellAssetsDirectory
-        imageCacheLister: root.listImageCacheFiles
-        imageCacheRemover: root.removeImageCacheFile
         backend: nativeLoader.item ?? null
         backendError: nativeLoader.status === Loader.Error
             ? "The Windows notification backend component failed to load." : ""
@@ -142,10 +140,14 @@ Singleton {
     readonly property bool deniedPollingActive: service.deniedPollingActive
     readonly property int settingsOpenRequests: service.settingsOpenRequests
 
+    // Set when a local send is refused before reaching the backend. A
+    // replacement send (-r/--replace-id) is refused here because this slice has
+    // no local replace path; it is never reported as forwarded/unconfirmed.
+    property string lastSendRefusal: ""
+
     readonly property bool pathConfined: service.pathConfined
     readonly property string pathError: service.pathError
     readonly property string historyPath: service.historyPath
-    readonly property string imageCacheDirectory: service.imageCacheDirectory
     readonly property string historyError: service.historyError
 
     readonly property int localDismissals: service.localDismissals
@@ -156,17 +158,6 @@ Singleton {
     readonly property int rejectedImageSources: service.rejectedImageSources
     readonly property string lastRejectedImageSource: service.lastRejectedImageSource
     readonly property string lastImageSourceError: service.lastImageSourceError
-    readonly property int imageCacheErrors: service.imageCacheErrors
-    readonly property int imageCacheDropped: service.imageCacheDropped
-    readonly property int imageCacheEvicted: service.imageCacheEvicted
-    readonly property int imageCachePruned: service.imageCachePruned
-    readonly property int activeImageWriters: service.activeImageWriters
-    readonly property int queuedImageWriters: service.queuedImageWriters
-    readonly property var imageCacheRequests: service.imageCacheRequests
-
-    function imageCacheSlot(index): var {
-        return service.imageCacheSlot(index);
-    }
 
     // A bounded previous-slice UI calls these helpers. Windows has no Hyprland
     // fullscreen toplevels in this slice, and do-not-disturb is not staged.
@@ -210,54 +201,20 @@ Singleton {
         service.clearAll();
     }
 
-    function imageCachePath(record): string {
-        return service.imageCachePath(record);
-    }
-
-    function applyCachedImage(record, path): bool {
-        return service.applyCachedImage(record, path);
-    }
-
-    function markImageCacheFailed(record): void {
-        service.markImageCacheFailed(record);
-    }
-
-    // Injected into the service. The listing is only used to prune or evict
-    // files inside the confined notification image-cache directory; deletion is
-    // re-checked against that directory here as well as in the service, and a
-    // disabled or unconfined shell lists and deletes nothing.
-    function listImageCacheFiles(): var {
-        if (!root.enabled || !root.service.pathConfined)
-            return [];
-        const files = [];
-        for (let i = 0; i < root._imageCacheFileModel.count; i++) {
-            const path = String(root._imageCacheFileModel.get(i, "filePath") ?? "");
-            const modified = root._imageCacheFileModel.get(i, "modified");
-            files.push({
-                path: path,
-                savedAt: modified instanceof Date ? modified.getTime() : 0
-            });
-        }
-        return files;
-    }
-
-    function removeImageCacheFile(path): bool {
-        if (!root.enabled || !root.service.pathConfined)
-            return false;
-        const directory = root.service.imageCacheDirectory.toLowerCase();
-        const target = root.normalize(String(path ?? "")).toLowerCase();
-        if (directory === "" || !target.startsWith(directory + "/"))
-            return false;
-        return CUtils.deleteFile(Qt.resolvedUrl(String(path)));
-    }
-
     // Only the bounded host/fixture calls this. The backend's local path is the
     // only delivery path staged in this slice; it never requests system access.
     // The summary/body are part of the confirmation: a returned id that already
-    // existed must not count as a delivered send.
+    // existed must not count as a delivered send. A replacement send is refused
+    // before notifySend and before expectDelivery.
     function postLocalTest(summary, body, args): int {
+        root.lastSendRefusal = "";
         if (!root.enabled || !root.backend || root.service.status !== "local")
             return 0;
+        const refusal = root.service.replacementSendRefusal(args ?? []);
+        if (refusal !== "") {
+            root.lastSendRefusal = refusal;
+            return 0;
+        }
         const id = root.backend.notifySend(summary, body, args ?? []);
         root.service.expectDelivery(id, summary, body);
         return id;
@@ -293,19 +250,6 @@ Singleton {
         source: root.enabled ? Qt.resolvedUrl("NativeNotificationBackend.qml") : ""
     }
 
-    // Read-only view of the confined image cache used for pruning and the hard
-    // file quota. The folder is empty while disabled or unconfined, and the
-    // service never deletes anything outside imageCacheDirectory.
-    readonly property FolderListModel _imageCacheFileModel: FolderListModel {
-        folder: root.enabled && root.service.imageCacheDirectory !== ""
-            ? Qt.resolvedUrl(root.service.imageCacheDirectory) : ""
-        nameFilters: ["*.png"]
-        showDirs: false
-        showHidden: false
-        showDotAndDotDot: false
-        sortField: FolderListModel.Time
-    }
-
     // The history file is written only after a successful load and only inside
     // the isolated profile. FileView performs no read when disabled because the
     // path stays empty.
@@ -317,12 +261,10 @@ Singleton {
 
         onLoaded: {
             root.service.restoreHistory(text());
-            root.service.pruneImageCacheFiles();
         }
         onLoadFailed: error => {
             if (error === FileViewError.FileNotFound) {
                 root.service.restoreHistory("");
-                root.service.pruneImageCacheFiles();
                 Qt.callLater(() => storage.setText(root.service.serializeHistory()));
             } else {
                 root.service.failHistory("The notification history could not be read from the isolated profile.");

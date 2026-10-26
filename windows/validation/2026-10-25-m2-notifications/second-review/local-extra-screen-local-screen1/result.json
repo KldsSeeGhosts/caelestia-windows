@@ -1,0 +1,175 @@
+﻿{
+    "passed":  true,
+    "smoke":  true,
+    "prototype":  "notifications",
+    "audioMode":  "Disabled",
+    "batteryMode":  "Disabled",
+    "mediaMode":  "Disabled",
+    "notificationsMode":  "Local",
+    "timedOut":  false,
+    "exitCode":  0,
+    "scaleFactor":  "native",
+    "screenIndex":  1,
+    "monitorCycle":  false,
+    "traceInput":  false,
+    "actualScreens":  [
+                          {
+                              "index":  1,
+                              "name":  "DELL S2725QS",
+                              "x":  -3840,
+                              "y":  0,
+                              "dpr":  1.75,
+                              "width":  920,
+                              "height":  620
+                          }
+                      ],
+    "captures":  [
+                     "file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/notifications-20261025-191553-935.png"
+                 ],
+    "audioSnapshots":  [
+
+                       ],
+    "batterySnapshots":  [
+
+                         ],
+    "mediaSnapshots":  [
+
+                       ],
+    "notificationsSnapshots":  [
+                                   {
+                                       "phase":  "INITIAL",
+                                       "state":  {
+                                                     "enabled":  true,
+                                                     "status":  "local",
+                                                     "reason":  "Windows local notifications are delivered to this shell only. System notification mirroring is off; real Windows notifications are neither read nor removed.",
+                                                     "backendLoaded":  true,
+                                                     "nativeRequested":  true,
+                                                     "mirroringOff":  true,
+                                                     "mirrorSystemNotifications":  false,
+                                                     "systemMirrorActive":  false,
+                                                     "systemNotificationAccess":  0,
+                                                     "ownership":  "unknown",
+                                                     "ownershipKnown":  false,
+                                                     "contended":  false,
+                                                     "deliveryUnconfirmed":  false,
+                                                     "historyLoaded":  true,
+                                                     "historyError":  "",
+                                                     "pathConfined":  true,
+                                                     "pathError":  "",
+                                                     "historyPath":  "D:/AiStack/caelestia-windows/windows/.local/build/notifications-prototype-profile/state/notifs.json",
+                                                     "historyInsideProfile":  true,
+                                                     "listCount":  1,
+                                                     "popupCount":  0,
+                                                     "notClosedCount":  1,
+                                                     "notificationIds":  [
+                                                                             "1"
+                                                                         ],
+                                                     "summaries":  [
+                                                                       "Caelestia Windows local notification"
+                                                                   ],
+                                                     "restoredCount":  1,
+                                                     "restoredIds":  [
+                                                                         "1"
+                                                                     ],
+                                                     "runMode":  "expire-dismiss",
+                                                     "postedId":  0,
+                                                     "postedRecordId":  "",
+                                                     "postedPresent":  false,
+                                                     "postedPopup":  false,
+                                                     "postedLocal":  false,
+                                                     "postedActions":  0,
+                                                     "postedSummary":  "",
+                                                     "historyContainsPosted":  false,
+                                                     "localDismissals":  0,
+                                                     "protectedDismissals":  0,
+                                                     "unconfirmedDeliveries":  0,
+                                                     "confirmedDeliveries":  0,
+                                                     "deliveryConfirmation":  "idle",
+                                                     "lastSendRefusal":  "",
+                                                     "rejectedImageSources":  0,
+                                                     "lastImageSourceError":  "",
+                                                     "uiLoaded":  true,
+                                                     "dockLoaded":  true,
+                                                     "contentWidth":  506,
+                                                     "contentHeight":  472,
+                                                     "contentImplicitHeight":  0,
+                                                     "contentVisible":  true
+                                                 }
+                                   },
+                                   {
+                                       "phase":  "FINAL",
+                                       "state":  {
+                                                     "enabled":  true,
+                                                     "status":  "local",
+                                                     "reason":  "Windows local notifications are delivered to this shell only. System notification mirroring is off; real Windows notifications are neither read nor removed.",
+                                                     "backendLoaded":  true,
+                                                     "nativeRequested":  true,
+                                                     "mirroringOff":  true,
+                                                     "mirrorSystemNotifications":  false,
+                                                     "systemMirrorActive":  false,
+                                                     "systemNotificationAccess":  0,
+                                                     "ownership":  "unknown",
+                                                     "ownershipKnown":  false,
+                                                     "contended":  false,
+                                                     "deliveryUnconfirmed":  false,
+                                                     "historyLoaded":  true,
+                                                     "historyError":  "",
+                                                     "pathConfined":  true,
+                                                     "pathError":  "",
+                                                     "historyPath":  "D:/AiStack/caelestia-windows/windows/.local/build/notifications-prototype-profile/state/notifs.json",
+                                                     "historyInsideProfile":  true,
+                                                     "listCount":  1,
+                                                     "popupCount":  0,
+                                                     "notClosedCount":  1,
+                                                     "notificationIds":  [
+                                                                             "1"
+                                                                         ],
+                                                     "summaries":  [
+                                                                       "Caelestia Windows local notification"
+                                                                   ],
+                                                     "restoredCount":  1,
+                                                     "restoredIds":  [
+                                                                         "1"
+                                                                     ],
+                                                     "runMode":  "expire-dismiss",
+                                                     "postedId":  1,
+                                                     "postedRecordId":  "1-1792970155719",
+                                                     "postedPresent":  false,
+                                                     "postedPopup":  false,
+                                                     "postedLocal":  false,
+                                                     "postedActions":  0,
+                                                     "postedSummary":  "",
+                                                     "historyContainsPosted":  false,
+                                                     "localDismissals":  1,
+                                                     "protectedDismissals":  0,
+                                                     "unconfirmedDeliveries":  0,
+                                                     "confirmedDeliveries":  1,
+                                                     "deliveryConfirmation":  "confirmed",
+                                                     "lastSendRefusal":  "",
+                                                     "rejectedImageSources":  0,
+                                                     "lastImageSourceError":  "",
+                                                     "uiLoaded":  true,
+                                                     "dockLoaded":  true,
+                                                     "contentWidth":  506,
+                                                     "contentHeight":  472,
+                                                     "contentImplicitHeight":  0,
+                                                     "contentVisible":  true
+                                                 }
+                                   }
+                               ],
+    "elapsedMilliseconds":  6511,
+    "sourceRevision":  "f14d77ce8dea30c70724acd40b58057d4bcb8410",
+    "sourceDirty":  false,
+    "backendRevision":  "1401042969e4b7ab3cfb314fc76945ab081db3de",
+    "buildRecordSha256":  "94F0834B7358EB3F0F6E254AFF6F70D60DF9259641E275A6162ADE96C4126333",
+    "configSha256":  "6FC8F8B80AF9D45A49A4737AF51B8C43A11B97E1B59A82468F31AB4C779C6F65",
+    "command":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\quickshell\\qs.exe",
+    "arguments":  "--no-color --log-times --path \"D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\notifications-20261025-191553-935\\shell.qml\"",
+    "executableSha256":  "22B69FFE0523F8FFDB86C22E1669A36B2C8DCAEA97B19754000EC7455345AF22",
+    "stage":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\shell-runs\\notifications-20261025-191553-935",
+    "profile":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\notifications-prototype-profile",
+    "sources":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\notifications-20261025-191553-935.sources.json",
+    "screenshot":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\notifications-20261025-191553-935.png",
+    "stdout":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\notifications-20261025-191553-935.stdout.log",
+    "stderr":  "D:\\AiStack\\caelestia-windows\\windows\\.local\\build\\logs\\notifications-20261025-191553-935.stderr.log"
+}

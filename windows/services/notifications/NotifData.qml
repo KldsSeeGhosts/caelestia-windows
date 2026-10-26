@@ -2,10 +2,14 @@ import QtQuick
 
 // Windows adaptation of the original services/NotifData.qml record consumed by
 // modules/notifications/*. It is a pure QtObject: no Quickshell import, no
-// compositor fullscreen query, no hidden native image-cache window and no
-// process call. NotificationsService injects service, expiry configuration and
-// the source notification; the facade owns persistence and any host-provided
-// image cache.
+// compositor fullscreen query, no image copy or cache window and no process
+// call. NotificationsService injects service, expiry configuration and the
+// source notification; the facade owns persistence. A notification image is
+// used only when the service accepts it as an allowlisted image://icon theme
+// name or as a file inside the staged shell assets directory; otherwise it
+// stays empty and the original card shows its fallback icon. The app icon goes
+// through the same allowlist, and the body is sanitized of Markdown/HTML images
+// before the original Markdown-rendering UI can load them.
 //
 // close() keeps the original hover lock contract: a locked card is marked
 // closed but is only removed (and only then dismissed) when the last lock is
@@ -43,9 +47,6 @@ QtObject {
     // the backend's x-windows-toast-id / x-windows-aumid hints. Its app name and
     // icon are the original UI fields; no extra visual state is added.
     property bool mirrored: false
-    property bool imageCachePending: false
-    property bool imageCacheDropped: false
-    property string imageCacheError: ""
     property bool imageSourceRejected: false
     property string imageSourceError: ""
     property bool hasFullscreen: false
@@ -107,8 +108,8 @@ QtObject {
 
         record.notificationId = String(source.id ?? record.notificationId);
         record.summary = String(source.summary ?? "");
-        record.body = String(source.body ?? "");
-        record.appIcon = String(source.appIcon ?? "");
+        record.updateBody(source.body);
+        record.updateAppIcon(source.appIcon);
         record.appName = String(source.appName ?? "");
         record.updateImage(source.image);
         record.hints = source.hints ?? ({});
@@ -122,17 +123,41 @@ QtObject {
         record.syncActions();
     }
 
+    // The service owns the body filter. The original popup/sidebar render the
+    // body as Markdown, so Markdown/HTML images are reduced to alt text before
+    // this record exposes it. Without the service the body stays empty rather
+    // than leaking an unfiltered Markdown source; records are only constructed
+    // by the service (or its fixture).
+    function updateBody(value): void {
+        const raw = String(value ?? "");
+        record.body = record.service && typeof record.service.sanitizeBody === "function"
+            ? record.service.sanitizeBody(raw) : "";
+    }
+
+    // Quickshell.iconPath() turns the app icon into image://icon/<value>, which
+    // also reaches QIcon::fromTheme. Only a theme name or a staged asset path is
+    // kept; anything else becomes "" so the original fallback icon renders.
+    function updateAppIcon(value): void {
+        const raw = String(value ?? "");
+        if (raw === "") {
+            record.appIcon = "";
+            return;
+        }
+        const result = record.service ? record.service.validateAppIcon(raw) : null;
+        record.appIcon = result && result.accepted ? String(result.value) : "";
+    }
+
     // The service owns the single source-trust decision. A rejected source is
     // dropped from this record entirely, so the original card shows its
-    // existing fallback icon and no writer is ever pointed at it. Accepted
-    // local sources are replaced by their canonical path.
+    // existing fallback icon and no file is ever opened. An accepted source is
+    // the validated UI URL: image:// for a provider, file:/// for a staged
+    // asset.
     function updateImage(source): void {
         const raw = String(source ?? "");
         if (raw === "") {
             record.image = "";
             record.imageSourceRejected = false;
             record.imageSourceError = "";
-            record.imageCachePending = false;
             return;
         }
 
@@ -141,7 +166,6 @@ QtObject {
             record.image = "";
             record.imageSourceRejected = true;
             record.imageSourceError = String(result?.reason ?? "No notification image validator is available.");
-            record.imageCachePending = false;
             record.service?.reportRejectedImageSource(raw, record.imageSourceError);
             return;
         }
@@ -149,7 +173,6 @@ QtObject {
         record.image = result.canonical;
         record.imageSourceRejected = false;
         record.imageSourceError = "";
-        record.imageCachePending = record.service?.needsImageCache(record) ?? false;
     }
 
     function syncActions(): void {
@@ -226,6 +249,10 @@ QtObject {
         if (record.notification) {
             record.syncFromNotification();
         } else {
+            // Restored history: re-apply the body filter and the app-icon
+            // allowlist even though the service already validated the entry.
+            record.updateBody(record.body);
+            record.updateAppIcon(record.appIcon);
             record.syncActions();
         }
     }
@@ -257,12 +284,12 @@ QtObject {
 
         function onBodyChanged(): void {
             if (record.notification)
-                record.body = String(record.notification.body ?? "");
+                record.updateBody(record.notification.body);
         }
 
         function onAppIconChanged(): void {
             if (record.notification)
-                record.appIcon = String(record.notification.appIcon ?? "");
+                record.updateAppIcon(record.notification.appIcon);
         }
 
         function onAppNameChanged(): void {
@@ -274,8 +301,6 @@ QtObject {
             if (!record.notification)
                 return;
             record.updateImage(record.notification.image);
-            if (record.imageCachePending)
-                record.service?.scheduleImageCache(record);
         }
 
         function onExpireTimeoutChanged(): void {
