@@ -71,6 +71,7 @@ ShellRoot {
             nativeBackendId: Brightness.backend?.backendId ?? "",
             ready: Brightness.ready, lastError: Brightness.lastError,
             strictBackend: Brightness.strictBackend,
+            queryIds: Brightness.queryIdsSupported,
             writesAllowed: Brightness.writesAllowed,
             strictRoutesEnabled: Brightness.strictRoutesEnabled,
             policyError: Brightness.policyError,
@@ -200,6 +201,17 @@ ShellRoot {
                 || state.osdAudioControlsEnabled !== false) {
             root.fail("original OSD content is not loaded read-only");
             return;
+        }
+        if (!state.queryIds) {
+            // The pinned backend cannot match query results to the requests
+            // that asked for them, so the controls gate stays closed even
+            // though the strict-route API is present; the state above must
+            // show exactly that.
+            if (state.writesAllowed || state.selectedInteractive
+                    || state.osdControlsEnabled) {
+                root.fail("a backend without query ids left the controls interactive");
+                return;
+            }
         }
         if (state.monitorCount !== state.monitors.length || state.monitorCount === 0) {
             root.fail("monitor states are inconsistent");

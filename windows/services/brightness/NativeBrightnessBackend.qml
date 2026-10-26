@@ -7,12 +7,12 @@ import Quickshell.Windows
 // until query()/probe() is invoked. query() and probe() are deferred to the
 // backend's after-first-frame hook when called during startup.
 //
-// The shared build is still at the old pin, which has no strict-route members.
-// strictSupported is false there and strictRoutes stays undefined, so the pure
-// adapter refuses writes instead of reaching the legacy setBrightness() path
-// (which retries \\.\LCD, falls back to software gamma and then reports
-// ok = true). Once the gitlink moves, the same wrapper forwards the strict
-// property, the one-shot brightnessWriteResult() and clearSoftwareDimming().
+// The shared build is at a pin with the strict-route members but without the
+// id-carrying query API. strictSupported is true there while queryIdsSupported
+// stays false: queryRequest remains undefined, which is what the adapter
+// feature-detects, so unmatched query results only ever feed read-only
+// display state and the controls gate stays closed. Once the gitlink moves,
+// the same wrapper forwards queryRequest()/queryFinished() unchanged.
 QtObject {
     id: root
 
@@ -22,8 +22,19 @@ QtObject {
     // Deliberately a `var`: undefined when the pinned native singleton lacks
     // the strict API, which is exactly what the adapter feature-detects.
     property var strictRoutes: strictSupported ? Brightness.strictRoutes : undefined
+    // The native singleton is process-wide and survives a wrapper reload, so
+    // request ids it issues are process-unique and strictly increasing. At a
+    // pin without queryRequest this stays undefined and the adapter keeps the
+    // controls read-only rather than guessing which request a result answers.
+    readonly property bool queryIdsSupported: typeof Brightness.queryRequest === "function"
+    // Deliberately a `var` like strictRoutes: a callable when supported,
+    // undefined otherwise, matching the adapter's feature detection.
+    readonly property var queryRequest: queryIdsSupported
+        ? ((screenName) => Brightness.queryRequest(screenName))
+        : undefined
 
     signal queried(string screenName, bool available, bool isDdc, real brightness)
+    signal queryFinished(int requestId, string screenName, bool available, bool isDdc, real brightness)
     signal brightnessSetFinished(string screenName, bool ok)
     signal brightnessWriteResult(string screenName, real value, bool ok, string method, string error)
     signal routeChanged(string screenName, string route)
@@ -70,6 +81,9 @@ QtObject {
         ignoreUnknownSignals: true
         function onQueried(screenName, available, isDdc, brightness): void {
             root.queried(screenName, available, isDdc, brightness);
+        }
+        function onQueryFinished(requestId, screenName, available, isDdc, brightness): void {
+            root.queryFinished(requestId, screenName, available, isDdc, brightness);
         }
         function onBrightnessSetFinished(screenName, ok): void {
             root.brightnessSetFinished(screenName, ok);

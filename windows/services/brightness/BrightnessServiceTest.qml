@@ -11,24 +11,38 @@ import QtQuick
 QtObject {
     id: test
 
-    // Strict-capable model of the pinned backend (525786f,
-    // src/windows/system/brightness.cpp). Timing and argument order come from
-    // the native source, so the adapter is exercised against realistic
-    // completion behavior:
-    //   - query() completes QUEUED on the single worker thread, in request
-    //     order (FIFO), emitting routeChanged(screen, route) and then
-    //     queried(screen, available, isDdc, brightness), with isDdc true only
-    //     for the ddc and software routes.
+    // Strict-capable model of the backend the adapter is written against:
+    // the pinned strict-route members (525786f,
+    // src/windows/system/brightness.cpp) plus the id-carrying query API
+    // (queryRequest/queryFinished). Timing and argument order come from the
+    // native source, so the adapter is exercised against realistic completion
+    // behavior:
+    //   - queryRequest(name) returns a process-unique, strictly increasing
+    //     positive id immediately (ids come from the test-wide counter, so no
+    //     two fakes ever issue the same id) and queues the completion.
+    //     Completions may be delivered OUT of request order:
+    //     deliverQuery(id) delivers one specific request, deliverQuery() the
+    //     oldest. A delivered completion emits routeChanged(screen, route),
+    //     then queryFinished(id, screen, available, isDdc, brightness) for
+    //     id-carrying requests, then queried(screen, available, isDdc,
+    //     brightness), with isDdc true only for the ddc and software routes.
+    //     The plain query() queues an id-less completion that emits
+    //     routeChanged and queried only.
+    //   - queryIdsSupported false removes queryRequest, modeling the pinned
+    //     525786f backend, which carries the strict members but no ids.
     //   - A hardware write completes QUEUED: brightnessSetFinished(ok) and
     //     then exactly one brightnessWriteResult(value, ok, route, error),
     //     with the per-screen in-flight bookkeeping finalized before the
     //     signals, so a handler can submit the next strict write immediately.
     //   - Unresolved-route and overlapping (in-flight) writes are rejected
     //     DIRECTLY, synchronously inside setBrightness(), with ok=false
-    //     results carrying the native error text.
+    //     results carrying the native error text; throwOnSet models a
+    //     synchronous dispatch failure.
     //   - A software-route write completes DIRECTLY.
     //   - strictRoutes can be enabled only while the worker is idle and can
-    //     never be disabled (attempts are counted and refused).
+    //     never be disabled (attempts are counted and refused). Flipping the
+    //     property emits exactly one strictRoutesChanged, from the property's
+    //     own change signal.
     //   - clearSoftwareDimming() emits nothing.
     // Probe and write outcomes are captured when the call is made (the worker
     // reads the display then); the fixture delivers the queued completions
@@ -36,13 +50,15 @@ QtObject {
     component FakeBackend: QtObject {
         id: fake
 
-        // Probe outcome captured per query() call.
+        // Probe outcome captured per queryRequest()/query() call.
         property string probeRoute: "wmi"
         property bool probeAvailable: true
         property real probeLevel: 0.5
         // Hardware/software write outcome captured per setBrightness() call.
         property bool writeOk: true
         property string writeError: ""
+        // When set, setBrightness() throws synchronously.
+        property bool throwOnSet: false
         // Route the queued result reports; empty means the stored route (the
         // realistic case). Set to model a result reported through another
         // route than the one dispatched.
@@ -54,6 +70,8 @@ QtObject {
         property int strictRefusals: 0
         property int strictDisableAttempts: 0
         property bool sawStrictAtWrite: false
+        // The id-carrying query API. False models the pinned 525786f backend.
+        property bool queryIdsSupported: true
         // Stored routes; a name absent from the map or mapped to "" is
         // unresolved, exactly like the native BrightnessRoute default.
         property var routes: ({})
@@ -68,7 +86,8 @@ QtObject {
         property int clearCalls: 0
         property var clearedScreens: []
         property var lastSet: null
-        // Pending worker completions, FIFO like the single worker thread.
+        // Pending worker completions. Queries may complete out of request
+        // order; each entry carries the id it answers (0 for plain query()).
         property var _queryCompletions: []
         property var _writeCompletions: []
         property var _inFlight: []
@@ -76,16 +95,25 @@ QtObject {
         readonly property int pendingWrites: _writeCompletions.length
 
         signal queried(string screenName, bool available, bool isDdc, real brightness)
+        signal queryFinished(int requestId, string screenName, bool available, bool isDdc, real brightness)
         signal brightnessSetFinished(string screenName, bool ok)
         signal brightnessWriteResult(string screenName, real value, bool ok, string method, string error)
         signal routeChanged(string screenName, string route)
         signal systemBrightnessChanged(string screenName, real brightness)
-        // strictRoutesChanged comes from the strictRoutes property itself and
-        // fires when setStrictRoutes() flips it.
+        // strictRoutesChanged comes from the strictRoutes property's own
+        // change signal when setStrictRoutes() flips it: exactly one emission
+        // per successful enable, none for a refusal.
+
+        // Deliberately a `var` like the wrapper's: a callable when supported,
+        // undefined otherwise, matching the adapter's feature detection.
+        readonly property var queryRequest: fake.queryIdsSupported
+            ? ((screenName) => fake._requestQuery(screenName))
+            : undefined
 
         // Enabling is one-way and idle-only: a disable attempt is counted and
         // refused, and an enable is refused while any write is active,
-        // matching the strict backend contract.
+        // matching the strict backend contract. The property assignment is
+        // the only strictRoutesChanged emission.
         function setStrictRoutes(enabled): void {
             if (fake.strictRoutes === enabled)
                 return;
@@ -99,7 +127,6 @@ QtObject {
             }
             fake.strictEnableCalls++;
             fake.strictRoutes = true;
-            fake.strictRoutesChanged();
         }
 
         function methodFor(screenName): string {
@@ -107,9 +134,9 @@ QtObject {
             return typeof route === "string" ? route : "";
         }
 
-        function query(screenName): void {
-            fake.queryCalls++;
+        function _queueQueryCompletion(id, screenName): void {
             fake._queryCompletions = fake._queryCompletions.concat([{
+                id: id,
                 screenName: screenName,
                 route: fake.probeRoute,
                 available: fake.probeAvailable,
@@ -117,20 +144,43 @@ QtObject {
             }]);
         }
 
-        // Delivers the oldest queued query completion: the stored route is
-        // updated first, then routeChanged and queried are emitted in the
-        // native order.
-        function deliverQuery(): void {
-            if (fake._queryCompletions.length === 0)
+        function _requestQuery(screenName): int {
+            fake.queryCalls++;
+            const id = test.allocQueryId();
+            fake._queueQueryCompletion(id, screenName);
+            return id;
+        }
+
+        // Plain parity API; the adapter only uses it on backends without ids.
+        function query(screenName): void {
+            fake.queryCalls++;
+            fake._queueQueryCompletion(0, screenName);
+        }
+
+        // Delivers one queued query completion: the one carrying `id` when
+        // given, otherwise the oldest. The stored route is updated first,
+        // then routeChanged, queryFinished (id-carrying requests only) and
+        // queried are emitted in the native order. Completions are kept in
+        // the queue, so requests may be delivered out of order.
+        function deliverQuery(id): void {
+            const completions = fake._queryCompletions;
+            let index = 0;
+            if (id !== undefined && id !== null)
+                index = completions.findIndex(completion => completion.id === id);
+            if (index < 0 || index >= completions.length)
                 return;
-            const completion = fake._queryCompletions[0];
-            fake._queryCompletions = fake._queryCompletions.slice(1);
+            const completion = completions[index];
+            fake._queryCompletions = completions.slice(0, index)
+                .concat(completions.slice(index + 1));
             fake.routes = Object.assign({}, fake.routes,
                 {[completion.screenName]: completion.route});
+            const isDdc = completion.route === "ddc" || completion.route === "software";
             fake.routeChanged(completion.screenName, completion.route);
+            if (completion.id > 0)
+                fake.queryFinished(completion.id, completion.screenName,
+                    completion.available, isDdc, completion.brightness);
             fake.queried(completion.screenName, completion.available,
-                completion.route === "ddc" || completion.route === "software",
-                completion.brightness);
+                isDdc, completion.brightness);
         }
 
         function probe(screenName): void {
@@ -154,6 +204,8 @@ QtObject {
 
         function setBrightness(screenName, isDdc, value): void {
             fake.setCalls++;
+            if (fake.throwOnSet)
+                throw "native setBrightness dispatch failed";
             const clamped = Math.max(0, Math.min(1, value));
             fake.lastSet = {screenName: screenName, isDdc: isDdc, value: clamped};
             if (!fake.strictRoutes) {
@@ -318,6 +370,14 @@ QtObject {
     readonly property FakeBackend blockedBackend: FakeBackend {}
     readonly property BrightnessService generationCase: BrightnessService {}
     readonly property FakeBackend generationBackend: FakeBackend {}
+    readonly property BrightnessService disableCase: BrightnessService {}
+    readonly property FakeBackend disableBackend: FakeBackend {}
+    readonly property BrightnessService swapCase: BrightnessService {}
+    readonly property FakeBackend swapBackendA: FakeBackend {}
+    readonly property FakeBackend swapBackendB: FakeBackend {}
+    readonly property BrightnessService noId: BrightnessService {}
+    // The pinned 525786f shape: strict members present, query ids absent.
+    readonly property FakeBackend noIdBackend: FakeBackend { queryIdsSupported: false }
 
     readonly property EmptyBackend emptyBackend: EmptyBackend {}
     readonly property SilentBackend silentBackend: SilentBackend {}
@@ -331,6 +391,9 @@ QtObject {
         ignoreUnknownSignals: true
         function onQueried(screenName, available, isDdc, brightness): void {
             test.pushFakeEvent("queried", [screenName, available, isDdc, brightness]);
+        }
+        function onQueryFinished(requestId, screenName, available, isDdc, brightness): void {
+            test.pushFakeEvent("queryFinished", [requestId, screenName, available, isDdc, brightness]);
         }
         function onBrightnessSetFinished(screenName, ok): void {
             test.pushFakeEvent("setFinished", [screenName, ok]);
@@ -349,7 +412,18 @@ QtObject {
         fakeModelEvents = fakeModelEvents.concat([[kind, args]]);
     }
 
+    // Process-unique query ids: one strictly increasing counter behind every
+    // fake, so no two backends ever issue the same id, exactly like the
+    // process-wide native singleton across wrapper reloads.
+    property int _queryIdSerial: 0
+
+    function allocQueryId(): int {
+        _queryIdSerial++;
+        return _queryIdSerial;
+    }
+
     readonly property DisplayProbe osdProbe: DisplayProbe {}
+    readonly property DisplayProbe blockedProbe: DisplayProbe {}
 
     property int assertions: 0
 
@@ -553,6 +627,7 @@ QtObject {
         check(service.strictBackend && service.writesAllowed, "strict writes are allowed");
         check(service.interactive("DISPLAY1") && service.canWrite("DISPLAY1"),
             "hardware route becomes interactive and writable");
+        const firstWriteResync = service.stateFor("DISPLAY1").resyncSerial;
         check(service.write("DISPLAY1", 0.75) === true, "hardware write is forwarded");
         check(backend.setCalls === 1, "one backend write");
         close(backend.lastSet.value, 0.75, "written value");
@@ -573,7 +648,7 @@ QtObject {
         close(service.stateFor("DISPLAY1").brightness, 0.75, "hardware write value");
         close(service.stateFor("DISPLAY1").lastConfirmed, 0.75, "confirmed write value");
         check(!service.stateFor("DISPLAY1").latched, "successful write is not latched");
-        check(service.stateFor("DISPLAY1").resyncSerial === 0,
+        check(service.stateFor("DISPLAY1").resyncSerial === firstWriteResync,
             "a successful write does not bump the resync serial");
         check(service.writeRequests === 1 && service.everWrote, "write counters");
         // One-way strict: a disable request is refused by the backend and the
@@ -735,6 +810,23 @@ QtObject {
         close(service.stateFor("DISPLAY1").brightness, 0.6,
             "a wrong-route failure snaps back to the confirmed value");
         backend.resultRoute = "";
+        // A synchronous dispatch rejection is a terminal failure of the
+        // attempted write: it snaps the displayed value back too.
+        backend.throwOnSet = true;
+        const throwResync = service.stateFor("DISPLAY1").resyncSerial;
+        const throwResyncs = osdProbe.resyncs;
+        check(service.write("DISPLAY1", 0.2) === false,
+            "a dispatch throw refuses the write");
+        check(service.stateFor("DISPLAY1").lastOutcome === "failed",
+            "the synchronous throw is a terminal failure");
+        check(service.stateFor("DISPLAY1").lastError.indexOf("dispatch failed") >= 0,
+            "the dispatch failure text is surfaced");
+        check(service.stateFor("DISPLAY1").resyncSerial === throwResync + 1,
+            "the direct rejection bumps the resync serial");
+        check(osdProbe.resyncs === throwResyncs + 1,
+            "the direct rejection rebound the display");
+        close(osdProbe.displayed, 0.6, "the display snapped back after the throw");
+        backend.throwOnSet = false;
 
         // --- Authorization changes drop queued targets immediately ------------
         // The review's case: queue a drag target, revoke the controls opt-in,
@@ -788,12 +880,18 @@ QtObject {
         service.policyError = "";
         check(service.interactive("DISPLAY1"), "clearing the policy failure restores the slider");
 
-        // A plain refusal never resyncs: nothing was dispatched, so the
-        // confirmed value is unchanged and a bump would be noise.
+        // Every refusal of a write attempt snaps the dragged display back:
+        // nothing was dispatched, so the confirmed value must be restored
+        // exactly like a terminal failure.
         const refuseResync = service.stateFor("DISPLAY1").resyncSerial;
+        const refuseResyncs = osdProbe.resyncs;
         expectRefused("DISPLAY1", NaN, "refusal after the drop tests");
-        check(service.stateFor("DISPLAY1").resyncSerial === refuseResync,
-            "a refused write does not bump the resync serial");
+        check(service.stateFor("DISPLAY1").resyncSerial === refuseResync + 1,
+            "a refused write bumps the resync serial");
+        check(osdProbe.resyncs === refuseResyncs + 1,
+            "the refused write rebound the display");
+        close(osdProbe.displayed, service.stateFor("DISPLAY1").brightness,
+            "the refused write restored the confirmed display value");
 
         // --- Old-pin backend: Interactive is refused, slider read-only --------
         check(legacy.enabled === false && legacyBackend.queryCalls === 0,
@@ -840,13 +938,30 @@ QtObject {
         blocked.enabled = true;
         blocked.backend = blockedBackend;
         blockedBackend.refuseStrict = true;
+        blockedBackend.probeRoute = "wmi";
+        blockedBackend.probeAvailable = true;
+        blockedBackend.probeLevel = 0.4;
         check(blocked.queryMonitor("BLOCK1") === true, "blocked fixture route query");
         blockedBackend.deliverQuery();
         expectCapabilityOn(blocked, "BLOCK1", "hardware", "blocked fixture hardware route");
         blocked.controlsEnabled = true;
         check(blocked.strictBackend, "the blocking fixture is strict-capable");
-        check(blocked.write("BLOCK1", 0.5) === false,
+        check(blocked.queryIdsSupported, "the blocking fixture carries query ids");
+        // The review's exact case: the first denied drag snaps back. The
+        // confirmed level is 0.4 and the drag moved the display to 0.9, so
+        // the strict-enable refusal must bump the resync serial from 0 and
+        // restore 0.4.
+        blockedProbe.record = blocked.stateFor("BLOCK1");
+        close(blockedProbe.displayed, 0.4, "the display binds the confirmed 0.4");
+        blockedProbe.displayed = 0.9; // The drag breaks the value binding.
+        check(blocked.stateFor("BLOCK1").resyncSerial === 0,
+            "no resync happened before the denied write");
+        check(blocked.write("BLOCK1", 0.9) === false,
             "a strict-route enable refusal refuses the write");
+        check(blocked.stateFor("BLOCK1").resyncSerial === 1,
+            "the strict-enable refusal bumps the resync serial from 0 to 1");
+        check(blockedProbe.resyncs === 1, "the denied drag's display was rebound");
+        close(blockedProbe.displayed, 0.4, "the displayed 0.9 snapped back to 0.4");
         check(blockedBackend.setCalls === 0, "no write reached a backend without strict routes");
         check(blockedBackend.strictRefusals === 1,
             "the backend recorded the refused strict enable");
@@ -865,6 +980,8 @@ QtObject {
         check(blockedBackend.strictRoutes, "strict routes are enabled on the retry");
         blockedBackend.completeWrite();
         close(blocked.stateFor("BLOCK1").brightness, 0.45, "the retried write confirms");
+        check(blocked.stateFor("BLOCK1").resyncSerial === 1,
+            "the successful retry does not bump the resync serial again");
 
         // --- Automatic observation and explicit refresh -----------------------
         check(observation.enabled === false && observationBackend.queryCalls === 0,
@@ -892,6 +1009,16 @@ QtObject {
         expectCapabilityOn(observation, "OBS1", "software-only", "software route observed");
         check(observation.write("OBS1", 0.5) === true, "software write under strict routes");
         check(observation.gammaTouched, "software write marks gamma as touched");
+        // A directly completed software failure is a terminal rejection: it
+        // settles as failed and bumps the resync serial.
+        observationBackend.writeOk = false;
+        const obsResync = observation.stateFor("OBS1").resyncSerial;
+        check(observation.write("OBS1", 0.25) === true, "a directly failing software write");
+        check(observation.stateFor("OBS1").lastOutcome === "failed",
+            "the direct software rejection settles as a failure");
+        check(observation.stateFor("OBS1").resyncSerial === obsResync + 1,
+            "the direct software rejection bumps the resync serial");
+        observationBackend.writeOk = true;
         check(observation.beginObservation() === false, "gamma state blocks automatic re-query");
         check(observationBackend.queryCalls === 3, "blocked automatic re-query sends nothing");
         check(observation.refreshRoutes() === 2, "explicit refresh is allowed");
@@ -917,10 +1044,10 @@ QtObject {
         recoveryBackend.deliverQuery();
 
         // --- Generation: a reconnected monitor is not authorized by a stale query
-        // The review's exact ordering: query A on the old record,
+        // The review's ordering for finding 1: query A on the old record,
         // disconnect/reconnect, query B on the fresh record, then deliver A's
-        // completion first. A answers a request the current record never made,
-        // so it is consumed and discarded; only B's completion authorizes.
+        // completion first. A's id was issued to the old record and never
+        // matches the fresh one, so it is discarded; only B authorizes.
         generationCase.screens = [{name: "GEN1"}, {name: "GEN2"}];
         generationCase.enabled = true;
         generationCase.backend = generationBackend;
@@ -932,6 +1059,7 @@ QtObject {
         const oldGeneration = generationCase.stateFor("GEN2").generation;
         const queryCallsBeforeUnplug = generationBackend.queryCalls;
         const requestsBeforeUnplug = generationCase.queryRequests;
+        const queryAId = generationCase.stateFor("GEN2").queryId;
         generationCase.screens = [{name: "GEN1"}];
         check(generationCase.monitorCount === 1, "unplugged screens leave the monitor list");
         check(generationCase.stateFor("GEN2") === null, "unplugged screen has no state");
@@ -942,35 +1070,41 @@ QtObject {
             "removing and re-adding a screen bumps its record generation");
         check(generationCase.queryMonitor("GEN2") === true, "query B on the reconnected record");
         expectCapabilityOn(generationCase, "GEN2", "querying", "query B is in flight");
+        const queryBId = generationCase.stateFor("GEN2").queryId;
+        check(queryBId > queryAId, "the reconnected record's id postdates A's");
         check(generationBackend.queryCalls === queryCallsBeforeUnplug + 1,
             "the re-plug sent exactly one new query");
         check(generationCase.queryRequests === requestsBeforeUnplug + 1,
             "the re-query is counted");
-        generationBackend.deliverQuery();
+        generationBackend.deliverQuery(queryAId);
         expectCapabilityOn(generationCase, "GEN2", "querying",
             "A's stale completion does not authorize the new record");
         check(generationCase.stateFor("GEN2").brightnessKnown === false,
             "A's level is discarded with its request");
-        generationBackend.deliverQuery();
+        generationBackend.deliverQuery(queryBId);
         expectCapabilityOn(generationCase, "GEN2", "hardware",
             "B's completion authorizes the new record");
         close(generationCase.stateFor("GEN2").brightness, 0.5, "B's level is recorded");
-        check(generationCase.stateFor("GEN2").queryToken > 0,
-            "the accepted query is tagged with this record's token");
-        // A completion with no outstanding request at all is ignored.
+        check(generationCase.stateFor("GEN2").queryId === queryBId,
+            "the accepted query is tagged with this record's id");
+
+        // A completion carrying an id no request ever issued, and the plain
+        // queried signal while ids are supported, are both ignored.
+        check(generationCase.queryMonitor("GEN2") === true, "query C before a second unplug");
+        const queryCId = generationCase.stateFor("GEN2").queryId;
+        generationBackend.queryFinished(test.allocQueryId(), "GEN2", true, true, 0.9);
         generationBackend.queried("GEN2", true, true, 0.9);
-        expectCapabilityOn(generationCase, "GEN2", "hardware",
-            "a result without an outstanding request is ignored");
-        close(generationCase.stateFor("GEN2").brightness, 0.5,
-            "an unmatched result changes nothing");
-        check(generationBackend.queryCalls === queryCallsBeforeUnplug + 1,
+        expectCapabilityOn(generationCase, "GEN2", "querying",
+            "an unissued id and the plain queried signal settle nothing");
+        check(generationCase.stateFor("GEN2").brightnessKnown === false,
+            "the unmatched deliveries invented no level");
+        check(generationBackend.queryCalls === queryCallsBeforeUnplug + 2,
             "an unmatched result sends no query");
 
         // A completion delivered while the screen is absent is consumed and
         // cannot resurrect state.
-        check(generationCase.queryMonitor("GEN2") === true, "query C before a second unplug");
         generationCase.screens = [{name: "GEN1"}];
-        generationBackend.deliverQuery();
+        generationBackend.deliverQuery(queryCId);
         check(generationCase.stateFor("GEN2") === null,
             "a late completion does not resurrect the record");
         check(generationBackend.queryCalls === queryCallsBeforeUnplug + 2,
@@ -981,19 +1115,28 @@ QtObject {
         expectCapabilityOn(generationCase, "GEN2", "unknown",
             "the twice-reconnected screen starts fresh");
 
-        // Reconnect twice: only the request issued by the current record
-        // authorizes it; older requests' completions are consumed in order.
+        // The review's ordering for finding 2: a deferred older request can
+        // complete AFTER a newer one (the backend's startup gate settles
+        // before draining deferred work). The newer request's completion is
+        // delivered first and is accepted on its own id; the older deferred
+        // completion is then discarded.
         check(generationCase.queryMonitor("GEN2") === true, "query A2 on the second record");
+        const a2Id = generationCase.stateFor("GEN2").queryId;
         generationCase.screens = [{name: "GEN1"}];
         generationCase.screens = [{name: "GEN1"}, {name: "GEN2"}];
         check(generationCase.queryMonitor("GEN2") === true, "query B2 on the third record");
-        generationBackend.deliverQuery();
-        expectCapabilityOn(generationCase, "GEN2", "querying",
-            "A2's completion is discarded for the third record");
-        generationBackend.deliverQuery();
+        const b2Id = generationCase.stateFor("GEN2").queryId;
+        check(b2Id > a2Id, "B2's id postdates A2's");
+        generationBackend.deliverQuery(b2Id);
         expectCapabilityOn(generationCase, "GEN2", "hardware",
-            "B2's completion authorizes the third record");
-        check(generationCase.stateFor("GEN2").queryToken > 0,
+            "the newer request is accepted even when it completes first");
+        close(generationCase.stateFor("GEN2").brightness, 0.5, "B2's level is recorded");
+        generationBackend.deliverQuery(a2Id);
+        expectCapabilityOn(generationCase, "GEN2", "hardware",
+            "the older deferred completion is discarded afterwards");
+        close(generationCase.stateFor("GEN2").brightness, 0.5,
+            "the older deferred completion changes nothing");
+        check(generationCase.stateFor("GEN2").queryId === b2Id,
             "the third record is tagged with its own request");
 
         // Removing a screen mid-write drops the pending record and its queued
@@ -1013,6 +1156,109 @@ QtObject {
             "a re-added screen has no pending write");
         check(!generationCase.stateFor("GEN2").hasQueuedWrite,
             "a re-added screen has no queued target");
+
+        // --- Finding 1: disable/re-enable with a stale delivery ---------------
+        // The review's exact sequence: query A at 0.2, disable, re-enable,
+        // query B at 0.8, then deliver A's completion. A's id was issued
+        // before the reset; ids never repeat, so it cannot match B's record.
+        disableCase.screens = [{name: "DIS1"}];
+        disableCase.enabled = true;
+        disableCase.backend = disableBackend;
+        disableBackend.probeRoute = "wmi";
+        disableBackend.probeAvailable = true;
+        disableBackend.probeLevel = 0.2;
+        check(disableCase.queryMonitor("DIS1") === true, "query A at 0.2 before disabling");
+        const staleDisableId = disableCase.stateFor("DIS1").queryId;
+        check(staleDisableId > 0, "query A carries a backend-issued id");
+        disableCase.enabled = false;
+        check(!disableCase.stateFor("DIS1").querying,
+            "disable clears the outstanding query");
+        disableCase.enabled = true;
+        disableBackend.probeLevel = 0.8;
+        check(disableCase.queryMonitor("DIS1") === true, "query B at 0.8 after re-enabling");
+        const freshDisableId = disableCase.stateFor("DIS1").queryId;
+        check(freshDisableId > staleDisableId, "ids strictly increase and never repeat");
+        disableBackend.deliverQuery(staleDisableId);
+        expectCapabilityOn(disableCase, "DIS1", "querying",
+            "A's stale completion does not consume B's result");
+        check(disableCase.stateFor("DIS1").brightnessKnown === false,
+            "A's 0.2 is discarded, not displayed");
+        disableBackend.deliverQuery(freshDisableId);
+        expectCapabilityOn(disableCase, "DIS1", "hardware",
+            "B's completion authorizes the current record");
+        close(disableCase.stateFor("DIS1").brightness, 0.8,
+            "the record holds B's 0.8, never A's 0.2");
+
+        // --- Wrapper replacement with a stale delivery ------------------------
+        // The native singleton is process-wide and survives a wrapper reload,
+        // so a late native completion is forwarded by the NEW wrapper. Its id
+        // was issued before the reload and cannot match the new request.
+        swapCase.screens = [{name: "SWAP1"}];
+        swapCase.enabled = true;
+        swapCase.backend = swapBackendA;
+        swapBackendA.probeRoute = "wmi";
+        swapBackendA.probeAvailable = true;
+        swapBackendA.probeLevel = 0.2;
+        check(swapCase.queryMonitor("SWAP1") === true, "query A through the first wrapper");
+        const staleSwapId = swapCase.stateFor("SWAP1").queryId;
+        swapCase.backend = swapBackendB;
+        expectCapabilityOn(swapCase, "SWAP1", "unknown",
+            "a backend swap drops the outstanding query");
+        swapBackendB.probeRoute = "wmi";
+        swapBackendB.probeAvailable = true;
+        swapBackendB.probeLevel = 0.8;
+        check(swapCase.queryMonitor("SWAP1") === true, "query B through the second wrapper");
+        const freshSwapId = swapCase.stateFor("SWAP1").queryId;
+        check(freshSwapId !== staleSwapId, "the two wrappers never issue the same id");
+        swapBackendB.queryFinished(staleSwapId, "SWAP1", true, false, 0.2);
+        expectCapabilityOn(swapCase, "SWAP1", "querying",
+            "the stale id forwarded by the new wrapper is discarded");
+        swapBackendA.deliverQuery(staleSwapId);
+        expectCapabilityOn(swapCase, "SWAP1", "querying",
+            "the detached wrapper's own delivery changes nothing");
+        swapBackendB.deliverQuery(freshSwapId);
+        expectCapabilityOn(swapCase, "SWAP1", "hardware",
+            "B's completion authorizes the swapped record");
+        close(swapCase.stateFor("SWAP1").brightness, 0.8,
+            "the swapped record holds B's level, never A's 0.2");
+
+        // --- The no-id backend stays read-only --------------------------------
+        // The pinned 525786f shape: strict members present, query ids absent.
+        // Queries still update read-only display state, but no result can
+        // authorize a hardware write or interactive control.
+        check(typeof noIdBackend.queryRequest === "undefined",
+            "the no-id fake exposes no queryRequest");
+        noId.screens = [{name: "NOID1"}];
+        noId.enabled = true;
+        noId.backend = noIdBackend;
+        check(!noId.queryIdsSupported, "the service detects the missing id API");
+        noIdBackend.probeRoute = "wmi";
+        noIdBackend.probeAvailable = true;
+        noIdBackend.probeLevel = 0.5;
+        check(noId.queryMonitor("NOID1") === true, "queries still run for display state");
+        noIdBackend.deliverQuery();
+        expectCapabilityOn(noId, "NOID1", "hardware", "display state still settles read-only");
+        close(noId.stateFor("NOID1").brightness, 0.5, "the read-only level is displayed");
+        noId.controlsEnabled = true;
+        check(noId.strictBackend, "the no-id backend still carries the strict members");
+        check(!noId.writesAllowed, "without ids no result can authorize a write");
+        check(!noId.interactive("NOID1") && !noId.canWrite("NOID1"),
+            "the slider stays read-only on a backend without ids");
+        check(noId.reason.indexOf("match query results") >= 0,
+            "the reason names the unmatched query results");
+        const noIdSetCalls = noIdBackend.setCalls;
+        const noIdResync = noId.stateFor("NOID1").resyncSerial;
+        check(noId.write("NOID1", 0.7) === false, "the write is refused");
+        check(noIdBackend.setCalls === noIdSetCalls
+            && noIdBackend.strictEnableCalls === 0,
+            "nothing reached the backend, not even a strict enable");
+        check(noId.lastError.indexOf("match query results") >= 0,
+            "the write refusal explains the id gap");
+        check(noId.stateFor("NOID1").resyncSerial === noIdResync + 1,
+            "the no-id refusal still snaps the display back");
+        check(!noId.strictRoutesEnabled, "strict mode is never claimed without ids");
+        check(noIdBackend.legacySetCalls === 0,
+            "the read-only gate never fell through to the legacy write path");
 
         // --- Disable clears every observation --------------------------------
         service.autoObservationDone = true;
@@ -1066,10 +1312,11 @@ QtObject {
             "non-string method and missing signals leave a bounded querying state");
         service.backend = backend;
 
-        // --- The fake models the pinned strict backend ------------------------
+        // --- The fake models the id-carrying strict backend -------------------
         // Direct checks of the model itself, independent of any adapter: every
         // timing and argument below comes from the pinned backend source
-        // (strictSet, finishSet, setStrictRoutes, clearSoftwareDimming).
+        // (strictSet, finishSet, setStrictRoutes, clearSoftwareDimming) plus
+        // the queryRequest/queryFinished contract.
         check(modelBackend.pendingQueries === 0 && modelBackend.pendingWrites === 0,
             "the model fake starts idle");
         // A legacy write occupies the single worker and completes without a
@@ -1079,21 +1326,30 @@ QtObject {
             "a legacy write occupies the single worker");
         check(modelBackend.methodFor("MODEL1") === "ddc",
             "a legacy unresolved route is written as DDC/CI");
+        const eventsBeforeRefusedEnable = fakeModelEvents.length;
         modelBackend.setStrictRoutes(true);
         check(!modelBackend.strictRoutes && modelBackend.strictRefusals === 1,
             "enabling strict routes is refused while a write is active");
+        check(fakeModelEvents.length === eventsBeforeRefusedEnable,
+            "a refused strict enable emits no strictRoutesChanged");
         modelBackend.completeWrite();
         check(modelBackend.pendingWrites === 0, "the legacy write completed");
         check(fakeModelEvents[fakeModelEvents.length - 1][0] === "setFinished",
             "a legacy write emits brightnessSetFinished only");
         check(fakeModelEvents.every(event => event[0] !== "writeResult"),
             "a legacy write emits no strict result");
+        const eventsBeforeEnable = fakeModelEvents.length;
         modelBackend.setStrictRoutes(true);
         check(modelBackend.strictRoutes && modelBackend.strictEnableCalls === 1,
             "enabling strict routes succeeds once idle");
+        check(fakeModelEvents.length === eventsBeforeEnable + 1
+            && fakeModelEvents[eventsBeforeEnable][0] === "strictRoutesChanged",
+            "enabling emits exactly one strictRoutesChanged");
         modelBackend.setStrictRoutes(false);
         check(modelBackend.strictRoutes && modelBackend.strictDisableAttempts === 1,
             "strict routes cannot be disabled");
+        check(fakeModelEvents.length === eventsBeforeEnable + 1,
+            "a refused disable emits no second strictRoutesChanged");
         // Unresolved route: direct synchronous rejection inside setBrightness.
         const eventsBeforeUnresolved = fakeModelEvents.length;
         modelBackend.setBrightness("MODEL2", false, 0.5);
@@ -1168,7 +1424,7 @@ QtObject {
         check(modelBackend.clearedScreens.indexOf("MODEL3") >= 0
             && modelBackend.clearedScreens.indexOf("MODEL2") < 0,
             "clearSoftwareDimming only clears screens with retained dimming");
-        // Queries complete queued, in request order, with the native
+        // Plain queries complete queued, with the native
         // routeChanged-then-queried sequence and isDdc mapping.
         modelBackend.probeRoute = "ddc";
         modelBackend.probeLevel = 0.7;
@@ -1194,10 +1450,47 @@ QtObject {
             && fakeModelEvents[eventsBeforeQueries + 3][1][0] === "MODEL5"
             && fakeModelEvents[eventsBeforeQueries + 3][1][2] === false,
             "the wmi query reports isDdc false");
+        // The id-carrying API: queryRequest returns a process-unique,
+        // strictly increasing positive id immediately, completions stay
+        // queued until delivered and may be delivered out of request order,
+        // and every completion also fires the plain queried signal.
+        modelBackend.probeRoute = "ddc";
+        modelBackend.probeLevel = 0.7;
+        modelBackend.probeAvailable = true;
+        const idEarly = modelBackend.queryRequest("MODEL6");
+        modelBackend.probeRoute = "wmi";
+        modelBackend.probeLevel = 0.3;
+        const idLate = modelBackend.queryRequest("MODEL7");
+        check(idEarly > 0 && idLate > idEarly,
+            "queryRequest returns positive, strictly increasing ids");
+        check(modelBackend.pendingQueries === 2, "id queries queue until delivered");
+        const eventsBeforeIds = fakeModelEvents.length;
+        modelBackend.deliverQuery(idLate);
+        modelBackend.deliverQuery(idEarly);
+        check(fakeModelEvents.length === eventsBeforeIds + 6,
+            "each id completion delivers routeChanged, queryFinished and queried");
+        const lateEvents = fakeModelEvents.slice(eventsBeforeIds, eventsBeforeIds + 3);
+        check(lateEvents[0][0] === "routeChanged" && lateEvents[0][1][0] === "MODEL7",
+            "the later request can be delivered first");
+        check(lateEvents[1][0] === "queryFinished" && lateEvents[1][1][0] === idLate
+            && lateEvents[1][1][1] === "MODEL7" && lateEvents[1][1][2] === true
+            && lateEvents[1][1][3] === false
+            && Math.abs(lateEvents[1][1][4] - 0.3) < 0.000001,
+            "queryFinished carries the id and the native argument order");
+        check(lateEvents[2][0] === "queried" && lateEvents[2][1][0] === "MODEL7",
+            "the id completion also fires the plain queried signal");
+        const earlyEvents = fakeModelEvents.slice(eventsBeforeIds + 3);
+        check(earlyEvents[0][0] === "routeChanged" && earlyEvents[0][1][0] === "MODEL6",
+            "the earlier request is delivered after the later one");
+        check(earlyEvents[1][0] === "queryFinished" && earlyEvents[1][1][0] === idEarly
+            && earlyEvents[1][1][1] === "MODEL6" && earlyEvents[1][1][3] === true,
+            "the earlier completion carries its own id and isDdc");
 
         check(backend.legacySetCalls === 0 && observationBackend.legacySetCalls === 0
             && recoveryBackend.legacySetCalls === 0 && blockedBackend.legacySetCalls === 0
-            && generationBackend.legacySetCalls === 0,
+            && generationBackend.legacySetCalls === 0 && disableBackend.legacySetCalls === 0
+            && swapBackendA.legacySetCalls === 0 && swapBackendB.legacySetCalls === 0
+            && noIdBackend.legacySetCalls === 0,
             "the adapter never used a legacy write path");
 
         console.log("CAELESTIA_BRIGHTNESS_FIXTURE_PASS " + JSON.stringify({assertions: assertions}));

@@ -11,9 +11,21 @@ import QtQuick
 //                                QString method, QString error)
 //   function clearSoftwareDimming(QString screen)
 //
-// Writes are never attempted without that contract. The shared build is still
-// at the old pin, which lacks every strict member: there an Interactive request
-// stays read-only rather than reaching the legacy setBrightness() path, which
+// QUERY CONTRACT (id-carrying backends):
+//   function queryRequest(string screen) -> int
+//     Returns a process-unique, strictly increasing positive id immediately;
+//     the worker owns the result from here on.
+//   signal queryFinished(int requestId, QString screen, bool available,
+//                        bool isDdc, real brightness)
+//     Emitted exactly once per queryRequest() call, for every outcome, on the
+//     GUI thread. The plain query()/queried() pair also remains; with ids it
+//     is ignored so a result is never processed twice.
+//
+// Writes are never attempted without that contract, and no query result is
+// authorized unless the backend can match it to its request. The shared build
+// is at a pin with the strict members but without the id API: there a route
+// query only feeds read-only display state and an Interactive request stays
+// read-only, rather than reaching the legacy setBrightness() path, which
 // silently retries \\.\LCD and falls back to software gamma and then reports
 // ok = true. With strict routes the backend never falls back and emits exactly
 // one brightnessWriteResult() per accepted write, so that signal is the only
@@ -68,10 +80,22 @@ QtObject {
     readonly property bool strictBackend: backend !== null
         && typeof backend.strictRoutes === "boolean"
         && typeof backend.brightnessWriteResult === "function"
-    // Writes are permitted only with the controls opt-in, the strict backend and
-    // no latched policy failure. Interactive is separate from writeReady: a
-    // pending write must never disable a slider mid-gesture.
+    // Query results are matched to the requests that asked for them through
+    // backend-issued ids. Ids are process-unique and strictly increasing, so
+    // an id issued before a disable, a reconnect or a backend replacement can
+    // never match the current record's outstanding request and no bookkeeping
+    // is needed across those resets. A backend without the id API can still
+    // be queried, but its unmatched results only ever update read-only
+    // display state: no result authorizes a hardware write or interactive
+    // control, and there is no heuristic fallback.
+    readonly property bool queryIdsSupported: backend !== null
+        && typeof backend.queryRequest === "function"
+    // Writes are permitted only with the controls opt-in, the strict backend,
+    // matchable query results and no latched policy failure. Interactive is
+    // separate from writeReady: a pending write must never disable a slider
+    // mid-gesture.
     readonly property bool writesAllowed: enabled && controlsEnabled && strictBackend
+        && queryIdsSupported
         && policyError.length === 0
     readonly property string status: {
         if (!enabled)
@@ -103,6 +127,8 @@ QtObject {
             return "Windows brightness is observable through read-only route queries. Brightness writes are disabled.";
         if (!strictBackend)
             return "Brightness writes need the strict-route backend. This backend exposes read-only routes, so the interactive slider stays read-only.";
+        if (!queryIdsSupported)
+            return "Brightness controls need a backend that can match each query result to the request that asked for it. This backend cannot match query results, so the controls stay read-only.";
         if (policyError)
             return policyError;
         if (!softwareEnabled)
@@ -116,18 +142,6 @@ QtObject {
     // Per-screen record generations survive a screen removal so a late query
     // result cannot authorize the reconnected monitor.
     property var _generations: ({})
-    // Outstanding query requests per screen, tracked independently of the
-    // screen records. Every backend.query() call pushes its record's globally
-    // unique request token; every queried() completion consumes the oldest
-    // outstanding token and is accepted only when it answers the token the
-    // current record issued. The queues survive record replacement, so a
-    // completion answering a request made against an older record is consumed
-    // and discarded instead of authorizing the reconnected monitor. The native
-    // backend answers one screen's queries in request order (a single worker
-    // thread delivering queued connections), so the oldest outstanding
-    // request is the one a completion answers.
-    property var _queryRequests: ({})
-    property int _querySerial: 0
     property Component _stateFactory: Component {
         MonitorState {}
     }
@@ -137,9 +151,11 @@ QtObject {
         // Bumped when the screen is removed; a fresh record for the same name
         // is created with the bumped value.
         property int generation: 0
-        // Globally unique token of the query request this record issued. A
-        // queried() completion is accepted only when it answers that token.
-        property int queryToken: 0
+        // Id of the query request this record issued and whose result is
+        // still outstanding; 0 while none. Backend ids are process-unique and
+        // strictly increasing, so an id from an earlier record, an earlier
+        // enable cycle or an earlier backend can never match this one.
+        property int queryId: 0
         // Bumped after a terminal write failure. The drag removed the host
         // slider's value binding, so reassigning the unchanged confirmed level
         // emits nothing; hosts rebind the displayed value on this serial.
@@ -274,36 +290,6 @@ QtObject {
         _generations = map;
     }
 
-    function _pushQueryRequest(name, token): void {
-        const map = Object.assign({}, _queryRequests);
-        const queue = map[name] ?? [];
-        map[name] = queue.concat([token]);
-        _queryRequests = map;
-    }
-
-    // Consumes the oldest outstanding request token for a screen: the request
-    // a queried() completion answers.
-    function _popQueryRequest(name): int {
-        const queue = _queryRequests[name];
-        if (!Array.isArray(queue) || queue.length === 0)
-            return -1;
-        const map = Object.assign({}, _queryRequests);
-        map[name] = queue.slice(1);
-        _queryRequests = map;
-        return queue[0];
-    }
-
-    // Drops the newest outstanding request token; a query() call that threw
-    // synchronously can never complete.
-    function _discardQueryRequest(name): void {
-        const queue = _queryRequests[name];
-        if (!Array.isArray(queue) || queue.length === 0)
-            return;
-        const map = Object.assign({}, _queryRequests);
-        map[name] = queue.slice(0, queue.length - 1);
-        _queryRequests = map;
-    }
-
     function _syncStates(): void {
         const previous = _states;
         const next = [];
@@ -344,6 +330,7 @@ QtObject {
             state.brightnessKnown = false;
             state.brightness = 0;
             state.querying = false;
+            state.queryId = 0;
             state.writePending = false;
             state.hasQueuedWrite = false;
             state.queuedValue = 0;
@@ -356,11 +343,25 @@ QtObject {
             state.lastError = "";
         }
         _generations = ({});
-        // The backend connection is gone while disabled; the outstanding
-        // requests can never complete and must not consume later ones.
-        _queryRequests = ({});
         policyError = "";
         strictRoutesEnabled = false;
+    }
+
+    // A backend swap ends every record's outstanding query: the new backend
+    // object is a different query identity, and a completion for a request
+    // issued through the previous one must never authorize these records
+    // again. Strict writes keep running across a swap; the process-wide
+    // native backend and its one-shot result survive a wrapper reload.
+    function _dropOutstandingQueries(): void {
+        for (const state of _states) {
+            if (!state.querying)
+                continue;
+            state.querying = false;
+            state.queryId = 0;
+            state.state = "unknown";
+            state.lastOutcome = "none";
+            state.lastError = "";
+        }
     }
 
     function _currentRoute(screenName): string {
@@ -378,6 +379,9 @@ QtObject {
         state.lastOutcome = "refused";
         state.lastError = message;
         refusedWrites++;
+        // The attempted write leaves nothing applied, so a dragged display
+        // value must snap back exactly like a terminal failure.
+        _snapBack(state);
         return false;
     }
 
@@ -398,8 +402,6 @@ QtObject {
             return false;
         }
         state.querying = true;
-        _querySerial++;
-        state.queryToken = _querySerial;
         state.state = "querying";
         state.route = "";
         state.available = false;
@@ -415,11 +417,26 @@ QtObject {
         state.lastError = "";
         queryRequests++;
         try {
-            _pushQueryRequest(state.screenName, state.queryToken);
-            backend.query(state.screenName);
+            if (queryIdsSupported) {
+                // The id is process-unique and strictly increasing, so an id
+                // issued before a disable, a reconnect or a backend
+                // replacement can never match a later record. Delivery is
+                // asynchronous by construction: the worker owns the result
+                // when queryRequest() returns.
+                const requestId = backend.queryRequest(state.screenName);
+                if (typeof requestId !== "number" || !Number.isFinite(requestId)
+                        || requestId <= 0)
+                    throw "returned the invalid request id " + requestId;
+                state.queryId = requestId;
+            } else {
+                // Degraded, display-only queries: the result cannot be
+                // matched to its request, and writesAllowed stays false, so
+                // it can never authorize a write no matter what arrives.
+                backend.query(state.screenName);
+            }
         } catch (error) {
-            _discardQueryRequest(state.screenName);
             state.querying = false;
+            state.queryId = 0;
             state.state = "failed";
             state.lastOutcome = "failed";
             state.lastError = "The brightness route query failed: " + error;
@@ -486,6 +503,8 @@ QtObject {
             return _refuse(state, "Brightness controls are disabled for read-only observation.");
         if (!strictBackend)
             return _refuse(state, "Brightness writes need the strict-route backend. This backend exposes read-only routes; the interactive slider stays read-only.");
+        if (!queryIdsSupported)
+            return _refuse(state, "Brightness writes need a backend that can match query results to requests. This backend cannot, so the slider stays read-only.");
         if (policyError.length > 0)
             return _refuse(state, policyError);
         if (typeof value !== "number" || !Number.isFinite(value))
@@ -552,12 +571,8 @@ QtObject {
     }
 
     function _startWrite(state, value): bool {
-        if (!_ensureStrictRoutes()) {
-            state.lastOutcome = "refused";
-            state.lastError = policyError;
-            refusedWrites++;
-            return false;
-        }
+        if (!_ensureStrictRoutes())
+            return _refuse(state, policyError);
         state.expectedRoute = state.route;
         state.pendingValue = value;
         state.writePending = true;
@@ -631,17 +646,31 @@ QtObject {
     }
 
     function _onQueried(screenName, available, isDdc, brightness): void {
-        // Match the completion to the request it answers: the oldest
-        // outstanding token for this screen. The token queue is kept across
-        // record replacement, so a completion answering a request issued to an
-        // older record is consumed here and discarded; it never authorizes the
-        // current record, whose own completion is still outstanding.
-        const token = _popQueryRequest(screenName);
-        const state = stateFor(screenName);
-        if (token < 0 || !state || !state.querying || state.queryToken !== token)
+        // With request ids, queryFinished is the only accepted completion: the
+        // backend still fires queried for every request, and processing both
+        // would settle every result twice.
+        if (queryIdsSupported)
             return;
-        // The backend also sets isDdc for the software route (brightness.cpp:
-        // 1230-1236); methodFor() is the only route source.
+        const state = stateFor(screenName);
+        if (!state || !state.querying)
+            return;
+        _applyQueryResult(state, screenName, available, brightness);
+    }
+
+    function _onQueryFinished(requestId, screenName, available, isDdc, brightness): void {
+        const state = stateFor(screenName);
+        // Only the id the current record issued authorizes the result. A
+        // completion carrying an id from before a disable, a reconnect or a
+        // backend replacement simply never matches and is discarded.
+        if (!state || !state.querying || state.queryId !== requestId)
+            return;
+        _applyQueryResult(state, screenName, available, brightness);
+    }
+
+    // Shared result application for an accepted completion. The backend also
+    // sets isDdc for the software route (brightness.cpp: 1230-1236);
+    // methodFor() is the only route source.
+    function _applyQueryResult(state, screenName, available, brightness): void {
         const route = _currentRoute(screenName);
         const level = Number(brightness);
         const readable = available === true && Number.isFinite(level);
@@ -777,6 +806,9 @@ QtObject {
         function onQueried(screenName, available, isDdc, brightness): void {
             root._onQueried(screenName, available, isDdc, brightness);
         }
+        function onQueryFinished(requestId, screenName, available, isDdc, brightness): void {
+            root._onQueryFinished(requestId, screenName, available, isDdc, brightness);
+        }
         function onBrightnessSetFinished(screenName, ok): void {
             root._onBrightnessSetFinished(screenName, ok);
         }
@@ -800,10 +832,10 @@ QtObject {
     onBackendChanged: {
         strictRoutesEnabled = false;
         policyError = "";
-        // The previous backend's completions will never arrive; its
-        // outstanding query tokens must not consume the next backend's
-        // completions.
-        _queryRequests = ({});
+        // A request issued through the previous backend must never authorize
+        // these records again; its id cannot match any later request because
+        // ids are process-unique, but the records stop waiting for it here.
+        _dropOutstandingQueries();
     }
     onScreensChanged: _syncStates()
     onControlsEnabledChanged: {
