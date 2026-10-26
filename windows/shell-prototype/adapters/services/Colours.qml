@@ -10,10 +10,14 @@ import QtQuick
 // layer() mirrors the upstream helper; with transparency disabled it is the
 // identity.
 QtObject {
+    id: root
     readonly property bool available: false
     readonly property bool light: false
 
-    readonly property QtObject tPalette: palette
+    readonly property QtObject tPalette: TransparentPalette {
+        palette: root.palette
+        light: root.light
+    }
     readonly property QtObject palette: QtObject {
         readonly property color m3primary_paletteKeyColor: "#a8627b"
         readonly property color m3secondary_paletteKeyColor: "#8e6f78"
@@ -76,6 +80,6 @@ QtObject {
     }
 
     function layer(colour: color, level: var): color {
-        return colour;
+        return tPalette.layer(colour, level);
     }
 }

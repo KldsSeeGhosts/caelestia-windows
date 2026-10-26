@@ -66,6 +66,7 @@ QtObject {
         // Default true so the pre-existing allowlist assertions keep passing.
         // Gate cases flip it at runtime; the legacy fake below omits it.
         property bool desktopControlSupported: true
+        property bool foregroundValidated: false
 
         function monitorFor(screen): var {
             return screen && screen.monitor ? screen.monitor : null;
@@ -693,6 +694,15 @@ QtObject {
         service.dispatchEnabled = true;
         expectSend("workspace 6", "workspace 6", "workspace",
             "dispatch opt-in restored");
+
+        fixture.activeToplevel = toplevel1;
+        fixture.focusedWorkspace = ws1;
+        ws1Toplevels.values = [];
+        check(service.activeToplevel === null, "unvalidated empty workspace keeps the upstream guard");
+        fixture.foregroundValidated = true;
+        check(service.activeToplevel === toplevel1, "validated Windows foreground is independent of workspace membership");
+        fixture.activeToplevel = null;
+        check(service.activeToplevel === null, "validated desktop remains empty");
 
         console.log("CAELESTIA_HYPR_FIXTURE_PASS " + JSON.stringify({
             assertions: assertions

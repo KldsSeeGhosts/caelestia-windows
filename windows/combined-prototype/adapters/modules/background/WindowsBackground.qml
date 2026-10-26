@@ -49,12 +49,15 @@ Background {
         const window = instances.find(w => w.modelData === screen);
         const clock = window ? CUtils.findChild(window.contentItem, "desktopClock") : null;
         const wallpaper = window ? CUtils.findChild(window.contentItem, "desktopWallpaper") : null;
+        const clockEnabled = GlobalConfig.forScreen(screen.name).background.desktopClock.enabled;
+        const clockReady = clockEnabled ? clock && clock.width > 0 && clock.height > 0 : !clock;
         const ready = Native.DesktopLayer.active && window && window.visible
-            && (!GlobalConfig.background.desktopClock.enabled || (clock && clock.width > 0 && clock.height > 0))
+            && clockReady
             && wallpaper && wallpaper.source.length > 0 && wallpaper.transitionProgress >= 1;
         console.log("CAELESTIA_BACKGROUND_STATE", JSON.stringify({
             active: Native.DesktopLayer.active, icons: desktopIcons,
             screens: screens.map(s => s.name), screen: screen.name, ready: !!ready,
+            clockEnabled: clockEnabled, clockPresent: !!clock,
             wallpaper: Wallpapers.current, width: window?.width ?? 0, height: window?.height ?? 0
         }));
         return !!ready;

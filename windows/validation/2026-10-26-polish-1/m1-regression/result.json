@@ -1,0 +1,260 @@
+{
+    "passed":  true,
+    "smoke":  true,
+    "prototype":  "shell",
+    "combined":  false,
+    "live":  false,
+    "background":  false,
+    "desktopIcons":  "Behind",
+    "schemeRuntime":  null,
+    "audioMode":  "Disabled",
+    "batteryMode":  "Disabled",
+    "mediaMode":  "Disabled",
+    "brightnessMode":  "Disabled",
+    "networkMode":  "Disabled",
+    "hyprMode":  "Disabled",
+    "tilingMode":  "Disabled",
+    "tilingEnvMode":  "off",
+    "tilingIncluded":  "",
+    "tilingExcluded":  "",
+    "bluetoothMode":  "Disabled",
+    "appsMode":  "Disabled",
+    "appsSearchQuery":  "",
+    "trayMode":  "Disabled",
+    "trayFixture":  false,
+    "trayHookMode":  null,
+    "sessionMode":  "Disabled",
+    "sessionActions":  false,
+    "notificationsMode":  "Disabled",
+    "notificationsMirror":  false,
+    "notificationsDismiss":  false,
+    "notificationsAppOpen":  false,
+    "mirrorSuppressedBySmoke":  false,
+    "timedOut":  false,
+    "exitCode":  0,
+    "scaleFactor":  "native",
+    "screenIndex":  0,
+    "monitorCycle":  false,
+    "traceInput":  false,
+    "actualScreens":  [
+                          {
+                              "index":  0,
+                              "name":  "MAG321UX OLED",
+                              "x":  0,
+                              "y":  0,
+                              "dpr":  1.5
+                          }
+                      ],
+    "captures":  [
+                     "file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-7d24bc78/windows/.local/polish/m1-regression/logs/shell-20261026-022256-353.png"
+                 ],
+    "elapsedMilliseconds":  4176,
+    "sourceRevision":  "1ee0d5c4736d462b32674e1755a18d6a33b88006",
+    "sourceDirty":  true,
+    "backendRevision":  "525786fc81f13346cb196dca5ab356f89ad707a5",
+    "buildRecordSha256":  "0FF3B9264081D8A8CEFB8D6BE7368FC8DA14F58134666F45799610E6ED361B68",
+    "configSha256":  "6FC8F8B80AF9D45A49A4737AF51B8C43A11B97E1B59A82468F31AB4C779C6F65",
+    "command":  "C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-8fb0d51b\\windows\\.local\\build\\quickshell\\qs.exe",
+    "arguments":  "--no-color --log-times --path \"C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-7d24bc78\\windows\\.local\\polish\\m1-regression\\shell-runs\\shell-20261026-022256-353\\shell.qml\"",
+    "executableSha256":  "4DD58B5926E461E5621E69D76078DE7113A853AB945324C9698E145DF29CE3A0",
+    "stage":  "C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-7d24bc78\\windows\\.local\\polish\\m1-regression\\shell-runs\\shell-20261026-022256-353",
+    "profile":  "C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-7d24bc78\\windows\\.local\\polish\\m1-regression\\shell-prototype-profile",
+    "sources":  "C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-7d24bc78\\windows\\.local\\polish\\m1-regression\\logs\\shell-20261026-022256-353.sources.json",
+    "screenshot":  "C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-7d24bc78\\windows\\.local\\polish\\m1-regression\\logs\\shell-20261026-022256-353.png",
+    "stdout":  "C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-7d24bc78\\windows\\.local\\polish\\m1-regression\\logs\\shell-20261026-022256-353.stdout.log",
+    "stderr":  "C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-7d24bc78\\windows\\.local\\polish\\m1-regression\\logs\\shell-20261026-022256-353.stderr.log",
+    "audioSnapshots":  [
+
+                       ],
+    "batterySnapshots":  [
+
+                         ],
+    "mediaSnapshots":  [
+
+                       ],
+    "brightnessSnapshots":  [
+
+                            ],
+    "networkSnapshots":  [
+
+                         ],
+    "hyprSnapshots":  [
+
+                      ],
+    "bluetoothSnapshots":  [
+
+                           ],
+    "appsSnapshots":  [
+
+                      ],
+    "traySnapshots":  [
+
+                      ],
+    "tilingSnapshots":  [
+
+                        ],
+    "sessionSnapshots":  [
+                             {
+                                 "phase":  "INITIAL",
+                                 "state":  {
+                                               "mode":  "Disabled",
+                                               "run":  false,
+                                               "enabled":  false,
+                                               "actionsEnabled":  false,
+                                               "available":  false,
+                                               "status":  "disabled",
+                                               "nativeRequested":  false,
+                                               "backendLoaded":  false,
+                                               "backendError":  "",
+                                               "hibernateCapabilityKnown":  false,
+                                               "canHibernate":  false,
+                                               "hibernateSupported":  false,
+                                               "actionGating":  true,
+                                               "fallbackBlocked":  true,
+                                               "actions":  {
+                                                               "lock":  {
+                                                                            "supported":  true,
+                                                                            "capability":  false,
+                                                                            "available":  false,
+                                                                            "requiresConfirmation":  false
+                                                                        },
+                                                               "logout":  {
+                                                                              "supported":  true,
+                                                                              "capability":  false,
+                                                                              "available":  false,
+                                                                              "requiresConfirmation":  true
+                                                                          },
+                                                               "shutdown":  {
+                                                                                "supported":  true,
+                                                                                "capability":  false,
+                                                                                "available":  false,
+                                                                                "requiresConfirmation":  true
+                                                                            },
+                                                               "reboot":  {
+                                                                              "supported":  true,
+                                                                              "capability":  false,
+                                                                              "available":  false,
+                                                                              "requiresConfirmation":  true
+                                                                          },
+                                                               "suspend":  {
+                                                                               "supported":  true,
+                                                                               "capability":  false,
+                                                                               "available":  false,
+                                                                               "requiresConfirmation":  false
+                                                                           },
+                                                               "hibernate":  {
+                                                                                 "supported":  true,
+                                                                                 "capability":  false,
+                                                                                 "available":  false,
+                                                                                 "requiresConfirmation":  false
+                                                                             },
+                                                               "firmware":  {
+                                                                                "supported":  true,
+                                                                                "capability":  false,
+                                                                                "available":  false,
+                                                                                "requiresConfirmation":  true
+                                                                            }
+                                                           },
+                                               "lastOutcome":  "disabled",
+                                               "lastAction":  "",
+                                               "lastConsumed":  true,
+                                               "lastDispatched":  false,
+                                               "lastRequested":  false,
+                                               "lastSucceeded":  false
+                                           }
+                             },
+                             {
+                                 "phase":  "FINAL",
+                                 "state":  {
+                                               "mode":  "Disabled",
+                                               "run":  false,
+                                               "enabled":  false,
+                                               "actionsEnabled":  false,
+                                               "available":  false,
+                                               "status":  "disabled",
+                                               "nativeRequested":  false,
+                                               "backendLoaded":  false,
+                                               "backendError":  "",
+                                               "hibernateCapabilityKnown":  false,
+                                               "canHibernate":  false,
+                                               "hibernateSupported":  false,
+                                               "actionGating":  true,
+                                               "fallbackBlocked":  true,
+                                               "actions":  {
+                                                               "lock":  {
+                                                                            "supported":  true,
+                                                                            "capability":  false,
+                                                                            "available":  false,
+                                                                            "requiresConfirmation":  false
+                                                                        },
+                                                               "logout":  {
+                                                                              "supported":  true,
+                                                                              "capability":  false,
+                                                                              "available":  false,
+                                                                              "requiresConfirmation":  true
+                                                                          },
+                                                               "shutdown":  {
+                                                                                "supported":  true,
+                                                                                "capability":  false,
+                                                                                "available":  false,
+                                                                                "requiresConfirmation":  true
+                                                                            },
+                                                               "reboot":  {
+                                                                              "supported":  true,
+                                                                              "capability":  false,
+                                                                              "available":  false,
+                                                                              "requiresConfirmation":  true
+                                                                          },
+                                                               "suspend":  {
+                                                                               "supported":  true,
+                                                                               "capability":  false,
+                                                                               "available":  false,
+                                                                               "requiresConfirmation":  false
+                                                                           },
+                                                               "hibernate":  {
+                                                                                 "supported":  true,
+                                                                                 "capability":  false,
+                                                                                 "available":  false,
+                                                                                 "requiresConfirmation":  false
+                                                                             },
+                                                               "firmware":  {
+                                                                                "supported":  true,
+                                                                                "capability":  false,
+                                                                                "available":  false,
+                                                                                "requiresConfirmation":  true
+                                                                            }
+                                                           },
+                                               "lastOutcome":  "disabled",
+                                               "lastAction":  "",
+                                               "lastConsumed":  true,
+                                               "lastDispatched":  false,
+                                               "lastRequested":  false,
+                                               "lastSucceeded":  false
+                                           }
+                             }
+                         ],
+    "notificationsSnapshots":  [
+
+                               ],
+    "appsSearches":  [
+
+                     ],
+    "sessionButtons":  [
+                           {
+                               "icon":  "logout",
+                               "disabled":  true
+                           },
+                           {
+                               "icon":  "power_settings_new",
+                               "disabled":  true
+                           },
+                           {
+                               "icon":  "downloading",
+                               "disabled":  true
+                           },
+                           {
+                               "icon":  "cached",
+                               "disabled":  true
+                           }
+                       ]
+}

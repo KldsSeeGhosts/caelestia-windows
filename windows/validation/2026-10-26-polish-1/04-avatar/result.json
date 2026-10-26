@@ -1,0 +1,122 @@
+{
+    "passed":  true,
+    "smoke":  true,
+    "prototype":  "combined",
+    "combined":  true,
+    "live":  false,
+    "background":  false,
+    "desktopIcons":  "Behind",
+    "audioMode":  "Disabled",
+    "batteryMode":  "Disabled",
+    "mediaMode":  "Disabled",
+    "brightnessMode":  "Disabled",
+    "networkMode":  "Disabled",
+    "hyprMode":  "Disabled",
+    "tilingMode":  "Disabled",
+    "tilingEnvMode":  "off",
+    "tilingIncluded":  "",
+    "tilingExcluded":  "",
+    "bluetoothMode":  "Disabled",
+    "appsMode":  "Disabled",
+    "appsSearchQuery":  "",
+    "trayMode":  "Disabled",
+    "trayFixture":  false,
+    "trayHookMode":  null,
+    "sessionMode":  "Disabled",
+    "sessionActions":  false,
+    "notificationsMode":  "Disabled",
+    "notificationsMirror":  false,
+    "notificationsDismiss":  false,
+    "notificationsAppOpen":  false,
+    "mirrorSuppressedBySmoke":  false,
+    "timedOut":  false,
+    "exitCode":  0,
+    "scaleFactor":  "native",
+    "screenIndex":  0,
+    "monitorCycle":  false,
+    "traceInput":  false,
+    "actualScreens":  [
+                          {
+                              "index":  0,
+                              "name":  "MAG321UX OLED",
+                              "x":  0,
+                              "y":  0,
+                              "dpr":  1.5
+                          }
+                      ],
+    "captures":  [
+                     "file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-7d24bc78/windows/.local/polish/04-avatar/logs/combined-20261026-021345-040-session.png",
+                     "file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-7d24bc78/windows/.local/polish/04-avatar/logs/combined-20261026-021345-040-popout-audio.png",
+                     "file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-7d24bc78/windows/.local/polish/04-avatar/logs/combined-20261026-021345-040-popout-network.png",
+                     "file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-7d24bc78/windows/.local/polish/04-avatar/logs/combined-20261026-021345-040-popout-bluetooth.png",
+                     "file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-7d24bc78/windows/.local/polish/04-avatar/logs/combined-20261026-021345-040-popout-battery.png",
+                     "file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-7d24bc78/windows/.local/polish/04-avatar/logs/combined-20261026-021345-040-osd.png",
+                     "file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-7d24bc78/windows/.local/polish/04-avatar/logs/combined-20261026-021345-040-launcher.png",
+                     "file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-7d24bc78/windows/.local/polish/04-avatar/logs/combined-20261026-021345-040-dashboard.png",
+                     "file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-7d24bc78/windows/.local/polish/04-avatar/logs/combined-20261026-021345-040-dashboard-dash.png",
+                     "file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-7d24bc78/windows/.local/polish/04-avatar/logs/combined-20261026-021345-040-dashboard-performance.png",
+                     "file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-7d24bc78/windows/.local/polish/04-avatar/logs/combined-20261026-021345-040-dashboard-weather.png",
+                     "file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-7d24bc78/windows/.local/polish/04-avatar/logs/combined-20261026-021345-040-utilities.png",
+                     "file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-7d24bc78/windows/.local/polish/04-avatar/logs/combined-20261026-021345-040-notification.png",
+                     "file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-7d24bc78/windows/.local/polish/04-avatar/logs/combined-20261026-021345-040-sidebar.png",
+                     "file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-7d24bc78/windows/.local/polish/04-avatar/logs/combined-20261026-021345-040-notification.png",
+                     "file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-7d24bc78/windows/.local/polish/04-avatar/logs/combined-20261026-021345-040.png"
+                 ],
+    "elapsedMilliseconds":  32230,
+    "sourceRevision":  "6d13f56f1348fe3d401476fbc031ba4234af2246",
+    "sourceDirty":  true,
+    "backendRevision":  "525786fc81f13346cb196dca5ab356f89ad707a5",
+    "buildRecordSha256":  "0FF3B9264081D8A8CEFB8D6BE7368FC8DA14F58134666F45799610E6ED361B68",
+    "configSha256":  "7363597EE6337A353059018DFED04A6956A024686F04AD11016256A991FBD7DE",
+    "command":  "C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-8fb0d51b\\windows\\.local\\build\\quickshell\\qs.exe",
+    "arguments":  "--no-color --log-times --path \"C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-7d24bc78\\windows\\.local\\polish\\04-avatar\\shell-runs\\combined-20261026-021345-040\\shell.qml\"",
+    "executableSha256":  "4DD58B5926E461E5621E69D76078DE7113A853AB945324C9698E145DF29CE3A0",
+    "stage":  "C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-7d24bc78\\windows\\.local\\polish\\04-avatar\\shell-runs\\combined-20261026-021345-040",
+    "profile":  "C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-7d24bc78\\windows\\.local\\polish\\04-avatar\\combined-prototype-profile",
+    "sources":  "C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-7d24bc78\\windows\\.local\\polish\\04-avatar\\logs\\combined-20261026-021345-040.sources.json",
+    "screenshot":  "C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-7d24bc78\\windows\\.local\\polish\\04-avatar\\logs\\combined-20261026-021345-040.png",
+    "stdout":  "C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-7d24bc78\\windows\\.local\\polish\\04-avatar\\logs\\combined-20261026-021345-040.stdout.log",
+    "stderr":  "C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-7d24bc78\\windows\\.local\\polish\\04-avatar\\logs\\combined-20261026-021345-040.stderr.log",
+    "audioSnapshots":  [
+
+                       ],
+    "batterySnapshots":  [
+
+                         ],
+    "mediaSnapshots":  [
+
+                       ],
+    "brightnessSnapshots":  [
+
+                            ],
+    "networkSnapshots":  [
+
+                         ],
+    "hyprSnapshots":  [
+
+                      ],
+    "bluetoothSnapshots":  [
+
+                           ],
+    "appsSnapshots":  [
+
+                      ],
+    "traySnapshots":  [
+
+                      ],
+    "tilingSnapshots":  [
+
+                        ],
+    "sessionSnapshots":  [
+
+                         ],
+    "notificationsSnapshots":  [
+
+                               ],
+    "appsSearches":  [
+
+                     ],
+    "sessionButtons":  [
+
+                       ]
+}

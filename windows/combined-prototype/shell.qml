@@ -48,11 +48,12 @@ ShellRoot {
         interval: 10000
         onTriggered: {
             if (!desktopBackground.checkReady(root.selectedScreen)) {
-                root.fail("desktop background or clock not ready");
+                root.fail("desktop background or configured clock state not ready");
                 return;
             }
             const path = Quickshell.env("CAELESTIA_SHELL_SCREENSHOT");
-            CUtils.saveItem(win.contentItem, Qt.resolvedUrl(path), () => {
+            const background = ShellState.componentsFor(root.selectedScreen)?.background;
+            CUtils.saveItem(background.contentItem, Qt.resolvedUrl(path), () => {
                 console.log("CAELESTIA_COMBINED_PASS background", CUtils.qtVersion);
                 Qt.quit();
             }, () => root.fail("background smoke screenshot"));
@@ -303,6 +304,20 @@ ShellRoot {
     FontLoader {
         id: clockFont
         source: Quickshell.shellPath("assets/rubik/Rubik.ttf")
+    }
+
+    // Inspect the actual Windows platform font selection, including token axes.
+    Item {
+        visible: false
+        Repeater {
+            id: fontProbes
+            model: ["headline", "title", "body", "label"]
+            delegate: Text {
+                required property string modelData
+                text: "Performance Clear 01 46"
+                font: Tokens.font[modelData].medium
+            }
+        }
     }
 
     // Original daemon position. The Windows adapter replaces the Wayland
@@ -625,6 +640,14 @@ ShellRoot {
                     index: root.screenIndex, name: win.screen.name,
                     x: win.screen.x, y: win.screen.y, dpr: win.devicePixelRatio
                 }));
+                for (let i = 0; i < fontProbes.count; ++i) {
+                    const probe = fontProbes.itemAt(i);
+                    console.log("CAELESTIA_COMBINED_FONT", probe.modelData, probe.fontInfo.family);
+                    if (probe.fontInfo.family !== "Google Sans Flex") {
+                        root.fail("unresolved " + probe.modelData + " font");
+                        return;
+                    }
+                }
                 console.log("CAELESTIA_COMBINED_GEOMETRY", win.screen.name,
                     win.screen.x, win.screen.y, win.width, win.height,
                     win.devicePixelRatio, win.contentItem.GraphicsInfo.api);

@@ -1,0 +1,122 @@
+{
+    "passed":  true,
+    "smoke":  true,
+    "prototype":  "combined",
+    "combined":  true,
+    "live":  false,
+    "background":  false,
+    "desktopIcons":  "Behind",
+    "audioMode":  "Disabled",
+    "batteryMode":  "Disabled",
+    "mediaMode":  "Disabled",
+    "brightnessMode":  "Disabled",
+    "networkMode":  "Disabled",
+    "hyprMode":  "Disabled",
+    "tilingMode":  "Disabled",
+    "tilingEnvMode":  "off",
+    "tilingIncluded":  "",
+    "tilingExcluded":  "",
+    "bluetoothMode":  "Disabled",
+    "appsMode":  "Disabled",
+    "appsSearchQuery":  "",
+    "trayMode":  "Disabled",
+    "trayFixture":  false,
+    "trayHookMode":  null,
+    "sessionMode":  "Disabled",
+    "sessionActions":  false,
+    "notificationsMode":  "Disabled",
+    "notificationsMirror":  false,
+    "notificationsDismiss":  false,
+    "notificationsAppOpen":  false,
+    "mirrorSuppressedBySmoke":  false,
+    "timedOut":  false,
+    "exitCode":  0,
+    "scaleFactor":  "native",
+    "screenIndex":  0,
+    "monitorCycle":  false,
+    "traceInput":  false,
+    "actualScreens":  [
+                          {
+                              "index":  0,
+                              "name":  "MAG321UX OLED",
+                              "x":  0,
+                              "y":  0,
+                              "dpr":  1.5
+                          }
+                      ],
+    "captures":  [
+                     "file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-7d24bc78/windows/.local/polish/07-active-window-recheck/logs/combined-20261026-021917-580-session.png",
+                     "file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-7d24bc78/windows/.local/polish/07-active-window-recheck/logs/combined-20261026-021917-580-popout-audio.png",
+                     "file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-7d24bc78/windows/.local/polish/07-active-window-recheck/logs/combined-20261026-021917-580-popout-network.png",
+                     "file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-7d24bc78/windows/.local/polish/07-active-window-recheck/logs/combined-20261026-021917-580-popout-bluetooth.png",
+                     "file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-7d24bc78/windows/.local/polish/07-active-window-recheck/logs/combined-20261026-021917-580-popout-battery.png",
+                     "file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-7d24bc78/windows/.local/polish/07-active-window-recheck/logs/combined-20261026-021917-580-osd.png",
+                     "file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-7d24bc78/windows/.local/polish/07-active-window-recheck/logs/combined-20261026-021917-580-launcher.png",
+                     "file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-7d24bc78/windows/.local/polish/07-active-window-recheck/logs/combined-20261026-021917-580-dashboard.png",
+                     "file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-7d24bc78/windows/.local/polish/07-active-window-recheck/logs/combined-20261026-021917-580-dashboard-dash.png",
+                     "file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-7d24bc78/windows/.local/polish/07-active-window-recheck/logs/combined-20261026-021917-580-dashboard-performance.png",
+                     "file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-7d24bc78/windows/.local/polish/07-active-window-recheck/logs/combined-20261026-021917-580-dashboard-weather.png",
+                     "file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-7d24bc78/windows/.local/polish/07-active-window-recheck/logs/combined-20261026-021917-580-utilities.png",
+                     "file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-7d24bc78/windows/.local/polish/07-active-window-recheck/logs/combined-20261026-021917-580-notification.png",
+                     "file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-7d24bc78/windows/.local/polish/07-active-window-recheck/logs/combined-20261026-021917-580-sidebar.png",
+                     "file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-7d24bc78/windows/.local/polish/07-active-window-recheck/logs/combined-20261026-021917-580-notification.png",
+                     "file:///C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-7d24bc78/windows/.local/polish/07-active-window-recheck/logs/combined-20261026-021917-580.png"
+                 ],
+    "elapsedMilliseconds":  32302,
+    "sourceRevision":  "55a87c0c3f63b7ca72a5809a03082e68c8776ffd",
+    "sourceDirty":  true,
+    "backendRevision":  "525786fc81f13346cb196dca5ab356f89ad707a5",
+    "buildRecordSha256":  "0FF3B9264081D8A8CEFB8D6BE7368FC8DA14F58134666F45799610E6ED361B68",
+    "configSha256":  "533FB6FC327215FFE1B81F2CFA4C9A903AA1415A06C8567CBF1F3CF984B2F784",
+    "command":  "C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-8fb0d51b\\windows\\.local\\build\\quickshell\\qs.exe",
+    "arguments":  "--no-color --log-times --path \"C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-7d24bc78\\windows\\.local\\polish\\07-active-window-recheck\\shell-runs\\combined-20261026-021917-580\\shell.qml\"",
+    "executableSha256":  "4DD58B5926E461E5621E69D76078DE7113A853AB945324C9698E145DF29CE3A0",
+    "stage":  "C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-7d24bc78\\windows\\.local\\polish\\07-active-window-recheck\\shell-runs\\combined-20261026-021917-580",
+    "profile":  "C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-7d24bc78\\windows\\.local\\polish\\07-active-window-recheck\\combined-prototype-profile",
+    "sources":  "C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-7d24bc78\\windows\\.local\\polish\\07-active-window-recheck\\logs\\combined-20261026-021917-580.sources.json",
+    "screenshot":  "C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-7d24bc78\\windows\\.local\\polish\\07-active-window-recheck\\logs\\combined-20261026-021917-580.png",
+    "stdout":  "C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-7d24bc78\\windows\\.local\\polish\\07-active-window-recheck\\logs\\combined-20261026-021917-580.stdout.log",
+    "stderr":  "C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-7d24bc78\\windows\\.local\\polish\\07-active-window-recheck\\logs\\combined-20261026-021917-580.stderr.log",
+    "audioSnapshots":  [
+
+                       ],
+    "batterySnapshots":  [
+
+                         ],
+    "mediaSnapshots":  [
+
+                       ],
+    "brightnessSnapshots":  [
+
+                            ],
+    "networkSnapshots":  [
+
+                         ],
+    "hyprSnapshots":  [
+
+                      ],
+    "bluetoothSnapshots":  [
+
+                           ],
+    "appsSnapshots":  [
+
+                      ],
+    "traySnapshots":  [
+
+                      ],
+    "tilingSnapshots":  [
+
+                        ],
+    "sessionSnapshots":  [
+
+                         ],
+    "notificationsSnapshots":  [
+
+                               ],
+    "appsSearches":  [
+
+                     ],
+    "sessionButtons":  [
+
+                       ]
+}

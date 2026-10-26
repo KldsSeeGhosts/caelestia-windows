@@ -1,0 +1,12 @@
+﻿{
+    "passed":  true,
+    "checks":  {
+                   "application":  true,
+                   "toolWithAppWindowRejected":  true,
+                   "cloakedRejected":  true,
+                   "hiddenRejected":  true,
+                   "nullRejected":  true,
+                   "existingQsWindowsRejected":  true
+               },
+    "observedQsWindows":  2
+}

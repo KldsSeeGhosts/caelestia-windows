@@ -1,0 +1,51 @@
+﻿2026-10-26 02:15:37.725  INFO: Launching config: "C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-7d24bc78/windows/.local/polish/06-clock/shell-runs/combined-20261026-021536-279/shell.qml"
+2026-10-26 02:15:37.725  INFO: Shell ID: "6730c9022508138af8107d3f124785d4" Path ID "6730c9022508138af8107d3f124785d4"
+2026-10-26 02:15:37.754  INFO: Saving logs to "C:/Users/Ermin/AppData/Local/quickshell/run/by-id/c08124int/log.qslog"
+2026-10-26 02:15:38.038  INFO quickshell.windows.blur: Blur behind panels is turned off by QS_WINDOWS_BLUR.
+2026-10-26 02:15:38.048  INFO quickshell.windows.blur: No layer rules file found (looked for C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-7d24bc78/windows/.local/polish/06-clock/shell-runs/combined-20261026-021536-279/defaults/windows/layerrules.json ), blur behind panels is off.
+2026-10-26 02:15:38.050 DEBUG quickshell.windows.desktops: Desktop list changed: 1 desktops
+2026-10-26 02:15:38.050 DEBUG quickshell.windows.desktops: Current desktop: 0
+2026-10-26 02:15:38.052 DEBUG quickshell.hyprland.ipc.events: Event "focusedmon" "DELL S2725QS,"
+2026-10-26 02:15:38.053 DEBUG quickshell.hyprland.ipc.events: Event "activewindowv2" ""
+2026-10-26 02:15:38.053 DEBUG quickshell.hyprland.ipc.events: Event "activewindow" ","
+2026-10-26 02:15:38.053  INFO quickshell.hyprland.ipc: Hyprland compatibility module ready: 2 monitors, 1 workspaces, 0 toplevels in 3 ms
+2026-10-26 02:15:38.053  INFO qml: CAELESTIA_HYPR_BACKEND_READY usingLua=false monitors=2 workspaces=1 toplevels=0
+2026-10-26 02:15:38.064  INFO caelestia.windows.focusguard: target-unavailable
+2026-10-26 02:15:38.064 DEBUG qml: CAELESTIA_SHELL_FOCUS target-unavailable
+2026-10-26 02:15:38.103 DEBUG qml: CAELESTIA_HYPR_STATUS hypr=1 dispatch=0
+2026-10-26 02:15:38.103 DEBUG qml: CAELESTIA_TILING_STATUS tiling=off included=0 excluded=0 status=disabled
+2026-10-26 02:15:38.107 DEBUG quickshell.windows.panel: Placing qs::windows::WinPanelWindow(0x21265390cd0) at QRect(0,0 2560x1440) on "MAG321UX OLED"
+2026-10-26 02:15:38.119 DEBUG quickshell.windows.panel: Put qs::windows::WinPanelWindow(0x21265390cd0) into the desktop window 0x10216 behind the icons
+2026-10-26 02:15:38.121 DEBUG quickshell.windows.panel: Placing qs::windows::WinPanelWindow(0x21260e71b50) at QRect(80,80 900x620) on "MAG321UX OLED"
+2026-10-26 02:15:38.127  INFO caelestia.windows.focusguard: idle
+2026-10-26 02:15:38.127 DEBUG qml: CAELESTIA_SHELL_FOCUS idle
+2026-10-26 02:15:38.294 DEBUG quickshell.windows.appsfolder: Scanned 154 apps from the Windows Apps folder
+2026-10-26 02:15:38.382  INFO: Configuration Loaded
+2026-10-26 02:15:38.603 DEBUG quickshell.windows.startup: First panel frame presented
+2026-10-26 02:15:39.004 DEBUG quickshell.windows.startup: Startup settled, running 6 deferred tasks
+2026-10-26 02:15:39.004  INFO quickshell.windows.desktops: VirtualDesktopAccessor.dll not found next to the executable; desktop switching and creation are unavailable.
+2026-10-26 02:15:39.006 DEBUG quickshell.hyprland.ipc.events: Event "openwindow" "20070,1,Raycast.Raycast_qypenmj9wpt2a!Raycast,Raycast"
+2026-10-26 02:15:39.012 DEBUG quickshell.hyprland.ipc.events: Event "openwindow" "4650358,1,Claude_pzs8sxrjxfjjc!Claude,Claude"
+2026-10-26 02:15:39.013 DEBUG quickshell.hyprland.ipc.events: Event "openwindow" "509ca,1,TheBrowserCompany.Dia_ttt1ap7aakyb4!Dia,Posts / X"
+2026-10-26 02:15:39.013 DEBUG quickshell.hyprland.ipc.events: Event "openwindow" "50936,1,zcode,ZCode"
+2026-10-26 02:15:39.014 DEBUG quickshell.hyprland.ipc.events: Event "openwindow" "550678,1,qs,Caelestia preview"
+2026-10-26 02:15:39.014 DEBUG quickshell.hyprland.ipc.events: Event "openwindow" "1850af6,1,qs,Caelestia preview"
+2026-10-26 02:15:39.015 DEBUG quickshell.hyprland.ipc.events: Event "openwindow" "40900,1,ksg code,T3 Code (Nightly)"
+2026-10-26 02:15:39.015 DEBUG quickshell.hyprland.ipc.events: Event "openwindow" "3071c,1,Valve.Steam.Client,Steam"
+2026-10-26 02:15:39.016 DEBUG quickshell.hyprland.ipc.events: Event "activewindowv2" "4650358"
+2026-10-26 02:15:39.016 DEBUG quickshell.hyprland.ipc.events: Event "activewindow" "Claude_pzs8sxrjxfjjc!Claude,Claude"
+2026-10-26 02:15:39.050  INFO quickshell.windows.bluetooth.worker: Using Bluetooth adapter "Intel(R) Wireless Bluetooth(R)" "5C:B2:6D:F3:07:F4" "\\\\?\\USB#VID_8087&PID_0032#8&f2cb6fa&0&13#{92383b0e-f90e-4ac9-8d44-8c2d0d0ebda2}"
+2026-10-26 02:15:39.054 DEBUG quickshell.windows.bluetooth.worker: Started the paired classic device watcher
+2026-10-26 02:15:39.057 DEBUG quickshell.windows.bluetooth.worker: Started the paired LE device watcher
+2026-10-26 02:15:39.076 DEBUG quickshell.windows.bluetooth: Tracked new adapter BluetoothAdapter(0x212655f0040, id="\\\\?\\USB#VID_8087&PID_0032#8&f2cb6fa&0&13#{92383b0e-f90e-4ac9-8d44-8c2d0d0ebda2}")
+2026-10-26 02:15:39.077 DEBUG quickshell.windows.bluetooth: Initial adapter lookup done, adapter present: true
+2026-10-26 02:15:40.340 DEBUG quickshell.hyprland.ipc.events: Event "windowgeometry" ""
+2026-10-26 02:15:40.837 DEBUG quickshell.hyprland.ipc.events: Event "windowgeometry" ""
+2026-10-26 02:15:42.143 DEBUG quickshell.hyprland.ipc.events: Event "focusedmon" "MAG321UX OLED,1"
+2026-10-26 02:15:42.235 DEBUG quickshell.hyprland.ipc.events: Event "activewindowv2" ""
+2026-10-26 02:15:42.235 DEBUG quickshell.hyprland.ipc.events: Event "activewindow" ","
+2026-10-26 02:15:42.962 DEBUG quickshell.hyprland.ipc.events: Event "activewindowv2" "40900"
+2026-10-26 02:15:42.962 DEBUG quickshell.hyprland.ipc.events: Event "activewindow" "ksg code,T3 Code (Nightly)"
+2026-10-26 02:15:48.608 DEBUG qml: CAELESTIA_BACKGROUND_STATE {"active":true,"icons":"Behind","screens":["MAG321UX OLED"],"ready":true,"clockEnabled":false,"clockPresent":false,"wallpaper":"C:/WINDOWS/web/wallpaper/Windows/img19.jpg","width":2560,"height":1440}
+2026-10-26 02:15:49.547 DEBUG qml: CAELESTIA_COMBINED_PASS background 6.11.2
+

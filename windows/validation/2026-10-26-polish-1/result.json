@@ -1,0 +1,145 @@
+﻿{
+    "passed":  true,
+    "sourceRevision":  "1c3a2e985a74ddcd6bc8de84b08295a8ec6a97e6",
+    "runtimeBuild":  "C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-8fb0d51b\\windows\\.local\\build",
+    "runtimeBackendRevision":  "57163953a2efe8ee05288daabda5295e94c93404",
+    "checkoutBackendRevision":  "525786fc81f13346cb196dca5ab356f89ad707a5",
+    "backendRebuilt":  false,
+    "runs":  [
+                 {
+                     "name":  "baseline",
+                     "passed":  true,
+                     "implementationCommit":  "41ddcefc8f97360b2b2b2bafcbd83ac5beb2651b",
+                     "recordedRunSource":  "41ddcefc8f97360b2b2b2bafcbd83ac5beb2651b",
+                     "dpr":  "1.5",
+                     "captures":  [
+                                      "00-baseline/dashboard-dash.png"
+                                  ],
+                     "result":  "00-baseline/result.json"
+                 },
+                 {
+                     "name":  "font",
+                     "passed":  true,
+                     "implementationCommit":  "037dd5be73c13e68d52d2a8d76cc744f2be2d3c7",
+                     "recordedRunSource":  "41ddcefc8f97360b2b2b2bafcbd83ac5beb2651b",
+                     "dpr":  "1.5",
+                     "captures":  [
+                                      "01-font/dashboard-dash.png"
+                                  ],
+                     "result":  "01-font/result.json"
+                 },
+                 {
+                     "name":  "font175",
+                     "passed":  true,
+                     "implementationCommit":  "037dd5be73c13e68d52d2a8d76cc744f2be2d3c7",
+                     "recordedRunSource":  "037dd5be73c13e68d52d2a8d76cc744f2be2d3c7",
+                     "dpr":  "1.75",
+                     "captures":  [
+                                      "01-font-175/dashboard-dash.png"
+                                  ],
+                     "result":  "01-font-175/result.json"
+                 },
+                 {
+                     "name":  "transparency",
+                     "passed":  true,
+                     "implementationCommit":  "2578cdeed1f402039a99175cb83d33e78d11951f",
+                     "recordedRunSource":  "037dd5be73c13e68d52d2a8d76cc744f2be2d3c7",
+                     "dpr":  "1.5",
+                     "captures":  [
+                                      "02-transparency/dashboard-dash.png"
+                                  ],
+                     "result":  "02-transparency/result.json"
+                 },
+                 {
+                     "name":  "toggles",
+                     "passed":  true,
+                     "implementationCommit":  "6d13f56f1348fe3d401476fbc031ba4234af2246",
+                     "recordedRunSource":  "2578cdeed1f402039a99175cb83d33e78d11951f",
+                     "dpr":  "1.5",
+                     "captures":  [
+                                      "03-toggles/utilities.png"
+                                  ],
+                     "result":  "03-toggles/result.json"
+                 },
+                 {
+                     "name":  "avatar",
+                     "passed":  true,
+                     "implementationCommit":  "b4442390c73bc462de6f31ab58f7f33e5aa81c14",
+                     "recordedRunSource":  "6d13f56f1348fe3d401476fbc031ba4234af2246",
+                     "dpr":  "1.5",
+                     "captures":  [
+                                      "04-avatar/dashboard-dash.png"
+                                  ],
+                     "result":  "04-avatar/result.json"
+                 },
+                 {
+                     "name":  "assets",
+                     "passed":  true,
+                     "implementationCommit":  "1fd6f1964bdd9a946ac8889f06896b950861ecb9",
+                     "recordedRunSource":  "b4442390c73bc462de6f31ab58f7f33e5aa81c14",
+                     "dpr":  "1.5",
+                     "captures":  [
+                                      "05-assets/dashboard-dash.png",
+                                      "05-assets/session.png",
+                                      "05-assets/sidebar.png"
+                                  ],
+                     "result":  "05-assets/result.json"
+                 },
+                 {
+                     "name":  "clock",
+                     "passed":  true,
+                     "implementationCommit":  "55a87c0c3f63b7ca72a5809a03082e68c8776ffd",
+                     "recordedRunSource":  "1fd6f1964bdd9a946ac8889f06896b950861ecb9",
+                     "dpr":  "",
+                     "captures":  [
+                                      "06-clock/surface.png"
+                                  ],
+                     "result":  "06-clock/result.json"
+                 },
+                 {
+                     "name":  "active",
+                     "passed":  true,
+                     "implementationCommit":  "1ee0d5c4736d462b32674e1755a18d6a33b88006",
+                     "recordedRunSource":  "55a87c0c3f63b7ca72a5809a03082e68c8776ffd",
+                     "dpr":  "1.5",
+                     "captures":  [
+                                      "07-active-window/dashboard-dash.png"
+                                  ],
+                     "result":  "07-active-window/result.json"
+                 },
+                 {
+                     "name":  "python",
+                     "passed":  true,
+                     "implementationCommit":  "1c3a2e985a74ddcd6bc8de84b08295a8ec6a97e6",
+                     "recordedRunSource":  "57b27ef17a9083f61bc1accb51f9bd15010c4576",
+                     "dpr":  "1.5",
+                     "captures":  [
+                                      "08-python/dashboard-dash.png"
+                                  ],
+                     "result":  "08-python/result.json"
+                 },
+                 {
+                     "name":  "python-missing",
+                     "passed":  true,
+                     "implementationCommit":  "1c3a2e985a74ddcd6bc8de84b08295a8ec6a97e6",
+                     "recordedRunSource":  "1c3a2e985a74ddcd6bc8de84b08295a8ec6a97e6",
+                     "dpr":  "1.75",
+                     "captures":  [
+                                      "final-175-python-missing/dashboard-dash.png",
+                                      "final-175-python-missing/utilities.png"
+                                  ],
+                     "result":  "final-175-python-missing/result.json"
+                 },
+                 {
+                     "name":  "m1",
+                     "passed":  true,
+                     "implementationCommit":  "1c3a2e985a74ddcd6bc8de84b08295a8ec6a97e6",
+                     "recordedRunSource":  "1ee0d5c4736d462b32674e1755a18d6a33b88006",
+                     "dpr":  "1.5",
+                     "captures":  [
+                                      "m1-regression/surface.png"
+                                  ],
+                     "result":  "m1-regression/result.json"
+                 }
+             ]
+}

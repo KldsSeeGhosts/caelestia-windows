@@ -41,6 +41,7 @@ param(
     [switch]$NotificationDismiss,
     [switch]$NotificationAppOpen,
     [switch]$Combined,
+    [switch]$Transparency,
     [switch]$Background,
     [ValidateSet('Behind', 'Replace')][string]$DesktopIcons = 'Behind',
     [switch]$Live,
@@ -197,6 +198,14 @@ if ($Session) {
 if ($Combined) {
     $configText = @'
 {
+  "appearance": {
+    "font": {
+      "headline": {"family":"Google Sans Flex"},
+      "title": {"family":"Google Sans Flex"},
+      "body": {"family":"Google Sans Flex"},
+      "label": {"family":"Google Sans Flex"}
+    }
+  },
   "bar": {
     "persistent": true,
     "showOnHover": true,
@@ -232,12 +241,12 @@ if ($Combined) {
     "vimKeybinds": true,
     "commands": {"logout":[],"shutdown":[],"hibernate":[],"reboot":[]}
   },
-  "paths": {"sessionGif":""},
+  "paths": {"sessionGif":"root:/assets/kurukuru.gif"},
   "dashboard": {"enabled":true,"showOnHover":true},
   "launcher": {"enabled":true,"showOnHover":true},
   "sidebar": {"enabled":true,"showOnHover":true},
   "osd": {"enabled":true},
-  "utilities": {"enabled":true,"cards":{"keepAwake":true,"recorder":true,"quickToggles":true},"quickToggles":[{"id":"wifi","enabled":true},{"id":"bluetooth","enabled":true},{"id":"dnd","enabled":true}]}
+  "utilities": {"enabled":true,"cards":{"keepAwake":true,"recorder":true,"quickToggles":true},"quickToggles":[{"id":"wifi","enabled":true},{"id":"bluetooth","enabled":true},{"id":"mic","enabled":true},{"id":"dnd","enabled":true},{"id":"settings","enabled":true}]}
 }
 '@
 }
@@ -275,7 +284,7 @@ if ($Combined) {
     $configObject | Add-Member -NotePropertyName background -NotePropertyValue ([pscustomobject]@{
         enabled = $Background.IsPresent
         wallpaperEnabled = $true
-        desktopClock = [pscustomobject]@{ enabled = $Background.IsPresent; position = 'bottom-right' }
+        desktopClock = [pscustomobject]@{ enabled = $false; position = 'bottom-right' }
         visualiser = [pscustomobject]@{ enabled = $false }
     }) -Force
     $configText = $configObject | ConvertTo-Json -Depth 10
@@ -297,6 +306,15 @@ if ($null -ne $tilingSettings) {
     $configObject = $configText | ConvertFrom-Json
     $configObject | Add-Member -NotePropertyName windows -NotePropertyValue ([pscustomobject]@{ tiling = $tilingSettings }) -Force
     $configText = $configObject | ConvertTo-Json -Depth 20
+}
+if ($Transparency) {
+    $configObject = $configText | ConvertFrom-Json
+    if (-not $configObject.appearance) {
+        $configObject | Add-Member -NotePropertyName appearance -NotePropertyValue ([pscustomobject]@{})
+    }
+    $configObject.appearance | Add-Member -NotePropertyName transparency `
+        -NotePropertyValue ([pscustomobject]@{ enabled = $true }) -Force
+    $configText = $configObject | ConvertTo-Json -Depth 10
 }
 $configText | Set-Content -LiteralPath $config -Encoding UTF8
 $logRoot = Join-Path $RunRoot 'logs'
@@ -353,6 +371,10 @@ $wePython = if ($schemeAvailable) { [string]$schemeRuntime.python } else {
     if ($pythonLauncher) { & $pythonLauncher.Source -3 -c 'import sys; print(sys.executable)' }
 }
 $info.EnvironmentVariables['CAELESTIA_WE_PYTHON'] = [string]$wePython
+if ($Combined) {
+    $info.EnvironmentVariables['CAELESTIA_ACCOUNT_PICTURE'] = & "$PSScriptRoot\Get-AccountPicture.ps1" `
+        -CacheRoot (Join-Path $profileRoot 'cache')
+}
 $info.EnvironmentVariables['QS_WINDOWS_BLUR'] = '0'
 $info.EnvironmentVariables['QT_LOGGING_RULES'] = 'quickshell.windows.tracker.debug=false;quickshell.windows.inputmask.debug=false'
 if ($TraceInput) {
@@ -544,6 +566,7 @@ $result = [ordered]@{
     passed = $(if ($Smoke) { $passed } else { $null }); smoke = $Smoke.IsPresent
     prototype = $kind; combined = $Combined.IsPresent; live = $Live.IsPresent
     background = $Background.IsPresent; desktopIcons = $DesktopIcons
+    schemeRuntime = $(if ($Combined) { $schemeRuntime } else { $null })
     audioMode = $AudioMode; batteryMode = $BatteryMode; mediaMode = $MediaMode; brightnessMode = $BrightnessMode
     networkMode = $NetworkMode
     hyprMode = $HyprMode

@@ -27,14 +27,14 @@ Singleton {
     property bool showPreview: false
     property bool previewLight: false
     readonly property M3Palette palette: current
-    readonly property M3Palette tPalette: current
+    readonly property TransparentPalette tPalette: TransparentPalette {
+        palette: root.palette
+        light: root.light
+        wallLuminance: root.wallLuminance
+    }
     readonly property M3Palette current: M3Palette {}
     readonly property M3Palette preview: M3Palette {}
-    readonly property QtObject transparency: QtObject {
-        readonly property bool enabled: false
-        readonly property real base: 1
-        readonly property real layers: 1
-    }
+    readonly property TransparentPalette transparency: tPalette
 
     function getLuminance(c: color): real {
         if (c.r == 0 && c.g == 0 && c.b == 0)
@@ -49,10 +49,8 @@ Singleton {
         return Qt.rgba(Math.max(0, Math.min(1, c.r * scale)), Math.max(0, Math.min(1, c.g * scale)), Math.max(0, Math.min(1, c.b * scale)), a);
     }
 
-    // The prototype renders opaque surfaces, so layering is the identity. The
-    // function is kept because staged upstream components call it.
     function layer(c: color, layer: var): color {
-        return c;
+        return transparency.layer(c, layer);
     }
 
     function on(c: color): color {

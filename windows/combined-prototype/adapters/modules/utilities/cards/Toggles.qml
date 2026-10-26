@@ -10,6 +10,7 @@ import Caelestia.State
 import qs.components
 import qs.components.controls
 import qs.services
+import qs.utils
 import qs.modules.bar.popouts as BarPopouts
 
 StyledRect {
@@ -18,8 +19,15 @@ StyledRect {
     required property ScreenState screenState
     required property BarPopouts.Wrapper popouts
 
-    readonly property var quickToggles: Config.utilities.quickToggles.values.filter(item =>
-        item.enabled && ["wifi", "bluetooth", "dnd"].includes(item.id))
+    readonly property var quickToggles: {
+        const seenIds = new Set();
+        return Config.utilities.quickToggles.values.filter(item => {
+            if (!item.enabled || seenIds.has(item.id))
+                return false;
+            seenIds.add(item.id);
+            return true;
+        });
+    }
     readonly property int splitIndex: Math.ceil(quickToggles.length / 2)
     readonly property bool needExtraRow: quickToggles.length > 6
 
@@ -81,6 +89,27 @@ StyledRect {
                     }
                 }
                 DelegateChoice {
+                    roleValue: "mic"
+                    delegate: Toggle {
+                        icon: "mic"
+                        checked: !Audio.sourceMuted
+                        enabled: Audio.inputControlsAvailable
+                        onClicked: Audio.setSourceMuted(!Audio.sourceMuted)
+                    }
+                }
+                DelegateChoice {
+                    roleValue: "settings"
+                    delegate: Toggle {
+                        icon: "settings"
+                        inactiveOnColour: Colours.palette.m3onSurfaceVariant
+                        isToggle: false
+                        onClicked: {
+                            root.screenState.utilities = false;
+                            Qt.openUrlExternally(Paths.configFile);
+                        }
+                    }
+                }
+                DelegateChoice {
                     roleValue: "dnd"
                     delegate: Toggle {
                         icon: "notifications_off"
@@ -89,7 +118,17 @@ StyledRect {
                         onClicked: Notifs.doNotDisturb = !Notifs.doNotDisturb
                     }
                 }
-
+                DelegateChoice {
+                    delegate: Toggle {
+                        // Preserve configured positions without pretending an
+                        // unsupported Windows service can be activated.
+                        required property var modelData
+                        icon: ({
+                            gameMode: "gamepad", wallpaperPlaying: "smart_display", vpn: "vpn_key"
+                        })[modelData.id] ?? "block"
+                        enabled: false
+                    }
+                }
             }
         }
     }

@@ -1,4 +1,7 @@
 {
+  "assets/bongocat.gif": "assets/bongocat.gif",
+  "assets/kurukuru.gif": "assets/kurukuru.gif",
+  "assets/dino.png": "assets/dino.png",
   "modules/background/Background.qml": "modules/background/Background.qml",
   "modules/background/DesktopClock.qml": "modules/background/DesktopClock.qml",
   "modules/background/Wallpaper.qml": "modules/background/Wallpaper.qml",
@@ -34,6 +37,7 @@
   "windows/services/hypr/Hypr.qml": "services/Hypr.qml",
   "windows/services/hypr/HyprService.qml": "services/HyprService.qml",
   "windows/services/hypr/NativeHyprBackend.qml": "services/NativeHyprBackend.qml",
+  "windows/services/hypr/Watch-ActiveWindow.ps1": "helpers/Watch-ActiveWindow.ps1",
   "windows/services/tiling/Tiling.qml": "services/Tiling.qml",
   "windows/services/tiling/TilingService.qml": "services/TilingService.qml",
   "windows/services/tiling/NativeTilingBackend.qml": "services/NativeTilingBackend.qml",

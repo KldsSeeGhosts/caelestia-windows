@@ -27,6 +27,7 @@
   "services/Time.qml": "services/Time.qml",
   "utils/Strings.qml": "utils/Strings.qml",
   "windows/shell-prototype/adapters/services/Colours.qml": "services/Colours.qml",
+  "windows/shell-prototype/adapters/services/TransparentPalette.qml": "services/TransparentPalette.qml",
   "windows/shell-prototype/adapters/services/Hypr.qml": "services/Hypr.qml",
   "windows/shell-prototype/adapters/utils/Paths.qml": "utils/Paths.qml",
   "windows/shell-prototype/adapters/Caelestia/Services/qmldir": "imports/Caelestia/Services/qmldir",

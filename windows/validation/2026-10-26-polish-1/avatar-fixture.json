@@ -1,0 +1,6 @@
+﻿{
+    "result":  "Get-AccountPicture.ps1 extracted a decodable PNG into the isolated fixture cache.",
+    "fixture":  "Four-byte prefix 00 01 02 03 followed by assets/dino.png in fixture.accountpicture-ms.",
+    "nativeAccountPicture":  "No readable HKCU/AccountPictures image or .face on this account; upstream placeholder captured.",
+    "passed":  true
+}

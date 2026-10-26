@@ -1,6 +1,7 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import Quickshell
 import M3Shapes
 import Caelestia.Config
 import Caelestia.I18n
@@ -90,7 +91,7 @@ Item {
                 id: pfp
 
                 anchors.fill: parent
-                source: ""
+                source: Quickshell.env("CAELESTIA_ACCOUNT_PICTURE") || ""
             }
 
             StyledRect {
@@ -268,7 +269,7 @@ Item {
 
                 anchors.verticalCenter: parent.verticalCenter
                 anchors.verticalCenterOffset: Math.round(fontInfo.pointSize * 0.1)
-                text: SysInfo.wm + "..."
+                text: Hypr.activeToplevel?.title || Tr.tr("Desktop")
                 color: Colours.palette.m3onSecondaryContainer
                 font: Tokens.font.body.builders.small.vaxis("slnt", -4).build()
                 width: Math.min(implicitWidth, Tokens.sizes.dashboard.userWidth - wmContainer.x - Tokens.padding.medium * 2 - wmIcon.implicitWidth - wmLabel.spacing - Tokens.padding.extraLarge)
