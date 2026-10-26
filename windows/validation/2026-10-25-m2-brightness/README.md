@@ -441,3 +441,18 @@ Rerun with the same commands: `Test-BrightnessService.ps1` passed with 480
 assertions, including the review's route sequence and a 64-bit id check, and
 `Test-BrightnessPrototype.ps1` passed. Only Disabled and ReadOnly native runs
 were made, and nothing was written.
+
+## Review addendum 4 (closing)
+
+The re-check of `2ea5dd4e` found two low-likelihood issues, which the orchestrator fixed
+without another review round:
+
+- An uncorrelated route change during a pending write now drops the queued
+  target and re-queries once the write settles.
+- The fake id counter is now `real`, and a query past `INT_MAX` is exercised
+  end to end.
+
+`Test-BrightnessService.ps1` passed with 484 assertions, and
+`Test-BrightnessPrototype.ps1` passed. Review stops here by decision: day-to-day
+behavior is next verified live on the desktop, not with more offscreen edge cases.
+No real brightness has been written yet.

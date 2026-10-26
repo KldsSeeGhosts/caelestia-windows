@@ -415,7 +415,7 @@ QtObject {
     // Process-unique query ids: one strictly increasing counter behind every
     // fake, so no two backends ever issue the same id, exactly like the
     // process-wide native singleton across wrapper reloads.
-    property int _queryIdSerial: 0
+    property real _queryIdSerial: 0
 
     function allocQueryId(): real {
         _queryIdSerial++;
@@ -1235,6 +1235,12 @@ QtObject {
         disableBackend.queryFinished.disconnect(recordId);
         check(forwardedId === bigId, "queryFinished carries a 64-bit id exactly");
         disableCase.stateFor("DIS1").queryId = 0;
+        // Allocation past INT_MAX stays positive and completes.
+        test._queryIdSerial = 2147483647;
+        check(disableCase.queryMonitor("DIS1") === true, "a query past INT_MAX is issued");
+        check(disableCase.stateFor("DIS1").queryId === 2147483648, "the allocated id is not narrowed");
+        disableBackend.deliverQuery(disableCase.stateFor("DIS1").queryId);
+        expectCapabilityOn(disableCase, "DIS1", "hardware", "a 64-bit id completes and authorizes");
 
         // --- Wrapper replacement with a stale delivery ------------------------
         // The native singleton is process-wide and survives a wrapper reload,

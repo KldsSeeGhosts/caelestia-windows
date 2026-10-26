@@ -158,6 +158,9 @@ QtObject {
         // enable cycle or an earlier backend can never match this one.
         // A `real`: backend ids are 64-bit and an `int` would truncate them.
         property real queryId: 0
+        // An uncorrelated route change arrived while a write was in flight; the
+        // record queries again once that write settles.
+        property bool routeStale: false
         // Bumped after a terminal write failure. The drag removed the host
         // slider's value binding, so reassigning the unchanged confirmed level
         // emits nothing; hosts rebind the displayed value on this serial.
@@ -737,6 +740,7 @@ QtObject {
             }
             // Drop every queued target and snap back to the last confirmation.
             _snapBack(state);
+            _requeryIfRouteStale(state);
             return;
         }
         const level = Number(value);
@@ -764,6 +768,16 @@ QtObject {
                 && state.generation === _generationFor(state.screenName))
                 write(state.screenName, next);
         }
+        _requeryIfRouteStale(state);
+    }
+
+    function _requeryIfRouteStale(state): void {
+        if (!state.routeStale)
+            return;
+        state.routeStale = false;
+        const latched = state.latched;
+        queryMonitor(state.screenName);
+        state.latched = latched;
     }
 
     function _onRouteChanged(screenName, route): void {
@@ -776,9 +790,16 @@ QtObject {
         if (state.querying)
             return; // The query path emits routeChanged immediately before queried.
         // A strict write never changes routes. Never clear writePending here: the
-        // terminal brightnessWriteResult() is the only completion.
-        if (state.writePending)
+        // terminal brightnessWriteResult() is the only completion. An
+        // uncorrelated route change during the write drops the queued target
+        // and re-queries once the write settles.
+        if (state.writePending) {
+            if (queryIdsSupported && reported !== state.route) {
+                state.hasQueuedWrite = false;
+                state.routeStale = true;
+            }
             return;
+        }
         // With ids, a route is only trusted as part of an accepted query. A
         // change outside one (for example a stale request finishing after the
         // record was authorized) withdraws write authorization by querying
