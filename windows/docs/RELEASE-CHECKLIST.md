@@ -33,9 +33,9 @@ describing a build or prototype smoke as a validated shell release.
 - [ ] Validate claimed live controls, device loss/recovery, sleep/wake,
   input/focus, notifications, session operations and desktop restoration.
   Keep one active tiler; takeover and autostart must be deliberate test opt-ins.
-- [ ] Archive evidence under `windows/validation/`: README, `result.json`,
-  applicable matrices, logs and screenshots. Do not archive staged QML or
-  per-run source manifests. State all unsupported and untested behavior.
+- [ ] Attach evidence (logs, screenshots, results) to the release pull
+  request or as release assets, not the repository. State all unsupported
+  and untested behavior.
 
 ## Install, update and remove
 
