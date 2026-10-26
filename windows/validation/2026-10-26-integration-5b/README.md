@@ -2,7 +2,7 @@
 
 Validated clean shell source `a009706a379cb49c9becb67ba4b7bdf857b1394b`
 and backend `c1177c2771ecc3e9fd282449bdb08314576ca271`.
-The subsequent archive/report commit changes documentation and evidence only.
+The subsequent archive/report commits change documentation and evidence only.
 This is build, bounded smoke and isolated packaging evidence, not a live shell
 release or live AppBar/tiling acceptance.
 

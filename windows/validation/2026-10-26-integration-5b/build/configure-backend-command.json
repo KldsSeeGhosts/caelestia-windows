@@ -1,0 +1,19 @@
+﻿[
+    "-S",
+    "C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-88fb895a\\windows\\deps\\quickshell",
+    "-B",
+    "C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-88fb895a\\windows\\.local\\build\\quickshell",
+    "-G",
+    "Ninja",
+    "-DCMAKE_BUILD_TYPE=Release",
+    "-DCMAKE_CXX_COMPILER=clang-cl",
+    "-DCMAKE_PREFIX_PATH=C:\\Users\\Ermin\\AppData\\Local\\caelestia-dev\\Qt\\6.11.2\\msvc2022_64",
+    "-DCMAKE_C_COMPILER=clang-cl",
+    "-DCLI11_INCLUDE_DIR=C:\\Users\\Ermin\\AppData\\Local\\caelestia-dev\\deps\\CLI11-2.5.0\\include",
+    "-DCRASH_HANDLER=OFF",
+    "-DBUILD_TESTING=OFF",
+    "-DINSTALL_QMLDIR=qml",
+    "-DQS_AUTOSTART_NAME=CaelestiaPrototype",
+    "-DQS_AUTOSTART_ARGS=",
+    "-DQS_AUTOSTART_DESCRIPTION=Caelestia compatibility prototype"
+]

@@ -45,8 +45,8 @@ The user will install and validate live. No additional test harness was added.
 
 Evidence, exact commands and conflict details:
 [integration 5b validation](windows/validation/2026-10-26-integration-5b/README.md).
-Build and smoke used clean `a009706a`; the following report/archive commit
-changes documentation and evidence only. Earlier archives remain unchanged.
+Build and smoke used clean `a009706a`; the following report/archive commits
+change documentation and evidence only. Earlier archives remain unchanged.
 
 ---
 

@@ -1,0 +1,15 @@
+﻿[
+    "-S",
+    "C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-88fb895a",
+    "-B",
+    "C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-88fb895a\\windows\\.local\\build\\caelestia",
+    "-G",
+    "Ninja",
+    "-DCMAKE_BUILD_TYPE=Release",
+    "-DCMAKE_CXX_COMPILER=clang-cl",
+    "-DCMAKE_PREFIX_PATH=C:\\Users\\Ermin\\AppData\\Local\\caelestia-dev\\Qt\\6.11.2\\msvc2022_64",
+    "-DCAELESTIA_PORTABLE_UI=ON",
+    "-DENABLE_MODULES=plugin",
+    "-DINSTALL_QMLDIR=qml",
+    "-DCMAKE_INSTALL_PREFIX=C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-88fb895a\\windows\\.local\\build\\install"
+]

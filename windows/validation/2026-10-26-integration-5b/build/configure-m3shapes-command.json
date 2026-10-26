@@ -1,0 +1,14 @@
+﻿[
+    "-S",
+    "C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-88fb895a\\windows\\deps\\m3shapes",
+    "-B",
+    "C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-88fb895a\\windows\\.local\\build\\m3shapes",
+    "-G",
+    "Ninja",
+    "-DCMAKE_BUILD_TYPE=Release",
+    "-DCMAKE_CXX_COMPILER=clang-cl",
+    "-DCMAKE_PREFIX_PATH=C:\\Users\\Ermin\\AppData\\Local\\caelestia-dev\\Qt\\6.11.2\\msvc2022_64",
+    "-DINSTALL_QMLDIR=qml",
+    "-DCMAKE_INSTALL_PREFIX=C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-88fb895a\\windows\\.local\\build\\install",
+    "-DM3SHAPES_BUILD_EXAMPLES=OFF"
+]
