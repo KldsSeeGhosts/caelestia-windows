@@ -130,3 +130,56 @@ desktop.
   forbidden in this archive.
 - Tiling construction (M3-2 stages 4-8), fitting-failure UI and the full M3
   scenario matrix remain untouched.
+
+## Orchestrator live runs (2026-10-25, ~20:01-20:08)
+
+Run on the shared desktop by the orchestrator as the single controller, at
+`4242820e` with the shared build (backend pin `1401042`). ksg-shell was
+running; it was not stopped for these stages because no tiler was constructed.
+
+### Stage 1/2: Observe smoke, both monitors
+
+```powershell
+Start-ShellPrototype.ps1 -QtPrefix <Qt 6.11.2> -BuildRoot <shared build> -Hypr -HyprMode Observe -Smoke -ScreenIndex 0
+Start-ShellPrototype.ps1 ... -Hypr -HyprMode Observe -Smoke -ScreenIndex 1
+```
+
+- The first run failed only because the settled check read
+  `state.nativeInitialized`, which the snapshot records as `initialized`
+  (fixed in `4242820e`). Both monitors then passed.
+- Backend: 2 monitors, 1 workspace, 6 toplevels, focused monitor
+  `MAG321UX OLED`; original `Workspaces` rendered 5 slots with workspace 1
+  active, `ActiveWindow` rendered, special workspaces inactive.
+- `Get-DesktopState.ps1` before/after: identical apart from the capture time.
+  No `qs` process remained. `rescueParked` acts only on windows carrying the
+  `QuickshellTilingParked` property, so ksg-shell windows are out of scope.
+- Visual gap: the workspace labels render as tofu. The upstream defaults are
+  Nerd Font glyphs (`occupiedLabel`/`activeLabel` `\U000F0BAF`), and no Nerd
+  Font is installed or bundled. Packaging (M4) must ship a symbols font or
+  the Windows config must choose labels that the bundled fonts cover.
+
+### Stage 3: Dispatch, live (user authorized)
+
+`-Hypr -HyprMode Dispatch -ScreenIndex 0`, then a click on workspace 2 in the
+original indicator (one background click and one foreground click).
+
+- The adapter behaved as designed: `commandsSent=2`, `lastDispatch="workspace 2"`,
+  no refusals.
+- The backend did not create or switch a desktop.
+  `VirtualDesktopAccessor.dll` is absent, so creation falls back to a
+  synthetic Ctrl+Win+D chord. No new desktop appeared (registry `Desktops`
+  entries unchanged before/after; `workspaceCount` stayed 1), but every
+  normal window on both monitors was minimized, which is the Win+D
+  show-desktop effect. Whether the chord lost its Ctrl modifier or another
+  keyboard hook (ksg-shell) intercepted it is not established.
+- Cleanup: the orchestrator restored Dia, ZCode and T3 Code (the pre-test
+  foreground) with `ShowWindowAsync(SW_RESTORE)`. Windows Terminal and Steam
+  were left minimized because their pre-test state was not recorded. One
+  stray `Ctrl+Win+F4` and one `Win+D` were sent during diagnosis; with a
+  single desktop the former is a no-op.
+
+**Decision:** workspace creation and switching must not use synthetic
+shortcuts. Stage 3 dispatch requires `VirtualDesktopAccessor.dll`; without
+it the adapter refuses workspace dispatch with a clear reason. Shipping the
+accessor is an M4 packaging item, and the synthetic-chord fallback is a
+backend defect to fix or disable in the fork.
