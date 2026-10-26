@@ -12,6 +12,11 @@ QtObject {
 
     readonly property string cache: Quickshell.cacheDir.replace(/\\/g, "/")
 
+    // Profile-local state. The staged shell.qml pins Quickshell.stateDir to
+    // <build>/combined-prototype-profile/state, and the scheme bridge writes
+    // <profile>/state/caelestia/scheme.json (the upstream CLI's own layout).
+    readonly property string state: (Quickshell.stateDir + "/caelestia").replace(/\\/g, "/")
+
     readonly property string wallsdir: (Quickshell.env("CAELESTIA_WALLPAPER_DIR") || (home + "/Pictures/Wallpapers")).replace(/\\/g, "/")
     function shortenHome(path: string): string { return path.replace(home, "~"); }
     function absolutePath(path: string): string {

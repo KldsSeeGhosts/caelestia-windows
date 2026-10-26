@@ -30,6 +30,10 @@ Commands remain confined to the session adapter allowlist.
 launches, session dispatch, tray interception and notification mirroring. They
 load all dashboard tabs, utilities, history, the launcher, status popouts,
 notifications and a toast, and exit. The supplied build is reused unchanged.
+When the scheme runtime is available the smoke run also asserts that the
+launcher's scheme and variant providers loaded from the bridge (26 scheme rows
+and 9 variants with the current scheme set) and that the generated palette was
+applied.
 
 ## Available components
 
@@ -53,18 +57,55 @@ notifications and a toast, and exit. The supplied build is reused unchanged.
   Choose wallpaper action/control-window button opens a native image picker.
   Applying a wallpaper uses the existing `Quickshell.Windows.Wallpaper` API and
   requires Live controls. Highlighting an image never applies it.
+- Dynamic Material You colours follow the wallpaper. The profile-local Python
+  runtime runs the upstream `caelestia` CLI's own scheme generator
+  (`materialyoucolor` quantize/score plus the Material dynamic schemes) and
+  writes `state/caelestia/scheme.json`; `Colours.qml` watches that file, so the
+  shell recolours live. Applying a wallpaper regenerates the dynamic palette
+  (respecting `services.smartScheme`). The launcher's `> scheme ` and
+  `> variant ` rows work, and the `Light mode`/`Dark mode` actions regenerate
+  the palette. The runtime is created on first combined launch inside the
+  isolated profile (see below); the first launch needs `py` and network access.
 - Calculator supports arithmetic, powers, parentheses, pi/e and basic math
   functions. Clicking/accepting copies the result in Live mode. Its external
   calculator button opens Windows Calculator in Live mode.
+
+## Dynamic colours and the profile-local scheme runtime
+
+`Start-ShellPrototype.ps1 -Combined` calls `Install-SchemeRuntime.ps1`, which
+provisions `scheme/venv` under the combined profile (never the repository or the
+user's ordinary Python packages) with `pillow==13.0.0`,
+`materialyoucolor==3.0.4` and the upstream `caelestia` CLI pinned at
+`5e804b10`. The installer also places a Windows `fcntl` shim in the venv and
+copies `win_scheme.py` into the profile. Use `-SkipSchemeRuntime` to skip
+provisioning and the generator entirely. A failed provision is cached in
+`scheme/runtime.json`; delete that file or run `Install-SchemeRuntime.ps1
+-ProfileRoot <profile> -Force` to retry.
+
+`win_scheme.py` imports the CLI's scheme/material modules but deliberately skips
+its theme writer (Linux-only `fcntl`, Hyprland sockets, dconf, `/dev/pts` and
+`killall`). The Windows shell is the only theme consumer. Upstream's symlink
+wallpaper state is replaced with ordinary `path.txt`/`thumbnail.jpg` files
+because Windows symlinks need extra privileges. All state, cache and config
+writes are forced below `combined-prototype-profile`; the bridge refuses to run
+without `CAELESTIA_PROFILE_ROOT`.
+
+If provisioning or generation fails, `schemeRuntime` is false in the run result
+and the shell keeps its fixed Caelestia palette. Switching variant or mode while
+a static scheme is selected switches to the wallpaper-derived dynamic palette
+when a wallpaper is known, so those rows always do something visible.
 
 ## Still unavailable, and why
 
 - Workspaces, ActiveWindow, tiling, Hypr dispatch and AppBar are outside this
   implementation. Their existing adapters are unchanged.
-- Dynamic schemes and variants require the upstream `caelestia scheme` CLI and
-  matugen. Neither exists in the supplied runtime. Scheme/variant searches have
-  no generated entries, and action descriptions identify the missing generator.
-  Wallpaper changes therefore retain the fixed Caelestia palette.
+- Dynamic colours depend on the profile-local Python runtime. Without `py`,
+  network access on first launch, or a working `materialyoucolor`/CLI install,
+  the generator reports unavailable and wallpaper changes retain the fixed
+  palette. The port does not run matugen or the CLI's Linux theme application
+  pipeline, so generated colours do not propagate to GTK, Hyprland, terminals,
+  Discord or other upstream targets. Static scheme previews come from the CLI's
+  bundled scheme data.
 - Expressive M3 shape outlines and morphing require the native M3Shapes plugin,
   which is absent from the supplied build. A combined-only round-surface shim
   keeps the original layout and children; it does not claim the original shapes.
@@ -88,8 +129,12 @@ Bluetooth and Tray facades retain their `Windows*` staged names to avoid QML
 component/singleton name collisions. Dashboard statistics fill the upstream
 `Caelestia.Services` contracts using Windows APIs already in the backend; the
 unbuilt Linux native services are never imported. Combined-only adapters replace
-Linux process calls in profile pictures, calculator, wallpaper and launcher
-providers. Other prototype entry points retain their existing sources and gates.
+Linux process calls in profile pictures, calculator, wallpaper, colours, scheme
+generation and launcher providers. The real upstream `SchemeItem`/`VariantItem`
+replace the apps-only stubs. Other prototype entry points retain their existing
+sources and gates.
 
 This remains a prototype. Smoke validates loading and layout without exercising
-real writes, destructive actions, tray interception or notification consent.
+native writes, destructive actions, tray interception or notification consent.
+The scheme bridge is exercised separately from the smoke boundary because it
+writes only inside the isolated profile.

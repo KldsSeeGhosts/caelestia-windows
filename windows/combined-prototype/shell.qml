@@ -615,6 +615,10 @@ ShellRoot {
                     root.fail("media dashboard panel did not open");
                     return;
                 }
+                // Instantiate the launcher scheme providers one tick before the
+                // row-count assertion so their bridge refresh can settle.
+                if (SchemeGenerator.available)
+                    Schemes.reload();
                 const details = CUtils.findChild(win.contentItem, "combinedDashboardContent");
                 if (!details || details.implicitHeight <= 0) {
                     root.fail("original media details did not load");
@@ -623,6 +627,22 @@ ShellRoot {
                 root.capturePhase("dashboard");
                 win.screenState.dashboardTab = 0;
             } else if (step === 9) {
+                // The launcher instantiated the scheme providers a few ticks
+                // ago; their asynchronous bridge refresh has populated the row
+                // models by now.
+                if (SchemeGenerator.available) {
+                    console.log("CAELESTIA_COMBINED_SCHEMES", JSON.stringify({
+                        schemes: Schemes.list.length,
+                        variants: M3Variants.list.length,
+                        current: Schemes.currentScheme,
+                        variant: Schemes.currentVariant,
+                        palette: Colours.palette.m3primary
+                    }));
+                    if (Schemes.list.length === 0 || M3Variants.list.length === 0) {
+                        root.fail("scheme or variant provider did not load");
+                        return;
+                    }
+                }
                 root.capturePhase("dashboard-dash");
                 win.screenState.dashboardTab = 2;
             } else if (step === 10) {

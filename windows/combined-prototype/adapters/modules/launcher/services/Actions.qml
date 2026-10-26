@@ -26,8 +26,10 @@ Searcher {
             {name: "Calculator", description: "Arithmetic and functions", icon: "calculate", command: ["autocomplete", "calc"]},
             {name: "Wallpaper", description: "Browse wallpaper folder", icon: "wallpaper", command: ["autocomplete", "wallpaper"]},
             {name: "Choose wallpaper file", description: "Open Windows image picker (Live controls)", icon: "image", command: ["chooseWallpaper"]},
-            {name: "Schemes", description: "Dynamic themes unavailable: matugen is not installed", icon: "palette", command: ["autocomplete", "scheme"]},
-            {name: "Variants", description: "Dynamic themes unavailable: matugen is not installed", icon: "colors", command: ["autocomplete", "variant"]},
+            {name: "Schemes", description: "Choose a colour scheme and generate its palette", icon: "palette", command: ["autocomplete", "scheme"]},
+            {name: "Variants", description: "Choose the Material You scheme variant", icon: "colors", command: ["autocomplete", "variant"]},
+            {name: "Light mode", description: "Regenerate the palette in light mode", icon: "light_mode", command: ["generateMode", "light"]},
+            {name: "Dark mode", description: "Regenerate the palette in dark mode", icon: "dark_mode", command: ["generateMode", "dark"]},
             {name: "Lock", description: "Lock Windows (Live controls)", icon: "lock", command: ["lock"]},
             {name: "Sleep", description: "Suspend Windows (Live controls)", icon: "bedtime", command: ["suspend"]}
         ]
@@ -52,7 +54,7 @@ Searcher {
                 list.search.text = `${GlobalConfig.launcher.actionPrefix}${command[1]} `;
             } else if (command[0] === "chooseWallpaper") {
                 Wallpapers.choose();
-            } else if (command[0] === "setMode" && command.length > 1) {
+            } else if ((command[0] === "setMode" || command[0] === "generateMode") && command.length > 1) {
                 list.screenState.launcher = false;
                 Colours.setMode(command[1]);
             } else {

@@ -33,6 +33,8 @@ param(
     [switch]$NotificationAppOpen,
     [switch]$Combined,
     [switch]$Live,
+    # Skips provisioning/using the profile-local Python scheme generator.
+    [switch]$SkipSchemeRuntime,
     [ValidateSet('native', '1', '1.5', '1.75')][string]$ScaleFactor = 'native',
     [ValidateRange(0, 15)][int]$ScreenIndex = 0
 )
@@ -196,6 +198,23 @@ if ($Combined -and $Live) {
         '"commands": {"logout":["logout"],"shutdown":["shutdown"],"hibernate":["hibernate"],"reboot":["reboot"]}')
 }
 $configText | Set-Content -LiteralPath $config -Encoding UTF8
+# Dynamic colours: the combined prototype uses the real caelestia CLI scheme
+# generator from a profile-local virtual environment. Provisioning is
+# idempotent; a failure leaves the shell on its fixed palette.
+$schemeRuntime = $null
+if ($Combined -and -not $SkipSchemeRuntime) {
+    try {
+        $installOutput = & (Join-Path $PSScriptRoot 'Install-SchemeRuntime.ps1') -ProfileRoot $profileRoot
+        $schemeRuntime = $installOutput | Select-Object -Last 1
+        if ($schemeRuntime -is [string]) {
+            try { $schemeRuntime = $schemeRuntime | ConvertFrom-Json } catch { $schemeRuntime = $null }
+        }
+    } catch {
+        Write-Warning "Scheme runtime provisioning failed: $($_.Exception.Message)"
+        $schemeRuntime = $null
+    }
+}
+$schemeAvailable = $null -ne $schemeRuntime -and $schemeRuntime.available -eq $true
 $logRoot = Join-Path $BuildRoot 'logs'
 New-Item -ItemType Directory -Force -Path $logRoot | Out-Null
 $screenshot = Join-Path $logRoot "$runName.png"
@@ -214,6 +233,17 @@ $info.EnvironmentVariables['QML_DISK_CACHE_PATH'] = Join-Path $profileRoot 'cach
 $info.EnvironmentVariables['CAELESTIA_CONFIG_DIR'] = Join-Path $profileRoot 'config'
 $info.EnvironmentVariables['CAELESTIA_STATE_DIR'] = Join-Path $profileRoot 'state'
 $info.EnvironmentVariables['CAELESTIA_RUNTIME_DIR'] = Join-Path $profileRoot 'runtime'
+# Keep the scheme bridge (and any inherited CLI call) inside the prototype
+# profile. The bridge also enforces CAELESTIA_PROFILE_ROOT itself.
+if ($Combined) {
+    $info.EnvironmentVariables['CAELESTIA_PROFILE_ROOT'] = $profileRoot
+    $info.EnvironmentVariables['XDG_CONFIG_HOME'] = Join-Path $profileRoot 'config'
+    $info.EnvironmentVariables['XDG_STATE_HOME'] = Join-Path $profileRoot 'state'
+    $info.EnvironmentVariables['XDG_DATA_HOME'] = Join-Path $profileRoot 'data'
+    $info.EnvironmentVariables['XDG_CACHE_HOME'] = Join-Path $profileRoot 'cache'
+}
+$info.EnvironmentVariables['CAELESTIA_SCHEME_PYTHON'] = $(if ($schemeAvailable) { [string]$schemeRuntime.python } else { '' })
+$info.EnvironmentVariables['CAELESTIA_SCHEME_HELPER'] = $(if ($schemeAvailable) { [string]$schemeRuntime.helper } else { '' })
 $info.EnvironmentVariables['QS_WINDOWS_BLUR'] = '0'
 $info.EnvironmentVariables['QT_LOGGING_RULES'] = 'quickshell.windows.tracker.debug=false;quickshell.windows.inputmask.debug=false'
 if ($TraceInput) {
@@ -360,6 +390,9 @@ $result = [ordered]@{
     scaleFactor = $ScaleFactor; screenIndex = $ScreenIndex
     monitorCycle = $MonitorCycle.IsPresent
     traceInput = $TraceInput.IsPresent
+    schemeRuntime = $schemeAvailable
+    schemeRuntimeMessage = $(if ($null -ne $schemeRuntime) { [string]$schemeRuntime.message } else { '' })
+    schemeCliRevision = $(if ($schemeAvailable) { [string]$schemeRuntime.revision } else { '' })
     actualScreens = @([regex]::Matches($runOutput, "${marker}_SCREEN (\{[^\r\n]+\})") | ForEach-Object { $_.Groups[1].Value | ConvertFrom-Json })
     captures = @([regex]::Matches($runOutput, "${marker}_CAPTURE ([^\r\n]+)") | ForEach-Object { $_.Groups[1].Value })
     elapsedMilliseconds = $elapsed.ElapsedMilliseconds
