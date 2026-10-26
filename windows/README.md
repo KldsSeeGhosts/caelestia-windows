@@ -12,9 +12,14 @@ For the next development session, start with [HANDOFF.md](HANDOFF.md).
 - The full Caelestia source history is retained, based on the revision in
   [sources.lock.json](sources.lock.json).
 - The Windows Quickshell source is pinned as `windows/deps/quickshell`.
-- The pinned backend, eight portable Caelestia modules, and Windows-only
-  `Caelestia.Windows` focus helper build with Qt 6.11.2 and clang-cl 20.1.8.
-  See [native build instructions](NATIVE-BUILD.md).
+- Material 3 Expressive shapes come from the pinned external
+  `windows/deps/m3shapes` QML plugin at the same revision as Caelestia's
+  `flake.lock`. It is not an in-repo `plugin/` module: upstream split it out in
+  `caelestia-dots/shell` 24aa15ee. The portable build compiles it with the same
+  Qt/clang-cl toolchain and installs the `M3Shapes` module for the combined shell.
+- The pinned backend, eight portable Caelestia modules, the M3Shapes module, and
+  Windows-only `Caelestia.Windows` focus helper build with Qt 6.11.2 and
+  clang-cl 20.1.8. See [native build instructions](NATIVE-BUILD.md).
 - The [bar/session prototype](shell-prototype/README.md) loads the original
   `ContentWindow`, `StyledWindow`, `Regions`, `Interactions`, bar Clock/Power,
   and session content/wrapper in a bounded native window. Original blob
@@ -123,7 +128,9 @@ HLSL shader generation. Optional SPIR-V optimization is omitted on Windows
 because it requires a separate `spirv-opt` executable.
 
 The native prototype stages an explicit original QML subset with a fixed
-palette and nonvisual unavailable adapters. Localized upstream changes use
+palette and nonvisual unavailable adapters. Material 3 shape components now use
+the real `M3Shapes.MaterialShape` item, including path queries and morphing,
+instead of the former neutral round-surface shim. Localized upstream changes use
 the window's direct `exclusionMode`, keep drag padding finite with no monitor,
 and gate input/gestures and keyboard focus. `interactionEnabled` defaults to
 true; the profile enables no-input smoke tests without changing normal Linux

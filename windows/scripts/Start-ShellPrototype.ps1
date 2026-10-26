@@ -87,6 +87,10 @@ $qmlRoot = Join-Path $BuildRoot 'install\qml'
 foreach ($required in @($exe, "$QtPrefix\bin\Qt6Core.dll", "$qmlRoot\Caelestia\Config\qmldir", "$qmlRoot\Caelestia\Windows\qmldir")) {
     if (-not (Test-Path -LiteralPath $required -PathType Leaf)) { throw "Build prerequisite missing: $required" }
 }
+$m3ShapesModule = Join-Path $qmlRoot 'M3Shapes'
+if ($Combined -and -not (Test-Path -LiteralPath (Join-Path $m3ShapesModule 'qmldir') -PathType Leaf)) {
+    throw "The combined shell needs the M3Shapes module: build with windows/scripts/Build-Prototype.ps1 ($m3ShapesModule is missing)."
+}
 $kind = $(if ($selected.Count -eq 1) { $selected[0] } elseif ($Combined) { 'combined' } else { 'shell' })
 $stagePrototype = $(if ($kind -ne 'shell' -and $slices[$kind].Stage) { $slices[$kind].Stage } else { $kind })
 $marker = $(if ($kind -ne 'shell' -and $slices[$kind].Marker) { $slices[$kind].Marker } else { 'CAELESTIA_' + $kind.ToUpperInvariant() })
@@ -207,7 +211,7 @@ $info.Arguments = '--no-color --log-times --path "' + (Join-Path $stage 'shell.q
 $info.WorkingDirectory = $stage
 $info.UseShellExecute = $false
 $info.CreateNoWindow = $true
-$info.EnvironmentVariables['PATH'] = "$QtPrefix\bin;$qmlRoot\Caelestia\lib;$env:PATH"
+$info.EnvironmentVariables['PATH'] = "$QtPrefix\bin;$qmlRoot\Caelestia\lib;$m3ShapesModule;$env:PATH"
 $info.EnvironmentVariables['QML_IMPORT_PATH'] = "$stage\imports;$qmlRoot;$QtPrefix\qml"
 $info.EnvironmentVariables['QML2_IMPORT_PATH'] = "$stage\imports;$qmlRoot;$QtPrefix\qml"
 $info.EnvironmentVariables['QML_DISK_CACHE_PATH'] = Join-Path $profileRoot 'cache'

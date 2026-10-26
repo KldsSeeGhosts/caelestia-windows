@@ -34,6 +34,12 @@ notifications and a toast, and exit. The supplied build is reused unchanged.
 ## Available components
 
 - Original bar logo, clock, tray, status icons, popouts, session drawer and OSD.
+- Material 3 Expressive shapes: the original `M3Shapes.MaterialShape` item from
+  the pinned `windows/deps/m3shapes` plugin supplies ambient media background
+  shapes, cover-art masking, expressive loading indicators and morph animations.
+  No round-surface substitute remains. Windows resolves `m3shapesplugin.dll`'s
+  dependent `m3shapes.dll` from PATH, so the launcher adds the module directory
+  (`install/qml/M3Shapes`) to the child's DLL search path.
 - All four original dashboard tabs: Dashboard, Media, Performance and Weather.
   The dashboard contains the original user/date/calendar/weather/resource/media
   layout. Performance reads CPU, RAM, GPU and volumes from the backend's
@@ -65,9 +71,6 @@ notifications and a toast, and exit. The supplied build is reused unchanged.
   matugen. Neither exists in the supplied runtime. Scheme/variant searches have
   no generated entries, and action descriptions identify the missing generator.
   Wallpaper changes therefore retain the fixed Caelestia palette.
-- Expressive M3 shape outlines and morphing require the native M3Shapes plugin,
-  which is absent from the supplied build. A combined-only round-surface shim
-  keeps the original layout and children; it does not claim the original shapes.
 - Lyrics, beat tracking and audio visualisation depend on excluded upstream
   native services. Cover art, metadata, player selection and transport remain.
 - Profile picture editing is unavailable; its click reports this in a toast.
