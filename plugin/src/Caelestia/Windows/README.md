@@ -1,7 +1,7 @@
 # Windows focus policy
 
-`Caelestia.Windows` is built only on Windows. It currently provides one
-nonvisual QML element for the isolated compatibility preview:
+`Caelestia.Windows` is built only on Windows. It provides nonvisual focus and
+font helpers for the isolated compatibility preview:
 
 ```qml
 import Caelestia.Windows
@@ -60,3 +60,12 @@ restore a hidden/destroyed target. Bind at most one guard to a preview window.
 The parent task builds with `windows/scripts/Build-Prototype.ps1` and validates
 the native focus behavior. Adding this source does not establish runtime
 activation or focus-return compatibility.
+
+The module also provides a nonvisual `WindowsFontFallback` element.
+`WindowsFonts.qml` constructs it in every staged host to register
+`Symbols Nerd Font Mono` as a process-local Qt fallback for
+`QChar::Script_Common` (the Nerd private-use glyphs). The same loader supplies
+the bundled application fonts. This keeps Rubik as the workspace primary and
+preserves every mono token and font builder, without relying on installed
+fonts or Windows fallback discovery. No fonts or font settings are installed
+into Windows. Constructing this helper performs no native UI or input work.

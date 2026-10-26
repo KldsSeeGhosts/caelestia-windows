@@ -550,7 +550,8 @@ ShellRoot {
                         || win.width !== root.previewWidth || win.height !== root.previewHeight
                         || bodyFont.status !== FontLoader.Ready
                         || iconFont.status !== FontLoader.Ready
-                        || clockFont.status !== FontLoader.Ready) {
+                        || clockFont.status !== FontLoader.Ready
+                        || !windowsFonts.ready) {
                     root.fail("geometry, fonts or DPI");
                     return;
                 }
@@ -561,6 +562,12 @@ ShellRoot {
                 console.log("CAELESTIA_COMBINED_GEOMETRY", win.screen.name,
                     win.screen.x, win.screen.y, win.width, win.height,
                     win.devicePixelRatio, win.contentItem.GraphicsInfo.api);
+                console.log("CAELESTIA_COMBINED_FONTS", JSON.stringify({
+                    symbols: windowsFonts.symbols.name,
+                    mono: windowsFonts.regular.name,
+                    monoToken: Tokens.font.mono.small.family,
+                    workspaces: Tokens.font.workspaces
+                }));
                 const states = root.serviceStates();
                 if (!root.checkBoundary(states)) {
                     root.fail("read-only service boundary");

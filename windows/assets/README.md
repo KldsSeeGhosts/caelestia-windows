@@ -11,3 +11,20 @@ They are not installed into Windows.
 The original body font and its license remain in `assets/google-sans-flex`.
 The full symbols font retains ligatures and variable axes used by Caelestia's
 original `MaterialIcon.qml`.
+
+The Windows stage also bundles these unmodified files from
+[Nerd Fonts v3.4.0](https://github.com/ryanoasis/nerd-fonts/releases/tag/v3.4.0):
+
+| Font | Release archive | License |
+| --- | --- | --- |
+| Symbols Nerd Font Mono | `NerdFontsSymbolsOnly.zip`, `SymbolsNerdFontMono-Regular.ttf` | [MIT](nerd-font-symbols/LICENSE) |
+| CaskaydiaCove NF (CaskaydiaCove Nerd Font) | `CascadiaCode.zip`, Regular, Bold, Italic and BoldItalic faces; Cascadia Code 2407.24 | [SIL OFL 1.1](caskaydia-cove/LICENSE) |
+
+Exact archive URLs, release version, and SHA-256 hashes of both archives and
+every vendored font/license are in [`sources.lock.json`](../sources.lock.json).
+Staging checks these hashes and copies only the pinned files. Downloads happen
+at development time; startup and staging use the checked-in files.
+`WindowsFonts.qml` loads them into each prototype process. The Windows plugin
+explicitly registers Symbols Nerd Font Mono for Qt's Common-script fallback,
+covering both U+F444 and U+F0BAF while preserving Rubik workspace text and the
+original CaskaydiaCove NF mono tokens. No font is installed into Windows.
