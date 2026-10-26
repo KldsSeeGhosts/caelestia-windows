@@ -44,6 +44,12 @@ public static class CaelestiaForeground {
         } catch { return false; }
     }
 
+    static bool IsCoreWindowClass(IntPtr hwnd) {
+        var text = new StringBuilder(256);
+        GetClassName(hwnd, text, text.Capacity);
+        return text.ToString() == "Windows.UI.Core.CoreWindow";
+    }
+
     static bool IsShellClass(IntPtr hwnd) {
         var text = new StringBuilder(256);
         GetClassName(hwnd, text, text.Capacity);
@@ -61,19 +67,27 @@ public static class CaelestiaForeground {
         return false;
     }
 
-    public static bool IsShellSurface(IntPtr hwnd) {
-        if (hwnd == IntPtr.Zero) return false;
-        if (IsShellClass(hwnd)) return true;
-        string name;
-        if (!TryProcessName(hwnd, out name)) return false;
+    static bool IsShellProcessName(string name) {
         switch (name) {
-            case "dwm": case "qs": case "quickshell": case "sihost":
+            // qs/quickshell are this shell's own panels. The native AppBar
+            // path has a separate isOwnProcessWindow guard.
+            case "dwm": case "qs": case "quickshell": case "sihost": case "lockapp":
             case "shellexperiencehost": case "startmenuexperiencehost":
             case "shellhost": case "searchhost": case "searchapp": case "searchui":
             case "textinputhost":
                 return true;
         }
         return false;
+    }
+
+    public static bool IsShellSurface(IntPtr hwnd) {
+        if (hwnd == IntPtr.Zero) return false;
+        if (IsShellClass(hwnd)) return true;
+        string name;
+        if (!TryProcessName(hwnd, out name)) return false;
+        // CoreWindow is shared with ordinary UWP/DirectX applications.
+        if (IsCoreWindowClass(hwnd) && name == "explorer") return true;
+        return IsShellProcessName(name);
     }
 
     public static bool IsDesktop(IntPtr hwnd) {
@@ -87,15 +101,20 @@ public static class CaelestiaForeground {
     public static bool IsApplication(IntPtr hwnd) {
         if (hwnd == IntPtr.Zero || !IsWindowVisible(hwnd) || GetAncestor(hwnd, 2) != hwnd)
             return false;
-        if ((GetWindowLongPtr(hwnd, -20).ToInt64() & 0x80) != 0)
-            return false; // WS_EX_TOOLWINDOW, including tool windows with APPWINDOW.
+        if (IsShellClass(hwnd)) return false;
+        var exStyle = GetWindowLongPtr(hwnd, -20).ToInt64();
+        if ((exStyle & 0x80) != 0 && (exStyle & 0x40000) == 0)
+            return false; // WS_EX_TOOLWINDOW without WS_EX_APPWINDOW.
         uint cloaked;
-        if (DwmGetWindowAttribute(hwnd, 14, out cloaked, 4) != 0 || cloaked != 0)
-            return false; // DWMWA_CLOAKED, fail closed on an unavailable observation.
-        if (IsShellSurface(hwnd)) return false;
+        if (DwmGetWindowAttribute(hwnd, 14, out cloaked, 4) == 0 && cloaked != 0)
+            return false; // Fail open when the cloak query is unavailable, like native.
         if (GetWindowTextLength(hwnd) == 0) return false;
-        string unused;
-        return TryProcessName(hwnd, out unused); // fail closed when the owner is unknown.
+        string name;
+        // A failed process query is rejected here; the native classifier keeps
+        // a class-only fallback for the same window.
+        if (!TryProcessName(hwnd, out name)) return false;
+        if (IsCoreWindowClass(hwnd) && name == "explorer") return false;
+        return !IsShellProcessName(name);
     }
 }
 '@

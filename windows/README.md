@@ -263,7 +263,7 @@ isolated prototype passes.
 ## Dependency maintenance
 
 The current backend pin is in the private
-[Caelestia backend fork](https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/tree/591a33f4a31c84c759fd3cabe4bd29d1b90f374d).
+[Caelestia backend fork](https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/tree/1bcdf44cfc1788dd8789d2b019447100511d5d58).
 It retains the audited `nunreasonable/quickshell` baseline `e8ae0ef1` and adds
 a native mask handoff change: reconcile Qt hover when `WS_EX_TRANSPARENT`
 changes, because the move that triggered the hook can already have reached the
@@ -289,11 +289,13 @@ media integration is [PR #7](https://github.com/KldsSeeGhosts/caelestia-windows/
 
 [Backend PR #8](https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/pull/8)
 adds one system-surface classification for the Windows task switcher, Task
-View, Start/Search flyouts, foreground staging and cloaked windows. Those
-surfaces cannot become tracked toplevels, fullscreen applications or the
-foreground application, and an AppBar fullscreen notification lowers the
-shell's top panels only for a real application. The root gitlink and source
-manifest use the pushed revision; the PR remains a draft.
+View, Start/Search flyouts, foreground staging and cloaked windows. Shell
+surfaces cannot become tracked toplevels, foreground applications or AppBar
+fullscreen seeds; `Windows.UI.Core.CoreWindow` is a system surface only under
+explorer or a shell host. Cloaking stays separate from the tiler's fullscreen
+episode, and an AppBar opening over a known shell surface is held pending until
+a monitor-covering application settles or a close arrives, rather than being dropped. The root gitlink and source manifest use the
+pushed revision; the PR remains a draft.
 
 Keep the source manifest and submodule revision in agreement. Review backend
 updates before moving the gitlink; keep backend patches in a dedicated fork
