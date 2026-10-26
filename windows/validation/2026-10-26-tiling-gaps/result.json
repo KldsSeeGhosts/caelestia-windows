@@ -1,0 +1,47 @@
+﻿{
+    "sourceRevision":  "ffe14703ad947817827d362d0ed36c2e47981d96",
+    "backendRevision":  "087620807ae628ead13ec50b389fd536c2ed0fe8",
+    "sourceDirty":  false,
+    "buildPath":  "C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-1cef1f78\\windows\\.local\\build",
+    "buildPassed":  true,
+    "executableSha256":  "5243A1E7B4477873587A6008B44811195E9A2D6561ED4B65D2B28BDE76C14CD7",
+    "qtVersion":  "6.11.2",
+    "windowsVersion":  "Microsoft Windows NT 10.0.26300.0",
+    "unit":  {
+                 "status":  "blocked",
+                 "compiled":  true,
+                 "reason":  "LLVM manifest merge generated a malformed requestedExecutionLevel. Re-embedding the declared asInvoker manifest with Windows SDK mt.exe succeeded, then Application Control blocked the test executable.",
+                 "passed":  null
+             },
+    "smoke":  {
+                  "reason":  "The non-visible desktop smoke loaded successfully but did not finish before the isolation wrapper limit. No completed smoke result or capture was produced.",
+                  "passed":  false,
+                  "startupOptions":  {
+                                         "gapsIn":  5,
+                                         "singleWindowGapsOut":  20,
+                                         "borderColours":  true,
+                                         "gapsOut":  10
+                                     },
+                  "managedCount":  0,
+                  "limitSeconds":  60,
+                  "tilingMode":  "observe",
+                  "backendEnabled":  false,
+                  "desktop":  "CaelestiaTilingGapsSmoke",
+                  "status":  "incomplete",
+                  "completionMarker":  false,
+                  "screenshot":  null,
+                  "timedOut":  true,
+                  "attempts":  1,
+                  "processId":  25012,
+                  "runtimeDiagnostics":  false
+              },
+    "desktopComparison":  {
+                              "monitorsUnchanged":  true,
+                              "taskbarUnchanged":  true,
+                              "shellProcessesUnchanged":  true,
+                              "foregroundUnchanged":  true
+                          },
+    "startupSideEffect":  "Inherited backend AppBar cleanup reported removing four registrations as stale on the separate desktop. No change to real monitor/work rectangles, taskbar flags, shell PIDs or foreground was observed.",
+    "livePlacementValidated":  false,
+    "liveBorderAppearanceValidated":  false
+}

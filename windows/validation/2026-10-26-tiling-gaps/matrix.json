@@ -1,0 +1,22 @@
+﻿[
+    {
+        "check":  "Native backend, M3Shapes and portable plugins",
+        "result":  "pass"
+    },
+    {
+        "check":  "Existing fake-desktop tiling manager test",
+        "result":  "compiled; execution blocked by Application Control"
+    },
+    {
+        "check":  "Single isolated combined smoke",
+        "result":  "loaded options; incomplete at 60-second wrapper limit"
+    },
+    {
+        "check":  "Real desktop snapshots",
+        "result":  "unchanged monitor/work areas, taskbar flags, shell PIDs and foreground"
+    },
+    {
+        "check":  "Live gaps/borders",
+        "result":  "not exercised"
+    }
+]
