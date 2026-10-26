@@ -183,3 +183,20 @@ shortcuts. Stage 3 dispatch requires `VirtualDesktopAccessor.dll`; without
 it the adapter refuses workspace dispatch with a clear reason. Shipping the
 accessor is an M4 packaging item, and the synthetic-chord fallback is a
 backend defect to fix or disable in the fork.
+
+## Follow-up: desktop-control gate (2026-10-25)
+
+The root adapter on this branch now refuses every `workspace`/`movetoworkspace`
+form unless the backend reports `desktopControlSupported === true`. The property
+is feature-detected with `typeof`, so the current pin (which lacks it) refuses
+with reason `desktop-control-unavailable` and the text
+`Switching workspaces needs VirtualDesktopAccessor.dll.` `killwindow` →
+`closewindow` is not gated. The offscreen fixture covers absent, false, true and
+a runtime flip; `Test-HyprService.ps1` passes with 640 assertions, and
+`Test-HyprPrototype.ps1` passes its 4-run Disabled-only matrix. The backend fork
+branch `windows/m3-desktops-accessor-only` (commit `084d23f`) removes the
+synthetic chord: switch/create/ensure refuse without the accessor, waiters
+complete false, and the Hyprland singleton exposes the capability. The root
+gitlink, `windows/sources.lock.json` and the pinned backend revision are
+unchanged, so this branch refuses workspace dispatch until a later pin update
+ships the accessor-backed capability.

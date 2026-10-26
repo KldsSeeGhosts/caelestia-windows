@@ -61,13 +61,24 @@ backticks, `$`, pipes, `&`, `<` or `>`. Only these forms are forwarded:
 | `killwindow address:0x<hex>` | `closewindow address:0x<hex>` | documented graceful-close downgrade: `WM_CLOSE`, not a force-kill |
 | `togglespecialworkspace <safe-name>` | consumed | no-op; Windows has no special workspaces |
 
+Every `workspace`/`movetoworkspace` form additionally requires the backend's
+`desktopControlSupported === true`. That capability means
+`VirtualDesktopAccessor.dll` is loaded: the backend has no synthetic-shortcut
+fallback, because a Ctrl+Win chord without the accessor created no desktop and
+minimized every window (the Win+D effect). The property is feature-detected with
+`typeof`, so the current backend pin (which does not expose it) reports false and
+refuses these requests with reason `desktop-control-unavailable` and the text
+`Switching workspaces needs VirtualDesktopAccessor.dll.` `killwindow` →
+`closewindow` is not gated.
+
 Everything else is refused before the backend call with a `console.warn` and a
 `lastRefusal` object (`request`, `reason`, `text`, `sequence`). Reasons:
 `dispatch-disabled`, `unavailable`, `not-string`, `invalid`, `unsupported`,
-`injection`, `too-long`. `toggleSpecial()` and `cycleSpecialWorkspace()` are
-always consumed as no-ops. `lastDispatch`, `lastDispatchKind`, `commandsSent`,
-`refusals`, `consumed` and `dispatchSequence` record what happened. A request is
-not a result: the backend's `dispatch` is void and cannot confirm success.
+`injection`, `too-long`, `desktop-control-unavailable`. `toggleSpecial()` and
+`cycleSpecialWorkspace()` are always consumed as no-ops. `lastDispatch`,
+`lastDispatchKind`, `commandsSent`, `refusals`, `consumed` and `dispatchSequence`
+record what happened. A request is not a result: the backend's `dispatch` is void
+and cannot confirm success.
 
 ## Facade surface
 

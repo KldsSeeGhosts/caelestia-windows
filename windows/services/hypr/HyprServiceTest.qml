@@ -63,6 +63,9 @@ QtObject {
         property var focusedMonitor: null
         property int dispatchCalls: 0
         property var dispatchLog: []
+        // Default true so the pre-existing allowlist assertions keep passing.
+        // Gate cases flip it at runtime; the legacy fake below omits it.
+        property bool desktopControlSupported: true
 
         function monitorFor(screen): var {
             return screen && screen.monitor ? screen.monitor : null;
@@ -73,8 +76,22 @@ QtObject {
         }
     }
 
+    // The current backend pin has no desktopControlSupported property. This fake
+    // deliberately omits it so the fixture proves the typeof feature-detect.
+    component LegacyBackend: QtObject {
+        property bool initialized: true
+        property int dispatchCalls: 0
+        property var dispatchLog: []
+
+        function dispatch(request): void {
+            dispatchCalls++;
+            dispatchLog.push(request);
+        }
+    }
+
     readonly property HyprService service: HyprService {}
     readonly property FakeBackend fixture: FakeBackend {}
+    readonly property LegacyBackend legacyFixture: LegacyBackend {}
 
     readonly property FakeModel monitorModel: FakeModel {}
     readonly property FakeModel workspaceModel: FakeModel {}
@@ -234,6 +251,23 @@ QtObject {
         check(service.lastConsumedRequest === request, message + ": lastConsumedRequest");
     }
 
+    // The backend has no desktop control (capability false or absent). Workspace
+    // requests must be refused locally with the exact documented reason/text.
+    function expectDesktopControlRefusal(request, message): void {
+        const backend = service.backend;
+        const beforeCalls = backend.dispatchCalls;
+        const beforeRefusals = service.refusals;
+        const beforeSequence = service.dispatchSequence;
+        service.dispatch(request);
+        check(service.refusals === beforeRefusals + 1, message + ": no refusal recorded");
+        check(service.lastRefusalReason === "desktop-control-unavailable",
+            message + ": reason " + service.lastRefusalReason + " != desktop-control-unavailable");
+        check(service.lastRefusalText === "Switching workspaces needs VirtualDesktopAccessor.dll.",
+            message + ": text " + service.lastRefusalText);
+        check(service.dispatchSequence === beforeSequence + 1, message + ": sequence");
+        check(backend.dispatchCalls === beforeCalls, message + ": refusal reached the backend");
+    }
+
     function run(): void {
         // --- Safe default construction -----------------------------------------
         check(service.enabled === false && service.dispatchEnabled === false,
@@ -245,6 +279,7 @@ QtObject {
         check(!service.nativeInitialized && !service.available, "disabled has no observation");
         check(service.usingLua === false, "usingLua is false");
         check(service.globalFocusPerMonitor === true, "global focus limitation is explicit");
+        check(service.desktopControlSupported === false, "disabled has no desktop control");
         check(service.monitors.values.length === 0 && service.workspaces.values.length === 0
             && service.toplevels.values.length === 0, "disabled exposes empty models");
         check(service.focusedMonitor === null && service.focusedWorkspace === null,
@@ -436,6 +471,51 @@ QtObject {
         check(service.toplevelsForWs(2, ["beta"]).length === 1,
             "toplevelsForWs applies ignored tags");
         check(service.toplevelsForWs(2).length === 2, "toplevelsForWs ignores tags by default");
+
+        // --- Desktop-control capability gate ----------------------------------
+        // The fixture defaults to true (matching an accessor-backed backend), so
+        // the allowlist section below keeps its original send assertions.
+        check(service.desktopControlSupported === true, "fixture reports desktop control");
+        fixture.desktopControlSupported = false;
+        check(service.desktopControlSupported === false, "false capability is reported false");
+        resetDispatch();
+        expectDesktopControlRefusal("workspace 2", "workspace gated on false capability");
+        expectDesktopControlRefusal("workspace r+1", "relative workspace gated on false capability");
+        expectDesktopControlRefusal("workspace name:dev", "named workspace gated on false capability");
+        expectDesktopControlRefusal("movetoworkspace 3,address:0x1a2b",
+            "movetoworkspace gated on false capability");
+        check(fixture.dispatchCalls === 0, "gated workspace requests reached the backend");
+        // The gate is scoped to workspace control; close translation still works.
+        expectSend("killwindow address:0x1", "closewindow address:0x1", "closewindow",
+            "killwindow is unaffected by the workspace gate");
+
+        // Absent property (the current backend pin): typeof must treat it as
+        // unavailable instead of throwing or falling through to a send.
+        service.backend = legacyFixture;
+        check(service.nativeInitialized === true, "legacy backend is initialized");
+        check(service.desktopControlSupported === false, "absent capability is reported false");
+        resetDispatch();
+        expectDesktopControlRefusal("workspace 2", "workspace gated on absent capability");
+        expectDesktopControlRefusal("movetoworkspace 3,address:0x1",
+            "movetoworkspace gated on absent capability");
+        check(legacyFixture.dispatchCalls === 0,
+            "gated workspace requests reached the legacy backend");
+        service.dispatch("killwindow address:0x2");
+        check(legacyFixture.dispatchCalls === 1
+            && legacyFixture.dispatchLog[0] === "closewindow address:0x2",
+            "killwindow still dispatches with an absent capability");
+
+        // Restore the accessor-backed fake and prove a runtime flip both ways.
+        service.backend = fixture;
+        fixture.desktopControlSupported = true;
+        check(service.desktopControlSupported === true, "true capability is reported true");
+        resetDispatch();
+        expectSend("workspace 2", "workspace 2", "workspace", "workspace with capability");
+        fixture.desktopControlSupported = false;
+        expectDesktopControlRefusal("workspace 2", "workspace gated after runtime flip off");
+        fixture.desktopControlSupported = true;
+        expectSend("workspace 2", "workspace 2", "workspace", "workspace after runtime flip on");
+        resetDispatch();
 
         // --- Allowlisted dispatch ---------------------------------------------
         resetDispatch();

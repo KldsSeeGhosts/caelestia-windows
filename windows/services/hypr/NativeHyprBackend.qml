@@ -27,6 +27,14 @@ QtObject {
     readonly property var focusedMonitor: Hyprland.focusedMonitor
     readonly property bool usingLua: Hyprland.usingLua
 
+    // Feature-detected because the current backend pin does not expose the
+    // property (a backend rebuild with the desktop-accessor capability does).
+    // A missing property therefore reports false, and the facade refuses
+    // workspace creation/switching instead of reaching a synthetic chord.
+    readonly property bool desktopControlSupported:
+        typeof Hyprland.desktopControlSupported === "boolean"
+            ? Hyprland.desktopControlSupported : false
+
     function monitorFor(screen): var {
         return Hyprland.monitorFor(screen);
     }

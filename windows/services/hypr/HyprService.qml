@@ -16,6 +16,8 @@ import QtQuick
 //   focusedMonitor     monitor or null
 //   monitorFor(screen) monitor or null
 //   dispatch(request)  sends one validated request to the backend
+//   desktopControlSupported (optional) bool; absent means workspace control is
+//                      unavailable.
 //
 // Per-monitor workspace ownership is NOT claimed. The pinned backend binds every
 // monitor's `activeWorkspace` and every workspace's `monitor` to the single
@@ -32,6 +34,9 @@ import QtQuick
 //   workspace name:<safe-name>          (backend resolves existing names only)
 //   movetoworkspace <1..9999>,address:0x<hex>
 //   killwindow address:0x<hex>   -> closewindow address:0x<hex> (graceful close)
+// Workspace forms additionally require the backend's accessor-backed
+// `desktopControlSupported === true`. Without it they are refused with reason
+// `desktop-control-unavailable` and never reach the backend.
 // `togglespecialworkspace ...` is consumed as a no-op because Windows virtual
 // desktops have no Hyprland special-workspace concept. Every other form,
 // including injected separators, extra commas, control characters and multiple
@@ -62,6 +67,15 @@ QtObject {
     readonly property bool available: root.nativeInitialized
     readonly property bool usingLua: false
     readonly property bool globalFocusPerMonitor: true
+
+    // Workspace control is a backend capability, not an adapter choice: the
+    // pinned backend can only create or switch desktops through
+    // VirtualDesktopAccessor.dll. The property is feature-detected with
+    // `typeof` because the current backend pin does not expose it. When it is
+    // absent or false, `workspace`/`movetoworkspace` never reach the backend.
+    readonly property bool desktopControlSupported: root.nativeInitialized
+        && typeof root.backend.desktopControlSupported === "boolean"
+        && root.backend.desktopControlSupported === true
 
     readonly property QtObject _emptyModel: QtObject {
         readonly property var values: []
@@ -179,6 +193,19 @@ QtObject {
         root.backend.dispatch(translated);
     }
 
+    // Workspace-changing requests are gated on the accessor-backed capability.
+    // The backend has no synthetic-shortcut fallback; forwarding without the
+    // accessor would create nothing (or trigger the Windows show-desktop
+    // effect), so the adapter refuses before backend.dispatch().
+    function _sendWorkspace(source, translated, kind): void {
+        if (!root.desktopControlSupported) {
+            root._refuse(source, "desktop-control-unavailable",
+                "Switching workspaces needs VirtualDesktopAccessor.dll.");
+            return;
+        }
+        root._send(source, translated, kind);
+    }
+
     function _consume(source, text): void {
         root.dispatchSequence++;
         root.consumed++;
@@ -228,11 +255,11 @@ QtObject {
 
         const workspace = /^workspace ([1-9][0-9]{0,3})$/.exec(request);
         if (workspace) {
-            root._send(request, request, "workspace");
+            root._sendWorkspace(request, request, "workspace");
             return;
         }
         if (request === "workspace r+1" || request === "workspace r-1") {
-            root._send(request, request, "workspace-relative");
+            root._sendWorkspace(request, request, "workspace-relative");
             return;
         }
         const named = /^workspace name:([A-Za-z0-9_.-]{1,64})$/.exec(request);
@@ -240,7 +267,7 @@ QtObject {
             // The pinned backend resolves only an existing name (dispatcher.cpp
             // :417-420). It never creates a workspace from this form, so the
             // adapter forwards it unchanged instead of pretending otherwise.
-            root._send(request, request, "workspace-name");
+            root._sendWorkspace(request, request, "workspace-name");
             return;
         }
         const move = /^movetoworkspace ([1-9][0-9]{0,3}),address:0x([0-9a-fA-F]{1,16})$/
@@ -248,7 +275,7 @@ QtObject {
         if (move) {
             const translated = "movetoworkspace " + move[1] + ",address:0x"
                 + move[2].toLowerCase();
-            root._send(request, translated, "movetoworkspace");
+            root._sendWorkspace(request, translated, "movetoworkspace");
             return;
         }
         const kill = /^killwindow address:0x([0-9a-fA-F]{1,16})$/.exec(request);
