@@ -30,10 +30,43 @@ namespace Caelestia.Takeover {
         public bool Visible;
         public Rect Bounds;
     }
+    public sealed class SavedRegion {
+        public long Handle, ProcessStartTicks;
+        public uint Owner;
+        // Null means no explicit region; otherwise this is RGNDATA in base64.
+        public string RegionData;
+    }
     public sealed class Snapshot {
         public ulong TaskbarFlags;
         public List<Display> Displays = new List<Display>();
         public List<Bar> Bars = new List<Bar>();
+        public List<SavedRegion> Regions = new List<SavedRegion>();
+    }
+    // Persist ownership before any mutation, including newly discovered HWNDs.
+    // Native operations are injected so bookkeeping is testable without a desktop.
+    public sealed class RegionSuppression {
+        readonly Snapshot snapshot;
+        readonly Func<Bar, SavedRegion> capture;
+        readonly Action<SavedRegion> persist, apply, restore;
+        public RegionSuppression(Snapshot snapshot, Func<Bar, SavedRegion> capture,
+            Action<SavedRegion> persist, Action<SavedRegion> apply, Action<SavedRegion> restore) {
+            this.snapshot = snapshot; this.capture = capture; this.persist = persist;
+            this.apply = apply; this.restore = restore;
+        }
+        public void Reconcile(Bar bar) {
+            var current = capture(bar);
+            var saved = snapshot.Regions.Find(r => r.Handle == current.Handle &&
+                r.Owner == current.Owner && r.ProcessStartTicks == current.ProcessStartTicks);
+            if (saved == null) {
+                snapshot.Regions.Add(current);
+                try { persist(current); } catch { snapshot.Regions.Remove(current); throw; }
+                saved = current;
+            }
+            apply(saved);
+        }
+        public void Restore() {
+            foreach (var region in snapshot.Regions) restore(region);
+        }
     }
     public sealed class TaskbarAction {
         public string Operation, Device, Utc, Source;
@@ -198,6 +231,83 @@ namespace Caelestia.Takeover {
         [DllImport("user32.dll", SetLastError = true)] static extern IntPtr SetWinEventHook(
             uint first, uint last, IntPtr module, WinEventCallback callback, uint process, uint thread, uint flags);
         [DllImport("user32.dll")] static extern bool UnhookWinEvent(IntPtr hook);
+        [DllImport("user32.dll", SetLastError = true)] static extern int GetWindowRgn(IntPtr window, IntPtr region);
+        [DllImport("user32.dll", SetLastError = true)] static extern int SetWindowRgn(IntPtr window, IntPtr region, bool redraw);
+        [DllImport("gdi32.dll", SetLastError = true)] static extern IntPtr CreateRectRgn(int left, int top, int right, int bottom);
+        [DllImport("gdi32.dll", SetLastError = true)] static extern uint GetRegionData(IntPtr region, uint size, byte[] data);
+        [DllImport("gdi32.dll", SetLastError = true)] static extern IntPtr ExtCreateRegion(IntPtr transform, uint size, byte[] data);
+        [DllImport("gdi32.dll")] static extern bool DeleteObject(IntPtr obj);
+        [DllImport("kernel32.dll")] static extern void SetLastError(uint error);
+
+        static long ProcessStart(uint owner) {
+            using (var process = Process.GetProcessById((int)owner)) return process.StartTime.ToUniversalTime().Ticks;
+        }
+        static bool SameRegionWindow(SavedRegion saved) {
+            var window = new IntPtr(saved.Handle);
+            uint owner;
+            if (!IsWindow(window)) return false;
+            GetWindowThreadProcessId(window, out owner);
+            if (owner != saved.Owner || !Explorer(owner)) return false;
+            try {
+                if (ProcessStart(owner) != saved.ProcessStartTicks) return false;
+                var name = new StringBuilder(128);
+                GetClassName(window, name, name.Capacity);
+                return IsExplorerTaskbar(name.ToString(), owner, saved.Owner);
+            } catch (ArgumentException) { return false; }
+              catch (InvalidOperationException) { return false; }
+              catch (System.ComponentModel.Win32Exception) { return false; }
+        }
+        public static SavedRegion CaptureRegion(Bar bar) {
+            var saved = new SavedRegion { Handle = bar.Handle, Owner = bar.Owner, ProcessStartTicks = ProcessStart(bar.Owner) };
+            if (!SameRegionWindow(saved)) throw new InvalidOperationException("Taskbar changed while capturing region.");
+            var region = CreateRectRgn(0, 0, 0, 0);
+            if (region == IntPtr.Zero) throw new System.ComponentModel.Win32Exception();
+            try {
+                // ERROR also means no explicit region. Reject an explicit
+                // last-error value, although the API does not promise one.
+                SetLastError(0);
+                int kind = GetWindowRgn(new IntPtr(bar.Handle), region);
+                int error = Marshal.GetLastWin32Error();
+                if (kind == 0 && error != 0) throw new System.ComponentModel.Win32Exception(error, "GetWindowRgn failed");
+                if (kind != 0) {
+                    uint size = GetRegionData(region, 0, null);
+                    if (size == 0) throw new System.ComponentModel.Win32Exception();
+                    var data = new byte[size];
+                    if (GetRegionData(region, size, data) != size) throw new System.ComponentModel.Win32Exception();
+                    saved.RegionData = Convert.ToBase64String(data);
+                }
+                return saved;
+            } finally { DeleteObject(region); }
+        }
+        static void SetRegion(SavedRegion saved, IntPtr region) {
+            if (!SameRegionWindow(saved)) { if (region != IntPtr.Zero) DeleteObject(region); return; }
+            if (SetWindowRgn(new IntPtr(saved.Handle), region, true) == 0) {
+                if (region != IntPtr.Zero) DeleteObject(region);
+                throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error(), "SetWindowRgn failed");
+            }
+            // The system owns a successfully assigned region.
+        }
+        public static void ApplyEmptyRegion(SavedRegion saved) {
+            if (!SameRegionWindow(saved)) return;
+            var window = new IntPtr(saved.Handle);
+            var existing = CreateRectRgn(0, 0, 0, 0);
+            if (existing == IntPtr.Zero) throw new System.ComponentModel.Win32Exception();
+            try { if (GetWindowRgn(window, existing) == 1) return; } // NULLREGION
+            finally { DeleteObject(existing); }
+            var empty = CreateRectRgn(0, 0, 0, 0);
+            if (empty == IntPtr.Zero) throw new System.ComponentModel.Win32Exception();
+            SetRegion(saved, empty);
+        }
+        public static void RestoreRegion(SavedRegion saved) {
+            if (!SameRegionWindow(saved)) return;
+            IntPtr region = IntPtr.Zero;
+            if (saved.RegionData != null) {
+                var data = Convert.FromBase64String(saved.RegionData);
+                region = ExtCreateRegion(IntPtr.Zero, (uint)data.Length, data);
+                if (region == IntPtr.Zero) throw new System.ComponentModel.Win32Exception();
+            }
+            SetRegion(saved, region);
+        }
 
         public static IntPtr HookShows(uint owner, WinEventCallback callback) {
             // EVENT_OBJECT_SHOW; out-of-context callbacks run on this UI thread.
@@ -358,8 +468,14 @@ namespace Caelestia.Takeover {
         static void RestoreDesktop(Snapshot saved, int owner, bool workAreas, bool taskbars) {
             var previous = SetThreadDpiAwarenessContext(new IntPtr(-4));
             try {
+                var regionErrors = new List<string>();
                 int removed = owner >= 0 ? RemoveStaleAppBars(owner) : 0;
                 if (taskbars) {
+                    if (saved != null && saved.Regions != null)
+                        foreach (var region in saved.Regions) {
+                            try { RestoreRegion(region); }
+                            catch (Exception error) { regionErrors.Add(region.Handle + ": " + error.Message); }
+                        }
                     var data = AppBar(FindWindow("Shell_TrayWnd", null));
                     ulong currentFlags = SHAppBarMessage(4, ref data).ToUInt64();
                     // Emergency recovery deliberately makes the real taskbar
@@ -400,13 +516,15 @@ namespace Caelestia.Takeover {
                 // qs-owned background children die with qs. Do not destroy
                 // Explorer's WorkerW/Progman, which host other applications.
                 RedrawWindow(GetDesktopWindow(), IntPtr.Zero, IntPtr.Zero, 0x181);
+                if (regionErrors.Count != 0)
+                    throw new InvalidOperationException("Taskbar region restoration failed: " + String.Join("; ", regionErrors.ToArray()));
             } finally { if (previous != IntPtr.Zero) SetThreadDpiAwarenessContext(previous); }
         }
     }
 
     public sealed class Supervisor : NativeWindow, IDisposable {
         readonly Launch launch;
-        readonly bool hide, restart;
+        readonly bool hide, restart, invisible;
         readonly Snapshot saved;
         readonly System.Threading.EventWaitHandle recovery;
         readonly Timer timer = new Timer();
@@ -416,6 +534,7 @@ namespace Caelestia.Takeover {
         readonly Native.WinEventCallback showCallback;
         readonly TaskbarHookBinding showHook;
         readonly TaskbarShowHandler showHandler;
+        readonly RegionSuppression regions;
         Process child;
         DateTime started, nextStart;
         int quickCrashes;
@@ -438,7 +557,7 @@ namespace Caelestia.Takeover {
                 mutex.ReleaseMutex();
             }
         }
-        public static int Run(string specPath, bool hide, bool restart) {
+        public static int Run(string specPath, bool hide, bool restart, bool invisible) {
             using (var mutex = new System.Threading.Mutex(false, MutexName)) {
                 bool acquired;
                 try { acquired = mutex.WaitOne(0); }
@@ -446,15 +565,15 @@ namespace Caelestia.Takeover {
                 if (!acquired) throw new InvalidOperationException("A desktop supervisor already owns this Windows session.");
                 try {
                     var launch = new JavaScriptSerializer().Deserialize<Launch>(File.ReadAllText(specPath));
-                    using (var supervisor = new Supervisor(launch, hide, restart)) {
+                    using (var supervisor = new Supervisor(launch, hide, restart, invisible)) {
                         Application.Run();
                         return supervisor.ExitCode;
                     }
                 } finally { mutex.ReleaseMutex(); }
             }
         }
-        Supervisor(Launch launch, bool hide, bool restart) {
-            this.launch = launch; this.hide = hide; this.restart = restart;
+        Supervisor(Launch launch, bool hide, bool restart, bool invisible) {
+            this.launch = launch; this.hide = hide; this.restart = restart; this.invisible = invisible && hide;
             showCallback = OnTaskbarShow; // Root the delegate for the entire hook lifetime.
             showHook = new TaskbarHookBinding(
                 delegate(uint owner) { return Native.HookShows(owner, showCallback); },
@@ -462,6 +581,8 @@ namespace Caelestia.Takeover {
             showHandler = new TaskbarShowHandler(showPolicy, Native.EventTaskbar, Native.HideObserved, Native.Record);
             Directory.CreateDirectory(launch.StateDirectory);
             saved = Native.Capture();
+            regions = new RegionSuppression(saved, Native.CaptureRegion, delegate(SavedRegion ignored) { SaveSnapshot(); },
+                Native.ApplyEmptyRegion, Native.RestoreRegion);
             // Durable before the first native change, usable if this helper is killed.
             File.WriteAllText(Path.Combine(launch.StateDirectory, "desktop-before.json"), json.Serialize(saved));
             Native.RecordAction = delegate(TaskbarAction action) {
@@ -482,12 +603,28 @@ namespace Caelestia.Takeover {
             timer.Start();
             nextStart = DateTime.UtcNow;
         }
+        void SaveSnapshot() {
+            var path = Path.Combine(launch.StateDirectory, "desktop-before.json");
+            var temporary = path + ".tmp";
+            File.WriteAllText(temporary, json.Serialize(saved));
+            if (File.Exists(path)) File.Replace(temporary, path, null);
+            else File.Move(temporary, path);
+        }
+        void SuppressRegions() {
+            if (invisible) foreach (var bar in Native.Taskbars()) regions.Reconcile(bar);
+        }
         protected override void WndProc(ref Message message) {
             if (message.Msg == taskbarCreated && child != null && !child.HasExited && hide) {
                 // Quickshell's tray hook also sends TaskbarCreated to re-announce
                 // icons. Rebind only when Explorer's process actually changed.
-                RefreshShowHook(false);
-                Native.Hide(true);
+                try {
+                    RefreshShowHook(false);
+                    SuppressRegions();
+                    Native.Hide(true);
+                } catch (Exception error) {
+                    File.AppendAllText(Path.Combine(launch.StateDirectory, "watchdog-error.log"), error + Environment.NewLine);
+                    Finish("watchdog-error", 1);
+                }
             }
             base.WndProc(ref message);
         }
@@ -515,6 +652,10 @@ namespace Caelestia.Takeover {
             long ticks = Stopwatch.GetTimestamp();
             try {
                 if (done || !hide || child == null || child.HasExited || !showHook.Matches(hook)) return;
+                if (invisible && objectId == 0 && childId == 0) {
+                    var bar = Native.EventTaskbar(window, showHook.Owner);
+                    if (bar != null) regions.Reconcile(bar);
+                }
                 showHandler.Handle(showHook.Owner, window, objectId, childId, ticks);
             } catch (Exception error) {
                 // Desktop switches or disappearing Explorer windows must not
@@ -550,14 +691,14 @@ namespace Caelestia.Takeover {
                 process.ErrorDataReceived += delegate(object sender, DataReceivedEventArgs e) { if (e.Data != null) Append(launch.StderrPath, e.Data); };
             // Snapshot is durable and the supervisor owns restoration before
             // the child can register its AppBars. Retain the post-start pass.
-            if (hide) { RefreshShowHook(false); Native.Hide(true); }
+            if (hide) { RefreshShowHook(false); SuppressRegions(); Native.Hide(true); }
             process.Start();
             child = process;
             ownedPid = child.Id;
             if (info.RedirectStandardOutput) child.BeginOutputReadLine();
             if (info.RedirectStandardError) child.BeginErrorReadLine();
             started = DateTime.UtcNow;
-            if (hide) { RefreshShowHook(false); Native.Hide(true); }
+            if (hide) { RefreshShowHook(false); SuppressRegions(); Native.Hide(true); }
             Status("running", child.Id);
         }
         static readonly object logLock = new object();
@@ -573,7 +714,7 @@ namespace Caelestia.Takeover {
                 }
                 if (child == null) { if (DateTime.UtcNow >= nextStart) Start(); return; }
                 if (!child.HasExited) {
-                    if (hide) { RefreshShowHook(false); Native.Hide(false); }
+                    if (hide) { RefreshShowHook(false); SuppressRegions(); Native.Hide(false); }
                     return;
                 }
                 showHook.Dispose();

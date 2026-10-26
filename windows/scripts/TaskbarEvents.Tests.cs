@@ -159,6 +159,38 @@ public static class TaskbarEventsTests {
             delegate(TaskbarAction action) { if (action.Operation == "event-backoff") backoffs++; });
         for (int i = 0; i < 20; i++) refusedHandler.Handle(42, new IntPtr(1), 0, 0, i * 10);
         Check(refusedHides == 20 && backoffs == 1, "owner recheck failures are not counted as hides");
+        var snapshot = new Snapshot();
+        var sequence = new List<string>();
+        bool persistFails = false;
+        var manager = new RegionSuppression(snapshot,
+            delegate(Bar bar) { sequence.Add("capture"); return new SavedRegion {
+                Handle = bar.Handle, Owner = bar.Owner, ProcessStartTicks = bar.Owner,
+                RegionData = "original-" + bar.Owner }; },
+            delegate(SavedRegion r) { sequence.Add("persist"); if (persistFails) throw new Exception("disk"); },
+            delegate(SavedRegion r) { sequence.Add("apply"); },
+            delegate(SavedRegion r) { sequence.Add("restore-" + r.RegionData); });
+        manager.Reconcile(first);
+        Check(String.Join(",", sequence.ToArray()) == "capture,persist,apply" &&
+            snapshot.Regions.Count == 1, "durable snapshot precedes mutation");
+        sequence.Clear();
+        manager.Reconcile(first);
+        Check(String.Join(",", sequence.ToArray()) == "capture,apply" &&
+            snapshot.Regions[0].RegionData == "original-42", "reapply retains original snapshot");
+        manager.Reconcile(newOwner);
+        Check(snapshot.Regions.Count == 2 && snapshot.Regions[1].Owner == 43, "new Explorer gets its own snapshot");
+        var json = new System.Web.Script.Serialization.JavaScriptSerializer();
+        var roundTrip = json.Deserialize<Snapshot>(json.Serialize(snapshot));
+        Check(roundTrip.Regions.Count == 2 && roundTrip.Regions[0].RegionData == "original-42" &&
+            roundTrip.Regions[1].ProcessStartTicks == 43, "durable recovery snapshot round-trips identity and region");
+        persistFails = true;
+        int before = sequence.Count;
+        try { manager.Reconcile(other); throw new Exception("expected failure"); }
+        catch (Exception e) { if (e.Message != "disk") throw; }
+        Check(snapshot.Regions.Count == 2 && sequence.Count == before + 2 &&
+            sequence[sequence.Count - 1] == "persist", "failed persistence prevents apply");
+        manager.Restore();
+        Check(sequence.Contains("restore-original-42") && sequence.Contains("restore-original-43"),
+            "restore each saved identity");
         return assertions;
     }
 }
