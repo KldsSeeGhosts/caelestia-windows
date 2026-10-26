@@ -13,12 +13,63 @@ effects and safety").
 | `NativeTilingBackend.qml` | thin wrapper that imports `Quickshell.Windows` and feature-detects the allowlist/telemetry members; loaded by URL only for observe/interactive |
 | `Tiling.qml` | singleton facade staged at `services/Tiling.qml`; owns the environment opt-ins, the native `Loader` and the `Toaster.toast` bridge |
 
-## Opt-ins
+## Profile configuration
 
-Child-process environment variables; the launcher writes every one
-explicitly so an inherited value cannot enable tiling.
+`shell.json` is loaded and watched by `Caelestia.Config.GlobalConfig`.
+The Windows-only `windows` map holds service extensions; the facade validates
+`windows.tiling` on each change.
 
-- `CAELESTIA_WINDOWS_TILING=off|observe|interactive`, default `off`.
+```json
+{
+  "windows": {
+    "tiling": {
+      "enabled": true,
+      "mode": "observe",
+      "gapsIn": 10,
+      "gapsOut": 10,
+      "include": ["exe:editor.exe", "class:Chrome_WidgetWin_*"],
+      "exclude": ["title:*Private*"],
+      "float": ["title:*Dialog*"],
+      "monitors": {"\\\\.\\DISPLAY2": false}
+    }
+  }
+}
+```
+
+- Defaults: disabled, Observe mode when enabled, 10/10 DIP gaps, empty rules,
+  all monitors enabled. Modes are `observe` and `interactive`; disabled selects
+  `off`. Invalid modes stay off. Gaps are finite numbers, rounded and clamped
+  to 0..100 integer DIPs; invalid/missing gaps use 10. These are the backend's
+  gap parameters, whose layout engines can place an inner gap on both tiles.
+- `include`, `exclude`, `float`: arrays of wildcard strings or
+  semicolon-separated strings. Case-insensitive whole-value wildcard matching
+  (`*`, `?`, character classes), not regular expressions. `exe:` matches
+  executable filename/basename, `class:` matches Win32 class, `title:` matches
+  title. Unprefixed rules retain the shared app ID/exe/class match.
+- `float` is an exclusion alias: matching windows stay unmanaged. Exclude,
+  float and disabled-monitor rules win over every inclusion.
+- `monitors` maps Qt screen-name wildcard patterns to booleans. All monitors
+  default enabled; `false` adds a native `screen:` exclusion, `true` leaves
+  the monitor enabled. A blanket false wildcard also excludes true exceptions.
+- Live changes stop the current session before applying rules/gaps, then
+  request enable through the existing native mutex gate. Observe/disabled
+  stop the tiler. A held mutex produces the existing
+  `Another tiling manager is already running.` toast. Invalid JSON uses
+  Caelestia's ordinary config error handling. Interactive requires a non-empty
+  effective include list and is downgraded to Observe during smoke.
+
+The bounded launcher accepts `-TilingConfigFile <shell.json>` and copies only
+this section into its isolated profile. Edit the profile's `config/shell.json`
+for live reload. `-ProfileRoot` and `-RunRoot` select output paths;
+`-BuildRoot` supplies binaries read-only. Existing profile tiling settings
+survive another prototype launch.
+
+## Overrides
+
+Explicit launcher switches override environment variables, which override
+corresponding profile values. With no override, profile settings apply.
+
+- `CAELESTIA_WINDOWS_TILING=off|observe|interactive`.
   `off` never imports or constructs the backend `Tiling` singleton: the
   facade's `Loader` is bound to the service's `nativeRequested` flag, which
   is false only for `off`. `observe` constructs the wrapper (which runs
@@ -38,14 +89,15 @@ explicitly so an inherited value cannot enable tiling.
   Exclusions win over inclusions; the host process is never managed by the
   backend itself.
 
-The backend pin (`14010429`) predates the fork branch
-`windows/m3-windows-stack` (`cd170acf`) that adds `included`, `lastError`,
-`managedCount`, `failedCount`, `enableRefused(reason)` and
-`windowTilingFailed(address, reason)`. Everything beyond `enabled` and
-`excluded` is therefore feature-detected: on the pinned build
-`supportsIncluded` is false (so interactive always refuses), telemetry
-properties report their defaults (`0`/empty) and no signals arrive. No
-backend edit is part of this slice.
+`-Tiling -TilingMode Disabled|Observe|Interactive` overrides mode.
+`-TilingIncluded` and `-TilingExcluded` override corresponding lists; an explicit
+empty string clears the list. Profile float/monitor exclusions still apply.
+For direct QML launches, an empty environment value means absent; set the
+corresponding variable's `_OVERRIDE=1` companion to explicitly clear it.
+
+The pin includes the M3 allowlist, telemetry and typed exe/class/screen
+selectors (`supportsScopedRules`). Older builds refuse Interactive when unable
+to enforce inclusion or typed rules. Gap-only Observe runs remain compatible.
 
 `CAELESTIA_WINDOWS_HYPR=1` observation is not required, but with it the
 facade resolves each failure's `appClass`/`title` through the Hypr
@@ -58,7 +110,9 @@ false — including interactive still waiting for or denied an enable),
 `refused` (interactive blocked by policy, or the backend refused enabling:
 `tiler-mutex-held`, `no-screen`), `tiling` (backend `enabled` true). The
 facade prints one `CAELESTIA_TILING_STATUS tiling=<mode> included=<n>
-excluded=<n> status=<status>` line at startup.
+excluded=<n> gapsIn=<dip> gapsOut=<dip> status=<status>` line at startup.
+`CAELESTIA_TILING_CONFIG` reports each effective config change and
+`CAELESTIA_TILING_OPTIONS` reports gaps read back from the backend.
 
 ## Fitting-failure explanation
 
@@ -100,3 +154,9 @@ the list cap, every toast copy string, both rate limits, the collapse toast,
 enable-refusal toasts and the count/error projection. It imports no
 Quickshell or Caelestia module. Run it through
 `windows/scripts/Test-TilingService.ps1`.
+
+`Test-TilingConfig.ps1 -QtPrefix <Qt> -BuildRoot <build>` is a short native
+Observe/off smoke. It checks profile-only mode, gap/rule loading, watched
+gap/rule changes, and watched disable without ever requesting Interactive.
+The backend's `tiling_observability_test` also covers typed exe/class selectors,
+disabled-monitor precedence and monitor transfer using fake window facts.

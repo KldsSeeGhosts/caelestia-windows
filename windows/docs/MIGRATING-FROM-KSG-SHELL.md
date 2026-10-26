@@ -1,4 +1,4 @@
-# Migrating from KSG Shell
+﻿# Migrating from KSG Shell
 
 The importer reads `%APPDATA%\com.ksg.shell\settings.json`. It never changes
 KSG Shell, Windows preferences, autostart, running processes or tiler state.
@@ -56,8 +56,8 @@ contain private values already in the base config. Review locally; use
 
 The destination schema at this revision is defined by
 `plugin/src/Caelestia/Config/`, rather than the older upstream `config/` QML.
-Only supported fields enter `shell.json`; no speculative `wm`, `tiling`,
-`keybinds` or wallpaper-path properties are emitted.
+The Windows extension is stored at `windows.tiling` and consumed through
+`GlobalConfig.windows`. No speculative keybind or wallpaper fields are emitted.
 
 | KSG preference | Caelestia overlay |
 | --- | --- |
@@ -71,11 +71,15 @@ Only supported fields enter `shell.json`; no speculative `wm`, `tiling`,
 | `bar.items.volume` | `bar.statusIcons` entry `audio`, `enabled` |
 | `bar.items.power` | `bar.statusIcons` entry `battery`, `enabled` |
 | `osd.enabled` | `osd.enabled` |
+| `wm.enabled` | `windows.tiling.enabled`, with `mode="observe"` |
+| `wm.gap` | `windows.tiling.gapsIn` |
+| `wm.padding` | `windows.tiling.gapsOut` |
 
 Missing or incorrectly typed KSG boolean values use KSG's default `true`;
 incorrect types appear in summary warnings. KSG gap/padding defaults are
-10 DIPs and clamp to 0..40, preserving fractions. These are summarized,
-not installed as working Caelestia gap settings.
+10 DIPs and clamp to 0..40. The summary preserves fractions; imported gaps
+round to the nearest integer DIP because the backend properties are integers.
+Existing Caelestia include/exclude/float/monitor rules survive the merge.
 
 Visibility preferences do not establish native backend capability.
 For example, importing keyboard/tray visibility does not make unsupported
@@ -83,13 +87,10 @@ keyboard observation or tray interception work.
 
 ## What requires manual decisions
 
-- **Tiling:** `wm.enabled`, `wm.gap` and `wm.padding` appear in `-Summary`.
-  The M3 adapter on `origin/t3/m3-tiling-slice` consumes
-  `CAELESTIA_WINDOWS_TILING=off|observe|interactive`,
-  `CAELESTIA_WINDOWS_TILING_INCLUDED` and
-  `CAELESTIA_WINDOWS_TILING_EXCLUDED`, not `shell.json`. It exposes no
-  configurable gap/padding. Do not invent JSON fields that the config loader
-  would quarantine as unknown. The importer never enables either tiler.
+- **Tiling:** the importer maps enabled/gap/padding into `windows.tiling`,
+  always selecting Observe. It never enables either tiler. Environment and
+  explicit launcher switches override config. See the
+  [tiling service schema](../services/tiling/README.md).
   KSG layout trees, category stacking, floating dimensions, drag behavior
   and resize increments have no equivalent in that adapter.
 - **Per-app rules:** KSG's `libs/shell-core/src/wm/rules.rs` opens only its
@@ -100,9 +101,9 @@ keyboard observation or tray interception work.
   compound identifiers; M3 offers inclusion/exclusion wildcards with
   exclusion precedence. Bulk translation would change admission semantics.
   Review rules manually: a simple title wildcard can become
-  `title:*Example*`; other M3 patterns match app ID, executable name/basename
-  **and** class, so an exact KSG class match is not an exact class-only
-  equivalent. Lists are semicolon-separated. Excluding an app leaves it
+  `title:*Example*`; `exe:editor.exe` and `class:ExampleClass` select the
+  corresponding fact. Unprefixed patterns retain the shared app ID/exe/class
+  dialect. Lists are JSON arrays or semicolon-separated strings. Excluding an app leaves it
   unmanaged; it does not reproduce KSG force, pinning or stack rules.
 - **Keybinds:** KSG's `wm/hotkeys.rs` hardcodes Win+P (toggle tiling), Win+F
   (float), Win+M (monocle), Win+Q/Win+Shift+Q (cycle), Alt+I/J/K/L (focus),
@@ -124,7 +125,7 @@ keyboard observation or tray interception work.
 - **Monitors:** `DockSettings.enabledMonitors` exists as an in-memory host
   policy, but native `settings.rs::parse` does not populate it from the
   settings file. KSG stable display IDs also differ from Qt screen names.
-  Review Caelestia per-screen settings after the production profile lands.
+  Set `windows.tiling.monitors` using Qt screen names or wildcards after review.
 - **Notifications/dock/takeover:** `bar.items.notifications` hides a KSG
   icon. Caelestia's `sidebar.enabled` disables the drawer itself, which is
   different. The dock's enable/size/magnification preferences and
@@ -169,15 +170,16 @@ Recheck these contracts before adding mappings after either schema evolves.
 
 5. Launch the integrated production shell using its documented launcher,
    with tiling off and takeover/autostart enabled only when explicitly chosen.
-   The current combined prototype is bounded and does not automatically
-   consume this production profile. This importer does not remove that limit.
+   The bounded combined prototype accepts `-TilingConfigFile <shell.json>`
+   to copy only `windows.tiling` into its isolated profile. It does not
+   automatically consume or replace the production profile.
 6. Test the bar and services first. For the separately integrated M3 adapter,
    choose a small non-empty inclusion list and review exclusions before
-   selecting interactive mode. `observe` constructs the native controller
+   selecting `windows.tiling.mode="interactive"`. `observe` constructs the native controller
    and may rescue previously parked windows even though it keeps tiling
    disabled; it is not a zero-effect dry run. The pinned M3 reference runtime
-   lacks `included`, so it refuses interactive mode until a supporting backend
-   is used. Do not remove that refusal to make migration appear complete.
+   supports inclusion and typed app/monitor selectors. Older builds refuse
+   interactive when they cannot enforce the configured selectors.
 7. Validate window placement, monitors, fullscreen, minimum-size handling,
    sleep/wake and exit restoration before choosing Caelestia autostart.
 

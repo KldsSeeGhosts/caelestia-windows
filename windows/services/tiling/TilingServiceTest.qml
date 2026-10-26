@@ -19,6 +19,9 @@ QtObject {
         property bool initialized: true
         property bool enabled: false
         property bool supportsIncluded: true
+        property bool supportsScopedRules: true
+        property int gapsInApplied: 0
+        property int gapsOutApplied: 0
         property string lastError: ""
         property int managedCount: 0
         property int failedCount: 0
@@ -26,12 +29,17 @@ QtObject {
         property var includedApplied: null
         property int enableRequests: 0
 
-        function applyOptions(excluded, included): void {
+        function applyOptions(excluded, included, gapsIn, gapsOut): void {
             excludedApplied = excluded;
             includedApplied = included;
+            gapsInApplied = gapsIn;
+            gapsOutApplied = gapsOut;
         }
         function requestEnable(): void {
             enableRequests++;
+        }
+        function requestDisable(): void {
+            enabled = false;
         }
     }
 
@@ -239,7 +247,7 @@ QtObject {
         service.backend = noListBackend;
         checkEqual(service.status, "refused", "interactive without included is refused");
         checkEqual(service.reason,
-            "Interactive tiling requires CAELESTIA_WINDOWS_TILING_INCLUDED to name the windows it may manage.",
+            "Interactive tiling requires an include list in windows.tiling or CAELESTIA_WINDOWS_TILING_INCLUDED.",
             "included-empty refusal reason");
         checkEqual(noListBackend.enableRequests, 0, "empty allowlist never enables");
         check(!noListBackend.enabled, "empty allowlist leaves the tiler disabled");
@@ -486,6 +494,50 @@ QtObject {
             "identity translate restores exact copy");
         checkEqual(service.toastCount, toasts.length,
             "toastCount matches the emitted decisions");
+
+        // Live config uses the same enable gate and can always disable.
+        service.backend = null;
+        resetToasts();
+        const settings = {
+            enabled: true, mode: "interactive", gapsIn: 10, gapsOut: 10,
+            include: ["exe:editor.exe", "class:Chrome*"],
+            exclude: ["title:Secret*"], float: ["title:Dialog*"],
+            monitors: {"DISPLAY2": false, "DISPLAY1": true}
+        };
+        service.configureProfile(settings, {}, false);
+        service.backend = liveBackend;
+        checkEqual(liveBackend.gapsInApplied, 10, "config inner gap applied");
+        checkEqual(liveBackend.gapsOutApplied, 10, "config outer gap applied");
+        checkJson(liveBackend.excludedApplied,
+            ["title:Secret*", "title:Dialog*", "screen:DISPLAY2"], "float and monitor precedence");
+        service.handleEnableRefused("tiler-mutex-held");
+        checkEqual(service.status, "refused", "config enable uses mutex refusal");
+        checkEqual(toasts.length, 1, "config mutex refusal has existing toast");
+        service.configureProfile(settings, {mode: "observe", included: ""}, false);
+        checkEqual(service.mode, "observe", "env mode overrides config");
+        checkEqual(service.includedPatterns.length, 0, "explicit empty env overrides config list");
+        checkEqual(service.gapsIn, 10, "env keeps config gaps");
+        service.configureProfile(settings, {}, true);
+        checkEqual(service.mode, "observe", "config interactive downgraded in smoke");
+        liveBackend.enabled = true;
+        service.configureProfile({enabled: false}, {}, false);
+        check(!liveBackend.enabled, "live disable stops native session before loader unload");
+        checkEqual(service.mode, "off", "config disabled");
+        checkEqual(service.gapsOut, 10, "gap defaults");
+        service.configureProfile({enabled: true, gapsIn: -1, gapsOut: 500}, {}, false);
+        checkEqual(service.gapsIn, 0, "gap lower clamp");
+        checkEqual(service.gapsOut, 100, "gap upper clamp");
+        checkEqual(service.mode, "observe", "enabled defaults to observe");
+        service.configureProfile({enabled: true, gapsIn: "bad"}, {}, false);
+        checkEqual(service.gapsIn, 10, "invalid gap fallback");
+        liveBackend.supportsScopedRules = false;
+        service.configureProfile(settings, {}, false);
+        checkEqual(service.status, "refused", "old backend refuses scoped rules");
+        checkEqual(service.reason,
+            "This Windows backend cannot enforce exe, class or monitor selectors; interactive tiling stays off.",
+            "scoped rule refusal explanation");
+        checkJson(service.parsePatternList("exe:;class: ;screen:;title:;exe:a"),
+            ["exe:a"], "empty typed rules never authorize unrestricted tiling");
 
         console.log("CAELESTIA_TILING_FIXTURE_PASS " + JSON.stringify({
             assertions: assertions

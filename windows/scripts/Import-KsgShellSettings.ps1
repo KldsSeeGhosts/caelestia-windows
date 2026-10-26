@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
 Imports supported KSG Shell preferences without changing KSG Shell.
 .DESCRIPTION
@@ -7,9 +7,9 @@ Without -OutFile, prints the merged shell.json to stdout and writes nothing.
 mapping report instead of the config. Existing output requires -Force, which
 creates a byte-for-byte backup before replacement.
 
-Only actual Caelestia ConfigRoot fields are emitted. M3 tiling currently uses
-environment opt-ins, not shell.json; its saved preferences are reported for
-manual switch-over. See windows/docs/MIGRATING-FROM-KSG-SHELL.md.
+Emits Caelestia ConfigRoot fields and the Windows facade's windows.tiling
+extension. Imported tiling always starts in Observe mode, never Interactive.
+See windows/docs/MIGRATING-FROM-KSG-SHELL.md.
 #>
 [CmdletBinding()]
 param(
@@ -202,21 +202,35 @@ foreach ($pair in @(
     Record-Mapping $from ("bar.statusIcons[id={0}].enabled" -f $pair[1])
 }
 
+# KSG has no persisted user rules. Preserve reviewed Caelestia include/exclude/
+# float/monitor settings from the base rather than guessing from unknown keys.
+$savedEnabled = Read-Bool 'wm.enabled'
+$savedGap = Read-Gap 'wm.gap'
+$savedPadding = Read-Gap 'wm.padding'
+Set-Value $merged 'windows.tiling.enabled' $savedEnabled
+Set-Value $merged 'windows.tiling.mode' 'observe'
+# The native backend Q_PROPERTYs accept integer DIPs.
+Set-Value $merged 'windows.tiling.gapsIn' ([int][Math]::Round($savedGap, [MidpointRounding]::AwayFromZero))
+Set-Value $merged 'windows.tiling.gapsOut' ([int][Math]::Round($savedPadding, [MidpointRounding]::AwayFromZero))
+Record-Mapping 'wm.enabled' 'windows.tiling.enabled (Observe only)'
+Record-Mapping 'wm.gap' 'windows.tiling.gapsIn'
+Record-Mapping 'wm.padding' 'windows.tiling.gapsOut'
+
 $report = [ordered]@{
     schemaVersion = 1
     dryRun = (-not $outputPath -or [bool]$DryRun)
     mergedExistingConfig = [bool]$basePath
     mapped = @($mappings.ToArray())
     tiling = [ordered]@{
-        savedEnabled = (Read-Bool 'wm.enabled')
-        savedGapDip = (Read-Gap 'wm.gap')
-        savedPaddingDip = (Read-Gap 'wm.padding')
-        imported = $false
-        switchOverMode = 'off'
+        savedEnabled = $savedEnabled
+        savedGapDip = $savedGap
+        savedPaddingDip = $savedPadding
+        imported = $true
+        switchOverMode = 'observe'
         modeVariable = 'CAELESTIA_WINDOWS_TILING'
         includedVariable = 'CAELESTIA_WINDOWS_TILING_INCLUDED'
         excludedVariable = 'CAELESTIA_WINDOWS_TILING_EXCLUDED'
-        reason = 'M3 uses launch opt-ins, has no shell.json settings or configurable gap/padding, and requires a reviewed non-empty allowlist before interactive mode.'
+        reason = 'Mapped into windows.tiling; integer DIPs rounded to nearest. Observe never enables tiling. Interactive requires manual switch-over and a reviewed non-empty include list.'
     }
     notImported = @(
         'wm layout/drag/stacking/floating/resize: different tiling engine; no equivalent config fields.',

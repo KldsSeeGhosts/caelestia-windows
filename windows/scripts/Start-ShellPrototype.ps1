@@ -2,8 +2,9 @@
 param(
     [Parameter(Mandatory)][string]$QtPrefix,
     [string]$BuildRoot,
-    # Keep binaries read-only while staging/configuring an independent run.
     [string]$RunRoot,
+    [string]$ProfileRoot,
+    [string]$TilingConfigFile,
     [switch]$Smoke,
     [switch]$Wait,
     [switch]$MonitorCycle,
@@ -104,7 +105,9 @@ if ($NotificationAppOpen -and $NotificationsMode -ne 'Mirror') { throw '-Notific
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
 if (-not $BuildRoot) { $BuildRoot = Join-Path $repoRoot 'windows\.local\build' }
 $BuildRoot = [IO.Path]::GetFullPath($BuildRoot)
-if (-not $RunRoot) { $RunRoot = $BuildRoot }
+# BuildRoot supplies binaries only. Stages, profiles and logs belong to this
+# checkout, so borrowing another worktree's build never modifies that build.
+if (-not $RunRoot) { $RunRoot = Join-Path $repoRoot 'windows\.local\build' }
 $RunRoot = [IO.Path]::GetFullPath($RunRoot)
 $exe = Join-Path $BuildRoot 'quickshell\qs.exe'
 $qmlRoot = Join-Path $BuildRoot 'install\qml'
@@ -119,7 +122,8 @@ $kind = $(if ($selected.Count -eq 1) { $selected[0] } elseif ($Combined) { 'comb
 $stagePrototype = $(if ($kind -ne 'shell' -and $slices[$kind].Stage) { $slices[$kind].Stage } else { $kind })
 $marker = $(if ($kind -ne 'shell' -and $slices[$kind].Marker) { $slices[$kind].Marker } else { 'CAELESTIA_' + $kind.ToUpperInvariant() })
 $runName = $kind + '-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff')
-$profileRoot = Join-Path $RunRoot "$kind-prototype-profile"
+if (-not $ProfileRoot) { $ProfileRoot = Join-Path $RunRoot "$kind-prototype-profile" }
+$profileRoot = [IO.Path]::GetFullPath($ProfileRoot)
 # A fresh stage avoids stale QML types from a previous implementation.
 $stage = & (Join-Path $PSScriptRoot 'Stage-ShellPrototype.ps1') `
     -Destination (Join-Path $RunRoot "shell-runs\$runName") -ProfileRoot $profileRoot -Prototype $stagePrototype
@@ -129,6 +133,14 @@ foreach ($dir in @('config', 'state', 'runtime', 'cache', 'data')) {
 # This dedicated prototype profile intentionally accepts only this audited slice.
 # Never read or write ordinary Caelestia configuration.
 $config = Join-Path $profileRoot 'config\shell.json'
+$tilingSettings = $null
+if ($TilingConfigFile) {
+    $tilingDocument = Get-Content -LiteralPath $TilingConfigFile -Raw | ConvertFrom-Json
+    $tilingSettings = $tilingDocument.windows.tiling
+    if ($tilingSettings -isnot [pscustomobject]) { throw '-TilingConfigFile requires a windows.tiling object in shell.json.' }
+} elseif (Test-Path -LiteralPath $config) {
+    $tilingSettings = (Get-Content -LiteralPath $config -Raw | ConvertFrom-Json).windows.tiling
+}
 $configText = @'
 {
   "bar": {
@@ -273,6 +285,11 @@ if ($Combined) {
         restartOnCrash = -not $NoRestartOnCrash.IsPresent
     } } | ConvertTo-Json | Set-Content -LiteralPath $takeoverConfig -Encoding UTF8
 }
+if ($null -ne $tilingSettings) {
+    $configObject = $configText | ConvertFrom-Json
+    $configObject | Add-Member -NotePropertyName windows -NotePropertyValue ([pscustomobject]@{ tiling = $tilingSettings }) -Force
+    $configText = $configObject | ConvertTo-Json -Depth 20
+}
 $configText | Set-Content -LiteralPath $config -Encoding UTF8
 $logRoot = Join-Path $RunRoot 'logs'
 New-Item -ItemType Directory -Force -Path $logRoot | Out-Null
@@ -324,19 +341,23 @@ foreach ($name in $slices.Keys) {
 # neither supplies it nor forwards it to a smoke run.
 $softwareOptIn = $env:CAELESTIA_WINDOWS_BRIGHTNESS_SOFTWARE -eq '1'
 $info.EnvironmentVariables['CAELESTIA_WINDOWS_BRIGHTNESS_SOFTWARE'] = $(if ($Brightness -and $BrightnessMode -eq 'Interactive' -and -not $Smoke -and $softwareOptIn) { '1' } else { '0' })
-# Tiling takes a mode word rather than two flags, so its opt-ins are written
-# explicitly instead of through the generic loop: off|observe|interactive,
-# and smoke always forces Interactive down to observe before the child can
-# construct anything. The allowlist/denylist are written explicitly too, so
-# an inherited value can never widen a run.
-$tilingEnvMode = 'off'
-if ($Tiling -and $TilingMode -ne 'Disabled') {
-    $tilingEnvMode = $TilingMode.ToLowerInvariant()
-    if ($tilingEnvMode -eq 'interactive' -and $Smoke) { $tilingEnvMode = 'observe' }
+# Explicit switches override environment, which overrides shell.json.
+# The facade enforces the smoke downgrade for config and env alike.
+$tilingEnvMode = $env:CAELESTIA_WINDOWS_TILING
+if ($Tiling) {
+    $tilingEnvMode = $(if ($TilingMode -eq 'Disabled') { 'off' } else { $TilingMode.ToLowerInvariant() })
 }
-$info.EnvironmentVariables['CAELESTIA_WINDOWS_TILING'] = $tilingEnvMode
-$info.EnvironmentVariables['CAELESTIA_WINDOWS_TILING_INCLUDED'] = $(if ($Tiling) { $TilingIncluded } else { '' })
-$info.EnvironmentVariables['CAELESTIA_WINDOWS_TILING_EXCLUDED'] = $(if ($Tiling) { $TilingExcluded } else { '' })
+if (-not $Combined -and -not $Tiling) { $tilingEnvMode = 'off' }
+if ($Smoke -and $tilingEnvMode -eq 'interactive') { $tilingEnvMode = 'observe' }
+$info.EnvironmentVariables['CAELESTIA_WINDOWS_TILING'] = [string]$tilingEnvMode
+$info.EnvironmentVariables['CAELESTIA_WINDOWS_TILING_OVERRIDE'] = $(if ($Tiling) { '1' } else { '0' })
+foreach ($field in @('Included', 'Excluded')) {
+    $variable = 'CAELESTIA_WINDOWS_TILING_' + $field.ToUpperInvariant()
+    $explicit = $PSBoundParameters.ContainsKey("Tiling$field")
+    $value = $(if ($explicit) { Get-Variable -Name "Tiling$field" -ValueOnly } else { [Environment]::GetEnvironmentVariable($variable) })
+    $info.EnvironmentVariables[$variable] = [string]$value
+    $info.EnvironmentVariables[$variable + '_OVERRIDE'] = $(if ($explicit) { '1' } else { '0' })
+}
 # Battery observation stays read-only; Profiles adds read-only PowerProfiles
 # observation, and ProfileWrites (the battery control mode above) additionally
 # permits explicit profile selection outside smoke.
@@ -502,7 +523,7 @@ $result = [ordered]@{
     elapsedMilliseconds = $elapsed.ElapsedMilliseconds
     sourceRevision = (& git -C $repoRoot rev-parse HEAD).Trim()
     sourceDirty = [bool](& git -C $repoRoot status --porcelain)
-    backendRevision = (& git -C (Join-Path $repoRoot 'windows\deps\quickshell') rev-parse HEAD).Trim()
+    backendRevision = (Get-Content -LiteralPath (Join-Path $BuildRoot 'logs\build.json') -Raw | ConvertFrom-Json).backendRevision
     buildRecordSha256 = (Get-FileHash -LiteralPath (Join-Path $BuildRoot 'logs\build.json')).Hash
     configSha256 = (Get-FileHash -LiteralPath $config).Hash
     command = $info.FileName; arguments = $info.Arguments

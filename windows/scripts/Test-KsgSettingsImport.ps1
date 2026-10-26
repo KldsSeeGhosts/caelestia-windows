@@ -1,4 +1,4 @@
-# Quick file-only smoke. No shell launch, native build, registry or process writes.
+﻿# Quick file-only smoke. No shell launch, native build, registry or process writes.
 [CmdletBinding()]
 param()
 $ErrorActionPreference = 'Stop'
@@ -29,6 +29,7 @@ try {
     "statusIcons": [{"id":"microphone","enabled":true},{"id":"audio","enabled":true}]
   },
   "appearance": {"rounding":{"scale":1.5}},
+  "windows": {"tiling":{"mode":"interactive","include":["exe:editor.exe"],"float":["title:Dialog*"],"monitors":{"DISPLAY2":false}}},
   "future": {"empty": [], "nested": [[1,2], [], null], "nothing": null}
 }
 '@ | Set-Content -LiteralPath $base -Encoding UTF8
@@ -48,7 +49,12 @@ try {
     Assert ($json -notmatch 'fixture-do-not-import') 'Unknown source values leaked.'
     $report = & $importer -SettingsFile $source -BaseFile $base -Summary | ConvertFrom-Json
     Assert ($report.tiling.savedGapDip -eq 12.5 -and $report.tiling.savedPaddingDip -eq 40 -and
-        -not $report.tiling.savedEnabled -and -not $report.tiling.imported) 'Tiling report incorrect.'
+        -not $report.tiling.savedEnabled -and $report.tiling.imported) 'Tiling report incorrect.'
+    Assert (-not $config.windows.tiling.enabled -and $config.windows.tiling.mode -eq 'observe' -and
+        $config.windows.tiling.gapsIn -eq 13 -and $config.windows.tiling.gapsOut -eq 40) 'Tiling mapping incorrect.'
+    Assert ($config.windows.tiling.include[0] -eq 'exe:editor.exe' -and
+        $config.windows.tiling.float[0] -eq 'title:Dialog*' -and
+        -not $config.windows.tiling.monitors.DISPLAY2) 'Reviewed Caelestia rules were changed.'
 
     & $importer -SettingsFile $source -BaseFile $base -OutFile $output | Out-Null
     $before = (Get-FileHash -LiteralPath $output).Hash
@@ -64,6 +70,11 @@ try {
     try { & $importer -SettingsFile $source -OutFile $source -Force | Out-Null } catch { $refused = $true }
     Assert $refused 'Source overwrite allowed.'
     Assert ((Get-FileHash -LiteralPath $source).Hash -eq $sourceHash) 'Source file changed.'
+    $defaultsSource = Join-Path $temporary 'source\defaults.json'
+    '{}' | Set-Content -LiteralPath $defaultsSource -Encoding UTF8
+    $defaults = & $importer -SettingsFile $defaultsSource -BaseFile $base | ConvertFrom-Json
+    Assert ($defaults.windows.tiling.enabled -and $defaults.windows.tiling.mode -eq 'observe' -and
+        $defaults.windows.tiling.gapsIn -eq 10 -and $defaults.windows.tiling.gapsOut -eq 10) 'KSG tiling defaults incorrect.'
     '{"passed":true,"scope":"file-only importer smoke","checks":["dry-run","false values","id-based list merge","unknown data preservation","source value filtering","tiling report","overwrite refusal","byte-identical backup","idempotence","source protection"]}'
 } finally {
     # Delete only the exact, verified temporary workspace created above.
