@@ -24,7 +24,9 @@ Background {
     // Fail closed when Explorer has no desktop host. Never fall back to an
     // ordinary full-screen window over the user's applications.
     screens: enabled && Native.DesktopLayer.active
-        ? Screens.screens.filter(s => !smoke || Quickshell.env("CAELESTIA_SHELL_LIVE") === "1" || s === Quickshell.screens[screenIndex])
+        ? Screens.screens.filter(s => !smoke
+            || (Quickshell.env("CAELESTIA_SHELL_LIVE") === "1" && !Quickshell.env("CAELESTIA_SHELL_SCREEN"))
+            || s === Quickshell.screens[screenIndex])
         : []
 
     function reconcileDesktop(): void {

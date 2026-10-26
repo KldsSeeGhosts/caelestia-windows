@@ -2,7 +2,9 @@
 
 `shell-live` stages the integrated combined graph with one original
 `ContentWindow` on every Qt screen, including monitor arrival/removal. Each
-full-screen drawer has an AppBar reservation beside it. The original desktop
+full-screen drawer has four AppBar reservations: the bar width on the left and
+the configured border thickness on the top, right and bottom. They release
+while upstream's fullscreen detection hides the frame. The original desktop
 background is enabled on every monitor and yields to Wallpaper Engine. The
 desktop clock defaults off. Workspaces, native workspace
 dispatch, active-window display, utilities, M3Shapes, shortcuts, and service
@@ -80,7 +82,18 @@ all monitor-sized drawers and backgrounds (or zero background hosts while
 Wallpaper Engine owns the desktop) while disabling input, hardware writes,
 workspace dispatch, tiling, recording, keep-awake, physical hotkeys, notification
 mirroring and tray interception. AppBar reservations remain enabled and must be
-released on quit. Smoke forces taskbar hiding off even with edited settings.
+released on quit. Smoke runs directly, without acquiring the desktop supervisor's
+session mutex or invoking taskbar/global recovery. Its cleanup removes only its
+own exited child's stale AppBars.
+
+When another shell is live, add `-ScreenIndex 1` (verify the secondary Qt screen
+index first) to limit the temporary smoke's drawers, backgrounds and reservations
+to that display. This flag requires `-Smoke`. Normal starts still use all screens.
+The repeatable `windows/scripts/Test-InstalledFrame.ps1 -QtPrefix <Qt-prefix>`
+creates a temporary install/profile, measures all four work-area deltas on the
+secondary display, verifies fullscreen release with an isolated component
+fixture, quits its children, and checks that both starting work areas, taskbar
+flags and existing shell processes are preserved.
 
 Use the temporary uninstaller with `-Purge` afterward. This checks the deployed
 runtime without changing the user's profile or enabling autostart.

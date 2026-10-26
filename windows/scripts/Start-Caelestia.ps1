@@ -3,6 +3,7 @@ param(
     [string]$Prefix,
     [ValidateSet('Start', 'State', 'Quit', 'Restart')][string]$Command = 'Start',
     [switch]$Smoke,
+    [ValidateRange(0, 15)][int]$ScreenIndex,
     [ValidateSet('Disabled', 'Observe', 'Interactive')][string]$TilingMode = 'Disabled',
     [string]$TilingIncluded = '',
     [string]$TilingExcluded = '',
@@ -20,6 +21,7 @@ $profile = Resolve-CaelestiaDirectory $record.profile
 $stage = Join-Path $Prefix 'shell'
 $exe = Join-Path $Prefix 'qs.exe'
 if ($Smoke -and $Command -ne 'Start') { throw '-Smoke requires -Command Start.' }
+if ($PSBoundParameters.ContainsKey('ScreenIndex') -and -not $Smoke) { throw '-ScreenIndex requires -Smoke.' }
 
 if ($Command -eq 'Start') {
     foreach ($dir in @('config', 'state', 'cache', 'data', 'runtime', 'logs')) {
@@ -74,6 +76,7 @@ $info.EnvironmentVariables['QT_LOGGING_RULES'] = 'quickshell.windows.tracker.deb
 $info.EnvironmentVariables['CAELESTIA_SHELL_LIVE'] = '1'
 $info.EnvironmentVariables['CAELESTIA_COMBINED_LIVE'] = $(if ($Smoke) { '0' } else { '1' })
 $info.EnvironmentVariables['CAELESTIA_SHELL_SMOKE'] = $(if ($Smoke) { '1' } else { '0' })
+$info.EnvironmentVariables['CAELESTIA_SHELL_SCREEN'] = $(if ($PSBoundParameters.ContainsKey('ScreenIndex')) { "$ScreenIndex" } else { '' })
 foreach ($slice in @('AUDIO', 'BATTERY', 'BLUETOOTH', 'BRIGHTNESS', 'MEDIA', 'NETWORK', 'APPS', 'TRAY', 'NOTIFICATIONS', 'SESSION', 'POWER_PROFILES')) {
     $info.EnvironmentVariables["CAELESTIA_WINDOWS_$slice"] = '1'
 }
@@ -148,23 +151,38 @@ $stderrPath = Join-Path $profile 'logs\shell.stderr.log'
 foreach ($path in @($stdoutPath, $stderrPath)) { [IO.File]::WriteAllText($path, '') }
 $supervisorConfig = Join-Path $profile 'config\windows.json'
 if ($Smoke) {
-    # Even an edited user profile cannot hide the taskbar during smoke.
-    $supervisorConfig = Join-Path $profile 'runtime\smoke-windows.json'
-    '{"windows":{"hideTaskbar":false,"restartOnCrash":true}}' |
-        Set-Content -LiteralPath $supervisorConfig -Encoding UTF8
+    # A temporary install's read-only smoke can coexist with the live desktop
+    # supervisor. Never acquire its takeover mutex or signal global recovery.
+    $info.RedirectStandardOutput = $true
+    $info.RedirectStandardError = $true
+    $info.EnvironmentVariables['QS_DISABLE_CRASH_HANDLER'] = '1'
+    $process = [Diagnostics.Process]::Start($info)
+    $outTask = $process.StandardOutput.ReadToEndAsync()
+    $errTask = $process.StandardError.ReadToEndAsync()
+    Write-Output "Started Caelestia smoke PID $($process.Id). Profile: $profile"
+} else {
+    $supervised = & (Join-Path $PSScriptRoot 'Start-DesktopShell.ps1') -StartInfo $info `
+        -StateDirectory (Join-Path $profile ('runtime\supervisor-' + [guid]::NewGuid().ToString('N'))) `
+        -ConfigPath $supervisorConfig -StdoutPath $stdoutPath -StderrPath $stderrPath
+    $process = $supervised.Watchdog
+    Write-Output "Started supervised Caelestia. Profile: $profile; status: $($supervised.StatusPath)"
 }
-$supervised = & (Join-Path $PSScriptRoot 'Start-DesktopShell.ps1') -StartInfo $info `
-    -StateDirectory (Join-Path $profile ('runtime\supervisor-' + [guid]::NewGuid().ToString('N'))) `
-    -ConfigPath $supervisorConfig -StdoutPath $stdoutPath -StderrPath $stderrPath
-$process = $supervised.Watchdog
-Write-Output "Started supervised Caelestia. Profile: $profile; status: $($supervised.StatusPath)"
 if (-not $Smoke -and -not $Wait) { return }
 $timedOut = $false
-if ($Smoke) { $timedOut = -not $process.WaitForExit(60000) } else { $process.WaitForExit() }
+if ($Smoke) {
+    $timedOut = -not $process.WaitForExit(60000)
+    if ($timedOut) { $process.Kill(); $process.WaitForExit() }
+    [IO.File]::WriteAllText($stdoutPath, $outTask.GetAwaiter().GetResult())
+    [IO.File]::WriteAllText($stderrPath, $errTask.GetAwaiter().GetResult())
+    if (-not ('Caelestia.Takeover.Native' -as [type])) {
+        Add-Type -Path (Join-Path $PSScriptRoot 'DesktopTakeover.cs') -ReferencedAssemblies System.Windows.Forms, System.Web.Extensions
+    }
+    # ABM_REMOVE only for this exited child, including a crash/timeout. Do not
+    # restore global work-area snapshots or taskbars belonging to the live shell.
+    [Caelestia.Takeover.Native]::RemoveStaleAppBars($process.Id) | Out-Null
+} else { $process.WaitForExit() }
 if ($timedOut) {
-    # This invocation owns the session supervisor. Signal recovery before failing.
-    & (Join-Path $PSScriptRoot 'Restore-Desktop.ps1') | Out-Null
-    throw "Caelestia smoke timed out awaiting IPC quit. See $profile\logs and $($supervised.StatusPath)."
+    throw "Caelestia smoke timed out awaiting IPC quit. See $profile\logs."
 }
 $output = [IO.File]::ReadAllText($stdoutPath)
 $errors = [IO.File]::ReadAllText($stderrPath)

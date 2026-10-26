@@ -109,6 +109,7 @@ StyledRect {
                     roleValue: "kbLayout"
                     delegate: EntryWrapper {
                         StyledText {
+                            objectName: "keyboardLayoutStatus"
                             animate: true
                             text: Hypr.kbLayout
                             color: root.colour

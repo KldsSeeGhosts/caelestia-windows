@@ -99,8 +99,14 @@ The facade keeps the members the audited original modules read:
 `extras`, `devices`, `keyboard`, `capsLock`, `numLock`, `defaultKbLayout`,
 `kbLayoutFull`, `kbLayout` and `kbMap`.
 
-The keyboard fields are truthful unavailable defaults: the Windows backend
-supplies no keyboard state. `extras` exposes no-op `refreshOptions()`/
+Keyboard fields read the Windows `Keyboard` singleton behind the observation
+opt-in. The backend queries the foreground thread's input locale on foreground
+changes and every 500 ms, including switches within one application. `kbLayout`
+is its lowercase ISO language code (for example `en`), `kbLayoutFull` is the
+localized layout name, and `capsLock`/`numLock` expose `GetKeyState` toggle bits.
+The disabled facade retains unavailable defaults and constructs no native
+keyboard observer. No layout activation or input injection is used.
+`extras` exposes no-op `refreshOptions()`/
 `batchMessage()` and `options` is empty because there is no Hyprland
 configuration socket. `configReloaded` is never emitted because the backend
 never emits `configreloaded`. `monitors`, `workspaces` and `toplevels` pass the

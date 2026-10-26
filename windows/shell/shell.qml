@@ -26,6 +26,12 @@ ShellRoot {
 
     readonly property bool externalWallpaperActive: WallpaperEngine.ownsDesktop
     readonly property bool smoke: Quickshell.env("CAELESTIA_SHELL_SMOKE") === "1"
+    // Isolated install validation may reserve only the secondary monitor.
+    // Normal starts always retain the complete per-monitor shell.
+    readonly property int smokeScreenIndex: Number(Quickshell.env("CAELESTIA_SHELL_SCREEN") || "-1")
+    readonly property var shellScreens: smoke && smokeScreenIndex >= 0
+        ? Quickshell.screens.filter((screen, index) => index === smokeScreenIndex)
+        : Quickshell.screens
     settings.watchFiles: false
 
     FontLoader {
@@ -40,7 +46,7 @@ ShellRoot {
 
     Variants {
         id: drawers
-        model: Quickshell.screens
+        model: root.shellScreens
 
         Scope {
             id: scope
@@ -51,6 +57,7 @@ ShellRoot {
                 screen: scope.modelData
                 zone: content.bar.exclusiveZone
                 active: true
+                fullscreen: content.hasFullscreen
             }
             ContentWindow {
                 id: content
@@ -100,12 +107,19 @@ ShellRoot {
     function snapshot(): var {
         return {
             smoke: root.smoke,
-            screens: Quickshell.screens.length,
+            smokeComplete: root.smoke && smokeCheck.step >= 5,
+            screens: root.shellScreens.length,
+            keyboard: { layout: Hypr.kbLayout, name: Hypr.kbLayoutFull,
+                capsLock: Hypr.capsLock, numLock: Hypr.numLock },
             windows: drawers.instances.map(scope => ({
                 screen: scope.modelData.name,
                 width: scope.window.width, height: scope.window.height,
                 screenWidth: scope.modelData.width, screenHeight: scope.modelData.height,
-                barWidth: scope.window.bar.implicitWidth
+                barWidth: scope.window.bar.implicitWidth,
+                barZone: scope.window.bar.exclusiveZone,
+                borderZone: scope.window.borderLayoutThickness,
+                dpr: scope.window.devicePixelRatio,
+                appFullscreen: scope.window.hasFullscreen
             })),
             backgroundScreens: desktopBackground.screens.map(s => s.name),
             backgroundWindows: desktopBackground.instances.map(w => ({
@@ -158,13 +172,14 @@ ShellRoot {
     // Quick install smoke: load the session and dashboard on every monitor,
     // suppress input/native writes, verify monitor-sized windows, then await IPC quit.
     Timer {
+        id: smokeCheck
         property int step: 0
         interval: 3000
         repeat: true
         running: root.smoke
         onTriggered: {
             step++;
-            for (const screen of Quickshell.screens) {
+            for (const screen of root.shellScreens) {
                 const state = ShellState.forScreen(screen);
                 if (state) {
                     state.session = step === 1;
@@ -183,13 +198,14 @@ ShellRoot {
                 && (!state.scheme.available || (state.scheme.status === "ready"
                     && state.scheme.schemes > 0 && state.scheme.variants > 0))
                 && Quickshell.env("QS_WINDOWS_TRAY_HOOK") === "0"
+                && state.keyboard.layout !== "??" && state.keyboard.layout.length > 0
                 && state.backgroundWindows.length === (root.externalWallpaperActive ? 0 : state.screens)
                 && state.backgroundWindows.every(w => {
                     const screen = Quickshell.screens.find(s => s.name === w.modelScreen);
                     return screen && w.screen === w.modelScreen
                         && w.width === screen.width && w.height === screen.height;
                 })
-                && Quickshell.screens.every(s => desktopBackground.checkReady(s));
+                && root.shellScreens.every(s => desktopBackground.checkReady(s));
             if (valid)
                 console.log("CAELESTIA_SHELL_LIVE_PASS");
             else
