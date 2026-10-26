@@ -5,6 +5,62 @@ components and motion while adapting platform services. The dependency derives
 from the Windows Quickshell fork used by ii-windows. Hyprland remains a Linux
 Wayland compositor; Windows continues to own application composition through DWM.
 
+## Credits and attribution
+
+This port has three layers:
+
+1. **The interface is Caelestia.** [Caelestia Shell](https://github.com/caelestia-dots/shell)
+   by soramanew and contributors is GPL-3.0. About 69,000 lines of upstream UI
+   are used nearly unchanged. At the maintainer's attribution snapshot, 75
+   upstream files were touched, with about 1,500 lines added and 195 removed.
+   The expressive shapes come from soramanew's
+   [m3shapes](https://github.com/soramanew/m3shapes), Apache-2.0.
+   Colour generation uses [Caelestia CLI](https://github.com/caelestia-dots/cli),
+   GPL-3.0, with [materialyoucolor](https://github.com/T-Dynamos/materialyoucolor-python),
+   MIT, and [Pillow](https://github.com/python-pillow/Pillow), HPND.
+   Python is a required dependency for colour generation; its
+   packages are installed at runtime into a profile-local virtual environment.
+2. **The Windows platform support comes from Windows Quickshell.**
+   [nunreasonable/quickshell](https://github.com/nunreasonable/quickshell),
+   LGPL-3.0, was built for [ii-windows](https://github.com/nunreasonable/ii-windows),
+   GPL-3.0, on top of outfoxxed's
+   [Quickshell](https://git.outfoxxed.me/quickshell/quickshell), LGPL-3.0.
+   It already supplied about 66,000 lines of Windows code: native layer
+   windows, AppBar integration, hotkeys, tiling, virtual desktops, Core Audio,
+   Bluetooth, notifications and toast mirroring, tray hooks, brightness and
+   gamma, GSMTC media, and UPower. Its vendored
+   [Material Color Utilities](https://github.com/material-foundation/material-color-utilities)
+   are Apache-2.0. The
+   [Caelestia backend fork](https://github.com/KldsSeeGhosts/caelestia-quickshell-windows)
+   adds about 9,200 lines and removes 800, including about 5,800 lines of tests.
+   These figures describe the attribution snapshot, not a release guarantee.
+3. **This repository connects those projects.** The Windows port adds service
+   adapters, combined and production shell entries, build/stage/install and
+   desktop takeover tools, documentation, plugin additions for focus guarding
+   and a WASAPI visualizer, a scheme bridge, and Wallpaper Engine integration.
+   The port retains Caelestia's GPL-3.0 license; backend changes retain the
+   backend's LGPL-3.0 license. ii-windows was a packaging reference only;
+   no ii-windows code was copied. Feature availability and validation depend
+   on the checked-out revision; this attribution is not an acceptance report.
+
+The runtime uses dynamically linked [Qt 6](https://www.qt.io/development/qt-framework),
+LGPL-3.0, deployed with `windeployqt`. Fonts are
+[Google Sans Flex](https://github.com/googlefonts/googlesans-flex),
+[Rubik](https://github.com/googlefonts/rubik), and
+[Cascadia Code](https://github.com/microsoft/cascadia-code) as
+[CaskaydiaCove Nerd Font](https://github.com/ryanoasis/nerd-fonts),
+all SIL OFL 1.1; [Material Symbols](https://github.com/google/material-design-icons)
+are Apache-2.0 and [Nerd Fonts Symbols](https://github.com/ryanoasis/nerd-fonts)
+are MIT. Adapted desktop COM interface definitions come from
+[MScholtes/VirtualDesktop](https://github.com/MScholtes/VirtualDesktop), MIT.
+Copyright holders, license files, and installation locations are listed in
+[THIRD-PARTY-NOTICES.md](../THIRD-PARTY-NOTICES.md).
+
+The Windows port was built with substantial AI assistance: Claude
+orchestrated the work, and GPT, GLM, DeepSeek, and Gemini agents implemented
+parts of it. The maintainer directed and reviewed the work. This describes
+the port, not the authorship of the upstream projects.
+
 ## Current state
 
 For the next development session, start with [HANDOFF.md](HANDOFF.md).

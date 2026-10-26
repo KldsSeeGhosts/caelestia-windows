@@ -1,0 +1,76 @@
+# Windows release checklist
+
+This is a maintainer checklist, not an authorization to change repository
+visibility, tag, push, enable workflows or publish. Keep the existing Linux
+release workflows disabled. Record failures and untested cases rather than
+describing a build or prototype smoke as a validated shell release.
+
+## Source and public availability
+
+- [ ] The maintainer explicitly decides to make both
+  [caelestia-windows](https://github.com/KldsSeeGhosts/caelestia-windows) and
+  [caelestia-quickshell-windows](https://github.com/KldsSeeGhosts/caelestia-quickshell-windows)
+  public. Verify source access without repository credentials before public
+  binary distribution. Only the maintainer performs the visibility change.
+- [ ] Review source and packaged contents for credentials and personal data.
+- [ ] Confirm the release commit, backend gitlink and
+  `windows/sources.lock.json` agree. Backend changes must be committed and
+  available in the backend fork. Confirm the M3Shapes pin too.
+- [ ] Confirm notices, upstream history, source URLs and attribution reflect
+  the exact payload, including the AI-assistance disclosure.
+
+## Build and compatibility
+
+- [ ] Follow [NATIVE-BUILD.md](../NATIVE-BUILD.md) from a clean recursive
+  checkout with the documented toolchain.
+- [ ] Run `powershell -NoProfile -File windows/scripts/Test-Environment.ps1 -Json`;
+  record the prerequisite report separately from build and runtime results.
+- [ ] Build with `windows/scripts/Build-Prototype.ps1`; record source pins,
+  Qt/compiler/SDK versions and build logs.
+- [ ] Run the smoke commands and relevant service fixtures in
+  [CONTRIBUTING.md](../../CONTRIBUTING.md). Test each supported monitor and
+  native DPI, plus mixed-DPI movement, negative origins and transparency.
+- [ ] Validate claimed live controls, device loss/recovery, sleep/wake,
+  input/focus, notifications, session operations and desktop restoration.
+  Keep one active tiler; takeover and autostart must be deliberate test opt-ins.
+- [ ] Archive evidence under `windows/validation/`: README, `result.json`,
+  applicable matrices, logs and screenshots. Do not archive staged QML or
+  per-run source manifests. State all unsupported and untested behavior.
+
+## Install, update and remove
+
+- [ ] Run `Test-InstallLicenses.ps1 -BuildRoot <build> -QtPrefix <qt>` for the
+  temporary-prefix install/update/uninstall and notice-integrity check.
+- [ ] On a clean Windows 11 user profile, install without autostart, launch,
+  exercise exact-instance State/Restart/Quit, and check runtime deployment
+  without developer PATH entries.
+- [ ] Update a stopped installation; confirm edited configuration, state,
+  profile-local Python environment and user data survive. Test rollback with
+  the previous supported payload.
+- [ ] Separately test opt-in autostart and desktop takeover, clean exit and
+  crash recovery; restore the original taskbar, work areas and tiler.
+- [ ] Verify `licenses/LICENSE`, `THIRD-PARTY-NOTICES.md`, source pins,
+  backend LICENSE/LICENSE-GPL, m3shapes, all bundled fonts and backend
+  third-party notices in the installed `licenses/` tree.
+- [ ] Check Qt's supplied license files and SBOMs from the exact Qt prefix
+  against all deployed modules and embedded third parties. Supply any missing
+  license texts; an SBOM alone is insufficient. Check CRT redistribution terms.
+- [ ] With Python available, provision colour generation in the profile-local
+  venv and verify Caelestia CLI, materialyoucolor and Pillow license metadata,
+  including Pillow's bundled-library notices.
+- [ ] Uninstall; verify binaries, `licenses/`, the prefix-specific shortcut
+  and autostart entry are removed while user data remains. Separately test
+  `-Purge` with a disposable profile. Verify other shell installations survive.
+
+## Tag and publish
+
+- [ ] The maintainer approves the tested release scope and known limitations.
+- [ ] Tag the exact tested port revision and identify the corresponding
+  backend revision/tag. Make the complete corresponding sources and any
+  license-required build/relink materials available with the release.
+- [ ] Assemble archives from that tested payload with notices intact; record
+  SHA-256 checksums, supported Windows builds, dependency versions, installation,
+  update/rollback, uninstall, recovery and known limitations in release notes.
+- [ ] After explicit maintainer approval, publish the tag, source and binary
+  artifacts. Download the published payload and recheck checksums, notices
+  and clean-profile installation.

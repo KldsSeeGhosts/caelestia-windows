@@ -29,7 +29,9 @@ if (Get-ItemProperty -LiteralPath $run -Name $integration.RunName -ErrorAction S
 }
 if (Test-Path -LiteralPath $integration.Shortcut) { Remove-Item -LiteralPath $integration.Shortcut -Force }
 # Re-resolve immediately before recursive removal. Only a marked installation
-# and its recorded, separate profile can be removed.
+# and its recorded, separate profile can be removed. The prefix includes all
+# packaged notices under licenses/; runtime venv notices stay with the profile
+# unless -Purge was explicitly requested.
 $Prefix = Resolve-CaelestiaDirectory $Prefix
 Remove-Item -LiteralPath $Prefix -Recurse -Force
 if ($Purge -and (Test-Path -LiteralPath $profile)) {

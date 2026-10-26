@@ -1,0 +1,11 @@
+case,result
+initial install notice byte integrity,pass
+update notice byte integrity,pass
+Qt license and SBOM byte integrity,pass
+profile preservation,pass
+uninstall prefix and licenses removal,pass
+shortcut cleanup and no autostart,pass
+PowerShell parse checks,pass
+source pin agreement,pass
+ordinary PATH full native toolchain,not ready
+shell runtime acceptance,not run

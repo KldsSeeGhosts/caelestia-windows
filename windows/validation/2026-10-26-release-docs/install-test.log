@@ -1,0 +1,16 @@
+Warning: Translations will not be available due to the following error.
+Cannot open C:/Users/Ermin/AppData/Local/caelestia-dev/Qt/6.11.2/msvc2022_64/translations/catalogs.json
+Installed Caelestia: C:\Users\Ermin\AppData\Local\Temp\caelestia-license-test-e6979ead92dc426fa41e175ee9dc8c54\app
+Run: powershell -NoProfile -File "C:\Users\Ermin\AppData\Local\Temp\caelestia-license-test-e6979ead92dc426fa41e175ee9dc8c54\app\Start-Caelestia.ps1"
+Profile (seeded on first launch): C:\Users\Ermin\AppData\Local\Temp\caelestia-license-test-e6979ead92dc426fa41e175ee9dc8c54\profile
+LICENSE_install_PASS
+Warning: Translations will not be available due to the following error.
+Cannot open C:/Users/Ermin/AppData/Local/caelestia-dev/Qt/6.11.2/msvc2022_64/translations/catalogs.json
+Installed Caelestia: C:\Users\Ermin\AppData\Local\Temp\caelestia-license-test-e6979ead92dc426fa41e175ee9dc8c54\app
+Run: powershell -NoProfile -File "C:\Users\Ermin\AppData\Local\Temp\caelestia-license-test-e6979ead92dc426fa41e175ee9dc8c54\app\Start-Caelestia.ps1"
+Profile (seeded on first launch): C:\Users\Ermin\AppData\Local\Temp\caelestia-license-test-e6979ead92dc426fa41e175ee9dc8c54\profile
+LICENSE_update_PASS
+Uninstalled Caelestia: C:\Users\Ermin\AppData\Local\Temp\caelestia-license-test-e6979ead92dc426fa41e175ee9dc8c54\app
+Kept profile: C:\Users\Ermin\AppData\Local\Temp\caelestia-license-test-e6979ead92dc426fa41e175ee9dc8c54\profile
+LICENSE_UNINSTALL_PASS
+INSTALL_LICENSES_PASS

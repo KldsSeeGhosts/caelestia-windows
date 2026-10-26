@@ -442,11 +442,14 @@ Do **not** enable Caelestia's tiler while another tiling window manager (Komoreb
 
 ## Credits and licenses
 
-- **Caelestia Shell (upstream):** Designed and written by [@soramanew](https://github.com/soramanew) and the [caelestia-dots/shell](https://github.com/caelestia-dots/shell) contributors. Licensed under the **GNU General Public License v3.0 (GPL-3.0)** — see [`LICENSE`](../../LICENSE).
-- **M3Shapes (`qt6-m3shapes`):** Material 3 Expressive shapes QML plugin by [@soramanew](https://github.com/soramanew) ([`soramanew/m3shapes`](https://github.com/soramanew/m3shapes)), pinned at `windows/deps/m3shapes`.
-- **Quickshell and Windows Quickshell backend:** Original [Quickshell](https://quickshell.outfoxxed.me) toolkit by [@outfoxxed](https://github.com/outfoxxed). Windows platform backend (`src/windows/`) developed by [@nunreasonable](https://github.com/nunreasonable) for [ii-windows](https://github.com/nunreasonable/ii-windows), with Caelestia Windows service, workspace, tiling, and input-mask adaptations in [`KldsSeeGhosts/caelestia-quickshell-windows`](https://github.com/KldsSeeGhosts/caelestia-quickshell-windows). Licensed under the **GNU Lesser General Public License v3.0 (LGPL-3.0)** — see [`windows/deps/quickshell/LICENSE`](../deps/quickshell/LICENSE).
-- **ii-windows:** Windows porting architecture and reference by [@nunreasonable](https://github.com/nunreasonable) ([`nunreasonable/ii-windows`](https://github.com/nunreasonable/ii-windows)), originally adapting [@end-4's dots-hyprland](https://github.com/end-4/dots-hyprland).
-- **Bundled fonts:**
-  - **Material Symbols Rounded** by Google — **Apache License 2.0** ([`windows/assets/material-symbols-rounded/LICENSE`](../assets/material-symbols-rounded/LICENSE)).
-  - **Rubik** by Hubert and Fischer, Meir Sadan, and Cyreal — **SIL Open Font License 1.1** ([`windows/assets/rubik/OFL.txt`](../assets/rubik/OFL.txt)).
-  - **Google Sans Flex** by Google — **SIL Open Font License 1.1** ([`assets/google-sans-flex/OFL.txt`](../../assets/google-sans-flex/OFL.txt)).
+The interface comes from Caelestia Shell and m3shapes. Windows platform support
+comes from nunreasonable's Windows Quickshell backend, built for ii-windows,
+and outfoxxed's Quickshell. This port adds Windows adapters, tooling and plugin
+changes. ii-windows was a packaging reference only; no code was copied.
+
+See the [three-layer credits and AI-assistance disclosure](../README.md#credits-and-attribution)
+and [third-party notices](../../THIRD-PARTY-NOTICES.md) for every project's
+source, copyright, license and notice location. Installed shell notices are
+under `<Prefix>\licenses\`; colour-generation package notices stay in the
+profile-local Python virtual environment. Python is required for colour
+generation. Fonts are loaded into the process, not installed into Windows.

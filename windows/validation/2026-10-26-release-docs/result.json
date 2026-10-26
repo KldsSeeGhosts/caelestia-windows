@@ -1,0 +1,60 @@
+{
+    "schemaVersion":  1,
+    "status":  "passed",
+    "observedAtUtc":  "2026-10-26T06:48:08.7567656Z",
+    "sourceBaseRevision":  "9b732a3090914cf3e3a94b25e2366af2d18370bf",
+    "sourceDirty":  true,
+    "sourceNote":  "Implementation and documentation changes are in the commit containing this archive; tested file hashes below identify the working files.",
+    "backendRevision":  "13b2d0930f798e7a0c006258a3a68824e300b2d6",
+    "m3shapesRevision":  "32ad9ce328bb77ed349b40a3be10ee9ea610b8ab",
+    "windows":  "Microsoft Windows NT 10.0.26300.0",
+    "powershell":  "5.1.26100.9711",
+    "qtPrefix":  "C:\\Users\\Ermin\\AppData\\Local\\caelestia-dev\\Qt\\6.11.2\\msvc2022_64",
+    "buildRoot":  "C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-488b52f1\\windows\\.local\\build",
+    "usedBuildRecord":  {
+                            "sourceRevision":  "3482604c224f024b5f1c793d195f84fbbce3bb95",
+                            "sourceDirty":  true,
+                            "backendRevision":  "13b2d0930f798e7a0c006258a3a68824e300b2d6",
+                            "m3shapesRevision":  "32ad9ce328bb77ed349b40a3be10ee9ea610b8ab",
+                            "windowsSdkVersion":  "10.0.26100.0\\",
+                            "msvcToolsVersion":  "14.44.35207",
+                            "qtVersion":  "6.11.2",
+                            "qtPrefix":  "C:\\Users\\Ermin\\AppData\\Local\\caelestia-dev\\Qt\\6.11.2\\msvc2022_64",
+                            "compiler":  "clang version 20.1.8",
+                            "cmake":  "cmake version 4.4.4",
+                            "ninja":  "1.13.2.git.kitware.jobserver-pipe-1",
+                            "windows":  "Microsoft Windows NT 10.0.26300.0",
+                            "builtAtUtc":  "2026-10-26T06:01:13.8292936Z"
+                        },
+    "executableSha256":  "a3457551721f4b9d3595e7ad83724e1a115a3946ac5f8cdebdb2cbec2f15af6c",
+    "testedFileSha256":  {
+                             "windows/scripts/Install-Caelestia.ps1":  "19cb39803fe51dec373d5c10f4eb811a51e87a7f98811e42ead305191eb85c25",
+                             "windows/scripts/Uninstall-Caelestia.ps1":  "826e51e16760291ca2b90b2e44072ba775e34239e2834554f9a002bca47f4d04",
+                             "windows/scripts/Test-InstallLicenses.ps1":  "fbf8765598d797e8ec66e700b0a108dc3a160ded1adcedb5e0ed3de8bd59a457",
+                             "THIRD-PARTY-NOTICES.md":  "d3b0e11c906cdd6a5926e891e9dff1b76f6957523094b17346fd0933f90b651e"
+                         },
+    "command":  "powershell -NoProfile -File windows/scripts/Test-InstallLicenses.ps1 -BuildRoot C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-488b52f1/windows/.local/build -QtPrefix C:/Users/Ermin/AppData/Local/caelestia-dev/Qt/6.11.2/msvc2022_64",
+    "exitCode":  0,
+    "checks":  [
+                   "initial install notice hashes",
+                   "update notice hashes",
+                   "Qt supplied license file and SBOM hashes",
+                   "Qt GPL/LGPL text hashes",
+                   "profile unchanged after install/update/uninstall",
+                   "prefix including licenses removed",
+                   "prefix shortcut removed",
+                   "no autostart entry"
+               ],
+    "syntaxCheck":  "passed for all three changed/new PowerShell scripts",
+    "environment":  {
+                        "nativeToolchainReadyOnOrdinaryPath":  false,
+                        "sourcePinsMatch":  true,
+                        "report":  "environment.json"
+                    },
+    "warning":  "windeployqt reports missing translations/catalogs.json; translations are explicitly excluded by the existing installer.",
+    "limitations":  [
+                        "Packaging-only test using an existing integration build; no rebuild or shell launch.",
+                        "No live desktop takeover, autostart, Python provisioning, clean-user-profile validation, Qt third-party redistribution audit, or purge test."
+                    ],
+    "documentationLinkCheck":  "passed for new standalone guides, notices and archive"
+}
