@@ -68,6 +68,9 @@ foreach ($directory in @('config', 'state', 'data', 'cache')) {
 $info.EnvironmentVariables['CAELESTIA_SCHEME_PYTHON'] = $(if ($schemeAvailable) { [string]$schemeRuntime.python } else { '' })
 $info.EnvironmentVariables['CAELESTIA_SCHEME_HELPER'] = $(if ($schemeAvailable) { [string]$schemeRuntime.helper } else { '' })
 $info.EnvironmentVariables['CAELESTIA_WE_PYTHON'] = [string]$wePython
+$info.EnvironmentVariables['CAELESTIA_ACCOUNT_PICTURE'] = $(if ($Command -eq 'Start') {
+    & (Join-Path $PSScriptRoot 'Get-AccountPicture.ps1') -CacheRoot (Join-Path $profile 'cache')
+} else { '' })
 $info.EnvironmentVariables['QS_WINDOWS_BLUR'] = '0'
 $info.EnvironmentVariables['QSG_RHI_BACKEND'] = 'd3d11'
 $info.EnvironmentVariables['QT_LOGGING_RULES'] = 'quickshell.windows.tracker.debug=false;quickshell.windows.inputmask.debug=false'

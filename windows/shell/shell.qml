@@ -50,7 +50,7 @@ ShellRoot {
             Exclusions {
                 screen: scope.modelData
                 zone: content.bar.exclusiveZone
-                active: true
+                active: !root.smoke
             }
             ContentWindow {
                 id: content
@@ -151,8 +151,23 @@ ShellRoot {
         Hypr.logStartupStatus();
         Tiling.logStartupStatus();
         SchemeGenerator.refresh();
-        Native.SystemMonitor.active = true;
         Native.SystemStats.networkEnabled = true;
+    }
+
+    // Sample only while a dashboard is visible, including its close animation.
+    readonly property bool statisticsVisible: drawers.instances.some(scope =>
+        (scope.window.screenState?.dashboard ?? false)
+        || (ShellState.componentsFor(scope.modelData)?.panels?.dashboard.visible ?? false))
+
+    Binding {
+        target: Native.SystemMonitor
+        property: "active"
+        value: root.statisticsVisible
+    }
+    Binding {
+        target: Native.SystemStats
+        property: "active"
+        value: root.statisticsVisible
     }
 
     // Quick install smoke: load the session and dashboard on every monitor,

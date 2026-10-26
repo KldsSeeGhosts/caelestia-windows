@@ -120,7 +120,7 @@
     }
   },
   "paths": {
-    "sessionGif": ""
+    "sessionGif": "root:/assets/kurukuru.gif"
   },
   "dashboard": {
     "enabled": true,
@@ -176,6 +176,22 @@
       "mode": "observe",
       "gapsIn": 10,
       "gapsOut": 10
+    }
+  },
+  "appearance": {
+    "font": {
+      "headline": {
+        "family": "Google Sans Flex"
+      },
+      "title": {
+        "family": "Google Sans Flex"
+      },
+      "body": {
+        "family": "Google Sans Flex"
+      },
+      "label": {
+        "family": "Google Sans Flex"
+      }
     }
   }
 }
