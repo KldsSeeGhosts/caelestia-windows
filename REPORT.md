@@ -27,9 +27,10 @@ change, push, PR, Linear update or evidence archive was created.
   supplied runtime. Wallpaper applies without changing the fixed palette.
 - M3Shapes is absent from the supplied build. Decorative outlines use neutral
   round surfaces; expressive shapes/morphing are unavailable.
-- Lyrics/audio analysis, profile-image editing, idle inhibition and recorder
-  have missing native services or API support. Unimplemented quick toggles are
-  hidden; profile-image clicks report unavailability.
+- Lyrics, profile-image editing, idle inhibition and recorder have missing native
+  services or API support. Unimplemented quick toggles are hidden; profile-image
+  clicks report unavailability. Audio visualisation and beat tracking are now
+  implemented; see [the audio visualiser report](windows/REPORT-audio-visualizer.md).
 - Basic calculator replaces excluded Qalculate; units are unsupported.
 - Native capability/permission limits remain visible. No fake brightness route,
   temperature, notification permission or successful native write is supplied.
