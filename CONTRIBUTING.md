@@ -58,7 +58,9 @@ isolated profiles and one active tiler, preserving other application sessions.
 
 ## Branches, commits and the two repositories
 
-Use topic branches and `windows: <description>` commit subjects for this port.
+Branch topic work from `ksg/dev`, the default branch, and open pull requests
+against it. `main` follows the latest verified release, and `upstream` mirrors
+the upstream project. Use `windows: <description>` commit subjects for this port.
 Keep changes focused, follow nearby QML/C++/PowerShell style, and include
 behavior, validation, side effects and known gaps in the pull request.
 Do not force-push `main`, enable inherited Linux release workflows or publish
