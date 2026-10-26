@@ -1,0 +1,2 @@
+# Preserve vendored license bytes, including upstream whitespace.
+windows/licenses/fonts/**/LICENSE -text -whitespace

@@ -80,6 +80,7 @@ try {
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot $script) -Destination $payload
     }
     New-Item -ItemType Directory -Path "$payload\licenses" | Out-Null
+    Copy-Item -LiteralPath "$repoRoot\LICENSE", "$repoRoot\THIRD-PARTY-NOTICES.md" -Destination "$payload\licenses"
     Copy-Item -LiteralPath "$repoRoot\windows\deps\m3shapes\LICENSE" -Destination "$payload\licenses\M3Shapes-LICENSE"
     Copy-Item -LiteralPath "$repoRoot\LICENSE" -Destination "$payload\licenses\Caelestia-LICENSE"
     Copy-Item -LiteralPath "$repoRoot\windows\deps\quickshell\LICENSE" -Destination "$payload\licenses\Quickshell-LICENSE"
@@ -87,8 +88,29 @@ try {
     Copy-Item -LiteralPath "$repoRoot\windows\deps\quickshell\LICENSE" -Destination "$payload\licenses\LGPL-3.0.txt"
     Copy-Item -LiteralPath "$repoRoot\windows\deps\quickshell\src\windows\third_party\material_color\LICENSE" -Destination "$payload\licenses\MaterialColor-LICENSE"
     Copy-Item -LiteralPath "$repoRoot\windows\sources.lock.json" -Destination "$payload\licenses"
+    # Keep component-relative paths and copyright/NOTICE files, including new
+    # fonts and backend dependencies added after this packaging script.
+    function Copy-LicenseTree([string]$Source, [string]$Destination) {
+        foreach ($file in Get-ChildItem -LiteralPath $Source -File -Recurse) {
+            if ($file.Name -notmatch '(^|[._-])(LICENSE|LICENCE|COPYING|NOTICE|OFL)([._-].*)?$') { continue }
+            $relative = $file.FullName.Substring($Source.TrimEnd('\').Length + 1)
+            $target = Join-Path $Destination $relative
+            New-Item -ItemType Directory -Force -Path (Split-Path -Parent $target) | Out-Null
+            Copy-Item -LiteralPath $file.FullName -Destination $target -Force
+        }
+    }
+    Get-ChildItem -LiteralPath "$repoRoot\windows\licenses" -Force | Copy-Item -Destination "$payload\licenses" -Recurse
+    Copy-LicenseTree "$repoRoot\assets" "$payload\licenses\fonts"
+    Copy-LicenseTree "$repoRoot\windows\assets" "$payload\licenses\fonts"
+    Copy-LicenseTree "$repoRoot\windows\deps\quickshell\src\windows\third_party" "$payload\licenses\Quickshell-third-party"
+    New-Item -ItemType Directory -Force -Path "$payload\licenses\Qt" | Out-Null
+    # The standard LGPL/GPL texts also apply to the dynamically deployed Qt
+    # libraries. Some aqt prefixes contain only SBOMs, not LICENSES/.
+    Copy-Item -LiteralPath "$repoRoot\windows\deps\quickshell\LICENSE" -Destination "$payload\licenses\Qt\LGPL-3.0.txt"
+    Copy-Item -LiteralPath "$repoRoot\windows\deps\quickshell\LICENSE-GPL" -Destination "$payload\licenses\Qt\GPL-3.0.txt"
+    Copy-LicenseTree $QtPrefix "$payload\licenses\Qt"
     if (Test-Path -LiteralPath "$QtPrefix\licenses") {
-        Copy-Item -LiteralPath "$QtPrefix\licenses" -Destination "$payload\licenses\Qt" -Recurse
+        Get-ChildItem -LiteralPath "$QtPrefix\licenses" -Force | Copy-Item -Destination "$payload\licenses\Qt" -Recurse -Force
     }
     # The aqt Qt archive ships component licensing/provenance in SPDX SBOMs
     # rather than a top-level licenses directory.

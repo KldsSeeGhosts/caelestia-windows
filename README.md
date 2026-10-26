@@ -8,6 +8,10 @@ Private Windows port of [Caelestia Shell](https://github.com/caelestia-dots/shel
 - [Milestones and acceptance criteria](windows/ROADMAP.md)
 - [Compatibility prototype](windows/prototype/README.md)
 - [Source revisions](windows/sources.lock.json)
+- [Windows credits and attribution](windows/README.md#credits-and-attribution)
+- [Third-party notices](THIRD-PARTY-NOTICES.md)
+- [Contributing](CONTRIBUTING.md)
+- [Release checklist](windows/docs/RELEASE-CHECKLIST.md)
 
 After cloning, initialize the backend and inspect the local prerequisites:
 
