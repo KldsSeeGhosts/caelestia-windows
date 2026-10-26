@@ -42,6 +42,28 @@ namespace Caelestia.Takeover {
         public List<Bar> Bars = new List<Bar>();
         public List<SavedRegion> Regions = new List<SavedRegion>();
     }
+    public static class DpiScope {
+        public static T Run<T>(Func<IntPtr, IntPtr> set, Func<T> action) {
+            var previous = set(new IntPtr(-4)); // DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2
+            if (previous == IntPtr.Zero) throw new InvalidOperationException("Unable to set per-monitor v2 DPI awareness.");
+            try { return action(); }
+            finally { set(previous); }
+        }
+    }
+    public static class RegionBatch {
+        // No mutation is allowed until every capture and the single persist succeeds.
+        public static void Prepare(Snapshot snapshot, IList<Bar> bars,
+            Func<Bar, SavedRegion> capture, Action<Snapshot> persist) {
+            var captured = new List<SavedRegion>();
+            foreach (var bar in bars) {
+                var region = capture(bar);
+                if (region == null) throw new InvalidOperationException("Taskbar disappeared during capture.");
+                captured.Add(region);
+            }
+            snapshot.Regions = captured;
+            persist(snapshot);
+        }
+    }
     public static class SupervisorSafety {
         // A diagnostic write must never prevent cleanup. Snapshot persistence
         // is deliberately not routed through this helper.
@@ -253,7 +275,7 @@ namespace Caelestia.Takeover {
         [DllImport("user32.dll")] static extern bool EnumDisplayMonitors(IntPtr dc, IntPtr clip, MonitorCallback callback, IntPtr data);
         [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern bool GetMonitorInfo(IntPtr monitor, ref MonitorInfo info);
         [DllImport("user32.dll")] static extern IntPtr MonitorFromWindow(IntPtr window, uint flags);
-        [DllImport("user32.dll")] static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
+        [DllImport("user32.dll", SetLastError = true)] public static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
         [DllImport("user32.dll", SetLastError = true)] static extern bool SystemParametersInfo(uint action, uint parameter, ref Rect rect, uint flags);
         [DllImport("shell32.dll")] static extern UIntPtr SHAppBarMessage(uint message, ref AppBarData data);
         [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern uint RegisterWindowMessage(string message);
@@ -272,6 +294,22 @@ namespace Caelestia.Takeover {
         [DllImport("gdi32.dll")] static extern bool DeleteObject(IntPtr obj);
         [DllImport("kernel32.dll")] static extern void SetLastError(uint error);
 
+        public static void SaveSnapshot(string path, Snapshot snapshot) {
+            var temporary = path + ".tmp";
+            var text = new JavaScriptSerializer().Serialize(snapshot);
+            using (var stream = new FileStream(temporary, FileMode.Create, FileAccess.Write, FileShare.None))
+            using (var writer = new StreamWriter(stream)) {
+                writer.Write(text);
+                writer.Flush();
+                stream.Flush(true);
+            }
+            if (File.Exists(path)) File.Replace(temporary, path, null);
+            else File.Move(temporary, path);
+        }
+        public static void PrepareRegions(string path, Snapshot snapshot, List<Bar> bars) {
+            RegionBatch.Prepare(snapshot, bars, CaptureRegion,
+                delegate(Snapshot value) { SaveSnapshot(path, value); });
+        }
         static long ProcessStart(uint owner) {
             using (var process = Process.GetProcessById((int)owner)) return process.StartTime.ToUniversalTime().Ticks;
         }
@@ -291,8 +329,10 @@ namespace Caelestia.Takeover {
               catch (System.ComponentModel.Win32Exception) { return false; }
         }
         public static SavedRegion CaptureRegion(Bar bar) {
-            return RegionCapture.TryCapture(delegate { return CaptureRegionCore(bar); },
-                delegate { return !CurrentTaskbar(bar); });
+            return DpiScope.Run(SetThreadDpiAwarenessContext, delegate {
+                return RegionCapture.TryCapture(delegate { return CaptureRegionCore(bar); },
+                    delegate { return !CurrentTaskbar(bar); });
+            });
         }
         static bool CurrentTaskbar(Bar bar) {
             var window = new IntPtr(bar.Handle);
@@ -336,6 +376,12 @@ namespace Caelestia.Takeover {
             // The system owns a successfully assigned region.
         }
         public static void ApplyEmptyRegion(SavedRegion saved) {
+            DpiScope.Run(SetThreadDpiAwarenessContext, delegate {
+                ApplyEmptyRegionCore(saved);
+                return true;
+            });
+        }
+        static void ApplyEmptyRegionCore(SavedRegion saved) {
             if (!SameRegionWindow(saved)) return;
             var window = new IntPtr(saved.Handle);
             var existing = CreateRectRgn(0, 0, 0, 0);
@@ -347,6 +393,12 @@ namespace Caelestia.Takeover {
             SetRegion(saved, empty);
         }
         public static void RestoreRegion(SavedRegion saved) {
+            DpiScope.Run(SetThreadDpiAwarenessContext, delegate {
+                RestoreRegionCore(saved);
+                return true;
+            });
+        }
+        static void RestoreRegionCore(SavedRegion saved) {
             if (!SameRegionWindow(saved)) return;
             IntPtr region = IntPtr.Zero;
             if (saved.RegionData != null) {
@@ -418,6 +470,9 @@ namespace Caelestia.Takeover {
             return new AppBarData { Size = (uint)Marshal.SizeOf(typeof(AppBarData)), Window = window };
         }
         public static List<Bar> Taskbars() {
+            return DpiScope.Run(SetThreadDpiAwarenessContext, TaskbarsCore);
+        }
+        static List<Bar> TaskbarsCore() {
             var bars = new List<Bar>();
             EnumWindows(delegate(IntPtr window, IntPtr data) {
                 var name = new StringBuilder(128);
@@ -633,7 +688,7 @@ namespace Caelestia.Takeover {
             regions = new RegionSuppression(saved, Native.CaptureRegion, delegate(SavedRegion ignored) { SaveSnapshot(); },
                 Native.ApplyEmptyRegion, Native.RestoreRegion);
             // Durable before the first native change, usable if this helper is killed.
-            File.WriteAllText(Path.Combine(launch.StateDirectory, "desktop-before.json"), json.Serialize(saved));
+            Native.SaveSnapshot(Path.Combine(launch.StateDirectory, "desktop-before.json"), saved);
             Native.RecordAction = delegate(TaskbarAction action) {
                 SupervisorSafety.Log(delegate {
                     File.AppendAllText(Path.Combine(launch.StateDirectory, "taskbar-actions.jsonl"),
@@ -651,11 +706,7 @@ namespace Caelestia.Takeover {
             nextStart = DateTime.UtcNow;
         }
         void SaveSnapshot() {
-            var path = Path.Combine(launch.StateDirectory, "desktop-before.json");
-            var temporary = path + ".tmp";
-            File.WriteAllText(temporary, json.Serialize(saved));
-            if (File.Exists(path)) File.Replace(temporary, path, null);
-            else File.Move(temporary, path);
+            Native.SaveSnapshot(Path.Combine(launch.StateDirectory, "desktop-before.json"), saved);
         }
         void SuppressRegions() {
             if (invisible) foreach (var bar in Native.Taskbars()) regions.Reconcile(bar);

@@ -1,4 +1,4 @@
-// Fake-only tests. No hook or taskbar native function is called.
+// Fake-only desktop tests. Snapshot persistence uses a temporary file.
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -266,6 +266,66 @@ public static class TaskbarEventsTests {
             RegionCapture.TryCapture(delegate { throw new IOException("native failure"); }, delegate { return false; });
             throw new Exception("expected native failure");
         } catch (IOException) { Check(true, "failure for a surviving taskbar remains fatal"); }
+
+        var dpiCalls = new List<long>();
+        var fakeDpi = new Func<IntPtr, IntPtr>(delegate(IntPtr value) {
+            dpiCalls.Add(value.ToInt64());
+            return value.ToInt64() == -4 ? new IntPtr(42) : new IntPtr(-4);
+        });
+        try {
+            DpiScope.Run<int>(fakeDpi, delegate { throw new IOException("region operation"); });
+            throw new Exception("expected DPI test failure");
+        } catch (IOException) {}
+        Check(dpiCalls.Count == 2 && dpiCalls[0] == -4 && dpiCalls[1] == 42,
+            "per-monitor v2 scope restores caller DPI context on failure");
+        bool called = false;
+        try {
+            DpiScope.Run<int>(delegate(IntPtr value) { return IntPtr.Zero; },
+                delegate { called = true; return 0; });
+            throw new Exception("expected DPI setup failure");
+        } catch (InvalidOperationException) {}
+        Check(!called, "failed DPI context switch refuses region operations");
+
+        var batchSnapshot = new Snapshot();
+        var batchSequence = new List<string>();
+        var batchBars = new List<Bar> { first, other };
+        RegionBatch.Prepare(batchSnapshot, batchBars, delegate(Bar bar) {
+            batchSequence.Add("capture" + bar.Handle);
+            return new SavedRegion { Handle = bar.Handle };
+        }, delegate(Snapshot value) {
+            Check(value.Regions.Count == 2, "batch persistence receives every region");
+            batchSequence.Add("persist");
+        });
+        foreach (var region in batchSnapshot.Regions) batchSequence.Add("apply" + region.Handle);
+        Check(String.Join(",", batchSequence.ToArray()) == "capture1,capture2,persist,apply1,apply2",
+            "all regions are captured and persisted before any mutation");
+        bool persisted = false;
+        try {
+            RegionBatch.Prepare(new Snapshot(), batchBars, delegate(Bar bar) {
+                return bar.Handle == 2 ? null : new SavedRegion { Handle = bar.Handle };
+            }, delegate(Snapshot value) { persisted = true; });
+            throw new Exception("expected missing taskbar");
+        } catch (InvalidOperationException) {}
+        Check(!persisted, "failed batch capture cannot commit an incomplete snapshot");
+        try {
+            RegionBatch.Prepare(new Snapshot(), batchBars,
+                delegate(Bar bar) { return new SavedRegion { Handle = bar.Handle }; },
+                delegate(Snapshot value) { throw new IOException("disk"); });
+            throw new Exception("expected batch persistence failure");
+        } catch (IOException) { Check(true, "batch persistence failure propagates before mutation"); }
+
+        var snapshotPath = Path.Combine(Path.GetTempPath(), "caelestia-snapshot-test-" + Guid.NewGuid().ToString("N") + ".json");
+        try {
+            Native.SaveSnapshot(snapshotPath, batchSnapshot);
+            batchSnapshot.TaskbarFlags = 1;
+            Native.SaveSnapshot(snapshotPath, batchSnapshot);
+            var stored = json.Deserialize<Snapshot>(File.ReadAllText(snapshotPath));
+            Check(stored.TaskbarFlags == 1 && stored.Regions.Count == 2,
+                "C# snapshot helper creates and atomically replaces an existing record");
+        } finally {
+            if (File.Exists(snapshotPath)) File.Delete(snapshotPath);
+            if (File.Exists(snapshotPath + ".tmp")) File.Delete(snapshotPath + ".tmp");
+        }
         return assertions;
     }
 }

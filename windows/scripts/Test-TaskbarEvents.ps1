@@ -7,6 +7,7 @@ $ErrorActionPreference = 'Stop'
 if ($LASTEXITCODE -ne 0) { throw 'Production Add-Type compilation failed.' }
 # Compile the same source together with the fake harness. This process does not
 # call Supervisor.Run, SetWinEventHook, ShowWindow, or any desktop operation.
+# Snapshot persistence is exercised using an isolated temporary file.
 Add-Type -Path @((Join-Path $PSScriptRoot 'DesktopTakeover.cs'),
     (Join-Path $PSScriptRoot 'TaskbarEvents.Tests.cs')) `
     -ReferencedAssemblies System.Windows.Forms, System.Web.Extensions

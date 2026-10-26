@@ -114,11 +114,15 @@ powershell -NoProfile -File windows/scripts/Test-InvisibleTaskbarProbe.ps1 -Outp
 ```
 
 The probe refuses an active supervisor, records a durable recovery snapshot,
-captures a baseline and sampled screen pixels for each taskbar rectangle, and
-restores and verifies regions in `finally`. It does not force the taskbars to
-show. Inspect the PNGs against the baseline: hashes and `IsWindowVisible` do
-not prove that taskbar pixels are absent, and screen captures may contain
-private data. Sampling is not a frame-perfect or 5 ms exposure measurement.
+captures a baseline and sampled screen pixels for each full taskbar monitor, and
+restores and verifies regions in `finally`. Full-monitor captures cover both
+the auto-hide edge strip and slide-up area without guessing the revealed size.
+They include private screen content and can make sampling substantially slower.
+It does not force the taskbars to show or generate edge hover. During a controlled
+run the tester must exercise edge hover and separately test pointer click-through.
+Inspect the PNGs against the baseline: hashes and `IsWindowVisible` do not prove
+that taskbar pixels are absent or input passes through. Sampling is not a
+frame-perfect or 5 ms exposure measurement.
 If interrupted by forced termination, use its snapshot for emergency recovery.
 Then test the installed experimental configuration under orchestrator control,
 including transitions, startup, multiple monitors, Explorer restart, pointer

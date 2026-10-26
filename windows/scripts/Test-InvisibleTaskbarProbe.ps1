@@ -16,29 +16,39 @@ $acquired = $false
 try {
     try { $acquired = $mutex.WaitOne(0) } catch [Threading.AbandonedMutexException] { $acquired = $true }
     if (-not $acquired) { throw 'A desktop supervisor is active. Stop it before this probe.' }
-    $bars = @([Caelestia.Takeover.Native]::Taskbars())
+    # Capture obtains taskbar and monitor coordinates in per-monitor v2 pixels.
+    $snapshot = [Caelestia.Takeover.Native]::Capture()
+    $bars = @($snapshot.Bars)
     if ($bars.Count -eq 0 -or @($bars | Where-Object { -not $_.Visible }).Count -ne 0) {
         throw 'All Explorer taskbars must exist and be visible before running the probe.'
     }
     New-Item -ItemType Directory -Path $directory | Out-Null
-    $snapshot = [Caelestia.Takeover.Native]::Capture()
-    $serializer = New-Object Web.Script.Serialization.JavaScriptSerializer
     $snapshotPath = Join-Path $directory 'desktop-before.json'
     $samples = New-Object 'System.Collections.Generic.List[object]'
     $restoreErrors = New-Object 'System.Collections.Generic.List[string]'
+    $mutationStarted = $false
     function Save-TaskbarCapture($bar, [string]$name) {
-        $width = $bar.Bounds.Right - $bar.Bounds.Left
-        $height = $bar.Bounds.Bottom - $bar.Bounds.Top
-        if ($width -le 0 -or $height -le 0) { throw 'Taskbar rectangle is empty.' }
-        $bitmap = New-Object Drawing.Bitmap($width, $height)
+        $displays = @($snapshot.Displays | Where-Object { $_.Device -eq $bar.Device })
+        if ($displays.Count -ne 1) { throw "Cannot identify monitor for taskbar $($bar.Handle)." }
+        # The entire monitor covers the collapsed edge strip and any revealed
+        # taskbar position, including slide animation and non-bottom edges.
+        $bounds = $displays[0].Bounds
+        $width = $bounds.Right - $bounds.Left
+        $height = $bounds.Bottom - $bounds.Top
+        if ($width -le 0 -or $height -le 0) { throw 'Monitor rectangle is empty.' }
+        $previousDpi = [Caelestia.Takeover.Native]::SetThreadDpiAwarenessContext([IntPtr](-4))
+        if ($previousDpi -eq [IntPtr]::Zero) { throw 'Cannot set per-monitor v2 DPI awareness for screen capture.' }
         try {
-            $graphics = [Drawing.Graphics]::FromImage($bitmap)
-            try { $graphics.CopyFromScreen($bar.Bounds.Left, $bar.Bounds.Top, 0, 0, $bitmap.Size) }
-            finally { $graphics.Dispose() }
-            $path = Join-Path $directory $name
-            $bitmap.Save($path, [Drawing.Imaging.ImageFormat]::Png)
-            return (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
-        } finally { $bitmap.Dispose() }
+            $bitmap = New-Object Drawing.Bitmap($width, $height)
+            try {
+                $graphics = [Drawing.Graphics]::FromImage($bitmap)
+                try { $graphics.CopyFromScreen($bounds.Left, $bounds.Top, 0, 0, $bitmap.Size) }
+                finally { $graphics.Dispose() }
+                $path = Join-Path $directory $name
+                $bitmap.Save($path, [Drawing.Imaging.ImageFormat]::Png)
+                return (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
+            } finally { $bitmap.Dispose() }
+        } finally { [void][Caelestia.Takeover.Native]::SetThreadDpiAwarenessContext($previousDpi) }
     }
     try {
         foreach ($bar in $bars) {
@@ -47,25 +57,34 @@ try {
             $samples.Add([pscustomobject]@{ ElapsedMilliseconds = -1; Handle = $bar.Handle
                 Visible = $bar.Visible; Image = $name; Sha256 = $hash })
         }
-        foreach ($bar in $bars) {
-            $saved = [Caelestia.Takeover.Native]::CaptureRegion($bar)
-            if ($null -eq $saved) { throw 'Taskbar disappeared during capture. Stopping for restoration.' }
-            $snapshot.Regions.Add($saved)
-            # Persist the entire recovery record before each first mutation.
-            $temporary = $snapshotPath + '.tmp'
-            [IO.File]::WriteAllText($temporary, $serializer.Serialize($snapshot))
-            if (Test-Path -LiteralPath $snapshotPath) { [IO.File]::Replace($temporary, $snapshotPath, $null) }
-            else { [IO.File]::Move($temporary, $snapshotPath) }
+        # Capture every original region and commit one complete recovery record
+        # before applying anything. The helper also handles PowerShell 5.1 nulls.
+        [Caelestia.Takeover.Native]::PrepareRegions($snapshotPath, $snapshot, $snapshot.Bars)
+        $mutationStarted = $true
+        foreach ($saved in $snapshot.Regions) {
             [Caelestia.Takeover.Native]::ApplyEmptyRegion($saved)
         }
         $clock = [Diagnostics.Stopwatch]::StartNew()
         $index = 0
         while ($clock.Elapsed.TotalSeconds -lt $Seconds) {
-            $current = @([Caelestia.Takeover.Native]::Taskbars())
+            $currentDesktop = [Caelestia.Takeover.Native]::Capture()
+            $current = @($currentDesktop.Bars)
             if ($current.Count -ne $snapshot.Regions.Count) { throw 'Taskbar set changed during probe. Stopping for restoration.' }
             foreach ($bar in $current) {
                 if (-not ($snapshot.Regions | Where-Object { $_.Handle -eq $bar.Handle -and $_.Owner -eq $bar.Owner })) {
                     throw 'Taskbar set changed during probe. Stopping for restoration.'
+                }
+                if (-not ($bars | Where-Object { $_.Handle -eq $bar.Handle -and $_.Owner -eq $bar.Owner -and $_.Device -eq $bar.Device })) {
+                    throw 'Taskbar monitor changed during probe. Stopping for restoration.'
+                }
+                $originalDisplay = @($snapshot.Displays | Where-Object { $_.Device -eq $bar.Device })
+                $currentDisplay = @($currentDesktop.Displays | Where-Object { $_.Device -eq $bar.Device })
+                if ($originalDisplay.Count -ne 1 -or $currentDisplay.Count -ne 1 -or
+                    $originalDisplay[0].Bounds.Left -ne $currentDisplay[0].Bounds.Left -or
+                    $originalDisplay[0].Bounds.Top -ne $currentDisplay[0].Bounds.Top -or
+                    $originalDisplay[0].Bounds.Right -ne $currentDisplay[0].Bounds.Right -or
+                    $originalDisplay[0].Bounds.Bottom -ne $currentDisplay[0].Bounds.Bottom) {
+                    throw 'Monitor geometry changed during probe. Stopping for restoration.'
                 }
                 $name = 'sample-{0:D5}-{1}.png' -f $index, $bar.Handle
                 $hash = Save-TaskbarCapture $bar $name
@@ -76,7 +95,7 @@ try {
             Start-Sleep -Milliseconds $IntervalMilliseconds
         }
     } finally {
-        foreach ($saved in $snapshot.Regions) {
+        foreach ($saved in $(if ($mutationStarted) { $snapshot.Regions })) {
             try {
                 [Caelestia.Takeover.Native]::RestoreRegion($saved)
                 $bar = @([Caelestia.Takeover.Native]::Taskbars() | Where-Object {
@@ -93,7 +112,7 @@ try {
         $samples | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $directory 'samples.json') -Encoding UTF8
         if ($restoreErrors.Count) { throw ("Restoration failed: " + ($restoreErrors -join '; ') + ". Recovery snapshot: $snapshotPath") }
     }
-    Write-Output "Restoration verified. Inspect the sampled PNGs; Visible is a window flag, not a pixel test. Snapshot: $snapshotPath"
+    Write-Output "Restoration verified. Inspect full-monitor PNGs, including edge-hover reveals; Visible is not a pixel or hit-test. Snapshot: $snapshotPath"
 } finally {
     if ($acquired) { $mutex.ReleaseMutex() }
     $mutex.Dispose()
