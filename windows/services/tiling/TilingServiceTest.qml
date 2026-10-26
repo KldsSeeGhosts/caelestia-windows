@@ -529,7 +529,7 @@ QtObject {
         checkEqual(service.gapsOut, 100, "gap upper clamp");
         checkEqual(service.mode, "observe", "enabled defaults to observe");
         service.configureProfile({enabled: true, gapsIn: "bad"}, {}, false);
-        checkEqual(service.gapsIn, 10, "invalid gap fallback");
+        checkEqual(service.gapsIn, 5, "invalid gap fallback");
         liveBackend.supportsScopedRules = false;
         service.configureProfile(settings, {}, false);
         checkEqual(service.status, "refused", "old backend refuses scoped rules");

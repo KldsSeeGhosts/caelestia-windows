@@ -354,16 +354,24 @@ Controls the desktop wallpaper surface, desktop clock, and desktop audio visuali
 
 The Windows extension `windows.tiling` is validated by the tiling facade and
 watched through `GlobalConfig`. Defaults are disabled, Observe mode when enabled,
-and 10/10 DIP gaps. Example:
+5 DIP inner gaps per window side (10 total), 10 DIP outer gaps, 20 DIP outer
+gaps for a single tiled window, and `borderColours: true`. Example:
 
 ```json
-{"windows":{"tiling":{"enabled":false,"mode":"observe","gapsIn":10,"gapsOut":10,"include":["exe:notepad.exe"],"exclude":[],"float":["title:*Dialog*"],"monitors":{"*DISPLAY2":false}}}}
+{"windows":{"tiling":{"enabled":false,"mode":"observe","gapsIn":5,"gapsOut":10,"singleWindowGapsOut":20,"borderColours":true,"include":["exe:notepad.exe"],"exclude":[],"float":["title:*Dialog*"],"monitors":{"*DISPLAY2":false}}}}
 ```
 
 Rules are wildcard arrays or semicolon-separated strings. `exe:`, `class:` and
 `title:` select individual window facts. `float` and disabled-monitor patterns
 are exclusions and win over inclusions. Interactive requires a non-empty include
 list; live changes stop the session before applying new rules/gaps.
+`singleWindowGapsOut` replaces `gapsOut` when exactly one window is tiled on a
+monitor/workspace, excluding minimized and maximized windows. Maximized windows
+continue to fill the Windows work area. `borderColours` applies scheme primary
+and dim onSurfaceVariant borders on Windows 11 build 22000+, following focus
+and scheme changes. Colours use upstream 0xe6/0x11 alpha blended against surface.
+Disabling colouring/tiling, leaving management or normal shell exit restores
+the system default border. Older Windows skips colouring.
 See [the full schema](../services/tiling/README.md).
 
 Explicit launcher switches override environment variables, which override profile
@@ -376,8 +384,11 @@ The underlying `Quickshell.Windows.Tiling` singleton exposes the following layou
 
 - `enabled` (`bool`, default `false`)
 - `layout` (`string`, default `"dwindle"`): `"dwindle"`, `"master"`, or `"scrolling"`
-- `gapsIn` (`int`, default `4`): Inner gap between tiled windows in logical pixels
-- `gapsOut` (`int`, default `5`): Outer gap between tiled windows and the monitor work area in logical pixels
+- `gapsIn` (`int`, default `5`): Inner inset per tiled window side in DIPs, 10 total between windows
+- `gapsOut` (`int`, default `10`): Outer gap to the monitor work area in DIPs
+- `singleWindowGapsOut` (`int`, default `20`): Outer gap with exactly one tiled window
+- `borderColours` (`bool`, default `true`): Enable managed-window DWM border colours
+- `activeBorderColour`, `inactiveBorderColour` (`color`): Supplied live by the facade from the scheme; unset native colours use the system default
 - `preserveSplit` (`bool`, default `true`)
 - `smartSplit` (`bool`, default `false`)
 - `forceSplit` (`int`, default `0`): `0` (follow cursor/auto), `1` (left/top), `2` (right/bottom)
@@ -389,8 +400,8 @@ The underlying `Quickshell.Windows.Tiling` singleton exposes the following layou
 - `scrollingColumnWidth` (`double`, default `0.5`, range `0.1`–`1.0`)
 - `scrollingCenter` (`string`, default `"overflow"`): `"never"`, `"always"`, `"on-overflow"` / `"overflow"`
 
-The table above lists native backend defaults; the Windows facade overrides gaps
-to 10/10 DIPs. Layout selection remains a backend option outside this profile schema.
+The table above lists native backend defaults, also used by the Windows facade.
+Layout selection remains a backend option outside this profile schema.
 
 ---
 

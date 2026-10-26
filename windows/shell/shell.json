@@ -174,8 +174,10 @@
     "tiling": {
       "enabled": false,
       "mode": "observe",
-      "gapsIn": 10,
-      "gapsOut": 10
+      "gapsIn": 5,
+      "gapsOut": 10,
+      "singleWindowGapsOut": 20,
+      "borderColours": true
     }
   },
   "appearance": {

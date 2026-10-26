@@ -25,8 +25,10 @@ The Windows-only `windows` map holds service extensions; the facade validates
     "tiling": {
       "enabled": true,
       "mode": "observe",
-      "gapsIn": 10,
+      "gapsIn": 5,
       "gapsOut": 10,
+      "singleWindowGapsOut": 20,
+      "borderColours": true,
       "include": ["exe:editor.exe", "class:Chrome_WidgetWin_*"],
       "exclude": ["title:*Private*"],
       "float": ["title:*Dialog*"],
@@ -36,11 +38,24 @@ The Windows-only `windows` map holds service extensions; the facade validates
 }
 ```
 
-- Defaults: disabled, Observe mode when enabled, 10/10 DIP gaps, empty rules,
+- Defaults: disabled, Observe mode when enabled, empty rules,
   all monitors enabled. Modes are `observe` and `interactive`; disabled selects
   `off`. Invalid modes stay off. Gaps are finite numbers, rounded and clamped
-  to 0..100 integer DIPs; invalid/missing gaps use 10. These are the backend's
-  gap parameters, whose layout engines can place an inner gap on both tiles.
+  to 0..100 integer DIPs; invalid/missing gaps use their defaults below.
+- `gapsIn`: default 5 DIPs per window side, giving 10 DIPs total between two
+  tiled windows. Existing explicit values retain their per-side meaning.
+- `gapsOut`: default 10 DIPs between tiled windows and the monitor work area.
+- `singleWindowGapsOut`: default 20 DIPs, replacing `gapsOut` when exactly
+  one window is tiled on that monitor and workspace. Minimized and maximized
+  windows do not count as tiled. Maximized windows keep Windows semantics and
+  fill the work area; the Hyprland maximized-window gap rule is not applied.
+- `borderColours`: default true. On Windows 11 build 22000+, managed windows
+  use the scheme primary when focused and a dim onSurfaceVariant otherwise.
+  The upstream 0xe6/0x11 alpha values are blended against the scheme surface
+  because DWM accepts opaque colours. Focus and scheme changes update live.
+  Every touched border returns to `DWMWA_COLOR_DEFAULT` when the window leaves
+  management, the option or tiler is disabled, or the shell exits normally.
+  Older Windows builds skip colouring. DWM owns border width and rounding.
 - `include`, `exclude`, `float`: arrays of wildcard strings or
   semicolon-separated strings. Case-insensitive whole-value wildcard matching
   (`*`, `?`, character classes), not regular expressions. `exe:` matches
@@ -51,7 +66,7 @@ The Windows-only `windows` map holds service extensions; the facade validates
 - `monitors` maps Qt screen-name wildcard patterns to booleans. All monitors
   default enabled; `false` adds a native `screen:` exclusion, `true` leaves
   the monitor enabled. A blanket false wildcard also excludes true exceptions.
-- Live changes stop the current session before applying rules/gaps, then
+- Live changes stop the current session before applying rules/gaps/colours, then
   request enable through the existing native mutex gate. Observe/disabled
   stop the tiler. A held mutex produces the existing
   `Another tiling manager is already running.` toast. Invalid JSON uses
