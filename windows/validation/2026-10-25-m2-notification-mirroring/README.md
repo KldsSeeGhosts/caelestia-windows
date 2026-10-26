@@ -256,3 +256,91 @@ Three original files were touched, all additively with unchanged Linux defaults:
 
 No backend source, dependency pin, `windows/deps/quickshell`, `HANDOFF.md` or
 `ROADMAP.md` was changed.
+
+## Review addendum
+
+An independent review of `736d992a` found six issues (two P1, four P2). All six
+are fixed on `t3/notification-mirroring` (root `ef985779`, backend branch
+`windows/m2-notification-mirror-consent` at `fe01579`, created from the
+unchanged pin `1401042969`; the root gitlink and `windows/sources.lock.json`
+were not updated). The concurrent notification image-cache removal from
+`t3/notifications-local-delivery` was merged; conflicts were resolved by taking
+the cache removal plus the mirroring fixes.
+
+### Fixes
+
+1. **P1 app-open bypassed the dismissal opt-in.** The backend gained
+   `activateMirrored(id)`, which activates a mirrored toast's source app
+   without the `Dismissed` auto-close that `NotificationAction::invoke` turned
+   into a real-toast removal. The generic action path no longer auto-closes
+   mirrored records at all; local records keep the original behavior. The
+   service routes mirrored app-open through the new member and refuses it
+   (counting a refusal) when the backend does not expose it — the pinned
+   revision's case — so a body click or app-open can never remove the real
+   Windows toast without the separate dismissal opt-in. The QML fixture's
+   `FakeAction` now models the native auto-close, proving activation neither
+   dismisses nor removes while an explicit dismiss still does.
+2. **P1 enabling could issue a second automatic access request.**
+   `ToastMirrorWorker::setEnabled(true)` now calls `begin(false)`: enabling the
+   mirror (the consent path and session ownership acquisition, extracted into
+   `NotificationServer::acquireOwnership`) only reads `GetAccessStatus`. The
+   OS prompt belongs exclusively to `requestSystemAccess()`.
+3. **P2 revocation never disabled mirroring.** `applyMirroring()` reconciles in
+   both directions from raw inputs (property-change handlers can run before
+   derived bindings re-evaluate, so `mirrorStaged`/`accessState` are not
+   trusted there): lost access, a removed mirror opt-in, backend
+   unavailability and service disable each withdraw the applied mirror with
+   one `setMirroring(false)` write — which also stops the backend's
+   ten-second access polling — and recovered access re-enables it with one
+   fresh write.
+4. **P2 denied polling could not detect recovery.** The backend gained the
+   non-prompting `refreshAccessStatus()` (GetAccessStatus only, never
+   RequestAccessAsync). The service's denied poll calls it inside the existing
+   visible-center, five-poll budget, so a denied-to-allowed change made in
+   Windows settings is observed and re-enables mirroring without any new
+   prompt.
+5. **P2 QML reload lost process-wide consent.** The explicit request latches a
+   process-lifetime `accessRequested` (kept on the backend singleton and
+   exposed read-only to QML). A reloaded service object reconciles with it: a
+   cached `Allowed` re-enables mirroring without a new request, and an
+   unanswered request is not repeatable in the same process.
+6. **P2 Linux dock layout regressed.** `modules/sidebar/NotifDock.qml` anchors
+   the list to `title.bottom` with the original `Tokens.spacing.medium`
+   whenever the optional mirroring row is hidden, so the hidden zero-height
+   row adds no gap above the list; the row keeps its `Tokens.spacing.small`
+   margin only while visible.
+
+Every new backend member is feature-detected in QML (`typeof` checks and
+`=== true` reads), so the shared build at the pinned revision still loads the
+facade and the service refuses the unsafe paths instead of using them.
+
+### Re-validation
+
+- Backend: the new `windows/scripts/Test-BackendNotifications.ps1` builds
+  `notification_mirror_consent_test` plus the mpris/upower status regressions
+  with the smallest seam faking the WinRT listener access status/request, app
+  activation and window lookup. **7 + 6 + 9 passed, 0 failed** (consent test:
+  enable never prompts; only the explicit request prompts and only from
+  Unspecified; `refreshAccessStatus` never prompts; mirrored activation does
+  not dismiss or remove while an explicit dismiss does; ownership acquisition
+  enables without prompting). No test requests listener access, prompts,
+  activates an app or removes a real notification.
+- QML fixture: `Test-NotificationService.ps1` passes with **449 assertions**
+  (221 before this slice), keeping every prior assertion except the single
+  app-open one that finding 1 deliberately replaced, plus the merged
+  replacement-send and image-policy coverage from
+  `t3/notifications-local-delivery` and new sections for both-direction
+  revocation, non-prompting recovery, reload reconciliation and the pinned
+  backend revision.
+- Native (`Test-NotificationsPrototype.ps1`, worktree sources against the
+  shared pinned build, Disabled/Local smoke only): run
+  `notifications-validation-20261025-202958-578` — fixture, two disabled
+  screens, three local runs and the M1/media/battery regressions,
+  **9/9 passed**; desktop and legacy-history identity unchanged; every
+  mirroring, access, dismissal, app-open and settings counter stayed zero.
+
+### Still not exercised natively
+
+Real Windows access prompts, real toast mirroring/dismissal/removal, real app
+activation and the backend's ten-second access timer remain fixture/seam-only;
+native evidence still covers Disabled and Local smoke only.
