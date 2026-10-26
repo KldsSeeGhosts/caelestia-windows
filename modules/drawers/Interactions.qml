@@ -23,6 +23,7 @@ CustomMouseArea {
     property bool osdShortcutActive
     property bool utilitiesShortcutActive
     property bool sidebarShortcutActive
+    property bool launcherHoverEntered
 
     function withinPanelHeight(panel: Item, x: real, y: real): bool {
         const panelY = root.borderThickness + panel.y;
@@ -50,6 +51,21 @@ CustomMouseArea {
     function inBottomPanel(panel: Item, x: real, y: real, isCorner = false): bool {
         const panelHeight = panel.height * (1 - (panel.offsetScale ?? 0)); // qmllint disable missing-property
         return y > height - Math.max(Config.border.minThickness, Config.border.thickness + panelHeight) - (isCorner ? Config.border.rounding : 0) && withinPanelWidth(panel, x, y);
+    }
+
+    // Upstream b6b2adf0 removed launcher hover-close, so a keybind or start
+    // button open stays until dismissed. Track a real pointer entry and close
+    // the hover drawer again only once the pointer has reached the launcher.
+    function updateLauncherHover(inLauncher: bool): void {
+        if (inLauncher) {
+            if (!screenState.launcher)
+                screenState.launcher = true;
+            launcherHoverEntered = true;
+        } else if (screenState.launcher && launcherHoverEntered) {
+            // The bottom strip stays inside inBottomPanel while the launcher is
+            // open, so closing here cannot immediately reopen it.
+            screenState.launcher = false;
+        }
     }
 
     function onWheel(event: WheelEvent): void {
@@ -95,6 +111,11 @@ CustomMouseArea {
 
             if (Config.sidebar.showOnHover && !sidebarShortcutActive)
                 screenState.sidebar = false;
+
+            // Only close a launcher the pointer actually entered. A keybind or
+            // start-button open with the pointer elsewhere stays open.
+            if (Config.launcher.enabled && Config.launcher.showOnHover)
+                updateLauncherHover(false);
         }
     }
 
@@ -207,10 +228,9 @@ CustomMouseArea {
         }
 
         // Show launcher on hover, or show/hide on drag if hover is disabled
-        if (Config.launcher.enabled && Config.launcher.showOnHover) {
-            if (!screenState.launcher && inBottomPanel(panels.launcher, x, y))
-                screenState.launcher = true;
-        } else if (Config.launcher.enabled && pressed && inBottomPanel(panels.launcher, dragStart.x, dragStart.y) && withinPanelWidth(panels.launcher, x, y)) {
+        if (Config.launcher.enabled && Config.launcher.showOnHover)
+            updateLauncherHover(inBottomPanel(panels.launcher, x, y));
+        else if (Config.launcher.enabled && pressed && inBottomPanel(panels.launcher, dragStart.x, dragStart.y) && withinPanelWidth(panels.launcher, x, y)) {
             if (dragY < -Config.launcher.dragThreshold)
                 screenState.launcher = true;
             else if (dragY > Config.launcher.dragThreshold)
@@ -261,6 +281,7 @@ CustomMouseArea {
         function onLauncherChanged() {
             // If launcher is hidden, clear shortcut flags for dashboard and OSD
             if (!root.screenState.launcher) {
+                root.launcherHoverEntered = false;
                 root.dashboardShortcutActive = false;
                 root.osdShortcutActive = false;
                 root.utilitiesShortcutActive = false;
