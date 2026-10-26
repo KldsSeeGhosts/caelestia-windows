@@ -232,3 +232,61 @@ combined manifest, entrypoint and Wallpapers service. Preserve these background
 entries and the `Wallpapers.current` contract during integration. Production
 can instantiate `WindowsBackground` using its opt-in environment contract;
 ordinary runs cover every enabled monitor.
+
+---
+
+## KSG settings migration implementation, 2026-10-26
+
+Implemented on `t3/ksg-migration` from `origin/t3/combined-modules`
+(`6026f947`). No push, PR, Linear operation, native shell launch, desktop
+takeover or change to KSG Shell was performed.
+
+- Added `windows/scripts/Import-KsgShellSettings.ps1`. Default operation
+  prints a merged JSON overlay without writing; `-Summary` prints a safe
+  mapping report. `-BaseFile`, `-OutFile` and `-DryRun` support review and
+  explicit output. Existing output requires `-Force` and is backed up
+  byte-for-byte before atomic replacement. KSG profile output is refused.
+- Added `windows/docs/MIGRATING-FROM-KSG-SHELL.md`, covering schema sources,
+  exact mappings, unsupported preferences, one-tiler switch-over and rollback.
+- Audited KSG source revision `85bd3d85` read-only and M3 reference
+  `5777a246`. Native KSG has no saved wallpaper, theme/accent, editable
+  keybinds or user app-rule lists. Its rules and tiler chords are compiled
+  in. M3 uses environment opt-ins, not `shell.json`, and exposes no
+  configurable gap/padding. Those preferences are reported for manual
+  switch-over, not misrepresented as working JSON settings.
+
+Real-settings dry run under Windows PowerShell 5.1.26100.9711:
+
+| Source | Result |
+| --- | --- |
+| Bar enabled | `bar.persistent=true` |
+| Show date | `bar.clock.showDate=true` |
+| Tray icon | `bar.entries[id=tray].enabled=true` |
+| Keyboard/Bluetooth/network/volume/power icons | `kbLayout`/`bluetooth`/`network`/`audio`/`battery` status entries enabled |
+| OSD | `osd.enabled=true` |
+| Tiling enabled; gap/padding | Saved `true`, 10/10 DIPs; summary only, not enabled or written |
+| Warnings/existing Caelestia base | None / absent |
+
+Nine source preferences mapped. The current profile also contains dock pins
+and historical backups, which have no supported destination and are not
+copied. All four KSG profile files retained their hashes and the one existing
+KSG process retained its PID through the smoke. No source values resembling
+tokens, pin launch commands, wallpaper paths or personal paths are archived.
+
+Quick file-only smoke passed: false values, id-based list merge, preservation
+of unrelated fields/nested arrays/nulls, filtering of unknown source values,
+tiling defaults/clamping, dry-run, overwrite refusal, byte-identical backup,
+idempotence and source overwrite protection. Commands:
+
+```powershell
+powershell -NoProfile -File windows/scripts/Test-KsgSettingsImport.ps1
+powershell -NoProfile -File windows/scripts/Import-KsgShellSettings.ps1 -Summary
+powershell -NoProfile -File windows/scripts/Import-KsgShellSettings.ps1
+powershell -NoProfile -File windows/scripts/Test-Environment.ps1 -Json
+```
+
+Evidence: `windows/validation/2026-10-26-ksg-settings-import/`. The prerequisite
+report confirms matching backend pins but missing native build tools on the
+ordinary PATH. This PowerShell-only change needs no C++/QML rebuild.
+Production-profile loading, interactive tiling and full replacement remain
+integration/runtime gates, not claims established by this smoke.

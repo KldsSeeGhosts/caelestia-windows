@@ -1,0 +1,56 @@
+﻿{
+    "passed":  true,
+    "runtime":  "Windows PowerShell 5.1.26100.9711",
+    "platform":  "Microsoft Windows NT 10.0.26300.0",
+    "baseRevision":  "6026f9475e99393be5d85c49b2367f1c36e3632e",
+    "ksgSourceRevision":  "85bd3d852d03111ac4e78d77e46a513969754018",
+    "m3ReferenceRevision":  "5777a2464619229e2fb36c7ade3696505f4a16a6",
+    "importerSha256":  "BB6396225E1C822475D89DF4079D16B1FC0EEAA3DF38544DD10DA5BC029C927E",
+    "realSettings":  {
+                         "dryRun":  true,
+                         "mappedCount":  9,
+                         "mappedPreferencesEnabled":  true,
+                         "mergedExistingConfig":  false,
+                         "savedTilingEnabled":  true,
+                         "savedGapDip":  10,
+                         "savedPaddingDip":  10,
+                         "tilingImported":  false,
+                         "warnings":  [
+
+                                      ],
+                         "profileFilesChecked":  4,
+                         "profileUnchanged":  true,
+                         "existingKsgProcessCount":  1,
+                         "existingKsgProcessesUnchanged":  true
+                     },
+    "fixture":  {
+                    "passed":  true,
+                    "scope":  "file-only importer smoke",
+                    "checks":  [
+                                   "dry-run",
+                                   "false values",
+                                   "id-based list merge",
+                                   "unknown data preservation",
+                                   "source value filtering",
+                                   "tiling report",
+                                   "overwrite refusal",
+                                   "byte-identical backup",
+                                   "idempotence",
+                                   "source protection"
+                               ]
+                },
+    "environment":  {
+                        "backendPinMatches":  true,
+                        "nativeToolchainReady":  false,
+                        "blockers":  [
+                                         "cmake is not available on PATH.",
+                                         "ninja is not available on PATH.",
+                                         "No MSVC cl.exe or clang-cl.exe is available in this environment.",
+                                         "Qt development tools were not found; supply -QtPrefix or configure the Qt build environment."
+                                     ]
+                    },
+    "limits":  [
+                   "No C++/QML changes or native build required for this PowerShell converter.",
+                   "No desktop takeover, shell launch, tiling enablement, autostart or live migration tested."
+               ]
+}
