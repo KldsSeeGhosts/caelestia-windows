@@ -114,6 +114,10 @@ BrightnessService {
 
         readonly property real brightness: record?.brightness ?? 0
         readonly property bool brightnessKnown: record?.brightnessKnown ?? false
+        // Bumped by the service after a denied or failed write. A drag removed
+        // the slider's value binding, so the host uses this serial to rebind
+        // the displayed value to the confirmed level.
+        readonly property int resyncSerial: record?.resyncSerial ?? 0
         // interactive keeps the slider usable while a coalesced write is in
         // flight; writable/writeReady additionally require no write pending.
         readonly property bool interactive: root.interactive(screenName)

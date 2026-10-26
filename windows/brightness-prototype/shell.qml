@@ -49,6 +49,7 @@ ShellRoot {
             available: monitor.record?.available ?? false,
             brightness: monitor.brightness,
             brightnessKnown: monitor.brightnessKnown,
+            resyncSerial: monitor.record?.resyncSerial ?? 0,
             interactive: monitor.interactive,
             writeReady: monitor.writeReady,
             writable: monitor.writable,
@@ -70,6 +71,7 @@ ShellRoot {
             nativeBackendId: Brightness.backend?.backendId ?? "",
             ready: Brightness.ready, lastError: Brightness.lastError,
             strictBackend: Brightness.strictBackend,
+            queryIds: Brightness.queryIdsSupported,
             writesAllowed: Brightness.writesAllowed,
             strictRoutesEnabled: Brightness.strictRoutesEnabled,
             policyError: Brightness.policyError,
@@ -87,10 +89,12 @@ ShellRoot {
             selectedInteractive: selected?.interactive ?? false,
             selectedWritable: selected?.writable ?? false,
             selectedBrightnessKnown: selected?.brightnessKnown ?? false,
+            selectedResyncSerial: selected?.resyncSerial ?? 0,
             screenStatePresent: root.screenState !== null,
             osdLoaded: osdHost.item !== null,
             osdControlsEnabled: osdHost.item?.brightnessControlsEnabled ?? false,
-            osdAudioControlsEnabled: osdHost.item?.audioControlsEnabled ?? true
+            osdAudioControlsEnabled: osdHost.item?.audioControlsEnabled ?? true,
+            osdResyncSerial: osdHost.item?.brightnessResyncSerial ?? 0
         };
     }
 
@@ -137,6 +141,10 @@ ShellRoot {
             }
             if (state.osdControlsEnabled !== state.selectedInteractive) {
                 root.fail("original OSD control hook is not guarded by the service");
+                return;
+            }
+            if (state.osdResyncSerial !== state.selectedResyncSerial) {
+                root.fail("original OSD resync hook is not bound to the service serial");
                 return;
             }
         } else if (state.status !== "disabled" || state.nativeRequested
@@ -193,6 +201,17 @@ ShellRoot {
                 || state.osdAudioControlsEnabled !== false) {
             root.fail("original OSD content is not loaded read-only");
             return;
+        }
+        if (!state.queryIds) {
+            // The pinned backend cannot match query results to the requests
+            // that asked for them, so the controls gate stays closed even
+            // though the strict-route API is present; the state above must
+            // show exactly that.
+            if (state.writesAllowed || state.selectedInteractive
+                    || state.osdControlsEnabled) {
+                root.fail("a backend without query ids left the controls interactive");
+                return;
+            }
         }
         if (state.monitorCount !== state.monitors.length || state.monitorCount === 0) {
             root.fail("monitor states are inconsistent");
@@ -379,6 +398,8 @@ ShellRoot {
                         audioControlsEnabled: false
                         brightnessControlsEnabled: root.selectedMonitor
                             ? root.selectedMonitor.interactive : false
+                        brightnessResyncSerial: root.selectedMonitor
+                            ? root.selectedMonitor.resyncSerial : 0
                     }
                 }
 
