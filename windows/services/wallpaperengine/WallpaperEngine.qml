@@ -27,9 +27,9 @@ Singleton {
     property string configPath: ""
     property var items: []
     property var monitors: ({})
-    readonly property string monitor: options.monitor || "Monitor0"
+    readonly property string monitor: String(options.monitor || "Monitor0")
     readonly property var current: monitors[monitor] ?? null
-    readonly property string picker: ["engine", "files", "both"].includes(options.picker)
+    readonly property string picker: !enabled ? "files" : ["engine", "files", "both"].includes(options.picker)
         ? options.picker : (running && detected && enabled ? "engine" : "files")
     property string lastPaletteKey: ""
     property string actionProject: ""
@@ -53,7 +53,7 @@ Singleton {
     }
 
     function open(path: string): bool {
-        if (!controlsEnabled || action.running || !items.some(item => item.path === path))
+        if (!controlsEnabled || action.running || !/^Monitor\d+$/.test(monitor) || !items.some(item => item.path === path))
             return false;
         actionProject = path;
         action.running = true;
@@ -68,6 +68,7 @@ Singleton {
     FileView {
         path: Quickshell.env("CAELESTIA_CONFIG_DIR") + "/shell.json"
         watchChanges: true
+        printErrors: false
         onFileChanged: reload()
         onLoaded: {
             try { root.options = JSON.parse(text()).windows?.wallpaperEngine ?? {}; }
@@ -77,6 +78,7 @@ Singleton {
     FileView {
         path: root.configPath
         watchChanges: true
+        printErrors: false
         onFileChanged: { reload(); debounce.restart(); }
     }
     Timer { id: debounce; interval: 300; onTriggered: root.refresh() }
@@ -104,8 +106,11 @@ Singleton {
                 root.detected = data.detected;
                 root.running = data.running;
                 root.configPath = data.configPath || "";
-                root.items = data.items;
-                root.monitors = data.monitors;
+                // Preserve carousel delegates and selection across idle polls.
+                if (JSON.stringify(root.items) !== JSON.stringify(data.items))
+                    root.items = data.items;
+                if (JSON.stringify(root.monitors) !== JSON.stringify(data.monitors))
+                    root.monitors = data.monitors;
                 root.snapshotReady = true;
                 root.status = !root.enabled ? "disabled" : root.running && root.detected ? "ready" : "absent";
                 root.lastError = "";
