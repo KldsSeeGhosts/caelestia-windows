@@ -295,8 +295,17 @@ try {
         Assert ($expected.screen -eq $smokeScreen) `
             "The fixture selected '$($expected.screen)' but the smoke measured '$smokeScreen'."
     }
+    # Qt names screens by model on some systems; fall back to the screen origin,
+    # accepting either native or device-independent coordinates.
     $target = @($before.monitors | Where-Object deviceName -eq $expected.screen)
-    Assert ($target.Count -eq 1) "The fixture screen '$($expected.screen)' is not a monitor."
+    if ($target.Count -ne 1) {
+        $target = @($before.monitors | Where-Object {
+            ($_.physicalBounds.left -eq $expected.x -and $_.physicalBounds.top -eq $expected.y) -or
+            ($_.physicalBounds.left -eq [Math]::Round($expected.x * $expected.dpr) -and
+             $_.physicalBounds.top -eq [Math]::Round($expected.y * $expected.dpr)) })
+    }
+    Assert ($target.Count -eq 1) "The fixture screen '$($expected.screen)' at $($expected.x),$($expected.y) is not a monitor."
+    $device = $target[0].deviceName
     # The fixture starts with its exclusions inactive. Refuse to reserve (or let
     # an application be moved by a temporary work-area change) on the primary
     # display, including with -SkipSmoke, where there is no smoke screen to
@@ -306,6 +315,7 @@ try {
     Assert ((WorkIdentity $idle) -eq (WorkIdentity $before)) `
         'The frame fixture changed a work area before its reservations were enabled.'
     $summary.fixtureScreen = $expected.screen
+    $summary.fixtureDevice = $device
     $summary.expected = [ordered]@{
         left = $expected.left; top = $expected.top; right = $expected.right; bottom = $expected.bottom
         dpr = $expected.dpr; barZone = $expected.barZone; borderZone = $expected.borderZone
@@ -322,7 +332,7 @@ try {
         }
         $snapshot = Snapshot 'fixture-reserved'
         $script:fixtureLast = $snapshot
-        $script:fixtureDelta = WorkDeltas $before $snapshot $expected.screen
+        $script:fixtureDelta = WorkDeltas $before $snapshot $device
         if ($null -eq $script:fixtureDelta) { return $false }
         return ($script:fixtureDelta.left -gt 0 -and $script:fixtureDelta.top -gt 0 `
             -and $script:fixtureDelta.right -gt 0 -and $script:fixtureDelta.bottom -gt 0)
@@ -333,7 +343,7 @@ try {
         Assert ([Math]::Abs($delta[$edge] - $expected.$edge) -le 2) `
             "$edge reservation was $($delta[$edge]) px; expected $($expected.$edge) px."
     }
-    Assert (OtherWorkUnchanged $before $reserved $expected.screen) 'The frame fixture changed another monitor.'
+    Assert (OtherWorkUnchanged $before $reserved $device) 'The frame fixture changed another monitor.'
     Assert (($reserved.taskbar | ConvertTo-Json -Compress) -eq ($before.taskbar | ConvertTo-Json -Compress)) `
         'The frame fixture changed taskbar flags.'
     $summary.delta = $delta

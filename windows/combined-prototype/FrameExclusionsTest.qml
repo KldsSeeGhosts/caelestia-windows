@@ -40,6 +40,10 @@ ShellRoot {
             const dpr = root.selectedScreen ? root.selectedScreen.devicePixelRatio : 1;
             return JSON.stringify({
                 screen: root.selectedScreen ? root.selectedScreen.name : "",
+                // Qt may report a model name instead of a device name, so the
+                // runner can also match the monitor by its origin.
+                x: root.selectedScreen ? root.selectedScreen.x : 0,
+                y: root.selectedScreen ? root.selectedScreen.y : 0,
                 dpr: dpr,
                 reservations: root.reservations,
                 barZone: root.barZone,
