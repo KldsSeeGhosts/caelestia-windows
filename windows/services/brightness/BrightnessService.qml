@@ -12,10 +12,11 @@ import QtQuick
 //   function clearSoftwareDimming(QString screen)
 //
 // QUERY CONTRACT (id-carrying backends):
-//   function queryRequest(string screen) -> int
+//   function queryRequest(string screen) -> qint64 (a QML number)
 //     Returns a process-unique, strictly increasing positive id immediately;
-//     the worker owns the result from here on.
-//   signal queryFinished(int requestId, QString screen, bool available,
+//     the worker owns the result from here on. Ids are 64-bit, so they are
+//     held as `real`, never `int`, which would truncate them to 32 bits.
+//   signal queryFinished(qint64 requestId, QString screen, bool available,
 //                        bool isDdc, real brightness)
 //     Emitted exactly once per queryRequest() call, for every outcome, on the
 //     GUI thread. The plain query()/queried() pair also remains; with ids it
@@ -155,7 +156,8 @@ QtObject {
         // still outstanding; 0 while none. Backend ids are process-unique and
         // strictly increasing, so an id from an earlier record, an earlier
         // enable cycle or an earlier backend can never match this one.
-        property int queryId: 0
+        // A `real`: backend ids are 64-bit and an `int` would truncate them.
+        property real queryId: 0
         // Bumped after a terminal write failure. The drag removed the host
         // slider's value binding, so reassigning the unchanged confirmed level
         // emits nothing; hosts rebind the displayed value on this serial.
@@ -777,6 +779,18 @@ QtObject {
         // terminal brightnessWriteResult() is the only completion.
         if (state.writePending)
             return;
+        // With ids, a route is only trusted as part of an accepted query. A
+        // change outside one (for example a stale request finishing after the
+        // record was authorized) withdraws write authorization by querying
+        // again; the latch is not a route refresh the user asked for, so it is
+        // kept.
+        if (queryIdsSupported && reported !== state.route
+                && (state.state === "hardware" || state.state === "software-only")) {
+            const latched = state.latched;
+            queryMonitor(screenName);
+            state.latched = latched;
+            return;
+        }
         state.route = reported;
         if (state.state === "hardware" && reported === "software")
             state.state = "software-only";

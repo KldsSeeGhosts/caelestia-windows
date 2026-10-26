@@ -95,7 +95,7 @@ QtObject {
         readonly property int pendingWrites: _writeCompletions.length
 
         signal queried(string screenName, bool available, bool isDdc, real brightness)
-        signal queryFinished(int requestId, string screenName, bool available, bool isDdc, real brightness)
+        signal queryFinished(real requestId, string screenName, bool available, bool isDdc, real brightness)
         signal brightnessSetFinished(string screenName, bool ok)
         signal brightnessWriteResult(string screenName, real value, bool ok, string method, string error)
         signal routeChanged(string screenName, string route)
@@ -144,7 +144,7 @@ QtObject {
             }]);
         }
 
-        function _requestQuery(screenName): int {
+        function _requestQuery(screenName): real {
             fake.queryCalls++;
             const id = test.allocQueryId();
             fake._queueQueryCompletion(id, screenName);
@@ -417,7 +417,7 @@ QtObject {
     // process-wide native singleton across wrapper reloads.
     property int _queryIdSerial: 0
 
-    function allocQueryId(): int {
+    function allocQueryId(): real {
         _queryIdSerial++;
         return _queryIdSerial;
     }
@@ -1188,6 +1188,53 @@ QtObject {
             "B's completion authorizes the current record");
         close(disableCase.stateFor("DIS1").brightness, 0.8,
             "the record holds B's 0.8, never A's 0.2");
+
+        // --- A stale completion's route change -----------------------------------
+        // The backend emits routeChanged before queryFinished. Query A resolves
+        // to an unreadable WMI route, query B (after a disable/re-enable) to a
+        // readable LCD route. B is delivered and accepted first; A then
+        // arrives. Its id is rejected, but its routeChanged must not move the
+        // authorized record to WMI: the record queries again instead.
+        disableBackend.probeRoute = "wmi";
+        disableBackend.probeAvailable = false;
+        check(disableCase.queryMonitor("DIS1") === true, "query A on an unreadable WMI route");
+        const staleRouteId = disableCase.stateFor("DIS1").queryId;
+        disableCase.enabled = false;
+        disableCase.enabled = true;
+        disableBackend.probeRoute = "lcd";
+        disableBackend.probeAvailable = true;
+        disableBackend.probeLevel = 0.8;
+        check(disableCase.queryMonitor("DIS1") === true, "query B on a readable LCD route");
+        disableBackend.deliverQuery(disableCase.stateFor("DIS1").queryId);
+        expectCapabilityOn(disableCase, "DIS1", "hardware", "B authorizes the LCD route");
+        check(disableCase.stateFor("DIS1").route === "lcd", "B's route is LCD");
+        const callsBeforeStale = disableBackend.queryCalls;
+        disableBackend.deliverQuery(staleRouteId);
+        expectCapabilityOn(disableCase, "DIS1", "querying",
+            "A's route change withdraws write authorization");
+        check(disableBackend.queryCalls === callsBeforeStale + 1,
+            "A's route change starts one fresh query");
+        check(disableCase.write("DIS1", 0.5) === false,
+            "no write dispatches through A's unconfirmed WMI route");
+        disableBackend.deliverQuery(disableCase.stateFor("DIS1").queryId);
+        expectCapabilityOn(disableCase, "DIS1", "hardware",
+            "the fresh query re-authorizes the real route");
+        check(disableCase.stateFor("DIS1").route === "lcd",
+            "the record is back on the LCD route");
+
+        // --- 64-bit ids --------------------------------------------------------
+        // An id past INT_MAX must survive the record and the signal intact.
+        const bigId = 4294967297;
+        disableCase.stateFor("DIS1").queryId = bigId;
+        check(disableCase.stateFor("DIS1").queryId === bigId,
+            "a record keeps a 64-bit query id exactly");
+        let forwardedId = 0;
+        const recordId = id => { forwardedId = id; };
+        disableBackend.queryFinished.connect(recordId);
+        disableBackend.queryFinished(bigId, "NOPE", false, false, 0);
+        disableBackend.queryFinished.disconnect(recordId);
+        check(forwardedId === bigId, "queryFinished carries a 64-bit id exactly");
+        disableCase.stateFor("DIS1").queryId = 0;
 
         // --- Wrapper replacement with a stale delivery ------------------------
         // The native singleton is process-wide and survives a wrapper reload,

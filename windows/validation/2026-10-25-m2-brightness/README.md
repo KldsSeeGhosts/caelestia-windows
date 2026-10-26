@@ -419,3 +419,25 @@ No shared script under `windows/scripts/` changed, so
   host-to-hook plumbing remain the evidence for the hook.
 - `systemBrightnessChanged` (read-back and WMI events) is still not modeled;
   no adapter behavior depends on its timing.
+
+## Review addendum 3 (route changes and 64-bit ids)
+
+The review of `5c7e1548` blocked it on two findings. The orchestrator fixed both
+in the follow-up commit:
+
+1. **P1: a stale completion's route change.** The backend emits `routeChanged`
+   before `queryFinished`. A request issued before a disable/re-enable could
+   finish after the current record was authorized; its id was rejected, but its
+   route change still moved the record to an unconfirmed route that remained
+   writable. With ids, a route change outside an accepted query now withdraws
+   write authorization by querying again. The latch is kept, because this isn't
+   a route refresh the user asked for.
+2. **P2: 64-bit ids narrowed to 32 bits.** The backend id is a `qint64`. The
+   record's `queryId`, the wrapper's and fake's `queryFinished` parameter, and
+   the fake's id allocator are now `real`, so ids past `INT_MAX` keep their
+   exact value.
+
+Rerun with the same commands: `Test-BrightnessService.ps1` passed with 480
+assertions, including the review's route sequence and a 64-bit id check, and
+`Test-BrightnessPrototype.ps1` passed. Only Disabled and ReadOnly native runs
+were made, and nothing was written.

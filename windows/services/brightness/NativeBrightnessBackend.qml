@@ -34,7 +34,8 @@ QtObject {
         : undefined
 
     signal queried(string screenName, bool available, bool isDdc, real brightness)
-    signal queryFinished(int requestId, string screenName, bool available, bool isDdc, real brightness)
+    // requestId is a `real`: the native id is a qint64 and `int` would truncate it.
+    signal queryFinished(real requestId, string screenName, bool available, bool isDdc, real brightness)
     signal brightnessSetFinished(string screenName, bool ok)
     signal brightnessWriteResult(string screenName, real value, bool ok, string method, string error)
     signal routeChanged(string screenName, string route)
