@@ -1,3 +1,63 @@
+# Windows integration round 2
+
+Branch: `t3/integration-2`, based on `origin/t3/integration` (`4697ffa8`).
+Backend: `windows/integration-2`, merge commit
+`57163953a2efe8ee05288daabda5295e94c93404` (pushed to `caelestia`).
+The Quickshell gitlink and source manifest move together; M3Shapes remains
+pinned to `32ad9ce328bb77ed349b40a3be10ee9ea610b8ab`.
+
+Merged, in order: M3Shapes, native utilities, desktop background, KSG migration.
+Ported only the workspace-dispatch service/test/docs changes from `cadcd7c2`;
+the old tiling branch was not merged. Original workspace click and wheel
+handlers use the facade. Combined Live enables dispatch and workspace scrolling;
+smoke always disables dispatch. The native wrapper sets `workspaceLimit` from
+the focused monitor's configured workspace count before each dispatch.
+
+Conflict resolutions retain the M3 bar, AppBar, separate tiling opt-in, shared
+toasts and in-process notification fixture. The real M3Shapes plugin replaces
+the round shape shim and original LoadingIndicator is staged. Documentation
+retains each feature's notes. Launcher selection accepts both Background and
+the independent Combined+Tiling add-on.
+
+Build output is isolated to this worktree's `windows/.local/build`; no other
+worktree's build is used or changed.
+
+Validation on Windows build 26300, Qt 6.11.2, clang-cl 20.1.8, MSVC 14.44.35207,
+SDK 10.0.26100.0, CMake 4.4.4 and Ninja 1.13.2:
+
+- Full native `Build-Prototype.ps1` passed, including backend, real M3Shapes,
+  portable plugins and install. The strict build-environment check passed with
+  matching pins. Ordinary PowerShell still requires the documented tool paths.
+- One `-Combined -Smoke` run passed in 43.131 seconds, exit 0, no timeout or
+  QML warnings/errors: `combined-20261026-014947-493.json`.
+- One `-Combined -Live -Smoke` run passed in 32.152 seconds, exit 0, no timeout
+  or QML warnings/errors: `combined-20261026-015051-486.json`.
+- Both runs observed the primary monitor at native 150% DPI. Desktop IDs,
+  current desktop and the Windows wallpaper path matched the baseline after
+  each run. Dispatch, recorder, idle helper and other native writes stayed off.
+- Hypr service fixture passed 646 assertions; file-only KSG importer tests and
+  `git diff --check` passed. Live workspace switching and the opt-in desktop
+  background were not exercised by these two panel smoke runs.
+
+Logs and run artifacts remain ignored under this worktree's build directory.
+No new evidence archive is created. Imported migration evidence retains its
+original branch records.
+
+Launch from this worktree:
+
+```powershell
+powershell -NoProfile -File windows/scripts/Start-ShellPrototype.ps1 `
+    -QtPrefix "$env:LOCALAPPDATA\caelestia-dev\Qt\6.11.2\msvc2022_64" `
+    -BuildRoot "$PWD\windows\.local\build" -Combined -Live
+```
+
+Add `-Background` for the desktop surface/clock. Tiling remains an independent
+opt-in with its existing application allowlist. Round 3 branches are excluded.
+
+---
+
+# Earlier feature reports
+
 # Windows M3Shapes implementation
 
 Implemented on `t3/m3shapes` from `origin/t3/combined-modules` (`6026f947`).

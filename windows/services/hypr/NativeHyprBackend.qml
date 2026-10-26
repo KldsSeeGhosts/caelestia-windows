@@ -1,5 +1,6 @@
 import QtQuick
 import Quickshell.Hyprland
+import Caelestia.Config
 
 // Loaded by URL only after CAELESTIA_WINDOWS_HYPR=1. Referencing Quickshell's
 // Hyprland singleton constructs HyprlandIpc: WindowTracker, VirtualDesktops,
@@ -27,10 +28,8 @@ QtObject {
     readonly property var focusedMonitor: Hyprland.focusedMonitor
     readonly property bool usingLua: Hyprland.usingLua
 
-    // Feature-detected because the current backend pin does not expose the
-    // property (a backend rebuild with the desktop-accessor capability does).
-    // A missing property therefore reports false, and the facade refuses
-    // workspace creation/switching instead of reaching a synthetic chord.
+    // Feature-detected for older backends. A missing or refused native
+    // provider reports false; the facade then refuses workspace actions.
     readonly property bool desktopControlSupported:
         typeof Hyprland.desktopControlSupported === "boolean"
             ? Hyprland.desktopControlSupported : false
@@ -42,6 +41,13 @@ QtObject {
     function dispatch(request): void {
         // The facade has already applied the Windows allowlist. This is the only
         // path that reaches the backend dispatcher.
+        // Bound creation to the original bar's configured workspace count.
+        // Existing Windows desktops are never removed by this limit.
+        if (typeof Hyprland.workspaceLimit === "number") {
+            const monitor = Hyprland.focusedMonitor;
+            const config = monitor ? Config.forScreen(monitor.name) : GlobalConfig;
+            Hyprland.workspaceLimit = config.bar.workspaces.shown;
+        }
         Hyprland.dispatch(request);
     }
 

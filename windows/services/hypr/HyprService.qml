@@ -32,9 +32,9 @@ import QtQuick
 //   workspace <1..9999>
 //   workspace r+1 | workspace r-1
 //   workspace name:<safe-name>          (backend resolves existing names only)
-//   movetoworkspace <1..9999>,address:0x<hex>
+//   movetoworkspace <1..9999>[,address:0x<hex>]
 //   killwindow address:0x<hex>   -> closewindow address:0x<hex> (graceful close)
-// Workspace forms additionally require the backend's accessor-backed
+// Workspace forms additionally require the backend's native desktop-control
 // `desktopControlSupported === true`. Without it they are refused with reason
 // `desktop-control-unavailable` and never reach the backend.
 // `togglespecialworkspace ...` is consumed as a no-op because Windows virtual
@@ -69,10 +69,10 @@ QtObject {
     readonly property bool globalFocusPerMonitor: true
 
     // Workspace control is a backend capability, not an adapter choice: the
-    // pinned backend can only create or switch desktops through
-    // VirtualDesktopAccessor.dll. The property is feature-detected with
-    // `typeof` because the current backend pin does not expose it. When it is
-    // absent or false, `workspace`/`movetoworkspace` never reach the backend.
+    // backend creates or switches desktops through a build-checked native COM
+    // provider when dispatch is opted in. The property is feature-detected with
+    // `typeof` for compatibility with older backend pins. When it is absent or
+    // false, `workspace`/`movetoworkspace` never reach the backend.
     readonly property bool desktopControlSupported: root.nativeInitialized
         && typeof root.backend.desktopControlSupported === "boolean"
         && root.backend.desktopControlSupported === true
@@ -193,14 +193,13 @@ QtObject {
         root.backend.dispatch(translated);
     }
 
-    // Workspace-changing requests are gated on the accessor-backed capability.
-    // The backend has no synthetic-shortcut fallback; forwarding without the
-    // accessor would create nothing (or trigger the Windows show-desktop
-    // effect), so the adapter refuses before backend.dispatch().
+    // Workspace-changing requests are gated on the native desktop-control capability.
+    // The backend has no synthetic-shortcut fallback. Without a compatible
+    // provider the adapter refuses before backend.dispatch().
     function _sendWorkspace(source, translated, kind): void {
         if (!root.desktopControlSupported) {
             root._refuse(source, "desktop-control-unavailable",
-                "Switching workspaces needs VirtualDesktopAccessor.dll.");
+                "Native Windows desktop control is unavailable on this build or dispatch is disabled.");
             return;
         }
         root._send(source, translated, kind);
@@ -270,11 +269,11 @@ QtObject {
             root._sendWorkspace(request, request, "workspace-name");
             return;
         }
-        const move = /^movetoworkspace ([1-9][0-9]{0,3}),address:0x([0-9a-fA-F]{1,16})$/
+        const move = /^movetoworkspace ([1-9][0-9]{0,3})(?:,address:0x([0-9a-fA-F]{1,16}))?$/
             .exec(request);
         if (move) {
-            const translated = "movetoworkspace " + move[1] + ",address:0x"
-                + move[2].toLowerCase();
+            const translated = "movetoworkspace " + move[1]
+                + (move[2] ? ",address:0x" + move[2].toLowerCase() : "");
             root._sendWorkspace(request, translated, "movetoworkspace");
             return;
         }
@@ -305,7 +304,7 @@ QtObject {
         case "movetoworkspace":
             root._refuse(request, "invalid",
                 "Hypr dispatch refused " + root._display(request)
-                + ": expected movetoworkspace <1-9999>,address:0x<hex>.");
+                + ": expected movetoworkspace <1-9999>[,address:0x<hex>].");
             return;
         case "killwindow":
             root._refuse(request, "invalid",

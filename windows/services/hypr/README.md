@@ -57,19 +57,27 @@ backticks, `$`, pipes, `&`, `<` or `>`. Only these forms are forwarded:
 | `workspace <1-9999>` | `workspace <n>` | numeric desktops |
 | `workspace r+1`, `workspace r-1` | unchanged | controlled relative step |
 | `workspace name:<safe-name>` | unchanged | backend resolves existing names only; `[A-Za-z0-9_.-]{1,64}` |
-| `movetoworkspace <1-9999>,address:0x<hex>` | unchanged (address lowercased) | one selector, no follow-up command |
+| `movetoworkspace <1-9999>[,address:0x<hex>]` | unchanged (address lowercased) | active window if no selector; follows the moved window |
 | `killwindow address:0x<hex>` | `closewindow address:0x<hex>` | documented graceful-close downgrade: `WM_CLOSE`, not a force-kill |
 | `togglespecialworkspace <safe-name>` | consumed | no-op; Windows has no special workspaces |
 
 Every `workspace`/`movetoworkspace` form additionally requires the backend's
-`desktopControlSupported === true`. That capability means
-`VirtualDesktopAccessor.dll` is loaded: the backend has no synthetic-shortcut
-fallback, because a Ctrl+Win chord without the accessor created no desktop and
-minimized every window (the Win+D effect). The property is feature-detected with
-`typeof`, so the current backend pin (which does not expose it) reports false and
-refuses these requests with reason `desktop-control-unavailable` and the text
-`Switching workspaces needs VirtualDesktopAccessor.dll.` `killwindow` →
-`closewindow` is not gated.
+`desktopControlSupported === true`. With both opt-ins, the backend uses an
+in-process COM provider, with exact 24H2 interface GUID checks on Windows build
+families 26100, 26200 and 26300. Unsupported builds, mismatched interfaces,
+Explorer disconnection and denied window moves are refused. No third-party DLL
+is downloaded or required, and no keyboard shortcut fallback exists.
+
+The native wrapper sets `Hyprland.workspaceLimit` from
+`Config.bar.workspaces.shown` before dispatch (clamped 1..20). Numeric requests
+and relative scrolling create missing desktops only up to that limit. Existing
+desktops above it remain addressable and are never removed. Named requests only
+resolve existing desktop names. `movetoworkspace N` moves the active window and
+switches to its destination; the optional address selects a tracked window.
+
+A missing capability is refused with reason `desktop-control-unavailable` and
+text `Native Windows desktop control is unavailable on this build or dispatch
+is disabled.` Graceful `killwindow` translation is not gated on this capability.
 
 Everything else is refused before the backend call with a `console.warn` and a
 `lastRefusal` object (`request`, `reason`, `text`, `sequence`). Reasons:

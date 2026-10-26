@@ -105,7 +105,9 @@ and retention, not native notification delivery or mirroring.
 
 - Original bar logo, workspaces, active window, clock, tray, status icons,
   popouts, session drawer and OSD. Workspaces and active window observe through
-  the Windows Hypr facade; dispatch stays off.
+  the Windows Hypr facade. Live enables native desktop selection by click and
+  relative scrolling, with creation bounded by the configured workspace count.
+  Both smoke modes keep dispatch off.
 - Material 3 Expressive shapes: the original `M3Shapes.MaterialShape` item from
   the pinned `windows/deps/m3shapes` plugin supplies ambient media background
   shapes, cover-art masking, expressive loading indicators and morph animations.

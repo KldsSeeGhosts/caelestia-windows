@@ -262,7 +262,7 @@ QtObject {
         check(service.refusals === beforeRefusals + 1, message + ": no refusal recorded");
         check(service.lastRefusalReason === "desktop-control-unavailable",
             message + ": reason " + service.lastRefusalReason + " != desktop-control-unavailable");
-        check(service.lastRefusalText === "Switching workspaces needs VirtualDesktopAccessor.dll.",
+        check(service.lastRefusalText === "Native Windows desktop control is unavailable on this build or dispatch is disabled.",
             message + ": text " + service.lastRefusalText);
         check(service.dispatchSequence === beforeSequence + 1, message + ": sequence");
         check(backend.dispatchCalls === beforeCalls, message + ": refusal reached the backend");
@@ -532,6 +532,8 @@ QtObject {
             "named workspace safe characters");
         expectSend("workspace name:2", "workspace name:2", "workspace-name",
             "numeric name form");
+        expectSend("movetoworkspace 2", "movetoworkspace 2", "movetoworkspace",
+            "movetoworkspace active window");
         expectSend("movetoworkspace 3,address:0x1a2b", "movetoworkspace 3,address:0x1a2b",
             "movetoworkspace", "movetoworkspace lowercase");
         expectSend("movetoworkspace 12,address:0xABCDEF",
@@ -541,7 +543,7 @@ QtObject {
             "killwindow translation");
         expectSend("killwindow address:0xABCD", "closewindow address:0xabcd",
             "closewindow", "killwindow normalizes address");
-        check(service.commandsSent === 12 && fixture.dispatchCalls === 12,
+        check(service.commandsSent === 13 && fixture.dispatchCalls === 13,
             "allowlisted dispatches reached the backend once each");
         check(fixture.dispatchLog.indexOf("togglefloating address:0x1") < 0,
             "no refused request was forwarded");

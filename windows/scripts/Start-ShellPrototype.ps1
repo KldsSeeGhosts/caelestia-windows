@@ -169,8 +169,8 @@ if ($Session) {
         '"commands": {"logout":["logout"],"shutdown":["shutdown"],"hibernate":["hibernate"],"reboot":["reboot"]}')
 }
 # Combined enables every adapted bar entry and panel. Service writes require
-# -Live; smoke suppresses them. Workspaces and active window observe through
-# Hypr with dispatch off. Tiling has its own explicit switch and mode.
+# -Live; smoke suppresses them. Live also enables native workspace dispatch.
+# Tiling has its own explicit switch and mode.
 # Hypr-only lock, microphone and keyboard-layout status entries stay disabled.
 if ($Combined) {
     $configText = @'
@@ -220,9 +220,8 @@ if ($Combined) {
 '@
 }
 # Hypr runs stage the original bar workspace and active-window components. The
-# original Text display type is selected because the external M3Shapes module
-# is not part of the portable build; the prototype ships only a compatibility
-# stand-in for its type. Per-monitor workspace ownership stays unclaimed, so
+# original Text display type keeps workspace labels legible.
+# Per-monitor workspace ownership stays unclaimed, so
 # perMonitor keeps the upstream default while showUnoccupied keeps the five
 # configured slots visible on both monitors.
 if ($Hypr) {
@@ -245,6 +244,9 @@ if ($Combined -and $Live) {
     $configText = $configText.Replace(
         '"commands": {"logout":[],"shutdown":[],"hibernate":[],"reboot":[]}',
         '"commands": {"logout":["logout"],"shutdown":["shutdown"],"hibernate":["hibernate"],"reboot":["reboot"]}')
+    $configText = $configText.Replace(
+        '"scrollActions": {"workspaces":false,"volume":false,"brightness":false}',
+        '"scrollActions": {"workspaces":true,"volume":false,"brightness":false}')
 }
 if ($Combined) {
     $configObject = $configText | ConvertFrom-Json
@@ -356,7 +358,6 @@ if ($Combined) {
         if ($slices[$name].Controls) { $info.EnvironmentVariables[$slices[$name].Controls] = $(if ($Live -and -not $Smoke) { '1' } else { '0' }) }
     }
     $info.EnvironmentVariables['CAELESTIA_WINDOWS_POWER_PROFILES'] = '1'
-    $info.EnvironmentVariables['CAELESTIA_WINDOWS_HYPR_DISPATCH'] = '0'
     $info.EnvironmentVariables['CAELESTIA_WINDOWS_BRIGHTNESS_SOFTWARE'] = '0'
     $info.EnvironmentVariables['CAELESTIA_WINDOWS_NOTIFICATION_MIRROR'] = $(if ($Live -and -not $Smoke) { '1' } else { '0' })
     $info.EnvironmentVariables['CAELESTIA_WINDOWS_NOTIFICATION_MIRROR_DISMISS'] = $(if ($Live -and -not $Smoke) { '1' } else { '0' })
