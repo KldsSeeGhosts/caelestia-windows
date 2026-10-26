@@ -175,6 +175,14 @@ if ($Session) {
 if ($Combined) {
     $configText = @'
 {
+  "appearance": {
+    "font": {
+      "headline": {"family":"Google Sans Flex"},
+      "title": {"family":"Google Sans Flex"},
+      "body": {"family":"Google Sans Flex"},
+      "label": {"family":"Google Sans Flex"}
+    }
+  },
   "bar": {
     "persistent": true,
     "showOnHover": true,
