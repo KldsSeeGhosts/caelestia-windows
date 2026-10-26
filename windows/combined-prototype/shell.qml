@@ -74,6 +74,11 @@ ShellRoot {
                 monitors: Hypr.monitors.values.length, workspaces: Hypr.workspaces.values.length,
                 activeWsId: Hypr.activeWsId, activeTitle: Hypr.activeToplevel?.title ?? ""
             },
+            tiling: {
+                mode: Tiling.mode, status: Tiling.status, backendEnabled: Tiling.backendEnabled,
+                managed: Tiling.managedCount, failed: Tiling.failedCount,
+                included: Tiling.includedPatterns.length, excluded: Tiling.excludedPatterns.length
+            },
             tray: {
                 enabled: WindowsTray.enabled, status: WindowsTray.status, activation: WindowsTray.activationEnabled,
                 hook: Quickshell.env("QS_WINDOWS_TRAY_HOOK") ?? ""
@@ -152,6 +157,9 @@ ShellRoot {
         if (controls.some(control => control === true))
             return false;
         if (states.hypr.dispatch !== false)
+            return false;
+        // Smoke never enables the tiler: at most the observe construction.
+        if (states.tiling.backendEnabled !== false || states.tiling.status === "tiling")
             return false;
         if (states.tray.hook !== "0")
             return false;
@@ -248,6 +256,15 @@ ShellRoot {
         onDismissRequested: win.screenState.session = false
     }
 
+    // The original toast surface, hosted as in the tiling prototype: fitting
+    // failures and enable refusals from the tiling facade appear here. It is
+    // plain Caelestia QML and asks only hasFullscreen of the combined Notifs
+    // facade. Loaded by URL so the module import stays out of shell.qml.
+    function loadToasts(): void {
+        if (toastsHost.item === null)
+            toastsHost.setSource(Qt.resolvedUrl("components/ToastsHost.qml"));
+    }
+
     ContentWindow {
         id: win
 
@@ -262,6 +279,18 @@ ShellRoot {
         implicitHeight: root.previewHeight
         margins.left: root.fullScreen ? 0 : root.inset
         margins.top: root.fullScreen ? 0 : root.inset
+
+        // Tiling toasts overlay the shell top-center, as the utilities panel
+        // places them upstream; the bounded window keeps them inside.
+        Loader {
+            id: toastsHost
+
+            anchors.top: parent.top
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.topMargin: Tokens.padding.medium
+            asynchronous: false
+            z: 10
+        }
     }
 
     property bool fullScreen: false
@@ -422,7 +451,9 @@ ShellRoot {
                 osd: win.screenState?.osd,
                 popout: panels?.popouts.currentName ?? "",
                 popoutOpen: panels?.popouts.hasCurrent ?? false,
-                services: root.serviceStates(), focusStatus: focusGuard.status
+                services: root.serviceStates(), focusStatus: focusGuard.status,
+                tiling: { mode: Tiling.mode, status: Tiling.status },
+                toastsLoaded: toastsHost.item !== null
             });
         }
         function capture(): void {
@@ -446,6 +477,8 @@ ShellRoot {
 
     Component.onCompleted: {
         Hypr.logStartupStatus();
+        Tiling.logStartupStatus();
+        root.loadToasts();
         if (!selectedScreen) {
             console.error("CAELESTIA_COMBINED_FAIL: requested screen does not exist", screenIndex);
             // Quickshell attaches the engine exit handler after creation.
@@ -532,6 +565,10 @@ ShellRoot {
                     return;
                 }
                 console.log("CAELESTIA_COMBINED_SESSION_BUTTONS", JSON.stringify(sessionButtons));
+                if (toastsHost.item === null) {
+                    root.fail("original toast surface did not load");
+                    return;
+                }
                 root.capturePhase("session");
                 win.screenState.session = false;
             } else if (step === 2) {

@@ -66,7 +66,10 @@ $slices = [ordered]@{
     # Mirror mode adds its own opt-ins below; smoke never mirrors.
     notifications = @{ On = $Notifications; Mode = $NotificationsMode; Observe = 'CAELESTIA_WINDOWS_NOTIFICATIONS' }
 }
-$selected = @($slices.Keys | Where-Object { $slices[$_].On })
+# -Tiling selects the tiling prototype entry point on its own, but with
+# -Combined it is an add-on observation/control switch for the combined shell
+# rather than a second entry point.
+$selected = @($slices.Keys | Where-Object { $slices[$_].On -and -not ($Combined -and $_ -eq 'tiling') })
 if ($selected.Count -gt 1) { throw 'Select one prototype entry point per run.' }
 if ($Combined -and $selected.Count -gt 0) { throw '-Combined cannot be combined with a single-slice entry point.' }
 if ($Combined -and $MonitorCycle) { throw 'Only the M1 shell prototype implements monitor cycling.' }
