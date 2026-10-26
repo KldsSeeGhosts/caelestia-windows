@@ -1,4 +1,6 @@
 import QtQuick
+import Quickshell
+import Quickshell.Io
 import Quickshell.Hyprland
 import Caelestia.Config
 
@@ -23,7 +25,33 @@ QtObject {
     readonly property var monitors: Hyprland.monitors
     readonly property var workspaces: Hyprland.workspaces
     readonly property var toplevels: Hyprland.toplevels
-    readonly property var activeToplevel: Hyprland.activeToplevel
+    property var foreground: ({ address: "", title: "", appId: "" })
+    readonly property bool foregroundValidated: true
+    readonly property var activeToplevel: {
+        if (!foreground.address)
+            return null;
+        const tracked = toplevels.values.find(t =>
+            t.address.toLowerCase().replace(/^0x/, "") === foreground.address);
+        // Some application windows are omitted by the backend's task-switcher
+        // eligibility rules. Their observed title remains usable, but no
+        // screencopy/wayland handle is invented.
+        return tracked ?? {
+            address: foreground.address, title: foreground.title,
+            workspace: focusedWorkspace, wayland: null,
+            lastIpcObject: { class: foreground.appId, mapped: true, tags: [] }
+        };
+    }
+    // The backend tracks windows on other desktops too. Independently observe
+    // the real foreground HWND before projecting one as the active application.
+    readonly property Process foregroundWatcher: Process {
+        command: ["powershell.exe", "-NoProfile", "-NonInteractive", "-File",
+            Quickshell.shellPath("helpers/Watch-ActiveWindow.ps1")]
+        running: true
+        stdout: SplitParser {
+            onRead: line => root.foreground = JSON.parse(line)
+        }
+        onExited: root.foreground = { address: "", title: "", appId: "" }
+    }
     readonly property var focusedWorkspace: Hyprland.focusedWorkspace
     readonly property var focusedMonitor: Hyprland.focusedMonitor
     readonly property bool usingLua: Hyprland.usingLua

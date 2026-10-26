@@ -98,6 +98,10 @@ QtObject {
         const candidate = root.backend.activeToplevel;
         if (!candidate)
             return null;
+        // Native Windows foreground validation is independent of the backend's
+        // workspace membership model, which may omit a real foreground app.
+        if (root.backend.foregroundValidated === true)
+            return candidate;
         const workspaceName = typeof candidate.workspace?.name === "string"
             ? candidate.workspace.name : "";
         const focusedValues = root.backend.focusedWorkspace?.toplevels?.values;

@@ -2,6 +2,7 @@
   "windows/services/hypr/Hypr.qml": "services/Hypr.qml",
   "windows/services/hypr/HyprService.qml": "services/HyprService.qml",
   "windows/services/hypr/NativeHyprBackend.qml": "services/NativeHyprBackend.qml",
+  "windows/services/hypr/Watch-ActiveWindow.ps1": "helpers/Watch-ActiveWindow.ps1",
   "windows/hypr-prototype/adapters/services/Brightness.qml": "services/Brightness.qml",
   "windows/hypr-prototype/components/WorkspacesHost.qml": "components/WorkspacesHost.qml",
   "windows/hypr-prototype/components/SpecialWorkspacesHost.qml": "components/SpecialWorkspacesHost.qml",
