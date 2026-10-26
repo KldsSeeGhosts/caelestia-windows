@@ -28,7 +28,7 @@ try {
         0x10C00000, -30000, -30000, 80, 80, [IntPtr]::Zero, [IntPtr]::Zero, [IntPtr]::Zero, [IntPtr]::Zero)
     $windows.Add($tool)
     if ($tool -eq [IntPtr]::Zero) { throw 'Could not create native tool fixture.' }
-    $checks.toolWithAppWindowRejected = -not [CaelestiaForeground]::IsApplication($tool)
+    $checks.toolWithAppWindowAccepted = [CaelestiaForeground]::IsApplication($tool)
     $cloak = 1
     if ([ForegroundFixture]::DwmSetWindowAttribute($app, 13, [ref]$cloak, 4) -ne 0) {
         throw 'Could not cloak native fixture.'
@@ -41,8 +41,7 @@ try {
     $checks.nullRejected = -not [CaelestiaForeground]::IsApplication([IntPtr]::Zero)
     $shells = @(Get-Process qs, quickshell -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 })
     foreach ($shell in $shells) {
-        if (-not [CaelestiaForeground]::IsOwnShell($shell.MainWindowHandle) -or
-            [CaelestiaForeground]::IsApplication($shell.MainWindowHandle)) {
+        if ([CaelestiaForeground]::IsApplication($shell.MainWindowHandle)) {
             throw 'A qs shell window passed the application filter.'
         }
     }

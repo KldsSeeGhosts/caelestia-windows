@@ -263,7 +263,7 @@ isolated prototype passes.
 ## Dependency maintenance
 
 The current backend pin is in the private
-[Caelestia backend fork](https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/tree/1bcdf44cfc1788dd8789d2b019447100511d5d58).
+[Caelestia backend fork](https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/tree/c0e748c815e516ad8e8157eb1132a0bc14a15368).
 It retains the audited `nunreasonable/quickshell` baseline `e8ae0ef1` and adds
 a native mask handoff change: reconcile Qt hover when `WS_EX_TRANSPARENT`
 changes, because the move that triggered the hook can already have reached the
@@ -292,10 +292,15 @@ adds one system-surface classification for the Windows task switcher, Task
 View, Start/Search flyouts, foreground staging and cloaked windows. Shell
 surfaces cannot become tracked toplevels, foreground applications or AppBar
 fullscreen seeds; `Windows.UI.Core.CoreWindow` is a system surface only under
-explorer or a shell host. Cloaking stays separate from the tiler's fullscreen
-episode, and an AppBar opening over a known shell surface is held pending until
-a monitor-covering application settles or a close arrives, rather than being dropped. The root gitlink and source manifest use the
-pushed revision; the PR remains a draft.
+explorer or a shell host. A shell cloak keeps its mapped tile, while an app or
+inherited cloak publishes hidden and releases the tiled space like a minimize
+without ending the fullscreen episode. Every deferred AppBar opening carries a
+generation, so a rapid close/reopen keeps its retries. The Alt+Tab Task
+Switching overlay classes, including MultitaskingViewFrame and
+TaskSwitcherOverlayWnd, are rejected before they can become toplevels, so
+Windows placing the switcher on the primary display no longer hides only that
+monitor's frame. The root gitlink and source manifest use the pushed revision;
+the PR remains a draft.
 
 Keep the source manifest and submodule revision in agreement. Review backend
 updates before moving the gitlink; keep backend patches in a dedicated fork

@@ -57,8 +57,8 @@ public static class CaelestiaForeground {
             case "Progman": case "WorkerW": case "Shell_TrayWnd": case "Shell_SecondaryTrayWnd":
             case "Dwm": case "DwmWindow": case "Windows.Internal.Shell.TabProxyWindow":
             case "XamlExplorerHostIslandWindow": case "TopLevelWindowForOverflowXamlIsland":
-            case "MultitaskingViewFrame": case "TaskSwitcherWnd": case "TaskListThumbnailWnd":
-            case "ThumbnailDeviceHelperWnd": case "ForegroundStaging":
+            case "MultitaskingViewFrame": case "TaskSwitcherWnd": case "TaskSwitcherOverlayWnd":
+            case "TaskListThumbnailWnd": case "ThumbnailDeviceHelperWnd": case "ForegroundStaging":
             case "ApplicationManager_DesktopShellWindow": case "LauncherTipWnd":
             case "Shell_InputSwitchTopLevelWindow": case "NotifyIconOverflowWindow":
             case "DV2ControlHost": case "Xaml_WindowedPopupClass": case "#32768":
