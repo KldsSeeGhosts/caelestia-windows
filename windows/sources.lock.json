@@ -21,5 +21,55 @@
     "repository": "https://github.com/nunreasonable/ii-windows.git",
     "revision": "b59ac3b1389c1d562bec8a81aa3f6fb6480ca6b1",
     "role": "Porting and packaging reference. Its sources.lock supplies the backend pin; it is not the Caelestia UI dependency."
-  }
+  },
+  "fonts": [
+    {
+      "repository": "https://github.com/ryanoasis/nerd-fonts",
+      "release": "v3.4.0",
+      "archiveUrl": "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.4.0/NerdFontsSymbolsOnly.zip",
+      "archiveSha256": "8e617904b980fe3648a4b116808788fe50c99d2d495376cb7c0badbd8a564c47",
+      "family": "Symbols Nerd Font Mono",
+      "license": "MIT",
+      "files": [
+        {
+          "path": "windows/assets/nerd-font-symbols/LICENSE",
+          "sha256": "84a7a98c82140fb12c37fe42b93805baa16024cb3e5acc599b7ffe612c55d847"
+        },
+        {
+          "path": "windows/assets/nerd-font-symbols/SymbolsNerdFontMono-Regular.ttf",
+          "sha256": "f0f624d9b474bea1662cf7e862d44aebe1ae1f6c7f9cb7a0ca5d0e5ac9561c60"
+        }
+      ]
+    },
+    {
+      "repository": "https://github.com/ryanoasis/nerd-fonts",
+      "release": "v3.4.0",
+      "archiveUrl": "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.4.0/CascadiaCode.zip",
+      "archiveSha256": "8d80993351a0a6b69a998e5c72060b7200c4f1af1f32b3ad4d8cad27c245940e",
+      "family": "CaskaydiaCove NF",
+      "license": "OFL-1.1",
+      "files": [
+        {
+          "path": "windows/assets/caskaydia-cove/CaskaydiaCoveNerdFont-Bold.ttf",
+          "sha256": "d38b2e9461f52c70ef9f18c5c79f869d8b084432416ea6e850855c5222fbdc38"
+        },
+        {
+          "path": "windows/assets/caskaydia-cove/CaskaydiaCoveNerdFont-BoldItalic.ttf",
+          "sha256": "b9679d1e9ef18bbc5889c5352a1e8593065da2a4b5a84ca1ad4a30b4d592f728"
+        },
+        {
+          "path": "windows/assets/caskaydia-cove/CaskaydiaCoveNerdFont-Italic.ttf",
+          "sha256": "a9e51ea159fcb6376f4897a8161a03e701ae08f0ca14b1990fe8bd9187202ade"
+        },
+        {
+          "path": "windows/assets/caskaydia-cove/CaskaydiaCoveNerdFont-Regular.ttf",
+          "sha256": "701d7ec08f58f07251c1758361c5d1ab57ba0a867dd378cbb0fa52e1d2beccad"
+        },
+        {
+          "path": "windows/assets/caskaydia-cove/LICENSE",
+          "sha256": "82c05d6c53dfa0c9025985c19e371810020b74ed2c61d51d370f2a8ab2506d52"
+        }
+      ]
+    }
+  ]
 }

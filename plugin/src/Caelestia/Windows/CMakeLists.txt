@@ -3,6 +3,8 @@ qml_module(caelestia-windows
     SOURCES
         windowsfocusguard.hpp
         windowsfocusguard.cpp
+        windowsfontfallback.hpp
+        windowsfontfallback.cpp
     LIBRARIES
         Qt::Gui
         Qt::Quick

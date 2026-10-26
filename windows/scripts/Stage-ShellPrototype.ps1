@@ -25,6 +25,17 @@ $files = [ordered]@{
     'windows/assets/rubik/Rubik.ttf' = 'assets/rubik/Rubik.ttf'
     'windows/assets/rubik/OFL.txt' = 'assets/rubik/OFL.txt'
     'windows/assets/README.md' = 'assets/README.md'
+    'windows/shell-prototype/WindowsFonts.qml' = 'WindowsFonts.qml'
+}
+$sourceLock = Get-Content -LiteralPath (Join-Path $repoRoot 'windows/sources.lock.json') -Raw | ConvertFrom-Json
+foreach ($font in $sourceLock.fonts) {
+    foreach ($fontFile in $font.files) {
+        $path = Join-Path $repoRoot $fontFile.path
+        if ((Get-FileHash -LiteralPath $path).Hash -ne $fontFile.sha256) {
+            throw "Bundled font checksum mismatch: $($fontFile.path)"
+        }
+        $files.Add($fontFile.path, $fontFile.path.Substring('windows/'.Length))
+    }
 }
 if ($Prototype -ne 'shell') {
     $files.Remove('windows/shell-prototype/shell.qml')
@@ -119,9 +130,30 @@ $hashes = foreach ($entry in $files.GetEnumerator()) {
     Copy-Item -LiteralPath $source -Destination $target -Force
     if ($entry.Value -eq 'shell.qml') {
         $shell = [IO.File]::ReadAllText($target)
+        # Every bounded host uses the same process-local Nerd fonts, including
+        # mono text in service slices. Keep this adaptation out of upstream QML.
+        if ([regex]::Matches($shell, '(?m)^ShellRoot \{').Count -ne 1) {
+            throw 'Expected one ShellRoot for the Windows font loader.'
+        }
+        $shell = $shell.Replace('ShellRoot {', "ShellRoot {`n    WindowsFonts { id: windowsFonts }")
         $header = @("DataDir $ProfileRoot\data", "StateDir $ProfileRoot\state", "CacheDir $ProfileRoot\cache") |
             ForEach-Object { "//@ pragma $_" }
         [IO.File]::WriteAllText($target, (($header -join "`n") + "`n" + $shell), (New-Object Text.UTF8Encoding($false)))
+    }
+    if ($entry.Value -eq 'modules/bar/components/workspaces/Workspace.qml') {
+        # Qt 6.11's QML font value exposes family, not families. The Windows
+        # helper preserves Rubik/configured primary and adds the bundled Nerd
+        # font explicitly, without changing system fallback or upstream QML.
+        $workspace = [IO.File]::ReadAllText($target)
+        $familyBinding = 'font.family: Tokens.font.workspaces'
+        if ([regex]::Matches($workspace, [regex]::Escape($familyBinding)).Count -ne 1) {
+            throw 'Expected one workspace font binding for the Windows fallback.'
+        }
+        $workspace = [regex]::Replace($workspace, '(?m)^import QtQuick\r?$',
+            "import Caelestia.Windows`nimport QtQuick")
+        $workspace = $workspace.Replace($familyBinding,
+            'font: WindowsFontFallback.workspaceFont(Tokens.font.body.small, Tokens.font.workspaces)')
+        [IO.File]::WriteAllText($target, $workspace, (New-Object Text.UTF8Encoding($false)))
     }
     [ordered]@{
         source = $entry.Key; staged = $entry.Value
