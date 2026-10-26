@@ -32,15 +32,56 @@ public static class CaelestiaForeground {
             using (var process = Process.GetProcessById((int)pid)) { return process.ProcessName; }
         } catch { return ""; }
     }
-    public static bool IsOwnShell(IntPtr hwnd) {
+    static bool TryProcessName(IntPtr hwnd, out string name) {
+        name = "";
         uint pid;
         GetWindowThreadProcessId(hwnd, out pid);
         try {
             using (var process = Process.GetProcessById((int)pid)) {
-                var name = process.ProcessName.ToLowerInvariant();
-                return name == "qs" || name == "quickshell";
+                name = process.ProcessName.ToLowerInvariant();
+                return true;
             }
         } catch { return false; }
+    }
+
+    static bool IsShellClass(IntPtr hwnd) {
+        var text = new StringBuilder(256);
+        GetClassName(hwnd, text, text.Capacity);
+        switch (text.ToString()) {
+            case "Progman": case "WorkerW": case "Shell_TrayWnd": case "Shell_SecondaryTrayWnd":
+            case "Dwm": case "DwmWindow": case "Windows.Internal.Shell.TabProxyWindow":
+            case "XamlExplorerHostIslandWindow": case "TopLevelWindowForOverflowXamlIsland":
+            case "MultitaskingViewFrame": case "TaskSwitcherWnd": case "TaskListThumbnailWnd":
+            case "ThumbnailDeviceHelperWnd": case "ForegroundStaging":
+            case "ApplicationManager_DesktopShellWindow": case "LauncherTipWnd":
+            case "Shell_InputSwitchTopLevelWindow": case "NotifyIconOverflowWindow":
+            case "DV2ControlHost": case "Xaml_WindowedPopupClass": case "#32768":
+                return true;
+        }
+        return false;
+    }
+
+    public static bool IsShellSurface(IntPtr hwnd) {
+        if (hwnd == IntPtr.Zero) return false;
+        if (IsShellClass(hwnd)) return true;
+        string name;
+        if (!TryProcessName(hwnd, out name)) return false;
+        switch (name) {
+            case "dwm": case "qs": case "quickshell": case "sihost":
+            case "shellexperiencehost": case "startmenuexperiencehost":
+            case "shellhost": case "searchhost": case "searchapp": case "searchui":
+            case "textinputhost":
+                return true;
+        }
+        return false;
+    }
+
+    public static bool IsDesktop(IntPtr hwnd) {
+        if (hwnd == IntPtr.Zero) return false;
+        var text = new StringBuilder(64);
+        GetClassName(hwnd, text, text.Capacity);
+        var name = text.ToString();
+        return name == "Progman" || name == "WorkerW";
     }
 
     public static bool IsApplication(IntPtr hwnd) {
@@ -51,27 +92,10 @@ public static class CaelestiaForeground {
         uint cloaked;
         if (DwmGetWindowAttribute(hwnd, 14, out cloaked, 4) != 0 || cloaked != 0)
             return false; // DWMWA_CLOAKED, fail closed on an unavailable observation.
-        var text = new StringBuilder(256);
-        GetClassName(hwnd, text, text.Capacity);
-        switch (text.ToString()) {
-            case "Progman": case "WorkerW": case "Shell_TrayWnd": case "Shell_SecondaryTrayWnd":
-            case "Dwm": case "DwmWindow": case "Windows.Internal.Shell.TabProxyWindow":
-            case "XamlExplorerHostIslandWindow": case "TopLevelWindowForOverflowXamlIsland":
-                return false;
-        }
+        if (IsShellSurface(hwnd)) return false;
         if (GetWindowTextLength(hwnd) == 0) return false;
-        uint pid;
-        GetWindowThreadProcessId(hwnd, out pid);
-        try {
-            using (var process = Process.GetProcessById((int)pid)) {
-                switch (process.ProcessName.ToLowerInvariant()) {
-                    case "dwm": case "qs": case "quickshell": case "sihost":
-                    case "shellexperiencehost": case "startmenuexperiencehost":
-                        return false;
-                }
-            }
-        } catch { return false; }
-        return true;
+        string unused;
+        return TryProcessName(hwnd, out unused); // fail closed when the owner is unknown.
     }
 }
 '@
@@ -82,11 +106,14 @@ do {
     $foreground = [CaelestiaForeground]::GetForegroundWindow()
     if ([CaelestiaForeground]::IsApplication($foreground)) {
         $lastApplication = $foreground
-    } elseif (-not [CaelestiaForeground]::IsOwnShell($foreground) -or
+    } elseif ([CaelestiaForeground]::IsDesktop($foreground) -or
+        -not [CaelestiaForeground]::IsShellSurface($foreground) -or
         -not [CaelestiaForeground]::IsApplication($lastApplication)) {
         $lastApplication = [IntPtr]::Zero
     }
-    # Preserve the last real application while a shell panel owns focus.
+    # Preserve the last real application while the task switcher, Task View,
+    # Start/Search or one of the shell's own panels owns focus. The desktop
+    # still clears it.
     $address = if ($lastApplication -eq [IntPtr]::Zero) { '' } else { $lastApplication.ToInt64().ToString('x') }
     $line = @{
         address = $address

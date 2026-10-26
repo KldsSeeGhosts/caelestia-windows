@@ -263,7 +263,7 @@ isolated prototype passes.
 ## Dependency maintenance
 
 The current backend pin is in the private
-[Caelestia backend fork](https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/tree/1401042969e4b7ab3cfb314fc76945ab081db3de).
+[Caelestia backend fork](https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/tree/591a33f4a31c84c759fd3cabe4bd29d1b90f374d).
 It retains the audited `nunreasonable/quickshell` baseline `e8ae0ef1` and adds
 a native mask handoff change: reconcile Qt hover when `WS_EX_TRANSPARENT`
 changes, because the move that triggered the hook can already have reached the
@@ -286,6 +286,14 @@ the backend PR remains open.
 adds GSMTC initialization/session-scan status and isolates artwork writes and
 pruning to the shell profile cache. It is stacked on backend PR #2; the root
 media integration is [PR #7](https://github.com/KldsSeeGhosts/caelestia-windows/pull/7).
+
+[Backend PR #8](https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/pull/8)
+adds one system-surface classification for the Windows task switcher, Task
+View, Start/Search flyouts, foreground staging and cloaked windows. Those
+surfaces cannot become tracked toplevels, fullscreen applications or the
+foreground application, and an AppBar fullscreen notification lowers the
+shell's top panels only for a real application. The root gitlink and source
+manifest use the pushed revision; the PR remains a draft.
 
 Keep the source manifest and submodule revision in agreement. Review backend
 updates before moving the gitlink; keep backend patches in a dedicated fork
