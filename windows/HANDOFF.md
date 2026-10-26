@@ -60,20 +60,29 @@ Checked live on round 5b:
 
 ## Open work, in order
 
-1. **Tiling gaps and focused-window border** (`t3/tiling-gaps`, based on the pre-cleanup `08c34968`; merge it into `dev`). This follows
-   Caelestia's Hyprland defaults: a 20-DIP outer gap for a lone window,
-   otherwise 10, with 10 between windows. It also adds a 1 px focused-window
-   border in the scheme primary through `DWMWA_BORDER_COLOR`, restored on quit.
-   Maximized windows keep Windows semantics. Install it live as an update and
-   check it visually.
-2. Swap autostart from ksg-shell to Caelestia, with the user's approval.
-3. A full runtime soak on the installed shell (ERM-533). The round 5 fixes
-   are merged.
-4. Polish pass 2, from the user's live feedback. The user is the final judge
-   of fidelity against upstream Caelestia.
-5. Upstream sync (ERM-536). Upstream's `refactor/adopt-lib` branch moves the
+Done since round 5b:
+- Tiling gaps, merged into `dev` and `main` (9b2f9529, backend `0876208`).
+  A lone tiled window sits 20 DIPs from the frame, and other windows get 10.
+  The focused window gets a scheme-coloured border, through
+  `windows.tiling.singleWindowGapsOut` and `borderColours`. Measured live at
+  20 DIPs. Check the border colour visually when the displays are on.
+- Autostart: the HKCU Run entry `CaelestiaWindows` starts the shell. The
+  ksg-shell entry was removed; its value is saved as `ksg-shell-run-entry.txt`
+  in the switch-over backup.
+
+Remaining:
+1. A full runtime soak on the installed shell (ERM-533).
+2. Polish pass 2, from the user's live feedback (ERM-540). The user is the
+   final judge of fidelity against upstream Caelestia.
+3. Live acceptance gates moved to M4. ERM-499 needs a laptop battery; ERM-508
+   needs audio device, denial and sleep recovery tested.
+4. Upstream sync (ERM-536). Upstream's `refactor/adopt-lib` branch moves the
    scheme, wallpapers and visualiser to C++ and may replace our versions.
-6. A final usage tally (Gemini 3.8 Flash) and the public release export.
+5. A final usage tally with Gemini 3.8 Flash (ERM-542) and the public release
+   export (ERM-541).
+
+Known quirk: a shell started while every display is off reserves its edges but
+draws nothing until the displays wake. Round 5b behaves the same way.
 
 ## Working rules
 
