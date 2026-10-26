@@ -702,9 +702,12 @@ ShellRoot {
                 }
                 console.log("CAELESTIA_WE_CAROUSEL count=" + list.count);
                 root.capturePhase("wallpaper-picker");
+            } else if (step === 17) {
+                // saveItem is asynchronous. Keep the picker visible for the
+                // capture instead of closing it in the capture's own frame.
                 win.screenState.launcher = false;
                 win.screenState.sidebar = true;
-            } else if (step === 17) {
+            } else if (step === 18) {
                 if (Notifs.enabled && Notifs.list.length < 1) {
                     root.fail("notification popup did not render");
                     return;
