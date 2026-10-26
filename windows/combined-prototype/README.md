@@ -4,6 +4,47 @@ The bounded Windows host stages the original Caelestia bar, dashboard, launcher,
 utilities, notification history, popups and toasts over the reviewed facades in
 `windows/services`. Configuration and state stay in the isolated combined profile.
 
+## Desktop background
+
+Add `-Background` to opt into the original Caelestia wallpaper surface and desktop
+clock. `-DesktopIcons Behind` is the default; `-DesktopIcons Replace` draws above
+the icons without changing Explorer's icon visibility setting. Both modes stay
+below ordinary application windows. Exiting removes the surfaces and reveals
+the existing desktop. The host never writes the Windows wallpaper at startup.
+
+The original `background` configuration controls the wallpaper transition,
+clock scale/position and per-screen enablement. The launcher creates an isolated
+profile with the wallpaper and clock enabled when `-Background` is supplied.
+Ordinary runs follow the enabled monitor list through the original `Variants`;
+smoke restricts the background to `-ScreenIndex`.
+
+```powershell
+powershell -NoProfile -File windows/scripts/Start-ShellPrototype.ps1 `
+    -QtPrefix "$env:LOCALAPPDATA\caelestia-dev\Qt\6.11.2\msvc2022_64" `
+    -BuildRoot D:\AiStack\caelestia-windows\windows\.local\build `
+    -RunRoot "$PWD\windows\.local\background-smoke" `
+    -Combined -Background -Smoke
+```
+
+`-RunRoot` separates staging, profile state and logs from the read-only build.
+With `-Background -Smoke`, the combined host performs a roughly 10-second
+background/clock check instead of the longer panel sequence. Other combined
+smoke invocations retain their existing panel checks.
+
+The pinned backend already maps `WlrLayer.Background`/`Bottom` to desktop child
+windows when `Quickshell.Windows.DesktopLayer.enabled` is set. It sends
+`0x052C` to Progman when needed, supports both top-level WorkerW and the
+24H2+ WorkerW child layout, and follows desktop/monitor changes. The Windows
+wrapper enables that API only for this opt-in; without a desktop host it creates
+no background surfaces.
+
+Wallpaper pixels use the launcher's shared `Wallpapers.current`, initialized
+from Windows' current wallpaper path with the bundled image as fallback.
+The original `WallpaperImpl` capture and shader transitions remain in use.
+The portable image adapter supports static images; video wallpapers require
+the excluded native Multimedia implementation. The original visualiser is staged
+behind a provider check and becomes available when `Audio.cava` is supplied.
+
 ## Launch
 
 ```powershell

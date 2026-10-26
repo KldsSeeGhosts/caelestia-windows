@@ -14,6 +14,7 @@ import qs.components
 import qs.services
 import qs.modules.drawers
 import qs.modules.launcher.services
+import qs.modules.background
 
 // Original Caelestia modules over isolated Windows service facades.
 // Live controls are explicit; smoke keeps every native write gate off.
@@ -22,6 +23,7 @@ ShellRoot {
 
     readonly property bool live: Quickshell.env("CAELESTIA_COMBINED_LIVE") === "1"
     readonly property bool smoke: Quickshell.env("CAELESTIA_SHELL_SMOKE") === "1"
+    readonly property bool backgroundSmoke: smoke && Quickshell.env("CAELESTIA_WINDOWS_BACKGROUND") === "1"
     readonly property int initialScreenIndex: Number(Quickshell.env("CAELESTIA_SHELL_SCREEN") || "0")
     property int screenIndex: initialScreenIndex
     readonly property ShellScreen selectedScreen: Quickshell.screens[screenIndex] ?? null
@@ -31,6 +33,27 @@ ShellRoot {
     readonly property int previewHeight: Math.min(620, (selectedScreen?.height ?? 780) - inset * 2)
 
     settings.watchFiles: false
+
+    WindowsBackground {
+        id: desktopBackground
+    }
+
+    // A quick desktop-level smoke, independent of the longer panel harness.
+    Timer {
+        running: root.backgroundSmoke
+        interval: 10000
+        onTriggered: {
+            if (!desktopBackground.checkReady(root.selectedScreen)) {
+                root.fail("desktop background or clock not ready");
+                return;
+            }
+            const path = Quickshell.env("CAELESTIA_SHELL_SCREENSHOT");
+            CUtils.saveItem(win.contentItem, Qt.resolvedUrl(path), () => {
+                console.log("CAELESTIA_COMBINED_PASS background", CUtils.qtVersion);
+                Qt.quit();
+            }, () => root.fail("background smoke screenshot"));
+        }
+    }
 
     // One line per service for the harness. The state is the facade status;
     // every control flag is asserted separately so "read-only" is proven, not
@@ -482,7 +505,7 @@ ShellRoot {
         property string popoutName: ""
         property bool popoutsStarted: false
 
-        running: root.smoke && root.selectedScreen !== null
+        running: root.smoke && !root.backgroundSmoke && root.selectedScreen !== null
         repeat: true
         interval: 1200
         onTriggered: {

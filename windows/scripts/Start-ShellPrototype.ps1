@@ -2,6 +2,8 @@
 param(
     [Parameter(Mandatory)][string]$QtPrefix,
     [string]$BuildRoot,
+    # Keep binaries read-only while staging/configuring an independent run.
+    [string]$RunRoot,
     [switch]$Smoke,
     [switch]$Wait,
     [switch]$MonitorCycle,
@@ -32,6 +34,8 @@ param(
     [switch]$NotificationDismiss,
     [switch]$NotificationAppOpen,
     [switch]$Combined,
+    [switch]$Background,
+    [ValidateSet('Behind', 'Replace')][string]$DesktopIcons = 'Behind',
     [switch]$Live,
     [ValidateSet('native', '1', '1.5', '1.75')][string]$ScaleFactor = 'native',
     [ValidateRange(0, 15)][int]$ScreenIndex = 0
@@ -60,6 +64,8 @@ $slices = [ordered]@{
     notifications = @{ On = $Notifications; Mode = $NotificationsMode; Observe = 'CAELESTIA_WINDOWS_NOTIFICATIONS' }
 }
 if ($Live -and -not $Combined) { throw '-Live requires -Combined.' }
+if ($Background -and -not $Combined) { throw '-Background requires -Combined.' }
+if ($DesktopIcons -ne 'Behind' -and -not $Background) { throw '-DesktopIcons requires -Background.' }
 $selected = @($slices.Keys | Where-Object { $slices[$_].On })
 if ($selected.Count -gt 1) { throw 'Select one prototype entry point per run.' }
 if ($Combined -and $selected.Count -gt 0) { throw '-Combined cannot be combined with a single-slice entry point.' }
@@ -82,6 +88,8 @@ if ($NotificationAppOpen -and $NotificationsMode -ne 'Mirror') { throw '-Notific
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
 if (-not $BuildRoot) { $BuildRoot = Join-Path $repoRoot 'windows\.local\build' }
 $BuildRoot = [IO.Path]::GetFullPath($BuildRoot)
+if (-not $RunRoot) { $RunRoot = $BuildRoot }
+$RunRoot = [IO.Path]::GetFullPath($RunRoot)
 $exe = Join-Path $BuildRoot 'quickshell\qs.exe'
 $qmlRoot = Join-Path $BuildRoot 'install\qml'
 foreach ($required in @($exe, "$QtPrefix\bin\Qt6Core.dll", "$qmlRoot\Caelestia\Config\qmldir", "$qmlRoot\Caelestia\Windows\qmldir")) {
@@ -91,10 +99,10 @@ $kind = $(if ($selected.Count -eq 1) { $selected[0] } elseif ($Combined) { 'comb
 $stagePrototype = $(if ($kind -ne 'shell' -and $slices[$kind].Stage) { $slices[$kind].Stage } else { $kind })
 $marker = $(if ($kind -ne 'shell' -and $slices[$kind].Marker) { $slices[$kind].Marker } else { 'CAELESTIA_' + $kind.ToUpperInvariant() })
 $runName = $kind + '-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff')
-$profileRoot = Join-Path $BuildRoot "$kind-prototype-profile"
+$profileRoot = Join-Path $RunRoot "$kind-prototype-profile"
 # A fresh stage avoids stale QML types from a previous implementation.
 $stage = & (Join-Path $PSScriptRoot 'Stage-ShellPrototype.ps1') `
-    -Destination (Join-Path $BuildRoot "shell-runs\$runName") -ProfileRoot $profileRoot -Prototype $stagePrototype
+    -Destination (Join-Path $RunRoot "shell-runs\$runName") -ProfileRoot $profileRoot -Prototype $stagePrototype
 foreach ($dir in @('config', 'state', 'runtime', 'cache', 'data')) {
     New-Item -ItemType Directory -Force -Path (Join-Path $profileRoot $dir) | Out-Null
 }
@@ -195,8 +203,18 @@ if ($Combined -and $Live) {
         '"commands": {"logout":[],"shutdown":[],"hibernate":[],"reboot":[]}',
         '"commands": {"logout":["logout"],"shutdown":["shutdown"],"hibernate":["hibernate"],"reboot":["reboot"]}')
 }
+if ($Combined) {
+    $configObject = $configText | ConvertFrom-Json
+    $configObject | Add-Member -NotePropertyName background -NotePropertyValue ([pscustomobject]@{
+        enabled = $Background.IsPresent
+        wallpaperEnabled = $true
+        desktopClock = [pscustomobject]@{ enabled = $Background.IsPresent; position = 'bottom-right' }
+        visualiser = [pscustomobject]@{ enabled = $false }
+    }) -Force
+    $configText = $configObject | ConvertTo-Json -Depth 10
+}
 $configText | Set-Content -LiteralPath $config -Encoding UTF8
-$logRoot = Join-Path $BuildRoot 'logs'
+$logRoot = Join-Path $RunRoot 'logs'
 New-Item -ItemType Directory -Force -Path $logRoot | Out-Null
 $screenshot = Join-Path $logRoot "$runName.png"
 $stdoutPath = Join-Path $logRoot "$runName.stdout.log"
@@ -286,6 +304,8 @@ if ($Combined) {
     $info.EnvironmentVariables['CAELESTIA_SHELL_SESSION'] = '1'
     $info.EnvironmentVariables['CAELESTIA_SHELL_SESSION_MODE'] = 'Observe'
     $info.EnvironmentVariables['CAELESTIA_COMBINED_LIVE'] = $(if ($Live) { '1' } else { '0' })
+    $info.EnvironmentVariables['CAELESTIA_WINDOWS_BACKGROUND'] = $(if ($Background) { '1' } else { '0' })
+    $info.EnvironmentVariables['CAELESTIA_WINDOWS_DESKTOP_ICONS'] = $DesktopIcons
 }
 if ($ScaleFactor -ne 'native') {
     $info.EnvironmentVariables['QT_ENABLE_HIGHDPI_SCALING'] = '0'
@@ -346,7 +366,9 @@ $passed = -not $timedOut -and -not $runtimeDiagnostics -and
 Copy-Item -LiteralPath (Join-Path $stage 'sources.json') -Destination (Join-Path $logRoot "$runName.sources.json")
 $result = [ordered]@{
     passed = $(if ($Smoke) { $passed } else { $null }); smoke = $Smoke.IsPresent
-    prototype = $kind; combined = $Combined.IsPresent; live = $Live.IsPresent; audioMode = $AudioMode; batteryMode = $BatteryMode; mediaMode = $MediaMode; brightnessMode = $BrightnessMode
+    prototype = $kind; combined = $Combined.IsPresent; live = $Live.IsPresent
+    background = $Background.IsPresent; desktopIcons = $DesktopIcons
+    audioMode = $AudioMode; batteryMode = $BatteryMode; mediaMode = $MediaMode; brightnessMode = $BrightnessMode
     networkMode = $NetworkMode
     bluetoothMode = $BluetoothMode; appsMode = $AppsMode; appsSearchQuery = $(if ($Apps) { $AppsSearchQuery } else { '' })
     trayMode = $TrayMode; trayFixture = $TrayFixture.IsPresent
@@ -366,7 +388,7 @@ $result = [ordered]@{
     sourceRevision = (& git -C $repoRoot rev-parse HEAD).Trim()
     sourceDirty = [bool](& git -C $repoRoot status --porcelain)
     backendRevision = (& git -C (Join-Path $repoRoot 'windows\deps\quickshell') rev-parse HEAD).Trim()
-    buildRecordSha256 = (Get-FileHash -LiteralPath (Join-Path $logRoot 'build.json')).Hash
+    buildRecordSha256 = (Get-FileHash -LiteralPath (Join-Path $BuildRoot 'logs\build.json')).Hash
     configSha256 = (Get-FileHash -LiteralPath $config).Hash
     command = $info.FileName; arguments = $info.Arguments
     executableSha256 = (Get-FileHash -LiteralPath $exe).Hash

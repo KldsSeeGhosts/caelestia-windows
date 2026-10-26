@@ -8,6 +8,7 @@ import qs.services
 
 Item {
     id: root
+    objectName: "desktopWallpaper"
 
     readonly property transitionShader shader: {
         CUtils.dependency(Config.background.wallpaperTransition);
