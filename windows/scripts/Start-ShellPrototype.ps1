@@ -44,6 +44,7 @@ param(
     [switch]$Transparency,
     [switch]$Background,
     [ValidateSet('Behind', 'Replace')][string]$DesktopIcons = 'Behind',
+    [switch]$RuntimeProbe,
     [switch]$Live,
     [switch]$Takeover,
     [switch]$HideTaskbar,
@@ -84,6 +85,7 @@ if ($Live -and -not $Combined) { throw '-Live requires -Combined.' }
 if ($Background -and -not $Combined) { throw '-Background requires -Combined.' }
 if ($DesktopIcons -ne 'Behind' -and -not $Background) { throw '-DesktopIcons requires -Background.' }
 # With -Combined, -Tiling adds observation/control rather than another entry point.
+if ($RuntimeProbe -and (-not $Combined -or $Live -or $Smoke)) { throw '-RuntimeProbe requires read-only -Combined without -Smoke.' }
 $selected = @($slices.Keys | Where-Object { $slices[$_].On -and -not ($Combined -and $_ -eq 'tiling') })
 if (($Takeover -or $HideTaskbar -or $NoRestartOnCrash) -and -not $Combined) {
     throw 'Desktop supervision switches require -Combined.'
@@ -486,6 +488,7 @@ if ($Smoke) {
     '{"binds":[]}' | Set-Content -LiteralPath $emptyKeys -Encoding UTF8
     $info.EnvironmentVariables['CAELESTIA_WINDOWS_KEYBINDS'] = $emptyKeys
 }
+$info.EnvironmentVariables['CAELESTIA_RUNTIME_PROBE'] = $(if ($RuntimeProbe) { '1' } else { '0' })
 $info.EnvironmentVariables['CAELESTIA_SHELL_MONITOR_CYCLE'] = $(if ($MonitorCycle) { '1' } else { '0' })
 $info.EnvironmentVariables['CAELESTIA_SHELL_SCREENSHOT'] = ([Uri]$screenshot).AbsoluteUri
 $info.RedirectStandardOutput = $Smoke.IsPresent -or $Wait.IsPresent

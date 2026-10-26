@@ -10,6 +10,7 @@ import QtQuick
 // The runner uses Qt qml.exe offscreen with only this file and BrightnessService.qml.
 QtObject {
     id: test
+    property QtObject unpluggedRecord: null
 
     // Strict-capable model of the backend the adapter is written against:
     // the pinned strict-route members (525786f,
@@ -1145,6 +1146,7 @@ QtObject {
         check(generationCase.write("GEN2", 0.6) === true, "start a write then unplug");
         check(generationCase.write("GEN2", 0.7) === true, "queue a target behind it");
         const unplugSetCalls = generationBackend.setCalls;
+        test.unpluggedRecord = generationCase.stateFor("GEN2");
         generationCase.screens = [{name: "GEN1"}];
         generationBackend.completeWrite();
         check(generationCase.stateFor("GEN2") === null, "mid-write unplug drops state");
@@ -1546,8 +1548,21 @@ QtObject {
             && noIdBackend.legacySetCalls === 0,
             "the adapter never used a legacy write path");
 
-        console.log("CAELESTIA_BRIGHTNESS_FIXTURE_PASS " + JSON.stringify({assertions: assertions}));
-        Qt.quit();
+        destructionCheck.start();
+    }
+
+    readonly property Timer destructionCheck: Timer {
+        interval: 1
+        onTriggered: {
+            try {
+                check(test.unpluggedRecord === null, "unplugged monitor record is destroyed after event delivery");
+                console.log("CAELESTIA_BRIGHTNESS_FIXTURE_PASS " + JSON.stringify({assertions: assertions}));
+                Qt.quit();
+            } catch (error) {
+                console.error("CAELESTIA_BRIGHTNESS_FIXTURE_FAIL " + error.message);
+                Qt.exit(1);
+            }
+        }
     }
 
     // Assertion helper for the failure snap-back that reads the live record.

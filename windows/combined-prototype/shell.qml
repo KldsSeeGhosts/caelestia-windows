@@ -28,6 +28,7 @@ ShellRoot {
     readonly property bool backgroundSmoke: smoke && Quickshell.env("CAELESTIA_WINDOWS_BACKGROUND") === "1"
     // Instantiate the watcher at shell startup, before the launcher is opened.
     readonly property bool externalWallpaperActive: WallpaperEngine.ownsDesktop
+    readonly property bool runtimeProbe: Quickshell.env("CAELESTIA_RUNTIME_PROBE") === "1"
     readonly property int initialScreenIndex: Number(Quickshell.env("CAELESTIA_SHELL_SCREEN") || "0")
     property int screenIndex: initialScreenIndex
     readonly property ShellScreen selectedScreen: Quickshell.screens[screenIndex] ?? null
@@ -330,7 +331,7 @@ ShellRoot {
     WindowsFocusGuard {
         id: focusGuard
         target: win.contentItem
-        active: !root.smoke && ((win.screenState?.session ?? false) || (win.screenState?.launcher ?? false))
+        active: !root.smoke && !root.runtimeProbe && ((win.screenState?.session ?? false) || (win.screenState?.launcher ?? false))
         onOutcome: status => console.log("CAELESTIA_SHELL_FOCUS", status)
         onDismissRequested: {
             win.screenState.session = false;
@@ -343,7 +344,7 @@ ShellRoot {
 
         screen: root.selectedScreen
         visible: root.selectedScreen !== null && root.shellShown
-        interactionEnabled: !root.smoke
+        interactionEnabled: !root.smoke && !root.runtimeProbe
         // Full screen is the upstream layout: anchored to every edge of the
         // monitor, with only the bar, border and open panels taking input.
         anchors.right: root.fullScreen
@@ -544,19 +545,54 @@ ShellRoot {
                 barWidth: win.bar.implicitWidth, barHovered: win.bar.isHovered,
                 session: win.screenState?.session, sessionVisible: panels?.session.visible,
                 launcher: win.screenState?.launcher, dashboard: win.screenState?.dashboard,
+                dashboardTab: win.screenState?.dashboardTab,
+                utilities: win.screenState?.utilities, sidebar: win.screenState?.sidebar,
                 osd: win.screenState?.osd,
                 popout: panels?.popouts.currentName ?? "",
                 popoutOpen: panels?.popouts.hasCurrent ?? false,
                 services: root.serviceStates(), focusStatus: focusGuard.status,
                 tiling: { mode: Tiling.mode, status: Tiling.status },
                 toastsLoaded: panels?.toasts !== null && panels?.toasts !== undefined,
-                fullScreen: root.fullScreen, barZone: win.bar.exclusiveZone
+                fullScreen: root.fullScreen, barZone: win.bar.exclusiveZone,
+                runtimeProbe: root.runtimeProbe,
+                statisticsActive: Native.SystemMonitor.active,
+                networkStatisticsActive: Native.SystemStats.active
             });
         }
         function capture(): void {
             CUtils.saveItem(win.contentItem, Qt.resolvedUrl(Quickshell.env("CAELESTIA_SHELL_SCREENSHOT")));
         }
         function quit(): void { Qt.quit(); }
+        // Local UI-only profiling hooks. No service controls or app launches.
+        function showPanel(name: string, tab: int): bool {
+            const state = win.screenState;
+            const panels = ShellState.componentsFor(win.screen)?.panels;
+            const drawers = ["dashboard", "launcher", "utilities", "sidebar", "osd"];
+            const popouts = ["audio", "network", "bluetooth", "battery"];
+            if (!state || !panels || (name !== "idle" && !drawers.includes(name) && !popouts.includes(name)))
+                return false;
+            if (name === "dashboard" && (tab < 0 || tab > 3))
+                return false;
+            state.session = false;
+            state.dashboardTab = tab;
+            for (const drawer of drawers)
+                state[drawer] = drawer === name;
+            panels.popouts.close();
+            if (popouts.includes(name)) {
+                panels.popouts.currentName = name;
+                panels.popouts.currentCenter = win.height / 2;
+                panels.popouts.hasCurrent = true;
+            }
+            return true;
+        }
+        function scrollLauncher(index: int): int {
+            const list = CUtils.findChild(win.contentItem, "combinedLauncherAppList");
+            if (!win.screenState?.launcher || !list || list.count === 0)
+                return -1;
+            list.currentIndex = Math.max(0, Math.min(index, list.count - 1));
+            list.positionViewAtIndex(list.currentIndex, ListView.Center);
+            return list.currentIndex;
+        }
         function moveToScreen(index: int): bool {
             if (index < 0 || index >= Quickshell.screens.length)
                 return false;
@@ -582,13 +618,31 @@ ShellRoot {
     Component.onCompleted: {
         Hypr.logStartupStatus();
         Tiling.logStartupStatus();
-        Native.SystemMonitor.active = true;
         Native.SystemStats.networkEnabled = true;
         if (!selectedScreen) {
             console.error("CAELESTIA_COMBINED_FAIL: requested screen does not exist", screenIndex);
             // Quickshell attaches the engine exit handler after creation.
             Qt.callLater(() => Qt.exit(1));
         }
+    }
+
+    // Only the dashboard consumes these samplers. Keep them through the close
+    // animation, then release native live counters and stop the stats timer.
+    // SystemStats retains its cumulative network counters across inactive gaps.
+    readonly property bool statisticsVisible: root.shellShown
+        && ((win.screenState?.dashboard ?? false)
+            || (ShellState.componentsFor(win.screen)?.panels?.dashboard.visible ?? false))
+
+    Binding {
+        target: Native.SystemMonitor
+        property: "active"
+        value: root.statisticsVisible
+    }
+
+    Binding {
+        target: Native.SystemStats
+        property: "active"
+        value: root.statisticsVisible
     }
 
     Binding {

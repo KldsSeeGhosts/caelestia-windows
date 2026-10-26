@@ -77,7 +77,9 @@ QtObject {
     }
 
     readonly property Timer timeStrTimer: Timer {
-        running: !record.closed
+        running: !record.closed && (record.popup || (record.service?.centerVisible ?? false))
+        // Refresh immediately when history opens, even after hours hidden.
+        triggeredOnStart: true
         repeat: true
         interval: 5000
         onTriggered: record.updateTimeStr()

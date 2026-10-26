@@ -321,8 +321,12 @@ QtObject {
         // their generation is bumped, so a late result cannot authorize the
         // reconnected monitor.
         for (const old of previous) {
-            if (!next.some(state => state.screenName === old.screenName))
+            if (!next.some(state => state.screenName === old.screenName)) {
                 _bumpGeneration(old.screenName);
+                // These records are parented to the service, so dropping the
+                // array reference alone retains them until process exit.
+                old.destroy();
+            }
         }
         _states = next;
     }

@@ -71,6 +71,22 @@ Build with [NATIVE-BUILD.md](../NATIVE-BUILD.md) from this checkout. Build and
 launch default to this checkout's `windows/.local/build`; `-BuildRoot` overrides
 that path.
 
+When reusing a build, pass `-RunRoot` to put stages, profiles and logs in a
+separate directory without writing into `-BuildRoot`. Each concurrent run
+should have its own run root.
+
+`Measure-ShellRuntime.ps1 -QtPrefix <Qt> -BuildRoot <build> -RunRoot <new-directory>`
+runs a 20-minute read-only profile on screen 1. It samples private bytes,
+working set, handles, GDI/USER objects, threads and CPU every 15 seconds. Two
+minutes idle at each end bracket four cycles of dashboard tabs, launcher
+scrolling, popouts, utilities, history and OSD, with an action every 10 seconds.
+CPU is recorded both as one-core utilization and divided by logical processor
+count. `-RuntimeProbe` disables pointer interaction and focus acquisition in
+this instance, so outside clicks cannot dismiss the IPC-driven panels. The
+`prototype` target exposes `showPanel(name, tab)` and `scrollLauncher(index)`;
+these only change local UI state. The harness targets its own child PID and
+stops only that process. This is resource profiling, not an input acceptance test.
+
 To observe tiling, add `-Tiling -TilingMode Observe`. To enable placement, use
 an explicit application allowlist:
 
