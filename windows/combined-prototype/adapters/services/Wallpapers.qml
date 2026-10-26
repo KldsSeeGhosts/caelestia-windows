@@ -13,14 +13,30 @@ Singleton {
     id: root
 
     readonly property bool controlsEnabled: Quickshell.env("CAELESTIA_COMBINED_LIVE") === "1" && Quickshell.env("CAELESTIA_SHELL_SMOKE") !== "1"
-    property string actualCurrent: Native.Wallpaper.currentWallpaper().replace(/\\/g, "/")
-    property var list: []
+    property string fileCurrent: Native.Wallpaper.currentWallpaper().replace(/\\/g, "/")
+    readonly property string actualCurrent: WallpaperEngine.enabled && WallpaperEngine.running && WallpaperEngine.current?.path
+        ? WallpaperEngine.current.path : fileCurrent
+    // Image consumers (mode/variant generation and the desktop) need the
+    // preview, while launcher selection needs the project.json identity.
+    readonly property string currentImage: WallpaperEngine.enabled && WallpaperEngine.running && WallpaperEngine.current?.preview
+        ? WallpaperEngine.current.preview : fileCurrent
+    readonly property string current: currentImage
+    readonly property bool externalWallpaperActive: WallpaperEngine.ownsDesktop
+    property var files: []
+    readonly property var list: {
+        const engine = WallpaperEngine.enabled && WallpaperEngine.detected ? WallpaperEngine.items : [];
+        if (WallpaperEngine.picker === "engine")
+            return engine;
+        if (WallpaperEngine.picker === "both")
+            return [...engine, ...files];
+        return files;
+    }
     property bool previewColourLock: false
 
     Component.onCompleted: reload()
 
     function reload(): void {
-        list = Native.FsUtils.listDir(Paths.wallsdir).filter(n => /\.(png|jpe?g|bmp|webp)$/i.test(n)).map(n => ({
+        files = Native.FsUtils.listDir(Paths.wallsdir).filter(n => /\.(png|jpe?g|bmp|webp)$/i.test(n)).map(n => ({
                     path: Paths.wallsdir + "/" + n,
                     relativePath: n
                 }));
@@ -36,10 +52,12 @@ Singleton {
     function setWallpaper(path): bool {
         if (!controlsEnabled)
             return false;
+        if (WallpaperEngine.items.some(item => item.path === path))
+            return WallpaperEngine.open(path);
         const local = String(path).replace(/^file:\/\/\//, "");
         const ok = Native.Wallpaper.setWallpaper(local, false);
         if (ok) {
-            actualCurrent = local;
+            fileCurrent = local;
             if (SchemeGenerator.available) {
                 // The picker always produces the wallpaper-derived dynamic
                 // scheme; the bridge writes scheme.json and Colours reloads it.

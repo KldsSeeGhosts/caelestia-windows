@@ -87,6 +87,10 @@ Item {
 
             search: root.search
             screenState: root.screenState
+            // Freeze the app delegate state while the wallpaper view takes
+            // over. Otherwise "> wallpaper" starts the actions transition
+            // just as its Loader destroys that transition's QML context.
+            state: root.screenState.launcher && !root.showWallpapers ? requestedState : displayState
         }
     }
 

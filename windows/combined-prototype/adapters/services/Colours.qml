@@ -95,7 +95,7 @@ Singleton {
     }
 
     function setMode(mode: string): void {
-        SchemeGenerator.setMode(mode, Wallpapers.actualCurrent);
+        SchemeGenerator.setMode(mode, Wallpapers.currentImage);
     }
 
     // Kept for API compatibility with staged components; Hyprland is absent.

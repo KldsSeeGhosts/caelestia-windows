@@ -35,6 +35,8 @@ param(
     [switch]$Live,
     # Skips provisioning/using the profile-local Python scheme generator.
     [switch]$SkipSchemeRuntime,
+    # Optional Windows-only settings merged into the isolated shell.json.
+    [string]$WindowsConfigPath,
     [ValidateSet('native', '1', '1.5', '1.75')][string]$ScaleFactor = 'native',
     [ValidateRange(0, 15)][int]$ScreenIndex = 0
 )
@@ -197,6 +199,12 @@ if ($Combined -and $Live) {
         '"commands": {"logout":[],"shutdown":[],"hibernate":[],"reboot":[]}',
         '"commands": {"logout":["logout"],"shutdown":["shutdown"],"hibernate":["hibernate"],"reboot":["reboot"]}')
 }
+if ($Combined -and $WindowsConfigPath) {
+    $windowsOptions = Get-Content -LiteralPath $WindowsConfigPath -Raw | ConvertFrom-Json
+    $configObject = $configText | ConvertFrom-Json
+    $configObject | Add-Member -NotePropertyName windows -NotePropertyValue $windowsOptions.windows -Force
+    $configText = $configObject | ConvertTo-Json -Depth 20
+}
 $configText | Set-Content -LiteralPath $config -Encoding UTF8
 # Dynamic colours: the combined prototype uses the real caelestia CLI scheme
 # generator from a profile-local virtual environment. Provisioning is
@@ -244,6 +252,13 @@ if ($Combined) {
 }
 $info.EnvironmentVariables['CAELESTIA_SCHEME_PYTHON'] = $(if ($schemeAvailable) { [string]$schemeRuntime.python } else { '' })
 $info.EnvironmentVariables['CAELESTIA_SCHEME_HELPER'] = $(if ($schemeAvailable) { [string]$schemeRuntime.helper } else { '' })
+$wePython = if ($schemeAvailable) { [string]$schemeRuntime.python } else {
+    # Discovery uses only the standard library and remains available when the
+    # user opts out of the Material scheme runtime.
+    $pythonLauncher = Get-Command py.exe -ErrorAction SilentlyContinue
+    if ($pythonLauncher) { & $pythonLauncher.Source -3 -c 'import sys; print(sys.executable)' }
+}
+$info.EnvironmentVariables['CAELESTIA_WE_PYTHON'] = [string]$wePython
 $info.EnvironmentVariables['QS_WINDOWS_BLUR'] = '0'
 $info.EnvironmentVariables['QT_LOGGING_RULES'] = 'quickshell.windows.tracker.debug=false;quickshell.windows.inputmask.debug=false'
 if ($TraceInput) {

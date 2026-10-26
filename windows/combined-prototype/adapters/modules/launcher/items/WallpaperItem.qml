@@ -66,7 +66,8 @@ Item {
 
         Image {
             anchors.fill: parent
-            source: "file:///" + root.modelData.path
+            source: root.modelData.engine && !root.modelData.preview ? ""
+                : "file:///" + (root.modelData.preview || root.modelData.path)
             fillMode: Image.PreserveAspectCrop
         }
     }
