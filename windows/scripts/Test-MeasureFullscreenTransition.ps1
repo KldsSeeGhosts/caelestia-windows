@@ -18,13 +18,19 @@ try {
         '{"Operation":"show","Device":"one","VisibleBefore":true,"VisibleAfter":true,"MonotonicTicks":1150,"TickFrequency":1000}'
         '{"Operation":"hide","Device":"one","VisibleBefore":true,"VisibleAfter":false,"MonotonicTicks":1250,"TickFrequency":1000}'
         '{"Operation":"hide","Device":"two","VisibleBefore":true,"VisibleAfter":false,"MonotonicTicks":2200,"TickFrequency":1000}'
+        '{"Operation":"restore","Device":"three","VisibleBefore":true,"VisibleAfter":true,"MonotonicTicks":2350,"TickFrequency":1000}'
     ) | Set-Content -LiteralPath $taskbar
     $result = @(& (Join-Path $PSScriptRoot 'Measure-FullscreenTransition.ps1') $backend $taskbar)
     if ($result.Count -ne 3 -or $result[0].LatencyMs -ne 100 -or $result[1].LatencyMs -ne 250 -or
         $result[0].TaskbarVisibleIntervals[0].DurationMs -ne 100 -or
         $result[0].AppBarWorkAreaEvents.Count -ne 1 -or
         $null -ne $result[1].TaskbarVisibleIntervals[0].DurationMs -or
-        $null -ne $result[2].LatencyMs) { throw 'Unexpected transition metrics.' }
+        $null -ne $result[2].LatencyMs -or
+        $result[2].TaskbarVisibleIntervals.Count -ne 1 -or
+        $result[2].TaskbarVisibleIntervals[0].Device -ne 'three' -or
+        $result[2].TaskbarVisibleIntervals[0].StartKnown -or $result[2].TaskbarVisibleIntervals[0].EndKnown -or
+        $null -ne $result[2].TaskbarVisibleIntervals[0].DurationMs -or
+        $result[2].TaskbarVisibleIntervals[0].ObservationQpc[0] -ne 2350) { throw 'Unexpected transition metrics.' }
     '{"QpcTicks":1,"QpcFrequency":999,"VisibleAfter":false}' | Add-Content -LiteralPath $taskbar
     $rejected = $false
     try { & (Join-Path $PSScriptRoot 'Measure-FullscreenTransition.ps1') $backend $taskbar | Out-Null }

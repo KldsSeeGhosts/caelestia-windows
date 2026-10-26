@@ -40,6 +40,10 @@ $frequency = [double]$frequencies[0]
 $events = @($events | Sort-Object Tick, Source, Line)
 $backend = @($events | Where-Object Source -eq 'backend')
 $actions = @($events | Where-Object Source -eq 'taskbar')
+$dropReports = @($backend | Where-Object { $_.Record.event -eq 'trace_dropped' })
+if ($dropReports.Count -gt 0) {
+    Write-Warning "The backend trace reports dropped events. Transition metrics may be incomplete; inspect trace_dropped records for counts."
+}
 $transitions = @($backend | Where-Object {
     $_.Record.event -eq 'fullscreen' -and -not ($_.Record.initial -and -not $_.Record.active)
 })
@@ -62,19 +66,29 @@ foreach ($action in $actions) {
     if ($r.Operation -eq 'show' -and $after -eq $true -and -not $visible.ContainsKey($key)) {
         # This is the observed show/callback time, not necessarily the instant
         # Windows made the taskbar visible.
-        $visible[$key] = $action.Tick
+        $visible[$key] = [pscustomobject]@{ Start = $action.Tick; Observations = [System.Collections.Generic.List[long]]::new() }
     } elseif ($before -eq $true -and -not $visible.ContainsKey($key)) {
-        $visible[$key] = $null
+        $visible[$key] = [pscustomobject]@{ Start = $null; Observations = [System.Collections.Generic.List[long]]::new() }
     }
     if ($after -eq $true -and -not $visible.ContainsKey($key)) {
-        $visible[$key] = $action.Tick
-    } elseif ($after -eq $false -and $visible.ContainsKey($key)) {
-        $intervals.Add([pscustomobject]@{ Device = $key; Start = $visible[$key]; End = $action.Tick })
+        $visible[$key] = [pscustomobject]@{ Start = $action.Tick; Observations = [System.Collections.Generic.List[long]]::new() }
+    }
+    if ($visible.ContainsKey($key) -and ($before -eq $true -or $after -eq $true)) {
+        $visible[$key].Observations.Add($action.Tick)
+    }
+    if ($after -eq $false -and $visible.ContainsKey($key)) {
+        $intervals.Add([pscustomobject]@{
+            Device = $key; Start = $visible[$key].Start; End = $action.Tick
+            Observations = @($visible[$key].Observations.ToArray())
+        })
         $visible.Remove($key)
     }
 }
 foreach ($key in @($visible.Keys)) {
-    $intervals.Add([pscustomobject]@{ Device = $key; Start = $visible[$key]; End = $null })
+    $intervals.Add([pscustomobject]@{
+        Device = $key; Start = $visible[$key].Start; End = $null
+        Observations = @($visible[$key].Observations.ToArray())
+    })
 }
 
 foreach ($transition in $transitions) {
@@ -92,8 +106,8 @@ foreach ($transition in $transitions) {
     })
     $exposures = @($intervals | Where-Object {
         if ($null -eq $_.Start) {
-            # Only the observation immediately before this action is known.
-            $null -ne $_.End -and $_.End -ge $transition.Tick -and $_.End -le $end
+            # A null start does not establish visibility across unobserved time.
+            @($_.Observations | Where-Object { $_ -ge $transition.Tick -and $_ -le $end }).Count -gt 0
         } else {
             ($null -eq $_.End -or $_.End -ge $transition.Tick) -and $_.Start -le $end
         }
@@ -105,6 +119,7 @@ foreach ($transition in $transitions) {
             DurationMs = if ($null -ne $start -and $null -ne $finish) { Milliseconds $start $finish } else { $null }
             StartKnown = ($null -ne $_.Start)
             EndKnown = ($null -ne $_.End)
+            ObservationQpc = @($_.Observations | Where-Object { $_ -ge $transition.Tick -and $_ -le $end })
         }
     })
     [pscustomobject]@{
