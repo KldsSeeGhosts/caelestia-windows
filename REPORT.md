@@ -1,3 +1,47 @@
+# Windows polish 1 implementation
+
+Branch `t3/polish-1`, based on `origin/t3/integration-2` at `41ddcefc`.
+All eight requested items are implemented in separate `windows:` commits.
+No pushes, PRs, Linear updates, C++ changes or backend rebuilds were made.
+
+Evidence root: [windows/validation/2026-10-26-polish-1](windows/validation/2026-10-26-polish-1/README.md).
+
+| Item | Commit | Result and capture |
+| --- | --- | --- |
+| 1. Body font | `037dd5be` | Combined staged configuration requests the registered Google Sans Flex family. Native headline/title/body/label probes pass at 150% and 175%. [150%](windows/validation/2026-10-26-polish-1/01-font/dashboard-dash.png), [175%](windows/validation/2026-10-26-polish-1/01-font-175/dashboard-dash.png). |
+| 2. Translucency | `2578cdee` | Separate TransparentPalette restores upstream alpha/luminance layering; Colours delegates to it. The component accepts a palette, light mode and wallpaper luminance for the dynamic-scheme integration. Defaults stay unchanged. [Capture](windows/validation/2026-10-26-polish-1/02-transparency/dashboard-dash.png). |
+| 3. Quick toggles | `6d13f56f` | Restored configuration deduplication, capability-gated microphone mute, and settings opening the isolated shell.json through the default handler. Five default buttons retain upstream equal-width ButtonRow behavior and spacing. Unsupported configured ids remain disabled. [Capture](windows/validation/2026-10-26-polish-1/03-toggles/utilities.png). |
+| 4. Account avatar | `b4442390` | Reads existing HKCU AccountPicture images or APPDATA AccountPictures, including packed accountpicture-ms extraction into isolated cache. Falls back to .face, then the original placeholder. This account has no readable photo; extraction fixture passed. [Native fallback capture](windows/validation/2026-10-26-polish-1/04-avatar/dashboard-dash.png). |
+| 5. Asset resolver | `1fd6f196` | Resolves root:/, absolute drive/UNC paths, file URLs and home paths; stages bongocat.gif, kurukuru.gif and dino.png. Combined restores the default session GIF; bounded M1 keeps its explicit empty override. [Bongocat](windows/validation/2026-10-26-polish-1/05-assets/dashboard-dash.png), [session](windows/validation/2026-10-26-polish-1/05-assets/session.png), [sidebar](windows/validation/2026-10-26-polish-1/05-assets/sidebar.png). |
+| 6. Desktop clock | `55a87c0c` | Background launch leaves desktopClock.enabled false. Background smoke checks absence when disabled and captures the background itself. Observed clockPresent:false and ready:true. [Capture](windows/validation/2026-10-26-polish-1/06-clock/surface.png). |
+| 7. Active window chip | `1ee0d5c4` | Windows facade validates foreground HWNDs against DWMWA_CLOAKED, tool style, shell classes, DWM and qs processes. It preserves the last real app while qs owns focus. The dashboard's hardcoded DWM label now uses that source. Real titles were observed; native filter tests and 649 Hypr assertions pass. [Capture](windows/validation/2026-10-26-polish-1/07-active-window/dashboard-dash.png). |
+| 8. Python check | `1c3a2e98` | No installer script exists on this base, so the combined launcher checks py/python and prints a clear warning while retaining the fixed palette when unavailable. Both present/missing paths pass. [Normal capture](windows/validation/2026-10-26-polish-1/08-python/dashboard-dash.png), [missing-Python 175% capture](windows/validation/2026-10-26-polish-1/final-175-python-missing/dashboard-dash.png). |
+
+Baseline, each visual change, final combined smoke at native 175% with
+transparency and Python absent, and shared M1 regression all pass. Final
+implementation revision: `1c3a2e985a74ddcd6bc8de84b08295a8ec6a97e6`.
+[Run matrix](windows/validation/2026-10-26-polish-1/matrix.csv) lists commits
+and capture paths; [validation notes](windows/validation/2026-10-26-polish-1/README.md)
+record commands, rejected attempts and limitations.
+
+The runtime was borrowed read-only through `-BuildRoot` from
+`C:\Users\Ermin\.t3\worktrees\caelestia-windows\t3-8fb0d51b\windows\.local\build`,
+Qt 6.11.2, backend `57163953a2efe8ee05288daabda5295e94c93404`.
+Local staging, profiles and logs use this worktree's `windows/.local/polish`.
+The pre-existing local dependency checkout mismatch (`525786fc`) remains
+untouched; no gitlink or source-lock change is included.
+
+Transparency validation establishes alpha layering, not new DWM blur parity.
+Live mic writes/editor launch were not exercised by smoke. No real account
+photo was available, and the sidebar capture contains a notification rather
+than the empty-state art. The base has no dynamic scheme generator; this
+change supplies its missing-Python diagnostic and preserves fixed-palette
+startup.
+
+---
+
+# Earlier integration and feature reports
+
 # Windows integration round 2
 
 Branch: `t3/integration-2`, based on `origin/t3/integration` (`4697ffa8`).

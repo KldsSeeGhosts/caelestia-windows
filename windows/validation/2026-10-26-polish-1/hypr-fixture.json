@@ -1,0 +1,36 @@
+﻿{
+    "passed":  true,
+    "timedOut":  false,
+    "exitCode":  0,
+    "fixture":  {
+                    "assertions":  649
+                },
+    "nativeImports":  0,
+    "hashMismatch":  [
+
+                     ],
+    "diagnostics":  [
+
+                    ],
+    "sourceRevision":  "55a87c0c3f63b7ca72a5809a03082e68c8776ffd",
+    "sourceDirty":  true,
+    "qtVersion":  "6.11.2",
+    "runnerSha256":  "24994D434962751713F0C8932B356104B0849572B95765DAD50C13DA6BE3FA20",
+    "command":  "C:\\Users\\Ermin\\AppData\\Local\\caelestia-dev\\Qt\\6.11.2\\msvc2022_64\\bin\\qml.exe",
+    "arguments":  "\"C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-7d24bc78\\windows\\.local\\polish\\hypr-fixture\\hypr-tests\\hypr-fixture-20261026-022016-619\\HyprServiceTest.qml\"",
+    "sources":  [
+                    {
+                        "source":  "windows/services/hypr/HyprService.qml",
+                        "sourceSha256":  "358F7CD8FE17A3B0558DB834CA97F0D3BB35E37DBC859CECF947ADDC32EB2A72",
+                        "stagedSha256":  "358F7CD8FE17A3B0558DB834CA97F0D3BB35E37DBC859CECF947ADDC32EB2A72"
+                    },
+                    {
+                        "source":  "windows/services/hypr/HyprServiceTest.qml",
+                        "sourceSha256":  "49E33F386F8FCAE0F01C5ED8C82FCC266FEDDCBDCA19008912E9757156CD9B49",
+                        "stagedSha256":  "49E33F386F8FCAE0F01C5ED8C82FCC266FEDDCBDCA19008912E9757156CD9B49"
+                    }
+                ],
+    "stage":  "C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-7d24bc78\\windows\\.local\\polish\\hypr-fixture\\hypr-tests\\hypr-fixture-20261026-022016-619",
+    "stdout":  "C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-7d24bc78\\windows\\.local\\polish\\hypr-fixture\\logs\\hypr-fixture-20261026-022016-619.stdout.log",
+    "stderr":  "C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-7d24bc78\\windows\\.local\\polish\\hypr-fixture\\logs\\hypr-fixture-20261026-022016-619.stderr.log"
+}
