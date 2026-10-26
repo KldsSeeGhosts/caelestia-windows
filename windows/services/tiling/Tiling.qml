@@ -74,14 +74,16 @@ TilingService {
     property bool statusLogged: false
 
     Component.onCompleted: {
+        // Connected first: configure() activates the Loader, and a backend
+        // attached during it can already produce a refusal toast.
+        root.toastDecision.connect((title, message, icon, type) => {
+            Toaster.toast(title, message, icon, type === 3 ? Toast.Error : Toast.Warning);
+        });
         root.configure(
             Quickshell.env("CAELESTIA_WINDOWS_TILING"),
             Quickshell.env("CAELESTIA_WINDOWS_TILING_INCLUDED"),
             Quickshell.env("CAELESTIA_WINDOWS_TILING_EXCLUDED"),
             Quickshell.env("CAELESTIA_SHELL_SMOKE") === "1");
-        root.toastDecision.connect((title, message, icon, type) => {
-            Toaster.toast(title, message, icon, type === 3 ? Toast.Error : Toast.Warning);
-        });
     }
 
     // Printed once so the launch log proves which opt-ins the child process

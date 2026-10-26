@@ -75,16 +75,21 @@ or `Toast.Error`, icon `view_quilt`, copy through `Tr.tr`):
 | `min-size` | | `It needs more space than its tile; it was left floating.` |
 | `off-target` | | `It kept moving away from its tile; it was left floating.` |
 | `correction-limit` | | `It didn't fit its tile exactly, so it may leave a gap.` |
-| `unresponsive` | | `It stopped responding while being placed.` |
+| `unresponsive` | | `It didn't accept the move, so it was left floating.` |
 | unknown | | `It could not be placed in its tile.` |
 
 Rate limits: at most one toast per window address per reason per enabled
-session; at most three failure toasts per ten seconds; suppressed excess
-collapses into one `Some windows couldn't be tiled` toast, itself shown at
-most once per ten seconds (the summary does not consume the three-toast
-budget). An enable refusal emits exactly one `Tiling is off` error toast
-(`Another tiling manager is already running.` / `No screen is available to
-tile on.`).
+session, and at most three toasts per ten seconds. The third toast of a
+burst is the summary `Some windows couldn't be tiled`; later failures in
+that window are recorded without a toast. Each refused enable attempt emits
+exactly one `Tiling is off` error toast: `Add apps to the tiling list to
+turn it on.` (empty allowlist), `This version can't limit tiling to chosen
+apps.` (backend without `included`), `Another tiling manager is already
+running.` or `No screen is available to tile on.`
+
+The allowlist is parsed like the backend does: a `title:` rule with nothing
+after the prefix is dropped, so it cannot turn into an empty, unrestricted
+backend allowlist.
 
 ## Testing
 

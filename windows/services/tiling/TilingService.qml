@@ -41,9 +41,11 @@ import QtQuick
 // `toastDecision`; the facade forwards it to `Toaster.toast`. Copy strings go
 // through `tr` so the facade can localize them like upstream daemons. Rate
 // limits: at most one toast per window address per failure reason per enabled
-// session, at most three failure toasts per ten seconds, and suppressed
-// excess collapses into a single summary toast (itself at most once per ten
-// seconds). An enable refusal emits exactly one error toast.
+// session and at most three failure toasts per ten seconds. When a third
+// failure arrives inside the window it is shown as a summary toast instead,
+// which counts toward the three; later failures in that window stay in the
+// failure list only. Each refused enable attempt emits exactly one error
+// toast.
 QtObject {
     id: root
 
@@ -155,7 +157,6 @@ QtObject {
     property var _recentFailures: []
     property var _notifiedKeys: new Set()
     property var _toastTimes: []
-    property var _collapseTimes: []
     property int _toastCount: 0
 
     // Interactive enable permission. An empty inclusion list or a backend
@@ -174,13 +175,19 @@ QtObject {
 
     // --- Configuration ----------------------------------------------------------
 
-    // Semicolon-separated wildcard patterns: entries are trimmed and empty
-    // entries dropped. The backend compiles the wildcards itself; the service
-    // only normalizes the list. Non-string input yields an empty list.
+    // Semicolon-separated wildcard patterns: entries are trimmed and entries
+    // the backend would drop are dropped here too, so an empty list means the
+    // backend also sees no rule. That matters because the backend treats an
+    // empty compiled allowlist as unrestricted: a lone `title:` must not count
+    // as an inclusion rule (tiling_scope.cpp ScopeRules::compile). The backend
+    // compiles the wildcards itself. Non-string input yields an empty list.
     function parsePatternList(text): var {
         if (typeof text !== "string")
             return [];
-        return text.split(";").map(entry => entry.trim()).filter(entry => entry.length > 0);
+        return text.split(";").map(entry => entry.trim()).filter(entry => {
+            const pattern = /^title:/i.test(entry) ? entry.slice(6).trim() : entry;
+            return pattern.length > 0;
+        });
     }
 
     // Called once by the facade before the native Loader becomes active.
@@ -194,11 +201,13 @@ QtObject {
         }
         root._requestedMode = requested;
         root._smoke = smoke === true;
-        root._mode = requested === "interactive" && root._smoke ? "observe" : requested;
         root._includedPatterns = root.parsePatternList(includedText);
         root._excludedPatterns = root.parsePatternList(excludedText);
         root._backendRefusal = "";
         root._resetToastSession();
+        // The mode is assigned last: it activates the facade's native Loader
+        // synchronously, and the attached backend must see the final lists.
+        root._mode = requested === "interactive" && root._smoke ? "observe" : requested;
         // A backend attached before configuration still receives the new
         // options; enabling is decided once at attach time.
         if (root.backend !== null && root._mode !== "off"
@@ -218,10 +227,18 @@ QtObject {
             backend.applyOptions(root._excludedPatterns, root._includedPatterns);
         // Interactive enabling is requested only when the policy allows it;
         // the backend then either reports enabled or refuses through its
-        // enableRefused signal.
-        if (root._mode === "interactive" && root._policyRefusalFor(backend) === ""
-                && typeof backend.requestEnable === "function")
+        // enableRefused signal. A policy refusal is explained here, once per
+        // refused attempt.
+        if (root._mode !== "interactive")
+            return;
+        const refusal = root._policyRefusalFor(backend);
+        if (refusal !== "") {
+            root._toastCount++;
+            root.toastDecision(root.tr("Tiling is off"),
+                root.tr(root._policyRefusalText(refusal)), "view_quilt", 3);
+        } else if (typeof backend.requestEnable === "function") {
             backend.requestEnable();
+        }
     }
 
     onBackendEnabledChanged: {
@@ -232,7 +249,6 @@ QtObject {
     function _resetToastSession(): void {
         root._notifiedKeys = new Set();
         root._toastTimes = [];
-        root._collapseTimes = [];
         root._toastCount = 0;
     }
 
@@ -250,6 +266,12 @@ QtObject {
         root._toastCount++;
         root.toastDecision(root.tr("Tiling is off"),
             root.tr(root._enableRefusalText(root._backendRefusal)), "view_quilt", 3);
+    }
+
+    function _policyRefusalText(refusal): string {
+        if (refusal === "included-empty")
+            return "Add apps to the tiling list to turn it on.";
+        return "This version can't limit tiling to chosen apps.";
     }
 
     function _enableRefusalText(reason): string {
@@ -304,7 +326,7 @@ QtObject {
         case "correction-limit":
             return "It didn't fit its tile exactly, so it may leave a gap.";
         case "unresponsive":
-            return "It stopped responding while being placed.";
+            return "It didn't accept the move, so it was left floating.";
         default:
             return "It could not be placed in its tile.";
         }
@@ -313,19 +335,15 @@ QtObject {
     function _emitFailureToast(title, message): void {
         const now = root.clock();
         root._toastTimes = root._toastTimes.filter(t => now - t < 10000);
-        if (root._toastTimes.length >= 3) {
-            // Overall burst limit reached: this failure collapses into the
-            // summary toast, shown at most once per ten-second window.
-            root._collapseTimes = root._collapseTimes.filter(t => now - t < 10000);
-            if (root._collapseTimes.length > 0)
-                return;
-            root._collapseTimes.push(now);
-            root._toastCount++;
-            root.toastDecision(root.tr("Some windows couldn't be tiled"), "", "view_quilt", 2);
+        if (root._toastTimes.length >= 3)
             return;
-        }
         root._toastTimes.push(now);
         root._toastCount++;
-        root.toastDecision(title, message, "view_quilt", 2);
+        // The third slot of a burst becomes the summary, so the summary stays
+        // inside the three-toast budget.
+        if (root._toastTimes.length === 3)
+            root.toastDecision(root.tr("Some windows couldn't be tiled"), "", "view_quilt", 2);
+        else
+            root.toastDecision(title, message, "view_quilt", 2);
     }
 }

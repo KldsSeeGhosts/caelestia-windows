@@ -136,3 +136,29 @@ tiling line at all.
 No environment report was rerun: this slice changes no dependency pins or
 setup instructions. No runtime success beyond the Disabled smoke above is
 inferred from source parity.
+
+## Review follow-up
+
+An independent review of `a8538ea9` blocked the slice on five findings. The
+orchestrator fixed all of them in the follow-up commit:
+
+1. A lone `title:` counted as an allowlist rule, but the backend drops it and
+   reads an empty compiled allowlist as unrestricted. `parsePatternList` now
+   drops the same entries the backend drops (`tiling_scope.cpp`
+   `ScopeRules::compile`).
+2. `configure()` assigned the mode before the lists, so the facade's Loader
+   attached against an empty allowlist and valid Interactive startup never
+   requested enabling. The mode is now assigned last. The fixture covers this
+   with a Loader-shaped synchronous attach.
+3. Policy refusals (empty or unsupported allowlist) produced no toast. Each
+   refused attempt now emits one `Tiling is off` error toast, and the facade
+   connects its toast bridge before `configure()`.
+4. The summary toast was a fourth toast in a ten-second window. It now takes
+   the third slot.
+5. The `unresponsive` copy claimed the app stopped responding. Per the
+   backend, the window ignored the move and was floated: "It didn't accept
+   the move, so it was left floating."
+
+Rerun at the follow-up commit with the same commands: `Test-TilingService.ps1`
+passed with 161 assertions, and `Test-TilingPrototype.ps1` passed. Only
+Disabled-mode native runs were made.

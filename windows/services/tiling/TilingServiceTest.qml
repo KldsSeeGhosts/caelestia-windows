@@ -69,6 +69,19 @@ QtObject {
     readonly property FakeTilingBackend failingBackend: FakeTilingBackend {}
     readonly property FakeTilingBackend burstBackend: FakeTilingBackend {}
 
+    // Startup ordering as the facade sees it: Tiling.qml binds its Loader to
+    // nativeRequested, so the backend attaches synchronously inside
+    // configure() as soon as the mode leaves off. The toast bridge is
+    // connected before configure(), like the facade.
+    readonly property FakeTilingBackend startupBackend: FakeTilingBackend {}
+    property var startupToasts: []
+    readonly property TilingService startupService: TilingService {
+        onNativeRequestedChanged: backend = nativeRequested ? test.startupBackend : null
+        onToastDecision: (title, message, icon, type) => {
+            test.startupToasts.push({title: title, message: message, icon: icon, type: type});
+        }
+    }
+
     property double currentTime: 100000
     property var toasts: []
 
@@ -125,6 +138,35 @@ QtObject {
             ["a*", "title:Foo Bar"], "wildcards and title rules preserved");
         checkJson(service.parsePatternList(" title:X ; "), ["title:X"],
             "edges trimmed without touching interiors");
+        // The backend drops a title rule with nothing after the prefix and
+        // reads an empty allowlist as unrestricted, so these are not rules.
+        checkJson(service.parsePatternList("title:"), [], "bare title prefix dropped");
+        checkJson(service.parsePatternList(" TITLE:   ;"), [], "blank title rule dropped");
+        checkJson(service.parsePatternList("title:;firefox"), ["firefox"],
+            "blank title rule dropped beside a real rule");
+
+        // --- Startup through a Loader-shaped attach --------------------------
+        startupService.configure("interactive", "org.mozilla.firefox", "explorer", false);
+        check(startupService.backend === startupBackend, "startup attached during configure");
+        checkJson(startupBackend.includedApplied, ["org.mozilla.firefox"],
+            "startup attach saw the final allowlist");
+        checkJson(startupBackend.excludedApplied, ["explorer"],
+            "startup attach saw the final excluded list");
+        checkEqual(startupBackend.enableRequests, 1, "valid interactive startup requested enabling");
+        checkEqual(startupToasts.length, 0, "valid startup decided no toast");
+
+        startupService.configure("off", "", "", false);
+        check(startupService.backend === null, "off detached the startup backend");
+        startupBackend.enableRequests = 0;
+        startupService.configure("interactive", "title:", "", false);
+        checkEqual(startupService.status, "refused", "a blank title allowlist is refused");
+        checkEqual(startupBackend.enableRequests, 0, "a blank title allowlist never enables");
+        checkEqual(startupToasts.length, 1, "startup policy refusal decided one toast");
+        checkEqual(startupToasts[0].title, "Tiling is off", "policy refusal toast title");
+        checkEqual(startupToasts[0].message, "Add apps to the tiling list to turn it on.",
+            "included-empty toast message");
+        checkEqual(startupToasts[0].icon, "view_quilt", "policy refusal toast icon");
+        checkEqual(startupToasts[0].type, 3, "policy refusal toast is an error");
 
         // --- Off mode ---------------------------------------------------------
         service.configure("off", "firefox*", "explorer", false);
@@ -201,6 +243,11 @@ QtObject {
             "included-empty refusal reason");
         checkEqual(noListBackend.enableRequests, 0, "empty allowlist never enables");
         check(!noListBackend.enabled, "empty allowlist leaves the tiler disabled");
+        checkEqual(toasts.length, 1, "included-empty refusal decided one toast");
+        checkEqual(toasts[0].message, "Add apps to the tiling list to turn it on.",
+            "included-empty refusal toast message");
+        checkEqual(toasts[0].type, 3, "included-empty refusal toast is an error");
+        resetToasts();
 
         // --- Interactive without backend allowlist support -----------------------
         service.configure("interactive", "fixture*", "explorer", false);
@@ -210,6 +257,11 @@ QtObject {
             "The pinned Windows backend does not support an inclusion allowlist; interactive tiling stays off.",
             "included-unsupported refusal reason");
         checkEqual(legacyBackend.enableRequests, 0, "legacy backend never enables");
+        checkEqual(toasts.length, 1, "included-unsupported refusal decided one toast");
+        checkEqual(toasts[0].message, "This version can't limit tiling to chosen apps.",
+            "included-unsupported refusal toast message");
+        checkEqual(toasts[0].type, 3, "included-unsupported refusal toast is an error");
+        resetToasts();
         checkJson(legacyBackend.excludedApplied, ["explorer"],
             "legacy backend still receives the excluded list");
         check(legacyBackend.includedApplied === null, "legacy backend drops the allowlist");
@@ -351,7 +403,7 @@ QtObject {
         currentTime = 133000;
         service.handleWindowTilingFailed("5e6f", "unresponsive");
         checkEqual(toasts.length, 4, "same address with a new reason toasts again");
-        checkEqual(toasts[3].message, "It stopped responding while being placed.",
+        checkEqual(toasts[3].message, "It didn't accept the move, so it was left floating.",
             "unresponsive message");
 
         currentTime = 144000;
@@ -373,10 +425,10 @@ QtObject {
         checkEqual(service.recentFailures[19].address, "cap24", "newest entry kept");
         check(!service.recentFailures.some(e => e.address === "2a1b"),
             "dropped entries are gone");
-        // The frozen clock keeps the burst window saturated: cap0 and cap1 fit
-        // the remaining budget, cap2 collapses, cap3..cap24 add nothing.
-        checkEqual(toasts.length, 8, "cap loop toasts are burst limited");
-        checkEqual(toasts[7].title, "Some windows couldn't be tiled",
+        // The frozen clock holds 9a0b's toast in the window: cap0 takes the
+        // second slot, cap1 the third as the summary, cap2..cap24 add nothing.
+        checkEqual(toasts.length, 7, "cap loop toasts are burst limited");
+        checkEqual(toasts[6].title, "Some windows couldn't be tiled",
             "cap loop produced the collapse toast");
 
         // --- Burst limit and collapse toast --------------------------------------
@@ -387,28 +439,28 @@ QtObject {
         resetToasts();
         for (const address of ["a1", "a2", "a3", "a4"])
             service.handleWindowTilingFailed(address, "min-size");
-        checkEqual(toasts.length, 4, "fourth failure collapses");
-        checkEqual(toasts[2].title, "Couldn't tile a window", "first three toast individually");
-        checkEqual(toasts[3].title, "Some windows couldn't be tiled", "collapse title");
-        checkEqual(toasts[3].message, "", "collapse message");
-        checkEqual(toasts[3].icon, "view_quilt", "collapse icon");
-        checkEqual(toasts[3].type, 2, "collapse toast is a warning");
-        check(!toasts.some(t => t.title === "Couldn't tile a4"),
-            "the fourth failure has no individual toast");
+        checkEqual(toasts.length, 3, "the summary counts toward the three-toast budget");
+        checkEqual(toasts[1].title, "Couldn't tile a window", "first two toast individually");
+        checkEqual(toasts[2].title, "Some windows couldn't be tiled", "collapse title");
+        checkEqual(toasts[2].message, "", "collapse message");
+        checkEqual(toasts[2].icon, "view_quilt", "collapse icon");
+        checkEqual(toasts[2].type, 2, "collapse toast is a warning");
 
         service.handleWindowTilingFailed("a5", "min-size");
-        checkEqual(toasts.length, 4, "collapse does not repeat inside the window");
+        checkEqual(toasts.length, 3, "nothing more inside the window");
+        checkEqual(service.recentFailures[service.recentFailureCount - 1].address, "a5",
+            "suppressed failures are still recorded");
 
         currentTime = 210001;
         service.handleWindowTilingFailed("a6", "min-size");
-        checkEqual(toasts.length, 5, "budget resets after the window passes");
-        checkEqual(toasts[4].title, "Couldn't tile a window", "individual toasts resume");
+        checkEqual(toasts.length, 4, "budget resets after the window passes");
+        checkEqual(toasts[3].title, "Couldn't tile a window", "individual toasts resume");
 
         for (const address of ["a7", "a8", "a9"])
             service.handleWindowTilingFailed(address, "min-size");
-        checkEqual(toasts[7].title, "Some windows couldn't be tiled",
+        checkEqual(toasts[5].title, "Some windows couldn't be tiled",
             "a second window collapses again");
-        checkEqual(toasts.length, 8, "exactly one collapse per window");
+        checkEqual(toasts.length, 6, "exactly one collapse per window");
 
         // --- Enabled-session reset -------------------------------------------------
         burstBackend.enabled = false;
@@ -427,6 +479,8 @@ QtObject {
             "T:It needs more space than its tile; it was left floating.",
             "messages pass through the translate hook");
         service.tr = text => text;
+        // Past the burst window, so b2 gets an individual toast, not the summary.
+        currentTime = 230000;
         service.handleWindowTilingFailed("b2", "min-size");
         checkEqual(toasts[2].title, "Couldn't tile a window",
             "identity translate restores exact copy");
