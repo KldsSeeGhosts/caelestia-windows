@@ -20,16 +20,21 @@ an explicit control-window toggle; it does not reserve work area or start tiling
 
 `-Live` enables the existing audio, hardware brightness, media, Wi-Fi, Bluetooth,
 power-profile, app-launch, tray activation and session action gates. It also
-enables the tray hook. Notification mirroring, Windows dismissal and app-open
-are permitted, but listener access is requested only by the history panel's
-explicit button. No access request happens at startup. Destructive session
-buttons create a pending request; Confirm/Cancel appear in the control window.
-Commands remain confined to the session adapter allowlist.
+enables the tray hook, the keep-awake helper, the ffmpeg recorder and the
+launcher's Lock action. Lock resolves through the original session adapter to
+the pinned backend's `Session.lock()`, which calls Windows `LockWorkStation`;
+there is no custom lock screen or credential UI. Notification mirroring, Windows
+dismissal and app-open are permitted, but listener access is requested only by
+the history panel's explicit button. No access request happens at startup.
+Destructive session buttons create a pending request; Confirm/Cancel appear in
+the control window. Commands remain confined to the session adapter allowlist.
 
 `-Combined -Smoke` and `-Combined -Live -Smoke` both suppress native writes,
-launches, session dispatch, tray interception and notification mirroring. They
-load all dashboard tabs, utilities, history, the launcher, status popouts,
-notifications and a toast, and exit. The supplied build is reused unchanged.
+launches, session dispatch, tray interception and notification mirroring. The
+utilities cards still load, but the keep-awake helper and the ffmpeg recorder
+hold no process and the smoke harness asserts that. Smoke loads all dashboard
+tabs, utilities, history, the launcher, status popouts, notifications and a
+toast, and exits. The supplied build is reused unchanged.
 
 ## Available components
 
@@ -41,9 +46,18 @@ notifications and a toast, and exit. The supplied build is reused unchanged.
   network sparklines. Missing temperatures display Unavailable. Dashboard content
   scales down to fit the bounded host. Weather retains upstream HTTP requests
   and uses only profile-local cache storage.
-- Original utilities wrapper and quick-toggle layout, limited to Wi-Fi,
-  Bluetooth and shell-local do-not-disturb. Hardware controls follow their
-  facade's availability and write gate.
+- Original utilities wrapper with the keep-awake, screen-recorder and
+  quick-toggle cards. Quick toggles are limited to Wi-Fi, Bluetooth and
+  shell-local do-not-disturb; hardware controls follow their facade's
+  availability and write gate. Keep-awake holds
+  `SetThreadExecutionState(ES_CONTINUOUS | ES_DISPLAY_REQUIRED |
+  ES_SYSTEM_REQUIRED)` in a PowerShell child process that ends when the toggle
+  turns off or the shell exits. The recorder drives `ffmpeg` with `gdigrab`
+  when `ffmpeg` is on PATH and writes
+  `%USERPROFILE%\Videos\Caelestia\recording_<timestamp>.mp4`; stopping flushes
+  the MP4 through ffmpeg's stdin. Without ffmpeg the card reports Unavailable
+  with that reason. Both cards are visible in every combined run but act only
+  while Live controls are on, and never during smoke.
 - Original sidebar notification history, grouping, dismissal and mirror-access
   UI, plus original notification popups and core `Toaster` rendering.
 - Original launcher search, keyboard navigation, app rows, action rows and
@@ -71,8 +85,12 @@ notifications and a toast, and exit. The supplied build is reused unchanged.
 - Lyrics, beat tracking and audio visualisation depend on excluded upstream
   native services. Cover art, metadata, player selection and transport remain.
 - Profile picture editing is unavailable; its click reports this in a toast.
-- Idle inhibition lacks a lifetime-scoped inhibition API in the existing backend.
-  Recorder, VPN and Linux-specific quick toggles are hidden.
+- Idle inhibition is not the upstream Wayland `IdleInhibitor`; Windows holds the
+  execution state in a child process instead (see the utilities card above). The
+  recorder supports fullscreen `gdigrab` only: region capture, audio capture and
+  pause have no implemented ffmpeg route, so the card does not offer them. Its
+  recordings list and delete modal are omitted with the Linux `caelestia record`
+  directory layout. VPN and Linux-specific quick toggles remain hidden.
 - Qalculate is excluded from the portable build. The arithmetic provider is a
   small expression parser, without Qalculate's units or arbitrary expressions.
 - Hardware and backend capability limits still apply: missing DDC/WMI brightness

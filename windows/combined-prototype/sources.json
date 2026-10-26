@@ -94,5 +94,10 @@
   "windows/combined-prototype/adapters/imports/Caelestia/Services/NetworkUsage.qml": "imports/Caelestia/Services/NetworkUsage.qml",
   "modules/dashboard/performance/NetworkCard.qml": "modules/dashboard/performance/NetworkCard.qml",
   "windows/combined-prototype/adapters/modules/session/Content.qml": "modules/session/Content.qml",
-  "windows/combined-prototype/adapters/modules/dashboard/performance/HeroCard.qml": "modules/dashboard/performance/HeroCard.qml"
+  "windows/combined-prototype/adapters/modules/dashboard/performance/HeroCard.qml": "modules/dashboard/performance/HeroCard.qml",
+  "windows/combined-prototype/adapters/daemons/IdleInhibit.qml": "daemons/IdleInhibit.qml",
+  "windows/combined-prototype/helpers/KeepAwake.ps1": "helpers/KeepAwake.ps1",
+  "windows/combined-prototype/adapters/services/Recorder.qml": "services/Recorder.qml",
+  "windows/combined-prototype/adapters/modules/utilities/cards/IdleInhibit.qml": "modules/utilities/cards/IdleInhibit.qml",
+  "windows/combined-prototype/adapters/modules/utilities/cards/Record.qml": "modules/utilities/cards/Record.qml"
 }

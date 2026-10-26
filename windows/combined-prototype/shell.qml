@@ -8,10 +8,12 @@ import Quickshell.Io
 import Caelestia
 import Caelestia.Config
 import Caelestia.Services
+import Caelestia.State
 import Caelestia.Windows
 import Quickshell.Windows as Native
 import qs.components
 import qs.services
+import qs.daemons
 import qs.modules.drawers
 import qs.modules.launcher.services
 
@@ -78,6 +80,19 @@ ShellRoot {
             session: {
                 mode: root.sessionMode, enabled: SessionManager.enabled === true,
                 actions: SessionManager.actionsEnabled === true
+            },
+            // Windows utilities: the keep-awake helper and the ffmpeg recorder
+            // are only ever active behind the Live gate, and neither may hold a
+            // process during smoke.
+            utilities: {
+                keepAwakePermitted: idleInhibitor.permitted,
+                inhibitIdle: RuntimeState.inhibitIdle,
+                keepAwakeHeld: idleInhibitor.inhibiting,
+                recorderPermitted: Recorder.permitted,
+                recorderProbed: Recorder.probed,
+                recorderAvailable: Recorder.available,
+                recorderRunning: Recorder.running,
+                recorderStatus: Recorder.status
             }
         };
     }
@@ -161,6 +176,11 @@ ShellRoot {
         const firstMonitor = Brightness.monitors.length > 0 ? Brightness.monitors[0] : null;
         if (firstMonitor && Brightness.write(firstMonitor.screenName, 0.5) !== false)
             return false;
+        // No idle-inhibit helper and no recorder process may exist in smoke,
+        // even when the Live flags are supplied.
+        if (states.utilities.keepAwakeHeld || states.utilities.recorderRunning
+                || states.utilities.recorderProbed)
+            return false;
 
         const session = root.sessionState();
         if (session.enabled !== true || session.actionsEnabled !== false
@@ -226,6 +246,13 @@ ShellRoot {
     FontLoader {
         id: clockFont
         source: Quickshell.shellPath("assets/rubik/Rubik.ttf")
+    }
+
+    // Original daemon position. The Windows adapter replaces the Wayland
+    // IdleInhibitor with a lifetime-scoped child process. It starts nothing
+    // until the keep-awake toggle is on, and never during smoke.
+    IdleInhibit {
+        id: idleInhibitor
     }
 
     WindowsFocusGuard {
@@ -636,6 +663,27 @@ ShellRoot {
                 if (!panels.utilities.visible || panels.utilities.implicitHeight <= 0) {
                     root.fail("utilities"); return;
                 }
+                // The original utilities cards are enabled in the combined
+                // profile. Both Windows cards must lay out, and neither may
+                // have started anything.
+                const keepAwakeCard = CUtils.findChild(win.contentItem, "utilitiesKeepAwake");
+                const recorderCard = CUtils.findChild(win.contentItem, "utilitiesScreenRecorder");
+                const togglesCard = CUtils.findChild(win.contentItem, "utilitiesQuickToggles");
+                if (!keepAwakeCard || !recorderCard || !togglesCard
+                        || keepAwakeCard.implicitHeight <= 0 || recorderCard.implicitHeight <= 0) {
+                    root.fail("utilities cards did not load");
+                    return;
+                }
+                if (RuntimeState.inhibitIdle || Recorder.running || idleInhibitor.inhibiting) {
+                    root.fail("utilities controls acted during smoke");
+                    return;
+                }
+                console.log("CAELESTIA_COMBINED_UTILITIES", JSON.stringify({
+                    height: panels.utilities.implicitHeight,
+                    keepAwake: keepAwakeCard.implicitHeight,
+                    recorder: recorderCard.implicitHeight,
+                    toggles: togglesCard.implicitHeight
+                }));
                 root.capturePhase("utilities");
                 win.screenState.utilities = false;
                 Toaster.toast("Caelestia", "Original shell toast", "check");
