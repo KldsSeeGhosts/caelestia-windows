@@ -295,6 +295,17 @@ ShellRoot {
 
     property bool fullScreen: false
 
+    // Full-screen bar reservation, opt-in: one left-anchored input-transparent
+    // window whose exclusiveZone the backend maps to a native AppBar, so
+    // maximized and tiled windows stop at the bar's width. Active only while
+    // Full screen is on; hiding or destroying the window removes the AppBar
+    // and restores the work area.
+    Exclusions {
+        screen: root.selectedScreen
+        zone: win.bar.exclusiveZone
+        active: root.fullScreen && root.selectedScreen !== null
+    }
+
     // The shell window is frameless and stays above other windows, so an
     // ordinary window carries the preview's controls: it has a taskbar entry,
     // moves, and closing it ends the preview.
@@ -453,7 +464,8 @@ ShellRoot {
                 popoutOpen: panels?.popouts.hasCurrent ?? false,
                 services: root.serviceStates(), focusStatus: focusGuard.status,
                 tiling: { mode: Tiling.mode, status: Tiling.status },
-                toastsLoaded: toastsHost.item !== null
+                toastsLoaded: toastsHost.item !== null,
+                fullScreen: root.fullScreen, barZone: win.bar.exclusiveZone
             });
         }
         function capture(): void {
@@ -465,6 +477,13 @@ ShellRoot {
                 return false;
             root.screenIndex = index;
             return true;
+        }
+        // Harness handle for the full-screen toggle behind the same opt-in
+        // as the control-window button, so a smoke run can prove the AppBar
+        // reservation appears and disappears with it.
+        function setFullScreen(on: bool): bool {
+            root.fullScreen = on;
+            return root.fullScreen === on;
         }
         // Local delivery through the reviewed facade, for trying the original
         // notification popup. It never touches the Windows Action Center.
