@@ -1,6 +1,53 @@
-# Combined modules implementation
+# Wallpaper Engine implementation
 
-Implemented locally on `t3/dynamic-scheme`, based on
+Implemented on `t3/wallpaper-engine`, based on `origin/t3/dynamic-scheme`
+(`6abba7ba`). Final implementation revision: `27ae336c`. All commits use
+`windows:` messages. No pushes, PRs, Linear changes, subagents, dependency
+updates or native rebuilds.
+
+- Added a Windows service facade with Steam registry/library/manifest discovery,
+  running-process detection, active per-monitor config resolution, project
+  metadata and previews. FileView watches WE's config; five-second read-only
+  discovery catches process changes, workshop installs and atomic replacements.
+- Current Monitor0 preview feeds the existing real Caelestia Material generator.
+  `services.smartScheme` is respected; Pillow samples animated previews at frame
+  zero. The generated scheme is loaded live by Colours.
+- The original launcher carousel supports WE titles/previews and the requested
+  engine/files/both picker modes. Default is engine when WE runs. Explicit Live
+  selection requests the official CLI using an argument array; the watcher
+  confirms selection before generating its palette. Scheme mode/variant actions
+  use the preview rather than attempting to decode project.json.
+- `windows.wallpaperEngine.enabled` defaults to auto; optional `monitor`
+  defaults to Monitor0. Windows settings use watched isolated
+  `config/windows.json` because the pinned C++ shell schema rejects a windows
+  key. `-WindowsConfigPath` supplies this object without rebuilding the shared
+  binary. See `windows/services/wallpaperengine/README.md`.
+- Carried the WindowsBackground adapter from `origin/t3/background` (`08055887`)
+  with a fail-closed external-owner guard. It disables the entire desktop host,
+  including the clock, while WE runs. Clock layering above WE is unvalidated.
+  The ordinary dynamic-scheme branch has no background host to instantiate;
+  preserve this guarded adapter when merging the background branch.
+- Fixed combined carousel Loader lifetimes exposed by the new picker smoke.
+
+Validation reused the supplied build at
+`D:\AiStack\caelestia-windows\windows\.local\build` (Qt 6.11.2, backend
+`525786fc`, CLI `5e804b10`). Final `-Combined -Smoke` passes from clean committed
+source in 35.7 seconds without warnings/errors. It reads “Autum In Japan Pixel
+Art”, generates primary `#f9b7a3`, and renders 253 workshop items in the picker.
+A short isolated background probe passes with zero background windows,
+DesktopLayer inactive and clock off. A GIF preview generates primary `#acc9ea`.
+Both current WE monitor selections remain exactly unchanged; no CLI switch was
+invoked. The environment prerequisite report was also recorded.
+
+Evidence, screenshot, commands and limits:
+`windows/validation/2026-10-26-wallpaper-engine/README.md`.
+Live CLI switching, external wallpaper transitions, restart/recovery and clock
+layering remain unvalidated. This is quick smoke evidence, not a validated shell
+release.
+
+## Previous combined modules implementation
+
+The previous dynamic-scheme work was implemented locally on `t3/dynamic-scheme`, based on
 `origin/t3/combined-modules` (`6026f947`). No backend rebuild, dependency pin
 change, push, PR, Linear update or evidence archive was created.
 

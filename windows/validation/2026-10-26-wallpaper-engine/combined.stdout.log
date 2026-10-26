@@ -1,0 +1,80 @@
+﻿2026-10-26 02:14:09.738  INFO: Launching config: "D:/AiStack/caelestia-windows/windows/.local/build/shell-runs/combined-20261026-021408-289/shell.qml"
+2026-10-26 02:14:09.739  INFO: Shell ID: "bb5cd51842dcc3f2ec10ba48409e17d4" Path ID "bb5cd51842dcc3f2ec10ba48409e17d4"
+2026-10-26 02:14:09.761  INFO: Saving logs to "C:/Users/Ermin/AppData/Local/quickshell/run/by-id/43nlz3int/log.qslog"
+2026-10-26 02:14:10.023  INFO quickshell.windows.blur: Blur behind panels is turned off by QS_WINDOWS_BLUR.
+2026-10-26 02:14:10.043  INFO quickshell.windows.blur: No layer rules file found (looked for D:/AiStack/caelestia-windows/windows/.local/build/shell-runs/combined-20261026-021408-289/defaults/windows/layerrules.json ), blur behind panels is off.
+2026-10-26 02:14:10.044  INFO caelestia.windows.focusguard: target-unavailable
+2026-10-26 02:14:10.044 DEBUG qml: CAELESTIA_SHELL_FOCUS target-unavailable
+2026-10-26 02:14:10.175 DEBUG quickshell.windows.desktops: Desktop list changed: 1 desktops
+2026-10-26 02:14:10.175 DEBUG quickshell.windows.desktops: Current desktop: 0
+2026-10-26 02:14:10.175 DEBUG quickshell.windows.panel: Placing qs::windows::WinPanelWindow(0x22105e9faf0) at QRect(80,80 900x620) on "MAG321UX OLED"
+2026-10-26 02:14:10.177  INFO caelestia.windows.focusguard: idle
+2026-10-26 02:14:10.177 DEBUG qml: CAELESTIA_SHELL_FOCUS idle
+2026-10-26 02:14:10.196  INFO: Configuration Loaded
+2026-10-26 02:14:10.199 DEBUG qml: CAELESTIA_SCHEME_LOADED name=dynamic flavour=default mode=dark applied=74 primary=#f9b7a3
+2026-10-26 02:14:10.409 DEBUG qml: CAELESTIA_WE_CURRENT {"monitor":"Monitor0","title":"Autum In Japan Pixel Art","project":"C:/Program Files (x86)/Steam/steamapps/workshop/content/431960/2456741440/project.json","preview":"C:/Program Files (x86)/Steam/steamapps/workshop/content/431960/2456741440/preview.jpg"}
+2026-10-26 02:14:10.409 DEBUG quickshell.windows.startup: First panel frame presented
+2026-10-26 02:14:10.411 DEBUG qml: CAELESTIA_SCHEME_LOADED name=dynamic flavour=default mode=dark applied=74 primary=#f9b7a3
+2026-10-26 02:14:10.425 DEBUG quickshell.windows.appsfolder: Scanned 154 apps from the Windows Apps folder
+2026-10-26 02:14:10.571 DEBUG qml: CAELESTIA_SCHEME_LOADED name=dynamic flavour=default mode=dark applied=74 primary=#f9b7a3
+2026-10-26 02:14:10.578 DEBUG qml: CAELESTIA_SCHEME_APPLIED name=dynamic flavour=default mode=dark variant=tonalspot primary=f9b7a3
+2026-10-26 02:14:10.579 DEBUG qml: CAELESTIA_SCHEME_LOADED name=dynamic flavour=default mode=dark applied=74 primary=#f9b7a3
+2026-10-26 02:14:10.810 DEBUG quickshell.windows.startup: Startup settled, running 5 deferred tasks
+2026-10-26 02:14:10.834  INFO quickshell.windows.desktops: VirtualDesktopAccessor.dll not found next to the executable; desktop switching falls back to keyboard shortcuts.
+2026-10-26 02:14:10.847  INFO quickshell.windows.bluetooth.worker: Using Bluetooth adapter "Intel(R) Wireless Bluetooth(R)" "5C:B2:6D:F3:07:F4" "\\\\?\\USB#VID_8087&PID_0032#8&f2cb6fa&0&13#{92383b0e-f90e-4ac9-8d44-8c2d0d0ebda2}"
+2026-10-26 02:14:10.850 DEBUG quickshell.windows.bluetooth.worker: Started the paired classic device watcher
+2026-10-26 02:14:10.853 DEBUG quickshell.windows.bluetooth.worker: Started the paired LE device watcher
+2026-10-26 02:14:10.869 DEBUG quickshell.windows.bluetooth: Tracked new adapter BluetoothAdapter(0x2210a5f7ac0, id="\\\\?\\USB#VID_8087&PID_0032#8&f2cb6fa&0&13#{92383b0e-f90e-4ac9-8d44-8c2d0d0ebda2}")
+2026-10-26 02:14:10.870 DEBUG quickshell.windows.bluetooth: Initial adapter lookup done, adapter present: true
+2026-10-26 02:14:11.634 DEBUG qml: CAELESTIA_COMBINED_SCREEN {"index":0,"name":"MAG321UX OLED","x":0,"y":0,"dpr":1.5}
+2026-10-26 02:14:11.634 DEBUG qml: CAELESTIA_COMBINED_GEOMETRY MAG321UX OLED 0 0 900 620 1.5 4
+2026-10-26 02:14:11.634 DEBUG qml: CAELESTIA_COMBINED_SERVICE name=audio enabled=true status=ready controls=false output=true
+2026-10-26 02:14:11.634 DEBUG qml: CAELESTIA_COMBINED_SERVICE name=battery enabled=true status=ready hasBattery=false profiles=true profileWrites=false
+2026-10-26 02:14:11.634 DEBUG qml: CAELESTIA_COMBINED_SERVICE name=bluetooth enabled=true status=on controls=false
+2026-10-26 02:14:11.634 DEBUG qml: CAELESTIA_COMBINED_SERVICE name=brightness enabled=true status=observing controls=false monitors=2 firstMonitorRoute= firstMonitorKnown=false
+2026-10-26 02:14:11.634 DEBUG qml: CAELESTIA_COMBINED_SERVICE name=media enabled=true status=loading controls=false players=0
+2026-10-26 02:14:11.634 DEBUG qml: CAELESTIA_COMBINED_SERVICE name=network enabled=true status=disconnected controls=false commandsSent=0
+2026-10-26 02:14:11.634 DEBUG qml: CAELESTIA_COMBINED_SERVICE name=apps enabled=true status=ready launch=false count=154
+2026-10-26 02:14:11.634 DEBUG qml: CAELESTIA_COMBINED_SERVICE name=tray enabled=true status=not-observable activation=false hook=0
+2026-10-26 02:14:11.635 DEBUG qml: CAELESTIA_COMBINED_SERVICE name=notifications enabled=true status=local mirror=false popups=0
+2026-10-26 02:14:11.635 DEBUG qml: CAELESTIA_COMBINED_SERVICE name=session mode=Observe enabled=true actions=false
+2026-10-26 02:14:12.798 DEBUG qml: CAELESTIA_COMBINED_SESSION_BUTTONS [{"icon":"logout","disabled":true},{"icon":"power_settings_new","disabled":true},{"icon":"downloading","disabled":true},{"icon":"cached","disabled":true}]
+2026-10-26 02:14:12.846 DEBUG qml: CAELESTIA_COMBINED_CAPTURE file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/combined-20261026-021408-289-session.png
+2026-10-26 02:14:16.398 DEBUG qml: CAELESTIA_COMBINED_POPOUT audio 320 349
+2026-10-26 02:14:16.436 DEBUG qml: CAELESTIA_COMBINED_CAPTURE file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/combined-20261026-021408-289-popout-audio.png
+2026-10-26 02:14:19.998 DEBUG qml: CAELESTIA_COMBINED_POPOUT network 154 106
+2026-10-26 02:14:20.038 DEBUG qml: CAELESTIA_COMBINED_CAPTURE file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/combined-20261026-021408-289-popout-network.png
+2026-10-26 02:14:23.598 DEBUG qml: CAELESTIA_COMBINED_POPOUT bluetooth 149 197
+2026-10-26 02:14:23.634 DEBUG qml: CAELESTIA_COMBINED_CAPTURE file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/combined-20261026-021408-289-popout-bluetooth.png
+2026-10-26 02:14:27.198 DEBUG qml: CAELESTIA_COMBINED_POPOUT battery 202 116
+2026-10-26 02:14:27.238 DEBUG qml: CAELESTIA_COMBINED_CAPTURE file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/combined-20261026-021408-289-popout-battery.png
+2026-10-26 02:14:30.850 DEBUG qml: CAELESTIA_COMBINED_CAPTURE file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/combined-20261026-021408-289-osd.png
+2026-10-26 02:14:32.058  INFO: qs:@/qs/components/controls/StyledProgressBar.qml: Object or context destroyed during incubation
+2026-10-26 02:14:32.058  INFO: qs:@/qs/components/controls/StyledProgressBar.qml: Object or context destroyed during incubation
+2026-10-26 02:14:32.103 DEBUG qml: CAELESTIA_COMBINED_CAPTURE file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/combined-20261026-021408-289-launcher.png
+2026-10-26 02:14:33.268 DEBUG qml: CAELESTIA_COMBINED_CAPTURE file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/combined-20261026-021408-289-dashboard.png
+2026-10-26 02:14:33.430  INFO: qs:@/qs/modules/dashboard/Media.qml: Object or context destroyed during incubation
+2026-10-26 02:14:34.401 DEBUG qml: CAELESTIA_WE_PICKER {"status":"ready","running":true,"detected":true,"monitor":"Monitor0","count":253,"engineCount":253,"picker":"engine","current":{"path":"C:/Program Files (x86)/Steam/steamapps/workshop/content/431960/2456741440/project.json","preview":"C:/Program Files (x86)/Steam/steamapps/workshop/content/431960/2456741440/preview.jpg","title":"Autum In Japan Pixel Art","relativePath":"Autum In Japan Pixel Art","type":"scene","engine":true},"primary":{"r":0.9764705896377563,"g":0.7176470756530762,"b":0.6392157077789307,"a":1,"hsvHue":0.038750000298023224,"hsvSaturation":0.3453879654407501,"hsvValue":0.9764705896377563,"hslHue":0.038750000298023224,"hslSaturation":0.8775463700294495,"hslLightness":0.8078431487083435,"valid":true},"error":""}
+2026-10-26 02:14:34.401 DEBUG qml: CAELESTIA_COMBINED_SCHEMES {"schemes":26,"variants":9,"current":"dynamic default","variant":"tonalspot","palette":{"r":0.9764705896377563,"g":0.7176470756530762,"b":0.6392157077789307,"a":1,"hsvHue":0.038750000298023224,"hsvSaturation":0.3453879654407501,"hsvValue":0.9764705896377563,"hslHue":0.038750000298023224,"hslSaturation":0.8775463700294495,"hslLightness":0.8078431487083435,"valid":true}}
+2026-10-26 02:14:34.458 DEBUG qml: CAELESTIA_COMBINED_CAPTURE file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/combined-20261026-021408-289-dashboard-dash.png
+2026-10-26 02:14:35.659 DEBUG qml: CAELESTIA_COMBINED_CAPTURE file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/combined-20261026-021408-289-dashboard-performance.png
+2026-10-26 02:14:36.844 DEBUG qml: CAELESTIA_COMBINED_CAPTURE file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/combined-20261026-021408-289-dashboard-weather.png
+2026-10-26 02:14:38.031 DEBUG qml: CAELESTIA_COMBINED_CAPTURE file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/combined-20261026-021408-289-utilities.png
+2026-10-26 02:14:39.237 DEBUG qml: CAELESTIA_COMBINED_CAPTURE file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/combined-20261026-021408-289-notification.png
+2026-10-26 02:14:40.437 DEBUG qml: CAELESTIA_COMBINED_CAPTURE file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/combined-20261026-021408-289-sidebar.png
+2026-10-26 02:14:42.798 DEBUG qml: CAELESTIA_WE_CAROUSEL count=253
+2026-10-26 02:14:42.911 DEBUG qml: CAELESTIA_COMBINED_CAPTURE file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/combined-20261026-021408-289-wallpaper-picker.png
+2026-10-26 02:14:45.197 DEBUG qml: CAELESTIA_COMBINED_SERVICE name=audio enabled=true status=ready controls=false output=true
+2026-10-26 02:14:45.197 DEBUG qml: CAELESTIA_COMBINED_SERVICE name=battery enabled=true status=ready hasBattery=false profiles=true profileWrites=false
+2026-10-26 02:14:45.197 DEBUG qml: CAELESTIA_COMBINED_SERVICE name=bluetooth enabled=true status=on controls=false
+2026-10-26 02:14:45.197 DEBUG qml: CAELESTIA_COMBINED_SERVICE name=brightness enabled=true status=observing controls=false monitors=2 firstMonitorRoute= firstMonitorKnown=false
+2026-10-26 02:14:45.197 DEBUG qml: CAELESTIA_COMBINED_SERVICE name=media enabled=true status=no-sessions controls=false players=0
+2026-10-26 02:14:45.197 DEBUG qml: CAELESTIA_COMBINED_SERVICE name=network enabled=true status=disconnected controls=false commandsSent=0
+2026-10-26 02:14:45.197 DEBUG qml: CAELESTIA_COMBINED_SERVICE name=apps enabled=true status=ready launch=false count=154
+2026-10-26 02:14:45.197 DEBUG qml: CAELESTIA_COMBINED_SERVICE name=tray enabled=true status=not-observable activation=false hook=0
+2026-10-26 02:14:45.197 DEBUG qml: CAELESTIA_COMBINED_SERVICE name=notifications enabled=true status=unconfirmed mirror=false popups=0
+2026-10-26 02:14:45.197 DEBUG qml: CAELESTIA_COMBINED_SERVICE name=session mode=Observe enabled=true actions=false
+2026-10-26 02:14:45.234 DEBUG qml: CAELESTIA_COMBINED_CAPTURE file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/combined-20261026-021408-289-notification.png
+2026-10-26 02:14:45.237 DEBUG qml: CAELESTIA_COMBINED_CAPTURE file:///D:/AiStack/caelestia-windows/windows/.local/build/logs/combined-20261026-021408-289.png
+2026-10-26 02:14:45.237 DEBUG qml: CAELESTIA_COMBINED_PASS 6.11.2
+
