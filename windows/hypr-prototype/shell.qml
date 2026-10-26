@@ -209,7 +209,7 @@ ShellRoot {
             }
             return;
         }
-        if (state.status !== "ready" || !state.nativeInitialized || !state.backendLoaded) {
+        if (state.status !== "ready" || !state.initialized || !state.backendLoaded) {
             root.fail("enabled service did not stay ready: " + state.status);
             return;
         }
