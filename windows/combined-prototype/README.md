@@ -1,5 +1,8 @@
 # Combined shell prototype
 
+For the all-monitor production entry and per-user installation, see
+[the Windows shell entry](../shell/README.md).
+
 The bounded Windows host stages the original Caelestia bar, workspaces, active
 window, dashboard, launcher, utilities, notification history, popups and toasts
 over the reviewed facades in

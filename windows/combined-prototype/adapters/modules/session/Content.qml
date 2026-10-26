@@ -84,6 +84,28 @@ Column {
         KeyNavigation.up: hibernate
     }
 
+    // Production has no preview control window. Keep explicit confirmation
+    // inside the original session drawer; closing it cancels the pending action.
+    Column {
+        visible: Quickshell.env("CAELESTIA_SHELL_LIVE") === "1" && SessionManager.confirmationPending
+        spacing: Tokens.spacing.small
+
+        StyledText { text: "Confirm Windows " + SessionManager.pendingAction + "?" }
+        Row {
+            spacing: Tokens.spacing.small
+            TextButton { text: "Cancel"; onClicked: SessionManager.cancelConfirmation() }
+            TextButton { text: "Confirm"; onClicked: SessionManager.confirm() }
+        }
+    }
+
+    Connections {
+        target: root.screenState
+        function onSessionChanged(): void {
+            if (!root.screenState.session && Quickshell.env("CAELESTIA_SHELL_LIVE") === "1")
+                SessionManager.cancelConfirmation();
+        }
+    }
+
     component SessionButton: IconButton {
         id: button
 

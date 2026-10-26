@@ -1,0 +1,42 @@
+{
+  "bar": {
+    "persistent": true,
+    "showOnHover": true,
+    "entries": [
+      {"id":"logo","enabled":true},
+      {"id":"spacer","enabled":true},
+      {"id":"tray","enabled":true},
+      {"id":"clock","enabled":true},
+      {"id":"statusIcons","enabled":true},
+      {"id":"power","enabled":true}
+    ],
+    "clock": {"showIcon":true,"showDate":true,"showSeconds":true},
+    "scrollActions": {"workspaces":false,"volume":false,"brightness":false},
+    "popouts": {"activeWindow":false,"tray":false,"statusIcons":true},
+    "statusIcons": [
+      {"id":"lockStatus","enabled":false},
+      {"id":"audio","enabled":true},
+      {"id":"microphone","enabled":false},
+      {"id":"kbLayout","enabled":false},
+      {"id":"network","enabled":true},
+      {"id":"bluetooth","enabled":true},
+      {"id":"battery","enabled":true}
+    ],
+    "tray": {"recolour": true}
+  },
+  "session": {
+    "enabled": true,
+    "vimKeybinds": true,
+    "commands": {"logout":["logout"],"shutdown":["shutdown"],"hibernate":["hibernate"],"reboot":["reboot"]}
+  },
+  "paths": {"sessionGif":""},
+  "dashboard": {"enabled":true,"showOnHover":true},
+  "launcher": {"enabled":true,"showOnHover":true},
+  "sidebar": {"enabled":true,"showOnHover":true},
+  "osd": {"enabled":true},
+  "utilities": {
+    "enabled":true,
+    "cards":{"keepAwake":false,"recorder":false,"quickToggles":true},
+    "quickToggles":[{"id":"wifi","enabled":true},{"id":"bluetooth","enabled":true},{"id":"dnd","enabled":true}]
+  }
+}
