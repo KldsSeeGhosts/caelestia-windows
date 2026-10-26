@@ -1,0 +1,27 @@
+﻿[
+    {
+        "passed":  true,
+        "evidence":  "build/build-backend.log",
+        "test":  "backend build"
+    },
+    {
+        "passed":  true,
+        "evidence":  "build/environment.json",
+        "test":  "environment pins and native tools"
+    },
+    {
+        "passed":  true,
+        "evidence":  "combined/result.json",
+        "test":  "combined read-only smoke, rendered en"
+    },
+    {
+        "passed":  true,
+        "evidence":  "frame/result.json",
+        "test":  "secondary monitor four edges and restored work areas"
+    },
+    {
+        "passed":  true,
+        "evidence":  "frame/fixture-fullscreen.json",
+        "test":  "fullscreen flag releases and reacquires four AppBars"
+    }
+]
