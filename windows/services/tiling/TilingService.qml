@@ -14,7 +14,7 @@ import QtQuick
 //   lastError            string, guarded read ("" when unsupported)
 //   managedCount         int, guarded read (0 when unsupported)
 //   failedCount          int, guarded read (0 when unsupported)
-//   applyOptions(excluded, included, gapsIn, gapsOut)
+//   applyOptions(excluded, included, gapsIn, gapsOut, singleWindowGapsOut, borderColours)
 //                        applies pattern lists and integer DIP gaps
 //   requestEnable()      the only path that may set the backend tiler enabled
 //   requestDisable()     stops the session on config reload/disable
@@ -77,6 +77,8 @@ QtObject {
     readonly property var excludedPatterns: root._excludedPatterns
     readonly property int gapsIn: root._gapsIn
     readonly property int gapsOut: root._gapsOut
+    readonly property int singleWindowGapsOut: root._singleWindowGapsOut
+    readonly property bool borderColours: root._borderColours
 
     // The facade binds its native Loader to this flag: `off` never loads the
     // wrapper file, so the Tiling singleton is never imported or constructed.
@@ -156,8 +158,10 @@ QtObject {
     property bool _smoke: false
     property var _includedPatterns: []
     property var _excludedPatterns: []
-    property int _gapsIn: 10
+    property int _gapsIn: 5
     property int _gapsOut: 10
+    property int _singleWindowGapsOut: 20
+    property bool _borderColours: true
     property bool _configuring: false
     property string _backendRefusal: ""
     property var _recentFailures: []
@@ -201,9 +205,9 @@ QtObject {
         return root.parsePatternList(text.split(";"));
     }
 
-    function normalizedGap(value): int {
+    function normalizedGap(value, fallback): int {
         return typeof value === "number" && Number.isFinite(value)
-            ? Math.round(Math.max(0, Math.min(100, value))) : 10;
+            ? Math.round(Math.max(0, Math.min(100, value))) : fallback;
     }
 
     // Profile config is read by the facade so the existing portable Config
@@ -226,12 +230,12 @@ QtObject {
             }
         }
         root.configure(mode, included, excluded, smoke,
-            settings.gapsIn, settings.gapsOut);
+            settings.gapsIn, settings.gapsOut, settings.singleWindowGapsOut, settings.borderColours);
     }
 
     // Also used for live reload. Stop the active session before changing any
     // admission rules; all enables continue through the native mutex gate.
-    function configure(modeText, includedText, excludedText, smoke, innerGap, outerGap): void {
+    function configure(modeText, includedText, excludedText, smoke, innerGap, outerGap, singleOuterGap, borderColours): void {
         root._configuring = true;
         if (root.backend !== null && typeof root.backend.requestDisable === "function")
             root.backend.requestDisable();
@@ -246,8 +250,10 @@ QtObject {
         root._smoke = smoke === true;
         root._includedPatterns = root.parsePatternList(includedText);
         root._excludedPatterns = root.parsePatternList(excludedText);
-        root._gapsIn = root.normalizedGap(innerGap);
-        root._gapsOut = root.normalizedGap(outerGap);
+        root._gapsIn = root.normalizedGap(innerGap, 5);
+        root._gapsOut = root.normalizedGap(outerGap, 10);
+        root._singleWindowGapsOut = root.normalizedGap(singleOuterGap, 20);
+        root._borderColours = typeof borderColours === "boolean" ? borderColours : true;
         root._backendRefusal = "";
         root._resetToastSession();
         // The mode is assigned last: it activates the facade's native Loader
@@ -271,7 +277,8 @@ QtObject {
         if (backend === null || root._mode === "off")
             return;
         if (typeof backend.applyOptions === "function")
-            backend.applyOptions(root._excludedPatterns, root._includedPatterns, root.gapsIn, root.gapsOut);
+            backend.applyOptions(root._excludedPatterns, root._includedPatterns, root.gapsIn,
+                root.gapsOut, root.singleWindowGapsOut, root.borderColours);
         // Interactive enabling is requested only when the policy allows it;
         // the backend then either reports enabled or refuses through its
         // enableRefused signal. A policy refusal is explained here, once per

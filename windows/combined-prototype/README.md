@@ -66,7 +66,7 @@ the configured border thickness on the other three edges through four native
 AppBars. These release when full screen is turned off, an application enters
 fullscreen, or the host exits. Tiling defaults off; profile configuration or explicit switches can enable it.
 See [the tiling schema](../services/tiling/README.md) for live reload, typed rules
-and 10/10 DIP gap defaults.
+and gap defaults (5 DIPs per inner side, 10 outer, 20 outer for a single tile).
 
 Build with [NATIVE-BUILD.md](../NATIVE-BUILD.md) from this checkout. Build and
 launch default to this checkout's `windows/.local/build`; `-BuildRoot` overrides

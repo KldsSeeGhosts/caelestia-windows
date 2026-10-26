@@ -273,7 +273,7 @@ Caelestia's Windows backend includes a native DWM tiler (`Quickshell.Windows.Til
 Tiling defaults off. Configure `windows.tiling` in `config/shell.json`:
 
 ```json
-{"windows":{"tiling":{"enabled":false,"mode":"observe","gapsIn":10,"gapsOut":10,"include":["exe:notepad.exe"],"exclude":[],"float":["title:*Dialog*"],"monitors":{}}}}
+{"windows":{"tiling":{"enabled":false,"mode":"observe","gapsIn":5,"gapsOut":10,"singleWindowGapsOut":20,"borderColours":true,"include":["exe:notepad.exe"],"exclude":[],"float":["title:*Dialog*"],"monitors":{}}}}
 ```
 
 Set `enabled=true` and choose `observe` or `interactive` after reviewing the
@@ -282,6 +282,17 @@ arrays or semicolon-separated wildcards; `exe:`, `class:` and `title:` select
 specific window facts. Monitor-name wildcards map to booleans. Exclude, float
 and disabled-monitor rules take precedence. Changes reload live. The KSG importer
 maps its gap and padding preferences, defaulting to 10/10 DIPs, and selects Observe.
+`gapsIn` defaults to 5 DIPs per window side, making 10 DIPs between windows;
+explicit saved values keep their existing meaning. `gapsOut` defaults to 10 DIPs.
+`singleWindowGapsOut` defaults to 20 DIPs when only one window is tiled on a
+monitor/workspace. Minimized and maximized windows do not count; maximizing
+still fills the Windows work area.
+
+`borderColours` defaults to true on Windows 11 build 22000+. Focused windows use
+the scheme primary; other managed windows use dim onSurfaceVariant. The upstream
+alpha values are blended against surface. Colours follow focus and scheme
+changes and return to the system default when disabled, unmanaged or on normal
+shell exit. Older Windows skips colouring. These settings reload live.
 See [the complete tiling schema](../services/tiling/README.md).
 
 Production supports `-TilingMode Disabled|Observe|Interactive`, `-TilingIncluded`

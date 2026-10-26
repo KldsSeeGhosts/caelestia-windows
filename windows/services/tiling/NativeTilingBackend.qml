@@ -1,5 +1,6 @@
 import QtQuick
 import Quickshell.Windows
+import qs.services
 
 // Loaded by URL only after CAELESTIA_WINDOWS_TILING=observe|interactive.
 // Referencing the Quickshell.Windows `Tiling` singleton constructs
@@ -56,14 +57,37 @@ QtObject {
     // The service owns the policy; the wrapper applies what the pinned
     // backend accepts. An unsupported `included` list is dropped here, which
     // the service has already refused interactive enabling for.
-    function applyOptions(excluded, included, gapsIn, gapsOut): void {
+    function applyOptions(excluded, included, gapsIn, gapsOut, singleWindowGapsOut, borderColours): void {
         Tiling.excluded = excluded;
         if (root.supportsIncluded)
             Tiling.included = included;
         Tiling.gapsIn = gapsIn;
         Tiling.gapsOut = gapsOut;
+        Tiling.singleWindowGapsOut = singleWindowGapsOut;
+        Tiling.borderColours = borderColours;
         console.info("CAELESTIA_TILING_OPTIONS gapsIn=" + Tiling.gapsIn
-            + " gapsOut=" + Tiling.gapsOut);
+            + " gapsOut=" + Tiling.gapsOut
+            + " singleWindowGapsOut=" + Tiling.singleWindowGapsOut
+            + " borderColours=" + Tiling.borderColours);
+    }
+
+    // DWM accepts opaque COLORREFs. Match Hyprland's 0xe6 / 0x11
+    // scheme borders by compositing against the scheme surface.
+    function blend(foreground, surface, alpha): color {
+        return Qt.rgba(foreground.r * alpha + surface.r * (1 - alpha),
+            foreground.g * alpha + surface.g * (1 - alpha),
+            foreground.b * alpha + surface.b * (1 - alpha), 1);
+    }
+
+    readonly property Binding _activeBorder: Binding {
+        target: Tiling
+        property: "activeBorderColour"
+        value: root.blend(Colours.palette.m3primary, Colours.palette.m3surface, 230 / 255)
+    }
+    readonly property Binding _inactiveBorder: Binding {
+        target: Tiling
+        property: "inactiveBorderColour"
+        value: root.blend(Colours.palette.m3onSurfaceVariant, Colours.palette.m3surface, 17 / 255)
     }
 
     function requestEnable(): void {
