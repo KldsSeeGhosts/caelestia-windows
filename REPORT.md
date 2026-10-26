@@ -1,3 +1,96 @@
+# Windows integration round 5
+
+Branch `t3/integration-5`, based on `origin/t3/integration-4` (`db33341e`).
+Backend `windows/integration-5` is pushed to `caelestia` at
+`457127d820ac1e48cd5c7c5454e8fef738e1a235`; gitlink and source lock agree.
+
+## Integration
+
+- Backend merge `457127d`: review-followups `8e4c2e2`, no conflicts. Retains
+  leak-review, Explorer reconnection for workspace dispatch and MTA audio sessions.
+- Shell merge `07265f63`: polish `00251c31`. Launcher conflict unions profile,
+  tiling and desktop-supervision options with transparency and account-picture
+  setup. Background conflict keeps all-monitor/Wallpaper Engine ownership and
+  checks the configured clock state. REPORT retains the integration report.
+  TransparentPalette now wraps the dynamic palette rather than replacing it.
+- Shell merge `5f627b8b`: runtime-review `58cc7f24`. Unioned runtime profiling
+  with existing background/launcher switches; wallpaper thumbnails retain WE
+  preview selection plus bounded asynchronous decoding. Kept build-record
+  backend provenance and the existing independent profile/run-root behavior.
+- `ac2a7807`: paired backend pins; production font defaults, account picture,
+  staged assets/session GIF and hidden-dashboard native sampler suspension.
+- `a5934f10`: production smoke bypasses the session-wide supervisor and owns
+  only its child process. Smoke disables AppBar reservation and taskbar takeover.
+  Also removed a duplicate merged result-map key.
+- `66902a2b`: Windows C++ font defaults resolve the registered Google Sans Flex
+  family even for existing profiles without explicit font settings. Linux
+  defaults remain unchanged. Retain launcher search through close animation so
+  closing the wallpaper picker cannot incubate app delegates in a dying context.
+- `1b582a5b`: absolute Windows PowerShell path for the foreground watcher under
+  deployed smoke's minimal PATH; production smoke verifies hidden telemetry off.
+
+`origin/t3/release-docs` did not exist when integration started and was skipped.
+No new evidence archive, PR, Linear change or main-branch change was made.
+Feature-branch archives arrived unchanged through the polish merge.
+
+## Build and quick smoke
+
+Native build and incremental font rebuild passed with Qt 6.11.2, clang-cl
+20.1.8, MSVC 14.44.35207 and Windows SDK 10.0.26100.0. Backend, real M3Shapes
+and portable plugins are built in this worktree only:
+
+```text
+C:\Users\Ermin\.t3\worktrees\caelestia-windows\t3-661ef84c\windows\.local\build
+```
+
+The final compiled-source build record is `66902a2b` (clean); subsequent
+`1b582a5b` changes only staged QML. Strict build-environment report passes.
+
+- Combined smoke with transparency: PASS, exit 0, 37.662 s, native primary 150%.
+  `logs/combined-20261026-025441-021.json`.
+- Combined Live smoke: PASS, exit 0, 35.933 s, native secondary 175%.
+  `logs/combined-20261026-025613-932.json`.
+- Dynamic WE-derived palette and catalog remained live (253 wallpapers, nine
+  variants). Control/dispatch/tiling/tray hooks stayed off during smoke.
+- Updated installed production: PASS on both monitors (2560x1440 and 2194x1234
+  logical windows), minimal PATH, profile-local scheme runtime, zero runtime
+  warnings/errors, hidden CPU/network samplers inactive, explicit installed IPC
+  state and quit, launcher exit 0. Foreground-filter native fixture passes.
+- Early rejected runs exposed one transient AppsFolder icon warning and the
+  picker-close incubation race. The close race is fixed. First installed
+  attempt exposed the missing PowerShell PATH entry; that is fixed. A local
+  harness exit-code handle issue was corrected before the final passing run.
+
+## Update and uninstall
+
+Installed round-4 sources `db33341e` with the prior round-4 backend build
+`4a3e9a1` into a unique TEMP prefix, seeded the round-4 profile, changed its
+clock preference and added a state sentinel. Reinstalled this build over that
+same prefix/profile. The executable hash changed; all three config JSON files
+and the state sentinel retained their exact hashes before update, after the
+new build ran, and after uninstall. Temp-prefix uninstall passed and retained
+the profile. All test output remains ignored under `windows/.local`.
+
+The user's installed process PID 33252 remained running. Before/after monitor
+work areas and taskbar snapshots matched exactly. No Install/Uninstall command
+used the default prefix, and no real-profile file was written.
+
+To update the real installation when ready, quit it normally first, then run
+from this worktree (no uninstall, no purge):
+
+```powershell
+powershell -NoProfile -File windows/scripts/Install-Caelestia.ps1 `
+  -BuildRoot "C:\Users\Ermin\.t3\worktrees\caelestia-windows\t3-661ef84c\windows\.local\build" `
+  -Prefix "$env:LOCALAPPDATA\Programs\caelestia-windows" `
+  -ProfileRoot "$env:LOCALAPPDATA\caelestia-windows"
+```
+
+The installer refuses an update while that prefix's qs.exe is running and
+preserves existing profile configuration. Start the installed shortcut again
+when the update finishes.
+
+---
+
 # Windows integration round 4
 
 Branch `t3/integration-4` starts at `origin/t3/integration-3` (`9b732a30`).
