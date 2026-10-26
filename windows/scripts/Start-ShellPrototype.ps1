@@ -320,6 +320,9 @@ $info.EnvironmentVariables['CAELESTIA_WINDOWS_NOTIFICATION_APP_OPEN'] = $(if ($m
 # interception, and software gamma brightness is never supplied.
 if ($Combined) {
     foreach ($name in $slices.Keys) {
+        # Tiling is a Custom slice with a mode word rather than an Observe pair;
+        # the generic tiling block above keeps it off for combined runs.
+        if ($slices[$name].Custom) { continue }
         $info.EnvironmentVariables[$slices[$name].Observe] = '1'
         if ($slices[$name].Controls) { $info.EnvironmentVariables[$slices[$name].Controls] = '0' }
     }
