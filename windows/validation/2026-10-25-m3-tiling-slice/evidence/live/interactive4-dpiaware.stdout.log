@@ -1,0 +1,21 @@
+﻿2026-10-25 22:14:19.044  INFO: Launching config: "D:/AiStack/caelestia-windows/windows/.local/m3/shell-runs/tiling-20261025-221418-616/shell.qml"
+2026-10-25 22:14:19.044  INFO: Shell ID: "334aa768249eb5fad24a973eb8589844" Path ID "334aa768249eb5fad24a973eb8589844"
+2026-10-25 22:14:19.064  INFO: Saving logs to "C:/Users/Ermin/AppData/Local/quickshell/run/by-id/4bvvvshnt/log.qslog"
+2026-10-25 22:14:19.093  INFO quickshell.windows.blur: Blur behind panels is turned off by QS_WINDOWS_BLUR.
+2026-10-25 22:14:19.097  INFO qml: CAELESTIA_TILING_BACKEND_READY supportsIncluded=1 supportsTelemetry=1
+2026-10-25 22:14:19.097 DEBUG quickshell.windows.tiling: Tiling allowlist changed to QList("title:Caelestia Tiling Test*") ; re-evaluating window membership.
+2026-10-25 22:14:19.097 DEBUG quickshell.windows.desktops: Desktop list changed: 1 desktops
+2026-10-25 22:14:19.097 DEBUG quickshell.windows.desktops: Current desktop: 0
+2026-10-25 22:14:19.099  INFO quickshell.windows.blur: No layer rules file found (looked for D:/AiStack/caelestia-windows/windows/.local/m3/shell-runs/tiling-20261025-221418-616/defaults/windows/layerrules.json ), blur behind panels is off.
+2026-10-25 22:14:19.218 DEBUG qml: CAELESTIA_TILING_STATUS tiling=interactive included=1 excluded=2 status=tiling
+2026-10-25 22:14:19.227 DEBUG quickshell.windows.panel: Placing qs::windows::WinPanelWindow(0x27780e13b20) at QRect(80,80 620x700) on "MAG321UX OLED"
+2026-10-25 22:14:19.237  INFO: Configuration Loaded
+2026-10-25 22:14:19.352 DEBUG quickshell.windows.panel: Taking keyboard focus for qs::windows::WinPanelWindow(0x27780e13b20) as it is shown
+2026-10-25 22:14:19.362 DEBUG quickshell.windows.startup: First panel frame presented
+2026-10-25 22:14:19.762 DEBUG quickshell.windows.startup: Startup settled, running 2 deferred tasks
+2026-10-25 22:14:19.762  INFO quickshell.windows.desktops: VirtualDesktopAccessor.dll not found next to the executable; desktop switching and creation are unavailable.
+2026-10-25 22:14:19.790 DEBUG quickshell.windows.tiling: Tiling "2350acc" "Microsoft.WindowsNotepad_8wekyb3d8bbwe!App" on "{00000000-0000-0000-0000-000000000000}" "MAG321UX OLED"
+2026-10-25 22:14:19.790 DEBUG quickshell.windows.tiling: Tiling "18b0b56" "Microsoft.Paint_8wekyb3d8bbwe!App" on "{00000000-0000-0000-0000-000000000000}" "MAG321UX OLED"
+2026-10-25 22:14:19.945 DEBUG quickshell.windows.tiling: Completed placement "18b0b56" final frame QRect(1926,56 1906x1958) after 0 corrections
+2026-10-25 22:14:19.945 DEBUG quickshell.windows.tiling: Completed placement "2350acc" final frame QRect(8,56 1906x1958) after 0 corrections
+

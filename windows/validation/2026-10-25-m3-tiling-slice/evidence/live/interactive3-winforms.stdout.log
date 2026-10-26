@@ -1,0 +1,23 @@
+﻿2026-10-25 22:12:29.775  INFO: Launching config: "D:/AiStack/caelestia-windows/windows/.local/m3/shell-runs/tiling-20261025-221228-738/shell.qml"
+2026-10-25 22:12:29.775  INFO: Shell ID: "281f226125db96e073f324bb6eebce34" Path ID "281f226125db96e073f324bb6eebce34"
+2026-10-25 22:12:29.798  INFO: Saving logs to "C:/Users/Ermin/AppData/Local/quickshell/run/by-id/w8wtsshnt/log.qslog"
+2026-10-25 22:12:29.832  INFO quickshell.windows.blur: Blur behind panels is turned off by QS_WINDOWS_BLUR.
+2026-10-25 22:12:29.836  INFO qml: CAELESTIA_TILING_BACKEND_READY supportsIncluded=1 supportsTelemetry=1
+2026-10-25 22:12:29.836 DEBUG quickshell.windows.tiling: Tiling allowlist changed to QList("title:Caelestia Tiling Test*") ; re-evaluating window membership.
+2026-10-25 22:12:29.836 DEBUG quickshell.windows.desktops: Desktop list changed: 1 desktops
+2026-10-25 22:12:29.836 DEBUG quickshell.windows.desktops: Current desktop: 0
+2026-10-25 22:12:29.838  INFO quickshell.windows.blur: No layer rules file found (looked for D:/AiStack/caelestia-windows/windows/.local/m3/shell-runs/tiling-20261025-221228-738/defaults/windows/layerrules.json ), blur behind panels is off.
+2026-10-25 22:12:29.957 DEBUG qml: CAELESTIA_TILING_STATUS tiling=interactive included=1 excluded=2 status=tiling
+2026-10-25 22:12:29.967 DEBUG quickshell.windows.panel: Placing qs::windows::WinPanelWindow(0x2092da7da20) at QRect(80,80 620x700) on "MAG321UX OLED"
+2026-10-25 22:12:29.977  INFO: Configuration Loaded
+2026-10-25 22:12:30.104 DEBUG quickshell.windows.panel: Taking keyboard focus for qs::windows::WinPanelWindow(0x2092da7da20) as it is shown
+2026-10-25 22:12:30.115 DEBUG quickshell.windows.startup: First panel frame presented
+2026-10-25 22:12:30.516 DEBUG quickshell.windows.startup: Startup settled, running 2 deferred tasks
+2026-10-25 22:12:30.516  INFO quickshell.windows.desktops: VirtualDesktopAccessor.dll not found next to the executable; desktop switching and creation are unavailable.
+2026-10-25 22:12:30.543 DEBUG quickshell.windows.tiling: Tiling "3240a2c" "powershell" on "{00000000-0000-0000-0000-000000000000}" "MAG321UX OLED"
+2026-10-25 22:12:30.543 DEBUG quickshell.windows.tiling: Tiling "470d1e" "powershell" on "{00000000-0000-0000-0000-000000000000}" "MAG321UX OLED"
+2026-10-25 22:12:30.708 DEBUG quickshell.windows.tiling: Correcting "3240a2c" "powershell" towards QRect(8,56 1906x1958) from QRect(-540,48 2453x1966) correction 1 of 2
+2026-10-25 22:12:30.708 DEBUG quickshell.windows.tiling: Correcting "470d1e" "powershell" towards QRect(1926,56 1906x1958) from QRect(1927,56 1906x1959) correction 1 of 2
+2026-10-25 22:12:32.708  INFO quickshell.windows.tiling: Window "3240a2c" "powershell" ignores being moved; it floats after 1 corrections.
+2026-10-25 22:12:32.708  INFO quickshell.windows.tiling: Window "470d1e" "powershell" ignores being moved; it floats after 1 corrections.
+

@@ -162,3 +162,89 @@ orchestrator fixed all of them in the follow-up commit:
 Rerun at the follow-up commit with the same commands: `Test-TilingService.ps1`
 passed with 161 assertions, and `Test-TilingPrototype.ps1` passed. Only
 Disabled-mode native runs were made.
+
+## Orchestrator live runs (stages 4 and 5)
+
+Run on the shared desktop on 2026-10-25 by the orchestrator, the only
+controller, at `332a2b38`. The evidence is in [`evidence/live`](evidence/live/).
+
+**Build.** The pinned backend (`525786f`) has no `Tiling.included` and no
+telemetry, and the M3 backend (`cd170acf`) lacks the M2 services. The runs
+therefore used an unpinned test merge of the two, fork branch
+`windows/m3-on-m2-services`, built into a separate root
+(`windows\.local\m3`, see [`m3-runtime-build.json`](evidence/live/m3-runtime-build.json)).
+The build was a local copy of `Build-Prototype.ps1` with only the pin-match
+gate removed. The root gitlink and `sources.lock.json` were not changed. All
+11 backend test suites passed on the merge. The submodule move makes each
+run record `sourceDirty=true`.
+
+### Stage 4: Observe, both monitors
+
+`Start-ShellPrototype.ps1 -Tiling -TilingMode Observe -TilingExcluded 'ksg-shell;explorer' -Smoke -ScreenIndex 0|1`
+at backend `d10ece6`. Both passed:
+- `status=observing`;
+- `backendLoaded`, `includedSupported` and `backendEnabled=false`;
+- `managedCount=0`, no toasts, and the original toast surface loaded.
+
+`Get-DesktopState.ps1` was identical before and after, and no `qs` process
+remained. ksg-shell's tiler stayed on, because Observe never enables
+tiling.
+
+### Stage 5: Interactive on an allowlist
+
+ksg-shell's tiler was paused through its live-reloaded `wm.enabled` setting.
+The allowlist was `title:Caelestia Tiling Test*`, which matches only windows
+the orchestrator opened; the excluded list was `ksg-shell;explorer`. Runs
+were stopped with `Stop-Process` on the exact `qs` PID. ksg-shell's settings
+file was restored from a backup after each run.
+
+1. **Backend `d10ece6`: windows were never placed.** The shell reported
+   `status=tiling` and `managedCount=2`, but nothing moved. The tiler re-inserted
+   both windows every ~31 ms on desktop
+   `{00000000-0000-0000-0000-000000000000}`
+   ([log head](evidence/live/interactive2-placeholder-churn.head.log)).
+   - Cause: this machine has one virtual desktop and no `VirtualDesktopIDs`
+     registry value. `VirtualDesktops` falls back to one null-GUID
+     placeholder, but `indexOf` rejected null GUIDs.
+   - Effect: `TilingManager::layoutAlive` saw every layout as dead.
+   - The code was already present at the old pin `1401042`.
+   - Fixed in fork commit `5a9735bc` (branch
+     `windows/m3-single-desktop-placeholder`, merged as `4beaf54`): the
+     placeholder resolves to desktop 0 only when it is the sole entry.
+2. **Backend `4beaf54`, DPI-unaware windows: placed, then floated.** The two
+   test windows were PowerShell WinForms
+   ([`test-windows.ps1`](evidence/live/test-windows.ps1)), which Windows
+   bitmap-scales at 150%.
+   - One window landed 1 px off its tile.
+   - The other landed at a distorted rect, `-540,48 2453x1966`.
+   - The tiler then floated both as "ignores being moved" and restored them
+     to their pre-tiling position.
+   - Two `Couldn't tile a window` toasts were shown, carrying the
+     `unresponsive` copy ([log](evidence/live/interactive3-winforms.stdout.log)).
+   - The failure path behaved as designed. Placement of DPI-unaware windows
+     on a scaled monitor is a backend follow-up.
+3. **Backend `4beaf54`, DPI-aware windows: tiled.** The windows were Notepad
+   and Paint, each on a file whose name matched the allowlist.
+   - Each was inserted once. Within 155 ms both completed placement with 0
+     corrections ([log](evidence/live/interactive4-dpiaware.stdout.log)).
+   - Notepad landed at `8,56 1906x1958` and Paint at `1926,56 1906x1958`, the
+     two halves of the 3840x2160 work area at 150% scaling.
+   - IPC state showed `status=tiling`, `managedCount=2`, `failedCount=0` and
+     no toasts.
+   - Other windows (Dia, Settings, Raycast) were not moved.
+   - After `Stop-Process`, both windows stayed at their tile rects. A kill
+     skips graceful restoration, and nothing was parked off-screen.
+
+The only before/after difference in `Get-DesktopState.ps1` was the
+foreground window ([before](evidence/live/desktop-before-interactive2.json),
+[after](evidence/live/desktop-after-interactive2.json)). The orchestrator
+closed only its own Notepad tabs and Paint, leaving the user's restored
+Notepad tabs intact. Full-desktop screenshots were not archived because they
+showed unrelated private windows.
+
+**Not validated:**
+- graceful disable restoring pre-tiling frames (IPC quit rather than a kill);
+- a second monitor in Interactive;
+- the mutex refusal with ksg-shell's tiler running;
+- DPI-unaware placement;
+- this tiling stack at a reviewed root pin.
