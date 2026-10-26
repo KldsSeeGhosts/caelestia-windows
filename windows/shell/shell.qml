@@ -113,6 +113,8 @@ ShellRoot {
                 width: w.width, height: w.height
             })),
             tilingMode: Tiling.mode,
+            statisticsActive: Native.SystemMonitor.active,
+            networkStatisticsActive: Native.SystemStats.active,
             wallpaperEngine: {
                 ready: WallpaperEngine.snapshotReady,
                 running: WallpaperEngine.running,
@@ -194,6 +196,7 @@ ShellRoot {
                 && state.windows.every(w => w.width === w.screenWidth
                     && w.height === w.screenHeight && w.barWidth > 0)
                 && Object.values(state.controls).every(value => value === false)
+                && !state.statisticsActive && !state.networkStatisticsActive
                 && (!WallpaperEngine.python || state.wallpaperEngine.ready)
                 && (!state.scheme.available || (state.scheme.status === "ready"
                     && state.scheme.schemes > 0 && state.scheme.variants > 0))

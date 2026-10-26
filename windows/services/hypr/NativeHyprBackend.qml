@@ -44,7 +44,8 @@ QtObject {
     // The backend tracks windows on other desktops too. Independently observe
     // the real foreground HWND before projecting one as the active application.
     readonly property Process foregroundWatcher: Process {
-        command: ["powershell.exe", "-NoProfile", "-NonInteractive", "-File",
+        command: [Quickshell.env("SystemRoot") + "/System32/WindowsPowerShell/v1.0/powershell.exe",
+            "-NoProfile", "-NonInteractive", "-File",
             Quickshell.shellPath("helpers/Watch-ActiveWindow.ps1")]
         running: true
         stdout: SplitParser {
