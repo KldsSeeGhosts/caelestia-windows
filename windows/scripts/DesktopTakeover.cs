@@ -39,32 +39,63 @@ namespace Caelestia.Takeover {
         public string Operation, Device, Utc, Source;
         public long Handle;
         public uint Owner;
-        public bool VisibleBefore, RequestedVisible, VisibleAfter;
+        public bool VisibleBefore, RequestedVisible, Asynchronous;
+        public bool? VisibleAfter, RequestAccepted;
         // Ticks are Stopwatch/QPC ticks, not wall-clock or WinEvent's ms time.
         public long MonotonicTicks, TickFrequency;
         public long? ShowObservedTicks;
-        public double? ShowToHideMilliseconds;
+        public double? ShowToHideMilliseconds, ShowToRequestMilliseconds;
     }
     // All timestamps are supplied by the caller, allowing deterministic tests.
-    // At most five event-driven hides in two seconds, then five seconds of
-    // polling-only operation. A new fight can trigger another bounded backoff.
+    // Count only rapid same-HWND recurrences after our requests. Twelve within
+    // two seconds trigger five seconds of polling-only operation.
     public sealed class TaskbarShowPolicy {
+        sealed class WindowState {
+            public long LastRequest;
+            public readonly Queue<long> Recurrences = new Queue<long>();
+        }
         readonly long frequency;
-        readonly Queue<long> shows = new Queue<long>();
+        readonly Dictionary<string, WindowState> windows = new Dictionary<string, WindowState>();
         long backoffUntil;
         public TaskbarShowPolicy(long frequency) { this.frequency = frequency; }
-        public bool AllowImmediate(long now, out bool enteredBackoff) {
+        static string Key(Bar bar) { return bar.Owner.ToString() + ":" + bar.Handle.ToString(); }
+        void Prune(long now) {
+            var expired = new List<string>();
+            foreach (var entry in windows)
+                if (now - entry.Value.LastRequest >= 2 * frequency) expired.Add(entry.Key);
+            foreach (var key in expired) windows.Remove(key);
+        }
+        public bool AllowImmediate(Bar bar, long now, out bool enteredBackoff) {
             enteredBackoff = false;
             if (now < backoffUntil) return false;
-            while (shows.Count > 0 && now - shows.Peek() >= 2 * frequency) shows.Dequeue();
-            shows.Enqueue(now);
-            if (shows.Count <= 5) return true;
-            shows.Clear();
-            backoffUntil = now + 5 * frequency;
-            enteredBackoff = true;
-            return false;
+            Prune(now);
+            WindowState state;
+            if (windows.TryGetValue(Key(bar), out state)) {
+                while (state.Recurrences.Count > 0 && now - state.Recurrences.Peek() >= 2 * frequency)
+                    state.Recurrences.Dequeue();
+                long elapsed = now - state.LastRequest;
+                if (elapsed >= 0 && elapsed <= frequency * 75 / 1000) {
+                    state.Recurrences.Enqueue(now);
+                    if (state.Recurrences.Count >= 12) {
+                        windows.Clear();
+                        backoffUntil = now + 5 * frequency;
+                        enteredBackoff = true;
+                        return false;
+                    }
+                }
+            }
+            return true;
         }
-        public void Reset() { shows.Clear(); backoffUntil = 0; }
+        public void RememberRequest(Bar bar, long ticks) {
+            WindowState state;
+            var key = Key(bar);
+            if (!windows.TryGetValue(key, out state)) {
+                state = new WindowState();
+                windows.Add(key, state);
+            }
+            state.LastRequest = ticks;
+        }
+        public void Reset() { windows.Clear(); backoffUntil = 0; }
     }
     // Hook ownership and replacement are injectable, so restart/failure and
     // disposal can be exercised without registering a real desktop hook.
@@ -106,11 +137,14 @@ namespace Caelestia.Takeover {
             var observed = Native.ObserveShow(bar, ticks);
             observed.Source = "event";
             bool enteredBackoff = false;
-            bool immediate = bar.Visible && policy.AllowImmediate(ticks, out enteredBackoff);
+            bool immediate = bar.Visible && policy.AllowImmediate(bar, ticks, out enteredBackoff);
             // Hide before disk I/O. Delayed events can describe a window
             // that is already hidden; record them without another hide.
             var hidden = immediate && bar.Visible ? hide(bar, ticks) : null;
-            if (hidden != null) hidden.Source = "event";
+            if (hidden != null) {
+                hidden.Source = "event";
+                policy.RememberRequest(bar, hidden.MonotonicTicks);
+            }
             record(observed);
             if (hidden != null) record(hidden);
             if (enteredBackoff) {
@@ -150,6 +184,7 @@ namespace Caelestia.Takeover {
         [DllImport("user32.dll")] static extern bool IsWindow(IntPtr window);
         [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr window, out uint pid);
         [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr window, int command);
+        [DllImport("user32.dll")] static extern bool ShowWindowAsync(IntPtr window, int command);
         [DllImport("user32.dll")] static extern bool EnumDisplayMonitors(IntPtr dc, IntPtr clip, MonitorCallback callback, IntPtr data);
         [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern bool GetMonitorInfo(IntPtr monitor, ref MonitorInfo info);
         [DllImport("user32.dll")] static extern IntPtr MonitorFromWindow(IntPtr window, uint flags);
@@ -271,7 +306,26 @@ namespace Caelestia.Takeover {
             return action;
         }
         public static TaskbarAction HideObserved(Bar bar, long ticks) {
-            return Visibility(bar, false, "hide", ticks);
+            return AsyncHide(bar, ticks, delegate(Bar target) {
+                var window = new IntPtr(target.Handle);
+                uint owner;
+                GetWindowThreadProcessId(window, out owner);
+                if (!IsWindow(window) || owner != target.Owner) return null;
+                return ShowWindowAsync(window, 0); // SW_HIDE; request only
+            }, Stopwatch.GetTimestamp);
+        }
+        // Injectable request and clock permit testing without a native window.
+        public static TaskbarAction AsyncHide(Bar bar, long ticks, Func<Bar, bool?> post, Func<long> clock) {
+            bool? accepted = post(bar);
+            if (!accepted.HasValue) return null;
+            long requested = clock();
+            var action = ActionFor(bar, "hide", requested);
+            action.Asynchronous = true;
+            action.RequestAccepted = accepted;
+            action.VisibleAfter = null; // Completion is not known at return.
+            action.ShowObservedTicks = ticks;
+            action.ShowToRequestMilliseconds = (requested - ticks) * 1000.0 / Stopwatch.Frequency;
+            return action;
         }
         public static void Hide(bool recordUnchanged) {
             foreach (var bar in Taskbars()) {
@@ -505,6 +559,9 @@ namespace Caelestia.Takeover {
                 process.OutputDataReceived += delegate(object sender, DataReceivedEventArgs e) { if (e.Data != null) Append(launch.StdoutPath, e.Data); };
             if (info.RedirectStandardError)
                 process.ErrorDataReceived += delegate(object sender, DataReceivedEventArgs e) { if (e.Data != null) Append(launch.StderrPath, e.Data); };
+            // Snapshot is durable and the supervisor owns restoration before
+            // the child can register its AppBars. Retain the post-start pass.
+            if (hide) { RefreshShowHook(false); Native.Hide(true); }
             process.Start();
             child = process;
             ownedPid = child.Id;

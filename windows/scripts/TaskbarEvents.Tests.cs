@@ -56,7 +56,8 @@ public static class TaskbarEventsTests {
             hides++;
             order.Add("hide");
             return new TaskbarAction { Operation = "hide", ShowObservedTicks = ticks,
-                MonotonicTicks = ticks + 3, ShowToHideMilliseconds = 3 };
+                MonotonicTicks = ticks + 3, Asynchronous = true, RequestAccepted = true,
+                VisibleAfter = null, ShowToRequestMilliseconds = 3 };
         }, delegate(TaskbarAction action) { order.Add(action.Operation); actions.Add(action); });
         handler.Handle(0, new IntPtr(1), 0, 0, 0);
         handler.Handle(42, new IntPtr(1), -4, 0, 0);
@@ -71,31 +72,97 @@ public static class TaskbarEventsTests {
         Check(actions[0].MonotonicTicks == 100 && actions[0].ShowObservedTicks == 100 &&
             actions[0].TickFrequency == System.Diagnostics.Stopwatch.Frequency && actions[0].Utc != null &&
             actions[0].Source == "event" && actions[1].Source == "event" &&
-            actions[1].ShowObservedTicks == 100 && actions[1].ShowToHideMilliseconds == 3,
+            actions[1].ShowObservedTicks == 100 && actions[1].ShowToRequestMilliseconds == 3 &&
+            actions[1].Asynchronous && actions[1].VisibleAfter == null &&
+            actions[1].ShowToHideMilliseconds == null,
             "correlated monotonic and UTC records");
-        handler.Handle(42, new IntPtr(2), 0, 0, 200);
-        handler.Handle(42, new IntPtr(1), 0, 0, 300);
-        handler.Handle(42, new IntPtr(2), 0, 0, 400);
-        handler.Handle(42, new IntPtr(1), 0, 0, 500);
-        handler.Handle(42, new IntPtr(1), 0, 0, 600);
-        handler.Handle(42, new IntPtr(1), 0, 0, 700);
-        Check(hides == 5, "sixth show starts backoff and later shows do not hide");
-        Check(actions.FindAll(a => a.Operation == "show").Count == 7 &&
-            actions.FindAll(a => a.Operation == "event-backoff").Count == 1,
-            "record each show and only one backoff");
-        handler.Handle(42, new IntPtr(1), 0, 0, 5600);
-        Check(hides == 6, "immediate suppression resumes at backoff deadline");
+        // Many separate relayouts and both taskbars must not trip the guard.
+        for (int i = 1; i <= 30; i++)
+            handler.Handle(42, new IntPtr(i % 2 + 1), 0, 0, 100 + i * 100);
+        Check(hides == 31 && actions.FindAll(a => a.Operation == "event-backoff").Count == 0,
+            "spaced startup relayouts on both monitors do not back off");
+        policy.Reset();
+        int beforeBurst = hides;
+        for (int i = 0; i < 9; i++)
+            handler.Handle(42, new IntPtr(2), 0, 0, 3101 + i * 10);
+        Check(hides == beforeBurst + 9 && actions.FindAll(a => a.Operation == "event-backoff").Count == 0,
+            "brief same-window startup burst remains event-driven");
+        // A sustained same-window fight is bounded, even when asynchronous
+        // requests have not completed and duplicate shows remain visible.
+        policy.Reset();
+        int beforeFight = hides;
+        for (int i = 1; i <= 14; i++)
+            handler.Handle(42, new IntPtr(1), 0, 0, 4100 + i * 10);
+        Check(hides == beforeFight + 12, "twelfth rapid recurrence enters backoff");
+        Check(actions.FindAll(a => a.Operation == "event-backoff").Count == 1,
+            "backoff is logged once despite further shows");
+        handler.Handle(42, new IntPtr(1), 0, 0, 9230);
+        Check(hides == beforeFight + 13, "immediate suppression resumes at backoff deadline");
         visible = false;
-        handler.Handle(42, new IntPtr(2), 0, 0, 5700);
-        Check(hides == 6 && actions[actions.Count - 1].Operation == "show", "record delayed show without redundant hide");
+        handler.Handle(42, new IntPtr(2), 0, 0, 9240);
+        Check(hides == beforeFight + 13 && actions[actions.Count - 1].Operation == "show", "record delayed show without redundant hide");
         policy.Reset();
         visible = true;
-        handler.Handle(42, new IntPtr(2), 0, 0, 5800);
-        Check(hides == 7, "restart resets policy");
+        handler.Handle(42, new IntPtr(2), 0, 0, 9250);
+        Check(hides == beforeFight + 14, "restart resets policy");
+
+        var first = new Bar { Handle = 1, Owner = 42, Visible = true };
+        var other = new Bar { Handle = 2, Owner = 42, Visible = true };
+        var newOwner = new Bar { Handle = 1, Owner = 43, Visible = true };
         policy.Reset();
         bool entered;
-        for (int i = 0; i < 5; i++) Check(policy.AllowImmediate(i * 100, out entered), "initial burst");
-        Check(policy.AllowImmediate(2400, out entered) && !entered, "rolling window expires old shows");
+        for (int i = 0; i < 20; i++) {
+            long tick = i * 90;
+            Check(policy.AllowImmediate(first, tick, out entered) && !entered, "non-rapid repeated relayout");
+            policy.RememberRequest(first, tick + 1);
+        }
+        policy.Reset();
+        for (int i = 0; i < 11; i++) {
+            policy.RememberRequest(first, i * 10);
+            Check(policy.AllowImmediate(first, i * 10 + 1, out entered) && !entered, "bounded rapid recurrence");
+        }
+        policy.RememberRequest(other, 111);
+        Check(policy.AllowImmediate(other, 112, out entered) && !entered, "other HWND has its own counter");
+        Check(policy.AllowImmediate(newOwner, 112, out entered) && !entered, "owner change has its own counter");
+        policy.RememberRequest(first, 120);
+        Check(!policy.AllowImmediate(first, 121, out entered) && entered, "twelfth recurrence enters backoff");
+        Check(!policy.AllowImmediate(other, 122, out entered) && !entered, "global backoff is quiet");
+        Check(policy.AllowImmediate(other, 5121, out entered) && !entered, "backoff ends at deadline");
+        policy.Reset();
+        policy.RememberRequest(first, 0);
+        Check(policy.AllowImmediate(first, 76, out entered) && !entered, "75 ms boundary excludes slower events");
+        policy.RememberRequest(first, 200);
+        Check(policy.AllowImmediate(first, 275, out entered) && !entered, "75 ms boundary includes rapid event");
+        policy.Reset();
+        for (int i = 0; i < 11; i++) {
+            policy.RememberRequest(first, i * 10);
+            Check(policy.AllowImmediate(first, i * 10 + 1, out entered), "rolling window setup");
+        }
+        policy.RememberRequest(first, 2200);
+        Check(policy.AllowImmediate(first, 2201, out entered) && !entered, "old recurrences expire");
+
+        var asyncAction = Native.AsyncHide(first, 100,
+            delegate(Bar bar) { return true; }, delegate { return 110; });
+        Check(asyncAction.Asynchronous && asyncAction.RequestAccepted == true &&
+            asyncAction.VisibleAfter == null && asyncAction.ShowToHideMilliseconds == null &&
+            asyncAction.ShowObservedTicks == 100 && asyncAction.MonotonicTicks == 110 &&
+            asyncAction.ShowToRequestMilliseconds == 10 * 1000.0 / System.Diagnostics.Stopwatch.Frequency,
+            "async request records acceptance and request timing, not completion");
+        var rejected = Native.AsyncHide(first, 100, delegate(Bar bar) { return false; }, delegate { return 110; });
+        Check(rejected.RequestAccepted == false && rejected.VisibleAfter == null, "failed post remains unconfirmed");
+        Check(Native.AsyncHide(first, 100, delegate(Bar bar) { return null; }, delegate { return 110; }) == null,
+            "owner recheck failure issues no action");
+        int rejectedRequests = 0, backoffs = 0;
+        var failedHandler = new TaskbarShowHandler(new TaskbarShowPolicy(1000),
+            delegate(IntPtr hwnd, uint owner) { return first; },
+            delegate(Bar bar, long ticks) {
+                rejectedRequests++;
+                return new TaskbarAction { Operation = "hide", Asynchronous = true,
+                    RequestAccepted = false, MonotonicTicks = ticks };
+            },
+            delegate(TaskbarAction action) { if (action.Operation == "event-backoff") backoffs++; });
+        for (int i = 0; i < 20; i++) failedHandler.Handle(42, new IntPtr(1), 0, 0, i * 10);
+        Check(rejectedRequests == 12 && backoffs == 1, "failed async requests are bounded too");
         return assertions;
     }
 }
