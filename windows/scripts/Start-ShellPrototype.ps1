@@ -296,6 +296,7 @@ $info.EnvironmentVariables['CAELESTIA_CONFIG_DIR'] = Join-Path $profileRoot 'con
 $info.EnvironmentVariables['CAELESTIA_STATE_DIR'] = Join-Path $profileRoot 'state'
 $info.EnvironmentVariables['CAELESTIA_RUNTIME_DIR'] = Join-Path $profileRoot 'runtime'
 if ($Combined) {
+    $schemeRuntime = & "$PSScriptRoot\Test-SchemeRuntime.ps1"
     $info.EnvironmentVariables['CAELESTIA_ACCOUNT_PICTURE'] = & "$PSScriptRoot\Get-AccountPicture.ps1" `
         -CacheRoot (Join-Path $profileRoot 'cache')
 }
@@ -452,6 +453,7 @@ $result = [ordered]@{
     passed = $(if ($Smoke) { $passed } else { $null }); smoke = $Smoke.IsPresent
     prototype = $kind; combined = $Combined.IsPresent; live = $Live.IsPresent
     background = $Background.IsPresent; desktopIcons = $DesktopIcons
+    schemeRuntime = $(if ($Combined) { $schemeRuntime } else { $null })
     audioMode = $AudioMode; batteryMode = $BatteryMode; mediaMode = $MediaMode; brightnessMode = $BrightnessMode
     networkMode = $NetworkMode
     hyprMode = $HyprMode
