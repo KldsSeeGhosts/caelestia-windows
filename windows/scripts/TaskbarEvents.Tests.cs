@@ -1,6 +1,7 @@
 // Fake-only tests. No hook or taskbar native function is called.
 using System;
 using System.Collections.Generic;
+using System.IO;
 using Caelestia.Takeover;
 
 public static class TaskbarEventsTests {
@@ -191,6 +192,80 @@ public static class TaskbarEventsTests {
         manager.Restore();
         Check(sequence.Contains("restore-original-42") && sequence.Contains("restore-original-43"),
             "restore each saved identity");
+
+        int regionApplies = 0, guardedHides = 0, guardedBackoffs = 0;
+        var guarded = new TaskbarShowHandler(new TaskbarShowPolicy(1000),
+            delegate(IntPtr hwnd, uint owner) { return first; },
+            delegate(Bar bar) { regionApplies++; },
+            delegate(Bar bar, long ticks) {
+                guardedHides++;
+                return new TaskbarAction { Operation = "hide", MonotonicTicks = ticks };
+            },
+            delegate(TaskbarAction action) { if (action.Operation == "event-backoff") guardedBackoffs++; });
+        for (int i = 0; i < 30; i++) guarded.Handle(42, new IntPtr(1), 0, 0, i * 10);
+        Check(regionApplies == 12 && guardedHides == 12 && guardedBackoffs == 1,
+            "region and hide share the event backoff during repeated Explorer resets");
+        // Timer reconciliation is independent of event backoff.
+        persistFails = false;
+        sequence.Clear();
+        manager.Reconcile(first);
+        Check(sequence.Contains("apply"), "poll reconciliation still applies during event backoff");
+        guarded.Handle(42, new IntPtr(1), 0, 0, 5120);
+        Check(regionApplies == 13 && guardedHides == 13, "region and hide resume after backoff");
+
+        int cleaned = 0;
+        foreach (var error in new Exception[] { new IOException("full"), new UnauthorizedAccessException("denied") }) {
+            SupervisorSafety.Fail(delegate { throw error; }, delegate { cleaned++; });
+        }
+        Check(cleaned == 2, "cleanup runs when both error-log writes fail");
+        var failedSnapshot = new Snapshot();
+        int applied = 0, restored = 0;
+        var failedManager = new RegionSuppression(failedSnapshot,
+            delegate(Bar bar) { return new SavedRegion { Handle = bar.Handle, Owner = bar.Owner }; },
+            delegate(SavedRegion r) { if (r.Handle == 2) throw new IOException("snapshot full"); },
+            delegate(SavedRegion r) { applied++; },
+            delegate(SavedRegion r) { restored++; });
+        failedManager.Reconcile(first);
+        try { failedManager.Reconcile(other); throw new Exception("expected snapshot failure"); }
+        catch (IOException) {
+            SupervisorSafety.Fail(delegate { throw new IOException("log full"); },
+                delegate { failedManager.Restore(); });
+        }
+        Check(applied == 1 && restored == 1 && failedSnapshot.Regions.Count == 1,
+            "failed snapshot and failed logging still restore previously owned region");
+
+        bool vanished = true;
+        int attempts = 0, raceApplies = 0;
+        var raceSnapshot = new Snapshot();
+        var raceManager = new RegionSuppression(raceSnapshot,
+            delegate(Bar bar) {
+                return RegionCapture.TryCapture(delegate {
+                    attempts++;
+                    if (vanished) throw new InvalidOperationException("Explorer exited");
+                    return new SavedRegion { Handle = bar.Handle, Owner = bar.Owner };
+                }, delegate { return vanished; });
+            }, delegate(SavedRegion r) {}, delegate(SavedRegion r) { raceApplies++; },
+            delegate(SavedRegion r) {});
+        raceManager.Reconcile(first);
+        Check(attempts == 1 && raceApplies == 0 && raceSnapshot.Regions.Count == 0,
+            "vanished taskbar is skipped without persistence or mutation");
+        vanished = false;
+        raceManager.Reconcile(first);
+        Check(attempts == 2 && raceApplies == 1 && raceSnapshot.Regions.Count == 1,
+            "later discovery retries after Explorer returns");
+        var replaced = new RegionSuppression(new Snapshot(),
+            delegate(Bar bar) {
+                return RegionCapture.TryCapture(delegate {
+                    return new SavedRegion { Handle = bar.Handle, Owner = bar.Owner };
+                }, delegate { return true; });
+            }, delegate(SavedRegion r) { throw new Exception("persisted replacement"); },
+            delegate(SavedRegion r) { throw new Exception("applied replacement"); }, delegate(SavedRegion r) {});
+        replaced.Reconcile(first);
+        Check(true, "replaced taskbar identity is skipped");
+        try {
+            RegionCapture.TryCapture(delegate { throw new IOException("native failure"); }, delegate { return false; });
+            throw new Exception("expected native failure");
+        } catch (IOException) { Check(true, "failure for a surviving taskbar remains fatal"); }
         return assertions;
     }
 }

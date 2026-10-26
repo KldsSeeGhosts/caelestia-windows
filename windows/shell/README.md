@@ -128,7 +128,8 @@ concurrently with the supervisor.
 When enabled, an Explorer-process WinEvent show hook supplements the existing
 250 ms reconciliation timer. After twelve shows on the same Explorer-owned
 window within 75 ms of our preceding event hide returns, all within two seconds,
-it pauses event-driven hiding for five seconds while the timer continues.
+it pauses event-driven hiding and region reapplication for five seconds while
+the timer continues to reconcile both.
 Separate, slower relayouts and shows on different windows do not share a count.
 The supervisor's `taskbar-actions.jsonl` records show observations, hide calls,
 hook installation/failure and event-backoff transitions. `Source` distinguishes

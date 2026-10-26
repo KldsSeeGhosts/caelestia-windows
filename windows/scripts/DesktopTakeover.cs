@@ -42,6 +42,30 @@ namespace Caelestia.Takeover {
         public List<Bar> Bars = new List<Bar>();
         public List<SavedRegion> Regions = new List<SavedRegion>();
     }
+    public static class SupervisorSafety {
+        // A diagnostic write must never prevent cleanup. Snapshot persistence
+        // is deliberately not routed through this helper.
+        public static void Log(Action write) {
+            try { write(); } catch (IOException) {} catch (UnauthorizedAccessException) {}
+        }
+        public static void Fail(Action log, Action cleanup) {
+            try { Log(log); } finally { cleanup(); }
+        }
+    }
+    public static class RegionCapture {
+        public static SavedRegion TryCapture(Func<SavedRegion> capture, Func<bool> vanished) {
+            try {
+                var result = capture();
+                return result == null || vanished() ? null : result;
+            }
+            catch (Exception) {
+                // Only discard an error if the enumerated identity has
+                // actually disappeared. Other native failures remain fatal.
+                if (vanished()) return null;
+                throw;
+            }
+        }
+    }
     // Persist ownership before any mutation, including newly discovered HWNDs.
     // Native operations are injected so bookkeeping is testable without a desktop.
     public sealed class RegionSuppression {
@@ -55,6 +79,7 @@ namespace Caelestia.Takeover {
         }
         public void Reconcile(Bar bar) {
             var current = capture(bar);
+            if (current == null) return;
             var saved = snapshot.Regions.Find(r => r.Handle == current.Handle &&
                 r.Owner == current.Owner && r.ProcessStartTicks == current.ProcessStartTicks);
             if (saved == null) {
@@ -156,11 +181,18 @@ namespace Caelestia.Takeover {
     public sealed class TaskbarShowHandler {
         readonly TaskbarShowPolicy policy;
         readonly Func<IntPtr, uint, Bar> resolve;
+        readonly Action<Bar> suppress;
         readonly Func<Bar, long, TaskbarAction> hide;
         readonly Action<TaskbarAction> record;
         public TaskbarShowHandler(TaskbarShowPolicy policy, Func<IntPtr, uint, Bar> resolve,
             Func<Bar, long, TaskbarAction> hide, Action<TaskbarAction> record) {
             this.policy = policy; this.resolve = resolve; this.hide = hide; this.record = record;
+            this.suppress = delegate(Bar bar) {};
+        }
+        public TaskbarShowHandler(TaskbarShowPolicy policy, Func<IntPtr, uint, Bar> resolve,
+            Action<Bar> suppress, Func<Bar, long, TaskbarAction> hide, Action<TaskbarAction> record) {
+            this.policy = policy; this.resolve = resolve; this.suppress = suppress;
+            this.hide = hide; this.record = record;
         }
         public void Handle(uint owner, IntPtr window, int objectId, int childId, long ticks) {
             if (owner == 0 || objectId != 0 || childId != 0) return;
@@ -170,6 +202,7 @@ namespace Caelestia.Takeover {
             observed.Source = "event";
             bool enteredBackoff = false;
             bool immediate = bar.Visible && policy.AllowImmediate(bar, ticks, out enteredBackoff);
+            if (immediate) suppress(bar);
             // Hide before disk I/O. Delayed events can describe a window
             // that is already hidden; record them without another hide.
             var hidden = immediate && bar.Visible ? hide(bar, ticks) : null;
@@ -258,8 +291,21 @@ namespace Caelestia.Takeover {
               catch (System.ComponentModel.Win32Exception) { return false; }
         }
         public static SavedRegion CaptureRegion(Bar bar) {
+            return RegionCapture.TryCapture(delegate { return CaptureRegionCore(bar); },
+                delegate { return !CurrentTaskbar(bar); });
+        }
+        static bool CurrentTaskbar(Bar bar) {
+            var window = new IntPtr(bar.Handle);
+            uint owner;
+            if (!IsWindow(window)) return false;
+            GetWindowThreadProcessId(window, out owner);
+            var name = new StringBuilder(128);
+            GetClassName(window, name, name.Capacity);
+            return IsExplorerTaskbar(name.ToString(), owner, bar.Owner) && Explorer(owner);
+        }
+        static SavedRegion CaptureRegionCore(Bar bar) {
             var saved = new SavedRegion { Handle = bar.Handle, Owner = bar.Owner, ProcessStartTicks = ProcessStart(bar.Owner) };
-            if (!SameRegionWindow(saved)) throw new InvalidOperationException("Taskbar changed while capturing region.");
+            if (!SameRegionWindow(saved)) return null;
             var region = CreateRectRgn(0, 0, 0, 0);
             if (region == IntPtr.Zero) throw new System.ComponentModel.Win32Exception();
             try {
@@ -276,14 +322,16 @@ namespace Caelestia.Takeover {
                     if (GetRegionData(region, size, data) != size) throw new System.ComponentModel.Win32Exception();
                     saved.RegionData = Convert.ToBase64String(data);
                 }
-                return saved;
+                return SameRegionWindow(saved) ? saved : null;
             } finally { DeleteObject(region); }
         }
         static void SetRegion(SavedRegion saved, IntPtr region) {
             if (!SameRegionWindow(saved)) { if (region != IntPtr.Zero) DeleteObject(region); return; }
             if (SetWindowRgn(new IntPtr(saved.Handle), region, true) == 0) {
+                int error = Marshal.GetLastWin32Error();
                 if (region != IntPtr.Zero) DeleteObject(region);
-                throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error(), "SetWindowRgn failed");
+                if (!SameRegionWindow(saved)) return;
+                throw new System.ComponentModel.Win32Exception(error, "SetWindowRgn failed");
             }
             // The system owns a successfully assigned region.
         }
@@ -578,7 +626,8 @@ namespace Caelestia.Takeover {
             showHook = new TaskbarHookBinding(
                 delegate(uint owner) { return Native.HookShows(owner, showCallback); },
                 Native.UnhookShows);
-            showHandler = new TaskbarShowHandler(showPolicy, Native.EventTaskbar, Native.HideObserved, Native.Record);
+            showHandler = new TaskbarShowHandler(showPolicy, Native.EventTaskbar,
+                delegate(Bar bar) { if (invisible) regions.Reconcile(bar); }, Native.HideObserved, Native.Record);
             Directory.CreateDirectory(launch.StateDirectory);
             saved = Native.Capture();
             regions = new RegionSuppression(saved, Native.CaptureRegion, delegate(SavedRegion ignored) { SaveSnapshot(); },
@@ -586,12 +635,10 @@ namespace Caelestia.Takeover {
             // Durable before the first native change, usable if this helper is killed.
             File.WriteAllText(Path.Combine(launch.StateDirectory, "desktop-before.json"), json.Serialize(saved));
             Native.RecordAction = delegate(TaskbarAction action) {
-                try {
+                SupervisorSafety.Log(delegate {
                     File.AppendAllText(Path.Combine(launch.StateDirectory, "taskbar-actions.jsonl"),
                         json.Serialize(action) + Environment.NewLine);
-                } catch (IOException) {
-                    // Logging must never prevent desktop restoration.
-                } catch (UnauthorizedAccessException) {}
+                });
             };
             recovery = new System.Threading.EventWaitHandle(false, System.Threading.EventResetMode.ManualReset, EventName);
             recovery.Reset();
@@ -622,8 +669,7 @@ namespace Caelestia.Takeover {
                     SuppressRegions();
                     Native.Hide(true);
                 } catch (Exception error) {
-                    File.AppendAllText(Path.Combine(launch.StateDirectory, "watchdog-error.log"), error + Environment.NewLine);
-                    Finish("watchdog-error", 1);
+                    Fail(error, "");
                 }
             }
             base.WndProc(ref message);
@@ -652,27 +698,29 @@ namespace Caelestia.Takeover {
             long ticks = Stopwatch.GetTimestamp();
             try {
                 if (done || !hide || child == null || child.HasExited || !showHook.Matches(hook)) return;
-                if (invisible && objectId == 0 && childId == 0) {
-                    var bar = Native.EventTaskbar(window, showHook.Owner);
-                    if (bar != null) regions.Reconcile(bar);
-                }
                 showHandler.Handle(showHook.Owner, window, objectId, childId, ticks);
             } catch (Exception error) {
-                // Desktop switches or disappearing Explorer windows must not
-                // let an exception escape an unmanaged callback.
-                try { File.AppendAllText(Path.Combine(launch.StateDirectory, "watchdog-error.log"),
-                    "WinEvent: " + error + Environment.NewLine); }
-                catch (IOException) {} catch (UnauthorizedAccessException) {}
+                // Do not let a persistence failure escape an unmanaged callback
+                // or leave a partially suppressed desktop running.
+                Fail(error, "WinEvent: ");
             }
         }
+        void Fail(Exception error, string prefix) {
+            SupervisorSafety.Fail(delegate {
+                File.AppendAllText(Path.Combine(launch.StateDirectory, "watchdog-error.log"),
+                    prefix + error + Environment.NewLine);
+            }, delegate { Finish("watchdog-error", 1); });
+        }
         void Status(string phase, int pid) {
-            var path = Path.Combine(launch.StateDirectory, "watchdog.json");
-            var text = json.Serialize(new { phase = phase, shellPid = pid, watchdogPid = Process.GetCurrentProcess().Id,
-                quickCrashes = quickCrashes, hideTaskbar = hide, restartOnCrash = restart, exitCode = ExitCode,
-                utc = DateTime.UtcNow.ToString("o") });
-            File.WriteAllText(path + ".tmp", text);
-            if (File.Exists(path)) File.Replace(path + ".tmp", path, null);
-            else File.Move(path + ".tmp", path);
+            SupervisorSafety.Log(delegate {
+                var path = Path.Combine(launch.StateDirectory, "watchdog.json");
+                var text = json.Serialize(new { phase = phase, shellPid = pid, watchdogPid = Process.GetCurrentProcess().Id,
+                    quickCrashes = quickCrashes, hideTaskbar = hide, restartOnCrash = restart, exitCode = ExitCode,
+                    utc = DateTime.UtcNow.ToString("o") });
+                File.WriteAllText(path + ".tmp", text);
+                if (File.Exists(path)) File.Replace(path + ".tmp", path, null);
+                else File.Move(path + ".tmp", path);
+            });
         }
         void Start() {
             var info = new ProcessStartInfo(launch.Executable, launch.Arguments) {
@@ -703,7 +751,7 @@ namespace Caelestia.Takeover {
         }
         static readonly object logLock = new object();
         static void Append(string path, string line) {
-            lock (logLock) { File.AppendAllText(path, line + Environment.NewLine); }
+            SupervisorSafety.Log(delegate { lock (logLock) { File.AppendAllText(path, line + Environment.NewLine); } });
         }
         void Tick(object sender, EventArgs args) {
             try {
@@ -729,15 +777,23 @@ namespace Caelestia.Takeover {
                 nextStart = DateTime.UtcNow.AddSeconds(Math.Min(30, Math.Pow(2, Math.Max(1, quickCrashes))));
                 Status("restart-backoff", 0);
             } catch (Exception error) {
-                File.AppendAllText(Path.Combine(launch.StateDirectory, "watchdog-error.log"), error + Environment.NewLine);
-                Finish("watchdog-error", 1);
+                Fail(error, "");
             }
         }
         void Finish(string phase, int code) {
             ExitCode = code;
-            Dispose();
-            Status(phase, 0);
-            Application.ExitThread();
+            try { Dispose(); }
+            catch (Exception error) {
+                ExitCode = 1;
+                SupervisorSafety.Log(delegate {
+                    File.AppendAllText(Path.Combine(launch.StateDirectory, "watchdog-error.log"),
+                        "Cleanup: " + error + Environment.NewLine);
+                });
+            }
+            finally {
+                try { Status(phase, 0); }
+                finally { Application.ExitThread(); }
+            }
         }
         public void Dispose() {
             if (done) return;
@@ -746,14 +802,19 @@ namespace Caelestia.Takeover {
             showHook.Dispose();
             // On helper failure do not leave an unsupervised shell reserving
             // space. Normal clean exit reaches here after qs has exited.
-            if (child != null) {
-                if (!child.HasExited) { child.Kill(); child.WaitForExit(); }
-                child.Dispose(); child = null;
+            try {
+                if (child != null) {
+                    if (!child.HasExited) { child.Kill(); child.WaitForExit(); }
+                    child.Dispose(); child = null;
+                }
+            } finally {
+                try { Native.RestoreOwned(saved, ownedPid, launch.RestoreWorkAreas, hide); }
+                finally {
+                    Native.RecordAction = null;
+                    recovery.Dispose();
+                    DestroyHandle();
+                }
             }
-            Native.RestoreOwned(saved, ownedPid, launch.RestoreWorkAreas, hide);
-            Native.RecordAction = null;
-            recovery.Dispose();
-            DestroyHandle();
         }
     }
 }

@@ -49,6 +49,7 @@ try {
         }
         foreach ($bar in $bars) {
             $saved = [Caelestia.Takeover.Native]::CaptureRegion($bar)
+            if ($null -eq $saved) { throw 'Taskbar disappeared during capture. Stopping for restoration.' }
             $snapshot.Regions.Add($saved)
             # Persist the entire recovery record before each first mutation.
             $temporary = $snapshotPath + '.tmp'
@@ -83,6 +84,7 @@ try {
                 })
                 if ($bar.Count -ne 1) { throw "Taskbar $($saved.Handle) no longer exists; Explorer restart resets its region." }
                 $actual = [Caelestia.Takeover.Native]::CaptureRegion($bar[0])
+                if ($null -eq $actual) { throw "Taskbar $($saved.Handle) disappeared during verification." }
                 if ($actual.ProcessStartTicks -ne $saved.ProcessStartTicks -or $actual.RegionData -cne $saved.RegionData) {
                     throw "Taskbar $($saved.Handle) region did not verify."
                 }
