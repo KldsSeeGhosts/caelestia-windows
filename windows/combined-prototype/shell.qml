@@ -9,20 +9,18 @@ import Caelestia
 import Caelestia.Config
 import Caelestia.Services
 import Caelestia.Windows
+import Quickshell.Windows as Native
 import qs.components
 import qs.services
 import qs.modules.drawers
 import qs.modules.launcher.services
 
-// Combined read-only prototype: the original bar with its drawers, popouts,
-// OSD, notification list, apps launcher and media dashboard panel, wired to
-// the reviewed Windows service facades exactly as the bounded M2 slices stage
-// them. Every service observes only; every control, write, dispatch, launch,
-// mirror and tiling path stays off. The window keeps the bounded M1 geometry
-// and isolation: no AppBar, desktop takeover, taskbar change or autostart.
+// Original Caelestia modules over isolated Windows service facades.
+// Live controls are explicit; smoke keeps every native write gate off.
 ShellRoot {
     id: root
 
+    readonly property bool live: Quickshell.env("CAELESTIA_COMBINED_LIVE") === "1"
     readonly property bool smoke: Quickshell.env("CAELESTIA_SHELL_SMOKE") === "1"
     readonly property int initialScreenIndex: Number(Quickshell.env("CAELESTIA_SHELL_SCREEN") || "0")
     property int screenIndex: initialScreenIndex
@@ -251,18 +249,12 @@ ShellRoot {
     WindowsFocusGuard {
         id: focusGuard
         target: win.contentItem
-        active: !root.smoke && (win.screenState?.session ?? false)
+        active: !root.smoke && ((win.screenState?.session ?? false) || (win.screenState?.launcher ?? false))
         onOutcome: status => console.log("CAELESTIA_SHELL_FOCUS", status)
-        onDismissRequested: win.screenState.session = false
-    }
-
-    // The original toast surface, hosted as in the tiling prototype: fitting
-    // failures and enable refusals from the tiling facade appear here. It is
-    // plain Caelestia QML and asks only hasFullscreen of the combined Notifs
-    // facade. Loaded by URL so the module import stays out of shell.qml.
-    function loadToasts(): void {
-        if (toastsHost.item === null)
-            toastsHost.setSource(Qt.resolvedUrl("components/ToastsHost.qml"));
+        onDismissRequested: {
+            win.screenState.session = false;
+            win.screenState.launcher = false;
+        }
     }
 
     ContentWindow {
@@ -279,18 +271,6 @@ ShellRoot {
         implicitHeight: root.previewHeight
         margins.left: root.fullScreen ? 0 : root.inset
         margins.top: root.fullScreen ? 0 : root.inset
-
-        // Tiling toasts overlay the shell top-center, as the utilities panel
-        // places them upstream; the bounded window keeps them inside.
-        Loader {
-            id: toastsHost
-
-            anchors.top: parent.top
-            anchors.horizontalCenter: parent.horizontalCenter
-            anchors.topMargin: Tokens.padding.medium
-            asynchronous: false
-            z: 10
-        }
     }
 
     property bool fullScreen: false
@@ -316,7 +296,7 @@ ShellRoot {
 
         FloatingWindow {
             title: "Caelestia preview"
-            implicitWidth: 360
+            implicitWidth: 480
             implicitHeight: controls.implicitHeight + 40
             color: Colours.palette.m3surface
             onClosed: Qt.quit()
@@ -338,7 +318,7 @@ ShellRoot {
                 StyledText {
                     width: parent.width
                     wrapMode: Text.WordWrap
-                    text: "Look around freely. Everything is read-only, so nothing on this PC changes."
+                    text: root.live ? "Live controls" : "Read-only"
                     color: Colours.palette.m3onSurfaceVariant
                 }
 
@@ -349,7 +329,7 @@ ShellRoot {
                         model: [
                             { icon: "ads_click", text: "Bar icons open their details" },
                             { icon: "south", text: "Bottom edge opens the launcher" },
-                            { icon: "north", text: "Top edge opens media" }
+                            { icon: "north", text: "Top edge opens the dashboard" }
                         ]
 
                         Row {
@@ -367,6 +347,30 @@ ShellRoot {
                                 color: Colours.palette.m3onSurface
                             }
                         }
+                    }
+                }
+
+                Row {
+                    spacing: 8
+                    PreviewButton { text: "Dashboard"; onActivated: win.screenState.dashboard = !win.screenState.dashboard }
+                    PreviewButton { text: "Utilities"; onActivated: win.screenState.utilities = !win.screenState.utilities }
+                    PreviewButton { text: "History"; onActivated: win.screenState.sidebar = !win.screenState.sidebar }
+                }
+
+                PreviewButton {
+                    visible: root.live
+                    text: "Choose wallpaper"
+                    onActivated: Wallpapers.choose()
+                }
+
+                Column {
+                    visible: SessionManager.confirmationPending
+                    spacing: 8
+                    StyledText { text: "Confirm Windows " + SessionManager.pendingAction + "?" }
+                    Row {
+                        spacing: 8
+                        PreviewButton { text: "Confirm"; primary: true; onActivated: SessionManager.confirm() }
+                        PreviewButton { text: "Cancel"; onActivated: SessionManager.cancelConfirmation() }
                     }
                 }
 
@@ -464,7 +468,7 @@ ShellRoot {
                 popoutOpen: panels?.popouts.hasCurrent ?? false,
                 services: root.serviceStates(), focusStatus: focusGuard.status,
                 tiling: { mode: Tiling.mode, status: Tiling.status },
-                toastsLoaded: toastsHost.item !== null,
+                toastsLoaded: panels?.toasts !== null && panels?.toasts !== undefined,
                 fullScreen: root.fullScreen, barZone: win.bar.exclusiveZone
             });
         }
@@ -497,12 +501,24 @@ ShellRoot {
     Component.onCompleted: {
         Hypr.logStartupStatus();
         Tiling.logStartupStatus();
-        root.loadToasts();
+        Native.SystemMonitor.active = true;
+        Native.SystemStats.networkEnabled = true;
         if (!selectedScreen) {
             console.error("CAELESTIA_COMBINED_FAIL: requested screen does not exist", screenIndex);
             // Quickshell attaches the engine exit handler after creation.
             Qt.callLater(() => Qt.exit(1));
         }
+    }
+
+    Binding {
+        target: Notifs
+        property: "centerVisible"
+        value: win.screenState?.sidebar ?? false
+    }
+
+    Component {
+        id: smokeNotificationFactory
+        SmokeNotification {}
     }
 
     Timer {
@@ -511,6 +527,7 @@ ShellRoot {
         property var popoutQueue: []
         property string popoutName: ""
         property bool popoutsStarted: false
+        property var notification: null
 
         running: root.smoke && root.selectedScreen !== null
         repeat: true
@@ -584,7 +601,7 @@ ShellRoot {
                     return;
                 }
                 console.log("CAELESTIA_COMBINED_SESSION_BUTTONS", JSON.stringify(sessionButtons));
-                if (toastsHost.item === null) {
+                if (!panels.toasts) {
                     root.fail("original toast surface did not load");
                     return;
                 }
@@ -648,31 +665,61 @@ ShellRoot {
                     root.fail("launcher app list did not stage the catalog");
                     return;
                 }
+                WindowsCalculator.evalAsync("2*(3+4)^2");
+                if (WindowsCalculator.result !== "98") {
+                    root.fail("calculator"); return;
+                }
                 root.capturePhase("launcher");
                 win.screenState.launcher = false;
+                win.screenState.dashboardTab = 1;
                 win.screenState.dashboard = true;
             } else if (step === 8) {
                 if (!panels.dashboard.visible || panels.dashboard.offsetScale >= 1) {
                     root.fail("media dashboard panel did not open");
                     return;
                 }
-                const details = CUtils.findChild(win.contentItem, "combinedMediaDetails");
+                const details = CUtils.findChild(win.contentItem, "combinedDashboardContent");
                 if (!details || details.implicitHeight <= 0) {
                     root.fail("original media details did not load");
                     return;
                 }
                 root.capturePhase("dashboard");
-                win.screenState.dashboard = false;
-                if (Notifs.enabled && Notifs.postLocalTest(
-                        "Caelestia Windows",
-                        "Combined prototype local notification " + Date.now(),
-                        ["-a", "Caelestia Windows", "-t", "6000"]) <= 0) {
-                    root.fail("local notification delivery was refused");
-                    return;
-                }
+                win.screenState.dashboardTab = 0;
             } else if (step === 9) {
-                if (Notifs.enabled && Notifs.popups.filter(n => !n.closed).length < 1) {
-                    root.fail("notification popup did not render");
+                root.capturePhase("dashboard-dash");
+                win.screenState.dashboardTab = 2;
+            } else if (step === 10) {
+                root.capturePhase("dashboard-performance");
+                win.screenState.dashboardTab = 3;
+            } else if (step === 11) {
+                root.capturePhase("dashboard-weather");
+                win.screenState.dashboard = false;
+                win.screenState.utilities = true;
+            } else if (step === 12) {
+                if (!panels.utilities.visible || panels.utilities.implicitHeight <= 0) {
+                    root.fail("utilities"); return;
+                }
+                root.capturePhase("utilities");
+                win.screenState.utilities = false;
+                Toaster.toast("Caelestia", "Original shell toast", "check");
+                check.notification = smokeNotificationFactory.createObject(root);
+                if (!check.notification || !Notifs.service.handleNotification(check.notification)) {
+                    root.fail("notification fixture"); return;
+                }
+            } else if (step === 13) {
+                if (!Notifs.popups.some(record => record.notification === check.notification)) {
+                    root.fail("notification popup did not render"); return;
+                }
+                root.capturePhase("notification");
+                win.screenState.sidebar = true;
+            } else if (step === 14) {
+                if (!panels.sidebar.visible || panels.sidebar.implicitWidth <= 0) {
+                    root.fail("sidebar"); return;
+                }
+                root.capturePhase("sidebar");
+            } else if (step === 15) {
+                if (!Notifs.list.some(record => record.notification === check.notification)) {
+                    root.fail("notification history did not retain the fixture");
                     return;
                 }
                 root.capturePhase("notification");
@@ -690,7 +737,7 @@ ShellRoot {
 
     Timer {
         running: root.smoke
-        interval: 40000
+        interval: 55000
         onTriggered: {
             console.error("CAELESTIA_COMBINED_FAIL: timeout");
             Qt.exit(1);
