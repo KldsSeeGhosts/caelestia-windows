@@ -1,0 +1,14 @@
+********* Start testing of qs::windows::TilingManagerTest *********
+Config: Using QtTest library 6.11.2, Qt 6.11.2 (x86_64-little_endian-llp64 shared (dynamic) release build; by MSVC 2022), windows 11
+PASS   : qs::windows::TilingManagerTest::initTestCase()
+FAIL!  : qs::windows::TilingManagerTest::browserFullscreenRetainsTile(borderless) Compared values are not the same
+   Actual   (native.frame)   : QRect(40,60 600x400) (bottomright 639,459)
+   Expected (fullscreenFrame): QRect(0,0 1920x1080) (bottomright 1919,1079)
+D:\AiStack\caelestia-windows\windows\deps\quickshell\src\windows\test\tiling_manager_test.cpp(268) : failure location
+FAIL!  : qs::windows::TilingManagerTest::browserFullscreenRetainsTile(borderless-topmost) Compared values are not the same
+   Actual   (native.frame)   : QRect(40,60 600x400) (bottomright 639,459)
+   Expected (fullscreenFrame): QRect(0,0 1920x1080) (bottomright 1919,1079)
+D:\AiStack\caelestia-windows\windows\deps\quickshell\src\windows\test\tiling_manager_test.cpp(268) : failure location
+PASS   : qs::windows::TilingManagerTest::cleanupTestCase()
+Totals: 2 passed, 2 failed, 0 skipped, 0 blacklisted, 7ms
+********* Finished testing of qs::windows::TilingManagerTest *********

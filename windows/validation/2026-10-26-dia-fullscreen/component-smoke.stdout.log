@@ -1,0 +1,20 @@
+﻿2026-10-26 10:32:18.801  INFO: Launching config: "D:/AiStack/caelestia-windows/windows/.local/build/shell-runs/shell-20261026-103217-530/shell.qml"
+2026-10-26 10:32:18.801  INFO: Shell ID: "46de5cefa4951f9be04c39efb6350453" Path ID "46de5cefa4951f9be04c39efb6350453"
+2026-10-26 10:32:18.813  INFO: Saving logs to "C:/Users/Ermin/AppData/Local/quickshell/run/by-id/g3hu1rint/log.qslog"
+2026-10-26 10:32:25.249  INFO quickshell.windows.blur: Blur behind panels is turned off by QS_WINDOWS_BLUR.
+2026-10-26 10:32:25.249  INFO quickshell.windows.blur: No layer rules file found (looked for D:/AiStack/caelestia-windows/windows/.local/build/shell-runs/shell-20261026-103217-530/defaults/windows/layerrules.json ), blur behind panels is off.
+2026-10-26 10:32:25.249  INFO caelestia.windows.focusguard: target-unavailable
+2026-10-26 10:32:25.249 DEBUG qml: CAELESTIA_SHELL_FOCUS target-unavailable
+2026-10-26 10:32:25.265 DEBUG quickshell.windows.desktops: Desktop list changed: 1 desktops
+2026-10-26 10:32:25.265 DEBUG quickshell.windows.desktops: Current desktop: 0
+2026-10-26 10:32:25.265 DEBUG quickshell.windows.panel: Placing qs::windows::WinPanelWindow(0x15ffea8c430) at QRect(80,80 864x608) on "\\\\.\\DISPLAY1"
+2026-10-26 10:32:25.275  INFO caelestia.windows.focusguard: idle
+2026-10-26 10:32:25.275 DEBUG qml: CAELESTIA_SHELL_FOCUS idle
+2026-10-26 10:32:25.284  INFO: Configuration Loaded
+2026-10-26 10:32:25.473 DEBUG quickshell.windows.startup: First panel frame presented
+2026-10-26 10:32:25.874 DEBUG quickshell.windows.startup: Startup settled, running 1 deferred tasks
+2026-10-26 10:32:25.874  INFO quickshell.windows.desktops: VirtualDesktopAccessor.dll not found next to the executable; desktop switching and creation are unavailable.
+2026-10-26 10:32:26.677 DEBUG qml: CAELESTIA_SHELL_SCREEN {"index":0,"name":"\\\\.\\DISPLAY1","x":0,"y":0,"dpr":1}
+2026-10-26 10:32:26.677 DEBUG qml: CAELESTIA_SHELL_GEOMETRY \\.\DISPLAY1 0 0 864 608 1 4
+2026-10-26 10:32:26.678 DEBUG qml: CAELESTIA_SESSION_INITIAL {"mode":"Disabled","run":false,"enabled":false,"actionsEnabled":false,"available":false,"status":"disabled","nativeRequested":false,"backendLoaded":false,"backendError":"","hibernateCapabilityKnown":false,"canHibernate":false,"hibernateSupported":false,"actionGating":true,"fallbackBlocked":true,"actions":{"lock":{"supported":true,"capability":false,"available":false,"requiresConfirmation":false},"logout":{"supported":true,"capability":false,"available":false,"requiresConfirmation":true},"shutdown":{"supported":true,"capability":false,"available":false,"requiresConfirmation":true},"reboot":{"supported":true,"capability":false,"available":false,"requiresConfirmation":true},"suspend":{"supported":true,"capability":false,"available":false,"requiresConfirmation":false},"hibernate":{"supported":true,"capability":false,"available":false,"requiresConfirmation":false},"firmware":{"supported":true,"capability":false,"available":false,"requiresConfirmation":true}},"lastOutcome":"disabled","lastAction":"","lastConsumed":true,"lastDispatched":false,"lastRequested":false,"lastSucceeded":false}
+

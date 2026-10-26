@@ -4,6 +4,16 @@ Caelestia for Windows is the user's live desktop shell. It replaced ksg-shell
 on 2026-10-26 and runs round 5b, installed as an in-place update over round 4
 with the profile kept. Earlier handoffs are in this file's git history.
 
+Installed candidate since that baseline: `t3/fix-dia-fullscreen`,
+source `d95cbcfd`, backend `046c82f`, for ERM-543 / GitHub #9. The tiler
+now suspends browser fullscreen before evaluating floating window styles.
+All 37 manager cases pass; the GitHub video stays fullscreen on the available
+1024x768 display. Physical DP-2 mixed-DPI and taskbar-flicker verification
+remain pending while the user is away. The bounded component smoke timed out;
+do not count it as passing acceptance. See
+[the evidence and limits](validation/2026-10-26-dia-fullscreen/README.md).
+This candidate is installed; its topic branches remain under review.
+
 ## Where the code is
 
 Both repositories use the conventional `main`, `dev` and `upstream` branch model:
