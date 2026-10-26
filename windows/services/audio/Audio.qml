@@ -4,6 +4,7 @@ import QtQuick
 import Quickshell
 import Caelestia.Config
 import qs.components.misc
+import Caelestia.Windows.Audio
 
 AudioService {
     id: root
@@ -16,6 +17,10 @@ AudioService {
     audioIncrement: GlobalConfig.services.audioIncrement
     backend: nativeLoader.item?.backend ?? null
     backendError: nativeLoader.status === Loader.Error ? "The Windows audio backend component failed to load." : ""
+
+    visualiserBars: GlobalConfig.services.visualiserBars
+    cavaProvider: cavaLoader.item
+    beatProvider: beatLoader.item
 
     readonly property Loader _nativeLoader: Loader {
         id: nativeLoader
@@ -45,4 +50,22 @@ AudioService {
             onPressed: root.setMuted(!root.muted)
         }
     ]
+    // Original Caelestia CavaProvider/BeatTracker over WASAPI loopback. They
+    // start only when an original ServiceRef references them, so the dashboard
+    // media panel and background visualiser keep their upstream lifetime.
+    readonly property Loader _cavaLoader: Loader {
+        id: cavaLoader
+
+        active: root.enabled
+        sourceComponent: CavaProvider {
+            bars: root.visualiserBars
+        }
+    }
+
+    readonly property Loader _beatLoader: Loader {
+        id: beatLoader
+
+        active: root.enabled
+        sourceComponent: BeatTracker {}
+    }
 }

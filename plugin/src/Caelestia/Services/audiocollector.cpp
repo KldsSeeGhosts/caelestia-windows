@@ -2,7 +2,11 @@
 
 #include <qloggingcategory.h>
 
+#ifndef CAELESTIA_WINDOWS_AUDIO
 #include <pipewire/pipewire.h>
+#else
+#include "wasapiloopback.hpp"
+#endif
 
 #include <algorithm>
 #include <mutex>
@@ -15,11 +19,15 @@
 
 namespace {
 
+#ifndef CAELESTIA_WINDOWS_AUDIO
 Q_LOGGING_CATEGORY(lcAcWorker, "caelestia.services.ac.worker", QtInfoMsg)
+#endif
 
 } // namespace
 
 namespace caelestia::shell::services {
+
+#ifndef CAELESTIA_WINDOWS_AUDIO
 
 PipeWireWorker::PipeWireWorker(std::stop_token token, AudioCollector* collector)
     : m_loop(nullptr)
@@ -164,6 +172,8 @@ void PipeWireWorker::processStream() {
     pw_stream_queue_buffer(m_stream, buffer);
 }
 
+#endif
+
 AudioCollector& AudioCollector::instance() {
     static AudioCollector s_instance;
     return s_instance;
@@ -195,6 +205,28 @@ void AudioCollector::loadChunk(const qint16* samples, quint32 count) {
     m_pending.clear();
     m_samples.push(std::span(samples, count), toFloat);
 }
+
+#ifdef CAELESTIA_WINDOWS_AUDIO
+
+void AudioCollector::loadChunk(const float* samples, quint32 count) {
+    if (m_discardPending.exchange(false, std::memory_order_acquire)) {
+        m_pending.clear();
+    }
+
+    // Called from the WASAPI capture thread, so stash the chunk until the next
+    // callback rather than wait on a reader.
+    const std::unique_lock lock(m_samplesLock, std::try_to_lock);
+    if (!lock.owns_lock()) {
+        m_pending.push(std::span(samples, count));
+        return;
+    }
+
+    m_pending.pushTo(m_samples);
+    m_pending.clear();
+    m_samples.push(std::span(samples, count));
+}
+
+#endif
 
 template <typename T> quint32 AudioCollector::readLatest(T* out, quint32 count) {
     if (count == 0 || count > ac::k_chunkSize) {
@@ -240,7 +272,12 @@ void AudioCollector::start() {
     clearBuffer();
 
     m_thread = std::jthread([this](std::stop_token token) {
+#ifdef CAELESTIA_WINDOWS_AUDIO
+        ::caelestia::shell::windows::WasapiLoopbackWorker worker(std::move(token), this);
+        worker.run();
+#else
         const PipeWireWorker worker(std::move(token), this);
+#endif
     });
 }
 

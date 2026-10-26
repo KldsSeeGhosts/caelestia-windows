@@ -1,9 +1,46 @@
 #include "beattracker.hpp"
 
+#include <algorithm>
+#include <span>
+#include <vector>
+
 #include "audiocollector.hpp"
 #include "audioprovider.hpp"
 
 namespace caelestia::shell::services {
+
+#ifdef CAELESTIA_WINDOWS_AUDIO
+
+BeatProcessor::BeatProcessor(QObject* parent)
+    : AudioProcessor(parent)
+    , m_detector(ac::k_sampleRate)
+    , m_in(new float[ac::k_chunkSize]) {};
+
+BeatProcessor::~BeatProcessor() {
+    delete[] m_in;
+}
+
+void BeatProcessor::process() {
+    if (!m_in) {
+        return;
+    }
+
+    const auto count = AudioCollector::instance().readChunk(m_in);
+
+    // The detector needs doubles; the collector window is 512 mono samples.
+    thread_local std::vector<double> samples;
+    samples.resize(count);
+    std::ranges::transform(std::span(m_in, count), samples.begin(), [](float value) {
+        return static_cast<double>(value);
+    });
+
+    const double bpm = m_detector.process(samples.data(), static_cast<int>(count));
+    if (bpm > 0.0) {
+        emit beat(static_cast<smpl_t>(bpm));
+    }
+}
+
+#else
 
 BeatProcessor::BeatProcessor(QObject* parent)
     : AudioProcessor(parent)
@@ -35,6 +72,8 @@ void BeatProcessor::process() {
         emit beat(aubio_tempo_get_bpm(m_tempo));
     }
 }
+
+#endif
 
 BeatTracker::BeatTracker(QObject* parent)
     : AudioProvider(parent)

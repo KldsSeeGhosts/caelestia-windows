@@ -2,7 +2,13 @@
 
 #include <qqmlintegration.h>
 
+#ifdef CAELESTIA_WINDOWS_AUDIO
+// libcava is not part of the Windows toolchain; this module carries its own
+// FFT/bar plan (CavaPlan) instead. The QML contract is unchanged.
+#include "cavaplan.hpp"
+#else
 #include <cava/cavacore.h>
+#endif
 
 #include "audioprovider.hpp"
 
@@ -24,7 +30,11 @@ protected:
     void process() override;
 
 private:
+#ifdef CAELESTIA_WINDOWS_AUDIO
+    ::caelestia::shell::windows::CavaPlan* m_plan;
+#else
     struct cava_plan* m_plan;
+#endif
     double* m_in;
     double* m_out;
 
