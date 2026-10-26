@@ -1,3 +1,55 @@
+# Windows integration round 5b
+
+Branch `t3/integration-5b`, based on `origin/t3/integration-5` (`74bdad57`).
+Validated shell merge `a009706a379cb49c9becb67ba4b7bdf857b1394b`.
+Backend `windows/integration-5b` is pushed to `caelestia` at
+`c1177c2771ecc3e9fd282449bdb08314576ca271`; gitlink and source lock agree.
+
+- Release docs `ca303fbe` merged cleanly as `dfc27c92`, including installer
+  license copying and its existing validation script.
+- Live fixes `31916c22` merged as `a009706a`. Combined state unions runtime
+  profiling/sampler fields with frame/fullscreen fields. Production keeps the
+  round-5 smoke reservation gate and adds live fullscreen release. The launcher
+  retains one isolated smoke child, normal supervision, selected-screen support
+  and child-only stale-AppBar cleanup. Dependency conflicts resolve to the
+  merged backend, preserving both provenance descriptions.
+- Backend merges `457127d` and `b5d60be` without conflicts, retaining Explorer
+  reconnection, MTA audio sessions and native keyboard/lock observation.
+- Round-5 polish, Wallpaper Engine, dynamic colours, tiling and fonts remain.
+  No live install, live process, taskbar or work-area changes were made.
+
+Fresh native backend, M3Shapes and portable plugin build: PASS. Output:
+
+```text
+C:\Users\Ermin\.t3\worktrees\caelestia-windows\t3-88fb895a\windows\.local\build
+```
+
+Strict prerequisites pass inside the build script's isolated VS environment.
+Qt 6.11.2, clang-cl 20.1.8, MSVC 14.44.35207 and SDK 10.0.26100.0.
+Exactly one `-Combined -Smoke -Transparency` run: PASS, exit 0, 56.019 seconds,
+native primary 150%, no runtime warning/error records. Native keyboard `en`
+and Caps/Num false render; the dynamic `#f9b7a3` palette and 253-item WE carousel
+load. Native writes, tiling, takeover and work-area reservation remain off.
+
+Existing `Test-InstallLicenses.ps1`: PASS for install, update, retained profile,
+notice hashes, shortcut cleanup and uninstall. Actual prior round-5 package
+`74bdad57` also upgraded to this build in a separate TEMP prefix/profile:
+executable replaced, three config JSON hashes and a state sentinel preserved,
+47 license files copied. Uninstall preserves the profile; both temporary roots
+were then removed. Qt deployment's missing translation-catalog warning remains.
+
+Before/after monitor/work rectangles, taskbar flags, Explorer/qs process set
+(live qs PID 33252) and seven live install/config file hashes match.
+Live frame/AppBar tests were not run because they reserve work areas.
+The user will install and validate live. No additional test harness was added.
+
+Evidence, exact commands and conflict details:
+[integration 5b validation](windows/validation/2026-10-26-integration-5b/README.md).
+Build and smoke used clean `a009706a`; the following report/archive commit
+changes documentation and evidence only. Earlier archives remain unchanged.
+
+---
+
 # Windows integration round 5
 
 Branch `t3/integration-5`, based on `origin/t3/integration-4` (`db33341e`).

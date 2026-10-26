@@ -1,0 +1,6 @@
+﻿{
+    "passed":  true,
+    "exitCode":  0,
+    "script":  "windows/scripts/Test-InstallLicenses.ps1",
+    "completedAtUtc":  "2026-10-26T07:13:31.9002848Z"
+}

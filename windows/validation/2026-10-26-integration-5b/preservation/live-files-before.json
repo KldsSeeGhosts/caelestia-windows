@@ -1,0 +1,30 @@
+﻿[
+    {
+        "path":  "C:\\Users\\Ermin\\AppData\\Local\\Programs\\caelestia-windows/qs.exe",
+        "sha256":  "691FEEB72045C0A730E9B08B8F49C42EAE03E9C7B26CD118AFB2D50C1772DBBC"
+    },
+    {
+        "path":  "C:\\Users\\Ermin\\AppData\\Local\\Programs\\caelestia-windows/install.json",
+        "sha256":  "D28E96B1FA4E8F500D21E6AB3C295D724A4C55BAB064C95AC02177595DBA107D"
+    },
+    {
+        "path":  "C:\\Users\\Ermin\\AppData\\Local\\caelestia-windows\\config\\keybinds.json",
+        "sha256":  "EA4AE8312D9AED127E81A5B375408D2E0E20491E6696896C5926BAFA7C32D0CA"
+    },
+    {
+        "path":  "C:\\Users\\Ermin\\AppData\\Local\\caelestia-windows\\config\\shell.json",
+        "sha256":  "3952D29FB71285441CF399630F3B734175C1834740D8818280C54976A308A192"
+    },
+    {
+        "path":  "C:\\Users\\Ermin\\AppData\\Local\\caelestia-windows\\config\\shell.json.20261026-024017-761.b3512e24e3c949d4901bce4691cb5ab4.bak",
+        "sha256":  "3DCC33065F8E065266F34F492D26DF91F8D7B41297C00513C9D469EB8AFD0B77"
+    },
+    {
+        "path":  "C:\\Users\\Ermin\\AppData\\Local\\caelestia-windows\\config\\shell.json.pre-tiling.bak",
+        "sha256":  "A6B726D25680211965A3409C4AE49F5E211B9044CC4DC868FA04E6477ADAE7B2"
+    },
+    {
+        "path":  "C:\\Users\\Ermin\\AppData\\Local\\caelestia-windows\\config\\windows.json",
+        "sha256":  "FA3C2AECFD94DFE9EB938A660B3B1671A1E3A80C65A1E043DE0275F90766F1E9"
+    }
+]

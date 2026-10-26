@@ -1,0 +1,65 @@
+﻿{
+    "passed":  true,
+    "validationScope":  "Build, bounded read-only combined smoke, isolated installer/license/update/uninstall; no live AppBar or tiling acceptance.",
+    "sourceRevision":  "a009706a379cb49c9becb67ba4b7bdf857b1394b",
+    "sourceDirty":  false,
+    "backendRevision":  "c1177c2771ecc3e9fd282449bdb08314576ca271",
+    "shellBase":  "74bdad573d46cbc8110d3eb39904414b2fe180e6",
+    "releaseDocsRevision":  "ca303fbea9925e0f74eba32cb544baccd1d28b4d",
+    "liveFixesRevision":  "31916c220ce083fb3f4735bdefebc48519fc4c80",
+    "backendBase":  "457127d820ac1e48cd5c7c5454e8fef738e1a235",
+    "backendLiveFixes":  "b5d60be7b600cb22045db8b72b62ed34d44079c2",
+    "buildPath":  "C:\\Users\\Ermin\\.t3\\worktrees\\caelestia-windows\\t3-88fb895a\\windows\\.local\\build",
+    "combinedSmokeRuns":  1,
+    "combinedSmoke":  {
+                          "passed":  true,
+                          "exitCode":  0,
+                          "timedOut":  false,
+                          "elapsedMilliseconds":  56019,
+                          "schemeRuntime":  true,
+                          "actualScreens":  [
+                                                {
+                                                    "index":  0,
+                                                    "name":  "MAG321UX OLED",
+                                                    "x":  0,
+                                                    "y":  0,
+                                                    "dpr":  1.5
+                                                }
+                                            ],
+                          "runtimeWarningsOrErrors":  false,
+                          "keyboardLayout":  "en",
+                          "capsLock":  false,
+                          "numLock":  false,
+                          "wallpaperEngineCatalogItems":  253
+                      },
+    "installerLicenseTestPassed":  true,
+    "priorVersionUpdate":  {
+                               "passed":  true,
+                               "priorSourceRevision":  "74bdad573d46cbc8110d3eb39904414b2fe180e6",
+                               "sourceRevision":  "a009706a379cb49c9becb67ba4b7bdf857b1394b",
+                               "priorExecutableSha256":  "099321FBB73EC18742B644B7C5404DBED846B33ABC68A22A5DD6DE73F95BC2A6",
+                               "executableSha256":  "1E43077F5CCE057184E46FC7B1794322D8346DFE3511F969E9761932F87E3352",
+                               "executableReplaced":  true,
+                               "prefix":  "C:\\Users\\Ermin\\AppData\\Local\\Temp\\caelestia-integration-5b-88fb895a\\app",
+                               "profile":  "C:\\Users\\Ermin\\AppData\\Local\\Temp\\caelestia-integration-5b-88fb895a\\profile",
+                               "editedClockSeconds":  false,
+                               "profileFilesPreserved":  4,
+                               "licenseFiles":  47,
+                               "noticesCopied":  true,
+                               "uninstallPassed":  true,
+                               "profileRetainedOnUninstall":  true,
+                               "cleanupPassed":  true
+                           },
+    "preservation":  {
+                         "passed":  true,
+                         "monitorGeometryAndWorkAreasUnchanged":  true,
+                         "taskbarFlagsUnchanged":  true,
+                         "relevantProcessesUnchanged":  true,
+                         "liveQsPid":  33252,
+                         "liveFileHashesUnchanged":  true,
+                         "liveFilesChecked":  7,
+                         "upgradeTempRemoved":  true,
+                         "licenseTestTempRemoved":  true
+                     },
+    "completedAtUtc":  "2026-10-26T07:16:41.9105386Z"
+}

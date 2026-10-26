@@ -1,0 +1,17 @@
+﻿{
+    "passed":  true,
+    "priorSourceRevision":  "74bdad573d46cbc8110d3eb39904414b2fe180e6",
+    "sourceRevision":  "a009706a379cb49c9becb67ba4b7bdf857b1394b",
+    "priorExecutableSha256":  "099321FBB73EC18742B644B7C5404DBED846B33ABC68A22A5DD6DE73F95BC2A6",
+    "executableSha256":  "1E43077F5CCE057184E46FC7B1794322D8346DFE3511F969E9761932F87E3352",
+    "executableReplaced":  true,
+    "prefix":  "C:\\Users\\Ermin\\AppData\\Local\\Temp\\caelestia-integration-5b-88fb895a\\app",
+    "profile":  "C:\\Users\\Ermin\\AppData\\Local\\Temp\\caelestia-integration-5b-88fb895a\\profile",
+    "editedClockSeconds":  false,
+    "profileFilesPreserved":  4,
+    "licenseFiles":  47,
+    "noticesCopied":  true,
+    "uninstallPassed":  true,
+    "profileRetainedOnUninstall":  true,
+    "cleanupPassed":  true
+}

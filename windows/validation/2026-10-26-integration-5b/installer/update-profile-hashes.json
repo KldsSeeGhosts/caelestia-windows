@@ -1,0 +1,18 @@
+﻿[
+    {
+        "relativePath":  "config\\keybinds.json",
+        "sha256":  "EA4AE8312D9AED127E81A5B375408D2E0E20491E6696896C5926BAFA7C32D0CA"
+    },
+    {
+        "relativePath":  "config\\shell.json",
+        "sha256":  "4814921531AABC47197C7CA3F382431995F111C19F959D840B74697588EDED8B"
+    },
+    {
+        "relativePath":  "config\\windows.json",
+        "sha256":  "099ABAC93366D1615D8749730DDC5A6C9AB462AFC4E7A1BC5074EE2425A79642"
+    },
+    {
+        "relativePath":  "state\\update-sentinel.txt",
+        "sha256":  "2343296F81780C2A36B08CAD2D9D55DB910EC0F6A946342823B2EBC47186BD15"
+    }
+]

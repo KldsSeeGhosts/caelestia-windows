@@ -1,0 +1,5 @@
+Warning: Translations will not be available due to the following error.
+Cannot open C:/Users/Ermin/AppData/Local/caelestia-dev/Qt/6.11.2/msvc2022_64/translations/catalogs.json
+Installed Caelestia: C:\Users\Ermin\AppData\Local\Temp\caelestia-integration-5b-88fb895a\app
+Run: powershell -NoProfile -File "C:\Users\Ermin\AppData\Local\Temp\caelestia-integration-5b-88fb895a\app\Start-Caelestia.ps1"
+Profile (seeded on first launch): C:\Users\Ermin\AppData\Local\Temp\caelestia-integration-5b-88fb895a\profile

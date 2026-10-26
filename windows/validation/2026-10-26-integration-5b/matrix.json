@@ -1,0 +1,32 @@
+﻿[
+    {
+        "check":  "native-build",
+        "passed":  true,
+        "evidence":  "build/build.json",
+        "details":  "Fresh backend, M3Shapes and portable plugins; strict prerequisites pass."
+    },
+    {
+        "check":  "combined-smoke",
+        "passed":  true,
+        "evidence":  "combined/combined-20261026-031255-942.json",
+        "details":  "Exactly one run; transparency, native primary 150%, dynamic scheme, WE catalog, native keyboard code; no runtime diagnostics."
+    },
+    {
+        "check":  "license-install-update-uninstall",
+        "passed":  true,
+        "evidence":  "installer/install-licenses.log",
+        "details":  "Existing Test-InstallLicenses.ps1 verifies hashes of notices, all font notices and Qt license/SBOM files; shortcut/profile/cleanup checks pass."
+    },
+    {
+        "check":  "round-5-to-5b-update",
+        "passed":  true,
+        "evidence":  "installer/prior-update.json",
+        "details":  "Actual prior round-5 package upgraded; executable replaced, three config files and state sentinel unchanged, 47 license files."
+    },
+    {
+        "check":  "desktop-and-live-files",
+        "passed":  true,
+        "evidence":  "preservation/preservation.json",
+        "details":  "Monitor/work-area geometry, taskbar flags, process set and seven live install/config hashes unchanged; both temp roots removed."
+    }
+]
