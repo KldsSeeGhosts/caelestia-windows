@@ -313,3 +313,109 @@ staged shell closure that includes the `Content.qml` hook.
   fake).
 - `systemBrightnessChanged` (read-back and WMI events) is still not modeled;
   no adapter behavior depends on its timing.
+
+## Review addendum 2 (request IDs)
+
+This addendum records the third review's fixes on branch
+`t3/m2-brightness-adapter-v3` (code changes in `b483660d`, on top of
+`7a2df8f1`). The per-screen FIFO of query tokens is gone: a parallel backend
+change adds request ids, and the adapter is now written against that API —
+
+- `int queryRequest(string screenName)` returns a process-unique, strictly
+  increasing positive id immediately;
+- `signal queryFinished(int requestId, string screenName, bool available,
+  bool isDdc, real brightness)` fires exactly once per `queryRequest()` call,
+  for every outcome, on the GUI thread; plain `query()`/`queried()` are
+  unchanged and never carry ids.
+
+The final runs below were made on a clean tree at `b483660d` and report
+`sourceDirty=false` against backend `525786f` (gitlink and
+`windows/sources.lock.json` unchanged; the pinned backend still has no ids).
+
+Reviewed behavior that changed:
+
+1. **A stale completion can never authorize (finding 1).** Each record stores
+   the id it issued, and a `queryFinished` is accepted only when its id equals
+   the current record's outstanding id; everything else is discarded.
+   Disable, re-enable and reconnect need no token bookkeeping because an
+   issued id never repeats. A backend swap additionally ends the records'
+   outstanding queries, so a completion for a pre-swap request — forwarded by
+   the new wrapper, which wraps the same process-wide native singleton —
+   finds no waiting record and cannot match a later request's id.
+2. **Out-of-order completion is safe (finding 2).** Acceptance no longer
+   assumes any delivery order: the newer request's completion is accepted on
+   its own id even when the backend's startup gate lets it dispatch before an
+   older deferred request, and the older completion is then discarded.
+3. **Every refused or failed write snaps the display back (finding 3).**
+   `_refuse` bumps the resync serial exactly like a terminal failure, so the
+   strict-enable refusal (confirmed 0.4, dragged 0.9, serial 0 to 1) and the
+   direct rejection paths — a synchronous dispatch throw and a directly
+   failing software write — all restore the confirmed displayed value.
+4. **The fake models the id API (finding 4) and emits exactly one
+   `strictRoutesChanged` per enable** (the property's own change signal; the
+   duplicate explicit emit is gone). `queryRequest` returns synchronous ids
+   from a test-wide counter, completions stay queued until delivered and may
+   be delivered out of request order (`deliverQuery(id)` picks a specific
+   request), and every completion also fires the plain `queried` signal.
+
+The id API is feature-detected in `NativeBrightnessBackend.qml`
+(`typeof Brightness.queryRequest === "function"`; the wrapper exposes
+`queryRequest` as a callable or `undefined` and forwards `queryFinished`).
+Without ids — the pinned `525786f` build — route queries still update
+read-only display state through plain `queried`, but `writesAllowed` stays
+false, the slider stays read-only, the reason and the write refusal state
+that the backend cannot match query results, and there is no heuristic
+fallback. When ids are supported the plain `queried` signal is ignored, so a
+result is never processed twice. The prototype host now reports `queryIds`
+in its state; the read-only smokes below show `strictBackend: true,
+queryIds: false, writesAllowed: false` on this build, so the closed controls
+gate is demonstrated truthfully rather than by the old-pin strict gap.
+
+Fixture scenarios added or reworked (each deterministic): the review's exact
+finding-1 sequence (query A at 0.2, disable, re-enable, query B at 0.8,
+deliver A — the record keeps waiting and only B's 0.8 is recorded); the
+review's finding-2 ordering (deferred A2 completes after B2; B2 is accepted
+first, A2 discarded); reconnect with in-order delivery and an unissued id
+plus the plain `queried` signal ignored mid-query; disable/re-enable with
+stale delivery; wrapper replacement with the stale id forwarded by the new
+wrapper and the detached wrapper's own delivery; the no-id backend staying
+read-only (display settles, controls refused, nothing reaches the backend);
+the strict-enable refusal snapping the dragged display back; exactly one
+`strictRoutesChanged` per enable and none for refusals; and the two direct
+rejection paths snapping back. Assertions that changed meaning: a refused
+write now bumps the resync serial and rebinds the display (the old fixture
+asserted it did not), the first successful write's serial check became a
+delta (earlier refusals now legitimately bump it), and the `queryToken`
+field checks became `queryId` identity checks on the accepted request.
+
+Commands (native PowerShell from the repository root):
+
+```powershell
+$qtPrefix = "$env:LOCALAPPDATA\caelestia-dev\Qt\6.11.2\msvc2022_64"
+$buildRoot = 'D:\AiStack\caelestia-windows\windows\.local\build'
+powershell -NoProfile -File windows/scripts/Test-BrightnessService.ps1 `
+    -QtPrefix $qtPrefix -BuildRoot $buildRoot
+powershell -NoProfile -File windows/scripts/Test-BrightnessPrototype.ps1 `
+    -QtPrefix $qtPrefix -BuildRoot $buildRoot
+```
+
+| Check | Observed result |
+| --- | --- |
+| Offscreen request-id fixture | Pass; **466 assertions**; no native imports, staging hash mismatch or QML diagnostic; `brightness-fixture-20261025-230208-443` at `b483660d`, `sourceDirty=false` |
+| Brightness prototype harness | Pass; 6 runs (fixture, `Disabled`/`ReadOnly` on each of the two measured screens, M1 regression); desktop identity, gamma ramp hashes and the leaked-process check all clean; read-only runs show `queryIds=false` with the controls gate closed; `brightness-validation-20261025-230208-156` |
+
+No shared script under `windows/scripts/` changed, so
+`Test-NetworkPrototype.ps1` was not re-run.
+
+### Untested in this addendum
+
+- Every native write path and the native `queryRequest`/`queryFinished`
+  delivery itself: `Disabled` and `ReadOnly` remain the only native smoke
+  modes (safety gate), and the pinned `525786f` backend has no ids. The id
+  path, real DDC/CI denial, overlap rejection and recovery are fixture-only
+  claims until the backend gitlink moves.
+- The native OSD `FilledSlider` rebind after a real denied write (needs an
+  `Interactive` run); the offscreen `DisplayProbe` and the read-only
+  host-to-hook plumbing remain the evidence for the hook.
+- `systemBrightnessChanged` (read-back and WMI events) is still not modeled;
+  no adapter behavior depends on its timing.
