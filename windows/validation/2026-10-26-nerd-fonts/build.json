@@ -1,0 +1,22 @@
+﻿{
+    "sourceRevision":  "96cc55bf186733bde0f5393d33f400301367a251",
+    "sourceDirty":  true,
+    "backendRevision":  "cc2cf04d8efbb196c1e6d96c2079970432f71851",
+    "windowsSdkVersion":  "10.0.26100.0\\",
+    "msvcToolsVersion":  "14.44.35207",
+    "qtVersion":  "6.11.2",
+    "qtPrefix":  "C:\\Users\\Ermin\\AppData\\Local\\caelestia-dev\\Qt\\6.11.2\\msvc2022_64",
+    "compiler":  "clang version 20.1.8",
+    "cmake":  "cmake version 4.4.4",
+    "ninja":  "1.13.2.git.kitware.jobserver-pipe-1",
+    "windows":  "Microsoft Windows NT 10.0.26300.0",
+    "builtAtUtc":  "2026-10-26T05:35:31.4247971Z",
+    "windowsFontPlugin":  {
+                              "sourceRevision":  "24aa63a2eaf4402b4935006b2f93fe16088de38f",
+                              "sourceDirty":  true,
+                              "builtAtUtc":  "2026-10-26T05:54:49.4401584Z",
+                              "target":  "caelestia-windowsplugin",
+                              "pluginSha256":  "8969EE00FACAC0D951DEA5B6808760711DF84F0D0F7B3EE7501D840772750E87",
+                              "reusedBuildRoot":  "C:/Users/Ermin/.t3/worktrees/caelestia-windows/t3-325d7919/windows/.local/build"
+                          }
+}
