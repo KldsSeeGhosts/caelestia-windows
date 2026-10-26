@@ -22,6 +22,20 @@ tracks the milestones and implementation issues.
   started. ERM-498 now has a bounded media adapter/original player prototype;
   its real-session and transport gates remain open.
 
+## Status snapshot, 2026-10-26 (round 5b live)
+
+- M2 and M3 are complete and integrated. Every service runs in the installed
+  shell, with workspaces, native virtual-desktop switching, interactive tiling,
+  and AppBar reservation of the bar and border edges.
+- M4 is integrated and live. The production installer, all monitors, taskbar
+  takeover with a crash watchdog, global shortcuts, Nerd Font glyphs, the
+  visualizer, the dynamic scheme, Wallpaper Engine, the backend leak fixes,
+  polish pass 1 and the release docs are installed as an update over round 4.
+  `t3/integration-5b` (`08c34968`) uses backend `c1177c2`.
+- Open: Caelestia-style tiling gaps and focused-window border, the autostart
+  swap from ksg-shell, a full runtime soak, polish pass 2, upstream sync, and
+  the public export. See [HANDOFF.md](HANDOFF.md).
+
 Continue from [HANDOFF.md](HANDOFF.md). Linear was connected and synchronized
 on 2026-10-25 under the Ermin Zeherovic (ERM) team. This roadmap owns detailed
 acceptance criteria; Linear tracks issue status and dependencies.
