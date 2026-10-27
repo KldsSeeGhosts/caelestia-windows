@@ -222,7 +222,11 @@ QtObject {
     // List visibility is caller intent. The backend starts its eight-second
     // scan timer only through setWifiListVisible(true) (network.cpp:71-82), so
     // this adapter never asks for a scan or a visibility refresh while hidden.
+    // Callers register an owner instead of writing this bool: several Nexus
+    // windows (and their sub-pages) can be open at once, and closing one must
+    // not stop another one's scans.
     property bool listVisible: false
+    property var listVisibilityOwners: []
 
     // Tracks the last visibility written to the current backend so a loader
     // swap or a state change does not repeat an identical request.
@@ -419,6 +423,28 @@ QtObject {
             return;
         root.listVisible = next;
         root._applyListVisibility();
+    }
+
+    // Caller-scoped visibility. Every page instance passes itself, so duplicate
+    // calls from the same page are idempotent and one page's destruction/hide
+    // cannot clear another page's intent.
+    function acquireListVisibility(owner): void {
+        if (!owner)
+            return;
+        if (root.listVisibilityOwners.indexOf(owner) < 0)
+            root.listVisibilityOwners = [...root.listVisibilityOwners, owner];
+        root.setListVisible(true);
+    }
+
+    function releaseListVisibility(owner): void {
+        if (!owner)
+            return;
+        const next = root.listVisibilityOwners.filter(item => item !== owner);
+        if (next.length === root.listVisibilityOwners.length)
+            return;
+        root.listVisibilityOwners = next;
+        if (next.length === 0)
+            root.setListVisible(false);
     }
 
     property bool _applyingVisibility: false

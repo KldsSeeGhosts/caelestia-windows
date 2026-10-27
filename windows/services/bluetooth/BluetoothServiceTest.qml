@@ -340,6 +340,33 @@ QtObject {
         service.tick(150000);
     }
 
+    function testDiscoveryOwnership(): void {
+        reset();
+        backend.adapter = adapter;
+        radioOn();
+        const base = adapter.discoveryRequests;
+        const ownerA = {};
+        const ownerB = {};
+
+        check(service.acquireDiscovery(ownerA), "first owner starts discovery");
+        equal(adapter.discovering, true, "discovery reached the adapter for the first owner");
+        equal(adapter.discoveryRequests, base + 1, "first owner sent one discovery request");
+        check(service.acquireDiscovery(ownerA), "duplicate acquire is accepted");
+        equal(service.discoveryOwners.length, 1, "duplicate owner is not counted twice");
+        equal(adapter.discoveryRequests, base + 1, "duplicate acquire sent nothing");
+        check(service.acquireDiscovery(ownerB), "second owner joins discovery");
+        equal(service.discoveryOwners.length, 2, "second owner registered");
+        equal(adapter.discoveryRequests, base + 1, "second owner reuses running discovery");
+        check(service.releaseDiscovery(ownerA), "first owner releases discovery");
+        equal(service.discovering, true, "first release keeps discovery running");
+        equal(adapter.discoveryRequests, base + 1, "first release sent nothing");
+        check(service.releaseDiscovery(ownerB), "last owner releases discovery");
+        equal(service.discovering, false, "last release stops discovery");
+        equal(adapter.discoveryRequests, base + 2, "last release sent one stop");
+        check(!service.releaseDiscovery(ownerB), "unknown release is refused");
+        equal(adapter.discoveryRequests, base + 2, "unknown release sent nothing");
+    }
+
     function testDevicePendingAndTimeout(): void {
         reset();
         backend.adapter = adapter;
@@ -521,6 +548,7 @@ QtObject {
         testInitializingAndNullAdapter();
         testRadioStates();
         testDiscoveryBound();
+        testDiscoveryOwnership();
         testDevicePendingAndTimeout();
         testStaleRemovalAndReadOnly();
         testUnsupportedControls();
