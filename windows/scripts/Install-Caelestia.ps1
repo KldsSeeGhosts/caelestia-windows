@@ -121,6 +121,11 @@ try {
     }
     # Resolve staged QML imports as well as DLL dependencies. Deployed Qt is
     # used at runtime; no development Qt prefix is recorded in the launcher.
+    # The aqt Qt archive omits the separate qttranslations component, so
+    # windeployqt still prints "Translations will not be available ...
+    # catalogs.json" with --no-translations. That message is informational:
+    # this installer deliberately ships no Qt catalogs and the shell installs
+    # no QTranslator, so deployment proceeds and runtime strings stay English.
     $ErrorActionPreference = 'Continue'
     & $deploy --verbose 0 --release --no-compiler-runtime --no-system-dxc-compiler --no-translations --dir $payload --plugindir "$payload\plugins" --qmldir $stage --qmlimport "$payload\qml" "$payload\qs.exe" 2>&1 | ForEach-Object { "$_" }
     $deployExit = $LASTEXITCODE
