@@ -19,9 +19,10 @@ import qs.modules.nexus
 //     page through the inline overlay's NexusState; the standalone window has
 //     no such channel, so the page travels as a component property instead.
 //   * a second request for Nexus reuses the live window instead of stacking
-//     another copy behind the focused application. It applies the requested
-//     page and calls FloatingWindow.requestActivate(), which raises and
-//     focuses the existing native window.
+//     another copy behind the focused application. It restores the window if
+//     it is minimized, applies the requested page and calls
+//     FloatingWindow.requestActivate(), which raises and focuses the existing
+//     native window.
 //   * nothing else differs. Callers that use upstream `create()` still get the
 //     default page.
 //
@@ -54,6 +55,10 @@ Singleton {
     function create(parent: Item, props: var): var {
         const existing = root.activeWindow();
         if (existing) {
+            // Minimized windows still report visible, so check them here too.
+            // Clearing minimized restores the window without touching a
+            // maximized state, before the activation request raises it.
+            existing.minimized = false;
             if (props && props.pageIdx !== undefined)
                 existing.openPage(props.pageIdx);
             else

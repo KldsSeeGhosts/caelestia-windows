@@ -2,7 +2,7 @@
 
 Back to the [Caelestia for Windows user guide](USER-GUIDE.md).
 
-On Linux, Caelestia relies on Hyprland (`hyprland.conf` or `keybinds.lua`) to capture global shortcuts and run window/workspace dispatchers. On Windows, the Quickshell backend provides a built-in `HotkeyManager` (`Quickshell.Windows.Hotkeys`) that registers Win32 hotkeys (`RegisterHotKey`) and a low-level keyboard hook (`WH_KEYBOARD_LL`) when needed for lone-modifier taps or `Win+<Key>` overrides.
+On Linux, Caelestia relies on Hyprland (`hyprland.conf` or `keybinds.lua`) to capture global shortcuts and run window/workspace dispatchers. On Windows, the Quickshell backend provides a built-in `HotkeyManager` (`Quickshell.Windows.Hotkeys`) that offers every chord, including `Win+<Key>`, to `RegisterHotKey` first. It keeps a low-level keyboard hook (`WH_KEYBOARD_LL`) for lone-modifier taps, for `Win+<Key>` overrides that Windows refuses to register, and for the masking tap that stops the Start menu opening after a registered `Super` chord. Registration is preferred because only a `WM_HOTKEY` delivery lets the shell raise and focus a window it opens.
 
 Defaults are staged at `shell/defaults/windows/keybinds.json`. Production seeds `config/keybinds.json` under the recorded profile on first launch only.
 

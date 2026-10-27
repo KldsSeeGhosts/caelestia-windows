@@ -8,7 +8,8 @@
 //      config/shell.json and reads back live (Nexus's persistence path);
 //   2. modules/nexus/WindowFactory.qml opens a real detached window with the
 //      upstream geometry, minimum size and title, and a second request reuses
-//      that window instead of creating another one;
+//      that window instead of creating another one, restoring it when it is
+//      minimized without clearing a maximized state;
 //   3. every page in PageRegistry loads through PageCompRegistry without a QML
 //      diagnostic, and a window destroyed while its first page is still
 //      incubating (including after two page replacements) emits nothing;
@@ -181,8 +182,20 @@ ShellRoot {
                 const reopened = WindowFactory.create();
                 root.check(reopened === root.nexusWindow, "a second request created another Nexus window");
                 root.check(WindowFactory.windowCount === 1, "a second request changed the Nexus window count");
+                // Minimized windows still report visible, so the reuse path must
+                // restore them itself. Maximize first to prove the restore does
+                // not clear that state.
+                root.nexusWindow.maximized = true;
+                root.nexusWindow.minimized = true;
             } else if (root.step === 4) {
                 const win = root.nexusWindow;
+                root.check(win.minimized === true, "minimize did not apply");
+                const restored = WindowFactory.create();
+                root.check(restored === win, "a second request created another Nexus window while minimized");
+                root.check(WindowFactory.windowCount === 1, "reopening a minimized window changed the count");
+                root.check(win.minimized === false, "a second request did not restore the minimized Nexus window");
+                root.check(win.maximized === true, "restoring a minimized window cleared maximized");
+                win.maximized = false;
                 root.check(win.width > 0 && win.height > 0, "nexus window has no geometry");
                 root.check(win.minimumSize.width > 0 && win.minimumSize.height > 0, "nexus window has no minimum size");
                 root.check(String(win.title).startsWith("Nexus"), "nexus window title: " + win.title);

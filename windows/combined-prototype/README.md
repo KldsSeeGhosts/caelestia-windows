@@ -240,11 +240,13 @@ volume and brightness actions still require the matching Live control gate;
 in read-only observation they are inert rather than failing a native route.
 
 A lone Super tap is delivered by a low-level keyboard hook, which also keeps the
-Start menu from opening while the shell owns the tap. Other combinations use
-`RegisterHotKey`, falling back to the same hook where Windows reserves them; the
-hook is only installed while at least one hook-backed bind exists. Both the
-registered hotkeys and the hook are removed when the shell exits, so the Start
-menu works normally again.
+Start menu from opening while the shell owns the tap. Every other combination,
+including Super chords, is offered to `RegisterHotKey` first and falls back to
+the same hook where Windows reserves it; a registered Super chord still gets a
+masking tap from the hook so the Start menu stays closed when the Windows key is
+released. The hook is only installed while at least one hook-backed bind or such
+a masking tap exists. Both the registered hotkeys and the hook are removed when
+the shell exits, so the Start menu works normally again.
 
 When the supervisor hides the taskbar (`-HideTaskbar` or
 `windows.hideTaskbar`), it also consumes Explorer's taskbar chords with its own
