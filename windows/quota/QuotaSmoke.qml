@@ -2,10 +2,9 @@
 //
 // Staged into the production graph by windows/scripts/Test-Quota.ps1 and run
 // with an isolated profile and the offscreen platform. The offscreen QPA has no
-// PanelWindow backend, so it instantiates the original drawer Panels and the
-// ported Quota.Wrapper directly instead of ContentWindow. That still exercises
-// the real staging, singleton service, panel layout, meters, provider marks and
-// blur-blob surface.
+// PanelWindow backend, so it instantiates the original drawer Panels (which
+// creates Quota.Wrapper) instead of ContentWindow. That still exercises the real
+// staging, singleton service, panel layout, meters and provider marks.
 //
 //   * configured: a local synthetic CPA stub lets cpa_usage.py collect records;
 //     the drawer opens, meters render, and the screenshot is saved;
