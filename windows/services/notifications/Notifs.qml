@@ -54,6 +54,7 @@ Singleton {
         popupsSuppressed: root.doNotDisturb
         enabled: root.enabled
         mirrorOptIn: root.mirrorOptIn
+        useExistingAccess: true
         windowsDismissOptIn: root.windowsDismissOptIn
         appOpenOptIn: root.appOpenOptIn
         centerVisible: root.centerVisible

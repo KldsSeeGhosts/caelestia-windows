@@ -10,8 +10,8 @@ import Quickshell.Services.Notifications
 // post-reload hook applies it. At the pinned backend the default is true
 // (qml.hpp line 112); leaving it there would construct the system mirror,
 // request notification-listener access and start reading real toasts. Mirroring
-// is enabled only by the service's setMirroring() after the explicit consent
-// button produced an Allowed status.
+// is enabled only by the service's setMirroring() after a non-prompting query
+// or the explicit consent button produces an Allowed status.
 //
 // requestAccess() is the single consent path. It is invoked only from
 // NotificationsService.requestAccess(), which the original notification-center
@@ -19,13 +19,10 @@ import Quickshell.Services.Notifications
 // The pinned backend itself only raises an OS prompt when Windows reports
 // Unspecified, and GetAccessStatus is read from inside its worker.
 //
-// The consent-fix backend revision additionally exposes a non-prompting
-// refreshAccessStatus() query, a process-lifetime accessRequested latch and an
-// activateMirrored() activation path that does not dismiss the real toast. The
-// shared build at the pinned revision has none of them, so every use below
-// feature-detects the member: at the old pin the queries degrade to "no new
-// information" and mirrored app-open is refused by the service rather than
-// dismissing through the generic action path.
+// The pinned backend exposes a non-prompting refreshAccessStatus() query, a
+// process-lifetime accessRequested latch and an activateMirrored() path that
+// does not dismiss the real toast. Uses remain feature-detected for older
+// backends; absent activation is refused rather than dismissing the toast.
 //
 // The pinned backend does not publish whether the claim succeeded, is retrying,
 // or was forwarded (server.cpp lines 55-91 only log and retry internally), so
@@ -69,8 +66,7 @@ QtObject {
     readonly property bool systemMirrorActive: server.systemMirrorActive
     readonly property int systemNotificationAccess: server.systemNotificationAccess
     // Process-lifetime consent latch published by the consent-fix revision; a
-    // reloaded service reconciles with it instead of re-asking. The pinned
-    // revision does not define the property, so this reads false there.
+    // reloaded service reconciles with it instead of re-asking.
     readonly property bool accessRequested: server.accessRequested === true
 
     // Explicit consent path. The service calls this at most once per process.
@@ -78,8 +74,7 @@ QtObject {
         server.requestSystemNotificationAccess();
     }
 
-    // Non-prompting access query for bounded denied polling. Absent at the
-    // pinned revision; the poll then only re-reads the published value.
+    // Non-prompting query for startup and bounded denied polling.
     function refreshAccessStatus(): void {
         if (typeof server.refreshAccessStatus === "function")
             server.refreshAccessStatus();
@@ -92,8 +87,8 @@ QtObject {
     }
 
     // Activates a mirrored record's source app without dismissing the real
-    // Windows toast. Absent at the pinned revision, whose generic action path
-    // auto-closes as dismissed; the service refuses app-open in that case.
+    // Windows toast. Older backends without this member are refused by the
+    // service rather than using the auto-closing generic action path.
     function activateMirrored(id): bool {
         if (typeof server.activateMirrored !== "function")
             return false;

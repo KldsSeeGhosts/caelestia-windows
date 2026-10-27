@@ -170,7 +170,15 @@ QtObject {
     readonly property FakeBackend autoFixture: FakeBackend {}
     readonly property FakeBackend recoveryFixture: FakeBackend {}
     readonly property FakeBackend reloadFixture: FakeBackend {}
+    readonly property FakeBackend existingAccessFixture: FakeBackend { ready: false }
     readonly property PinnedFakeBackend pinnedFixture: PinnedFakeBackend {}
+
+    readonly property NotificationsService existingAccessService: NotificationsService {
+        enabled: true
+        mirrorOptIn: true
+        useExistingAccess: true
+        backend: existingAccessFixture
+    }
 
     readonly property NotificationsService mirrorService: NotificationsService {
         enabled: true
@@ -353,6 +361,40 @@ QtObject {
             && service.ownershipNote.length > 0, "ownership is unknown without a backend");
         check(service.localDismissals === 0 && service.protectedDismissals === 0,
             "dismiss counters start at zero");
+
+        // Startup reads an existing grant without prompting, only after readiness.
+        check(existingAccessFixture.refreshAccessStatusCalls === 0,
+            "unready backend is not probed");
+        existingAccessFixture.refreshHandler = () => {
+            existingAccessFixture.systemNotificationAccess = 2;
+        };
+        existingAccessFixture.ready = true;
+        check(existingAccessFixture.refreshAccessStatusCalls === 1
+            && existingAccessFixture.requestAccessCalls === 0,
+            "startup queries existing consent without requesting it");
+        check(existingAccessService.mirroringApplied
+            && existingAccessFixture.setMirroringCalls === 1,
+            "an existing Allowed grant enables mirroring without a process latch");
+        existingAccessFixture.systemNotificationAccess = 3;
+        check(!existingAccessService.mirroringApplied,
+            "revoked access disables the mirror");
+        existingAccessFixture.systemNotificationAccess = 2;
+        check(existingAccessService.mirroringApplied
+            && existingAccessFixture.requestAccessCalls === 0,
+            "a restored grant enables the mirror without a prompt");
+        existingAccessService.mirrorOptIn = false;
+        check(!existingAccessService.mirroringApplied,
+            "removing the opt-in disables the mirror");
+        existingAccessFixture.systemNotificationAccess = 1;
+        existingAccessService.mirrorOptIn = true;
+        check(!existingAccessService.mirroringApplied
+            && existingAccessService.canRequestAccess
+            && existingAccessFixture.requestAccessCalls === 0,
+            "unspecified access waits for the explicit consent action");
+        existingAccessFixture.systemNotificationAccess = 4;
+        check(!existingAccessService.mirroringApplied
+            && existingAccessFixture.requestAccessCalls === 0,
+            "unavailable access never prompts or enables the mirror");
 
         const ignored = makeNotification(900, "Ignored while disabled");
         check(service.handleNotification(ignored) === false, "disabled refuses delivery");
