@@ -72,7 +72,12 @@ private slots:
     void junctionClipboardParentIsRefused();
     void junctionSwappedForCacheEntryIsNotFollowed();
     void heldDeletionDoesNotFollowSwappedJunction();
-    void heldDeletionRefusesReplacedEntry();
+    void heldDeletionIgnoresReplacedPath();
+    void ancestorJunctionIsRefused();
+    void ancestorCannotBeRenamedWhileHeld();
+    void hardLinkInSwappedDirectoryIsNotDeleted();
+    void populatedHeldDeletionSucceeds();
+    void explicitOpenReadIsNotCancelledByClose();
     void freshFilesNeverWriteThroughLinks();
 };
 
@@ -458,7 +463,7 @@ void ClipboardLogicTest::heldDeletionDoesNotFollowSwappedJunction() {
     QVERIFY(removeJunction(cache.path()));
 }
 
-void ClipboardLogicTest::heldDeletionRefusesReplacedEntry() {
+void ClipboardLogicTest::heldDeletionIgnoresReplacedPath() {
     QTemporaryDir root;
     QTemporaryDir outside;
     QVERIFY(root.isValid());
@@ -481,14 +486,177 @@ void ClipboardLogicTest::heldDeletionRefusesReplacedEntry() {
     // A same-named decoy in the junction target has a different file identity.
     QVERIFY(writeSentinel(outside.filePath(QStringLiteral("preview.png"))));
 
-    QVERIFY(!deletion.removeContents());
-    QVERIFY(!deletion.removeSelf());
+    // Entries are opened through the held directory, so the original file in
+    // the moved directory is deleted and the decoy behind the junction is not
+    // reachable at all.
+    QVERIFY(deletion.removeContents());
+    QVERIFY(!QFileInfo::exists(moved + QStringLiteral("/preview.png")));
     QVERIFY(QFileInfo::exists(outside.filePath(QStringLiteral("preview.png"))));
     QVERIFY(QFileInfo::exists(outsideSentinel));
-    QVERIFY(QFileInfo::exists(moved + QStringLiteral("/preview.png")));
+    QVERIFY(deletion.removeSelf());
 
     QVERIFY(removeJunction(cache.path()));
-    QVERIFY(QDir(moved).removeRecursively());
+}
+
+void ClipboardLogicTest::ancestorJunctionIsRefused() {
+    QTemporaryDir parent;
+    QVERIFY(parent.isValid());
+    const auto ancestor = parent.filePath(QStringLiteral("A"));
+    const auto root = ancestor + QStringLiteral("/root");
+
+    ClipboardCacheDirectory cache;
+    QVERIFY(QDir().mkpath(root));
+    QVERIFY(cache.configure(root, 4242, 0x1234567890abcdefULL));
+    QVERIFY(cache.ensure());
+    QVERIFY(writeSentinel(cache.filePath(QStringLiteral("preview.png"))));
+
+    // The same layout in another tree, including a dead-pid sibling.
+    const auto outside = parent.filePath(QStringLiteral("outside"));
+    const auto outsideInstance = outside + QStringLiteral("/root/clipboard/") + cache.name();
+    const auto deadName = QStringLiteral("1002-0000000000000003");
+    const auto outsideDead = outside + QStringLiteral("/root/clipboard/") + deadName;
+    QVERIFY(QDir().mkpath(outsideInstance));
+    QVERIFY(QDir().mkpath(outsideDead));
+    const auto outsideSentinel = outsideInstance + QStringLiteral("/preview.png");
+    const auto deadSentinel = outsideDead + QStringLiteral("/sentinel.txt");
+    QVERIFY(writeSentinel(outsideSentinel));
+    QVERIFY(writeSentinel(deadSentinel));
+
+    // After configure() and ensure(), an ancestor of the root is replaced by a
+    // junction. Every identity below it is consistent inside the other tree,
+    // so only the root's final path can tell.
+    const auto moved = parent.filePath(QStringLiteral("A-moved"));
+    QVERIFY(QDir().rename(ancestor, moved));
+    QVERIFY(makeJunction(ancestor, outside));
+
+    QVERIFY(!cache.remove());
+    QVERIFY(!cache.removeFile(cache.filePath(QStringLiteral("preview.png"))));
+    QCOMPARE(ClipboardCacheDirectory::removeDeadSiblings(root, cache.name(), [](quint32) { return false; }), 0);
+    QVERIFY(QFileInfo::exists(outsideSentinel));
+    QVERIFY(QFileInfo::exists(deadSentinel));
+
+    QVERIFY(removeJunction(ancestor));
+    QVERIFY(QDir().rename(moved, ancestor));
+    // Back at its real location the same instance deletes normally.
+    QVERIFY(cache.remove());
+    QVERIFY(!QFileInfo::exists(cache.path()));
+    QVERIFY(QFileInfo::exists(outsideSentinel));
+}
+
+void ClipboardLogicTest::ancestorCannotBeRenamedWhileHeld() {
+    QTemporaryDir parent;
+    QVERIFY(parent.isValid());
+    const auto ancestor = parent.filePath(QStringLiteral("A"));
+    const auto root = ancestor + QStringLiteral("/root");
+
+    ClipboardCacheDirectory cache;
+    QVERIFY(QDir().mkpath(root));
+    QVERIFY(cache.configure(root, 4242, 0x1234567890abcdefULL));
+    QVERIFY(cache.ensure());
+
+    {
+        // ClipboardCacheDeletion::open() verifies the root's final path after
+        // opening it and relies on the OS refusing to rename an ancestor while
+        // the handle is held, so no swap can land between that check and the
+        // relative opens that follow. This pins that assumption.
+        ClipboardCacheDeletion deletion;
+        QCOMPARE(deletion.open(root, cache.path()), ClipboardCacheDeletion::OpenResult::Opened);
+        QVERIFY(!QDir().rename(ancestor, parent.filePath(QStringLiteral("A-moved"))));
+        QVERIFY(QFileInfo::exists(root));
+        QVERIFY(deletion.removeSelf());
+    }
+}
+
+void ClipboardLogicTest::hardLinkInSwappedDirectoryIsNotDeleted() {
+    QTemporaryDir root;
+    QTemporaryDir outside;
+    QVERIFY(root.isValid());
+    QVERIFY(outside.isValid());
+
+    ClipboardCacheDirectory cache;
+    QVERIFY(cache.configure(root.path(), 4242, 0x1234567890abcdefULL));
+    QVERIFY(cache.ensure());
+    const auto entry = cache.filePath(QStringLiteral("preview.png"));
+    QVERIFY(writeSentinel(entry));
+
+    // The junction target holds a hard link to the very file that was
+    // enumerated, so it has the same volume serial and file ID.
+    const auto target = outside.filePath(QStringLiteral("instance"));
+    QVERIFY(QDir().mkpath(target));
+    const auto outsideLink = target + QStringLiteral("/preview.png");
+    const auto linkWide = QDir::toNativeSeparators(outsideLink).toStdWString();
+    const auto entryWide = QDir::toNativeSeparators(entry).toStdWString();
+    QVERIFY(CreateHardLinkW(linkWide.c_str(), entryWide.c_str(), nullptr));
+
+    const auto moved = cache.path() + QStringLiteral("-moved");
+    ClipboardCacheDeletion deletion;
+    QCOMPARE(deletion.open(root.path(), cache.path()), ClipboardCacheDeletion::OpenResult::Opened);
+    QVERIFY(QDir().rename(cache.path(), moved));
+    QVERIFY(makeJunction(cache.path(), target));
+
+    // Entries are opened through the held directory, so the original name in
+    // the moved directory is deleted and the outside link is never reached.
+    QVERIFY(deletion.removeContents());
+    QVERIFY(!QFileInfo::exists(moved + QStringLiteral("/preview.png")));
+    QVERIFY(QFileInfo::exists(outsideLink));
+    QFile survivor(outsideLink);
+    QVERIFY(survivor.open(QIODevice::ReadOnly));
+    QCOMPARE(survivor.readAll(), QByteArray("sentinel"));
+    survivor.close();
+    QVERIFY(deletion.removeSelf());
+
+    QVERIFY(removeJunction(cache.path()));
+}
+
+void ClipboardLogicTest::populatedHeldDeletionSucceeds() {
+    QTemporaryDir root;
+    QVERIFY(root.isValid());
+
+    ClipboardCacheDirectory cache;
+    QVERIFY(cache.configure(root.path(), 4242, 0x1234567890abcdefULL));
+    QVERIFY(cache.ensure());
+    for (const auto& name : { QStringLiteral("a.png"), QStringLiteral("b.txt"), QStringLiteral("c.bin") })
+        QVERIFY(writeSentinel(cache.filePath(name)));
+
+    {
+        ClipboardCacheDeletion deletion;
+        QCOMPARE(deletion.open(root.path(), cache.path()), ClipboardCacheDeletion::OpenResult::Opened);
+        QVERIFY(deletion.removeChild(QStringLiteral("a.png")));
+        QVERIFY(!QFileInfo::exists(cache.filePath(QStringLiteral("a.png"))));
+        QVERIFY(!deletion.removeChild(QStringLiteral("a.png")));
+        QVERIFY(!deletion.removeChild(QStringLiteral("..\\b.txt")));
+        QVERIFY(!deletion.removeChild(QStringLiteral("b.txt:stream")));
+        QVERIFY(deletion.removeContents());
+        QVERIFY(deletion.removeSelf());
+    }
+    // The name goes away once the held handles close.
+    QVERIFY(!QFileInfo::exists(cache.path()));
+    QVERIFY(QFileInfo::exists(root.path()));
+}
+
+void ClipboardLogicTest::explicitOpenReadIsNotCancelledByClose() {
+    ClipboardSessionState session;
+    session.activate();
+    const auto generation = session.generation();
+    QVERIFY(!session.cancelsRead(generation, false));
+    QVERIFY(!session.cancelsRead(generation, true));
+
+    // The overlay calls close() before openItem(): a displayed preview or a
+    // refresh read is cancelled, an explicit open is not.
+    session.deactivate();
+    QVERIFY(session.cancelsRead(generation, false));
+    QVERIFY(!session.cancelsRead(generation, true));
+
+    // A newer generation supersedes a refresh/preview read, not an open.
+    session.activate();
+    QVERIFY(session.cancelsRead(generation, false));
+    QVERIFY(!session.cancelsRead(generation, true));
+    QVERIFY(!session.cancelsRead(session.generation(), false));
+
+    // Shutdown cancels everything.
+    session.requestStop();
+    QVERIFY(session.cancelsRead(session.generation(), false));
+    QVERIFY(session.cancelsRead(session.generation(), true));
 }
 
 void ClipboardLogicTest::freshFilesNeverWriteThroughLinks() {

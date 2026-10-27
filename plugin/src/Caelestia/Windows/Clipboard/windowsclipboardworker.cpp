@@ -128,21 +128,15 @@ QString extensionFor(const QByteArray& bytes) {
 }
 
 // Awaits one WinRT operation on the worker thread without a blocking get().
-// The operation is cancelled as soon as the caller's predicate turns true (a
-// closed picker, a newer generation or shutdown) or the deadline expires.
+// The operation is cancelled as soon as the caller's predicate turns true or
+// the deadline expires. A refresh or preview read cancels on a closed picker, a
+// newer generation or shutdown; an explicit open cancels on shutdown only. An
+// operation that already completed is always used, so completion is checked
+// before cancellation.
 template <typename T>
 [[nodiscard]] ItemReadStatus awaitItemRead(const IAsyncOperation<T>& operation,
     const std::function<bool()>& cancelled, ULONGLONG deadline, T& value) {
     for (;;) {
-        if (cancelled()) {
-            try {
-                operation.Cancel();
-            } catch (const winrt::hresult_error&) {
-            } catch (...) {
-            }
-            return ItemReadStatus::Cancelled;
-        }
-
         AsyncStatus status = AsyncStatus::Started;
         try {
             status = operation.Status();
@@ -164,6 +158,15 @@ template <typename T>
         }
         if (status != AsyncStatus::Started)
             return ItemReadStatus::Failed;
+
+        if (cancelled()) {
+            try {
+                operation.Cancel();
+            } catch (const winrt::hresult_error&) {
+            } catch (...) {
+            }
+            return ItemReadStatus::Cancelled;
+        }
 
         if (GetTickCount64() >= deadline) {
             try {
@@ -875,7 +878,7 @@ void WindowsClipboardWorker::publishSnapshot(quint64 generation, const QVariantL
     emit snapshotReady(generation, items, enabled, status, error);
 }
 
-QString WindowsClipboardWorker::ensurePreview(const QString& id) {
+QString WindowsClipboardWorker::ensurePreview(const QString& id, bool explicitOpen) {
     auto& impl = *m_impl;
     if (impl.previewFiles.contains(id))
         return impl.previewFiles.value(id);
@@ -894,9 +897,13 @@ QString WindowsClipboardWorker::ensurePreview(const QString& id) {
 
     QByteArray bytes;
     ItemReadStatus readStatus = ItemReadStatus::Failed;
+    // The picker's close() runs before an explicit open, so only shutdown (and
+    // the read deadline) may cancel that one. A displayed preview also stops on
+    // a close or a newer generation.
+    const auto generation = impl.session->generation();
     try {
         readStatus = readBitmap(found->handle,
-            [&impl]() { return impl.session->stopping() || !impl.session->active(); },
+            [&impl, generation, explicitOpen]() { return impl.session->cancelsRead(generation, explicitOpen); },
             GetTickCount64() + ITEM_READ_TIMEOUT_MS, bytes);
     } catch (const winrt::hresult_error& error) {
         qCWarning(logClipboard).noquote()
@@ -979,7 +986,7 @@ void WindowsClipboardWorker::requestImage(const QString& id) {
     if (!m_impl->running || m_impl->session->stopping() || !m_impl->session->active())
         return;
 
-    const auto path = ensurePreview(id);
+    const auto path = ensurePreview(id, false);
     if (path.isEmpty()) {
         emit operationFinished(QStringLiteral("preview"), id, false,
             QStringLiteral("The image could not be read from clipboard history."));
@@ -1097,7 +1104,7 @@ void WindowsClipboardWorker::openItem(const QString& id) {
 
     try {
         if (found->kind == QStringLiteral("image")) {
-            const auto path = ensurePreview(id);
+            const auto path = ensurePreview(id, true);
             if (path.isEmpty()) {
                 emit operationFinished(QStringLiteral("open"), id, false,
                     QStringLiteral("The image could not be read from clipboard history."));
@@ -1152,7 +1159,8 @@ void WindowsClipboardWorker::openItem(const QString& id) {
             IVectorView<IStorageItem> storageItems {nullptr};
             const auto read = awaitItemStart(
                 [&content]() { return content.GetStorageItemsAsync(); },
-                [this]() { return m_impl->session->stopping() || !m_impl->session->active(); },
+                // Explicit open: close() already ran, so only shutdown cancels.
+                [this]() { return m_impl->session->cancelsRead(0, true); },
                 GetTickCount64() + ITEM_READ_TIMEOUT_MS, storageItems);
             if (read == ItemReadStatus::Cancelled)
                 return;

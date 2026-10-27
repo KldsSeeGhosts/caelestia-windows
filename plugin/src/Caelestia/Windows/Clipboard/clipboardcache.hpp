@@ -25,6 +25,52 @@ inline QLoggingCategory& log() {
     return category;
 }
 
+// Relative opens need NtCreateFile: CreateFileW cannot open a name relative to
+// a directory handle. ntdll is always loaded, so it is resolved at runtime
+// instead of linking ntdll.lib. The types are private copies of the documented
+// native ones, so no winternl.h dependency or macro clash.
+struct NtUnicodeString {
+    USHORT length;
+    USHORT maximumLength;
+    PWSTR buffer;
+};
+
+struct NtObjectAttributes {
+    ULONG length;
+    HANDLE rootDirectory;
+    NtUnicodeString* objectName;
+    ULONG attributes;
+    PVOID securityDescriptor;
+    PVOID securityQualityOfService;
+};
+
+struct NtIoStatusBlock {
+    union {
+        LONG status;
+        PVOID pointer;
+    };
+    ULONG_PTR information;
+};
+
+using NtCreateFileFn = LONG(NTAPI*)(PHANDLE, ACCESS_MASK, NtObjectAttributes*, NtIoStatusBlock*,
+    PLARGE_INTEGER, ULONG, ULONG, ULONG, ULONG, PVOID, ULONG);
+
+constexpr LONG STATUS_NOT_IMPLEMENTED_CODE = static_cast<LONG>(0xC0000002);
+constexpr LONG STATUS_NAME_NOT_FOUND_CODE = static_cast<LONG>(0xC0000034);
+constexpr LONG STATUS_PATH_NOT_FOUND_CODE = static_cast<LONG>(0xC000003A);
+constexpr ULONG NT_OBJ_CASE_INSENSITIVE = 0x40;
+constexpr ULONG NT_FILE_OPEN = 0x1;
+constexpr ULONG NT_FILE_DIRECTORY_FILE = 0x1;
+constexpr ULONG NT_FILE_NON_DIRECTORY_FILE = 0x40;
+constexpr ULONG NT_FILE_SYNCHRONOUS_IO_NONALERT = 0x20;
+constexpr ULONG NT_FILE_OPEN_REPARSE_POINT = 0x200000;
+
+inline NtCreateFileFn ntCreateFile() {
+    static const auto function = reinterpret_cast<NtCreateFileFn>(
+        reinterpret_cast<void*>(GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "NtCreateFile")));
+    return function;
+}
+
 } // namespace cache_detail
 
 class ClipboardCacheDeletion;
@@ -48,11 +94,11 @@ class ClipboardCacheDeletion;
 // level makes the operation a no-op.
 //
 // Deletion does not trust a path after validation. ClipboardCacheDeletion
-// opens the cache root, the clipboard parent and the candidate directory with
-// FILE_FLAG_OPEN_REPARSE_POINT, rejects reparse points through their handle,
-// verifies the parent chain by volume serial and file ID, and then deletes the
-// held directory and its verified direct children by handle. A path swapped for
-// a junction between validation and deletion therefore cannot redirect it.
+// pins the cache root by its final path, opens everything below it relative to
+// the held parent handle, rejects reparse points through their handle, and
+// deletes the held directory and its verified direct children by handle. A path
+// swapped for a junction, at the instance level or above the root, between
+// validation and deletion therefore cannot redirect it.
 //
 // The policy is WinRT-free so clipboard-logic-tests can exercise the delete
 // boundary without reading or modifying the real clipboard history.
@@ -328,12 +374,19 @@ private:
     QString m_path;
 };
 
-// One held, identity-verified delete transaction. The cache root, the
-// clipboard parent and the candidate instance directory stay open for the
-// whole operation, so a rename or junction swap at any of those paths cannot
-// redirect the deletion. Direct children are opened with
-// FILE_FLAG_OPEN_REPARSE_POINT and must match the file ID the held directory
-// reported; anything else is skipped.
+// One held, identity-verified delete transaction. Only the cache root is ever
+// opened by path. It is pinned: its final path (after any junction or symlink
+// in an ancestor) must equal the configured root, so a junction above the root
+// that redirects into another tree is refused. While a descendant handle is
+// held NTFS refuses to rename an ancestor, so verifying after the open is
+// enough (clipboardlogic_test.cpp checks that claim).
+//
+// The clipboard parent, the instance directory and every entry are then opened
+// relative to the handle of their parent (NtCreateFile with RootDirectory and
+// a single name), never again by absolute path. FILE_OPEN_REPARSE_POINT opens
+// a junction or symlink itself instead of following it, and it is refused. A
+// file is deleted only when its volume serial and file ID match the entry the
+// held directory enumerated.
 class ClipboardCacheDeletion {
 public:
     enum class OpenResult { Opened, Missing, Refused };
@@ -343,9 +396,8 @@ public:
     ClipboardCacheDeletion& operator=(const ClipboardCacheDeletion&) = delete;
 
     // Opens the whole chain. The candidate may be missing (already collected);
-    // any reparse point, replaced parent or identity mismatch is Refused.
+    // any reparse point, redirected root or identity mismatch is Refused.
     [[nodiscard]] OpenResult open(const QString& root, const QString& path) {
-        m_path.clear();
         if (!ClipboardCacheDirectory::validRoot(root) || path.isEmpty() || !QDir::isAbsolutePath(path))
             return OpenResult::Refused;
 
@@ -358,23 +410,20 @@ public:
             return OpenResult::Refused;
         }
 
-        if (!m_root.openDirectory(cleanRoot) || !m_root.isRealDirectory())
+        if (!m_root.openRoot(cleanRoot) || !m_root.isRealDirectory())
             return refuse(QStringLiteral("the cache root is not a real directory"));
-        if (!m_base.openDirectory(base) || !m_base.isRealDirectory())
+        if (!m_root.isAt(cleanRoot))
+            return refuse(QStringLiteral("the cache root is not at its configured location"));
+        if (!m_base.openChild(m_root, QStringLiteral("clipboard"), true, false) || !m_base.isRealDirectory())
             return refuse(QStringLiteral("the clipboard parent is not a real directory"));
-        if (!m_root.contains(QStringLiteral("clipboard"), m_base))
-            return refuse(QStringLiteral("the clipboard parent is not the held cache root's child"));
-        if (!m_instance.openDirectory(target)) {
-            if (m_instance.error() == ERROR_FILE_NOT_FOUND || m_instance.error() == ERROR_PATH_NOT_FOUND)
+        if (!m_instance.openChild(m_base, name, true, true)) {
+            if (m_instance.missing())
                 return OpenResult::Missing;
             return refuse(QStringLiteral("the instance directory could not be opened"));
         }
         if (!m_instance.isRealDirectory())
             return refuse(QStringLiteral("the instance directory is a reparse point or not a directory"));
-        if (!m_base.contains(name, m_instance))
-            return refuse(QStringLiteral("the instance directory is not the held clipboard parent's child"));
 
-        m_path = target;
         return OpenResult::Opened;
     }
 
@@ -447,7 +496,7 @@ private:
         };
 
         HANDLE value = INVALID_HANDLE_VALUE;
-        DWORD lastError = ERROR_SUCCESS;
+        LONG status = cache_detail::STATUS_NOT_IMPLEMENTED_CODE;
 
         Handle() = default;
         ~Handle() { close(); }
@@ -461,30 +510,100 @@ private:
             }
         }
 
-        [[nodiscard]] DWORD error() const { return lastError; }
         [[nodiscard]] bool valid() const { return value != INVALID_HANDLE_VALUE; }
 
-        [[nodiscard]] bool openDirectory(const QString& path) {
-            return open(path, FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES | DELETE | SYNCHRONIZE,
-                FILE_FLAG_BACKUP_SEMANTICS);
+        [[nodiscard]] bool missing() const {
+            return status == cache_detail::STATUS_NAME_NOT_FOUND_CODE
+                || status == cache_detail::STATUS_PATH_NOT_FOUND_CODE;
         }
 
-        [[nodiscard]] bool openFile(const QString& path) {
-            return open(path, DELETE | FILE_READ_ATTRIBUTES | SYNCHRONIZE, 0);
-        }
-
-        [[nodiscard]] bool open(const QString& path, DWORD access, DWORD flags) {
+        // The only open by path: the cache root. FILE_FLAG_OPEN_REPARSE_POINT
+        // opens a junction or symlink at the root itself instead of following
+        // it; ancestors are still resolved, so isAt() has to pin the result.
+        // FILE_SHARE_DELETE lets a deliberate swap happen while the held handle
+        // keeps referring to the validated object.
+        [[nodiscard]] bool openRoot(const QString& path) {
             close();
             const auto wide = QDir::toNativeSeparators(path).toStdWString();
-            // FILE_FLAG_OPEN_REPARSE_POINT: never follow a junction or symlink.
-            // FILE_SHARE_DELETE lets a deliberate swap happen while the held
-            // handle keeps referring to the validated object; identity checks
-            // below still refuse to delete through the new path.
-            value = CreateFileW(wide.c_str(), access,
+            value = CreateFileW(wide.c_str(), FILE_TRAVERSE | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
                 FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
-                flags | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
-            lastError = value == INVALID_HANDLE_VALUE ? GetLastError() : ERROR_SUCCESS;
+                FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+            status = value == INVALID_HANDLE_VALUE ? cache_detail::STATUS_PATH_NOT_FOUND_CODE : 0;
             return value != INVALID_HANDLE_VALUE;
+        }
+
+        // Opens exactly one name inside the held `parent`, never a path. A
+        // directory (the clipboard parent, the instance directory) or a
+        // non-directory entry; the instance directory and file entries are
+        // opened with DELETE so they can be removed through this handle.
+        [[nodiscard]] bool openChild(const Handle& parent, const QString& name, bool directory, bool deletable) {
+            close();
+            status = cache_detail::STATUS_NOT_IMPLEMENTED_CODE;
+            const auto create = cache_detail::ntCreateFile();
+            if (create == nullptr || !parent.valid() || !validName(name))
+                return false;
+
+            auto wide = name.toStdWString();
+            cache_detail::NtUnicodeString objectName {};
+            objectName.length = static_cast<USHORT>(wide.size() * sizeof(WCHAR));
+            objectName.maximumLength = objectName.length;
+            objectName.buffer = wide.data();
+
+            cache_detail::NtObjectAttributes attributes {};
+            attributes.length = sizeof(attributes);
+            attributes.rootDirectory = parent.value;
+            attributes.objectName = &objectName;
+            attributes.attributes = cache_detail::NT_OBJ_CASE_INSENSITIVE;
+
+            ACCESS_MASK access = FILE_READ_ATTRIBUTES | SYNCHRONIZE;
+            if (directory)
+                access |= FILE_TRAVERSE | FILE_LIST_DIRECTORY;
+            if (deletable)
+                access |= DELETE;
+
+            cache_detail::NtIoStatusBlock block {};
+            HANDLE opened = INVALID_HANDLE_VALUE;
+            // FILE_OPEN_REPARSE_POINT: a junction or symlink is opened itself,
+            // not followed, and refused by the type check afterwards.
+            status = create(&opened, access, &attributes, &block, nullptr, 0,
+                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, cache_detail::NT_FILE_OPEN,
+                cache_detail::NT_FILE_SYNCHRONOUS_IO_NONALERT | cache_detail::NT_FILE_OPEN_REPARSE_POINT
+                    | (directory ? cache_detail::NT_FILE_DIRECTORY_FILE : cache_detail::NT_FILE_NON_DIRECTORY_FILE),
+                nullptr, 0);
+            if (status < 0 || opened == nullptr || opened == INVALID_HANDLE_VALUE)
+                return false;
+            value = opened;
+            return true;
+        }
+
+        // One path component only: a separator, a stream colon or a dot name
+        // would let the single name walk somewhere else.
+        [[nodiscard]] static bool validName(const QString& name) {
+            return !name.isEmpty() && name != QStringLiteral(".") && name != QStringLiteral("..")
+                && !name.contains(QLatin1Char('\\')) && !name.contains(QLatin1Char('/'))
+                && !name.contains(QLatin1Char(':'));
+        }
+
+        // True only when the object behind this handle really lives at `path`
+        // (case-insensitive). A junction or symlink in any ancestor makes the
+        // final path differ, so a redirected root never passes.
+        [[nodiscard]] bool isAt(const QString& path) const {
+            std::wstring buffer(MAX_PATH, L'\0');
+            for (int attempt = 0; attempt < 3; ++attempt) {
+                const auto length = GetFinalPathNameByHandleW(value, buffer.data(),
+                    static_cast<DWORD>(buffer.size()), FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
+                if (length == 0)
+                    return false;
+                if (length < buffer.size()) {
+                    buffer.resize(length);
+                    auto resolved = QString::fromStdWString(buffer);
+                    if (resolved.startsWith(QStringLiteral("\\\\?\\")))
+                        resolved = resolved.mid(4);
+                    return resolved.compare(QDir::toNativeSeparators(path), Qt::CaseInsensitive) == 0;
+                }
+                buffer.resize(length);
+            }
+            return false;
         }
 
         [[nodiscard]] bool attributeTag(FILE_ATTRIBUTE_TAG_INFO& info) const {
@@ -506,27 +625,6 @@ private:
 
         [[nodiscard]] bool fileId(FILE_ID_INFO& id) const {
             return valid() && GetFileInformationByHandleEx(value, FileIdInfo, &id, sizeof(id)) != 0;
-        }
-
-        // True only when `child` has the same volume serial and 128-bit file ID
-        // as an entry named `name` directly in this held directory.
-        [[nodiscard]] bool contains(const QString& name, const Handle& child) const {
-            FILE_ID_INFO parentId {};
-            FILE_ID_INFO childId {};
-            if (!fileId(parentId) || !child.fileId(childId)
-                || parentId.VolumeSerialNumber != childId.VolumeSerialNumber) {
-                return false;
-            }
-            std::vector<Entry> entries;
-            if (!list(value, entries))
-                return false;
-            for (const auto& entry: entries) {
-                if (entry.name.compare(name, Qt::CaseInsensitive) == 0
-                    && std::memcmp(&entry.id, &childId.FileId, sizeof(FILE_ID_128)) == 0) {
-                    return true;
-                }
-            }
-            return false;
         }
 
         [[nodiscard]] bool deleteSelf() const { return deleteByHandle(value); }
@@ -585,16 +683,19 @@ private:
     }
 
     [[nodiscard]] bool removeEntry(const Handle::Entry& entry) {
-        const auto path = m_path + QLatin1Char('/') + entry.name;
+        // Opened relative to the held instance directory, so a swapped path
+        // (or a hard link to the same file elsewhere) is never reached.
         Handle child;
-        if (!child.openFile(path) || !child.isRegularFile()) {
+        if (!child.openChild(m_instance, entry.name, false, true) || !child.isRegularFile()) {
             qCWarning(cache_detail::log())
                 << "Clipboard cache cleanup refused an entry that is no longer a regular file.";
             return false;
         }
 
+        FILE_ID_INFO parentId {};
         FILE_ID_INFO childId {};
-        if (!child.fileId(childId)
+        if (!m_instance.fileId(parentId) || !child.fileId(childId)
+            || parentId.VolumeSerialNumber != childId.VolumeSerialNumber
             || std::memcmp(&childId.FileId, &entry.id, sizeof(FILE_ID_128)) != 0) {
             qCWarning(cache_detail::log())
                 << "Clipboard cache cleanup refused an entry whose file identity changed.";
@@ -611,7 +712,6 @@ private:
     Handle m_root;
     Handle m_base;
     Handle m_instance;
-    QString m_path;
 };
 
 inline bool ClipboardCacheDirectory::removeValidated(const QString& root, const QString& path) {
