@@ -348,6 +348,65 @@ prevents the automatic paste after the item was copied, a Caelestia toast says
 [the clipboard notes](../services/clipboard/README.md) for exact behaviour and
 what still needs live verification.
 
+### CPA quota drawer (Windows)
+
+The top-right quota/agents drawer from the custom Linux overlay is ported with
+the original components, layout and motion. Hover the **top-right strip** to
+open it; it closes when the pointer leaves, when a fullscreen application
+appears, or when the shell loses its focus grab. Like the Linux source there is
+no bar entry and no default keybind.
+
+The drawer is **opt-in**: nothing runs unless a CPA management config exists.
+It expects the same file the Linux collector used, at a Windows location:
+
+```text
+%LOCALAPPDATA%\caelestia-windows\config\cpa-agents.json
+```
+
+```json
+{"baseUrl": "https://your-cpa-host", "adminKey": "<management key>"}
+```
+
+`CAELESTIA_CONFIG_DIR` (the shell profile) is used when set, and
+`CAELESTIA_CPA_CONFIG` can name another file. The shell only checks that the
+file exists; its contents are parsed by the Python collector alone and are
+never displayed or logged. Keep the key out of commits, screenshots and issue
+reports.
+
+Optional drawer settings live beside `shell.json` in `quota.json`. Every value
+is optional and matches the Linux schema:
+
+```json
+{
+    "enabled": true,
+    "geometry": {"width": 384, "height": 520},
+    "refreshIntervalMs": 60000,
+    "refreshTimeoutMs": 60000
+}
+```
+
+With `cpa-agents.json` present the drawer enables automatically. Set
+`"enabled": false` to keep the config but hide the drawer, or provide
+`quota.json` without `cpa-agents.json` to show the "not configured" empty state.
+
+Python is already required for colour generation. The quota collector only uses
+the standard library, so it runs with the profile's scheme virtual environment
+when one exists, otherwise the Windows `py` launcher. Set
+`CAELESTIA_QUOTA_PYTHON` to an interpreter path to override it.
+
+Quota refreshes every 60 seconds by default. The collector writes saved records
+under the profile `state\omarchy\agents\usage` directory, so a failed or
+unreachable endpoint shows one "Quota refresh failed. Showing saved data." line
+instead of error spam, and the QML watchdog stops a hung collector or token
+download. With no saved records the drawer shows a plain empty state. The bolt
+button runs the keepalive script; that is an explicit request that sends real
+keepalive traffic to CPA and needs the CPA inference key (`CPA_API_KEY` in the
+environment, or the Linux `environment.d/cpa.conf` fallback). It is not run
+during smoke or by the shell at startup.
+
+See [the port notes](../quota/README.md) for the source mapping and what is and
+is not verified.
+
 ### Per-monitor configuration
 
 To override settings on a specific display, create:
