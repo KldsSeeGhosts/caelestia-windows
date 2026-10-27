@@ -1270,6 +1270,14 @@ QtObject {
         check(mirrorService.mirrorWrites === 1 && mirrorFixture.setMirroringCalls === 1,
             "mirroring is never written repeatedly");
         expectStatusFor(mirrorService, "local", "local delivery continues with mirroring allowed");
+        check(!mirrorService.bannerSuppressionAllowed, "allowed consent alone cannot suppress banners");
+        mirrorFixture.systemMirrorActive = true;
+        check(mirrorService.bannerSuppressionAllowed, "active allowed mirror can suppress banners");
+        mirrorService.replaceSystemBanners = false;
+        check(!mirrorService.bannerSuppressionAllowed, "replacement option disables suppression");
+        mirrorService.replaceSystemBanners = true;
+        mirrorFixture.systemMirrorActive = false;
+        check(!mirrorService.bannerSuppressionAllowed, "inactive mirror cannot suppress banners");
 
         // Mirrored record identification uses only the toast hints.
         const mirroredNotification = makeNotification(501, "Windows toast");
@@ -1285,6 +1293,8 @@ QtObject {
         const mirroredRecord = mirrorService.list[0];
         check(mirroredRecord.mirrored === true && mirroredRecord.local === false,
             "toast hints identify a mirrored record");
+        check(mirroredRecord.popup && mirrorService.popups.includes(mirroredRecord),
+            "mirrored notifications enter the same popup list as local notifications");
         check(mirroredRecord.appName === "Windows Terminal"
             && mirroredRecord.appIcon === "terminal",
             "mirrored records use the original app name/icon fields");

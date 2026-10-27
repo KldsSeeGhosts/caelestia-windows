@@ -56,6 +56,7 @@ QtObject {
     // works without them; mirroring, Windows dismissal of mirrored records and
     // app-open each stay independent and default off.
     property bool mirrorOptIn: false
+    property bool replaceSystemBanners: true
     // Query an existing Windows grant without showing a consent prompt.
     property bool useExistingAccess: false
     property var accessProbeBackend: null
@@ -235,6 +236,8 @@ QtObject {
     // Unknown/Unspecified/Allowed/Denied/Unavailable, as required by the
     // backend contract. Without a staged mirror there is no measurement.
     readonly property string accessState: root.computeAccessState()
+    readonly property bool bannerSuppressionAllowed: replaceSystemBanners && mirrorStaged
+        && systemMirrorActive && systemNotificationAccess === 2 && accessState === "Allowed"
 
     readonly property bool canRequestAccess: mirrorStaged && backend?.ready === true
         && accessState === "Unspecified" && !consentRequested && !consentPending

@@ -14,7 +14,7 @@ import qs.components.misc
 // The pure NotificationsService owns records, expiry, dismissal, image source
 // trust, mirroring consent and history serialization; this facade adds only the
 // opt-ins, the native loader, the Windows settings action, the isolated-profile
-// FileView and the local send helper. It intentionally imports no HOME/XDG path
+// FileView, banner-recovery helper and local send helper. It imports no HOME/XDG path
 // object and never constructs the native server while disabled. No notification
 // image is copied, written, listed or deleted: only allowlisted image://icon
 // theme names and files already inside the staged shell assets directory are
@@ -49,11 +49,65 @@ Singleton {
     // The staged shell's assets directory is the only local location a
     // notification image may come from.
     readonly property string shellAssetsDirectory: Quickshell.shellPath("assets")
+    readonly property string bannerHelper: Quickshell.env("CAELESTIA_BANNER_HELPER")
+    property bool bannerConfigReady: false
+    property bool replaceSystemBanners: true
+    property var keepSystemBanners: []
+    property bool bannerStopping: false
+    property bool bannerStarted: false
+    property bool bannerRecoveryComplete: false
+    property bool bannerFailed: false
+    property var pendingBannerApps: []
+    readonly property bool bannerWanted: bannerConfigReady && bannerRecoveryComplete && !bannerFailed
+        && root.service.pathConfined && bannerHelper !== ""
+        && root.service.bannerSuppressionAllowed
+
+    function recoverBanners(): void {
+        if (bannerHelper !== "" && service.pathConfined && !bannerRecovery.running
+                && Quickshell.env("CAELESTIA_SHELL_SMOKE") !== "1")
+            bannerRecovery.running = true;
+    }
+
+    function configureBanners(): void {
+        if (bannerProcess.running && bannerStarted && !bannerStopping)
+            bannerProcess.write(JSON.stringify({command: "configure", keep: keepSystemBanners}) + "\n");
+    }
+
+    function reconcileBanners(): void {
+        if (!bannerWanted) {
+            if ((bannerConfigReady && !replaceSystemBanners) || bannerFailed
+                    || !service.bannerSuppressionAllowed)
+                pendingBannerApps = [];
+            if (bannerProcess.running && bannerStarted && !bannerStopping) {
+                bannerStopping = true;
+                bannerProcess.write('{"command":"stop"}\n');
+            }
+        } else if (!bannerProcess.running && !bannerStopping) {
+            bannerProcess.running = true;
+        }
+    }
+
+    function noteBannerApp(notification): void {
+        if (bannerFailed || bannerHelper === "" || !service.pathConfined
+                || !service.bannerSuppressionAllowed || !service.isSystemNotification(notification))
+            return;
+        const name = notification?.hints?.["x-windows-aumid"];
+        if (typeof name !== "string" || name === "")
+            return;
+        if (bannerWanted && bannerProcess.running && bannerStarted && !bannerStopping)
+            bannerProcess.write(JSON.stringify({command: "app", name: name}) + "\n");
+        else if (pendingBannerApps.length < 512 && !pendingBannerApps.includes(name))
+            pendingBannerApps = [...pendingBannerApps, name];
+    }
+
+    onBannerWantedChanged: reconcileBanners()
+    Component.onCompleted: recoverBanners()
 
     readonly property NotificationsService service: NotificationsService {
         popupsSuppressed: root.doNotDisturb
         enabled: root.enabled
         mirrorOptIn: root.mirrorOptIn
+        replaceSystemBanners: root.replaceSystemBanners
         useExistingAccess: true
         windowsDismissOptIn: root.windowsDismissOptIn
         appOpenOptIn: root.appOpenOptIn
@@ -260,6 +314,92 @@ Singleton {
 
         active: root.enabled
         source: root.enabled ? Qt.resolvedUrl("NativeNotificationBackend.qml") : ""
+    }
+
+    readonly property FileView _bannerConfig: FileView {
+        path: Quickshell.env("CAELESTIA_CONFIG_DIR") + "/windows.json"
+        watchChanges: true
+        printErrors: false
+        onFileChanged: reload()
+        onLoaded: {
+            try {
+                const options = JSON.parse(text()).windows?.notifications ?? {};
+                if (typeof options !== "object" || options === null
+                        || (options.replaceSystemBanners !== undefined
+                            && typeof options.replaceSystemBanners !== "boolean")
+                        || (options.keepSystemBanners !== undefined
+                            && (!Array.isArray(options.keepSystemBanners)
+                                || !options.keepSystemBanners.every(x => typeof x === "string"))))
+                    throw new Error("Invalid windows.notifications settings");
+                root.replaceSystemBanners = options.replaceSystemBanners !== false;
+                root.keepSystemBanners = options.keepSystemBanners ?? [];
+                root.bannerConfigReady = true;
+                root.configureBanners();
+            } catch (error) {
+                root.bannerConfigReady = false;
+                console.warn("Caelestia banner settings:", String(error));
+            }
+        }
+        onLoadFailed: {
+            root.bannerConfigReady = false;
+            console.warn("Caelestia banner settings could not be read");
+        }
+    }
+
+    readonly property Process _bannerProcess: Process {
+        id: bannerProcess
+        command: [Quickshell.env("SystemRoot") + "/System32/WindowsPowerShell/v1.0/powershell.exe",
+            "-NoProfile", "-File", root.bannerHelper, "-StateDirectory", Quickshell.stateDir,
+            "-Command", "Worker"]
+        stdinEnabled: true
+        stdout: SplitParser { onRead: line => {} }
+        stderr: SplitParser { onRead: line => console.warn("Caelestia banner helper:", line) }
+        onStarted: {
+            root.bannerStarted = true;
+            if (!root.bannerWanted) {
+                root.bannerStopping = true;
+                bannerProcess.write('{"command":"stop"}\n');
+                return;
+            }
+            root.configureBanners();
+            for (const name of root.pendingBannerApps)
+                bannerProcess.write(JSON.stringify({command: "app", name: name}) + "\n");
+            root.pendingBannerApps = [];
+        }
+        onExited: code => {
+            const expected = root.bannerStopping;
+            root.bannerStarted = false;
+            root.bannerStopping = false;
+            if (code !== 0 || !expected) {
+                root.bannerFailed = true;
+                root.bannerRecoveryComplete = false;
+                console.warn("Caelestia banner helper exited unexpectedly with", code);
+                root.recoverBanners();
+            } else if (expected && root.bannerWanted)
+                Qt.callLater(root.reconcileBanners);
+        }
+    }
+
+    // Runs even when mirroring is disabled, including after a QML reload that
+    // killed the previous worker without exiting the supervised process.
+    readonly property Process _bannerRecovery: Process {
+        id: bannerRecovery
+        command: [Quickshell.env("SystemRoot") + "/System32/WindowsPowerShell/v1.0/powershell.exe",
+            "-NoProfile", "-File", root.bannerHelper, "-StateDirectory", Quickshell.stateDir,
+            "-Command", "Restore"]
+        stderr: SplitParser { onRead: line => console.warn("Caelestia banner recovery:", line) }
+        onExited: code => {
+            if (code === 0)
+                root.bannerRecoveryComplete = true;
+            else
+                console.warn("Caelestia banner recovery failed; replacement remains disabled");
+        }
+    }
+
+    Connections {
+        target: root.backend
+        ignoreUnknownSignals: true
+        function onNotificationReceived(notification): void { root.noteBannerApp(notification); }
     }
 
     // The history file is written only after a successful load and only inside

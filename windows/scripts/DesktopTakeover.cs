@@ -1014,6 +1014,7 @@ namespace Caelestia.Takeover {
         }
         Supervisor(Launch launch, bool hide, bool restart, bool invisible) {
             this.launch = launch; this.hide = hide; this.restart = restart; this.invisible = invisible && hide;
+            RestoreBanners();
             showCallback = OnTaskbarShow; // Root the delegate for the entire hook lifetime.
             showHook = new TaskbarHookBinding(
                 delegate(uint owner) { return Native.HookShows(owner, showCallback); },
@@ -1047,6 +1048,30 @@ namespace Caelestia.Takeover {
         }
         void SaveSnapshot() {
             Native.SaveSnapshot(Path.Combine(launch.StateDirectory, "desktop-before.json"), saved);
+        }
+        void RestoreBanners() {
+            string state;
+            if (launch.Environment == null || !launch.Environment.TryGetValue("CAELESTIA_STATE_DIR", out state)
+                || String.IsNullOrEmpty(state)) return;
+            string helper = Path.Combine(launch.WorkingDirectory, "Banner-Suppression.ps1");
+            if (!File.Exists(helper)) {
+                if (File.Exists(Path.Combine(state, "banner-suppression.json")))
+                    throw new InvalidOperationException("Banner recovery helper is missing: " + helper);
+                return;
+            }
+            var info = new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, @"WindowsPowerShell\v1.0\powershell.exe"),
+                "-NoProfile -File \"" + helper + "\" -StateDirectory \"" + state + "\" -Command Restore") {
+                UseShellExecute = false, CreateNoWindow = true, RedirectStandardError = true
+            };
+            using (var recoveryProcess = Process.Start(info)) {
+                if (!recoveryProcess.WaitForExit(45000)) {
+                    recoveryProcess.Kill();
+                    throw new InvalidOperationException("Banner recovery timed out; the journal was retained.");
+                }
+                string errors = recoveryProcess.StandardError.ReadToEnd();
+                if (recoveryProcess.ExitCode != 0)
+                    throw new InvalidOperationException("Banner recovery failed: " + errors);
+            }
         }
         void SuppressRegions() {
             if (invisible) foreach (var bar in Native.Taskbars()) regions.Reconcile(bar);
@@ -1179,6 +1204,7 @@ namespace Caelestia.Takeover {
                 child.WaitForExit(); // drain redirected log callbacks
                 int code = child.ExitCode, pid = child.Id;
                 child.Dispose(); child = null;
+                RestoreBanners();
                 if (code == 0) { Finish("clean-exit", 0); return; }
                 quickCrashes = (DateTime.UtcNow - started).TotalSeconds < 30 ? quickCrashes + 1 : 0;
                 if (!restart || quickCrashes >= 3) { Finish("crash-give-up", code); return; }
@@ -1218,11 +1244,14 @@ namespace Caelestia.Takeover {
                     child.Dispose(); child = null;
                 }
             } finally {
-                try { Native.RestoreOwned(saved, ownedPid, launch.RestoreWorkAreas, hide); }
+                try { RestoreBanners(); }
                 finally {
-                    Native.RecordAction = null;
-                    recovery.Dispose();
-                    DestroyHandle();
+                    try { Native.RestoreOwned(saved, ownedPid, launch.RestoreWorkAreas, hide); }
+                    finally {
+                        Native.RecordAction = null;
+                        recovery.Dispose();
+                        DestroyHandle();
+                    }
                 }
             }
         }
