@@ -16,10 +16,12 @@ import Caelestia.Config
 // and one live-controller list, so a reload's new generation reuses the
 // baseline instead of capturing the old generation's applied values, and the
 // old generation's teardown does not restore while the new one is live. The
-// baseline is saved to the profile runtime directory before the first write
-// and restored when the option is disabled or the shell exits cleanly. Writes
-// never set SPIF_UPDATEINIFILE, so the stored Windows preference is untouched
-// and the next logon restores it after a crash.
+// baseline and the applied values are saved to the profile runtime directory
+// before the first write and restored when the option is disabled or the shell
+// exits cleanly. After a crash the saved baseline is used only while the system
+// still holds the recorded applied values; a user change in between discards it.
+// Writes never set SPIF_UPDATEINIFILE, so the stored Windows preference is
+// untouched and the next logon restores it after a crash.
 //
 // The native object is not constructed at all while the option is disabled,
 // so a user who turns on X-Mouse in Windows keeps that setting.

@@ -20,6 +20,33 @@ using namespace caelestia::shell::windows;
 
 namespace {
 
+QByteArray recoveryContents(const FocusFollowsMouseValues& baseline,
+    const FocusFollowsMouseValues& applied) {
+    return QStringLiteral("version=2\ntracking=%1\ndelay=%2\nraise=%3\n"
+                          "appliedTracking=%4\nappliedDelay=%5\nappliedRaise=%6\n")
+        .arg(baseline.tracking ? 1 : 0)
+        .arg(baseline.delayMs)
+        .arg(baseline.raise ? 1 : 0)
+        .arg(applied.tracking ? 1 : 0)
+        .arg(applied.delayMs)
+        .arg(applied.raise ? 1 : 0)
+        .toUtf8();
+}
+
+bool writeFile(const QString& path, const QByteArray& contents) {
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly))
+        return false;
+    return file.write(contents) == contents.size();
+}
+
+QByteArray readFile(const QString& path) {
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly))
+        return {};
+    return file.readAll();
+}
+
 class FakeFocusFollowsMouseSystem final: public FocusFollowsMouseSystem {
 public:
     FocusFollowsMouseValues values;
@@ -87,7 +114,10 @@ private slots:
     void restoreIsIdempotent();
     void overlappingGenerationsShareBaseline();
     void mostRecentUpdateWins();
-    void recoveryFileSuppliesBaseline();
+    void recoveryFileUsedWhenSystemStillMatches();
+    void recoveryFileDiscardedWhenUserChangedSetting();
+    void recoveryFileWithoutAppliedValuesIsDiscarded();
+    void liveDelayChangeRewritesAppliedValues();
     void recoveryFileWrittenBeforeFirstChange();
     void disabledDoesNotWriteRecoveryFile();
 };
@@ -343,20 +373,17 @@ void FocusFollowsMouseTest::mostRecentUpdateWins() {
     QCOMPARE(system.values.tracking, false);
 }
 
-void FocusFollowsMouseTest::recoveryFileSuppliesBaseline() {
+void FocusFollowsMouseTest::recoveryFileUsedWhenSystemStillMatches() {
     QTemporaryDir directory;
     QVERIFY(directory.isValid());
     const auto path = directory.filePath(QStringLiteral("focus-follows-mouse-recovery.json"));
 
-    {
-        QFile file(path);
-        QVERIFY(file.open(QIODevice::WriteOnly));
-        const QByteArray contents("version=1\ntracking=0\ndelay=400\nraise=1\n");
-        QCOMPARE(file.write(contents), contents.size());
-    }
+    // A crashed session applied (true, 100, false) and left this file.
+    QVERIFY(writeFile(path,
+        recoveryContents({false, 400, true}, {true, 100, false})));
 
     FakeFocusFollowsMouseSystem system;
-    // The crashed process had already applied these live values.
+    // The system still holds the values that session applied.
     system.values = {true, 100, false};
     FocusFollowsMouseOwner owner;
     FocusFollowsMouseController controller(system, &owner);
@@ -366,11 +393,102 @@ void FocusFollowsMouseTest::recoveryFileSuppliesBaseline() {
     QCOMPARE(controller.saved().tracking, false);
     QCOMPARE(controller.saved().delayMs, 400);
     QCOMPARE(controller.saved().raise, true);
+    // The recovered baseline stays, but the recorded applied values follow the
+    // new delay.
+    QCOMPARE(readFile(path), recoveryContents({false, 400, true}, {true, 50, false}));
 
     QVERIFY(controller.restore());
     QCOMPARE(system.values.tracking, false);
     QCOMPARE(system.values.delayMs, 400);
     QCOMPARE(system.values.raise, true);
+    QVERIFY(!QFile::exists(path));
+}
+
+void FocusFollowsMouseTest::recoveryFileDiscardedWhenUserChangedSetting() {
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const auto path = directory.filePath(QStringLiteral("focus-follows-mouse-recovery.json"));
+
+    // A crashed session applied (true, 100, false) and left this file.
+    QVERIFY(writeFile(path,
+        recoveryContents({false, 100, false}, {true, 100, false})));
+
+    FakeFocusFollowsMouseSystem system;
+    // While the shell was down the user changed X-Mouse to these values, so
+    // the stale baseline no longer describes what to restore.
+    system.values = {true, 900, true};
+    FocusFollowsMouseOwner owner;
+    FocusFollowsMouseController controller(system, &owner);
+    controller.setRecoveryPath(path);
+
+    QVERIFY(controller.apply(true, 150, false));
+    QCOMPARE(controller.saved().tracking, true);
+    QCOMPARE(controller.saved().delayMs, 900);
+    QCOMPARE(controller.saved().raise, true);
+    QCOMPARE(system.values.tracking, true);
+    QCOMPARE(system.values.delayMs, 150);
+    QCOMPARE(system.values.raise, false);
+
+    // The stale file was discarded and replaced by the fresh capture.
+    QCOMPARE(readFile(path), recoveryContents({true, 900, true}, {true, 150, false}));
+
+    QVERIFY(controller.restore());
+    QCOMPARE(system.values.tracking, true);
+    QCOMPARE(system.values.delayMs, 900);
+    QCOMPARE(system.values.raise, true);
+    QVERIFY(!QFile::exists(path));
+}
+
+void FocusFollowsMouseTest::recoveryFileWithoutAppliedValuesIsDiscarded() {
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const auto path = directory.filePath(QStringLiteral("focus-follows-mouse-recovery.json"));
+
+    // Older builds wrote no applied values, so the file can't be validated.
+    QVERIFY(writeFile(path, QByteArray("version=1\ntracking=0\ndelay=400\nraise=1\n")));
+
+    FakeFocusFollowsMouseSystem system;
+    system.values = {true, 300, true};
+    FocusFollowsMouseOwner owner;
+    FocusFollowsMouseController controller(system, &owner);
+    controller.setRecoveryPath(path);
+
+    QVERIFY(controller.apply(true, 100, false));
+    QCOMPARE(controller.saved().tracking, true);
+    QCOMPARE(controller.saved().delayMs, 300);
+    QCOMPARE(controller.saved().raise, true);
+
+    QVERIFY(controller.restore());
+    QCOMPARE(system.values.tracking, true);
+    QCOMPARE(system.values.delayMs, 300);
+    QCOMPARE(system.values.raise, true);
+    QVERIFY(!QFile::exists(path));
+}
+
+void FocusFollowsMouseTest::liveDelayChangeRewritesAppliedValues() {
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const auto path = directory.filePath(QStringLiteral("focus-follows-mouse-recovery.json"));
+
+    FakeFocusFollowsMouseSystem system;
+    system.values = {false, 400, false};
+    FocusFollowsMouseOwner owner;
+    FocusFollowsMouseController controller(system, &owner);
+    controller.setRecoveryPath(path);
+
+    QVERIFY(controller.apply(true, 100, false));
+    QCOMPARE(readFile(path), recoveryContents({false, 400, false}, {true, 100, false}));
+
+    // A live delay and raise change must rewrite the applied values while the
+    // baseline stays the same.
+    QVERIFY(controller.apply(true, 250, true));
+    QCOMPARE(readFile(path), recoveryContents({false, 400, false}, {true, 250, true}));
+    QCOMPARE(controller.saved().delayMs, 400);
+
+    QVERIFY(controller.restore());
+    QCOMPARE(system.values.tracking, false);
+    QCOMPARE(system.values.delayMs, 400);
+    QCOMPARE(system.values.raise, false);
     QVERIFY(!QFile::exists(path));
 }
 
@@ -388,7 +506,7 @@ void FocusFollowsMouseTest::recoveryFileWrittenBeforeFirstChange() {
     controller.setRecoveryPath(path);
 
     QVERIFY(controller.apply(true, 100, false));
-    QVERIFY(QFile::exists(path));
+    QCOMPARE(readFile(path), recoveryContents({false, 400, false}, {true, 100, false}));
 
     QVERIFY(controller.restore());
     QVERIFY(!QFile::exists(path));

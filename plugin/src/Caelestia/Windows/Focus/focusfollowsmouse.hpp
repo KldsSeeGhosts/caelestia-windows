@@ -48,10 +48,11 @@ class FocusFollowsMouseController;
 // destructor must not restore them while the replacement is live.
 //
 // The first controller to apply captures one baseline for the process (from a
-// recovery file left by an unclean exit, or from the system). Every live
-// controller then declares the values it wants; the most recent declaration
-// wins. The baseline is restored only when the last controller releases or
-// disables the option. Main thread only.
+// recovery file left by an unclean exit only while the system still holds that
+// session's applied values, otherwise from the system). Every live controller
+// then declares the values it wants; the most recent declaration wins. The
+// baseline is restored only when the last controller releases or disables the
+// option. Main thread only.
 class FocusFollowsMouseOwner {
 public:
     static FocusFollowsMouseOwner& instance();
@@ -84,14 +85,19 @@ private:
     bool restoreBaseline(FocusFollowsMouseSystem& system, QString* error);
     void upsertEntry(FocusFollowsMouseController& controller, FocusFollowsMouseSystem& system,
         const FocusFollowsMouseValues& desired);
+    // Rewrites the recovery file when the applied values differ from the ones
+    // already recorded, so a crash after a live delay change is recovered too.
+    void persistRecovery();
     void removeRecoveryFile();
 
     QList<Entry> m_entries;
     FocusFollowsMouseValues m_baseline;
     FocusFollowsMouseValues m_current;
+    FocusFollowsMouseValues m_recoveryApplied;
     QString m_recoveryPath;
     quint64 m_nextOrder = 0;
     bool m_owned = false;
+    bool m_recoveryAppliedValid = false;
 };
 
 // Controllers are owned by the QML Loader (one per generation). Each controller

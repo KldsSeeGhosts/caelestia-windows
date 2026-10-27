@@ -47,16 +47,22 @@ no system value is read or written.
 ## Crash safety
 
 Writes pass no `SPIF_UPDATEINIFILE`, so the user's stored X-Mouse preference is
-never changed. Before the first write the controller saves the baseline to
-`focus-follows-mouse-recovery.json` in the profile's `runtime` directory
-(`CAELESTIA_RUNTIME_DIR`, normally `%LOCALAPPDATA%\caelestia-windows\runtime`).
-The write is atomic (temp file plus rename). A crash or forced kill leaves that
-file behind; after the supervisor restarts the shell, the new process uses the
-file's baseline instead of treating the still-applied session values as the
-original, so disabling the option or a later clean exit restores the user's
-values instead of leaving tracking on. The file is deleted after a successful
-restore. A clean shell exit restores through `aboutToQuit` and the native
-destructor.
+never changed. Before the first write the controller saves the baseline and the
+values it applies to `focus-follows-mouse-recovery.json` in the profile's
+`runtime` directory (`CAELESTIA_RUNTIME_DIR`, normally
+`%LOCALAPPDATA%\caelestia-windows\runtime`). The write is atomic (temp file plus
+rename). A live delay or raise change rewrites the file, so it always records
+the session's current applied values.
+
+A crash or forced kill leaves that file behind; after the supervisor restarts
+the shell, the new process uses the file's baseline only while the system still
+holds the recorded applied values. If the user changed the Windows X-Mouse
+setting while the shell was down, the file is discarded, the live values become
+the new baseline, and a later clean exit restores the user's change instead of
+the stale values. A file without applied values (written by an older build)
+cannot be validated and is also discarded. The file is deleted after a
+successful restore. A clean shell exit restores through `aboutToQuit` and the
+native destructor.
 
 ## Testing
 
@@ -65,6 +71,8 @@ system boundary and a temporary recovery-file directory, so it never touches
 the real Windows setting. It covers the disabled no-op, capture/restore,
 changed-field-only writes, live re-apply, clamping, read failure,
 partial-failure rollback, destructor restore, idempotent restore, overlapping
-generations, most-recent-update wins, recovery-file baseline and removal, and
-no file write while disabled. Build target: `focus-follows-mouse-tests`; run it
+generations, most-recent-update wins, recovery-file baseline and removal,
+stale-file rejection after a user change, applied-value rewrites on live
+changes, legacy files without applied values, and no file write while
+disabled. Build target: `focus-follows-mouse-tests`; run it
 with `windows/scripts/Test-FocusFollowsMouse.ps1`.
