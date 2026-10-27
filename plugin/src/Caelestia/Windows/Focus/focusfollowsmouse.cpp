@@ -14,28 +14,46 @@ namespace caelestia::shell::windows {
 
 namespace {
 
-constexpr int RECOVERY_FILE_VERSION = 1;
+constexpr int RECOVERY_FILE_VERSION = 2;
 constexpr qint64 MAX_RECOVERY_FILE_SIZE = 4096;
+
+// The baseline to restore plus the values the crashed session applied. The
+// baseline is trusted only while the system still holds those applied values;
+// otherwise the user changed the setting in between and the live values are
+// the new baseline.
+struct RecoveryState {
+    FocusFollowsMouseValues baseline;
+    FocusFollowsMouseValues applied;
+};
 
 void assertMainThread() {
     const auto* app = QCoreApplication::instance();
     Q_ASSERT(app == nullptr || QThread::currentThread() == app->thread());
 }
 
-QByteArray serializeRecovery(const FocusFollowsMouseValues& values) {
-    return QStringLiteral("version=%1\ntracking=%2\ndelay=%3\nraise=%4\n")
+QByteArray serializeRecovery(const RecoveryState& state) {
+    return QStringLiteral("version=%1\ntracking=%2\ndelay=%3\nraise=%4\n"
+                          "appliedTracking=%5\nappliedDelay=%6\nappliedRaise=%7\n")
         .arg(RECOVERY_FILE_VERSION)
-        .arg(values.tracking ? 1 : 0)
-        .arg(values.delayMs)
-        .arg(values.raise ? 1 : 0)
+        .arg(state.baseline.tracking ? 1 : 0)
+        .arg(state.baseline.delayMs)
+        .arg(state.baseline.raise ? 1 : 0)
+        .arg(state.applied.tracking ? 1 : 0)
+        .arg(state.applied.delayMs)
+        .arg(state.applied.raise ? 1 : 0)
         .toUtf8();
 }
 
-bool parseRecovery(const QByteArray& contents, FocusFollowsMouseValues& values) {
+bool parseRecovery(const QByteArray& contents, RecoveryState& state) {
+    int version = 0;
+    bool haveVersion = false;
     bool haveTracking = false;
     bool haveDelay = false;
     bool haveRaise = false;
-    FocusFollowsMouseValues parsed;
+    bool haveAppliedTracking = false;
+    bool haveAppliedDelay = false;
+    bool haveAppliedRaise = false;
+    RecoveryState parsed;
 
     const auto lines = QString::fromUtf8(contents).split(u'\n', Qt::SkipEmptyParts);
     for (const auto& line : lines) {
@@ -45,34 +63,60 @@ bool parseRecovery(const QByteArray& contents, FocusFollowsMouseValues& values) 
 
         const auto key = trimmed.section(u'=', 0, 0).trimmed();
         const auto value = trimmed.section(u'=', 1).trimmed();
-        if (key == QStringLiteral("tracking")) {
+        if (key == QStringLiteral("version")) {
+            bool ok = false;
+            version = value.toInt(&ok);
+            if (!ok)
+                return false;
+            haveVersion = true;
+        } else if (key == QStringLiteral("tracking")) {
             if (value != QStringLiteral("0") && value != QStringLiteral("1"))
                 return false;
-            parsed.tracking = value == QStringLiteral("1");
+            parsed.baseline.tracking = value == QStringLiteral("1");
             haveTracking = true;
         } else if (key == QStringLiteral("delay")) {
             bool ok = false;
             const auto delayMs = value.toInt(&ok);
             if (!ok || delayMs < 0)
                 return false;
-            parsed.delayMs = delayMs;
+            parsed.baseline.delayMs = delayMs;
             haveDelay = true;
         } else if (key == QStringLiteral("raise")) {
             if (value != QStringLiteral("0") && value != QStringLiteral("1"))
                 return false;
-            parsed.raise = value == QStringLiteral("1");
+            parsed.baseline.raise = value == QStringLiteral("1");
             haveRaise = true;
+        } else if (key == QStringLiteral("appliedTracking")) {
+            if (value != QStringLiteral("0") && value != QStringLiteral("1"))
+                return false;
+            parsed.applied.tracking = value == QStringLiteral("1");
+            haveAppliedTracking = true;
+        } else if (key == QStringLiteral("appliedDelay")) {
+            bool ok = false;
+            const auto delayMs = value.toInt(&ok);
+            if (!ok || delayMs < 0)
+                return false;
+            parsed.applied.delayMs = delayMs;
+            haveAppliedDelay = true;
+        } else if (key == QStringLiteral("appliedRaise")) {
+            if (value != QStringLiteral("0") && value != QStringLiteral("1"))
+                return false;
+            parsed.applied.raise = value == QStringLiteral("1");
+            haveAppliedRaise = true;
         }
     }
 
-    if (!haveTracking || !haveDelay || !haveRaise)
+    // A file without applied values (including any version 1 file) can't be
+    // validated, so it is discarded rather than trusted.
+    if (!haveVersion || version != RECOVERY_FILE_VERSION || !haveTracking || !haveDelay
+        || !haveRaise || !haveAppliedTracking || !haveAppliedDelay || !haveAppliedRaise)
         return false;
 
-    values = parsed;
+    state = parsed;
     return true;
 }
 
-bool loadRecovery(const QString& path, FocusFollowsMouseValues& values) {
+bool loadRecovery(const QString& path, RecoveryState& state) {
     if (path.isEmpty())
         return false;
 
@@ -82,15 +126,15 @@ bool loadRecovery(const QString& path, FocusFollowsMouseValues& values) {
     if (file.size() > MAX_RECOVERY_FILE_SIZE)
         return false;
 
-    return parseRecovery(file.readAll(), values);
+    return parseRecovery(file.readAll(), state);
 }
 
-bool saveRecovery(const QString& path, const FocusFollowsMouseValues& values) {
+bool saveRecovery(const QString& path, const RecoveryState& state) {
     QSaveFile file(path);
     if (!file.open(QIODevice::WriteOnly))
         return false;
 
-    const auto contents = serializeRecovery(values);
+    const auto contents = serializeRecovery(state);
     if (file.write(contents) != contents.size()) {
         file.cancelWriting();
         return false;
@@ -154,8 +198,11 @@ bool FocusFollowsMouseOwner::acquire(FocusFollowsMouseController& controller,
 
     if (!m_owned) {
         // The baseline is the only value that must survive a crash. Reuse the
-        // file left by an unclean exit; still read the live values so a later
-        // restore knows what it has to put back.
+        // file left by an unclean exit only while the system still holds the
+        // values that session applied; a mismatch means the user changed the
+        // setting while the shell was down, so the live values are the new
+        // baseline. Always read the live values so a later restore knows what
+        // it has to put back.
         FocusFollowsMouseValues current;
         if (!system.read(current)) {
             if (error)
@@ -163,23 +210,34 @@ bool FocusFollowsMouseOwner::acquire(FocusFollowsMouseController& controller,
             return false;
         }
 
-        FocusFollowsMouseValues baseline;
-        const bool recovered = !recoveryPath.isEmpty() && loadRecovery(recoveryPath, baseline);
-        m_baseline = recovered ? baseline : current;
+        RecoveryState recovered;
+        const bool haveRecovery = !recoveryPath.isEmpty()
+            && loadRecovery(recoveryPath, recovered) && recovered.applied == current;
+
+        m_baseline = haveRecovery ? recovered.baseline : current;
         m_current = current;
+        m_recoveryApplied = haveRecovery ? recovered.applied : desired;
+        m_recoveryAppliedValid = false;
         m_recoveryPath = recoveryPath;
         m_owned = true;
 
-        // Persist before the first SET write. If this fails, change nothing: a
-        // crash after an unrecorded write could leave tracking on.
-        if (!recovered && !m_recoveryPath.isEmpty()
-            && !saveRecovery(m_recoveryPath, m_baseline)) {
-            m_owned = false;
-            m_recoveryPath.clear();
-            if (error)
-                *error =
-                    QStringLiteral("Couldn't save the Windows focus-follows-mouse recovery state.");
-            return false;
+        if (haveRecovery) {
+            // The file already records this baseline and the applied values
+            // matching the live system, so it needs no rewrite before the SETs.
+            m_recoveryAppliedValid = true;
+        } else if (!m_recoveryPath.isEmpty()) {
+            // Persist before the first SET write. If this fails, change
+            // nothing: a crash after an unrecorded write could leave tracking
+            // on.
+            if (!saveRecovery(m_recoveryPath, {m_baseline, m_recoveryApplied})) {
+                m_owned = false;
+                m_recoveryPath.clear();
+                if (error)
+                    *error = QStringLiteral(
+                        "Couldn't save the Windows focus-follows-mouse recovery state.");
+                return false;
+            }
+            m_recoveryAppliedValid = true;
         }
     }
 
@@ -199,6 +257,9 @@ bool FocusFollowsMouseOwner::acquire(FocusFollowsMouseController& controller,
             // Keep a retry path for the destructor; active() reports the error
             // until then.
             upsertEntry(controller, system, desired);
+            persistRecovery();
+        } else {
+            persistRecovery();
         }
         if (error)
             *error = writeError;
@@ -206,6 +267,7 @@ bool FocusFollowsMouseOwner::acquire(FocusFollowsMouseController& controller,
     }
 
     upsertEntry(controller, system, desired);
+    persistRecovery();
     return true;
 }
 
@@ -244,10 +306,12 @@ bool FocusFollowsMouseOwner::release(
 
         QString writeError;
         if (!writeValues(*latest->system, latest->desired, m_current, &writeError)) {
+            persistRecovery();
             if (error)
                 *error = writeError;
             return false;
         }
+        persistRecovery();
         return true;
     }
 
@@ -269,6 +333,9 @@ bool FocusFollowsMouseOwner::restoreBaseline(
 
     QString writeError;
     if (!writeValues(system, m_baseline, m_current, &writeError)) {
+        // Keep the file in step with whatever restore managed to apply so a
+        // later crash recovers the remaining baseline values.
+        persistRecovery();
         if (error)
             *error = writeError;
         return false;
@@ -278,6 +345,18 @@ bool FocusFollowsMouseOwner::restoreBaseline(
     removeRecoveryFile();
     m_recoveryPath.clear();
     return true;
+}
+
+void FocusFollowsMouseOwner::persistRecovery() {
+    if (!m_owned || m_recoveryPath.isEmpty() || !m_recoveryAppliedValid
+        || m_recoveryApplied == m_current)
+        return;
+
+    if (!saveRecovery(m_recoveryPath, {m_baseline, m_current})) {
+        qWarning("Couldn't update the focus-follows-mouse recovery file.");
+        return;
+    }
+    m_recoveryApplied = m_current;
 }
 
 void FocusFollowsMouseOwner::upsertEntry(FocusFollowsMouseController& controller,
@@ -295,6 +374,7 @@ void FocusFollowsMouseOwner::upsertEntry(FocusFollowsMouseController& controller
 }
 
 void FocusFollowsMouseOwner::removeRecoveryFile() {
+    m_recoveryAppliedValid = false;
     if (m_recoveryPath.isEmpty())
         return;
 

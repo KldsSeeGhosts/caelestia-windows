@@ -65,8 +65,8 @@ WindowsFocusFollowsMouse::~WindowsFocusFollowsMouse() = default;
 
 bool WindowsFocusFollowsMouse::apply(bool enabled, int delayMs, bool raise) {
     // The profile runtime directory is provided by the QML facade. The
-    // baseline is persisted there before the first SET write so a supervisor
-    // restart after a crash knows what to restore.
+    // baseline and applied values are persisted there before the first SET
+    // write so a supervisor restart after a crash knows what to restore.
     m_controller.setRecoveryPath(m_recoveryDirectory.isEmpty()
             ? QString()
             : QDir(m_recoveryDirectory)

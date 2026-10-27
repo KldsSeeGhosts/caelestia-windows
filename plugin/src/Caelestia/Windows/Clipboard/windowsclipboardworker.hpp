@@ -64,7 +64,8 @@ private:
     void startHistoryRead(quint64 generation, bool eventDriven);
     void publishSnapshot(quint64 generation, const QVariantList& items, bool enabled,
         const QString& status, const QString& error);
-    [[nodiscard]] QString ensurePreview(const QString& id);
+    // `explicitOpen` reads are user actions: a picker close does not cancel them.
+    [[nodiscard]] QString ensurePreview(const QString& id, bool explicitOpen);
     void removePreview(const QString& id);
     void clearPreviews();
 
