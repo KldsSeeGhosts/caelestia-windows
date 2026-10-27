@@ -371,6 +371,19 @@ prevents the automatic paste after the item was copied, a Caelestia toast says
 [the clipboard notes](../services/clipboard/README.md) for exact behaviour and
 what still needs live verification.
 
+### Turning the display panels off
+
+`ipc call displays off` (or your own `ipc` keybind, see
+[KEYBINDS.md](KEYBINDS.md#3-ipc--call-a-caelestia-ipchandler)) asks the shell's
+own window to switch the physical panels off with Windows display power
+(`WM_SYSCOMMAND` / `SC_MONITORPOWER = 2`) after a 500 ms delay. It is not a
+display-topology disable: it changes no resolution, scale, desktop coordinate or
+window position and stores no setting. Normal input wakes the panels, but
+keep-awake, remote input or background activity can also wake them. This path
+has been tested with fakes only; whether Windows keeps both monitors in the
+topology must be verified live, and physically powering a monitor off may still
+remove it.
+
 ### Per-monitor configuration
 
 To override settings on a specific display, create:

@@ -272,6 +272,36 @@ Calls a QML `IpcHandler` target and function inside the running shell:
 }
 ```
 
+The installed shell (not the combined dev prototype) also exposes the explicit
+panel-off action `displays off`. It asks
+the shell's own window to process Windows display power (`WM_SYSCOMMAND` /
+`SC_MONITORPOWER = 2`) after a 500 ms delay, so the triggering key release does
+not immediately wake the panels again. It changes no topology, resolution,
+scale or window position and writes no setting. Normal input wakes the panels;
+keep-awake, remote input or background activity can wake them. No default key
+is shipped; add this bind to opt in:
+
+```json
+{
+    "keys": "Super+Shift+O",
+    "action": "ipc",
+    "target": "displays",
+    "function": "off",
+    "description": "Turn the panels off (wake with input)"
+}
+```
+
+The action is also callable without a key:
+
+```powershell
+$prefix = "$env:LOCALAPPDATA\Programs\caelestia-windows"
+& "$prefix\qs.exe" -p "$prefix\shell" ipc call displays off
+```
+
+Only fakes have exercised this path. Whether Windows retains the monitor
+topology and window placement is a live QA check, not a guarantee; physically
+switching a monitor off may still remove it.
+
 ### 4. `"exec"` — launch an external command
 
 Runs a command line in a detached process:
