@@ -59,10 +59,23 @@ Only one thread at a time may install a build live, restart the live shell or
 run live tests, because there is one install, one profile and one tiler.
 Coordinate that through the orchestrating thread.
 
+## Delegation
+
+Claude orchestrates and has the final say on design, UI/UX and scope.
+
+- Implementation: no default agent. The user names the model for each task.
+- Review: only Claude or Codex GPT 6.1 Sol at high reasoning. Never Terra or
+  DeepSeek, and never the model that wrote the change.
+- Route Terra and Sol through the `codex` provider and DeepSeek through the
+  `deepseek` provider. Do not use fast mode unless the user asks.
+
 ## Computer use
 
-Delegate all computer use (driving the desktop, apps or the live shell through
-GUI automation, screenshots for checks) to a Codex agent on GPT 6.1 Terra.
-Other agents, including the orchestrator, do not operate the desktop
+The orchestrating thread delegates all computer use (driving the desktop, apps
+or the live shell through GUI automation, screenshots for checks) to one Codex
+agent on GPT 6.1 Terra at medium reasoning. That agent does the work itself
+with the desktop tools. It never spawns, delegates to or requests another
+agent, even though this section says computer use is delegated. This is a trial: Terra may use quota faster than Sol for
+worse results, so note the outcome and revisit. Other agents, including the orchestrator, do not operate the desktop
 themselves. The single-controller rule above still applies: one computer-use
 agent at a time, started by the orchestrating thread.
