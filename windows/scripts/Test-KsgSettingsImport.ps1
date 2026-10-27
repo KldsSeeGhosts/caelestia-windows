@@ -29,6 +29,14 @@ try {
     "statusIcons": [{"id":"microphone","enabled":true},{"id":"audio","enabled":true}]
   },
   "appearance": {"rounding":{"scale":1.5}},
+  "utilities": {
+    "cards": {"keepAwake": false},
+    "quickToggles": [
+      {"id":"wifi","enabled":true},
+      {"id":"dnd","enabled":false,"extra":"keep"},
+      {"id":"custom","enabled":true}
+    ]
+  },
   "windows": {"tiling":{"mode":"interactive","include":["exe:editor.exe"],"float":["title:Dialog*"],"monitors":{"DISPLAY2":false}}},
   "future": {"empty": [], "nested": [[1,2], [], null], "nothing": null}
 }
@@ -43,6 +51,12 @@ try {
     Assert ($config.bar.entries[1].extra -eq 42 -and -not $config.bar.entries[1].enabled) 'Entry properties lost.'
     Assert ($config.bar.statusIcons[0].enabled -and -not $config.bar.statusIcons[1].enabled) 'Status merge failed.'
     Assert ($config.appearance.rounding.scale -eq 1.5) 'Unrelated setting changed.'
+    $toggleIds = @($config.utilities.quickToggles | ForEach-Object { $_.id })
+    Assert (($toggleIds -join ',') -ceq 'wifi,bluetooth,mic,settings,gameMode,wallpaperPlaying,dnd,vpn,custom') `
+        'Default quick toggles missing, reordered or extra toggle dropped.'
+    Assert (-not $config.utilities.quickToggles[6].enabled -and
+        $config.utilities.quickToggles[6].extra -eq 'keep') 'Quick toggle state or properties lost.'
+    Assert (-not $config.utilities.cards.keepAwake) 'Non-imported utilities setting changed.'
     Assert ($config.future.empty -is [array] -and $config.future.empty.Count -eq 0) 'Empty array lost.'
     Assert ($config.future.nested[0].Count -eq 2 -and $config.future.nested[1].Count -eq 0 -and
         $null -eq $config.future.nested[2] -and $null -eq $config.future.nothing) 'Nested array/null changed.'
@@ -75,7 +89,7 @@ try {
     $defaults = & $importer -SettingsFile $defaultsSource -BaseFile $base | ConvertFrom-Json
     Assert ($defaults.windows.tiling.enabled -and $defaults.windows.tiling.mode -eq 'observe' -and
         $defaults.windows.tiling.gapsIn -eq 10 -and $defaults.windows.tiling.gapsOut -eq 10) 'KSG tiling defaults incorrect.'
-    '{"passed":true,"scope":"file-only importer smoke","checks":["dry-run","false values","id-based list merge","unknown data preservation","source value filtering","tiling report","overwrite refusal","byte-identical backup","idempotence","source protection"]}'
+    '{"passed":true,"scope":"file-only importer smoke","checks":["dry-run","false values","id-based list merge","default quick toggles preserved","non-imported utilities preserved","unknown data preservation","source value filtering","tiling report","overwrite refusal","byte-identical backup","idempotence","source protection"]}'
 } finally {
     # Delete only the exact, verified temporary workspace created above.
     $resolved = [IO.Path]::GetFullPath($temporary)

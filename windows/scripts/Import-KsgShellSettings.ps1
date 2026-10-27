@@ -124,6 +124,46 @@ function Set-Entry([string]$Path, [string]$Id, [bool]$Enabled, $Defaults) {
     Set-Value $merged $Path $entries
 }
 
+# A list key in shell.json replaces the compiled default list instead of
+# extending it. Complete a present partial list with the defaults in their
+# original order, keeping each existing entry's state and extra properties,
+# then append ids that the defaults do not know. An absent key stays absent so
+# the compiled defaults keep applying.
+function Merge-Defaults([string]$Path, $Defaults) {
+    $parent = $merged
+    $parts = $Path.Split('.')
+    for ($i = 0; $i -lt $parts.Length - 1; $i++) {
+        if ($parent -isnot [System.Collections.IDictionary] -or -not $parent.Contains($parts[$i])) { return }
+        $parent = $parent[$parts[$i]]
+    }
+    $key = $parts[-1]
+    if ($parent -isnot [System.Collections.IDictionary] -or -not $parent.Contains($key)) { return }
+    $entries = $parent[$key]
+    if ($entries -isnot [array]) { throw "Base '$Path' must be an array." }
+    foreach ($entry in $entries) {
+        if ($entry -isnot [System.Collections.IDictionary] -or -not $entry.Contains('id')) {
+            throw "Base '$Path' contains an entry without an id."
+        }
+    }
+    $defaultIds = @($Defaults | ForEach-Object { [string]$_['id'] })
+    $result = New-Object 'System.Collections.Generic.List[object]'
+    foreach ($default in $Defaults) {
+        $mergedEntry = [ordered]@{}
+        foreach ($property in $default.Keys) { $mergedEntry[$property] = $default[$property] }
+        foreach ($existing in $entries) {
+            if ($existing['id'] -ceq $default['id']) {
+                foreach ($property in $existing.Keys) { $mergedEntry[$property] = $existing[$property] }
+                break
+            }
+        }
+        $result.Add($mergedEntry)
+    }
+    foreach ($existing in $entries) {
+        if ($defaultIds -cnotcontains ([string]$existing['id'])) { $result.Add($existing) }
+    }
+    Set-Value $merged $Path $result.ToArray()
+}
+
 # Resolve and protect the source profile before considering any output.
 $sourcePath = [IO.Path]::GetFullPath($SettingsFile)
 $sourceDirectory = [IO.Path]::GetDirectoryName($sourcePath)
@@ -201,6 +241,16 @@ foreach ($pair in @(
     Set-Entry 'bar.statusIcons' $pair[1] (Read-Bool $from) @($statusDefaults)
     Record-Mapping $from ("bar.statusIcons[id={0}].enabled" -f $pair[1])
 }
+
+# KSG stores no quick-toggle list. A full list copied from a partial base would
+# replace all compiled defaults, so restore the missing upstream entries while
+# keeping each base entry's enabled state, extra properties and extra ids.
+# Upstream order/states: plugin/src/Caelestia/Config/utilitiesconfig.hpp.
+$quickToggleDefaults = @(
+    @('wifi', $true), @('bluetooth', $true), @('mic', $true), @('settings', $true),
+    @('gameMode', $true), @('wallpaperPlaying', $true), @('dnd', $true), @('vpn', $false)
+) | ForEach-Object { [ordered]@{ id = $_[0]; enabled = $_[1] } }
+Merge-Defaults 'utilities.quickToggles' @($quickToggleDefaults)
 
 # KSG has no persisted user rules. Preserve reviewed Caelestia include/exclude/
 # float/monitor settings from the base rather than guessing from unknown keys.

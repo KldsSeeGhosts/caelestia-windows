@@ -19,6 +19,11 @@ ShellRoot {
     readonly property int borderZone: 3
     readonly property var selectedScreen:
         Quickshell.screens[Number(Quickshell.env("CAELESTIA_SHELL_SCREEN"))] ?? null
+    // Explicit readiness handshake for the runner. A cold first start can take
+    // longer than a fixed poll window, so the runner waits for this instead of
+    // treating a missing IPC answer as a failed fixture. A binding also covers
+    // Quickshell publishing its screen list after the object tree completes.
+    readonly property bool fixtureReady: selectedScreen !== null
     settings.watchFiles: false
 
     Exclusions {
@@ -31,6 +36,14 @@ ShellRoot {
 
     IpcHandler {
         target: "frameTest"
+        // The runner polls this until the object tree is complete. It is kept
+        // separate from expected() so "still starting" is not a missing reply.
+        function ready(): string {
+            return JSON.stringify({
+                ready: root.fixtureReady,
+                screen: root.selectedScreen ? root.selectedScreen.name : ""
+            });
+        }
         function setFullscreen(on: bool): void { root.appFullscreen = on; }
         function setReservations(on: bool): void { root.reservations = on; }
         // Report the reservation this fixture asks for. The runner compares it
@@ -59,10 +72,11 @@ ShellRoot {
 
     // Safety net if the runner is killed: never leave temporary AppBars behind.
     // The runner reports its own failure first; this only covers its death and
-    // stays above the runner's own bounded fixture phase.
+    // stays above the runner's own bounded fixture phase, including a cold
+    // first start. The runner's overall deadline still bounds the whole run.
     Timer {
         running: true
-        interval: 35000
+        interval: 90000
         onTriggered: Qt.exit(1)
     }
 }

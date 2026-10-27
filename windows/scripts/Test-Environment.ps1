@@ -13,6 +13,12 @@ $lock = Get-Content -LiteralPath (Join-Path $repoRoot 'windows\sources.lock.json
 if ($lock.schemaVersion -ne 1) {
     throw 'Unsupported Windows source manifest schema.'
 }
+# The combined prototype splits its staging map per feature under sources.d.
+# Merging here fails on a duplicate destination or a source staged twice, so an
+# ambiguous fragment cannot reach a build.
+. (Join-Path $PSScriptRoot 'CombinedSources.ps1')
+$combinedManifest = Get-CombinedSourcesManifest (Join-Path $repoRoot 'windows\combined-prototype')
+$combinedFragments = @(Get-ChildItem -LiteralPath (Join-Path $repoRoot 'windows\combined-prototype\sources.d') -Filter '*.json' -File)
 
 $blockers = New-Object 'System.Collections.Generic.List[string]'
 $tools = New-Object 'System.Collections.Generic.List[object]'
@@ -112,6 +118,10 @@ $report = [pscustomobject][ordered]@{
         matches = $sourceMatches
     }
     tools = @($tools.ToArray())
+    stagingManifest = [pscustomobject][ordered]@{
+        fragments = $combinedFragments.Count
+        entries = @($combinedManifest.PSObject.Properties).Count
+    }
     nativeToolchainReady = $blockers.Count -eq 0
     blockers = @($blockers.ToArray())
     notes = @(
@@ -125,6 +135,7 @@ if ($Json) {
 } else {
     $report | Format-List repository, platform, nativeToolchainReady
     $report.source | Format-List
+    $report.stagingManifest | Format-List
     $report.tools | Format-Table -AutoSize
     foreach ($blocker in $report.blockers) { Write-Output "BLOCKER: $blocker" }
     foreach ($note in $report.notes) { Write-Output $note }
