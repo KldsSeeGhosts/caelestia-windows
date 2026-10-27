@@ -14,8 +14,9 @@ param(
     [switch]$SkipSmoke,
     # Overall bound. Every wait and IPC call below is separately bounded; this
     # converts a slow install or a wedged child into a reported failure instead
-    # of an unexplained kill by the caller's own timeout.
-    [ValidateRange(60, 900)][int]$TimeoutSeconds = 240
+    # of an unexplained kill by the caller's own timeout. Leave enough room for
+    # a cold first start of both the smoke and the frame fixture.
+    [ValidateRange(60, 900)][int]$TimeoutSeconds = 300
 )
 
 # A temporary deployed runtime, with read-only smoke on one secondary display.
@@ -90,7 +91,7 @@ function OtherWorkUnchanged($Before, $After, [string]$DeviceName) {
 # A GUI-subsystem qs.exe that cannot start or a wedged instance would otherwise
 # block the caller forever: IpcClient::waitForResponse has no timeout. Bound
 # every invocation and kill the client on expiry so the phase reports instead.
-function Invoke-QsIpc([string[]]$IpcArgs, [int]$TimeoutMs = 5000) {
+function Invoke-QsIpc([string[]]$IpcArgs, [int]$TimeoutMs = 5000, [switch]$AllowTimeout) {
     $quoted = @($IpcArgs | ForEach-Object {
         if ($_ -match '[\s"]') { '"' + ($_ -replace '"', '\"') + '"' } else { $_ }
     })
@@ -108,10 +109,18 @@ function Invoke-QsIpc([string[]]$IpcArgs, [int]$TimeoutMs = 5000) {
     $err = $process.StandardError.ReadToEndAsync()
     if (-not $process.WaitForExit($TimeoutMs)) {
         try { $process.Kill(); $null = $process.WaitForExit(2000) } catch {}
+        $process.Dispose()
+        # A readiness poll must keep waiting through a still-starting instance.
+        # Action calls keep the hard failure so a wedged child cannot be
+        # mistaken for success.
+        if ($AllowTimeout) {
+            return [pscustomobject]@{ exitCode = -1; timedOut = $true; stdout = ''; stderr = '' }
+        }
         throw "qs ipc did not answer within $TimeoutMs ms: $($IpcArgs -join ' ')"
     }
     $result = [pscustomobject]@{
         exitCode = $process.ExitCode
+        timedOut = $false
         stdout = $out.GetAwaiter().GetResult()
         stderr = $err.GetAwaiter().GetResult()
     }
@@ -119,8 +128,8 @@ function Invoke-QsIpc([string[]]$IpcArgs, [int]$TimeoutMs = 5000) {
     return $result
 }
 function ShellState {
-    $result = Invoke-QsIpc @('ipc', '--path', "$prefix\shell\shell.qml", 'call', 'shell', 'state') 5000
-    if ($result.exitCode -ne 0) { return $null }
+    $result = Invoke-QsIpc @('ipc', '--path', "$prefix\shell\shell.qml", 'call', 'shell', 'state') 5000 -AllowTimeout
+    if ($result.timedOut -or $result.exitCode -ne 0) { return $null }
     try { return $result.stdout | ConvertFrom-Json } catch { return $null }
 }
 function Wait-Condition([scriptblock]$Condition, [int]$Seconds, [string]$Message, [int]$PollMs = 200) {
@@ -217,7 +226,10 @@ try {
         Set-Phase 'smoke-started'
 
         $state = $null
-        $smokeDeadline = [DateTime]::UtcNow.AddSeconds(35)
+        # Start-Caelestia bounds the same smoke at 60 s. Wait slightly longer
+        # here so the launcher can report its own failure instead, and tolerate
+        # the cold QML cache of a first run after installation.
+        $smokeDeadline = [DateTime]::UtcNow.AddSeconds(75)
         while ([DateTime]::UtcNow -lt $smokeDeadline) {
             Assert-Deadline 'waiting for the installed smoke'
             Start-Sleep -Milliseconds 500
@@ -278,18 +290,29 @@ try {
     $summary.fixturePid = $fixture.Id
     Set-Phase 'fixture-started'
 
+    # Wait for the fixture's own readiness handshake before asking it for
+    # state. A cold first QML start can take much longer than the old 10 s
+    # window, and an unanswered IPC call is "not ready yet", not a failure.
     $expected = $null
     Wait-Condition {
         if ($fixture.HasExited) {
             throw "The frame fixture exited before answering: $($fixtureErr.GetAwaiter().GetResult())"
         }
-        $reply = Invoke-QsIpc @('ipc', '--pid', "$($fixture.Id)", 'call', 'frameTest', 'expected') 4000
-        if ($reply.exitCode -ne 0) { return $false }
-        try { $script:fixtureExpected = $reply.stdout | ConvertFrom-Json } catch { return $false }
-        return $true
-    } 10 'The frame fixture did not answer IPC.'
-    $expected = $script:fixtureExpected
+        $reply = Invoke-QsIpc @('ipc', '--pid', "$($fixture.Id)", 'call', 'frameTest', 'ready') 4000 -AllowTimeout
+        if ($reply.timedOut -or $reply.exitCode -ne 0) { return $false }
+        try { $ready = $reply.stdout | ConvertFrom-Json } catch { return $false }
+        $script:fixtureReady = $ready
+        return [bool]$ready.ready
+    } 60 'The frame fixture did not finish starting.'
+    Set-Phase 'fixture-ready'
+
+    $reply = Invoke-QsIpc @('ipc', '--pid', "$($fixture.Id)", 'call', 'frameTest', 'expected') 4000
+    if ($reply.exitCode -ne 0) { throw "The frame fixture did not report its expected reservation: $($reply.stderr)" }
+    try { $expected = $reply.stdout | ConvertFrom-Json } catch { throw 'The frame fixture returned invalid state.' }
     Assert ($null -ne $expected -and $expected.screen) 'The frame fixture reported no screen.'
+    if ($expected.screen -ne $script:fixtureReady.screen) {
+        throw "The frame fixture changed screens while starting ($($script:fixtureReady.screen) -> $($expected.screen))."
+    }
     Assert (-not $expected.reservations) 'The frame fixture reserved a work area before validation.'
     if ($smokeScreen) {
         Assert ($expected.screen -eq $smokeScreen) `
