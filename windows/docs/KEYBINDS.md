@@ -200,20 +200,62 @@ Hotkey `dispatch` actions invoke the backend `Hyprland.dispatch` directly, bypas
 
 | Dispatcher | Description |
 | --- | --- |
-| `workspace 1..10` | Switch to numbered virtual desktop `1`–`10` |
-| `workspace +1` / `workspace -1` / `workspace r+1` / `workspace r-1` | Switch to next or previous virtual desktop |
-| `workspace e+1` / `workspace e-1` | Switch to next or previous occupied virtual desktop |
+| `workspace <n>` | Switch to numbered virtual desktop `n`, creating it if needed up to the configured limit |
+| `workspace +1` / `-1` / `r+1` / `r-1` / `e+1` / `e-1` | Switch to the next or previous virtual desktop. `r` and `e` resolve the same way on Windows; there is no empty-desktop search |
+| `workspace name:<name>` | Switch to an existing named virtual desktop |
+| `workspace empty` | Switch to the first empty virtual desktop, creating one if needed |
 | `workspace previous` | Switch to previously focused virtual desktop |
-| `movetoworkspace 1..10` | Move active window to virtual desktop `1`–`10` and follow it |
-| `movetoworkspacesilent 1..10` | Move active window to virtual desktop `1`–`10` without switching |
+| `movetoworkspace <target>` | Move a window to the target and follow it; the target accepts every `workspace` form except `special:` |
+| `movetoworkspacesilent <target>` | Move a window to the target without switching |
+| `centerwindow` | Center the active floating window on its monitor's work area; a scrolling-layout tile centers its column, a dwindle/master tile is unchanged |
+| `pin` / `pin on` / `pin off` | Toggle or force an all-desktop pin; needs the pin exports of `VirtualDesktopAccessor.dll`, otherwise it logs an unsupported reason and does nothing |
+| `resizeactive <width> <height>` | Resize the active window by pixels or `%` of its current size; `0` keeps an axis unchanged |
+| `resizeactive exact <width> <height>` | Set the size, using the monitor size for `%` values; a `0` axis keeps its current size |
 | `closewindow` / `killactive` | Close active window (`WM_CLOSE`) |
 | `togglefloating` | Float or retile the active window |
 | `fullscreen` | Toggle fullscreen (`0`) or maximize (`1`) |
 | `movefocus l` / `r` / `u` / `d` | Move focus to the tiled neighbor on the left, right, top, or bottom |
 | `movewindow l` / `r` / `u` / `d` | Move or swap the active tiled window in the given direction |
-| `swapnext` | Swap active window with the next tiled window |
+| `swapwindow l` / `r` / `u` / `d` | Swap the active tiled window with its neighbor |
 | `togglesplit` | Toggle split direction (`dwindle` layout) |
-| `splitratio +0.1` / `-0.1` | Adjust split ratio or master factor |
+| `splitratio +0.1` / `-0.1` | Adjust split ratio or master factor; `layoutmsg splitratio ...` is equivalent |
+| `togglespecialworkspace <name>`, `togglegroup`, `changegroupactive` | Refused with a named warning; see the mapping note below |
+
+#### Hyprland bind mapping
+
+The ported Linux binds use Hyprland's Lua dispatcher names. `Hyprland.dispatch`
+accepts those as well as the classic names above, for example
+`hl.dsp.focus({workspace="+1"})`,
+`hl.dsp.window.move({workspace="r-1",follow=false})`,
+`hl.dsp.window.center()`, `hl.dsp.window.pin({action="on"})`,
+`hl.dsp.window.resize({x=0,y=100,relative=true})` and
+`hl.dsp.layout("splitratio 0.6")`.
+
+**Maps:** workspace selection and relative moves; `movetoworkspace` and
+`movetoworkspacesilent` with numeric, relative or `previous` targets;
+`centerwindow`; `pin` with `on`/`off`; relative and exact `resizeactive` with a
+pixel or percent axis; focus/move/swap by direction; floating,
+fullscreen/maximize, split and layout messages; `exec`, `global` and `no_op`.
+
+**Does not map:**
+
+- *Special/scratchpad workspaces.* Windows virtual desktops are exclusive and
+  user-visible, so there is no hidden scratchpad that can be layered over the
+  current desktop. `workspace special:<name>`,
+  `movetoworkspace special:<name>`, `togglespecialworkspace <name>`,
+  `hl.dsp.workspace.toggle_special(<name>)` and
+  `hl.dsp.focus({workspace="special:<name>"})` log a named refusal and do
+  nothing. A faithful mapping would need a separate named-desktop or overlay
+  subsystem.
+- *Window groups/tabs.* DWM has no group stack to add to, cycle or lock, so
+  `togglegroup`, `changegroupactive`, `hl.dsp.group.*`,
+  `hl.dsp.window.cycle_next` and `hl.dsp.window.move({out_of_group=true})` log
+  a named refusal. Use the native Alt+Tab switcher for window cycling.
+- *Monitor dispatch.* `focusmonitor` and
+  `movecurrentworkspacetomonitor` assume per-monitor workspaces; the Windows
+  virtual-desktop model is global across monitors.
+- *`swapnext` / `cyclenext`.* Use `swapwindow <direction>` for a directional
+  swap and the native task switcher for cycling.
 
 ### 3. `"ipc"` — call a Caelestia `IpcHandler`
 
