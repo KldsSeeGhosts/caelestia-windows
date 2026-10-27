@@ -27,6 +27,12 @@ $logicTest = Join-Path $BuildRoot 'caelestia\lib\clipboard-logic-tests.exe'
 if (-not (Test-Path -LiteralPath $logicTest -PathType Leaf)) {
     throw "Missing clipboard logic test: $logicTest (run windows/scripts/Build-Prototype.ps1 first)."
 }
+# Sends a native QVariantList through QML property chains into the shipped
+# ClipboardHistory.js; the QML smoke below only feeds it JS arrays.
+$qmlTest = Join-Path $BuildRoot 'caelestia\lib\clipboard-qml-tests.exe'
+if (-not (Test-Path -LiteralPath $qmlTest -PathType Leaf)) {
+    throw "Missing clipboard QML boundary test: $qmlTest (run windows/scripts/Build-Prototype.ps1 first)."
+}
 $previousPath = $env:PATH
 $env:PATH = "$QtPrefix\bin;$qmlRoot\Caelestia\lib;$env:PATH"
 # Never run the clipboard logic tests with the repository, worktree, install
@@ -36,13 +42,17 @@ Push-Location -LiteralPath $run
 try {
     & $logicTest -o "$run\logic-tests.txt,txt" | Out-Null
     $logicExit = $LASTEXITCODE
+    & $qmlTest -o "$run\qml-tests.txt,txt" | Out-Null
+    $qmlTestExit = $LASTEXITCODE
 } finally {
     Pop-Location
     $env:PATH = $previousPath
 }
-$logicPassed = $logicExit -eq 0 -and
+$logicPassed = $logicExit -eq 0 -and $qmlTestExit -eq 0 -and
     (Test-Path -LiteralPath "$run\logic-tests.txt" -PathType Leaf) -and
-    (Select-String -LiteralPath "$run\logic-tests.txt" -Pattern 'Totals:.*\b0 failed\b' -Quiet)
+    (Select-String -LiteralPath "$run\logic-tests.txt" -Pattern 'Totals:.*\b0 failed\b' -Quiet) -and
+    (Test-Path -LiteralPath "$run\qml-tests.txt" -PathType Leaf) -and
+    (Select-String -LiteralPath "$run\qml-tests.txt" -Pattern 'Totals:.*\b0 failed\b' -Quiet)
 $info = New-Object Diagnostics.ProcessStartInfo
 $info.FileName = Join-Path $BuildRoot 'quickshell\qs.exe'
 $info.Arguments = '--no-color --log-times --path "' + "$stage\clipboard-smoke.qml" + '"'
@@ -83,6 +93,7 @@ $result = [ordered]@{
     timedOut = $timedOut; exitCode = $process.ExitCode
     logicTestsPassed = $logicPassed; logicTestsExitCode = $logicExit
     logicTests = $logicTest; logicTestsLog = "$run\logic-tests.txt"
+    qmlBoundaryTests = $qmlTest; qmlBoundaryTestsExitCode = $qmlTestExit; qmlBoundaryTestsLog = "$run\qml-tests.txt"
     sourceRevision = (& git -C $repoRoot rev-parse HEAD).Trim()
     sourceDirty = [bool](& git -C $repoRoot status --porcelain)
     backendRevision = (Get-Content "$BuildRoot\logs\build.json" -Raw | ConvertFrom-Json).backendRevision
