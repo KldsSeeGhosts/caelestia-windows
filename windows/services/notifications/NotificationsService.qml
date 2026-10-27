@@ -45,9 +45,9 @@ QtObject {
     // fake) exposing: ready (bool), ownership (string), mirrorSystemNotifications
     // (bool), systemMirrorActive (bool), systemNotificationAccess (int),
     // notifySend(summary, body, args), and notificationReceived(notification).
-    // The consent-fix revision additionally exposes accessRequested (bool),
-    // refreshAccessStatus() and activateMirrored(id); every use of those is
-    // feature-detected so the shared build at the pinned revision still works.
+    // The pinned backend also exposes accessRequested (bool),
+    // refreshAccessStatus() and activateMirrored(id); uses are feature-detected
+    // for older backends.
     property var backend: null
     property bool enabled: false
 
@@ -56,6 +56,10 @@ QtObject {
     // works without them; mirroring, Windows dismissal of mirrored records and
     // app-open each stay independent and default off.
     property bool mirrorOptIn: false
+    property bool replaceSystemBanners: true
+    // Query an existing Windows grant without showing a consent prompt.
+    property bool useExistingAccess: false
+    property var accessProbeBackend: null
     property bool windowsDismissOptIn: false
     property bool appOpenOptIn: false
     property bool centerVisible: false
@@ -135,6 +139,7 @@ QtObject {
     onEnabledChanged: {
         if (root.enabled) {
             root.refreshAccess();
+            root.probeExistingAccess();
             return;
         }
         root.disableMirroring();
@@ -231,6 +236,8 @@ QtObject {
     // Unknown/Unspecified/Allowed/Denied/Unavailable, as required by the
     // backend contract. Without a staged mirror there is no measurement.
     readonly property string accessState: root.computeAccessState()
+    readonly property bool bannerSuppressionAllowed: replaceSystemBanners && mirrorStaged
+        && systemMirrorActive && systemNotificationAccess === 2 && accessState === "Allowed"
 
     readonly property bool canRequestAccess: mirrorStaged && backend?.ready === true
         && accessState === "Unspecified" && !consentRequested && !consentPending
@@ -328,6 +335,18 @@ QtObject {
         root.applyMirroring();
     }
 
+    function probeExistingAccess(): void {
+        const candidate = root.backend;
+        if (!root.useExistingAccess || !root.enabled || !root.mirrorOptIn
+                || root.backendError !== "" || !candidate || candidate.ready !== true
+                || candidate.ownership === "contended"
+                || root.accessProbeBackend === candidate
+                || typeof candidate.refreshAccessStatus !== "function")
+            return;
+        root.accessProbeBackend = candidate;
+        candidate.refreshAccessStatus();
+    }
+
     // The single, explicit consent action. It refuses unless the state is
     // Unspecified and no attempt was made in this process, so Windows is never
     // asked twice and Denied/Allowed/Unavailable never prompt again.
@@ -397,7 +416,7 @@ QtObject {
             && !!backend && backend?.ownership !== "contended";
         const desired = staged && backend?.ready === true
             && root.reportedAccess === 2
-            && (root.consentRequested || backend?.accessRequested === true);
+            && (root.useExistingAccess || root.consentRequested || backend?.accessRequested === true);
 
         if (!desired) {
             root.disableMirroring();
@@ -527,14 +546,29 @@ QtObject {
 
         function onReadyChanged(): void {
             root.refreshAccess();
+            root.probeExistingAccess();
         }
     }
 
-    onBackendChanged: root.refreshAccess()
+    onBackendChanged: {
+        root.accessProbeBackend = null;
+        root.refreshAccess();
+        root.probeExistingAccess();
+    }
     // Removing the mirror opt-in or a backend component failure must reconcile
     // mirroring immediately, not only on the next access signal.
-    onMirrorOptInChanged: root.refreshAccess()
-    onBackendErrorChanged: root.refreshAccess()
+    onMirrorOptInChanged: {
+        root.refreshAccess();
+        root.probeExistingAccess();
+    }
+    onBackendErrorChanged: {
+        root.refreshAccess();
+        root.probeExistingAccess();
+    }
+    onUseExistingAccessChanged: {
+        root.refreshAccess();
+        root.probeExistingAccess();
+    }
 
     function handleNotification(notification): bool {
         if (!deliveryAllowed() || !notification || typeof notification !== "object")

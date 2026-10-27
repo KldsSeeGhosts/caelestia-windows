@@ -2,6 +2,10 @@
   "windows": {
     "hideTaskbar": false,
     "restartOnCrash": true,
+    "notifications": {
+      "replaceSystemBanners": true,
+      "keepSystemBanners": []
+    },
     "wallpaperEngine": {
       "enabled": "auto"
     }

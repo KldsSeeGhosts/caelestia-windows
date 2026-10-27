@@ -168,7 +168,7 @@ ownership of the desktop background. The desktop clock defaults off.
    - **Right edge drag:** Opens the **Notification sidebar** and **Utilities** drawer.
    - **Bottom-left power button:** Opens the **Session** menu.
    - **Clicking outside or pressing `Escape`:** Dismisses the active drawer and returns keyboard focus to your previous window.
-3. **Notification mirroring consent:** Caelestia never triggers a Windows permission prompt at startup. If you want Windows system notifications mirrored into Caelestia's popups and sidebar, open the right-edge notification sidebar and click the explicit **Request access** button once.
+3. **Notification mirroring consent:** Caelestia never triggers a Windows permission prompt at startup. An existing Allowed grant is discovered automatically. Otherwise, to mirror Windows notifications into Caelestia's popups and sidebar, open the right-edge notification sidebar and click **Request access** once. While mirroring is active, Caelestia requests per-app native banner suppression by default, leaving notifications in Windows Action Center. The original settings are journaled and restored on quit, mirror deactivation, or crash recovery, except where you changed a setting yourself. System toasts and Windows Defender are excluded, and the first toast from a newly seen app may also show a native banner. Set `windows.notifications.replaceSystemBanners` to `false` or list AUMIDs in `windows.notifications.keepSystemBanners` in `config/windows.json` to keep native banners. See the [configuration reference](CONFIGURATION.md). Immediate application of Windows' setting and end-to-end delivery still require live verification.
 
 ---
 

@@ -306,6 +306,32 @@ Wallpaper Engine settings live in `config/windows.json` under
 `"engine"`, `"files"` or `"both"`, and `monitor` defaults to `"Monitor0"`.
 The background yields completely while Wallpaper Engine owns the desktop.
 
+Windows banner replacement is also configured in `config/windows.json`:
+
+```json
+{
+  "windows": {
+    "notifications": {
+      "replaceSystemBanners": true,
+      "keepSystemBanners": ["Example.App_123!App"]
+    }
+  }
+}
+```
+
+`replaceSystemBanners` defaults to `true`; set it to `false` to leave Windows
+banners alone. It takes effect only while system mirroring is active and
+Windows has granted access. `keepSystemBanners` defaults to an empty list and
+contains exact, case-insensitive Windows app user model IDs (AUMIDs), not app
+display names. Windows system toasts matching `Windows.SystemToast.*` and
+`Windows.Defender.SecurityCenter` are always excluded. Changes are watched.
+For an app not yet present in Windows notification settings, the first
+notification can still produce a native banner before its setting is changed.
+The journal in `state\banner-suppression.json` records previous `ShowBanner`
+values for recovery; user changes made while suppression is active are kept.
+The setting does not turn on Focus or remove notifications from Action Center.
+Actual immediate Windows banner behavior still needs live verification.
+
 ### `background`
 
 Controls the desktop wallpaper surface, desktop clock, and desktop audio visualizer:

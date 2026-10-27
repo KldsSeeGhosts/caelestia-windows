@@ -62,6 +62,7 @@ $info.EnvironmentVariables['QT_QPA_PLATFORM_PLUGIN_PATH'] = Join-Path $Prefix 'p
 $info.EnvironmentVariables['QML_DISK_CACHE_PATH'] = Join-Path $profile 'cache\qml'
 $info.EnvironmentVariables['CAELESTIA_CONFIG_DIR'] = Join-Path $profile 'config'
 $info.EnvironmentVariables['CAELESTIA_STATE_DIR'] = Join-Path $profile 'state'
+$info.EnvironmentVariables['CAELESTIA_BANNER_HELPER'] = Join-Path $PSScriptRoot 'Banner-Suppression.ps1'
 $info.EnvironmentVariables['CAELESTIA_RUNTIME_DIR'] = Join-Path $profile 'runtime'
 $info.EnvironmentVariables['CAELESTIA_PROFILE_ROOT'] = $profile
 foreach ($directory in @('config', 'state', 'data', 'cache')) {
@@ -145,6 +146,7 @@ if ($Command -ne 'Start') {
                 throw "Desktop supervisor has not finished restoring: $($statusFile.FullName)"
             }
         }
+        & (Join-Path $PSScriptRoot 'Banner-Suppression.ps1') -StateDirectory (Join-Path $profile 'state') -Command Restore
     }
     Write-Output $output
     return
