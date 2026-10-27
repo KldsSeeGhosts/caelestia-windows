@@ -62,6 +62,26 @@ describing a build or prototype smoke as a validated shell release.
   and autostart entry are removed while user data remains. Separately test
   `-Purge` with a disposable profile. Verify other shell installations survive.
 
+## Code signing
+
+Smart App Control blocks unsigned native binaries that lack cloud reputation,
+and it ignores self-signed and locally trusted roots (#27). Users who keep it
+on can run the release only if it is signed by a publicly trusted CA.
+
+- [ ] Once the public repositories exist, apply to SignPath Foundation's free
+  open-source code signing. Paid alternatives (Azure Artifact Signing, an OV
+  certificate) need a separate maintainer decision.
+- [ ] Add a Windows CI job that builds from the tagged sources and signs every
+  shipped `.exe` and `.dll` (`qs.exe`, Caelestia plugins,
+  `caelestia-settings.dll`) with an RFC 3161 timestamp. Keep signing
+  credentials in the signing service, never in the repository.
+- [ ] Before packaging, fail the release if any shipped native binary is
+  unsigned or has an invalid Authenticode signature
+  (`Get-AuthenticodeSignature`).
+- [ ] On a machine with Smart App Control **on**, install the signed payload
+  and confirm that `Microsoft-Windows-CodeIntegrity/Operational` logs no
+  3033 or 3077 events for the install prefix.
+
 ## Tag and publish
 
 - [ ] The maintainer approves the tested release scope and known limitations.
