@@ -136,7 +136,7 @@ Controls the left vertical bar, workspaces indicator, active window title, syste
             { "id": "spacer", "enabled": true },
             { "id": "activeWindow", "enabled": true },
             { "id": "spacer", "enabled": true },
-            { "id": "tray", "enabled": true },
+            { "id": "tray", "enabled": false },
             { "id": "clock", "enabled": true },
             { "id": "statusIcons", "enabled": true },
             { "id": "power", "enabled": true }
@@ -150,6 +150,7 @@ Controls the left vertical bar, workspaces indicator, active window title, syste
 
 - `bar.workspaces.shown` (clamped `1..20`) also sets `Hyprland.workspaceLimit` on the Windows backend: numeric workspace switches and relative scrolling create missing virtual desktops up to this count, while any existing virtual desktops above `shown` remain addressable and are never deleted automatically.
 - `bar.workspaces.specialWorkspaceIcons` and `showWindowsOnSpecialWorkspaces` have no effect because Windows virtual desktops do not have Hyprland `special:` scratchpads.
+- `bar.entries` `tray`: disabled by default until tray icons respond to clicks reliably. Set `enabled` to `true` to show it.
 - `bar.tray`: Right-clicking a tray item opens the application's native Win32 context menu rather than an inline QML `TrayMenu`.
 - `bar.statusIcons`: `"audio"`, `"network"`, `"bluetooth"`, and `"battery"` are supported out of the box. `"lockStatus"`, `"microphone"`, and `"kbLayout"` default to disabled because the Windows backend does not provide Hyprland keyboard/lock state.
 
