@@ -26,7 +26,10 @@ function Get-CombinedSourcesManifest([string]$CombinedPrototypeRoot) {
         if ($properties.Count -eq 0) { throw "Combined staging fragment has no entries: $path" }
         foreach ($property in $properties) {
             $source = $property.Name
-            $destination = [string]$property.Value
+            if ($property.Value -isnot [string]) {
+                throw "Combined staging fragment maps '$source' to a non-string destination: $name"
+            }
+            $destination = $property.Value
             if ([string]::IsNullOrWhiteSpace($destination)) {
                 throw "Combined staging fragment maps '$source' to an empty destination: $name"
             }
