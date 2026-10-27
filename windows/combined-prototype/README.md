@@ -353,7 +353,9 @@ The production entry uses the same services and provisions its scheme venv under
 - Lyrics still require the excluded native lyrics service. Audio analysis uses
   WASAPI loopback in `Caelestia.Windows.Audio`; the original cover visualiser,
   background visualiser and beat-driven GIF consume its providers.
-- Profile picture editing is unavailable; its click reports this in a toast.
+- Clicking the profile picture opens a file picker. The chosen image is copied to
+  `profile-picture` in the shell's state folder and shown in the dashboard ahead of
+  the Windows account picture. The Windows account picture is never changed.
 - Idle inhibition is not the upstream Wayland `IdleInhibitor`; Windows holds the
   execution state in a child process instead (see the utilities card above). The
   recorder supports fullscreen `gdigrab` only: region capture, audio capture and

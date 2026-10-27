@@ -246,7 +246,8 @@ Controls the top dashboard drawer and platform service intervals/units.
 - **Media (`Players`):** Backed by Windows GSMTC (`GlobalSystemMediaTransportControlsSessionManager`). Per-player volume, window raise/quit, and URI opening are not part of GSMTC.
 - **Audio (`maxVolume`):** Capped at `1.0` (100%) by Windows Core Audio.
 - **Audio visualizer:** `Caelestia.Windows.Audio` supplies WASAPI loopback analysis to the original `Audio.cava` and `Audio.beatTracker` contracts. Lyrics remain unavailable.
-- **Profile picture:** Clicking the avatar in the dashboard shows a toast on Windows rather than copying to `~/.face`.
+- **Profile picture:** Clicking the avatar in the dashboard opens a file picker. The image is copied to `profile-picture` in the shell's state folder (not `~/.face`) and shown ahead of the Windows account picture, which is never changed.
+- **CPU temperature:** Windows exposes no unprivileged CPU die temperature. The dashboard reads it from [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor) when it is running elevated with its remote web server on `127.0.0.1:8085`, using the signed [PawnIO](https://pawnio.eu/) driver. Without it the card shows "Unavailable". Setup, once: `winget install namazso.PawnIO` and `winget install LibreHardwareMonitor.LibreHardwareMonitor`, enable Options > Remote Web Server, and start it at sign-in with a scheduled task that runs with highest privileges. LibreHardwareMonitor 0.9.6 ignores its `listenerIp` setting and listens on all interfaces, so add an inbound Windows Firewall block rule for TCP 8085. Loopback traffic is not filtered, so the shell still reads it. Nothing here is installed or configured by the shell.
 
 ### `notifs`, `sidebar`, `osd`, and `utilities`
 

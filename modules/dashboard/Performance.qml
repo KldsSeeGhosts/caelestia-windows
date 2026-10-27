@@ -140,8 +140,24 @@ Item {
     }
 
     component WrappedLoader: Loader {
+        id: wrapped
+
+        // Windows: cards size to their text ("9.9 / 63.6 GiB" becomes
+        // "10.0 / 63.6 GiB"). Every implicit size change animates the whole
+        // dashboard and re-runs the pane loading in Content.qml, so the
+        // dropdown shifted and stalled while values changed. Cards only grow.
+        property real widest: 0
+        property real tallest: 0
+        readonly property real itemWidth: item?.implicitWidth ?? 0
+        readonly property real itemHeight: item?.implicitHeight ?? 0
+
+        onItemWidthChanged: widest = Math.max(widest, itemWidth)
+        onItemHeightChanged: tallest = Math.max(tallest, itemHeight)
+
         Layout.fillWidth: true
         Layout.fillHeight: true
+        Layout.preferredWidth: widest > 0 ? widest : -1
+        Layout.preferredHeight: tallest > 0 ? tallest : -1
         visible: active
     }
 }
