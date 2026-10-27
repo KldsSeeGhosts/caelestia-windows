@@ -141,7 +141,8 @@ All handlers in the table are staged in production, plus `caelestia:volumeUp`, `
 > Win+Shift+T, Win+B, Win+digit, Win+Shift+digit, Win+Ctrl+digit,
 > Win+Alt+digit and Win+Alt+Enter with a low-level hook so they cannot reveal
 > the hidden taskbar. They cannot be changed in `keybinds.json`; a lone Super
-> tap and Super+L are unchanged.
+> tap and Super+L are unchanged. Injected or remapped versions of these chords
+> are consumed too, unless they carry the shell/supervisor mask signature.
 
 
 ### 2. `"dispatch"` — run a window or workspace dispatcher

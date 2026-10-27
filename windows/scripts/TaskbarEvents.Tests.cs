@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Threading;
 using Caelestia.Takeover;
 
 public static class TaskbarEventsTests {
@@ -342,7 +343,7 @@ public static class TaskbarEventsTests {
             Check(TaskbarShortcutPolicy.Matches(digit, false, true, false, true), "Win+Ctrl+digit");
             Check(TaskbarShortcutPolicy.Matches(digit, false, false, true, true), "Win+Alt+digit");
             Check(!TaskbarShortcutPolicy.Matches(digit, true, true, false, true),
-                "Win+Ctrl+Shift+digit is not a listed taskbar chord");
+                "Win+Ctrl+Shift+digit is outside this exact-modifier set");
             Check(!TaskbarShortcutPolicy.Matches(digit, true, false, true, true),
                 "Win+Shift+Alt+digit is not a listed taskbar chord");
             Check(!TaskbarShortcutPolicy.Matches(digit, false, true, true, true),
@@ -359,46 +360,184 @@ public static class TaskbarEventsTests {
         Check(!TaskbarShortcutPolicy.Matches(0x4C, false, false, false, true), "Win+L is left alone");
         Check(!TaskbarShortcutPolicy.Matches(0x5B, false, false, false, true), "lone Win is left alone");
 
-        var filter = new TaskbarShortcutFilter();
-        Check(filter.Handle(0x54, false, false, false, false, false, true), "filter swallows a Win+T key-down");
-        Check(filter.Handle(0x54, false, false, false, false, false, true), "filter swallows a Win+T auto-repeat");
-        Check(filter.Handle(0x54, true, false, false, false, false, false),
+        var filter = new TaskbarShortcutFilter(delegate(int vk, uint scanCode, bool extended) {});
+        Check(filter.Handle(0x54, false, false, 0, false, false, false, true, false, 0x10, false),
+            "filter swallows a Win+T key-down");
+        Check(filter.Handle(0x54, false, false, 0, false, false, false, true, false, 0x10, false),
+            "filter swallows a Win+T auto-repeat");
+        Check(filter.Handle(0x54, true, false, 0, false, false, false, false, false, 0x10, false),
             "filter swallows the key-up after Win was released first");
-        Check(!filter.Handle(0x54, true, false, false, false, false, true), "unstored key-up passes");
-        Check(!filter.Handle(0x54, false, true, false, false, false, true), "injected chord passes");
-        Check(!filter.Handle(0x41, false, false, false, false, false, true), "unrelated chord passes");
-        Check(filter.Handle(0x31, false, false, false, false, false, true), "filter swallows Win+1 down");
-        Check(filter.Handle(0x31, true, false, false, false, false, false), "filter swallows Win+1 up");
+        Check(!filter.Handle(0x54, true, false, 0, false, false, false, false, false, 0x10, false),
+            "unstored key-up passes");
+        Check(!filter.Handle(0x41, false, false, 0, false, false, false, true, false, 0x10, false),
+            "unrelated chord passes");
+        Check(filter.Handle(0x31, false, false, 0, false, false, false, true, false, 0x10, false),
+            "filter swallows Win+1 down");
+        Check(filter.Handle(0x31, true, false, 0, false, false, false, false, false, 0x10, false),
+            "filter swallows Win+1 up");
         filter.Reset();
-        Check(!filter.Handle(0x31, true, false, false, false, false, false), "reset forgets swallowed keys");
+        Check(!filter.MaskPending && !filter.Handle(0x31, true, false, 0, false, false, false, false, false, 0x10, false),
+            "reset forgets swallowed keys and a pending mask");
 
-        int installs = 0, removes = 0;
+        // 1. Swallowing Win+T must mask the next Win-up exactly once.
+        int maskCalls = 0;
+        var maskOrder = new List<string>();
+        var maskFilter = new TaskbarShortcutFilter(
+            delegate(int vk, uint scanCode, bool extended) {
+                maskCalls++;
+                maskOrder.Add("mask:" + vk.ToString("X"));
+            });
+        Check(!maskFilter.Handle(0x5B, false, false, 0, false, false, false, true, false, 0x10, false),
+            "Win down passes");
+        Check(maskFilter.Handle(0x54, false, false, 0, false, false, false, true, false, 0x10, false),
+            "T down consumed");
+        Check(maskFilter.MaskPending, "consumed chord leaves a mask pending");
+        Check(maskFilter.Handle(0x54, true, false, 0, false, false, false, false, false, 0x10, false),
+            "T up consumed");
+        maskOrder.Clear();
+        bool winUpConsumed = maskFilter.Handle(0x5B, true, false, 0, false, false, false, false, false, 0x10, false);
+        maskOrder.Add(winUpConsumed ? "consume" : "pass");
+        Check(winUpConsumed, "Win up consumed after masking");
+        Check(String.Join(",", maskOrder.ToArray()) == "mask:5B,consume",
+            "mask is injected before the swallowed Win-up");
+        Check(!maskFilter.MaskPending, "mask clears after the Win-up");
+        Check(!maskFilter.Handle(0x5B, true, false, 0, false, false, false, false, false, 0x10, false),
+            "second Win up passes without another mask");
+        Check(maskCalls == 1, "only one mask is injected");
+
+        // 2. Repeated Win+T while Win is held still masks only once.
+        int repeatMasks = 0;
+        var repeatFilter = new TaskbarShortcutFilter(
+            delegate(int vk, uint scanCode, bool extended) { repeatMasks++; });
+        Check(!repeatFilter.Handle(0x5B, false, false, 0, false, false, false, true, false, 0x10, false),
+            "repeat Win down passes");
+        for (int i = 0; i < 5; i++) {
+            Check(repeatFilter.Handle(0x54, false, false, 0, false, false, false, true, false, 0x10, false),
+                "repeat T down consumed");
+        }
+        Check(repeatMasks == 0, "no mask before Win release");
+        Check(repeatFilter.Handle(0x5B, true, false, 0, false, false, false, false, false, 0x10, false),
+            "Win up consumed after repeated downs");
+        Check(repeatMasks == 1, "repeated Win+T injects one mask");
+        Check(repeatFilter.Handle(0x54, true, false, 0, false, false, false, false, false, 0x10, false),
+            "pending T up consumed after Win release");
+
+        // Win auto-repeat must not be mistaken for a new Win press.
+        int winRepeatMasks = 0;
+        var winRepeatFilter = new TaskbarShortcutFilter(
+            delegate(int vk, uint scanCode, bool extended) { winRepeatMasks++; });
+        winRepeatFilter.Handle(0x5B, false, false, 0, false, false, false, true, false, 0x10, false);
+        winRepeatFilter.Handle(0x54, false, false, 0, false, false, false, true, false, 0x10, false);
+        winRepeatFilter.Handle(0x54, true, false, 0, false, false, false, false, false, 0x10, false);
+        Check(!winRepeatFilter.Handle(0x5B, false, false, 0, false, false, false, true, false, 0x10, false),
+            "Win auto-repeat passes");
+        Check(winRepeatFilter.MaskPending, "Win auto-repeat does not clear the pending mask");
+        Check(winRepeatFilter.Handle(0x5B, true, false, 0, false, false, false, false, false, 0x10, false),
+            "Win up after auto-repeat is masked");
+        Check(winRepeatMasks == 1, "Win auto-repeat still yields one mask");
+
+        int loneMasks = 0;
+        var loneFilter = new TaskbarShortcutFilter(
+            delegate(int vk, uint scanCode, bool extended) { loneMasks++; });
+        loneFilter.Handle(0x5B, false, false, 0, false, false, false, true, false, 0x10, false);
+        Check(!loneFilter.Handle(0x5B, true, false, 0, false, false, false, false, false, 0x10, false),
+            "lone Win up passes");
+        Check(loneMasks == 0, "a lone Win tap is not masked");
+
+        // 3. Remapped/injected chords are consumed unless they carry the
+        // shared shell/supervisor mask signature.
+        int injectedMasks = 0;
+        var injectedFilter = new TaskbarShortcutFilter(
+            delegate(int vk, uint scanCode, bool extended) { injectedMasks++; });
+        Check(injectedFilter.Handle(0x54, false, true, 0, false, false, false, true, false, 0x10, false),
+            "injected Win+T is consumed");
+        Check(injectedFilter.Handle(0x54, true, true, 0, false, false, false, false, false, 0x10, false),
+            "injected T up is consumed");
+        Check(injectedFilter.Handle(0x5B, true, true, 0, false, false, false, false, false, 0x10, false),
+            "injected Win up is masked");
+        Check(injectedMasks == 1, "injected chord still gets one mask");
+        Check(!injectedFilter.Handle(0x54, false, true, Native.InjectionMarker,
+            false, false, false, true, false, 0x10, false), "shell-marker chord passes");
+        Check(!injectedFilter.Handle(0x5B, true, true, Native.InjectionMarker,
+            false, false, false, false, false, 0x10, false), "masked release replay passes");
+        Check(injectedMasks == 1, "signature-tagged events do not add masks");
+        var markerOnly = new TaskbarShortcutFilter(
+            delegate(int vk, uint scanCode, bool extended) { injectedMasks++; });
+        Check(!markerOnly.Handle(0x54, false, true, Native.InjectionMarker,
+            false, false, false, true, false, 0x10, false), "marker-tagged chord passes");
+        Check(!markerOnly.MaskPending, "marker-tagged chord does not arm a mask");
+
+        // 4. A second Win key means the mask belongs to the last Win release.
+        int bothMasks = 0;
+        var bothFilter = new TaskbarShortcutFilter(
+            delegate(int vk, uint scanCode, bool extended) { bothMasks++; });
+        bothFilter.Handle(0x5B, false, false, 0, false, false, false, true, false, 0x10, false);
+        bothFilter.Handle(0x54, false, false, 0, false, false, false, true, false, 0x10, false);
+        bothFilter.Handle(0x54, true, false, 0, false, false, false, false, false, 0x10, false);
+        Check(!bothFilter.Handle(0x5B, true, false, 0, false, false, false, false, true, 0x10, false),
+            "first Win up passes while the other Win is held");
+        Check(bothFilter.MaskPending, "mask remains pending for the last Win");
+        Check(bothFilter.Handle(0x5C, true, false, 0, false, false, false, false, false, 0x10, false),
+            "last Win up is consumed with a mask");
+        Check(bothMasks == 1, "one mask covers both Win releases");
+
+        // 5. The hook owns a dedicated pumping thread and joins on stop.
+        int installs = 0, removes = 0, installThread = 0, removeThread = 0;
+        var reports = new List<bool>();
+        int mainThread = Thread.CurrentThread.ManagedThreadId;
         var shortcutHook = new TaskbarShortcutHook(
-            delegate(Native.LowLevelKeyboardProc callback) { installs++; return new IntPtr(7); },
-            delegate(IntPtr hook) { removes++; Check(hook == new IntPtr(7), "unhook identity"); });
-        Check(!shortcutHook.Active && !shortcutHook.Installed, "shortcut hook starts uninstalled");
-        Check(!shortcutHook.Handle(0x54, false, false, false, false, false, true),
-            "inactive shortcut hook passes");
-        Check(shortcutHook.Install() && shortcutHook.Installed && installs == 1, "shortcut hook install");
-        Check(!shortcutHook.Active, "installed but inactive shortcut hook passes");
+            delegate(Native.LowLevelKeyboardProc callback) {
+                installs++;
+                installThread = Thread.CurrentThread.ManagedThreadId;
+                return new IntPtr(7);
+            },
+            delegate(IntPtr hook) {
+                removes++;
+                removeThread = Thread.CurrentThread.ManagedThreadId;
+                Check(hook == new IntPtr(7), "unhook identity");
+            },
+            delegate(int vk, uint scanCode, bool extended) { throw new Exception("no injected event expected"); },
+            delegate(bool ok) { reports.Add(ok); });
+        Check(!shortcutHook.Running && !shortcutHook.Installed, "shortcut hook starts stopped");
+        Check(shortcutHook.EnsureStarted(), "shortcut hook starts");
+        Check(shortcutHook.Installed && shortcutHook.Running && installs == 1,
+            "hook is installed on its own thread");
+        Check(installThread != mainThread, "install runs off the supervisor thread");
+        Check(reports.Count == 1 && reports[0], "install result is reported");
         shortcutHook.Activate();
-        Check(shortcutHook.Active && shortcutHook.Handle(0x54, false, false, false, false, false, true),
-            "active shortcut hook swallows");
+        Check(shortcutHook.Active, "hook activates");
         shortcutHook.Deactivate();
-        Check(!shortcutHook.Active && !shortcutHook.Handle(0x54, false, false, false, false, false, true),
-            "deactivation stops swallowing");
-        shortcutHook.Activate();
+        Check(!shortcutHook.Active, "hook deactivates");
+        shortcutHook.Stop();
+        Check(!shortcutHook.Running && !shortcutHook.Installed && removes == 1,
+            "stop joins the thread and unhooks");
+        Check(removeThread == installThread, "unhook runs on the hook thread");
+        shortcutHook.Stop();
+        Check(removes == 1, "stop is idempotent");
+        Check(shortcutHook.EnsureStarted(), "hook restarts after stop");
         shortcutHook.Dispose();
-        Check(!shortcutHook.Active && !shortcutHook.Installed && removes == 1, "dispose removes shortcut hook");
+        Check(!shortcutHook.Running && removes == 2, "dispose stops the restarted hook");
         shortcutHook.Dispose();
-        Check(removes == 1, "shortcut hook dispose is idempotent");
-        var failedHook = new TaskbarShortcutHook(
-            delegate(Native.LowLevelKeyboardProc callback) { return IntPtr.Zero; },
-            delegate(IntPtr hook) { throw new Exception("failed hook must not be removed"); });
-        Check(!failedHook.Install() && !failedHook.Installed, "failed shortcut hook install stays unbound");
-        failedHook.Activate();
-        Check(!failedHook.Active, "failed shortcut hook cannot activate");
-        failedHook.Dispose();
+        Check(removes == 2, "dispose is idempotent");
+
+        bool failInstall = true;
+        int retryRemoves = 0;
+        var retryReports = new List<bool>();
+        var retryHook = new TaskbarShortcutHook(
+            delegate(Native.LowLevelKeyboardProc callback) {
+                return failInstall ? IntPtr.Zero : new IntPtr(9);
+            },
+            delegate(IntPtr hook) { retryRemoves++; },
+            delegate(int vk, uint scanCode, bool extended) {},
+            delegate(bool ok) { retryReports.Add(ok); });
+        Check(!retryHook.EnsureStarted() && !retryHook.Installed && !retryHook.Running,
+            "failed install leaves no running hook thread");
+        Check(retryReports.Count == 1 && !retryReports[0], "install failure is reported");
+        failInstall = false;
+        Check(retryHook.EnsureStarted() && retryHook.Installed,
+            "a failed install retries before the next child");
+        retryHook.Dispose();
+        Check(retryRemoves == 1, "retried hook is unhooked once");
         return assertions;
     }
 }

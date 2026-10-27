@@ -135,22 +135,38 @@ the Explorer taskbar shortcuts that would otherwise reveal, focus or invoke a
 hidden taskbar: Win+T, Win+Shift+T, Win+B, Win+0..9, Win+Shift+0..9,
 Win+Ctrl+0..9, Win+Alt+0..9 and Win+Alt+Enter. Matching requires the exact
 modifiers, so Win+A, Win+N, Win+L and other Windows chords are unchanged. A lone
-Win tap still opens the Caelestia launcher.
+Win tap still opens the Caelestia launcher. Microsoft also documents
+Win+Ctrl+Shift+0..9 (launch the pinned app as administrator); that combined
+variant is outside this exact-modifier set and is not consumed.
 
-The hook is installed before the shell child starts. Windows calls the most
-recently installed low-level hook first, so the shell's own hook, installed
-later, still sees each chord first and clears its lone-Super tap candidate; the
-supervisor hook then consumes the event before Explorer receives it. The hook is
-active only while the supervised shell process is running. It is deactivated on
-exit and removed during cleanup, and it never runs when `hideTaskbar` is false.
-Its callback does no I/O and performs at most four key-state queries.
+The hook owns a dedicated background thread with its own message loop. That
+thread only runs the callback; it never performs disk I/O, waits on supervisor
+work or logs. Install results are posted to the supervisor UI thread, which
+appends `shortcut-hook-installed` or `shortcut-hook-failed` to
+`taskbar-actions.jsonl`. The thread is started before the shell child. Windows
+calls the most recently installed low-level hook first, so the shell's own hook,
+installed later, still sees each chord first and clears its lone-Super tap
+candidate; the supervisor hook then consumes the event before Explorer receives
+it. A later reinstall is only attempted before a new child starts, never while
+the shell is running, because that would reverse the chain order. The hook is
+active only while the supervised shell process runs; it is deactivated on exit
+and stopped and joined during cleanup. It never runs when `hideTaskbar` is
+false.
+
+After a consumed chord, the next Win key-up is swallowed and replaced with the
+same masking convention qs.exe uses: an unassigned 0xE8 key tap followed by a
+replay of the Win key-up, both tagged with qs.exe's `0x5153484B` injection
+marker. The shell and supervisor hooks ignore events carrying that marker.
+Injected or remapped chords, for example from PowerToys, are consumed too
+unless they carry the marker, so they cannot bypass suppression. The callback
+does no I/O and performs at most six key-state queries, including the second-Win
+check.
 
 This is the supervisor's existing C# helper, not a newly built native binary,
 and it leaves the shell keybind map unchanged. A default keybind entry is not
 used: the shell hook runs whenever the shell runs, so a default bind would also
 swallow these chords with `hideTaskbar: false`, and the keybind map has no
-no-op action. `taskbar-actions.jsonl` records `shortcut-hook-installed` or
-`shortcut-hook-failed` at supervisor startup.
+no-op action.
 
 When enabled, an Explorer-process WinEvent show hook supplements the existing
 250 ms reconciliation timer. After twelve shows on the same Explorer-owned
