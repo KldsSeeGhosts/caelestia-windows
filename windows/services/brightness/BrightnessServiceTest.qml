@@ -768,7 +768,8 @@ QtObject {
         backend.writeError = "DDC/CI write denied";
         check(service.write("DISPLAY1", 0.15) === true, "start a failing pending write");
         osdProbe.record = service.stateFor("DISPLAY1");
-        close(osdProbe.displayed, 0.9, "the display binds the last confirmed value");
+        close(osdProbe.displayed, 0.15, "the display shows the requested level at once");
+        close(service.stateFor("DISPLAY1").lastConfirmed, 0.9, "the confirmed level is kept for snap-back");
         osdProbe.displayed = 0.05; // The drag breaks the value binding.
         check(service.write("DISPLAY1", 0.05) === true, "queue a second target behind it");
         const failResync = service.stateFor("DISPLAY1").resyncSerial;
