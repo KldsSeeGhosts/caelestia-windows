@@ -141,9 +141,12 @@ variant is outside this exact-modifier set and is not consumed.
 
 The hook owns a dedicated background thread with its own message loop. That
 thread only runs the callback; it never performs disk I/O, waits on supervisor
-work or logs. Install results are posted to the supervisor UI thread, which
-appends `shortcut-hook-installed` or `shortcut-hook-failed` to
-`taskbar-actions.jsonl`. The thread is started before the shell child. Windows
+work or logs. The supervisor UI thread records `shortcut-hook-installed`,
+`shortcut-hook-failed` or `shortcut-hook-timeout` in `taskbar-actions.jsonl`.
+The install attempt finishes before the shell child starts. On timeout the
+supervisor cancels the attempt and joins its thread before starting the child
+without shortcut suppression. If an install call is already in progress,
+joining can take longer than the timeout. The next child start retries. Windows
 calls the most recently installed low-level hook first, so the shell's own hook,
 installed later, still sees each chord first and clears its lone-Super tap
 candidate; the supervisor hook then consumes the event before Explorer receives
@@ -153,10 +156,13 @@ active only while the supervised shell process runs; it is deactivated on exit
 and stopped and joined during cleanup. It never runs when `hideTaskbar` is
 false.
 
-After a consumed chord, the next Win key-up is swallowed and replaced with the
-same masking convention qs.exe uses: an unassigned 0xE8 key tap followed by a
-replay of the Win key-up, both tagged with qs.exe's `0x5153484B` injection
-marker. The shell and supervisor hooks ignore events carrying that marker.
+After a consumed chord, the supervisor attempts the same masking convention
+qs.exe uses: an unassigned 0xE8 key tap followed by a replay of the Win key-up,
+all tagged with qs.exe's `0x5153484B` injection marker. The physical Win-up is
+swallowed only if all three events were inserted. If insertion fails or is
+partial, the physical Win-up passes through to avoid leaving Win logically
+pressed; Start may open in that fallback. The shell and supervisor hooks ignore
+events carrying that marker.
 Injected or remapped chords, for example from PowerToys, are consumed too
 unless they carry the marker, so they cannot bypass suppression. The callback
 does no I/O and performs at most six key-state queries, including the second-Win

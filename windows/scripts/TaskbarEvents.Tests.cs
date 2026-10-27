@@ -360,7 +360,7 @@ public static class TaskbarEventsTests {
         Check(!TaskbarShortcutPolicy.Matches(0x4C, false, false, false, true), "Win+L is left alone");
         Check(!TaskbarShortcutPolicy.Matches(0x5B, false, false, false, true), "lone Win is left alone");
 
-        var filter = new TaskbarShortcutFilter(delegate(int vk, uint scanCode, bool extended) {});
+        var filter = new TaskbarShortcutFilter(delegate(int vk, uint scanCode, bool extended) { return 3; });
         Check(filter.Handle(0x54, false, false, 0, false, false, false, true, false, 0x10, false),
             "filter swallows a Win+T key-down");
         Check(filter.Handle(0x54, false, false, 0, false, false, false, true, false, 0x10, false),
@@ -386,6 +386,7 @@ public static class TaskbarEventsTests {
             delegate(int vk, uint scanCode, bool extended) {
                 maskCalls++;
                 maskOrder.Add("mask:" + vk.ToString("X"));
+                return 3;
             });
         Check(!maskFilter.Handle(0x5B, false, false, 0, false, false, false, true, false, 0x10, false),
             "Win down passes");
@@ -405,10 +406,23 @@ public static class TaskbarEventsTests {
             "second Win up passes without another mask");
         Check(maskCalls == 1, "only one mask is injected");
 
+        foreach (uint inserted in new uint[] { 0, 1, 2 }) {
+            uint fakeInserted = inserted;
+            int calls = 0;
+            var failureFilter = new TaskbarShortcutFilter(
+                delegate(int vk, uint scanCode, bool extended) { calls++; return fakeInserted; });
+            failureFilter.Handle(0x5B, false, false, 0, false, false, false, true, false, 0x10, false);
+            failureFilter.Handle(0x54, false, false, 0, false, false, false, true, false, 0x10, false);
+            Check(!failureFilter.Handle(0x5B, true, false, 0, false, false, false, false, false, 0x10, false),
+                "physical Win up passes after " + inserted + " inserted events");
+            Check(calls == 1 && !failureFilter.MaskPending,
+                "failed or partial injection is attempted once and clears the mask");
+        }
+
         // 2. Repeated Win+T while Win is held still masks only once.
         int repeatMasks = 0;
         var repeatFilter = new TaskbarShortcutFilter(
-            delegate(int vk, uint scanCode, bool extended) { repeatMasks++; });
+            delegate(int vk, uint scanCode, bool extended) { repeatMasks++; return 3; });
         Check(!repeatFilter.Handle(0x5B, false, false, 0, false, false, false, true, false, 0x10, false),
             "repeat Win down passes");
         for (int i = 0; i < 5; i++) {
@@ -425,7 +439,7 @@ public static class TaskbarEventsTests {
         // Win auto-repeat must not be mistaken for a new Win press.
         int winRepeatMasks = 0;
         var winRepeatFilter = new TaskbarShortcutFilter(
-            delegate(int vk, uint scanCode, bool extended) { winRepeatMasks++; });
+            delegate(int vk, uint scanCode, bool extended) { winRepeatMasks++; return 3; });
         winRepeatFilter.Handle(0x5B, false, false, 0, false, false, false, true, false, 0x10, false);
         winRepeatFilter.Handle(0x54, false, false, 0, false, false, false, true, false, 0x10, false);
         winRepeatFilter.Handle(0x54, true, false, 0, false, false, false, false, false, 0x10, false);
@@ -438,7 +452,7 @@ public static class TaskbarEventsTests {
 
         int loneMasks = 0;
         var loneFilter = new TaskbarShortcutFilter(
-            delegate(int vk, uint scanCode, bool extended) { loneMasks++; });
+            delegate(int vk, uint scanCode, bool extended) { loneMasks++; return 3; });
         loneFilter.Handle(0x5B, false, false, 0, false, false, false, true, false, 0x10, false);
         Check(!loneFilter.Handle(0x5B, true, false, 0, false, false, false, false, false, 0x10, false),
             "lone Win up passes");
@@ -448,7 +462,7 @@ public static class TaskbarEventsTests {
         // shared shell/supervisor mask signature.
         int injectedMasks = 0;
         var injectedFilter = new TaskbarShortcutFilter(
-            delegate(int vk, uint scanCode, bool extended) { injectedMasks++; });
+            delegate(int vk, uint scanCode, bool extended) { injectedMasks++; return 3; });
         Check(injectedFilter.Handle(0x54, false, true, 0, false, false, false, true, false, 0x10, false),
             "injected Win+T is consumed");
         Check(injectedFilter.Handle(0x54, true, true, 0, false, false, false, false, false, 0x10, false),
@@ -462,7 +476,7 @@ public static class TaskbarEventsTests {
             false, false, false, false, false, 0x10, false), "masked release replay passes");
         Check(injectedMasks == 1, "signature-tagged events do not add masks");
         var markerOnly = new TaskbarShortcutFilter(
-            delegate(int vk, uint scanCode, bool extended) { injectedMasks++; });
+            delegate(int vk, uint scanCode, bool extended) { injectedMasks++; return 3; });
         Check(!markerOnly.Handle(0x54, false, true, Native.InjectionMarker,
             false, false, false, true, false, 0x10, false), "marker-tagged chord passes");
         Check(!markerOnly.MaskPending, "marker-tagged chord does not arm a mask");
@@ -470,7 +484,7 @@ public static class TaskbarEventsTests {
         // 4. A second Win key means the mask belongs to the last Win release.
         int bothMasks = 0;
         var bothFilter = new TaskbarShortcutFilter(
-            delegate(int vk, uint scanCode, bool extended) { bothMasks++; });
+            delegate(int vk, uint scanCode, bool extended) { bothMasks++; return 3; });
         bothFilter.Handle(0x5B, false, false, 0, false, false, false, true, false, 0x10, false);
         bothFilter.Handle(0x54, false, false, 0, false, false, false, true, false, 0x10, false);
         bothFilter.Handle(0x54, true, false, 0, false, false, false, false, false, 0x10, false);
@@ -483,7 +497,7 @@ public static class TaskbarEventsTests {
 
         // 5. The hook owns a dedicated pumping thread and joins on stop.
         int installs = 0, removes = 0, installThread = 0, removeThread = 0;
-        var reports = new List<bool>();
+        var reports = new List<string>();
         int mainThread = Thread.CurrentThread.ManagedThreadId;
         var shortcutHook = new TaskbarShortcutHook(
             delegate(Native.LowLevelKeyboardProc callback) {
@@ -497,13 +511,13 @@ public static class TaskbarEventsTests {
                 Check(hook == new IntPtr(7), "unhook identity");
             },
             delegate(int vk, uint scanCode, bool extended) { throw new Exception("no injected event expected"); },
-            delegate(bool ok) { reports.Add(ok); });
+            delegate(string operation) { reports.Add(operation); });
         Check(!shortcutHook.Running && !shortcutHook.Installed, "shortcut hook starts stopped");
         Check(shortcutHook.EnsureStarted(), "shortcut hook starts");
         Check(shortcutHook.Installed && shortcutHook.Running && installs == 1,
             "hook is installed on its own thread");
         Check(installThread != mainThread, "install runs off the supervisor thread");
-        Check(reports.Count == 1 && reports[0], "install result is reported");
+        Check(reports.Count == 1 && reports[0] == "shortcut-hook-installed", "install result is reported");
         shortcutHook.Activate();
         Check(shortcutHook.Active, "hook activates");
         shortcutHook.Deactivate();
@@ -522,22 +536,62 @@ public static class TaskbarEventsTests {
 
         bool failInstall = true;
         int retryRemoves = 0;
-        var retryReports = new List<bool>();
+        var retryReports = new List<string>();
         var retryHook = new TaskbarShortcutHook(
             delegate(Native.LowLevelKeyboardProc callback) {
                 return failInstall ? IntPtr.Zero : new IntPtr(9);
             },
             delegate(IntPtr hook) { retryRemoves++; },
-            delegate(int vk, uint scanCode, bool extended) {},
-            delegate(bool ok) { retryReports.Add(ok); });
+            delegate(int vk, uint scanCode, bool extended) { return 3; },
+            delegate(string operation) { retryReports.Add(operation); });
         Check(!retryHook.EnsureStarted() && !retryHook.Installed && !retryHook.Running,
             "failed install leaves no running hook thread");
-        Check(retryReports.Count == 1 && !retryReports[0], "install failure is reported");
+        Check(retryReports.Count == 1 && retryReports[0] == "shortcut-hook-failed", "install failure is reported");
         failInstall = false;
         Check(retryHook.EnsureStarted() && retryHook.Installed,
             "a failed install retries before the next child");
         retryHook.Dispose();
         Check(retryRemoves == 1, "retried hook is unhooked once");
+
+        var enteredInstall = new ManualResetEvent(false);
+        var releaseInstall = new ManualResetEvent(false);
+        var completedStart = new ManualResetEvent(false);
+        var timeoutReports = new List<string>();
+        int timeoutInstalls = 0, timeoutRemoves = 0;
+        bool timeoutResult = true;
+        var timeoutHook = new TaskbarShortcutHook(
+            delegate(Native.LowLevelKeyboardProc callback) {
+                timeoutInstalls++;
+                if (timeoutInstalls == 1) {
+                    enteredInstall.Set();
+                    releaseInstall.WaitOne();
+                }
+                return new IntPtr(11);
+            },
+            delegate(IntPtr hook) { timeoutRemoves++; },
+            delegate(int vk, uint scanCode, bool extended) { return 3; },
+            delegate(string operation) { timeoutReports.Add(operation); }, 30);
+        var starter = new Thread(delegate() {
+            timeoutResult = timeoutHook.EnsureStarted();
+            completedStart.Set();
+        });
+        starter.Start();
+        Check(enteredInstall.WaitOne(5000), "delayed install entered");
+        Check(!completedStart.WaitOne(200), "timeout waits for in-flight install to finish before child start");
+        releaseInstall.Set();
+        Check(completedStart.WaitOne(5000), "timed-out startup completes after install returns");
+        starter.Join();
+        Check(!timeoutResult && !timeoutHook.Running && !timeoutHook.Installed && timeoutRemoves == 1,
+            "timeout removes and joins the late install before child start");
+        Check(timeoutReports.Count == 1 && timeoutReports[0] == "shortcut-hook-timeout",
+            "timeout is reported distinctly");
+        Check(timeoutHook.EnsureStarted() && timeoutHook.Installed && timeoutInstalls == 2,
+            "next child start retries the timed-out install");
+        timeoutHook.Dispose();
+        Check(timeoutRemoves == 2, "retried timeout hook is removed on disposal");
+        enteredInstall.Close();
+        releaseInstall.Close();
+        completedStart.Close();
         return assertions;
     }
 }

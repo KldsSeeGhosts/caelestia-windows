@@ -273,11 +273,11 @@ namespace Caelestia.Takeover {
     // 256 bits, no hook allocation.
     public sealed class TaskbarShortcutFilter {
         readonly ulong[] down = new ulong[4];
-        readonly Action<int, uint, bool> injectMaskedRelease;
+        readonly Func<int, uint, bool, uint> injectMaskedRelease;
         bool maskPending;
         bool leftWinDown, rightWinDown;
         public bool MaskPending { get { return maskPending; } }
-        public TaskbarShortcutFilter(Action<int, uint, bool> injectMaskedRelease) {
+        public TaskbarShortcutFilter(Func<int, uint, bool, uint> injectMaskedRelease) {
             this.injectMaskedRelease = injectMaskedRelease;
         }
         public bool Handle(int vk, bool up, bool injected, ulong injectionMarker,
@@ -303,8 +303,7 @@ namespace Caelestia.Takeover {
                     else rightWinDown = false;
                     if (!maskPending || otherWinDown) return false;
                     maskPending = false;
-                    injectMaskedRelease(vk, scanCode, extended);
-                    return true;
+                    return injectMaskedRelease(vk, scanCode, extended) == 3;
                 }
                 int index = vk >> 6;
                 ulong bit = 1UL << (vk & 63);
@@ -341,12 +340,13 @@ namespace Caelestia.Takeover {
     // hook callbacks; disk I/O and supervisor work stay on the UI thread. The
     // hook is installed before the shell child starts so the shell's later
     // hook remains first in the chain. Only volatile lifecycle and activation
-    // flags cross threads. Install results are posted to the UI thread; the
-    // hook thread never logs or waits on supervisor work.
+    // flags cross threads. The supervisor reports results after the handshake;
+    // the hook thread never logs or waits on supervisor work.
     public sealed class TaskbarShortcutHook : IDisposable {
         readonly Func<Native.LowLevelKeyboardProc, IntPtr> install;
         readonly Action<IntPtr> remove;
-        readonly Action<bool> report;
+        readonly Action<string> report;
+        readonly int timeoutMilliseconds;
         readonly TaskbarShortcutFilter filter;
         readonly Native.LowLevelKeyboardProc callback;
         readonly ManualResetEvent ready = new ManualResetEvent(false);
@@ -354,67 +354,76 @@ namespace Caelestia.Takeover {
         volatile bool active;
         volatile bool installed;
         volatile bool resetRequested;
+        volatile bool cancel;
         volatile int threadId;
         bool disposed;
         public bool Installed { get { return installed; } }
         public bool Active { get { return active; } }
         public bool Running { get { Thread value = thread; return value != null && value.IsAlive; } }
         public TaskbarShortcutHook(Func<Native.LowLevelKeyboardProc, IntPtr> install, Action<IntPtr> remove,
-            Action<int, uint, bool> injectMaskedRelease, Action<bool> report) {
+            Func<int, uint, bool, uint> injectMaskedRelease, Action<string> report)
+            : this(install, remove, injectMaskedRelease, report, 5000) {}
+        public TaskbarShortcutHook(Func<Native.LowLevelKeyboardProc, IntPtr> install, Action<IntPtr> remove,
+            Func<int, uint, bool, uint> injectMaskedRelease, Action<string> report, int timeoutMilliseconds) {
             this.install = install;
             this.remove = remove;
             this.report = report;
+            this.timeoutMilliseconds = timeoutMilliseconds;
             filter = new TaskbarShortcutFilter(injectMaskedRelease);
             callback = OnKeyboard; // Root the delegate for the hook lifetime.
         }
         public bool EnsureStarted() {
             if (disposed) return false;
-            Thread current = thread;
-            if (current != null) {
-                // A failed install leaves the thread exiting. Join it so the
-                // next child start can retry deterministically.
-                if (current.IsAlive && !installed) current.Join(5000);
-                if (current.IsAlive) return installed;
-            }
+            if (installed && Running) return true;
+            if (thread != null) Stop();
             ready.Reset();
+            cancel = false;
+            threadId = 0;
             thread = new Thread(ThreadMain);
             thread.IsBackground = true;
             thread.Name = "Caelestia taskbar shortcut hook";
             thread.Start();
             // Do not let the shell start before the install attempt: a later
             // install would put this hook ahead of the shell's hook.
-            ready.WaitOne(5000);
-            return installed;
+            if (!ready.WaitOne(timeoutMilliseconds)) {
+                // An in-flight native install cannot be interrupted safely.
+                // Cancel, then join before starting the child, even if the
+                // install itself takes longer than the startup timeout.
+                Stop();
+                report("shortcut-hook-timeout");
+                return false;
+            }
+            bool success = installed;
+            if (!success) Stop();
+            report(success ? "shortcut-hook-installed" : "shortcut-hook-failed");
+            return success;
         }
         public void Activate() { resetRequested = true; active = true; }
         public void Deactivate() { active = false; resetRequested = true; }
         public void Stop() {
             active = false;
             resetRequested = true;
+            cancel = true;
             Thread current = thread;
-            thread = null;
             if (current == null) { installed = false; return; }
             int id = threadId;
-            if (id == 0) {
-                ready.WaitOne(5000);
-                id = threadId;
-            }
             if (id != 0) Native.PostThreadMessage((uint)id, Native.WmQuit, IntPtr.Zero, IntPtr.Zero);
             if (current.IsAlive) current.Join();
+            thread = null;
+            threadId = 0;
             installed = false;
             filter.Reset();
         }
         void ThreadMain() {
             IntPtr hook = IntPtr.Zero;
-            bool reported = false;
             try {
                 Native.Msg message;
                 Native.PeekMessage(out message, IntPtr.Zero, 0, 0, 0);
                 threadId = (int)Native.GetCurrentThreadId();
+                if (cancel) return;
                 hook = install(callback);
+                if (cancel) return;
                 installed = hook != IntPtr.Zero;
-                report(installed);
-                reported = true;
                 ready.Set();
                 if (hook == IntPtr.Zero) return;
                 while (Native.GetMessage(out message, IntPtr.Zero, 0, 0) > 0) {
@@ -427,10 +436,7 @@ namespace Caelestia.Takeover {
                 if (hook != IntPtr.Zero) remove(hook);
                 installed = false;
                 filter.Reset();
-                if (!reported) {
-                    report(false);
-                    ready.Set();
-                }
+                ready.Set();
             }
         }
         IntPtr OnKeyboard(int code, IntPtr wParam, IntPtr lParam) {
@@ -608,12 +614,12 @@ namespace Caelestia.Takeover {
             };
             return input;
         }
-        public static void InjectMaskedRelease(int vk, uint scanCode, bool extended) {
+        public static uint InjectMaskedRelease(int vk, uint scanCode, bool extended) {
             var inputs = new Input[3];
             inputs[0] = KeyInput(MaskKey, false, 0, false);
             inputs[1] = KeyInput(MaskKey, true, 0, false);
             inputs[2] = KeyInput(vk, true, scanCode, extended);
-            SendInput((uint)inputs.Length, inputs, Marshal.SizeOf(typeof(Input)));
+            return SendInput((uint)inputs.Length, inputs, Marshal.SizeOf(typeof(Input)));
         }
         [DllImport("user32.dll", SetLastError = true)] static extern int GetWindowRgn(IntPtr window, IntPtr region);
         [DllImport("user32.dll", SetLastError = true)] static extern int SetWindowRgn(IntPtr window, IntPtr region, bool redraw);
@@ -962,7 +968,6 @@ namespace Caelestia.Takeover {
         readonly System.Windows.Forms.Timer timer = new System.Windows.Forms.Timer();
         readonly JavaScriptSerializer json = new JavaScriptSerializer();
         readonly uint taskbarCreated = Native.RegisterWindowMessage("TaskbarCreated");
-        readonly uint shortcutHookMessage = Native.RegisterWindowMessage("CaelestiaTaskbarShortcutHook");
         readonly TaskbarShowPolicy showPolicy = new TaskbarShowPolicy(Stopwatch.Frequency);
         readonly Native.WinEventCallback showCallback;
         readonly TaskbarHookBinding showHook;
@@ -1032,18 +1037,9 @@ namespace Caelestia.Takeover {
             // A hidden top-level window receives Explorer's broadcast. A
             // message-only HWND would not receive TaskbarCreated.
             CreateHandle(new CreateParams { Caption = "Caelestia desktop watchdog", Style = unchecked((int)0x80000000) });
-            // The hook thread only posts its install result here. Logging stays
-            // on the UI thread and never blocks keyboard delivery.
-            IntPtr watchdogHandle = Handle;
             shortcutHook = new TaskbarShortcutHook(Native.InstallKeyboardHook, Native.RemoveKeyboardHook,
                 Native.InjectMaskedRelease,
-                delegate(bool ok) {
-                    Native.PostMessage(watchdogHandle, shortcutHookMessage,
-                        new IntPtr(ok ? 1 : 0), IntPtr.Zero);
-                });
-            // Start and finish the install attempt before the shell child can
-            // install its own hook, so this hook stays later in the chain.
-            if (hide) shortcutHook.EnsureStarted();
+                delegate(string operation) { LogHook(operation, 0); });
             timer.Interval = 250;
             timer.Tick += Tick;
             timer.Start();
@@ -1056,10 +1052,6 @@ namespace Caelestia.Takeover {
             if (invisible) foreach (var bar in Native.Taskbars()) regions.Reconcile(bar);
         }
         protected override void WndProc(ref Message message) {
-            if (shortcutHookMessage != 0 && message.Msg == shortcutHookMessage) {
-                LogHook(message.WParam.ToInt64() != 0 ? "shortcut-hook-installed" : "shortcut-hook-failed", 0);
-                return;
-            }
             if (message.Msg == taskbarCreated && child != null && !child.HasExited && hide) {
                 // Quickshell's tray hook also sends TaskbarCreated to re-announce
                 // icons. Rebind only when Explorer's process actually changed.
