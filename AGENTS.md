@@ -33,3 +33,28 @@ and `windows/ROADMAP.md` before implementation.
 - Run the environment check after changing pins or setup instructions:
   `powershell -NoProfile -File windows/scripts/Test-Environment.ps1 -Json`.
   It is a prerequisite report, not a successful build or runtime test.
+
+## Parallel work cadence
+
+Several threads may work at once. Each task follows the same cycle:
+
+1. Start in a new worktree on a topic branch from `origin/dev`: `t3/<topic>`,
+   plus `windows/<topic>` from the backend's `dev` when the backend changes.
+   Never work directly in another thread's worktree or on `dev` or `main`.
+2. Implement, build and test inside that worktree. Builds and tests may run in
+   parallel; anything touching the live desktop may not (see below).
+3. Commit, push and open a PR into `dev`. Before merging, rebase onto the
+   current `origin/dev`. If another task moved the Quickshell gitlink or
+   `windows/sources.lock.json` meanwhile, merge the backend branches and move
+   both pins again.
+4. After the merge into `dev` (and later the fast-forward of `main` once the
+   live install is verified), clean up in the same session: remove the
+   worktree, delete the local branch and delete the remote branch, in both
+   this repository and the backend fork. Check that the worktree is clean and
+   its commits are in `origin/dev` first; never delete unmerged work.
+   On Windows, folders that `git worktree remove` cannot delete because of
+   long paths are removed with `Remove-Item -LiteralPath '\\?\<path>'`.
+
+Only one thread at a time may install a build live, restart the live shell or
+run live tests, because there is one install, one profile and one tiler.
+Coordinate that through the orchestrating thread.
