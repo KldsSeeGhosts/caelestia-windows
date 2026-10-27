@@ -653,6 +653,8 @@ Singleton {
         }
         if (!summary || !Array.isArray(summary.providers))
             return false;
+        if (summary.schemaVersion !== undefined && summary.schemaVersion !== 1)
+            return false;
 
         const stampSource = String(summary.refreshedAt || summary.generatedAt || "");
         let stamp = Date.parse(stampSource);
@@ -664,6 +666,14 @@ Singleton {
 
         const groups = [];
         const records = [];
+        const prior = root.selectedProviderId;
+        let priorProvider = "";
+        for (let i = 0; i < root.providers.length; i++) {
+            if (root.providers[i].id === prior) {
+                priorProvider = root.providers[i].provider;
+                break;
+            }
+        }
         for (let i = 0; i < summary.providers.length; i++) {
             const provider = summary.providers[i];
             if (!provider || typeof provider !== "object")
@@ -716,7 +726,6 @@ Singleton {
             || (summaryError !== "" && ordered.length > 0);
         root.status = root.error !== "" ? "error" : degraded ? "partial" : "ok";
 
-        const prior = root.selectedProviderId;
         let exists = false;
         for (let i = 0; i < ordered.length; i++) {
             if (ordered[i].id === prior) {
@@ -724,8 +733,18 @@ Singleton {
                 break;
             }
         }
-        if (!exists)
-            root.selectedProviderId = root.defaultProviderId();
+        if (!exists) {
+            // A cached summary uses display-only ids. Keep the same provider
+            // when the first live summary replaces it.
+            let fallback = "";
+            for (let i = 0; i < ordered.length && priorProvider; i++) {
+                if (ordered[i].provider === priorProvider) {
+                    fallback = ordered[i].id;
+                    break;
+                }
+            }
+            root.selectedProviderId = fallback || root.defaultProviderId();
+        }
 
         root.writeCache();
         return true;

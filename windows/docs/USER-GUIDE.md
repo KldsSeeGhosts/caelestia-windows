@@ -400,8 +400,7 @@ The config file is:
 `CAELESTIA_CONFIG_DIR` (the shell profile) is used when set, and
 `CAELESTIA_CPA_CONFIG` can name another file. The shell reads the file into
 memory to build the request; the key, the response body, emails and account ids
-are never displayed in logs. Keep the key out of commits, screenshots and issue
-reports.
+are never logged. Keep the key out of commits, screenshots and issue reports.
 
 Optional drawer settings live beside `shell.json` in `quota.json`. Every value
 is optional and matches the Linux schema:
