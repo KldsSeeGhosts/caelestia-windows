@@ -197,6 +197,16 @@ ShellRoot {
             } else if (root.step === root.pageEnd) {
                 root.check(root.pageIdx === PageRegistry.pages.length, "not every page was visited");
                 root.check(root.pagesItem.currentItem !== null, "last nexus page did not load");
+                // Public sub-page helpers: open pushes, close pops, and a page
+                // change resets the stack.
+                const ns = root.nexusItem.nState;
+                ns.openSubPage(0);
+                root.check(ns.subPageIdxStack.length === 1, "openSubPage did not push onto the sub-page stack");
+                ns.closeSubPage();
+                root.check(ns.subPageIdxStack.length === 0, "closeSubPage did not pop the sub-page stack");
+                ns.openSubPage(0);
+                ns.currentPageIdx = 0;
+                root.check(ns.subPageIdxStack.length === 0, "page change did not reset the sub-page stack");
                 root.nexusWindow.visible = false; // destroys the window (WindowFactory)
                 // The utilities card is the second entry point. It has no
                 // offscreen-safe host (it needs a real popout wrapper), so this

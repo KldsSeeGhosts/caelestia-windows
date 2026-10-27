@@ -15,6 +15,8 @@ import Quickshell
 // never imports. Every other field, signal and sub-page helper is the upstream
 // one.
 QtObject {
+    id: root
+
     property ShellScreen screen
     property bool isWindow
     property bool animatingContainer

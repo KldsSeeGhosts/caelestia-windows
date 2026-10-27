@@ -3,6 +3,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Layouts
 import Quickshell
+import Caelestia
 import Caelestia.Components
 import Caelestia.Config
 import Caelestia.I18n
@@ -71,12 +72,12 @@ PageBase {
                     nameFilters: [Tr.tr("Image files") + " (*." + Images.validImageExtensions.join(" *.") + ")"]
                     onAccepted: {
                         // The native dialog's accepted() has no path argument.
-                        // Read its QUrl, decode it, and ignore a cancel/empty
-                        // selection instead of passing undefined to the facade.
-                        const selected = String(selectedFile ?? "");
-                        if (selected.length === 0)
+                        // Convert its QUrl to a native path (UNC included) and
+                        // ignore a cancel/empty selection instead of passing
+                        // undefined to the facade.
+                        if (!selectedFile || String(selectedFile).length === 0)
                             return;
-                        const path = decodeURIComponent(selected);
+                        const path = CUtils.toLocalFile(selectedFile);
                         if (path.length === 0)
                             return;
                         Wallpapers.setWallpaper(path);

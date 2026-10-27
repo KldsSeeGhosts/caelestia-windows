@@ -50,6 +50,33 @@ PageBase {
             onTriggered: Nmcli.rescanWifi()
         }
 
+        // The parent Network page is hidden while this sub-page is open, so
+        // repeat the facade's last connect/forget result here.
+        ConnectedRect {
+            readonly property bool shown: Nmcli.resultText.length > 0
+
+            Layout.fillWidth: true
+            Layout.bottomMargin: shown ? Tokens.spacing.small / 2 : -parent.spacing
+            visible: shown
+            implicitHeight: shown ? allResultText.implicitHeight + Tokens.padding.large * 2 : 0
+            first: true
+            last: true
+
+            StyledText {
+                id: allResultText
+
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.margins: Tokens.padding.large
+
+                text: Nmcli.resultText
+                color: Nmcli.resultSucceeded === false ? Colours.palette.m3error : Colours.palette.m3onSurfaceVariant
+                font: Tokens.font.body.small
+                wrapMode: Text.WordWrap
+            }
+        }
+
         NetworkList {
             id: allList
 

@@ -91,7 +91,9 @@ PageBase {
             iconName: "speaker"
             placeholderIcon: "speaker"
             placeholderText: Tr.trCtx("No output devices", "no audio outputs")
-            controlsAvailable: Audio.outputControlsAvailable
+            // Service-wide gate only: each row also checks canControl(node), so
+            // a healthy device stays selectable when the current default is not.
+            controlsAvailable: Audio.controlsEnabled && Audio.ready
             onSelected: node => Audio.setAudioSink(node)
         }
 
@@ -120,7 +122,7 @@ PageBase {
             iconName: "mic"
             placeholderIcon: "mic_off"
             placeholderText: Tr.trCtx("No input devices", "no audio inputs")
-            controlsAvailable: Audio.inputControlsAvailable
+            controlsAvailable: Audio.controlsEnabled && Audio.ready
             onSelected: node => Audio.setAudioSource(node)
         }
 
