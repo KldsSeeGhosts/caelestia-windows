@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import Quickshell
+import Quickshell.Windows as Native
 import M3Shapes
 import Caelestia.Config
 import Caelestia.I18n
@@ -19,6 +20,33 @@ Item {
     required property FileDialog facePicker
 
     property color pfpFallbackColour: Colours.layer(Colours.palette.m3surfaceContainerHighest, 2)
+
+    // Windows: a picture chosen here is kept in the shell's state folder and
+    // wins over the Windows account picture. Windows account settings are
+    // never changed.
+    readonly property string stateFolder: Quickshell.stateDir.replace(/\\/g, "/")
+    readonly property string customPicture: "file:///" + stateFolder + "/profile-picture"
+    readonly property bool hasPicture: custom.ready || pfp.ready
+    property bool customExists: false
+
+    function reloadCustomPicture(): void {
+        // Only point the image at the file once it exists, so a first run does not log a missing file.
+        customExists = Native.FsUtils.listDir(stateFolder).includes("profile-picture");
+        custom.source = "";
+        if (customExists)
+            custom.source = customPicture;
+    }
+
+    Component.onCompleted: reloadCustomPicture()
+
+    Connections {
+        target: root.facePicker
+
+        // Wrapper.qml copies the file, then emits this if the dashboard is still open.
+        function onSelected(): void {
+            root.reloadCustomPicture();
+        }
+    }
 
     anchors.fill: parent
     anchors.margins: Tokens.padding.large
@@ -58,10 +86,7 @@ Item {
                 anchors.fill: parent
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
-                onClicked: {
-                    root.screenState.dashboard = false;
-                    Toaster.toast("Profile image", "Profile image editing is unavailable on Windows.", "person");
-                }
+                onClicked: root.facePicker.open()
             }
         }
 
@@ -75,7 +100,7 @@ Item {
             Loader {
                 anchors.centerIn: parent
                 asynchronous: true
-                active: !pfp.ready
+                active: !root.hasPicture
 
                 sourceComponent: MaterialIcon {
                     text: "person_add"
@@ -94,9 +119,18 @@ Item {
                 source: Quickshell.env("CAELESTIA_ACCOUNT_PICTURE") || ""
             }
 
+            Image {
+                readonly property bool ready: status === Image.Ready
+                id: custom
+
+                anchors.fill: parent
+                cache: false
+                fillMode: Image.PreserveAspectCrop
+            }
+
             StyledRect {
                 anchors.fill: parent
-                color: Qt.alpha(Colours.palette.m3scrim, pfp.ready ? 0.4 : 0)
+                color: Qt.alpha(Colours.palette.m3scrim, root.hasPicture ? 0.4 : 0)
                 opacity: mouse.containsMouse ? 1 : 0
                 layer.enabled: opacity < 1
 

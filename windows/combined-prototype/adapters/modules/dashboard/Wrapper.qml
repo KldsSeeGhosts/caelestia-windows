@@ -13,8 +13,23 @@ Item {
     id: root
 
     required property ScreenState screenState
+    // Windows has no supported way to change the account picture, so the picked
+    // image is copied into the shell's own state folder and shown in the
+    // dashboard only. The copy happens here, not in dash/User.qml: the native
+    // dialog takes focus and the dashboard can close (destroying User) before
+    // the dialog is accepted, as upstream's own handler also lives here.
     readonly property FileDialog facePicker: FileDialog {
-        title: "Profile picture selection is unavailable on Windows"
+        title: Tr.tr("Select a profile picture")
+        nameFilters: ["Images (*.png *.jpg *.jpeg *.bmp *.webp)"]
+        onAccepted: {
+            const target = "file:///" + Quickshell.stateDir.replace(/\\/g, "/") + "/profile-picture";
+            if (CUtils.copyFile(selectedFile, Qt.resolvedUrl(target))) {
+                selected(String(selectedFile));
+                Toaster.toast("Profile image", "Profile image changed. This does not change your Windows account picture.", "person");
+            } else {
+                Toaster.toast("Profile image", "Could not use that image as the profile image.", "person");
+            }
+        }
     }
 
     readonly property real contentScale: Math.min(1, Math.max(1, parent.width - Tokens.padding.large * 2) / Math.max(1, content.implicitWidth))
