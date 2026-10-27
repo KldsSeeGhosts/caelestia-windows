@@ -33,8 +33,10 @@ foreach ($directory in @('config', 'state', 'runtime', 'cache', 'data')) {
 }
 Copy-Item -LiteralPath "$repoRoot\windows\nexus\NexusSmoke.qml" -Destination "$stage\nexus-smoke.qml"
 # A minimal profile: every omitted option keeps its built-in default, which is
-# what the smoke's restore step compares against.
-'{}' | Set-Content -LiteralPath "$profile\config\shell.json" -Encoding UTF8
+# what the smoke's restore step compares against. The seeded tiling keys prove
+# the page's whole-map windows write keeps unrelated entries.
+'{"windows":{"tiling":{"include":["exe:notepad.exe"],"gapsOut":14}}}' |
+    Set-Content -LiteralPath "$profile\config\shell.json" -Encoding UTF8
 $qmlRoot = Join-Path $BuildRoot 'install\qml'
 $info = New-Object Diagnostics.ProcessStartInfo
 $info.FileName = Join-Path $BuildRoot 'quickshell\qs.exe'
@@ -97,7 +99,7 @@ function Get-Diagnostics([string]$Body) {
 $diagnostics = Get-Diagnostics $text
 $passed = -not $timedOut -and $process.ExitCode -eq 0 -and
     $text.Contains('CAELESTIA_NEXUS_SMOKE_PASS') -and
-    $text.Contains('CAELESTIA_NEXUS_SMOKE_PAGES 11') -and
+    $text.Contains('CAELESTIA_NEXUS_SMOKE_PAGES 12') -and
     $text.Contains('CAELESTIA_SHORTCUT name=nexus') -and
     $diagnostics.Count -eq 0
 $result = [ordered]@{
