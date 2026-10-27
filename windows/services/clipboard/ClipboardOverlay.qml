@@ -249,7 +249,10 @@ Scope {
         // closed (the overlay closes before dispatching the action), so the
         // native error is surfaced on the shell's own toast surface.
         function onOperationFailed(operation, message): void {
-            console.warn("Clipboard", operation, "failed:", message);
+            // The native message is fixed operation copy plus a numeric
+            // HRESULT. Never add provider text here; the toast speaks to the
+            // user, the log only records which operation failed.
+            console.warn("Clipboard operation failed:", operation);
             Toaster.toast(qsTr("Clipboard"), message, "content_paste", Toast.Error);
         }
 

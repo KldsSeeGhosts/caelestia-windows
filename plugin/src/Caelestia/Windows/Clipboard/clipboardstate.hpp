@@ -38,6 +38,13 @@ public:
             && m_generation.load(std::memory_order_acquire) == read;
     }
 
+    // The GUI-side gate for a queued snapshot. It must still belong to the
+    // current open session: a snapshot emitted before a close, or by a previous
+    // session before a reopen, is dropped even if it was queued successfully.
+    [[nodiscard]] bool acceptsSnapshot(quint64 generation) const {
+        return !stopping() && accepts(generation);
+    }
+
     [[nodiscard]] bool active() const { return m_active.load(std::memory_order_acquire); }
 
     void requestStop() { m_stopping.store(true, std::memory_order_release); }

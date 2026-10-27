@@ -51,8 +51,8 @@ public slots:
     void setCacheRoot(const QString& directory);
 
 signals:
-    void snapshotReady(const QVariantList& items, bool historyEnabled, const QString& status,
-        const QString& error);
+    void snapshotReady(quint64 generation, const QVariantList& items, bool historyEnabled,
+        const QString& status, const QString& error);
     void historyEnabledChanged(bool enabled);
     void imageReady(const QString& id, const QString& url);
     void operationFinished(const QString& operation, const QString& id, bool ok, const QString& error);
@@ -62,8 +62,8 @@ private:
     void performRefresh(bool eventDriven);
     void scheduleEventRefresh();
     void startHistoryRead(quint64 generation, bool eventDriven);
-    void publishSnapshot(const QVariantList& items, bool enabled, const QString& status,
-        const QString& error);
+    void publishSnapshot(quint64 generation, const QVariantList& items, bool enabled,
+        const QString& status, const QString& error);
     [[nodiscard]] QString ensurePreview(const QString& id);
     void removePreview(const QString& id);
     void clearPreviews();

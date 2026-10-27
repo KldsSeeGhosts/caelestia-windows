@@ -55,7 +55,14 @@ WindowsClipboard::WindowsClipboard(QObject* parent)
     connect(m_thread, &QThread::finished, m_thread, &QObject::deleteLater);
 
     connect(m_worker, &WindowsClipboardWorker::snapshotReady, this,
-        [this](const QVariantList& items, bool enabled, const QString& status, const QString& error) {
+        [this](quint64 generation, const QVariantList& items, bool enabled, const QString& status,
+            const QString& error) {
+            // The worker publishes a generation, but this signal may already be
+            // queued when the picker closes. The GUI updates the shared session
+            // synchronously on open/close, so a snapshot from a closed or older
+            // session is rejected here even after a reopen.
+            if (m_shuttingDown || m_session == nullptr || !m_session->acceptsSnapshot(generation))
+                return;
             if (m_items != items) {
                 m_items = items;
                 emit itemsChanged();

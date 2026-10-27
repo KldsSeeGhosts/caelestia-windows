@@ -58,10 +58,15 @@ QString fromHString(const winrt::hstring& value) {
     return QString::fromWCharArray(value.c_str(), static_cast<qsizetype>(value.size()));
 }
 
-QString hresultText(const winrt::hresult_error& error) {
-    return QStringLiteral("0x%1 %2")
-        .arg(static_cast<quint32>(error.code().value), 8, 16, QLatin1Char('0'))
-        .arg(fromHString(error.message()));
+// WinRT's message() can contain provider-specific text. Logs and toasts only
+// receive fixed operation copy plus the numeric HRESULT, never that text.
+QString hresultCode(const winrt::hresult_error& error) {
+    return QStringLiteral("0x%1").arg(
+        static_cast<quint32>(error.code().value), 8, 16, QLatin1Char('0'));
+}
+
+QString operationError(const QString& operation, const winrt::hresult_error& error) {
+    return QStringLiteral("Couldn't %1 (%2)").arg(operation, hresultCode(error));
 }
 
 QString unknownErrorText(const QString& context) {
@@ -296,8 +301,9 @@ struct WindowsClipboardWorker::Impl {
                         if (next.contains(it.key())) {
                             ++it;
                         } else {
-                            QFile::remove(it.value());
+                            const auto path = it.value();
                             it = previewFiles.erase(it);
+                            cache.removeFile(path);
                         }
                     }
 
@@ -323,7 +329,7 @@ struct WindowsClipboardWorker::Impl {
             }
         } catch (const winrt::hresult_error& readError) {
             status = QStringLiteral("error");
-            failure = hresultText(readError);
+            failure = operationError(QStringLiteral("read clipboard history"), readError);
             list.clear();
         } catch (...) {
             status = QStringLiteral("error");
@@ -341,7 +347,7 @@ struct WindowsClipboardWorker::Impl {
         // map was being built. Nothing is published after close.
         if (!running || session->stopping() || !session->accepts(generation))
             return;
-        worker.publishSnapshot(list, enabled, status, failure);
+        worker.publishSnapshot(generation, list, enabled, status, failure);
     }
 };
 
@@ -376,8 +382,8 @@ void WindowsClipboardWorker::begin() {
         winrt::init_apartment(winrt::apartment_type::multi_threaded);
         impl.apartment = true;
     } catch (const winrt::hresult_error& error) {
-        qCWarning(logClipboard).noquote() << "init_apartment(multi_threaded) failed:"
-                                          << hresultText(error);
+        qCWarning(logClipboard).noquote()
+            << operationError(QStringLiteral("initialize the clipboard worker"), error);
     } catch (...) {
         qCWarning(logClipboard) << "init_apartment(multi_threaded) failed with an unknown error.";
     }
@@ -430,19 +436,19 @@ void WindowsClipboardWorker::begin() {
         impl.historyToken = Clipboard::HistoryChanged(queueRefresh);
         impl.historyRegistered = true;
     } catch (const winrt::hresult_error& error) {
-        qCWarning(logClipboard).noquote() << "Clipboard.HistoryChanged registration failed:"
-                                          << hresultText(error);
+        qCWarning(logClipboard).noquote()
+            << operationError(QStringLiteral("subscribe to clipboard history changes"), error);
     } catch (...) {
-        qCWarning(logClipboard) << "Clipboard.HistoryChanged registration failed.";
+        qCWarning(logClipboard) << "Couldn't subscribe to clipboard history changes.";
     }
     try {
         impl.enabledToken = Clipboard::HistoryEnabledChanged(queueRefresh);
         impl.enabledRegistered = true;
     } catch (const winrt::hresult_error& error) {
         qCWarning(logClipboard).noquote()
-            << "Clipboard.HistoryEnabledChanged registration failed:" << hresultText(error);
+            << operationError(QStringLiteral("subscribe to clipboard history setting changes"), error);
     } catch (...) {
-        qCWarning(logClipboard) << "Clipboard.HistoryEnabledChanged registration failed.";
+        qCWarning(logClipboard) << "Couldn't subscribe to clipboard history setting changes.";
     }
 }
 
@@ -569,7 +575,7 @@ void WindowsClipboardWorker::performRefresh(bool eventDriven) {
         enabled = Clipboard::IsHistoryEnabled();
     } catch (const winrt::hresult_error& failure) {
         status = QStringLiteral("error");
-        error = hresultText(failure);
+        error = operationError(QStringLiteral("read the clipboard history setting"), failure);
     } catch (...) {
         status = QStringLiteral("error");
         error = unknownErrorText(QStringLiteral("reading the clipboard history setting"));
@@ -587,7 +593,7 @@ void WindowsClipboardWorker::performRefresh(bool eventDriven) {
         clearPreviews();
         if (!impl.session->accepts(generation))
             return;
-        publishSnapshot({}, enabled, status, error);
+        publishSnapshot(generation, {}, enabled, status, error);
         return;
     }
 
@@ -611,14 +617,15 @@ void WindowsClipboardWorker::startHistoryRead(quint64 generation, bool eventDriv
         impl.order.clear();
         clearPreviews();
         if (impl.session->accepts(generation))
-            publishSnapshot({}, true, QStringLiteral("error"), hresultText(failure));
+            publishSnapshot(generation, {}, true, QStringLiteral("error"),
+                operationError(QStringLiteral("read clipboard history"), failure));
         return;
     } catch (...) {
         impl.items.clear();
         impl.order.clear();
         clearPreviews();
         if (impl.session->accepts(generation)) {
-            publishSnapshot({}, true, QStringLiteral("error"),
+            publishSnapshot(generation, {}, true, QStringLiteral("error"),
                 unknownErrorText(QStringLiteral("starting the clipboard history read")));
         }
         return;
@@ -626,7 +633,7 @@ void WindowsClipboardWorker::startHistoryRead(quint64 generation, bool eventDriv
 
     if (!operation) {
         if (impl.session->accepts(generation)) {
-            publishSnapshot({}, true, QStringLiteral("error"),
+            publishSnapshot(generation, {}, true, QStringLiteral("error"),
                 QStringLiteral("Windows did not start a clipboard history read."));
         }
         return;
@@ -665,7 +672,7 @@ void WindowsClipboardWorker::startHistoryRead(quint64 generation, bool eventDriv
                     result = sender.GetResults();
                     ok = result != nullptr;
                 } catch (const winrt::hresult_error& failure) {
-                    error = hresultText(failure);
+                    error = operationError(QStringLiteral("read clipboard history"), failure);
                 } catch (...) {
                     error = unknownErrorText(QStringLiteral("completing the clipboard history read"));
                 }
@@ -705,8 +712,10 @@ void WindowsClipboardWorker::startHistoryRead(quint64 generation, bool eventDriv
             if (impl.historyOperation == operation)
                 impl.historyOperation = nullptr;
         }
-        if (impl.session->accepts(generation))
-            publishSnapshot({}, true, QStringLiteral("error"), hresultText(failure));
+        if (impl.session->accepts(generation)) {
+            publishSnapshot(generation, {}, true, QStringLiteral("error"),
+                operationError(QStringLiteral("read clipboard history"), failure));
+        }
     } catch (...) {
         {
             const std::lock_guard lock(impl.asyncMutex);
@@ -714,21 +723,23 @@ void WindowsClipboardWorker::startHistoryRead(quint64 generation, bool eventDriv
                 impl.historyOperation = nullptr;
         }
         if (impl.session->accepts(generation)) {
-            publishSnapshot({}, true, QStringLiteral("error"),
+            publishSnapshot(generation, {}, true, QStringLiteral("error"),
                 unknownErrorText(QStringLiteral("waiting for the clipboard history read")));
         }
     }
 }
 
-void WindowsClipboardWorker::publishSnapshot(const QVariantList& items, bool enabled,
-    const QString& status, const QString& error) {
-    if (!m_impl->running || m_impl->session->stopping() || !m_impl->session->active())
+void WindowsClipboardWorker::publishSnapshot(quint64 generation, const QVariantList& items,
+    bool enabled, const QString& status, const QString& error) {
+    if (!m_impl->running || m_impl->session->stopping() || !m_impl->session->active()
+        || !m_impl->session->accepts(generation)) {
         return;
+    }
     if (m_impl->historyEnabled != enabled) {
         m_impl->historyEnabled = enabled;
         emit historyEnabledChanged(enabled);
     }
-    emit snapshotReady(items, enabled, status, error);
+    emit snapshotReady(generation, items, enabled, status, error);
 }
 
 QString WindowsClipboardWorker::ensurePreview(const QString& id) {
@@ -752,10 +763,11 @@ QString WindowsClipboardWorker::ensurePreview(const QString& id) {
     try {
         bytes = readBitmap(found->handle);
     } catch (const winrt::hresult_error& error) {
-        qCWarning(logClipboard).noquote() << "Reading a clipboard bitmap failed:" << hresultText(error);
+        qCWarning(logClipboard).noquote()
+            << operationError(QStringLiteral("read a clipboard image"), error);
         return {};
     } catch (...) {
-        qCWarning(logClipboard) << "Reading a clipboard bitmap failed with an unknown error.";
+        qCWarning(logClipboard) << "Couldn't read a clipboard image (unknown error).";
         return {};
     }
     if (bytes.isEmpty())
@@ -769,6 +781,13 @@ QString WindowsClipboardWorker::ensurePreview(const QString& id) {
     if (path.isEmpty())
         return {};
 
+    // Re-verify immediately before the write: the directory could have been
+    // replaced while the bitmap was being read.
+    if (!impl.cache.ensure(&directoryError)) {
+        qCWarning(logClipboard).noquote() << directoryError;
+        return {};
+    }
+
     QFile file(path);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
         qCWarning(logClipboard) << "Could not write a clipboard preview file.";
@@ -777,7 +796,7 @@ QString WindowsClipboardWorker::ensurePreview(const QString& id) {
     const auto written = file.write(bytes);
     file.close();
     if (written != bytes.size()) {
-        QFile::remove(path);
+        impl.cache.removeFile(path);
         qCWarning(logClipboard) << "A clipboard preview file was written incompletely.";
         return {};
     }
@@ -789,12 +808,12 @@ QString WindowsClipboardWorker::ensurePreview(const QString& id) {
 void WindowsClipboardWorker::removePreview(const QString& id) {
     const auto path = m_impl->previewFiles.take(id);
     if (!path.isEmpty())
-        QFile::remove(path);
+        m_impl->cache.removeFile(path);
 }
 
 void WindowsClipboardWorker::clearPreviews() {
     for (const auto& path: m_impl->previewFiles)
-        QFile::remove(path);
+        m_impl->cache.removeFile(path);
     m_impl->previewFiles.clear();
 }
 
@@ -822,8 +841,7 @@ void WindowsClipboardWorker::setCacheRoot(const QString& directory) {
 
     const auto removed = ClipboardCacheDirectory::removeDeadSiblings(
         impl.cache.root(), impl.cache.name(), [](quint32 pid) { return processAlive(pid); });
-    qCDebug(logClipboard) << "Clipboard cache" << impl.cache.path() << "dead siblings removed"
-                          << removed;
+    qCDebug(logClipboard) << "Clipboard cache ready; dead siblings removed" << removed;
 }
 
 void WindowsClipboardWorker::requestImage(const QString& id) {
@@ -864,7 +882,9 @@ void WindowsClipboardWorker::copyItem(const QString& id, bool paste) {
         }
         emit operationFinished(operation, id, true, QString());
     } catch (const winrt::hresult_error& error) {
-        emit operationFinished(operation, id, false, hresultText(error));
+        const auto action = paste ? QStringLiteral("paste the clipboard item")
+                                  : QStringLiteral("copy the clipboard item");
+        emit operationFinished(operation, id, false, operationError(action, error));
     } catch (...) {
         emit operationFinished(operation, id, false,
             unknownErrorText(QStringLiteral("restoring the clipboard item")));
@@ -889,7 +909,8 @@ void WindowsClipboardWorker::removeItem(const QString& id) {
             return;
         }
     } catch (const winrt::hresult_error& error) {
-        emit operationFinished(QStringLiteral("remove"), id, false, hresultText(error));
+        emit operationFinished(QStringLiteral("remove"), id, false,
+            operationError(QStringLiteral("delete the clipboard history item"), error));
         return;
     } catch (...) {
         emit operationFinished(QStringLiteral("remove"), id, false,
@@ -916,7 +937,8 @@ void WindowsClipboardWorker::clearHistory() {
             return;
         }
     } catch (const winrt::hresult_error& error) {
-        emit operationFinished(QStringLiteral("clear"), QString(), false, hresultText(error));
+        emit operationFinished(QStringLiteral("clear"), QString(), false,
+            operationError(QStringLiteral("clear the clipboard history"), error));
         return;
     } catch (...) {
         emit operationFinished(QStringLiteral("clear"), QString(), false,
@@ -1009,7 +1031,8 @@ void WindowsClipboardWorker::openItem(const QString& id) {
         emit operationFinished(QStringLiteral("open"), id, false,
             QStringLiteral("This clipboard item has no openable representation."));
     } catch (const winrt::hresult_error& error) {
-        emit operationFinished(QStringLiteral("open"), id, false, hresultText(error));
+        emit operationFinished(QStringLiteral("open"), id, false,
+            operationError(QStringLiteral("open the clipboard item"), error));
     } catch (...) {
         emit operationFinished(QStringLiteral("open"), id, false,
             unknownErrorText(QStringLiteral("opening the clipboard item")));

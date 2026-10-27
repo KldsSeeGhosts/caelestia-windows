@@ -90,11 +90,14 @@ generation are never published. The worker's two event subscriptions are
 revoked independently and only through a shared lifetime bridge, so a callback
 already in flight during teardown cannot reach a destroyed worker.
 
-The picker session is a shared atomic `{active, generation}` pair. The GUI
-updates it immediately on open, close and deactivation, not through the queued
-`setActive`; the worker re-checks it between blocking per-item reads and again
-right before publishing. A snapshot therefore cannot escape after the picker
-closes, even when a text read was already waiting. Every WinRT result used for
+The picker session is a shared atomic `{active, generation, stopping}` state.
+The GUI updates it immediately on open, close and deactivation, not through the
+queued `setActive`; the worker re-checks it between blocking per-item reads and
+again right before publishing. `snapshotReady` also carries the generation the
+worker read, and the GUI applies the snapshot only when that generation is still
+the current open session and `stopping` is false. A snapshot queued before a
+close, or from a previous session before a reopen, is therefore dropped on the
+GUI side as well. Every WinRT result used for
 the snapshot (`Status()`, enumeration, item ids, timestamps, format and content
 reads) is wrapped in `catch (hresult_error)` plus `catch (...)`; a failure
 becomes the error snapshot or an `other` entry, and no exception crosses a Qt
@@ -163,28 +166,38 @@ them.
 ## Images and cleanup
 
 Each `WindowsClipboard` instance owns exactly one directory,
-`<cacheRoot>/clipboard/<pid>-<random>`, created only after a valid absolute
-`cacheRoot` is known. It holds both previews and explicitly opened text files;
-there are no shared `preview/` or `open/` directories, and shutdown does not
-depend on a per-file ownership set. Image previews are lazy: nothing is read
-until the open picker lists an image item. The worker reads the bitmap, writes
-it into the instance directory with a content-hash name, and exposes a
-`file://` URL. Previews survive a refresh only while their item is still in the
-history; `remove()` and a failed/empty refresh delete them. Previews larger
-than 64 MiB are not materialized; copy/paste of that item still works.
+`<cacheRoot>/clipboard/<pid>-<random>`, created only after a valid fully
+qualified local `cacheRoot` is known. Drive-relative (`C:relative`), bare drive
+roots (`C:\`), UNC, `\\?\`, `\\.\` and relative roots are refused. The directory
+holds both previews and explicitly opened text files; there are no shared
+`preview/` or `open/` directories, and shutdown does not depend on a per-file
+ownership set. Image previews are lazy: nothing is read until the open picker
+lists an image item. The worker reads the bitmap, writes it into the instance
+directory with a content-hash name, and exposes a `file://` URL. Previews
+survive a refresh only while their item is still in the history; `remove()` and
+a failed/empty refresh delete them. Previews larger than 64 MiB are not
+materialized; copy/paste of that item still works.
 
-Shutdown deletes only that one directory, recursively, after resolving the
-cache base and the instance directory and verifying that the instance is a
-direct child of `<cacheRoot>/clipboard/` whose name matches
-`<pid>-<16 hex>`. An empty, relative or never-configured path is a no-op, and a
-symlink or replaced path is refused, so cleanup cannot escape the instance
-directory or touch the working directory. At startup the new instance removes
-sibling `<pid>-*` directories only when that pid is not a running process; a
-live sibling is never touched. A crashed session is therefore collected by the
-next start, while an orderly shutdown leaves nothing behind.
+Every create, write and delete first verifies that the instance directory, the
+`clipboard` parent and the cache root are real directories without
+`FILE_ATTRIBUTE_REPARSE_POINT`. A junction, symlink or replaced path at any
+level is a no-op with a fixed log message and no clipboard-derived path.
+Cleanup never recurses: the cache is flat, so it enumerates only the direct
+files of the instance directory, deletes only regular files without a reparse
+point, and skips every other entry. `RemoveDirectoryW` then removes the empty
+directory (and removes a junction link rather than its target).
+`QFileInfo::isSymLink()` is not the safety check: Qt does not report NTFS
+junctions as symlinks. At startup the new instance applies the same layout
+and flat-delete rules to sibling `<pid>-*` directories, only when that pid is
+not a running process; a live sibling or any junction is never touched. A
+crashed session is therefore collected by the next start, while an orderly
+shutdown leaves nothing behind.
 
-Clipboard contents are never logged. The only text this feature writes to disk
-is an explicit "open as text file" action and the image preview files above.
+Clipboard contents are never logged. WinRT `hresult_error::message()` is never
+logged or shown in a toast: failures use fixed operation copy plus the numeric
+HRESULT, for example `Couldn't read clipboard history (0x80070005)`. The only
+text this feature writes to disk is an explicit "open as text file" action and
+the image preview files above.
 
 ## Attribution
 
@@ -206,9 +219,16 @@ outliving the loader (the runner asserts the destructor's marker line). The
 script also runs the small `clipboard-logic-tests` executable built with the
 plugin, which covers the `SetHistoryItemAsContent` status decision, the shared
 session state (immediate deactivation, stale-read rejection, reopen and newer
-read invalidation) and the per-instance cache boundary: shutdown before a cache
+read invalidation) and the GUI snapshot gate: a snapshot queued while active is
+dropped when the picker closes before it is processed, reopening does not revive
+it, and a current-generation snapshot still applies. It also covers strict cache
+roots (`C:relative`, bare drives, UNC, device and relative paths are refused)
+and the per-instance cache boundary with real `mklink /J` junctions: an
+instance-directory junction, a nested junction inside the instance directory and
+a junction replacing the `clipboard` parent all leave outside sentinel files
+untouched, while ordinary flat files are still deleted. Shutdown before a cache
 root is set leaves sentinel files in the working directory and a temp directory
-untouched, cleanup removes only the configured instance directory, and a live
+untouched; cleanup removes only the configured instance directory, and a live
 sibling's directory survives while a dead sibling's is collected. The logic
 test runs with its disposable run directory as the working directory, never the
 repository, worktree, install prefix or user profile. It never opens the
