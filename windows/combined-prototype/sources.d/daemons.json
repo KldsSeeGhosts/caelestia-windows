@@ -1,0 +1,5 @@
+{
+  "windows/combined-prototype/adapters/daemons/IdleInhibit.qml": "daemons/IdleInhibit.qml",
+  "windows/combined-prototype/helpers/KeepAwake.ps1": "helpers/KeepAwake.ps1",
+  "windows/combined-prototype/adapters/daemons/Shortcuts.qml": "daemons/Shortcuts.qml"
+}

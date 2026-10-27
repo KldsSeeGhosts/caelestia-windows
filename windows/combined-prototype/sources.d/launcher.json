@@ -1,0 +1,16 @@
+{
+  "windows/combined-prototype/adapters/modules/launcher/Wrapper.qml": "modules/launcher/Wrapper.qml",
+  "modules/launcher/WallpaperList.qml": "modules/launcher/WallpaperList.qml",
+  "modules/launcher/items/ActionItem.qml": "modules/launcher/items/ActionItem.qml",
+  "windows/combined-prototype/adapters/modules/launcher/ContentList.qml": "modules/launcher/ContentList.qml",
+  "windows/combined-prototype/adapters/modules/launcher/Content.qml": "modules/launcher/Content.qml",
+  "windows/combined-prototype/adapters/modules/launcher/items/WallpaperItem.qml": "modules/launcher/items/WallpaperItem.qml",
+  "modules/launcher/items/SchemeItem.qml": "modules/launcher/items/SchemeItem.qml",
+  "modules/launcher/items/VariantItem.qml": "modules/launcher/items/VariantItem.qml",
+  "windows/combined-prototype/adapters/modules/launcher/services/Arithmetic.js": "modules/launcher/services/Arithmetic.js",
+  "windows/combined-prototype/adapters/modules/launcher/services/WindowsCalculator.qml": "modules/launcher/services/WindowsCalculator.qml",
+  "windows/combined-prototype/adapters/modules/launcher/items/CalcItem.qml": "modules/launcher/items/CalcItem.qml",
+  "windows/combined-prototype/adapters/modules/launcher/services/Actions.qml": "modules/launcher/services/Actions.qml",
+  "windows/combined-prototype/adapters/modules/launcher/services/Schemes.qml": "modules/launcher/services/Schemes.qml",
+  "windows/combined-prototype/adapters/modules/launcher/services/M3Variants.qml": "modules/launcher/services/M3Variants.qml"
+}

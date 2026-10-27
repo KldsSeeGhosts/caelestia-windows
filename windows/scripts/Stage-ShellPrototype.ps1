@@ -5,12 +5,14 @@ param(
     # 'shell' is the M1 bar/session host. Every other value names one bounded
     # slice under windows/<name>-prototype with its own shell.qml and
     # sources.json manifest. One slice per stage. 'combined' unions the M1
-    # manifest with every service slice manifest plus the combined adapters.
+    # manifest with every service slice manifest plus the combined adapters,
+    # which are split per feature under combined-prototype/sources.d.
     [ValidateSet('shell', 'audio', 'battery', 'media', 'brightness', 'network', 'bluetooth', 'apps', 'tray', 'notifications', 'hypr', 'tiling', 'combined', 'shell-live')]
     [string]$Prototype = 'shell'
 )
 
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'CombinedSources.ps1')
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
 $Destination = [IO.Path]::GetFullPath($Destination)
 $ProfileRoot = [IO.Path]::GetFullPath($ProfileRoot)
@@ -84,7 +86,13 @@ if ($Prototype -eq 'tiling') {
     $files.Remove('windows/shell-prototype/adapters/services/Hypr.qml')
 }
 if ($Prototype -ne 'shell') {
-    $sliceManifest = Get-Content -LiteralPath (Join-Path $repoRoot "windows\$Prototype-prototype\sources.json") -Raw | ConvertFrom-Json
+    if ($Prototype -eq 'combined') {
+        # Fragments are merged in sorted filename order and reject an ambiguous
+        # map, so parallel features can add their own file without conflicts.
+        $sliceManifest = Get-CombinedSourcesManifest (Join-Path $repoRoot 'windows\combined-prototype')
+    } else {
+        $sliceManifest = Get-Content -LiteralPath (Join-Path $repoRoot "windows\$Prototype-prototype\sources.json") -Raw | ConvertFrom-Json
+    }
     foreach ($entry in $sliceManifest.PSObject.Properties) { $files.Add($entry.Name, $entry.Value) }
 }
 # The combined prototype unions every service slice onto the base manifest.
