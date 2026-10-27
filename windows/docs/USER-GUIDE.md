@@ -301,6 +301,46 @@ profile values. Without an override, the profile applies. Smoke forces tiling of
 Native layout choices remain backend options; this profile schema configures
 admission and gaps.
 
+### Clipboard history
+
+`caelestia:clipboard` opens Caelestia's Material 3 clipboard picker over
+**Windows' native clipboard history**. There is no separate capture store, so
+the ordering, password-manager exclusions, pinned items, size limit and sync are
+the same as Win+V. Search, text and image previews, arrow/Page/Home/End
+navigation, `Delete` to remove an entry and a confirmed Clear All work as on
+Linux. The picker restores focus to the application you came from and pastes
+with a marked Ctrl+V when you press `Enter`.
+
+The feature is enabled by default (`windows.clipboard.enabled` in
+`shell.json`) but **has no default key**. Add one yourself:
+
+```json
+{
+    "extends": "defaults",
+    "binds": [
+        {
+            "keys": "Super+V",
+            "action": "global",
+            "name": "caelestia:clipboard",
+            "description": "Open clipboard history"
+        }
+    ]
+}
+```
+
+Binding `Super+V` replaces Windows' own Win+V panel for that chord. The picker
+can also be opened over IPC: `ipc call clipboard toggle`, `open`, `close` or
+`state` against the installed shell.
+
+If Windows clipboard history is off, Caelestia shows that honestly and offers a
+button to open **Settings > System > Clipboard**. It never turns the setting on
+for you and never logs clipboard contents. If Windows refuses history access to
+the shell process, the picker says so instead of showing an empty list as if it
+succeeded. Image previews and an explicitly opened text file are written only
+under the profile's `cache\clipboard` folder and are cleaned up with their
+entries. See [the clipboard notes](../services/clipboard/README.md) for exact
+behaviour and what still needs live verification.
+
 ### Per-monitor configuration
 
 To override settings on a specific display, create:
@@ -317,7 +357,7 @@ Run the installed `Start-Caelestia.ps1 -Command State` and use each `windows[].s
 
 On Linux, Caelestia relies on Hyprland's `hyprland.conf` / `keybinds.lua` to bind keys to `global` shortcuts and `hyprctl dispatch`. On Windows, `shell.json` does not store keybinds; instead, the Quickshell backend runs its own `HotkeyManager` (`Quickshell.Windows.Hotkeys`), which reads defaults from `defaults/windows/keybinds.json` and your personal overrides from `%LOCALAPPDATA%\caelestia-windows\config\keybinds.json`.
 
-The following table comes from the merged `defaults/windows/keybinds.json`. Window/tiling/workspace dispatch chords are not assigned by default. Nexus is not staged.
+The following table comes from the merged `defaults/windows/keybinds.json`. Window/tiling/workspace dispatch chords are not assigned by default. Nexus is not staged. Clipboard history (`caelestia:clipboard`) is staged but has no default key; bind `Super+V` yourself, which replaces Windows' Win+V panel for that chord.
 
 | Action | Default keys | Target |
 | --- | --- | --- |

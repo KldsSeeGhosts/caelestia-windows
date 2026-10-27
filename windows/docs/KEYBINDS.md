@@ -97,6 +97,7 @@ Available Caelestia global shortcut names:
 | `caelestia:utilities` | Toggle utilities quick-toggles drawer | `daemons/Shortcuts.qml` |
 | `caelestia:showall` | Toggle launcher, dashboard, OSD, and utilities together | `daemons/Shortcuts.qml` |
 | `caelestia:clearNotifs` | Close all active notifications | `services/Notifs.qml` |
+| `caelestia:clipboard` | Open or close the Windows clipboard history picker | `modules/clipboard/ClipboardOverlay.qml` |
 | `caelestia:toggleDnd` | Toggle Do Not Disturb | `services/Notifs.qml` |
 | `caelestia:mediaToggle` | Play/pause active GSMTC media player | `services/Players.qml` |
 | `caelestia:mediaPrev` | Previous track | `services/Players.qml` |
@@ -106,6 +107,24 @@ Available Caelestia global shortcut names:
 | `caelestia:brightnessDown` | Decrease monitor brightness | `services/Brightness.qml` |
 
 All handlers in the table are staged in production, plus `caelestia:volumeUp`, `caelestia:volumeDown`, and `caelestia:volumeMute` from the audio adapter. Nexus is not staged. Service actions retain their control gates. Production targets the focused monitor; bounded previews target their selected screen.
+
+`caelestia:clipboard` ships with **no default key**. Add a bind in your own
+`keybinds.json`; the picker reads Windows' native clipboard history, so it
+needs no capture daemon. Binding `Super+V` replaces Windows' own Win+V panel for
+that chord (Caelestia registers it through `HotkeyManager`, so the shell sees it
+first while it runs). The feature is also gated by
+`windows.clipboard.enabled` in `shell.json`; see
+[the clipboard notes](../services/clipboard/README.md).
+
+The picker also has an IPC target, so it can be opened without a key bind:
+
+```powershell
+$prefix = "$env:LOCALAPPDATA\Programs\caelestia-windows"
+& "$prefix\qs.exe" -p "$prefix\shell" ipc call clipboard toggle
+& "$prefix\qs.exe" -p "$prefix\shell" ipc call clipboard open
+& "$prefix\qs.exe" -p "$prefix\shell" ipc call clipboard close
+& "$prefix\qs.exe" -p "$prefix\shell" ipc call clipboard state
+```
 
 ## Shipped default keys
 

@@ -139,5 +139,11 @@
   "windows/combined-prototype/adapters/modules/utilities/cards/IdleInhibit.qml": "modules/utilities/cards/IdleInhibit.qml",
   "windows/combined-prototype/adapters/modules/utilities/cards/Record.qml": "modules/utilities/cards/Record.qml",
   "windows/combined-prototype/adapters/daemons/Shortcuts.qml": "daemons/Shortcuts.qml",
-  "windows/combined-prototype/adapters/services/Time.qml": "services/Time.qml"
+  "windows/combined-prototype/adapters/services/Time.qml": "services/Time.qml",
+  "windows/services/clipboard/ClipboardHistory.js": "modules/clipboard/ClipboardHistory.js",
+  "windows/services/clipboard/ClipboardOverlay.qml": "modules/clipboard/ClipboardOverlay.qml",
+  "windows/services/clipboard/ClipboardHistory.qml": "services/ClipboardHistory.qml",
+  "windows/services/clipboard/NativeClipboardBackend.qml": "services/NativeClipboardBackend.qml",
+  "windows/services/clipboard/upstream/SOURCE.md": "modules/clipboard/upstream/SOURCE.md",
+  "windows/services/clipboard/upstream/LICENSE-MIT.txt": "modules/clipboard/upstream/LICENSE-MIT.txt"
 }

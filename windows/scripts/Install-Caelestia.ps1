@@ -82,6 +82,7 @@ try {
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'scheme') -Destination $payload -Recurse
     New-Item -ItemType Directory -Path "$payload\licenses" | Out-Null
     Copy-Item -LiteralPath "$repoRoot\LICENSE", "$repoRoot\THIRD-PARTY-NOTICES.md" -Destination "$payload\licenses"
+    Copy-Item -LiteralPath "$repoRoot\windows\services\clipboard\upstream\LICENSE-MIT.txt" -Destination "$payload\licenses\Clipboard-Overlay-MIT.txt"
     Copy-Item -LiteralPath "$repoRoot\windows\deps\m3shapes\LICENSE" -Destination "$payload\licenses\M3Shapes-LICENSE"
     Copy-Item -LiteralPath "$repoRoot\LICENSE" -Destination "$payload\licenses\Caelestia-LICENSE"
     Copy-Item -LiteralPath "$repoRoot\windows\deps\quickshell\LICENSE" -Destination "$payload\licenses\Quickshell-LICENSE"

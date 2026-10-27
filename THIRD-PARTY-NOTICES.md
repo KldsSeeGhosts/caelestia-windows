@@ -30,6 +30,17 @@ not bundled by the shell installer. Keep their distribution metadata and
 license files with that environment. An ordinary uninstall preserves the
 profile, including these notices; `-Purge` removes it.
 
+## Clipboard overlay
+
+The clipboard picker's presentation and display-row model are adapted from
+Omarchy's `quattro` clipboard, via the user's Linux Caelestia overlay. Windows
+specifics (native clipboard history, paste dispatch, the panel host and image
+previews) replace Omarchy's `wl-paste` helpers and shell scripts.
+
+| Component and source | Copyright holders | License | License text in repository | Installed notice |
+| --- | --- | --- | --- | --- |
+| [Omarchy](https://github.com/omacom/omarchy) clipboard | David Heinemeier Hansson | MIT | `windows/services/clipboard/upstream/LICENSE-MIT.txt` | `licenses/Clipboard-Overlay-MIT.txt` |
+
 ## Windows backend and runtime
 
 | Component and source | Copyright holders | License | License text in repository or build prerequisite | Installed notice |
