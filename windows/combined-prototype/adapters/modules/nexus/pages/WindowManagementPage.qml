@@ -69,7 +69,8 @@ PageBase {
             subtext: Tr.tr("Apps matched by include rules. Edit in shell.json")
             value: {
                 const include = GlobalConfig.windows?.tiling?.include;
-                return Array.isArray(include) ? include.length : String(include ?? "").split(";").filter(s => s.trim()).length;
+                // A QVariantList from GlobalConfig fails Array.isArray, so copy it first.
+                return typeof include === "string" ? include.split(";").filter(s => s.trim()).length : Array.from(include ?? []).length;
             }
         }
 
