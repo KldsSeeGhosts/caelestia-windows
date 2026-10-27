@@ -1,0 +1,7 @@
+{
+  "utils/Icons.qml": "utils/Icons.qml",
+  "windows/combined-prototype/adapters/utils/SysInfo.qml": "utils/SysInfo.qml",
+  "utils/Searcher.qml": "utils/Searcher.qml",
+  "windows/combined-prototype/adapters/utils/Paths.qml": "utils/Paths.qml",
+  "utils/Images.qml": "utils/Images.qml"
+}

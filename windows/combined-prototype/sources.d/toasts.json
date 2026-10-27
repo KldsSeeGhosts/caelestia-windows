@@ -1,0 +1,4 @@
+{
+  "modules/utilities/toasts/Toasts.qml": "modules/utilities/toasts/Toasts.qml",
+  "modules/utilities/toasts/ToastItem.qml": "modules/utilities/toasts/ToastItem.qml"
+}

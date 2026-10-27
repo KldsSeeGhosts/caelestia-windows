@@ -372,7 +372,10 @@ The production entry uses the same services and provisions its scheme venv under
 ## Staging boundaries
 
 `Stage-ShellPrototype.ps1` unions the M1 manifest, service slice manifests and
-`combined-prototype/sources.json`. Combined overrides are explicit. Battery,
+the per-feature fragments under `combined-prototype/sources.d`, merged in sorted
+filename order. Add a new fragment under `sources.d` for a new feature; staging
+fails on a duplicate destination or a source mapped to two destinations.
+Combined overrides are explicit. Battery,
 Bluetooth and Tray facades retain their `Windows*` staged names to avoid QML
 component/singleton name collisions. Dashboard statistics fill the upstream
 `Caelestia.Services` contracts using Windows APIs already in the backend; the
