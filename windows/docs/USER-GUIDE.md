@@ -301,6 +301,26 @@ profile values. Without an override, the profile applies. Smoke forces tiling of
 Native layout choices remain backend options; this profile schema configures
 admission and gaps.
 
+### Focus follows mouse
+
+`windows.focusFollowsMouse` applies Windows' X-Mouse focus tracking only while
+the shell runs. It is off by default, so the Windows-level setting is left
+alone.
+
+```json
+{"windows":{"focusFollowsMouse":{"enabled":true,"delay":100,"raise":false}}}
+```
+
+`delay` is milliseconds before focus changes (0-5000, default 100); `raise`
+brings the focused window to the top (default false). Changes reload live. The
+shell records the current Windows values before its first change and restores
+them when the option is turned off or the shell quits cleanly. The values are
+never written to the user profile, so a crash or forced kill cannot leave the
+stored preference changed; the next sign-in restores it. To migrate from the
+old system-wide setup, enable this option and turn off Windows' own X-Mouse
+setting (Settings > Accessibility > Mouse > "Activate a window by hovering over
+it with the mouse").
+
 ### Clipboard history
 
 `caelestia:clipboard` opens Caelestia's Material 3 clipboard picker over

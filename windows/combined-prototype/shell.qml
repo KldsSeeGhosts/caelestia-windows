@@ -619,6 +619,7 @@ ShellRoot {
     Component.onCompleted: {
         Hypr.logStartupStatus();
         Tiling.logStartupStatus();
+        FocusFollowsMouse.logStartupStatus();
         Native.SystemStats.networkEnabled = true;
         if (!selectedScreen) {
             console.error("CAELESTIA_COMBINED_FAIL: requested screen does not exist", screenIndex);

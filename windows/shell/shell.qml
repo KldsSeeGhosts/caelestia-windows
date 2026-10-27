@@ -173,6 +173,7 @@ ShellRoot {
         ShellState.shellRoot = root;
         Hypr.logStartupStatus();
         Tiling.logStartupStatus();
+        FocusFollowsMouse.logStartupStatus();
         SchemeGenerator.refresh();
         Native.SystemStats.networkEnabled = true;
         // One route query per screen. Without it every monitor stays "unknown"
