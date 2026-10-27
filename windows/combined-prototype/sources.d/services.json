@@ -1,0 +1,20 @@
+{
+  "windows/services/battery/Battery.qml": "services/WindowsBattery.qml",
+  "windows/services/bluetooth/Bluetooth.qml": "services/WindowsBluetooth.qml",
+  "windows/services/tray/Tray.qml": "services/WindowsTray.qml",
+  "windows/combined-prototype/adapters/imports/Caelestia/Services/Cpu.qml": "imports/Caelestia/Services/Cpu.qml",
+  "windows/combined-prototype/adapters/imports/Caelestia/Services/Memory.qml": "imports/Caelestia/Services/Memory.qml",
+  "windows/combined-prototype/adapters/imports/Caelestia/Services/Gpu.qml": "imports/Caelestia/Services/Gpu.qml",
+  "windows/combined-prototype/adapters/imports/Caelestia/Services/Storage.qml": "imports/Caelestia/Services/Storage.qml",
+  "windows/combined-prototype/adapters/imports/Caelestia/Services/ServiceRef.qml": "imports/Caelestia/Services/ServiceRef.qml",
+  "windows/combined-prototype/adapters/imports/Caelestia/Services/qmldir": "imports/Caelestia/Services/qmldir",
+  "services/Weather.qml": "services/Weather.qml",
+  "windows/combined-prototype/adapters/services/Wallpapers.qml": "services/Wallpapers.qml",
+  "windows/combined-prototype/adapters/services/Colours.qml": "services/Colours.qml",
+  "windows/combined-prototype/adapters/services/SchemeGenerator.qml": "services/SchemeGenerator.qml",
+  "windows/services/wallpaperengine/WallpaperEngine.qml": "services/WallpaperEngine.qml",
+  "windows/services/wallpaperengine/bridge.py": "services/wallpaperengine_bridge.py",
+  "windows/combined-prototype/adapters/imports/Caelestia/Services/NetworkUsage.qml": "imports/Caelestia/Services/NetworkUsage.qml",
+  "windows/combined-prototype/adapters/services/Recorder.qml": "services/Recorder.qml",
+  "windows/combined-prototype/adapters/services/Time.qml": "services/Time.qml"
+}

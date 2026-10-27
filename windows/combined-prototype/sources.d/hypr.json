@@ -1,0 +1,6 @@
+{
+  "windows/services/hypr/Hypr.qml": "services/Hypr.qml",
+  "windows/services/hypr/HyprService.qml": "services/HyprService.qml",
+  "windows/services/hypr/NativeHyprBackend.qml": "services/NativeHyprBackend.qml",
+  "windows/services/hypr/Watch-ActiveWindow.ps1": "helpers/Watch-ActiveWindow.ps1"
+}

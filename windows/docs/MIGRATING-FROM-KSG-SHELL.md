@@ -39,6 +39,12 @@ retaining order and unrelated entry properties; absent lists start with the
 upstream defaults. Arrays elsewhere are preserved. An enabled KSG bar sets
 `bar.persistent=true` but preserves explicit Caelestia screen exclusions.
 
+KSG has no quick-toggle preference. A `utilities.quickToggles` key in the base
+replaces the compiled default list, so the importer restores every upstream
+default in its compiled order while keeping each existing entry's enabled state
+and extra properties, then appends extra ids. The key stays absent when the
+base has none, so later default changes still apply.
+
 Any existing output requires `-Force`, even a separate candidate. Forced
 replacement creates a sibling
 `shell.json.<timestamp>.<unique-id>.bak` containing the original bytes, then

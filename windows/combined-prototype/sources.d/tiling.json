@@ -1,0 +1,5 @@
+{
+  "windows/services/tiling/Tiling.qml": "services/Tiling.qml",
+  "windows/services/tiling/TilingService.qml": "services/TilingService.qml",
+  "windows/services/tiling/NativeTilingBackend.qml": "services/NativeTilingBackend.qml"
+}
