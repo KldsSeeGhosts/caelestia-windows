@@ -226,13 +226,26 @@ function cappedEntry(entry) {
     };
 }
 
+// WindowsClipboard.items is a native QVariantList. QML hands that to JS as an
+// array-like sequence wrapper for which Array.isArray() is false, so a plain
+// Array.isArray check silently treats the whole history as empty. Accept any
+// array-like object and copy it into a real array.
+function toArray(value) {
+    if (Array.isArray(value))
+        return value;
+    if (value && typeof value === "object" && typeof value.length === "number")
+        return Array.from(value);
+    return [];
+}
+
 // Selection is preserved by stable item id, not by row index. A refresh can
 // insert new entries above the selected one; keeping the index would silently
 // move the selection (and Delete would remove the wrong entry). When the
 // selected entry is gone, fall back to the clamped previous index.
-function indexOfId(rows, id) {
+function indexOfId(list, id) {
     const wanted = String(id || "");
-    if (!wanted || !Array.isArray(rows))
+    const rows = toArray(list);
+    if (!wanted)
         return -1;
     for (let i = 0; i < rows.length; i++) {
         if (String(rows[i].itemId || rows[i].id || "") === wanted)
@@ -241,8 +254,9 @@ function indexOfId(rows, id) {
     return -1;
 }
 
-function selectionIndex(previousId, previousIndex, rows) {
-    if (!Array.isArray(rows) || rows.length === 0)
+function selectionIndex(previousId, previousIndex, list) {
+    const rows = toArray(list);
+    if (rows.length === 0)
         return -1;
     const found = indexOfId(rows, previousId);
     if (found >= 0)
@@ -252,7 +266,7 @@ function selectionIndex(previousId, previousIndex, rows) {
 }
 
 function displayRows(history, query, limit) {
-    const values = Array.isArray(history) ? history : [];
+    const values = toArray(history);
     const needle = String(query || "").trim().toLowerCase();
     let max = limit === undefined || limit === null ? 50 : Number(limit);
     if (isNaN(max))

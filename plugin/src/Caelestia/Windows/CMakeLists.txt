@@ -46,6 +46,16 @@ if(Qt6Test_FOUND)
         "${CMAKE_CURRENT_SOURCE_DIR}/Clipboard"
     )
     target_link_libraries(clipboard-logic-tests PRIVATE Qt::Core Qt::Test)
+
+    # Sends a native QVariantList through QML property chains into the shipped
+    # ClipboardHistory.js, which the JS-only checks cannot do.
+    add_executable(clipboard-qml-tests
+        Clipboard/test/clipboardqml_test.cpp
+    )
+    target_compile_definitions(clipboard-qml-tests PRIVATE
+        CLIPBOARD_SERVICE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../../../windows/services/clipboard"
+    )
+    target_link_libraries(clipboard-qml-tests PRIVATE Qt::Core Qt::Qml Qt::Test)
 endif()
 
 # WASAPI loopback analysis: CavaProvider/BeatTracker/ServiceRef for the
