@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Synthetic read-only CPA management server for the Windows quota smoke.
 
-Test fixture only. It serves the small subset of /v0/management endpoints that
-cpa_usage.py reads, with fixed synthetic accounts and usage. It never contacts
-a real CPA server and contains no credentials.
+Test fixture only. It serves CPA Manager's pre-aggregated quota summary with
+fixed synthetic providers, accounts and windows, and checks the Bearer header.
+It never contacts a real CPA server and contains no credentials or real account
+data.
 
 Usage:
-    py -I stub_cpa.py --port 0 --port-file <path>
+    py -I stub_cpa.py --port 0 --port-file <path> [--admin-key <key>]
 
 The selected port is written to --port-file so the test can point the smoke
 profile at it.
@@ -21,74 +22,169 @@ from typing import Any
 from urllib.parse import urlsplit
 
 NOW = dt.datetime.now(dt.timezone.utc)
-TODAY = NOW.date().isoformat()
 RESET_5H = (NOW + dt.timedelta(hours=3)).isoformat()
 RESET_WEEK = (NOW + dt.timedelta(days=5)).isoformat()
 
-AUTH_FILES = [
-    {
-        "provider": "codex",
-        "account": "codex@example.test",
-        "file_name": "codex.json",
-        "auth_index": "codex-0",
-        "id_token": {"chatgpt_account_id": "fixture-account"},
-        "status": "active",
-        "tier": "Pro",
-    },
-    {
-        "provider": "claude",
-        "account": "claude@example.test",
-        "file_name": "claude.json",
-        "auth_index": "claude-0",
-        "status": "active",
-        "tier": "Max",
-    },
-]
-
-USAGE = {
-    "details": [
+AUTH_FILES = {
+    "files": [
         {
-            "timestamp": NOW.isoformat(),
+            "account": "codex@example.test",
+            "account_type": "oauth",
             "auth_index": "codex-0",
-            "auth_file_snapshot": "codex.json",
-            "account_snapshot": "codex@example.test",
-            "tokens": {"input_tokens": 1000, "output_tokens": 234},
-            "failed": False,
-            "resolved_model": "gpt-5.6-luna",
+            "email": "codex@example.test",
+            "label": "Codex fixture",
+            "name": "codex.json",
+            "provider": "codex",
+            "status": "active",
+            "disabled": False,
+            "unavailable": False,
         },
         {
-            "timestamp": NOW.isoformat(),
+            "account": "claude@example.test",
+            "account_type": "oauth",
             "auth_index": "claude-0",
-            "auth_file_snapshot": "claude.json",
-            "account_snapshot": "claude@example.test",
-            "tokens": {"input_tokens": 2000, "output_tokens": 468},
-            "failed": False,
-            "resolved_model": "claude-sonnet-4-6",
+            "email": "claude@example.test",
+            "label": "Claude fixture",
+            "name": "claude.json",
+            "provider": "claude",
+            "status": "active",
+            "disabled": False,
+            "unavailable": False,
         },
-    ]
+    ],
+    "observed_at": NOW.isoformat(),
 }
 
 
-def provider_of(account: dict[str, Any]) -> str:
-    return str(account.get("auth_provider_snapshot") or account.get("provider") or "").lower()
+def window(
+    window_id: str,
+    label: str,
+    used: int,
+    resets_at: str,
+    source: str = "provider",
+) -> dict[str, Any]:
+    return {
+        "id": window_id,
+        "label": label,
+        "usedPercent": used,
+        "remainingPercent": 100 - used,
+        "resetAt": resets_at,
+        "source": source,
+    }
+
+
+# Two Codex accounts, two Claude accounts (one with a model-scoped window) and
+# one Z.ai account. Keys mirror CPA Manager's schema; values are synthetic.
+SUMMARY = {
+    "schemaVersion": 1,
+    "generatedAt": NOW.isoformat(),
+    "refreshedAt": NOW.isoformat(),
+    "ttlMs": 60000,
+    "status": "ok",
+    "error": None,
+    "providers": [
+        {
+            "id": "codex",
+            "label": "Codex",
+            "status": "ok",
+            "error": None,
+            "accounts": [
+                {
+                    "id": "codex-primary",
+                    "label": "codex@example.test",
+                    "synthetic": False,
+                    "plan": "Pro",
+                    "status": "ok",
+                    "error": None,
+                    "windows": [
+                        window("five-hour", "5-hour", 42, RESET_5H),
+                        window("weekly", "Weekly", 18, RESET_WEEK),
+                    ],
+                },
+                {
+                    "id": "codex-secondary",
+                    "label": "codex2@example.test",
+                    "synthetic": False,
+                    "plan": "Plus",
+                    "status": "ok",
+                    "error": None,
+                    "windows": [
+                        window("five-hour", "5-hour", 68, RESET_5H),
+                        window("weekly", "Weekly", 55, RESET_WEEK),
+                    ],
+                },
+            ],
+        },
+        {
+            "id": "claude",
+            "label": "Claude",
+            "status": "ok",
+            "error": None,
+            "accounts": [
+                {
+                    "id": "claude-primary",
+                    "label": "claude@example.test",
+                    "synthetic": False,
+                    "plan": "Max",
+                    "status": "ok",
+                    "error": None,
+                    "windows": [
+                        window("five-hour", "5-hour", 71, RESET_5H),
+                        window("weekly", "Weekly", 35, RESET_WEEK),
+                        # Model-scoped: the drawer moves this to "Model limits".
+                        window("seven-day-opus", "Weekly", 88, RESET_WEEK),
+                    ],
+                },
+                {
+                    "id": "claude-secondary",
+                    "label": "claude2@example.test",
+                    "synthetic": False,
+                    "plan": "Pro",
+                    "status": "ok",
+                    "error": None,
+                    "windows": [
+                        window("five-hour", "5-hour", 22, RESET_5H),
+                        window("weekly", "Weekly", 61, RESET_WEEK),
+                    ],
+                },
+            ],
+        },
+        {
+            "id": "zai",
+            "label": "Z.ai",
+            "status": "ok",
+            "error": None,
+            "accounts": [
+                {
+                    "id": "zai-primary",
+                    "label": "zai@example.test",
+                    "synthetic": False,
+                    "plan": "GLM Coding",
+                    "status": "ok",
+                    "error": None,
+                    "windows": [
+                        window("five-hour", "5-hour", 12, RESET_5H),
+                        window("weekly", "Weekly", 8, RESET_WEEK),
+                    ],
+                }
+            ],
+        },
+    ],
+    "todayCostUsd": 3.71,
+}
 
 
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
+    admin_key = "smoke-placeholder"
 
     def log_message(self, format: str, *args: Any) -> None:  # noqa: A002
         # Keep the smoke output free of request noise.
         pass
 
-    def _body(self) -> dict[str, Any]:
-        length = int(self.headers.get("Content-Length") or 0)
-        if not length:
-            return {}
-        try:
-            value = json.loads(self.rfile.read(length))
-        except Exception:
-            return {}
-        return value if isinstance(value, dict) else {}
+    def _authorized(self) -> bool:
+        header = str(self.headers.get("Authorization") or "")
+        return header == "Bearer " + self.admin_key
 
     def _send(self, status: int, value: Any) -> None:
         data = json.dumps(value, separators=(",", ":")).encode()
@@ -99,104 +195,26 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def do_GET(self) -> None:  # noqa: N802
+        if not self._authorized():
+            self._send(401, {"error": "unauthorized"})
+            return
         path = urlsplit(self.path).path
-        if path == "/v0/management/auth-files":
-            self._send(200, {"files": AUTH_FILES})
-        elif path == "/v0/management/usage":
-            self._send(200, USAGE)
+        if path == "/v0/management/quota/summary":
+            self._send(200, SUMMARY)
+        elif path == "/v0/management/auth-files":
+            self._send(200, AUTH_FILES)
         else:
             self._send(404, {"error": "not found"})
-
-    def do_POST(self) -> None:  # noqa: N802
-        path = urlsplit(self.path).path
-        body = self._body()
-
-        if path == "/v0/management/monitoring/account-history":
-            rows = []
-            for account in body.get("accounts") or []:
-                provider = provider_of(account)
-                rows.append({
-                    "row_key": account.get("row_key"),
-                    "total_tokens": 987654,
-                    "total_requests": 300,
-                    "success_rate": 0.99,
-                    "plan_type": "pro" if provider == "codex" else "max",
-                })
-            self._send(200, {"items": rows})
-            return
-
-        if path == "/v0/management/quota-snapshots/query":
-            rows = []
-            for account in body.get("accounts") or []:
-                provider = provider_of(account) or str(account.get("provider") or "").lower()
-                codex = provider == "codex"
-                rows.append({
-                    "row_key": account.get("row_key"),
-                    "provider": provider,
-                    "windows": [
-                        {"label": "5-hour", "used_percent": 42 if codex else 71, "resets_at": RESET_5H},
-                        {"label": "Weekly", "used_percent": 18 if codex else 35, "resets_at": RESET_WEEK},
-                    ],
-                })
-            self._send(200, {"items": rows})
-            return
-
-        if path == "/v0/management/monitoring/account-window-usage":
-            rows = []
-            for window in body.get("windows") or []:
-                rows.append({
-                    "request_key": window.get("request_key"),
-                    "total_tokens": 1234,
-                    "total_requests": 5,
-                    "model": "gpt-5.6-luna",
-                })
-            self._send(200, {"items": rows})
-            return
-
-        if path == "/v0/management/api-call":
-            url = str(body.get("url") or "")
-            if "anthropic.com" in url:
-                self._send(200, {
-                    "status_code": 200,
-                    "body": {
-                        "five_hour": {"utilization": 71, "resets_at": RESET_5H},
-                        "seven_day": {"utilization": 35, "resets_at": RESET_WEEK},
-                    },
-                })
-            elif "chatgpt.com" in url:
-                self._send(200, {
-                    "status_code": 200,
-                    "body": {
-                        "rate_limit": {
-                            "primary_window": {
-                                "used_percent": 42,
-                                "limit_window_seconds": 18000,
-                                "reset_at": RESET_5H,
-                            },
-                            "secondary_window": {
-                                "used_percent": 18,
-                                "limit_window_seconds": 604800,
-                                "reset_at": RESET_WEEK,
-                            },
-                        },
-                        "plan_type": "pro",
-                    },
-                })
-            else:
-                self._send(404, {"error": "no upstream"})
-            return
-
-        # OpenCode Go has no scrape on this fixture; cpa_usage.py falls back to
-        # /v0/management/config, which is absent, then keeps no record.
-        self._send(404, {"error": "not found"})
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--port", type=int, default=0)
     parser.add_argument("--port-file", required=True)
+    parser.add_argument("--admin-key", default="smoke-placeholder")
     args, _ = parser.parse_known_args()
 
+    Handler.admin_key = args.admin_key
     server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
     with open(args.port_file, "w", encoding="utf-8") as handle:
         handle.write(str(server.server_address[1]))

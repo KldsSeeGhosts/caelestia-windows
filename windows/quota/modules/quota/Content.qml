@@ -43,13 +43,6 @@ Item {
     function percentText(value: var): string {
         return value === null ? "—" : Math.round(value * 100) + "%";
     }
-    function formatTokens(value: var): string {
-        const n = Number(value) || 0;
-        if (n >= 1e9) return (n / 1e9).toFixed(1) + "G";
-        if (n >= 1e6) return (n / 1e6).toFixed(1) + "M";
-        if (n >= 1e3) return (n / 1e3).toFixed(1) + "k";
-        return String(Math.round(n));
-    }
     function relativeTime(stamp: string): string {
         const time = Date.parse(stamp);
         if (!Number.isFinite(time)) return qsTr("Not reported");
@@ -98,10 +91,7 @@ Item {
         return name ? Quickshell.shellPath("assets/provider-icons/" + name) : "";
     }
     function usageSummary(): string {
-        const p = root.provider;
-        if (!p) return qsTr("No activity recorded");
-        const reqs = Number(p.requestsToday || 0), tokens = Number(p.tokensToday || 0);
-        return tokens > 0 ? qsTr("%1 tokens, %2 requests").arg(root.formatTokens(tokens)).arg(reqs) : qsTr("%1 requests").arg(reqs);
+        return Quota.usageTodayText;
     }
     readonly property bool zaiIsPeak: root.provider && root.provider.provider === "zai"
         && new Date(Quota.nowMs).getUTCHours() >= 1 && new Date(Quota.nowMs).getUTCHours() < 15
@@ -154,7 +144,7 @@ Item {
             type: IconButton.Text
             font: Tokens.font.icon.small
             enabled: !root.loading && Quota.configured
-            onClicked: Quota.refresh()
+            onClicked: Quota.refresh(true)
             Accessible.name: qsTr("Refresh quota")
             QuotaToolTip {
                 visible: parent.hovered
@@ -321,10 +311,10 @@ Item {
                 width: parent.width
                 visible: root.accounts.length === 0 || root.hasError
                 text: root.hasError ? root.error
-                    : Quota.status === "unconfigured" ? qsTr("CPA quota is not configured. Add cpa-agents.json to the shell config directory.")
+                    : Quota.status === "unconfigured" ? qsTr("Not configured. Add cpa-agents.json to the shell config folder.")
                     : qsTr("No agent usage records found.")
                 wrapMode: Text.WordWrap
-                color: Colours.palette.m3error
+                color: root.hasError ? Colours.palette.m3error : root.muted
                 topPadding: 8; bottomPadding: 8
             }
             Label {
@@ -524,33 +514,24 @@ Item {
                 bottomPadding: 12
                 Label {
                     width: parent.width
-                    text: root.provider && root.provider.poolGroup ? qsTr("Shared provider ledger, not per-account quota.") : qsTr("Activity for the selected account.")
+                    text: qsTr("CPA Manager reports one cost total for all accounts. Per-account token and request ledgers are not part of the quota summary.")
                     wrapMode: Text.WordWrap
                     font.pixelSize: 11
                     color: root.muted
                 }
-                Repeater {
-                    model: root.provider ? Logic.models(root.provider) : []
-                    delegate: RowLayout {
-                        required property var modelData
-                        width: stack.width
-                        spacing: 8
-                        Label {
-                            Layout.fillWidth: true
-                            Layout.minimumWidth: 0
-                            text: modelData.name
-                            font.family: Tokens.font.mono.small.family
-                            font.pixelSize: 11
-                            elide: Text.ElideRight
-                        }
-                        Label { text: root.formatTokens(modelData.tokens); font.pixelSize: 12; color: root.muted }
+                RowLayout {
+                    width: stack.width
+                    spacing: 8
+                    Label {
+                        Layout.fillWidth: true
+                        text: qsTr("Cost today")
+                        font.pixelSize: 12
                     }
-                }
-                Label {
-                    visible: !root.provider || Logic.models(root.provider).length === 0
-                    text: qsTr("No token breakdown reported today.")
-                    font.pixelSize: 11
-                    color: root.muted
+                    Label {
+                        text: Quota.usageCostText
+                        font.pixelSize: 12
+                        color: root.muted
+                    }
                 }
             }
         }

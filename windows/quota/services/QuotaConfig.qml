@@ -13,8 +13,8 @@ import Quickshell.Io
 //
 // Presence of cpa-agents.json is the opt-in: the drawer is enabled only when a
 // CPA management config exists, unless quota.json explicitly sets "enabled".
-// QML only checks that the file loads; the admin key is parsed by cpa_usage.py
-// alone and is never displayed or logged.
+// The Quota service reads the file itself and keeps baseUrl/adminKey in memory;
+// nothing here exposes or logs either value.
 Singleton {
     id: root
 
@@ -23,40 +23,33 @@ Singleton {
         || ((Quickshell.env("APPDATA") || root.home + "/AppData/Roaming") + "/caelestia")).replace(/\\/g, "/")
     readonly property string quotaConfigPath: Quickshell.env("CAELESTIA_QUOTA_CONFIG") || (root.configDir + "/quota.json")
 
-    // Linux read ~/.config/omarchy/cpa-agents.json. The Windows equivalent is
-    // the shell profile's config directory; CAELESTIA_CPA_CONFIG can name any
-    // other file for an isolated run.
+    // The Linux overlay read ~/.config/omarchy/cpa-agents.json. The Windows
+    // equivalent is the shell profile's config directory; CAELESTIA_CPA_CONFIG
+    // can name another file for an isolated run.
     readonly property string cpaConfigPath: Quickshell.env("CAELESTIA_CPA_CONFIG") || (root.configDir + "/cpa-agents.json")
 
-    // Python is already a runtime dependency for the colour scheme. Reuse the
-    // profile venv when one was provisioned, then the Windows launcher, then a
-    // bare python on PATH. Extra args are supplied by the service.
+    // Python is still required for the optional keepalive helper behind the
+    // bolt button. The quota summary itself is read over HTTP by QML and needs
+    // no interpreter.
     readonly property string schemePython: Quickshell.env("CAELESTIA_SCHEME_PYTHON")
     readonly property string python: Quickshell.env("CAELESTIA_QUOTA_PYTHON") || root.schemePython || "py"
 
-    // Quickshell resolves these from the staged shell's StateDir/CacheDir
-    // pragmas in the combined prototype. Production falls back to the per-user
-    // Caelestia state location.
-    readonly property string stateHome: (Quickshell.env("CAELESTIA_STATE_DIR")
-        || Quickshell.env("XDG_STATE_HOME")
-        || Quickshell.stateDir
-        || ((Quickshell.env("LOCALAPPDATA") || root.home + "/AppData/Local") + "/caelestia-windows/state")).replace(/\\/g, "/")
+    // Quickshell resolves cacheDir from the staged shell's CacheDir pragma in
+    // the combined prototype. Production falls back to the per-user Caelestia
+    // cache location. Only the derived last-good summary is cached there.
     readonly property string cacheHome: (Quickshell.env("CAELESTIA_CACHE_DIR")
         || Quickshell.env("XDG_CACHE_HOME")
         || Quickshell.cacheDir
         || ((Quickshell.env("LOCALAPPDATA") || root.home + "/AppData/Local") + "/caelestia-windows/cache")).replace(/\\/g, "/")
-    readonly property string usageDir: root.stateHome + "/omarchy/agents/usage"
 
     // Upstream defaults, overridable from quota.json.
     property int panelWidth: 384
     property int panelHeight: 520
     property int refreshIntervalMs: 60000
-    property int refreshTimeoutMs: 60000
     property bool settingPresent: false
     property bool settingEnabled: false
 
-    // Set by the FileView below. QML never reads the contents; the collector is
-    // the only consumer of the admin key.
+    // Set by the FileView below. Quota parses the contents in memory.
     property bool cpaConfigPresent: false
     readonly property bool configured: root.cpaConfigPresent
     // Auto-enable when a CPA config exists; quota.json can override either way.
@@ -73,9 +66,8 @@ Singleton {
         onTextChanged: root.applySettings(quotaFile.text())
     }
 
-    // Existence check only. Loading cpa-agents.json is a local read and its
-    // text is never accessed, logged or exposed. This keeps a machine without
-    // CPA completely quiet: no Python process, no warning, no drawer.
+    // Existence check only. The Quota service owns the one content read and
+    // never logs baseUrl, adminKey or the response body.
     FileView {
         id: cpaConfigFile
 
@@ -109,7 +101,5 @@ Singleton {
             root.panelHeight = Math.max(240, Number(geometry.height));
         if (Number.isFinite(Number(parsed.refreshIntervalMs)))
             root.refreshIntervalMs = Math.max(10000, Number(parsed.refreshIntervalMs));
-        if (Number.isFinite(Number(parsed.refreshTimeoutMs)))
-            root.refreshTimeoutMs = Math.max(5000, Number(parsed.refreshTimeoutMs));
     }
 }

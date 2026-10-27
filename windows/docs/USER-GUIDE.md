@@ -379,8 +379,15 @@ open it; it closes when the pointer leaves, when a fullscreen application
 appears, or when the shell loses its focus grab. Like the Linux source there is
 no bar entry and no default keybind.
 
-The drawer is **opt-in**: nothing runs unless a CPA management config exists.
-It expects the same file the Linux collector used, at a Windows location:
+The drawer is **opt-in**: nothing requests anything unless a CPA management
+config exists. It reads CPA Manager's own pre-aggregated quota summary from:
+
+```text
+GET <baseUrl>/v0/management/quota/summary
+Authorization: Bearer <adminKey>
+```
+
+The config file is:
 
 ```text
 %LOCALAPPDATA%\caelestia-windows\config\cpa-agents.json
@@ -391,9 +398,9 @@ It expects the same file the Linux collector used, at a Windows location:
 ```
 
 `CAELESTIA_CONFIG_DIR` (the shell profile) is used when set, and
-`CAELESTIA_CPA_CONFIG` can name another file. The shell only checks that the
-file exists; its contents are parsed by the Python collector alone and are
-never displayed or logged. Keep the key out of commits, screenshots and issue
+`CAELESTIA_CPA_CONFIG` can name another file. The shell reads the file into
+memory to build the request; the key, the response body, emails and account ids
+are never displayed in logs. Keep the key out of commits, screenshots and issue
 reports.
 
 Optional drawer settings live beside `shell.json` in `quota.json`. Every value
@@ -403,8 +410,7 @@ is optional and matches the Linux schema:
 {
     "enabled": true,
     "geometry": {"width": 384, "height": 520},
-    "refreshIntervalMs": 60000,
-    "refreshTimeoutMs": 60000
+    "refreshIntervalMs": 60000
 }
 ```
 
@@ -412,20 +418,24 @@ With `cpa-agents.json` present the drawer enables automatically. Set
 `"enabled": false` to keep the config but hide the drawer, or provide
 `quota.json` without `cpa-agents.json` to show the "not configured" empty state.
 
-Python is already required for colour generation. The quota collector only uses
-the standard library, so it runs with the profile's scheme virtual environment
-when one exists, otherwise the Windows `py` launcher. Set
-`CAELESTIA_QUOTA_PYTHON` to an interpreter path to override it.
+No Python is needed to display quota. The drawer reads the summary with QML's
+`XMLHttpRequest`, maps providers to chips, accounts to rows and quota windows
+to meters, and shows `todayCostUsd` in the "Usage today" disclosure. Refreshes
+follow `refreshIntervalMs` but never run faster than the manager's `ttlMs`;
+only one request is in flight and it aborts after 15 seconds. The last good
+summary is cached at `cache\quota-summary.json` in the profile (display names,
+windows, status and cost only, no endpoint or key) so the previous reading
+appears instantly on start.
 
-Quota refreshes every 60 seconds by default. The collector writes saved records
-under the profile `state\omarchy\agents\usage` directory, so a failed or
-unreachable endpoint shows one "Quota refresh failed. Showing saved data." line
-instead of error spam, and the QML watchdog stops a hung collector or token
-download. With no saved records the drawer shows a plain empty state. The bolt
-button runs the keepalive script; that is an explicit request that sends real
-keepalive traffic to CPA and needs the CPA inference key (`CPA_API_KEY` in the
-environment, or the Linux `environment.d/cpa.conf` fallback). It is not run
-during smoke or by the shell at startup.
+If a refresh fails, the last good summary stays on screen behind the single
+"Quota refresh failed. Showing saved data." line. Per-account token ledgers,
+the per-model token table, balance, cooldown timestamps and the old saved
+records under `state\omarchy\agents\usage` are not part of CPA Manager's
+summary and are no longer shown. The bolt button still runs the upstream
+optional keepalive helper; that is an explicit request that sends real
+keepalive traffic to CPA, needs Python and the CPA inference key
+(`CPA_API_KEY` in the environment, or the Linux `environment.d/cpa.conf`
+fallback), and is not run during smoke or by the shell at startup.
 
 See [the port notes](../quota/README.md) for the source mapping and what is and
 is not verified.

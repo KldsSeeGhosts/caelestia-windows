@@ -6,12 +6,15 @@
 // creates Quota.Wrapper) instead of ContentWindow. That still exercises the real
 // staging, singleton service, panel layout, meters and provider marks.
 //
-//   * configured: a local synthetic CPA stub lets cpa_usage.py collect records;
-//     the drawer opens, meters render, and the screenshot is saved;
-//   * offline: the CPA endpoint is unreachable; the service must settle into one
-//     friendly saved-data error, keep the drawer usable, and never hang;
-//   * unconfigured: no cpa-agents.json exists; the service spawns no collector
-//     and the drawer stays disabled.
+//   * configured: a local synthetic CPA Manager stub serves the pre-aggregated
+//     quota summary; the drawer opens on the Claude group, the model-scoped
+//     window and the usage disclosure render, and dark/light screenshots are
+//     saved;
+//   * offline: the endpoint refuses connections and, when the configured run
+//     left a cached summary, the drawer keeps that reading with the one friendly
+//     saved-data line; it must never hang;
+//   * unconfigured: no cpa-agents.json exists; the service makes no request and
+//     the drawer stays disabled.
 //
 // No external network, credentials, pointer input or live desktop is used.
 import QtQuick
@@ -33,12 +36,15 @@ ShellRoot {
     settings.watchFiles: false
 
     readonly property string mode: Quickshell.env("CAELESTIA_QUOTA_SMOKE_MODE") || "configured"
+    readonly property bool saved: Quickshell.env("CAELESTIA_QUOTA_SMOKE_SAVED") === "1"
     readonly property ShellScreen selectedScreen: Quickshell.screens[0] ?? null
     readonly property ScreenState screenState: ShellState.forScreen(root.selectedScreen)
     readonly property int inset: 60
     readonly property int previewWidth: Math.min(900, (selectedScreen?.width ?? 1060) - inset * 2)
     readonly property int previewHeight: Math.min(620, (selectedScreen?.height ?? 780) - inset * 2)
     readonly property string screenshotPath: Quickshell.env("CAELESTIA_SHELL_SCREENSHOT")
+    readonly property string lightScreenshotPath: Quickshell.env("CAELESTIA_QUOTA_LIGHT_SCREENSHOT")
+    readonly property string lightSchemePath: Quickshell.env("CAELESTIA_QUOTA_LIGHT_SCHEME")
 
     // Same process-local fonts as the production entry, so text shaping is the
     // real one rather than a system fallback.
@@ -53,6 +59,15 @@ ShellRoot {
     FontLoader {
         id: clockFont
         source: Quickshell.shellPath("assets/rubik/Rubik.ttf")
+    }
+
+    // Optional light palette for a second configured screenshot. The fixture is
+    // a fixed Material 3 light scheme, not a generated wallpaper palette.
+    FileView {
+        id: lightScheme
+
+        path: root.lightSchemePath
+        printErrors: false
     }
 
     // The mask builder only reads geometry and config from the window, so a
@@ -175,15 +190,83 @@ ShellRoot {
         return count;
     }
 
-    function capture(then): void {
-        if (!root.screenshotPath) {
+    // The Content root is the only item that exposes the usage disclosure state.
+    function findContent(item): var {
+        for (const child of item.children) {
+            if (!child)
+                continue;
+            if (child.usageOpen !== undefined)
+                return child;
+            const found = root.findContent(child);
+            if (found)
+                return found;
+        }
+        return null;
+    }
+
+    function findVerticalBody(item): var {
+        for (const child of item.children) {
+            if (!child)
+                continue;
+            if (child.contentY !== undefined && child.contentHeight !== undefined
+                    && child.flickableDirection === Flickable.VerticalFlick)
+                return child;
+            const found = root.findVerticalBody(child);
+            if (found)
+                return found;
+        }
+        return null;
+    }
+
+    function scrollToBottom(content): void {
+        if (!content)
+            return;
+        const body = root.findVerticalBody(content);
+        if (body)
+            body.contentY = Math.max(0, body.contentHeight - body.height);
+    }
+
+    function scopedWindows(accounts): int {
+        let count = 0;
+        for (const account of accounts) {
+            for (const limit of account.limits || []) {
+                if (String(limit.title || "").indexOf("·") >= 0)
+                    count++;
+            }
+        }
+        return count;
+    }
+
+    function captureTo(path, then): void {
+        if (!path) {
             then();
             return;
         }
-        CUtils.saveItem(host, Qt.resolvedUrl(root.screenshotPath), () => {
-            console.log("CAELESTIA_QUOTA_SMOKE_CAPTURE", root.screenshotPath);
+        CUtils.saveItem(host, Qt.resolvedUrl(path), () => {
+            console.log("CAELESTIA_QUOTA_SMOKE_CAPTURE", path);
             then();
         }, () => root.fail("screenshot"));
+    }
+
+    function capture(then): void {
+        root.captureTo(root.screenshotPath, then);
+    }
+
+    function captureLight(then): void {
+        root.captureTo(root.lightScreenshotPath, then);
+    }
+
+    function applyLightPalette(): bool {
+        if (!root.lightScreenshotPath || !root.lightSchemePath || !lightScheme.loaded)
+            return false;
+        Colours.load(lightScheme.text(), false);
+        return Colours.light;
+    }
+
+    function closeDrawer(): void {
+        root.screenState.quota = false;
+        driver.step = 5;
+        driver.retries = 0;
     }
 
     Timer {
@@ -192,6 +275,7 @@ ShellRoot {
         property int step: 0
         property int retries: 0
         property bool captured: false
+        property bool lightCaptured: false
 
         interval: 200
         repeat: true
@@ -235,16 +319,17 @@ ShellRoot {
                     root.fail("quota drawer enabled without a CPA config");
                     return;
                 }
-                if (Quota.providers.length !== 0 || Quota.loading || Quota.hasError) {
+                if (Quota.providers.length !== 0 || Quota.loading || Quota.hasError
+                        || Quota.status !== "unconfigured") {
                     root.fail("unconfigured service was not quiet: providers=" + Quota.providers.length
-                        + " loading=" + Quota.loading + " error=" + Quota.error);
+                        + " loading=" + Quota.loading + " status=" + Quota.status + " error=" + Quota.error);
                     return;
                 }
                 console.log("CAELESTIA_QUOTA_SMOKE_UNCONFIGURED", JSON.stringify({
                     status: Quota.status, configured: Quota.configured, enabled: Quota.enabled
                 }));
                 root.screenState.quota = true;
-                driver.step = 3;
+                driver.step = 5;
                 driver.retries = 0;
                 return;
             }
@@ -261,13 +346,18 @@ ShellRoot {
                     root.fail("offline run did not stay configured/enabled");
                     return;
                 }
-                if (Quota.providers.length !== 0 || !Quota.hasError) {
-                    root.fail("offline run did not report saved/empty data: providers="
-                        + Quota.providers.length + " error=" + Quota.error);
+                if (!Quota.hasError) {
+                    root.fail("offline run did not report a saved-data error");
+                    return;
+                }
+                if (root.saved !== (Quota.providers.length > 0)) {
+                    root.fail("offline saved-data expectation: saved=" + root.saved
+                        + " providers=" + Quota.providers.length);
                     return;
                 }
                 console.log("CAELESTIA_QUOTA_SMOKE_OFFLINE", JSON.stringify({
-                    status: Quota.status, error: Quota.error, providers: Quota.providers.length
+                    status: Quota.status, error: Quota.error,
+                    providers: Quota.providers.length, saved: root.saved
                 }));
                 root.screenState.quota = true;
                 driver.step = 1;
@@ -275,10 +365,10 @@ ShellRoot {
                 return;
             }
 
-            if (Quota.providers.length < 2) {
+            if (Quota.providers.length !== 5) {
                 if (driver.retries++ < 60)
                     return;
-                root.fail("collector records did not load: status=" + Quota.status
+                root.fail("quota summary did not load: status=" + Quota.status
                     + " configured=" + Quota.configured + " providers=" + Quota.providers.length
                     + " error=" + Quota.error);
                 return;
@@ -288,26 +378,33 @@ ShellRoot {
                 return;
             }
             if (Quota.hasError || Quota.status !== "ok") {
-                root.fail("stub collection did not succeed: status=" + Quota.status + " error=" + Quota.error);
+                root.fail("stub summary did not succeed: status=" + Quota.status + " error=" + Quota.error);
                 return;
             }
-            if (Quota.providerGroups.length !== 2 || Quota.activeGroupAccounts.length !== 1) {
+            const claudeAccounts = Quota.providers.filter(account => account.provider === "claude");
+            if (Quota.providerGroups.length !== 3 || Quota.activeGroupAccounts.length !== 2) {
                 root.fail("provider grouping: groups=" + Quota.providerGroups.length
-                    + " accounts=" + Quota.activeGroupAccounts.length);
+                    + " codexAccounts=" + Quota.activeGroupAccounts.length);
                 return;
             }
-            const codex = Quota.providers.find(provider => provider.provider === "codex");
-            const claude = Quota.providers.find(provider => provider.provider === "claude");
-            if (!codex || codex.limits.length !== 2 || !claude || claude.limits.length !== 2) {
-                root.fail("live limit rows: codex=" + (codex ? codex.limits.length : -1)
-                    + " claude=" + (claude ? claude.limits.length : -1));
+            if (claudeAccounts.length !== 2 || claudeAccounts[0].limits.length !== 3) {
+                root.fail("Claude quota rows: accounts=" + claudeAccounts.length
+                    + " limits=" + (claudeAccounts.length ? claudeAccounts[0].limits.length : -1));
                 return;
             }
-            console.log("CAELESTIA_QUOTA_SMOKE_RECORDS", JSON.stringify({
+            if (root.scopedWindows(claudeAccounts) !== 1) {
+                root.fail("model-scoped window was not classified: " + root.scopedWindows(claudeAccounts));
+                return;
+            }
+            if (Quota.todayCostUsd === null || Math.abs(Quota.todayCostUsd - 3.71) > 0.001) {
+                root.fail("today's cost was not mapped: " + Quota.todayCostUsd);
+                return;
+            }
+            console.log("CAELESTIA_QUOTA_SMOKE_SUMMARY", JSON.stringify({
                 status: Quota.status, configured: Quota.configured, enabled: Quota.enabled,
                 providers: Quota.providers.length, groups: Quota.providerGroups.length,
-                codexLimits: codex.limits.length, claudeLimits: claude.limits.length,
-                todayTokens: Quota.todayTotalTokens
+                accounts: Quota.providers.length, claudeLimits: claudeAccounts[0].limits.length,
+                scoped: root.scopedWindows(claudeAccounts), todayCostUsd: Quota.todayCostUsd
             }));
             root.screenState.quota = true;
             driver.step = 1;
@@ -331,73 +428,141 @@ ShellRoot {
                 root.fail("quota service did not settle after opening");
                 return;
             }
-            if (root.mode === "offline" && (!Quota.hasError || Quota.status !== "error")) {
-                if (driver.retries++ < 50)
-                    return;
-                root.fail("offline drawer lost its saved-data error after opening");
-                return;
-            }
             if (quota.width !== QuotaConfig.panelWidth || quota.height <= 0) {
                 root.fail("quota geometry: " + quota.width + "x" + quota.height);
                 return;
             }
             const meters = root.countMeters(quota);
-            if (root.mode === "configured" && meters < 2) {
-                root.fail("quota meters did not render: " + meters);
-                return;
-            }
-            if (root.mode === "offline" && meters !== 0) {
-                root.fail("offline quota rendered meters without records: " + meters);
-                return;
-            }
-            console.log("CAELESTIA_QUOTA_SMOKE_OPEN", JSON.stringify({
-                mode: root.mode, width: quota.width, height: quota.height, meters: meters,
-                status: Quota.status, error: Quota.error, provider: Quota.activeProvider?.provider ?? ""
-            }));
             if (root.mode === "configured") {
-                const claude = Quota.providers.find(provider => provider.provider === "claude");
+                if (Quota.hasError || Quota.status !== "ok") {
+                    root.fail("configured drawer lost its summary after opening");
+                    return;
+                }
+                if (meters < 2) {
+                    root.fail("quota meters did not render: " + meters);
+                    return;
+                }
+                console.log("CAELESTIA_QUOTA_SMOKE_OPEN", JSON.stringify({
+                    mode: root.mode, width: quota.width, height: quota.height, meters: meters,
+                    status: Quota.status, error: Quota.error, provider: Quota.activeProvider?.provider ?? ""
+                }));
+                const claude = Quota.providers.find(account => account.provider === "claude");
                 Quota.selectProvider(claude.id);
                 driver.step = 2;
                 driver.retries = 0;
                 return;
             }
-            driver.step = 2;
-            driver.retries = 0;
+            if (!Quota.hasError || Quota.status !== "error") {
+                if (driver.retries++ < 50)
+                    return;
+                root.fail("offline drawer lost its saved-data error after opening");
+                return;
+            }
+            if (root.saved && meters < 2) {
+                if (driver.retries++ < 20)
+                    return;
+                root.fail("saved-data drawer rendered no meters: " + meters);
+                return;
+            }
+            if (!root.saved && meters !== 0) {
+                root.fail("offline quota rendered meters without a summary: " + meters);
+                return;
+            }
+            if (driver.captured)
+                return;
+            console.log("CAELESTIA_QUOTA_SMOKE_OPEN", JSON.stringify({
+                mode: root.mode, width: quota.width, height: quota.height, meters: meters,
+                status: Quota.status, error: Quota.error,
+                provider: Quota.activeProvider?.provider ?? ""
+            }));
+            driver.captured = true;
+            root.capture(() => root.closeDrawer());
             return;
         }
 
         if (driver.step === 2) {
-            // saveItem is asynchronous; keep the driver from starting a second
-            // capture on the next tick.
-            if (driver.captured)
+            if (!Quota.activeProvider || Quota.activeProvider.provider !== "claude") {
+                if (driver.retries++ < 20)
+                    return;
+                root.fail("account selection did not switch to Claude");
                 return;
-            driver.captured = true;
-            if (root.mode === "configured") {
-                if (!Quota.activeProvider || Quota.activeProvider.provider !== "claude") {
-                    root.fail("account selection did not switch to Claude");
-                    return;
-                }
-                const meters = root.countMeters(quota);
-                if (meters < 2) {
-                    root.fail("Claude meters did not render: " + meters);
-                    return;
-                }
-                console.log("CAELESTIA_QUOTA_SMOKE_SWITCH", JSON.stringify({
-                    provider: Quota.activeProvider.provider,
-                    label: Quota.activeGroup?.label ?? "",
-                    accounts: Quota.activeGroupAccounts.length,
-                    meters: meters
-                }));
             }
-            root.capture(() => {
-                root.screenState.quota = false;
-                driver.step = 3;
-                driver.retries = 0;
-            });
+            const content = root.findContent(quota);
+            if (!content) {
+                root.fail("quota Content root was not found");
+                return;
+            }
+            content.usageOpen = true;
+            root.scrollToBottom(content);
+            driver.step = 3;
+            driver.retries = 0;
             return;
         }
 
         if (driver.step === 3) {
+            if (driver.captured)
+                return;
+            const content = root.findContent(quota);
+            if (!content || !content.usageOpen) {
+                root.fail("usage disclosure did not open");
+                return;
+            }
+            const meters = root.countMeters(quota);
+            if (meters < 3) {
+                root.fail("Claude meters did not render: " + meters);
+                return;
+            }
+            if (root.lightScreenshotPath && root.lightSchemePath && !lightScheme.loaded) {
+                if (driver.retries++ < 20)
+                    return;
+                root.fail("light scheme fixture did not load");
+                return;
+            }
+            driver.retries = 0;
+            console.log("CAELESTIA_QUOTA_SMOKE_SWITCH", JSON.stringify({
+                provider: Quota.activeProvider.provider,
+                label: Quota.activeGroup?.label ?? "",
+                accounts: Quota.activeGroupAccounts.length,
+                meters: meters, scoped: root.scopedWindows(Quota.activeGroupAccounts),
+                usageOpen: content.usageOpen, todayCostUsd: Quota.todayCostUsd
+            }));
+            driver.captured = true;
+            root.scrollToBottom(content);
+            root.capture(() => {
+                if (root.applyLightPalette()) {
+                    driver.step = 4;
+                    driver.retries = 0;
+                } else {
+                    root.closeDrawer();
+                }
+            });
+            return;
+        }
+
+        if (driver.step === 4) {
+            if (!Colours.light) {
+                if (driver.retries++ < 20)
+                    return;
+                root.fail("light palette did not load");
+                return;
+            }
+            // Let the palette change repaint one frame before saving evidence.
+            if (driver.retries++ < 2)
+                return;
+            if (driver.lightCaptured)
+                return;
+            driver.lightCaptured = true;
+            const content = root.findContent(quota);
+            if (!content || !content.usageOpen) {
+                root.fail("usage disclosure closed before the light capture");
+                return;
+            }
+            root.scrollToBottom(content);
+            root.captureLight(() => root.closeDrawer());
+            return;
+        }
+
+        if (driver.step === 5) {
             if (quota.visible || quota.offsetScale < 0.99) {
                 if (driver.retries++ < 40)
                     return;

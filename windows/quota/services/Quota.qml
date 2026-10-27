@@ -6,55 +6,54 @@ import Quickshell
 import Quickshell.Io
 import qs.services
 
-// Quota & Agents usage data service, ported from the Linux overlay.
+// CPA quota data service for the Windows drawer.
 //
-// Periodically collects usage from CPA management via cpa_usage.py, reads
-// records from the profile state directory via read_records.py, and parses
-// limit windows, models, daily tokens, and balances for the dropdown.
+// CPA Manager publishes one pre-aggregated management response:
 //
-// Windows differences from the original:
-//   * paths come from QuotaConfig (profile config/state/cache) instead of HOME
-//     and XDG_* Linux defaults;
-//   * python3 is replaced by the profile Python or the py launcher, with -I;
-//   * the GNU `timeout` wrapper is replaced by the QML watchdogs below, so a
-//     hung collector or ledger download is killed instead of lingering;
-//   * nothing runs unless a CPA management config exists, which keeps a machine
-//     without CPA quiet (no process, no error, empty drawer state).
+//   GET <baseUrl>/v0/management/quota/summary
+//   Authorization: Bearer <adminKey>
+//
+// This service reads that response with QML XMLHttpRequest, maps providers,
+// accounts and windows onto the shape the original drawer components expect,
+// and keeps the last good summary on failure. No child process, ledger or
+// local usage-record store is involved.
+//
+// Privacy: baseUrl/adminKey are parsed from cpa-agents.json in memory only.
+// The key, the response body, emails and account ids are never logged. Errors
+// are mapped from CPA's known codes to short UI strings.
 Singleton {
     id: root
 
-    readonly property string updateScript: Quickshell.shellPath("scripts/cpa_usage.py")
-    readonly property string readScript: Quickshell.shellPath("scripts/read_records.py")
-    readonly property string keepaliveScript: Quickshell.shellPath("scripts/cpa_keepalive.py")
-
     readonly property int refreshIntervalMs: QuotaConfig.refreshIntervalMs
-    readonly property int refreshTimeoutMs: QuotaConfig.refreshTimeoutMs
+    readonly property int requestTimeoutMs: 15000
     readonly property bool configured: QuotaConfig.configured
     readonly property bool enabled: QuotaConfig.enabled
 
-    // The collector and the reader must agree on the record location. Passing
-    // XDG_* to the child keeps the upstream scripts' own directory logic.
-    readonly property var childEnvironment: ({
-        "XDG_STATE_HOME": QuotaConfig.stateHome,
-        "XDG_CACHE_HOME": QuotaConfig.cacheHome,
-        "HOME": QuotaConfig.home,
-        "USERPROFILE": QuotaConfig.home,
-        "PYTHONUTF8": "1"
-    })
+    readonly property string summaryUrlSuffix: "/v0/management/quota/summary"
+    readonly property string cachePath: QuotaConfig.cacheHome + "/quota-summary.json"
+    readonly property int effectiveRefreshMs: Math.max(root.refreshIntervalMs, root.ttlMs)
 
-    // Live clock for reset countdowns
+    // Endpoint, read from cpa-agents.json by the FileView below.
+    property string baseUrl: ""
+    property string adminKey: ""
+    property bool endpointLoaded: false
+
+    // Live clock for reset countdowns.
     property double nowMs: Date.now()
 
     property bool loading: false
     property string status: "idle" // idle | unconfigured | loading | ok | partial | error
     property string error: ""
     property double lastUpdatedAt: 0
-    property string refreshError: ""
-    property bool refreshTimedOut: false
-    property bool pendingLogRefresh: false
+    property double lastRequestAt: 0
+    property int ttlMs: 0
+    property bool inFlight: false
+    property bool requestTimedOut: false
+    property var activeRequest: null
 
     property var providers: []
     property string selectedProviderId: ""
+    property var todayCostUsd: null
 
     readonly property int providerIndex: {
         for (let i = 0; i < providers.length; i++) {
@@ -68,6 +67,11 @@ Singleton {
     readonly property bool hasData: providers.length > 0
     readonly property bool hasError: error !== ""
 
+    readonly property string usageCostText: root.todayCostUsd === null
+        ? qsTr("Not reported") : "$" + Number(root.todayCostUsd).toFixed(2)
+    readonly property string usageTodayText: root.todayCostUsd === null
+        ? qsTr("Cost not reported today") : qsTr("%1 across all accounts").arg(root.usageCostText)
+
     // Accounts grouped by provider: one chip per provider, with all accounts
     // of that provider reachable from the group.
     readonly property var providerGroups: {
@@ -76,7 +80,11 @@ Singleton {
         for (let i = 0; i < providers.length; i++) {
             const p = providers[i];
             if (!byProvider[p.provider]) {
-                byProvider[p.provider] = { provider: p.provider, label: providerDisplayName(p.provider), accounts: [] };
+                byProvider[p.provider] = {
+                    provider: p.provider,
+                    label: p.providerLabel || providerDisplayName(p.provider),
+                    accounts: []
+                };
                 groups.push(byProvider[p.provider]);
             }
             byProvider[p.provider].accounts.push(p);
@@ -95,15 +103,12 @@ Singleton {
         return null;
     }
 
-    // Full per-account records for the Stack drawer. Pool limits are already
-    // present on each account; do not replace its status/freshness with the
-    // deliberately smaller poolLimits metadata or reshuffle rows on clicks.
     readonly property var activeGroupAccounts: {
         const p = activeProvider;
         if (!p)
             return [];
         const group = activeGroup ? (activeGroup.accounts || []) : [p];
-        return group.map(r => Object.assign({}, r, {accountLabel: r.account || r.name || ""}));
+        return group.map(r => Object.assign({}, r, {accountLabel: r.accountLabel || r.account || r.name || ""}));
     }
 
     function providerDisplayName(providerId: string): string {
@@ -127,6 +132,10 @@ Singleton {
         return String(providerId || "Agent").charAt(0).toUpperCase() + String(providerId || "").slice(1);
     }
 
+    function normalizeProviderId(value: string): string {
+        return String(value || "").trim().toLowerCase().replace(/_/g, "-");
+    }
+
     // Select a provider group: activates its first account (or the
     // currently-selected one if it already belongs to the group).
     function selectGroup(provider: string): void {
@@ -143,10 +152,6 @@ Singleton {
         }
     }
 
-    // Aggregates
-    property double todayTotalTokens: 0
-    property var todayCostUsd: null
-
     function selectProvider(id: string): void {
         selectedProviderId = id;
     }
@@ -158,44 +163,35 @@ Singleton {
         selectedProviderId = providers[wrapped].id;
     }
 
-    function resetToDefault(): void {
-        if (providers.length === 0)
-            return;
-        // Prefer Codex/OpenAI, fallback to first provider (sorted order is already codex-first).
+    function defaultProviderId(): string {
         for (let i = 0; i < providers.length; i++) {
             const p = String(providers[i].provider || "").toLowerCase();
-            if (p === "codex" || p === "openai" || p.includes("codex")) {
-                selectedProviderId = providers[i].id;
-                return;
-            }
+            if (p === "codex" || p === "openai" || p.includes("codex"))
+                return providers[i].id;
         }
-        selectedProviderId = providers[0].id;
+        return providers.length > 0 ? providers[0].id : "";
     }
 
+    function resetToDefault(): void {
+        selectedProviderId = root.defaultProviderId();
+    }
+
+    // -- Keepalive -----------------------------------------------------------
+    // The bolt button is the original overlay's explicit keepalive action. It
+    // still runs cpa_keepalive.py behind the button (and only then), so the
+    // drawer's normal quota path needs no Python.
     property bool keepaliveRunning: false
     property int keepaliveDone: 0
     property int keepaliveTotal: 7
     property real keepaliveProgress: keepaliveTotal > 0 ? keepaliveDone / keepaliveTotal : 0
     property string keepaliveError: ""
 
-    function refresh(): void {
-        if (!QuotaConfig.enabled || !QuotaConfig.configured) {
-            status = QuotaConfig.configured ? "idle" : "unconfigured";
-            return;
-        }
-        if (loading || updateProcess.running)
-            return;
-        refreshError = "";
-        refreshTimedOut = false;
-        error = "";
-        loading = true;
-        refreshWatchdog.restart();
-        updateProcess.running = true;
-        if (!logProcess.running) {
-            logWatchdog.restart();
-            logProcess.running = true;
-        }
-    }
+    readonly property string keepaliveScript: Quickshell.shellPath("scripts/cpa_keepalive.py")
+    readonly property var keepaliveEnvironment: ({
+        "HOME": QuotaConfig.home,
+        "USERPROFILE": QuotaConfig.home,
+        "PYTHONUTF8": "1"
+    })
 
     function triggerKeepalive(): void {
         if (!QuotaConfig.enabled || !QuotaConfig.configured || keepaliveProcess.running)
@@ -206,94 +202,23 @@ Singleton {
         keepaliveProcess.running = true;
     }
 
-    // 1. Run collector process. The QML watchdog replaces GNU timeout.
-    Process {
-        id: updateProcess
-        command: [QuotaConfig.python, "-I", root.updateScript, "--cpa-config", QuotaConfig.cpaConfigPath, "--cached-log"]
-        environment: root.childEnvironment
-
-        onExited: (exitCode, exitStatus) => {
-            refreshWatchdog.stop();
-            if (root.refreshTimedOut)
-                root.refreshError = qsTr("Quota refresh timed out. Showing saved data.");
-            else if (exitCode !== 0)
-                root.refreshError = qsTr("Quota refresh failed. Showing saved data.");
-            root.loading = false;
-            readProcess.running = true;
-            if (root.pendingLogRefresh) {
-                root.pendingLogRefresh = false;
-                logApplyTimer.restart();
-            }
-        }
-    }
-
-    // Download the large token ledger separately so quotas can finish first.
-    Process {
-        id: logProcess
-        command: [QuotaConfig.python, "-I", root.updateScript, "--cpa-config", QuotaConfig.cpaConfigPath, "--refresh-log-only"]
-        environment: root.childEnvironment
-
-        onExited: (exitCode, exitStatus) => {
-            logWatchdog.stop();
-            if (exitCode !== 0) return;
-            if (root.loading) root.pendingLogRefresh = true;
-            else logApplyTimer.restart();
-        }
-    }
-
-    // Windows has no GNU timeout; bound the background ledger download here.
-    Timer {
-        id: logWatchdog
-        interval: 50000
-        onTriggered: logProcess.running = false
-    }
-
-    Timer {
-        id: logApplyTimer
-        interval: 100
-        onTriggered: {
-            if (root.loading) { root.pendingLogRefresh = true; return; }
-            if (!QuotaConfig.configured) return;
-            root.loading = true;
-            root.refreshError = "";
-            root.error = "";
-            root.refreshTimedOut = false;
-            refreshWatchdog.restart();
-            updateProcess.running = true;
-        }
-    }
-
-    // 2. Read records directly via read_records.py
-    Process {
-        id: readProcess
-        command: [QuotaConfig.python, "-I", root.readScript]
-        environment: root.childEnvironment
-
-        stdout: StdioCollector {
-            waitForEnd: true
-            onStreamFinished: root.applyRecords(text)
-        }
-    }
-
-    // 3. Keepalive: ping Codex/Antigravity/Zai accounts to keep the 5-hour
-    //    window active. The script emits NDJSON progress lines (one per ping)
-    //    so the bolt icon can fill progressively. Only an explicit click runs
-    //    it, and nothing runs without a CPA config.
     Process {
         id: keepaliveProcess
         command: [QuotaConfig.python, "-I", root.keepaliveScript, "--cpa-config", QuotaConfig.cpaConfigPath]
-        environment: root.childEnvironment
+        environment: root.keepaliveEnvironment
 
         stdout: SplitParser {
             splitMarker: "\n"
             onRead: data => {
                 const line = String(data).trim();
-                if (!line) return;
+                if (!line)
+                    return;
                 try {
                     const msg = JSON.parse(line);
                     if (msg && msg.type === "progress" && typeof msg.done === "number") {
                         root.keepaliveDone = Math.max(0, Math.min(msg.total || root.keepaliveTotal, msg.done));
-                        if (msg.total) root.keepaliveTotal = msg.total;
+                        if (msg.total)
+                            root.keepaliveTotal = msg.total;
                     } else if (msg && typeof msg.ok === "boolean" && msg.ok === false) {
                         root.keepaliveError = msg.error || "Keepalive failed";
                     }
@@ -303,174 +228,517 @@ Singleton {
 
         onExited: (exitCode, exitStatus) => {
             // Ensure the ring completes even if the script was fast and progress lines were coalesced.
-            if (root.keepaliveDone < root.keepaliveTotal) root.keepaliveDone = root.keepaliveTotal;
+            if (root.keepaliveDone < root.keepaliveTotal)
+                root.keepaliveDone = root.keepaliveTotal;
             root.keepaliveRunning = false;
-            // Re-read records and refresh quota so the panel reflects the new window.
-            root.refresh();
+            // Refresh so the panel reflects the newly-active window.
+            root.refresh(true);
         }
     }
 
-    function chipTitleFor(rec: var, list: var): string {
-        const prov = String(rec.provider || "").toLowerCase();
-        let base = rec.tierLabel || rec.provider || "Agent";
+    // -- Endpoint and cache --------------------------------------------------
 
-        // Count how many accounts share this same tierLabel or provider
-        let sameCount = 0;
-        for (let i = 0; i < list.length; i++) {
-            const other = list[i];
-            if ((other.tierLabel === rec.tierLabel) || (other.provider === rec.provider))
-                sameCount++;
-        }
+    // Contents are read here and never logged or exposed as a file dump.
+    FileView {
+        id: endpointFile
 
-        if (sameCount > 1 && rec.account) {
-            // Extract short user part from email
-            const userPart = rec.account.split("@")[0];
-            if (userPart)
-                return `${base} (${userPart})`;
+        path: QuotaConfig.cpaConfigPath
+        printErrors: false
+        watchChanges: true
+
+        onTextChanged: root.applyEndpoint(endpointFile.text())
+        onLoadFailed: {
+            root.endpointLoaded = false;
+            root.baseUrl = "";
+            root.adminKey = "";
         }
-        return base;
     }
 
-    function applyRecords(jsonText: string): void {
-        // Remember whether the user had explicitly picked a provider before this refresh.
-        // On first load selectedProviderId is "" and we do initialize below.
-        // On later refreshes we preserve the scroll/selection.
-        const hadSelection = selectedProviderId !== "" && providers.length > 0;
-        const priorSelection = selectedProviderId;
+    // Last good mapped summary, no endpoint or key. Loaded once at start so a
+    // slow or unreachable manager still shows the previous reading instantly.
+    FileView {
+        id: cacheFile
+
+        path: root.cachePath
+        printErrors: false
+        watchChanges: false
+        blockWrites: false
+
+        onLoaded: root.loadCache(cacheFile.text())
+    }
+
+    function applyEndpoint(raw: string): void {
+        let parsed = null;
+        try {
+            // Notepad and some editors save a UTF-8 BOM; JSON.parse rejects it.
+            parsed = JSON.parse((raw || "").replace(/^\uFEFF/, ""));
+        } catch (e) {
+            parsed = null;
+        }
+        const base = (parsed && typeof parsed.baseUrl === "string") ? parsed.baseUrl.trim().replace(/\/+$/, "") : "";
+        const key = (parsed && typeof parsed.adminKey === "string") ? parsed.adminKey : "";
+        const previous = root.baseUrl + "\n" + root.adminKey;
+        root.baseUrl = base;
+        root.adminKey = key;
+        root.endpointLoaded = true;
+        if (previous !== base + "\n" + key)
+            root.refresh(true);
+        else
+            root.maybeRefresh();
+    }
+
+    function loadCache(raw: string): void {
+        // A live response always wins over the cache, even if it arrives first.
+        if (root.providers.length > 0 || root.lastUpdatedAt > 0)
+            return;
+        let cached = null;
+        try {
+            cached = JSON.parse((raw || "").replace(/^\uFEFF/, ""));
+        } catch (e) {
+            return;
+        }
+        if (!cached || !Array.isArray(cached.providers) || cached.providers.length === 0)
+            return;
+        root.providers = cached.providers;
+        root.lastUpdatedAt = Number(cached.lastUpdatedAt) || 0;
+        root.ttlMs = Number(cached.ttlMs) || 0;
+        root.todayCostUsd = (typeof cached.todayCostUsd === "number" && Number.isFinite(cached.todayCostUsd))
+            ? cached.todayCostUsd : null;
+        root.status = root.error !== "" ? "error" : "ok";
+        root.selectedProviderId = root.defaultProviderId();
+    }
+
+    function displayAccount(value: string): string {
+        const text = String(value || "").trim();
+        if (!text)
+            return "";
+        return text.indexOf("@") >= 0 ? text.split("@")[0] : text;
+    }
+
+    function cacheRecord(rec: var, index: int): var {
+        // Persist only what the drawer draws: display names, provider labels,
+        // windows and status. Emails, account ids and manager error text stay
+        // in memory.
+        return {
+            id: rec.provider + ":cached-" + index,
+            name: root.displayAccount(rec.name),
+            account: "",
+            accountLabel: root.displayAccount(rec.accountLabel || rec.name),
+            provider: rec.provider,
+            providerLabel: rec.providerLabel,
+            tierLabel: rec.tierLabel,
+            chipLabel: root.displayAccount(rec.chipLabel || rec.name),
+            status: rec.status,
+            statusMessage: "",
+            usageStatusText: "",
+            errorText: "",
+            unavailable: !!rec.unavailable,
+            disabled: !!rec.disabled,
+            cooldowns: [],
+            cooldownUntil: "",
+            limits: rec.limits,
+            lastUsedAt: "",
+            poolGroup: null,
+            poolAccounts: [],
+            poolLimits: [],
+            balance: null,
+            recentDays: [],
+            modelUsage: {},
+            allTime: null,
+            updatedAt: rec.updatedAt,
+            quotaUpdatedAt: rec.quotaUpdatedAt,
+            quotaCheckedAt: rec.quotaCheckedAt,
+            quotaError: "",
+            quotaAuthRequired: !!rec.quotaAuthRequired,
+            dailyMetric: "tokens",
+            tokensToday: 0,
+            requestsToday: 0,
+            providerRank: rec.providerRank
+        };
+    }
+
+    function writeCache(): void {
+        if (!root.cachePath)
+            return;
+        try {
+            const cachedProviders = [];
+            for (let i = 0; i < root.providers.length; i++)
+                cachedProviders.push(root.cacheRecord(root.providers[i], i));
+            cacheFile.setText(JSON.stringify({
+                schemaVersion: 1,
+                lastUpdatedAt: root.lastUpdatedAt,
+                ttlMs: root.ttlMs,
+                todayCostUsd: root.todayCostUsd,
+                providers: cachedProviders
+            }));
+        } catch (e) {
+            // The cache is an optimisation; a failed write must stay silent.
+        }
+    }
+
+    // -- Refresh -------------------------------------------------------------
+
+    function maybeRefresh(): void {
+        if (!root.configured) {
+            root.status = "unconfigured";
+            root.error = "";
+            return;
+        }
+        if (!root.enabled || !root.endpointLoaded)
+            return;
+        root.refresh(false);
+    }
+
+    function refresh(force): void {
+        if (force === undefined)
+            force = false;
+        if (!root.configured) {
+            root.status = "unconfigured";
+            return;
+        }
+        if (!root.enabled || root.inFlight)
+            return;
+        // Automatic refreshes never outpace the manager's own TTL.
+        if (!force && root.lastRequestAt > 0 && root.ttlMs > 0
+                && Date.now() - root.lastRequestAt < root.ttlMs)
+            return;
+        if (!root.endpointLoaded || !root.baseUrl || !root.adminKey) {
+            root.error = qsTr("CPA management config is incomplete. Add baseUrl and adminKey to cpa-agents.json.");
+            root.status = "error";
+            return;
+        }
+        if (typeof XMLHttpRequest === "undefined") {
+            root.error = qsTr("Quota refresh failed. Showing saved data.");
+            root.status = "error";
+            return;
+        }
+
+        let request = null;
+        try {
+            request = new XMLHttpRequest();
+        } catch (e) {
+            request = null;
+        }
+        if (!request) {
+            root.error = qsTr("Quota refresh failed. Showing saved data.");
+            root.status = "error";
+            return;
+        }
+
+        root.inFlight = true;
+        root.loading = true;
+        root.requestTimedOut = false;
+        root.lastRequestAt = Date.now();
+        root.activeRequest = request;
+        watchdog.restart();
+
+        request.onload = function () {
+            if (root.activeRequest !== request)
+                return;
+            try {
+                if (request.status >= 200 && request.status < 300) {
+                    if (!root.applySummary(request.responseText)) {
+                        root.failRefresh(false);
+                        return;
+                    }
+                    root.finishRequest();
+                    return;
+                }
+            } catch (e) {
+                root.failRefresh(false);
+                return;
+            }
+            root.failRefresh(false);
+        };
+        request.onerror = function () {
+            if (root.activeRequest === request)
+                root.failRefresh(false);
+        };
+        request.ontimeout = function () {
+            if (root.activeRequest === request) {
+                root.requestTimedOut = true;
+                root.failRefresh(true);
+            }
+        };
+        request.onabort = function () {
+            if (root.activeRequest === request)
+                root.failRefresh(root.requestTimedOut);
+        };
 
         try {
-            const rawRecords = JSON.parse(jsonText);
-            if (!Array.isArray(rawRecords))
-                return;
-
-            let totalTokensToday = 0;
-            const parsed = [];
-
-            for (let i = 0; i < rawRecords.length; i++) {
-                const rec = rawRecords[i];
-                if (!rec || typeof rec !== "object")
-                    continue;
-
-                const recent = rec.recentDays || [];
-                let tokensToday = 0;
-                let reqsToday = 0;
-                if (recent.length > 0) {
-                    const todayEntry = recent[recent.length - 1];
-                    tokensToday = Number(todayEntry.tokens || todayEntry.tokenCount || todayEntry.messageCount || 0);
-                    reqsToday = Number(todayEntry.requests || todayEntry.requestCount || 0);
-                }
-                // Pooled records all carry the leader's ledger; only the
-                // leader contributes so the global total is not multiplied.
-                if (!rec.poolMemberOf)
-                    totalTokensToday += tokensToday;
-
-                parsed.push({
-                    id: rec.id || ("p-" + i),
-                    name: rec.name || rec.account || rec.tierLabel || "Agent",
-                    account: rec.account || rec.accountLabel || "",
-                    provider: rec.provider || "cpa",
-                    tierLabel: rec.tierLabel || rec.provider || "Subscription",
-                    chipLabel: "",
-                    status: rec.status || "active",
-                    statusMessage: rec.statusMessage || rec.errorText || "",
-                    usageStatusText: rec.usageStatusText || "",
-                    errorText: rec.errorText || "",
-                    unavailable: !!rec.unavailable,
-                    disabled: !!rec.disabled,
-                    cooldowns: rec.cooldowns || [],
-                    cooldownUntil: rec.cooldownUntil || "",
-                    limits: rec.limits || [],
-                    lastUsedAt: rec.lastUsedAt || "",
-                    poolGroup: rec.poolGroup || null,
-                    poolAccounts: rec.poolAccounts || [],
-                    poolLimits: rec.poolLimits || [],
-                    balance: rec.balance || null,
-                    recentDays: recent,
-                    modelUsage: rec.modelUsage || {},
-                    allTime: rec.allTime || null,
-                    updatedAt: rec.updatedAt || "",
-                    quotaUpdatedAt: rec.quotaUpdatedAt || "",
-                    quotaCheckedAt: rec.quotaCheckedAt || "",
-                    quotaError: rec.quotaError || "",
-                    quotaAuthRequired: !!rec.quotaAuthRequired,
-                    dailyMetric: rec.dailyMetric || "tokens",
-                    tokensToday: tokensToday,
-                    requestsToday: reqsToday
-                });
-            }
-
-            // Assign unique, informative chip titles
-            for (let i = 0; i < parsed.length; i++) {
-                parsed[i].chipLabel = chipTitleFor(parsed[i], parsed);
-            }
-
-            // Stable sort: codex, claude, antigravity, cursor, opencode-go, vertex, kimi
-            parsed.sort((a, b) => {
-                const pOrder = ["codex", "claude", "antigravity", "cursor", "zai", "opencode-go", "vertex", "kimi"];
-                const aIdx = pOrder.indexOf(a.provider.toLowerCase());
-                const bIdx = pOrder.indexOf(b.provider.toLowerCase());
-                const aRank = aIdx >= 0 ? aIdx : 99;
-                const bRank = bIdx >= 0 ? bIdx : 99;
-                if (aRank !== bRank)
-                    return aRank - bRank;
-                return a.name.localeCompare(b.name);
-            });
-
-            providers = parsed;
-            todayTotalTokens = totalTokensToday;
-            // Reading cached files is not a successful upstream refresh.
-            lastUpdatedAt = parsed.reduce((latest, p) => Math.max(latest, Date.parse(p.updatedAt) || 0), 0);
-            error = refreshError;
-            status = error ? "error" : (parsed.some(p => p.unavailable || p.errorText) ? "partial" : "ok");
-
-            if (!selectedProviderId && parsed.length > 0)
-                selectedProviderId = parsed[0].id;
-            else if (hadSelection) {
-                // Refresh preserved the sorting; verify the prior selection still exists.
-                let stillExists = false;
-                for (let i = 0; i < parsed.length; i++) {
-                    if (parsed[i].id === priorSelection) { stillExists = true; break; }
-                }
-                if (!stillExists && parsed.length > 0)
-                    selectedProviderId = parsed[0].id;
-            }
+            request.open("GET", root.baseUrl + root.summaryUrlSuffix);
+            request.setRequestHeader("Authorization", "Bearer " + root.adminKey);
+            request.setRequestHeader("Accept", "application/json");
+            request.timeout = root.requestTimeoutMs;
+            request.send();
         } catch (e) {
-            error = qsTr("Could not read saved quota data.");
-            status = "error";
-            console.warn("Error parsing agent usage records:", e);
+            root.failRefresh(false);
         }
     }
 
-    // Read completed account records while slower providers are still running.
-    Timer {
-        interval: 2000
-        running: root.loading
-        repeat: true
-        onTriggered: if (!readProcess.running) readProcess.running = true
+    function finishRequest(): void {
+        watchdog.stop();
+        root.inFlight = false;
+        root.loading = false;
+        root.activeRequest = null;
+    }
+
+    function failRefresh(timedOut: bool): void {
+        if (!root.inFlight)
+            return;
+        root.finishRequest();
+        root.error = timedOut
+            ? qsTr("Quota refresh timed out. Showing saved data.")
+            : qsTr("Quota refresh failed. Showing saved data.");
+        root.status = "error";
     }
 
     Timer {
-        id: refreshWatchdog
-        interval: root.refreshTimeoutMs + 5000
+        id: watchdog
+        interval: root.requestTimeoutMs + 1000
+        repeat: false
         onTriggered: {
-            root.refreshTimedOut = true;
-            root.refreshError = qsTr("Quota refresh timed out. Showing saved data.");
-            root.error = root.refreshError;
+            if (!root.inFlight)
+                return;
+            root.requestTimedOut = true;
+            const request = root.activeRequest;
+            root.activeRequest = null;
+            root.finishRequest();
+            if (request) {
+                try {
+                    request.abort();
+                } catch (e) {}
+            }
+            root.error = qsTr("Quota refresh timed out. Showing saved data.");
             root.status = "error";
-            updateProcess.running = false;
-            logProcess.running = false;
-            logWatchdog.stop();
-            root.loading = false;
         }
     }
 
-    // Refresh timers. They stay inert until a CPA config exists.
+    // -- Mapping -------------------------------------------------------------
+
+    function friendlyError(code: string): string {
+        switch (String(code || "").toLowerCase()) {
+        case "unauthorized":
+            return qsTr("Account authorization needs attention in CPA.");
+        case "rate_limited":
+            return qsTr("The provider rate-limited the quota read.");
+        case "timeout":
+            return qsTr("The provider did not answer the quota request.");
+        case "not_found":
+            return qsTr("The provider could not find this account.");
+        case "parse_failed":
+            return qsTr("CPA could not interpret the provider's quota response.");
+        case "not_configured":
+        case "setup_required":
+            return qsTr("Quota reporting is not configured in CPA.");
+        case "no_accounts":
+            return qsTr("CPA reported no quota accounts.");
+        default:
+            return qsTr("CPA could not read this account's quota.");
+        }
+    }
+
+    function windowBaseLabel(id: string): string {
+        const value = String(id || "").toLowerCase();
+        if (/five[-_]hour|session/.test(value))
+            return qsTr("5-hour");
+        if (/seven[-_]day|weekly/.test(value))
+            return qsTr("Weekly");
+        return qsTr("Quota");
+    }
+
+    function windowTitle(providerId: string, window: var): string {
+        const label = String(window.label || "").trim();
+        // The original collector marked a model-scoped window with "·".
+        if (label.indexOf("·") >= 0)
+            return label;
+        const id = String(window.id || "");
+        const match = id.match(/^(?:five[-_]hour|seven[-_]day|weekly|session)[-_](.+)$/i);
+        if (match) {
+            const scope = match[1].replace(/[-_]+/g, " ").trim();
+            if (scope && !/^(window|primary|secondary|weekly|session)$/i.test(scope)) {
+                const pretty = scope.split(" ").map(part => {
+                    if (/^oauth$/i.test(part))
+                        return "OAuth";
+                    if (/^api$/i.test(part))
+                        return "API";
+                    return part.charAt(0).toUpperCase() + part.slice(1);
+                }).join(" ");
+                return pretty + " · " + (label || root.windowBaseLabel(id));
+            }
+        }
+        return label || root.windowBaseLabel(id);
+    }
+
+    function mapWindow(providerId: string, window: var, index: int): var {
+        if (!window || typeof window !== "object")
+            return null;
+        const used = window.usedPercent;
+        let percent = null;
+        if (used !== null && used !== undefined && Number.isFinite(Number(used)))
+            percent = Math.max(0, Math.min(100, Number(used))) / 100;
+        else if (window.remainingPercent !== null && window.remainingPercent !== undefined
+                && Number.isFinite(Number(window.remainingPercent)))
+            percent = Math.max(0, Math.min(100, 100 - Number(window.remainingPercent))) / 100;
+        const title = root.windowTitle(providerId, window);
+        return {
+            id: String(window.id || ("window-" + index)),
+            title: title,
+            label: title,
+            percent: percent,
+            resetsAt: String(window.resetAt || ""),
+            estimated: !!window.estimated,
+            source: String(window.source || "")
+        };
+    }
+
+    function mapAccount(provider: var, account: var, providerRank: int, stamp: string, providerError: string): var {
+        const providerId = root.normalizeProviderId(provider.id);
+        const rawCode = (account.error === null || account.error === undefined) ? "" : String(account.error);
+        const code = rawCode || providerError;
+        const message = code ? root.friendlyError(code) : "";
+        const failed = account.status === "error" || account.status === "unavailable" || code !== "";
+        const disabled = account.status === "disabled" || account.status === "inactive";
+        const plan = String(account.plan || "").trim();
+        const label = String(account.label || "").trim();
+        const display = label || plan || String(provider.label || provider.id || "Account");
+        const windows = Array.isArray(account.windows)
+            ? account.windows.map((window, i) => root.mapWindow(providerId, window, i)).filter(w => w !== null)
+            : [];
+        return {
+            id: providerId + ":" + String(account.id || ("account-" + providerRank + "-" + windows.length)),
+            name: display,
+            account: label,
+            accountLabel: display,
+            provider: providerId,
+            providerLabel: String(provider.label || provider.id || "Agent"),
+            tierLabel: plan || String(provider.label || ""),
+            chipLabel: display,
+            status: String(account.status || "ok"),
+            statusMessage: message,
+            usageStatusText: message,
+            errorText: message,
+            unavailable: failed,
+            disabled: disabled,
+            cooldowns: [],
+            cooldownUntil: "",
+            limits: windows,
+            lastUsedAt: "",
+            poolGroup: null,
+            poolAccounts: [],
+            poolLimits: [],
+            balance: null,
+            recentDays: [],
+            modelUsage: {},
+            allTime: null,
+            updatedAt: stamp,
+            quotaUpdatedAt: stamp,
+            quotaCheckedAt: stamp,
+            quotaError: message,
+            quotaAuthRequired: /unauthorized|auth_required|reauth/i.test(code),
+            dailyMetric: "tokens",
+            tokensToday: 0,
+            requestsToday: 0,
+            providerRank: providerRank
+        };
+    }
+
+    // Returns false when the body is not a usable summary.
+    function applySummary(raw: string): bool {
+        let summary = null;
+        try {
+            summary = JSON.parse(raw);
+        } catch (e) {
+            return false;
+        }
+        if (!summary || !Array.isArray(summary.providers))
+            return false;
+
+        const stampSource = String(summary.refreshedAt || summary.generatedAt || "");
+        let stamp = Date.parse(stampSource);
+        if (!Number.isFinite(stamp))
+            stamp = Date.now();
+        const stampIso = new Date(stamp).toISOString();
+        const ttl = Number(summary.ttlMs);
+        root.ttlMs = (Number.isFinite(ttl) && ttl > 0) ? ttl : 0;
+
+        const groups = [];
+        const records = [];
+        for (let i = 0; i < summary.providers.length; i++) {
+            const provider = summary.providers[i];
+            if (!provider || typeof provider !== "object")
+                continue;
+            const id = root.normalizeProviderId(provider.id);
+            if (!id)
+                continue;
+            const accounts = Array.isArray(provider.accounts) ? provider.accounts : [];
+            if (!groups.some(group => group.id === id))
+                groups.push({ id: id, label: String(provider.label || provider.id), rank: i, order: groups.length });
+            const providerError = (provider.error === null || provider.error === undefined)
+                ? "" : String(provider.error);
+            for (let j = 0; j < accounts.length; j++) {
+                if (accounts[j] && typeof accounts[j] === "object")
+                    records.push(root.mapAccount(provider, accounts[j], groups.length - 1, stampIso, providerError));
+            }
+        }
+
+        // Stable provider order, codex-first like the original drawer. Unknown
+        // providers keep the manager's own order at the end.
+        const preferred = ["codex", "claude", "antigravity", "cursor", "zai", "opencode-go", "vertex", "kimi"];
+        groups.sort((a, b) => {
+            const aIdx = preferred.indexOf(a.id);
+            const bIdx = preferred.indexOf(b.id);
+            const aRank = aIdx >= 0 ? aIdx : 99;
+            const bRank = bIdx >= 0 ? bIdx : 99;
+            if (aRank !== bRank)
+                return aRank - bRank;
+            return a.order - b.order;
+        });
+
+        const ordered = [];
+        for (let i = 0; i < groups.length; i++) {
+            const group = groups[i];
+            for (let j = 0; j < records.length; j++) {
+                if (records[j].provider === group.id)
+                    ordered.push(records[j]);
+            }
+        }
+
+        const summaryError = (summary.error === null || summary.error === undefined)
+            ? "" : root.friendlyError(String(summary.error));
+        root.providers = ordered;
+        root.todayCostUsd = (typeof summary.todayCostUsd === "number" && Number.isFinite(summary.todayCostUsd))
+            ? summary.todayCostUsd : null;
+        root.lastUpdatedAt = stamp;
+        root.error = ordered.length === 0 && summaryError ? summaryError : "";
+        const degraded = ordered.some(a => a.unavailable)
+            || (typeof summary.status === "string" && summary.status !== "ok")
+            || (summaryError !== "" && ordered.length > 0);
+        root.status = root.error !== "" ? "error" : degraded ? "partial" : "ok";
+
+        const prior = root.selectedProviderId;
+        let exists = false;
+        for (let i = 0; i < ordered.length; i++) {
+            if (ordered[i].id === prior) {
+                exists = true;
+                break;
+            }
+        }
+        if (!exists)
+            root.selectedProviderId = root.defaultProviderId();
+
+        root.writeCache();
+        return true;
+    }
+
+    // -- Timers --------------------------------------------------------------
+
     Timer {
         id: autoRefreshTimer
-        interval: root.refreshIntervalMs
-        running: root.configured && QuotaConfig.enabled
+        interval: root.effectiveRefreshMs
+        running: root.configured && root.enabled
         repeat: true
-        onTriggered: root.refresh()
+        onTriggered: root.refresh(false)
     }
 
     Timer {
@@ -493,33 +761,19 @@ Singleton {
         }
 
         function refresh(): void {
-            root.refresh();
+            root.refresh(true);
         }
     }
 
-    // The probe is asynchronous, so the first load can arrive after this
-    // component was created. React once to its result instead of polling.
-    onConfiguredChanged: {
-        if (!root.configured)
-            return;
-        if (!readProcess.running)
-            readProcess.running = true;
-        if (QuotaConfig.enabled)
-            root.refresh();
-    }
-
-    onEnabledChanged: {
-        if (root.enabled && root.configured)
-            root.refresh();
-    }
+    onConfiguredChanged: root.maybeRefresh()
+    onEnabledChanged: root.maybeRefresh()
 
     Component.onCompleted: {
         if (!root.configured) {
             root.status = "unconfigured";
             return;
         }
-        readProcess.running = true;
-        if (QuotaConfig.enabled)
-            root.refresh();
+        // The endpoint FileView and cache FileView load asynchronously.
+        root.status = "idle";
     }
 }
