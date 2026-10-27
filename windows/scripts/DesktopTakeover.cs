@@ -79,6 +79,19 @@ namespace Caelestia.Takeover {
             try { Log(log); } finally { cleanup(); }
         }
     }
+    public static class TransientIo {
+        // A scanner or indexer can hold a file for a moment. Retry a few times
+        // with doubling pauses (25, 50, 100, 200 ms), then surface the error.
+        public static void Retry(Action action, Action<int> pause) {
+            for (int attempt = 0; ; attempt++) {
+                try { action(); return; }
+                catch (Exception error) {
+                    if (!(error is IOException || error is UnauthorizedAccessException) || attempt >= 4) throw;
+                }
+                pause(25 << attempt);
+            }
+        }
+    }
     public static class RegionCapture {
         public static SavedRegion TryCapture(Func<SavedRegion> capture, Func<bool> vanished) {
             try {
@@ -684,8 +697,10 @@ namespace Caelestia.Takeover {
                 writer.Flush();
                 stream.Flush(true);
             }
-            if (File.Exists(path)) File.Replace(temporary, path, null);
-            else File.Move(temporary, path);
+            TransientIo.Retry(delegate {
+                if (File.Exists(path)) File.Replace(temporary, path, null);
+                else File.Move(temporary, path);
+            }, System.Threading.Thread.Sleep);
         }
         public static void PrepareRegions(string path, Snapshot snapshot, List<Bar> bars) {
             RegionBatch.Prepare(snapshot, bars, CaptureRegion,
@@ -1027,6 +1042,7 @@ namespace Caelestia.Takeover {
         int ownedPid = -1;
         volatile int startGeneration;
         uint lastHookFailure;
+        DateTime nextPersistLog;
         bool done;
         public int ExitCode;
 
@@ -1067,7 +1083,7 @@ namespace Caelestia.Takeover {
                 delegate(uint owner) { return Native.HookShows(owner, showCallback); },
                 Native.UnhookShows);
             showHandler = new TaskbarShowHandler(showPolicy, Native.EventTaskbar,
-                delegate(Bar bar) { if (invisible) regions.Reconcile(bar); }, Native.HideObserved, Native.Record);
+                delegate(Bar bar) { if (invisible) Reconcile(bar); }, Native.HideObserved, Native.Record);
             Directory.CreateDirectory(launch.StateDirectory);
             saved = Native.Capture();
             regions = new RegionSuppression(saved, Native.CaptureRegion, delegate(SavedRegion ignored) { SaveSnapshot(); },
@@ -1130,8 +1146,23 @@ namespace Caelestia.Takeover {
                     throw new InvalidOperationException("Banner recovery failed: " + errors);
             }
         }
+        // A snapshot that still cannot be written after retries leaves that
+        // bar untouched (persist precedes apply). Keep the shell running and
+        // retry on the next tick instead of ending the session.
+        void Reconcile(Bar bar) {
+            try { regions.Reconcile(bar); }
+            catch (Exception error) {
+                if (!(error is IOException || error is UnauthorizedAccessException)) throw;
+                if (DateTime.UtcNow < nextPersistLog) return; // at most one log line a minute
+                nextPersistLog = DateTime.UtcNow.AddMinutes(1);
+                SupervisorSafety.Log(delegate {
+                    File.AppendAllText(Path.Combine(launch.StateDirectory, "watchdog-error.log"),
+                        "snapshot persist failed, will retry: " + error + Environment.NewLine);
+                });
+            }
+        }
         void SuppressRegions() {
-            if (invisible) foreach (var bar in Native.Taskbars()) regions.Reconcile(bar);
+            if (invisible) foreach (var bar in Native.Taskbars()) Reconcile(bar);
         }
         protected override void WndProc(ref Message message) {
             if (message.Msg == taskbarCreated && child != null && !child.HasExited && hide) {

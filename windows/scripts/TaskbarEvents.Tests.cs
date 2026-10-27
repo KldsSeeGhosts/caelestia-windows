@@ -223,6 +223,19 @@ public static class TaskbarEventsTests {
             SupervisorSafety.Fail(delegate { throw error; }, delegate { cleaned++; });
         }
         Check(cleaned == 2, "cleanup runs when both error-log writes fail");
+        var pauses = new List<int>();
+        int tries = 0;
+        TransientIo.Retry(delegate { if (++tries < 3) throw new IOException("locked"); }, pauses.Add);
+        Check(tries == 3 && String.Join(",", pauses.ConvertAll(p => p.ToString()).ToArray()) == "25,50",
+            "transient lock is retried with backoff");
+        tries = 0; pauses.Clear();
+        try { TransientIo.Retry(delegate { tries++; throw new UnauthorizedAccessException("locked"); }, pauses.Add); throw new Exception("expected lock failure"); }
+        catch (UnauthorizedAccessException) {}
+        Check(tries == 5 && pauses.Count == 4, "persistent lock is bounded and then surfaces");
+        tries = 0;
+        try { TransientIo.Retry(delegate { tries++; throw new InvalidOperationException("bug"); }, pauses.Add); }
+        catch (InvalidOperationException) {}
+        Check(tries == 1, "non-I/O errors are not retried");
         var failedSnapshot = new Snapshot();
         int applied = 0, restored = 0;
         var failedManager = new RegionSuppression(failedSnapshot,
