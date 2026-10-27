@@ -27,6 +27,11 @@ public:
     // Runs on the worker thread before its event loop stops.
     void end();
 
+    // Thread-safe. Stops pending work and best-effort cancels the in-flight
+    // history read. The facade calls it before its bounded thread wait, when
+    // the worker thread may already be blocked inside a WinRT call.
+    void requestStop();
+
 public slots:
     void refresh();
     // Change events are only followed while the picker is open. A closed
@@ -48,8 +53,14 @@ signals:
     void openUrl(const QString& url);
 
 private:
-    void performRefresh();
-    void pruneStalePreviews();
+    void performRefresh(bool eventDriven);
+    void scheduleEventRefresh();
+    void startHistoryRead(quint64 generation, bool eventDriven);
+    void publishSnapshot(const QVariantList& items, bool enabled, const QString& status,
+        const QString& error);
+    void reconcilePreviews(bool startup);
+    void removeOpenFiles();
+    [[nodiscard]] QString openDirectory() const;
     [[nodiscard]] QString previewDirectory() const;
     [[nodiscard]] QString ensurePreview(const QString& id);
     void removePreview(const QString& id);

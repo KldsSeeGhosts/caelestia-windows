@@ -5,6 +5,7 @@ qml_module(caelestia-windows
         windowsfocusguard.cpp
         windowsfontfallback.hpp
         windowsfontfallback.cpp
+        Clipboard/clipboardlogic.hpp
         Clipboard/windowsclipboard.hpp
         Clipboard/windowsclipboard.cpp
         Clipboard/windowsclipboardworker.hpp
@@ -30,6 +31,20 @@ target_compile_definitions(caelestia-windows PRIVATE
 target_include_directories(caelestia-windows PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/Clipboard"
 )
+
+# The clipboard's WinRT-free decisions are checked by a small Qt Test
+# executable. windows/scripts/Test-ClipboardHistory.ps1 runs it alongside the
+# QML smoke.
+find_package(Qt6 QUIET COMPONENTS Test)
+if(Qt6Test_FOUND)
+    add_executable(clipboard-logic-tests
+        Clipboard/test/clipboardlogic_test.cpp
+    )
+    target_include_directories(clipboard-logic-tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/Clipboard"
+    )
+    target_link_libraries(clipboard-logic-tests PRIVATE Qt::Core Qt::Test)
+endif()
 
 # WASAPI loopback analysis: CavaProvider/BeatTracker/ServiceRef for the
 # original visualiser and media components.

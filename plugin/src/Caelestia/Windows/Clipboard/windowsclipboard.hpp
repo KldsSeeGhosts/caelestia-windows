@@ -1,12 +1,14 @@
 #pragma once
 
+#include <qelapsedtimer.h>
 #include <qobject.h>
 #include <qqmlintegration.h>
 #include <qstring.h>
-#include <qthread.h>
 #include <qtimer.h>
 #include <qvariant.h>
 #include <qt_windows.h>
+
+class QThread;
 
 namespace caelestia::shell::windows {
 
@@ -16,13 +18,16 @@ class WindowsClipboardWorker;
 // every Windows.ApplicationModel.DataTransfer.Clipboard call; this object
 // keeps only presentation data, the paste choreography and focus return.
 //
+// This is a regular QML element owned by the loader (not a singleton): when
+// windows.clipboard.enabled becomes false the wrapper item is destroyed, which
+// stops the worker, cancels pending pastes and drops retained history.
+//
 // Windows keeps its own rules: password-manager exclusions, pinned items,
 // size limits and sync. The shell never enables clipboard history, never logs
 // clipboard contents and never maintains a parallel capture store.
 class WindowsClipboard: public QObject {
     Q_OBJECT
     QML_ELEMENT
-    QML_SINGLETON
 
     // The profile cache directory for preview images and opened text files.
     // Empty disables both; the shell never writes elsewhere.
@@ -46,6 +51,8 @@ public:
     [[nodiscard]] QString lastError() const { return m_lastError; }
 
     Q_INVOKABLE void refresh();
+    // The picker open/close edge. Opening captures the immutable paste
+    // destination from the currently focused external window.
     Q_INVOKABLE void setActive(bool active);
     Q_INVOKABLE void copy(const QString& id);
     Q_INVOKABLE void paste(const QString& id);
@@ -54,6 +61,11 @@ public:
     Q_INVOKABLE void openItem(const QString& id);
     Q_INVOKABLE void requestImage(const QString& id);
     Q_INVOKABLE void openSettings() const;
+    // Explicit reset used by the loader-owned wrapper when it is destroyed
+    // (or when windows.clipboard.enabled becomes false): cancels a pending
+    // paste, stops the worker, unsubscribes both events and clears all
+    // retained history and preview ownership. Idempotent; later calls no-op.
+    Q_INVOKABLE void shutdown();
 
 signals:
     void cacheDirectoryChanged();
@@ -63,10 +75,15 @@ signals:
     void lastErrorChanged();
     void imageReady(const QString& id, const QString& url);
     // The item is now the clipboard content. The picker closes itself and the
-    // synthetic paste follows after the close animation and focus return.
+    // synthetic paste follows after the close animation and verified focus
+    // return to the window captured when the picker opened.
     void pasteReady(const QString& id);
     void operationFailed(const QString& operation, const QString& message);
     void openUrl(const QString& url);
+    // Emitted from shutdown(), before the worker is stopped. The loader-owned
+    // wrapper calls shutdown() on destruction; the smoke uses this to prove
+    // the native backend is reset, not only that Loader.item became null.
+    void aboutToShutdown();
 
 private:
     struct NativeWindow {
@@ -77,24 +94,34 @@ private:
 
     [[nodiscard]] static NativeWindow identify(HWND hwnd);
     [[nodiscard]] static bool valid(const NativeWindow& window);
-    void sampleForeground();
+    [[nodiscard]] static bool modifiersReleased();
+    void capturePasteDestination();
+    void cancelPendingPaste();
+    void failPaste(const QString& message);
     void attemptPaste();
     [[nodiscard]] bool sendPasteChord() const;
+    void shutdownWorker();
     void setStatus(const QString& status);
     void setLastError(const QString& error);
 
-    QThread m_thread;
+    QThread* m_thread = nullptr;
     WindowsClipboardWorker* m_worker = nullptr;
     QVariantList m_items;
     QString m_cacheDirectory;
     QString m_status = QStringLiteral("initializing");
     QString m_lastError;
+    // The immutable destination for the pending paste. It is sampled when the
+    // picker opens, not when paste() is called (the picker is foreground
+    // then), and never updated by background foreground sampling.
+    NativeWindow m_pasteDestination;
     QString m_pendingPasteId;
+    QElapsedTimer m_pasteWait;
+    QElapsedTimer m_modifierWait;
     QTimer m_pasteTimer;
-    QTimer m_foregroundTimer;
-    NativeWindow m_external;
     bool m_historyEnabled = false;
-    bool m_pasteFocusRetried = false;
+    bool m_pasteDestinationCaptured = false;
+    bool m_focusRestoreRequested = false;
+    bool m_shuttingDown = false;
 };
 
 } // namespace caelestia::shell::windows

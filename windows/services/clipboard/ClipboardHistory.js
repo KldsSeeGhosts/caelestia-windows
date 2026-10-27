@@ -226,6 +226,31 @@ function cappedEntry(entry) {
     };
 }
 
+// Selection is preserved by stable item id, not by row index. A refresh can
+// insert new entries above the selected one; keeping the index would silently
+// move the selection (and Delete would remove the wrong entry). When the
+// selected entry is gone, fall back to the clamped previous index.
+function indexOfId(rows, id) {
+    const wanted = String(id || "");
+    if (!wanted || !Array.isArray(rows))
+        return -1;
+    for (let i = 0; i < rows.length; i++) {
+        if (String(rows[i].itemId || rows[i].id || "") === wanted)
+            return i;
+    }
+    return -1;
+}
+
+function selectionIndex(previousId, previousIndex, rows) {
+    if (!Array.isArray(rows) || rows.length === 0)
+        return -1;
+    const found = indexOfId(rows, previousId);
+    if (found >= 0)
+        return found;
+    const fallback = Number.isFinite(previousIndex) ? previousIndex : 0;
+    return Math.max(0, Math.min(fallback, rows.length - 1));
+}
+
 function displayRows(history, query, limit) {
     const values = Array.isArray(history) ? history : [];
     const needle = String(query || "").trim().toLowerCase();

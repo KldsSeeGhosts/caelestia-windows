@@ -448,14 +448,16 @@ bound.
 | --- | --- | --- | --- |
 | `enabled` | bool | `true` | Construct the native clipboard service and allow the picker to open. |
 
-Disabling the option unloads the native type instead of merely hiding the
-picker: no clipboard history is read and the global shortcut is a no-op.
-Changes reload live. The shell never enables Windows clipboard history or
-changes its settings; when Windows has it off, the picker offers a button that
-opens `ms-settings:clipboard`. Password-manager exclusions, pinned items, size
-limits and sync remain Windows' decisions. Preview images and explicitly opened
-text files are written only under the profile's `cache\clipboard` directory and
-are pruned with their entries. See
+Disabling the option shuts the native backend down and destroys it instead of
+merely hiding the picker: the worker thread stops, the WinRT event
+subscriptions are revoked, a pending paste is cancelled, retained history and
+preview ownership are cleared, no clipboard history is read and the global
+shortcut is a no-op. Changes reload live. The shell never enables Windows
+clipboard history or changes its settings; when Windows has it off, the picker
+offers a button that opens `ms-settings:clipboard`. Password-manager
+exclusions, pinned items, size limits and sync remain Windows' decisions.
+Preview images and explicitly opened text files are written only under the
+profile's `cache\clipboard` directory and are pruned with their entries. See
 [the clipboard notes](../services/clipboard/README.md) for the shortcut, IPC
 target and remaining live verification.
 

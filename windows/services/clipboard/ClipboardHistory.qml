@@ -12,7 +12,9 @@ import Caelestia.Config
 //
 // The key is optional and defaults to enabled. The native backend is not
 // constructed at all while the option is disabled, so no clipboard history is
-// read and no Windows setting is touched.
+// read and no Windows setting is touched. Disabling a running feature unloads
+// the loader-owned wrapper, which explicitly shuts the native backend down
+// before it is destroyed.
 //
 // Status is one of: "disabled" (this option), "initializing", "loading",
 // "ready", "disabled" (Windows clipboard history off), "denied" (Windows

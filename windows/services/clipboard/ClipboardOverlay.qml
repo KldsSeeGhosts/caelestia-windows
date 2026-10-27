@@ -74,6 +74,9 @@ Scope {
         clearConfirmOpen = false;
         search.text = "";
         requestedPreviews = ({});
+        // Capture the paste destination before this panel becomes visible and
+        // takes focus. setActive(true) also cancels any previous paste.
+        ClipboardHistory.setActive(true);
         opened = true;
     }
 
@@ -91,6 +94,13 @@ Scope {
 
     function rebuildDisplay(): void {
         const previousIndex = selectedIndex;
+        // A refresh can insert or remove entries above the selection. Keeping
+        // the row index would move the selection to a different entry (and
+        // Delete would remove the wrong one), so the selected item id is the
+        // anchor; index is only the fallback when that entry is gone.
+        const previousId = previousIndex >= 0 && previousIndex < displayModel.count
+            ? String(displayModel.get(previousIndex).itemId ?? "")
+            : "";
         const rows = ClipboardRows.displayRows(ClipboardHistory.items, search.text, root.historyLimit);
 
         // Update roles in place: clearing destroys visible delegates, their
@@ -128,7 +138,7 @@ Scope {
         if (displayModel.count === 0)
             selectedIndex = -1;
         else
-            selectedIndex = Math.max(0, Math.min(previousIndex, displayModel.count - 1));
+            selectedIndex = ClipboardRows.selectionIndex(previousId, previousIndex, rows);
         results.currentIndex = selectedIndex;
 
         // Thumbnails are fetched only while the picker is open and only for
@@ -206,9 +216,12 @@ Scope {
     }
 
     onOpenedChanged: {
-        ClipboardHistory.setActive(opened);
-        if (!opened)
+        // Opening already called setActive(true) before the panel showed, so
+        // the destination is captured before this window takes focus.
+        if (!opened) {
+            ClipboardHistory.setActive(false);
             return;
+        }
         ClipboardHistory.refresh();
         Qt.callLater(root.rebuildDisplay);
         focusTimer.restart();

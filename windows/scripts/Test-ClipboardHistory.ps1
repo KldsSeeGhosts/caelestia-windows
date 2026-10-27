@@ -20,6 +20,21 @@ Copy-Item -LiteralPath "$repoRoot\windows\services\clipboard\ClipboardHistorySmo
 '{"windows":{"clipboard":{"enabled":true}}}' |
     Set-Content -LiteralPath "$profile\config\shell.json" -Encoding UTF8
 $qmlRoot = Join-Path $BuildRoot 'install\qml'
+# The clipboard logic test is built with the plugin and covers the decisions
+# the QML smoke cannot reach: the SetHistoryItemAsContent status and the
+# event-driven refresh gate.
+$logicTest = Join-Path $BuildRoot 'caelestia\lib\clipboard-logic-tests.exe'
+if (-not (Test-Path -LiteralPath $logicTest -PathType Leaf)) {
+    throw "Missing clipboard logic test: $logicTest (run windows/scripts/Build-Prototype.ps1 first)."
+}
+$previousPath = $env:PATH
+$env:PATH = "$QtPrefix\bin;$qmlRoot\Caelestia\lib;$env:PATH"
+& $logicTest -o "$run\logic-tests.txt,txt" | Out-Null
+$logicExit = $LASTEXITCODE
+$env:PATH = $previousPath
+$logicPassed = $logicExit -eq 0 -and
+    (Test-Path -LiteralPath "$run\logic-tests.txt" -PathType Leaf) -and
+    (Select-String -LiteralPath "$run\logic-tests.txt" -Pattern 'Totals:.*\b0 failed\b' -Quiet)
 $info = New-Object Diagnostics.ProcessStartInfo
 $info.FileName = Join-Path $BuildRoot 'quickshell\qs.exe'
 $info.Arguments = '--no-color --log-times --path "' + "$stage\clipboard-smoke.qml" + '"'
@@ -48,11 +63,18 @@ $stderr = $errTask.GetAwaiter().GetResult()
 $stdout | Set-Content -LiteralPath "$run\stdout.log" -Encoding UTF8
 $stderr | Set-Content -LiteralPath "$run\stderr.log" -Encoding UTF8
 $text = "$stdout`n$stderr"
-$passed = -not $timedOut -and $process.ExitCode -eq 0 -and
+$qmlPassed = -not $timedOut -and $process.ExitCode -eq 0 -and
     $text.Contains('CAELESTIA_CLIPBOARD_SMOKE_PASS') -and
+    # The native destructor's marker proves the loader-owned instance itself
+    # was destroyed after the option was disabled, not just Loader.item.
+    $text.Contains('CAELESTIA_CLIPBOARD_NATIVE_DESTROYED') -and
     $text -notmatch '(?m)^\S+ \S+\s+(WARN|ERROR|FATAL|CRITICAL)\b'
+$passed = $logicPassed -and $qmlPassed
 $result = [ordered]@{
-    passed = $passed; timedOut = $timedOut; exitCode = $process.ExitCode
+    passed = $passed; qmlPassed = $qmlPassed
+    timedOut = $timedOut; exitCode = $process.ExitCode
+    logicTestsPassed = $logicPassed; logicTestsExitCode = $logicExit
+    logicTests = $logicTest; logicTestsLog = "$run\logic-tests.txt"
     sourceRevision = (& git -C $repoRoot rev-parse HEAD).Trim()
     sourceDirty = [bool](& git -C $repoRoot status --porcelain)
     backendRevision = (Get-Content "$BuildRoot\logs\build.json" -Raw | ConvertFrom-Json).backendRevision
@@ -63,4 +85,6 @@ $result = [ordered]@{
 }
 $result | ConvertTo-Json | Set-Content -LiteralPath "$run\result.json" -Encoding UTF8
 $result | ConvertTo-Json
-if (-not $passed) { throw "Clipboard smoke failed: $run" }
+if (-not $passed) {
+    throw "Clipboard test failed: $run (logic=$logicPassed, qml=$qmlPassed)"
+}

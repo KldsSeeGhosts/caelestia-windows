@@ -31,7 +31,11 @@ own Win+V panel for that chord. See
 `windows.clipboard.enabled` in `config/shell.json` gates the feature (default
 `true`). Unknown fields in `windows.clipboard` are ignored. Disabling it does
 not construct the native type, does not read the history, and leaves the global
-shortcut a no-op.
+shortcut a no-op. The native instance is loader-owned and not a singleton:
+disabling the feature explicitly shuts the backend down and then destroys it,
+which stops the worker thread, cancels the in-flight read and any pending
+paste, unsubscribes both WinRT events and drops all retained history and
+preview ownership.
 
 ```json
 { "windows": { "clipboard": { "enabled": false } } }
@@ -48,7 +52,7 @@ off, the picker shows an empty state with a button that opens
 | `plugin/src/Caelestia/Windows/Clipboard/windowsclipboard.{hpp,cpp}` | QML facade (`Caelestia.Windows.WindowsClipboard`): presentation list, paste choreography, focus sampling, marked key injection |
 | `plugin/src/Caelestia/Windows/Clipboard/windowsclipboardworker.{hpp,cpp}` | Dedicated MTA worker: every WinRT clipboard history call, static event handling, preview files |
 | `windows/services/clipboard/ClipboardHistory.qml` | Gated `qs.services` facade staged as `services/ClipboardHistory.qml` |
-| `windows/services/clipboard/NativeClipboardBackend.qml` | Loader-only wrapper that constructs the native singleton and binds the profile cache directory |
+| `windows/services/clipboard/NativeClipboardBackend.qml` | Loader-only wrapper that owns the native instance and binds the profile cache directory |
 | `windows/services/clipboard/ClipboardOverlay.qml` | Ported picker, staged as `modules/clipboard/ClipboardOverlay.qml` |
 | `windows/services/clipboard/ClipboardHistory.js` | Display-row classification and bounded preview |
 | `windows/services/clipboard/ClipboardHistorySmoke.qml` | Light native smoke (model and gate only) |
@@ -74,9 +78,38 @@ Native `WindowsClipboard` exposes:
 History is read only when the picker opens (`setActive(true)` plus
 `refresh()`). While it is open, `Clipboard.HistoryChanged` and
 `Clipboard.HistoryEnabledChanged` are coalesced into one refresh every 150 ms.
-A closed picker reads nothing in the background. Every WinRT call runs on a
-dedicated MTA worker thread, so the GUI thread never blocks on
-`GetHistoryItemsAsync`, `GetTextAsync` or bitmap reads.
+Closing the picker stops and invalidates the coalescing timer, so a scheduled
+read cannot run while nothing is on screen; an asynchronous result that arrives
+after close (or after a newer read) is dropped by its generation. A closed
+picker reads nothing in the background. Every WinRT call runs on a dedicated
+MTA worker thread, so the GUI thread never blocks on `GetHistoryItemsAsync`,
+`GetTextAsync` or bitmap reads. The history read itself is asynchronous: its
+operation handle is cancelled on shutdown and results for a superseded
+generation are never published. The worker's two event subscriptions are
+revoked independently and only through a shared lifetime bridge, so a callback
+already in flight during teardown cannot reach a destroyed worker.
+
+`paste(id)` sets the item as clipboard content with
+`SetHistoryItemAsContent` and requires the returned
+`SetHistoryItemAsContentStatus::Success`; `AccessDenied` or `ItemDeleted` is
+reported as a failure and never followed by an injection. The picker closes,
+then after 240 ms (the 100 ms close animation and the focus guard's 75 ms focus
+return) a synthetic Ctrl+V marked with the backend's `0x5153484B` injection
+marker (`KeyboardHook::INJECTION_MARKER` in `windows/deps/quickshell/src/
+windows/keyboard_hook.hpp`) is sent. The shell's low-level keyboard hook
+ignores events that carry the marker, so the paste cannot re-enter Caelestia's
+own hotkey or taskbar-suppression hooks.
+
+The paste destination is an immutable `HWND`/process/thread identity captured
+when the picker opens (before its panel takes focus), not a background sample
+and not the foreground at paste time. Before injecting, the native type
+verifies that the destination is still valid and still the verified foreground
+window; if the shell process still holds focus it makes one bounded
+`SetForegroundWindow` request, and if the destination did not regain focus, or
+another application is foreground, the paste is cancelled with no injection.
+Injecting is also delayed, with a bound, until all physical modifier keys are
+released: a held Super would turn the chord into Win+Ctrl+V, and the injected
+Ctrl-up must not release the user's own Ctrl.
 
 The picker opens on the Hypr-observed focused monitor when
 `CAELESTIA_WINDOWS_HYPR=1` has resolved a focused monitor, and falls back to the
@@ -84,22 +117,12 @@ first Qt screen otherwise. It is one full-screen panel that follows the
 selected screen; while the picker is closed its window is hidden and therefore
 has no native window.
 
-`paste(id)` sets the item as clipboard content with
-`SetHistoryItemAsContent`, tells the picker to close, waits 240 ms for the
-100 ms close animation and the focus guard's 75 ms focus return, then sends a
-synthetic Ctrl+V marked with the backend's `0x5153484B` injection marker
-(`KeyboardHook::INJECTION_MARKER` in `windows/deps/quickshell/src/windows/
-keyboard_hook.hpp`). The shell's low-level keyboard hook ignores events that
-carry the marker, so the paste cannot re-enter Caelestia's own hotkey or
-taskbar-suppression hooks. If Windows still holds the shell process foreground,
-the native type makes one bounded `SetForegroundWindow` attempt to the last
-external window before injecting.
-
 `copy(id)` restores its content without closing the picker (the UI closes it
 for you). `remove(id)` calls `DeleteItemFromHistory`, `clear()` calls
-`ClearHistory`. Windows decides what pinned items do in both cases and whether
-the history is available at all, including password-manager exclusions
-(`ExcludeClipboardContentFromMonitorProcessing`,
+`ClearHistory`, and both report failure when Windows returns `false` instead of
+pretending the history changed. Windows decides what pinned items do in both
+cases and whether the history is available at all, including password-manager
+exclusions (`ExcludeClipboardContentFromMonitorProcessing`,
 `CanIncludeInClipboardHistory`) and the 25-item history limit.
 
 The public WinRT history item exposes only `Id`, `Timestamp` and `Content`.
@@ -119,9 +142,11 @@ item. The worker reads the bitmap, writes it under
 `<Quickshell.cacheDir>/clipboard/preview/` (the profile cache) with a
 content-hash name, and exposes a `file://` URL. Previews survive a refresh only
 while their item is still in the history; `remove()` and a failed/empty refresh
-delete them, and files older than a day are pruned at worker start and when the
-cache directory changes. Previews larger than 64 MiB are not materialized;
-copy/paste of that item still works.
+delete them. An orderly shutdown deletes this session's previews and opened
+text files, startup deletes any preview or opened file the new session does not
+own (crash leftovers), and a ten-minute prune removes unowned previews and
+stale opened text while the worker runs. Previews larger than 64 MiB are not
+materialized; copy/paste of that item still works.
 
 Clipboard contents are never logged. The only text this feature writes to disk
 is an explicit "open as text file" action and the image preview files above.
@@ -138,11 +163,17 @@ overlay. See [upstream/SOURCE.md](upstream/SOURCE.md) and
 `windows/scripts/Test-ClipboardHistory.ps1` stages the installed shell graph in
 a temporary profile and runs `ClipboardHistorySmoke.qml` with the built
 `qs.exe`. It checks the display-row model (search past the bounded preview,
-filtered ids, output limits, entry classification) and the
-`windows.clipboard.enabled` gate, including that disabling the option unloads
-the native type. It never opens the picker, so it does not read, clear or
-modify the real clipboard history; the enabled case can construct the native
-type, whose only WinRT call in that state is a read-only
+filtered ids, output limits, entry classification, selection preservation by
+item id), the `windows.clipboard.enabled` gate, that disabling the option emits
+the native `aboutToShutdown` reset (cancelling the worker, events and pending
+paste), and that the native C++ instance itself is destroyed rather than
+outliving the loader (the runner asserts the destructor's marker line). The
+script also runs the small `clipboard-logic-tests` executable built with the
+plugin, which covers the `SetHistoryItemAsContent` status decision and the
+event-driven refresh gate (no read while closed; deactivation and newer reads
+invalidate stale completions). It never opens the picker, so it does not read,
+clear or modify the real clipboard history; the enabled case can construct the
+native type, whose only WinRT call in that state is a read-only
 `Clipboard.IsHistoryEnabled()`.
 
 ## Live verification still needed

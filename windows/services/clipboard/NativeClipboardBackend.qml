@@ -5,10 +5,11 @@ import Caelestia.Windows
 // Loaded by ClipboardHistory only while windows.clipboard.enabled is true, so
 // a disabled feature constructs no native type and reads no clipboard data.
 //
-// Caelestia.Windows.WindowsClipboard is a QML singleton; its first reference
-// constructs it. This wrapper exists so the facade's Loader controls that
-// construction and so the profile cache directory is bound before any preview
-// is requested. The native type writes nowhere outside that directory.
+// Caelestia.Windows.WindowsClipboard is a regular QML element, not a
+// singleton: this wrapper owns the native instance, so destroying the wrapper
+// (for example when the option is disabled) destroys the worker thread, its
+// WinRT event subscriptions, retained history, preview ownership and any
+// pending paste timer. Nothing can fire after the feature is disabled.
 Item {
     id: root
 
@@ -16,7 +17,24 @@ Item {
     width: 0
     height: 0
 
-    readonly property var service: WindowsClipboard
+    WindowsClipboard {
+        id: service
+
+        // Bound at construction. The native type writes nowhere outside this
+        // profile cache directory.
+        cacheDirectory: Quickshell.cacheDir + "/clipboard"
+    }
+
+    // Explicit reset before QML destroys this wrapper. QML does eventually
+    // destroy the native object with the wrapper, but the worker must stop,
+    // events must be revoked and a pending paste must be cancelled even if
+    // deletion is deferred; shutdown() also gives the smoke a deterministic
+    // reset to observe.
+    Component.onDestruction: service.shutdown()
+
+    // Exposed so the smoke can observe the native instance's lifetime; the
+    // facade proxies everything else.
+    readonly property var nativeInstance: service
 
     readonly property var items: service.items
     readonly property bool historyEnabled: service.historyEnabled
@@ -64,12 +82,8 @@ Item {
         service.openSettings();
     }
 
-    Component.onCompleted: service.cacheDirectory = Quickshell.cacheDir + "/clipboard"
-
-    // Destroying this wrapper (for example when windows.clipboard.enabled is
-    // set to false) disconnects the singleton callbacks with it.
     Connections {
-        target: root.service
+        target: root.nativeInstance
 
         function onImageReady(id, url): void {
             root.imageReady(id, url);

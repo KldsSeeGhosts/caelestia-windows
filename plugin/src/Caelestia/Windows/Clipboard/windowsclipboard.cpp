@@ -6,6 +6,7 @@
 #include <qdesktopservices.h>
 #include <qloggingcategory.h>
 #include <qmetaobject.h>
+#include <qthread.h>
 #include <qurl.h>
 
 #include "windowsclipboardworker.hpp"
@@ -20,7 +21,15 @@ Q_LOGGING_CATEGORY(logClipboard, "caelestia.windows.clipboard")
 // previous window 75 ms after closing. Inject after both have run.
 constexpr int PASTE_INJECT_DELAY_MS = 240;
 constexpr int PASTE_FOCUS_RETRY_MS = 80;
-constexpr int FOREGROUND_POLL_MS = 250;
+// Bounded waits: the destination must be verified foreground before any
+// injection, and a physically held modifier must be released so the injected
+// chord cannot become Win+Ctrl+V or release the user's own Ctrl.
+constexpr int PASTE_FOCUS_TIMEOUT_MS = 700;
+constexpr int PASTE_MODIFIER_TIMEOUT_MS = 1500;
+constexpr int MODIFIER_POLL_MS = 40;
+// A stalled WinRT call must not hang the GUI. The worker and its thread are
+// handed to QThread::finished when this bound expires.
+constexpr int WORKER_SHUTDOWN_WAIT_MS = 2500;
 
 // Must match KeyboardHook::INJECTION_MARKER in the Windows Quickshell backend
 // (src/windows/keyboard_hook.hpp). The shell's low-level keyboard hook ignores
@@ -33,10 +42,11 @@ constexpr ULONG_PTR INJECTION_MARKER = 0x5153484B;
 WindowsClipboard::WindowsClipboard(QObject* parent)
     : QObject(parent) {
     m_worker = new WindowsClipboardWorker(QString());
-    m_worker->moveToThread(&m_thread);
+    m_thread = new QThread();
+    m_worker->moveToThread(m_thread);
 
-    connect(&m_thread, &QThread::started, m_worker, &WindowsClipboardWorker::begin);
-    connect(&m_thread, &QThread::finished, m_worker, &WindowsClipboardWorker::end);
+    connect(m_thread, &QThread::started, m_worker, &WindowsClipboardWorker::begin);
+    connect(m_thread, &QThread::finished, m_worker, &WindowsClipboardWorker::end);
 
     connect(m_worker, &WindowsClipboardWorker::snapshotReady, this,
         [this](const QVariantList& items, bool enabled, const QString& status, const QString& error) {
@@ -80,8 +90,9 @@ WindowsClipboard::WindowsClipboard(QObject* parent)
         [this](const QString& operation, const QString& id, bool ok, const QString& error) {
             if (operation == QStringLiteral("paste")) {
                 if (!ok) {
-                    setLastError(error);
-                    emit operationFailed(operation, error);
+                    // The old clipboard content is still present; no paste may
+                    // follow, and the pending destination is discarded.
+                    failPaste(error);
                     return;
                 }
                 if (m_pendingPasteId != id)
@@ -99,37 +110,40 @@ WindowsClipboard::WindowsClipboard(QObject* parent)
     m_pasteTimer.setSingleShot(true);
     connect(&m_pasteTimer, &QTimer::timeout, this, &WindowsClipboard::attemptPaste);
 
-    m_foregroundTimer.setInterval(FOREGROUND_POLL_MS);
-    connect(&m_foregroundTimer, &QTimer::timeout, this, &WindowsClipboard::sampleForeground);
-    sampleForeground();
-    m_foregroundTimer.start();
-
     if (auto* app = QCoreApplication::instance()) {
         connect(
             app,
             &QCoreApplication::aboutToQuit,
             this,
-            [this]() {
-                m_foregroundTimer.stop();
-                m_pasteTimer.stop();
-                m_thread.quit();
-                if (!m_thread.wait(2000))
-                    qCWarning(logClipboard) << "Clipboard worker thread was still busy at exit.";
-            },
+            [this]() { shutdownWorker(); },
             Qt::DirectConnection);
     }
 
-    m_thread.setObjectName(QStringLiteral("ClipboardHistory"));
-    m_thread.start();
+    m_thread->setObjectName(QStringLiteral("ClipboardHistory"));
+    m_thread->start();
 }
 
 WindowsClipboard::~WindowsClipboard() {
-    m_foregroundTimer.stop();
-    m_pasteTimer.stop();
-    m_thread.quit();
-    m_thread.wait();
-    delete m_worker;
-    m_worker = nullptr;
+    // shutdown() normally ran from the loader-owned wrapper's destruction.
+    // This also covers process exit and any owner that forgot it.
+    qCDebug(logClipboard) << "CAELESTIA_CLIPBOARD_NATIVE_DESTROYED";
+    shutdownWorker();
+}
+
+void WindowsClipboard::shutdown() {
+    if (m_shuttingDown)
+        return;
+
+    // The wrapper is about to be destroyed; let an observer (the smoke) see
+    // the reset before the worker and retained history are gone. Do not emit
+    // property notifications here: QML bindings on the dying wrapper must not
+    // be re-evaluated.
+    emit aboutToShutdown();
+    m_items.clear();
+    m_historyEnabled = false;
+    m_lastError.clear();
+    cancelPendingPaste();
+    shutdownWorker();
 }
 
 void WindowsClipboard::setCacheDirectory(const QString& directory) {
@@ -146,15 +160,24 @@ void WindowsClipboard::setCacheDirectory(const QString& directory) {
 }
 
 void WindowsClipboard::refresh() {
-    if (m_worker == nullptr)
+    if (m_worker == nullptr || m_shuttingDown)
         return;
     setStatus(QStringLiteral("loading"));
     QMetaObject::invokeMethod(m_worker, &WindowsClipboardWorker::refresh, Qt::QueuedConnection);
 }
 
 void WindowsClipboard::setActive(bool active) {
-    if (m_worker == nullptr)
+    if (m_worker == nullptr || m_shuttingDown)
         return;
+
+    if (active) {
+        // A new picker session starts a new paste. Sample the destination
+        // before this window becomes foreground and keep it immutable until
+        // the paste completes or is abandoned.
+        cancelPendingPaste();
+        capturePasteDestination();
+    }
+
     QMetaObject::invokeMethod(
         m_worker,
         [worker = m_worker, active]() { worker->setActive(active); },
@@ -162,41 +185,57 @@ void WindowsClipboard::setActive(bool active) {
 }
 
 void WindowsClipboard::copy(const QString& id) {
-    if (m_worker == nullptr)
+    if (m_worker == nullptr || m_shuttingDown)
         return;
     QMetaObject::invokeMethod(m_worker, &WindowsClipboardWorker::copyItem, Qt::QueuedConnection, id,
         false);
 }
 
 void WindowsClipboard::paste(const QString& id) {
-    if (m_worker == nullptr)
+    if (m_worker == nullptr || m_shuttingDown)
         return;
+
+    // The destination was captured when the picker opened. If it cannot be
+    // identified, or is our own process, there is nothing safe to paste into.
+    if (!m_pasteDestinationCaptured || !valid(m_pasteDestination)
+        || m_pasteDestination.process == GetCurrentProcessId()) {
+        failPaste(QStringLiteral(
+            "Caelestia could not identify the window to paste into; copy the item instead."));
+        return;
+    }
+
+    // paste() is called before the picker closes, so the destination captured
+    // on open is still the only valid one. A previous request's timer is
+    // superseded without discarding that destination.
+    m_pasteTimer.stop();
     m_pendingPasteId = id;
-    m_pasteFocusRetried = false;
+    m_pasteWait.start();
+    m_modifierWait.invalidate();
+    m_focusRestoreRequested = false;
     QMetaObject::invokeMethod(m_worker, &WindowsClipboardWorker::copyItem, Qt::QueuedConnection, id,
         true);
 }
 
 void WindowsClipboard::remove(const QString& id) {
-    if (m_worker == nullptr)
+    if (m_worker == nullptr || m_shuttingDown)
         return;
     QMetaObject::invokeMethod(m_worker, &WindowsClipboardWorker::removeItem, Qt::QueuedConnection, id);
 }
 
 void WindowsClipboard::clear() {
-    if (m_worker == nullptr)
+    if (m_worker == nullptr || m_shuttingDown)
         return;
     QMetaObject::invokeMethod(m_worker, &WindowsClipboardWorker::clearHistory, Qt::QueuedConnection);
 }
 
 void WindowsClipboard::openItem(const QString& id) {
-    if (m_worker == nullptr)
+    if (m_worker == nullptr || m_shuttingDown)
         return;
     QMetaObject::invokeMethod(m_worker, &WindowsClipboardWorker::openItem, Qt::QueuedConnection, id);
 }
 
 void WindowsClipboard::requestImage(const QString& id) {
-    if (m_worker == nullptr)
+    if (m_worker == nullptr || m_shuttingDown)
         return;
     QMetaObject::invokeMethod(m_worker, &WindowsClipboardWorker::requestImage, Qt::QueuedConnection,
         id);
@@ -226,36 +265,96 @@ bool WindowsClipboard::valid(const NativeWindow& window) {
         && current.thread == window.thread;
 }
 
-void WindowsClipboard::sampleForeground() {
-    const auto foreground = identify(GetForegroundWindow());
-    if (foreground.hwnd != nullptr && foreground.process != GetCurrentProcessId())
-        m_external = foreground;
+bool WindowsClipboard::modifiersReleased() {
+    // GetAsyncKeyState reads the physical modifier state; the injected chord
+    // must not combine with a key the user is still holding.
+    const auto down = [](int key) { return (GetAsyncKeyState(key) & 0x8000) != 0; };
+    return !down(VK_LWIN) && !down(VK_RWIN) && !down(VK_CONTROL) && !down(VK_LCONTROL)
+        && !down(VK_RCONTROL) && !down(VK_MENU) && !down(VK_LMENU) && !down(VK_RMENU)
+        && !down(VK_SHIFT) && !down(VK_LSHIFT) && !down(VK_RSHIFT);
+}
+
+void WindowsClipboard::capturePasteDestination() {
+    m_pasteDestination = identify(GetForegroundWindow());
+    m_pasteDestinationCaptured = m_pasteDestination.hwnd != nullptr
+        && m_pasteDestination.process != GetCurrentProcessId();
+    if (!m_pasteDestinationCaptured)
+        m_pasteDestination = {};
+}
+
+void WindowsClipboard::cancelPendingPaste() {
+    m_pasteTimer.stop();
+    m_pendingPasteId.clear();
+    m_pasteDestination = {};
+    m_pasteDestinationCaptured = false;
+    m_focusRestoreRequested = false;
+    m_modifierWait.invalidate();
+}
+
+void WindowsClipboard::failPaste(const QString& message) {
+    cancelPendingPaste();
+    setLastError(message);
+    emit operationFailed(QStringLiteral("paste"), message);
 }
 
 void WindowsClipboard::attemptPaste() {
     if (m_pendingPasteId.isEmpty())
         return;
 
-    if (!m_pasteFocusRetried && valid(m_external)) {
-        const auto foreground = identify(GetForegroundWindow());
-        if (foreground.hwnd != nullptr && foreground.process == GetCurrentProcessId()) {
-            // The picker should already be hidden and its focus guard should
-            // have restored the previous window. If Windows still holds our
-            // process foreground, make one bounded restore attempt.
-            m_pasteFocusRetried = true;
-            SetForegroundWindow(m_external.hwnd);
-            m_pasteTimer.start(PASTE_FOCUS_RETRY_MS);
-            return;
-        }
+    // The destination is immutable for this request. A changed identity (for
+    // example a restarted application or a reused HWND) aborts the paste.
+    if (!m_pasteDestinationCaptured || !valid(m_pasteDestination)) {
+        failPaste(QStringLiteral("The window to paste into is no longer available; nothing was pasted."));
+        return;
     }
 
-    if (!sendPasteChord()) {
-        const auto error = QStringLiteral("Windows refused the synthetic paste input.");
-        setLastError(error);
-        emit operationFailed(QStringLiteral("paste"), error);
+    const auto destination = m_pasteDestination;
+    const auto foreground = identify(GetForegroundWindow());
+
+    if (foreground.hwnd != destination.hwnd) {
+        // Another application took focus. Injecting now would paste into the
+        // wrong window; only the shell's own process may be asked to restore
+        // the captured destination, and only once.
+        if (foreground.hwnd != nullptr && foreground.process != GetCurrentProcessId()) {
+            failPaste(QStringLiteral("The foreground window changed; nothing was pasted."));
+            return;
+        }
+        if (m_pasteWait.elapsed() >= PASTE_FOCUS_TIMEOUT_MS) {
+            failPaste(QStringLiteral("The previous window did not regain focus; nothing was pasted."));
+            return;
+        }
+        if (!m_focusRestoreRequested) {
+            m_focusRestoreRequested = true;
+            SetForegroundWindow(destination.hwnd);
+        }
+        m_pasteTimer.start(PASTE_FOCUS_RETRY_MS);
+        return;
     }
-    m_pendingPasteId.clear();
-    m_pasteFocusRetried = false;
+
+    // Verified focus: do not inject while a modifier is still physically
+    // down. Waiting is bounded and the paste is cancelled if the user keeps
+    // holding the key.
+    if (!modifiersReleased()) {
+        if (!m_modifierWait.isValid())
+            m_modifierWait.start();
+        if (m_modifierWait.elapsed() >= PASTE_MODIFIER_TIMEOUT_MS) {
+            failPaste(QStringLiteral("Modifier keys are still held; release them and paste again."));
+            return;
+        }
+        m_pasteTimer.start(MODIFIER_POLL_MS);
+        return;
+    }
+
+    // The user may have switched applications while the modifiers were held.
+    if (identify(GetForegroundWindow()).hwnd != destination.hwnd) {
+        failPaste(QStringLiteral("The foreground window changed; nothing was pasted."));
+        return;
+    }
+
+    if (!sendPasteChord())
+        failPaste(QStringLiteral("Windows refused the synthetic paste input."));
+    else
+        cancelPendingPaste();
 }
 
 bool WindowsClipboard::sendPasteChord() const {
@@ -269,6 +368,8 @@ bool WindowsClipboard::sendPasteChord() const {
         return input;
     };
 
+    // Every physical modifier was verified released above, so pressing and
+    // releasing Ctrl here cannot logically release a key the user still holds.
     std::array<INPUT, 4> inputs {
         keyInput(VK_CONTROL, false),
         keyInput('V', false),
@@ -277,6 +378,50 @@ bool WindowsClipboard::sendPasteChord() const {
     };
     return SendInput(static_cast<UINT>(inputs.size()), inputs.data(), sizeof(INPUT))
         == static_cast<UINT>(inputs.size());
+}
+
+void WindowsClipboard::shutdownWorker() {
+    if (m_shuttingDown)
+        return;
+    m_shuttingDown = true;
+
+    cancelPendingPaste();
+
+    if (m_worker == nullptr)
+        return;
+
+    auto* worker = m_worker;
+    auto* thread = m_thread;
+    m_worker = nullptr;
+    m_thread = nullptr;
+
+    // No callback may reach this object after it starts being destroyed.
+    disconnect(worker, nullptr, this, nullptr);
+
+    // Thread-safe best effort: cancel the async history read even if the
+    // worker thread is currently blocked inside a WinRT call.
+    worker->requestStop();
+
+    if (thread == nullptr) {
+        delete worker;
+        return;
+    }
+
+    thread->quit();
+    if (thread->wait(WORKER_SHUTDOWN_WAIT_MS)) {
+        delete worker;
+        delete thread;
+        return;
+    }
+
+    // A WinRT call did not return. Keep the GUI alive: end() still runs when
+    // the call finally returns, and both objects clean themselves up on the
+    // thread's finished signal. Their event handlers only hold the shared,
+    // already-detached bridge, so a late callback cannot touch this facade.
+    qCWarning(logClipboard) << "Clipboard worker did not stop within" << WORKER_SHUTDOWN_WAIT_MS
+                            << "ms; detaching it from the GUI.";
+    connect(thread, &QThread::finished, worker, &QObject::deleteLater);
+    connect(thread, &QThread::finished, thread, &QObject::deleteLater);
 }
 
 void WindowsClipboard::setStatus(const QString& status) {

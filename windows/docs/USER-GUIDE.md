@@ -309,7 +309,11 @@ the ordering, password-manager exclusions, pinned items, size limit and sync are
 the same as Win+V. Search, text and image previews, arrow/Page/Home/End
 navigation, `Delete` to remove an entry and a confirmed Clear All work as on
 Linux. The picker restores focus to the application you came from and pastes
-with a marked Ctrl+V when you press `Enter`.
+with a marked Ctrl+V when you press `Enter`. The destination is fixed when the
+picker opens: if that window is gone, another application took focus, focus did
+not return, or a modifier key (for example the Super you used to open the
+picker) is still held, the paste is cancelled instead of injecting into the
+wrong window or sending Win+Ctrl+V. `Shift+Enter` copies without pasting.
 
 The feature is enabled by default (`windows.clipboard.enabled` in
 `shell.json`) but **has no default key**. Add one yourself:

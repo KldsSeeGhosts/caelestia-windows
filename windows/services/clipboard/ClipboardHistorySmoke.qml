@@ -1,10 +1,11 @@
-// Light native smoke for the clipboard overlay: the display-row model and the
-// windows.clipboard gate.
+// Light native smoke for the clipboard overlay: the display-row model, the
+// windows.clipboard gate and the loader-owned native lifetime.
 //
 // This test never reads, clears or modifies clipboard history. The picker is
 // never opened, refresh()/setActive(true) are never called, and no image
-// preview is requested. Only a read-only IsHistoryEnabled check can run when
-// the enabled facade constructs the native type.
+// preview is requested. No native type exists at all while the option is
+// disabled; the enabled case only constructs the worker (no WinRT history
+// read).
 import QtQuick
 import Quickshell
 import Quickshell.Io
@@ -18,6 +19,13 @@ ShellRoot {
     settings.watchFiles: false
 
     property int step: 0
+    // The first native instance captured while the feature is enabled. Its
+    // explicit shutdown (not just Loader.item becoming null) is the regression
+    // for the loader-owned backend; the C++ destructor also logs a line the
+    // PowerShell runner asserts.
+    property var watchedNative: null
+    property bool nativeWatched: false
+    property bool nativeShutDown: false
 
     // Loads the picker QML (its windows stay invisible because opened is
     // false) so parse and binding errors fail this smoke. interactionEnabled
@@ -26,6 +34,18 @@ ShellRoot {
         id: clipboardOverlay
 
         interactionEnabled: false
+    }
+
+    // The wrapper is unloaded when the option is disabled; the native backend
+    // emits this synchronously from its explicit shutdown, so the smoke can
+    // prove the worker and retained state were reset rather than a cached
+    // singleton outliving the Loader.
+    Connections {
+        target: root.watchedNative
+
+        function onAboutToShutdown(): void {
+            root.nativeShutDown = true;
+        }
     }
 
     property FileView config: FileView {
@@ -65,7 +85,25 @@ ShellRoot {
             "row limit");
         root.check(ClipboardRows.displayRows(entries, "", 0).length === 0, "zero limit");
 
-        // Image, file, URL, colour, code and other items keep their action data.
+        // Selection follows the stable item id, not the row index. A refresh
+        // that inserts entries above the selected one must not select another
+        // entry (Delete would remove the wrong item).
+        const before = [
+            { id: "sel-a", kind: "text", text: "A" },
+            { id: "sel-b", kind: "text", text: "B" }
+        ];
+        const after = [{ id: "sel-new", kind: "text", text: "New" }].concat(before);
+        const beforeRows = ClipboardRows.displayRows(before, "", 60);
+        const afterRows = ClipboardRows.displayRows(after, "", 60);
+        root.check(beforeRows.length === 2 && afterRows.length === 3, "selection rows");
+        root.check(ClipboardRows.selectionIndex("sel-b", 1, afterRows) === 2,
+            "selection follows the item id across a refresh");
+        root.check(ClipboardRows.selectionIndex("gone", 1, afterRows) === 1,
+            "selection falls back to the clamped index when the item is gone");
+        root.check(ClipboardRows.selectionIndex("sel-b", 1, []) === -1,
+            "an empty list clears the selection");
+
+        // Image and file rows keep their action data.
         const kinds = ClipboardRows.displayRows([
             { id: "img", kind: "image", imageUrl: "file:///C:/cache/a.png",
               timestampLabel: "Monday 10:00" },
@@ -94,6 +132,14 @@ ShellRoot {
         root.check(ClipboardHistory.items.length === 0, "no history items at start");
         root.check(ClipboardHistory.historyEnabled === false, "history flag is never refreshed");
         root.check(ClipboardHistory.lastError.length === 0, "no startup error");
+
+        const wrapper = ClipboardHistory.backend.item;
+        root.check(wrapper !== null, "the loader created the backend wrapper");
+        root.check(wrapper.nativeInstance !== null, "the wrapper owns a native clipboard instance");
+        if (!root.nativeWatched) {
+            root.watchedNative = wrapper.nativeInstance;
+            root.nativeWatched = true;
+        }
     }
 
     // Drives the picker's own rebuild with synthetic entries. The items are
@@ -112,6 +158,22 @@ ShellRoot {
         root.check(clipboardOverlay.display.get(2).isColor, "colour row flag");
         root.check(clipboardOverlay.selectedIndex === 0, "first row is selected");
 
+        // End-to-end selection preservation: select smoke-b, then refresh with
+        // a new entry above it. The selected row must stay smoke-b so Delete
+        // removes that entry rather than the inserted one or smoke-a.
+        clipboardOverlay.selectedIndex = 1;
+        ClipboardHistory.items = [
+            { id: "smoke-new", kind: "text", text: "new entry" },
+            { id: "smoke-a", kind: "text", text: "first entry" },
+            { id: "smoke-b", kind: "text", text: "https://example.com" },
+            { id: "smoke-c", kind: "text", text: "#123456" }
+        ];
+        clipboardOverlay.rebuildDisplay();
+        root.check(clipboardOverlay.display.count === 4, "inserted row is displayed");
+        root.check(clipboardOverlay.selectedIndex === 2, "selection moved with its item");
+        root.check(clipboardOverlay.display.get(clipboardOverlay.selectedIndex).itemId === "smoke-b",
+            "Delete would target the originally selected item");
+
         ClipboardHistory.items = [];
         clipboardOverlay.rebuildDisplay();
         root.check(clipboardOverlay.display.count === 0, "display clears with the history");
@@ -123,6 +185,8 @@ ShellRoot {
         root.check(!ClipboardHistory.available, "a disabled feature constructs no native type");
         root.check(ClipboardHistory.status === "disabled", "disabled status");
         root.check(ClipboardHistory.items.length === 0, "no history items while disabled");
+        root.check(root.nativeWatched && root.nativeShutDown,
+            "disabling shuts the native backend down, not only the loader item");
     }
 
     Timer {
