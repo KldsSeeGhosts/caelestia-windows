@@ -225,7 +225,6 @@ namespace Caelestia.Takeover {
             observed.Source = "event";
             bool enteredBackoff = false;
             bool immediate = bar.Visible && policy.AllowImmediate(bar, ticks, out enteredBackoff);
-            if (immediate) suppress(bar);
             // Hide before disk I/O. Delayed events can describe a window
             // that is already hidden; record them without another hide.
             var hidden = immediate && bar.Visible ? hide(bar, ticks) : null;
@@ -233,6 +232,10 @@ namespace Caelestia.Takeover {
                 hidden.Source = "event";
                 policy.RememberHide(bar, hidden.MonotonicTicks);
             }
+            // Region capture and its durable journal can involve slow Explorer
+            // calls during a display transition. Hide first; Reconcile still
+            // journals the original region before changing that region.
+            if (immediate) suppress(bar);
             record(observed);
             if (hidden != null) record(hidden);
             if (enteredBackoff) {
@@ -1204,7 +1207,7 @@ namespace Caelestia.Takeover {
                 }
                 if (child == null) { if (DateTime.UtcNow >= nextStart) Start(); return; }
                 if (!child.HasExited) {
-                    if (hide) { RefreshShowHook(false); SuppressRegions(); Native.Hide(false); }
+                    if (hide) { RefreshShowHook(false); Native.Hide(false); SuppressRegions(); }
                     return;
                 }
                 showHook.Dispose();

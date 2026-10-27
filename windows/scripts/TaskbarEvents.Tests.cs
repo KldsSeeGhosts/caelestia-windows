@@ -195,10 +195,12 @@ public static class TaskbarEventsTests {
             "restore each saved identity");
 
         int regionApplies = 0, guardedHides = 0, guardedBackoffs = 0;
+        var showSequence = new List<string>();
         var guarded = new TaskbarShowHandler(new TaskbarShowPolicy(1000),
             delegate(IntPtr hwnd, uint owner) { return first; },
-            delegate(Bar bar) { regionApplies++; },
+            delegate(Bar bar) { showSequence.Add("region"); regionApplies++; },
             delegate(Bar bar, long ticks) {
+                showSequence.Add("hide");
                 guardedHides++;
                 return new TaskbarAction { Operation = "hide", MonotonicTicks = ticks };
             },
@@ -206,6 +208,8 @@ public static class TaskbarEventsTests {
         for (int i = 0; i < 30; i++) guarded.Handle(42, new IntPtr(1), 0, 0, i * 10);
         Check(regionApplies == 12 && guardedHides == 12 && guardedBackoffs == 1,
             "region and hide share the event backoff during repeated Explorer resets");
+        Check(showSequence[0] == "hide" && showSequence[1] == "region",
+            "hide precedes potentially slow region reconciliation");
         // Timer reconciliation is independent of event backoff.
         persistFails = false;
         sequence.Clear();
