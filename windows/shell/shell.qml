@@ -111,6 +111,15 @@ ShellRoot {
         }
     }
 
+    // Explicit panel-off through Windows display power. This is not
+    // Displays::setEnabled: it changes no display path, topology or setting.
+    // The native action waits 500 ms so this key's release is processed before
+    // the panels switch off and cannot wake them again.
+    IpcHandler {
+        target: "displays"
+        function off(): bool { return WindowsDisplayPower.off(); }
+    }
+
     function snapshot(): var {
         return {
             smoke: root.smoke,
@@ -173,6 +182,7 @@ ShellRoot {
         ShellState.shellRoot = root;
         Hypr.logStartupStatus();
         Tiling.logStartupStatus();
+        FocusFollowsMouse.logStartupStatus();
         SchemeGenerator.refresh();
         Native.SystemStats.networkEnabled = true;
         // One route query per screen. Without it every monitor stays "unknown"

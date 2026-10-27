@@ -270,7 +270,7 @@ Caelestia's Windows backend includes a native DWM tiler (`Quickshell.Windows.Til
 - `"master"`: Master-stack layout (`masterFactor`: `0.55`, `masterOrientation`: `"left"`, `"right"`, `"top"`, `"bottom"`).
 - `"scrolling"`: Niri/PaperWM-style horizontal scrolling strip (`scrollingColumnWidth`: `0.5`, `scrollingCenter`: `"overflow"`).
 
-Tiling defaults off. Configure `windows.tiling` in `config/shell.json`:
+Tiling defaults off. Configure `windows.tiling` in `config/shell.json` or in Nexus under **Window management**:
 
 ```json
 {"windows":{"tiling":{"enabled":false,"mode":"observe","gapsIn":5,"gapsOut":10,"singleWindowGapsOut":20,"borderColours":true,"include":["exe:notepad.exe"],"exclude":[],"float":["title:*Dialog*"],"monitors":{}}}}
@@ -300,6 +300,29 @@ and `-TilingExcluded`. Explicit switches override environment, which overrides
 profile values. Without an override, the profile applies. Smoke forces tiling off.
 Native layout choices remain backend options; this profile schema configures
 admission and gaps.
+
+### Focus follows mouse
+
+`windows.focusFollowsMouse` applies Windows' X-Mouse focus tracking only while
+the shell runs. It is off by default, so the Windows-level setting is left
+alone.
+
+```json
+{"windows":{"focusFollowsMouse":{"enabled":true,"delay":100,"raise":false}}}
+```
+
+`delay` is milliseconds before focus changes (0-5000, default 100); `raise`
+brings the focused window to the top (default false). Changes reload live. The
+shell records the current Windows values before its first change and restores
+them when the option is turned off or the shell quits cleanly. The baseline is
+kept across a live reload and saved under the profile's `runtime` directory
+before any change, so the supervisor's restart after a crash can still restore
+the values instead of leaving tracking on. The values are never written to the
+user profile, so a crash or forced kill cannot leave the stored preference
+changed; the next sign-in restores it. To migrate from the
+old system-wide setup, enable this option and turn off Windows' own X-Mouse
+setting (Settings > Accessibility > Mouse > "Activate a window by hovering over
+it with the mouse").
 
 ### Clipboard history
 
@@ -407,6 +430,19 @@ during smoke or by the shell at startup.
 See [the port notes](../quota/README.md) for the source mapping and what is and
 is not verified.
 
+### Turning the display panels off
+
+`ipc call displays off` (or your own `ipc` keybind, see
+[KEYBINDS.md](KEYBINDS.md#3-ipc--call-a-caelestia-ipchandler)) asks the shell's
+own window to switch the physical panels off with Windows display power
+(`WM_SYSCOMMAND` / `SC_MONITORPOWER = 2`) after a 500 ms delay. It is not a
+display-topology disable: it changes no resolution, scale, desktop coordinate or
+window position and stores no setting. Normal input wakes the panels, but
+keep-awake, remote input or background activity can also wake them. This path
+has been tested with fakes only; whether Windows keeps both monitors in the
+topology must be verified live, and physically powering a monitor off may still
+remove it.
+
 ### Per-monitor configuration
 
 To override settings on a specific display, create:
@@ -479,6 +515,7 @@ Nexus edits that global file, not per-monitor overlays. If a value is overridden
 | Connected devices (Bluetooth) | Partially supported | Radio on/off, paired-device list, connect/disconnect, forget, per-device battery and address, and a gated pair request. Discoverable, pairable, trusted, blocked and wake settings are not exposed by the backend and are shown disabled; a PIN or passkey prompt is completed in Windows Settings (`ms-settings:bluetooth`). |
 | Audio | Works | Output and input volume/mute, device pickers and per-app volumes, through the same WASAPI/PipeWire-compatible facade the bar popout uses. Needs the audio observation and control opt-ins, which a normal Live start enables; a bounded read-only run shows the devices but refuses every write. |
 | Panels (Dashboard, Taskbar, Launcher, Sidebar, Utilities, plus the workspace/active-window/tray/status-icon/clock sub-pages) | Works | Writes the same `bar`, `dashboard`, `launcher`, `sidebar` and `utilities` keys as Linux and applies them live. Linux-only entries stay inert on Windows: `specialWorkspaceIcons`, and the `lockStatus` / `microphone` / `kbLayout` status icons. |
+| Window management | Works | Tiling enable, Observe/Interactive mode, the tiling-list count, border colours, the three gaps, and focus-follows-mouse enable/delay/raise persist to `windows` in `shell.json`. Tiling changes apply live; the focus-follows-mouse values take effect once the shell includes the focus-follows-mouse service. The include/exclude/float/monitor rules themselves stay in `shell.json`. |
 | Apps | Partially supported | "All apps" browses the Windows `shell:AppsFolder` + Start-menu catalog and sets favourites and hidden apps for the launcher, when the app catalog is enabled for the run. Upstream's default-application pickers write `general.apps.*`, which Windows does not use, so they are replaced by a link to `ms-settings:defaultapps`. |
 | Services | Works, one row unavailable | Poll intervals, input increments, visualiser bars, smart scheme, default player and GPU override persist and apply live. Lyrics are not available on Windows, so the lyrics-backend select states that instead of offering a dead choice. |
 | Language & region | Works | UI language, temperature/data/clock units, and the upstream weather-location placeholder. |
@@ -487,9 +524,9 @@ Nexus edits that global file, not per-monitor overlays. If a value is overridden
 
 ### Windows adapter boundary
 
-Unmodified upstream files are staged directly. Only files that need a Windows service or type live under `windows/combined-prototype/adapters/modules/nexus/` (Bluetooth, network, audio controls, wallpaper picker, apps, services, about, the shared network and audio-device lists, the page container, `NexusState` and `WindowFactory`), each with a header that states exactly what changed and why. See [CONFIGURATION.md](CONFIGURATION.md) for the `shell.json` schema.
+Unmodified upstream files are staged directly. Only files that need a Windows service or type live under `windows/combined-prototype/adapters/modules/nexus/` (Bluetooth, network, audio controls, wallpaper picker, apps, services, about, the shared network and audio-device lists, the page container and registries, `NexusState`, `WindowFactory` and the Windows-only Window management page), each with a header or inline comment that states exactly what changed and why. See [CONFIGURATION.md](CONFIGURATION.md) for the `shell.json` schema.
 
-A Windows-only page for `windows.tiling` (`enabled`, `mode`, `gapsIn`, `gapsOut`, `singleWindowGapsOut`, `borderColours`) is not included yet; edit `config/shell.json` directly as described in [CONFIGURATION.md](CONFIGURATION.md#tiling-and-gaps-configuration).
+The Windows-only **Window management** page exposes `windows.tiling` (`enabled`, `mode`, `gapsIn`, `gapsOut`, `singleWindowGapsOut`, `borderColours`) and `windows.focusFollowsMouse` (`enabled`, `delay`, `raise`). The include, exclude, float and monitor rules remain in `shell.json` as described in [CONFIGURATION.md](CONFIGURATION.md#tiling-and-gaps-configuration).
 
 ---
 

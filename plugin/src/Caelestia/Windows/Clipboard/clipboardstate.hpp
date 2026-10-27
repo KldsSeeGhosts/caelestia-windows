@@ -33,6 +33,18 @@ public:
         return m_generation.fetch_add(1, std::memory_order_acq_rel) + 1;
     }
 
+    // The generation a per-item read belongs to (preview reads have no token
+    // of their own, so they capture the current one).
+    [[nodiscard]] quint64 generation() const { return m_generation.load(std::memory_order_acquire); }
+
+    // Whether a per-item WinRT read must be cancelled. Shutdown always cancels.
+    // A refresh or preview read also stops on a close or a newer generation. An
+    // explicit open ran after the picker's close() by design, so a close or a
+    // refresh does not cancel it.
+    [[nodiscard]] bool cancelsRead(quint64 read, bool explicitOpen) const {
+        return stopping() || (!explicitOpen && !accepts(read));
+    }
+
     [[nodiscard]] bool accepts(quint64 read) const {
         return m_active.load(std::memory_order_acquire)
             && m_generation.load(std::memory_order_acquire) == read;

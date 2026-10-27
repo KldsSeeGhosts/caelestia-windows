@@ -47,7 +47,7 @@ The following global options are read only from the root `%LOCALAPPDATA%\caelest
 - `paths`: `lyricsDir`, `wallpaperDir`
 - `services`: `audioIncrement`, `brightnessIncrement`, `clockFormat`, `dataUnits`, `defaultPlayer`, `gpuType`, `lyricsBackend`, `maxVolume`, `playerAliases`, `sensorUnits`, `smartScheme`, `visualiserBars`, `weatherLocation`, `weatherUnits`
 - `utilities`: `toasts.*`, `vpn.*`
-- `windows`: `clipboard.*`, `tiling.*` (Windows extensions)
+- `windows`: `clipboard.*`, `focusFollowsMouse.*`, `tiling.*` (Windows extensions)
 
 ---
 
@@ -401,7 +401,8 @@ and dim onSurfaceVariant borders on Windows 11 build 22000+, following focus
 and scheme changes. Colours use upstream 0xe6/0x11 alpha blended against surface.
 Disabling colouring/tiling, leaving management or normal shell exit restores
 the system default border. Older Windows skips colouring.
-See [the full schema](../services/tiling/README.md).
+See [the full schema](../services/tiling/README.md). Nexus exposes these tiling
+and focus-follows-mouse options on its **Window management** page.
 
 Explicit launcher switches override environment variables, which override profile
 values. `CAELESTIA_WINDOWS_TILING=off|observe|interactive`,
@@ -464,6 +465,40 @@ target and remaining live verification.
 
 Add the key bind separately; binding `Super+V` replaces Windows' own Win+V panel
 for that chord. See [KEYBINDS.md](KEYBINDS.md).
+
+---
+
+## Focus follows mouse configuration
+
+`windows.focusFollowsMouse` applies Windows' X-Mouse focus tracking while the
+shell runs. It is off by default and does not touch the Windows-level setting
+until enabled.
+
+```json
+{"windows":{"focusFollowsMouse":{"enabled":true,"delay":100,"raise":false}}}
+```
+
+| Field | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `enabled` | bool | `false` | Apply focus tracking while the shell runs. |
+| `delay` | int | `100` | Milliseconds before focus changes, clamped to 0-5000. |
+| `raise` | bool | `false` | Bring the focused window to the top. |
+
+The shell reads the current Windows values before the first change and
+restores them when the option is disabled or the shell exits cleanly. A reload's
+replacement QML generation shares the process-wide baseline with the old one, so
+restarting the shell does not lose the originals. The baseline and the values
+the session applies are saved to `runtime\focus-follows-mouse-recovery.json` in
+the profile before the first change, and live delay or raise changes rewrite
+the applied values. After a supervisor restart following a crash, the baseline
+is used only while the system still holds the recorded applied values; if the
+user changed the Windows setting while the shell was down, the file is
+discarded and the live values become the baseline, so a clean exit does not
+restore stale values. Writes do not use `SPIF_UPDATEINIFILE`, so the stored
+Windows preference is unchanged; after a crash or forced kill the recovery file
+(or the next sign-in) restores it. Changes reload live.
+If the option is disabled, the shell never reads or writes the system setting,
+so a user who enables X-Mouse in Windows keeps it.
 
 ---
 

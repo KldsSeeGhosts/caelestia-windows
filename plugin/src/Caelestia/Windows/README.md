@@ -1,7 +1,7 @@
 # Windows focus policy
 
-`Caelestia.Windows` is built only on Windows. It provides nonvisual focus and
-font helpers for the isolated compatibility preview:
+`Caelestia.Windows` is built only on Windows. It provides nonvisual focus,
+focus-follows-mouse and font helpers for the isolated compatibility preview:
 
 ```qml
 import Caelestia.Windows
@@ -60,6 +60,40 @@ restore a hidden/destroyed target. Bind at most one guard to a preview window.
 The parent task builds with `windows/scripts/Build-Prototype.ps1` and validates
 the native focus behavior. Adding this source does not establish runtime
 activation or focus-return compatibility.
+
+`WindowsFocusFollowsMouse` applies `windows.focusFollowsMouse` through
+`SystemParametersInfoW` while the shell runs. It reads the current X-Mouse
+values before its first write and restores them when disabled or destroyed;
+writes never set `SPIF_UPDATEINIFILE`. The `windows/services/focusfollowsmouse`
+facade owns the loader and config validation. Its pure controller and
+`SystemParametersInfoW` boundary are separate so the unit test can inject a
+fake system and never touch the real setting.
+
+## Display power
+
+`WindowsDisplayPower` is a singleton for the explicit panel-off action:
+
+```qml
+IpcHandler {
+    target: "displays"
+    function off(): bool { return WindowsDisplayPower.off(); }
+}
+```
+
+`off()` queues one `WM_SYSCOMMAND` / `SC_MONITORPOWER = 2` request after 500 ms
+and returns true when it was queued. The request is sent with `SendMessage` to a
+hidden top-level window owned by the shell process, whose window procedure
+forwards to `DefWindowProc`; it is never broadcast. It changes no display path,
+topology, resolution, scale or setting. A true result does not prove the panels
+went dark. Normal input wakes them, but keep-awake, remote input or background
+activity can also wake them.
+
+`windows/scripts/Test-DisplayPower.ps1` runs the fakes-only native test. It
+injects a recording sender to prove one send after the delay, and uses a
+recording window procedure to inspect the exact `WM_SYSCOMMAND` /
+`SC_MONITORPOWER = 2` message without changing real display power. Testing with
+a real desktop, including whether Windows retains monitor detection and window
+placement, is a separate live QA step.
 
 The module also provides the nonvisual `WindowsFontFallback` singleton.
 Windows staging adapts only the original workspace label font binding to
