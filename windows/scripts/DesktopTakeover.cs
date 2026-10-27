@@ -1214,8 +1214,8 @@ namespace Caelestia.Takeover {
             if (done) return;
             done = true;
             timer.Stop(); timer.Dispose();
-            showHook.Dispose();
             shortcutHook.Dispose();
+            showHook.Dispose();
             // On helper failure do not leave an unsupervised shell reserving
             // space. Normal clean exit reaches here after qs has exited.
             try {
