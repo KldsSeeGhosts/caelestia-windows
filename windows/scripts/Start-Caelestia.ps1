@@ -117,9 +117,11 @@ if ($Smoke) {
     '{"binds":[]}' | Set-Content -LiteralPath $emptyKeys -Encoding UTF8
     $info.EnvironmentVariables['CAELESTIA_WINDOWS_KEYBINDS'] = $emptyKeys
 }
-# Do not inherit synthetic DPI or QPA settings from development/probe sessions.
-foreach ($name in @('QT_SCALE_FACTOR', 'QT_SCREEN_SCALE_FACTORS', 'QT_FONT_DPI', 'QT_ENABLE_HIGHDPI_SCALING', 'QT_QPA_PLATFORM')) {
+# Do not inherit synthetic DPI or QPA settings from development/probe sessions,
+# or Electron's run-as-node flags from an Electron host (they break Electron apps the shell launches).
+foreach ($name in @('QT_SCALE_FACTOR', 'QT_SCREEN_SCALE_FACTORS', 'QT_FONT_DPI', 'QT_ENABLE_HIGHDPI_SCALING', 'QT_QPA_PLATFORM', 'ELECTRON_RUN_AS_NODE', 'ELECTRON_NO_ASAR')) {
     $info.EnvironmentVariables.Remove($name)
+    [Environment]::SetEnvironmentVariable($name, $null, 'Process')
 }
 
 if ($Command -ne 'Start') {

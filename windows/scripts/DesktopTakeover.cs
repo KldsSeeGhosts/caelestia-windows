@@ -1121,6 +1121,8 @@ namespace Caelestia.Takeover {
                 WorkingDirectory = launch.WorkingDirectory, UseShellExecute = false, CreateNoWindow = true
             };
             foreach (var entry in launch.Environment) info.EnvironmentVariables[entry.Key] = entry.Value;
+            info.EnvironmentVariables.Remove("ELECTRON_RUN_AS_NODE");
+            info.EnvironmentVariables.Remove("ELECTRON_NO_ASAR");
             // qs normally starts its own crash relauncher. The supervisor must
             // own the actual shell process and its bounded restart policy.
             info.EnvironmentVariables["QS_DISABLE_CRASH_HANDLER"] = "1";

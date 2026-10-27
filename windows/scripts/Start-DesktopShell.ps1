@@ -29,6 +29,9 @@ $specPath = Join-Path $StateDirectory 'launch.json'
     StdoutPath = $StdoutPath; StderrPath = $StderrPath
 } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $specPath -Encoding UTF8
 $watcher = Join-Path $PSScriptRoot 'Watch-DesktopShell.ps1'
+foreach ($var in @('ELECTRON_RUN_AS_NODE', 'ELECTRON_NO_ASAR')) {
+    [Environment]::SetEnvironmentVariable($var, $null, 'Process')
+}
 $arguments = '-NoProfile -Sta -File "' + $watcher + '" -LaunchSpec "' + $specPath + '"'
 $process = Start-Process -FilePath "$PSHOME\powershell.exe" -ArgumentList $arguments -WindowStyle Hidden -PassThru `
     -RedirectStandardOutput (Join-Path $StateDirectory 'watchdog.stdout.log') `
