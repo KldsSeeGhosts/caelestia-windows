@@ -58,3 +58,11 @@ Several threads may work at once. Each task follows the same cycle:
 Only one thread at a time may install a build live, restart the live shell or
 run live tests, because there is one install, one profile and one tiler.
 Coordinate that through the orchestrating thread.
+
+## Computer use
+
+Delegate all computer use (driving the desktop, apps or the live shell through
+GUI automation, screenshots for checks) to a Codex agent on GPT 6.1 Terra.
+Other agents, including the orchestrator, do not operate the desktop
+themselves. The single-controller rule above still applies: one computer-use
+agent at a time, started by the orchestrating thread.
