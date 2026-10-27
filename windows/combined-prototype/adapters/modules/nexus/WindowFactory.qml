@@ -12,12 +12,16 @@ import qs.modules.nexus
 //
 // The upstream FloatingWindow, its colour behaviour, minimum size, per-monitor
 // Config/Tokens screen binding, title and destroy-on-close lifecycle are kept
-// exactly. Two things are added for the Windows entry points:
+// exactly. Three things are added for the Windows entry points:
 //
 //   * `openPage(idx)` lets the bar popout's detached mode and the utilities
 //     toggle open the window on the page they asked for. Upstream passes the
 //     page through the inline overlay's NexusState; the standalone window has
 //     no such channel, so the page travels as a component property instead.
+//   * a second request for Nexus reuses the live window instead of stacking
+//     another copy behind the focused application. It applies the requested
+//     page and calls FloatingWindow.requestActivate(), which raises and
+//     focuses the existing native window.
 //   * nothing else differs. Callers that use upstream `create()` still get the
 //     default page.
 //
@@ -38,7 +42,25 @@ Singleton {
 
     readonly property int windowCount: root.windows.length
 
+    function activeWindow(): var {
+        for (let i = root.windows.length - 1; i >= 0; --i) {
+            const win = root.windows[i];
+            if (win && win.visible)
+                return win;
+        }
+        return null;
+    }
+
     function create(parent: Item, props: var): var {
+        const existing = root.activeWindow();
+        if (existing) {
+            if (props && props.pageIdx !== undefined)
+                existing.openPage(props.pageIdx);
+            else
+                existing.requestActivate();
+            return existing;
+        }
+
         const win = nexusComp.createObject(parent ?? dummy, props);
         if (win)
             root.windows = [...root.windows, win];
@@ -79,6 +101,14 @@ Singleton {
             // Local Windows addition: the starting Nexus page. Bound below so it
             // is in place before the page container loads.
             property int pageIdx: 0
+
+            // The nav pane replaces the initial nState.currentPageIdx binding
+            // with a direct write once the user navigates, so a live window must
+            // be told the page directly when it is re-opened.
+            function openPage(idx: int): void {
+                nexus.nState.currentPageIdx = idx;
+                win.requestActivate();
+            }
 
             // A closing window can lose `screen` before its content is gone.
             // Keep the last real screen so the per-monitor Config/Tokens

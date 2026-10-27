@@ -7,7 +7,8 @@
 //   1. a settings write through GlobalConfig reaches the isolated
 //      config/shell.json and reads back live (Nexus's persistence path);
 //   2. modules/nexus/WindowFactory.qml opens a real detached window with the
-//      upstream geometry, minimum size and title;
+//      upstream geometry, minimum size and title, and a second request reuses
+//      that window instead of creating another one;
 //   3. every page in PageRegistry loads through PageCompRegistry without a QML
 //      diagnostic, and a window destroyed while its first page is still
 //      incubating (including after two page replacements) emits nothing;
@@ -46,6 +47,7 @@ ShellRoot {
 
     property int step: 0
     property int retries: 0
+    property int waitRetries: 0
     property int pageIdx: 0
     property int originalDragThreshold: -1
     property var nexusWindow: null
@@ -54,8 +56,8 @@ ShellRoot {
     // Token owned by the page container of the early-close window. It must be
     // invalidated by the time the next step runs.
     property var earlyCloseToken: null
-    // Steps 4..pageEnd-1 walk every registered page.
-    readonly property int pageEnd: 4 + PageRegistry.pages.length
+    // Steps 5..pageEnd-1 walk every registered page.
+    readonly property int pageEnd: 5 + PageRegistry.pages.length
     property var shortcuts: null
 
     function check(condition, message): void {
@@ -139,9 +141,47 @@ ShellRoot {
             } else if (root.step === 2) {
                 root.check(GlobalConfig.bar.dragThreshold === root.originalDragThreshold, "restore did not apply");
                 root.check(root.readConfig().includes("\"dragThreshold\": " + root.originalDragThreshold), "restore did not reach config/shell.json");
+
+                // Early-close regression: replace the page of a fresh Nexus
+                // window while the first incubation is still outstanding, and
+                // destroy it in the same event-loop turn. The page container must
+                // invalidate both incubations and dispose of their late results
+                // without touching the destroyed window. Any diagnostic it emits
+                // fails the run before PASS. This runs before the long-lived
+                // window exists because a second WindowFactory request now
+                // reuses the live window instead of creating another one.
+                const early = WindowFactory.create();
+                root.check(early !== null && early !== undefined, "early-close window was not created");
+                const earlyNexus = early.contentItem.children.find(child => child && child.nState !== undefined && child.nState.isWindow === true) ?? null;
+                root.check(earlyNexus !== null, "early-close nexus content item missing");
+                const earlyPages = root.findPages(earlyNexus);
+                root.check(earlyPages !== null, "early-close page container missing");
+                earlyPages.loadPage(1);
+                const replacedToken = earlyPages.pageTokens?.[0];
+                root.check(replacedToken !== undefined, "page replacement did not leave an incubation token");
+                earlyPages.loadPage(2);
+                root.check(replacedToken.alive === false, "page replacement did not invalidate the previous incubation");
+                root.earlyCloseToken = earlyPages.pageTokens?.[0];
+                root.check(root.earlyCloseToken !== undefined, "early-close page did not leave an incubation token");
+                early.destroy();
+            } else if (root.step === 3) {
+                root.check(root.earlyCloseToken !== null, "early-close token was not recorded");
+                if (WindowFactory.windowCount !== 0 && root.waitRetries < 20) {
+                    root.waitRetries++;
+                    return;
+                }
+                root.check(WindowFactory.windowCount === 0, "early-close window was not destroyed");
+                root.check(root.earlyCloseToken.alive === false, "window destruction did not invalidate the page incubation");
+                root.earlyCloseToken = null;
+                root.waitRetries = 0;
+
                 root.nexusWindow = WindowFactory.create();
                 root.check(root.nexusWindow !== null && root.nexusWindow !== undefined, "WindowFactory.create returned nothing");
-            } else if (root.step === 3) {
+                // A re-open must bring the live window forward, not add another.
+                const reopened = WindowFactory.create();
+                root.check(reopened === root.nexusWindow, "a second request created another Nexus window");
+                root.check(WindowFactory.windowCount === 1, "a second request changed the Nexus window count");
+            } else if (root.step === 4) {
                 const win = root.nexusWindow;
                 root.check(win.width > 0 && win.height > 0, "nexus window has no geometry");
                 root.check(win.minimumSize.width > 0 && win.minimumSize.height > 0, "nexus window has no minimum size");
@@ -160,32 +200,7 @@ ShellRoot {
                     return;
                 }
                 root.check(root.pagesItem.currentItem !== null, "default nexus page did not load");
-
-                // Early-close regression: create a second Nexus window, replace
-                // its page while the first incubation is still outstanding, and
-                // destroy it in the same event-loop turn. The page container must
-                // invalidate both incubations and dispose of their late results
-                // without touching the destroyed window. Any diagnostic it emits
-                // fails the run before PASS.
-                const early = WindowFactory.create();
-                root.check(early !== null && early !== undefined, "early-close window was not created");
-                const earlyNexus = early.contentItem.children.find(child => child && child.nState !== undefined && child.nState.isWindow === true) ?? null;
-                root.check(earlyNexus !== null, "early-close nexus content item missing");
-                const earlyPages = root.findPages(earlyNexus);
-                root.check(earlyPages !== null, "early-close page container missing");
-                earlyPages.loadPage(1);
-                const replacedToken = earlyPages.pageTokens?.[0];
-                root.check(replacedToken !== undefined, "page replacement did not leave an incubation token");
-                earlyPages.loadPage(2);
-                root.check(replacedToken.alive === false, "page replacement did not invalidate the previous incubation");
-                root.earlyCloseToken = earlyPages.pageTokens?.[0];
-                root.check(root.earlyCloseToken !== undefined, "early-close page did not leave an incubation token");
-                early.destroy();
             } else if (root.step < root.pageEnd) {
-                if (root.earlyCloseToken) {
-                    root.check(root.earlyCloseToken.alive === false, "window destruction did not invalidate the page incubation");
-                    root.earlyCloseToken = null;
-                }
                 const index = root.pageIdx;
                 root.nexusItem.nState.currentPageIdx = index;
                 root.pageIdx = index + 1;
