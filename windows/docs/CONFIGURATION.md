@@ -47,6 +47,7 @@ The following global options are read only from the root `%LOCALAPPDATA%\caelest
 - `paths`: `lyricsDir`, `wallpaperDir`
 - `services`: `audioIncrement`, `brightnessIncrement`, `clockFormat`, `dataUnits`, `defaultPlayer`, `gpuType`, `lyricsBackend`, `maxVolume`, `playerAliases`, `sensorUnits`, `smartScheme`, `visualiserBars`, `weatherLocation`, `weatherUnits`
 - `utilities`: `toasts.*`, `vpn.*`
+- `windows`: `clipboard.*`, `tiling.*` (Windows extensions)
 
 ---
 
@@ -430,6 +431,39 @@ The underlying `Quickshell.Windows.Tiling` singleton exposes the following layou
 
 The table above lists native backend defaults, also used by the Windows facade.
 Layout selection remains a backend option outside this profile schema.
+
+---
+
+## Clipboard history configuration
+
+The `caelestia:clipboard` picker is backed by Windows' native clipboard history.
+`windows.clipboard` in `shell.json` gates it; defaults are enabled with no key
+bound.
+
+```json
+{"windows":{"clipboard":{"enabled":true}}}
+```
+
+| Field | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `enabled` | bool | `true` | Construct the native clipboard service and allow the picker to open. |
+
+Disabling the option shuts the native backend down and destroys it instead of
+merely hiding the picker: the worker thread stops, the WinRT event
+subscriptions are revoked, a pending paste is cancelled, retained history and
+preview ownership are cleared, no clipboard history is read and the global
+shortcut is a no-op. Changes reload live. The shell never enables Windows
+clipboard history or changes its settings; when Windows has it off, the picker
+offers a button that opens `ms-settings:clipboard`. Password-manager
+exclusions, pinned items, size limits and sync remain Windows' decisions.
+Preview images and explicitly opened text files are written only inside the
+instance's own directory, `<cacheRoot>\clipboard\<pid>-<random>` under the
+Quickshell cache directory, and that one directory is deleted on shutdown. See
+[the clipboard notes](../services/clipboard/README.md) for the shortcut, IPC
+target and remaining live verification.
+
+Add the key bind separately; binding `Super+V` replaces Windows' own Win+V panel
+for that chord. See [KEYBINDS.md](KEYBINDS.md).
 
 ---
 

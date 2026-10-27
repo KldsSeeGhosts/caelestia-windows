@@ -171,6 +171,9 @@
     }
   },
   "windows": {
+    "clipboard": {
+      "enabled": true
+    },
     "tiling": {
       "enabled": false,
       "mode": "observe",
