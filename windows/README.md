@@ -63,7 +63,8 @@ the port, not the authorship of the upstream projects.
 
 ## Current state
 
-For the next development session, start with [HANDOFF.md](HANDOFF.md).
+For working rules and the live-install procedure, see [AGENTS.md](../AGENTS.md).
+Open work is tracked in GitHub issues and the Linear project.
 
 The combined graph now also has an [all-monitor Windows shell entry](shell/README.md)
 with persistent profiles and per-user installation. See [REPORT.md](../REPORT.md)
