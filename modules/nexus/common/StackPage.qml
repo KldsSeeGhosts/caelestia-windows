@@ -27,7 +27,9 @@ StackView {
 
     Component.onCompleted: {
         openSubPage(0, true);
-        for (const page of nState.subPageIdxStack)
+        // Windows port: an asynchronously incubated page can complete after its
+        // Nexus window (and NexusState) was destroyed; skip the restore then.
+        for (const page of nState?.subPageIdxStack ?? [])
             openSubPage(page, true);
     }
 

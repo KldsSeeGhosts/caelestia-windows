@@ -26,12 +26,18 @@ PageBase {
             id: wallWrapper
 
             Layout.alignment: Qt.AlignHCenter
+            // Windows port: nState is null when the page finishes incubating after
+            // its Nexus window was destroyed, so size to nothing instead of throwing.
             implicitWidth: {
-                const screen = root.nState.screen;
+                const screen = root.nState?.screen;
+                if (!screen)
+                    return 0;
                 return implicitHeight / screen.height * screen.width;
             }
             implicitHeight: {
-                const screen = root.nState.screen;
+                const screen = root.nState?.screen;
+                if (!screen)
+                    return 0;
                 const cWidth = root.cappedWidth;
                 return Math.min(Math.round(cWidth * 0.4), cWidth / screen.width * screen.height);
             }
