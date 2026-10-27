@@ -39,6 +39,10 @@ namespace Caelestia.Takeover {
     }
     public sealed class Snapshot {
         public ulong TaskbarFlags;
+        // Explorer's "Show my taskbar on all displays" (MMTaskbarEnabled) before
+        // the supervisor turned it off. Null means the value was absent.
+        public bool MultiMonitorTaskbarSaved;
+        public int? MultiMonitorTaskbar;
         public List<Display> Displays = new List<Display>();
         public List<Bar> Bars = new List<Bar>();
         public List<SavedRegion> Regions = new List<SavedRegion>();
@@ -225,7 +229,6 @@ namespace Caelestia.Takeover {
             observed.Source = "event";
             bool enteredBackoff = false;
             bool immediate = bar.Visible && policy.AllowImmediate(bar, ticks, out enteredBackoff);
-            if (immediate) suppress(bar);
             // Hide before disk I/O. Delayed events can describe a window
             // that is already hidden; record them without another hide.
             var hidden = immediate && bar.Visible ? hide(bar, ticks) : null;
@@ -233,6 +236,10 @@ namespace Caelestia.Takeover {
                 hidden.Source = "event";
                 policy.RememberHide(bar, hidden.MonotonicTicks);
             }
+            // Region capture and its durable journal can involve slow Explorer
+            // calls during a display transition. Hide first; Reconcile still
+            // journals the original region before changing that region.
+            if (immediate) suppress(bar);
             record(observed);
             if (hidden != null) record(hidden);
             if (enteredBackoff) {
@@ -516,6 +523,45 @@ namespace Caelestia.Takeover {
         [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern uint RegisterWindowMessage(string message);
         [DllImport("user32.dll")] static extern IntPtr GetDesktopWindow();
         [DllImport("user32.dll")] static extern bool RedrawWindow(IntPtr window, IntPtr update, IntPtr region, uint flags);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr SendMessageTimeout(IntPtr window, uint message,
+            UIntPtr wParam, string lParam, uint flags, uint timeout, out UIntPtr result);
+
+        const string ExplorerAdvanced = @"Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced";
+        static int? ReadMultiMonitorTaskbar() {
+            using (var key = Registry.CurrentUser.OpenSubKey(ExplorerAdvanced)) {
+                var value = key == null ? null : key.GetValue("MMTaskbarEnabled");
+                return value is int ? (int?)(int)value : null;
+            }
+        }
+        static void WriteMultiMonitorTaskbar(int? value) {
+            using (var key = Registry.CurrentUser.CreateSubKey(ExplorerAdvanced)) {
+                if (value.HasValue) key.SetValue("MMTaskbarEnabled", value.Value, RegistryValueKind.DWord);
+                else key.DeleteValue("MMTaskbarEnabled", false);
+            }
+            // Settings broadcasts the same notification; Explorer then creates or
+            // destroys the secondary taskbars without restarting.
+            UIntPtr ignored;
+            SendMessageTimeout(new IntPtr(0xFFFF), 0x001A, UIntPtr.Zero, "TraySettings", 0x0002, 3000, out ignored);
+        }
+        // Explorer replaces a secondary taskbar's window region while it re-lays
+        // the taskbar out after a display mode change (for example an HDR
+        // toggle), so it is drawn for a few hundred milliseconds before the
+        // region can be suppressed again. Without secondary taskbars there is
+        // nothing to flash. The original value is persisted before the change.
+        public static void SuppressSecondaryTaskbars(Snapshot snapshot, Action persist) {
+            if (!snapshot.MultiMonitorTaskbarSaved) {
+                snapshot.MultiMonitorTaskbar = ReadMultiMonitorTaskbar();
+                snapshot.MultiMonitorTaskbarSaved = true;
+                persist();
+            }
+            if (ReadMultiMonitorTaskbar() != 0) WriteMultiMonitorTaskbar(0);
+        }
+        static void RestoreSecondaryTaskbars(Snapshot saved) {
+            if (saved == null || !saved.MultiMonitorTaskbarSaved) return;
+            // Leave a value the user changed while the shell was running.
+            if (ReadMultiMonitorTaskbar() == 0 && saved.MultiMonitorTaskbar != 0)
+                WriteMultiMonitorTaskbar(saved.MultiMonitorTaskbar);
+        }
         public delegate void WinEventCallback(IntPtr hook, uint eventType, IntPtr window,
             int objectId, int childId, uint thread, uint eventTime);
         [DllImport("user32.dll", SetLastError = true)] static extern IntPtr SetWinEventHook(
@@ -909,6 +955,7 @@ namespace Caelestia.Takeover {
                 var regionErrors = new List<string>();
                 int removed = owner >= 0 ? RemoveStaleAppBars(owner) : 0;
                 if (taskbars) {
+                    RestoreSecondaryTaskbars(saved);
                     if (saved != null && saved.Regions != null)
                         foreach (var region in saved.Regions) {
                             try { RestoreRegion(region); }
@@ -1027,6 +1074,7 @@ namespace Caelestia.Takeover {
                 Native.ApplyEmptyRegion, Native.RestoreRegion);
             // Durable before the first native change, usable if this helper is killed.
             Native.SaveSnapshot(Path.Combine(launch.StateDirectory, "desktop-before.json"), saved);
+            if (hide) Native.SuppressSecondaryTaskbars(saved, SaveSnapshot);
             Native.RecordAction = delegate(TaskbarAction action) {
                 SupervisorSafety.Log(delegate {
                     File.AppendAllText(Path.Combine(launch.StateDirectory, "taskbar-actions.jsonl"),
@@ -1204,7 +1252,7 @@ namespace Caelestia.Takeover {
                 }
                 if (child == null) { if (DateTime.UtcNow >= nextStart) Start(); return; }
                 if (!child.HasExited) {
-                    if (hide) { RefreshShowHook(false); SuppressRegions(); Native.Hide(false); }
+                    if (hide) { RefreshShowHook(false); Native.Hide(false); SuppressRegions(); }
                     return;
                 }
                 showHook.Dispose();
