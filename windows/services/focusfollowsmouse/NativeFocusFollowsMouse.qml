@@ -1,9 +1,12 @@
 import QtQuick
+import Quickshell
 import Caelestia.Windows
 
 // Loaded only while windows.focusFollowsMouse.enabled is true. The native
-// object is loader-owned: destroying this wrapper (option off, clean shell
-// exit) destroys it and restores the values captured before the first write.
+// object is loader-owned, but the applied values are owned process-wide by the
+// plugin: a replacement generation created by a reload shares the old
+// generation's baseline, and the old destructor does not restore it while the
+// replacement is live.
 Item {
     id: root
 
@@ -11,8 +14,11 @@ Item {
     width: 0
     height: 0
 
+    readonly property string recoveryDirectory: Quickshell.env("CAELESTIA_RUNTIME_DIR") || ""
+
     WindowsFocusFollowsMouse {
         id: nativeService
+        recoveryDirectory: root.recoveryDirectory
     }
 
     readonly property var nativeInstance: nativeService

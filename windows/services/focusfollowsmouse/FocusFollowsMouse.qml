@@ -12,10 +12,14 @@ import Caelestia.Config
 //       "enabled": false, "delay": 100, "raise": false } } }
 //
 // While enabled, the loader-owned native object applies Windows' X-Mouse
-// values with SystemParametersInfoW. It reads the current values before the
-// first write and restores them when the option is disabled or the shell
-// exits cleanly. Writes never set SPIF_UPDATEINIFILE, so the stored Windows
-// preference is untouched and the next logon restores it after a crash.
+// values with SystemParametersInfoW. The plugin keeps one process-wide baseline
+// and one live-controller list, so a reload's new generation reuses the
+// baseline instead of capturing the old generation's applied values, and the
+// old generation's teardown does not restore while the new one is live. The
+// baseline is saved to the profile runtime directory before the first write
+// and restored when the option is disabled or the shell exits cleanly. Writes
+// never set SPIF_UPDATEINIFILE, so the stored Windows preference is untouched
+// and the next logon restores it after a crash.
 //
 // The native object is not constructed at all while the option is disabled,
 // so a user who turns on X-Mouse in Windows keeps that setting.

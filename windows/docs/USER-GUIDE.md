@@ -314,9 +314,12 @@ alone.
 `delay` is milliseconds before focus changes (0-5000, default 100); `raise`
 brings the focused window to the top (default false). Changes reload live. The
 shell records the current Windows values before its first change and restores
-them when the option is turned off or the shell quits cleanly. The values are
-never written to the user profile, so a crash or forced kill cannot leave the
-stored preference changed; the next sign-in restores it. To migrate from the
+them when the option is turned off or the shell quits cleanly. The baseline is
+kept across a live reload and saved under the profile's `runtime` directory
+before any change, so the supervisor's restart after a crash can still restore
+the values instead of leaving tracking on. The values are never written to the
+user profile, so a crash or forced kill cannot leave the stored preference
+changed; the next sign-in restores it. To migrate from the
 old system-wide setup, enable this option and turn off Windows' own X-Mouse
 setting (Settings > Accessibility > Mouse > "Activate a window by hovering over
 it with the mouse").

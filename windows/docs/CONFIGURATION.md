@@ -484,9 +484,15 @@ until enabled.
 | `raise` | bool | `false` | Bring the focused window to the top. |
 
 The shell reads the current Windows values before the first change and
-restores them when the option is disabled or the shell exits cleanly. Writes do
-not use `SPIF_UPDATEINIFILE`, so the stored Windows preference is unchanged;
-after a crash or forced kill the next sign-in restores it. Changes reload live.
+restores them when the option is disabled or the shell exits cleanly. A reload's
+replacement QML generation shares the process-wide baseline with the old one, so
+restarting the shell does not lose the originals. The baseline is also saved to
+`runtime\focus-follows-mouse-recovery.json` in the profile before the first
+change, so a supervisor restart after a crash restores the user's values rather
+than treating the still-applied values as the originals. Writes do not use
+`SPIF_UPDATEINIFILE`, so the stored Windows preference is unchanged; after a
+crash or forced kill the recovery file (or the next sign-in) restores it.
+Changes reload live.
 If the option is disabled, the shell never reads or writes the system setting,
 so a user who enables X-Mouse in Windows keeps it.
 

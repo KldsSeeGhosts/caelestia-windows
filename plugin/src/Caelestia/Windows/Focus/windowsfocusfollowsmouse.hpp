@@ -30,6 +30,7 @@ class WindowsFocusFollowsMouse: public QObject {
     Q_PROPERTY(bool applied READ applied NOTIFY stateChanged)
     Q_PROPERTY(QString status READ status NOTIFY stateChanged)
     Q_PROPERTY(QString lastError READ lastError NOTIFY stateChanged)
+    Q_PROPERTY(QString recoveryDirectory READ recoveryDirectory WRITE setRecoveryDirectory)
 
 public:
     explicit WindowsFocusFollowsMouse(QObject* parent = nullptr);
@@ -38,6 +39,8 @@ public:
     [[nodiscard]] bool applied() const { return m_controller.active(); }
     [[nodiscard]] QString status() const { return m_status; }
     [[nodiscard]] QString lastError() const { return m_lastError; }
+    [[nodiscard]] QString recoveryDirectory() const { return m_recoveryDirectory; }
+    void setRecoveryDirectory(const QString& directory) { m_recoveryDirectory = directory; }
 
     Q_INVOKABLE bool apply(bool enabled, int delayMs, bool raise);
     Q_INVOKABLE void restore();
@@ -52,6 +55,7 @@ private:
     FocusFollowsMouseController m_controller {m_system};
     QString m_status = QStringLiteral("idle");
     QString m_lastError;
+    QString m_recoveryDirectory;
 };
 
 } // namespace caelestia::shell::windows

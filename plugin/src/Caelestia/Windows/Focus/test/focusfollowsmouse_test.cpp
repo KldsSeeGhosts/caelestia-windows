@@ -1,10 +1,16 @@
 // Logic tests for the focus-follows-mouse controller. The fake system boundary
 // is the point of this test: it proves the option reads the previous values
 // before writing, writes only what differs, restores them when disabled or
-// destroyed, and never touches the real Windows X-Mouse setting.
+// destroyed, shares one baseline between overlapping QML generations, and
+// never touches the real Windows X-Mouse setting.
 
+#include <memory>
+
+#include <qdir.h>
+#include <qfile.h>
 #include <qstring.h>
 #include <qstringlist.h>
+#include <qtemporarydir.h>
 
 #include <QtTest/QtTest>
 
@@ -24,6 +30,11 @@ public:
 
     int reads = 0;
     QStringList writes;
+    QString recoveryFileThatMustExist;
+
+    bool recoveryReady() const {
+        return recoveryFileThatMustExist.isEmpty() || QFile::exists(recoveryFileThatMustExist);
+    }
 
     bool read(FocusFollowsMouseValues& out) override {
         ++reads;
@@ -35,7 +46,7 @@ public:
 
     bool setTracking(bool tracking) override {
         writes.append(QStringLiteral("tracking=%1").arg(tracking ? 1 : 0));
-        if (!trackingResult)
+        if (!recoveryReady() || !trackingResult)
             return false;
         values.tracking = tracking;
         return true;
@@ -43,7 +54,7 @@ public:
 
     bool setDelayMs(int delayMs) override {
         writes.append(QStringLiteral("delay=%1").arg(delayMs));
-        if (!delayResult)
+        if (!recoveryReady() || !delayResult)
             return false;
         values.delayMs = delayMs;
         return true;
@@ -51,7 +62,7 @@ public:
 
     bool setRaise(bool raise) override {
         writes.append(QStringLiteral("raise=%1").arg(raise ? 1 : 0));
-        if (!raiseResult)
+        if (!recoveryReady() || !raiseResult)
             return false;
         values.raise = raise;
         return true;
@@ -74,12 +85,18 @@ private slots:
     void partialFailureRollsBack();
     void destructorRestores();
     void restoreIsIdempotent();
+    void overlappingGenerationsShareBaseline();
+    void mostRecentUpdateWins();
+    void recoveryFileSuppliesBaseline();
+    void recoveryFileWrittenBeforeFirstChange();
+    void disabledDoesNotWriteRecoveryFile();
 };
 
 void FocusFollowsMouseTest::disabledDoesNotTouchTheSystem() {
     FakeFocusFollowsMouseSystem system;
     system.values = {false, 400, false};
-    FocusFollowsMouseController controller(system);
+    FocusFollowsMouseOwner owner;
+    FocusFollowsMouseController controller(system, &owner);
 
     QString error;
     QVERIFY(controller.apply(false, 100, false, &error));
@@ -94,7 +111,8 @@ void FocusFollowsMouseTest::disabledDoesNotTouchTheSystem() {
 void FocusFollowsMouseTest::enableCapturesAndRestores() {
     FakeFocusFollowsMouseSystem system;
     system.values = {false, 400, false};
-    FocusFollowsMouseController controller(system);
+    FocusFollowsMouseOwner owner;
+    FocusFollowsMouseController controller(system, &owner);
 
     QString error;
     QVERIFY(controller.apply(true, 100, false, &error));
@@ -122,7 +140,8 @@ void FocusFollowsMouseTest::enableCapturesAndRestores() {
 void FocusFollowsMouseTest::matchingValuesAreNotWritten() {
     FakeFocusFollowsMouseSystem system;
     system.values = {true, 100, false};
-    FocusFollowsMouseController controller(system);
+    FocusFollowsMouseOwner owner;
+    FocusFollowsMouseController controller(system, &owner);
 
     QVERIFY(controller.apply(true, 100, false));
     QVERIFY(controller.active());
@@ -138,7 +157,8 @@ void FocusFollowsMouseTest::matchingValuesAreNotWritten() {
 void FocusFollowsMouseTest::reapplyWritesOnlyChanges() {
     FakeFocusFollowsMouseSystem system;
     system.values = {false, 100, false};
-    FocusFollowsMouseController controller(system);
+    FocusFollowsMouseOwner owner;
+    FocusFollowsMouseController controller(system, &owner);
 
     QVERIFY(controller.apply(true, 100, false));
     system.writes.clear();
@@ -162,7 +182,8 @@ void FocusFollowsMouseTest::reapplyWritesOnlyChanges() {
 void FocusFollowsMouseTest::recapturesAfterDisable() {
     FakeFocusFollowsMouseSystem system;
     system.values = {false, 100, false};
-    FocusFollowsMouseController controller(system);
+    FocusFollowsMouseOwner owner;
+    FocusFollowsMouseController controller(system, &owner);
 
     QVERIFY(controller.apply(true, 100, false));
     QVERIFY(controller.restore());
@@ -187,7 +208,8 @@ void FocusFollowsMouseTest::recapturesAfterDisable() {
 void FocusFollowsMouseTest::clampsDelay() {
     FakeFocusFollowsMouseSystem system;
     system.values = {false, 100, false};
-    FocusFollowsMouseController controller(system);
+    FocusFollowsMouseOwner owner;
+    FocusFollowsMouseController controller(system, &owner);
 
     QVERIFY(controller.apply(true, -50, false));
     QCOMPARE(system.values.delayMs, FocusFollowsMouseController::MIN_DELAY_MS);
@@ -203,7 +225,8 @@ void FocusFollowsMouseTest::readFailureDoesNotWrite() {
     FakeFocusFollowsMouseSystem system;
     system.values = {false, 100, false};
     system.readResult = false;
-    FocusFollowsMouseController controller(system);
+    FocusFollowsMouseOwner owner;
+    FocusFollowsMouseController controller(system, &owner);
 
     QString error;
     QVERIFY(!controller.apply(true, 100, false, &error));
@@ -217,7 +240,8 @@ void FocusFollowsMouseTest::partialFailureRollsBack() {
     FakeFocusFollowsMouseSystem system;
     system.values = {false, 100, false};
     system.delayResult = false;
-    FocusFollowsMouseController controller(system);
+    FocusFollowsMouseOwner owner;
+    FocusFollowsMouseController controller(system, &owner);
 
     QString error;
     QVERIFY(!controller.apply(true, 250, false, &error));
@@ -235,8 +259,9 @@ void FocusFollowsMouseTest::partialFailureRollsBack() {
 void FocusFollowsMouseTest::destructorRestores() {
     FakeFocusFollowsMouseSystem system;
     system.values = {false, 100, false};
+    FocusFollowsMouseOwner owner;
     {
-        FocusFollowsMouseController controller(system);
+        FocusFollowsMouseController controller(system, &owner);
         QVERIFY(controller.apply(true, 200, true));
         QCOMPARE(system.values.tracking, true);
         QCOMPARE(system.values.delayMs, 200);
@@ -251,7 +276,8 @@ void FocusFollowsMouseTest::destructorRestores() {
 void FocusFollowsMouseTest::restoreIsIdempotent() {
     FakeFocusFollowsMouseSystem system;
     system.values = {false, 100, false};
-    FocusFollowsMouseController controller(system);
+    FocusFollowsMouseOwner owner;
+    FocusFollowsMouseController controller(system, &owner);
 
     QVERIFY(controller.apply(true, 200, false));
     system.writes.clear();
@@ -259,6 +285,129 @@ void FocusFollowsMouseTest::restoreIsIdempotent() {
     QCOMPARE(system.writes, QStringList({QStringLiteral("tracking=0"), QStringLiteral("delay=100")}));
     system.writes.clear();
     QVERIFY(controller.restore());
+    QVERIFY(system.writes.isEmpty());
+}
+
+void FocusFollowsMouseTest::overlappingGenerationsShareBaseline() {
+    FakeFocusFollowsMouseSystem system;
+    system.values = {false, 400, false};
+    FocusFollowsMouseOwner owner;
+
+    auto first = std::make_unique<FocusFollowsMouseController>(system, &owner);
+    QVERIFY(first->apply(true, 100, false));
+    QCOMPARE(system.values.tracking, true);
+    QCOMPARE(system.values.delayMs, 100);
+
+    // Quickshell loads the replacement generation before destroying the old
+    // one. The replacement must not capture the old generation's applied
+    // values as its baseline, and the old destructor must not restore while
+    // the replacement is live.
+    auto second = std::make_unique<FocusFollowsMouseController>(system, &owner);
+    QVERIFY(second->apply(true, 250, true));
+    QVERIFY(second->active());
+    QCOMPARE(second->saved().tracking, false);
+    QCOMPARE(second->saved().delayMs, 400);
+
+    system.writes.clear();
+    first.reset();
+    QVERIFY(second->active());
+    QCOMPARE(system.values.tracking, true);
+    QCOMPARE(system.values.delayMs, 250);
+    QCOMPARE(system.values.raise, true);
+    QVERIFY(system.writes.isEmpty());
+
+    second.reset();
+    QCOMPARE(system.values.tracking, false);
+    QCOMPARE(system.values.delayMs, 400);
+    QCOMPARE(system.values.raise, false);
+}
+
+void FocusFollowsMouseTest::mostRecentUpdateWins() {
+    FakeFocusFollowsMouseSystem system;
+    system.values = {false, 100, false};
+    FocusFollowsMouseOwner owner;
+
+    auto first = std::make_unique<FocusFollowsMouseController>(system, &owner);
+    auto second = std::make_unique<FocusFollowsMouseController>(system, &owner);
+    QVERIFY(first->apply(true, 100, false));
+    QVERIFY(second->apply(true, 250, false));
+    QVERIFY(first->apply(true, 300, true));
+
+    QCOMPARE(system.values.delayMs, 300);
+    second.reset();
+    QCOMPARE(system.values.delayMs, 300);
+    QCOMPARE(system.values.raise, true);
+
+    first.reset();
+    QCOMPARE(system.values.delayMs, 100);
+    QCOMPARE(system.values.tracking, false);
+}
+
+void FocusFollowsMouseTest::recoveryFileSuppliesBaseline() {
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const auto path = directory.filePath(QStringLiteral("focus-follows-mouse-recovery.json"));
+
+    {
+        QFile file(path);
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        const QByteArray contents("version=1\ntracking=0\ndelay=400\nraise=1\n");
+        QCOMPARE(file.write(contents), contents.size());
+    }
+
+    FakeFocusFollowsMouseSystem system;
+    // The crashed process had already applied these live values.
+    system.values = {true, 100, false};
+    FocusFollowsMouseOwner owner;
+    FocusFollowsMouseController controller(system, &owner);
+    controller.setRecoveryPath(path);
+
+    QVERIFY(controller.apply(true, 50, false));
+    QCOMPARE(controller.saved().tracking, false);
+    QCOMPARE(controller.saved().delayMs, 400);
+    QCOMPARE(controller.saved().raise, true);
+
+    QVERIFY(controller.restore());
+    QCOMPARE(system.values.tracking, false);
+    QCOMPARE(system.values.delayMs, 400);
+    QCOMPARE(system.values.raise, true);
+    QVERIFY(!QFile::exists(path));
+}
+
+void FocusFollowsMouseTest::recoveryFileWrittenBeforeFirstChange() {
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const auto path = directory.filePath(QStringLiteral("focus-follows-mouse-recovery.json"));
+
+    FakeFocusFollowsMouseSystem system;
+    system.values = {false, 400, false};
+    // Any SET call before the baseline is persisted fails the test.
+    system.recoveryFileThatMustExist = path;
+    FocusFollowsMouseOwner owner;
+    FocusFollowsMouseController controller(system, &owner);
+    controller.setRecoveryPath(path);
+
+    QVERIFY(controller.apply(true, 100, false));
+    QVERIFY(QFile::exists(path));
+
+    QVERIFY(controller.restore());
+    QVERIFY(!QFile::exists(path));
+}
+
+void FocusFollowsMouseTest::disabledDoesNotWriteRecoveryFile() {
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const auto path = directory.filePath(QStringLiteral("focus-follows-mouse-recovery.json"));
+
+    FakeFocusFollowsMouseSystem system;
+    system.values = {false, 400, false};
+    FocusFollowsMouseOwner owner;
+    FocusFollowsMouseController controller(system, &owner);
+    controller.setRecoveryPath(path);
+
+    QVERIFY(controller.apply(false, 100, false));
+    QVERIFY(!QFile::exists(path));
+    QCOMPARE(system.reads, 0);
     QVERIFY(system.writes.isEmpty());
 }
 

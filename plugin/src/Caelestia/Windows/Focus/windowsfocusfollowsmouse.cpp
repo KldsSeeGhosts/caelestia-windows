@@ -1,6 +1,7 @@
 #include "windowsfocusfollowsmouse.hpp"
 
 #include <qcoreapplication.h>
+#include <qdir.h>
 #include <qloggingcategory.h>
 #include <qt_windows.h>
 
@@ -63,6 +64,14 @@ WindowsFocusFollowsMouse::WindowsFocusFollowsMouse(QObject* parent): QObject(par
 WindowsFocusFollowsMouse::~WindowsFocusFollowsMouse() = default;
 
 bool WindowsFocusFollowsMouse::apply(bool enabled, int delayMs, bool raise) {
+    // The profile runtime directory is provided by the QML facade. The
+    // baseline is persisted there before the first SET write so a supervisor
+    // restart after a crash knows what to restore.
+    m_controller.setRecoveryPath(m_recoveryDirectory.isEmpty()
+            ? QString()
+            : QDir(m_recoveryDirectory)
+                  .filePath(QStringLiteral("focus-follows-mouse-recovery.json")));
+
     QString error;
     const bool ok = m_controller.apply(enabled, delayMs, raise, &error);
 
