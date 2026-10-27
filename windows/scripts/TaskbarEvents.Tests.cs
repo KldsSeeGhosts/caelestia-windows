@@ -223,6 +223,35 @@ public static class TaskbarEventsTests {
             SupervisorSafety.Fail(delegate { throw error; }, delegate { cleaned++; });
         }
         Check(cleaned == 2, "cleanup runs when both error-log writes fail");
+        var pauses = new List<int>();
+        int tries = 0;
+        TransientIo.Retry(delegate { if (++tries < 3) throw new IOException("locked"); }, pauses.Add);
+        Check(tries == 3 && String.Join(",", pauses.ConvertAll(p => p.ToString()).ToArray()) == "25,50",
+            "transient lock is retried with backoff");
+        tries = 0; pauses.Clear();
+        try { TransientIo.Retry(delegate { tries++; throw new UnauthorizedAccessException("locked"); }, pauses.Add); throw new Exception("expected lock failure"); }
+        catch (UnauthorizedAccessException) {}
+        Check(tries == 5 && pauses.Count == 4, "persistent lock is bounded and then surfaces");
+        tries = 0;
+        try { TransientIo.Retry(delegate { tries++; throw new InvalidOperationException("bug"); }, pauses.Add); }
+        catch (InvalidOperationException) {}
+        Check(tries == 1, "non-I/O errors are not retried");
+        // A startup lock that outlasts the retry budget defers the takeover,
+        // then startup proceeds once the lock clears.
+        bool startupLocked = true;
+        int startupWrites = 0, startupReports = 0, takeovers = 0;
+        var startup = new StartupPersistence(
+            delegate { TransientIo.Retry(delegate { if (startupLocked) throw new IOException("locked"); startupWrites++; }, pauses.Add); },
+            delegate(Exception error) { startupReports++; });
+        for (int tick = 0; tick < 3; tick++) if (startup.Ready()) takeovers++;
+        Check(takeovers == 0 && startupWrites == 0 && startupReports == 3,
+            "startup lock beyond the retry budget defers takeover without ending the session");
+        startupLocked = false;
+        for (int tick = 0; tick < 3; tick++) if (startup.Ready()) takeovers++;
+        Check(takeovers == 3 && startupWrites == 1 && startupReports == 3,
+            "startup proceeds once the lock clears and persists only once");
+        try { new StartupPersistence(delegate { throw new InvalidOperationException("bug"); }, delegate(Exception error) {}).Ready(); throw new Exception("expected failure"); }
+        catch (InvalidOperationException) {}
         var failedSnapshot = new Snapshot();
         int applied = 0, restored = 0;
         var failedManager = new RegionSuppression(failedSnapshot,
