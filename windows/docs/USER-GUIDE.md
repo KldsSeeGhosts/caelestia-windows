@@ -362,6 +362,8 @@ The bar popout wrapper still supports upstream's detached mode: when a popout re
 
 Nexus writes the global `Caelestia.Config` layer, so every change lands in `%LOCALAPPDATA%\caelestia-windows\config\shell.json` and applies live; the settings file watcher also reloads the window when you edit that file by hand. Only schema keys are written, so no option is quarantined.
 
+Nexus edits that global file, not per-monitor overlays. If a value is overridden in `config/monitors/<name>/shell.json`, the monitor override keeps winning on that monitor; edit the monitor file to change it there.
+
 ### Page support on Windows
 
 | Page | Status | What works, and what Windows owns |
@@ -379,7 +381,7 @@ Nexus writes the global `Caelestia.Config` layer, so every change lands in `%LOC
 
 ### Windows adapter boundary
 
-Unmodified upstream files are staged directly. Only files that need a Windows service or type live under `windows/combined-prototype/adapters/modules/nexus/` (Bluetooth, network, wallpaper picker, apps, services, about, the shared network list, `NexusState` and `WindowFactory`), each with a header that states exactly what changed and why. See [CONFIGURATION.md](CONFIGURATION.md) for the `shell.json` schema.
+Unmodified upstream files are staged directly. Only files that need a Windows service or type live under `windows/combined-prototype/adapters/modules/nexus/` (Bluetooth, network, audio controls, wallpaper picker, apps, services, about, the shared network and audio-device lists, the page container, `NexusState` and `WindowFactory`), each with a header that states exactly what changed and why. See [CONFIGURATION.md](CONFIGURATION.md) for the `shell.json` schema.
 
 A Windows-only page for `windows.tiling` (`enabled`, `mode`, `gapsIn`, `gapsOut`, `singleWindowGapsOut`, `borderColours`) is not included yet; edit `config/shell.json` directly as described in [CONFIGURATION.md](CONFIGURATION.md#tiling-and-gaps-configuration).
 

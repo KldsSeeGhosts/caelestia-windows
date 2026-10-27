@@ -68,7 +68,17 @@ PageBase {
                     title: Tr.tr("Select an image")
                     filterLabel: Tr.tr("Image files")
                     filters: Images.validImageExtensions
-                    onAccepted: path => {
+                    nameFilters: [Tr.tr("Image files") + " (*." + Images.validImageExtensions.join(" *.") + ")"]
+                    onAccepted: {
+                        // The native dialog's accepted() has no path argument.
+                        // Read its QUrl, decode it, and ignore a cancel/empty
+                        // selection instead of passing undefined to the facade.
+                        const selected = String(selectedFile ?? "");
+                        if (selected.length === 0)
+                            return;
+                        const path = decodeURIComponent(selected);
+                        if (path.length === 0)
+                            return;
                         Wallpapers.setWallpaper(path);
                         root.nState.closeSubPage();
                     }
@@ -135,7 +145,11 @@ PageBase {
                     opacity: modelData ? 1 : 0
                     enabled: modelData
 
-                    source: String(modelData?.path ?? "")
+                    // Wallpaper Engine entries carry a project.json `path` for
+                    // selection and a real image in `preview`. Feed the preview
+                    // to the tile, as the launcher adapter does, so Qt never
+                    // tries to decode project.json as an image.
+                    source: !modelData ? "" : modelData.preview ? "file:///" + modelData.preview : modelData.engine ? "" : String(modelData.path ?? "")
                     text: modelData?.name ?? ""
                     onClicked: {
                         Wallpapers.setWallpaper(modelData.path);

@@ -32,15 +32,18 @@ PageBase {
 
     title: Tr.tr("Connected devices")
 
-    Component.onCompleted: if (root.visible)
-        WindowsBluetooth.startDiscovery()
-    Component.onDestruction: WindowsBluetooth.stopDiscovery()
-    onVisibleChanged: {
-        if (root.visible && WindowsBluetooth.canSetDiscovering)
-            WindowsBluetooth.startDiscovery();
-        else if (!root.visible)
-            WindowsBluetooth.stopDiscovery();
+    // Discovery is caller-scoped: another Nexus window may be discovering at
+    // the same time, so this page releases only its own registration.
+    function setScan(on: bool): void {
+        if (on)
+            WindowsBluetooth.acquireDiscovery(root);
+        else
+            WindowsBluetooth.releaseDiscovery(root);
     }
+
+    Component.onCompleted: root.setScan(root.visible)
+    Component.onDestruction: WindowsBluetooth.releaseDiscovery(root)
+    onVisibleChanged: root.setScan(root.visible)
 
     ColumnLayout {
         anchors.horizontalCenter: parent.horizontalCenter

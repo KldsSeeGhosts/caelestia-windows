@@ -35,14 +35,24 @@ QtObject {
     signal subPageClosed
 
     function openSubPage(idx: int): void {
-        subPageIdxStack.push(idx);
-        subPageOpened(idx);
+        if (!root.subPageIdxStack)
+            root.subPageIdxStack = [];
+        root.subPageIdxStack.push(idx);
+        root.subPageOpened(idx);
     }
 
     function closeSubPage(): void {
-        subPageClosed();
-        subPageIdxStack.pop();
+        if (!root.subPageIdxStack || root.subPageIdxStack.length === 0)
+            return;
+        root.subPageClosed();
+        root.subPageIdxStack.pop();
     }
 
-    onCurrentPageIdxChanged: subPageIdxStack.length = 0
+    // A window can be destroyed while a page or StackView binding is still
+    // settling. Guard the stack so a late currentPageIdx write cannot dereference
+    // a destroyed list.
+    onCurrentPageIdxChanged: {
+        if (root.subPageIdxStack)
+            root.subPageIdxStack.length = 0;
+    }
 }

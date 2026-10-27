@@ -9,9 +9,11 @@
 //   2. modules/nexus/WindowFactory.qml opens a real detached window with the
 //      upstream geometry, minimum size and title;
 //   3. every page in PageRegistry loads through PageCompRegistry without a QML
-//      diagnostic;
-//   4. closing the window destroys it, and the staged caelestia:nexus global
-//      shortcut reaches the same window through the backend hotkey manager.
+//      diagnostic, and a window destroyed while its first page is still
+//      incubating (including after two page replacements) emits nothing;
+//   4. every Nexus window is closed before PASS, and the staged
+//      caelestia:nexus global shortcut reaches the same window through the
+//      backend hotkey manager.
 //
 // It does not type into the window, take screenshots, start a tiler or touch
 // the live profile. Windows service facades stay disabled unless the caller
@@ -49,6 +51,9 @@ ShellRoot {
     property var nexusWindow: null
     property var nexusItem: null
     property var pagesItem: null
+    // Token owned by the page container of the early-close window. It must be
+    // invalidated by the time the next step runs.
+    property var earlyCloseToken: null
     // Steps 4..pageEnd-1 walk every registered page.
     readonly property int pageEnd: 4 + PageRegistry.pages.length
     property var shortcuts: null
@@ -155,7 +160,32 @@ ShellRoot {
                     return;
                 }
                 root.check(root.pagesItem.currentItem !== null, "default nexus page did not load");
+
+                // Early-close regression: create a second Nexus window, replace
+                // its page while the first incubation is still outstanding, and
+                // destroy it in the same event-loop turn. The page container must
+                // invalidate both incubations and dispose of their late results
+                // without touching the destroyed window. Any diagnostic it emits
+                // fails the run before PASS.
+                const early = WindowFactory.create();
+                root.check(early !== null && early !== undefined, "early-close window was not created");
+                const earlyNexus = early.contentItem.children.find(child => child && child.nState !== undefined && child.nState.isWindow === true) ?? null;
+                root.check(earlyNexus !== null, "early-close nexus content item missing");
+                const earlyPages = root.findPages(earlyNexus);
+                root.check(earlyPages !== null, "early-close page container missing");
+                earlyPages.loadPage(1);
+                const replacedToken = earlyPages.pageTokens?.[0];
+                root.check(replacedToken !== undefined, "page replacement did not leave an incubation token");
+                earlyPages.loadPage(2);
+                root.check(replacedToken.alive === false, "page replacement did not invalidate the previous incubation");
+                root.earlyCloseToken = earlyPages.pageTokens?.[0];
+                root.check(root.earlyCloseToken !== undefined, "early-close page did not leave an incubation token");
+                early.destroy();
             } else if (root.step < root.pageEnd) {
+                if (root.earlyCloseToken) {
+                    root.check(root.earlyCloseToken.alive === false, "window destruction did not invalidate the page incubation");
+                    root.earlyCloseToken = null;
+                }
                 const index = root.pageIdx;
                 root.nexusItem.nState.currentPageIdx = index;
                 root.pageIdx = index + 1;
@@ -189,7 +219,21 @@ ShellRoot {
                 root.step++;
                 driver.interval = 1500;
                 return;
+            } else if (root.step === root.pageEnd + 2) {
+                // Close every window before the PASS marker so a late
+                // incubation or shutdown diagnostic is still part of the run
+                // the test evaluates. This also removes the token-singleton race
+                // that used to print QFont warnings after the window outlived
+                // the quit request.
+                WindowFactory.closeAll();
+                root.step++;
+                driver.interval = 1200;
+                return;
             } else {
+                root.check(WindowFactory.windowCount === 0, "Nexus windows are still open before PASS");
+                root.nexusWindow = null;
+                root.nexusItem = null;
+                root.pagesItem = null;
                 driver.stop();
                 console.log("CAELESTIA_NEXUS_SMOKE_PAGES " + PageRegistry.pages.length);
                 console.log("CAELESTIA_NEXUS_SMOKE_PASS");

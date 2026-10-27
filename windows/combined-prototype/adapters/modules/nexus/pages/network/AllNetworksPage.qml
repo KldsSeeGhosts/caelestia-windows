@@ -22,9 +22,19 @@ PageBase {
     title: Tr.tr("All networks")
     isSubPage: true
 
-    // The parent Network page owns the visibility intent; this sub-page only
-    // makes sure a scan is allowed while it is the page in front.
-    Component.onCompleted: Nmcli.setListVisible(true)
+    // This sub-page registers its own visibility owner. The parent Network page
+    // may still hold an owner, and a second Nexus window must not be affected
+    // when this one is popped or destroyed.
+    function setVisibility(visible: bool): void {
+        if (visible)
+            Nmcli.acquireListVisibility(root);
+        else
+            Nmcli.releaseListVisibility(root);
+    }
+
+    Component.onCompleted: root.setVisibility(true)
+    Component.onDestruction: Nmcli.releaseListVisibility(root)
+    onVisibleChanged: root.setVisibility(root.visible)
 
     ColumnLayout {
         anchors.horizontalCenter: parent.horizontalCenter

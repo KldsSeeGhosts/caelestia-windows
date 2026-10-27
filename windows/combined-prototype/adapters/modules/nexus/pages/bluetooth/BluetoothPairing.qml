@@ -25,19 +25,21 @@ PageBase {
 
     readonly property var newDevices: [...WindowsBluetooth.devices].filter(device => device && device.bonded !== true).sort((a, b) => (b.pairing - a.pairing) || (a.name ?? "").localeCompare(b.name ?? ""))
 
+    // Caller-scoped discovery: the Bluetooth page can stay registered beneath
+    // this sub-page, and another Nexus window may also be scanning.
     function setScan(on: bool): void {
         if (on)
-            WindowsBluetooth.startDiscovery();
+            WindowsBluetooth.acquireDiscovery(root);
         else
-            WindowsBluetooth.stopDiscovery();
+            WindowsBluetooth.releaseDiscovery(root);
     }
 
     title: Tr.tr("Pair new device")
     isSubPage: true
 
-    Component.onCompleted: setScan(true)
-    Component.onDestruction: setScan(false)
-    onVisibleChanged: setScan(visible)
+    Component.onCompleted: root.setScan(true)
+    Component.onDestruction: WindowsBluetooth.releaseDiscovery(root)
+    onVisibleChanged: root.setScan(root.visible)
 
     ColumnLayout {
         anchors.horizontalCenter: parent.horizontalCenter

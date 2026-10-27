@@ -81,25 +81,20 @@ $stderr = $errTask.GetAwaiter().GetResult()
 $stdout | Set-Content -LiteralPath "$run\stdout.log" -Encoding UTF8
 $stderr | Set-Content -LiteralPath "$run\stderr.log" -Encoding UTF8
 $text = "$stdout`n$stderr"
-# The window opened by the caelestia:nexus handler (and, with -Windowed, the
-# shell's own top-level windows) is still open when the smoke asks the process
-# to quit. Qt then tears the tokens singleton down while item font bindings are
-# still re-evaluating, which prints "Unable to assign [undefined] to QFont".
-# That is an exit artifact, not a page diagnostic, so only lines emitted before
-# the PASS marker fail the run; anything after it is recorded separately.
-$passIndex = $text.IndexOf('CAELESTIA_NEXUS_SMOKE_PASS')
-$beforePass = if ($passIndex -ge 0) { $text.Substring(0, $passIndex) } else { $text }
-$afterPass = if ($passIndex -ge 0) { $text.Substring($passIndex) } else { "" }
-# The offscreen QPA plugin also emits two environment warnings of its own (no Qt
-# font directory, masks unsupported). They are not QML diagnostics either.
+# The smoke closes every Nexus window it opened before printing PASS. Evaluate
+# the whole process output, so a real error during window shutdown or a late
+# page incubation fails the run instead of being hidden after the marker.
+#
+# The offscreen QPA plugin emits two environment warnings of its own (no Qt font
+# directory, masks unsupported). They are not QML diagnostics and are the only
+# lines excluded.
 $offscreenOnly = 'QFontDatabase: Cannot find font directory|This plugin does not support setting window masks'
 function Get-Diagnostics([string]$Body) {
     @($Body -split "`n" |
         Where-Object { $_ -match '^\S+ \S+\s+(WARN|ERROR|FATAL|CRITICAL)\b' } |
         Where-Object { $_ -notmatch $offscreenOnly })
 }
-$diagnostics = Get-Diagnostics $beforePass
-$shutdownDiagnostics = Get-Diagnostics $afterPass
+$diagnostics = Get-Diagnostics $text
 $passed = -not $timedOut -and $process.ExitCode -eq 0 -and
     $text.Contains('CAELESTIA_NEXUS_SMOKE_PASS') -and
     $text.Contains('CAELESTIA_NEXUS_SMOKE_PAGES 11') -and
@@ -110,7 +105,6 @@ $result = [ordered]@{
     timedOut  = $timedOut
     exitCode  = $process.ExitCode
     diagnostics = $diagnostics
-    shutdownDiagnostics = $shutdownDiagnostics
     sourceRevision = (& git -C $repoRoot rev-parse HEAD).Trim()
     sourceDirty = [bool](& git -C $repoRoot status --porcelain)
     backendRevision = (Get-Content "$BuildRoot\logs\build.json" -Raw | ConvertFrom-Json).backendRevision

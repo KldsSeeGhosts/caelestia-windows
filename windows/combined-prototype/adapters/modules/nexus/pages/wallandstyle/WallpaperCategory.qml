@@ -50,7 +50,10 @@ PageBase {
                 opacity: modelData ? 1 : 0
                 enabled: modelData
 
-                source: String(modelData?.path ?? "")
+                // Wallpaper Engine entries use `path` (project.json) only for
+                // selection; the tile must show `preview`, matching the launcher
+                // adapter, or Qt decodes project.json as an image.
+                source: !modelData ? "" : modelData.preview ? "file:///" + modelData.preview : modelData.engine ? "" : String(modelData.path ?? "")
                 text: modelData?.name ?? ""
                 onClicked: {
                     Wallpapers.setWallpaper(modelData.path);

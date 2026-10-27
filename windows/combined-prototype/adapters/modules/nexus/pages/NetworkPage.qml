@@ -29,10 +29,32 @@ PageBase {
     title: Tr.tr("Network")
 
     // The Windows scanner runs only while a caller says the list is visible and
-    // the controls opt-in is on; this page is that caller while it is shown.
-    Component.onCompleted: Nmcli.setListVisible(root.visible)
-    Component.onDestruction: Nmcli.setListVisible(false)
-    onVisibleChanged: Nmcli.setListVisible(root.visible)
+    // the controls opt-in is on. Every window and sub-page registers its own
+    // interest, so closing one Nexus window cannot stop another window's scan.
+    function setVisibility(visible: bool): void {
+        if (visible)
+            Nmcli.acquireListVisibility(root);
+        else
+            Nmcli.releaseListVisibility(root);
+    }
+
+    // A refused/failed command has no row to land on (for example a read-only
+    // run or an unavailable adapter), and a successful connect is useful
+    // feedback too. The facade's lastResult is the single source of truth.
+    readonly property string actionNote: {
+        if (!Nmcli.enabled || !Nmcli.listAvailable)
+            return "";
+        const lines = [];
+        if (!Nmcli.controlsEnabled)
+            lines.push(Tr.tr("Wi-Fi actions are disabled for read-only observation."));
+        if (Nmcli.resultText.length > 0)
+            lines.push(Nmcli.resultText);
+        return lines.join("\n");
+    }
+
+    Component.onCompleted: root.setVisibility(root.visible)
+    Component.onDestruction: Nmcli.releaseListVisibility(root)
+    onVisibleChanged: root.setVisibility(root.visible)
 
     ColumnLayout {
         anchors.horizontalCenter: parent.horizontalCenter
@@ -116,6 +138,32 @@ PageBase {
             checked: Nmcli.wifiEnabled
             enabled: Nmcli.controlsEnabled && Nmcli.adapterPresent
             onToggled: Nmcli.enableWifi(checked)
+        }
+
+        ConnectedRect {
+            readonly property bool shown: root.actionNote.length > 0
+
+            Layout.topMargin: shown ? Tokens.spacing.small / 2 : -parent.spacing
+            Layout.fillWidth: true
+            visible: shown
+            implicitHeight: shown ? resultNoteText.implicitHeight + Tokens.padding.large * 2 : 0
+            first: true
+            last: true
+
+            StyledText {
+                id: resultNoteText
+
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.margins: Tokens.padding.large
+                visible: parent.shown
+
+                text: root.actionNote
+                color: Nmcli.resultText.length > 0 && Nmcli.resultSucceeded === false ? Colours.palette.m3error : Colours.palette.m3onSurfaceVariant
+                font: Tokens.font.body.small
+                wrapMode: Text.WordWrap
+            }
         }
 
         NetworkList {

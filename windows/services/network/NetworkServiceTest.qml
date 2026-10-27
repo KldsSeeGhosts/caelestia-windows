@@ -426,6 +426,34 @@ QtObject {
         check(fixture.listVisibilityCalls === ++visibility && fixture.listVisibleArg === false,
             "visibility intent can be cleared");
 
+        // --- Caller-scoped visibility across windows/sub-pages ----------------
+        const ownerA = {};
+        const ownerB = {};
+        const ownersBase = fixture.listVisibilityCalls;
+        service.acquireListVisibility(ownerA);
+        check(service.listVisible && service.listVisibilityOwners.length === 1
+            && fixture.listVisibilityCalls === ownersBase + 1 && fixture.listVisibleArg === true,
+            "first owner starts the visible list");
+        service.acquireListVisibility(ownerA);
+        check(service.listVisibilityOwners.length === 1
+            && fixture.listVisibilityCalls === ownersBase + 1,
+            "duplicate acquire is idempotent");
+        service.acquireListVisibility(ownerB);
+        check(service.listVisibilityOwners.length === 2
+            && fixture.listVisibilityCalls === ownersBase + 1,
+            "second owner joins the visible list");
+        service.releaseListVisibility(ownerA);
+        check(service.listVisible && service.listVisibilityOwners.length === 1
+            && fixture.listVisibilityCalls === ownersBase + 1,
+            "releasing one owner keeps the list visible");
+        service.releaseListVisibility(ownerB);
+        check(!service.listVisible && service.listVisibilityOwners.length === 0
+            && fixture.listVisibilityCalls === ownersBase + 2 && fixture.listVisibleArg === false,
+            "last owner release stops the visible list");
+        service.releaseListVisibility(ownerB);
+        check(fixture.listVisibilityCalls === ownersBase + 2,
+            "unknown release is ignored");
+
         // --- Connect result and credential boundary --------------------------
         model.values = [openNetwork, secureNoProfile, secureProfile];
         resetCommandCounters();

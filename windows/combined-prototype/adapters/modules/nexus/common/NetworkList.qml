@@ -66,10 +66,15 @@ ItemList {
 
         required property int index
         required property var modelData
-        property bool currentSelected
+        // The pending state belongs to the service: it is set when the adapter
+        // accepts the request and cleared when the native result arrives, so a
+        // refusal or failure re-enables the row without a local flag that only
+        // a success path could clear.
+        readonly property bool pending: Nmcli.connectingSsid === modelData.ssid || Nmcli.pendingSsid === modelData.ssid
+        readonly property bool actionAvailable: modelData.active || root.needsWindowsSettings(modelData) || Nmcli.controlsEnabled
         property real textOpacity: disabled ? 0.5 : 1
 
-        disabled: currentSelected || Nmcli.connectingSsid === modelData.ssid
+        disabled: pending || !actionAvailable
 
         anchors.left: root.list.contentItem.left
         anchors.right: root.list.contentItem.right
@@ -91,7 +96,6 @@ ItemList {
                 Qt.openUrlExternally("ms-settings:network-wifi");
             } else {
                 Nmcli.connectToAccessPoint(modelData);
-                currentSelected = true;
                 root.networkSelected(modelData);
             }
         }
@@ -100,24 +104,6 @@ ItemList {
             Anim {
                 type: Anim.DefaultEffects
             }
-        }
-
-        Connections {
-            function onActiveChanged(): void {
-                if (network.modelData.active)
-                    network.currentSelected = false;
-            }
-
-            target: network.modelData
-        }
-
-        Connections {
-            function onNetworkSelected(ap): void {
-                if (ap !== network.modelData)
-                    network.currentSelected = false;
-            }
-
-            target: root
         }
 
         RowLayout {
@@ -170,7 +156,7 @@ ItemList {
             }
 
             AnimLoader {
-                sourceComp: Nmcli.connectingSsid === network.modelData.ssid ? loadingComp : iconComp
+                sourceComp: network.pending ? loadingComp : iconComp
 
                 Component {
                     id: iconComp
