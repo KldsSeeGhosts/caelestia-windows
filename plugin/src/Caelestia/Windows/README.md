@@ -1,7 +1,7 @@
 # Windows focus policy
 
-`Caelestia.Windows` is built only on Windows. It provides nonvisual focus and
-font helpers for the isolated compatibility preview:
+`Caelestia.Windows` is built only on Windows. It provides nonvisual focus,
+focus-follows-mouse and font helpers for the isolated compatibility preview:
 
 ```qml
 import Caelestia.Windows
@@ -60,6 +60,14 @@ restore a hidden/destroyed target. Bind at most one guard to a preview window.
 The parent task builds with `windows/scripts/Build-Prototype.ps1` and validates
 the native focus behavior. Adding this source does not establish runtime
 activation or focus-return compatibility.
+
+`WindowsFocusFollowsMouse` applies `windows.focusFollowsMouse` through
+`SystemParametersInfoW` while the shell runs. It reads the current X-Mouse
+values before its first write and restores them when disabled or destroyed;
+writes never set `SPIF_UPDATEINIFILE`. The `windows/services/focusfollowsmouse`
+facade owns the loader and config validation. Its pure controller and
+`SystemParametersInfoW` boundary are separate so the unit test can inject a
+fake system and never touch the real setting.
 
 The module also provides the nonvisual `WindowsFontFallback` singleton.
 Windows staging adapts only the original workspace label font binding to
