@@ -181,6 +181,10 @@ void WindowsClipboard::refresh() {
     // queued refresh that runs after the picker closed reads nothing.
     if (!m_session->active())
         return;
+    // A newer request supersedes an in-flight per-item read immediately: the
+    // bumped generation cancels it at its next poll, and the worker's own
+    // performRefresh starts the new generation.
+    (void)m_session->nextRead();
     setStatus(QStringLiteral("loading"));
     QMetaObject::invokeMethod(m_worker, &WindowsClipboardWorker::refresh, Qt::QueuedConnection);
 }

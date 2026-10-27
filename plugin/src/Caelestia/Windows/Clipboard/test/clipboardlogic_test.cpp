@@ -2,7 +2,8 @@
 // decisions that previously failed silently: a non-Success
 // SetHistoryItemAsContent status, a picker close that must invalidate a
 // blocking history read or a queued snapshot, the per-instance cache delete
-// boundary (including NTFS junctions) and strict cache-root validation.
+// boundary (including NTFS junctions swapped in before and after validation)
+// and strict cache-root validation.
 
 #include <qcoreapplication.h>
 #include <qdir.h>
@@ -69,6 +70,9 @@ private slots:
     void junctionInstanceDirectoryIsRefused();
     void junctionNestedDirectoryIsNotFollowed();
     void junctionClipboardParentIsRefused();
+    void junctionSwappedForCacheEntryIsNotFollowed();
+    void heldDeletionDoesNotFollowSwappedJunction();
+    void heldDeletionRefusesReplacedEntry();
     void freshFilesNeverWriteThroughLinks();
 };
 
@@ -385,6 +389,106 @@ void ClipboardLogicTest::junctionClipboardParentIsRefused() {
     QVERIFY(QFileInfo::exists(deadSentinel));
 
     QVERIFY(removeJunction(root.filePath(QStringLiteral("clipboard"))));
+}
+
+void ClipboardLogicTest::junctionSwappedForCacheEntryIsNotFollowed() {
+    QTemporaryDir root;
+    QTemporaryDir outside;
+    QVERIFY(root.isValid());
+    QVERIFY(outside.isValid());
+    QVERIFY(QDir().mkpath(root.filePath(QStringLiteral("clipboard"))));
+    QVERIFY(writeSentinel(root.filePath(QStringLiteral("root-sentinel.txt"))));
+    const auto outsideSentinel = outside.filePath(QStringLiteral("outside-sentinel.txt"));
+    QVERIFY(writeSentinel(outsideSentinel));
+
+    ClipboardCacheDirectory cache;
+    QVERIFY(cache.configure(root.path(), 4242, 0x1234567890abcdefULL));
+    QVERIFY(cache.ensure());
+    QVERIFY(writeSentinel(cache.filePath(QStringLiteral("preview.png"))));
+
+    // Replace the already-validated instance directory with a junction to a
+    // sibling target. Deletion must refuse it and leave the target untouched.
+    QVERIFY(QDir(cache.path()).removeRecursively());
+    QVERIFY(makeJunction(cache.path(), outside.path()));
+
+    QVERIFY(!cache.remove());
+    QVERIFY(!cache.removeFile(cache.filePath(QStringLiteral("outside-sentinel.txt"))));
+    QVERIFY(QFileInfo::exists(outsideSentinel));
+    QVERIFY(QFileInfo::exists(root.filePath(QStringLiteral("root-sentinel.txt"))));
+    QVERIFY(QFileInfo::exists(cache.path()));
+
+    QVERIFY(removeJunction(cache.path()));
+}
+
+void ClipboardLogicTest::heldDeletionDoesNotFollowSwappedJunction() {
+    QTemporaryDir root;
+    QTemporaryDir outside;
+    QVERIFY(root.isValid());
+    QVERIFY(outside.isValid());
+    QVERIFY(QDir().mkpath(root.filePath(QStringLiteral("clipboard"))));
+    const auto outsideSentinel = outside.filePath(QStringLiteral("outside-sentinel.txt"));
+    QVERIFY(writeSentinel(outsideSentinel));
+
+    ClipboardCacheDirectory cache;
+    QVERIFY(cache.configure(root.path(), 4242, 0x1234567890abcdefULL));
+    QVERIFY(cache.ensure());
+
+    const auto moved = cache.path() + QStringLiteral("-moved");
+    {
+        // Validation happens here and holds the identity of the original
+        // instance directory. A swap after this point must not redirect the
+        // deletion.
+        ClipboardCacheDeletion deletion;
+        QCOMPARE(deletion.open(root.path(), cache.path()), ClipboardCacheDeletion::OpenResult::Opened);
+        QVERIFY(QDir().rename(cache.path(), moved));
+        QVERIFY(makeJunction(cache.path(), outside.path()));
+
+        // The held directory object is deleted by handle, not the junction
+        // target. The name may disappear immediately or when the last handle
+        // closes; both are safe.
+        QVERIFY(deletion.removeContents());
+        QVERIFY(deletion.removeSelf());
+        QVERIFY(QFileInfo::exists(cache.path()));
+        QVERIFY(QFileInfo::exists(outsideSentinel));
+    }
+    QVERIFY(!QFileInfo::exists(moved));
+    QVERIFY(QFileInfo::exists(cache.path()));
+    QVERIFY(QFileInfo::exists(outsideSentinel));
+
+    QVERIFY(removeJunction(cache.path()));
+}
+
+void ClipboardLogicTest::heldDeletionRefusesReplacedEntry() {
+    QTemporaryDir root;
+    QTemporaryDir outside;
+    QVERIFY(root.isValid());
+    QVERIFY(outside.isValid());
+    QVERIFY(QDir().mkpath(root.filePath(QStringLiteral("clipboard"))));
+    const auto outsideSentinel = outside.filePath(QStringLiteral("outside-sentinel.txt"));
+    QVERIFY(writeSentinel(outsideSentinel));
+
+    ClipboardCacheDirectory cache;
+    QVERIFY(cache.configure(root.path(), 4242, 0x1234567890abcdefULL));
+    QVERIFY(cache.ensure());
+    QVERIFY(writeSentinel(cache.filePath(QStringLiteral("preview.png"))));
+
+    ClipboardCacheDeletion deletion;
+    QCOMPARE(deletion.open(root.path(), cache.path()), ClipboardCacheDeletion::OpenResult::Opened);
+
+    const auto moved = cache.path() + QStringLiteral("-moved");
+    QVERIFY(QDir().rename(cache.path(), moved));
+    QVERIFY(makeJunction(cache.path(), outside.path()));
+    // A same-named decoy in the junction target has a different file identity.
+    QVERIFY(writeSentinel(outside.filePath(QStringLiteral("preview.png"))));
+
+    QVERIFY(!deletion.removeContents());
+    QVERIFY(!deletion.removeSelf());
+    QVERIFY(QFileInfo::exists(outside.filePath(QStringLiteral("preview.png"))));
+    QVERIFY(QFileInfo::exists(outsideSentinel));
+    QVERIFY(QFileInfo::exists(moved + QStringLiteral("/preview.png")));
+
+    QVERIFY(removeJunction(cache.path()));
+    QVERIFY(QDir(moved).removeRecursively());
 }
 
 void ClipboardLogicTest::freshFilesNeverWriteThroughLinks() {
