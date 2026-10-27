@@ -24,6 +24,10 @@ CustomMouseArea {
     property bool utilitiesShortcutActive
     property bool sidebarShortcutActive
     property bool launcherHoverEntered
+    // Set while the launcher resizes under a stationary pointer, cleared by the
+    // next pointer move. The mask shrinks with the results, which drops
+    // containsMouse without the pointer leaving.
+    property bool launcherResizeGuard
 
     function withinPanelHeight(panel: Item, x: real, y: real): bool {
         const panelY = root.borderThickness + panel.y;
@@ -61,7 +65,7 @@ CustomMouseArea {
             if (!screenState.launcher)
                 screenState.launcher = true;
             launcherHoverEntered = true;
-        } else if (screenState.launcher && launcherHoverEntered) {
+        } else if (screenState.launcher && launcherHoverEntered && !launcherResizeGuard) {
             // The bottom strip stays inside inBottomPanel while the launcher is
             // open, so closing here cannot immediately reopen it.
             screenState.launcher = false;
@@ -120,6 +124,8 @@ CustomMouseArea {
     }
 
     onPositionChanged: event => {
+        launcherResizeGuard = false;
+
         if (popouts.isDetached)
             return;
 
@@ -276,12 +282,24 @@ CustomMouseArea {
         }
     }
 
+    // Typing changes the result count and so the launcher height while the
+    // pointer rests on it. Do not treat the resulting mask change as a leave.
+    Connections {
+        function onHeightChanged(): void {
+            if (root.screenState.launcher && root.launcherHoverEntered)
+                root.launcherResizeGuard = true;
+        }
+
+        target: root.panels.launcher
+    }
+
     // Monitor individual visibility changes
     Connections {
         function onLauncherChanged() {
             // If launcher is hidden, clear shortcut flags for dashboard and OSD
             if (!root.screenState.launcher) {
                 root.launcherHoverEntered = false;
+                root.launcherResizeGuard = false;
                 root.dashboardShortcutActive = false;
                 root.osdShortcutActive = false;
                 root.utilitiesShortcutActive = false;

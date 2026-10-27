@@ -13,6 +13,7 @@ Item {
         property bool launcher: false
     }
     property bool launcherHoverEntered: false
+    property bool launcherResizeGuard: false
 
     // The runner inserts the real Interactions.qml launcher hover policy here.
     // LAUNCHER_HOVER_FUNCTION
@@ -63,6 +64,19 @@ Item {
             check(screenState.launcher && launcherHoverEntered, "hover open arms the close");
             updateLauncherHover(false);
             check(!screenState.launcher, "hover leave closes");
+
+            // Typing shrinks the results under a resting pointer. The mask
+            // change reports a leave that must not close the launcher.
+            screenState.launcher = true;
+            updateLauncherHover(true);
+            launcherResizeGuard = true;
+            launcherLeft();
+            check(screenState.launcher, "resize under a resting pointer keeps it open");
+
+            // The next pointer move clears the guard, so a real leave closes.
+            launcherResizeGuard = false;
+            launcherLeft();
+            check(!screenState.launcher, "leave after the pointer moves closes");
 
             // Leaving while closed is inert.
             launcherHoverEntered = false;
