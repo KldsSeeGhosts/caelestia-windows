@@ -538,6 +538,11 @@ QtObject {
         } else {
             return _refuse(state, "This monitor has no writable brightness route.");
         }
+        // Show the requested level at once, like the original Monitor does.
+        // Waiting for each DDC/CI confirmation made the handle jump back to an
+        // older drag target. lastConfirmed keeps the snap-back level.
+        state.brightness = target;
+        state.brightnessKnown = true;
         // Coalesce a drag: keep the terminal result as the only completion and
         // remember the latest target for the next strict write.
         if (state.writePending) {
@@ -753,7 +758,10 @@ QtObject {
         state.lastOutcome = state.expectedRoute === "software"
             ? "software-requested" : "hardware-requested";
         state.brightnessKnown = true;
-        state.brightness = applied;
+        // A newer drag target is already shown; only an idle record settles on
+        // the confirmed level.
+        if (!state.hasQueuedWrite)
+            state.brightness = applied;
         state.lastConfirmedKnown = true;
         state.lastConfirmed = applied;
         state.lastError = "";
