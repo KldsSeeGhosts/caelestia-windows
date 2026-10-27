@@ -101,6 +101,7 @@ QtObject {
         signal brightnessWriteResult(string screenName, real value, bool ok, string method, string error)
         signal routeChanged(string screenName, string route)
         signal systemBrightnessChanged(string screenName, real brightness)
+        signal displayConfigurationChanged()
         // strictRoutesChanged comes from the strictRoutes property's own
         // change signal when setStrictRoutes() flips it: exactly one emission
         // per successful enable, none for a refusal.
@@ -254,7 +255,7 @@ QtObject {
             fake._inFlight = fake._inFlight.concat([screenName]);
             fake._writeCompletions = fake._writeCompletions.concat([{
                 screenName: screenName,
-                value: clamped,
+                value: route === "sdr-white" ? Math.round(clamped * 100) / 100 : clamped,
                 route: fake.resultRoute.length > 0 ? fake.resultRoute : route,
                 ok: fake.writeOk,
                 error: fake.writeOk ? "" : fake.writeError,
@@ -379,6 +380,8 @@ QtObject {
     readonly property BrightnessService noId: BrightnessService {}
     // The pinned 525786f shape: strict members present, query ids absent.
     readonly property FakeBackend noIdBackend: FakeBackend { queryIdsSupported: false }
+    readonly property BrightnessService hdrCase: BrightnessService {}
+    readonly property FakeBackend hdrBackend: FakeBackend {}
 
     readonly property EmptyBackend emptyBackend: EmptyBackend {}
     readonly property SilentBackend silentBackend: SilentBackend {}
@@ -457,6 +460,33 @@ QtObject {
     }
 
     function run(): void {
+        // A native HDR route reports normalized SDR white and confirms its
+        // rounded read-back; a topology notification switches the same screen.
+        hdrCase.screens = [{name: "HDR1"}];
+        hdrCase.enabled = true;
+        hdrCase.backend = hdrBackend;
+        hdrCase.controlsEnabled = true;
+        hdrBackend.probeRoute = "sdr-white";
+        hdrBackend.probeLevel = (3000 - 1000) / 5000;
+        check(hdrCase.queryMonitor("HDR1"), "HDR route query");
+        hdrBackend.deliverQuery();
+        check(hdrCase.stateFor("HDR1").route === "sdr-white", "HDR route selected");
+        close(hdrCase.stateFor("HDR1").brightness, 0.4, "240 nits is 40 percent");
+        check(hdrCase.write("HDR1", 0.734), "HDR write accepted");
+        hdrBackend.completeWrite();
+        close(hdrCase.stateFor("HDR1").brightness, 0.73, "HDR read-back settles");
+        hdrBackend.probeRoute = "ddc";
+        hdrBackend.probeLevel = 1;
+        hdrBackend.displayConfigurationChanged();
+        hdrBackend.deliverQuery();
+        check(hdrCase.stateFor("HDR1").route === "ddc", "HDR off restores DDC");
+        hdrBackend.probeRoute = "sdr-white";
+        hdrBackend.probeLevel = 0;
+        hdrBackend.displayConfigurationChanged();
+        hdrBackend.deliverQuery();
+        check(hdrCase.stateFor("HDR1").route === "sdr-white", "HDR on restores SDR white");
+        close(hdrCase.stateFor("HDR1").brightness, 0, "80 nits is zero percent");
+
         // --- Safe construction -------------------------------------------------
         check(service.enabled === false && service.controlsEnabled === false
             && service.softwareEnabled === false, "safe opt-in defaults");

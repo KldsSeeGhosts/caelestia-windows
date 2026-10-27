@@ -213,6 +213,8 @@ QtObject {
             return "\\\\.\\LCD";
         if (route === "ddc")
             return "DDC/CI";
+        if (route === "sdr-white")
+            return "HDR SDR white level";
         if (route === "software")
             return "software (gamma)";
         return "no route";
@@ -270,7 +272,7 @@ QtObject {
         if (state.querying || state.latched)
             return false;
         if (state.state === "hardware")
-            return state.route === "wmi" || state.route === "lcd" || state.route === "ddc";
+            return state.route === "wmi" || state.route === "lcd" || state.route === "ddc" || state.route === "sdr-white";
         if (state.state === "software-only")
             return softwareEnabled && state.route === "software";
         return false;
@@ -526,7 +528,7 @@ QtObject {
         if (state.state === "unknown")
             return _refuse(state, "The brightness route is unknown; query it before writing.");
         if (state.state === "hardware") {
-            if (state.route !== "wmi" && state.route !== "lcd" && state.route !== "ddc")
+            if (state.route !== "wmi" && state.route !== "lcd" && state.route !== "ddc" && state.route !== "sdr-white")
                 return _refuse(state, "The reported hardware route is not writable.");
         } else if (state.state === "software-only") {
             if (!softwareEnabled)
@@ -693,7 +695,7 @@ QtObject {
         state.route = route;
         state.available = available === true;
         state.lastOutcome = "queried";
-        if (route === "wmi" || route === "lcd" || route === "ddc") {
+        if (route === "wmi" || route === "lcd" || route === "ddc" || route === "sdr-white") {
             state.state = available === true ? "hardware" : "failed";
             state.brightnessKnown = readable;
             state.brightness = clamped;
@@ -702,6 +704,7 @@ QtObject {
             state.lastError = available === true
                 ? ""
                 : routeLabel(route) + " did not report a readable brightness level.";
+            _requeryIfRouteStale(state);
             return;
         }
         if (route === "software") {
@@ -711,6 +714,7 @@ QtObject {
             state.lastConfirmedKnown = readable;
             state.lastConfirmed = clamped;
             state.lastError = "";
+            _requeryIfRouteStale(state);
             return;
         }
         state.state = "unsupported";
@@ -718,6 +722,7 @@ QtObject {
         state.brightness = 0;
         state.lastConfirmedKnown = false;
         state.lastError = "The backend reported no brightness route for this display.";
+        _requeryIfRouteStale(state);
     }
 
     // Legacy signal. Under strict routes the backend no longer emits only this
@@ -749,6 +754,12 @@ QtObject {
             }
             // Drop every queued target and snap back to the last confirmation.
             _snapBack(state);
+            if (reportedError.indexOf("display color mode changed;") === 0)
+                state.routeStale = true;
+            else if (reportedRoute === "sdr-white") {
+                state.state = "failed";
+                state.available = false;
+            }
             _requeryIfRouteStale(state);
             return;
         }
@@ -867,6 +878,15 @@ QtObject {
         }
         function onSystemBrightnessChanged(screenName, brightness): void {
             root._onSystemBrightnessChanged(screenName, brightness);
+        }
+        function onDisplayConfigurationChanged(): void {
+            for (const state of root._states) {
+                if (state.writePending || state.querying) {
+                    state.hasQueuedWrite = false;
+                    state.routeStale = true;
+                } else
+                    root.queryMonitor(state.screenName);
+            }
         }
     }
 

@@ -40,6 +40,7 @@ QtObject {
     signal brightnessWriteResult(string screenName, real value, bool ok, string method, string error)
     signal routeChanged(string screenName, string route)
     signal systemBrightnessChanged(string screenName, real brightness)
+    signal displayConfigurationChanged()
 
     function query(screenName): void {
         Brightness.query(screenName);
@@ -97,6 +98,9 @@ QtObject {
         }
         function onSystemBrightnessChanged(screenName, brightness): void {
             root.systemBrightnessChanged(screenName, brightness);
+        }
+        function onDisplayConfigurationChanged(): void {
+            root.displayConfigurationChanged();
         }
     }
 }
