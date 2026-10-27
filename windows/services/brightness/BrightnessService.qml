@@ -695,6 +695,9 @@ QtObject {
         state.route = route;
         state.available = available === true;
         state.lastOutcome = "queried";
+        // A previous drag can have detached the slider's value binding. A
+        // route query must show the actual newly observed level, too.
+        state.resyncSerial++;
         if (route === "wmi" || route === "lcd" || route === "ddc" || route === "sdr-white") {
             state.state = available === true ? "hardware" : "failed";
             state.brightnessKnown = readable;
