@@ -82,6 +82,29 @@ powershell -NoProfile -File windows/scripts/Build-Prototype.ps1 `
 `-BuildRoot` selects another output directory and `-Jobs` changes parallelism
 (default 4). The default directory is `windows/.local/build`.
 
+The build also produces `quickshell/brightness-probe.exe`. It uses the native
+brightness controller without starting the shell. Set Qt's bin directory in
+the current PowerShell process before using it:
+
+```powershell
+$env:PATH = "$devRoot\Qt\6.11.2\msvc2022_64\bin;$env:PATH"
+$probe = "$PWD\windows\.local\build\quickshell\brightness-probe.exe"
+& $probe
+& $probe -Display 'MAG321UX OLED' -Set 40
+& $probe -Display 'MAG321UX OLED' -Restore
+```
+
+The first command is read-only. Set and Restore change the selected HDR
+display's SDR white level. The probe records the exact original raw value in
+`%TEMP%\caelestia-brightness-sdr-white-journal.json` before its first set,
+keyed by monitor device path, and removes that entry only after an exact
+read-back on restore. Restore requires the same active display path and HDR
+mode. Back up the journal if needed; do not delete it before restoration.
+The Windows set request is undocumented and may fail or change on future
+Windows versions. Read-back confirms the reported setting, not physical
+display luminance. No physical write or HDR-toggle acceptance is implied by
+the build or fixtures.
+
 The script:
 
 1. Runs `Test-Environment.ps1 -Json -Strict` in the development environment and

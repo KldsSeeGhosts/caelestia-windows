@@ -101,6 +101,7 @@ QtObject {
         signal brightnessWriteResult(string screenName, real value, bool ok, string method, string error)
         signal routeChanged(string screenName, string route)
         signal systemBrightnessChanged(string screenName, real brightness)
+        signal displayConfigurationChanged()
         // strictRoutesChanged comes from the strictRoutes property's own
         // change signal when setStrictRoutes() flips it: exactly one emission
         // per successful enable, none for a refusal.
@@ -254,7 +255,7 @@ QtObject {
             fake._inFlight = fake._inFlight.concat([screenName]);
             fake._writeCompletions = fake._writeCompletions.concat([{
                 screenName: screenName,
-                value: clamped,
+                value: route === "sdr-white" ? Math.round(clamped * 100) / 100 : clamped,
                 route: fake.resultRoute.length > 0 ? fake.resultRoute : route,
                 ok: fake.writeOk,
                 error: fake.writeOk ? "" : fake.writeError,
@@ -379,6 +380,8 @@ QtObject {
     readonly property BrightnessService noId: BrightnessService {}
     // The pinned 525786f shape: strict members present, query ids absent.
     readonly property FakeBackend noIdBackend: FakeBackend { queryIdsSupported: false }
+    readonly property BrightnessService hdrCase: BrightnessService {}
+    readonly property FakeBackend hdrBackend: FakeBackend {}
 
     readonly property EmptyBackend emptyBackend: EmptyBackend {}
     readonly property SilentBackend silentBackend: SilentBackend {}
@@ -424,6 +427,7 @@ QtObject {
     }
 
     readonly property DisplayProbe osdProbe: DisplayProbe {}
+    readonly property DisplayProbe hdrDisplayProbe: DisplayProbe {}
     readonly property DisplayProbe blockedProbe: DisplayProbe {}
 
     property int assertions: 0
@@ -457,6 +461,38 @@ QtObject {
     }
 
     function run(): void {
+        // A native HDR route reports normalized SDR white and confirms its
+        // rounded read-back; a topology notification switches the same screen.
+        hdrCase.screens = [{name: "HDR1"}];
+        hdrCase.enabled = true;
+        hdrCase.backend = hdrBackend;
+        hdrCase.controlsEnabled = true;
+        hdrBackend.probeRoute = "sdr-white";
+        hdrBackend.probeLevel = (3000 - 1000) / 5000;
+        check(hdrCase.queryMonitor("HDR1"), "HDR route query");
+        hdrBackend.deliverQuery();
+        check(hdrCase.stateFor("HDR1").route === "sdr-white", "HDR route selected");
+        close(hdrCase.stateFor("HDR1").brightness, 0.4, "240 nits is 40 percent");
+        hdrDisplayProbe.record = hdrCase.stateFor("HDR1");
+        check(hdrCase.write("HDR1", 0.734), "HDR write accepted");
+        hdrBackend.completeWrite();
+        close(hdrCase.stateFor("HDR1").brightness, 0.73, "HDR read-back settles");
+        hdrDisplayProbe.displayed = 0.73; // A user drag detaches the binding.
+        hdrBackend.probeRoute = "ddc";
+        hdrBackend.probeLevel = 1;
+        hdrBackend.displayConfigurationChanged();
+        hdrBackend.deliverQuery();
+        check(hdrCase.stateFor("HDR1").route === "ddc", "HDR off restores DDC");
+        close(hdrDisplayProbe.displayed, 1, "HDR off displays the queried DDC level");
+        hdrDisplayProbe.displayed = 0.5;
+        hdrBackend.probeRoute = "sdr-white";
+        hdrBackend.probeLevel = 0;
+        hdrBackend.displayConfigurationChanged();
+        hdrBackend.deliverQuery();
+        check(hdrCase.stateFor("HDR1").route === "sdr-white", "HDR on restores SDR white");
+        close(hdrCase.stateFor("HDR1").brightness, 0, "80 nits is zero percent");
+        close(hdrDisplayProbe.displayed, 0, "HDR on displays the queried SDR white level");
+
         // --- Safe construction -------------------------------------------------
         check(service.enabled === false && service.controlsEnabled === false
             && service.softwareEnabled === false, "safe opt-in defaults");
@@ -951,17 +987,18 @@ QtObject {
         check(blocked.queryIdsSupported, "the blocking fixture carries query ids");
         // The review's exact case: the first denied drag snaps back. The
         // confirmed level is 0.4 and the drag moved the display to 0.9, so
-        // the strict-enable refusal must bump the resync serial from 0 and
+        // the strict-enable refusal must bump the resync serial and
         // restore 0.4.
         blockedProbe.record = blocked.stateFor("BLOCK1");
+        const blockedInitialResync = blocked.stateFor("BLOCK1").resyncSerial;
         close(blockedProbe.displayed, 0.4, "the display binds the confirmed 0.4");
         blockedProbe.displayed = 0.9; // The drag breaks the value binding.
-        check(blocked.stateFor("BLOCK1").resyncSerial === 0,
+        check(blocked.stateFor("BLOCK1").resyncSerial === blockedInitialResync,
             "no resync happened before the denied write");
         check(blocked.write("BLOCK1", 0.9) === false,
             "a strict-route enable refusal refuses the write");
-        check(blocked.stateFor("BLOCK1").resyncSerial === 1,
-            "the strict-enable refusal bumps the resync serial from 0 to 1");
+        check(blocked.stateFor("BLOCK1").resyncSerial === blockedInitialResync + 1,
+            "the strict-enable refusal bumps the resync serial");
         check(blockedProbe.resyncs === 1, "the denied drag's display was rebound");
         close(blockedProbe.displayed, 0.4, "the displayed 0.9 snapped back to 0.4");
         check(blockedBackend.setCalls === 0, "no write reached a backend without strict routes");
@@ -976,13 +1013,14 @@ QtObject {
         blockedBackend.refuseStrict = false;
         check(blocked.refreshRoutes() === 1, "a user refresh retries after a policy failure");
         blockedBackend.deliverQuery();
+        const blockedRefreshedResync = blocked.stateFor("BLOCK1").resyncSerial;
         check(blocked.policyError === "", "the refresh clears the policy latch");
         check(blocked.interactive("BLOCK1"), "the monitor becomes interactive again");
         check(blocked.write("BLOCK1", 0.45) === true, "the retried write is forwarded");
         check(blockedBackend.strictRoutes, "strict routes are enabled on the retry");
         blockedBackend.completeWrite();
         close(blocked.stateFor("BLOCK1").brightness, 0.45, "the retried write confirms");
-        check(blocked.stateFor("BLOCK1").resyncSerial === 1,
+        check(blocked.stateFor("BLOCK1").resyncSerial === blockedRefreshedResync,
             "the successful retry does not bump the resync serial again");
 
         // --- Automatic observation and explicit refresh -----------------------
