@@ -3,6 +3,7 @@ import Quickshell
 import Caelestia.Config
 import qs.components.misc
 import qs.services
+import qs.modules.nexus
 
 // Windows adaptation of daemons/Shortcuts.qml.
 //
@@ -11,6 +12,12 @@ import qs.services
 // screen selected by the prototype host instead. The shortcut names are
 // unchanged; defaults/windows/keybinds.json binds them to the Caelestia
 // defaults and remains overridable from the shell configuration directory.
+//
+// `caelestia:nexus` is registered exactly as upstream registers it: a detached
+// Nexus FloatingWindow through modules/nexus/WindowFactory.qml. The Windows
+// build stages that module, so the handler is the upstream one. No default key
+// is shipped for it (windows/docs/KEYBINDS.md), so it stays unbound until the
+// user adds a bind.
 Scope {
     id: root
 
@@ -29,6 +36,15 @@ Scope {
             + ` dashboard=${state?.dashboard ?? false} session=${state?.session ?? false}`
             + ` sidebar=${state?.sidebar ?? false} utilities=${state?.utilities ?? false}`
             + ` osd=${state?.osd ?? false}`);
+    }
+
+    CustomShortcut {
+        name: "nexus"
+        description: "Open the Nexus settings window"
+        onPressed: {
+            WindowFactory.create();
+            console.log("CAELESTIA_SHORTCUT name=nexus");
+        }
     }
 
     CustomShortcut {

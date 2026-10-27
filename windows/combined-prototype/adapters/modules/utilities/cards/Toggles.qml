@@ -10,7 +10,7 @@ import Caelestia.State
 import qs.components
 import qs.components.controls
 import qs.services
-import qs.utils
+import qs.modules.nexus
 import qs.modules.bar.popouts as BarPopouts
 
 StyledRect {
@@ -105,7 +105,12 @@ StyledRect {
                         isToggle: false
                         onClicked: {
                             root.screenState.utilities = false;
-                            Qt.openUrlExternally(Paths.configFile);
+                            // Upstream opens the staged Nexus settings window.
+                            // The combined Windows host stages modules/nexus and
+                            // its WindowFactory, so this is the original path
+                            // instead of the previous "open shell.json in an
+                            // editor" stand-in.
+                            WindowFactory.create();
                         }
                     }
                 }

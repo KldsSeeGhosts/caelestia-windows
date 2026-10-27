@@ -26,13 +26,28 @@ Singleton {
     readonly property string current: showPreview && !externalWallpaperActive ? previewPath : currentImage
     readonly property bool externalWallpaperActive: WallpaperEngine.ownsDesktop
     property var files: []
+    // Nexus's Wallpaper & style pages (modules/nexus/pages/wallandstyle) group
+    // entries by `parentDir` and label them by `name`, and the launcher carousel
+    // uses `path`/`relativePath`. The native file scan and Wallpaper Engine
+    // snapshot only carry paths, so every entry is normalized once here instead
+    // of editing the upstream pages. Both sources are flat on Windows, so
+    // `parentDir` is the wallpaper directory and `getCategoryFor` returns no
+    // category; Nexus then lists them directly on the wallpaper page.
+    function normalize(entry): var {
+        if (!entry || typeof entry.path !== "string" || entry.path.length === 0)
+            return null;
+        const relative = String(entry.relativePath ?? entry.path).split(/[\\/]/).pop();
+        return Object.assign({}, entry, {
+            name: String(entry.name ?? relative),
+            relativePath: String(entry.relativePath ?? relative),
+            parentDir: String(entry.parentDir ?? Paths.wallsdir)
+        });
+    }
     readonly property var list: {
         const engine = WallpaperEngine.enabled && WallpaperEngine.detected ? WallpaperEngine.items : [];
-        if (WallpaperEngine.picker === "engine")
-            return engine;
-        if (WallpaperEngine.picker === "both")
-            return [...engine, ...files];
-        return files;
+        const raw = WallpaperEngine.picker === "engine" ? engine
+            : WallpaperEngine.picker === "both" ? [...engine, ...files] : files;
+        return raw.map(normalize).filter(entry => entry !== null);
     }
     property bool previewColourLock: false
 
@@ -41,8 +56,24 @@ Singleton {
     function reload(): void {
         files = Native.FsUtils.listDir(Paths.wallsdir).filter(n => /\.(png|jpe?g|bmp|webp)$/i.test(n)).map(n => ({
                     path: Paths.wallsdir + "/" + n,
-                    relativePath: n
+                    relativePath: n,
+                    name: n,
+                    parentDir: Paths.wallsdir
                 }));
+    }
+    function getCategoryFor(w): string {
+        const parent = String(w?.parentDir ?? "");
+        if (parent === "" || parent === Paths.wallsdir)
+            return "";
+        return parent.slice(Paths.wallsdir.length + 1).split("/")[0];
+    }
+    // Upstream runs `caelestia wallpaper -r`; the Windows port applies the
+    // chosen image through the native Wallpaper facade, so a local random pick
+    // reuses setWallpaper and its control gate.
+    function setRandom(): bool {
+        if (list.length === 0)
+            return false;
+        return setWallpaper(list[Math.floor(Math.random() * list.length)].path);
     }
     function query(search): var { return list.filter(w => w.relativePath.toLowerCase().includes(search.toLowerCase())); }
     // Preview affects only the shell's wallpaper surface, never Windows state.
