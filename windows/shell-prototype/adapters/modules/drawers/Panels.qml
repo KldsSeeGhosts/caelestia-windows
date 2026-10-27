@@ -22,6 +22,10 @@ Item {
     readonly property alias sessionWrapper: sessionWrapper
     readonly property alias launcher: launcher
     readonly property alias dashboard: dashboard
+    // Windows: the combined entry stages the quota drawer; other prototypes
+    // keep an inert slot so the shared drawer files stay valid.
+    readonly property alias quota: quota
+    readonly property bool quotaEnabled: false
     readonly property alias popouts: popoutsWrapper.content
     readonly property alias popoutsWrapper: popoutsWrapper
     readonly property alias utilities: utilities
@@ -88,6 +92,13 @@ Item {
         id: dashboard
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.top: parent.top
+    }
+
+    // Inert quota slot for prototypes that do not stage windows/quota.
+    UnavailablePanel {
+        id: quota
+        anchors.top: parent.top
+        anchors.right: parent.right
     }
 
     BarPopouts.ClipWrapper {

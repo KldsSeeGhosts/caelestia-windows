@@ -66,6 +66,8 @@ StyledWindow {
         screenState.launcher = false;
         screenState.session = false;
         screenState.dashboard = false;
+        // Windows: the quota drawer follows the dashboard's close paths.
+        screenState.quota = false;
         panels.popouts.close();
     }
 
@@ -139,6 +141,8 @@ StyledWindow {
             root.screenState.session = false;
             root.screenState.sidebar = false;
             root.screenState.dashboard = false;
+            // Windows: close the ported quota drawer with the other drawers.
+            root.screenState.quota = false;
             panels.popouts.hasCurrent = false;
             bar.closeTray();
         }
@@ -188,6 +192,14 @@ StyledWindow {
             id: dashBg
 
             panel: panels.dashboard
+            deformAmount: 0.1
+        }
+
+        // Windows: the ported quota drawer gets its own blob surface.
+        PanelBg {
+            id: quotaBg
+
+            panel: panels.quota
             deformAmount: 0.1
         }
 
@@ -283,6 +295,10 @@ StyledWindow {
 
             dashboard.transform: Matrix4x4 {
                 matrix: dashBg.deformMatrix
+            }
+            // Windows: match the ported quota panel's blob deformation.
+            quota.transform: Matrix4x4 {
+                matrix: quotaBg.deformMatrix
             }
             launcher.transform: Matrix4x4 {
                 matrix: launcherBg.deformMatrix

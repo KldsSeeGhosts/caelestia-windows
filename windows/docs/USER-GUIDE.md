@@ -371,6 +371,74 @@ prevents the automatic paste after the item was copied, a Caelestia toast says
 [the clipboard notes](../services/clipboard/README.md) for exact behaviour and
 what still needs live verification.
 
+### CPA quota drawer (Windows)
+
+The top-right quota/agents drawer from the custom Linux overlay is ported with
+the original components, layout and motion. Hover the **top-right strip** to
+open it; it closes when the pointer leaves, when a fullscreen application
+appears, or when the shell loses its focus grab. Like the Linux source there is
+no bar entry and no default keybind.
+
+The drawer is **opt-in**: nothing requests anything unless a CPA management
+config exists. It reads CPA Manager's own pre-aggregated quota summary from:
+
+```text
+GET <baseUrl>/v0/management/quota/summary
+Authorization: Bearer <adminKey>
+```
+
+The config file is:
+
+```text
+%LOCALAPPDATA%\caelestia-windows\config\cpa-agents.json
+```
+
+```json
+{"baseUrl": "https://your-cpa-host", "adminKey": "<management key>"}
+```
+
+`CAELESTIA_CONFIG_DIR` (the shell profile) is used when set, and
+`CAELESTIA_CPA_CONFIG` can name another file. The shell reads the file into
+memory to build the request; the key, the response body, emails and account ids
+are never logged. Keep the key out of commits, screenshots and issue reports.
+
+Optional drawer settings live beside `shell.json` in `quota.json`. Every value
+is optional and matches the Linux schema:
+
+```json
+{
+    "enabled": true,
+    "geometry": {"width": 384, "height": 520},
+    "refreshIntervalMs": 60000
+}
+```
+
+With `cpa-agents.json` present the drawer enables automatically. Set
+`"enabled": false` to keep the config but hide the drawer, or provide
+`quota.json` without `cpa-agents.json` to show the "not configured" empty state.
+
+No Python is needed to display quota. The drawer reads the summary with QML's
+`XMLHttpRequest`, maps providers to chips, accounts to rows and quota windows
+to meters, and shows `todayCostUsd` in the "Usage today" disclosure. Refreshes
+follow `refreshIntervalMs` but never run faster than the manager's `ttlMs`;
+only one request is in flight and it aborts after 15 seconds. The last good
+summary is cached at `cache\quota-summary.json` in the profile (display names,
+windows, status and cost only, no endpoint or key) so the previous reading
+appears instantly on start.
+
+If a refresh fails, the last good summary stays on screen behind the single
+"Quota refresh failed. Showing saved data." line. Per-account token ledgers,
+the per-model token table, balance, cooldown timestamps and the old saved
+records under `state\omarchy\agents\usage` are not part of CPA Manager's
+summary and are no longer shown. The bolt button still runs the upstream
+optional keepalive helper; that is an explicit request that sends real
+keepalive traffic to CPA, needs Python and the CPA inference key
+(`CPA_API_KEY` in the environment, or the Linux `environment.d/cpa.conf`
+fallback), and is not run during smoke or by the shell at startup.
+
+See [the port notes](../quota/README.md) for the source mapping and what is and
+is not verified.
+
 ### Turning the display panels off
 
 `ipc call displays off` (or your own `ipc` keybind, see

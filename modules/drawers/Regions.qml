@@ -21,6 +21,13 @@ Region {
     height: win.height - clampedThickness * 2 - win.dragMaskPadding * 2
     intersection: Intersection.Xor
 
+    // Windows: the ported quota drawer's top-right input strip and panel.
+    R {
+        panel: root.panels.quota
+        y: 0
+        height: panel.height * (1 - root.panels.quota.offsetScale) + root.borderThickness
+    }
+
     R {
         panel: root.panels.dashboard
         y: 0

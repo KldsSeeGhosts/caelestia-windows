@@ -4,6 +4,10 @@ import Caelestia.Config
 import qs.components
 import qs.modules.bar as Bar
 import qs.modules.dashboard as Dashboard
+// Windows: ported CPA quota drawer (see windows/quota). The alias avoids the
+// Quota singleton imported through qs.services.
+import qs.modules.quota as QuotaModule
+import qs.services
 import qs.modules.launcher as Launcher
 import qs.modules.notifications as Notifications
 import qs.modules.osd as Osd
@@ -28,6 +32,9 @@ Item {
     readonly property alias sessionWrapper: sessionWrapper
     readonly property alias launcher: launcher
     readonly property alias dashboard: dashboard
+    // Windows: the top-right quota drawer, staged from windows/quota.
+    readonly property alias quota: quota
+    readonly property bool quotaEnabled: QuotaConfig.enabled
     readonly property alias popouts: popoutsWrapper.content
     readonly property alias popoutsWrapper: popoutsWrapper
     readonly property alias utilities: utilities
@@ -114,6 +121,16 @@ Item {
 
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.top: parent.top
+    }
+
+    // Windows: ported CPA quota drawer, anchored top-right as upstream.
+    QuotaModule.Wrapper {
+        id: quota
+
+        screenState: root.screenState
+
+        anchors.top: parent.top
+        anchors.right: parent.right
     }
 
     BarPopouts.ClipWrapper {
