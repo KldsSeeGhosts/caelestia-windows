@@ -68,6 +68,8 @@ DisplayPowerAction::DisplayPowerAction(HWND window, Sender sender, int delayMs, 
     , m_sender(std::move(sender))
     , m_delayMs(delayMs) {
     m_timer.setSingleShot(true);
+    // Coarse timers may fire up to 5% early; the delay is a minimum.
+    m_timer.setTimerType(Qt::PreciseTimer);
     connect(&m_timer, &QTimer::timeout, this, [this]() {
         const bool accepted = m_sender ? m_sender(m_window) : false;
         emit delivered(accepted);

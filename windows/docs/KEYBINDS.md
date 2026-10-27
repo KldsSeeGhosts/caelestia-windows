@@ -272,7 +272,8 @@ Calls a QML `IpcHandler` target and function inside the running shell:
 }
 ```
 
-Caelestia also exposes the explicit panel-off action `displays off`. It asks
+The installed shell (not the combined dev prototype) also exposes the explicit
+panel-off action `displays off`. It asks
 the shell's own window to process Windows display power (`WM_SYSCOMMAND` /
 `SC_MONITORPOWER = 2`) after a 500 ms delay, so the triggering key release does
 not immediately wake the panels again. It changes no topology, resolution,
