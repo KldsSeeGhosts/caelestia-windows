@@ -86,13 +86,19 @@ picker reads nothing in the background. Every WinRT call runs on a dedicated
 MTA worker thread, so the GUI thread never blocks on `GetHistoryItemsAsync`,
 `GetTextAsync` or bitmap reads. The history read itself is asynchronous: its
 operation handle is cancelled on shutdown and results for a superseded
-generation are never published. The worker's two event subscriptions are
-revoked independently and only through a shared lifetime bridge, so a callback
-already in flight during teardown cannot reach a destroyed worker.
+generation are never published. Per-item `GetTextAsync`, bitmap and storage-item
+reads are awaited in short slices on the worker thread and cancelled when a
+refresh or preview read is superseded (picker close or newer generation),
+shutdown starts, or a 3 s bound expires, so one stuck provider cannot hang the
+worker or a bounded GUI shutdown. An explicit open runs after the overlay's
+`close()`, so only shutdown and its own 3 s bound cancel it, and an operation
+that already completed is always used. The worker's two event subscriptions are revoked independently and
+only through a shared lifetime bridge, so a callback already in flight during
+teardown cannot reach a destroyed worker.
 
 The picker session is a shared atomic `{active, generation, stopping}` state.
 The GUI updates it immediately on open, close and deactivation, not through the
-queued `setActive`; the worker re-checks it between blocking per-item reads and
+queued `setActive`; the worker re-checks it between per-item reads and
 again right before publishing. `snapshotReady` also carries the generation the
 worker read, and the GUI applies the snapshot only when that generation is still
 the current open session and `stopping` is false. A snapshot queued before a
@@ -178,14 +184,30 @@ survive a refresh only while their item is still in the history; `remove()` and
 a failed/empty refresh delete them. Previews larger than 64 MiB are not
 materialized; copy/paste of that item still works.
 
-Every create, write and delete first verifies that the instance directory, the
+Every create and write first verifies that the instance directory, the
 `clipboard` parent and the cache root are real directories without
 `FILE_ATTRIBUTE_REPARSE_POINT`. A junction, symlink or replaced path at any
 level is a no-op with a fixed log message and no clipboard-derived path.
-Cleanup never recurses: the cache is flat, so it enumerates only the direct
-files of the instance directory, deletes only regular files without a reparse
-point, and skips every other entry. `RemoveDirectoryW` then removes the empty
-directory (and removes a junction link rather than its target).
+Deletion keeps the directory identity instead of trusting a validated path. Only
+the cache root is opened by path, and its final path
+(`GetFinalPathNameByHandleW`) must equal the configured root, so a junction in
+any ancestor that redirects into another tree is refused (a root configured
+through a short 8.3 name, `subst` drive or junction is refused too, and its
+cleanup is skipped). The `clipboard` parent, the instance directory and every
+entry are then opened relative to the held parent handle (`NtCreateFile` with
+`RootDirectory` and one name), never again by absolute path, with
+`FILE_OPEN_REPARSE_POINT`. Reparse points are rejected through
+`GetFileInformationByHandleEx(FileAttributeTagInfo)`, each file must match the
+volume serial and 128-bit file ID that the held directory enumerated, and the
+held directory and its verified direct children are deleted by handle
+(`SetFileInformationByHandle` with `FileDispositionInfoEx` POSIX semantics,
+falling back to `FileDispositionInfo`). While a descendant handle is held NTFS
+refuses to rename an ancestor, so verifying the root once after opening is
+enough. A directory or ancestor swapped for a junction, or a hard link to an
+enumerated file, between validation and deletion therefore cannot redirect it;
+on any identity doubt the entry is skipped. Cleanup never recurses: the cache is flat,
+so it enumerates only the direct files of the held instance directory, deletes
+only regular files without a reparse point, and skips every other entry.
 `QFileInfo::isSymLink()` is not the safety check: Qt does not report NTFS
 junctions as symlinks. At startup the new instance applies the same layout
 and flat-delete rules to sibling `<pid>-*` directories, only when that pid is
@@ -226,7 +248,16 @@ roots (`C:relative`, bare drives, UNC, device and relative paths are refused)
 and the per-instance cache boundary with real `mklink /J` junctions: an
 instance-directory junction, a nested junction inside the instance directory and
 a junction replacing the `clipboard` parent all leave outside sentinel files
-untouched, while ordinary flat files are still deleted. Shutdown before a cache
+untouched, while ordinary flat files are still deleted. The held-handle
+transaction is covered separately: a junction swapped in after validation is
+not followed, the validated directory object is deleted by handle instead of
+the junction target, and a same-named decoy or a hard link to the enumerated
+file behind the junction is never reached. A junction above the cache root
+(replacing an ancestor after `configure()`) is refused with an outside sentinel
+intact, an ancestor cannot be renamed while the root is held, and a populated
+held directory deletes cleanly. The cancellation rule is covered too: a close
+cancels a refresh or preview read but not an explicit open, and shutdown
+cancels both. Shutdown before a cache
 root is set leaves sentinel files in the working directory and a temp directory
 untouched; cleanup removes only the configured instance directory, and a live
 sibling's directory survives while a dead sibling's is collected. The logic

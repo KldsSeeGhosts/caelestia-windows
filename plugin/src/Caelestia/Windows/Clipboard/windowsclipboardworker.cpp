@@ -1,6 +1,7 @@
 #include "windowsclipboardworker.hpp"
 
 #include <chrono>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <utility>
@@ -45,7 +46,12 @@ using winrt::Windows::ApplicationModel::DataTransfer::ClipboardHistoryItemsResul
 using winrt::Windows::ApplicationModel::DataTransfer::DataPackageView;
 using winrt::Windows::ApplicationModel::DataTransfer::StandardDataFormats;
 using winrt::Windows::Foundation::AsyncStatus;
+using winrt::Windows::Foundation::Collections::IVectorView;
 using winrt::Windows::Foundation::IAsyncOperation;
+using winrt::Windows::Storage::IStorageItem;
+using winrt::Windows::Storage::Streams::DataReader;
+using winrt::Windows::Storage::Streams::IRandomAccessStreamWithContentType;
+using winrt::Windows::Storage::Streams::RandomAccessStreamReference;
 
 constexpr int EVENT_COALESCE_MS = 150;
 // A clipboard image larger than this is not materialized for preview. The
@@ -53,6 +59,14 @@ constexpr int EVENT_COALESCE_MS = 150;
 constexpr quint64 MAX_PREVIEW_BYTES = 64ULL * 1024ULL * 1024ULL;
 constexpr int MAX_ITEMS = 100;
 constexpr qsizetype MAX_NAME_HEX = 16;
+// Per-item WinRT reads are awaited in short slices so a provider that never
+// completes cannot hold the worker, a newer request or shutdown. The total
+// bound covers one history refresh; preview and open reads get their own.
+constexpr int ITEM_READ_POLL_MS = 10;
+constexpr int ITEM_READ_TOTAL_TIMEOUT_MS = 3000;
+constexpr int ITEM_READ_TIMEOUT_MS = 3000;
+
+enum class ItemReadStatus { Completed, Cancelled, TimedOut, Failed };
 
 QString fromHString(const winrt::hstring& value) {
     return QString::fromWCharArray(value.c_str(), static_cast<qsizetype>(value.size()));
@@ -113,29 +127,127 @@ QString extensionFor(const QByteArray& bytes) {
     return QStringLiteral("bin");
 }
 
-QByteArray readBitmap(const ClipboardHistoryItem& item) {
+// Awaits one WinRT operation on the worker thread without a blocking get().
+// The operation is cancelled as soon as the caller's predicate turns true or
+// the deadline expires. A refresh or preview read cancels on a closed picker, a
+// newer generation or shutdown; an explicit open cancels on shutdown only. An
+// operation that already completed is always used, so completion is checked
+// before cancellation.
+template <typename T>
+[[nodiscard]] ItemReadStatus awaitItemRead(const IAsyncOperation<T>& operation,
+    const std::function<bool()>& cancelled, ULONGLONG deadline, T& value) {
+    for (;;) {
+        AsyncStatus status = AsyncStatus::Started;
+        try {
+            status = operation.Status();
+        } catch (const winrt::hresult_error&) {
+            return ItemReadStatus::Failed;
+        } catch (...) {
+            return ItemReadStatus::Failed;
+        }
+
+        if (status == AsyncStatus::Completed) {
+            try {
+                value = operation.GetResults();
+                return ItemReadStatus::Completed;
+            } catch (const winrt::hresult_error&) {
+                return ItemReadStatus::Failed;
+            } catch (...) {
+                return ItemReadStatus::Failed;
+            }
+        }
+        if (status != AsyncStatus::Started)
+            return ItemReadStatus::Failed;
+
+        if (cancelled()) {
+            try {
+                operation.Cancel();
+            } catch (const winrt::hresult_error&) {
+            } catch (...) {
+            }
+            return ItemReadStatus::Cancelled;
+        }
+
+        if (GetTickCount64() >= deadline) {
+            try {
+                operation.Cancel();
+            } catch (const winrt::hresult_error&) {
+            } catch (...) {
+            }
+            return ItemReadStatus::TimedOut;
+        }
+        Sleep(ITEM_READ_POLL_MS);
+    }
+}
+
+template <typename T, typename Starter>
+[[nodiscard]] ItemReadStatus awaitItemStart(Starter&& start,
+    const std::function<bool()>& cancelled, ULONGLONG deadline, T& value) {
+    IAsyncOperation<T> operation {nullptr};
+    try {
+        operation = start();
+    } catch (const winrt::hresult_error&) {
+        return ItemReadStatus::Failed;
+    } catch (...) {
+        return ItemReadStatus::Failed;
+    }
+    if (!operation)
+        return ItemReadStatus::Failed;
+    return awaitItemRead(operation, cancelled, deadline, value);
+}
+
+[[nodiscard]] ItemReadStatus readText(const DataPackageView& content,
+    const std::function<bool()>& cancelled, ULONGLONG deadline, QString& text) {
+    winrt::hstring value;
+    const auto status = awaitItemStart(
+        [&content]() { return content.GetTextAsync(); }, cancelled, deadline, value);
+    if (status == ItemReadStatus::Completed)
+        text = fromHString(value);
+    return status;
+}
+
+[[nodiscard]] ItemReadStatus readBitmap(const ClipboardHistoryItem& item,
+    const std::function<bool()>& cancelled, ULONGLONG deadline, QByteArray& bytes) {
+    bytes.clear();
     const auto content = item.Content();
     if (!content.Contains(StandardDataFormats::Bitmap()))
-        return {};
+        return ItemReadStatus::Completed;
 
-    const auto reference = content.GetBitmapAsync().get();
+    RandomAccessStreamReference reference {nullptr};
+    auto status = awaitItemStart(
+        [&content]() { return content.GetBitmapAsync(); }, cancelled, deadline, reference);
+    if (status != ItemReadStatus::Completed)
+        return status;
     if (!reference)
-        return {};
+        return ItemReadStatus::Completed;
 
-    const auto stream = reference.OpenReadAsync().get();
+    IRandomAccessStreamWithContentType stream {nullptr};
+    status = awaitItemStart(
+        [&reference]() { return reference.OpenReadAsync(); }, cancelled, deadline, stream);
+    if (status != ItemReadStatus::Completed)
+        return status;
+    if (!stream)
+        return ItemReadStatus::Completed;
+
     const auto size = stream.Size();
     if (size == 0 || size > MAX_PREVIEW_BYTES)
-        return {};
+        return ItemReadStatus::Completed;
 
-    winrt::Windows::Storage::Streams::DataReader reader(stream.GetInputStreamAt(0));
-    const auto loaded = reader.LoadAsync(static_cast<uint32_t>(size)).get();
+    DataReader reader(stream.GetInputStreamAt(0));
+    uint32_t loaded = 0;
+    status = awaitItemStart(
+        [&reader, size]() { return reader.LoadAsync(static_cast<uint32_t>(size)); }, cancelled,
+        deadline, loaded);
+    if (status != ItemReadStatus::Completed)
+        return status;
     if (static_cast<quint64>(loaded) != size)
-        return {};
+        return ItemReadStatus::Completed;
 
     std::vector<uint8_t> storage(static_cast<size_t>(size));
     reader.ReadBytes(storage);
-    return QByteArray(reinterpret_cast<const char*>(storage.data()),
+    bytes = QByteArray(reinterpret_cast<const char*>(storage.data()),
         static_cast<qsizetype>(storage.size()));
+    return ItemReadStatus::Completed;
 }
 
 QString formatsOf(const DataPackageView& content) {
@@ -235,6 +347,14 @@ struct WindowsClipboardWorker::Impl {
         QString status = QStringLiteral("ready");
         QString failure = error;
         bool enabled = true;
+        bool itemTimedOut = false;
+
+        // A close, a newer generation or shutdown cancels the current per-item
+        // read instead of waiting for a provider that may never answer.
+        const auto cancelled = [this, generation]() {
+            return !running || session->stopping() || !session->accepts(generation);
+        };
+        const auto readDeadline = GetTickCount64() + ITEM_READ_TOTAL_TIMEOUT_MS;
 
         try {
             if (!ok) {
@@ -255,10 +375,9 @@ struct WindowsClipboardWorker::Impl {
                     QHash<QString, Item> next;
                     QStringList nextOrder;
                     for (const auto& handle: result.Items()) {
-                        // Re-check between blocking per-item reads: the picker
-                        // may have closed while a text or format read was
-                        // waiting.
-                        if (session->stopping() || !session->accepts(generation))
+                        // Re-check between per-item reads: the picker may have
+                        // closed while a text or format read was waiting.
+                        if (cancelled())
                             return;
                         if (next.size() >= static_cast<qsizetype>(MAX_ITEMS))
                             break;
@@ -274,9 +393,18 @@ struct WindowsClipboardWorker::Impl {
                         try {
                             const auto content = handle.Content();
                             item.formats = formatsOf(content);
-                            const bool hasText = content.Contains(StandardDataFormats::Text());
-                            if (hasText)
-                                item.text = fromHString(content.GetTextAsync().get());
+                            if (content.Contains(StandardDataFormats::Text())) {
+                                QString text;
+                                const auto read = readText(content, cancelled, readDeadline, text);
+                                if (read == ItemReadStatus::Cancelled)
+                                    return;
+                                if (read == ItemReadStatus::TimedOut) {
+                                    itemTimedOut = true;
+                                    break;
+                                }
+                                if (read == ItemReadStatus::Completed)
+                                    item.text = text;
+                            }
                             const bool hasBitmap = content.Contains(StandardDataFormats::Bitmap());
                             if (!item.text.trimmed().isEmpty())
                                 item.kind = QStringLiteral("text");
@@ -295,35 +423,43 @@ struct WindowsClipboardWorker::Impl {
                         nextOrder.append(id);
                     }
 
-                    // Previews that no longer belong to an item are deleted
-                    // here. Opened text files stay until shutdown.
-                    for (auto it = previewFiles.begin(); it != previewFiles.end();) {
-                        if (next.contains(it.key())) {
-                            ++it;
-                        } else {
-                            const auto path = it.value();
-                            it = previewFiles.erase(it);
-                            cache.removeFile(path);
+                    if (itemTimedOut) {
+                        // One stuck provider aborts the whole refresh instead
+                        // of spending the bound on every remaining item.
+                        status = QStringLiteral("error");
+                        failure = QStringLiteral("Windows did not finish reading the clipboard history.");
+                        list.clear();
+                    } else {
+                        // Previews that no longer belong to an item are deleted
+                        // here. Opened text files stay until shutdown.
+                        for (auto it = previewFiles.begin(); it != previewFiles.end();) {
+                            if (next.contains(it.key())) {
+                                ++it;
+                            } else {
+                                const auto path = it.value();
+                                it = previewFiles.erase(it);
+                                cache.removeFile(path);
+                            }
                         }
-                    }
 
-                    items = std::move(next);
-                    order = nextOrder;
+                        items = std::move(next);
+                        order = nextOrder;
 
-                    for (const auto& id: order) {
-                        const auto& item = items.value(id);
-                        const auto previewPath = previewFiles.value(id);
-                        QVariantMap values;
-                        values.insert(QStringLiteral("id"), id);
-                        values.insert(QStringLiteral("kind"), item.kind);
-                        values.insert(QStringLiteral("text"), item.text);
-                        values.insert(QStringLiteral("imageUrl"),
-                            previewPath.isEmpty() ? QString()
-                                                  : QUrl::fromLocalFile(previewPath).toString());
-                        values.insert(QStringLiteral("timestamp"), item.timestamp);
-                        values.insert(QStringLiteral("timestampLabel"), item.timestampLabel);
-                        values.insert(QStringLiteral("formats"), item.formats);
-                        list.append(values);
+                        for (const auto& id: order) {
+                            const auto& item = items.value(id);
+                            const auto previewPath = previewFiles.value(id);
+                            QVariantMap values;
+                            values.insert(QStringLiteral("id"), id);
+                            values.insert(QStringLiteral("kind"), item.kind);
+                            values.insert(QStringLiteral("text"), item.text);
+                            values.insert(QStringLiteral("imageUrl"),
+                                previewPath.isEmpty() ? QString()
+                                                      : QUrl::fromLocalFile(previewPath).toString());
+                            values.insert(QStringLiteral("timestamp"), item.timestamp);
+                            values.insert(QStringLiteral("timestampLabel"), item.timestampLabel);
+                            values.insert(QStringLiteral("formats"), item.formats);
+                            list.append(values);
+                        }
                     }
                 }
             }
@@ -742,7 +878,7 @@ void WindowsClipboardWorker::publishSnapshot(quint64 generation, const QVariantL
     emit snapshotReady(generation, items, enabled, status, error);
 }
 
-QString WindowsClipboardWorker::ensurePreview(const QString& id) {
+QString WindowsClipboardWorker::ensurePreview(const QString& id, bool explicitOpen) {
     auto& impl = *m_impl;
     if (impl.previewFiles.contains(id))
         return impl.previewFiles.value(id);
@@ -760,14 +896,27 @@ QString WindowsClipboardWorker::ensurePreview(const QString& id) {
     }
 
     QByteArray bytes;
+    ItemReadStatus readStatus = ItemReadStatus::Failed;
+    // The picker's close() runs before an explicit open, so only shutdown (and
+    // the read deadline) may cancel that one. A displayed preview also stops on
+    // a close or a newer generation.
+    const auto generation = impl.session->generation();
     try {
-        bytes = readBitmap(found->handle);
+        readStatus = readBitmap(found->handle,
+            [&impl, generation, explicitOpen]() { return impl.session->cancelsRead(generation, explicitOpen); },
+            GetTickCount64() + ITEM_READ_TIMEOUT_MS, bytes);
     } catch (const winrt::hresult_error& error) {
         qCWarning(logClipboard).noquote()
             << operationError(QStringLiteral("read a clipboard image"), error);
         return {};
     } catch (...) {
         qCWarning(logClipboard) << "Couldn't read a clipboard image (unknown error).";
+        return {};
+    }
+    if (readStatus == ItemReadStatus::Cancelled)
+        return {};
+    if (readStatus != ItemReadStatus::Completed) {
+        qCWarning(logClipboard) << "Couldn't read a clipboard image (the read did not complete).";
         return {};
     }
     if (bytes.isEmpty())
@@ -837,7 +986,7 @@ void WindowsClipboardWorker::requestImage(const QString& id) {
     if (!m_impl->running || m_impl->session->stopping() || !m_impl->session->active())
         return;
 
-    const auto path = ensurePreview(id);
+    const auto path = ensurePreview(id, false);
     if (path.isEmpty()) {
         emit operationFinished(QStringLiteral("preview"), id, false,
             QStringLiteral("The image could not be read from clipboard history."));
@@ -955,7 +1104,7 @@ void WindowsClipboardWorker::openItem(const QString& id) {
 
     try {
         if (found->kind == QStringLiteral("image")) {
-            const auto path = ensurePreview(id);
+            const auto path = ensurePreview(id, true);
             if (path.isEmpty()) {
                 emit operationFinished(QStringLiteral("open"), id, false,
                     QStringLiteral("The image could not be read from clipboard history."));
@@ -1007,11 +1156,26 @@ void WindowsClipboardWorker::openItem(const QString& id) {
 
         const auto content = found->handle.Content();
         if (content.Contains(StandardDataFormats::StorageItems())) {
-            for (const auto& entry: content.GetStorageItemsAsync().get()) {
-                const auto path = fromHString(entry.Path());
-                if (!path.isEmpty()) {
-                    emit openUrl(QUrl::fromLocalFile(path).toString());
-                    return;
+            IVectorView<IStorageItem> storageItems {nullptr};
+            const auto read = awaitItemStart(
+                [&content]() { return content.GetStorageItemsAsync(); },
+                // Explicit open: close() already ran, so only shutdown cancels.
+                [this]() { return m_impl->session->cancelsRead(0, true); },
+                GetTickCount64() + ITEM_READ_TIMEOUT_MS, storageItems);
+            if (read == ItemReadStatus::Cancelled)
+                return;
+            if (read != ItemReadStatus::Completed) {
+                emit operationFinished(QStringLiteral("open"), id, false,
+                    QStringLiteral("Windows did not finish reading the clipboard item."));
+                return;
+            }
+            if (storageItems) {
+                for (const auto& entry: storageItems) {
+                    const auto path = fromHString(entry.Path());
+                    if (!path.isEmpty()) {
+                        emit openUrl(QUrl::fromLocalFile(path).toString());
+                        return;
+                    }
                 }
             }
         }
