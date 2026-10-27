@@ -34,9 +34,9 @@ tracks the milestones and implementation issues.
   `t3/integration-5b` (`08c34968`) uses backend `c1177c2`.
 - Open: Caelestia-style tiling gaps and focused-window border, the autostart
   swap from ksg-shell, a full runtime soak, polish pass 2, upstream sync, and
-  the public export. See [HANDOFF.md](HANDOFF.md).
+  the public export. Open work is tracked in GitHub issues and Linear.
 
-Continue from [HANDOFF.md](HANDOFF.md). Linear was connected and synchronized
+Linear was connected and synchronized
 on 2026-10-25 under the Ermin Zeherovic (ERM) team. This roadmap owns detailed
 acceptance criteria; Linear tracks issue status and dependencies.
 

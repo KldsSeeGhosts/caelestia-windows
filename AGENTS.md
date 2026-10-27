@@ -1,81 +1,77 @@
 # Caelestia for Windows
 
-This repository ports Caelestia's original Qt/QML shell to Windows using the
-Windows Quickshell backend developed for ii-windows. Read `windows/README.md`
-and `windows/ROADMAP.md` before implementation.
+A port of Caelestia's Qt/QML shell to Windows, on the Windows Quickshell
+backend developed for ii-windows. For context, see `windows/README.md` and
+`windows/ROADMAP.md`. Open work is tracked in GitHub issues and in the Linear
+project "Caelestia Windows".
 
-- Preserve upstream history, copyright notices, licenses, and recognizable
-  component structure. Keep Windows adaptation localized and explain upstream
-  changes. `upstream` is Caelestia; `origin` is this private repository.
-- Prefer original Caelestia components and motion over visual approximations.
-  This project uses Qt Quick/QML and C++ plugins. The Rust/Windows Composition
-  constraints of the separate ksg-shell repository do not apply here.
-- Treat `windows/sources.lock.json` and the Quickshell gitlink as the dependency
-  pins. Update them together after reviewing the change. Do not edit the
-  dependency without committing its changes to an appropriate backend fork.
-- Use topic branches. Do not force-push `main` or publish packages as part of
-  routine repository work. The upstream Linux workflows were removed; add
-  Windows CI rather than restoring them, and keep them deleted during merges.
-- Run native Windows tooling in PowerShell. Linux cross-compilation belongs in
-  Ubuntu-24.04 under WSL2. Read upstream commands before adapting them.
-- Initial prototypes must use isolated configuration and state. Desktop takeover,
-  autostart, taskbar changes, and tiling must be opt-in. Keep one active tiling
-  manager during live tests and preserve existing application sessions.
-- Keep credentials and authentication outside the repository. Use Windows'
-  existing lock screen and UAC; do not implement a replacement credential UI.
-- Keep status honest: an importable component, a running prototype, and a
-  validated shell release are separate milestones. Record the runtime, source
-  revisions, commands, and observed results for each compatibility claim.
-- Do not commit new logs, screenshots or run archives. Attach evidence to the
-  pull request and keep only a short note of the commands, revisions and
-  results in the repository. Leave existing `windows/validation/` archives
-  unchanged until the pre-publication cleanup.
-- Run the environment check after changing pins or setup instructions:
-  `powershell -NoProfile -File windows/scripts/Test-Environment.ps1 -Json`.
-  It is a prerequisite report, not a successful build or runtime test.
+## Principles
 
-## Parallel work cadence
+- Ship a complete, working product first; harden it later.
+- Write the smallest change that works. Reuse or delete code before adding
+  more, and keep hot paths lean.
+- Only data loss, crashes or hangs, security or privacy leaks, and anything
+  broken in normal use block a merge. Everything else becomes a follow-up
+  issue.
+- Real use beats simulation. Prefer a short live check over more offscreen
+  tests.
+- Stay faithful to upstream Caelestia: keep its original components and
+  motion. Put Windows changes in adapters under
+  `windows/combined-prototype/adapters/`, and keep any edit to an upstream file
+  small and commented. Fix platform gaps once, in the backend.
+- Report what was and was not verified.
 
-Several threads may work at once. Each task follows the same cycle:
+## Repository
 
-1. Start in a new worktree on a topic branch from `origin/dev`: `t3/<topic>`,
-   plus `windows/<topic>` from the backend's `dev` when the backend changes.
-   Never work directly in another thread's worktree or on `dev` or `main`.
-2. Implement, build and test inside that worktree. Builds and tests may run in
-   parallel; anything touching the live desktop may not (see below).
-3. Commit, push and open a PR into `dev`. Before merging, rebase onto the
-   current `origin/dev`. If another task moved the Quickshell gitlink or
-   `windows/sources.lock.json` meanwhile, merge the backend branches and move
-   both pins again.
-4. After the merge into `dev` (and later the fast-forward of `main` once the
-   live install is verified), clean up in the same session: remove the
-   worktree, delete the local branch and delete the remote branch, in both
-   this repository and the backend fork. Check that the worktree is clean and
-   its commits are in `origin/dev` first; never delete unmerged work.
-   On Windows, folders that `git worktree remove` cannot delete because of
-   long paths are removed with `Remove-Item -LiteralPath '\\?\<path>'`.
+- **Remotes:** `origin` is this private repository and `upstream` is
+  Caelestia. `gh` defaults to upstream here, so always pass
+  `-R KldsSeeGhosts/caelestia-windows`.
+- **Branches:** `dev` is the integration line and `main` is the
+  live-verified build. Topic branches merge into `dev` by PR. Never
+  force-push `main`.
+- **Pins:** the Quickshell gitlink and `windows/sources.lock.json` move
+  together, to a commit on the backend fork's `dev`.
+- **Parallel threads:** each thread works on its own branch and never edits
+  another thread's branch or worktree. Update from `origin/dev` before
+  merging, and resolve conflicts by keeping both sides.
+- **Cleanup:** once your PR merges, delete your worktree and your local and
+  remote branches, in this repository and the backend fork.
+- **Keep out of commits:** logs, screenshots, run archives and credentials.
+  Leave `windows/validation/` unchanged until the pre-publication cleanup.
+- **User data:** never log or display it, for example clipboard contents.
+  Use Windows' own lock screen and UAC.
 
-Only one thread at a time may install a build live, restart the live shell or
-run live tests, because there is one install, one profile and one tiler.
-Coordinate that through the orchestrating thread.
+## Build and test
 
-## Delegation
+- Use PowerShell. Initialise submodules first, then build into a short path,
+  because deep paths exceed MAX_PATH:
+  `windows/scripts/Build-Prototype.ps1 -BuildRoot C:\b-<topic>`.
+- Run test binaries from a disposable temporary directory, never from the
+  repository or a home directory.
+- After changing pins, run
+  `windows/scripts/Test-Environment.ps1 -Json`.
 
-Claude orchestrates and has the final say on design, UI/UX and scope.
+## Live desktop
 
-- Implementation: no default agent. The user names the model for each task.
-- Review: only Claude or Codex GPT 6.1 Sol at high reasoning. Never Terra or
-  DeepSeek, and never the model that wrote the change.
-- Route Terra and Sol through the `codex` provider and DeepSeek through the
-  `deepseek` provider. Do not use fast mode unless the user asks.
+There is one install, one profile and one tiler, so only one thread at a time
+installs, restarts the shell or tests live.
 
-## Computer use
+- **Paths:** the prefix is `%LOCALAPPDATA%\Programs\caelestia-windows`. The
+  profile is `%LOCALAPPDATA%\caelestia-windows`, with `config\shell.json` and
+  `config\keybinds.json`.
+- **Install:**
+  1. Run `Start-Caelestia.ps1 -Command Quit`.
+  2. Run `Install-Caelestia.ps1 -BuildRoot <build> -Prefix <prefix> -ProfileRoot <profile>`.
+  3. Start the shell through a one-off interactive scheduled task running the
+     HKCU Run entry `CaelestiaWindows`. A shell started from an agent's own
+     shell dies with it.
+  4. Confirm with `-Command State`. If the shell is not running, read
+     `runtime\supervisor-*\watchdog-error.log` in the profile.
+- **Opt-in only:** desktop takeover, autostart, taskbar and tiling changes.
+  Keep only one tiling manager active.
 
-The orchestrating thread delegates all computer use (driving the desktop, apps
-or the live shell through GUI automation, screenshots for checks) to one Codex
-agent on GPT 6.1 Terra at medium reasoning. That agent does the work itself
-with the desktop tools. It never spawns, delegates to or requests another
-agent, even though this section says computer use is delegated. This is a trial: Terra may use quota faster than Sol for
-worse results, so note the outcome and revisit. Other agents, including the orchestrator, do not operate the desktop
-themselves. The single-controller rule above still applies: one computer-use
-agent at a time, started by the orchestrating thread.
+## Computer use and QA
+
+GPT 6.1 Terra on Codex, at medium reasoning, is the dedicated computer-use and
+QA agent. It tests the live shell and changes and does any GUI task, doing the
+work itself. Other agents do not operate the desktop.
