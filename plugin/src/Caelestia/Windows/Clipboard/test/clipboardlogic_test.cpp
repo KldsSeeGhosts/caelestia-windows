@@ -69,6 +69,7 @@ private slots:
     void junctionInstanceDirectoryIsRefused();
     void junctionNestedDirectoryIsNotFollowed();
     void junctionClipboardParentIsRefused();
+    void freshFilesNeverWriteThroughLinks();
 };
 
 void ClipboardLogicTest::setContentStatus() {
@@ -384,6 +385,50 @@ void ClipboardLogicTest::junctionClipboardParentIsRefused() {
     QVERIFY(QFileInfo::exists(deadSentinel));
 
     QVERIFY(removeJunction(root.filePath(QStringLiteral("clipboard"))));
+}
+
+void ClipboardLogicTest::freshFilesNeverWriteThroughLinks() {
+    QTemporaryDir root;
+    QTemporaryDir outside;
+    QVERIFY(root.isValid());
+    QVERIFY(outside.isValid());
+    const auto sentinel = outside.filePath(QStringLiteral("outside.txt"));
+    QVERIFY(writeSentinel(sentinel));
+
+    ClipboardCacheDirectory cache;
+    QVERIFY(cache.configure(root.path(), 4242, 0x1234567890abcdefULL));
+    QVERIFY(cache.ensure());
+
+    // Hard links need no elevation and carry no reparse-point attribute. Plant
+    // them at the predictable names the writers used before (stem.ext), so a
+    // truncating open would have rewritten the outside file.
+    const auto stem = QStringLiteral("clipboard-0123456789abcdef");
+    for (const auto& name : { stem + QStringLiteral(".txt"), stem + QStringLiteral(".png") }) {
+        const auto link = QDir::toNativeSeparators(cache.filePath(name)).toStdWString();
+        QVERIFY(CreateHardLinkW(link.c_str(), QDir::toNativeSeparators(sentinel).toStdWString().c_str(), nullptr));
+    }
+
+    const QByteArray payload("synthetic content");
+    const auto first = cache.writeFreshFile(stem, QStringLiteral("txt"), payload);
+    const auto second = cache.writeFreshFile(stem, QStringLiteral("txt"), payload);
+    QVERIFY(!first.isEmpty());
+    QVERIFY(!second.isEmpty());
+    QVERIFY(first != second);
+    QVERIFY(first != cache.filePath(stem + QStringLiteral(".txt")));
+
+    QFile written(first);
+    QVERIFY(written.open(QIODevice::ReadOnly));
+    QCOMPARE(written.readAll(), payload);
+    written.close();
+
+    QFile outsideFile(sentinel);
+    QVERIFY(outsideFile.open(QIODevice::ReadOnly));
+    QCOMPARE(outsideFile.readAll(), QByteArray("sentinel"));
+    outsideFile.close();
+
+    // Shutdown deletes the links (directory entries) but never the target.
+    QVERIFY(cache.remove());
+    QVERIFY(QFileInfo::exists(sentinel));
 }
 
 QTEST_GUILESS_MAIN(ClipboardLogicTest)

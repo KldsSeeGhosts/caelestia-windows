@@ -775,11 +775,6 @@ QString WindowsClipboardWorker::ensurePreview(const QString& id) {
 
     QCryptographicHash hash(QCryptographicHash::Sha256);
     hash.addData(bytes);
-    const auto name = QString::fromLatin1(hash.result().toHex().left(MAX_NAME_HEX)) + QLatin1Char('.')
-        + extensionFor(bytes);
-    const auto path = impl.cache.filePath(name);
-    if (path.isEmpty())
-        return {};
 
     // Re-verify immediately before the write: the directory could have been
     // replaced while the bitmap was being read.
@@ -788,16 +783,10 @@ QString WindowsClipboardWorker::ensurePreview(const QString& id) {
         return {};
     }
 
-    QFile file(path);
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+    const auto path =
+        impl.cache.writeFreshFile(QString::fromLatin1(hash.result().toHex().left(MAX_NAME_HEX)), extensionFor(bytes), bytes);
+    if (path.isEmpty()) {
         qCWarning(logClipboard) << "Could not write a clipboard preview file.";
-        return {};
-    }
-    const auto written = file.write(bytes);
-    file.close();
-    if (written != bytes.size()) {
-        impl.cache.removeFile(path);
-        qCWarning(logClipboard) << "A clipboard preview file was written incompletely.";
         return {};
     }
 
@@ -1001,19 +990,17 @@ void WindowsClipboardWorker::openItem(const QString& id) {
                 return;
             }
 
+            const auto bytes = found->text.toUtf8();
             QCryptographicHash hash(QCryptographicHash::Sha256);
-            hash.addData(found->text.toUtf8());
-            const auto path = m_impl->cache.filePath(QStringLiteral("clipboard-")
-                + QString::fromLatin1(hash.result().toHex().left(MAX_NAME_HEX))
-                + QStringLiteral(".txt"));
-            QFile file(path);
-            if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+            hash.addData(bytes);
+            const auto path = m_impl->cache.writeFreshFile(
+                QStringLiteral("clipboard-") + QString::fromLatin1(hash.result().toHex().left(MAX_NAME_HEX)),
+                QStringLiteral("txt"), bytes);
+            if (path.isEmpty()) {
                 emit operationFinished(QStringLiteral("open"), id, false,
                     QStringLiteral("The temporary text file could not be written."));
                 return;
             }
-            file.write(found->text.toUtf8());
-            file.close();
             emit openUrl(QUrl::fromLocalFile(path).toString());
             return;
         }

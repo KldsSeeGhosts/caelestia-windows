@@ -1,8 +1,11 @@
 #pragma once
 
+#include <qbytearray.h>
 #include <qdir.h>
+#include <qfile.h>
 #include <qfileinfo.h>
 #include <qglobal.h>
+#include <qrandom.h>
 #include <qregularexpression.h>
 #include <qstring.h>
 #include <qt_windows.h>
@@ -139,6 +142,37 @@ public:
         if (!m_configured)
             return true;
         return removeValidated(m_root, m_path);
+    }
+
+    // Writes `bytes` to a new direct file named `<stem>-<random hex>.<extension>`
+    // and returns its path, or an empty string. NewOnly fails when the name
+    // already exists, so an existing entry (for example a hard link planted at
+    // a predictable name) is never opened or truncated. A name collision is
+    // retried with a new suffix rather than reused.
+    [[nodiscard]] QString writeFreshFile(const QString& stem, const QString& extension, const QByteArray& bytes) const {
+        if (!ready())
+            return {};
+        for (int attempt = 0; attempt < 8; ++attempt) {
+            const auto path = filePath(stem + QLatin1Char('-')
+                + QString::number(QRandomGenerator::global()->generate64(), 16).rightJustified(16, QLatin1Char('0'))
+                + QLatin1Char('.') + extension);
+            if (path.isEmpty())
+                return {};
+            QFile file(path);
+            if (!file.open(QIODevice::WriteOnly | QIODevice::NewOnly)) {
+                if (QFileInfo::exists(path))
+                    continue;
+                return {};
+            }
+            const auto written = file.write(bytes);
+            file.close();
+            if (written != bytes.size()) {
+                removeFile(path);
+                return {};
+            }
+            return path;
+        }
+        return {};
     }
 
     // Deletes one direct file of the instance directory after the same layout
