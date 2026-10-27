@@ -246,6 +246,17 @@ hook is only installed while at least one hook-backed bind exists. Both the
 registered hotkeys and the hook are removed when the shell exits, so the Start
 menu works normally again.
 
+When the supervisor hides the taskbar (`-HideTaskbar` or
+`windows.hideTaskbar`), it also consumes Explorer's taskbar chords with its own
+low-level hook: Win+T, Win+Shift+T, Win+B, Win+digit, Win+Shift+digit,
+Win+Ctrl+digit, Win+Alt+digit and Win+Alt+Enter. The hook runs on a dedicated
+message-loop thread, is installed before the shell starts so the shell's hook
+still clears the lone-Super tap first, and is active only while the supervised
+shell process runs. After a consumed chord the next Win release is masked with
+qs.exe's 0xE8/`0x5153484B` convention, and injected or remapped chords are
+consumed unless they carry that marker. A lone Super tap and Super+L remain the
+shell's bindings, and Win+A/Win+N are untouched.
+
 To change the map, place a `keybinds.json` in the shell configuration directory
 (`CAELESTIA_CONFIG_DIR`, next to `shell.json`) or at
 `%LOCALAPPDATA%\caelestia\windows\keybinds.json`. Start from
