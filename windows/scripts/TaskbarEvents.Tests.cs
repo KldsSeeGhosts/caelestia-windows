@@ -236,6 +236,22 @@ public static class TaskbarEventsTests {
         try { TransientIo.Retry(delegate { tries++; throw new InvalidOperationException("bug"); }, pauses.Add); }
         catch (InvalidOperationException) {}
         Check(tries == 1, "non-I/O errors are not retried");
+        // A startup lock that outlasts the retry budget defers the takeover,
+        // then startup proceeds once the lock clears.
+        bool startupLocked = true;
+        int startupWrites = 0, startupReports = 0, takeovers = 0;
+        var startup = new StartupPersistence(
+            delegate { TransientIo.Retry(delegate { if (startupLocked) throw new IOException("locked"); startupWrites++; }, pauses.Add); },
+            delegate(Exception error) { startupReports++; });
+        for (int tick = 0; tick < 3; tick++) if (startup.Ready()) takeovers++;
+        Check(takeovers == 0 && startupWrites == 0 && startupReports == 3,
+            "startup lock beyond the retry budget defers takeover without ending the session");
+        startupLocked = false;
+        for (int tick = 0; tick < 3; tick++) if (startup.Ready()) takeovers++;
+        Check(takeovers == 3 && startupWrites == 1 && startupReports == 3,
+            "startup proceeds once the lock clears and persists only once");
+        try { new StartupPersistence(delegate { throw new InvalidOperationException("bug"); }, delegate(Exception error) {}).Ready(); throw new Exception("expected failure"); }
+        catch (InvalidOperationException) {}
         var failedSnapshot = new Snapshot();
         int applied = 0, restored = 0;
         var failedManager = new RegionSuppression(failedSnapshot,

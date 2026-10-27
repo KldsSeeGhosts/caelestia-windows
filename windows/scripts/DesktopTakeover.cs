@@ -92,6 +92,25 @@ namespace Caelestia.Takeover {
             }
         }
     }
+    // The first snapshot must be durable before any takeover. A lock that
+    // outlasts the retries defers startup instead of ending the session.
+    public sealed class StartupPersistence {
+        readonly Action persist;
+        readonly Action<Exception> report;
+        bool durable;
+        public StartupPersistence(Action persist, Action<Exception> report) {
+            this.persist = persist; this.report = report;
+        }
+        public bool Ready() {
+            if (durable) return true;
+            try { persist(); durable = true; }
+            catch (Exception error) {
+                if (!(error is IOException || error is UnauthorizedAccessException)) throw;
+                report(error);
+            }
+            return durable;
+        }
+    }
     public static class RegionCapture {
         public static SavedRegion TryCapture(Func<SavedRegion> capture, Func<bool> vanished) {
             try {
@@ -565,7 +584,8 @@ namespace Caelestia.Takeover {
             if (!snapshot.MultiMonitorTaskbarSaved) {
                 snapshot.MultiMonitorTaskbar = ReadMultiMonitorTaskbar();
                 snapshot.MultiMonitorTaskbarSaved = true;
-                persist();
+                // Roll back so a retry persists again instead of mutating unsaved.
+                try { persist(); } catch { snapshot.MultiMonitorTaskbarSaved = false; throw; }
             }
             if (ReadMultiMonitorTaskbar() != 0) WriteMultiMonitorTaskbar(0);
         }
@@ -1035,6 +1055,7 @@ namespace Caelestia.Takeover {
         readonly TaskbarHookBinding showHook;
         readonly TaskbarShowHandler showHandler;
         readonly RegionSuppression regions;
+        readonly StartupPersistence startup;
         readonly TaskbarShortcutHook shortcutHook;
         Process child;
         DateTime started, nextStart;
@@ -1088,9 +1109,12 @@ namespace Caelestia.Takeover {
             saved = Native.Capture();
             regions = new RegionSuppression(saved, Native.CaptureRegion, delegate(SavedRegion ignored) { SaveSnapshot(); },
                 Native.ApplyEmptyRegion, Native.RestoreRegion);
-            // Durable before the first native change, usable if this helper is killed.
-            Native.SaveSnapshot(Path.Combine(launch.StateDirectory, "desktop-before.json"), saved);
-            if (hide) Native.SuppressSecondaryTaskbars(saved, SaveSnapshot);
+            // Durable before the first native change, usable if this helper is
+            // killed. Tick retries it until it succeeds; nothing starts before.
+            startup = new StartupPersistence(delegate {
+                SaveSnapshot();
+                if (hide) Native.SuppressSecondaryTaskbars(saved, SaveSnapshot);
+            }, LogPersistFailure);
             Native.RecordAction = delegate(TaskbarAction action) {
                 SupervisorSafety.Log(delegate {
                     File.AppendAllText(Path.Combine(launch.StateDirectory, "taskbar-actions.jsonl"),
@@ -1153,13 +1177,16 @@ namespace Caelestia.Takeover {
             try { regions.Reconcile(bar); }
             catch (Exception error) {
                 if (!(error is IOException || error is UnauthorizedAccessException)) throw;
-                if (DateTime.UtcNow < nextPersistLog) return; // at most one log line a minute
-                nextPersistLog = DateTime.UtcNow.AddMinutes(1);
-                SupervisorSafety.Log(delegate {
-                    File.AppendAllText(Path.Combine(launch.StateDirectory, "watchdog-error.log"),
-                        "snapshot persist failed, will retry: " + error + Environment.NewLine);
-                });
+                LogPersistFailure(error);
             }
+        }
+        void LogPersistFailure(Exception error) {
+            if (DateTime.UtcNow < nextPersistLog) return; // at most one log line a minute
+            nextPersistLog = DateTime.UtcNow.AddMinutes(1);
+            SupervisorSafety.Log(delegate {
+                File.AppendAllText(Path.Combine(launch.StateDirectory, "watchdog-error.log"),
+                    "snapshot persist failed, will retry: " + error + Environment.NewLine);
+            });
         }
         void SuppressRegions() {
             if (invisible) foreach (var bar in Native.Taskbars()) Reconcile(bar);
@@ -1281,7 +1308,12 @@ namespace Caelestia.Takeover {
                     Finish("recovered", 0);
                     return;
                 }
-                if (child == null) { if (DateTime.UtcNow >= nextStart) Start(); return; }
+                if (child == null) {
+                    if (DateTime.UtcNow < nextStart) return;
+                    if (startup.Ready()) Start();
+                    else nextStart = DateTime.UtcNow.AddSeconds(1); // locked snapshot: retry, no takeover
+                    return;
+                }
                 if (!child.HasExited) {
                     if (hide) { RefreshShowHook(false); Native.Hide(false); SuppressRegions(); }
                     return;
