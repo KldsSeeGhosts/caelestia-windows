@@ -168,6 +168,10 @@ ShellRoot {
         Tiling.logStartupStatus();
         SchemeGenerator.refresh();
         Native.SystemStats.networkEnabled = true;
+        // One route query per screen. Without it every monitor stays "unknown"
+        // and the service refuses all brightness writes. No-op while the
+        // brightness opt-in is off.
+        Brightness.beginObservation();
     }
 
     // Sample only while a dashboard is visible, including its close animation.
