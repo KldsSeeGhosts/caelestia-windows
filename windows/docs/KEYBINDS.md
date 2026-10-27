@@ -2,7 +2,7 @@
 
 Back to the [Caelestia for Windows user guide](USER-GUIDE.md).
 
-On Linux, Caelestia relies on Hyprland (`hyprland.conf` or `keybinds.lua`) to capture global shortcuts and run window/workspace dispatchers. On Windows, the Quickshell backend provides a built-in `HotkeyManager` (`Quickshell.Windows.Hotkeys`) that offers every chord, including `Win+<Key>`, to `RegisterHotKey` first. It keeps a low-level keyboard hook (`WH_KEYBOARD_LL`) for lone-modifier taps, for `Win+<Key>` overrides that Windows refuses to register, and for the masking tap that stops the Start menu opening after a registered `Super` chord. Registration is preferred because only a `WM_HOTKEY` delivery lets the shell raise and focus a window it opens.
+On Linux, Caelestia relies on Hyprland (`hyprland.conf` or `keybinds.lua`) to capture global shortcuts and run window/workspace dispatchers. On Windows, the Quickshell backend provides a built-in `HotkeyManager` (`Quickshell.Windows.Hotkeys`) that registers chords without the Windows key through `RegisterHotKey` and runs every chord with the Windows key, and every lone-modifier tap or hold, through a low-level keyboard hook (`WH_KEYBOARD_LL`). A `Win+<Key>` bind can opt in to `RegisterHotKey` with `"register": true`; see [Routing](#routing-registerhotkey-or-the-keyboard-hook).
 
 Defaults are staged at `shell/defaults/windows/keybinds.json`. Production seeds `config/keybinds.json` under the recorded profile on first launch only.
 
@@ -70,7 +70,7 @@ Write key combinations as `Modifier+Modifier+Key` (case-insensitive):
 
 ## Bind actions (`action`)
 
-Each object in `"binds"` supports `"keys"`, `"action"`, `"description"`, `"onRelease"` (`bool`), and `"repeat"` (`bool`), plus action-specific fields:
+Each object in `"binds"` supports `"keys"`, `"action"`, `"description"`, `"onRelease"` (`bool`), `"repeat"` (`bool`) and `"register"` (`bool`, see [Routing](#routing-registerhotkey-or-the-keyboard-hook)), plus action-specific fields:
 
 ### 1. `"global"` — trigger a Caelestia `CustomShortcut`
 
@@ -109,7 +109,7 @@ Available Caelestia global shortcut names:
 
 All handlers in the table are staged in production, plus `caelestia:volumeUp`, `caelestia:volumeDown`, and `caelestia:volumeMute` from the audio adapter. Service actions retain their control gates. Production targets the focused monitor; bounded previews target their selected screen.
 
-`caelestia:nexus` opens the upstream Nexus settings window as a detached top-level window (`modules/nexus/WindowFactory.qml`). **No default key is shipped for it**; add a `global` bind with `"name": "caelestia:nexus"` to use it, for example:
+`caelestia:nexus` opens the upstream Nexus settings window as a detached top-level window (`modules/nexus/WindowFactory.qml`). **No default key is shipped for it**; add a `global` bind with `"name": "caelestia:nexus"` to use it. If the chord includes the Windows key, add `"register": true` so the window comes to the front instead of opening behind the focused application:
 
 ```json
 {
@@ -119,6 +119,7 @@ All handlers in the table are staged in production, plus `caelestia:volumeUp`, `
             "keys": "Super+Comma",
             "action": "global",
             "name": "caelestia:nexus",
+            "register": true,
             "description": "Open Nexus settings"
         }
     ]
@@ -144,6 +145,24 @@ $prefix = "$env:LOCALAPPDATA\Programs\caelestia-windows"
 & "$prefix\qs.exe" -p "$prefix\shell" ipc call clipboard close
 & "$prefix\qs.exe" -p "$prefix\shell" ipc call clipboard state
 ```
+
+## Routing: RegisterHotKey or the keyboard hook
+
+| Chord | Delivered by |
+| --- | --- |
+| No Windows key, for example `Ctrl+Alt+C` | `RegisterHotKey`, falling back to the hook if Windows refuses it |
+| With the Windows key (default) | The keyboard hook. It consumes the chord before the desktop supervisor and does nothing while an elevated app has the foreground |
+| With the Windows key and `"register": true` | `RegisterHotKey`, falling back to the hook if Windows refuses it |
+| Lone modifier tap or hold | The keyboard hook |
+
+Only a `WM_HOTKEY` delivery gives the shell permission to take the foreground, so a bind that opens a window (Nexus, a picker) needs `"register": true` when its chord has the Windows key; without it the window can open behind the focused application. Leave it off for everything else.
+
+`"register": true` has these consequences:
+
+- The hook still injects a masking key tap while the Windows key is down, so the Start menu stays closed when the key is released.
+- The bind also fires while an elevated app has the foreground, as chords without the Windows key already do.
+- The setting is ignored, and the hook keeps the chord, for the taskbar shortcuts the desktop supervisor consumes when `windows.hideTaskbar` is on (the chords in the note below), because Windows would never deliver them. The log records `Ignoring register for ...`.
+- If several binds share one chord, the chord is registered when any of them sets it.
 
 ## Shipped default keys
 
