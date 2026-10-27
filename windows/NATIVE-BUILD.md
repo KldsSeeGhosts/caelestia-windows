@@ -29,7 +29,12 @@ $python = "$devRoot\tools\Scripts\python.exe"
 ```
 
 The aqtinstall revision is intentional: released 3.3.0 does not support this
-Qt repository layout. Keep its log outside the source checkout:
+Qt repository layout. The archive list below deliberately omits the separate
+`qttranslations` component, because the installer ships no Qt translation
+catalogs and the shell installs no `QTranslator`. As a result `windeployqt`
+prints `Translations will not be available ... translations/catalogs.json`
+even with `--no-translations`. That message is informational and does not
+prevent deployment. Keep its log outside the source checkout:
 
 ```powershell
 Push-Location $devRoot
