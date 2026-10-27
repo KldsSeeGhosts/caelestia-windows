@@ -42,7 +42,8 @@ The stable profile defaults to `%LOCALAPPDATA%\caelestia-windows`. First launch
 seeds these files once, preserving edits across restart/update/uninstall:
 
 - `config/shell.json`: integrated combined Live defaults, with background and
-  desktop clock off and tiling disabled with 10/10 DIP gaps. Native Config watches edits.
+  desktop clock off, focus-follows-mouse off and tiling disabled with 10/10 DIP
+  gaps. Native Config watches edits.
 - `config/keybinds.json`: shipped `defaults/windows/keybinds.json`. The backend
   watches edits; see [KEYBINDS.md](../docs/KEYBINDS.md).
 - `config/windows.json`: `{"windows":{"hideTaskbar":false,"restartOnCrash":true}}`.
