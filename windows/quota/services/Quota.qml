@@ -407,6 +407,13 @@ Singleton {
             root.status = "error";
             return;
         }
+        // The admin key travels as a Bearer header: plain HTTP only to loopback.
+        if (!/^https:\/\//i.test(root.baseUrl)
+                && !/^http:\/\/(127\.0\.0\.1|localhost|\[::1\])(:\d+)?(\/|$)/i.test(root.baseUrl)) {
+            root.error = qsTr("CPA baseUrl must use https. Plain http is only allowed for localhost.");
+            root.status = "error";
+            return;
+        }
         if (typeof XMLHttpRequest === "undefined") {
             root.error = qsTr("Quota refresh failed. Showing saved data.");
             root.status = "error";
@@ -592,10 +599,19 @@ Singleton {
         };
     }
 
+    // CPA Manager reports errors as { code } objects (see KSG Code's decoder);
+    // accept a bare string too.
+    function errorCode(error: var): string {
+        if (error === null || error === undefined)
+            return "";
+        if (typeof error === "object")
+            return String(error.code || "error");
+        return String(error);
+    }
+
     function mapAccount(provider: var, account: var, providerRank: int, stamp: string, providerError: string): var {
         const providerId = root.normalizeProviderId(provider.id);
-        const rawCode = (account.error === null || account.error === undefined) ? "" : String(account.error);
-        const code = rawCode || providerError;
+        const code = root.errorCode(account.error) || providerError;
         const message = code ? root.friendlyError(code) : "";
         const failed = account.status === "error" || account.status === "unavailable" || code !== "";
         const disabled = account.status === "disabled" || account.status === "inactive";
@@ -684,8 +700,7 @@ Singleton {
             const accounts = Array.isArray(provider.accounts) ? provider.accounts : [];
             if (!groups.some(group => group.id === id))
                 groups.push({ id: id, label: String(provider.label || provider.id), rank: i, order: groups.length });
-            const providerError = (provider.error === null || provider.error === undefined)
-                ? "" : String(provider.error);
+            const providerError = root.errorCode(provider.error);
             for (let j = 0; j < accounts.length; j++) {
                 if (accounts[j] && typeof accounts[j] === "object")
                     records.push(root.mapAccount(provider, accounts[j], groups.length - 1, stampIso, providerError));
@@ -714,8 +729,8 @@ Singleton {
             }
         }
 
-        const summaryError = (summary.error === null || summary.error === undefined)
-            ? "" : root.friendlyError(String(summary.error));
+        const summaryCode = root.errorCode(summary.error);
+        const summaryError = summaryCode ? root.friendlyError(summaryCode) : "";
         root.providers = ordered;
         root.todayCostUsd = (typeof summary.todayCostUsd === "number" && Number.isFinite(summary.todayCostUsd))
             ? summary.todayCostUsd : null;

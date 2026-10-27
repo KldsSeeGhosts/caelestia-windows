@@ -20,6 +20,7 @@ import argparse
 import base64
 import json
 import os
+import re
 import sys
 import urllib.error
 import urllib.request
@@ -156,6 +157,18 @@ def _chat_completion_via_8317(model: str, extra_body: dict[str, Any] | None = No
     return False, last_err
 
 
+# Every line this script prints reaches the shell's error text, so scrub the
+# admin key (and any Bearer value) from it; raw exceptions can quote headers.
+_SECRETS: list[str] = []
+
+
+def _emit(obj: Any, **kwargs: Any) -> None:
+    out = json.dumps(obj, **kwargs)
+    for secret in _SECRETS:
+        out = out.replace(json.dumps(secret)[1:-1], "[redacted]")
+    print(re.sub(r'Bearer\s+[^\s"\\]+', "Bearer [redacted]", out))
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(add_help=False)
     ap.add_argument("--cpa-config", default="~/.config/omarchy/cpa-agents.json")
@@ -169,22 +182,24 @@ def main() -> int:
         st = cfg_path.stat()
         # Windows has no POSIX mode bits; every file reports group/other bits.
         if os.name != "nt" and st.st_mode & 0o077:
-            print(json.dumps({"ok": False, "error": "cpa config permissions too open"}))
+            _emit({"ok": False, "error": "cpa config permissions too open"})
             return 0
         # utf-8-sig also accepts Windows editors that save a UTF-8 BOM.
         cfg = json.loads(cfg_path.read_text(encoding="utf-8-sig"))
         base, key = _text(cfg.get("baseUrl")), _text(cfg.get("adminKey"))
+        if key:
+            _SECRETS.extend(part for part in [key, *key.splitlines()] if len(part) >= 6)
     except Exception as exc:
-        print(json.dumps({"ok": False, "error": f"config read failed: {exc}"}))
+        _emit({"ok": False, "error": f"config read failed: {type(exc).__name__}"})
         return 0
     if not base or not key:
-        print(json.dumps({"ok": False, "error": "missing baseUrl/adminKey"}))
+        _emit({"ok": False, "error": "missing baseUrl/adminKey"})
         return 0
 
     try:
         inv = request_json(base, key, "/v0/management/auth-files")
     except Exception as exc:
-        print(json.dumps({"ok": False, "error": f"auth-files failed: {exc}"}))
+        _emit({"ok": False, "error": f"auth-files failed: {type(exc).__name__}"})
         return 0
 
     files = inv.get("files") if isinstance(inv, dict) else inv
@@ -212,7 +227,7 @@ def main() -> int:
         if not auth_index:
             results.append({"provider": prov, "account": label, "ok": False, "error": "no auth_index"})
             prog = {"type": "progress", "done": idx + 1, "total": total, "provider": prov, "account": label, "ok": False}
-            print(json.dumps(prog, separators=(",", ":")))
+            _emit(prog, separators=(",", ":"))
             sys.stdout.flush()
             continue
         try:
@@ -312,11 +327,11 @@ def main() -> int:
         except Exception as exc:
             results.append({"provider": prov, "account": label, "ok": False, "error": str(exc)[:160]})
         prog = {"type": "progress", "done": idx + 1, "total": total, "provider": prov, "account": label, "ok": results[-1].get("ok", False)}
-        print(json.dumps(prog, separators=(",", ":")))
+        _emit(prog, separators=(",", ":"))
         sys.stdout.flush()
 
     summary = {"ok": ok_count > 0 or not targets, "pinged": len(targets), "succeeded": ok_count, "results": results}
-    print(json.dumps(summary, separators=(",", ":")))
+    _emit(summary, separators=(",", ":"))
     sys.stdout.flush()
     return 0
 
