@@ -47,7 +47,7 @@ The following global options are read only from the root `%LOCALAPPDATA%\caelest
 - `paths`: `lyricsDir`, `wallpaperDir`
 - `services`: `audioIncrement`, `brightnessIncrement`, `clockFormat`, `dataUnits`, `defaultPlayer`, `gpuType`, `lyricsBackend`, `maxVolume`, `playerAliases`, `sensorUnits`, `smartScheme`, `visualiserBars`, `weatherLocation`, `weatherUnits`
 - `utilities`: `toasts.*`, `vpn.*`
-- `windows`: `clipboard.*`, `tiling.*` (Windows extensions)
+- `windows`: `clipboard.*`, `focusFollowsMouse.*`, `tiling.*` (Windows extensions)
 
 ---
 
@@ -465,6 +465,37 @@ target and remaining live verification.
 
 Add the key bind separately; binding `Super+V` replaces Windows' own Win+V panel
 for that chord. See [KEYBINDS.md](KEYBINDS.md).
+
+---
+
+## Focus follows mouse configuration
+
+`windows.focusFollowsMouse` applies Windows' X-Mouse focus tracking while the
+shell runs. It is off by default and does not touch the Windows-level setting
+until enabled.
+
+```json
+{"windows":{"focusFollowsMouse":{"enabled":true,"delay":100,"raise":false}}}
+```
+
+| Field | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `enabled` | bool | `false` | Apply focus tracking while the shell runs. |
+| `delay` | int | `100` | Milliseconds before focus changes, clamped to 0-5000. |
+| `raise` | bool | `false` | Bring the focused window to the top. |
+
+The shell reads the current Windows values before the first change and
+restores them when the option is disabled or the shell exits cleanly. A reload's
+replacement QML generation shares the process-wide baseline with the old one, so
+restarting the shell does not lose the originals. The baseline is also saved to
+`runtime\focus-follows-mouse-recovery.json` in the profile before the first
+change, so a supervisor restart after a crash restores the user's values rather
+than treating the still-applied values as the originals. Writes do not use
+`SPIF_UPDATEINIFILE`, so the stored Windows preference is unchanged; after a
+crash or forced kill the recovery file (or the next sign-in) restores it.
+Changes reload live.
+If the option is disabled, the shell never reads or writes the system setting,
+so a user who enables X-Mouse in Windows keeps it.
 
 ---
 

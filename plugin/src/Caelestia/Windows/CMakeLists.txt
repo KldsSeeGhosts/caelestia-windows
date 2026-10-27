@@ -12,6 +12,10 @@ qml_module(caelestia-windows
         Clipboard/windowsclipboard.cpp
         Clipboard/windowsclipboardworker.hpp
         Clipboard/windowsclipboardworker.cpp
+        Focus/focusfollowsmouse.hpp
+        Focus/focusfollowsmouse.cpp
+        Focus/windowsfocusfollowsmouse.hpp
+        Focus/windowsfocusfollowsmouse.cpp
     LIBRARIES
         Qt::Gui
         Qt::Quick
@@ -32,6 +36,7 @@ target_compile_definitions(caelestia-windows PRIVATE
 # clipboard sources must be reachable from the module's include path.
 target_include_directories(caelestia-windows PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/Clipboard"
+    "${CMAKE_CURRENT_SOURCE_DIR}/Focus"
 )
 
 # The clipboard's WinRT-free decisions are checked by a small Qt Test
@@ -56,6 +61,17 @@ if(Qt6Test_FOUND)
         CLIPBOARD_SERVICE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../../../windows/services/clipboard"
     )
     target_link_libraries(clipboard-qml-tests PRIVATE Qt::Core Qt::Qml Qt::Test)
+
+    # The controller's system boundary is injected, so this test never reads
+    # or writes the real Windows X-Mouse setting.
+    add_executable(focus-follows-mouse-tests
+        Focus/test/focusfollowsmouse_test.cpp
+        Focus/focusfollowsmouse.cpp
+    )
+    target_include_directories(focus-follows-mouse-tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/Focus"
+    )
+    target_link_libraries(focus-follows-mouse-tests PRIVATE Qt::Core Qt::Test)
 endif()
 
 # WASAPI loopback analysis: CavaProvider/BeatTracker/ServiceRef for the
