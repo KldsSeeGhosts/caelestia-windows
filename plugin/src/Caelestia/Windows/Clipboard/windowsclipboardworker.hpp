@@ -6,6 +6,8 @@
 #include <qstring.h>
 #include <qvariant.h>
 
+#include "clipboardstate.hpp"
+
 namespace caelestia::shell::windows {
 
 // All Windows.ApplicationModel.DataTransfer.Clipboard work happens on this
@@ -13,13 +15,15 @@ namespace caelestia::shell::windows {
 // values, so no WinRT call or clipboard read can block the GUI thread.
 //
 // Item maps exposed to QML: id, kind (text|image|other), text, imageUrl,
-// timestamp, timestampLabel, formats. Image previews are materialized on
-// request and live under the profile cache directory passed by the frontend.
+// timestamp, timestampLabel, formats. Image previews and explicitly opened text
+// files are materialized under this instance's own cache directory:
+// <cacheRoot>/clipboard/<pid>-<random>.
 class WindowsClipboardWorker: public QObject {
     Q_OBJECT
 
 public:
-    explicit WindowsClipboardWorker(QString cacheDirectory, QObject* parent = nullptr);
+    explicit WindowsClipboardWorker(std::shared_ptr<ClipboardSessionState> session,
+        QObject* parent = nullptr);
     ~WindowsClipboardWorker() override;
 
     // Runs on the worker thread. Registers the static clipboard events.
@@ -27,22 +31,24 @@ public:
     // Runs on the worker thread before its event loop stops.
     void end();
 
-    // Thread-safe. Stops pending work and best-effort cancels the in-flight
-    // history read. The facade calls it before its bounded thread wait, when
-    // the worker thread may already be blocked inside a WinRT call.
+    // Runs on the worker thread: cancels and releases the in-flight history
+    // read there, never under a GUI-thread mutex. The facade sets the shared
+    // stop flag immediately and bounds the wait.
     void requestStop();
 
 public slots:
     void refresh();
     // Change events are only followed while the picker is open. A closed
-    // picker never reads the clipboard history in the background.
+    // picker never reads the clipboard history in the background. The shared
+    // session flag is updated by the facade, so this only manages the coalesced
+    // event read on the worker thread.
     void setActive(bool active);
     void copyItem(const QString& id, bool paste);
     void removeItem(const QString& id);
     void clearHistory();
     void openItem(const QString& id);
     void requestImage(const QString& id);
-    void setCacheDirectory(const QString& directory);
+    void setCacheRoot(const QString& directory);
 
 signals:
     void snapshotReady(const QVariantList& items, bool historyEnabled, const QString& status,
@@ -58,10 +64,6 @@ private:
     void startHistoryRead(quint64 generation, bool eventDriven);
     void publishSnapshot(const QVariantList& items, bool enabled, const QString& status,
         const QString& error);
-    void reconcilePreviews(bool startup);
-    void removeOpenFiles();
-    [[nodiscard]] QString openDirectory() const;
-    [[nodiscard]] QString previewDirectory() const;
     [[nodiscard]] QString ensurePreview(const QString& id);
     void removePreview(const QString& id);
     void clearPreviews();

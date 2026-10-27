@@ -18,6 +18,7 @@ import QtQuick.Effects
 import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
+import Caelestia
 import Caelestia.Config
 import Caelestia.Windows
 import qs.components
@@ -237,8 +238,19 @@ Scope {
             root.close();
         }
 
+        // The item is already on the clipboard, but focus, destination or a
+        // held modifier prevented the synthetic Ctrl+V. Say so instead of
+        // cancelling invisibly.
+        function onPasteDeferred(message): void {
+            Toaster.toast(qsTr("Clipboard"), message, "content_paste", Toast.Info);
+        }
+
+        // Copy, paste, delete and clear failures can arrive after the picker
+        // closed (the overlay closes before dispatching the action), so the
+        // native error is surfaced on the shell's own toast surface.
         function onOperationFailed(operation, message): void {
             console.warn("Clipboard", operation, "failed:", message);
+            Toaster.toast(qsTr("Clipboard"), message, "content_paste", Toast.Error);
         }
 
         // Live-disabling windows.clipboard unloads the native service; the

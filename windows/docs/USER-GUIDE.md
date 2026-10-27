@@ -341,9 +341,12 @@ button to open **Settings > System > Clipboard**. It never turns the setting on
 for you and never logs clipboard contents. If Windows refuses history access to
 the shell process, the picker says so instead of showing an empty list as if it
 succeeded. Image previews and an explicitly opened text file are written only
-under the profile's `cache\clipboard` folder and are cleaned up with their
-entries. See [the clipboard notes](../services/clipboard/README.md) for exact
-behaviour and what still needs live verification.
+inside the instance's own `cache\clipboard\<pid>-<random>` folder and that
+folder is removed on shutdown. If a held modifier or a lost destination window
+prevents the automatic paste after the item was copied, a Caelestia toast says
+"Copied. Press Ctrl+V to paste". See
+[the clipboard notes](../services/clipboard/README.md) for exact behaviour and
+what still needs live verification.
 
 ### Per-monitor configuration
 

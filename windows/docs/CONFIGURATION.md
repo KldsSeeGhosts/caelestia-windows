@@ -456,8 +456,9 @@ shortcut is a no-op. Changes reload live. The shell never enables Windows
 clipboard history or changes its settings; when Windows has it off, the picker
 offers a button that opens `ms-settings:clipboard`. Password-manager
 exclusions, pinned items, size limits and sync remain Windows' decisions.
-Preview images and explicitly opened text files are written only under the
-profile's `cache\clipboard` directory and are pruned with their entries. See
+Preview images and explicitly opened text files are written only inside the
+instance's own directory, `<cacheRoot>\clipboard\<pid>-<random>` under the
+profile cache, and that one directory is deleted on shutdown. See
 [the clipboard notes](../services/clipboard/README.md) for the shortcut, IPC
 target and remaining live verification.
 

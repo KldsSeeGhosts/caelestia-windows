@@ -20,9 +20,10 @@ Item {
     WindowsClipboard {
         id: service
 
-        // Bound at construction. The native type writes nowhere outside this
-        // profile cache directory.
-        cacheDirectory: Quickshell.cacheDir + "/clipboard"
+        // Bound at construction. The native type creates exactly one
+        // <cacheRoot>/clipboard/<pid>-<random> directory for previews and
+        // opened text, and writes nowhere outside it.
+        cacheRoot: Quickshell.cacheDir
     }
 
     // Explicit reset before QML destroys this wrapper. QML does eventually
@@ -43,6 +44,7 @@ Item {
 
     signal imageReady(string id, string url)
     signal pasteReady(string id)
+    signal pasteDeferred(string message)
     signal operationFailed(string operation, string message)
     signal openUrl(string url)
 
@@ -91,6 +93,10 @@ Item {
 
         function onPasteReady(id): void {
             root.pasteReady(id);
+        }
+
+        function onPasteDeferred(message): void {
+            root.pasteDeferred(message);
         }
 
         function onOperationFailed(operation, message): void {

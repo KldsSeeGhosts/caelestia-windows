@@ -1,7 +1,5 @@
 #include "windowsclipboardworker.hpp"
 
-#include <algorithm>
-#include <atomic>
 #include <chrono>
 #include <memory>
 #include <mutex>
@@ -17,9 +15,11 @@
 #include <qloggingcategory.h>
 #include <qmetaobject.h>
 #include <qmetatype.h>
+#include <qrandom.h>
 #include <qset.h>
 #include <qstringlist.h>
 #include <qtimer.h>
+#include <qt_windows.h>
 #include <qurl.h>
 
 #include <winrt/Windows.ApplicationModel.DataTransfer.h>
@@ -29,6 +29,7 @@
 #include <winrt/Windows.Storage.Streams.h>
 #include <winrt/base.h>
 
+#include "clipboardcache.hpp"
 #include "clipboardlogic.hpp"
 
 namespace caelestia::shell::windows {
@@ -47,10 +48,6 @@ using winrt::Windows::Foundation::AsyncStatus;
 using winrt::Windows::Foundation::IAsyncOperation;
 
 constexpr int EVENT_COALESCE_MS = 150;
-// Crash leftovers are removed at worker start and then periodically; the
-// interval only bounds how long a leftover may survive a crash.
-constexpr int PREVIEW_PRUNE_INTERVAL_MS = 10 * 60 * 1000;
-constexpr int STALE_PREVIEW_HOURS = 24;
 // A clipboard image larger than this is not materialized for preview. The
 // history entry itself is untouched and copy/paste still works.
 constexpr quint64 MAX_PREVIEW_BYTES = 64ULL * 1024ULL * 1024ULL;
@@ -67,6 +64,9 @@ QString hresultText(const winrt::hresult_error& error) {
         .arg(fromHString(error.message()));
 }
 
+QString unknownErrorText(const QString& context) {
+    return QStringLiteral("Unknown error while %1.").arg(context);
+}
 
 QString timestampIso(const winrt::Windows::Foundation::DateTime& value) {
     const auto point = winrt::clock::to_sys(value);
@@ -84,7 +84,7 @@ QString timestampLabel(const winrt::Windows::Foundation::DateTime& value) {
 }
 
 // Qt detects image formats from content, but a truthful extension keeps the
-// preview directory inspectable and avoids claiming every stream is PNG.
+// cache directory inspectable and avoids claiming every stream is PNG.
 QString extensionFor(const QByteArray& bytes) {
     if (bytes.size() >= 8 && bytes.startsWith(QByteArrayLiteral("\x89PNG\r\n\x1a\n")))
         return QStringLiteral("png");
@@ -145,8 +145,24 @@ QString formatsOf(const DataPackageView& content) {
         }
     } catch (const winrt::hresult_error&) {
         // Format enumeration is presentation only.
+    } catch (...) {
     }
     return formats.join(QStringLiteral(", "));
+}
+
+// A sibling cache directory may only be deleted when its process is gone.
+// ERROR_ACCESS_DENIED means the process exists but cannot be opened; treat
+// that as live and never touch its directory.
+bool processAlive(quint32 pid) {
+    if (pid == 0)
+        return false;
+    const HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+    if (process == nullptr)
+        return GetLastError() == ERROR_ACCESS_DENIED;
+    DWORD exitCode = 0;
+    const bool alive = GetExitCodeProcess(process, &exitCode) && exitCode == STILL_ACTIVE;
+    CloseHandle(process);
+    return alive;
 }
 
 } // namespace
@@ -171,41 +187,43 @@ struct WindowsClipboardWorker::Impl {
         QString formats;
     };
 
-    QString cacheDirectory;
+    std::shared_ptr<ClipboardSessionState> session;
+    ClipboardCacheDirectory cache;
     QHash<QString, Item> items;
     // Windows returns the history newest first. QHash does not preserve that,
     // so the exposed list follows this explicit order.
     QStringList order;
     QHash<QString, QString> previewFiles;
-    ClipboardRefreshGate gate;
     std::shared_ptr<EventBridge> bridge;
     winrt::event_token historyToken {};
     winrt::event_token enabledToken {};
     QTimer* coalesce = nullptr;
-    QTimer* pruneTimer = nullptr;
     bool apartment = false;
     bool running = false;
+    bool eventPending = false;
     bool historyRegistered = false;
     bool enabledRegistered = false;
     bool historyEnabled = false;
-    bool previewsReconciled = false;
-    std::atomic<bool> stopped {false};
 
-    // requestStop() may cancel from the GUI thread while the worker thread is
-    // blocked inside a WinRT call.
+    // The async history read and its cancellation belong to the worker
+    // thread. The GUI never takes this mutex and never touches a WinRT object.
     std::mutex asyncMutex;
     IAsyncOperation<ClipboardHistoryItemsResult> historyOperation {nullptr};
 
     // The history result is applied on the worker thread only, but the method
     // lives here so the WinRT type never appears in the public header. As a
     // nested class it can reach the worker's private members.
+    //
+    // Every WinRT access (Status(), enumeration, item ids, timestamps and
+    // content reads) is inside the try: an hresult_error becomes the error
+    // snapshot instead of crossing the queued-call boundary.
     void applyHistory(WindowsClipboardWorker& worker, quint64 generation, bool eventDriven,
         const ClipboardHistoryItemsResult& result, bool ok, const QString& error) {
-        if (!running || stopped.load())
+        if (!running || session->stopping())
             return;
-        if (!gate.accepts(generation))
+        if (!session->accepts(generation))
             return;
-        if (eventDriven && !gate.active())
+        if (eventDriven && !session->active())
             return;
 
         QVariantList list;
@@ -213,85 +231,104 @@ struct WindowsClipboardWorker::Impl {
         QString failure = error;
         bool enabled = true;
 
-        if (!ok) {
-            status = QStringLiteral("error");
-        } else {
-            const auto resultStatus = result.Status();
-            if (resultStatus == ClipboardHistoryItemsResultStatus::ClipboardHistoryDisabled) {
-                status = QStringLiteral("disabled");
-                enabled = false;
-            } else if (resultStatus == ClipboardHistoryItemsResultStatus::AccessDenied) {
-                status = QStringLiteral("denied");
-                failure = QStringLiteral("Windows refused access to clipboard history.");
-            } else if (resultStatus != ClipboardHistoryItemsResultStatus::Success) {
+        try {
+            if (!ok) {
                 status = QStringLiteral("error");
-                failure = QStringLiteral("Windows returned clipboard history status %1.")
-                              .arg(static_cast<int>(resultStatus));
             } else {
-                QHash<QString, Item> next;
-                QStringList nextOrder;
-                for (const auto& handle: result.Items()) {
-                    if (next.size() >= static_cast<qsizetype>(MAX_ITEMS))
-                        break;
-                    const auto id = fromHString(handle.Id());
-                    if (id.isEmpty() || next.contains(id))
-                        continue;
+                const auto resultStatus = result.Status();
+                if (resultStatus == ClipboardHistoryItemsResultStatus::ClipboardHistoryDisabled) {
+                    status = QStringLiteral("disabled");
+                    enabled = false;
+                } else if (resultStatus == ClipboardHistoryItemsResultStatus::AccessDenied) {
+                    status = QStringLiteral("denied");
+                    failure = QStringLiteral("Windows refused access to clipboard history.");
+                } else if (resultStatus != ClipboardHistoryItemsResultStatus::Success) {
+                    status = QStringLiteral("error");
+                    failure = QStringLiteral("Windows returned clipboard history status %1.")
+                                  .arg(static_cast<int>(resultStatus));
+                } else {
+                    QHash<QString, Item> next;
+                    QStringList nextOrder;
+                    for (const auto& handle: result.Items()) {
+                        // Re-check between blocking per-item reads: the picker
+                        // may have closed while a text or format read was
+                        // waiting.
+                        if (session->stopping() || !session->accepts(generation))
+                            return;
+                        if (next.size() >= static_cast<qsizetype>(MAX_ITEMS))
+                            break;
+                        const auto id = fromHString(handle.Id());
+                        if (id.isEmpty() || next.contains(id))
+                            continue;
 
-                    Item item;
-                    item.handle = handle;
-                    item.timestamp = timestampIso(handle.Timestamp());
-                    item.timestampLabel = timestampLabel(handle.Timestamp());
+                        Item item;
+                        item.handle = handle;
+                        item.timestamp = timestampIso(handle.Timestamp());
+                        item.timestampLabel = timestampLabel(handle.Timestamp());
 
-                    try {
-                        const auto content = handle.Content();
-                        item.formats = formatsOf(content);
-                        const bool hasText = content.Contains(StandardDataFormats::Text());
-                        if (hasText)
-                            item.text = fromHString(content.GetTextAsync().get());
-                        const bool hasBitmap = content.Contains(StandardDataFormats::Bitmap());
-                        if (!item.text.trimmed().isEmpty())
-                            item.kind = QStringLiteral("text");
-                        else if (hasBitmap)
-                            item.kind = QStringLiteral("image");
-                    } catch (const winrt::hresult_error&) {
-                        // Keep the entry; a format that cannot be read must not
-                        // hide the rest of the history.
-                        item.kind = QStringLiteral("other");
-                        item.text.clear();
+                        try {
+                            const auto content = handle.Content();
+                            item.formats = formatsOf(content);
+                            const bool hasText = content.Contains(StandardDataFormats::Text());
+                            if (hasText)
+                                item.text = fromHString(content.GetTextAsync().get());
+                            const bool hasBitmap = content.Contains(StandardDataFormats::Bitmap());
+                            if (!item.text.trimmed().isEmpty())
+                                item.kind = QStringLiteral("text");
+                            else if (hasBitmap)
+                                item.kind = QStringLiteral("image");
+                        } catch (const winrt::hresult_error&) {
+                            // Keep the entry; a format that cannot be read must
+                            // not hide the rest of the history.
+                            item.kind = QStringLiteral("other");
+                            item.text.clear();
+                        } catch (...) {
+                            item.kind = QStringLiteral("other");
+                            item.text.clear();
+                        }
+                        next.insert(id, item);
+                        nextOrder.append(id);
                     }
-                    next.insert(id, item);
-                    nextOrder.append(id);
-                }
 
-                // Previews that no longer belong to an item are deleted here.
-                for (auto it = previewFiles.begin(); it != previewFiles.end();) {
-                    if (next.contains(it.key())) {
-                        ++it;
-                    } else {
-                        QFile::remove(it.value());
-                        it = previewFiles.erase(it);
+                    // Previews that no longer belong to an item are deleted
+                    // here. Opened text files stay until shutdown.
+                    for (auto it = previewFiles.begin(); it != previewFiles.end();) {
+                        if (next.contains(it.key())) {
+                            ++it;
+                        } else {
+                            QFile::remove(it.value());
+                            it = previewFiles.erase(it);
+                        }
                     }
-                }
 
-                items = std::move(next);
-                order = nextOrder;
+                    items = std::move(next);
+                    order = nextOrder;
 
-                for (const auto& id: order) {
-                    const auto& item = items.value(id);
-                    const auto previewPath = previewFiles.value(id);
-                    QVariantMap values;
-                    values.insert(QStringLiteral("id"), id);
-                    values.insert(QStringLiteral("kind"), item.kind);
-                    values.insert(QStringLiteral("text"), item.text);
-                    values.insert(QStringLiteral("imageUrl"),
-                        previewPath.isEmpty() ? QString()
-                                              : QUrl::fromLocalFile(previewPath).toString());
-                    values.insert(QStringLiteral("timestamp"), item.timestamp);
-                    values.insert(QStringLiteral("timestampLabel"), item.timestampLabel);
-                    values.insert(QStringLiteral("formats"), item.formats);
-                    list.append(values);
+                    for (const auto& id: order) {
+                        const auto& item = items.value(id);
+                        const auto previewPath = previewFiles.value(id);
+                        QVariantMap values;
+                        values.insert(QStringLiteral("id"), id);
+                        values.insert(QStringLiteral("kind"), item.kind);
+                        values.insert(QStringLiteral("text"), item.text);
+                        values.insert(QStringLiteral("imageUrl"),
+                            previewPath.isEmpty() ? QString()
+                                                  : QUrl::fromLocalFile(previewPath).toString());
+                        values.insert(QStringLiteral("timestamp"), item.timestamp);
+                        values.insert(QStringLiteral("timestampLabel"), item.timestampLabel);
+                        values.insert(QStringLiteral("formats"), item.formats);
+                        list.append(values);
+                    }
                 }
             }
+        } catch (const winrt::hresult_error& readError) {
+            status = QStringLiteral("error");
+            failure = hresultText(readError);
+            list.clear();
+        } catch (...) {
+            status = QStringLiteral("error");
+            failure = unknownErrorText(QStringLiteral("reading clipboard history"));
+            list.clear();
         }
 
         if (status != QStringLiteral("ready")) {
@@ -300,27 +337,38 @@ struct WindowsClipboardWorker::Impl {
             worker.clearPreviews();
         }
 
+        // The picker may have closed while the last item was being read or the
+        // map was being built. Nothing is published after close.
+        if (!running || session->stopping() || !session->accepts(generation))
+            return;
         worker.publishSnapshot(list, enabled, status, failure);
     }
 };
 
-WindowsClipboardWorker::WindowsClipboardWorker(QString cacheDirectory, QObject* parent)
+WindowsClipboardWorker::WindowsClipboardWorker(
+    std::shared_ptr<ClipboardSessionState> session, QObject* parent)
     : QObject(parent)
     , m_impl(std::make_unique<Impl>()) {
-    m_impl->cacheDirectory = std::move(cacheDirectory);
+    m_impl->session = std::move(session);
+    if (!m_impl->session)
+        m_impl->session = std::make_shared<ClipboardSessionState>();
 }
 
 WindowsClipboardWorker::~WindowsClipboardWorker() {
-    // The facade joins the thread before deleting the worker, or hands both to
-    // QThread::finished when a WinRT call never returns. In either case the
+    // The facade joins the thread before the worker is deleted, or leaves both
+    // to the single QThread::finished -> deleteLater path. In either case the
     // owning thread is no longer running here.
-    if (m_impl->running)
-        end();
+    try {
+        if (m_impl->running)
+            end();
+    } catch (...) {
+        // A destructor must not throw, even if a WinRT release does.
+    }
 }
 
 void WindowsClipboardWorker::begin() {
     auto& impl = *m_impl;
-    if (impl.running || impl.stopped.load())
+    if (impl.running || impl.session->stopping())
         return;
     impl.running = true;
 
@@ -328,7 +376,10 @@ void WindowsClipboardWorker::begin() {
         winrt::init_apartment(winrt::apartment_type::multi_threaded);
         impl.apartment = true;
     } catch (const winrt::hresult_error& error) {
-        qCWarning(logClipboard).noquote() << "init_apartment(multi_threaded) failed:" << hresultText(error);
+        qCWarning(logClipboard).noquote() << "init_apartment(multi_threaded) failed:"
+                                          << hresultText(error);
+    } catch (...) {
+        qCWarning(logClipboard) << "init_apartment(multi_threaded) failed with an unknown error.";
     }
 
     impl.coalesce = new QTimer(this);
@@ -336,18 +387,13 @@ void WindowsClipboardWorker::begin() {
     impl.coalesce->setInterval(EVENT_COALESCE_MS);
     connect(impl.coalesce, &QTimer::timeout, this, [this]() {
         auto& impl = *m_impl;
-        if (!impl.running || impl.stopped.load() || impl.coalesce == nullptr)
+        if (!impl.running || impl.session->stopping() || !impl.session->active())
             return;
-        // Closing the picker invalidates the pending event before this fires.
-        if (impl.gate.onTimeout() != ClipboardRefreshGate::TimeoutDecision::Refresh)
+        if (!impl.eventPending || impl.coalesce == nullptr)
             return;
+        impl.eventPending = false;
         performRefresh(true);
     });
-
-    impl.pruneTimer = new QTimer(this);
-    impl.pruneTimer->setInterval(PREVIEW_PRUNE_INTERVAL_MS);
-    connect(impl.pruneTimer, &QTimer::timeout, this, [this]() { reconcilePreviews(false); });
-    impl.pruneTimer->start();
 
     // Static event handlers run on WinRT callback threads. They hold the
     // shared bridge and never capture the worker directly.
@@ -355,19 +401,27 @@ void WindowsClipboardWorker::begin() {
     impl.bridge->worker = this;
     const auto bridge = impl.bridge;
     const auto queueRefresh = [bridge](auto&&, auto&&) {
-        const std::lock_guard lock(bridge->mutex);
-        if (!bridge->alive || bridge->worker == nullptr)
-            return;
-        auto* worker = bridge->worker;
-        QMetaObject::invokeMethod(
-            worker,
-            [bridge]() {
-                const std::lock_guard guard(bridge->mutex);
-                if (!bridge->alive || bridge->worker == nullptr)
-                    return;
-                bridge->worker->scheduleEventRefresh();
-            },
-            Qt::QueuedConnection);
+        try {
+            const std::lock_guard lock(bridge->mutex);
+            if (!bridge->alive || bridge->worker == nullptr)
+                return;
+            auto* worker = bridge->worker;
+            QMetaObject::invokeMethod(
+                worker,
+                [bridge]() {
+                    try {
+                        const std::lock_guard guard(bridge->mutex);
+                        if (!bridge->alive || bridge->worker == nullptr)
+                            return;
+                        bridge->worker->scheduleEventRefresh();
+                    } catch (...) {
+                        // Never let an exception cross the queued boundary.
+                    }
+                },
+                Qt::QueuedConnection);
+        } catch (...) {
+            // The callback thread boundary must stay exception-free.
+        }
     };
 
     // Each subscription is revoked independently: one failing must not leave
@@ -378,32 +432,33 @@ void WindowsClipboardWorker::begin() {
     } catch (const winrt::hresult_error& error) {
         qCWarning(logClipboard).noquote() << "Clipboard.HistoryChanged registration failed:"
                                           << hresultText(error);
+    } catch (...) {
+        qCWarning(logClipboard) << "Clipboard.HistoryChanged registration failed.";
     }
     try {
         impl.enabledToken = Clipboard::HistoryEnabledChanged(queueRefresh);
         impl.enabledRegistered = true;
     } catch (const winrt::hresult_error& error) {
-        qCWarning(logClipboard).noquote() << "Clipboard.HistoryEnabledChanged registration failed:"
-                                          << hresultText(error);
+        qCWarning(logClipboard).noquote()
+            << "Clipboard.HistoryEnabledChanged registration failed:" << hresultText(error);
+    } catch (...) {
+        qCWarning(logClipboard) << "Clipboard.HistoryEnabledChanged registration failed.";
     }
 }
 
 void WindowsClipboardWorker::end() {
     auto& impl = *m_impl;
-    requestStop();
+    if (!impl.running)
+        return;
     impl.running = false;
 
-    impl.gate.setActive(false);
+    requestStop();
+    impl.eventPending = false;
 
     if (impl.coalesce != nullptr) {
         impl.coalesce->stop();
         delete impl.coalesce;
         impl.coalesce = nullptr;
-    }
-    if (impl.pruneTimer != nullptr) {
-        impl.pruneTimer->stop();
-        delete impl.pruneTimer;
-        impl.pruneTimer = nullptr;
     }
 
     // Detach the event handlers before the worker is destroyed. Revocation
@@ -420,6 +475,7 @@ void WindowsClipboardWorker::end() {
             Clipboard::HistoryChanged(impl.historyToken);
     } catch (const winrt::hresult_error&) {
         // Shutdown must not depend on event unregistration succeeding.
+    } catch (...) {
     }
     impl.historyRegistered = false;
 
@@ -428,21 +484,24 @@ void WindowsClipboardWorker::end() {
             Clipboard::HistoryEnabledChanged(impl.enabledToken);
     } catch (const winrt::hresult_error&) {
         // Shutdown must not depend on event unregistration succeeding.
+    } catch (...) {
     }
     impl.enabledRegistered = false;
 
     impl.items.clear();
     impl.order.clear();
-    // An orderly shutdown must not leave this session's previews or opened
-    // text files behind for the next start to reconcile.
-    clearPreviews();
-    removeOpenFiles();
+    impl.previewFiles.clear();
+    // Per-instance ownership: removes only this instance's directory, and
+    // nothing at all if no valid cache root was ever configured.
+    if (!impl.cache.remove())
+        qCWarning(logClipboard) << "Could not remove this session's clipboard cache directory.";
 
     if (impl.apartment) {
         try {
             winrt::uninit_apartment();
         } catch (const winrt::hresult_error&) {
             // The process is shutting down; there is nothing useful to do.
+        } catch (...) {
         }
         impl.apartment = false;
     }
@@ -450,13 +509,14 @@ void WindowsClipboardWorker::end() {
 
 void WindowsClipboardWorker::requestStop() {
     auto& impl = *m_impl;
-    impl.stopped.store(true);
+    impl.session->requestStop();
     const std::lock_guard lock(impl.asyncMutex);
     if (impl.historyOperation) {
         try {
             impl.historyOperation.Cancel();
         } catch (const winrt::hresult_error&) {
-            // Best effort: the bounded join in the facade still applies.
+            // Best effort: the facade's bounded wait still applies.
+        } catch (...) {
         }
         impl.historyOperation = nullptr;
     }
@@ -464,39 +524,42 @@ void WindowsClipboardWorker::requestStop() {
 
 void WindowsClipboardWorker::setActive(bool active) {
     auto& impl = *m_impl;
-    if (impl.stopped.load())
+    if (!impl.running || impl.session->stopping())
         return;
 
-    impl.gate.setActive(active);
-    // A closed picker must not leave a coalesced read pending, and a new
-    // session starts without an event from the previous one.
+    // The shared session flag was already updated on the GUI thread. A closed
+    // picker must not leave a coalesced read pending, and a new session starts
+    // without an event from the previous one.
+    Q_UNUSED(active)
     if (impl.coalesce != nullptr)
         impl.coalesce->stop();
+    impl.eventPending = false;
 }
 
 void WindowsClipboardWorker::refresh() {
-    if (!m_impl->running || m_impl->stopped.load())
+    auto& impl = *m_impl;
+    if (!impl.running || impl.session->stopping() || !impl.session->active())
         return;
     performRefresh(false);
 }
 
 void WindowsClipboardWorker::scheduleEventRefresh() {
     auto& impl = *m_impl;
-    if (!impl.running || impl.stopped.load() || impl.coalesce == nullptr)
+    if (!impl.running || impl.session->stopping() || !impl.session->active())
         return;
-    if (impl.gate.onEvent() != ClipboardRefreshGate::EventDecision::Schedule)
-        return;
-    impl.coalesce->start();
+    impl.eventPending = true;
+    if (impl.coalesce != nullptr)
+        impl.coalesce->start();
 }
 
 void WindowsClipboardWorker::performRefresh(bool eventDriven) {
     auto& impl = *m_impl;
-    if (!impl.running || impl.stopped.load())
+    if (!impl.running || impl.session->stopping() || !impl.session->active())
         return;
 
     // Every read starts a new generation; a completion that arrives after a
     // newer read or a picker close is not published.
-    const auto generation = impl.gate.nextRead();
+    const auto generation = impl.session->nextRead();
 
     QString status = QStringLiteral("ready");
     QString error;
@@ -507,7 +570,13 @@ void WindowsClipboardWorker::performRefresh(bool eventDriven) {
     } catch (const winrt::hresult_error& failure) {
         status = QStringLiteral("error");
         error = hresultText(failure);
+    } catch (...) {
+        status = QStringLiteral("error");
+        error = unknownErrorText(QStringLiteral("reading the clipboard history setting"));
     }
+
+    if (!impl.session->accepts(generation))
+        return;
 
     if (status == QStringLiteral("ready") && !enabled)
         status = QStringLiteral("disabled");
@@ -516,6 +585,8 @@ void WindowsClipboardWorker::performRefresh(bool eventDriven) {
         impl.items.clear();
         impl.order.clear();
         clearPreviews();
+        if (!impl.session->accepts(generation))
+            return;
         publishSnapshot({}, enabled, status, error);
         return;
     }
@@ -529,6 +600,8 @@ void WindowsClipboardWorker::performRefresh(bool eventDriven) {
 
 void WindowsClipboardWorker::startHistoryRead(quint64 generation, bool eventDriven) {
     auto& impl = *m_impl;
+    if (!impl.session->accepts(generation))
+        return;
 
     IAsyncOperation<ClipboardHistoryItemsResult> operation {nullptr};
     try {
@@ -537,16 +610,35 @@ void WindowsClipboardWorker::startHistoryRead(quint64 generation, bool eventDriv
         impl.items.clear();
         impl.order.clear();
         clearPreviews();
-        publishSnapshot({}, true, QStringLiteral("error"), hresultText(failure));
+        if (impl.session->accepts(generation))
+            publishSnapshot({}, true, QStringLiteral("error"), hresultText(failure));
+        return;
+    } catch (...) {
+        impl.items.clear();
+        impl.order.clear();
+        clearPreviews();
+        if (impl.session->accepts(generation)) {
+            publishSnapshot({}, true, QStringLiteral("error"),
+                unknownErrorText(QStringLiteral("starting the clipboard history read")));
+        }
+        return;
+    }
+
+    if (!operation) {
+        if (impl.session->accepts(generation)) {
+            publishSnapshot({}, true, QStringLiteral("error"),
+                QStringLiteral("Windows did not start a clipboard history read."));
+        }
         return;
     }
 
     {
         const std::lock_guard lock(impl.asyncMutex);
-        if (impl.stopped.load()) {
+        if (impl.session->stopping() || !impl.session->accepts(generation)) {
             try {
                 operation.Cancel();
             } catch (const winrt::hresult_error&) {
+            } catch (...) {
             }
             return;
         }
@@ -557,111 +649,86 @@ void WindowsClipboardWorker::startHistoryRead(quint64 generation, bool eventDriv
     if (bridge == nullptr)
         return;
 
-    operation.Completed([bridge, generation, eventDriven](
-                            const IAsyncOperation<ClipboardHistoryItemsResult>& sender,
-                            AsyncStatus asyncStatus) {
-        // Cancellation is expected during shutdown and has no result.
-        if (asyncStatus == AsyncStatus::Canceled)
-            return;
+    try {
+        operation.Completed([bridge, generation, eventDriven](
+                                const IAsyncOperation<ClipboardHistoryItemsResult>& sender,
+                                AsyncStatus asyncStatus) {
+            try {
+                // Cancellation is expected during shutdown and has no result.
+                if (asyncStatus == AsyncStatus::Canceled)
+                    return;
 
-        ClipboardHistoryItemsResult result {nullptr};
-        QString error;
-        bool ok = false;
-        try {
-            result = sender.GetResults();
-            ok = result != nullptr;
-        } catch (const winrt::hresult_error& failure) {
-            error = hresultText(failure);
-        }
+                ClipboardHistoryItemsResult result {nullptr};
+                QString error;
+                bool ok = false;
+                try {
+                    result = sender.GetResults();
+                    ok = result != nullptr;
+                } catch (const winrt::hresult_error& failure) {
+                    error = hresultText(failure);
+                } catch (...) {
+                    error = unknownErrorText(QStringLiteral("completing the clipboard history read"));
+                }
 
-        // Post while holding the bridge lock. end() marks the bridge dead
-        // under the same lock, so the worker cannot be destroyed between the
-        // liveness check and the queued invocation.
+                // Post while holding the bridge lock. end() marks the bridge
+                // dead under the same lock, so the worker cannot be destroyed
+                // between the liveness check and the queued invocation.
+                const std::lock_guard lock(bridge->mutex);
+                if (!bridge->alive || bridge->worker == nullptr)
+                    return;
+                auto* worker = bridge->worker;
+                QMetaObject::invokeMethod(
+                    worker,
+                    [bridge, generation, eventDriven, result, ok, error]() {
+                        try {
+                            WindowsClipboardWorker* target = nullptr;
+                            {
+                                const std::lock_guard guard(bridge->mutex);
+                                if (!bridge->alive || bridge->worker == nullptr)
+                                    return;
+                                target = bridge->worker;
+                            }
+                            target->m_impl->applyHistory(
+                                *target, generation, eventDriven, result, ok, error);
+                        } catch (...) {
+                            // No exception may cross the queued-call boundary.
+                        }
+                    },
+                    Qt::QueuedConnection);
+            } catch (...) {
+                // WinRT callback threads must stay exception-free.
+            }
+        });
+    } catch (const winrt::hresult_error& failure) {
         {
-            const std::lock_guard lock(bridge->mutex);
-            if (!bridge->alive || bridge->worker == nullptr)
-                return;
-            auto* worker = bridge->worker;
-            QMetaObject::invokeMethod(
-                worker,
-                [bridge, generation, eventDriven, result, ok, error]() {
-                    WindowsClipboardWorker* target = nullptr;
-                    {
-                        const std::lock_guard guard(bridge->mutex);
-                        if (!bridge->alive || bridge->worker == nullptr)
-                            return;
-                        target = bridge->worker;
-                    }
-                    target->m_impl->applyHistory(*target, generation, eventDriven, result, ok, error);
-                },
-                Qt::QueuedConnection);
+            const std::lock_guard lock(impl.asyncMutex);
+            if (impl.historyOperation == operation)
+                impl.historyOperation = nullptr;
         }
-    });
+        if (impl.session->accepts(generation))
+            publishSnapshot({}, true, QStringLiteral("error"), hresultText(failure));
+    } catch (...) {
+        {
+            const std::lock_guard lock(impl.asyncMutex);
+            if (impl.historyOperation == operation)
+                impl.historyOperation = nullptr;
+        }
+        if (impl.session->accepts(generation)) {
+            publishSnapshot({}, true, QStringLiteral("error"),
+                unknownErrorText(QStringLiteral("waiting for the clipboard history read")));
+        }
+    }
 }
 
 void WindowsClipboardWorker::publishSnapshot(const QVariantList& items, bool enabled,
     const QString& status, const QString& error) {
+    if (!m_impl->running || m_impl->session->stopping() || !m_impl->session->active())
+        return;
     if (m_impl->historyEnabled != enabled) {
         m_impl->historyEnabled = enabled;
         emit historyEnabledChanged(enabled);
     }
     emit snapshotReady(items, enabled, status, error);
-}
-
-QString WindowsClipboardWorker::previewDirectory() const {
-    if (m_impl->cacheDirectory.isEmpty())
-        return {};
-    return m_impl->cacheDirectory + QStringLiteral("/preview");
-}
-
-QString WindowsClipboardWorker::openDirectory() const {
-    if (m_impl->cacheDirectory.isEmpty())
-        return {};
-    return m_impl->cacheDirectory + QStringLiteral("/open");
-}
-
-void WindowsClipboardWorker::reconcilePreviews(bool startup) {
-    if (m_impl->cacheDirectory.isEmpty())
-        return;
-
-    // Preview files are regenerable and owned only by this session. Anything
-    // in the preview directory that this session does not own is a leftover
-    // from a previous run (a crash, or a session that never reached end()).
-    QSet<QString> owned;
-    owned.reserve(m_impl->previewFiles.size());
-    for (const auto& path: m_impl->previewFiles)
-        owned.insert(QDir::cleanPath(path));
-
-    const QDir preview(previewDirectory());
-    if (preview.exists()) {
-        const auto files = preview.entryInfoList(QDir::Files | QDir::NoDotAndDotDot);
-        for (const auto& file: files) {
-            if (!owned.contains(QDir::cleanPath(file.absoluteFilePath())))
-                QFile::remove(file.absoluteFilePath());
-        }
-    }
-
-    // The open directory only ever holds this session's explicit "open as
-    // text" files. At startup every file is a leftover; during a session only
-    // files that the prune threshold marks stale are removed.
-    const QDir open(openDirectory());
-    if (open.exists()) {
-        const auto now = QDateTime::currentDateTimeUtc();
-        const auto files = open.entryInfoList(QDir::Files | QDir::NoDotAndDotDot);
-        for (const auto& file: files) {
-            if (startup || file.lastModified().toUTC().secsTo(now) > STALE_PREVIEW_HOURS * 3600)
-                QFile::remove(file.absoluteFilePath());
-        }
-    }
-}
-
-void WindowsClipboardWorker::removeOpenFiles() {
-    const QDir directory(openDirectory());
-    if (!directory.exists())
-        return;
-    const auto files = directory.entryInfoList(QDir::Files | QDir::NoDotAndDotDot);
-    for (const auto& file: files)
-        QFile::remove(file.absoluteFilePath());
 }
 
 QString WindowsClipboardWorker::ensurePreview(const QString& id) {
@@ -675,9 +742,9 @@ QString WindowsClipboardWorker::ensurePreview(const QString& id) {
     if (found->kind != QStringLiteral("image"))
         return {};
 
-    const auto directory = previewDirectory();
-    if (directory.isEmpty()) {
-        qCWarning(logClipboard) << "No profile cache directory is configured; image previews are unavailable.";
+    QString directoryError;
+    if (!impl.cache.ensure(&directoryError)) {
+        qCWarning(logClipboard).noquote() << directoryError;
         return {};
     }
 
@@ -687,6 +754,9 @@ QString WindowsClipboardWorker::ensurePreview(const QString& id) {
     } catch (const winrt::hresult_error& error) {
         qCWarning(logClipboard).noquote() << "Reading a clipboard bitmap failed:" << hresultText(error);
         return {};
+    } catch (...) {
+        qCWarning(logClipboard) << "Reading a clipboard bitmap failed with an unknown error.";
+        return {};
     }
     if (bytes.isEmpty())
         return {};
@@ -695,13 +765,10 @@ QString WindowsClipboardWorker::ensurePreview(const QString& id) {
     hash.addData(bytes);
     const auto name = QString::fromLatin1(hash.result().toHex().left(MAX_NAME_HEX)) + QLatin1Char('.')
         + extensionFor(bytes);
-
-    if (!QDir().mkpath(directory)) {
-        qCWarning(logClipboard) << "Could not create the clipboard preview directory.";
+    const auto path = impl.cache.filePath(name);
+    if (path.isEmpty())
         return {};
-    }
 
-    const auto path = directory + QLatin1Char('/') + name;
     QFile file(path);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
         qCWarning(logClipboard) << "Could not write a clipboard preview file.";
@@ -731,25 +798,36 @@ void WindowsClipboardWorker::clearPreviews() {
     m_impl->previewFiles.clear();
 }
 
-void WindowsClipboardWorker::setCacheDirectory(const QString& directory) {
-    if (directory == m_impl->cacheDirectory)
+void WindowsClipboardWorker::setCacheRoot(const QString& directory) {
+    auto& impl = *m_impl;
+    if (impl.session->stopping() || impl.cache.configured())
         return;
-    if (!directory.isEmpty() && !QDir::isAbsolutePath(directory)) {
-        qCWarning(logClipboard) << "Ignoring a relative clipboard cache directory.";
+    if (directory.isEmpty())
+        return;
+    if (!ClipboardCacheDirectory::validRoot(directory)) {
+        qCWarning(logClipboard) << "Ignoring a relative or invalid clipboard cache root.";
+        return;
+    }
+    if (!impl.cache.configure(
+            directory, GetCurrentProcessId(), QRandomGenerator::global()->generate64())) {
+        qCWarning(logClipboard) << "Could not configure the clipboard cache directory.";
         return;
     }
 
-    clearPreviews();
-    m_impl->cacheDirectory = directory;
+    QString error;
+    if (!impl.cache.ensure(&error)) {
+        qCWarning(logClipboard).noquote() << error;
+        return;
+    }
 
-    const bool startup = !m_impl->previewsReconciled && !directory.isEmpty();
-    if (!directory.isEmpty())
-        m_impl->previewsReconciled = true;
-    reconcilePreviews(startup);
+    const auto removed = ClipboardCacheDirectory::removeDeadSiblings(
+        impl.cache.root(), impl.cache.name(), [](quint32 pid) { return processAlive(pid); });
+    qCDebug(logClipboard) << "Clipboard cache" << impl.cache.path() << "dead siblings removed"
+                          << removed;
 }
 
 void WindowsClipboardWorker::requestImage(const QString& id) {
-    if (!m_impl->running || m_impl->stopped.load())
+    if (!m_impl->running || m_impl->session->stopping() || !m_impl->session->active())
         return;
 
     const auto path = ensurePreview(id);
@@ -762,7 +840,7 @@ void WindowsClipboardWorker::requestImage(const QString& id) {
 }
 
 void WindowsClipboardWorker::copyItem(const QString& id, bool paste) {
-    if (!m_impl->running || m_impl->stopped.load())
+    if (!m_impl->running || m_impl->session->stopping())
         return;
 
     const auto operation = paste ? QStringLiteral("paste") : QStringLiteral("copy");
@@ -787,11 +865,14 @@ void WindowsClipboardWorker::copyItem(const QString& id, bool paste) {
         emit operationFinished(operation, id, true, QString());
     } catch (const winrt::hresult_error& error) {
         emit operationFinished(operation, id, false, hresultText(error));
+    } catch (...) {
+        emit operationFinished(operation, id, false,
+            unknownErrorText(QStringLiteral("restoring the clipboard item")));
     }
 }
 
 void WindowsClipboardWorker::removeItem(const QString& id) {
-    if (!m_impl->running || m_impl->stopped.load())
+    if (!m_impl->running || m_impl->session->stopping())
         return;
 
     const auto found = m_impl->items.find(id);
@@ -810,6 +891,10 @@ void WindowsClipboardWorker::removeItem(const QString& id) {
     } catch (const winrt::hresult_error& error) {
         emit operationFinished(QStringLiteral("remove"), id, false, hresultText(error));
         return;
+    } catch (...) {
+        emit operationFinished(QStringLiteral("remove"), id, false,
+            unknownErrorText(QStringLiteral("deleting the clipboard history item")));
+        return;
     }
 
     removePreview(id);
@@ -820,7 +905,7 @@ void WindowsClipboardWorker::removeItem(const QString& id) {
 }
 
 void WindowsClipboardWorker::clearHistory() {
-    if (!m_impl->running || m_impl->stopped.load())
+    if (!m_impl->running || m_impl->session->stopping())
         return;
 
     try {
@@ -833,6 +918,10 @@ void WindowsClipboardWorker::clearHistory() {
     } catch (const winrt::hresult_error& error) {
         emit operationFinished(QStringLiteral("clear"), QString(), false, hresultText(error));
         return;
+    } catch (...) {
+        emit operationFinished(QStringLiteral("clear"), QString(), false,
+            unknownErrorText(QStringLiteral("clearing the clipboard history")));
+        return;
     }
 
     clearPreviews();
@@ -843,7 +932,7 @@ void WindowsClipboardWorker::clearHistory() {
 }
 
 void WindowsClipboardWorker::openItem(const QString& id) {
-    if (!m_impl->running || m_impl->stopped.load())
+    if (!m_impl->running || m_impl->session->stopping())
         return;
 
     const auto found = m_impl->items.constFind(id);
@@ -883,27 +972,18 @@ void WindowsClipboardWorker::openItem(const QString& id) {
                 }
             }
 
-            const auto directoryPath = openDirectory();
-            if (directoryPath.isEmpty()) {
+            QString directoryError;
+            if (!m_impl->cache.ensure(&directoryError)) {
                 emit operationFinished(QStringLiteral("open"), id, false,
                     QStringLiteral("No profile cache directory is configured for the text file."));
                 return;
             }
-            const QDir directory(directoryPath);
-            if (!QDir().mkpath(directory.path())) {
-                emit operationFinished(QStringLiteral("open"), id, false,
-                    QStringLiteral("The temporary text file could not be created."));
-                return;
-            }
-            // This directory holds only the text most recently opened from the
-            // picker, so superseded copies are removed first.
-            for (const auto& entry: directory.entryInfoList(QDir::Files | QDir::NoDotAndDotDot))
-                QFile::remove(entry.absoluteFilePath());
 
             QCryptographicHash hash(QCryptographicHash::Sha256);
             hash.addData(found->text.toUtf8());
-            const auto path = directory.filePath(QStringLiteral("clipboard-")
-                + QString::fromLatin1(hash.result().toHex().left(MAX_NAME_HEX)) + QStringLiteral(".txt"));
+            const auto path = m_impl->cache.filePath(QStringLiteral("clipboard-")
+                + QString::fromLatin1(hash.result().toHex().left(MAX_NAME_HEX))
+                + QStringLiteral(".txt"));
             QFile file(path);
             if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
                 emit operationFinished(QStringLiteral("open"), id, false,
@@ -930,6 +1010,9 @@ void WindowsClipboardWorker::openItem(const QString& id) {
             QStringLiteral("This clipboard item has no openable representation."));
     } catch (const winrt::hresult_error& error) {
         emit operationFinished(QStringLiteral("open"), id, false, hresultText(error));
+    } catch (...) {
+        emit operationFinished(QStringLiteral("open"), id, false,
+            unknownErrorText(QStringLiteral("opening the clipboard item")));
     }
 }
 

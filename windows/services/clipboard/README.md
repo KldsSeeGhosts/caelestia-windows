@@ -64,12 +64,13 @@ Native `WindowsClipboard` exposes:
 - `items`: list of `{ id, kind ("text" | "image" | "other"), text, imageUrl,
   timestamp, timestampLabel, formats }`, newest first.
 - `historyEnabled`, `status` (`initializing`, `loading`, `ready`, `disabled`,
-  `denied`, `error`), `lastError`, `cacheDirectory`.
+  `denied`, `error`), `lastError`, `cacheRoot`.
 - `refresh()`, `setActive(bool)`, `copy(id)`, `paste(id)`, `remove(id)`,
   `clear()`, `openItem(id)`, `requestImage(id)`, `openSettings()`.
 - Signals: `itemsChanged`, `historyEnabledChanged`, `statusChanged`,
   `lastErrorChanged`, `imageReady(id, url)`, `pasteReady(id)`,
-  `operationFailed(operation, message)`, `openUrl(url)`.
+  `pasteDeferred(message)`, `operationFailed(operation, message)`,
+  `openUrl(url)`.
 
 `ClipboardHistory` (staged in `qs.services`) forwards these, adds the
 `windows.clipboard.enabled` gate, and forwards `openUrl` to
@@ -88,6 +89,24 @@ operation handle is cancelled on shutdown and results for a superseded
 generation are never published. The worker's two event subscriptions are
 revoked independently and only through a shared lifetime bridge, so a callback
 already in flight during teardown cannot reach a destroyed worker.
+
+The picker session is a shared atomic `{active, generation}` pair. The GUI
+updates it immediately on open, close and deactivation, not through the queued
+`setActive`; the worker re-checks it between blocking per-item reads and again
+right before publishing. A snapshot therefore cannot escape after the picker
+closes, even when a text read was already waiting. Every WinRT result used for
+the snapshot (`Status()`, enumeration, item ids, timestamps, format and content
+reads) is wrapped in `catch (hresult_error)` plus `catch (...)`; a failure
+becomes the error snapshot or an `other` entry, and no exception crosses a Qt
+slot or queued-call boundary.
+
+Teardown is non-blocking on the GUI side. `shutdown()` sets the shared stopping
+flag, queues the worker's WinRT `Cancel()`/release onto the worker thread and
+then waits at most 2.5 s in total. Worker and thread cleanup is connected once,
+before `start()`: `QThread::finished` runs `end()` and then deletes both with
+`deleteLater`. If the bounded wait expires the GUI simply returns; the thread
+finishes and self-deletes, and the already-detached bridge plus stopping flag
+prevent late callbacks or publications.
 
 `paste(id)` sets the item as clipboard content with
 `SetHistoryItemAsContent` and requires the returned
@@ -109,7 +128,12 @@ window; if the shell process still holds focus it makes one bounded
 another application is foreground, the paste is cancelled with no injection.
 Injecting is also delayed, with a bound, until all physical modifier keys are
 released: a held Super would turn the chord into Win+Ctrl+V, and the injected
-Ctrl-up must not release the user's own Ctrl.
+Ctrl-up must not release the user's own Ctrl. Because the item is already on
+the clipboard after a successful `SetHistoryItemAsContent`, these cancellations
+are not copy failures: the shell shows a Caelestia toast ("Copied. Press Ctrl+V
+to paste") instead of cancelling silently. Copy, paste, delete and clear
+failures that arrive after the picker closed are surfaced as error toasts on
+the same `Toaster` surface the tiling service uses.
 
 The picker opens on the Hypr-observed focused monitor when
 `CAELESTIA_WINDOWS_HYPR=1` has resolved a focused monitor, and falls back to the
@@ -131,22 +155,33 @@ pins; the item list is whatever Windows returns, and pinned items are kept by
 Windows' own rules.
 
 `openItem(id)` opens HTTP(S) URLs, single `file://` references and image
-previews directly. Other text is written to `clipboard/open/` under the profile
-cache and opened with the default application; that directory keeps only the
-most recently opened text file.
+previews directly. Other text is written as `clipboard-<hash>.txt` inside this
+instance's cache directory and opened with the default application. Opened text
+files stay until the instance shuts down; an in-session prune never deletes
+them.
 
 ## Images and cleanup
 
-Image previews are lazy: nothing is read until the open picker lists an image
-item. The worker reads the bitmap, writes it under
-`<Quickshell.cacheDir>/clipboard/preview/` (the profile cache) with a
-content-hash name, and exposes a `file://` URL. Previews survive a refresh only
-while their item is still in the history; `remove()` and a failed/empty refresh
-delete them. An orderly shutdown deletes this session's previews and opened
-text files, startup deletes any preview or opened file the new session does not
-own (crash leftovers), and a ten-minute prune removes unowned previews and
-stale opened text while the worker runs. Previews larger than 64 MiB are not
-materialized; copy/paste of that item still works.
+Each `WindowsClipboard` instance owns exactly one directory,
+`<cacheRoot>/clipboard/<pid>-<random>`, created only after a valid absolute
+`cacheRoot` is known. It holds both previews and explicitly opened text files;
+there are no shared `preview/` or `open/` directories, and shutdown does not
+depend on a per-file ownership set. Image previews are lazy: nothing is read
+until the open picker lists an image item. The worker reads the bitmap, writes
+it into the instance directory with a content-hash name, and exposes a
+`file://` URL. Previews survive a refresh only while their item is still in the
+history; `remove()` and a failed/empty refresh delete them. Previews larger
+than 64 MiB are not materialized; copy/paste of that item still works.
+
+Shutdown deletes only that one directory, recursively, after resolving the
+cache base and the instance directory and verifying that the instance is a
+direct child of `<cacheRoot>/clipboard/` whose name matches
+`<pid>-<16 hex>`. An empty, relative or never-configured path is a no-op, and a
+symlink or replaced path is refused, so cleanup cannot escape the instance
+directory or touch the working directory. At startup the new instance removes
+sibling `<pid>-*` directories only when that pid is not a running process; a
+live sibling is never touched. A crashed session is therefore collected by the
+next start, while an orderly shutdown leaves nothing behind.
 
 Clipboard contents are never logged. The only text this feature writes to disk
 is an explicit "open as text file" action and the image preview files above.
@@ -169,12 +204,17 @@ the native `aboutToShutdown` reset (cancelling the worker, events and pending
 paste), and that the native C++ instance itself is destroyed rather than
 outliving the loader (the runner asserts the destructor's marker line). The
 script also runs the small `clipboard-logic-tests` executable built with the
-plugin, which covers the `SetHistoryItemAsContent` status decision and the
-event-driven refresh gate (no read while closed; deactivation and newer reads
-invalidate stale completions). It never opens the picker, so it does not read,
-clear or modify the real clipboard history; the enabled case can construct the
-native type, whose only WinRT call in that state is a read-only
-`Clipboard.IsHistoryEnabled()`.
+plugin, which covers the `SetHistoryItemAsContent` status decision, the shared
+session state (immediate deactivation, stale-read rejection, reopen and newer
+read invalidation) and the per-instance cache boundary: shutdown before a cache
+root is set leaves sentinel files in the working directory and a temp directory
+untouched, cleanup removes only the configured instance directory, and a live
+sibling's directory survives while a dead sibling's is collected. The logic
+test runs with its disposable run directory as the working directory, never the
+repository, worktree, install prefix or user profile. It never opens the
+picker, so it does not read, clear or modify the real clipboard history; the
+enabled case can construct the native type, whose only WinRT call in that state
+is a read-only `Clipboard.IsHistoryEnabled()`.
 
 ## Live verification still needed
 
@@ -184,8 +224,9 @@ native type, whose only WinRT call in that state is a read-only
 - Whether `Clipboard.HistoryChanged` / `HistoryEnabledChanged` fire for an
   unpackaged desktop process and update an open picker.
 - Paste behaviour into a focused application, including focus return after the
-  close animation, and the marked Ctrl+V against the shell and supervisor
-  hooks.
+  close animation, the marked Ctrl+V against the shell and supervisor hooks,
+  and the "Copied. Press Ctrl+V to paste" toast when a modifier is still held
+  or the destination loses focus.
 - The Windows off/on empty state against a real `ms-settings:clipboard` toggle,
   and whether `ClearHistory` leaves pinned items.
 - Image previews for a real screenshot, and the cache cleanup on removal.

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <memory>
+
 #include <qelapsedtimer.h>
 #include <qobject.h>
 #include <qqmlintegration.h>
@@ -7,6 +9,8 @@
 #include <qtimer.h>
 #include <qvariant.h>
 #include <qt_windows.h>
+
+#include "clipboardstate.hpp"
 
 class QThread;
 
@@ -29,10 +33,11 @@ class WindowsClipboard: public QObject {
     Q_OBJECT
     QML_ELEMENT
 
-    // The profile cache directory for preview images and opened text files.
-    // Empty disables both; the shell never writes elsewhere.
-    Q_PROPERTY(QString cacheDirectory READ cacheDirectory WRITE setCacheDirectory NOTIFY
-            cacheDirectoryChanged)
+    // The profile cache root. The instance creates exactly one directory,
+    // <cacheRoot>/clipboard/<pid>-<random>, for previews and opened text.
+    // Empty or relative values create nothing; the shell never writes
+    // elsewhere.
+    Q_PROPERTY(QString cacheRoot READ cacheRoot WRITE setCacheRoot NOTIFY cacheRootChanged)
     Q_PROPERTY(QVariantList items READ items NOTIFY itemsChanged)
     Q_PROPERTY(bool historyEnabled READ historyEnabled NOTIFY historyEnabledChanged)
     Q_PROPERTY(QString status READ status NOTIFY statusChanged)
@@ -42,8 +47,8 @@ public:
     explicit WindowsClipboard(QObject* parent = nullptr);
     ~WindowsClipboard() override;
 
-    [[nodiscard]] QString cacheDirectory() const { return m_cacheDirectory; }
-    void setCacheDirectory(const QString& directory);
+    [[nodiscard]] QString cacheRoot() const { return m_cacheRoot; }
+    void setCacheRoot(const QString& directory);
 
     [[nodiscard]] QVariantList items() const { return m_items; }
     [[nodiscard]] bool historyEnabled() const { return m_historyEnabled; }
@@ -52,7 +57,8 @@ public:
 
     Q_INVOKABLE void refresh();
     // The picker open/close edge. Opening captures the immutable paste
-    // destination from the currently focused external window.
+    // destination from the currently focused external window. The shared
+    // session flag is updated immediately on both edges, not through the queue.
     Q_INVOKABLE void setActive(bool active);
     Q_INVOKABLE void copy(const QString& id);
     Q_INVOKABLE void paste(const QString& id);
@@ -64,11 +70,11 @@ public:
     // Explicit reset used by the loader-owned wrapper when it is destroyed
     // (or when windows.clipboard.enabled becomes false): cancels a pending
     // paste, stops the worker, unsubscribes both events and clears all
-    // retained history and preview ownership. Idempotent; later calls no-op.
+    // retained history and cache ownership. Idempotent; later calls no-op.
     Q_INVOKABLE void shutdown();
 
 signals:
-    void cacheDirectoryChanged();
+    void cacheRootChanged();
     void itemsChanged();
     void historyEnabledChanged();
     void statusChanged();
@@ -78,6 +84,10 @@ signals:
     // synthetic paste follows after the close animation and verified focus
     // return to the window captured when the picker opened.
     void pasteReady(const QString& id);
+    // The item is already on the clipboard, but injecting Ctrl+V was refused
+    // (focus/destination changed, modifiers still held, or SendInput failed).
+    // The user gets an informational toast instead of a silent cancel.
+    void pasteDeferred(const QString& message);
     void operationFailed(const QString& operation, const QString& message);
     void openUrl(const QString& url);
     // Emitted from shutdown(), before the worker is stopped. The loader-owned
@@ -97,7 +107,7 @@ private:
     [[nodiscard]] static bool modifiersReleased();
     void capturePasteDestination();
     void cancelPendingPaste();
-    void failPaste(const QString& message);
+    void failPaste(const QString& message, bool copied);
     void attemptPaste();
     [[nodiscard]] bool sendPasteChord() const;
     void shutdownWorker();
@@ -106,8 +116,9 @@ private:
 
     QThread* m_thread = nullptr;
     WindowsClipboardWorker* m_worker = nullptr;
+    std::shared_ptr<ClipboardSessionState> m_session;
     QVariantList m_items;
-    QString m_cacheDirectory;
+    QString m_cacheRoot;
     QString m_status = QStringLiteral("initializing");
     QString m_lastError;
     // The immutable destination for the pending paste. It is sampled when the

@@ -29,9 +29,17 @@ if (-not (Test-Path -LiteralPath $logicTest -PathType Leaf)) {
 }
 $previousPath = $env:PATH
 $env:PATH = "$QtPrefix\bin;$qmlRoot\Caelestia\lib;$env:PATH"
-& $logicTest -o "$run\logic-tests.txt,txt" | Out-Null
-$logicExit = $LASTEXITCODE
-$env:PATH = $previousPath
+# Never run the clipboard logic tests with the repository, worktree, install
+# prefix or the user profile as the working directory: the cache-cleanup
+# regressions exercise early shutdown and must not face real files.
+Push-Location -LiteralPath $run
+try {
+    & $logicTest -o "$run\logic-tests.txt,txt" | Out-Null
+    $logicExit = $LASTEXITCODE
+} finally {
+    Pop-Location
+    $env:PATH = $previousPath
+}
 $logicPassed = $logicExit -eq 0 -and
     (Test-Path -LiteralPath "$run\logic-tests.txt" -PathType Leaf) -and
     (Select-String -LiteralPath "$run\logic-tests.txt" -Pattern 'Totals:.*\b0 failed\b' -Quiet)

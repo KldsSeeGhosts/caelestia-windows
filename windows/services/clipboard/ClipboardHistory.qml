@@ -38,6 +38,7 @@ Singleton {
 
     signal imageReady(string id, string url)
     signal pasteReady(string id)
+    signal pasteDeferred(string message)
     signal operationFailed(string operation, string message)
 
     function refresh(): void {
@@ -141,6 +142,10 @@ Singleton {
 
         function onPasteReady(id): void {
             root.pasteReady(id);
+        }
+
+        function onPasteDeferred(message): void {
+            root.pasteDeferred(message);
         }
 
         function onOperationFailed(operation, message): void {
