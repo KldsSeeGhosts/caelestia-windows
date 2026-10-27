@@ -143,7 +143,9 @@ public sealed class BannerCommandReader {
         var thread = new Thread(() => {
             try {
                 string line;
-                while ((line = Console.In.ReadLine()) != null) Lines.Add(line);
+                // A writer whose console encoding emits a preamble prefixes the
+                // first line with a byte-order mark; JSON parsing rejects it.
+                while ((line = Console.In.ReadLine()) != null) Lines.Add(line.TrimStart((char)0xFEFF));
             } finally { Lines.CompleteAdding(); }
         });
         thread.IsBackground = true;

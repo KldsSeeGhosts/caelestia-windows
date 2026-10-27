@@ -1049,7 +1049,16 @@ namespace Caelestia.Takeover {
         void SaveSnapshot() {
             Native.SaveSnapshot(Path.Combine(launch.StateDirectory, "desktop-before.json"), saved);
         }
+        // Banner recovery must never stop the shell from starting, restarting
+        // or restoring the desktop. A failure keeps the journal for the next try.
         void RestoreBanners() {
+            try { RunBannerRecovery(); }
+            catch (Exception error) {
+                SupervisorSafety.Log(() => File.AppendAllText(Path.Combine(launch.StateDirectory, "banner-recovery.log"),
+                    DateTime.UtcNow.ToString("o") + " " + error.Message + Environment.NewLine));
+            }
+        }
+        void RunBannerRecovery() {
             string state;
             if (launch.Environment == null || !launch.Environment.TryGetValue("CAELESTIA_STATE_DIR", out state)
                 || String.IsNullOrEmpty(state)) return;
