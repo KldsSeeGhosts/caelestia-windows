@@ -12,6 +12,8 @@ qml_module(caelestia-windows
         Clipboard/windowsclipboard.cpp
         Clipboard/windowsclipboardworker.hpp
         Clipboard/windowsclipboardworker.cpp
+        DisplayPower/displaypower.hpp
+        DisplayPower/displaypower.cpp
     LIBRARIES
         Qt::Gui
         Qt::Quick
@@ -32,6 +34,7 @@ target_compile_definitions(caelestia-windows PRIVATE
 # clipboard sources must be reachable from the module's include path.
 target_include_directories(caelestia-windows PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/Clipboard"
+    "${CMAKE_CURRENT_SOURCE_DIR}/DisplayPower"
 )
 
 # The clipboard's WinRT-free decisions are checked by a small Qt Test
@@ -56,6 +59,22 @@ if(Qt6Test_FOUND)
         CLIPBOARD_SERVICE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../../../windows/services/clipboard"
     )
     target_link_libraries(clipboard-qml-tests PRIVATE Qt::Core Qt::Qml Qt::Test)
+
+    # The panel-off action's delay and message shape are checked with an
+    # injected sender and a recording window procedure; nothing changes real
+    # display power. windows/scripts/Test-DisplayPower.ps1 runs it.
+    add_executable(displaypower-tests
+        DisplayPower/test/displaypower_test.cpp
+        DisplayPower/displaypower.cpp
+    )
+    target_include_directories(displaypower-tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/DisplayPower"
+    )
+    target_compile_definitions(displaypower-tests PRIVATE
+        NOMINMAX
+        WIN32_LEAN_AND_MEAN
+    )
+    target_link_libraries(displaypower-tests PRIVATE Qt::Core Qt::Qml Qt::Test user32)
 endif()
 
 # WASAPI loopback analysis: CavaProvider/BeatTracker/ServiceRef for the
