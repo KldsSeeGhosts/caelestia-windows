@@ -20,6 +20,8 @@ project "Caelestia Windows".
   `windows/combined-prototype/adapters/`, and keep any edit to an upstream file
   small and commented. Fix platform gaps once, in the backend.
 - Report what was and was not verified.
+- A Claude model (Opus or Sonnet) has the final say on UI and design choices
+  that need taste.
 
 ## Repository
 
@@ -38,6 +40,10 @@ project "Caelestia Windows".
   remote branches, in this repository and the backend fork.
 - **Keep out of commits:** logs, screenshots, run archives and credentials.
   Leave `windows/validation/` unchanged until the pre-publication cleanup.
+- **PR evidence:** show visible changes with screenshots. Commit them to the
+  orphan `evidence` branch under `pr-<number>/`, and embed them in the PR with
+  `https://github.com/KldsSeeGhosts/caelestia-windows/blob/evidence/pr-<number>/<file>.png?raw=true`.
+  Crop to the change, and keep personal data out of frame.
 - **User data:** never log or display it, for example clipboard contents.
   Use Windows' own lock screen and UAC.
 
