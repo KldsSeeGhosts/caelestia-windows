@@ -144,7 +144,7 @@ Scope {
 
         // Thumbnails are fetched only while the picker is open and only for
         // items that are actually in the current list. The native type caches
-        // them under the profile cache directory.
+        // them under the instance's own Quickshell cache directory.
         for (let i = 0; i < displayModel.count; i++) {
             const row = displayModel.get(i);
             if (row.entryType !== "image" || row.previewImage.length > 0

@@ -52,7 +52,7 @@ off, the picker shows an empty state with a button that opens
 | `plugin/src/Caelestia/Windows/Clipboard/windowsclipboard.{hpp,cpp}` | QML facade (`Caelestia.Windows.WindowsClipboard`): presentation list, paste choreography, focus sampling, marked key injection |
 | `plugin/src/Caelestia/Windows/Clipboard/windowsclipboardworker.{hpp,cpp}` | Dedicated MTA worker: every WinRT clipboard history call, static event handling, preview files |
 | `windows/services/clipboard/ClipboardHistory.qml` | Gated `qs.services` facade staged as `services/ClipboardHistory.qml` |
-| `windows/services/clipboard/NativeClipboardBackend.qml` | Loader-only wrapper that owns the native instance and binds the profile cache directory |
+| `windows/services/clipboard/NativeClipboardBackend.qml` | Loader-only wrapper that owns the native instance and binds the Quickshell cache directory as `cacheRoot` |
 | `windows/services/clipboard/ClipboardOverlay.qml` | Ported picker, staged as `modules/clipboard/ClipboardOverlay.qml` |
 | `windows/services/clipboard/ClipboardHistory.js` | Display-row classification and bounded preview |
 | `windows/services/clipboard/ClipboardHistorySmoke.qml` | Light native smoke (model and gate only) |

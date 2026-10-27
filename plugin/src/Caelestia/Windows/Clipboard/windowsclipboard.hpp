@@ -33,10 +33,10 @@ class WindowsClipboard: public QObject {
     Q_OBJECT
     QML_ELEMENT
 
-    // The profile cache root. The instance creates exactly one directory,
-    // <cacheRoot>/clipboard/<pid>-<random>, for previews and opened text.
-    // Empty or relative values create nothing; the shell never writes
-    // elsewhere.
+    // The shell cache root (bound to Quickshell.cacheDir by the wrapper). The
+    // instance creates exactly one directory, <cacheRoot>/clipboard/
+    // <pid>-<random>, for previews and opened text. Empty or relative values
+    // create nothing; the shell never writes elsewhere.
     Q_PROPERTY(QString cacheRoot READ cacheRoot WRITE setCacheRoot NOTIFY cacheRootChanged)
     Q_PROPERTY(QVariantList items READ items NOTIFY itemsChanged)
     Q_PROPERTY(bool historyEnabled READ historyEnabled NOTIFY historyEnabledChanged)
