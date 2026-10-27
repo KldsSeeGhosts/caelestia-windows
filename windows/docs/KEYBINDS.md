@@ -89,6 +89,7 @@ Available Caelestia global shortcut names:
 
 | Shortcut `name` | Description | Source component |
 | --- | --- | --- |
+| `caelestia:nexus` | Open the Nexus settings window | `daemons/Shortcuts.qml` |
 | `caelestia:launcher` | Toggle launcher (fires on release unless interrupted) | `daemons/Shortcuts.qml` |
 | `caelestia:launcherInterrupt` | Interrupt lone-Super launcher tap | `daemons/Shortcuts.qml` |
 | `caelestia:dashboard` | Toggle top dashboard drawer | `daemons/Shortcuts.qml` |
@@ -106,7 +107,25 @@ Available Caelestia global shortcut names:
 | `caelestia:brightnessUp` | Increase monitor brightness | `services/Brightness.qml` |
 | `caelestia:brightnessDown` | Decrease monitor brightness | `services/Brightness.qml` |
 
-All handlers in the table are staged in production, plus `caelestia:volumeUp`, `caelestia:volumeDown`, and `caelestia:volumeMute` from the audio adapter. Nexus is not staged. Service actions retain their control gates. Production targets the focused monitor; bounded previews target their selected screen.
+All handlers in the table are staged in production, plus `caelestia:volumeUp`, `caelestia:volumeDown`, and `caelestia:volumeMute` from the audio adapter. Service actions retain their control gates. Production targets the focused monitor; bounded previews target their selected screen.
+
+`caelestia:nexus` opens the upstream Nexus settings window as a detached top-level window (`modules/nexus/WindowFactory.qml`). **No default key is shipped for it**; add a `global` bind with `"name": "caelestia:nexus"` to use it, for example:
+
+```json
+{
+    "extends": "defaults",
+    "binds": [
+        {
+            "keys": "Super+Comma",
+            "action": "global",
+            "name": "caelestia:nexus",
+            "description": "Open Nexus settings"
+        }
+    ]
+}
+```
+
+The utilities drawer's "settings" quick toggle opens the same window. The bar popout wrapper also maps a popout's detached mode to this window on the requested page, although no staged Windows popout requests it yet. See [the Nexus page support table](USER-GUIDE.md#nexus-settings-windows) for what each page can change on Windows.
 
 `caelestia:clipboard` ships with **no default key**. Add a bind in your own
 `keybinds.json`; the picker reads Windows' native clipboard history, so it

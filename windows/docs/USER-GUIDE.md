@@ -364,7 +364,7 @@ Run the installed `Start-Caelestia.ps1 -Command State` and use each `windows[].s
 
 On Linux, Caelestia relies on Hyprland's `hyprland.conf` / `keybinds.lua` to bind keys to `global` shortcuts and `hyprctl dispatch`. On Windows, `shell.json` does not store keybinds; instead, the Quickshell backend runs its own `HotkeyManager` (`Quickshell.Windows.Hotkeys`), which reads defaults from `defaults/windows/keybinds.json` and your personal overrides from `%LOCALAPPDATA%\caelestia-windows\config\keybinds.json`.
 
-The following table comes from the merged `defaults/windows/keybinds.json`. Window/tiling/workspace dispatch chords are not assigned by default. Nexus is not staged. Clipboard history (`caelestia:clipboard`) is staged but has no default key; bind `Super+V` yourself, which replaces Windows' Win+V panel for that chord.
+The following table comes from the merged `defaults/windows/keybinds.json`. Window/tiling/workspace dispatch chords are not assigned by default. `caelestia:nexus` and `caelestia:clipboard` are registered but intentionally unbound; add your own `global` binds for them (see [KEYBINDS.md](KEYBINDS.md#1-global--trigger-a-caelestia-customshortcut)). Binding `Super+V` to the clipboard replaces Windows' Win+V panel for that chord.
 
 | Action | Default keys | Target |
 | --- | --- | --- |
@@ -393,6 +393,44 @@ The following table comes from the merged `defaults/windows/keybinds.json`. Wind
 | Lock Windows | `Super+L` | `rundll32.exe user32.dll,LockWorkStation` |
 
 For custom keybind syntax (`global`, `dispatch`, `ipc`, `exec`, `key`, `reload`, and `extends: "defaults"`), see [KEYBINDS.md](KEYBINDS.md).
+
+---
+
+## Nexus settings (Windows)
+
+Nexus is upstream Caelestia's settings app (`modules/nexus/`), the successor to the old control center. It runs on Windows as a **detached top-level window**: a normal DWM window with native per-monitor DPI, a minimum size, its own title, and destroy-on-close. The Windows tiler never manages it, because the backend refuses every window owned by the shell process.
+
+Open it from:
+
+1. the `caelestia:nexus` global shortcut — registered but not bound by default; add a `global` bind in `config/keybinds.json`;
+2. the utilities drawer's **settings** quick toggle.
+
+The bar popout wrapper still supports upstream's detached mode: when a popout requests it, the wrapper opens this window on the requested page instead of an inline overlay. The staged Windows audio and Bluetooth popouts currently show their content attached (the Bluetooth popout offers the Windows Settings action instead), so no shipped control requests it yet.
+
+Nexus writes the global `Caelestia.Config` layer, so every change lands in `%LOCALAPPDATA%\caelestia-windows\config\shell.json` and applies live; the settings file watcher also reloads the window when you edit that file by hand. Only schema keys are written, so no option is quarantined.
+
+Nexus edits that global file, not per-monitor overlays. If a value is overridden in `config/monitors/<name>/shell.json`, the monitor override keeps winning on that monitor; edit the monitor file to change it there.
+
+### Page support on Windows
+
+| Page | Status | What works, and what Windows owns |
+| --- | --- | --- |
+| Wallpaper & style | Works | Wallpaper preview, "Wallpapers" (browse/random, featured, local files, Wallpaper Engine items), plus the display-wallpaper and transparency toggles, all persisted to `shell.json`. The dark-theme toggle drives the generated colour scheme through the same scheme generator Linux uses, so that state lives in the scheme output rather than in `shell.json`. Upstream's "Colours" page is a placeholder. |
+| Network | Partially supported | Wi-Fi on/off, the visible network list with signal and security, connect to saved or open networks, disconnect, forget a saved profile, and honest states for "no adapter" and "location denied". New password-protected networks, VPN profiles, static IP/DNS and the wired adapter details live in Windows Settings; the page links to `ms-settings:network`. |
+| Connected devices (Bluetooth) | Partially supported | Radio on/off, paired-device list, connect/disconnect, forget, per-device battery and address, and a gated pair request. Discoverable, pairable, trusted, blocked and wake settings are not exposed by the backend and are shown disabled; a PIN or passkey prompt is completed in Windows Settings (`ms-settings:bluetooth`). |
+| Audio | Works | Output and input volume/mute, device pickers and per-app volumes, through the same WASAPI/PipeWire-compatible facade the bar popout uses. Needs the audio observation and control opt-ins, which a normal Live start enables; a bounded read-only run shows the devices but refuses every write. |
+| Panels (Dashboard, Taskbar, Launcher, Sidebar, Utilities, plus the workspace/active-window/tray/status-icon/clock sub-pages) | Works | Writes the same `bar`, `dashboard`, `launcher`, `sidebar` and `utilities` keys as Linux and applies them live. Linux-only entries stay inert on Windows: `specialWorkspaceIcons`, and the `lockStatus` / `microphone` / `kbLayout` status icons. |
+| Apps | Partially supported | "All apps" browses the Windows `shell:AppsFolder` + Start-menu catalog and sets favourites and hidden apps for the launcher, when the app catalog is enabled for the run. Upstream's default-application pickers write `general.apps.*`, which Windows does not use, so they are replaced by a link to `ms-settings:defaultapps`. |
+| Services | Works, one row unavailable | Poll intervals, input increments, visualiser bars, smart scheme, default player and GPU override persist and apply live. Lyrics are not available on Windows, so the lyrics-backend select states that instead of offering a dead choice. |
+| Language & region | Works | UI language, temperature/data/clock units, and the upstream weather-location placeholder. |
+| About | Partially supported | Hero, shell and Qt versions, hostname, platform, board and uptime. Upstream's Linux distro/kernel/firmware rows and the `quickshell` / `caelestia` CLI probes are omitted because those values do not exist on this port. |
+| Updates, Plugins | Not implemented upstream | Caelestia itself shows "under construction"; the entries stay in the navigation with that state. |
+
+### Windows adapter boundary
+
+Unmodified upstream files are staged directly. Only files that need a Windows service or type live under `windows/combined-prototype/adapters/modules/nexus/` (Bluetooth, network, audio controls, wallpaper picker, apps, services, about, the shared network and audio-device lists, the page container, `NexusState` and `WindowFactory`), each with a header that states exactly what changed and why. See [CONFIGURATION.md](CONFIGURATION.md) for the `shell.json` schema.
+
+A Windows-only page for `windows.tiling` (`enabled`, `mode`, `gapsIn`, `gapsOut`, `singleWindowGapsOut`, `borderColours`) is not included yet; edit `config/shell.json` directly as described in [CONFIGURATION.md](CONFIGURATION.md#tiling-and-gaps-configuration).
 
 ---
 

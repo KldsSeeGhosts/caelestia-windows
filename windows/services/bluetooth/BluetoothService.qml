@@ -106,6 +106,12 @@ QtObject {
 
     readonly property bool discovering: hasAdapter && adapter?.discovering === true
 
+    // Discovery is caller-scoped for the same reason network scans are: two
+    // Nexus windows (or a page and its pairing sub-page) can be discovering at
+    // once, and closing one must not stop the other. The owning page registers
+    // itself; the last release stops the adapter.
+    property var discoveryOwners: []
+
     // Clock bookkeeping. tick() is the only writer; a map is reassigned instead
     // of mutated so QML bindings observe the change.
     property double clockMs: 0
@@ -350,6 +356,38 @@ QtObject {
 
     function stopDiscovery(): bool {
         return setDiscovering(false);
+    }
+
+    function acquireDiscovery(owner): bool {
+        if (!owner)
+            return false;
+        if (root.discoveryOwners.indexOf(owner) < 0)
+            root.discoveryOwners = [...root.discoveryOwners, owner];
+        return root.setDiscovering(true);
+    }
+
+    function releaseDiscovery(owner): bool {
+        if (!owner)
+            return false;
+        const next = root.discoveryOwners.filter(item => item !== owner);
+        if (next.length === root.discoveryOwners.length)
+            return false;
+        root.discoveryOwners = next;
+        if (next.length > 0)
+            return true;
+        return root.setDiscovering(false);
+    }
+
+    // A page can acquire while the radio is still settling; start once the
+    // adapter is allowed to discover and an owner is still interested.
+    onCanSetDiscoveringChanged: {
+        if (root.canSetDiscovering && root.discoveryOwners.length > 0)
+            root.setDiscovering(true);
+    }
+
+    onEnabledChanged: {
+        if (!root.enabled)
+            root.discoveryOwners = [];
     }
 
     function canConnect(device): bool {
