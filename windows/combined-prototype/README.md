@@ -380,3 +380,18 @@ providers. Other prototype entry points retain their existing sources and gates.
 
 This remains a prototype. Smoke validates loading and layout without exercising
 real writes, destructive actions, tray interception or notification consent.
+
+## Active-window preview fixture
+
+The Windows host reserves a 16:9 viewport within the original active-window
+popout. Capture frames retain their aspect ratio inside it. This prevents
+late capture dimensions from changing the popout's animation target; Linux
+keeps the upstream capture-sized layout.
+
+Run `powershell -NoProfile -File windows/scripts/Test-ActiveWindowFixture.ps1
+-QtPrefix <Qt-prefix>`. On Qt 6.11.2, source base `8fcf0163`, backend
+`c62451da`, the offscreen fixture passed with simulated frame sizes and source
+changes. In this fixture the unreserved popout height changed from 452 to 277
+DIPs, while the reserved content remained 400 by 277 DIPs. It uses the
+production staging manifest and no native window observation or real capture.
+It does not validate live hover, capture latency, or perceived smoothness.

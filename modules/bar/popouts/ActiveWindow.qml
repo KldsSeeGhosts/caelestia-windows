@@ -12,7 +12,12 @@ Item {
 
     required property PopoutState popouts
 
-    implicitWidth: Hypr.activeToplevel ? child.implicitWidth : -Tokens.padding.extraLargeIncreased
+    // Windows capture reports its dimensions only after the first frame, and
+    // clears them when the source changes. Hosts can reserve a stable viewport
+    // while retaining the upstream layout and animations everywhere else.
+    property bool reservePreviewGeometry: false
+
+    implicitWidth: reservePreviewGeometry || Hypr.activeToplevel ? child.implicitWidth : -Tokens.padding.extraLargeIncreased
     implicitHeight: child.implicitHeight
 
     Column {
@@ -86,14 +91,21 @@ Item {
             color: "transparent"
             radius: Tokens.rounding.medium
 
-            ScreencopyView {
-                id: preview
+            Item {
+                implicitWidth: root.reservePreviewGeometry ? Tokens.sizes.bar.windowPreviewSize : preview.implicitWidth
+                implicitHeight: root.reservePreviewGeometry ? Tokens.sizes.bar.windowPreviewSize * 9 / 16 : preview.implicitHeight
 
-                captureSource: Hypr.activeToplevel?.wayland ?? null
-                live: visible
+                ScreencopyView {
+                    id: preview
 
-                constraintSize.width: Tokens.sizes.bar.windowPreviewSize
-                constraintSize.height: Tokens.sizes.bar.windowPreviewSize
+                    objectName: "activeWindowPreview"
+                    anchors.centerIn: parent
+                    captureSource: Hypr.activeToplevel?.wayland ?? null
+                    live: visible
+
+                    constraintSize.width: Tokens.sizes.bar.windowPreviewSize
+                    constraintSize.height: root.reservePreviewGeometry ? Tokens.sizes.bar.windowPreviewSize * 9 / 16 : Tokens.sizes.bar.windowPreviewSize
+                }
             }
         }
     }
