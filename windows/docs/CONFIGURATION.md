@@ -401,7 +401,8 @@ and dim onSurfaceVariant borders on Windows 11 build 22000+, following focus
 and scheme changes. Colours use upstream 0xe6/0x11 alpha blended against surface.
 Disabling colouring/tiling, leaving management or normal shell exit restores
 the system default border. Older Windows skips colouring.
-See [the full schema](../services/tiling/README.md).
+See [the full schema](../services/tiling/README.md). Nexus exposes these tiling
+and focus-follows-mouse options on its **Window management** page.
 
 Explicit launcher switches override environment variables, which override profile
 values. `CAELESTIA_WINDOWS_TILING=off|observe|interactive`,

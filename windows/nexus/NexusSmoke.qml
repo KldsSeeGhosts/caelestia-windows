@@ -51,6 +51,9 @@ ShellRoot {
     property var nexusWindow: null
     property var nexusItem: null
     property var pagesItem: null
+    // Off-window copy of the Windows-only page, used for its whole-map write.
+    property var windowManagementPage: null
+    property var windowManagementState: null
     // Token owned by the page container of the early-close window. It must be
     // invalidated by the time the next step runs.
     property var earlyCloseToken: null
@@ -141,7 +144,33 @@ ShellRoot {
                 root.check(root.readConfig().includes("\"dragThreshold\": " + root.originalDragThreshold), "restore did not reach config/shell.json");
                 root.nexusWindow = WindowFactory.create();
                 root.check(root.nexusWindow !== null && root.nexusWindow !== undefined, "WindowFactory.create returned nothing");
+                // The Windows-only page writes GlobalConfig.windows as one map.
+                // Instantiate it inside the window so its controls have a scene,
+                // then prove that path persists and keeps the seeded keys.
+                const pageComp = Qt.createComponent("modules/nexus/pages/WindowManagementPage.qml");
+                root.check(pageComp.status === Component.Ready, "window management page failed to compile: " + pageComp.errorString());
+                root.windowManagementState = Qt.createQmlObject("import qs.modules.nexus; NexusState {}", root, "windowManagementState");
+                root.windowManagementPage = pageComp.createObject(root.nexusWindow.contentItem, { nState: root.windowManagementState });
+                root.check(root.windowManagementPage !== null, "window management page did not instantiate");
+                root.windowManagementPage.setWindowsOption("tiling", "gapsIn", 17);
+                root.windowManagementPage.setWindowsOption("focusFollowsMouse", "delay", 150);
+                root.check(GlobalConfig.windows?.tiling?.gapsIn === 17, "windows write did not apply live");
+                root.check(GlobalConfig.windows?.focusFollowsMouse?.delay === 150, "windows wrote no new group");
+                root.step++;
+                driver.interval = 900;
+                return;
             } else if (root.step === 3) {
+                const config = JSON.parse(root.readConfig());
+                root.check(config.windows?.tiling?.gapsIn === 17, "windows write did not reach config/shell.json");
+                root.check(config.windows?.focusFollowsMouse?.delay === 150, "windows group write did not reach config/shell.json");
+                root.check(config.windows?.tiling?.gapsOut === 14, "windows write dropped tiling.gapsOut");
+                root.check(Array.isArray(config.windows?.tiling?.include)
+                    && config.windows.tiling.include.length === 1
+                    && config.windows.tiling.include[0] === "exe:notepad.exe", "windows write dropped tiling.include");
+                root.windowManagementPage.destroy();
+                root.windowManagementPage = null;
+                root.windowManagementState.destroy();
+                root.windowManagementState = null;
                 const win = root.nexusWindow;
                 root.check(win.width > 0 && win.height > 0, "nexus window has no geometry");
                 root.check(win.minimumSize.width > 0 && win.minimumSize.height > 0, "nexus window has no minimum size");
