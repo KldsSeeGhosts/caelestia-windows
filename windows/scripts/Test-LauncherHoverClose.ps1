@@ -22,6 +22,8 @@ $leave = $leave.Replace('Config.', 'root.config.')
 # The fixture cannot exercise these call sites, so require them statically.
 $null = Get-UniqueMatch $interactions '(?m)^        if \(Config\.launcher\.enabled && Config\.launcher\.showOnHover\)\r?\n            updateLauncherHover\(inBottomPanel\(panels\.launcher, x, y\)\);\r?$'
 $null = Get-UniqueMatch $interactions '(?m)^                root\.launcherHoverEntered = false;\r?$'
+$null = Get-UniqueMatch $interactions '(?m)^        launcherResizeGuard = false;\r?$'
+$null = Get-UniqueMatch $interactions '(?m)^                root\.launcherResizeGuard = true;\r?$'
 
 $fixture = $fixture.Replace('    // LAUNCHER_HOVER_FUNCTION', $policy.TrimEnd())
 $fixture = $fixture.Replace('        // LAUNCHER_LEAVE_BODY', $leave.TrimEnd())
@@ -49,7 +51,7 @@ if (-not $process.WaitForExit(20000)) {
 $output = $stdout.GetAwaiter().GetResult() + $stderr.GetAwaiter().GetResult()
 $exitCode = $process.ExitCode
 Write-Output $output
-if ($exitCode -ne 0 -or $output -notmatch 'CAELESTIA_LAUNCHER_HOVER_PASS 11' -or
+if ($exitCode -ne 0 -or $output -notmatch 'CAELESTIA_LAUNCHER_HOVER_PASS 13' -or
     $output -match 'CAELESTIA_LAUNCHER_HOVER_FAIL|TypeError|ReferenceError|binding loop') {
     throw 'Launcher hover fixture failed.'
 }
