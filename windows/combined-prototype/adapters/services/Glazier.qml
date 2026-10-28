@@ -51,7 +51,8 @@ Singleton {
         for (const screen of screenProvider.screens) {
             const state = stateProvider.forScreen(screen);
             if (state) {
-                for (const name of ["bar", "osd", "session", "launcher", "dashboard", "quota", "utilities", "sidebar"])
+                // Not "bar": in non-persistent mode it changes the exclusive zone and reflows windows.
+                for (const name of ["osd", "session", "launcher", "dashboard", "quota", "utilities", "sidebar"])
                     state[name] = false;
             }
             const components = stateProvider.componentsFor(screen);

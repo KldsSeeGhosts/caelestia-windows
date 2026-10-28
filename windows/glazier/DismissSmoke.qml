@@ -35,7 +35,8 @@ ShellRoot {
         };
     }
     function allDismissed(): bool {
-        return states.every((s, i) => Object.keys(s).every(key => !s[key])
+        // The bar stays as it was; hiding it would reflow tiled windows.
+        return states.every((s, i) => Object.keys(s).every(key => key === "bar" ? s[key] : !s[key])
             && panels[i].popouts.closed && bars[i].closed);
     }
 
