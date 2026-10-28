@@ -22,6 +22,13 @@ ShellRoot {
                 return;
             if (!root.invoked) {
                 const expected = Quickshell.env("GLAZIER_EXPECTED_PATH").replace(/\\/g, "/");
+                let seen = "";
+                if (Glazier.resolvePath("D:/glazier.exe", "", path => { seen = path; return true; }) !== "D:/glazier.exe"
+                        || seen !== "D:/glazier.exe") {
+                    console.error("GLAZIER_TEST_FAIL drive root");
+                    Qt.exit(1);
+                    return;
+                }
                 if (Glazier.executable.toLowerCase() !== expected.toLowerCase()
                         || Glazier.available !== !!expected) {
                     console.error("GLAZIER_TEST_FAIL resolution " + Glazier.executable);

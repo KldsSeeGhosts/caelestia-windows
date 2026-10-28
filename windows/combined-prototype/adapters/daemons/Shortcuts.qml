@@ -32,8 +32,10 @@ Scope {
     }
 
     property bool launcherInterrupted
+    readonly property alias screenshotShortcut: screenshotShortcut
 
     CustomShortcut {
+        id: screenshotShortcut
         name: "screenshot"
         description: "Open Glazier screenshot tool"
         onPressed: Glazier.capture()

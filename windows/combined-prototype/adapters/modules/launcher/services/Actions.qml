@@ -56,7 +56,6 @@ Searcher {
             } else if (command[0] === "chooseWallpaper") {
                 Wallpapers.choose();
             } else if (command[0] === "screenshot") {
-                list.screenState.launcher = false;
                 Glazier.capture();
             } else if ((command[0] === "setMode" || command[0] === "generateMode") && command.length > 1) {
                 list.screenState.launcher = false;

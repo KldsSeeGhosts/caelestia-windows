@@ -12,7 +12,7 @@ $qs = Join-Path $BuildRoot 'quickshell\qs.exe'
 $qmlRoot = Join-Path $BuildRoot 'install\qml'
 $stub = Join-Path $run 'stub.exe'
 Add-Type -Path "$repo\windows\glazier\GlazierStub.cs" -OutputAssembly $stub -OutputType WindowsApplication
-foreach ($mode in @('config', 'config-only', 'default', 'fallback', 'missing')) {
+foreach ($mode in @('config', 'config-only', 'default', 'fallback', 'missing', 'launcher', 'shortcut', 'ipc', 'timeout')) {
     $root = Join-Path $run $mode
     $profile = Join-Path $root 'profile'
     $local = Join-Path $root 'local'
@@ -35,7 +35,13 @@ foreach ($mode in @('config', 'config-only', 'default', 'fallback', 'missing')) 
     }
     $expected = if ($mode -in @('config', 'config-only')) { $configured } elseif ($mode -eq 'missing') { '' } else { $default }
     $stage = & "$PSScriptRoot\Stage-ShellPrototype.ps1" -Destination "$root\stage" -ProfileRoot $profile -Prototype shell-live
-    Copy-Item "$repo\windows\glazier\GlazierSmoke.qml" "$stage\glazier-smoke.qml"
+    $dismissalTest = $mode -in @('launcher', 'shortcut', 'ipc', 'timeout')
+    $fixture = if ($dismissalTest) { 'DismissSmoke.qml' } else { 'GlazierSmoke.qml' }
+    Copy-Item "$repo\windows\glazier\$fixture" "$stage\glazier-smoke.qml"
+    if ($dismissalTest) {
+        Copy-Item "$repo\windows\glazier\OffscreenShortcut.qml" "$stage\components\misc\CustomShortcut.qml" -Force
+        Copy-Item "$repo\windows\glazier\OffscreenAppList.qml" "$stage\modules\launcher\AppList.qml" -Force
+    }
     $info = New-Object Diagnostics.ProcessStartInfo
     $info.FileName = $qs
     $info.Arguments = '--no-color --path "' + "$stage\glazier-smoke.qml" + '"'
@@ -55,12 +61,19 @@ foreach ($mode in @('config', 'config-only', 'default', 'fallback', 'missing')) 
     $info.EnvironmentVariables['CAELESTIA_CONFIG_DIR'] = "$profile\config"
     $info.EnvironmentVariables['GLAZIER_EXPECTED_PATH'] = $expected
     $info.EnvironmentVariables['GLAZIER_STUB_OUTPUT'] = "$root\invocation.txt"
+    $info.EnvironmentVariables.Remove('GLAZIER_DISMISS_MARKER')
+    if ($dismissalTest) {
+        $info.EnvironmentVariables['GLAZIER_DISMISS_MARKER'] = "$root\hidden.txt"
+        $info.EnvironmentVariables['GLAZIER_ROUTE'] = $mode
+        $info.EnvironmentVariables['GLAZIER_QS'] = $qs
+    }
     $process = [Diagnostics.Process]::Start($info)
     $stdout = $process.StandardOutput.ReadToEndAsync()
     $stderr = $process.StandardError.ReadToEndAsync()
     if (-not $process.WaitForExit(20000)) { $process.Kill(); throw "$mode timed out" }
     $text = $stdout.GetAwaiter().GetResult() + $stderr.GetAwaiter().GetResult()
-    if ($process.ExitCode -ne 0 -or -not $text.Contains('GLAZIER_TEST_PASS')) {
+    if ($process.ExitCode -ne 0 -or -not $text.Contains('GLAZIER_TEST_PASS') -or
+            $text -match '(?m)^\s*(WARN scene|ERROR|FATAL|CRITICAL)\b') {
         throw "$mode failed: $text"
     }
     $invocation = "$root\invocation.txt"
@@ -69,7 +82,10 @@ foreach ($mode in @('config', 'config-only', 'default', 'fallback', 'missing')) 
     } else {
         if (-not (Test-Path $invocation)) { throw "$mode did not launch the stub." }
         $lines = @(Get-Content $invocation)
-        if ($lines.Count -ne 2 -or $lines[0] -ne $expected -or $lines[1] -ne '--capture') {
+        $expectedCount = if ($dismissalTest) { 3 } else { 2 }
+        $expectedVisibility = if ($mode -eq 'timeout') { 'visible' } else { 'hidden' }
+        if ($lines.Count -ne $expectedCount -or $lines[0] -ne $expected -or $lines[1] -ne '--capture' -or
+                ($dismissalTest -and $lines[2] -ne $expectedVisibility)) {
             throw "$mode launched the wrong command."
         }
     }
