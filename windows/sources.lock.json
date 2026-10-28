@@ -79,6 +79,54 @@
           "sha256": "82c05d6c53dfa0c9025985c19e371810020b74ed2c61d51d370f2a8ab2506d52"
         }
       ]
+    },
+    {
+      "repository": "https://github.com/google/material-design-icons",
+      "revision": "10ecc14790612ca8fd164e3f4ffe9c16fc50d5b7",
+      "family": "Material Symbols Rounded",
+      "license": "Apache-2.0",
+      "files": [
+        {
+          "path": "windows/assets/material-symbols-rounded/LICENSE",
+          "sha256": "58d1e17ffe5109a7ae296caafcadfdbe6a7d176f0bc4ab01e12a689b0499d8bd"
+        },
+        {
+          "path": "windows/assets/material-symbols-rounded/MaterialSymbolsRounded.ttf",
+          "sha256": "7e74e36533ccee12c2b81e75bfcf3ccf123d3bb7e7e46d65d94445f23db0c97c"
+        }
+      ]
+    },
+    {
+      "repository": "https://github.com/google/fonts",
+      "revision": "e7db6ca603fd4862010383ff17ffd6cc4ffac1c0",
+      "family": "Rubik",
+      "license": "OFL-1.1",
+      "files": [
+        {
+          "path": "windows/assets/rubik/OFL.txt",
+          "sha256": "472cbe7c25441df63e9c7864b43eb3c0f4b3df950c66a76224e6cfe1eae843fb"
+        },
+        {
+          "path": "windows/assets/rubik/Rubik.ttf",
+          "sha256": "1b3a7437ba2af80e465e773ed60c5036d1ba6ace492d89046dbcf18fb31e4e88"
+        }
+      ]
+    },
+    {
+      "repository": "https://github.com/caelestia-dots/shell",
+      "revision": "4b1dae84b1b3b28bf486776ba30c1c1ec74fb64d",
+      "family": "Google Sans Flex",
+      "license": "OFL-1.1",
+      "files": [
+        {
+          "path": "assets/google-sans-flex/GoogleSansFlex-VariableFont_GRAD,ROND,opsz,slnt,wdth,wght.ttf",
+          "sha256": "2510a8b7a24beb1fe8163e9a49813ccfe96b5453444b9443d42665ca4fa320c9"
+        },
+        {
+          "path": "assets/google-sans-flex/LICENSE",
+          "sha256": "fb755fa3280d1d215a20df2e64fe6a0f75f8208439b11671978214aae60d2997"
+        }
+      ]
     }
   ]
 }

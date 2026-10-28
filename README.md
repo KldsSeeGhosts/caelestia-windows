@@ -1,10 +1,12 @@
 # Caelestia for Windows
 
-Private Windows port of [Caelestia Shell](https://github.com/caelestia-dots/shell), using the Windows Quickshell backend developed for [ii-windows](https://github.com/nunreasonable/ii-windows).
+Windows 11 port of [Caelestia Shell](https://github.com/caelestia-dots/shell), running natively on top of the Windows Quickshell backend (originally developed for [ii-windows](https://github.com/nunreasonable/ii-windows)).
 
-**Status: source and compatibility groundwork. This is not a working Windows shell distribution yet.** The upstream UI and history are retained. Windows-specific work lives in `windows/`; the pinned Quickshell backend is a Git submodule.
+The upstream QtQuick/QML interface, Material 3 Expressive shapes (`M3Shapes`), shaders, and commit history are retained. Windows-specific services, packaging, and documentation live in [`windows/`](windows/); the pinned Quickshell backend and `M3Shapes` module are Git submodules recorded in [`windows/sources.lock.json`](windows/sources.lock.json).
 
-- [Windows setup and current blockers](windows/README.md)
+- [Windows user guide (install, configuration, keybinds)](windows/docs/USER-GUIDE.md)
+- [Windows overview and architecture](windows/README.md)
+- [Native Windows build instructions](windows/NATIVE-BUILD.md)
 - [Milestones and acceptance criteria](windows/ROADMAP.md)
 - [Compatibility prototype](windows/prototype/README.md)
 - [Source revisions](windows/sources.lock.json)

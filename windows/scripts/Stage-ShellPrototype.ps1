@@ -22,10 +22,6 @@ if ($shellLive) { $Prototype = 'combined' }
 New-Item -ItemType Directory -Force -Path $Destination | Out-Null
 $files = [ordered]@{
     'windows/shell-prototype/shell.qml' = 'shell.qml'
-    'windows/assets/material-symbols-rounded/MaterialSymbolsRounded.ttf' = 'assets/material-symbols-rounded/MaterialSymbolsRounded.ttf'
-    'windows/assets/material-symbols-rounded/LICENSE' = 'assets/material-symbols-rounded/LICENSE'
-    'windows/assets/rubik/Rubik.ttf' = 'assets/rubik/Rubik.ttf'
-    'windows/assets/rubik/OFL.txt' = 'assets/rubik/OFL.txt'
     'windows/assets/README.md' = 'assets/README.md'
     'windows/shell-prototype/WindowsFonts.qml' = 'WindowsFonts.qml'
 }
@@ -33,10 +29,11 @@ $sourceLock = Get-Content -LiteralPath (Join-Path $repoRoot 'windows/sources.loc
 foreach ($font in $sourceLock.fonts) {
     foreach ($fontFile in $font.files) {
         $path = Join-Path $repoRoot $fontFile.path
-        if ((Get-FileHash -LiteralPath $path).Hash -ne $fontFile.sha256) {
+        if ((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() -ne $fontFile.sha256.ToLowerInvariant()) {
             throw "Bundled font checksum mismatch: $($fontFile.path)"
         }
-        $files.Add($fontFile.path, $fontFile.path.Substring('windows/'.Length))
+        $destRel = if ($fontFile.path.StartsWith('windows/')) { $fontFile.path.Substring('windows/'.Length) } else { $fontFile.path }
+        $files[$fontFile.path] = $destRel
     }
 }
 if ($Prototype -ne 'shell') {
@@ -44,7 +41,7 @@ if ($Prototype -ne 'shell') {
     $files.Add("windows/$Prototype-prototype/shell.qml", 'shell.qml')
 }
 $manifest = Get-Content -LiteralPath (Join-Path $repoRoot 'windows\shell-prototype\sources.json') -Raw | ConvertFrom-Json
-foreach ($entry in $manifest.PSObject.Properties) { $files.Add($entry.Name, $entry.Value) }
+foreach ($entry in $manifest.PSObject.Properties) { $files[$entry.Name] = $entry.Value }
 if ($Prototype -eq 'tray') {
     # The base manifest stages an unavailable Tray adapter. This slice stages
     # the original component plus its item/menu dependencies instead.

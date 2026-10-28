@@ -13,7 +13,7 @@ Detailed reference pages:
 
 ## What it is
 
-Caelestia for Windows replaces the day-to-day Windows shell chrome (`explorer.exe` taskbar, Start menu, Action Center, and manual window snapping) while keeping the Windows Desktop Window Manager (DWM) in charge of application rendering and composition.
+Caelestia for Windows provides a full QtQuick desktop shell alongside or in place of the standard Windows shell chrome (`explorer.exe` taskbar, Start menu, Action Center, and manual window snapping—with taskbar hiding and automatic window tiling opt-in) while keeping the Windows Desktop Window Manager (DWM) in charge of application rendering and composition.
 
 It runs the original Caelestia QML components, Material 3 Expressive shapes (`M3Shapes`), shaders, and spring/bezier motion curves natively on Windows, providing:
 
@@ -30,7 +30,7 @@ It runs the original Caelestia QML components, Material 3 Expressive shapes (`M3
 
 ## Requirements
 
-- **Operating system:** Windows 11 64-bit (x64). Native virtual desktop switching, window-to-workspace moves, and `WorkerW` desktop background embedding are verified on Windows 11 24H2 build families `26100`, `26200`, and `26300` (using an in-process COM provider—no third-party `VirtualDesktopAccessor.dll` download is required on supported 24H2 builds). `TODO(verify): confirm whether earlier Windows 11 builds (such as 22H2/23H2 builds 22621/22631) are supported for bar/services with workspace dispatch disabled.`
+- **Operating system:** Windows 11 64-bit (x64). Native virtual desktop switching, window-to-workspace moves, and `WorkerW` desktop background embedding are verified on Windows 11 24H2 build families `26100`, `26200`, and `26300` (using an in-process COM provider—no third-party `VirtualDesktopAccessor.dll` download is required on supported 24H2 builds). On earlier Windows 11 builds, the bar, drawers, and services run with virtual-desktop workspace dispatch disabled.
 - **GPU and display:** Any Direct3D 11-capable GPU. Caelestia renders hardware-accelerated QtQuick 6 scenes and HLSL shaders via Direct3D 11. Works with Windows transparency effects turned on or off, and supports mixed-DPI multi-monitor setups (validated at 100%, 150%, and 175% scaling, including negative secondary monitor coordinates).
 - **Permissions:** Standard user account (**no administrator privileges required**). Everything installs per-user under `%LOCALAPPDATA%`. Caelestia does not patch system files, inject DLLs into `explorer.exe`, or require UAC elevation.
 - **Single active tiler:** If you enable Caelestia's window tiler, you must stop other tiling window managers (Komorebi, GlazeWM, FancyZones, `ksg-shell`, etc.) first.
@@ -609,11 +609,8 @@ On Linux, StatusNotifierItem (`SNI`) apps send icon pixmaps and semantic `dbusme
 - **Restart / reload config:** Editing `shell.json` or `keybinds.json` hot-reloads automatically.
 - **Quit cleanly:**
   - In the combined preview, close the **Caelestia Preview Control** window or click its **Exit preview** button.
-  - Run `& "$env:LOCALAPPDATA\Programs\caelestia-windows\Start-Caelestia.ps1" -Command Quit` (or `Restart` / `State`). All calls select the exact installed QML path.
-  - From PowerShell, you can stop the Quickshell process at any time:
-    ```powershell
-    Stop-Process -Name qsw, qs -ErrorAction SilentlyContinue
-    ```
+  - Run `& "$env:LOCALAPPDATA\Programs\caelestia-windows\Start-Caelestia.ps1" -Command Quit` (or `Restart` to reload / `State` to query status). All calls target the exact installed QML path; `Quit` stops the supervisor and restores the Windows taskbar and work area cleanly.
+  - Avoid killing `qs.exe` directly with `Stop-Process -Name qsw, qs`: when `restartOnCrash` is enabled in `windows.json`, the background supervisor treats an unexpected `qs.exe` exit as a crash and restarts the shell automatically. Always use `Start-Caelestia.ps1 -Command Quit` to exit.
 
 ### Restoring the taskbar, work area, or off-screen windows after a crash
 
