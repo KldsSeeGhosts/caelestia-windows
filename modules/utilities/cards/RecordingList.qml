@@ -57,7 +57,8 @@ ColumnLayout {
 
         model: FileSystemModel {
             path: Paths.recsdir
-            nameFilters: ["recording_*.mp4"]
+            // Windows: Glazier supports custom names and hides unpublished MP4s.
+            nameFilters: Recorder.nameFilters ?? ["recording_*.mp4"]
             sortReverse: true
         }
 
@@ -108,7 +109,11 @@ ColumnLayout {
                 onClicked: {
                     root.screenState.utilities = false;
                     root.screenState.sidebar = false;
-                    Quickshell.execDetached([...GlobalConfig.general.apps.playback, recording.modelData.path]);
+                    // Windows: use the registered default player.
+                    if (typeof Paths.openRecording === "function")
+                        Paths.openRecording(recording.modelData.path);
+                    else
+                        Quickshell.execDetached([...GlobalConfig.general.apps.playback, recording.modelData.path]);
                 }
             }
 
@@ -118,7 +123,11 @@ ColumnLayout {
                 onClicked: {
                     root.screenState.utilities = false;
                     root.screenState.sidebar = false;
-                    Quickshell.execDetached([...GlobalConfig.general.apps.explorer, recording.modelData.path]);
+                    // Windows: open the recording's folder in Explorer.
+                    if (typeof Paths.revealRecording === "function")
+                        Paths.revealRecording(recording.modelData.path);
+                    else
+                        Quickshell.execDetached([...GlobalConfig.general.apps.explorer, recording.modelData.path]);
                 }
             }
 

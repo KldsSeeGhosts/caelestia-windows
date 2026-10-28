@@ -72,7 +72,8 @@ StyledRect {
 
                 StyledText {
                     Layout.fillWidth: true
-                    text: Recorder.paused ? Tr.trCtx("Paused", "recorder state") : Recorder.running ? Tr.trCtx("Running...", "recorder state") : Tr.trCtx("Ready", "recorder state")
+                    // Windows: expose Glazier availability, picker and failure states.
+                    text: Recorder.status ?? (Recorder.paused ? Tr.trCtx("Paused", "recorder state") : Recorder.running ? Tr.trCtx("Running...", "recorder state") : Tr.trCtx("Ready", "recorder state"))
                     color: Colours.palette.m3onSurfaceVariant
                     font: Tokens.font.body.small
                     elide: Text.ElideRight
@@ -81,7 +82,8 @@ StyledRect {
             }
 
             SplitButton {
-                disabled: Recorder.running
+                // Windows: do not offer capture while unavailable, selecting or saving.
+                disabled: Recorder.running || (Recorder.canStart !== undefined && !Recorder.canStart)
 
                 active: menuItems.find(m => root.props.recordingMode === m.icon + m.text) ?? menuItems[0]
                 menu.onItemSelected: item => root.props.recordingMode = item.icon + item.text
