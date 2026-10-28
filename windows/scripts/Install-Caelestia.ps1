@@ -31,6 +31,11 @@ if (Test-Path -LiteralPath $buildRecord) {
     if ($LASTEXITCODE -ne 0 -or $backendRevision -ne $buildInfo.backendRevision) {
         throw "Build backend revision is $($buildInfo.backendRevision), but checkout $repoRoot has quickshell at $backendRevision. Run the installer from a checkout at $($buildInfo.sourceRevision), with its quickshell submodule at $($buildInfo.backendRevision)."
     }
+    # Matching HEADs do not prove matching content. Installing local QML edits
+    # is a normal development step, so warn rather than refuse.
+    if ($buildInfo.sourceDirty -or (& git -C $repoRoot status --porcelain)) {
+        Write-Warning "The build or checkout has uncommitted changes; install.json sourceRevision $sourceRevision may not describe the installed files."
+    }
 } else {
     Write-Warning "Build record not found at $buildRecord; source and backend revisions cannot be verified."
 }
