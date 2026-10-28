@@ -1045,6 +1045,7 @@ namespace Caelestia.Takeover {
     public sealed class Supervisor : NativeWindow, IDisposable {
         readonly Launch launch;
         readonly bool hide, restart, invisible;
+        readonly bool isolatedTest;
         readonly Snapshot saved;
         readonly System.Threading.EventWaitHandle recovery;
         readonly System.Windows.Forms.Timer timer = new System.Windows.Forms.Timer();
@@ -1082,22 +1083,35 @@ namespace Caelestia.Takeover {
             }
         }
         public static int Run(string specPath, bool hide, bool restart, bool invisible) {
-            using (var mutex = new System.Threading.Mutex(false, MutexName)) {
+            return RunCore(specPath, hide, restart, invisible, MutexName, EventName, false);
+        }
+        // Used only by the non-desktop regression harness. Its unique names
+        // cannot acquire or signal the real session supervisor.
+        public static int RunIsolatedTest(string specPath, string token) {
+            Guid parsed;
+            if (!Guid.TryParseExact(token, "N", out parsed)) throw new ArgumentException("Invalid test token.");
+            string name = @"Local\CaelestiaDesktopTakeover-Test-" + parsed.ToString("N");
+            return RunCore(specPath, false, true, false, name, name + "-Recovery", true);
+        }
+        static int RunCore(string specPath, bool hide, bool restart, bool invisible,
+            string mutexName, string eventName, bool isolatedTest) {
+            using (var mutex = new System.Threading.Mutex(false, mutexName)) {
                 bool acquired;
                 try { acquired = mutex.WaitOne(0); }
                 catch (System.Threading.AbandonedMutexException) { acquired = true; }
                 if (!acquired) throw new InvalidOperationException("A desktop supervisor already owns this Windows session.");
                 try {
                     var launch = new JavaScriptSerializer().Deserialize<Launch>(File.ReadAllText(specPath));
-                    using (var supervisor = new Supervisor(launch, hide, restart, invisible)) {
+                    using (var supervisor = new Supervisor(launch, hide, restart, invisible, eventName, isolatedTest)) {
                         Application.Run();
                         return supervisor.ExitCode;
                     }
                 } finally { mutex.ReleaseMutex(); }
             }
         }
-        Supervisor(Launch launch, bool hide, bool restart, bool invisible) {
+        Supervisor(Launch launch, bool hide, bool restart, bool invisible, string eventName, bool isolatedTest) {
             this.launch = launch; this.hide = hide; this.restart = restart; this.invisible = invisible && hide;
+            this.isolatedTest = isolatedTest;
             RestoreBanners();
             showCallback = OnTaskbarShow; // Root the delegate for the entire hook lifetime.
             showHook = new TaskbarHookBinding(
@@ -1106,7 +1120,7 @@ namespace Caelestia.Takeover {
             showHandler = new TaskbarShowHandler(showPolicy, Native.EventTaskbar,
                 delegate(Bar bar) { if (invisible) Reconcile(bar); }, Native.HideObserved, Native.Record);
             Directory.CreateDirectory(launch.StateDirectory);
-            saved = Native.Capture();
+            saved = isolatedTest ? new Snapshot() : Native.Capture();
             regions = new RegionSuppression(saved, Native.CaptureRegion, delegate(SavedRegion ignored) { SaveSnapshot(); },
                 Native.ApplyEmptyRegion, Native.RestoreRegion);
             // Durable before the first native change, usable if this helper is
@@ -1121,7 +1135,7 @@ namespace Caelestia.Takeover {
                         json.Serialize(action) + Environment.NewLine);
                 });
             };
-            recovery = new System.Threading.EventWaitHandle(false, System.Threading.EventResetMode.ManualReset, EventName);
+            recovery = new System.Threading.EventWaitHandle(false, System.Threading.EventResetMode.ManualReset, eventName);
             recovery.Reset();
             // A hidden top-level window receives Explorer's broadcast. A
             // message-only HWND would not receive TaskbarCreated.
@@ -1337,7 +1351,7 @@ namespace Caelestia.Takeover {
                 if (code == 0) { Finish("clean-exit", 0); return; }
                 quickCrashes = (DateTime.UtcNow - started).TotalSeconds < 30 ? quickCrashes + 1 : 0;
                 if (!restart || quickCrashes >= 3) { Finish("crash-give-up", code); return; }
-                Native.RestoreOwned(saved, pid, launch.RestoreWorkAreas, hide);
+                if (!isolatedTest) Native.RestoreOwned(saved, pid, launch.RestoreWorkAreas, hide);
                 nextStart = DateTime.UtcNow.AddSeconds(Math.Min(30, Math.Pow(2, Math.Max(1, quickCrashes))));
                 Status("restart-backoff", 0);
             } catch (Exception error) {
@@ -1375,7 +1389,7 @@ namespace Caelestia.Takeover {
             } finally {
                 try { RestoreBanners(); }
                 finally {
-                    try { Native.RestoreOwned(saved, ownedPid, launch.RestoreWorkAreas, hide); }
+                    try { if (!isolatedTest) Native.RestoreOwned(saved, ownedPid, launch.RestoreWorkAreas, hide); }
                     finally {
                         Native.RecordAction = null;
                         recovery.Dispose();
