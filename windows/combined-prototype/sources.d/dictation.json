@@ -1,0 +1,7 @@
+{
+  "windows/combined-prototype/adapters/services/Dictation.qml": "services/Dictation.qml",
+  "windows/combined-prototype/adapters/services/DictationLogic.js": "services/DictationLogic.js",
+  "windows/combined-prototype/adapters/modules/dictation/DictationIndicator.qml": "modules/dictation/DictationIndicator.qml",
+  "windows/combined-prototype/adapters/modules/dictation/DictationWindow.qml": "modules/dictation/DictationWindow.qml",
+  "windows/combined-prototype/adapters/modules/dictation/DictationPill.qml": "modules/dictation/DictationPill.qml"
+}
