@@ -34,15 +34,30 @@ Backend paths in this section are relative to `windows/deps/quickshell`.
 | `src/windows/panel_window.cpp` | Panels already watched screen geometry/DPI, but same-pointer selection and unchanged logical bounds could leave native placement or mask publication unchanged. Registry events now invalidate AppBar placement and coalesce re-anchoring. The all-edge drawer resizes to the current logical screen; native bounds are reconciled through ScreenMapper even if Qt's logical rectangle did not change. Masks and their native/DPR snapshot are republished. |
 | `src/windows/input_mask.cpp`, native panel input region | Logical Regions are hit-tested with a published window DPR. Refresh that snapshot after remapping; regenerate scaled HWND regions too. An old scale/bounds pair can miss the Dell's right-edge OSD strip while accepting input elsewhere. |
 | PR #79 `WindowsHover.js`, `WindowsHoverRegions.qml`, drawer Interactions/Regions | Adjacency uses object identity, coordinates, logical dimensions and DPR, not monitor names. Geometry/DPR notification recalculates shared-edge strips; window resize and mask refresh align them with the new native bounds. No hover-width or visual-design change. |
-| `src/windows/hyprland/monitor.cpp`, Hypr adapter | Monitor names/scales/geometry and IPC metadata refresh in place. `monitorFor()` prefers QScreen pointer identity; its name fallback already consumes ShellScreen's corrected name. Workspace-count config reads the corrected Hyprland monitor name. |
+| `src/windows/hyprland/monitor.cpp`, `hyprland/connection.cpp`, Hypr adapter | Monitor names/scales/geometry and IPC metadata refresh in place. Add/remove and registry topology changes coalesce into monitor reconciliation, input-hook cursor-rectangle invalidation and focused-monitor recomputation. `monitorFor()` prefers QScreen pointer identity; its name fallback already consumes ShellScreen's corrected name. Workspace-count config reads the corrected Hyprland monitor name. |
 | `src/windows/window_tracker.cpp` | Its HMONITOR-to-QScreen map previously refreshed only on add/remove. Qt may replace HMONITOR without replacing QScreen. Rebuild the map and re-observe tracked windows on registry changes, keeping fullscreen/toplevel monitor associations current. |
 | `src/windows/tiling.cpp`, `tiling_scope.cpp` | Screen selectors now use corrected names and are re-evaluated. Layout ownership remains desktop GUID plus live QScreen pointer; remove the obsolete friendly-name part so a rename cannot strand the previous layout tree. Geometry/DPI changes still trigger re-layout. |
-| Windows brightness facade/service, native brightness/gamma | Native name lookup and route pruning use the shared resolver. Display changes cause the adapter to reconcile its name-keyed records even if the screens array is unchanged, then requery them. The MSI record is preserved while a separate Dell record is created. Gamma translates a public friendly name back to the current GDI source before CreateDC. |
+| Windows brightness facade/service, native brightness/gamma | Native name lookup and route pruning use the shared resolver. Display changes cause the adapter to reconcile its name-keyed records even if the screens array is unchanged, then requery them. The MSI record is preserved while a separate Dell record is created. Gamma translates a public friendly name back to the current GDI source before CreateDC. Remaining factor/ramp cache lifetime work is listed below. |
 | Desktop drop, Input screen enumeration, screenshots, screen recorder, brightness probe | All native screen-name publication/selection uses the same resolver, avoiding a mismatch between QML names and native selectors. |
 | `src/windows/taskbar.cpp`, `appbar.cpp`, panel AppBars | Taskbar discovery uses HWNDs/HMONITORs, not friendly names. Registry changes now schedule its existing settled rediscovery. Panel AppBars are invalidated and reserved again against the current native monitor. |
 | `windows/scripts/DesktopTakeover.cs` and desktop supervisor | Monitor work-area inspection and crash cleanup use native rectangles and owned HWND/PID records, not Qt screen labels. No persisted friendly-name identity to correct and no supervisor/taskbar ownership change is needed. |
 | `src/windows/animation_timing.cpp`, native Displays service | Animation watches refresh-rate signals; Displays reads Windows display-config paths independently. Neither needs the Qt friendly name. |
 | Dictation target selection | Requested screen names resolve against the corrected ShellScreen list. No screen-name cache is kept in the indicator. |
+
+### Remaining follow-ups, not fixed by this PR
+
+- `src/windows/wayland/screencopy_view.cpp:206` resolves an HMONITOR when a
+  capture starts and retains it in the capture context. An already-running
+  capture does not rebind when the same QScreen's native monitor changes.
+  Retained capture contexts need explicit invalidation/recreation on topology
+  or target-path replacement, including same-model replacement.
+- `src/windows/system/gamma.hpp:63` and the adjacent factor/ramp maps still
+  key dimming factors, floors, saved originals and restoration obligations by
+  friendly name, without target-path invalidation. Same-model monitor
+  replacement can reuse that name and inherit stale factors or saved ramps.
+  Correct CreateDC source lookup does not fix that cache ownership issue;
+  the follow-up must bind these records to physical target identity and define
+  restoration behavior when the old target is gone.
 
 A wrong per-monitor Config/Tokens tree can change drawer enablement, dimensions,
 border widths and hover thresholds. Independently, a stale native placement can
@@ -63,8 +78,10 @@ The registry watches screen add/remove, geometry/DPI changes and native display,
 device, DPI and settings messages. It refreshes after Qt processes the event
 and once more after 250 ms of settling. It publishes a complete snapshot before
 notifying consumers. Metrics include the current native handle so a handle-only
-replacement also refreshes the tracker and panels. A transient failed target
-query preserves the last known identity until a usable snapshot arrives.
+replacement also refreshes the tracker and panels. Missing friendly metadata
+preserves the last known name only when the non-empty target path matches.
+An unidentified new target exposes its device path; if even the path is
+unavailable, it exposes an unresolved label. Qt's stale name is never a fallback.
 
 ShellScreen name is now notifying rather than constant. DPR has its own
 notification for geometry, logical-DPI and physical-DPI changes. The global
@@ -81,8 +98,10 @@ are not rewritten by this fix.
 - Build root: `C:\b-scr88s`. No live installation or shell restart.
 - `screen_identity_test`: fake display-config targets, real Qt screen reuse,
   a real QML config-selection binding, unchanged MSI identity, same-name target
-  path replacement, transient-query preservation, negative-origin re-anchoring,
-  resize, DPR-only notifications and native-region scaling. Offscreen, no HWND.
+  path replacement, partial-metadata preservation, unresolved fallback names,
+  a position swap without add/remove followed by movement inside the old cached
+  cursor rectangle, negative-origin re-anchoring, resize, DPR-only notifications
+  and native-region scaling. Offscreen, no HWND.
 - Additional checks: brightness route, tiling manager/scope and panel-animation
   tests, Windows brightness QML fixture, shared-edge hover fixture, paired-pin
   environment validation and `git diff --check`.
