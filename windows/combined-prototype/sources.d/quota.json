@@ -2,6 +2,7 @@
   "windows/quota/modules/quota/Wrapper.qml": "modules/quota/Wrapper.qml",
   "windows/quota/modules/quota/Content.qml": "modules/quota/Content.qml",
   "windows/quota/modules/quota/QuotaMeter.qml": "modules/quota/QuotaMeter.qml",
+  "windows/quota/modules/quota/QuotaRing.qml": "modules/quota/QuotaRing.qml",
   "windows/quota/modules/quota/QuotaLogic.js": "modules/quota/QuotaLogic.js",
   "windows/quota/modules/quota/QuotaToolTip.qml": "modules/quota/QuotaToolTip.qml",
   "windows/quota/services/Quota.qml": "services/Quota.qml",

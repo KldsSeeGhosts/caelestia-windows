@@ -50,5 +50,6 @@ Item {
         loading: Quota.loading
         hasError: Quota.hasError
         error: Quota.error
+        revealed: root.shouldBeActive
     }
 }

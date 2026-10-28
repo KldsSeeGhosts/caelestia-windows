@@ -27,23 +27,22 @@ The response is mapped onto the original drawer model:
 
 | Summary | Drawer |
 | --- | --- |
-| `providers[]` | one chip per provider, in the original codex-first order |
+| `providers[]` | one ring per provider, in the original codex-first order |
 | `providers[].accounts[]` | one expandable row per account |
 | `accounts[].windows[]` | quota meters (`usedPercent`, `resetAt` countdown) |
 | window id with a model scope (`seven-day-opus`, …) | the "Model limits" block |
-| `todayCostUsd` | the "Usage today" disclosure |
+| `todayCostUsd` | the fixed footer cost |
 | `providers[].status/error`, `accounts[].status/error` | saved, disabled, reconnect and error notices |
 
 `remainingPercent` is used only when `usedPercent` is absent. Windows whose
 label already contains `·` keep their scope; otherwise a scoped id such as
 `seven-day-opus` is rendered as `Opus · Weekly`. That is how the original
-collector classified model-scoped limits, so `Content.qml`, `QuotaMeter.qml`,
-`QuotaToolTip.qml` and `QuotaLogic.js` keep their layout and metric semantics.
+collector classified model-scoped limits; the redesigned drawer retains those
+metric semantics.
 
 Refresh runs on `refreshIntervalMs` from `quota.json`, never faster than the
 manager's `ttlMs`, with one request in flight and a 15 s abort. On failure the
-last good summary stays on screen behind the original single
-`Quota refresh failed. Showing saved data.` line. The last good mapped summary
+last good summary stays on screen with an error in the footer. The last good mapped summary
 (display names, windows, status and cost only; no endpoint, key, email, account
 id or manager error text) is cached at `<cache>/quota-summary.json` so the
 drawer shows the previous reading instantly on start.
@@ -52,18 +51,15 @@ drawer shows the previous reading instantly on start.
 
 | Source here | Staged as |
 | --- | --- |
-| `modules/quota/{Wrapper,Content,QuotaMeter,QuotaToolTip}.qml` | `modules/quota/` |
+| `modules/quota/{Wrapper,Content,QuotaMeter,QuotaRing,QuotaToolTip}.qml` | `modules/quota/` |
 | `modules/quota/QuotaLogic.js` | `modules/quota/QuotaLogic.js` |
 | `services/Quota.qml` | `services/Quota.qml` |
 | `services/QuotaConfig.qml` | `services/QuotaConfig.qml` |
 | `scripts/cpa_keepalive.py` | `scripts/cpa_keepalive.py` |
 | `assets/provider-icons/*` | `assets/provider-icons/*` |
 
-`QuotaMeter.qml`, `QuotaToolTip.qml` and `QuotaLogic.js` are verbatim from the
-overlay. `Wrapper.qml` changes only the config source
-(`GlobalConfig.quota` to `QuotaConfig`). `Content.qml` changes the config
-source, the disabled button guards, the empty state, the cost line in the usage
-disclosure, and the unconfigured/empty colour (muted instead of red).
+The Windows drawer uses a grouped layout, provider rings and a fixed cost footer;
+the tooltip and data semantics are adapted from the overlay.
 
 The drawer is wired into the shared drawer graph:
 
@@ -101,9 +97,8 @@ The ported Python collector also produced per-account token ledgers and a
 saved-record store. The management summary does not contain that data, so the
 following are gone rather than approximated:
 
-- the per-model "tokens by model" table in the usage disclosure;
-- the today token/request count (the disclosure now shows `todayCostUsd` and
-  says that per-account ledgers are not part of the summary);
+- the per-model "tokens by model" table;
+- the today token/request count (the footer shows `todayCostUsd`);
 - account balance, cooldown timestamps, pool/ledger metadata and
   `lastUsedAt`;
 - `windows/quota/scripts/cpa_usage.py`, `read_records.py` and the
@@ -126,7 +121,7 @@ three isolated profiles:
 1. **configured** - a local synthetic CPA stub (`fixtures/stub_cpa.py`) serves
    the summary shape with three providers, five accounts and one model-scoped
    window. The drawer opens on Claude, the meters, "Model limits" block and
-   usage disclosure render, and dark plus light-palette screenshots are saved.
+   footer and rings render, and dark plus light-palette screenshots are saved.
 2. **offline** - the endpoint refuses connections. With the configured run's
    cache copied in, the saved rows stay visible behind the single error line;
    the run must settle without hanging.
