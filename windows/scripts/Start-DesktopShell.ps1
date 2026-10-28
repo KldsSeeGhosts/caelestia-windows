@@ -9,6 +9,7 @@ param(
     [string]$StderrPath
 )
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'Caelestia-InstallCommon.ps1')
 $StateDirectory = [IO.Path]::GetFullPath($StateDirectory)
 if (Test-Path -LiteralPath $StateDirectory) { throw 'Use a fresh, private state directory for each supervisor run.' }
 New-Item -ItemType Directory -Path $StateDirectory | Out-Null
@@ -33,16 +34,29 @@ foreach ($var in @('ELECTRON_RUN_AS_NODE', 'ELECTRON_NO_ASAR')) {
     [Environment]::SetEnvironmentVariable($var, $null, 'Process')
 }
 $arguments = '-NoProfile -Sta -File "' + $watcher + '" -LaunchSpec "' + $specPath + '"'
-$process = Start-Process -FilePath "$PSHOME\powershell.exe" -ArgumentList $arguments -WindowStyle Hidden -PassThru `
+$process = Start-Process -FilePath (Get-WindowsPowerShellPath) -ArgumentList $arguments -WindowStyle Hidden -PassThru `
     -RedirectStandardOutput (Join-Path $StateDirectory 'watchdog.stdout.log') `
     -RedirectStandardError (Join-Path $StateDirectory 'watchdog.stderr.log')
 $null = $process.Handle
-# The child starts only after snapshot persistence and takeover ownership.
-$deadline = [DateTime]::UtcNow.AddSeconds(20)
+# The child starts only after snapshot persistence and takeover ownership. The
+# watchdog reports "starting" at once, then "running" after banner recovery
+# (up to 45 s) and shell launch, so allow that bound plus startup.
+$deadline = [DateTime]::UtcNow.AddSeconds(75)
 $statusPath = Join-Path $StateDirectory 'watchdog.json'
-while (-not (Test-Path -LiteralPath $statusPath)) {
-    if ($process.HasExited -or [DateTime]::UtcNow -ge $deadline) {
-        throw "Desktop watchdog did not start. See $StateDirectory\watchdog.stderr.log"
+$phase = ''
+while ($true) {
+    if (Test-Path -LiteralPath $statusPath) {
+        try { $phase = [string](Get-Content -LiteralPath $statusPath -Raw | ConvertFrom-Json).phase } catch { }
+        if ($phase -in @('running', 'restart-backoff', 'clean-exit')) { break }
+        if ($phase -in @('watchdog-error', 'crash-give-up', 'recovered')) {
+            throw "Desktop watchdog stopped during startup ($phase). See $StateDirectory\watchdog-error.log"
+        }
+    }
+    if ($process.HasExited) { throw "Desktop watchdog exited during startup. See $StateDirectory\watchdog.stderr.log" }
+    if ([DateTime]::UtcNow -ge $deadline) {
+        # An abandoned watchdog would keep the session mutex and block every retry.
+        try { Stop-Process -Id $process.Id -Force -ErrorAction Stop } catch { }
+        throw "Desktop watchdog did not reach 'running' (last phase '$phase'); it was stopped. See $StateDirectory\watchdog.stderr.log"
     }
     Start-Sleep -Milliseconds 100
 }

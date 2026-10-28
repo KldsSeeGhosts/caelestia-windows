@@ -272,8 +272,9 @@ isolated prototype passes.
 
 ## Dependency maintenance
 
-The current backend pin is in the private
-[Caelestia backend fork](https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/tree/c0e748c815e516ad8e8157eb1132a0bc14a15368).
+The current backend pin is recorded in [`sources.lock.json`](sources.lock.json) in the
+[Caelestia backend fork](https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/tree/233448431f06ab05fbcb014193661eea0e4546a4).
+Blank weather location uses HTTPS IP geolocation (`ipapi.co`); set `services.weatherLocation` in `shell.json` to use a fixed city or coordinates instead.
 It retains the audited `nunreasonable/quickshell` baseline `e8ae0ef1` and adds
 a native mask handoff change: reconcile Qt hover when `WS_EX_TRANSPARENT`
 changes, because the move that triggered the hook can already have reached the

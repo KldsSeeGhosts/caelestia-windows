@@ -46,6 +46,9 @@ Singleton {
 
     // Live clock for reset countdowns.
     property double nowMs: Date.now()
+    // Open drawers holding the 10 s relative-time tick. A count keeps one
+    // monitor's open drawer from stopping the clock on another.
+    property int clockHolders: 0
 
     property bool loading: false
     property string status: "idle" // idle | unconfigured | loading | ok | partial | error
@@ -844,6 +847,19 @@ Singleton {
         return true;
     }
 
+    // -- Clock ---------------------------------------------------------------
+
+    // Called by an open drawer. Update once immediately so relative times are
+    // correct before the next tick.
+    function holdClock(): void {
+        root.clockHolders++;
+        root.nowMs = Date.now();
+    }
+
+    function releaseClock(): void {
+        root.clockHolders = Math.max(0, root.clockHolders - 1);
+    }
+
     // -- Timers --------------------------------------------------------------
 
     Timer {
@@ -857,7 +873,8 @@ Singleton {
     Timer {
         id: clockTimer
         interval: 10000 // 10 seconds tick
-        running: true
+        // Only tick while a drawer is open; no Quota UI means no countdowns.
+        running: root.enabled && root.clockHolders > 0
         repeat: true
         onTriggered: root.nowMs = Date.now()
     }

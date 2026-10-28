@@ -21,7 +21,7 @@ Backend `windows/integration-5b` is pushed to `caelestia` at
 Fresh native backend, M3Shapes and portable plugin build: PASS. Output:
 
 ```text
-C:\Users\Ermin\.t3\worktrees\caelestia-windows\t3-88fb895a\windows\.local\build
+<worktree>\windows\.local\build
 ```
 
 Strict prerequisites pass inside the build script's isolated VS environment.
@@ -92,7 +92,7 @@ Native build and incremental font rebuild passed with Qt 6.11.2, clang-cl
 and portable plugins are built in this worktree only:
 
 ```text
-C:\Users\Ermin\.t3\worktrees\caelestia-windows\t3-661ef84c\windows\.local\build
+<worktree>\windows\.local\build
 ```
 
 The final compiled-source build record is `66902a2b` (clean); subsequent
@@ -132,7 +132,7 @@ from this worktree (no uninstall, no purge):
 
 ```powershell
 powershell -NoProfile -File windows/scripts/Install-Caelestia.ps1 `
-  -BuildRoot "C:\Users\Ermin\.t3\worktrees\caelestia-windows\t3-661ef84c\windows\.local\build" `
+  -BuildRoot "<worktree>\windows\.local\build" `
   -Prefix "$env:LOCALAPPDATA\Programs\caelestia-windows" `
   -ProfileRoot "$env:LOCALAPPDATA\caelestia-windows"
 ```
@@ -210,7 +210,7 @@ The Windows IdleInhibit adapter uses Tr.formatDateTime.
 Build output, exclusively in this worktree:
 
 ```text
-C:\Users\Ermin\.t3\worktrees\caelestia-windows\t3-9957da37\windows\.local\build
+<worktree>\windows\.local\build
 ```
 
 Full Build-Prototype.ps1 passed: backend, M3Shapes, portable plugins (including

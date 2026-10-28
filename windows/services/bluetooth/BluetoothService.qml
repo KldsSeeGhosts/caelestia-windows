@@ -4,7 +4,8 @@ import QtQuick
 // consumed by modules/bar/components/status/BluetoothStatus.qml and
 // modules/bar/popouts/Bluetooth.qml. This object has no native imports, timers,
 // IPC, or process calls. The facade owns the clock and calls tick() with a
-// monotonic millisecond value so every bounded state is deterministic in tests.
+// wall-clock millisecond timestamp so every bounded state is deterministic in
+// tests and a system suspend gap still counts against the advertised window.
 // Backends may be injected.
 //
 // The pinned backend exposes a default adapter, adapter/device models, radio and
@@ -36,8 +37,8 @@ QtObject {
     // failures are logged by the backend worker and are not exposed here.
     property string backendError: ""
 
-    // Bounded observation windows. The facade timer ticks every 500 ms; tests
-    // drive tick() directly.
+    // Bounded observation windows. The facade timer ticks every 500 ms while
+    // clockActive is true; tests drive tick() directly.
     property int initializationTimeoutMs: 8000
     property int discoveryTimeoutMs: 30000
     property int settlingTimeoutMs: 20000
@@ -123,6 +124,46 @@ QtObject {
     property var _timedOutPending: ({})
     property var _timedOutPairing: ({})
 
+    // True only while a bounded wait or an operation needs the 500 ms facade
+    // timer. An idle adapter, a settled radio and an empty device list do not
+    // tick. The bookkeeping maps keep the clock alive for one final tick so a
+    // completed wait cannot leave a stale start/deadline behind.
+    readonly property bool clockActive: {
+        if (!enabled)
+            return false;
+        if (!backendReady) {
+            // Take one final tick to clear waits that belonged to the previous
+            // backend instance.
+            return _adapterWaitStartedAt !== 0 || _initializationTimedOut
+                || _discoveryStartedAt !== 0 || discoveryTimedOut
+                || Object.keys(_pendingStartedAt).length > 0
+                || Object.keys(_timedOutPending).length > 0;
+        }
+
+        // Waiting for the first adapter observation.
+        if (!hasAdapter && !_initializationTimedOut)
+            return true;
+
+        // An adapter appeared; take one final tick to clear the wait.
+        if (hasAdapter && (_adapterWaitStartedAt !== 0 || _initializationTimedOut))
+            return true;
+
+        // Caller-requested discovery has a bounded stop.
+        if (discovering && controlsEnabled && status === "on" && !discoveryTimedOut)
+            return true;
+
+        // Discovery stopped; take one final tick to clear its bound.
+        if (!discovering && (_discoveryStartedAt !== 0 || discoveryTimedOut))
+            return true;
+
+        // Pairing/connect/disconnect deadlines.
+        if (devices.some(device => isPending(device) && !isSettlingTimedOut(device)))
+            return true;
+
+        return Object.keys(_pendingStartedAt).length > 0
+            || Object.keys(_timedOutPending).length > 0;
+    }
+
     readonly property bool initializationExpired: _initializationTimedOut
     readonly property bool initialized: backendReady && hasAdapter
 
@@ -204,7 +245,8 @@ QtObject {
     readonly property bool canControlDevices: controlsEnabled && status === "on"
 
     // Bounded timeout accounting. Call from the facade timer (or directly in a
-    // fixture) with a monotonic millisecond value.
+    // fixture) with a wall-clock millisecond timestamp. Timestamps, not tick
+    // counts, are stored, so a suspend/resume gap is measured too.
     function tick(ms: double): void {
         if (!Number.isFinite(ms))
             return;

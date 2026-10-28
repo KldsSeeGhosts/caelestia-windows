@@ -6,7 +6,10 @@ param(
     [string]$VCRuntimeRoot,
     [string]$Prefix = (Join-Path $env:LOCALAPPDATA 'Programs\caelestia-windows'),
     [string]$ProfileRoot = (Join-Path $env:LOCALAPPDATA 'caelestia-windows'),
-    [switch]$Autostart
+    [switch]$Autostart,
+    # Accept a QtPrefix that differs from build.json, or a populated profile
+    # this installer did not create (never purged by Uninstall).
+    [switch]$Force
 )
 
 . (Join-Path $PSScriptRoot 'Caelestia-InstallCommon.ps1')
@@ -39,11 +42,18 @@ if (Test-Path -LiteralPath $buildRecord) {
 } else {
     Write-Warning "Build record not found at $buildRecord; source and backend revisions cannot be verified."
 }
+$explicitQtPrefix = $QtPrefix
 if (-not $QtPrefix) {
     if ($buildInfo) { $QtPrefix = $buildInfo.qtPrefix }
 }
 if (-not $QtPrefix) { throw 'Supply -QtPrefix for the Qt used to build qs.exe.' }
 $QtPrefix = (Resolve-Path -LiteralPath $QtPrefix).Path
+if ($explicitQtPrefix -and $buildInfo -and $buildInfo.qtPrefix -and -not $Force) {
+    $recordedQt = [IO.Path]::GetFullPath([string]$buildInfo.qtPrefix).TrimEnd('\')
+    if ($recordedQt -ne $QtPrefix.TrimEnd('\')) {
+        throw "-QtPrefix $QtPrefix differs from the Qt recorded in build.json ($recordedQt). Deploying a different Qt than qs.exe was built with can fail at runtime; pass -Force to accept."
+    }
+}
 if (-not $VCRuntimeRoot) {
     $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
     if (Test-Path -LiteralPath $vswhere) {
@@ -74,19 +84,82 @@ $deploy = Join-Path $QtPrefix 'bin\windeployqt.exe'
 foreach ($file in @("$BuildRoot\quickshell\qs.exe", $deploy, "$qmlRoot\Caelestia\Windows\qmldir", "$qmlRoot\M3Shapes\qmldir")) {
     if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw "Missing runtime prerequisite: $file" }
 }
-if (Test-Path -LiteralPath $Prefix) {
-    if (Get-ChildItem -LiteralPath $Prefix -Force | Select-Object -First 1) {
-        $old = Read-CaelestiaInstall $Prefix
-        if ($old.profile -ne $ProfileRoot) { throw 'An update must retain the installed ProfileRoot.' }
+# Recover from an interrupted earlier swap or staging run only when the sibling
+# directory carries Caelestia ownership evidence and has no reparse points.
+$prefixParent = Split-Path -Parent $Prefix
+$prefixLeaf = Split-Path -Leaf $Prefix
+$backup = "$Prefix.old"
+if (Test-Path -LiteralPath $backup) {
+    $backup = Resolve-CaelestiaDirectory $backup
+    $backupInstall = Join-Path $backup 'install.json'
+    if (-not (Test-Path -LiteralPath $backupInstall -PathType Leaf)) {
+        throw "Refusing to touch unowned backup directory without install.json: $backup"
+    }
+    $backupRecord = Get-Content -LiteralPath $backupInstall -Raw | ConvertFrom-Json
+    if ($backupRecord.product -ne 'caelestia-windows' -or $backupRecord.prefix -ne $Prefix) {
+        throw "Refusing to touch backup directory belonging to another installation: $backup"
+    }
+    if (-not (Test-Path -LiteralPath $Prefix)) { [IO.Directory]::Move($backup, $Prefix) }
+    else { Assert-CaelestiaNoReparsePoints $backup; Remove-Item -LiteralPath $backup -Recurse -Force }
+}
+if (Test-Path -LiteralPath $prefixParent) {
+    foreach ($leftover in Get-ChildItem -LiteralPath $prefixParent -Directory -Force -Filter "$prefixLeaf.staging-*") {
+        $leftoverPath = Resolve-CaelestiaDirectory $leftover.FullName
+        $leftoverPid = ($leftover.Name -replace '^.*\.staging-', '') -as [int]
+        if ($leftoverPid -and (Get-Process -Id $leftoverPid -ErrorAction SilentlyContinue)) { throw "Another installation is in progress: $leftoverPath" }
+        $stagingMarker = Join-Path $leftoverPath '.caelestia-staging.json'
+        $hasOwnership = (Test-Path -LiteralPath $stagingMarker -PathType Leaf) -or (Test-Path -LiteralPath (Join-Path $leftoverPath 'install.json') -PathType Leaf) -or (Test-Path -LiteralPath (Join-Path $leftoverPath 'qs.exe') -PathType Leaf)
+        if (-not $hasOwnership) {
+            throw "Refusing to remove unowned staging directory: $leftoverPath"
+        }
+        Assert-CaelestiaNoReparsePoints $leftoverPath
+        Remove-Item -LiteralPath $leftoverPath -Recurse -Force
     }
 }
+$old = $null
+if ((Test-Path -LiteralPath $Prefix) -and (Get-ChildItem -LiteralPath $Prefix -Force | Select-Object -First 1)) {
+    if (Test-Path -LiteralPath (Join-Path $Prefix 'install.json')) {
+        $old = Read-CaelestiaInstall $Prefix
+        if ($old.profile -ne $ProfileRoot) { throw 'An update must retain the installed ProfileRoot.' }
+    } elseif (-not $Force -or -not ((Test-Path -LiteralPath (Join-Path $Prefix 'qs.exe')) -or (Test-Path -LiteralPath (Join-Path $Prefix 'Start-Caelestia.ps1')))) {
+        # Only an interrupted Caelestia copy (no install.json) can be replaced, and only with -Force.
+        throw "$Prefix is not a recognized Caelestia installation. A partial install of Caelestia can be replaced with -Force."
+    }
+}
+# Quit this installation's shell and supervisor (including restart backoff,
+# when no qs.exe exists) before replacing files under a live watchdog.
 if (Get-CaelestiaProcesses $Prefix) { throw 'Quit this Caelestia installation before updating it.' }
+if (@(Get-CaelestiaSupervisors $ProfileRoot).Count) { throw 'A Caelestia desktop supervisor is still running for this profile. Run Start-Caelestia.ps1 -Command Quit before updating.' }
+# Profile ownership: an uninstall -Purge may delete only a profile created for
+# this prefix, so refuse to adopt someone else's populated directory.
+$profileExclusive = $true
+if (-not (Test-CaelestiaProfileEmpty $ProfileRoot)) {
+    $owner = Read-CaelestiaProfileOwner $ProfileRoot
+    if ($owner) {
+        if ($owner.prefix -ne $Prefix) {
+            if (-not $Force) { throw "ProfileRoot $ProfileRoot belongs to another Caelestia installation ($($owner.prefix)). Choose a separate profile, or pass -Force to share it." }
+            $profileExclusive = $false
+        } else { $profileExclusive = [bool]$owner.exclusive }
+    } elseif ($old) {
+        # Populated profile without a prior ownership marker is kept non-exclusive
+        # so Uninstall -Purge never removes pre-existing unmarked directories.
+        $profileExclusive = $false
+    } elseif ($Force) {
+        $profileExclusive = $false
+    } else {
+        throw "ProfileRoot $ProfileRoot is not empty and has no Caelestia ownership marker. Use an empty directory, or pass -Force (the profile is then never removed by Uninstall -Purge)."
+    }
+}
+$installId = if ($old -and $old.installId) { [string]$old.installId } else { [guid]::NewGuid().ToString('N') }
 
 # Assemble without writing to the supplied build tree or touching integration
 # until Qt deployment succeeds. Each installed file comes from this payload.
-$payload = Join-Path $env:TEMP ('caelestia-package-' + [guid]::NewGuid().ToString('N'))
+# The payload is a sibling of the prefix, so the final swap is a same-volume rename.
+$payload = "$Prefix.staging-$PID"
+New-Item -ItemType Directory -Force -Path $prefixParent | Out-Null
 New-Item -ItemType Directory -Path $payload | Out-Null
 try {
+    [ordered]@{ product = 'caelestia-windows'; prefix = $Prefix; pid = $PID } | ConvertTo-Json | Set-Content -LiteralPath "$payload\.caelestia-staging.json" -Encoding UTF8
     Copy-Item -LiteralPath "$BuildRoot\quickshell\qs.exe" -Destination $payload
     New-Item -ItemType Directory -Path "$payload\qml", "$payload\defaults" | Out-Null
     Copy-Item -LiteralPath "$qmlRoot\Caelestia" -Destination "$payload\qml" -Recurse
@@ -117,10 +190,14 @@ try {
     Copy-Item -LiteralPath "$repoRoot\windows\sources.lock.json" -Destination "$payload\licenses"
     # Keep component-relative paths and copyright/NOTICE files, including new
     # fonts and backend dependencies added after this packaging script.
-    function Copy-LicenseTree([string]$Source, [string]$Destination) {
+    function Copy-LicenseTree([string]$Source, [string]$Destination, [switch]$KeepLicenseDirs) {
         foreach ($file in Get-ChildItem -LiteralPath $Source -File -Recurse) {
-            if ($file.Name -notmatch '(^|[._-])(LICENSE|LICENCE|COPYING|NOTICE|OFL)([._-].*)?$') { continue }
             $relative = $file.FullName.Substring($Source.TrimEnd('\').Length + 1)
+            # Qt names its texts by SPDX id (LGPL-3.0-only.txt) inside LICENSES/;
+            # every file there is a license text. The top-level directory is
+            # copied wholesale below.
+            $inLicenseDir = $KeepLicenseDirs -and $relative -imatch '\\LICENSES\\' -and $relative -inotmatch '^LICENSES\\'
+            if (-not $inLicenseDir -and $file.Name -notmatch '(^|[._-])(LICENSE|LICENCE|COPYING|NOTICE|OFL)([._-].*)?$') { continue }
             $target = Join-Path $Destination $relative
             New-Item -ItemType Directory -Force -Path (Split-Path -Parent $target) | Out-Null
             Copy-Item -LiteralPath $file.FullName -Destination $target -Force
@@ -135,9 +212,10 @@ try {
     # libraries. Some aqt prefixes contain only SBOMs, not LICENSES/.
     Copy-Item -LiteralPath "$repoRoot\windows\deps\quickshell\LICENSE" -Destination "$payload\licenses\Qt\LGPL-3.0.txt"
     Copy-Item -LiteralPath "$repoRoot\windows\deps\quickshell\LICENSE-GPL" -Destination "$payload\licenses\Qt\GPL-3.0.txt"
-    Copy-LicenseTree $QtPrefix "$payload\licenses\Qt"
-    if (Test-Path -LiteralPath "$QtPrefix\licenses") {
-        Get-ChildItem -LiteralPath "$QtPrefix\licenses" -Force | Copy-Item -Destination "$payload\licenses\Qt" -Recurse -Force
+    Copy-LicenseTree $QtPrefix "$payload\licenses\Qt" -KeepLicenseDirs
+    # Qt's LICENSES/ directory (case-insensitive on Windows) is copied whole.
+    if (Test-Path -LiteralPath "$QtPrefix\LICENSES") {
+        Get-ChildItem -LiteralPath "$QtPrefix\LICENSES" -Force | Copy-Item -Destination "$payload\licenses\Qt" -Recurse -Force
     }
     # The aqt Qt archive ships component licensing/provenance in SPDX SBOMs
     # rather than a top-level licenses directory.
@@ -158,14 +236,45 @@ try {
     if ($deployExit -ne 0) { throw "windeployqt failed with exit code $deployExit" }
     @('[Paths]', 'Prefix=.', 'Plugins=plugins', 'QmlImports=qml') | Set-Content -LiteralPath "$payload\qt.conf" -Encoding ASCII
     $integration = Get-CaelestiaIntegration $Prefix
+    # install.json is written last: a staging directory without it is not an install.
     [ordered]@{
         product = 'caelestia-windows'; version = 1; prefix = $Prefix; profile = $ProfileRoot
+        installId = $installId
         sourceRevision = (& git -C $repoRoot rev-parse HEAD).Trim()
         executableSha256 = (Get-FileHash -LiteralPath "$payload\qs.exe").Hash
     } | ConvertTo-Json | Set-Content -LiteralPath "$payload\install.json" -Encoding UTF8
+    Remove-Item -LiteralPath "$payload\.caelestia-staging.json" -Force -ErrorAction SilentlyContinue
 
-    New-Item -ItemType Directory -Force -Path $Prefix | Out-Null
-    Get-ChildItem -LiteralPath $payload -Force | Copy-Item -Destination $Prefix -Recurse -Force
+    # Swap the complete payload in; removed files from an older build do not
+    # linger, and a failed swap puts the previous prefix back.
+    $hadPrefix = Test-Path -LiteralPath $Prefix
+    $inPlace = $false
+    if ($hadPrefix) {
+        try { [IO.Directory]::Move($Prefix, $backup) }
+        catch [IO.IOException] {
+            # Apps launched from the shell inherit the prefix as their working
+            # directory, which blocks renaming it. Mirror the payload in place
+            # instead; /MIR still removes files the new build no longer has.
+            Assert-CaelestiaNoReparsePoints $Prefix
+            & robocopy.exe $payload $Prefix /MIR /XJ /R:2 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null
+            if ($LASTEXITCODE -ge 8) { throw "Updating $Prefix in place failed (robocopy exit $LASTEXITCODE)." }
+            # Codes 1-7 mean success; do not leak them as the script's exit code.
+            $global:LASTEXITCODE = 0
+            $inPlace = $true
+        }
+    }
+    if (-not $inPlace) {
+        try { [IO.Directory]::Move($payload, $Prefix) }
+        catch {
+            if ($hadPrefix -and -not (Test-Path -LiteralPath $Prefix)) { [IO.Directory]::Move($backup, $Prefix) }
+            throw
+        }
+        if ($hadPrefix) {
+            Assert-CaelestiaNoReparsePoints $backup
+            Remove-Item -LiteralPath $backup -Recurse -Force
+        }
+    }
+    Write-CaelestiaProfileOwner $ProfileRoot $Prefix $installId $profileExclusive
     $launcher = Join-Path $Prefix 'Start-Caelestia.ps1'
     $powershell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
     $arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $launcher + '"'
@@ -188,9 +297,11 @@ try {
     Write-Output "Run: powershell -NoProfile -File `"$launcher`""
     Write-Output "Profile (seeded on first launch): $ProfileRoot"
 } finally {
-    # payload was created by this invocation under TEMP; verify before removal.
-    $safePayload = Resolve-CaelestiaDirectory $payload
-    if ((Split-Path -Parent $safePayload) -ne [IO.Path]::GetFullPath($env:TEMP).TrimEnd('\') -or
-        (Split-Path -Leaf $safePayload) -notlike 'caelestia-package-*') { throw 'Unsafe package cleanup path.' }
-    Remove-Item -LiteralPath $safePayload -Recurse -Force
+    # The staging directory is renamed on success; remove only this run's leftover.
+    if (Test-Path -LiteralPath $payload) {
+        $safePayload = Resolve-CaelestiaDirectory $payload
+        if ((Split-Path -Parent $safePayload) -ne $prefixParent -or
+            (Split-Path -Leaf $safePayload) -ne "$prefixLeaf.staging-$PID") { throw 'Unsafe package cleanup path.' }
+        Remove-Item -LiteralPath $safePayload -Recurse -Force
+    }
 }

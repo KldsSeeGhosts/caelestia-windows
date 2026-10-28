@@ -8,6 +8,7 @@
 #include <qquickitemgrabresult.h>
 #include <qquickwindow.h>
 #include <qregularexpression.h>
+#include <qsavefile.h>
 #include <qtconcurrentrun.h>
 
 #include "util/metaenum.hpp"
@@ -87,12 +88,39 @@ bool CUtils::copyFile(const QUrl& source, const QUrl& target, bool overwrite) {
         return false;
     }
 
-    if (overwrite && QFile::exists(target.toLocalFile()) && !QFile::remove(target.toLocalFile())) {
-        qCWarning(lcCUtils) << "copyFile: overwrite was specified but failed to remove" << target.toLocalFile();
+    const auto src = source.toLocalFile();
+    const auto dst = target.toLocalFile();
+
+    if (!overwrite || !QFile::exists(dst))
+        return QFile::copy(src, dst);
+
+    // Windows: write to a temp sibling and atomically replace via QSaveFile so a failed overwrite leaves the target intact (#131)
+    QFile in(src);
+    if (!in.open(QIODevice::ReadOnly)) {
+        qCWarning(lcCUtils) << "copyFile: failed to open source" << src;
         return false;
     }
 
-    return QFile::copy(source.toLocalFile(), target.toLocalFile());
+    QSaveFile out(dst);
+    if (!out.open(QIODevice::WriteOnly)) {
+        qCWarning(lcCUtils) << "copyFile: failed to open target" << dst << out.errorString();
+        return false;
+    }
+
+    while (!in.atEnd()) {
+        const auto chunk = in.read(1 << 16);
+        if (chunk.isEmpty() || out.write(chunk) != chunk.size()) {
+            qCWarning(lcCUtils) << "copyFile: failed to copy to" << dst;
+            out.cancelWriting();
+            return false;
+        }
+    }
+
+    if (!out.commit()) {
+        qCWarning(lcCUtils) << "copyFile: failed to commit" << dst << out.errorString();
+        return false;
+    }
+    return true;
 }
 
 bool CUtils::deleteFile(const QUrl& path) {

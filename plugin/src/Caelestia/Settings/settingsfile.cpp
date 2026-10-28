@@ -29,6 +29,10 @@ namespace {
 // Max retries for loads which fail due to malformed JSON, e.g. partial writes
 constexpr int k_maxLoadRetries = 3;
 
+// Windows: max retries for failed saves (e.g. transient file locks), with exponential backoff (#118)
+constexpr int k_maxSaveRetries = 5;
+constexpr int k_saveRetryBaseMs = 1000;
+
 } // namespace
 
 SettingsFile::SettingsFile(bool watch, QString path, QObject* parent)
@@ -37,7 +41,12 @@ SettingsFile::SettingsFile(bool watch, QString path, QObject* parent)
     , m_watcher(watch ? new QFileSystemWatcher(this) : nullptr)
     , m_saveDebounce(new QTimer(this))
     , m_loadDebounce(watch ? new QTimer(this) : nullptr)
-    , m_loadRetries(0) {
+    , m_saveRetry(new QTimer(this))
+    , m_loadRetries(0)
+    , m_saveRetries(0) {
+    m_saveRetry->setSingleShot(true);
+    QObject::connect(m_saveRetry, &QTimer::timeout, this, &SettingsFile::writeNow);
+
     m_saveDebounce->setSingleShot(true);
     m_saveDebounce->setInterval(500); // Save at most once every 500ms
 
@@ -64,7 +73,13 @@ std::optional<QJsonValue> SettingsFile::read() const {
 
 void SettingsFile::write(const QJsonValue& json) {
     m_pendingWrite = json;
+    m_saveRetries = 0;
+    m_saveRetry->stop();
     save();
+}
+
+void SettingsFile::flush() {
+    writeNow();
 }
 
 void SettingsFile::onFileChanged() {
@@ -188,19 +203,29 @@ void SettingsFile::save() {
     writeNow();
 }
 
+void SettingsFile::scheduleSaveRetry() {
+    if (m_saveRetries >= k_maxSaveRetries) {
+        qCWarning(lcSettingsFile, "Giving up saving %s after %d retries", qUtf8Printable(m_path), m_saveRetries);
+        return;
+    }
+
+    m_saveRetry->start(k_saveRetryBaseMs << m_saveRetries++);
+}
+
 void SettingsFile::writeNow() {
     if (!m_pendingWrite)
         return;
 
+    // Keep the pending write until it is committed, so failures can be retried
     const auto json = *m_pendingWrite;
     const auto data = (json.isObject() ? QJsonDocument(json.toObject()) : QJsonDocument(json.toArray())).toJson();
-    m_pendingWrite = std::nullopt;
 
     const auto dir = QFileInfo(m_path).absolutePath();
 
     if (!QDir().mkpath(dir)) {
         qCWarning(lcSettingsFile) << "Failed to create dir" << dir;
         emit writeFailed(mark(u"Failed to create parent directory"_s));
+        scheduleSaveRetry();
         return;
     }
 
@@ -211,6 +236,7 @@ void SettingsFile::writeNow() {
         qCWarning(lcSettingsFile, "Failed to open %s for writing: %s", qUtf8Printable(m_path),
             qUtf8Printable(file.errorString()));
         emit writeFailed(mark(u"Failed to open: %1"_s, { file.errorString() }));
+        scheduleSaveRetry();
         return;
     }
 
@@ -219,9 +245,15 @@ void SettingsFile::writeNow() {
     if (!file.commit()) {
         qCWarning(lcSettingsFile, "Failed to write %s: %s", qUtf8Printable(m_path), qUtf8Printable(file.errorString()));
         emit writeFailed(mark(u"Failed to write: %1"_s, { file.errorString() }));
+        scheduleSaveRetry();
         return;
     }
 
+    // Only clear the pending write if it wasn't replaced meanwhile
+    if (m_pendingWrite && *m_pendingWrite == json)
+        m_pendingWrite = std::nullopt;
+    m_saveRetries = 0;
+    m_saveRetry->stop();
     m_lastData = json;
     qCDebug(lcSettingsFile) << "Saved" << m_path;
 

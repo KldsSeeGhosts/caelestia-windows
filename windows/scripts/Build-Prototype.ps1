@@ -82,15 +82,31 @@ Invoke-BuildCommand 'configure-m3shapes' (@('-S', $m3shapesPath, '-B', "$BuildRo
     @('-DINSTALL_QMLDIR=qml', "-DCMAKE_INSTALL_PREFIX=$installRoot", '-DM3SHAPES_BUILD_EXAMPLES=OFF'))
 Invoke-BuildCommand 'build-m3shapes' @('--build', "$BuildRoot\m3shapes", '--parallel', "$Jobs")
 Invoke-BuildCommand 'install-m3shapes' @('--install', "$BuildRoot\m3shapes")
+# Resolve the version and revision up front so configure works without a reachable git tag or git metadata (#114).
+$ErrorActionPreference = 'Continue'
+$sourceVersion = & git -C $repoRoot describe --tags --abbrev=0 2>$null
+$describeExit = $LASTEXITCODE
+$rawShortRevision = & git -C $repoRoot rev-parse --short HEAD 2>$null
+$shortRevExit = $LASTEXITCODE
+$rawFullRevision = & git -C $repoRoot rev-parse HEAD 2>$null
+$fullRevExit = $LASTEXITCODE
+$rawDirty = & git -C $repoRoot status --porcelain 2>$null
+$ErrorActionPreference = 'Stop'
+if ($describeExit -ne 0 -or -not $sourceVersion) { $sourceVersion = '0.0.0' }
+$sourceVersion = "$sourceVersion".Trim() -replace '^v', ''
+$sourceRevision = if ($shortRevExit -eq 0 -and $rawShortRevision) { "$rawShortRevision".Trim() } else { 'unknown' }
+if (-not $sourceRevision) { $sourceRevision = 'unknown' }
+$fullSourceRevision = if ($fullRevExit -eq 0 -and $rawFullRevision) { "$rawFullRevision".Trim() } else { $sourceRevision }
+
 Invoke-BuildCommand 'configure-plugins' (@('-S', $repoRoot, '-B', "$BuildRoot\caelestia") + $common +
     @('-DCAELESTIA_PORTABLE_UI=ON', '-DENABLE_MODULES=plugin', '-DINSTALL_QMLDIR=qml',
-    "-DCMAKE_INSTALL_PREFIX=$installRoot"))
+    "-DCMAKE_INSTALL_PREFIX=$installRoot", "-DVERSION=$sourceVersion", "-DGIT_REVISION=$sourceRevision"))
 Invoke-BuildCommand 'build-plugins' @('--build', "$BuildRoot\caelestia", '--parallel', "$Jobs")
 Invoke-BuildCommand 'install-plugins' @('--install', "$BuildRoot\caelestia")
 
 [ordered]@{
-    sourceRevision = (& git -C $repoRoot rev-parse HEAD).Trim()
-    sourceDirty = [bool](& git -C $repoRoot status --porcelain)
+    sourceRevision = $fullSourceRevision
+    sourceDirty = [bool]$rawDirty
     backendRevision = (& git -C "$repoRoot\windows\deps\quickshell" rev-parse HEAD).Trim()
     m3shapesRevision = $m3shapesRevision
     windowsSdkVersion = $env:WindowsSDKVersion
