@@ -142,6 +142,10 @@ if ($Command -ne 'Start') {
             $status = Get-Content -LiteralPath $statusFile.FullName -Raw | ConvertFrom-Json
             if ($status.phase -notin @('running', 'restart-backoff')) { continue }
             $watchdog = Get-Process -Id $status.watchdogPid -ErrorAction SilentlyContinue
+            # A stale record from a killed supervisor can name a PID Windows has reused.
+            try {
+                if ($watchdog -and $watchdog.StartTime.ToUniversalTime() -gt [DateTimeOffset]::Parse($status.utc).UtcDateTime) { continue }
+            } catch { $watchdog = $null }
             if ($watchdog -and -not $watchdog.WaitForExit(10000)) {
                 throw "Desktop supervisor has not finished restoring: $($statusFile.FullName)"
             }
