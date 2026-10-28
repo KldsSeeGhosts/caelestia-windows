@@ -444,15 +444,6 @@ fallback), and is not run during smoke or by the shell at startup.
 See [the port notes](../quota/README.md) for the source mapping and what is and
 is not verified.
 
-### Grok Bot roster
-
-The bar avatar and roster are off by default. Create `grokbot.json` in the
-shell profile's config directory with `{"enabled": true}` to start the
-Windows persistence reader. It requires the scheme runtime's Python and keeps
-a local snapshot containing message previews. See [the Grok Bot notes](../grokbot/README.md)
-for privacy details, the snapshot contract and unavailable app-focus and image
-features.
-
 ### Turning the display panels off
 
 `ipc call displays off` (or your own `ipc` keybind, see

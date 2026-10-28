@@ -29,8 +29,6 @@ ShellRoot {
     readonly property bool backgroundSmoke: smoke && Quickshell.env("CAELESTIA_WINDOWS_BACKGROUND") === "1"
     // Instantiate the watcher at shell startup, before the launcher is opened.
     readonly property bool externalWallpaperActive: WallpaperEngine.ownsDesktop
-    // Windows: instantiate only the opt-in GrokBot snapshot adapter.
-    readonly property bool grokBotEnabled: GrokBot.enabled
     readonly property bool runtimeProbe: Quickshell.env("CAELESTIA_RUNTIME_PROBE") === "1"
     readonly property int initialScreenIndex: Number(Quickshell.env("CAELESTIA_SHELL_SCREEN") || "0")
     property int screenIndex: initialScreenIndex
