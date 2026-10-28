@@ -444,6 +444,14 @@ fallback), and is not run during smoke or by the shell at startup.
 See [the port notes](../quota/README.md) for the source mapping and what is and
 is not verified.
 
+### Grok Bot roster
+
+The bar avatar and roster are off by default. A separate producer must write a
+local snapshot; the Linux Grok Bot persistence reader is not a Windows
+producer. Configure the snapshot path in the shell profile's `grokbot.json`
+to opt in. See [the Grok Bot notes](../grokbot/README.md) for the exact
+contract, privacy considerations and unavailable app-focus and image features.
+
 ### Turning the display panels off
 
 `ipc call displays off` (or your own `ipc` keybind, see
