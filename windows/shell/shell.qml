@@ -18,7 +18,6 @@ import qs.daemons
 import qs.modules.background
 import qs.modules.drawers
 import qs.modules.clipboard
-import qs.modules.dictation
 import qs.modules.launcher.services
 
 // Original upstream drawer geometry and motion, with the combined Windows
@@ -46,7 +45,6 @@ ShellRoot {
     WindowsBackground { id: desktopBackground }
     IdleInhibit { id: idleInhibitor }
     Shortcuts {}
-    DictationIndicator {}
 
     // Windows' own clipboard history behind the Caelestia picker. Gated by
     // windows.clipboard.enabled; smoke never opens it or reads the history.

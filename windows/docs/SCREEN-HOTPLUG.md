@@ -42,7 +42,6 @@ Backend paths in this section are relative to `windows/deps/quickshell`.
 | `src/windows/taskbar.cpp`, `appbar.cpp`, panel AppBars | Taskbar discovery uses HWNDs/HMONITORs, not friendly names. Registry changes now schedule its existing settled rediscovery. Panel AppBars are invalidated and reserved again against the current native monitor. |
 | `windows/scripts/DesktopTakeover.cs` and desktop supervisor | Monitor work-area inspection and crash cleanup use native rectangles and owned HWND/PID records, not Qt screen labels. No persisted friendly-name identity to correct and no supervisor/taskbar ownership change is needed. |
 | `src/windows/animation_timing.cpp`, native Displays service | Animation watches refresh-rate signals; Displays reads Windows display-config paths independently. Neither needs the Qt friendly name. |
-| Dictation target selection | Requested screen names resolve against the corrected ShellScreen list. No screen-name cache is kept in the indicator. |
 
 ### Remaining follow-ups, not fixed by this PR
 
