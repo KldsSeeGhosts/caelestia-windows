@@ -86,6 +86,9 @@ namespace Caelestia.Takeover {
         public LogDrain(bool stdout, bool stderr) { pending = (stdout ? 1 : 0) + (stderr ? 1 : 0); }
         public bool Complete { get { return Interlocked.CompareExchange(ref pending, 0, 0) == 0; } }
         public void EndStream() { Interlocked.Decrement(ref pending); }
+        // Read and written under the supervisor log lock: once retired, a
+        // late callback from this child can no longer reach the shared logs.
+        public bool Retired;
     }
     public static class TransientIo {
         // A scanner or indexer can hold a file for a moment. Retry a few times
@@ -1315,12 +1318,12 @@ namespace Caelestia.Takeover {
             if (info.RedirectStandardOutput)
                 process.OutputDataReceived += delegate(object sender, DataReceivedEventArgs e) {
                     if (e.Data == null) drain.EndStream();
-                    else { if (testLogDelayMs > 0) Thread.Sleep(testLogDelayMs); Append(launch.StdoutPath, e.Data); }
+                    else { if (testLogDelayMs > 0) Thread.Sleep(testLogDelayMs); Append(launch.StdoutPath, e.Data, drain); }
                 };
             if (info.RedirectStandardError)
                 process.ErrorDataReceived += delegate(object sender, DataReceivedEventArgs e) {
                     if (e.Data == null) drain.EndStream();
-                    else { if (testLogDelayMs > 0) Thread.Sleep(testLogDelayMs); Append(launch.StderrPath, e.Data); }
+                    else { if (testLogDelayMs > 0) Thread.Sleep(testLogDelayMs); Append(launch.StderrPath, e.Data, drain); }
                 };
             // Snapshot is durable and the supervisor owns restoration before
             // the child can register its AppBars. Retain the post-start pass.
@@ -1349,9 +1352,10 @@ namespace Caelestia.Takeover {
             Status("running", child.Id);
         }
         static readonly object logLock = new object();
-        static void Append(string path, string line) {
-            SupervisorSafety.Log(delegate { lock (logLock) { File.AppendAllText(path, line + Environment.NewLine); } });
+        static void Append(string path, string line, LogDrain drain) {
+            SupervisorSafety.Log(delegate { lock (logLock) { if (!drain.Retired) File.AppendAllText(path, line + Environment.NewLine); } });
         }
+        static void Retire(LogDrain drain) { lock (logLock) drain.Retired = true; }
         void Tick(object sender, EventArgs args) {
             try {
                 if (!recovering && recovery.WaitOne(0)) {
@@ -1383,6 +1387,9 @@ namespace Caelestia.Takeover {
                 if (!childDrain.Complete && Stopwatch.GetTimestamp() < drainDeadline) return;
                 if (recovering) { Finish("recovered", 0); return; }
                 int code = child.ExitCode, pid = child.Id;
+                // Past EOF or the deadline: drop any stalled tail so it cannot
+                // interleave with a restarted child's log.
+                Retire(childDrain);
                 child.Dispose(); child = null;
                 childDrain = null;
                 RestoreBanners();

@@ -33,6 +33,11 @@ public static class SupervisorPipeFixture {
             Console.Error.Write("stderr-tail");
             return 0;
         }
+        if (args[0] == "crash") {
+            File.WriteAllText(Path.Combine(directory, "crash-" + Process.GetCurrentProcess().Id), "");
+            Console.Out.WriteLine("crash-line-" + Process.GetCurrentProcess().Id);
+            return 1;
+        }
         if (args[0] == "hold") {
             if (args.Length > 2 && args[2] == "require-pipes" &&
                 (GetFileType(GetStdHandle(-11)) != 3 || GetFileType(GetStdHandle(-12)) != 3)) return 4;

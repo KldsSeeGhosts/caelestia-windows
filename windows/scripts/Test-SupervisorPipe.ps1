@@ -35,14 +35,14 @@ function Signal-TestRecovery([string]$token) {
     try { $event.Set() | Out-Null } finally { $event.Dispose() }
 }
 try {
-    foreach ($scenario in @('restart', 'recovery', 'drain', 'drain-timeout')) {
+    foreach ($scenario in @('restart', 'recovery', 'drain', 'drain-timeout', 'stall-restart')) {
         $dir = Join-Path $root $scenario
         New-Item -ItemType Directory -Path $dir | Out-Null
         $token = [guid]::NewGuid().ToString('N')
         $specPath = Join-Path $dir 'launch.json'
         $statusPath = Join-Path $dir 'watchdog.json'
         @{
-            Executable = $fixture; Arguments = $(if ($scenario -like 'drain*') { 'clean "' + $dir + '"' } else { 'spawn "' + $dir + '"' })
+            Executable = $fixture; Arguments = $(if ($scenario -like 'drain*') { 'clean "' + $dir + '"' } elseif ($scenario -eq 'stall-restart') { 'crash "' + $dir + '"' } else { 'spawn "' + $dir + '"' })
             WorkingDirectory = $dir; StateDirectory = $dir
             StdoutPath = (Join-Path $dir 'stdout.log'); StderrPath = (Join-Path $dir 'stderr.log')
             RestoreWorkAreas = $false; Environment = @{}
@@ -50,7 +50,7 @@ try {
         $args = @('-NoProfile', '-STA', '-File', ('"' + $PSCommandPath + '"'),
             '-Worker', '-Spec', ('"' + $specPath + '"'), '-Token', $token)
         if ($scenario -eq 'drain') { $args += @('-LogDelayMs', '400') }
-        if ($scenario -eq 'drain-timeout') { $args += @('-LogDelayMs', '5000') }
+        if ($scenario -in 'drain-timeout', 'stall-restart') { $args += @('-LogDelayMs', '5000') }
         $watchdog = Start-Process -FilePath "$PSHOME\powershell.exe" -ArgumentList $args -WindowStyle Hidden -PassThru
         $workers += $watchdog
         if ($scenario -eq 'drain-timeout') {
@@ -58,6 +58,23 @@ try {
             Wait-Until { $status = Read-Status $statusPath; $status -and $status.phase -eq 'clean-exit' } 4 'Drain deadline did not bound shutdown.'
             if (-not $watchdog.WaitForExit(5000)) { throw 'Supervisor did not exit after the drain deadline.' }
             Write-Output 'PASS drain-timeout: shutdown continued despite a stalled log callback.'
+            continue
+        }
+        if ($scenario -eq 'stall-restart') {
+            # Each crashing child's only log line stalls past the drain
+            # deadline. Once retired, no stale tail may land in the shared
+            # log, including after a replacement child has started.
+            # Three quick crashes end in crash-give-up; stalled lines would land
+            # while the next child runs.
+            if (-not $watchdog.WaitForExit(30000)) { throw 'Supervisor did not give up after repeated crashes.' }
+            if (@(Get-ChildItem -LiteralPath $dir -Filter 'crash-*').Count -lt 2) { throw 'Supervisor did not restart the crashing child.' }
+            $status = Read-Status $statusPath
+            if (-not $status -or $status.phase -ne 'crash-give-up') { throw "Unexpected final phase: $($status.phase)" }
+            $log = Join-Path $dir 'stdout.log'
+            if ((Test-Path -LiteralPath $log) -and (Get-Content -LiteralPath $log -Raw)) {
+                throw 'A retired child callback wrote to the shared log after the drain deadline.'
+            }
+            Write-Output 'PASS stall-restart: stalled callbacks from retired children never reached the shared log.'
             continue
         }
         if ($scenario -eq 'drain') {
