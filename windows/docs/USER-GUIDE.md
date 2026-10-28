@@ -54,6 +54,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\windows\scripts\Install-Ca
 
 Supported flags: `-BuildRoot`, `-QtPrefix`, `-VCRuntimeRoot`, `-Prefix`, `-ProfileRoot`, and opt-in `-Autostart`. `BuildRoot` defaults to this checkout's `windows/.local/build`; Qt is read from its build record when omitted.
 
+For monitors sharing an edge, `windows.innerEdgeHoverWidth` in
+`config/shell.json` sets the additional OSD and utilities hover strip in
+logical pixels. It defaults to 12, accepts 0 to disable it, and is capped at
+48. Outer desktop edges keep their normal trigger sizes.
+
 What the installer does:
 
 1. Copies the packaged runtime (`qs.exe`, Qt 6.11.2 runtime DLLs, Caelestia and `M3Shapes` QML plugins, staged QML tree, bundled Rubik / Material Symbols Rounded / Google Sans Flex fonts, and license notices) into `%LOCALAPPDATA%\Programs\caelestia-windows`.

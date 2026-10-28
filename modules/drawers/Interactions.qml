@@ -6,6 +6,8 @@ import qs.components
 import qs.components.controls
 import qs.modules.bar as Bar
 import qs.modules.bar.popouts as BarPopouts
+// Windows: shared-edge trigger calculations.
+import "WindowsHover.js" as WindowsHover
 
 CustomMouseArea {
     id: root
@@ -17,6 +19,9 @@ CustomMouseArea {
     required property Bar.BarWrapper bar
     required property real borderThickness
     required property bool fullscreen
+    // Windows: supplied by the per-screen shared-edge adapter.
+    property real rightHoverExtra: 0
+    property real bottomHoverExtra: 0
 
     property point dragStart
     property bool dashboardShortcutActive
@@ -44,7 +49,9 @@ CustomMouseArea {
     }
 
     function inRightPanel(panel: Item, x: real, y: real): bool {
-        return x > Math.min(width - Config.border.minThickness, bar.implicitWidth + panel.x) && withinPanelHeight(panel, x, y);
+        // Windows: leave the other right-edge interactions unchanged.
+        const extra = panel === panels.osdWrapper ? rightHoverExtra : 0;
+        return x > WindowsHover.rightThreshold(width, Config.border.minThickness, bar.implicitWidth + panel.x, extra) && withinPanelHeight(panel, x, y);
     }
 
     function inTopPanel(panel: Item, x: real, y: real): bool {
@@ -54,7 +61,9 @@ CustomMouseArea {
 
     function inBottomPanel(panel: Item, x: real, y: real, isCorner = false): bool {
         const panelHeight = panel.height * (1 - (panel.offsetScale ?? 0)); // qmllint disable missing-property
-        return y > height - Math.max(Config.border.minThickness, Config.border.thickness + panelHeight) - (isCorner ? Config.border.rounding : 0) && withinPanelWidth(panel, x, y);
+        // Windows: only the utilities corner gets a shared-bottom-edge strip.
+        const extra = isCorner && panel === panels.utilities ? bottomHoverExtra : 0;
+        return y > WindowsHover.bottomThreshold(height, Config.border.minThickness, Config.border.thickness, panelHeight, isCorner ? Config.border.rounding : 0, extra) && withinPanelWidth(panel, x, y);
     }
 
     // Upstream b6b2adf0 removed launcher hover-close, so a keybind or start
@@ -361,7 +370,8 @@ CustomMouseArea {
         function onUtilitiesChanged() {
             if (root.screenState.utilities) {
                 // Utilities became visible, immediately check if this should be shortcut mode
-                const inUtilitiesArea = root.inBottomPanel(root.panels.utilities, root.mouseX, root.mouseY);
+                // Windows: use the same corner zone as hover activation.
+                const inUtilitiesArea = root.inBottomPanel(root.panels.utilities, root.mouseX, root.mouseY, root.rightHoverExtra > 0 || root.bottomHoverExtra > 0);
                 if (!inUtilitiesArea) {
                     root.utilitiesShortcutActive = true;
                 }
