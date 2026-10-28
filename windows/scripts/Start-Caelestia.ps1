@@ -192,7 +192,11 @@ if ($Command -ne 'Start') {
                 Move-Item -LiteralPath $unrestored.FullName -Destination ($unrestored.FullName + '.adopted') -Force
             }
         }
-        & (Join-Path $PSScriptRoot 'Banner-Suppression.ps1') -StateDirectory (Join-Path $profile 'state') -Command Restore
+        # Without a journal there is nothing to restore. Skipping it avoids the
+        # session-wide helper mutex that another install's live worker holds.
+        if (Test-Path -LiteralPath (Join-Path $profile 'state\banner-suppression.json')) {
+            & (Join-Path $PSScriptRoot 'Banner-Suppression.ps1') -StateDirectory (Join-Path $profile 'state') -Command Restore
+        }
     }
     Write-Output $output
     return
