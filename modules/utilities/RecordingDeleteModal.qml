@@ -10,6 +10,7 @@ import qs.components
 import qs.components.controls
 import qs.components.effects
 import qs.services
+import qs.utils // Windows: convert native recording paths to local-file URLs.
 
 Loader {
     id: root
@@ -195,7 +196,11 @@ Loader {
                         text: Tr.trCtx("Delete", "button")
                         type: TextButton.Text
                         onClicked: {
-                            CUtils.deleteFile(Qt.resolvedUrl(root.props.recordingConfirmDelete));
+                            // Windows: drive-letter paths are not URL schemes.
+                            if (typeof Paths.deleteRecording === "function")
+                                Paths.deleteRecording(root.props.recordingConfirmDelete);
+                            else
+                                CUtils.deleteFile(Qt.resolvedUrl(root.props.recordingConfirmDelete));
                             root.props.recordingConfirmDelete = "";
                         }
                     }

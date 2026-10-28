@@ -1,7 +1,10 @@
 #include "filesystemmodel.hpp"
 
 #include <qdiriterator.h>
+// Windows: file listing does not require a multimedia backend.
+#ifndef CAELESTIA_PORTABLE_UI
 #include <qmediaformat.h>
+#endif
 #include <qtconcurrentrun.h>
 
 #include <algorithm>
@@ -345,9 +348,15 @@ FileSystemModel::ScanFilters FileSystemModel::filtersFor(
 
         QSet<QString> videoMimeTypes;
         if (videos) {
+            // Windows: enumerate known video types, playback belongs to the OS.
+#ifdef CAELESTIA_PORTABLE_UI
+            const auto formats = QMimeDatabase().allMimeTypes();
+            for (const auto& mimeType : formats) {
+#else
             const auto formats = QMediaFormat().supportedFileFormats(QMediaFormat::Decode);
             for (const auto format : formats) {
                 const auto mimeType = QMediaFormat(format).mimeType();
+#endif
                 if (!mimeType.name().startsWith(u"video/"_s))
                     continue;
                 videoMimeTypes << mimeType.name();

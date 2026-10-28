@@ -35,6 +35,7 @@ ShellRoot {
         ? Quickshell.screens.filter((screen, index) => index === smokeScreenIndex)
         : Quickshell.screens
     settings.watchFiles: false
+    ThemeTokens {}
 
     FontLoader {
         source: Quickshell.shellPath("assets/google-sans-flex/GoogleSansFlex-VariableFont_GRAD,ROND,opsz,slnt,wdth,wght.ttf")

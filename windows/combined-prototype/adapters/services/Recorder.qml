@@ -4,208 +4,238 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 
-// Windows adaptation of the upstream Recorder singleton.
-//
-// Upstream drives `caelestia record` / gpu-screen-recorder over pidof. Neither
-// exists on Windows, so this adapter drives ffmpeg directly:
-//
-//   * availability is `where ffmpeg` on PATH (probed in Live mode only);
-//   * capture is gdigrab's `desktop` input, H.264 in MP4, written to
-//     %USERPROFILE%\Videos\Caelestia\recording_<timestamp>.mp4;
-//   * stopping writes `q` to ffmpeg's stdin so the MP4 is finalised, with a
-//     bounded kill if ffmpeg does not exit.
-//
-// The upstream contract (running/paused/elapsed/refCount/start/stop/
-// togglePause) is preserved for the original utilities card. Region capture,
-// audio capture and pause have no ffmpeg route here; they are reported as
-// unsupported instead of silently recording something else.
+// Windows: Glazier owns capture, audio, timing and MP4 finalization. Never infer
+// a successful recording from the lifetime of the short-lived command client.
 Singleton {
     id: root
 
     readonly property bool permitted: Quickshell.env("CAELESTIA_COMBINED_LIVE") === "1"
         && Quickshell.env("CAELESTIA_SHELL_SMOKE") !== "1"
-    readonly property string outputDir: (Quickshell.env("USERPROFILE") || "") + "\\Videos\\Caelestia"
-
-    // Upstream contract, read by modules/utilities/cards/Record.qml.
-    property bool running: false
-    property bool paused: false
-    property real elapsed: 0
     property int refCount: 0
-    property bool stopping: false
-
-    // Availability and diagnostics.
+    property string executable: ""
     property bool probed: false
     property bool available: false
-    property string ffmpegPath: ""
+    property string state: "idle"
+    property real elapsed: 0
+    property string outputDir: ""
+    // Exclude Glazier's unpublished .glazier-*.mp4 files, including on Windows.
+    readonly property var nameFilters: ["[!.]*.mp4"]
     property string lastFile: ""
     property string lastError: ""
     property bool pendingStart: false
-
-    readonly property bool canStart: root.permitted && root.available && !root.running && !root.pendingStart
-
-    // One line for the card. The toggle only records when Live controls are on.
+    property string hostId: ""
+    property real eventSequence: 0
+    property bool connectionFailed: false
+    property bool incompatible: false
+    readonly property bool running: ["recording", "paused", "finalizing"].indexOf(state) !== -1
+    readonly property bool paused: state === "paused"
+    readonly property bool stopping: state === "finalizing"
+    readonly property bool canStart: permitted && available && !incompatible && state === "idle" && !pendingStart
     readonly property string status: {
-        if (root.running)
-            return root.paused ? "Paused" : "Running...";
-        if (!root.permitted)
+        if (!permitted)
             return Quickshell.env("CAELESTIA_SHELL_SMOKE") === "1" ? "Suppressed during smoke." : "Live controls are off.";
-        if (!root.probed)
-            return "Checking ffmpeg...";
-        if (!root.available)
-            return "Unavailable: ffmpeg was not found on PATH.";
-        return "Ready";
+        if (lastError)
+            return lastError;
+        if (!probed)
+            return "Checking Glazier...";
+        if (!available)
+            return "Unavailable: install Glazier with control protocol v1.";
+        if (pendingStart)
+            return "Starting Glazier...";
+        return ({ idle: "Ready", selecting: "Select a region in Glazier", ready: "Ready in Glazier",
+            recording: "Running...", paused: "Paused", finalizing: "Saving recording..." })[state];
     }
 
-    function timestamp(date): string {
-        const pad = value => String(value).padStart(2, "0");
-        return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}_${pad(date.getHours())}-${pad(date.getMinutes())}-${pad(date.getSeconds())}`;
+    function disconnected(message): void {
+        connectionFailed = true;
+        state = "idle";
+        elapsed = 0;
+        pendingStart = false;
+        lastError = message;
     }
 
-    function start(extraArgs = []): bool {
-        if (!root.permitted || !root.available || root.running || root.pendingStart)
-            return false;
-        if (extraArgs.length > 0) {
-            root.lastError = "Region and audio capture are not implemented on the Windows recorder.";
+    function applyResponse(text): bool {
+        // A killed or crashed client finishes with no output: a transient
+        // disconnect, not an incompatible host.
+        if (!text.trim()) {
+            disconnected("Glazier is not responding.");
             return false;
         }
-
-        root.lastError = "";
-        root.pendingStart = true;
-        // ffmpeg does not create parent directories.
-        mkdirProcess.command = [
-            "powershell", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command",
-            "New-Item -ItemType Directory -Force -Path '" + root.outputDir.replace(/'/g, "''") + "' | Out-Null"
-        ];
-        mkdirProcess.running = true;
+        let data;
+        try {
+            data = JSON.parse(text.trim());
+        } catch (_) {
+            available = false;
+            incompatible = true;
+            disconnected("Glazier is incompatible: control protocol v1 is required.");
+            return false;
+        }
+        if (data.version !== 1 || typeof data.ok !== "boolean") {
+            available = false;
+            incompatible = true;
+            disconnected("Glazier is incompatible: control protocol v1 is required.");
+            return false;
+        }
+        if (!data.ok && !data.host_id) {
+            // A cold host may take a moment to create its pipe after detached
+            // launch. Keep the pending start until it responds or times out.
+            if (!pendingStart)
+                disconnected(data.error || "Glazier command failed.");
+            return false;
+        }
+        if (["idle", "selecting", "ready", "recording", "paused", "finalizing"].indexOf(data.state) < 0
+                || !Number.isFinite(data.elapsed_ms) || data.elapsed_ms < 0
+                || typeof data.host_id !== "string" || typeof data.output_directory !== "string"
+                || !Array.isArray(data.events)) {
+            available = false;
+            incompatible = true;
+            disconnected("Glazier returned an invalid recorder state.");
+            return false;
+        }
+        available = true;
+        if (connectionFailed)
+            lastError = "";
+        connectionFailed = false;
+        state = data.state;
+        elapsed = data.elapsed_ms / 1000;
+        outputDir = data.output_directory.replace(/\\/g, "/");
+        if (hostId !== data.host_id) {
+            hostId = data.host_id;
+            eventSequence = 0;
+        }
+        for (const event of data.events) {
+            if (event.sequence <= eventSequence)
+                continue;
+            eventSequence = event.sequence;
+            if (event.type === "finished" && typeof event.output_path === "string")
+                lastFile = event.output_path;
+            if (event.type === "error")
+                lastError = event.message || "Glazier recording failed.";
+            else if (event.type === "started")
+                lastError = "";
+            if (state === "idle" && ["finished", "cancelled", "error"].indexOf(event.type) !== -1) {
+                pendingStart = false;
+                startTimeout.stop();
+            }
+        }
+        if (!data.ok)
+            lastError = data.error || "Glazier command failed.";
+        if (state !== "idle") {
+            pendingStart = false;
+            startTimeout.stop();
+        }
         return true;
     }
 
-    function beginCapture(): void {
-        root.lastError = "";
-        root.lastFile = "";
-        root.captureFile = root.outputDir + "\\recording_" + root.timestamp(new Date()) + ".mp4";
-        captureProcess.command = [
-            root.ffmpegPath, "-hide_banner", "-loglevel", "error", "-y",
-            "-f", "gdigrab", "-framerate", "30", "-i", "desktop",
-            "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23", "-pix_fmt", "yuv420p",
-            root.captureFile
-        ];
-        captureProcess.running = true;
-        root.pendingStart = false;
-        root.running = true;
-        root.paused = false;
-        root.elapsed = 0;
+    function start(extraArgs = []): bool {
+        if (!canStart)
+            return false;
+        let region = false;
+        let sound = false;
+        for (const arg of extraArgs) {
+            if (!/^-[sr]+$/.test(arg)) {
+                lastError = "Unsupported recording option: " + arg;
+                return false;
+            }
+            region = region || arg.indexOf("r") !== -1;
+            sound = sound || arg.indexOf("s") !== -1;
+        }
+        const args = [executable, "--record", "--system-sound", sound ? "on" : "off", "--mic", "off"];
+        if (!region)
+            args.push("--fullscreen");
+        lastError = "";
+        lastFile = "";
+        pendingStart = true;
+        // #81: the backend detached path redirects all stdio to NUL and disowns
+        // handles. Do not host the long-lived tray app in a QML Process.
+        Quickshell.execDetached(args);
+        startTimeout.restart();
+        return true;
+    }
+
+    function send(command): void {
+        if (!permitted || !available || commandProcess.running)
+            return;
+        commandProcess.command = [executable, command];
+        commandProcess.running = true;
     }
 
     function stop(): void {
-        if (!root.running)
-            return;
-        if (captureProcess.running) {
-            root.stopping = true;
-            // `q` makes ffmpeg flush the container instead of leaving a
-            // truncated MP4; the timer is only a fallback for a stuck process.
-            captureProcess.write("q\n");
-            killTimer.restart();
-            return;
-        }
-        root.running = false;
-        root.elapsed = 0;
+        if (running || state === "selecting" || state === "ready")
+            send("--stop");
     }
 
     function togglePause(): void {
-        // ffmpeg cannot pause a live capture; the original pause affordance is
-        // hidden by the Windows card instead of pretending it worked.
-        root.lastError = "Pausing is not implemented on the Windows recorder.";
+        if (state === "recording" || paused)
+            send(paused ? "--resume" : "--pause");
     }
 
-    property string captureFile
-
-    // Availability probe. It only runs with Live controls, so read-only and
-    // smoke runs never launch a process.
     Process {
-        id: probeProcess
-
+        id: probe
         running: root.permitted && !root.probed
-        command: ["where", "ffmpeg"]
-
+        command: ["powershell.exe", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command",
+            "$override=$env:CAELESTIA_GLAZIER_EXE; if ($override) { if (Test-Path -LiteralPath $override -PathType Leaf) { $override }; exit }; "
+            + "$installed=Join-Path $env:LOCALAPPDATA 'Programs\\Glazier\\glazier.exe'; "
+            + "if (Test-Path -LiteralPath $installed -PathType Leaf) { $installed } "
+            + "else { $cmd=Get-Command glazier.exe -ErrorAction SilentlyContinue; if ($cmd) { $cmd.Source } }"]
         stdout: StdioCollector {
             onStreamFinished: {
-                const lines = text.trim().split(/\r?\n/).filter(line => line.trim().length > 0);
-                if (lines.length > 0) {
-                    root.ffmpegPath = lines[0].trim();
-                    root.available = true;
-                }
+                root.executable = text.trim();
+                root.available = root.executable !== "";
             }
         }
-
-        stderr: StdioCollector {}
-
         onExited: code => {
             root.probed = true;
-            if (code !== 0 || root.ffmpegPath === "") {
+            if (code !== 0 || root.executable === "") {
                 root.available = false;
-                root.ffmpegPath = "";
+                root.lastError = "Glazier was not found. Install Glazier with control protocol v1.";
+            } else {
+                root.poll();
             }
         }
+    }
+
+    function poll(): void {
+        if (permitted && executable && !incompatible && !statusProcess.running && !commandProcess.running)
+            statusProcess.running = true;
     }
 
     Process {
-        id: mkdirProcess
-
-        onExited: code => {
-            if (!root.pendingStart)
-                return;
-            if (code !== 0) {
-                root.pendingStart = false;
-                root.lastError = "Could not create " + root.outputDir + ".";
-                return;
-            }
-            root.beginCapture();
-        }
+        id: statusProcess
+        command: [root.executable, "--status"]
+        stdout: StdioCollector { onStreamFinished: root.applyResponse(text) }
     }
 
     Process {
-        id: captureProcess
-
-        stdinEnabled: true
-
-        stderr: StdioCollector {
-            onStreamFinished: {
-                const message = text.trim();
-                if (message.length > 0)
-                    root.lastError = message.split(/\r?\n/)[0];
-            }
-        }
-
-        onExited: code => {
-            killTimer.stop();
-            if (root.stopping)
-                root.lastFile = root.captureFile;
-            if (code !== 0 && code !== 255 && root.lastError === "")
-                root.lastError = "ffmpeg exited with code " + code + ".";
-            root.running = false;
-            root.paused = false;
-            root.stopping = false;
-            root.pendingStart = false;
-            root.elapsed = 0;
-        }
+        id: commandProcess
+        stdout: StdioCollector { onStreamFinished: root.applyResponse(text) }
     }
 
+    // Poll even when the card is closed: tray/hotkey actions must be reflected.
+    // Fast only while something is happening or the card is open.
     Timer {
-        id: killTimer
-
-        interval: 6000
-        onTriggered: {
-            if (captureProcess.running)
-                captureProcess.running = false;
-        }
-    }
-
-    // Only advance the clock while something is reading it.
-    Timer {
-        interval: 1000
-        running: root.running && !root.paused
+        interval: root.pendingStart || (!root.connectionFailed && (root.state !== "idle" || root.refCount > 0)) ? 500 : 5000
+        running: root.permitted && root.executable !== ""
         repeat: true
-        onTriggered: root.elapsed++
+        onTriggered: root.poll()
+    }
+
+    Timer {
+        interval: 16000
+        running: statusProcess.running || commandProcess.running
+        onTriggered: {
+            statusProcess.running = false;
+            commandProcess.running = false;
+            root.disconnected("Glazier control timed out.");
+        }
+    }
+
+    Timer {
+        id: startTimeout
+        interval: 15000
+        onTriggered: {
+            if (root.pendingStart)
+                root.disconnected("Glazier did not start recording. Check Glazier and its control protocol version.");
+        }
     }
 }

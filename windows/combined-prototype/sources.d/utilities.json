@@ -1,7 +1,10 @@
 {
+  "components/misc/Ref.qml": "components/misc/Ref.qml",
   "windows/combined-prototype/adapters/modules/utilities/cards/Toggles.qml": "modules/utilities/cards/Toggles.qml",
   "windows/combined-prototype/adapters/modules/utilities/Content.qml": "modules/utilities/Content.qml",
   "modules/utilities/Wrapper.qml": "modules/utilities/Wrapper.qml",
   "windows/combined-prototype/adapters/modules/utilities/cards/IdleInhibit.qml": "modules/utilities/cards/IdleInhibit.qml",
-  "windows/combined-prototype/adapters/modules/utilities/cards/Record.qml": "modules/utilities/cards/Record.qml"
+  "modules/utilities/cards/Record.qml": "modules/utilities/cards/Record.qml",
+  "modules/utilities/cards/RecordingList.qml": "modules/utilities/cards/RecordingList.qml",
+  "modules/utilities/RecordingDeleteModal.qml": "modules/utilities/RecordingDeleteModal.qml"
 }
