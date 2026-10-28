@@ -272,9 +272,20 @@ ShellRoot {
                 root.step++;
                 break;
             case 18:
-                if (Recorder.lastError.indexOf("not available") < 0) return;
+                if (Recorder.lastError.indexOf("not running") < 0) return;
                 if (root.pendingCaptures) return;
                 root.check(!Recorder.running && Recorder.elapsed === 0, "host loss clears stale recording");
+                const reply = (host, events) => JSON.stringify({ version: 1, ok: true, state: "idle", elapsed_ms: 0,
+                    host_id: host, output_directory: "C:/x", events: events });
+                const err = sequence => ({ sequence: sequence, type: "error", message: "boom" });
+                root.check(Recorder.applyResponse(reply("replay-host", [err(1),
+                    { sequence: 2, type: "finished", output_path: "C:\\x\\Old.mp4" }])) && Recorder.lastError === "",
+                    "first response from a new host is a baseline: old error not replayed");
+                root.check(Recorder.owns("c:/x/old.mp4") && !Recorder.owns("C:/x/other.mp4"), "baseline finished file is owned");
+                root.check(!Paths.deleteRecording("C:/x/other.mp4") && Recorder.lastError.indexOf("Only recordings") === 0,
+                    "delete of a file Glazier did not report is refused");
+                root.check(Recorder.applyResponse(reply("replay-host", [err(3)])) && Recorder.lastError === "boom",
+                    "events after the baseline apply");
                 root.check(!Recorder.applyResponse('{"version":2,"ok":true}'), "reject unknown version");
                 root.check(!Recorder.canStart, "incompatible host cannot record");
                 console.log("GLAZIER_RECORDER_PASS", root.assertions);

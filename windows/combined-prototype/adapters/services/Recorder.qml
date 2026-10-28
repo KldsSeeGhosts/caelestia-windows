@@ -21,6 +21,9 @@ Singleton {
     // Exclude Glazier's unpublished .glazier-*.mp4 files, including on Windows.
     readonly property var nameFilters: ["[!.]*.mp4"]
     property string lastFile: ""
+    // Normalized paths Glazier reported as finished (newest 500, persisted); the
+    // only files Delete may remove.
+    property var finishedFiles: []
     property string lastError: ""
     property bool pendingStart: false
     property string hostId: ""
@@ -54,6 +57,44 @@ Singleton {
         lastError = message;
     }
 
+    function normalize(path): string {
+        return path.replace(/\\/g, "/").toLowerCase();
+    }
+
+    function owns(path): bool {
+        return typeof path === "string" && finishedFiles.indexOf(normalize(path)) !== -1;
+    }
+
+    function remember(path): void {
+        if (owns(path))
+            return;
+        finishedFiles = [...finishedFiles, normalize(path)].slice(-500);
+        if (store.restored)
+            store.setText(JSON.stringify(finishedFiles));
+    }
+
+    FileView {
+        id: store
+        property bool restored
+        function finish(): void {
+            restored = true;
+            if (root.finishedFiles.length)
+                setText(JSON.stringify(root.finishedFiles));
+        }
+        path: root.permitted ? Quickshell.stateDir.replace(/\\/g, "/") + "/caelestia/recordings.json" : ""
+        atomicWrites: true
+        printErrors: false
+        onLoaded: {
+            try {
+                const saved = JSON.parse(text());
+                if (Array.isArray(saved))
+                    root.finishedFiles = [...new Set([...saved.filter(p => typeof p === "string"), ...root.finishedFiles])].slice(-500);
+            } catch (_) {} // corrupt: start over from what Glazier reports
+            finish();
+        }
+        onLoadFailed: finish() // no file yet; keep what finished before the read failed
+    }
+
     function applyResponse(text): bool {
         // A killed or crashed client finishes with no output: a transient
         // disconnect, not an incompatible host.
@@ -80,7 +121,7 @@ Singleton {
             // A cold host may take a moment to create its pipe after detached
             // launch. Keep the pending start until it responds or times out.
             if (!pendingStart)
-                disconnected(data.error || "Glazier command failed.");
+                disconnected("Glazier is not running (Start launches it).");
             return false;
         }
         if (["idle", "selecting", "ready", "recording", "paused", "finalizing"].indexOf(data.state) < 0
@@ -99,7 +140,10 @@ Singleton {
         state = data.state;
         elapsed = data.elapsed_ms / 1000;
         outputDir = data.output_directory.replace(/\\/g, "/");
-        if (hostId !== data.host_id) {
+        // The first response from a host is its baseline: that journal predates
+        // this shell, so only note finished files and keep old errors quiet.
+        const replay = hostId !== data.host_id;
+        if (replay) {
             hostId = data.host_id;
             eventSequence = 0;
         }
@@ -107,8 +151,13 @@ Singleton {
             if (event.sequence <= eventSequence)
                 continue;
             eventSequence = event.sequence;
-            if (event.type === "finished" && typeof event.output_path === "string")
-                lastFile = event.output_path;
+            if (event.type === "finished" && typeof event.output_path === "string") {
+                remember(event.output_path);
+                if (!replay)
+                    lastFile = event.output_path;
+            }
+            if (replay)
+                continue;
             if (event.type === "error")
                 lastError = event.message || "Glazier recording failed.";
             else if (event.type === "started")
@@ -148,7 +197,8 @@ Singleton {
         pendingStart = true;
         // #81: the backend detached path redirects all stdio to NUL and disowns
         // handles. Do not host the long-lived tray app in a QML Process.
-        Quickshell.execDetached(args);
+        // Start in Glazier's own folder so it never holds the shell's (install prefix) cwd.
+        Quickshell.execDetached({ command: args, workingDirectory: executable.replace(/[\\/][^\\/]*$/, "") });
         startTimeout.restart();
         return true;
     }
@@ -190,6 +240,7 @@ Singleton {
                 root.available = false;
                 root.lastError = "Glazier was not found. Install Glazier with control protocol v1.";
             } else {
+                root.lastError = "";
                 root.poll();
             }
         }
@@ -218,6 +269,14 @@ Singleton {
         running: root.permitted && root.executable !== ""
         repeat: true
         onTriggered: root.poll()
+    }
+
+    // Notice a Glazier installed while the shell is running.
+    Timer {
+        interval: 30000
+        running: root.permitted && root.probed && root.executable === ""
+        repeat: true
+        onTriggered: root.probed = false
     }
 
     Timer {
