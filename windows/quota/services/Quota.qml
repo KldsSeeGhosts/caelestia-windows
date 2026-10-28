@@ -13,6 +13,11 @@ import qs.services
 //   GET <baseUrl>/v0/management/quota/summary
 //   Authorization: Bearer <adminKey>
 //
+// Spend per provider comes from the manager's usage analytics, the same
+// source as the panel's Usage Analytics page:
+//
+//   POST <baseUrl>/v0/management/monitoring/analytics  {channel_share}
+//
 // This service reads that response with QML XMLHttpRequest, maps providers,
 // accounts and windows onto the shape the original drawer components expect,
 // and keeps the last good summary on failure. No child process, ledger or
@@ -30,6 +35,7 @@ Singleton {
     readonly property bool enabled: QuotaConfig.enabled
 
     readonly property string summaryUrlSuffix: "/v0/management/quota/summary"
+    readonly property string analyticsUrlSuffix: "/v0/management/monitoring/analytics"
     readonly property string cachePath: QuotaConfig.cacheHome + "/quota-summary.json"
     readonly property int effectiveRefreshMs: Math.max(root.refreshIntervalMs, root.ttlMs)
 
@@ -54,6 +60,8 @@ Singleton {
     property var providers: []
     property string selectedProviderId: ""
     property var todayCostUsd: null
+    // { today | yesterday | month: { total, rows: [{ provider, cost }] } }
+    property var spend: ({})
 
     readonly property int providerIndex: {
         for (let i = 0; i < providers.length; i++) {
@@ -304,6 +312,8 @@ Singleton {
         root.ttlMs = Number(cached.ttlMs) || 0;
         root.todayCostUsd = (typeof cached.todayCostUsd === "number" && Number.isFinite(cached.todayCostUsd))
             ? cached.todayCostUsd : null;
+        if (cached.spend && typeof cached.spend === "object" && Object.keys(root.spend).length === 0)
+            root.spend = cached.spend;
         root.status = root.error !== "" ? "error" : "ok";
         root.selectedProviderId = root.defaultProviderId();
     }
@@ -369,6 +379,7 @@ Singleton {
                 lastUpdatedAt: root.lastUpdatedAt,
                 ttlMs: root.ttlMs,
                 todayCostUsd: root.todayCostUsd,
+                spend: root.spend,
                 providers: cachedProviders
             }));
         } catch (e) {
@@ -432,6 +443,7 @@ Singleton {
             return;
         }
 
+        root.refreshSpend();
         root.inFlight = true;
         root.loading = true;
         root.requestTimedOut = false;
@@ -481,6 +493,73 @@ Singleton {
         } catch (e) {
             root.failRefresh(false);
         }
+    }
+
+    // -- Spend ---------------------------------------------------------------
+
+    // Analytics name OpenAI-compatible and local harness routes after their
+    // upstream ("openai-compatible-opencode-go", "devin-local"); fold them in.
+    function spendProviderId(raw: string): string {
+        const id = root.normalizeProviderId(raw).replace(/^openai-compatible-/, "").replace(/-(local|native)$/, "");
+        return id === "openai" ? "codex" : id === "anthropic" ? "claude" : (id || "other");
+    }
+
+    // Local calendar days, like the panel; 30 Days is a rolling window.
+    function refreshSpend(): void {
+        const now = Date.now();
+        const midnight = new Date(now);
+        midnight.setHours(0, 0, 0, 0);
+        const yesterday = new Date(midnight.getTime());
+        yesterday.setDate(yesterday.getDate() - 1);
+        root.fetchSpend("today", midnight.getTime(), now);
+        root.fetchSpend("yesterday", yesterday.getTime(), midnight.getTime());
+        root.fetchSpend("month", now - 30 * 86400000, now);
+    }
+
+    // Best effort: a failed read keeps the last good figures and never sets
+    // the drawer's error line, which belongs to the quota summary.
+    function fetchSpend(key: string, fromMs: double, toMs: double): void {
+        let request = null;
+        try {
+            request = new XMLHttpRequest();
+        } catch (e) {
+            return;
+        }
+        request.onload = function () {
+            if (request.status < 200 || request.status >= 300)
+                return;
+            let body = null;
+            try {
+                body = JSON.parse(request.responseText);
+            } catch (e) {
+                return;
+            }
+            if (!body || !Array.isArray(body.channel_share))
+                return;
+            const totals = {};
+            for (const row of body.channel_share) {
+                const cost = Number(row && row.cost);
+                if (!Number.isFinite(cost) || cost <= 0)
+                    continue;
+                const id = root.spendProviderId(row.auth_provider_snapshot);
+                totals[id] = (totals[id] || 0) + cost;
+            }
+            const rows = Object.keys(totals).filter(id => totals[id] >= 0.005)
+                .map(id => ({ provider: id, cost: totals[id] }))
+                .sort((a, b) => b.cost - a.cost);
+            const next = Object.assign({}, root.spend);
+            next[key] = { total: rows.reduce((sum, row) => sum + row.cost, 0), rows: rows };
+            root.spend = next;
+            root.writeCache();
+        };
+        try {
+            request.open("POST", root.baseUrl + root.analyticsUrlSuffix);
+            request.setRequestHeader("Authorization", "Bearer " + root.adminKey);
+            request.setRequestHeader("Content-Type", "application/json");
+            request.setRequestHeader("Accept", "application/json");
+            request.timeout = root.requestTimeoutMs;
+            request.send(JSON.stringify({ from_ms: fromMs, to_ms: toMs, include: { channel_share: true } }));
+        } catch (e) {}
     }
 
     function finishRequest(): void {

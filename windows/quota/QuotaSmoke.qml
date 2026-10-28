@@ -8,7 +8,7 @@
 //
 //   * configured: a local synthetic CPA Manager stub serves the pre-aggregated
 //     quota summary; the drawer opens on the Claude group, the model-scoped
-//     window, provider rings and footer render, and dark/light screenshots are
+//     window, provider sections and spend card render, and dark/light screenshots are
 //     saved;
 //   * offline: the endpoint refuses connections and, when the configured run
 //     left a cached summary, the drawer keeps that reading with the one friendly
@@ -195,7 +195,7 @@ ShellRoot {
         for (const child of item.children) {
             if (!child)
                 continue;
-            if (child.revealed !== undefined && child.openAccountId !== undefined)
+            if (child.objectName === "quotaContent")
                 return child;
             const found = root.findContent(child);
             if (found)
@@ -488,10 +488,17 @@ ShellRoot {
             if (driver.captured)
                 return;
             const content = root.findContent(quota);
-            const amount = root.findNamed(quota, "quotaFooterAmount");
-            if (!content || !content.revealed || !root.findNamed(quota, "quotaFooterCost")
-                    || !root.findNamed(quota, "quotaRing") || !amount || amount.text !== Quota.usageCostText) {
-                root.fail("footer or provider rings did not render");
+            const amount = root.findNamed(quota, "quotaSpendAmount");
+            if (!Quota.spend.today || !Quota.spend.yesterday || !Quota.spend.month) {
+                if (driver.retries++ < 20)
+                    return;
+                root.fail("per-provider spend did not load");
+                return;
+            }
+            if (!content || !content.revealed || !root.findNamed(quota, "quotaSpend")
+                    || !root.findNamed(quota, "quotaSection") || !amount || amount.text !== "$3.71"
+                    || Quota.spend.month.rows.length !== 6) {
+                root.fail("spend card or provider sections did not render");
                 return;
             }
             const meters = root.countMeters(quota);
@@ -511,7 +518,7 @@ ShellRoot {
                 label: Quota.activeGroup?.label ?? "",
                 accounts: Quota.activeGroupAccounts.length,
                 meters: meters, scoped: root.scopedWindows(Quota.activeGroupAccounts),
-                ringsAndFooter: true, todayCostUsd: Quota.todayCostUsd
+                sectionsAndSpend: true, todayCostUsd: Quota.todayCostUsd
             }));
             driver.captured = true;
             root.capture(() => {
