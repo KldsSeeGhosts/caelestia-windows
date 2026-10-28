@@ -5,6 +5,7 @@ qml_module(caelestia-windows
         windowsfocusguard.cpp
         windowsfontfallback.hpp
         windowsfontfallback.cpp
+        windowsfiles.hpp
         Clipboard/clipboardcache.hpp
         Clipboard/clipboardlogic.hpp
         Clipboard/clipboardstate.hpp
