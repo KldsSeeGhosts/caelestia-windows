@@ -11,8 +11,8 @@ import qs.components.controls
 import qs.services
 import "QuotaLogic.js" as Logic
 
-// OpenUsage layout: a spend card, then every provider as a header and one card
-// of meters, in a single scrolling list above a fixed footer.
+// OpenUsage layout: a spend card, a provider strip, then the chosen provider's
+// header and card of meters, above a fixed footer.
 Item {
     id: root
     objectName: "quotaContent"
@@ -181,7 +181,96 @@ Item {
                 family: root.family
             }
 
-            Item { width: 1; height: 10 }
+            Item { width: 1; height: 4 }
+
+            // One logo per provider with its lowest "% left", so only the
+            // chosen provider's card is open instead of one long list.
+            Rectangle {
+                id: strip
+                readonly property real segment: (width - 6) / Math.max(1, Quota.providerGroups.length)
+                readonly property int index: Math.max(0, Quota.providerGroups.findIndex(g => Quota.activeGroup && g.provider === Quota.activeGroup.provider))
+                visible: Quota.providerGroups.length > 1
+                width: parent.width
+                height: visible ? 58 : 0
+                radius: 16
+                color: Qt.alpha(Colours.palette.m3onSurface, 0.06)
+                Rectangle {
+                    x: 3 + strip.segment * strip.index
+                    y: 3
+                    width: strip.segment
+                    height: strip.height - 6
+                    radius: 13
+                    color: Colours.light ? Colours.palette.m3surfaceContainerLowest : Qt.alpha(Colours.palette.m3onSurface, 0.14)
+                    Behavior on x { Anim { type: Anim.Emphasized } }
+                }
+                Row {
+                    x: 3; y: 3
+                    Repeater {
+                        model: Quota.providerGroups
+                        delegate: AbstractButton {
+                            id: tab
+                            required property var modelData
+                            readonly property bool selected: !!Quota.activeGroup && Quota.activeGroup.provider === modelData.provider
+                            readonly property var worst: Logic.groupWorstRemain(modelData)
+                            readonly property url logo: root.providerIconSource(modelData.provider)
+                            objectName: "quotaProviderTab"
+                            width: strip.segment
+                            height: strip.height - 6
+                            hoverEnabled: true
+                            onClicked: Quota.selectGroup(modelData.provider)
+                            Accessible.name: modelData.label + ", " + (worst === null ? qsTr("no reading") : qsTr("%1% left").arg(Math.round(worst * 100)))
+                            background: Rectangle {
+                                radius: 13
+                                color: !tab.selected && tab.hovered ? Qt.alpha(Colours.palette.m3onSurface, 0.05) : "transparent"
+                                border.width: tab.activeFocus ? 1 : 0
+                                border.color: Colours.palette.m3primary
+                            }
+                            contentItem: Item {
+                                Column {
+                                    anchors.centerIn: parent
+                                    spacing: 4
+                                    Item {
+                                        anchors.horizontalCenter: parent.horizontalCenter
+                                        width: 18; height: 18
+                                        opacity: tab.selected || tab.hovered ? 1 : 0.7
+                                        Image {
+                                            anchors.fill: parent
+                                            visible: !!tab.logo.toString()
+                                            source: tab.logo
+                                            sourceSize: Qt.size(36, 36)
+                                            fillMode: Image.PreserveAspectFit
+                                        }
+                                        Label {
+                                            anchors.centerIn: parent
+                                            visible: !tab.logo.toString()
+                                            text: String(tab.modelData.label).slice(0, 2)
+                                            font.pixelSize: 11
+                                            font.weight: Font.DemiBold
+                                        }
+                                    }
+                                    Label {
+                                        anchors.horizontalCenter: parent.horizontalCenter
+                                        text: tab.worst === null ? "—" : Math.round(tab.worst * 100) + "%"
+                                        font.pixelSize: 11
+                                        font.weight: tab.selected ? Font.DemiBold : Font.Normal
+                                        color: tab.worst !== null && tab.worst <= 0.15 ? Colours.palette.m3error
+                                            : tab.selected ? Colours.palette.m3onSurface : root.muted
+                                    }
+                                }
+                            }
+                            QuotaToolTip {
+                                visible: tab.hovered
+                                text: tab.modelData.label + "\n" + (tab.modelData.accounts.length === 1 ? qsTr("Lowest remaining window")
+                                    : qsTr("Lowest remaining across %1 accounts").arg(tab.modelData.accounts.length))
+                                boundsItem: root
+                                family: root.family
+                            }
+                        }
+                    }
+                }
+            }
+
+            Item { width: 1; height: 6 }
 
             Rectangle {
                 visible: Quota.providerGroups.length === 0
@@ -200,7 +289,7 @@ Item {
             }
 
             Repeater {
-                model: Quota.providerGroups
+                model: Quota.activeGroup ? [Quota.activeGroup] : []
                 delegate: Column {
                     id: section
                     required property var modelData

@@ -496,7 +496,7 @@ ShellRoot {
                 return;
             }
             if (!content || !content.revealed || !root.findNamed(quota, "quotaSpend")
-                    || !root.findNamed(quota, "quotaSection") || !amount || amount.text !== "$3.71"
+                    || !root.findNamed(quota, "quotaSection") || !root.findNamed(quota, "quotaProviderTab") || !amount || amount.text !== "$3.71"
                     || Quota.spend.month.rows.length !== 6) {
                 root.fail("spend card or provider sections did not render");
                 return;
