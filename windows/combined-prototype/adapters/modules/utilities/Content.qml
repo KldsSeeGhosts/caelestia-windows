@@ -11,9 +11,7 @@ import qs.modules.bar.popouts as BarPopouts
 // recorder cards enabled in the combined profile; each card owns its Live gate,
 // so the read-only profile shows the same cards with inert controls.
 //
-// The upstream RecordingDeleteModal is omitted with the recordings list: the
-// Windows recorder writes its own folder and the original list/deletion flow
-// depends on the Linux `caelestia record` directory layout.
+// The original recording card, list and delete confirmation share Glazier's folder.
 Item {
     id: root
 
@@ -76,5 +74,10 @@ Item {
                 popouts: root.popouts
             }
         }
+    }
+
+    RecordingDeleteModal {
+        props: root.props
+        deformMatrix: root.deformMatrix
     }
 }

@@ -2,6 +2,8 @@ pragma Singleton
 
 import QtQuick
 import Quickshell
+import Caelestia
+import qs.services
 
 // Resolve the original shell's asset namespace inside the isolated stage.
 QtObject {
@@ -16,7 +18,19 @@ QtObject {
     readonly property string state: (Quickshell.stateDir + "/caelestia").replace(/\\/g, "/")
 
     readonly property string wallsdir: (Quickshell.env("CAELESTIA_WALLPAPER_DIR") || (home + "/Pictures/Wallpapers")).replace(/\\/g, "/")
+    readonly property string recsdir: Recorder.outputDir
     function shortenHome(path: string): string { return path.replace(home, "~"); }
+    // Use Windows default applications, not upstream's mpv/thunar commands.
+    function openRecording(path: string): bool {
+        return Qt.openUrlExternally(absolutePath(path));
+    }
+    function revealRecording(path: string): bool {
+        const local = path.replace(/\\/g, "/");
+        return Qt.openUrlExternally(absolutePath(local.slice(0, local.lastIndexOf("/"))));
+    }
+    function deleteRecording(path: string): bool {
+        return CUtils.deleteFile(absolutePath(path));
+    }
     function absolutePath(path: string): string {
         if (!path || !path.trim())
             return "";
