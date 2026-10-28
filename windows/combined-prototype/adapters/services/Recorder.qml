@@ -55,6 +55,12 @@ Singleton {
     }
 
     function applyResponse(text): bool {
+        // A killed or crashed client finishes with no output: a transient
+        // disconnect, not an incompatible host.
+        if (!text.trim()) {
+            disconnected("Glazier is not responding.");
+            return false;
+        }
         let data;
         try {
             data = JSON.parse(text.trim());
@@ -206,8 +212,9 @@ Singleton {
     }
 
     // Poll even when the card is closed: tray/hotkey actions must be reflected.
+    // Fast only while something is happening or the card is open.
     Timer {
-        interval: 500
+        interval: root.pendingStart || (!root.connectionFailed && (root.state !== "idle" || root.refCount > 0)) ? 500 : 5000
         running: root.permitted && root.executable !== ""
         repeat: true
         onTriggered: root.poll()
