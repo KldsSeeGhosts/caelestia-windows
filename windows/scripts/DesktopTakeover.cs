@@ -1160,14 +1160,21 @@ namespace Caelestia.Takeover {
                 "-NoProfile -File \"" + helper + "\" -StateDirectory \"" + state + "\" -Command Restore") {
                 UseShellExecute = false, CreateNoWindow = true, RedirectStandardError = true
             };
+            var errors = new StringBuilder();
             using (var recoveryProcess = Process.Start(info)) {
+                recoveryProcess.ErrorDataReceived += delegate(object sender, DataReceivedEventArgs e) {
+                    if (e.Data != null) lock (errors) {
+                        // Diagnostics are best effort and must remain bounded.
+                        if (errors.Length < 8192) errors.AppendLine(e.Data);
+                    }
+                };
+                recoveryProcess.BeginErrorReadLine();
                 if (!recoveryProcess.WaitForExit(45000)) {
                     recoveryProcess.Kill();
                     throw new InvalidOperationException("Banner recovery timed out; the journal was retained.");
                 }
-                string errors = recoveryProcess.StandardError.ReadToEnd();
                 if (recoveryProcess.ExitCode != 0)
-                    throw new InvalidOperationException("Banner recovery failed: " + errors);
+                    lock (errors) throw new InvalidOperationException("Banner recovery failed: " + errors.ToString());
             }
         }
         // A snapshot that still cannot be written after retries leaves that
@@ -1304,7 +1311,7 @@ namespace Caelestia.Takeover {
         void Tick(object sender, EventArgs args) {
             try {
                 if (recovery.WaitOne(0)) {
-                    if (child != null && !child.HasExited) { child.Kill(); child.WaitForExit(); }
+                    if (child != null && !child.HasExited) { child.Kill(); child.WaitForExit(1000); }
                     Finish("recovered", 0);
                     return;
                 }
@@ -1321,7 +1328,9 @@ namespace Caelestia.Takeover {
                 showHook.Dispose();
                 shortcutHook.Deactivate();
                 showPolicy.Reset();
-                child.WaitForExit(); // drain redirected log callbacks
+                // Do not use the parameterless WaitForExit here: it also
+                // waits for redirected pipe EOF, which a surviving descendant
+                // can hold indefinitely. The final log lines are best effort.
                 int code = child.ExitCode, pid = child.Id;
                 child.Dispose(); child = null;
                 RestoreBanners();
@@ -1360,7 +1369,7 @@ namespace Caelestia.Takeover {
             // space. Normal clean exit reaches here after qs has exited.
             try {
                 if (child != null) {
-                    if (!child.HasExited) { child.Kill(); child.WaitForExit(); }
+                    if (!child.HasExited) { child.Kill(); child.WaitForExit(1000); }
                     child.Dispose(); child = null;
                 }
             } finally {
