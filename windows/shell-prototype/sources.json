@@ -6,6 +6,8 @@
   "modules/drawers/ContentWindow.qml": "modules/drawers/ContentWindow.qml",
   "modules/drawers/Regions.qml": "modules/drawers/Regions.qml",
   "modules/drawers/Interactions.qml": "modules/drawers/Interactions.qml",
+  "windows/combined-prototype/adapters/modules/drawers/WindowsHover.js": "modules/drawers/WindowsHover.js",
+  "windows/combined-prototype/adapters/modules/drawers/WindowsHoverRegions.qml": "modules/drawers/WindowsHoverRegions.qml",
   "modules/session/Wrapper.qml": "modules/session/Wrapper.qml",
   "modules/session/Content.qml": "modules/session/Content.qml",
   "components/containers/StyledWindow.qml": "components/containers/StyledWindow.qml",

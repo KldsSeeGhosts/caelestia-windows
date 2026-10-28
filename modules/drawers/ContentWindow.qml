@@ -117,6 +117,16 @@ StyledWindow {
         bar: bar
         panels: panels
         win: root
+
+        // Windows: shared-edge rectangles also supply the hover predicates.
+        WindowsHoverRegions {
+            id: windowsHover
+            screen: root.screen
+            screens: Quickshell.screens
+            win: root
+            panels: panels
+            bar: bar
+        }
     }
 
     HyprlandFocusGrab {
@@ -281,6 +291,8 @@ StyledWindow {
         bar: bar
         borderThickness: root.borderLayoutThickness
         fullscreen: root.hasFullscreen
+        // Windows: widen only the two hover triggers on shared edges.
+        windowsHover: windowsHover
 
         Panels {
             id: panels
