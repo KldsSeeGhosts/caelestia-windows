@@ -12,18 +12,12 @@ import qs.components
 import qs.components.containers
 import qs.services
 import qs.modules.bar
-// Windows: detect shared edges in the adapter, in local logical units.
-import "WindowsHover.js" as WindowsHover
 
 StyledWindow {
     id: root
 
     readonly property alias bar: bar
     readonly property alias interactionWrapper: interactions
-    // Windows: only the shared right/bottom edges get the configurable strip.
-    readonly property real innerHoverWidth: WindowsHover.extraWidth(GlobalConfig.windows?.innerEdgeHoverWidth)
-    readonly property real rightHoverExtra: WindowsHover.adjacent(screen, Quickshell.screens, "right") ? innerHoverWidth : 0
-    readonly property real bottomHoverExtra: WindowsHover.adjacent(screen, Quickshell.screens, "bottom") ? innerHoverWidth : 0
     // Automated rendering can exercise the original graph without taking input.
     property bool interactionEnabled: true
 
@@ -124,27 +118,14 @@ StyledWindow {
         panels: panels
         win: root
 
-        // Windows: extend input only at the OSD and utilities trigger strips.
-        Region {
-            x: root.width - root.contentItem.Config.border.clampedThickness - root.rightHoverExtra
-            y: panels.osdWrapper.y + root.borderThickness - root.contentItem.Config.border.rounding
-            width: root.rightHoverExtra > 0 && root.contentItem.Config.osd.enabled ? root.contentItem.Config.border.clampedThickness + root.rightHoverExtra : 0
-            height: panels.osdWrapper.height + 2 * root.contentItem.Config.border.rounding
-            intersection: Intersection.Subtract
-        }
-        Region {
-            x: root.width - root.contentItem.Config.border.clampedThickness - root.rightHoverExtra
-            y: root.height - root.contentItem.Config.border.clampedThickness - root.contentItem.Config.border.rounding
-            width: root.rightHoverExtra > 0 && root.contentItem.Config.utilities.enabled ? root.contentItem.Config.border.clampedThickness + root.rightHoverExtra : 0
-            height: root.contentItem.Config.border.clampedThickness + root.contentItem.Config.border.rounding
-            intersection: Intersection.Subtract
-        }
-        Region {
-            x: panels.utilities.x + bar.implicitWidth - root.contentItem.Config.border.rounding
-            y: root.height - root.contentItem.Config.border.clampedThickness - root.contentItem.Config.border.rounding - root.bottomHoverExtra
-            width: root.bottomHoverExtra > 0 && root.contentItem.Config.utilities.enabled ? panels.utilities.width + 2 * root.contentItem.Config.border.rounding : 0
-            height: root.contentItem.Config.border.clampedThickness + root.contentItem.Config.border.rounding + root.bottomHoverExtra
-            intersection: Intersection.Subtract
+        // Windows: shared-edge rectangles also supply the hover predicates.
+        WindowsHoverRegions {
+            id: windowsHover
+            screen: root.screen
+            screens: Quickshell.screens
+            win: root
+            panels: panels
+            bar: bar
         }
     }
 
@@ -311,8 +292,7 @@ StyledWindow {
         borderThickness: root.borderLayoutThickness
         fullscreen: root.hasFullscreen
         // Windows: widen only the two hover triggers on shared edges.
-        rightHoverExtra: root.rightHoverExtra
-        bottomHoverExtra: root.bottomHoverExtra
+        windowsHover: windowsHover
 
         Panels {
             id: panels
