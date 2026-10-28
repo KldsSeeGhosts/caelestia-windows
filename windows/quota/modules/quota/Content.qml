@@ -18,24 +18,23 @@ Item {
     property bool hasError: false
     property string error: ""
     property string openAccountId: Quota.selectedProviderId
-    property bool usageOpen: false
+    property bool revealed: false
     property string priorGroup: ""
     readonly property var provider: Quota.activeProvider
     readonly property var accounts: Quota.activeGroupAccounts
     readonly property string family: Tokens.font.body.small.family
     readonly property color muted: Colours.palette.m3onSurfaceVariant
-    readonly property color hairline: Qt.alpha(Colours.palette.m3outlineVariant, 0.5)
+    readonly property color hairline: Qt.alpha(Colours.palette.m3outlineVariant, 0.6)
     readonly property double staleAfter: Math.max(180000, Quota.refreshIntervalMs * 3)
 
     implicitWidth: QuotaConfig.panelWidth - Tokens.padding.large * 2
-    implicitHeight: header.height + 10 + strip.height + 10 + groupTitle.implicitHeight + 6
+    implicitHeight: header.height + 14 + strip.height + 10 + groupTitle.implicitHeight + 8 + 14 + footer.height
         + Math.min(body.contentHeight, Math.max(0, QuotaConfig.panelHeight
-            - Tokens.padding.large * 2 - header.height - strip.height - groupTitle.implicitHeight - 26))
+            - Tokens.padding.large * 2 - header.height - strip.height - groupTitle.implicitHeight - footer.height - 46))
 
     function resetScroll(): void {
         body.contentY = 0;
         openAccountId = Quota.selectedProviderId;
-        usageOpen = false;
     }
     function accountState(account: var): string {
         return Logic.accountState(account, Quota.nowMs, root.staleAfter, root.hasError);
@@ -68,11 +67,11 @@ Item {
         const value = Logic.accountRemaining(account);
         if (value === null) return qsTr("No reading");
         const prefix = String(account.provider).toLowerCase() === "cursor" ? "API " : "";
-        return (state === "stale" ? qsTr("Saved ") : "") + prefix + root.percentText(value) + qsTr(" left");
+        return prefix + root.percentText(value);
     }
     function accountName(account: var): string {
         const label = String(account.accountLabel || account.name || qsTr("Account"));
-        return label.includes("@") ? label.split("@")[0] : label;
+        return (label.includes("@") ? label.split("@")[0] : label).replace(/\*{2,}/g, "•••");
     }
     function tierName(account: var): string {
         return String(account.tierLabel || "").split("·").pop().trim();
@@ -80,18 +79,15 @@ Item {
     function providerIconSource(providerId: string): url {
         const p = String(providerId).toLowerCase();
         let name = "";
-        if (p === "codex" || p === "openai") name = "codex.png";
+        if (p === "codex" || p === "openai") name = Colours.light ? "codex-light.svg" : "codex.svg";
         else if (p === "claude" || p === "anthropic") name = "claude.svg";
-        else if (p === "cursor") name = "cursor.png";
-        else if (p === "antigravity") name = "antigravity.svg";
+        else if (p === "cursor") name = Colours.light ? "cursor-light.svg" : "cursor.svg";
+        else if (p === "antigravity") name = Colours.light ? "antigravity-light.svg" : "antigravity.svg";
         else if (p === "zai") name = Colours.light ? "zai-light.svg" : "zai.svg";
         else if (p === "opencode-go") name = Colours.light ? "opencode-light.svg" : "opencode-dark.svg";
         else if (p === "vertex") name = "vertex.svg";
         else if (p === "kimi") name = Colours.light ? "kimi-light.svg" : "kimi-dark.svg";
         return name ? Quickshell.shellPath("assets/provider-icons/" + name) : "";
-    }
-    function usageSummary(): string {
-        return Quota.usageTodayText;
     }
     readonly property bool zaiIsPeak: root.provider && root.provider.provider === "zai"
         && new Date(Quota.nowMs).getUTCHours() >= 1 && new Date(Quota.nowMs).getUTCHours() < 15
@@ -127,16 +123,7 @@ Item {
         anchors.right: parent.right
         height: 32
         spacing: 6
-        Label { text: qsTr("Agents"); font.pixelSize: 18; font.weight: Font.DemiBold }
-        Label {
-            Layout.fillWidth: true
-            Layout.minimumWidth: 0
-            text: root.loading ? qsTr("Refreshing…") : Quota.lastUpdatedAt > 0
-                ? qsTr("Updated %1").arg(root.relativeTime(new Date(Quota.lastUpdatedAt).toISOString())) : qsTr("No reading yet")
-            font.pixelSize: 11
-            color: root.muted
-            elide: Text.ElideRight
-        }
+        Label { Layout.fillWidth: true; text: qsTr("Agents"); font.pixelSize: 20; font.weight: Font.DemiBold; font.letterSpacing: -0.2 }
         IconButton {
             implicitWidth: 30
             implicitHeight: 30
@@ -174,10 +161,10 @@ Item {
     Flickable {
         id: strip
         anchors.top: header.bottom
-        anchors.topMargin: 10
+        anchors.topMargin: 14
         anchors.left: parent.left
         anchors.right: parent.right
-        height: 74
+        height: 56
         clip: true
         contentWidth: providerRow.width
         contentHeight: height
@@ -185,89 +172,23 @@ Item {
         boundsBehavior: Flickable.StopAtBounds
         Row {
             id: providerRow
-            spacing: 4
+            // Few providers sit together in the centre instead of spreading out.
+            x: Math.max(0, (strip.width - width) / 2)
+            spacing: 0
             Repeater {
                 model: Quota.providerGroups
-                delegate: AbstractButton {
-                    id: chip
+                delegate: QuotaRing {
                     required property var modelData
                     required property int index
-                    readonly property bool selected: root.provider && root.provider.provider === modelData.provider
-                    readonly property var summary: Logic.providerSummary(modelData)
-                    readonly property bool saved: modelData.accounts.some(a => root.accountState(a) !== "ok")
-                    readonly property string iconSource: root.providerIconSource(modelData.provider)
-                    width: Math.max(47, (strip.width - 4 * Math.max(0, Quota.providerGroups.length - 1)) / Math.max(1, Quota.providerGroups.length))
-                    height: strip.height
-                    padding: 3
-                    hoverEnabled: true
-                    onClicked: Quota.selectGroup(modelData.provider)
-                    Accessible.name: modelData.label + ", " + summary.map(s => s.label + " " + root.percentText(s.remaining) + " remaining").join(", ")
-                    QuotaToolTip {
-                        visible: chip.hovered
-                        text: chip.modelData.label + "\n"
-                            + (chip.summary.length ? chip.summary.map(s => s.title + ": " + root.percentText(s.remaining) + " remaining").join("\n") : qsTr("No quota reading"))
-                            + (chip.saved ? qsTr("\nSome readings are saved or unavailable.") : "")
-                            + qsTr("\nLowest remaining per window across accounts and scopes.")
-                        boundsItem: root
-                        family: root.family
-                    }
-                    background: Rectangle {
-                        radius: 12
-                        color: chip.selected ? Colours.palette.m3secondaryContainer : chip.hovered ? Qt.alpha(Colours.palette.m3onSurface, 0.06) : "transparent"
-                        border.width: chip.activeFocus ? 1 : 0
-                        border.color: Colours.palette.m3primary
-                    }
-                    contentItem: Column {
-                        spacing: 3
-                        Item {
-                            width: parent.width
-                            height: 22
-                            Rectangle {
-                                anchors.centerIn: parent
-                                width: 22; height: 22; radius: 6
-                                color: chip.modelData.provider === "codex" ? Colours.palette.m3inverseSurface : "transparent"
-                                Image {
-                                    anchors.centerIn: parent
-                                    width: 18; height: 18
-                                    source: chip.iconSource
-                                    sourceSize: Qt.size(24, 24)
-                                    fillMode: Image.PreserveAspectFit
-                                    smooth: true; mipmap: true
-                                }
-                            }
-                            Label {
-                                anchors.centerIn: parent
-                                visible: !chip.iconSource
-                                text: String(chip.modelData.label).slice(0, 2)
-                                font.pixelSize: 11
-                            }
-                            Rectangle {
-                                visible: chip.saved
-                                anchors.right: parent.right
-                                width: 4; height: 4; radius: 2
-                                color: Colours.palette.m3outline
-                            }
-                        }
-                        Repeater {
-                            model: chip.summary
-                            delegate: Label {
-                                required property var modelData
-                                width: chip.availableWidth
-                                text: modelData.label + " " + root.percentText(modelData.remaining)
-                                horizontalAlignment: Text.AlignHCenter
-                                font.pixelSize: 10
-                                color: chip.saved ? root.muted : root.stateColour("ok", modelData.remaining)
-                            }
-                        }
-                        Label {
-                            visible: chip.summary.length === 0
-                            width: chip.availableWidth
-                            text: "—"
-                            horizontalAlignment: Text.AlignHCenter
-                            font.pixelSize: 11
-                            color: root.muted
-                        }
-                    }
+                    width: Math.max(48, Math.min(60, strip.width / Math.max(1, Quota.providerGroups.length)))
+                    group: modelData
+                    selected: root.provider && root.provider.provider === modelData.provider
+                    summary: Logic.providerSummary(modelData)
+                    saved: modelData.accounts.some(a => root.accountState(a) !== "ok")
+                    iconSource: root.providerIconSource(modelData.provider)
+                    revealed: root.revealed
+                    family: root.family
+                    tooltipBounds: root
                 }
             }
         }
@@ -282,22 +203,23 @@ Item {
         Label {
             Layout.fillWidth: true
             text: Quota.activeGroup ? Quota.activeGroup.label : qsTr("No providers")
-            font.pixelSize: 14
+            font.pixelSize: 15
             font.weight: Font.DemiBold
         }
         Label {
-            text: root.accounts.length > 1 ? qsTr("%1 accounts").arg(root.accounts.length) : qsTr("Remaining quota")
-            font.pixelSize: 11
+            text: root.accounts.length > 1 ? qsTr("%1 accounts").arg(root.accounts.length) : root.accounts.length === 1 ? qsTr("1 account") : ""
+            font.pixelSize: 12
             color: root.muted
         }
     }
     StyledFlickable {
         id: body
         anchors.top: groupTitle.bottom
-        anchors.topMargin: 6
+        anchors.topMargin: 8
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.bottom: parent.bottom
+        anchors.bottom: footer.top
+        anchors.bottomMargin: 14
         clip: true
         contentWidth: width
         contentHeight: stack.implicitHeight
@@ -309,27 +231,35 @@ Item {
             spacing: 0
             Label {
                 width: parent.width
-                visible: root.accounts.length === 0 || root.hasError
-                text: root.hasError ? root.error
-                    : Quota.status === "unconfigured" ? qsTr("Not configured. Add cpa-agents.json to the shell config folder.")
-                    : qsTr("No agent usage records found.")
-                wrapMode: Text.WordWrap
-                color: root.hasError ? Colours.palette.m3error : root.muted
-                topPadding: 8; bottomPadding: 8
-            }
-            Label {
-                width: parent.width
                 visible: root.zaiIsPeak
                 text: root.zaiPeakText
-                font.pixelSize: 11
+                font.pixelSize: 12
+                wrapMode: Text.WordWrap
                 color: root.muted
-                topPadding: 8; bottomPadding: 8
+                bottomPadding: 8
             }
-            Repeater {
+            Rectangle {
+                width: parent.width
+                height: groupColumn.implicitHeight
+                radius: 16
+                color: Qt.alpha(Colours.palette.m3onSurface, 0.05)
+                Column {
+                id: groupColumn
+                width: parent.width
+                Label {
+                    width: parent.width
+                    visible: root.accounts.length === 0
+                    text: Quota.status === "unconfigured" ? qsTr("Not configured. Add cpa-agents.json to the shell config folder.") : qsTr("No agent usage records found.")
+                    wrapMode: Text.WordWrap
+                    color: root.muted
+                    padding: 14
+                }
+                Repeater {
                 model: root.accounts
                 delegate: Column {
                     id: accountRow
                     required property var modelData
+                    required property int index
                     readonly property string quotaState: root.accountState(modelData)
                     readonly property bool expanded: root.openAccountId === modelData.id
                     width: stack.width
@@ -337,7 +267,8 @@ Item {
                     AbstractButton {
                         id: accountButton
                         width: parent.width
-                        height: 44
+                        height: 48
+                        leftPadding: 14; rightPadding: 12
                         hoverEnabled: true
                         Accessible.name: root.accountName(accountRow.modelData) + ", " + root.accountSummary(accountRow.modelData)
                         onClicked: {
@@ -347,40 +278,46 @@ Item {
                         }
                         QuotaToolTip {
                             visible: accountButton.hovered
-                            text: accountRow.modelData.accountLabel + "\n" + accountRow.modelData.tierLabel
+                            text: accountRow.quotaState === "stale" ? qsTr("Saved reading from %1").arg(root.relativeTime(accountRow.modelData.quotaUpdatedAt || accountRow.modelData.updatedAt || "")) : root.accountName(accountRow.modelData) + "\n" + root.tierName(accountRow.modelData)
                             boundsItem: root
                             family: root.family
                         }
                         background: Rectangle {
-                            color: accountButton.hovered ? Qt.alpha(Colours.palette.m3onSurface, 0.04) : "transparent"
-                            radius: 8
+                            x: 4; width: accountButton.width - 8
+                            color: accountButton.hovered || accountButton.down ? Qt.alpha(Colours.palette.m3onSurface, 0.04) : "transparent"
+                            radius: 12
                             border.width: accountButton.activeFocus ? 1 : 0
                             border.color: Colours.palette.m3primary
                         }
                         contentItem: RowLayout {
                             spacing: 6
                             Label {
-                                Layout.fillWidth: true
                                 Layout.minimumWidth: 0
+                                Layout.maximumWidth: accountButton.width * 0.38
                                 text: root.accountName(accountRow.modelData)
-                                font.weight: Font.DemiBold
+                                font.pixelSize: 14
+                                font.weight: Font.Medium
                                 elide: Text.ElideRight
                             }
                             Label {
-                                Layout.maximumWidth: 70
+                                Layout.maximumWidth: 90
                                 text: root.tierName(accountRow.modelData)
-                                font.pixelSize: 11
-                                color: root.muted
+                                font.pixelSize: 12
+                                color: Qt.alpha(root.muted, 0.7)
                                 elide: Text.ElideRight
                             }
+                            Item { Layout.fillWidth: true }
                             Label {
                                 text: root.accountSummary(accountRow.modelData)
-                                font.pixelSize: 11
+                                font.pixelSize: accountRow.quotaState === "ok" || accountRow.quotaState === "stale" ? 14 : 13
+                                font.weight: accountRow.quotaState === "ok" ? Font.DemiBold : Font.Normal
                                 color: root.stateColour(accountRow.quotaState, Logic.accountRemaining(accountRow.modelData))
                             }
                             MaterialIcon {
-                                text: accountRow.expanded ? "expand_less" : "expand_more"
-                                color: root.muted
+                                text: "chevron_right"
+                                rotation: accountRow.expanded ? 90 : 0
+                                Behavior on rotation { Anim {} }
+                                color: Qt.alpha(root.muted, 0.7)
                                 fontStyle: Tokens.font.icon.small
                             }
                         }
@@ -394,21 +331,21 @@ Item {
                         Column {
                             id: detail
                             width: parent.width
-                            spacing: 12
-                            topPadding: 2; bottomPadding: 14
+                            spacing: 14
+                            leftPadding: 14; rightPadding: 14; bottomPadding: 14
                             Rectangle {
                                 visible: accountRow.quotaState !== "ok"
-                                width: parent.width
-                                height: noticeText.implicitHeight + 16
-                                radius: 8
-                                color: Qt.alpha(accountRow.quotaState === "auth" ? Colours.palette.m3error : Colours.palette.m3onSurface, 0.07)
+                                width: parent.width - 28
+                                height: noticeText.implicitHeight + 18
+                                radius: 10
+                                color: Qt.alpha(accountRow.quotaState === "auth" ? Colours.palette.m3error : Colours.palette.m3onSurface, accountRow.quotaState === "auth" ? 0.10 : 0.06)
                                 Label {
                                     id: noticeText
                                     anchors.left: parent.left
                                     anchors.right: parent.right
                                     anchors.top: parent.top
-                                    anchors.margins: 8
-                                    font.pixelSize: 11
+                                    anchors.leftMargin: 10; anchors.rightMargin: 10; anchors.topMargin: 9
+                                    font.pixelSize: 12
                                     wrapMode: Text.WordWrap
                                     text: {
                                         const a = accountRow.modelData;
@@ -432,7 +369,7 @@ Item {
                                 model: Logic.orderedWindows(Logic.primaryWindows(accountRow.modelData))
                                 delegate: QuotaMeter {
                                     required property var modelData
-                                    width: detail.width
+                                    width: detail.width - 28
                                     limit: modelData
                                     nowMs: Quota.nowMs
                                     quotaState: accountRow.quotaState
@@ -442,14 +379,14 @@ Item {
                             Label {
                                 visible: Logic.scopedWindows(accountRow.modelData).length > 0
                                 text: qsTr("Model limits")
-                                font.pixelSize: 11
+                                font.pixelSize: 12
                                 color: root.muted
                             }
                             Repeater {
                                 model: Logic.orderedWindows(Logic.scopedWindows(accountRow.modelData))
                                 delegate: QuotaMeter {
                                     required property var modelData
-                                    width: detail.width
+                                    width: detail.width - 28
                                     limit: modelData
                                     nowMs: Quota.nowMs
                                     quotaState: accountRow.quotaState
@@ -459,7 +396,7 @@ Item {
                             }
                             Label {
                                 visible: !!accountRow.modelData.balance
-                                width: parent.width
+                                width: parent.width - 28
                                 wrapMode: Text.WordWrap
                                 text: {
                                     const b = accountRow.modelData.balance;
@@ -470,69 +407,48 @@ Item {
                             }
                         }
                     }
-                    Rectangle { width: parent.width; height: 1; color: root.hairline }
+                    Rectangle { x: 14; width: parent.width - 14; height: accountRow.index < root.accounts.length - 1 ? 1 : 0; color: root.hairline }
                 }
             }
-            AbstractButton {
-                id: usageButton
-                width: parent.width
-                height: 60
-                hoverEnabled: true
-                onClicked: root.usageOpen = !root.usageOpen
-                Accessible.name: qsTr("Usage today: %1").arg(root.usageSummary())
-                background: Rectangle {
-                    color: usageButton.hovered ? Qt.alpha(Colours.palette.m3onSurface, 0.04) : "transparent"
-                    radius: 8
-                    border.width: usageButton.activeFocus ? 1 : 0
-                    border.color: Colours.palette.m3primary
-                }
-                contentItem: RowLayout {
-                    spacing: 8
-                    Column {
-                        Layout.fillWidth: true
-                        spacing: 3
-                        Label { text: qsTr("Usage today"); font.weight: Font.DemiBold }
-                        Label {
-                            width: parent.width
-                            text: root.usageSummary()
-                            font.pixelSize: 11
-                            color: root.muted
-                            elide: Text.ElideRight
-                        }
-                    }
-                    MaterialIcon {
-                        text: root.usageOpen ? "expand_less" : "expand_more"
-                        color: root.muted
-                        fontStyle: Tokens.font.icon.small
-                    }
-                }
             }
-            Column {
-                width: parent.width
-                visible: root.usageOpen
-                spacing: 8
-                bottomPadding: 12
+            }
+        }
+    }
+    Item {
+        id: footer
+        anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom
+        height: 30
+        Rectangle { width: parent.width; height: 1; color: root.hairline }
+        RowLayout {
+            anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top
+            anchors.topMargin: 13
+            spacing: 8
+            Label {
+                id: footerStatus
+                Layout.fillWidth: true; Layout.minimumWidth: 0
+                text: root.loading ? qsTr("Refreshing…") : Quota.keepaliveRunning ? qsTr("Keepalive %1/%2").arg(Quota.keepaliveDone).arg(Quota.keepaliveTotal)
+                    : root.hasError ? qsTr("Refresh failed, showing saved data")
+                    : Quota.lastUpdatedAt > 0 ? qsTr("Updated %1").arg(root.relativeTime(new Date(Quota.lastUpdatedAt).toISOString())) : qsTr("No reading yet")
+                color: root.hasError && !root.loading && !Quota.keepaliveRunning ? Colours.palette.m3error : Qt.alpha(root.muted, 0.7)
+                font.pixelSize: 12; elide: Text.ElideRight
+                HoverHandler { id: statusHover }
+                QuotaToolTip { visible: statusHover.hovered && root.hasError; text: root.error; boundsItem: root; family: root.family }
+            }
+            Row {
+                objectName: "quotaFooterCost"
                 Label {
-                    width: parent.width
-                    text: qsTr("CPA Manager reports one cost total for all accounts. Per-account token and request ledgers are not part of the quota summary.")
-                    wrapMode: Text.WordWrap
-                    font.pixelSize: 11
-                    color: root.muted
+                    objectName: "quotaFooterAmount"
+                    text: Quota.todayCostUsd === null ? qsTr("Cost not reported") : Quota.usageCostText
+                    color: Quota.todayCostUsd === null ? Qt.alpha(root.muted, 0.7) : root.muted
+                    font.pixelSize: 12
+                    font.weight: Quota.todayCostUsd === null ? Font.Normal : Font.DemiBold
                 }
-                RowLayout {
-                    width: stack.width
-                    spacing: 8
-                    Label {
-                        Layout.fillWidth: true
-                        text: qsTr("Cost today")
-                        font.pixelSize: 12
-                    }
-                    Label {
-                        text: Quota.usageCostText
-                        font.pixelSize: 12
-                        color: root.muted
-                    }
+                Label {
+                    visible: Quota.todayCostUsd !== null
+                    text: qsTr(" today"); color: Qt.alpha(root.muted, 0.7); font.pixelSize: 12
                 }
+                HoverHandler { id: costHover }
+                QuotaToolTip { visible: costHover.hovered; text: qsTr("CPA Manager reports one total for all accounts."); boundsItem: root; family: root.family }
             }
         }
     }
