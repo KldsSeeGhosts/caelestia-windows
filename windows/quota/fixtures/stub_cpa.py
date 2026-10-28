@@ -206,6 +206,35 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self._send(404, {"error": "not found"})
 
+    def do_POST(self) -> None:  # noqa: N802
+        if not self._authorized():
+            self._send(401, {"error": "unauthorized"})
+            return
+        if urlsplit(self.path).path != "/v0/management/monitoring/analytics":
+            self._send(404, {"error": "not found"})
+            return
+        body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
+        rows = SPEND[spend_key(int(body.get("from_ms") or 0), int(body.get("to_ms") or 0))]
+        self._send(200, {"channel_share": [
+            {"auth_index": f"{provider}-0", "auth_provider_snapshot": provider, "cost": cost}
+            for provider, cost in rows
+        ]})
+
+
+# Synthetic per-account cost rows for the monitoring analytics endpoint. Today
+# sums to the summary's todayCostUsd; route names mimic CPA's provider ids.
+SPEND = {
+    "today": [("codex", 1.62), ("claude", 1.44), ("openai-compatible-opencode-go", 0.35), ("zai", 0.30)],
+    "yesterday": [("claude", 6.20), ("codex", 4.85), ("antigravity", 0.41)],
+    "month": [("claude", 182.40), ("codex", 151.75), ("cursor", 38.20), ("zai", 12.10), ("antigravity", 6.35), ("devin-local", 2.05)],
+}
+
+
+def spend_key(from_ms: int, to_ms: int) -> str:
+    if to_ms - from_ms > 2 * 86_400_000:
+        return "month"
+    return "yesterday" if to_ms < NOW.timestamp() * 1000 - 3_600_000 else "today"
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(add_help=False)

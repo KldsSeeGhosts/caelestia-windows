@@ -11,7 +11,7 @@ param(
 #
 #   configured    a synthetic local CPA Manager stub serves the pre-aggregated
 #                 quota summary; the drawer opens on Claude with meters, a
-#                 model-scoped window, rings and footer, and dark/light
+#                 model-scoped window, provider sections and spend card, and dark/light
 #                 screenshots are saved;
 #   offline       the CPA endpoint refuses connections; with the configured
 #                 run's cached summary the saved reading stays visible behind
@@ -194,7 +194,7 @@ function Invoke-QuotaSmoke([string]$Mode) {
                 $text -match 'CAELESTIA_QUOTA_SMOKE_SUMMARY .*"groups":3' -and
                 $text -match '"claudeLimits":3' -and $text -match '"scoped":1' -and
                 $text -match '"todayCostUsd":3.71' -and
-                $text -match 'CAELESTIA_QUOTA_SMOKE_SWITCH .*"ringsAndFooter":true' -and
+                $text -match 'CAELESTIA_QUOTA_SMOKE_SWITCH .*"sectionsAndSpend":true' -and
                 (Test-Path -LiteralPath $screenshot) -and (Get-Item -LiteralPath $screenshot).Length -gt 0 -and
                 (Test-Path -LiteralPath $lightScreenshot) -and (Get-Item -LiteralPath $lightScreenshot).Length -gt 0 -and
                 $cacheProviders -eq 5 -and -not $cacheLeaks
