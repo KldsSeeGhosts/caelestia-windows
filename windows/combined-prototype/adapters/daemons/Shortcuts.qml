@@ -21,6 +21,9 @@ import qs.modules.nexus
 Scope {
     id: root
 
+    // Windows: instantiate the picker IPC adapter even before the launcher opens.
+    readonly property bool glazierAvailable: Glazier.available
+
     readonly property var screenState: {
         const screen = ShellState.shellRoot?.selectedScreen
             ?? Quickshell.screens.find(s => Hypr.monitorFor(s) === Hypr.focusedMonitor)
@@ -29,6 +32,28 @@ Scope {
     }
 
     property bool launcherInterrupted
+
+    CustomShortcut {
+        name: "screenshot"
+        description: "Open Glazier screenshot tool"
+        onPressed: Glazier.capture()
+    }
+    // Windows: the upstream picker variants all open Glazier's frozen editor.
+    CustomShortcut {
+        name: "screenshotFreeze"
+        description: "Open Glazier screenshot tool"
+        onPressed: Glazier.capture()
+    }
+    CustomShortcut {
+        name: "screenshotClip"
+        description: "Open Glazier screenshot tool"
+        onPressed: Glazier.capture()
+    }
+    CustomShortcut {
+        name: "screenshotFreezeClip"
+        description: "Open Glazier screenshot tool"
+        onPressed: Glazier.capture()
+    }
 
     function logState(name: string): void {
         const state = root.screenState;
