@@ -13,9 +13,34 @@ param(
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
 if (-not $BuildRoot) { $BuildRoot = Join-Path $repoRoot 'windows\.local\build' }
 $BuildRoot = (Resolve-Path -LiteralPath $BuildRoot).Path
+$buildRecord = Join-Path $BuildRoot 'logs\build.json'
+if (Test-Path -LiteralPath $buildRecord) {
+    $buildInfo = Get-Content -LiteralPath $buildRecord -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+    if (-not $buildInfo.sourceRevision -or -not $buildInfo.backendRevision) {
+        throw "Build record $buildRecord must contain sourceRevision and backendRevision."
+    }
+    $sourceRevision = & git -C $repoRoot rev-parse HEAD
+    if ($LASTEXITCODE -ne 0 -or $sourceRevision -ne $buildInfo.sourceRevision) {
+        throw "Build source revision is $($buildInfo.sourceRevision), but checkout $repoRoot is at $sourceRevision. Run the installer from a checkout at $($buildInfo.sourceRevision), with its quickshell submodule at $($buildInfo.backendRevision)."
+    }
+    $backendRoot = Join-Path $repoRoot 'windows\deps\quickshell'
+    if (-not (Test-Path -LiteralPath (Join-Path $backendRoot '.git'))) {
+        throw "Quickshell submodule is not initialized in $repoRoot. Run the installer from a checkout at $($buildInfo.sourceRevision), with its quickshell submodule at $($buildInfo.backendRevision)."
+    }
+    $backendRevision = & git -C $backendRoot rev-parse HEAD
+    if ($LASTEXITCODE -ne 0 -or $backendRevision -ne $buildInfo.backendRevision) {
+        throw "Build backend revision is $($buildInfo.backendRevision), but checkout $repoRoot has quickshell at $backendRevision. Run the installer from a checkout at $($buildInfo.sourceRevision), with its quickshell submodule at $($buildInfo.backendRevision)."
+    }
+    # Matching HEADs do not prove matching content. Installing local QML edits
+    # is a normal development step, so warn rather than refuse.
+    if ($buildInfo.sourceDirty -or (& git -C $repoRoot status --porcelain)) {
+        Write-Warning "The build or checkout has uncommitted changes; install.json sourceRevision $sourceRevision may not describe the installed files."
+    }
+} else {
+    Write-Warning "Build record not found at $buildRecord; source and backend revisions cannot be verified."
+}
 if (-not $QtPrefix) {
-    $buildRecord = Join-Path $BuildRoot 'logs\build.json'
-    if (Test-Path -LiteralPath $buildRecord) { $QtPrefix = (Get-Content -LiteralPath $buildRecord -Raw | ConvertFrom-Json).qtPrefix }
+    if ($buildInfo) { $QtPrefix = $buildInfo.qtPrefix }
 }
 if (-not $QtPrefix) { throw 'Supply -QtPrefix for the Qt used to build qs.exe.' }
 $QtPrefix = (Resolve-Path -LiteralPath $QtPrefix).Path
