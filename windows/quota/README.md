@@ -100,10 +100,13 @@ There is no bar entry and no default keybind, matching the Linux overlay.
 - **Opt-in.** A local `FileView` existence check of `cpa-agents.json` decides
   whether the drawer is enabled. Missing config means no request, no error and
   a disabled drawer.
-- **Keepalive.** The bolt button still calls the upstream `cpa_keepalive.py`
-  helper, unchanged. It sends real keepalive traffic only when pressed and
-  needs Python plus `CPA_API_KEY` (or the Linux `environment.d/cpa.conf`
-  fallback); quota display itself no longer needs either.
+- **Keepalive.** The bolt button calls `cpa_keepalive.py`, which resolves the
+  inference endpoint from `--inference-url`, `CPA_INFERENCE_URL`, or
+  `inferenceUrl` in `cpa-agents.json` (falling back to loopback
+  `http://127.0.0.1:8317/v1/chat/completions` only when `baseUrl` is loopback).
+  It sends real keepalive traffic only when pressed and needs Python plus
+  `CPA_API_KEY` (or the `environment.d/cpa.conf` fallback); quota display
+  itself no longer needs either.
 - **Empty states.** No CPA config shows "Not configured. Add cpa-agents.json to
   the shell config folder." in the muted colour; an unreachable endpoint shows
   one saved-data line; a valid summary with no accounts shows the original
@@ -155,9 +158,10 @@ screenshots and caches are intentionally not committed.
   shapes beyond the captured schema, real provider labels, the exact set of
   model-scoped window ids, provider icon appearance at every DPI and the hover
   feel on the live desktop still need a live check.
-- The keepalive script keeps upstream's ports and endpoints. It was not pressed
-  in the smoke: it sends real traffic and needs CPA inference reachability plus
-  `CPA_API_KEY`.
+- The keepalive script requires an explicit HTTPS `inferenceUrl` (or
+  `CPA_INFERENCE_URL`) when `baseUrl` is remote, or uses loopback when
+  `baseUrl` is local. It was not pressed in the smoke: it sends real traffic and
+  needs CPA inference reachability plus `CPA_API_KEY`.
 - The light screenshot uses a fixed Material 3 baseline palette fixture, not a
   generated wallpaper scheme.
 - The provider icon marks are copied from the custom overlay. They are

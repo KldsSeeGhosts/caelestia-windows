@@ -14,9 +14,28 @@ Item {
     required property ScreenState screenState
 
     readonly property bool shouldBeActive: screenState.quota && QuotaConfig.enabled
+    // The relative-time tick only runs while this drawer is open.
+    property bool clockHeld: false
+
+    function syncClock(): void {
+        if (root.shouldBeActive && !root.clockHeld) {
+            root.clockHeld = true;
+            Quota.holdClock();
+        } else if (!root.shouldBeActive && root.clockHeld) {
+            root.clockHeld = false;
+            Quota.releaseClock();
+        }
+    }
+
     onShouldBeActiveChanged: {
+        root.syncClock();
         if (shouldBeActive && Date.now() - Quota.lastUpdatedAt > 30000)
             Quota.refresh();
+    }
+    Component.onCompleted: root.syncClock()
+    Component.onDestruction: {
+        if (root.clockHeld)
+            Quota.releaseClock();
     }
 
     property real offsetScale: shouldBeActive ? 0 : 1
@@ -27,14 +46,14 @@ Item {
     implicitWidth: QuotaConfig.panelWidth
     implicitHeight: Math.min(
         QuotaConfig.panelHeight,
-        content.implicitHeight + Tokens.padding.large * 2
+        ((content.item as Content)?.implicitHeight ?? 0) + Tokens.padding.large * 2
     )
     opacity: 1 - offsetScale
 
     onOffsetScaleChanged: {
         if (offsetScale >= 1) {
             Quota.resetToDefault();
-            content.resetScroll();
+            (content.item as Content)?.resetScroll();
         }
     }
 
@@ -42,14 +61,18 @@ Item {
         Anim {}
     }
 
-    Content {
+    Loader {
         id: content
 
         anchors.fill: parent
         anchors.margins: Tokens.padding.large
-        loading: Quota.loading
-        hasError: Quota.hasError
-        error: Quota.error
-        revealed: root.shouldBeActive
+
+        active: root.shouldBeActive || root.visible
+        sourceComponent: Content {
+            loading: Quota.loading
+            hasError: Quota.hasError
+            error: Quota.error
+            revealed: root.shouldBeActive
+        }
     }
 }
