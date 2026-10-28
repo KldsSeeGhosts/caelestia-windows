@@ -16,7 +16,13 @@ $stage = & "$PSScriptRoot\Stage-ShellPrototype.ps1" -Destination (Join-Path $run
 foreach ($directory in @('config', 'state', 'runtime', 'cache', 'data')) {
     New-Item -ItemType Directory -Force (Join-Path $profile $directory) | Out-Null
 }
-Copy-Item "$repoRoot\windows\nexus\NexusAudioStress.qml" "$stage\nexus-audio-stress.qml"
+$entry = Join-Path $stage 'nexus-audio-stress.qml'
+$header = @("DataDir $profile\data", "StateDir $profile\state", "CacheDir $profile\cache") |
+    ForEach-Object { "//@ pragma $_" }
+$shell = [IO.File]::ReadAllText("$repoRoot\windows\nexus\NexusAudioStress.qml")
+[IO.File]::WriteAllText($entry, (($header -join "`n") + "`n" + $shell), (New-Object Text.UTF8Encoding($false)))
+# Quickshell's backend runtime bookkeeping still uses its own runtime location,
+# outside RunRoot. The shell's data, state and cache directories are isolated.
 '{}' | Set-Content -LiteralPath "$profile\config\shell.json" -Encoding UTF8
 $qmlRoot = Join-Path $BuildRoot 'install\qml'
 $info = New-Object Diagnostics.ProcessStartInfo
