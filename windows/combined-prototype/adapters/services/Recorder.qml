@@ -62,7 +62,7 @@ Singleton {
     }
 
     function owns(path): bool {
-        return finishedFiles.indexOf(normalize(path)) !== -1;
+        return typeof path === "string" && finishedFiles.indexOf(normalize(path)) !== -1;
     }
 
     function remember(path): void {
@@ -76,6 +76,11 @@ Singleton {
     FileView {
         id: store
         property bool restored
+        function finish(): void {
+            restored = true;
+            if (root.finishedFiles.length)
+                setText(JSON.stringify(root.finishedFiles));
+        }
         path: root.permitted ? Quickshell.stateDir.replace(/\\/g, "/") + "/caelestia/recordings.json" : ""
         atomicWrites: true
         printErrors: false
@@ -85,11 +90,9 @@ Singleton {
                 if (Array.isArray(saved))
                     root.finishedFiles = [...new Set([...saved.filter(p => typeof p === "string"), ...root.finishedFiles])].slice(-500);
             } catch (_) {} // corrupt: start over from what Glazier reports
-            restored = true;
-            if (root.finishedFiles.length)
-                setText(JSON.stringify(root.finishedFiles));
+            finish();
         }
-        onLoadFailed: restored = true // no file yet
+        onLoadFailed: finish() // no file yet; keep what finished before the read failed
     }
 
     function applyResponse(text): bool {
