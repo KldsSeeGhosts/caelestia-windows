@@ -17,10 +17,11 @@
 //      caelestia:nexus global shortcut reaches the same window through the
 //      backend hotkey manager.
 //
-// It does not type into the window, take screenshots, start a tiler or touch
-// the live profile. Windows service facades stay disabled unless the caller
+// It types into the offscreen window but does not take screenshots, start a
+// tiler or touch the live profile. Windows service facades stay disabled unless the caller
 // passes Test-Nexus.ps1 -Observe, which sets only observation opt-ins.
 import QtQuick
+import QtTest
 import Quickshell
 import Quickshell.Io
 import Caelestia
@@ -54,14 +55,17 @@ ShellRoot {
     property var nexusWindow: null
     property var nexusItem: null
     property var pagesItem: null
+    property var searchField: null
+    property var searchResults: null
+    property var inputDriver: null
     // Off-window copy of the Windows-only page, used for its whole-map write.
     property var windowManagementPage: null
     property var windowManagementState: null
     // Token owned by the page container of the early-close window. It must be
     // invalidated by the time the next step runs.
     property var earlyCloseToken: null
-    // Steps 6..pageEnd-1 walk every registered page.
-    readonly property int pageEnd: 6 + PageRegistry.pages.length
+    // Steps 10..pageEnd-1 walk every registered page.
+    readonly property int pageEnd: 10 + PageRegistry.pages.length
     property var shortcuts: null
 
     function check(condition, message): void {
@@ -85,6 +89,30 @@ ShellRoot {
                 return found;
         }
         return null;
+    }
+
+    function findNamed(item, name): var {
+        if (!item)
+            return null;
+        if (item.objectName === name)
+            return item;
+        for (const child of item.children) {
+            const found = root.findNamed(child, name);
+            if (found)
+                return found;
+        }
+        return null;
+    }
+
+    readonly property Component inputDriverComponent: Component {
+        TestCase { when: false }
+    }
+
+    function typeQuery(text): void {
+        root.searchField.forceActiveFocus();
+        root.check(root.searchField.activeFocus, "search field did not receive focus");
+        for (const character of text)
+            root.inputDriver.keyClick(character);
     }
 
     // A fresh blocking FileView per read, so the check sees the file the
@@ -244,6 +272,57 @@ ShellRoot {
                 root.windowManagementPage = null;
                 root.windowManagementState.destroy();
                 root.windowManagementState = null;
+                root.searchField = root.findNamed(root.nexusItem, "nexusSearch");
+                root.searchResults = root.findNamed(root.nexusItem, "nexusSearchResults");
+                root.check(root.searchField !== null && root.searchResults !== null, "search controls missing");
+                root.inputDriver = root.inputDriverComponent.createObject(root.nexusWindow.contentItem);
+                root.check(root.inputDriver !== null, "input driver missing");
+                root.typeQuery("focus");
+                root.check(root.searchField.text === "focus", "typing did not update the search field");
+                root.check(root.searchResults.results.length === 1
+                    && root.searchResults.results[0].label === "Window management", "page keyword filtering failed");
+                root.inputDriver.keyClick(Qt.Key_Return);
+                root.check(root.nexusItem.nState.currentPageIdx === root.searchResults.results[0].pageIndex, "Enter did not navigate to page");
+                root.searchField.clear();
+                root.check(root.searchResults.results.length === PageRegistry.pages.length, "clearing search did not restore pages");
+                root.typeQuery("clock");
+                root.check(root.searchResults.results.length === 1
+                    && root.searchResults.results[0].label === "Clock", "sub-page title filtering failed");
+                root.inputDriver.keyClick(Qt.Key_Return);
+                root.check(root.nexusItem.nState.subPageIdxStack.join(",") === "2,10", "Enter did not select nested sub-page");
+                root.step++;
+                driver.interval = 900;
+                return;
+            } else if (root.step === 6) {
+                root.check(root.pagesItem.currentItem !== null && root.pagesItem.currentItem.depth === 3,
+                    "nested sub-page did not load");
+                root.check(root.pagesItem.currentItem.currentItem.title === "Clock", "wrong nested sub-page loaded");
+                root.searchField.clear();
+                root.typeQuery("tray");
+                root.check(root.searchResults.results.length === 1
+                    && root.searchResults.results[0].label === "Tray", "second sub-page filtering failed");
+                root.inputDriver.keyClick(Qt.Key_Return);
+                root.check(root.nexusItem.nState.subPageIdxStack.join(",") === "2,8",
+                    "same-page search did not replace sub-page path");
+                root.step++;
+                driver.interval = 900;
+                return;
+            } else if (root.step === 7) {
+                root.check(root.pagesItem.currentItem.depth === 3, "same-page nested result did not load");
+                root.check(root.pagesItem.currentItem.currentItem.title === "Tray", "wrong same-page result loaded");
+                root.searchField.clear();
+                root.typeQuery("zzzznotfound");
+                root.check(root.searchResults.results.length === 0, "unmatched query returned results");
+                const previousPage = root.nexusItem.nState.currentPageIdx;
+                root.inputDriver.keyClick(Qt.Key_Return);
+                root.check(root.nexusItem.nState.currentPageIdx === previousPage, "empty results changed page");
+                root.searchField.clear();
+                root.check(root.searchResults.results.length === PageRegistry.pages.length, "empty query did not restore pages");
+                root.inputDriver.destroy();
+                root.inputDriver = null;
+                console.log("CAELESTIA_NEXUS_SEARCH_PASS");
+            } else if (root.step === 8 || root.step === 9) {
+                // Allow any page transition and destroyed sub-pages to settle.
             } else if (root.step < root.pageEnd) {
                 const index = root.pageIdx;
                 root.nexusItem.nState.currentPageIdx = index;
