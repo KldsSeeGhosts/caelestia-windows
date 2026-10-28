@@ -25,6 +25,14 @@ public static class SupervisorPipeFixture {
 
     public static int Main(string[] args) {
         string directory = args[1];
+        if (args[0] == "clean") {
+            File.WriteAllText(Path.Combine(directory, "clean-" + Process.GetCurrentProcess().Id), "");
+            Console.Out.WriteLine("stdout-line");
+            Console.Out.Write("stdout-tail");
+            Console.Error.WriteLine("stderr-line");
+            Console.Error.Write("stderr-tail");
+            return 0;
+        }
         if (args[0] == "hold") {
             if (args.Length > 2 && args[2] == "require-pipes" &&
                 (GetFileType(GetStdHandle(-11)) != 3 || GetFileType(GetStdHandle(-12)) != 3)) return 4;

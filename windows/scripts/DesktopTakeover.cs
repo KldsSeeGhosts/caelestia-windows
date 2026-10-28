@@ -79,6 +79,14 @@ namespace Caelestia.Takeover {
             try { Log(log); } finally { cleanup(); }
         }
     }
+    // Null DataReceived marks EOF after all preceding callbacks have returned.
+    // Per-child state remains valid even if a deadline expires before EOF.
+    public sealed class LogDrain {
+        int pending;
+        public LogDrain(bool stdout, bool stderr) { pending = (stdout ? 1 : 0) + (stderr ? 1 : 0); }
+        public bool Complete { get { return Interlocked.CompareExchange(ref pending, 0, 0) == 0; } }
+        public void EndStream() { Interlocked.Decrement(ref pending); }
+    }
     public static class TransientIo {
         // A scanner or indexer can hold a file for a moment. Retry a few times
         // with doubling pauses (25, 50, 100, 200 ms), then surface the error.
@@ -413,8 +421,8 @@ namespace Caelestia.Takeover {
         }
         public bool EnsureStarted() {
             if (disposed) return false;
-            if (installed && Running) return true;
-            if (thread != null) Stop();
+            if (installed && Running && !cancel) return true;
+            if (thread != null && !Stop()) return false;
             ready.Reset();
             cancel = false;
             threadId = 0;
@@ -426,8 +434,7 @@ namespace Caelestia.Takeover {
             // install would put this hook ahead of the shell's hook.
             if (!ready.WaitOne(timeoutMilliseconds)) {
                 // An in-flight native install cannot be interrupted safely.
-                // Cancel, then join before starting the child, even if the
-                // install itself takes longer than the startup timeout.
+                // Cancel it and never start a replacement until it exits.
                 Stop();
                 report("shortcut-hook-timeout");
                 return false;
@@ -437,21 +444,25 @@ namespace Caelestia.Takeover {
             report(success ? "shortcut-hook-installed" : "shortcut-hook-failed");
             return success;
         }
-        public void Activate() { resetRequested = true; active = true; }
+        public void Activate() { resetRequested = true; active = installed && Running && !cancel; }
         public void Deactivate() { active = false; resetRequested = true; }
-        public void Stop() {
+        public bool Stop() {
             active = false;
             resetRequested = true;
             cancel = true;
             Thread current = thread;
-            if (current == null) { installed = false; return; }
+            if (current == null) { installed = false; return true; }
             int id = threadId;
             if (id != 0) Native.PostThreadMessage((uint)id, Native.WmQuit, IntPtr.Zero, IntPtr.Zero);
-            if (current.IsAlive) current.Join();
+            if (current.IsAlive && !current.Join(Math.Min(timeoutMilliseconds, 1000))) {
+                report("shortcut-hook-stop-timeout");
+                return false;
+            }
             thread = null;
             threadId = 0;
             installed = false;
             filter.Reset();
+            return true;
         }
         void ThreadMain() {
             IntPtr hook = IntPtr.Zero;
@@ -511,9 +522,10 @@ namespace Caelestia.Takeover {
         }
         public void Dispose() {
             if (disposed) return;
-            Stop();
+            bool stopped = Stop();
             disposed = true;
-            ready.Close();
+            // A late hook thread still signals ready in its finally block.
+            if (stopped) ready.Close();
         }
     }
     public static class Native {
@@ -1046,6 +1058,7 @@ namespace Caelestia.Takeover {
         readonly Launch launch;
         readonly bool hide, restart, invisible;
         readonly bool isolatedTest;
+        readonly int testLogDelayMs;
         readonly Snapshot saved;
         readonly System.Threading.EventWaitHandle recovery;
         readonly System.Windows.Forms.Timer timer = new System.Windows.Forms.Timer();
@@ -1059,6 +1072,9 @@ namespace Caelestia.Takeover {
         readonly StartupPersistence startup;
         readonly TaskbarShortcutHook shortcutHook;
         Process child;
+        LogDrain childDrain;
+        long drainDeadline;
+        bool recovering;
         DateTime started, nextStart;
         int quickCrashes;
         int ownedPid = -1;
@@ -1083,18 +1099,22 @@ namespace Caelestia.Takeover {
             }
         }
         public static int Run(string specPath, bool hide, bool restart, bool invisible) {
-            return RunCore(specPath, hide, restart, invisible, MutexName, EventName, false);
+            return RunCore(specPath, hide, restart, invisible, MutexName, EventName, false, 0);
         }
         // Used only by the non-desktop regression harness. Its unique names
         // cannot acquire or signal the real session supervisor.
         public static int RunIsolatedTest(string specPath, string token) {
+            return RunIsolatedTest(specPath, token, 0);
+        }
+        public static int RunIsolatedTest(string specPath, string token, int logDelayMs) {
             Guid parsed;
             if (!Guid.TryParseExact(token, "N", out parsed)) throw new ArgumentException("Invalid test token.");
+            if (logDelayMs < 0 || logDelayMs > 5000) throw new ArgumentOutOfRangeException("logDelayMs");
             string name = @"Local\CaelestiaDesktopTakeover-Test-" + parsed.ToString("N");
-            return RunCore(specPath, false, true, false, name, name + "-Recovery", true);
+            return RunCore(specPath, false, true, false, name, name + "-Recovery", true, logDelayMs);
         }
         static int RunCore(string specPath, bool hide, bool restart, bool invisible,
-            string mutexName, string eventName, bool isolatedTest) {
+            string mutexName, string eventName, bool isolatedTest, int testLogDelayMs) {
             using (var mutex = new System.Threading.Mutex(false, mutexName)) {
                 bool acquired;
                 try { acquired = mutex.WaitOne(0); }
@@ -1102,16 +1122,17 @@ namespace Caelestia.Takeover {
                 if (!acquired) throw new InvalidOperationException("A desktop supervisor already owns this Windows session.");
                 try {
                     var launch = new JavaScriptSerializer().Deserialize<Launch>(File.ReadAllText(specPath));
-                    using (var supervisor = new Supervisor(launch, hide, restart, invisible, eventName, isolatedTest)) {
+                    using (var supervisor = new Supervisor(launch, hide, restart, invisible, eventName, isolatedTest, testLogDelayMs)) {
                         Application.Run();
                         return supervisor.ExitCode;
                     }
                 } finally { mutex.ReleaseMutex(); }
             }
         }
-        Supervisor(Launch launch, bool hide, bool restart, bool invisible, string eventName, bool isolatedTest) {
+        Supervisor(Launch launch, bool hide, bool restart, bool invisible, string eventName, bool isolatedTest, int testLogDelayMs) {
             this.launch = launch; this.hide = hide; this.restart = restart; this.invisible = invisible && hide;
             this.isolatedTest = isolatedTest;
+            this.testLogDelayMs = testLogDelayMs;
             RestoreBanners();
             showCallback = OnTaskbarShow; // Root the delegate for the entire hook lifetime.
             showHook = new TaskbarHookBinding(
@@ -1290,10 +1311,17 @@ namespace Caelestia.Takeover {
             info.RedirectStandardOutput = !String.IsNullOrEmpty(launch.StdoutPath);
             info.RedirectStandardError = !String.IsNullOrEmpty(launch.StderrPath);
             var process = new Process { StartInfo = info };
+            var drain = new LogDrain(info.RedirectStandardOutput, info.RedirectStandardError);
             if (info.RedirectStandardOutput)
-                process.OutputDataReceived += delegate(object sender, DataReceivedEventArgs e) { if (e.Data != null) Append(launch.StdoutPath, e.Data); };
+                process.OutputDataReceived += delegate(object sender, DataReceivedEventArgs e) {
+                    if (e.Data == null) drain.EndStream();
+                    else { if (testLogDelayMs > 0) Thread.Sleep(testLogDelayMs); Append(launch.StdoutPath, e.Data); }
+                };
             if (info.RedirectStandardError)
-                process.ErrorDataReceived += delegate(object sender, DataReceivedEventArgs e) { if (e.Data != null) Append(launch.StderrPath, e.Data); };
+                process.ErrorDataReceived += delegate(object sender, DataReceivedEventArgs e) {
+                    if (e.Data == null) drain.EndStream();
+                    else { if (testLogDelayMs > 0) Thread.Sleep(testLogDelayMs); Append(launch.StderrPath, e.Data); }
+                };
             // Snapshot is durable and the supervisor owns restoration before
             // the child can register its AppBars. Retain the post-start pass.
             if (hide) { RefreshShowHook(false); SuppressRegions(); Native.Hide(true); }
@@ -1307,6 +1335,8 @@ namespace Caelestia.Takeover {
             };
             process.Start();
             child = process;
+            childDrain = drain;
+            drainDeadline = 0;
             ownedPid = child.Id;
             if (hide) {
                 shortcutHook.Activate();
@@ -1324,29 +1354,37 @@ namespace Caelestia.Takeover {
         }
         void Tick(object sender, EventArgs args) {
             try {
-                if (recovery.WaitOne(0)) {
-                    if (child != null && !child.HasExited) { child.Kill(); child.WaitForExit(1000); }
-                    Finish("recovered", 0);
-                    return;
+                if (!recovering && recovery.WaitOne(0)) {
+                    recovering = true;
+                    BeginDrain();
+                    if (child != null && !child.HasExited) child.Kill();
                 }
                 if (child == null) {
+                    if (recovering) { Finish("recovered", 0); return; }
                     if (DateTime.UtcNow < nextStart) return;
                     if (startup.Ready()) Start();
                     else nextStart = DateTime.UtcNow.AddSeconds(1); // locked snapshot: retry, no takeover
                     return;
                 }
                 if (!child.HasExited) {
+                    if (recovering) {
+                        if (Stopwatch.GetTimestamp() >= drainDeadline) Finish("recovered", 0);
+                        return;
+                    }
                     if (hide) { RefreshShowHook(false); Native.Hide(false); SuppressRegions(); }
                     return;
                 }
                 showHook.Dispose();
                 shortcutHook.Deactivate();
                 showPolicy.Reset();
-                // Do not use the parameterless WaitForExit here: it also
-                // waits for redirected pipe EOF, which a surviving descendant
-                // can hold indefinitely. The final log lines are best effort.
+                BeginDrain();
+                // Keep pumping the UI and recovery event while waiting for
+                // both EOF callbacks, but never wait beyond the shared deadline.
+                if (!childDrain.Complete && Stopwatch.GetTimestamp() < drainDeadline) return;
+                if (recovering) { Finish("recovered", 0); return; }
                 int code = child.ExitCode, pid = child.Id;
                 child.Dispose(); child = null;
+                childDrain = null;
                 RestoreBanners();
                 if (code == 0) { Finish("clean-exit", 0); return; }
                 quickCrashes = (DateTime.UtcNow - started).TotalSeconds < 30 ? quickCrashes + 1 : 0;
@@ -1357,6 +1395,9 @@ namespace Caelestia.Takeover {
             } catch (Exception error) {
                 Fail(error, "");
             }
+        }
+        void BeginDrain() {
+            if (drainDeadline == 0) drainDeadline = Stopwatch.GetTimestamp() + 2 * Stopwatch.Frequency;
         }
         void Finish(string phase, int code) {
             ExitCode = code;

@@ -2,12 +2,13 @@
 param(
     [switch]$Worker,
     [string]$Spec,
-    [string]$Token
+    [string]$Token,
+    [int]$LogDelayMs = 0
 )
 $ErrorActionPreference = 'Stop'
 if ($Worker) {
     Add-Type -Path (Join-Path $PSScriptRoot 'DesktopTakeover.cs') -ReferencedAssemblies System.Windows.Forms, System.Web.Extensions
-    exit [Caelestia.Takeover.Supervisor]::RunIsolatedTest($Spec, $Token)
+    exit [Caelestia.Takeover.Supervisor]::RunIsolatedTest($Spec, $Token, $LogDelayMs)
 }
 
 $root = Join-Path ([IO.Path]::GetTempPath()) ('caelestia-supervisor-pipe-' + [guid]::NewGuid().ToString('N'))
@@ -34,22 +35,42 @@ function Signal-TestRecovery([string]$token) {
     try { $event.Set() | Out-Null } finally { $event.Dispose() }
 }
 try {
-    foreach ($scenario in @('restart', 'recovery')) {
+    foreach ($scenario in @('restart', 'recovery', 'drain', 'drain-timeout')) {
         $dir = Join-Path $root $scenario
         New-Item -ItemType Directory -Path $dir | Out-Null
         $token = [guid]::NewGuid().ToString('N')
         $specPath = Join-Path $dir 'launch.json'
         $statusPath = Join-Path $dir 'watchdog.json'
         @{
-            Executable = $fixture; Arguments = 'spawn "' + $dir + '"'
+            Executable = $fixture; Arguments = $(if ($scenario -like 'drain*') { 'clean "' + $dir + '"' } else { 'spawn "' + $dir + '"' })
             WorkingDirectory = $dir; StateDirectory = $dir
             StdoutPath = (Join-Path $dir 'stdout.log'); StderrPath = (Join-Path $dir 'stderr.log')
             RestoreWorkAreas = $false; Environment = @{}
         } | ConvertTo-Json | Set-Content -LiteralPath $specPath -Encoding UTF8
         $args = @('-NoProfile', '-STA', '-File', ('"' + $PSCommandPath + '"'),
             '-Worker', '-Spec', ('"' + $specPath + '"'), '-Token', $token)
+        if ($scenario -eq 'drain') { $args += @('-LogDelayMs', '400') }
+        if ($scenario -eq 'drain-timeout') { $args += @('-LogDelayMs', '5000') }
         $watchdog = Start-Process -FilePath "$PSHOME\powershell.exe" -ArgumentList $args -WindowStyle Hidden -PassThru
         $workers += $watchdog
+        if ($scenario -eq 'drain-timeout') {
+            Wait-Until { @(Get-ChildItem -LiteralPath $dir -Filter 'clean-*').Count -gt 0 } 10 'Dummy clean child did not start.'
+            Wait-Until { $status = Read-Status $statusPath; $status -and $status.phase -eq 'clean-exit' } 4 'Drain deadline did not bound shutdown.'
+            if (-not $watchdog.WaitForExit(5000)) { throw 'Supervisor did not exit after the drain deadline.' }
+            Write-Output 'PASS drain-timeout: shutdown continued despite a stalled log callback.'
+            continue
+        }
+        if ($scenario -eq 'drain') {
+            Wait-Until { $status = Read-Status $statusPath; $status -and $status.phase -eq 'clean-exit' } 10 'Clean exit did not complete.'
+            if (-not $watchdog.WaitForExit(5000)) { throw 'Clean-exit supervisor did not exit.' }
+            $stdout = Get-Content -LiteralPath (Join-Path $dir 'stdout.log') -Raw
+            $stderr = Get-Content -LiteralPath (Join-Path $dir 'stderr.log') -Raw
+            if ($stdout -ne "stdout-line`r`nstdout-tail`r`n" -or $stderr -ne "stderr-line`r`nstderr-tail`r`n") {
+                throw 'Delayed callbacks or final unterminated output were lost.'
+            }
+            Write-Output 'PASS drain: delayed stdout and stderr callbacks, including unterminated final lines, completed before shutdown.'
+            continue
+        }
         Wait-Until { @(Get-ChildItem -LiteralPath $dir -Filter 'child-*').Count -gt 0 } 10 'Dummy shell did not start the pipe holder.'
         $marker = Get-ChildItem -LiteralPath $dir -Filter 'child-*' | Select-Object -First 1
         $shellPid = [int]($marker.Name -replace '^child-', '')
@@ -68,7 +89,7 @@ try {
             Start-Sleep -Milliseconds 750
             Signal-TestRecovery $token
         }
-        Wait-Until { $status = Read-Status $statusPath; $status -and $status.phase -eq 'recovered' } 8 'Recovery was not honoured.'
+        Wait-Until { $status = Read-Status $statusPath; $status -and $status.phase -eq 'recovered' } 4 'Recovery was not honoured within the bound.'
         if (-not $watchdog.WaitForExit(5000)) { throw 'Isolated supervisor did not exit.' }
         Write-Output "PASS ${scenario}: pipe holder alive after shell exit; supervisor completed within the bound."
     }
