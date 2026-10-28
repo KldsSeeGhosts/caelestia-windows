@@ -77,9 +77,61 @@ NetworkService {
         EthernetDevice {}
     }
 
-    readonly property var networks: root.networkSources.map(raw => root.accessPointComponent.createObject(null, {
-        raw: raw
-    }))
+    // Reuse typed AccessPoint wrappers across polls. NetworkService rebuilds
+    // networkSources from each refreshed native list, but the BSSID (plus SSID)
+    // is stable, so update the existing wrapper's raw object in place and only
+    // create/destroy wrappers when the visible set changes.
+    property var _networkWrappers: ({})
+    property var _networks: []
+
+    readonly property var networks: root._networks
+
+    function networkKey(raw): string {
+        const bssid = typeof raw?.bssid === "string" ? raw.bssid.trim() : "";
+        const ssid = typeof raw?.ssid === "string" ? raw.ssid : "";
+        return bssid.length > 0 ? bssid + "\u0000" + ssid : "ssid:" + ssid;
+    }
+
+    function syncNetworks(): void {
+        const sources = root.networkSources;
+        const previous = root._networkWrappers;
+        const wrappers = ({});
+        const points = [];
+        const stale = [];
+        let changed = sources.length !== root._networks.length;
+
+        for (let i = 0; i < sources.length; i++) {
+            const raw = sources[i];
+            const key = root.networkKey(raw);
+            let point = previous[key];
+            if (!point) {
+                point = root.accessPointComponent.createObject(null, {
+                    raw: raw
+                });
+                changed = true;
+            } else if (point.raw !== raw) {
+                point.raw = raw;
+            }
+            wrappers[key] = point;
+            points.push(point);
+            if (root._networks[i] !== point)
+                changed = true;
+        }
+
+        for (const key in previous)
+            if (!wrappers[key])
+                stale.push(previous[key]);
+
+        root._networkWrappers = wrappers;
+        if (changed)
+            root._networks = points;
+        for (const point of stale)
+            point.destroy();
+    }
+
+    onNetworkSourcesChanged: root.syncNetworks()
+    Component.onCompleted: root.syncNetworks()
+
     readonly property AccessPoint active: root.networks.find(point => point.active) ?? null
     readonly property var ethernetDevices: root.ethernetSources.map(raw => root.ethernetDeviceComponent.createObject(null, {
         raw: raw
