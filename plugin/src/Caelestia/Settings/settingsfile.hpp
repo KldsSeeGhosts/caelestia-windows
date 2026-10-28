@@ -23,6 +23,7 @@ public:
 
     [[nodiscard]] std::optional<QJsonValue> read() const;
     void write(const QJsonValue& json);
+    void flush(); // Write any pending data synchronously
 
     LoadResult load(bool reportErrors = true);
 
@@ -36,7 +37,9 @@ private:
     QFileSystemWatcher* m_watcher; // Null when not watching
     QTimer* m_saveDebounce;
     QTimer* m_loadDebounce; // Null when not watching
+    QTimer* m_saveRetry;
     int m_loadRetries;
+    int m_saveRetries;
     std::optional<QJsonValue> m_lastData;
     std::optional<QJsonValue> m_pendingWrite;
 
@@ -48,6 +51,7 @@ private:
     void onLoadDebounced();
     void save();
     void writeNow();
+    void scheduleSaveRetry();
 };
 
 } // namespace caelestia::shell::settings

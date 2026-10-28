@@ -11,14 +11,13 @@ public:
     explicit ChangeBatcher(QObject* parent = nullptr);
 
     void dirty();
+    void flush(); // Emit dirtied now if there are queued changes
 
 signals:
     void dirtied();
 
 private:
     bool m_dirty;
-
-    void flush();
 };
 
 } // namespace caelestia::shell::settings

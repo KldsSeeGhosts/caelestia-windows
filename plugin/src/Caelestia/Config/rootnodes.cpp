@@ -60,6 +60,10 @@ ConfigRoot::ConfigRoot(const QString& path, ConfigRoot* fallback, QObject* paren
     bindTokens();
 }
 
+ConfigRoot::~ConfigRoot() {
+    flushPending();
+}
+
 const FontTokens* ConfigRoot::fontTokens() const {
     return m_fontTokens;
 }
@@ -76,6 +80,10 @@ void ConfigRoot::bindTokens() {
 
 TokensRoot::TokensRoot(const QString& path, TokensRoot* fallback, QObject* parent)
     : RootNode(true, path, fallback, parent) {}
+
+TokensRoot::~TokensRoot() {
+    flushPending();
+}
 
 SETTINGS_SINGLETON_IMPL(ConfigSingleton, ConfigRoot, configDir(), monitorConfigDir(), u"shell.json"_s,
     detail::Handler<detail::ConfigKind::Shell>)

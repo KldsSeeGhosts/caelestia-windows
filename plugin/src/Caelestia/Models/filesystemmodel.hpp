@@ -142,6 +142,8 @@ private:
     QFileSystemWatcher m_watcher;
     QList<FileSystemEntry*> m_entries;
     QHash<QString, QFuture<PathDiff>> m_futures;
+    QHash<QString, quint64> m_scanGenerations;
+    quint64 m_scanCounter = 0;
 
     QString m_path;
     bool m_recursive;

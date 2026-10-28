@@ -6,6 +6,7 @@
 #include <cava/cavacore.h>
 #endif
 
+#include <algorithm>
 #include <cstddef>
 
 #include "audiocollector.hpp"
@@ -15,6 +16,8 @@ namespace {
 
 Q_LOGGING_CATEGORY(lcCava, "caelestia.services.cava", QtInfoMsg)
 Q_LOGGING_CATEGORY(lcCavaProcessor, "caelestia.services.cava.processor", QtInfoMsg)
+
+constexpr int k_maxBars = 256; // Matches windows::CavaPlan::kMaxBars
 
 } // namespace
 
@@ -77,6 +80,7 @@ void CavaProcessor::setBars(int bars) {
         qCWarning(lcCavaProcessor) << "setBars: bars must be greater than 0. Setting to 0.";
         bars = 0;
     }
+    bars = std::min(bars, k_maxBars);
 
     if (m_bars != bars) {
         m_bars = bars;
@@ -137,6 +141,10 @@ void CavaProvider::setBars(int bars) {
     if (bars < 0) {
         qCWarning(lcCava) << "setBars: bars must be greater than 0. Setting to 0.";
         bars = 0;
+    }
+    if (bars > k_maxBars) {
+        qCWarning(lcCava) << "setBars: bars capped at" << k_maxBars;
+        bars = k_maxBars;
     }
 
     if (m_bars == bars) {

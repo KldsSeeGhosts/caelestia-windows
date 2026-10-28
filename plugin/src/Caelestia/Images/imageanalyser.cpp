@@ -145,9 +145,14 @@ void ImageAnalyser::update() {
                 Qt::SingleShotConnection);
             return;
         }
-        QObject::connect(grabResult.data(), &QQuickItemGrabResult::ready, this, [grabResult, this] {
-            m_futureWatcher->setFuture(QtConcurrent::run(&ImageAnalyser::analyse, grabResult->image(), m_rescaleSize));
-        });
+        // Single shot, so the captured grabResult is released after firing (no self-retaining cycle)
+        QObject::connect(
+            grabResult.data(), &QQuickItemGrabResult::ready, this,
+            [grabResult, this] {
+                m_futureWatcher->setFuture(
+                    QtConcurrent::run(&ImageAnalyser::analyse, grabResult->image(), m_rescaleSize));
+            },
+            Qt::SingleShotConnection);
     } else {
         m_futureWatcher->setFuture(QtConcurrent::run([=, this](QPromise<AnalyseResult>& promise) {
             const QImage image(m_source);
