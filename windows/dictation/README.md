@@ -134,14 +134,9 @@ Issue #56 is not complete:
    focus theft, screen naming, named/removed monitor routing, 150%/175% DPI,
    placement, fade and light/dark appearance. This implementation performs no
    desktop operation, install or restart. Claude retains final visual review.
-3. The screenshot picker/annotator still needs Windows capture, selection,
-   clipboard/export and annotation integration. The custom picker depends on
-   Wayland screencopy, `hyprctl`, `/tmp`, `wl-copy`, `notify-send` and `swappy`;
-   it is not safely ported by relabelling those commands.
-4. GrokBot avatar/roster still needs a verified Windows data location/schema,
-   app observation/focus/launch adapter, assets and original bar/popout wiring.
-   The Linux service supervises `omabot-watch.py`, reads Linux application
-   persistence and uses `pgrep`/Hyprland/machine-specific launch paths.
+3. Screenshots are handled by the separate Glazier app rather than a QML port.
+4. GrokBot is out of scope. It was removed as optional bloat; users who want it
+   can add it themselves.
 
 Review `DictationLogic.js` and `Dictation.qml` for fail-closed status handling,
 then compare `DictationPill.qml` with the cited overlay for visual fidelity.
