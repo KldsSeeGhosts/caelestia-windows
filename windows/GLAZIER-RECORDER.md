@@ -29,11 +29,21 @@ Start uses `Quickshell.execDetached`, whose Windows #81 implementation redirects
 stdio to NUL and disowns inherited handles. Short-lived status/pause/resume/stop
 clients use `Process`. No recorder is killed to stop a recording.
 
-Status is polled every 500 ms, even with the card closed. Glazier owns the elapsed
+Status is polled even with the card closed, every 500 ms while the card is open or
+something is happening and every 5 s while idle. Glazier owns the elapsed
 clock and finalization. The last 32 sequenced events are deduplicated per host.
+The first response from a host is a baseline: its older events are not replayed
+(no stale error), though its finished files are noted.
 Only a finalized `finished.output_path` updates `lastFile`. A lost host clears
 stale recording indicators and reports the failure. Live-off and smoke profiles
 neither probe nor launch Glazier.
+
+Delete only removes files Glazier reported in a `finished` event; the list
+otherwise shows every `.mp4` in the output folder. The newest 500 such paths are
+kept in `<profile>\state\caelestia\recordings.json` (missing or corrupt files are
+ignored), and Delete is disabled for any other file. Recordings Glazier made
+before this was introduced stay listed but cannot be deleted from the card; use
+the folder button. Output paths are never logged or displayed.
 
 The original Record card, RecordingList and delete confirmation are staged.
 Small `Windows:` hooks expose availability/status and name filters; the Windows

@@ -134,6 +134,8 @@ ColumnLayout {
             IconButton {
                 icon: "delete_forever"
                 type: IconButton.Text
+                // Windows: only recordings Glazier reported can be deleted.
+                disabled: typeof Recorder.owns === "function" && !Recorder.owns(recording.modelData.path)
                 label.color: Colours.palette.m3error
                 stateLayer.color: Colours.palette.m3error
                 onClicked: root.props.recordingConfirmDelete = recording.modelData.path

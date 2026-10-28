@@ -21,7 +21,8 @@ Singleton {
     // Exclude Glazier's unpublished .glazier-*.mp4 files, including on Windows.
     readonly property var nameFilters: ["[!.]*.mp4"]
     property string lastFile: ""
-    // Normalized paths Glazier reported as finished; the only files Delete may remove.
+    // Normalized paths Glazier reported as finished (newest 500, persisted); the
+    // only files Delete may remove.
     property var finishedFiles: []
     property string lastError: ""
     property bool pendingStart: false
@@ -62,6 +63,33 @@ Singleton {
 
     function owns(path): bool {
         return finishedFiles.indexOf(normalize(path)) !== -1;
+    }
+
+    function remember(path): void {
+        if (owns(path))
+            return;
+        finishedFiles = [...finishedFiles, normalize(path)].slice(-500);
+        if (store.restored)
+            store.setText(JSON.stringify(finishedFiles));
+    }
+
+    FileView {
+        id: store
+        property bool restored
+        path: root.permitted ? Quickshell.stateDir.replace(/\\/g, "/") + "/caelestia/recordings.json" : ""
+        atomicWrites: true
+        printErrors: false
+        onLoaded: {
+            try {
+                const saved = JSON.parse(text());
+                if (Array.isArray(saved))
+                    root.finishedFiles = [...new Set([...saved.filter(p => typeof p === "string"), ...root.finishedFiles])].slice(-500);
+            } catch (_) {} // corrupt: start over from what Glazier reports
+            restored = true;
+            if (root.finishedFiles.length)
+                setText(JSON.stringify(root.finishedFiles));
+        }
+        onLoadFailed: restored = true // no file yet
     }
 
     function applyResponse(text): bool {
@@ -109,22 +137,19 @@ Singleton {
         state = data.state;
         elapsed = data.elapsed_ms / 1000;
         outputDir = data.output_directory.replace(/\\/g, "/");
-        // First contact with a host: its journal predates this shell, so only
-        // note finished files; unless we just launched it, old errors stay quiet.
-        let replay = false;
-        if (hostId !== data.host_id) {
+        // The first response from a host is its baseline: that journal predates
+        // this shell, so only note finished files and keep old errors quiet.
+        const replay = hostId !== data.host_id;
+        if (replay) {
             hostId = data.host_id;
             eventSequence = 0;
-            replay = !pendingStart;
         }
         for (const event of data.events) {
             if (event.sequence <= eventSequence)
                 continue;
             eventSequence = event.sequence;
             if (event.type === "finished" && typeof event.output_path === "string") {
-                const path = normalize(event.output_path);
-                if (finishedFiles.indexOf(path) === -1)
-                    finishedFiles = [...finishedFiles, path];
+                remember(event.output_path);
                 if (!replay)
                     lastFile = event.output_path;
             }
