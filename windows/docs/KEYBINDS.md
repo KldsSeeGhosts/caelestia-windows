@@ -157,6 +157,8 @@ $prefix = "$env:LOCALAPPDATA\Programs\caelestia-windows"
 
 Only a `WM_HOTKEY` delivery gives the shell permission to take the foreground, so a bind that opens a window (Nexus, a picker) needs `"register": true` when its chord has the Windows key; without it the window can open behind the focused application. Leave it off for everything else.
 
+A hook-backed Win chord also swallows the Windows key release and replays a masked one, so Explorer's own Win+<key> handling (including its Win+V clipboard flyout) cannot run after the chord. Binding `Super+V` to `caelestia:clipboard` therefore opens only the Caelestia picker.
+
 `"register": true` has these consequences:
 
 - The hook still injects a masking key tap while the Windows key is down, so the Start menu stays closed when the key is released.
