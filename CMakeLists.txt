@@ -5,10 +5,14 @@ if(NOT DEFINED VERSION)
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
         OUTPUT_VARIABLE VERSION
         OUTPUT_STRIP_TRAILING_WHITESPACE
+        RESULT_VARIABLE GIT_DESCRIBE_RESULT
+        ERROR_QUIET
     )
 
-    if("${VERSION}" STREQUAL "")
-        message(FATAL_ERROR "VERSION is not set and failed to get from git")
+    # Windows: clones without a reachable tag (only archive/* tags exist here) must
+    # still configure; fall back instead of failing (#114).
+    if(NOT GIT_DESCRIBE_RESULT EQUAL 0 OR "${VERSION}" STREQUAL "")
+        set(VERSION "0.0.0")
     endif()
 endif()
 
@@ -17,10 +21,12 @@ if(NOT DEFINED GIT_REVISION)
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
         OUTPUT_VARIABLE GIT_REVISION
         OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
     )
 
+    # Windows: fall back when the source tree is not a git checkout (#114).
     if("${GIT_REVISION}" STREQUAL "")
-        message(FATAL_ERROR "GIT_REVISION is not set and failed to get from git")
+        set(GIT_REVISION "unknown")
     endif()
 endif()
 

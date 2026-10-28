@@ -29,6 +29,12 @@ QtObject {
         return Qt.openUrlExternally(absolutePath(local.slice(0, local.lastIndexOf("/"))));
     }
     function deleteRecording(path: string): bool {
+        // The list shows every .mp4 in the output folder (upstream); only delete
+        // files Glazier reported as finished.
+        if (!Recorder.owns(path)) {
+            Recorder.lastError = "Only recordings Glazier reported can be deleted here.";
+            return false;
+        }
         return CUtils.deleteFile(absolutePath(path));
     }
     function absolutePath(path: string): string {

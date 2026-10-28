@@ -18,11 +18,12 @@ Singleton {
         && Quickshell.env("CAELESTIA_SHELL_SMOKE") !== "1"
     property bool detected: false
     property bool running: false
-    property bool snapshotReady: false
-    // Fail closed before discovery, and keep yielding even if integration is
-    // disabled: a running external desktop owner must never be covered.
+    property bool snapshotReady: !Boolean(python)
+    // Fail closed before discovery when a helper is configured, and keep
+    // yielding even if integration is disabled: a running external desktop
+    // owner must never be covered.
     readonly property bool ownsDesktop: !snapshotReady || running
-    property string status: "discovering"
+    property string status: python ? "discovering" : "unavailable"
     property string lastError: ""
     property string configPath: ""
     property var items: []
@@ -33,12 +34,109 @@ Singleton {
         ? options.picker : (running && detected && enabled ? "engine" : "files")
     property string lastPaletteKey: ""
     property string actionProject: ""
+    // Wallpaper titles and file paths are user content (#116): anything
+    // identifying goes to the log only behind an explicit opt-in.
+    readonly property bool debugLogging: Quickshell.env("CAELESTIA_WE_DEBUG") === "1"
+    // Full snapshots parse every workshop project.json, so idle polls run the
+    // cheap status mode and escalate only when something changed (#125).
+    property bool haveSnapshot: false
+    property bool fullScanNeeded: true
+    property int statusTicks: 0
+    property string lastStatusActiveJson: ""
+    property string itemsJson: ""
+    property string monitorsJson: ""
+    property bool scanPending: false
+    property bool scanTimedOut: false
 
-    function refresh(): void {
-        if (python && !scan.running)
-            scan.running = true;
-        else if (!python)
+    function refresh(deep: bool): void {
+        if (!python) {
             status = "unavailable";
+            // No bridge binary: release the desktop instead of claiming it
+            // forever (#125).
+            if (!snapshotReady)
+                snapshotReady = true;
+            return;
+        }
+        if (deep === true)
+            fullScanNeeded = true;
+        startScan(!fullScanNeeded && haveSnapshot && statusTicks < 20);
+    }
+
+    function startScan(statusOnly: bool): void {
+        if (scan.running || scanPending)
+            return;
+        scan.statusOnly = statusOnly;
+        scanTimedOut = false;
+        scanPending = true;
+        scanWatchdog.restart();
+        scan.running = true;
+        if (!scan.running && scanPending) {
+            // FailedToStart clears running without emitting exited.
+            scanPending = false;
+            scanWatchdog.stop();
+            scanFailed("wallpaper engine helper failed to start");
+        }
+    }
+
+    function scanFailed(message: string): void {
+        if (!scan.statusOnly)
+            fullScanNeeded = true;
+        status = "error";
+        lastError = message;
+        // Retain the last good state during partial/locked JSON writes, but a
+        // failure before the first good snapshot must not hold the desktop
+        // hostage; the poll keeps retrying (#125).
+        if (!snapshotReady)
+            snapshotReady = true;
+    }
+
+    function applySnapshot(data): void {
+        detected = data.detected;
+        running = data.running;
+        configPath = data.configPath || "";
+        // Compare against one cached serialization instead of re-stringifying
+        // the live models: redundant assignments would rebuild the carousel
+        // delegates on every poll.
+        const nextItems = JSON.stringify(data.items);
+        if (nextItems !== itemsJson) {
+            itemsJson = nextItems;
+            items = data.items;
+        }
+        const nextMonitors = JSON.stringify(data.monitors);
+        if (nextMonitors !== monitorsJson) {
+            monitorsJson = nextMonitors;
+            monitors = data.monitors;
+        }
+        lastStatusActiveJson = JSON.stringify(data.active ?? {});
+        haveSnapshot = true;
+        fullScanNeeded = false;
+        statusTicks = 0;
+        snapshotReady = true;
+        status = !enabled ? "disabled" : running && detected ? "ready" : "absent";
+        lastError = "";
+        matchColours();
+    }
+
+    function applyStatus(data): void {
+        const stateChanged = detected !== data.detected || running !== data.running;
+        detected = data.detected;
+        running = data.running;
+        if (data.configPath)
+            configPath = data.configPath;
+        snapshotReady = true;
+        statusTicks++;
+        const activeJson = JSON.stringify(data.active ?? {});
+        const changed = stateChanged || activeJson !== lastStatusActiveJson;
+        if (!haveSnapshot || fullScanNeeded || changed || statusTicks >= 20) {
+            // First settle, a changed selection/state, or the periodic catalogue
+            // refresh (workshop installs). Keep fullScanNeeded and lastStatusActiveJson
+            // unacknowledged until applySnapshot succeeds.
+            fullScanNeeded = true;
+            Qt.callLater(() => startScan(false));
+            return;
+        }
+        status = !enabled ? "disabled" : running && detected ? "ready" : "absent";
+        lastError = "";
     }
 
     function matchColours(): void {
@@ -49,7 +147,8 @@ Singleton {
             return;
         lastPaletteKey = key;
         SchemeGenerator.applyWallpaper(current.preview, GlobalConfig.services.smartScheme);
-        console.log("CAELESTIA_WE_CURRENT", JSON.stringify({monitor: monitor, title: current.title, project: current.path, preview: current.preview}));
+        if (debugLogging)
+            console.log("CAELESTIA_WE_CURRENT", JSON.stringify({monitor: monitor, title: current.title, project: current.path, preview: current.preview}));
     }
 
     function open(path: string): bool {
@@ -63,7 +162,7 @@ Singleton {
     onCurrentChanged: matchColours()
     onEnabledChanged: { lastPaletteKey = ""; matchColours(); }
     onRunningChanged: { lastPaletteKey = ""; matchColours(); }
-    Component.onCompleted: refresh()
+    Component.onCompleted: refresh(false)
 
     FileView {
         path: Quickshell.env("CAELESTIA_CONFIG_DIR") + "/windows.json"
@@ -81,10 +180,27 @@ Singleton {
         printErrors: false
         onFileChanged: { reload(); debounce.restart(); }
     }
-    Timer { id: debounce; interval: 300; onTriggered: root.refresh() }
-    // Also catches WE starting/stopping and workshop installs, including atomic
-    // replacement of config.json. Discovery never launches Wallpaper Engine.
-    Timer { interval: 5000; running: true; repeat: true; onTriggered: root.refresh() }
+    Timer { id: debounce; interval: 300; onTriggered: root.refresh(true) }
+    // Catches WE starting/stopping and selection changes the config watcher
+    // misses, including atomic replacement of config.json. Idle ticks run the
+    // cheap status mode (#125). Discovery never launches Wallpaper Engine.
+    Timer { interval: 15000; running: true; repeat: true; onTriggered: root.refresh(false) }
+    // A hung or unspawnable scan must not claim the desktop forever (#125).
+    Timer {
+        id: scanWatchdog
+        interval: 10000
+        onTriggered: {
+            if (root.scanPending || scan.running) {
+                root.scanPending = false;
+                root.scanTimedOut = true;
+                if (scan.running) {
+                    scan.signal(9);
+                    scan.running = false;
+                }
+                root.scanFailed("wallpaper engine scan timed out");
+            }
+        }
+    }
     Connections {
         target: SchemeGenerator
         function onFailed(message: string): void { root.lastPaletteKey = ""; }
@@ -96,29 +212,37 @@ Singleton {
     }
     Process {
         id: scan
-        command: [root.python, root.helper, "snapshot"]
+        property bool statusOnly: false
+        command: [root.python, root.helper, "snapshot"].concat(statusOnly ? ["--status-only"] : [])
         stdout: StdioCollector { id: scanOutput }
+        onRunningChanged: {
+            if (!scan.running && root.scanPending) {
+                Qt.callLater(() => {
+                    if (!scan.running && root.scanPending) {
+                        root.scanPending = false;
+                        scanWatchdog.stop();
+                        root.scanFailed("wallpaper engine helper failed to start");
+                    }
+                });
+            }
+        }
         onExited: code => {
+            root.scanPending = false;
+            scanWatchdog.stop();
+            const timedOut = root.scanTimedOut;
+            root.scanTimedOut = false;
+            if (timedOut)
+                return;
             try {
                 const data = JSON.parse(scanOutput.text);
                 if (code !== 0 || !data.ok)
                     throw new Error(data.error || "discovery failed");
-                root.detected = data.detected;
-                root.running = data.running;
-                root.configPath = data.configPath || "";
-                // Preserve carousel delegates and selection across idle polls.
-                if (JSON.stringify(root.items) !== JSON.stringify(data.items))
-                    root.items = data.items;
-                if (JSON.stringify(root.monitors) !== JSON.stringify(data.monitors))
-                    root.monitors = data.monitors;
-                root.snapshotReady = true;
-                root.status = !root.enabled ? "disabled" : root.running && root.detected ? "ready" : "absent";
-                root.lastError = "";
-                root.matchColours();
+                if (scan.statusOnly)
+                    root.applyStatus(data);
+                else
+                    root.applySnapshot(data);
             } catch (error) {
-                root.status = "error";
-                root.lastError = String(error);
-                // Retain the last good state during partial/locked JSON writes.
+                root.scanFailed(timedOut ? "wallpaper engine scan timed out" : String(error));
             }
         }
     }

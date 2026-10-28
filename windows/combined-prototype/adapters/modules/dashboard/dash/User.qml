@@ -116,6 +116,10 @@ Item {
                 id: pfp
 
                 anchors.fill: parent
+                fillMode: Image.PreserveAspectCrop
+                sourceSize: width > 0 && height > 0
+                    ? Qt.size(Math.ceil(width * Screen.devicePixelRatio), Math.ceil(height * Screen.devicePixelRatio))
+                    : undefined
                 source: Quickshell.env("CAELESTIA_ACCOUNT_PICTURE") || ""
             }
 
@@ -126,6 +130,9 @@ Item {
                 anchors.fill: parent
                 cache: false
                 fillMode: Image.PreserveAspectCrop
+                sourceSize: width > 0 && height > 0
+                    ? Qt.size(Math.ceil(width * Screen.devicePixelRatio), Math.ceil(height * Screen.devicePixelRatio))
+                    : undefined
             }
 
             StyledRect {

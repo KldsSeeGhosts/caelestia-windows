@@ -21,6 +21,7 @@ Singleton {
     property double ipApiBlockedUntil: 0
     property bool citiesLoaded: false
     property string pendingCoords
+    property string failedLocation
 
     readonly property string icon: cc ? Icons.getWeatherIcon(cc.weatherCode) : "cloud_alert"
     readonly property string description: cc ? getWeatherCondition(cc.weatherCode) : Tr.tr("No weather")
@@ -44,15 +45,16 @@ Singleton {
 
         if (configLocation) {
             if (configLocation.indexOf(",") !== -1 && !isNaN(parseFloat(configLocation.split(",")[0]))) {
+                failedLocation = "";
                 loc = configLocation;
                 fetchCityFromCoords(configLocation);
-            } else {
+            } else if (configLocation !== failedLocation) {
                 fetchCoordsFromCity(configLocation);
             }
         } else if ((!loc || timer.elapsed() > 900) && !ipApiRequestPending && Date.now() >= ipApiBlockedUntil) {
             ipApiRequestPending = true;
 
-            Requests.get("http://ip-api.com/json?fields=status,message,city,lat,lon", (text, metadata) => {
+            Requests.get("https://ipapi.co/json/", (text, metadata) => {
                 ipApiRequestPending = false;
                 recordIpApiRateLimit(metadata);
 
@@ -65,15 +67,22 @@ Singleton {
                 try {
                     response = JSON.parse(text);
                 } catch (error) {
-                    console.warn(lc, `Unable to parse response from ip-api: ${error}`);
+                    console.warn(lc, `Unable to parse response from ipapi.co: ${error}`);
                     return;
                 }
 
-                const lat = Number(response.lat);
-                const lon = Number(response.lon);
+                if (response?.error) {
+                    if (String(response.reason ?? "").toLowerCase().indexOf("rate") !== -1)
+                        recordIpApiRateLimit({ statusCode: 429, headers: metadata?.headers });
+                    console.warn(lc, `ipapi.co lookup failed: ${response.reason ?? response.message ?? "error response"}`);
+                    return;
+                }
 
-                if (response.status !== "success" || !Number.isFinite(lat) || !Number.isFinite(lon)) {
-                    console.warn(lc, `ip-api lookup failed: ${response.message ?? "invalid response"}`);
+                const lat = Number(response?.latitude);
+                const lon = Number(response?.longitude);
+
+                if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+                    console.warn(lc, `ipapi.co lookup failed: ${response?.reason ?? response?.message ?? "invalid coordinates"}`);
                     return;
                 }
 
@@ -84,7 +93,7 @@ Singleton {
                 ipApiRequestPending = false;
 
                 if (!recordIpApiRateLimit(metadata))
-                    console.warn(lc, `ip-api request failed: ${error}`);
+                    console.warn(lc, `ipapi.co request failed: ${error}`);
             });
         }
     }
@@ -96,10 +105,10 @@ Singleton {
         if (metadata?.statusCode !== 429 && !exhausted)
             return false;
 
-        const ttlHeader = metadata?.headers?.["x-ttl"];
-        const ttl = Number(ttlHeader);
+        const retryAfterHeader = metadata?.headers?.["retry-after"] ?? metadata?.headers?.["x-ttl"];
+        const ttl = Number(retryAfterHeader);
 
-        const delaySeconds = Number.isFinite(ttl) ? Math.max(1, Math.ceil(ttl) + 1) : 61;
+        const delaySeconds = Number.isFinite(ttl) && ttl > 0 ? Math.max(1, Math.ceil(ttl) + 1) : 3600;
 
         const delayMs = delaySeconds * 1000;
         ipApiBlockedUntil = Date.now() + delayMs;
@@ -210,31 +219,66 @@ Singleton {
         }, nominatimHeaders);
     }
 
+    function markCityLookupFailed(cityName: string, reason: string): void {
+        console.warn(lc, `Configured weather location geocoding failed: ${reason}`);
+        failedLocation = cityName;
+        loc = "";
+        cc = null;
+        forecast = [];
+        hourlyForecast = [];
+        city = Tr.trCtx("Unknown city", "weather location unavailable");
+        cityRetryTimer.restart();
+    }
+
     function fetchCoordsFromCity(cityName: string): void {
         const lang = Tr.locale.name.split("_")[0] || "en";
         const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(cityName)}&count=1&language=${lang}&format=json`;
 
         Requests.get(url, text => {
-            const json = JSON.parse(text);
-            if (json.results && json.results.length > 0) {
-                const result = json.results[0];
-                loc = result.latitude + "," + result.longitude;
-                city = fixCityName(result.name);
-            } else {
-                loc = "";
-                reload();
+            if (GlobalConfig.services.weatherLocation !== cityName)
+                return;
+            let json;
+            try {
+                json = JSON.parse(text);
+            } catch (error) {
+                markCityLookupFailed(cityName, `invalid JSON (${error})`);
+                return;
             }
+            const result = json?.results?.[0];
+            const lat = Number(result?.latitude);
+            const lon = Number(result?.longitude);
+            if (result && Number.isFinite(lat) && Number.isFinite(lon)) {
+                failedLocation = "";
+                cityRetryTimer.stop();
+                loc = `${lat},${lon}`;
+                city = fixCityName(result.name ?? cityName);
+            } else {
+                markCityLookupFailed(cityName, "no matching city");
+            }
+        }, error => {
+            if (GlobalConfig.services.weatherLocation !== cityName)
+                return;
+            markCityLookupFailed(cityName, String(error));
         });
     }
 
     function fetchWeatherData(): void {
+        const requestedLoc = loc;
         const url = getWeatherUrl();
         if (url === "")
             return;
 
         Requests.get(url, text => {
-            const json = JSON.parse(text);
-            if (!json.current || !json.daily)
+            if (!loc || loc !== requestedLoc)
+                return;
+            let json;
+            try {
+                json = JSON.parse(text);
+            } catch (error) {
+                console.warn(lc, `Unable to parse weather forecast response: ${error}`);
+                return;
+            }
+            if (!json?.current || !json?.daily || !json?.hourly)
                 return;
 
             cc = {
@@ -337,6 +381,10 @@ Singleton {
 
     Connections {
         function onWeatherLocationChanged(): void {
+            if (GlobalConfig.services.weatherLocation !== root.failedLocation) {
+                root.failedLocation = "";
+                cityRetryTimer.stop();
+            }
             root.reload();
         }
 
@@ -364,6 +412,18 @@ Singleton {
             } else {
                 root.reload();
             }
+        }
+    }
+
+    Timer {
+        id: cityRetryTimer
+
+        interval: 600000 // 10 minutes
+        repeat: false
+
+        onTriggered: {
+            root.failedLocation = "";
+            root.reload();
         }
     }
 

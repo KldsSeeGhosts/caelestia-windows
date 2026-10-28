@@ -13,6 +13,7 @@ class CAELESTIA_SETTINGS_API RootNode : public ObjectNode {
 
 public:
     explicit RootNode(bool watch, const QString& path, RootNode* fallback, QObject* parent = nullptr);
+    ~RootNode() override;
 
     [[nodiscard]] QList<Diagnostic> diagnostics() const;
 
@@ -23,6 +24,9 @@ signals:
     void treeLoaded(caelestia::shell::settings::RootNode* self);
     void treeLoadFailed(caelestia::shell::settings::RootNode* self, const QString& error);
     void treeSaveFailed(caelestia::shell::settings::RootNode* self, const QString& error);
+
+protected:
+    void flushPending();
 
 private:
     SettingsFile* const m_file;

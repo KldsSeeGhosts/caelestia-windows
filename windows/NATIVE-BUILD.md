@@ -68,6 +68,11 @@ curl.exe -L --fail --silent --show-error `
     'https://github.com/CLIUtils/CLI11/archive/refs/tags/v2.5.0.zip' `
     -o "$devRoot\cli11.zip"
 if ($LASTEXITCODE -ne 0) { throw 'CLI11 download failed.' }
+$cli11Expected = '887270cae374a0b9e22b39647f9fc4bc742587fb26d6a221da2d2bbcf3109b0b'
+if ((Get-FileHash -Algorithm SHA256 -LiteralPath "$devRoot\cli11.zip").Hash -ne $cli11Expected) {
+    Remove-Item -LiteralPath "$devRoot\cli11.zip" -Force
+    throw 'CLI11 checksum mismatch.'
+}
 Expand-Archive -LiteralPath "$devRoot\cli11.zip" -DestinationPath "$devRoot\deps" -Force
 ```
 

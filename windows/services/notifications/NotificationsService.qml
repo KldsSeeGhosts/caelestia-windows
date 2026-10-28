@@ -98,9 +98,27 @@ QtObject {
     property int fullscreenExpireTimeout: 2000
     property bool expirePopups: true
 
+    // Upstream NotifsFullscreen values: On (0) keeps popups over a fullscreen
+    // toplevel, Off (1) suppresses them and always expires a shown one.
+    readonly property int fullscreenPolicyOn: 0
+    readonly property int fullscreenPolicyOff: 1
+    property int fullscreenPolicy: fullscreenPolicyOn
+    // Injected by the facade: returns whether the focused monitor currently
+    // has a fullscreen toplevel. The pure object has no compositor query.
+    property var fullscreenProvider: null
+
     // The bounded host does not stage do-not-disturb or sidebar state. A host
     // that does can suppress popups without inventing a Windows notification.
     property bool popupsSuppressed: false
+
+    // Untrusted bodies have no natural length limit; one hostile body must not
+    // pin the UI thread. Bodies are capped before any scanning.
+    readonly property int maxBodyLength: 16384
+
+    // Retained records (live and restored, mirrored included) are capped so
+    // the serialized file, the startup parse and the QObject list stay
+    // bounded. 0 disables the cap.
+    property int maxHistoryCount: 300
 
     // Confinement root injected by the facade. The history path is built from
     // stateDirectory and must be a strict descendant of profileRoot. There is
@@ -110,6 +128,13 @@ QtObject {
 
     property bool historyLoaded: false
     property string historyError: ""
+    // True after a present history file failed to read or parse. While it is
+    // set the file on disk is the only copy of the user's history, so the
+    // facade must not overwrite it: mayPersistHistory() refuses, and a failed
+    // load emits no historyChanged. Only a subsequent successful restore
+    // clears it, so a corrupt or unreadable history file survives the session
+    // unchanged.
+    property bool historyLoadFailed: false
 
     // Counters used by the fixture and the native smoke. They never affect the
     // original UI contract.
@@ -151,6 +176,7 @@ QtObject {
         root.list = [];
         root.historyLoaded = false;
         root.historyError = "";
+        root.historyLoadFailed = false;
         root.pendingDeliveryId = 0;
         root.deliveryUnconfirmed = false;
         root.deliveryConfirmation = "idle";
@@ -570,6 +596,21 @@ QtObject {
         root.probeExistingAccess();
     }
 
+    // The focused monitor's fullscreen state, through the injected provider.
+    function currentHasFullscreen(): bool {
+        return typeof root.fullscreenProvider === "function"
+            && root.fullscreenProvider() === true;
+    }
+
+    // Upstream admission rule: popups are suppressed by the host state and,
+    // with the fullscreen policy Off, while a fullscreen toplevel is focused.
+    function shouldShowPopup(): bool {
+        if (root.popupsSuppressed)
+            return false;
+        return root.fullscreenPolicy !== root.fullscreenPolicyOff
+            || !root.currentHasFullscreen();
+    }
+
     function handleNotification(notification): bool {
         if (!deliveryAllowed() || !notification || typeof notification !== "object")
             return false;
@@ -588,8 +629,9 @@ QtObject {
             service: root,
             recordId: root.nextRecordId++ + "-" + Date.now(),
             notification: notification,
-            popup: !root.popupsSuppressed,
+            popup: root.shouldShowPopup(),
             local: !mirrored,
+            hasFullscreen: root.currentHasFullscreen(),
             _wasMirrored: mirrored
         });
         if (!record)
@@ -599,6 +641,7 @@ QtObject {
             root.mirroredCount++;
         record.arrivalSequence = root.arrivalSequence;
         root.list = [record, ...root.list];
+        root.enforceHistoryCap();
         root.deliveredNotifications++;
         root.settlePendingDelivery();
         root.historyChanged();
@@ -685,6 +728,10 @@ QtObject {
     function handleExpiry(record): void {
         if (!record || record.closed || !root.list.includes(record))
             return;
+        // Upstream always expires a shown popup while a fullscreen toplevel
+        // is focused, regardless of the expire configuration, so the state is
+        // re-queried at the moment of expiry.
+        record.hasFullscreen = root.currentHasFullscreen();
         if (root.expirePopups || record.hasFullscreen)
             record.popup = false;
     }
@@ -697,8 +744,15 @@ QtObject {
         if ((record.locks?.size ?? 0) > 0)
             return;
 
-        if (root.list.indexOf(record) < 0)
+        if (root.list.indexOf(record) < 0) {
+            // Cap eviction already removed this record from the list;
+            // releasing its last lock must still destroy the detached object.
+            if (record.evicted === true) {
+                record.notification = null;
+                record.destroy();
+            }
             return;
+        }
 
         root.list = root.list.filter(item => item !== record);
 
@@ -863,6 +917,7 @@ QtObject {
 
     function restoreHistory(data): bool {
         root.historyError = "";
+        root.historyLoadFailed = false;
 
         // Restoration merges instead of replacing. A live notification can
         // arrive before the asynchronous history load finishes; destroying it
@@ -871,7 +926,8 @@ QtObject {
         if (!root.pathConfined) {
             root.historyLoaded = true;
             root.historyError = root.pathError || "The notification history path is not confined to the isolated profile.";
-            root.finishHistoryRestore([]);
+            root.historyLoadFailed = true;
+            root.finishHistoryRestore([], true);
             return false;
         }
 
@@ -887,14 +943,16 @@ QtObject {
         } catch (error) {
             root.historyLoaded = true;
             root.historyError = "The notification history is not valid JSON.";
-            root.finishHistoryRestore([]);
+            root.historyLoadFailed = true;
+            root.finishHistoryRestore([], true);
             return false;
         }
 
         if (!Array.isArray(parsed)) {
             root.historyLoaded = true;
             root.historyError = "The notification history is not a list.";
-            root.finishHistoryRestore([]);
+            root.historyLoadFailed = true;
+            root.finishHistoryRestore([], true);
             return false;
         }
 
@@ -954,8 +1012,9 @@ QtObject {
     // Keeps every live (backend-backed) record, drops the previously restored
     // historical ones, then appends the freshly parsed entries that do not
     // collide with a live id. Live records win; the merged list is persisted by
-    // the facade's existing historyChanged save.
-    function finishHistoryRestore(restored): void {
+    // the facade's existing historyChanged save. A silent pass, used after a
+    // failed load, clears stale restored records without announcing a save.
+    function finishHistoryRestore(restored, silent): void {
         const live = root.list.filter(record => !record.closed && record.notification !== null);
         for (const record of root.list.slice()) {
             if (live.indexOf(record) < 0)
@@ -984,13 +1043,48 @@ QtObject {
 
         merged.sort((a, b) => b.time.getTime() - a.time.getTime());
         root.list = merged;
-        root.historyChanged();
+        root.enforceHistoryCap();
+        if (!silent)
+            root.historyChanged();
+    }
+
+    // Bound the retained list. Eviction drops the oldest records from the
+    // list; it is not a dismissal, so a still-live native notification keeps
+    // its own lifetime with the backend. A record a visible card still holds
+    // a lock on (for example mid removal animation) is marked evicted and
+    // detached, but its QObject is destroyed only when the last lock is
+    // released.
+    function enforceHistoryCap(): void {
+        if (root.maxHistoryCount <= 0)
+            return;
+        while (root.list.length > root.maxHistoryCount) {
+            const evicted = root.list[root.list.length - 1];
+            root.list = root.list.slice(0, -1);
+            if (!evicted)
+                continue;
+            evicted.closed = true;
+            evicted.popup = false;
+            evicted.notification = null;
+            evicted.evicted = true;
+            if ((evicted.locks?.size ?? 0) === 0)
+                evicted.destroy();
+        }
+    }
+
+    // The single save gate for the facade's writers: after a failed read or
+    // parse the file on disk is the only copy of the user's history and must
+    // not be overwritten with the empty or partial in-memory state.
+    function mayPersistHistory(): bool {
+        return root.enabled && root.pathConfined && root.historyLoaded
+            && !root.historyLoadFailed;
     }
 
     function failHistory(message): void {
         root.historyError = String(message ?? "The notification history could not be read.");
+        root.historyLoadFailed = true;
         root.historyLoaded = true;
-        root.historyChanged();
+        // No historyChanged: a failed read must not start the debounced save
+        // that would overwrite the unreadable file.
     }
 
     function historyContains(recordId): bool {
@@ -1256,6 +1350,14 @@ QtObject {
         let text = String(value);
         if (text === "")
             return "";
+        // A notification body is untrusted and unbounded; cap it before any
+        // scanning so one body cannot pin the UI thread.
+        if (text.length > root.maxBodyLength) {
+            text = text.slice(0, root.maxBodyLength);
+            // Do not leave a split surrogate pair at the cut.
+            if (/[\uD800-\uDBFF]/.test(text.charAt(text.length - 1)))
+                text = text.slice(0, -1);
+        }
         text = root.stripHtmlMediaTags(text);
         text = root.stripMarkdownReferenceDefinitions(text);
         // An image alt may itself contain an image, or stripping markup may
@@ -1316,11 +1418,19 @@ QtObject {
         return String(text ?? "").replace(/^[ \t]{0,3}\[[^\]\n]+\]:[^\n]*(?:\r?\n|$)/gm, "");
     }
 
-    // Replace every Markdown image with its alt text. Destinations are skipped
-    // with escape-aware delimiter matching, so "![x](file:///C:/a(b).png)" and
-    // nested alt brackets do not leave a partial destination behind.
+    // Replace every Markdown image with its alt text. Destinations are
+    // skipped with escape-aware delimiter matching, so "![x](file:///C:/a(b).png)",
+    // angle destinations and nested alt brackets do not leave a partial
+    // destination behind — including an image nested inside an unclosed
+    // "![a](< ... >", whose inner parentheses still pair normally. All
+    // matching is precomputed in one linear pass per table: no path rescans
+    // the suffix, so an image-storm body stays linear.
     function replaceMarkdownImages(text): string {
         const source = String(text ?? "");
+        const bracketMatch = root.computeDelimiterMatches(source, "[", "]");
+        const firstParenDrop = root.computeFirstParenDrop(source);
+        const nextAngleClose = root.computeNextAngleClose(source);
+        const nextNonWhitespace = root.computeNextNonWhitespace(source);
         let output = "";
         let i = 0;
         while (i < source.length) {
@@ -1331,19 +1441,20 @@ QtObject {
                 continue;
             }
             if (ch === "!" && source.charAt(i + 1) === "[") {
-                const altEnd = root.findClosingDelimiter(source, i + 2, "[", "]");
+                const altEnd = bracketMatch[i + 1];
                 if (altEnd >= 0) {
                     const alt = source.slice(i + 2, altEnd);
                     const marker = source.charAt(altEnd + 1);
                     if (marker === "(") {
-                        const destinationEnd = root.findClosingDelimiter(source, altEnd + 2, "(", ")");
+                        const destinationEnd = root.imageDestinationEnd(source,
+                            altEnd + 1, firstParenDrop, nextAngleClose, nextNonWhitespace);
                         if (destinationEnd >= 0) {
                             output += alt;
                             i = destinationEnd + 1;
                             continue;
                         }
                     } else if (marker === "[") {
-                        const referenceEnd = root.findClosingDelimiter(source, altEnd + 2, "[", "]");
+                        const referenceEnd = bracketMatch[altEnd + 1];
                         if (referenceEnd >= 0) {
                             output += alt;
                             i = referenceEnd + 1;
@@ -1362,45 +1473,125 @@ QtObject {
         return output;
     }
 
-    // Find the closing delimiter for an opening one just before start.
-    // Backslash escapes are skipped. In a "(" destination, leading whitespace
-    // is skipped and a "<...>" destination is opaque, so a ")" inside it does
-    // not end the image.
-    function findClosingDelimiter(text, start, open, close): int {
-        let depth = 1;
-        let i = start;
-        let atDestinationStart = open === "(";
-        while (i < text.length) {
-            const ch = text.charAt(i);
+    // One linear pass: match[i] is the index of the delimiter closing the one
+    // at i, or -1 when it never closes. Stack pairing over the whole text is
+    // the same depth counting the previous per-opener scan performed, but each
+    // position is answered once. Backslash escapes skip the next character.
+    function computeDelimiterMatches(text, open, close): var {
+        const source = String(text ?? "");
+        const match = new Array(source.length).fill(-1);
+        const stack = [];
+        for (let i = 0; i < source.length; i++) {
+            const ch = source.charAt(i);
             if (ch === "\\") {
-                i += 2;
-                atDestinationStart = false;
-                continue;
-            }
-            if (atDestinationStart && (ch === " " || ch === "\t" || ch === "\n" || ch === "\r")) {
                 i++;
                 continue;
             }
-            if (atDestinationStart) {
-                atDestinationStart = false;
-                if (ch === "<") {
-                    const angleEnd = text.indexOf(">", i + 1);
-                    if (angleEnd >= 0) {
-                        i = angleEnd + 1;
-                        continue;
-                    }
-                }
-            }
             if (ch === open) {
-                depth++;
-            } else if (ch === close) {
-                depth--;
-                if (depth === 0)
-                    return i;
+                stack.push(i);
+            } else if (ch === close && stack.length > 0) {
+                match[stack.pop()] = i;
             }
-            i++;
         }
-        return -1;
+        return match;
+    }
+
+    // The ")" that closes an inline image destination opened by the "(" at
+    // parenStart, or -1 when it never closes. A "<...>" destination is
+    // recognized first — CommonMark lets it contain "(" and ")" — and only
+    // when that form is not closed by ">" plus optional whitespace and ")"
+    // do the plain escape-aware parentheses pair. Every lookup is a
+    // precomputed table access, so no path rescans the text.
+    // firstDrop[k] is the first index q >= k where cumulative unescaped "("
+    // minus ")" depth drops to depth[k] - 1 (i.e. where a "(" opened just
+    // before k closes), or -1 if never. For an angle destination "<...>" ending
+    // at angleEnd, all "(" and ")" inside "<...>" are opaque, so the "(" at
+    // parenStart closes at firstDrop[angleEnd + 1] (covering optional titles
+    // such as '![x](<C:/a(b.png> "title")'); otherwise it closes at
+    // firstDrop[parenStart + 1].
+    function computeFirstParenDrop(text): var {
+        const source = String(text ?? "");
+        const depth = new Array(source.length + 1).fill(0);
+        for (let i = 0; i < source.length; i++) {
+            const ch = source.charAt(i);
+            if (ch === "\\") {
+                depth[i + 1] = depth[i];
+                if (i + 1 < source.length) {
+                    depth[i + 2] = depth[i];
+                    i++;
+                }
+                continue;
+            }
+            if (ch === "(")
+                depth[i + 1] = depth[i] + 1;
+            else if (ch === ")")
+                depth[i + 1] = depth[i] - 1;
+            else
+                depth[i + 1] = depth[i];
+        }
+        const firstAtDepth = new Map();
+        const firstDrop = new Array(source.length + 1).fill(-1);
+        for (let k = source.length; k >= 0; k--) {
+            const pos = firstAtDepth.get(depth[k] - 1);
+            if (pos !== undefined)
+                firstDrop[k] = pos - 1;
+            firstAtDepth.set(depth[k], k);
+        }
+        return firstDrop;
+    }
+
+    function imageDestinationEnd(source, parenStart, firstParenDrop,
+            nextAngleClose, nextNonWhitespace): int {
+        const angleStart = nextNonWhitespace[parenStart + 1];
+        if (source.charAt(angleStart) === "<") {
+            const angleEnd = nextAngleClose[angleStart + 1];
+            if (angleEnd >= 0) {
+                const closeAfterAngle = firstParenDrop[angleEnd + 1];
+                if (closeAfterAngle >= 0)
+                    return closeAfterAngle;
+            }
+        }
+        return firstParenDrop[parenStart + 1];
+    }
+
+    // Whether the character at index is preceded by an odd number of
+    // backslashes, so "\\" before it escapes the escape and leaves it live.
+    function isEscapedAt(source, index): bool {
+        let slashes = 0;
+        for (let i = index - 1; i >= 0 && source.charAt(i) === "\\"; i--)
+            slashes++;
+        return slashes % 2 === 1;
+    }
+
+    // nextAngleClose[k] is the index of the next unescaped ">" at or after k
+    // on the same line, or -1 when none follows: a CommonMark "<...>" link
+    // destination cannot span lines. One backwards pass answers every query.
+    function computeNextAngleClose(text): var {
+        const source = String(text ?? "");
+        const next = new Array(source.length + 1).fill(-1);
+        for (let i = source.length - 1; i >= 0; i--) {
+            const ch = source.charAt(i);
+            if (ch === "\n" || ch === "\r") {
+                next[i] = -1;
+                continue;
+            }
+            next[i] = ch === ">" && !root.isEscapedAt(source, i) ? i : next[i + 1];
+        }
+        return next;
+    }
+
+    // nextNonWhitespace[k] is the index of the first non-whitespace character
+    // at or after k, or source.length when none follows, so destination
+    // scanning skips whitespace without an inner loop.
+    function computeNextNonWhitespace(text): var {
+        const source = String(text ?? "");
+        const next = new Array(source.length + 1).fill(source.length);
+        for (let i = source.length - 1; i >= 0; i--) {
+            const ch = source.charAt(i);
+            next[i] = ch === " " || ch === "\t" || ch === "\n" || ch === "\r"
+                ? next[i + 1] : i;
+        }
+        return next;
     }
 
     // ---- Replacement sends -------------------------------------------------

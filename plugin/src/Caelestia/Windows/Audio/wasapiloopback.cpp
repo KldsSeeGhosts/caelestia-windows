@@ -182,29 +182,39 @@ struct WasapiLoopbackWorker::Impl {
         }
     }
 
+    // Only widths convertFrames() reads exactly are accepted; anything else (8-bit,
+    // packed 24-bit, odd block sizes) is rejected so packets are never overread.
     [[nodiscard]] Format formatFrom(const WAVEFORMATEX* waveFormat) const {
-        if (!waveFormat) {
+        if (!waveFormat || waveFormat->nChannels == 0) {
             return Format::Unsupported;
         }
 
+        const auto bits = waveFormat->wBitsPerSample;
+        if ((bits != 16 && bits != 32) || waveFormat->nBlockAlign != waveFormat->nChannels * (bits / 8)) {
+            return Format::Unsupported;
+        }
+
+        bool isFloat = false;
         if (waveFormat->wFormatTag == WAVE_FORMAT_EXTENSIBLE) {
+            if (waveFormat->cbSize < sizeof(WAVEFORMATEXTENSIBLE) - sizeof(WAVEFORMATEX)) {
+                return Format::Unsupported;
+            }
             const auto* extended = reinterpret_cast<const WAVEFORMATEXTENSIBLE*>(waveFormat);
             if (IsEqualGUID(extended->SubFormat, kSubtypeFloat)) {
-                return Format::Float32;
+                isFloat = true;
+            } else if (!IsEqualGUID(extended->SubFormat, kSubtypePcm)) {
+                return Format::Unsupported;
             }
-            if (IsEqualGUID(extended->SubFormat, kSubtypePcm)) {
-                return waveFormat->wBitsPerSample == 16 ? Format::Pcm16 : Format::Pcm32;
-            }
+        } else if (waveFormat->wFormatTag == WAVE_FORMAT_IEEE_FLOAT) {
+            isFloat = true;
+        } else if (waveFormat->wFormatTag != WAVE_FORMAT_PCM) {
             return Format::Unsupported;
         }
 
-        if (waveFormat->wFormatTag == WAVE_FORMAT_IEEE_FLOAT) {
-            return Format::Float32;
+        if (isFloat) {
+            return bits == 32 ? Format::Float32 : Format::Unsupported;
         }
-        if (waveFormat->wFormatTag == WAVE_FORMAT_PCM) {
-            return waveFormat->wBitsPerSample == 16 ? Format::Pcm16 : Format::Pcm32;
-        }
-        return Format::Unsupported;
+        return bits == 16 ? Format::Pcm16 : Format::Pcm32;
     }
 
     HRESULT createClient() {

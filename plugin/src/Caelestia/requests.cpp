@@ -1,5 +1,7 @@
 #include "requests.hpp"
 
+#include <chrono>
+
 #include <qjsvalue.h>
 #include <qjsvalueiterator.h>
 #include <qloggingcategory.h>
@@ -54,6 +56,9 @@ void Requests::get(const QUrl& url, const QJSValue& onSuccess, const QJSValue& o
     request.setRawHeader("Cache-Control"_ba, "no-cache, no-store"_ba);
     request.setRawHeader("Pragma"_ba, "no-cache"_ba);
     request.setRawHeader("Connection"_ba, "close"_ba);
+    // Windows: bound the transfer so the finished handler (and the caller's error
+    // callback) always runs instead of hanging forever (#135).
+    request.setTransferTimeout(std::chrono::seconds(15));
 
     if (headers.isObject()) {
         QJSValueIterator it(headers);

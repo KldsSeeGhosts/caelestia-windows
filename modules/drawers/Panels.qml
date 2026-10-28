@@ -33,6 +33,13 @@ Item {
     readonly property alias utilities: utilities
     readonly property alias toasts: toasts
     readonly property alias sidebar: sidebar
+    // Windows: neutral stand-in so shared drawers load under upstream shell.qml;
+    // the Windows Panels adapter replaces both with the real quota drawer.
+    readonly property bool quotaEnabled: false
+    readonly property Item quota: Item {
+        property real offsetScale: 1
+        visible: false
+    }
 
     anchors.fill: parent
     anchors.margins: borderThickness

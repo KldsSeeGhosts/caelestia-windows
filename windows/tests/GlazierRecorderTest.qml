@@ -272,11 +272,55 @@ ShellRoot {
                 root.step++;
                 break;
             case 18:
-                if (Recorder.lastError.indexOf("not available") < 0) return;
+                if (Recorder.lastError.indexOf("not running") < 0) return;
                 if (root.pendingCaptures) return;
                 root.check(!Recorder.running && Recorder.elapsed === 0, "host loss clears stale recording");
+                const reply = (host, events) => JSON.stringify({ version: 1, ok: true, state: "idle", elapsed_ms: 0,
+                    host_id: host, output_directory: "C:/x", events: events });
+                const err = sequence => ({ sequence: sequence, type: "error", message: "boom" });
+                root.check(Recorder.applyResponse(reply("replay-host", [err(1),
+                    { sequence: 2, type: "finished", output_path: "C:\\x\\Old.mp4" }])) && Recorder.lastError === "",
+                    "first response from a new host is a baseline: old error not replayed");
+                root.check(Recorder.owns("c:/x/old.mp4") && !Recorder.owns("C:/x/other.mp4"), "baseline finished file is owned");
+                root.check(!Paths.deleteRecording("C:/x/other.mp4") && Recorder.lastError.indexOf("Only recordings") === 0,
+                    "delete of a file Glazier did not report is refused");
+                root.check(Recorder.applyResponse(reply("replay-host", [err(3)])) && Recorder.lastError === "boom",
+                    "events after the baseline apply");
+                root.check(!Recorder.applyResponse("{\"version\":1,"), "partial status rejected");
+                root.check(!Recorder.incompatible, "partial status is transient, not incompatible");
+                root.check(!Recorder.applyResponse('{"version":1}'), "incomplete status rejected");
+                root.check(!Recorder.incompatible, "incomplete status is transient, not incompatible");
+                root.check(Recorder.applyResponse(reply("replay-host", [])), "valid status after a partial response recovers");
+                root.check(Recorder.available && !Recorder.incompatible && Recorder.canStart,
+                    "recorder re-enabled after a partial response");
+                root.check(!Recorder.applyResponse(""), "empty status is transient");
+                root.check(!Recorder.incompatible, "empty status does not latch incompatibility");
+                root.check(Recorder.applyResponse(reply("replay-host", [])), "valid status after empty output recovers");
                 root.check(!Recorder.applyResponse('{"version":2,"ok":true}'), "reject unknown version");
-                root.check(!Recorder.canStart, "incompatible host cannot record");
+                root.check(Recorder.incompatible && !Recorder.canStart, "incompatible host cannot record");
+                root.check(!Recorder.applyResponse('{"version":1,"ok":false,"error":"Glazier is not running."}'),
+                    "offline v1 status is not an active host");
+                root.check(!Recorder.incompatible && Recorder.available && Recorder.canStart,
+                    "compatible offline status clears incompatibility and re-enables Start");
+                root.check(!Recorder.applyResponse('{"version":2,"ok":true}'), "reject unknown version again");
+                root.check(Recorder.incompatible && !Recorder.canStart, "incompatible host disables Start again");
+                root.check(Recorder.applyResponse(reply("replay-host", [])), "compatible status clears incompatibility");
+                root.check(!Recorder.incompatible && Recorder.available && Recorder.canStart,
+                    "recorder recovers from explicit incompatibility");
+                let q = [];
+                q = SchemeGenerator.coalescePending(q, "list", ["list"]);
+                q = SchemeGenerator.coalescePending(q, "set", ["set-mode", "--mode", "light"]);
+                q = SchemeGenerator.coalescePending(q, "set", ["set-variant", "--variant", "vibrant"]);
+                root.check(q.length === 3 && q[0].kind === "list"
+                    && q[1].args[0] === "set-mode" && q[2].args[0] === "set-variant",
+                    "independent mode and variant changes stay queued with list");
+                q = SchemeGenerator.coalescePending(q, "set", ["set-mode", "--mode", "dark"]);
+                root.check(q.length === 3 && q[1].args[0] === "set-variant"
+                    && q[2].args[0] === "set-mode" && q[2].args[2] === "dark",
+                    "newer mode change supersedes only earlier mode change");
+                q = SchemeGenerator.coalescePending(q, "apply", ["apply-wallpaper", "--image", "C:/w.png", "--smart", "1"]);
+                root.check(q.length === 2 && q[0].kind === "list" && q[1].args[0] === "apply-wallpaper",
+                    "smart wallpaper apply supersedes queued scheme state changes but keeps list");
                 console.log("GLAZIER_RECORDER_PASS", root.assertions);
                 Qt.quit();
                 break;

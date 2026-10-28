@@ -90,15 +90,15 @@ def project(path: Path) -> dict:
     }
 
 
-def snapshot() -> dict:
+def snapshot(status_only: bool = False) -> dict:
     active = running()
     try:
         libs = libraries()
     except FileNotFoundError:
-        return {"ok": True, "detected": False, "running": active, "items": [], "monitors": {}}
+        return {"ok": True, "detected": False, "running": active, "active": {}, "items": [], "monitors": {}}
     directory = install(libs)
     if directory is None:
-        return {"ok": True, "detected": False, "running": active, "items": [], "monitors": {}}
+        return {"ok": True, "detected": False, "running": active, "active": {}, "items": [], "monitors": {}}
     config_path = directory / "config.json"
     config = read_json(config_path)
     # Only the active user's wallpaperconfig. Do not recurse through recent
@@ -111,6 +111,18 @@ def snapshot() -> dict:
             raise ValueError("cannot identify the active Wallpaper Engine config user")
         user = candidates[0]
     selected = config[user].get("general", {}).get("wallpaperconfig", {}).get("selectedwallpapers", {})
+    active_files = {
+        str(monitor): str(value.get("file", ""))
+        for monitor, value in sorted(selected.items())
+        if isinstance(value, dict)
+    }
+    executable = (directory / "wallpaper64.exe").as_posix()
+    if status_only:
+        return {
+            "ok": True, "detected": True, "running": active,
+            "configPath": config_path.as_posix(), "executable": executable,
+            "active": active_files,
+        }
     monitors = {}
     for monitor, value in selected.items():
         try:
@@ -129,20 +141,21 @@ def snapshot() -> dict:
     items.sort(key=lambda item: item["title"].casefold())
     return {
         "ok": True, "detected": True, "running": active,
-        "configPath": config_path.as_posix(), "executable": (directory / "wallpaper64.exe").as_posix(),
-        "monitors": monitors, "items": items,
+        "configPath": config_path.as_posix(), "executable": executable,
+        "active": active_files, "monitors": monitors, "items": items,
     }
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("command", choices=["snapshot", "open"])
+    parser.add_argument("--status-only", action="store_true")
     parser.add_argument("--project")
     parser.add_argument("--monitor", type=int)
     args = parser.parse_args()
     try:
         if args.command == "snapshot":
-            result = snapshot()
+            result = snapshot(status_only=args.status_only)
         else:
             if os.environ.get("CAELESTIA_COMBINED_LIVE") != "1" or os.environ.get("CAELESTIA_SHELL_SMOKE") == "1":
                 raise ValueError("Wallpaper Engine controls are disabled")

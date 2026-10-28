@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Keepalive for the Google, OpenAI, and Z.AI auth files on serverseesghosts.
+"""Keepalive for the Google, OpenAI, and Z.AI auth files on a CPA proxy.
 
 Sends a minimal "ping" message to:
   - gpt-5.6-luna at low reasoning  (activates the OpenAI / Codex 5-hour window)
@@ -9,8 +9,10 @@ Sends a minimal "ping" message to:
 For each enabled codex / antigravity / zai auth, a real inference is made so
 the upstream rolling window starts counting down instead of staying idle.
 Progress is streamed as NDJSON (one line per ping) so the QML bolt ring
-fills 0..1. The public CPA inference endpoint is at serverseesghosts:8317
-(tunneled to 127.0.0.1:8317); management is at 127.0.0.1:18317.
+fills 0..1. Management calls use baseUrl/adminKey from --cpa-config. The
+inference endpoint is resolved from --inference-url, CPA_INFERENCE_URL, or
+the config's inferenceUrl; without one a loopback endpoint is used, so the
+inference key is never sent to an unconfigured remote host.
 
 Scope: 3× antigravity (Google) + 3× codex (OpenAI) + 1× zai (GLM) = 7.
 """
@@ -23,6 +25,7 @@ import os
 import re
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Any
@@ -41,6 +44,18 @@ ANTIGRAVITY_MODEL_URLS = [
 CODEX_USAGE_URL = "https://chatgpt.com/backend-api/wham/usage"
 
 KEEPALIVE_PROVIDERS = {"codex", "antigravity", "zai"}
+
+# Loopback-only fallback for the inference call. The key stays on this host;
+# a remote endpoint must be named explicitly in the config, environment or CLI.
+DEFAULT_INFERENCE_URL = "http://127.0.0.1:8317/v1/chat/completions"
+LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Refuse redirects so the inference key cannot follow one to another host."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
 
 
 def _path(v: str) -> Path:
@@ -106,55 +121,105 @@ def codex_account_id(item: dict[str, Any]) -> str:
     return _text(acct)
 
 
-def _chat_completion_via_8317(model: str, extra_body: dict[str, Any] | None = None) -> tuple[bool, str]:
-    """One real inference via the public CPA inference endpoint (8317 tunneled to serverseesghosts).
+def _inference_endpoint(value: str) -> tuple[str, str]:
+    """Validate an inference endpoint, returning (url, error).
+
+    A bare base URL gets the OpenAI chat-completions path. The inference key
+    may travel over https, or plain http only to loopback.
+    """
+    raw = _text(value)
+    if not raw:
+        return "", "inference endpoint is not configured"
+    if "://" not in raw:
+        return "", "inference endpoint must be an absolute URL"
+    try:
+        parts = urllib.parse.urlsplit(raw)
+        host = parts.hostname
+    except ValueError:
+        return "", "inference endpoint is not a valid URL"
+    if parts.scheme not in ("http", "https") or not host:
+        return "", "inference endpoint must be an http(s) URL"
+    if parts.scheme == "http" and host.lower() not in LOOPBACK_HOSTS:
+        return "", "plain http inference is only allowed on loopback"
+    path = parts.path.rstrip("/")
+    if not path:
+        path = "/v1/chat/completions"
+    elif path.endswith("/v1"):
+        path += "/chat/completions"
+    return urllib.parse.urlunsplit((parts.scheme, parts.netloc, path, parts.query, "")), ""
+
+
+def _is_loopback_url(url: str) -> bool:
+    try:
+        host = urllib.parse.urlsplit(_text(url)).hostname
+    except ValueError:
+        return False
+    return bool(host and host.lower() in LOOPBACK_HOSTS)
+
+
+def _inference_url(cli_value: str, cfg: dict[str, Any]) -> str:
+    explicit = (_text(cli_value)
+                or _text(os.environ.get("CPA_INFERENCE_URL"))
+                or _text(_first(cfg, "inferenceUrl", "inferenceBaseUrl")))
+    if explicit:
+        return explicit
+    # Only fall back to loopback when management baseUrl is also on loopback;
+    # remote management configs must explicitly name their inference endpoint.
+    if _is_loopback_url(_text(cfg.get("baseUrl"))):
+        return DEFAULT_INFERENCE_URL
+    return ""
+
+
+def _inference_key() -> str:
+    key = _text(os.environ.get("CPA_API_KEY"))
+    if key:
+        return key
+    env_conf = Path.home() / ".config" / "environment.d" / "cpa.conf"
+    if env_conf.is_file():
+        try:
+            for line in env_conf.read_text(encoding="utf-8").splitlines():
+                if line.startswith("CPA_API_KEY="):
+                    return _text(line.split("=", 1)[1])
+        except Exception:
+            pass
+    return ""
+
+
+def _chat_completion(endpoint: str, api_key: str, model: str, extra_body: dict[str, Any] | None = None) -> tuple[bool, str]:
+    """One real inference through the configured CPA inference endpoint.
 
     Returns (ok, error). A real completion is the only thing that moves the
     5-hour rolling window off idle; wham/usage reads do not.
     """
-    api_key = os.environ.get("CPA_API_KEY")
+    if not endpoint:
+        return False, "inference endpoint is not configured"
     if not api_key:
-        env_conf = Path.home() / ".config" / "environment.d" / "cpa.conf"
-        if env_conf.is_file():
-            try:
-                for line in env_conf.read_text(encoding="utf-8").splitlines():
-                    if line.startswith("CPA_API_KEY="):
-                        api_key = line.split("=", 1)[1].strip()
-                        break
-            except Exception:
-                pass
-    # The inference endpoint is available at 127.0.0.1:8317 via SSH tunnel to serverseesghosts.
-    # Use https via the tailnet DNS when available, else http via tunnel.
-    endpoints = [
-        "https://serverseesghosts.tail74ed91.ts.net:8317/v1/chat/completions",
-        "http://127.0.0.1:8317/v1/chat/completions",
-    ]
+        return False, "CPA_API_KEY is not set"
     body: dict[str, Any] = {"model": model, "messages": [{"role": "user", "content": "ping"}], "max_tokens": 8}
     if extra_body:
         body.update(extra_body)
     data = json.dumps(body).encode()
-    last_err = ""
-    for url in endpoints:
+    try:
+        req = urllib.request.Request(endpoint, data=data, headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        })
+        # No redirects: the key must not travel to a host other than the one
+        # named by the config, environment or CLI.
+        opener = urllib.request.build_opener(_NoRedirect)
+        with opener.open(req, timeout=30) as resp:
+            j = json.loads(resp.read().decode("utf-8", "replace"))
+            if j.get("id") and (j.get("choices") or j.get("object") == "chat.completion"):
+                return True, ""
+            return False, str(j)[:200]
+    except urllib.error.HTTPError as e:
         try:
-            req = urllib.request.Request(url, data=data, headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            })
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                j = json.loads(resp.read().decode("utf-8", "replace"))
-                if j.get("id") and (j.get("choices") or j.get("object") == "chat.completion"):
-                    return True, ""
-                last_err = str(j)[:200]
-        except urllib.error.HTTPError as e:
-            try:
-                last_err = e.read().decode()[:300]
-            except Exception:
-                last_err = str(e)[:200]
-            continue
-        except Exception as e:
-            last_err = str(e)[:200]
-            continue
-    return False, last_err
+            body = e.read().decode()[:300]
+        except Exception:
+            body = ""
+        return False, body or f"HTTP {e.code}"
+    except Exception as e:
+        return False, str(e)[:200]
 
 
 # Every line this script prints reaches the shell's error text, so scrub the
@@ -172,6 +237,7 @@ def _emit(obj: Any, **kwargs: Any) -> None:
 def main() -> int:
     ap = argparse.ArgumentParser(add_help=False)
     ap.add_argument("--cpa-config", default="~/.config/omarchy/cpa-agents.json")
+    ap.add_argument("--inference-url", default="", help="CPA inference chat-completions endpoint")
     ap.add_argument("--providers", default="codex,antigravity,zai", help="comma-separated providers to ping")
     args, _ = ap.parse_known_args()
 
@@ -195,6 +261,14 @@ def main() -> int:
     if not base or not key:
         _emit({"ok": False, "error": "missing baseUrl/adminKey"})
         return 0
+
+    inference_url, inference_error = _inference_endpoint(_inference_url(args.inference_url, cfg))
+    if inference_error:
+        _emit({"ok": False, "error": inference_error})
+        return 0
+    inference_key = _inference_key()
+    if inference_key:
+        _SECRETS.extend(part for part in [inference_key, *inference_key.splitlines()] if len(part) >= 6)
 
     try:
         inv = request_json(base, key, "/v0/management/auth-files")
@@ -234,7 +308,7 @@ def main() -> int:
             if prov == "codex":
                 # Real keepalive for OpenAI: gpt-5.6-luna at low reasoning (user spec).
                 # Chat Completions wire is what the CPA inference proxy bills for the 5-hour window.
-                ok, err = _chat_completion_via_8317("gpt-5.6-luna", {"reasoning": {"effort": "low"}})
+                ok, err = _chat_completion(inference_url, inference_key, "gpt-5.6-luna", {"reasoning": {"effort": "low"}})
                 # Fallback to quota read if the real call is unavailable (still marks keepalive as attempted).
                 if not ok:
                     acct = codex_account_id(item)
@@ -253,8 +327,9 @@ def main() -> int:
                     results.append({"provider": prov, "account": label, "ok": False, "error": err[:200]})
             elif prov == "antigravity":
                 # Real keepalive for Google: gemini-3.7-flash at low reasoning (user spec).
-                # Try the real generation via 8317 first; Antigravity pool's billing still flows through the proxy.
-                ok, err = _chat_completion_via_8317("gemini-3.7-flash", None)
+                # Try the real generation via the configured inference endpoint first;
+                # Antigravity pool's billing still flows through the proxy.
+                ok, err = _chat_completion(inference_url, inference_key, "gemini-3.7-flash", None)
                 if not ok:
                     # Fallback: quota-summary read (the Google pool's 5-hour/weekly buckets are the displayed limits).
                     proj = _text(_first(item, "project_id", "projectId"))
@@ -291,8 +366,8 @@ def main() -> int:
                 else:
                     results.append({"provider": prov, "account": label, "ok": False, "error": (err or "gemini keepalive failed")[:200]})
             elif prov == "zai":
-                # Real keepalive for Z.AI: glm-5.3-flash via 8317
-                ok, err = _chat_completion_via_8317("glm-5.3-flash", None)
+                # Real keepalive for Z.AI: glm-5.3-flash via the configured inference endpoint.
+                ok, err = _chat_completion(inference_url, inference_key, "glm-5.3-flash", None)
                 if not ok:
                     # Fallback to direct upstream messages call via api_call
                     base_url = _text(_first(item, "base_url", "baseUrl")) or "https://api.z.ai/api/anthropic"

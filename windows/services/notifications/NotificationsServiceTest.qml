@@ -269,6 +269,39 @@ QtObject {
         backend: fixture
     }
 
+    // Isolated instances for the history cap and the fullscreen wiring.
+    readonly property FakeBackend capFixture: FakeBackend {}
+    readonly property NotificationsService capService: NotificationsService {
+        enabled: true
+        profileRoot: "C:/fixtures/profile"
+        stateDirectory: "C:/fixtures/profile/state"
+        shellAssetsDirectory: "C:/fixtures/shell/assets"
+        backend: capFixture
+        maxHistoryCount: 5
+    }
+
+    // Isolated instance for the session-long no-save latch after an
+    // unreadable history load, with a backend so notifications can arrive.
+    readonly property FakeBackend historyFailureFixture: FakeBackend {}
+    readonly property NotificationsService historyFailureService: NotificationsService {
+        enabled: true
+        profileRoot: "C:/fixtures/profile"
+        stateDirectory: "C:/fixtures/profile/state"
+        shellAssetsDirectory: "C:/fixtures/shell/assets"
+        backend: historyFailureFixture
+    }
+
+    property bool fullscreenActive: false
+    readonly property FakeBackend fullscreenFixture: FakeBackend {}
+    readonly property NotificationsService fullscreenService: NotificationsService {
+        enabled: true
+        profileRoot: "C:/fixtures/profile"
+        stateDirectory: "C:/fixtures/profile/state"
+        shellAssetsDirectory: "C:/fixtures/shell/assets"
+        backend: fullscreenFixture
+        fullscreenProvider: () => test.fullscreenActive
+    }
+
     readonly property FakeAction actionOne: FakeAction {
         identifier: "default"
         text: "Open"
@@ -280,12 +313,21 @@ QtObject {
 
     property int assertions: 0
     property int dismissalsBeforeImages: 0
+    property int historySignals: 0
     property var asyncRecord: null
+    // The locked record evicted by the cap test: released during the async
+    // phase so its deferred destruction can be observed after the event loop.
+    property var evictedRecord: null
+    property var evictedLockKey: null
 
     function check(condition, message): void {
         assertions++;
         if (!condition)
             throw new Error(message);
+    }
+
+    function noteHistorySignal(): void {
+        historySignals++;
     }
 
     function close(actual, expected, message): void {
@@ -779,6 +821,8 @@ QtObject {
             ["![a\\]b](file:///C:/x.png)", "a\\]b", "an escaped bracket in the alt"],
             ["![x](<file:///C:/a b.png>)", "x", "an angle-bracket destination"],
             ["![x](<file:///C:/a)b.png>)", "x", "a paren inside an angle-bracket destination"],
+            ["![x](<file:///C:/a(b).png>)", "x", "a paren pair inside an angle-bracket destination"],
+            ["![a](< ![x](file:///C:/outside.png) >)", "a", "an image nested in a closed angle destination"],
             ["![a ![b](c)](d)", "a b", "nested images"],
             ["![x] plus text", "x plus text", "a shortcut reference image"],
             ["![x][ref]", "x", "a reference-style image"],
@@ -804,6 +848,52 @@ QtObject {
             check(sanitized === entry[1],
                 entry[2] + ": " + JSON.stringify(sanitized) + " != " + JSON.stringify(entry[1]));
         }
+
+        // A body is untrusted and unbounded: it is capped before any
+        // scanning, and the cap never leaves a split surrogate pair.
+        check(service.sanitizeBody("x".repeat(service.maxBodyLength + 5000)).length
+            === service.maxBodyLength, "an oversized body is capped before sanitizing");
+        check(service.sanitizeBody("x".repeat(service.maxBodyLength)).length
+            === service.maxBodyLength, "a body at the cap passes through");
+        const surrogateCap = service.sanitizeBody(
+            "x".repeat(service.maxBodyLength - 1) + "😀" + "y".repeat(64));
+        check(surrogateCap.length === service.maxBodyLength - 1
+            && !/[\uD800-\uDBFF]/.test(surrogateCap.charAt(surrogateCap.length - 1)),
+            "the cap does not split a surrogate pair");
+        // Unterminated image openers must not degrade into rescanning: they
+        // are answered from the precomputed matches and stay plain text.
+        check(service.sanitizeBody("![".repeat(4096)) === "![".repeat(4096),
+            "an unterminated image storm stays plain text");
+
+        // An unclosed outer "![a](< ... >" must not shield a nested image:
+        // the inner parentheses pair normally, the inner image is stripped
+        // and no destination survives.
+        check(service.sanitizeBody('![x](<file:///C:/a(b.png> "title")') === "x",
+            "an angle destination with an unmatched '(' and a title is stripped");
+        check(service.sanitizeBody('![x](<file:///C:/a)b.png> (title))') === "x",
+            "an angle destination with an unmatched ')' and a paren title is stripped");
+        const nestedAngle = service.sanitizeBody("![a](< ![x](file:///C:/outside.png) >");
+        check(nestedAngle === "![a](< x >",
+            "an image nested in an unclosed angle destination is stripped: "
+            + JSON.stringify(nestedAngle));
+        check(nestedAngle.indexOf("file:///") < 0,
+            "the nested destination is gone from an unclosed angle image");
+
+        // Angle-destination lookups are precomputed tables with no indexOf
+        // rescans, so an unterminated "![x](<" storm stays linear and plain.
+        const angleStorm = "![x](<".repeat(2730);
+        check(service.sanitizeBody(angleStorm) === angleStorm,
+            "an unclosed angle-destination storm stays plain text");
+        const farAngleStorm = "![x](<".repeat(2730) + ">";
+        check(service.sanitizeBody(farAngleStorm) === farAngleStorm,
+            "a storm with one distant angle close stays plain text");
+        // Above the cap the storm is cut after 2730 full repetitions plus a
+        // trailing "![x]", which reduces to its alt text.
+        const cappedAngleStorm = "![x](<".repeat(2730) + "x";
+        check(service.sanitizeBody("![x](<".repeat(2730) + "![x]") === cappedAngleStorm,
+            "a capped angle storm keeps its unterminated openers as text");
+        check(service.sanitizeBody("![x](<".repeat(4000)) === cappedAngleStorm,
+            "a longer angle storm is capped before scanning");
 
         // Exercise the pass boundary through every record ingress. Mixed forms
         // include inline, full/collapsed/shortcut references and HTML media,
@@ -892,6 +982,66 @@ QtObject {
         check(record.popup === false && service.popups.length === 0
             && service.notClosed.length === 1, "expired popup leaves the list entry");
         record.popup = true;
+
+        // --- Fullscreen policy (upstream NotifsFullscreen wiring) -------------
+        check(fullscreenService.fullscreenPolicy === fullscreenService.fullscreenPolicyOn
+            && fullscreenService.shouldShowPopup(),
+            "the default policy shows popups");
+        const fsDefault = makeNotification(800, "Fullscreen default");
+        fullscreenFixture.notificationReceived(fsDefault);
+        check(fullscreenService.list[0].popup
+            && fullscreenService.list[0].hasFullscreen === false,
+            "policy On shows the popup and samples the idle state");
+
+        test.fullscreenActive = true;
+        check(fullscreenService.shouldShowPopup(),
+            "policy On still shows popups over fullscreen");
+        const fsOverFullscreen = makeNotification(801, "Shown over fullscreen");
+        fullscreenFixture.notificationReceived(fsOverFullscreen);
+        const fsRecord = fullscreenService.list[0];
+        check(fsRecord.popup && fsRecord.hasFullscreen === true,
+            "policy On shows a popup over fullscreen and records the state");
+
+        fullscreenService.fullscreenPolicy = fullscreenService.fullscreenPolicyOff;
+        check(!fullscreenService.shouldShowPopup(),
+            "policy Off suppresses popups over fullscreen");
+        const fsSuppressed = makeNotification(802, "Suppressed in fullscreen");
+        fullscreenFixture.notificationReceived(fsSuppressed);
+        const fsSuppressedRecord = fullscreenService.list[0];
+        check(fsSuppressedRecord.popup === false
+            && fsSuppressedRecord.hasFullscreen === true,
+            "policy Off admits the record without a popup");
+        check(fullscreenService.notClosed.includes(fsSuppressedRecord),
+            "a suppressed popup still enters the history list");
+
+        // Upstream always expires a shown popup while fullscreen is focused,
+        // regardless of the expire configuration.
+        fullscreenService.expirePopups = false;
+        fullscreenService.handleExpiry(fsRecord);
+        check(fsRecord.popup === false,
+            "a fullscreen popup expires regardless of the expire setting");
+
+        // The fullscreen timeout applies when the notification has none of
+        // its own, and re-sampling on update returns to the default timeout.
+        const fsTimeout = makeNotification(803, "Fullscreen timeout");
+        fsTimeout.expireTimeout = 0;
+        fullscreenFixture.notificationReceived(fsTimeout);
+        const fsTimeoutRecord = fullscreenService.list[0];
+        check(fsTimeoutRecord.timer.interval === fullscreenService.fullscreenExpireTimeout,
+            "a fullscreen popup without its own timeout uses the fullscreen timeout");
+        test.fullscreenActive = false;
+        check(fullscreenService.handleNotification(fsTimeout) === true,
+            "a repeated delivery refreshes the existing record");
+        check(fullscreenService.list[0] === fsTimeoutRecord
+            && fsTimeoutRecord.hasFullscreen === false,
+            "the fullscreen state is re-sampled on update");
+        check(fsTimeoutRecord.timer.interval === fullscreenService.defaultExpireTimeout,
+            "the interval follows the re-sampled state");
+
+        fullscreenService.fullscreenPolicy = fullscreenService.fullscreenPolicyOn;
+        for (const open of fullscreenService.list.slice())
+            open.close();
+        check(fullscreenService.list.length === 0, "fullscreen records close cleanly");
 
         // --- Local dismiss ----------------------------------------------------
         record.close();
@@ -1027,6 +1177,9 @@ QtObject {
             "corrupt history is rejected");
         check(restoredService.historyLoaded && restoredService.historyError.indexOf("valid JSON") >= 0,
             "corrupt history reports a clear error");
+        check(restoredService.historyLoadFailed === true
+            && restoredService.mayPersistHistory() === false,
+            "a corrupt history load latches the no-save state");
         check(restoredService.list.length === 0, "corrupt history leaves no records");
 
         check(restoredService.restoreHistory("") === true,
@@ -1109,6 +1262,126 @@ QtObject {
         restoredService.failHistory("Fixture read failure");
         check(restoredService.historyError === "Fixture read failure"
             && restoredService.historyLoaded, "explicit history failure is exposed");
+
+        // --- A failed load protects the file on disk for the whole session ---
+        // The unreadable file is the only copy of the user's history: a
+        // failed read or parse latches a no-save state and announces no save.
+        // Notifications that arrive afterwards are held in memory, but the
+        // gate stays closed; only a subsequent successful restore re-allows
+        // persistence.
+        restoredService.historyChanged.connect(test.noteHistorySignal);
+        check(restoredService.historyLoadFailed, "a read failure latches the no-save state");
+        check(!restoredService.mayPersistHistory(),
+            "a latched read failure refuses to persist");
+
+        restoredService.failHistory("Second read failure");
+        check(test.historySignals === 0, "a read failure announces no save");
+        check(!restoredService.mayPersistHistory(), "a repeated failure stays latched");
+
+        check(restoredService.restoreHistory("{not json") === false,
+            "a corrupt history is rejected again");
+        check(restoredService.historyLoadFailed && !restoredService.mayPersistHistory(),
+            "a parse failure latches the no-save state");
+        check(restoredService.historyError.indexOf("valid JSON") >= 0,
+            "a parse failure reports the JSON error");
+        check(test.historySignals === 0, "a failed parse announces no save");
+
+        historyFailureService.failHistory("Unreadable history");
+        check(historyFailureService.historyLoadFailed === true
+            && historyFailureService.mayPersistHistory() === false,
+            "an unreadable history latches the no-save state");
+        historyFailureFixture.notificationReceived(makeNotification(950, "Arrived after a failed load"));
+        check(historyFailureService.list.length === 1
+            && historyFailureService.list[0].summary === "Arrived after a failed load",
+            "a notification still arrives after a failed history load");
+        check(historyFailureService.historyLoadFailed === true
+            && historyFailureService.mayPersistHistory() === false,
+            "arrivals never re-allow overwriting the unreadable history file");
+        check(JSON.parse(historyFailureService.serializeHistory()).length === 1,
+            "the arrival is held in memory only");
+        historyFailureService.list[0].close();
+        check(historyFailureService.list.length === 0
+            && !historyFailureService.mayPersistHistory(),
+            "the latch outlives the arrival it refused to persist");
+
+        check(restoredService.restoreHistory("[]") === true,
+            "a successful restore clears the latch");
+        check(!restoredService.historyLoadFailed && restoredService.mayPersistHistory(),
+            "a successful restore re-allows persistence");
+        check(test.historySignals === 1, "a successful restore announces the merged state once");
+
+        restoredService.failHistory("Relatched");
+        check(!restoredService.mayPersistHistory(), "the latch re-engages after another failure");
+        check(restoredService.restoreHistory("[]") === true
+            && !restoredService.historyLoadFailed
+            && restoredService.mayPersistHistory(),
+            "only a subsequent successful restore clears the relatched state");
+        check(test.historySignals === 2, "the relatch cycle announces exactly its two saves");
+        restoredService.historyChanged.disconnect(test.noteHistorySignal);
+
+        // --- Retained records are capped -------------------------------------
+        for (let capIndex = 0; capIndex < 7; capIndex++) {
+            const capped = makeNotification(400 + capIndex, "Cap " + capIndex);
+            capped.body = "Cap body " + capIndex;
+            capFixture.notificationReceived(capped);
+        }
+        check(capService.list.length === 5, "live deliveries respect the cap");
+        check(capService.list[0].summary === "Cap 6"
+            && capService.list[4].summary === "Cap 2",
+            "the cap evicts the oldest records");
+        check(capService.recordForNotificationId("400") === null
+            && capService.recordForNotificationId("401") === null
+            && capService.recordForNotificationId("406") !== null,
+            "evicted records are gone and the newest survive");
+        check(JSON.parse(capService.serializeHistory()).length === 5,
+            "the serialized history is capped");
+        capService.clearAll();
+        check(capService.list.length === 0, "capped records can still be cleared");
+
+        const overCapEntries = [];
+        for (let restoredIndex = 0; restoredIndex < 8; restoredIndex++) {
+            overCapEntries.push({
+                time: 1000 + restoredIndex,
+                recordId: "cap-restored-" + restoredIndex,
+                notificationId: String(500 + restoredIndex),
+                summary: "Restored " + restoredIndex,
+                body: "Restored body " + restoredIndex,
+                local: true
+            });
+        }
+        check(capService.restoreHistory(JSON.stringify(overCapEntries)) === true,
+            "an over-cap history restores");
+        check(capService.list.length === 5, "a restored history is capped");
+        check(capService.list[0].summary === "Restored 7"
+            && capService.list[4].summary === "Restored 3",
+            "the cap keeps the newest restored records");
+        capService.clearAll();
+
+        // A record a visible card still holds a lock on is evicted from the
+        // list immediately, but its QObject is not destroyed while locked;
+        // releasing the last lock destroys it (checked in the async phase).
+        const evictedLockKey = {};
+        const evictedSource = makeNotification(600, "Locked and evicted");
+        capFixture.notificationReceived(evictedSource);
+        const evictedLockedRecord = capService.list[0];
+        evictedLockedRecord.lock(evictedLockKey);
+        for (let evictIndex = 1; evictIndex <= 5; evictIndex++)
+            capFixture.notificationReceived(makeNotification(600 + evictIndex, "After " + evictIndex));
+        check(capService.list.length === 5,
+            "the cap removes a locked record from the list immediately");
+        check(capService.list.indexOf(evictedLockedRecord) < 0,
+            "the locked evicted record is gone from the list");
+        check(evictedLockedRecord.closed === true && evictedLockedRecord.evicted === true,
+            "the locked evicted record is marked closed and evicted");
+        check(evictedLockedRecord.locks.size === 1
+            && evictedLockedRecord.recordId !== undefined,
+            "the locked evicted record is not destroyed while locked");
+        check(capService.recordForNotificationId("600") === null,
+            "the locked evicted record is no longer addressable");
+        check(evictedSource.dismissCalls === 0,
+            "eviction is not a dismissal");
+        test.evictedRecord = evictedLockedRecord;
+        test.evictedLockKey = evictedLockKey;
 
         // --- Replacement sends are refused, never reported unconfirmed --------
         check(service.replacementIdFromArgs(["-r", "42"]) === 42, "short -r takes a value");
@@ -1807,6 +2080,15 @@ QtObject {
         check(service.popups.length === 0 && service.notClosed.length === 1,
             "expired popup remains a list notification");
         check(!test.asyncRecord.timeStrTimer.running, "hidden history stops its age timer");
+
+        // The locked evicted record survived the event-loop turns since the
+        // cap test: destroying it is deferred to its last lock's release.
+        check(test.evictedRecord !== null && test.evictedRecord.evicted === true
+            && test.evictedRecord.closed === true
+            && test.evictedRecord.locks.size === 1,
+            "the locked evicted record is still alive after the event loop ran");
+        test.evictedRecord.unlock(test.evictedLockKey);
+        test.evictedLockKey = null;
         test.asyncRecord.time = new Date(Date.now() - 10 * 60000);
         service.centerVisible = true;
         check(test.asyncRecord.timeStrTimer.running, "opening history resumes age updates");
@@ -1832,6 +2114,17 @@ QtObject {
         test.asyncRecord.close();
         check(service.list.length === 0, "async record can be dismissed after expiry");
         check(service.localDismissals >= test.dismissalsBeforeImages + 3, "async dismissal counted");
+
+        // The last lock was released in the async phase: the evicted QObject
+        // has been destroyed, so its wrapper is no longer readable.
+        let evictedDestroyed = true;
+        try {
+            evictedDestroyed = test.evictedRecord.recordId === undefined;
+        } catch (error) {
+            evictedDestroyed = true;
+        }
+        check(evictedDestroyed,
+            "the evicted record is destroyed once its last lock is released");
         guard.stop();
         console.log("CAELESTIA_NOTIFICATIONS_FIXTURE_PASS " + JSON.stringify({assertions: assertions}));
         Qt.quit();

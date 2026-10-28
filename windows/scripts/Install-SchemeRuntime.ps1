@@ -3,7 +3,11 @@ param(
     [Parameter(Mandatory)][string]$ProfileRoot,
     # Empty resolves windows/sources.lock.json's schemeCli revision.
     [string]$CliRevision = '',
-    [switch]$Force
+    [switch]$Force,
+    # After a failed provision, do not retry (and block startup) for this long.
+    [int]$RetryCooldownMinutes = 360,
+    # Upper bound for each venv/pip step.
+    [int]$StepTimeoutSeconds = 180
 )
 
 # Provisions the profile-local Python runtime that generates Material You
@@ -30,6 +34,32 @@ $helperSource = Join-Path $PSScriptRoot 'scheme\win_scheme.py'
 $helper = Join-Path $runtimeRoot 'win_scheme.py'
 $shimSource = Join-Path $PSScriptRoot 'scheme\fcntl.py'
 $stamp = Join-Path $runtimeRoot 'runtime.json'
+$requirements = Join-Path $PSScriptRoot 'scheme\requirements.lock.txt'
+$provisionLog = Join-Path $runtimeRoot 'provision.log'
+
+# Runs a command with a hard time limit; returns its exit code and output.
+function Invoke-Bounded([string]$File, [string[]]$Arguments, [string]$Step) {
+    $info = New-Object Diagnostics.ProcessStartInfo
+    $info.FileName = $File
+    $info.Arguments = ($Arguments | ForEach-Object { if ($_ -match '[\s"]') { '"' + ($_ -replace '"', '\"') + '"' } else { $_ } }) -join ' '
+    $info.UseShellExecute = $false
+    $info.CreateNoWindow = $true
+    $info.RedirectStandardOutput = $true
+    $info.RedirectStandardError = $true
+    $process = [Diagnostics.Process]::Start($info)
+    $outTask = $process.StandardOutput.ReadToEndAsync()
+    $errTask = $process.StandardError.ReadToEndAsync()
+    if (-not $process.WaitForExit($StepTimeoutSeconds * 1000)) {
+        try { $process.Kill() } catch { }
+        throw "$Step timed out after $StepTimeoutSeconds s (offline or slow network?)"
+    }
+    $text = ($outTask.GetAwaiter().GetResult() + "`n" + $errTask.GetAwaiter().GetResult()).Trim()
+    if ($text) { Add-Content -LiteralPath $provisionLog -Value "[$Step] $text" }
+    if ($process.ExitCode -ne 0) {
+        $tail = ($text -split "`n" | Where-Object { $_.Trim() } | Select-Object -Last 3) -join ' | '
+        throw "$Step failed (exit $($process.ExitCode)): $tail"
+    }
+}
 
 function Write-Result([bool]$Available, [string]$Message) {
     [ordered]@{
@@ -66,6 +96,15 @@ if (-not $Force -and (Test-Path -LiteralPath $stamp)) {
             Write-Result $true 'cached'
             return
         }
+        # A recent failure for this revision is not retried synchronously on
+        # every start (for example while offline); -Force overrides.
+        if ($record.available -eq $false -and $record.revision -eq $CliRevision -and $record.attemptedAt) {
+            $age = (Get-Date) - [DateTime]::Parse([string]$record.attemptedAt)
+            if ($age.TotalMinutes -ge 0 -and $age.TotalMinutes -lt $RetryCooldownMinutes) {
+                Write-Result $false "retry suppressed for $([int]($RetryCooldownMinutes - $age.TotalMinutes)) more minutes after: $($record.message)"
+                return
+            }
+        }
     } catch {
         # A corrupt marker falls through to a fresh provision.
     }
@@ -79,8 +118,16 @@ try {
             throw 'the Python launcher (py) is not on PATH'
         }
         New-Item -ItemType Directory -Force -Path $runtimeRoot | Out-Null
-        & py -3 -m venv $venv | Out-Null
-        if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $python)) {
+        # Select a CPython minor version covered by scheme\requirements.lock.txt (3.11-3.14).
+        $pySelector = '-3'
+        foreach ($ver in @('-3.14', '-3.13', '-3.12', '-3.11')) {
+            try {
+                $null = & $launcher.Source $ver -c "import sys" 2>$null
+                if ($LASTEXITCODE -eq 0) { $pySelector = $ver; break }
+            } catch { }
+        }
+        Invoke-Bounded $launcher.Source @($pySelector, '-m', 'venv', $venv) 'creating the virtual environment'
+        if (-not (Test-Path -LiteralPath $python)) {
             throw 'could not create the profile-local virtual environment'
         }
     }
@@ -88,16 +135,12 @@ try {
     # Keep pip's download cache inside the isolated profile too.
     $env:PIP_CACHE_DIR = Join-Path $ProfileRoot 'cache\pip'
 
-    # The CLI declares Python >= 3.13; only its packaging metadata needs that.
-    # The scheme/material modules compile and run on the installed 3.12.
-    & $python -m pip install --disable-pip-version-check --quiet 'materialyoucolor==3.0.4' 'pillow==13.0.0' | Out-Null
-    if ($LASTEXITCODE -ne 0) {
-        throw 'could not install materialyoucolor/pillow'
-    }
-    & $python -m pip install --disable-pip-version-check --quiet --no-deps --ignore-requires-python "git+https://github.com/caelestia-dots/cli@$CliRevision" | Out-Null
-    if ($LASTEXITCODE -ne 0) {
-        throw "could not install the caelestia CLI at $CliRevision"
-    }
+    # Binary wheels only, each verified against the SHA-256 digests locked in
+    # scheme\requirements.lock.txt. The CLI declares Python >= 3.13; only its
+    # packaging metadata needs that. The scheme/material modules run on 3.12.
+    Invoke-Bounded $python @('-m', 'pip', 'install', '--disable-pip-version-check', '--quiet', '--timeout', '30', '--retries', '1', '--no-deps', '--only-binary=:all:', '--require-hashes', '-r', $requirements) 'installing materialyoucolor/pillow'
+    # The commit id in the URL content-addresses the CLI source (git verifies it).
+    Invoke-Bounded $python @('-m', 'pip', 'install', '--disable-pip-version-check', '--quiet', '--timeout', '30', '--retries', '1', '--no-deps', '--ignore-requires-python', "git+https://github.com/caelestia-dots/cli@$CliRevision") "installing the caelestia CLI at $CliRevision"
 
     Copy-Item -LiteralPath $helperSource -Destination $helper -Force
     $shimDir = (& $python -c "import site; print(site.getsitepackages()[0])" 2>$null | Select-Object -First 1)
@@ -132,6 +175,7 @@ try {
 } catch {
     $message = $_.Exception.Message
     Write-Warning "Scheme runtime unavailable: $message"
+    try { Add-Content -LiteralPath $provisionLog -Value "$((Get-Date).ToString('o')) FAILED: $message" } catch { }
     [ordered]@{
         available = $false
         revision = $CliRevision

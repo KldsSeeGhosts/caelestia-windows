@@ -1,2 +1,4 @@
 # Preserve vendored license bytes, including upstream whitespace.
 windows/licenses/fonts/**/LICENSE -text -whitespace
+# Preserve bundled font bytes checked by sources.lock.json.
+assets/google-sans-flex/* -text

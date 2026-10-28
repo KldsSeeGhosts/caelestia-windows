@@ -14,11 +14,12 @@ import qs.components.misc
 // The pure NotificationsService owns records, expiry, dismissal, image source
 // trust, mirroring consent and history serialization; this facade adds only the
 // opt-ins, the native loader, the Windows settings action, the isolated-profile
-// FileView, banner-recovery helper and local send helper. It imports no HOME/XDG path
-// object and never constructs the native server while disabled. No notification
-// image is copied, written, listed or deleted: only allowlisted image://icon
-// theme names and files already inside the staged shell assets directory are
-// used.
+// FileView (a history file that cannot be read or parsed is never overwritten
+// during the session), the banner-recovery helper and the local send helper.
+// It imports no HOME/XDG path object and never constructs the native server
+// while disabled. No notification image is copied, written, listed or deleted:
+// only allowlisted image://icon theme names and files already inside the
+// staged shell assets directory are used.
 Singleton {
     id: root
 
@@ -116,6 +117,10 @@ Singleton {
         defaultExpireTimeout: GlobalConfig.notifs.defaultExpireTimeout
         fullscreenExpireTimeout: GlobalConfig.notifs.fullscreenExpireTimeout
         expirePopups: GlobalConfig.notifs.expire
+        // Bound as the raw enum value: the service's policy constants mirror
+        // NotifsFullscreen (On = 0, Off = 1).
+        fullscreenPolicy: GlobalConfig.notifs.fullscreen
+        fullscreenProvider: () => root.hasFullscreen()
         profileRoot: root.profileRoot
         stateDirectory: Quickshell.stateDir
         shellAssetsDirectory: root.shellAssetsDirectory
@@ -231,8 +236,11 @@ Singleton {
         return workspace?.toplevels.values.some(t => t.monitor === monitor && t.lastIpcObject.fullscreen > 1) ?? false;
     }
 
+    // Upstream admission rule, owned by the pure service: host-suppressed
+    // state and, with the fullscreen policy Off, a focused fullscreen toplevel
+    // suppress the popup (the record still enters the history list).
     function shouldShowPopup(): bool {
-        return !service.popupsSuppressed;
+        return service.shouldShowPopup();
     }
 
     function historyJson(): string {
@@ -389,10 +397,14 @@ Singleton {
             "-Command", "Restore"]
         stderr: SplitParser { onRead: line => console.warn("Caelestia banner recovery:", line) }
         onExited: code => {
-            if (code === 0)
+            if (code === 0) {
                 root.bannerRecoveryComplete = true;
-            else
+                // A successful recovery clears an earlier helper failure, so
+                // replacement can start again; bannerWanted reconciles it.
+                root.bannerFailed = false;
+            } else {
                 console.warn("Caelestia banner recovery failed; replacement remains disabled");
+            }
         }
     }
 
@@ -412,14 +424,28 @@ Singleton {
         path: root.enabled && root.service.pathConfined ? root.service.historyPath : ""
 
         onLoaded: {
-            root.service.restoreHistory(text());
+            const raw = text();
+            if (!root.service.restoreHistory(raw)) {
+                // The file is present but unparseable, so it is the only copy
+                // of the user's history: the service's load-failure latch
+                // keeps it untouched for the rest of the session.
+                console.warn("Caelestia notification history could not be loaded ("
+                    + root.service.historyError + "); it will not be overwritten this session: "
+                    + root.service.historyPath);
+            }
         }
         onLoadFailed: error => {
             if (error === FileViewError.FileNotFound) {
                 root.service.restoreHistory("");
-                Qt.callLater(() => storage.setText(root.service.serializeHistory()));
+                Qt.callLater(() => {
+                    if (root.service.mayPersistHistory())
+                        storage.setText(root.service.serializeHistory());
+                });
             } else {
+                // The file exists but cannot be read at all; its contents are
+                // unknown here, so nothing may overwrite it this session.
                 root.service.failHistory("The notification history could not be read from the isolated profile.");
+                console.warn("Caelestia notification history could not be read and will not be overwritten this session.");
             }
         }
     }
@@ -429,7 +455,7 @@ Singleton {
 
         interval: 1000
         onTriggered: {
-            if (!root.enabled || !root.service.pathConfined || !root.service.historyLoaded)
+            if (!root.service.mayPersistHistory())
                 return;
             storage.setText(root.service.serializeHistory());
         }

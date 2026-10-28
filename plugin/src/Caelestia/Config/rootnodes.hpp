@@ -55,6 +55,7 @@ class CAELESTIA_CONFIG_API ConfigRoot : public settings::RootNode {
 
 public:
     explicit ConfigRoot(const QString& path, ConfigRoot* fallback = nullptr, QObject* parent = nullptr);
+    ~ConfigRoot() override;
 
     [[nodiscard]] const FontTokens* fontTokens() const;
 
@@ -74,6 +75,7 @@ class CAELESTIA_CONFIG_API TokensRoot : public settings::RootNode {
 
 public:
     explicit TokensRoot(const QString& path, TokensRoot* fallback = nullptr, QObject* parent = nullptr);
+    ~TokensRoot() override;
 };
 
 namespace detail {

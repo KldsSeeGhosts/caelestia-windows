@@ -23,20 +23,16 @@ BluetoothService {
     // The service is clock-injected so fixtures never wait on wall time. The
     // timer resets no native state by itself; tick() only expires bounded waits
     // and stops discovery/pairing that this process previously requested.
-    // Elapsed time accumulates timer intervals rather than reading Date.now():
-    // wall-clock corrections must not stretch or cut the advertised bounds.
-    property double _elapsedMs: 0
-
+    // Timestamps come from Date.now(), not accumulated timer intervals, so a
+    // suspend/resume gap counts against the advertised bounds. The timer runs
+    // only while clockActive reports a pending wait or operation.
     readonly property Timer _clock: Timer {
         interval: 500
         repeat: true
-        running: root.enabled
+        running: root.clockActive
         triggeredOnStart: true
 
-        onTriggered: {
-            root._elapsedMs += interval;
-            root.tick(root._elapsedMs);
-        }
+        onTriggered: root.tick(Date.now())
     }
 
     readonly property Loader _nativeLoader: Loader {

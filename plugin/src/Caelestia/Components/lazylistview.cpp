@@ -1,6 +1,7 @@
 #include "lazylistview.hpp"
 
 #include <qqmlcontext.h>
+#include <qpointer.h>
 #include <qtimer.h>
 
 #include <algorithm>
@@ -502,8 +503,10 @@ void LazyListView::flushPendingInserts() {
 
         if (!entry.readyDelayStarted) {
             entry.readyDelayStarted = true;
-            QTimer::singleShot(m_readyDelay, this, [this, item = entry.item] {
-                finishDelayedInsert(item);
+            // QPointer: if the delegate dies and its address is reused, the new one must not be revealed early
+            QTimer::singleShot(m_readyDelay, this, [this, item = QPointer<QQuickItem>(entry.item)] {
+                if (item)
+                    finishDelayedInsert(item);
             });
         }
     }

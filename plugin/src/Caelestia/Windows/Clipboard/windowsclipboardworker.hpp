@@ -67,6 +67,8 @@ private:
     // `explicitOpen` reads are user actions: a picker close does not cancel them.
     [[nodiscard]] QString ensurePreview(const QString& id, bool explicitOpen);
     void removePreview(const QString& id);
+    void evictPreviews(const QString& keep);
+    void trackOpenedFile(const QString& path);
     void clearPreviews();
 
     struct Impl;

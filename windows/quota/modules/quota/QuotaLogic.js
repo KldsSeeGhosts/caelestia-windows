@@ -36,12 +36,6 @@ function windowKey(limit) {
     return label.split("·").pop().trim();
 }
 
-function windowCategory(key) {
-    if (/h$/.test(key) || key === "API") return "primary";
-    if (key === "wk" || key === "mo" || key === "Auto") return "tertiary";
-    return "secondary";
-}
-
 function pace(limit, now) {
     const left = timeRemaining(limit, now);
     const remain = remaining(limit);
