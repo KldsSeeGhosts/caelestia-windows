@@ -17,6 +17,7 @@ import qs.daemons
 import qs.modules.drawers
 import qs.modules.launcher.services
 import qs.modules.background
+import qs.modules.dictation
 
 // Original Caelestia modules over isolated Windows service facades.
 // Live controls are explicit; smoke keeps every native write gate off.
@@ -38,6 +39,7 @@ ShellRoot {
     readonly property int previewHeight: Math.min(620, (selectedScreen?.height ?? 780) - inset * 2)
 
     settings.watchFiles: false
+    DictationIndicator {}
 
     WindowsBackground {
         id: desktopBackground
