@@ -131,6 +131,20 @@ class ProducerTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             watch.Watcher(self.directory).snapshot()
 
+    def test_failing_transcript_does_not_grow_cache(self):
+        path = blob(self.directory, "account.active%7Caccount.transcript.replicas.c", {"entries": []})
+        with open(path, "wb") as stream:
+            stream.truncate(watch.BLOB_LIMIT + 1)
+        watcher = watch.Watcher(self.directory)
+        for version in range(20):
+            # Each version differs in size, so it is a new cache signature.
+            blob(self.directory, "account.active%7Caccount.roster.last-roster", {"rows": [
+                {"id": "c", "name": "Research" + "x" * version}]})
+            with self.assertRaises(ValueError):
+                watcher.snapshot()
+        # Only the current roster projection may survive pruning.
+        self.assertLessEqual(len(watcher.cache), 2)
+
 
 if __name__ == "__main__":
     if len(sys.argv) == 3 and sys.argv[1] == "--fixture":

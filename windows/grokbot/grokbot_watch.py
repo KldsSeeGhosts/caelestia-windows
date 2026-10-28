@@ -135,6 +135,10 @@ class Watcher:
 
     def snapshot(self):
         index = index_blobs(self.directory)
+        # Prune cached versions and entries that disappeared before any read
+        # can fail, so a persistently bad blob cannot pin superseded entries.
+        signatures = {(v[0], v[1], v[2]) for v in index.values()}
+        self.cache = {k: v for k, v in self.cache.items() if k[:3] in signatures}
         slot_entries = [v for k, v in index.items() if k.endswith("client-meta.account-slot")]
         account = self.read(max(slot_entries, key=lambda e: e[1]), self.slot) if slot_entries else ""
         rosters = [(k, v) for k, v in index.items() if k.endswith("roster.last-roster")]
@@ -158,9 +162,6 @@ class Watcher:
                 since = self.read(max(matches, key=lambda pair: pair[1][1])[1], self.transcript)
                 bot["working"] = bool(since and 0 <= time.time() - since < 900)
             bots.append(bot)
-        # Prune cached versions and entries that disappeared.
-        signatures = {(v[0], v[1], v[2]) for v in index.values()}
-        self.cache = {k: v for k, v in self.cache.items() if k[:3] in signatures}
         return {
             "generated_ts": time.time(),
             # Process enumeration is intentionally outside the allowed input set.
