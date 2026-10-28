@@ -272,7 +272,7 @@ ShellRoot {
                 root.step++;
                 break;
             case 18:
-                if (Recorder.lastError.indexOf("not available") < 0) return;
+                if (Recorder.lastError.indexOf("not running") < 0) return;
                 if (root.pendingCaptures) return;
                 root.check(!Recorder.running && Recorder.elapsed === 0, "host loss clears stale recording");
                 root.check(!Recorder.applyResponse('{"version":2,"ok":true}'), "reject unknown version");

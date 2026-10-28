@@ -8,7 +8,7 @@ is named in the original Record card and its start menu is disabled.
 The executable is resolved from `%LOCALAPPDATA%\Programs\Glazier\glazier.exe`,
 then PATH. `CAELESTIA_GLAZIER_EXE` is an explicit override, including for tests.
 Install a compatible version before enabling this integration. A stopped v1 host
-may report unavailable until Start launches it; this does not disable cold start.
+reports "not running" until Start launches it; this does not disable cold start. A missing Glazier is probed again every 30 s.
 
 The upstream Recorder contract remains `running`, `paused`, `elapsed`, `refCount`,
 `start(extraArgs)`, `stop()`, `togglePause()`. Upstream modes map as follows:
