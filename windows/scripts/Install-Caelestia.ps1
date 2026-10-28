@@ -248,15 +248,29 @@ try {
     # Swap the complete payload in; removed files from an older build do not
     # linger, and a failed swap puts the previous prefix back.
     $hadPrefix = Test-Path -LiteralPath $Prefix
-    if ($hadPrefix) { [IO.Directory]::Move($Prefix, $backup) }
-    try { [IO.Directory]::Move($payload, $Prefix) }
-    catch {
-        if ($hadPrefix -and -not (Test-Path -LiteralPath $Prefix)) { [IO.Directory]::Move($backup, $Prefix) }
-        throw
-    }
+    $inPlace = $false
     if ($hadPrefix) {
-        Assert-CaelestiaNoReparsePoints $backup
-        Remove-Item -LiteralPath $backup -Recurse -Force
+        try { [IO.Directory]::Move($Prefix, $backup) }
+        catch [IO.IOException] {
+            # Apps launched from the shell inherit the prefix as their working
+            # directory, which blocks renaming it. Mirror the payload in place
+            # instead; /MIR still removes files the new build no longer has.
+            Assert-CaelestiaNoReparsePoints $Prefix
+            & robocopy.exe $payload $Prefix /MIR /XJ /R:2 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null
+            if ($LASTEXITCODE -ge 8) { throw "Updating $Prefix in place failed (robocopy exit $LASTEXITCODE)." }
+            $inPlace = $true
+        }
+    }
+    if (-not $inPlace) {
+        try { [IO.Directory]::Move($payload, $Prefix) }
+        catch {
+            if ($hadPrefix -and -not (Test-Path -LiteralPath $Prefix)) { [IO.Directory]::Move($backup, $Prefix) }
+            throw
+        }
+        if ($hadPrefix) {
+            Assert-CaelestiaNoReparsePoints $backup
+            Remove-Item -LiteralPath $backup -Recurse -Force
+        }
     }
     Write-CaelestiaProfileOwner $ProfileRoot $Prefix $installId $profileExclusive
     $launcher = Join-Path $Prefix 'Start-Caelestia.ps1'
