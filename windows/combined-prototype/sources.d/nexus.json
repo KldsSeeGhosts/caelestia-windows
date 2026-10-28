@@ -21,7 +21,7 @@
   "modules/nexus/common/SectionHeader.qml": "modules/nexus/common/SectionHeader.qml",
   "modules/nexus/common/SelectRow.qml": "modules/nexus/common/SelectRow.qml",
   "modules/nexus/common/SliderRow.qml": "modules/nexus/common/SliderRow.qml",
-  "modules/nexus/common/StackPage.qml": "modules/nexus/common/StackPage.qml",
+  "windows/combined-prototype/adapters/modules/nexus/common/StackPage.qml": "modules/nexus/common/StackPage.qml",
   "modules/nexus/common/StepperRow.qml": "modules/nexus/common/StepperRow.qml",
   "modules/nexus/common/TextFieldRow.qml": "modules/nexus/common/TextFieldRow.qml",
   "modules/nexus/common/ToggleRow.qml": "modules/nexus/common/ToggleRow.qml",

@@ -38,16 +38,7 @@ VerticalFadeFlickable {
     function openResult(result): void {
         if (!result)
             return;
-        if (root.nState.currentPageIdx !== result.pageIndex) {
-            root.nState.currentPageIdx = result.pageIndex;
-            // The replacement StackPage restores this stack when incubated.
-            root.nState.subPageIdxStack = result.path;
-        } else {
-            while (root.nState.subPageIdxStack.length)
-                root.nState.closeSubPage();
-            for (const idx of result.path)
-                root.nState.openSubPage(idx);
-        }
+        root.nState.searchNavigate(result.pageIndex, result.path);
     }
 
     function openFirstMatch(): void {
@@ -114,7 +105,7 @@ VerticalFadeFlickable {
                     bottomRightRadius: parent.bottomRightRadius
 
                     onClicked: {
-                        if (root.query.trim())
+                        if (root.query.trim() || root.nState.pendingSearchRoute)
                             root.openResult(item.modelData);
                         else
                             root.nState.currentPageIdx = item.modelData.pageIndex;
