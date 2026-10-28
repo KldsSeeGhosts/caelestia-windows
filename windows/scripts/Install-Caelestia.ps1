@@ -258,6 +258,8 @@ try {
             Assert-CaelestiaNoReparsePoints $Prefix
             & robocopy.exe $payload $Prefix /MIR /XJ /R:2 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null
             if ($LASTEXITCODE -ge 8) { throw "Updating $Prefix in place failed (robocopy exit $LASTEXITCODE)." }
+            # Codes 1-7 mean success; do not leak them as the script's exit code.
+            $global:LASTEXITCODE = 0
             $inPlace = $true
         }
     }

@@ -1250,6 +1250,9 @@ namespace Caelestia.Takeover {
                 }
             } catch (ArgumentException) { return false; }
               catch (InvalidOperationException) { return false; }
+              // A reused PID owned by a protected or elevated process denies
+              // access; our own watchdog never would, so it is not alive.
+              catch (System.ComponentModel.Win32Exception) { return false; }
               catch (IOException) { return true; }
         }
         // The adopted snapshot now lives in this run's journal; retire the old
