@@ -43,6 +43,8 @@ Item {
 
         root.invalidatePages();
         if (root.currentItem) {
+            if (root.nState.activePage === root.currentItem)
+                root.nState.activePage = null;
             root.currentItem.destroy();
             root.currentItem = null;
         }
@@ -68,6 +70,16 @@ Item {
                 return;
             incubator.object.anchors.fill = container;
             root.currentItem = incubator.object;
+            if (idx === root.nState.currentPageIdx) {
+                root.nState.activePage = incubator.object;
+                // The old page is no longer the active signal target. Defer
+                // routing until page-change handlers and incubation settle.
+                Qt.callLater(() => {
+                    if (token.alive && root.nState?.activePage === incubator.object
+                            && root.nState.currentPageIdx === idx)
+                        root.nState.applySearchRoute();
+                });
+            }
         };
 
         if (incubator.status === Component.Ready)
@@ -97,6 +109,7 @@ Item {
 
     Connections {
         function onCurrentPageIdxChanged(): void {
+            root.nState.activePage = null;
             switchAnim.complete();
             root.animOff = root.Tokens.padding.extraLarge * (root.nState.currentPageIdx > root.lastPageIdx ? 1 : -1);
             switchAnim.start();

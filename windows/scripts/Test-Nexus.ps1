@@ -17,7 +17,8 @@ param(
 # checks the GlobalConfig write path against <profile>\config\shell.json, opens
 # the detached Nexus window through modules/nexus/WindowFactory.qml, loads every
 # page from PageRegistry, presses caelestia:nexus through the backend hotkey
-# manager, and destroys the window again. Service facades stay disabled by
+# manager, types into search and checks filtering and navigation, and destroys
+# the window again. Service facades stay disabled by
 # default; -Observe constructs their read-only observers and still sets no
 # control, launch or write opt-in. It does not take screenshots, drive the
 # pointer, or start a tiler.
@@ -100,6 +101,7 @@ $diagnostics = Get-Diagnostics $text
 $passed = -not $timedOut -and $process.ExitCode -eq 0 -and
     $text.Contains('CAELESTIA_NEXUS_SMOKE_PASS') -and
     $text.Contains('CAELESTIA_NEXUS_SMOKE_PAGES 12') -and
+    $text.Contains('CAELESTIA_NEXUS_SEARCH_PASS') -and
     $text.Contains('CAELESTIA_SHORTCUT name=nexus') -and
     $diagnostics.Count -eq 0
 $result = [ordered]@{
