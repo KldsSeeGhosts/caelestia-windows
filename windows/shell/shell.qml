@@ -27,6 +27,8 @@ ShellRoot {
     id: root
 
     readonly property bool externalWallpaperActive: WallpaperEngine.ownsDesktop
+    // Windows: instantiate only the opt-in GrokBot snapshot adapter.
+    readonly property bool grokBotEnabled: GrokBot.enabled
     readonly property bool smoke: Quickshell.env("CAELESTIA_SHELL_SMOKE") === "1"
     // Isolated install validation may reserve only the secondary monitor.
     // Normal starts always retain the complete per-monitor shell.
