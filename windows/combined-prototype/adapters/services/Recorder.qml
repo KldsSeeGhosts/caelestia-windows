@@ -33,6 +33,9 @@ Singleton {
     readonly property bool running: ["recording", "paused", "finalizing"].indexOf(state) !== -1
     readonly property bool paused: state === "paused"
     readonly property bool stopping: state === "finalizing"
+    // Fast only while healthy and something is happening or the card is open;
+    // a failed host retries slowly and a quiet shell polls occasionally.
+    readonly property bool pollFast: pendingStart || (!connectionFailed && (state !== "idle" || refCount > 0))
     readonly property bool canStart: permitted && available && !incompatible && state === "idle" && !pendingStart
     readonly property string status: {
         if (!permitted)
@@ -96,8 +99,9 @@ Singleton {
     }
 
     function applyResponse(text): bool {
-        // A killed or crashed client finishes with no output: a transient
-        // disconnect, not an incompatible host.
+        // Empty, partial or malformed output (for example from a client killed
+        // by the watchdog) is a transient poll failure, not a protocol
+        // mismatch, so it must not disable the recorder until reload.
         if (!text.trim()) {
             disconnected("Glazier is not responding.");
             return false;
@@ -106,20 +110,31 @@ Singleton {
         try {
             data = JSON.parse(text.trim());
         } catch (_) {
+            disconnected("Glazier returned an unreadable status response.");
+            return false;
+        }
+        if (data === null || typeof data !== "object" || Array.isArray(data)) {
+            disconnected("Glazier returned an unreadable status response.");
+            return false;
+        }
+        if (typeof data.version === "number" && data.version !== 1) {
+            // A parsed status that names another protocol version is explicit
+            // incompatibility; a valid compatible response clears it.
             available = false;
             incompatible = true;
             disconnected("Glazier is incompatible: control protocol v1 is required.");
             return false;
         }
         if (data.version !== 1 || typeof data.ok !== "boolean") {
-            available = false;
-            incompatible = true;
-            disconnected("Glazier is incompatible: control protocol v1 is required.");
+            disconnected("Glazier returned an incomplete status response.");
             return false;
         }
         if (!data.ok && !data.host_id) {
-            // A cold host may take a moment to create its pipe after detached
-            // launch. Keep the pending start until it responds or times out.
+            // A v1 offline response still proves the CLI binary speaks the
+            // supported protocol, so clear any prior incompatibility and allow
+            // Start to launch Glazier. Keep pendingStart until it responds.
+            incompatible = false;
+            available = Boolean(executable);
             if (!pendingStart)
                 disconnected("Glazier is not running (Start launches it).");
             return false;
@@ -128,12 +143,11 @@ Singleton {
                 || !Number.isFinite(data.elapsed_ms) || data.elapsed_ms < 0
                 || typeof data.host_id !== "string" || typeof data.output_directory !== "string"
                 || !Array.isArray(data.events)) {
-            available = false;
-            incompatible = true;
             disconnected("Glazier returned an invalid recorder state.");
             return false;
         }
         available = true;
+        incompatible = false;
         if (connectionFailed)
             lastError = "";
         connectionFailed = false;
@@ -224,7 +238,8 @@ Singleton {
         id: probe
         running: root.permitted && !root.probed
         command: ["powershell.exe", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command",
-            "$override=$env:CAELESTIA_GLAZIER_EXE; if ($override) { if (Test-Path -LiteralPath $override -PathType Leaf) { $override }; exit }; "
+            "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; "
+            + "$override=$env:CAELESTIA_GLAZIER_EXE; if ($override) { if (Test-Path -LiteralPath $override -PathType Leaf) { $override }; exit }; "
             + "$installed=Join-Path $env:LOCALAPPDATA 'Programs\\Glazier\\glazier.exe'; "
             + "if (Test-Path -LiteralPath $installed -PathType Leaf) { $installed } "
             + "else { $cmd=Get-Command glazier.exe -ErrorAction SilentlyContinue; if ($cmd) { $cmd.Source } }"]
@@ -247,7 +262,7 @@ Singleton {
     }
 
     function poll(): void {
-        if (permitted && executable && !incompatible && !statusProcess.running && !commandProcess.running)
+        if (permitted && executable && !statusProcess.running && !commandProcess.running)
             statusProcess.running = true;
     }
 
@@ -263,9 +278,9 @@ Singleton {
     }
 
     // Poll even when the card is closed: tray/hotkey actions must be reflected.
-    // Fast only while something is happening or the card is open.
+    // Fast only when active or open; retry a failed host at 5 s, idle at 15 s.
     Timer {
-        interval: root.pendingStart || (!root.connectionFailed && (root.state !== "idle" || root.refCount > 0)) ? 500 : 5000
+        interval: root.pollFast ? 500 : root.connectionFailed ? 5000 : 15000
         running: root.permitted && root.executable !== ""
         repeat: true
         onTriggered: root.poll()
