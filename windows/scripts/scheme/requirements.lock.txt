@@ -1,0 +1,12 @@
+# Locked scheme-runtime dependencies (pip --require-hashes --only-binary).
+# Regenerate from PyPI file digests when windows/sources.lock.json bumps a version.
+materialyoucolor==3.0.4 \
+    --hash=sha256:4d3bd19fa9dca51410f8566dcaf93d16f0c007b39ad98e0609abf9206f66c274 \
+    --hash=sha256:6715a636eb4c38a66a55c2404667b67136cbf3ab177f245851898f959dc3cede \
+    --hash=sha256:cdd2e22418c1081acebe5e65884c49002df2e405b3e3c062df7b61a492786b88 \
+    --hash=sha256:df9815c45912003ec6802bc60b1d95b46f666592339a20f37334d3f97e87884f
+pillow==13.0.0 \
+    --hash=sha256:9dda0788a9932776a75d8bcc020076edc308ce2508b51f6739a45e3158b3fc42 \
+    --hash=sha256:d7710eb676e9bb68965cb045be0d333b4c0d7f9dfbaa7fbf121385b1588683d3 \
+    --hash=sha256:f7cbb7a64e7ec664775195e4f81923bc8a93d9451b963f844e59118f63147a7a \
+    --hash=sha256:ff3fe9eb621fbb9db4c4be33ab946f6bac5f98ab50ca8d3260503653656c961b

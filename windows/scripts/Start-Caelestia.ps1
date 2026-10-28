@@ -24,6 +24,11 @@ if ($Smoke -and $Command -ne 'Start') { throw '-Smoke requires -Command Start.' 
 if ($PSBoundParameters.ContainsKey('ScreenIndex') -and -not $Smoke) { throw '-ScreenIndex requires -Smoke.' }
 
 if ($Command -eq 'Start') {
+    # Automatically claim only an empty profile; pre-populated directories
+    # without an existing marker are never auto-marked exclusive.
+    if (-not (Read-CaelestiaProfileOwner $profile) -and (Test-CaelestiaProfileEmpty $profile)) {
+        Write-CaelestiaProfileOwner $profile $Prefix $(if ($record.installId) { [string]$record.installId } else { [guid]::NewGuid().ToString('N') }) $true
+    }
     foreach ($dir in @('config', 'state', 'cache', 'data', 'runtime', 'logs')) {
         New-Item -ItemType Directory -Force -Path (Join-Path $profile $dir) | Out-Null
     }
@@ -88,7 +93,17 @@ $liveValue = $(if ($Smoke) { '0' } else { '1' })
 foreach ($gate in @('AUDIO_CONTROLS', 'BLUETOOTH_CONTROLS', 'BRIGHTNESS_CONTROLS', 'MEDIA_CONTROLS', 'NETWORK_CONTROLS', 'APP_LAUNCH', 'TRAY_ACTIVATION', 'POWER_PROFILE_WRITES', 'SESSION_ACTIONS', 'NOTIFICATION_MIRROR', 'NOTIFICATION_MIRROR_DISMISS', 'NOTIFICATION_APP_OPEN')) {
     $info.EnvironmentVariables["CAELESTIA_WINDOWS_$gate"] = $liveValue
 }
-$info.EnvironmentVariables['QS_WINDOWS_TRAY_HOOK'] = $liveValue
+# The hook only feeds the bar's tray entry; leave it off while that entry is
+# disabled or removed in the profile's shell.json.
+$trayHook = $liveValue
+try {
+    $shellConfig = Get-Content -LiteralPath (Join-Path $profile 'config\shell.json') -Raw -ErrorAction Stop | ConvertFrom-Json
+    if ($null -ne $shellConfig.bar -and $null -ne $shellConfig.bar.entries) {
+        $trayEntry = @($shellConfig.bar.entries | Where-Object { $_.id -eq 'tray' }) | Select-Object -First 1
+        if (-not $trayEntry -or $trayEntry.enabled -eq $false) { $trayHook = '0' }
+    }
+} catch { }
+$info.EnvironmentVariables['QS_WINDOWS_TRAY_HOOK'] = $trayHook
 $info.EnvironmentVariables['CAELESTIA_WINDOWS_BRIGHTNESS_SOFTWARE'] = '0'
 $info.EnvironmentVariables['CAELESTIA_SHELL_SESSION'] = '1'
 $info.EnvironmentVariables['CAELESTIA_SHELL_SESSION_MODE'] = 'Observe'
@@ -129,25 +144,52 @@ if ($Command -ne 'Start') {
     $info.Arguments = 'ipc --path "' + (Join-Path $stage 'shell.qml') + '" call shell ' + $Command.ToLowerInvariant()
     $info.RedirectStandardOutput = $true
     $info.RedirectStandardError = $true
-    $process = [Diagnostics.Process]::Start($info)
-    $outTask = $process.StandardOutput.ReadToEndAsync()
-    $errTask = $process.StandardError.ReadToEndAsync()
-    if (-not $process.WaitForExit(10000)) { $process.Kill(); throw 'Shell IPC timed out.' }
-    $output = $outTask.GetAwaiter().GetResult()
-    $errors = $errTask.GetAwaiter().GetResult()
-    if ($process.ExitCode -ne 0) { throw "Shell IPC failed: $output $errors" }
+    $output = ''
+    $ipcFailure = $null
+    try {
+        $process = [Diagnostics.Process]::Start($info)
+        $outTask = $process.StandardOutput.ReadToEndAsync()
+        $errTask = $process.StandardError.ReadToEndAsync()
+        if (-not $process.WaitForExit(10000)) { $process.Kill(); throw 'Shell IPC timed out.' }
+        $output = $outTask.GetAwaiter().GetResult()
+        $errors = $errTask.GetAwaiter().GetResult()
+        if ($process.ExitCode -ne 0) { throw "Shell IPC failed: $output $errors" }
+    } catch {
+        # Quit must still reach a supervisor that is starting or in restart
+        # backoff, when no shell exists to answer IPC.
+        if ($Command -ne 'Quit') { throw }
+        $ipcFailure = $_.Exception.Message
+    }
     if ($Command -eq 'Quit') {
         # Let the supervisor restore its owned AppBars/taskbar before uninstall.
-        foreach ($statusFile in @(Get-ChildItem -Path "$profile\runtime\supervisor-*\watchdog.json" -ErrorAction SilentlyContinue)) {
-            $status = Get-Content -LiteralPath $statusFile.FullName -Raw | ConvertFrom-Json
-            if ($status.phase -notin @('running', 'restart-backoff')) { continue }
-            $watchdog = Get-Process -Id $status.watchdogPid -ErrorAction SilentlyContinue
-            # A stale record from a killed supervisor can name a PID Windows has reused.
-            try {
-                if ($watchdog -and $watchdog.StartTime.ToUniversalTime() -gt [DateTimeOffset]::Parse($status.utc).UtcDateTime) { continue }
-            } catch { $watchdog = $null }
-            if ($watchdog -and -not $watchdog.WaitForExit(10000)) {
-                throw "Desktop supervisor has not finished restoring: $($statusFile.FullName)"
+        # 60 s covers its bounded banner recovery (45 s) and desktop restore.
+        $bound = 60000
+        $supervisors = @(Get-CaelestiaSupervisors $profile)
+        foreach ($supervisor in $supervisors) {
+            $deadline = [DateTime]::UtcNow.AddMilliseconds($bound)
+            # Startup is not interruptible until banner recovery finishes.
+            while ($supervisor.Phase -eq 'starting' -and [DateTime]::UtcNow -lt $deadline -and -not $supervisor.Process.HasExited) {
+                Start-Sleep -Milliseconds 250
+                try { $supervisor.Phase = [string](Get-Content -LiteralPath $supervisor.StatusPath -Raw | ConvertFrom-Json).phase } catch { }
+            }
+            if ($supervisor.Process.HasExited) { continue }
+            if ($ipcFailure -or $supervisor.Phase -ne 'running') {
+                # No shell answered, so ask the supervisor itself to stop.
+                if (-not ('Caelestia.Takeover.Native' -as [type])) {
+                    Add-Type -Path (Join-Path $PSScriptRoot 'DesktopTakeover.cs') -ReferencedAssemblies System.Windows.Forms, System.Web.Extensions
+                }
+                [Caelestia.Takeover.Supervisor]::RecoverActive()
+            }
+            if (-not $supervisor.Process.WaitForExit([Math]::Max(1000, [int]($deadline - [DateTime]::UtcNow).TotalMilliseconds))) {
+                throw "Desktop supervisor has not finished restoring: $($supervisor.StatusPath)"
+            }
+        }
+        if (-not $supervisors.Count) {
+            if ($ipcFailure) { Write-Verbose "No running shell to quit: $ipcFailure" }
+            $unrestored = Get-CaelestiaUnrestoredSnapshot $profile
+            if ($unrestored) {
+                & (Join-Path $PSScriptRoot 'Restore-Desktop.ps1') -SnapshotPath $unrestored.FullName | Out-Null
+                Move-Item -LiteralPath $unrestored.FullName -Destination ($unrestored.FullName + '.adopted') -Force
             }
         }
         & (Join-Path $PSScriptRoot 'Banner-Suppression.ps1') -StateDirectory (Join-Path $profile 'state') -Command Restore

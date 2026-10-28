@@ -108,15 +108,21 @@ namespace Caelestia.Takeover {
     public sealed class StartupPersistence {
         readonly Action persist;
         readonly Action<Exception> report;
+        readonly int maxFailures;
+        int failures;
         bool durable;
-        public StartupPersistence(Action persist, Action<Exception> report) {
-            this.persist = persist; this.report = report;
+        public StartupPersistence(Action persist, Action<Exception> report) : this(persist, report, 0) {}
+        // maxFailures > 0 bounds the retries; the last error is then surfaced
+        // instead of leaving an invisible supervisor retrying forever.
+        public StartupPersistence(Action persist, Action<Exception> report, int maxFailures) {
+            this.persist = persist; this.report = report; this.maxFailures = maxFailures;
         }
         public bool Ready() {
             if (durable) return true;
             try { persist(); durable = true; }
             catch (Exception error) {
                 if (!(error is IOException || error is UnauthorizedAccessException)) throw;
+                if (maxFailures > 0 && ++failures >= maxFailures) throw;
                 report(error);
             }
             return durable;
@@ -1061,6 +1067,7 @@ namespace Caelestia.Takeover {
         readonly Launch launch;
         readonly bool hide, restart, invisible;
         readonly bool isolatedTest;
+        readonly bool adoptedUncleanBaseline;
         readonly int testLogDelayMs;
         readonly Snapshot saved;
         readonly System.Threading.EventWaitHandle recovery;
@@ -1089,13 +1096,16 @@ namespace Caelestia.Takeover {
 
         public static string MutexName { get { return @"Local\CaelestiaDesktopTakeover-" + Process.GetCurrentProcess().SessionId; } }
         public static string EventName { get { return MutexName + "-Recovery"; } }
+        // Upper bound for a supervisor to finish restoring (banner recovery
+        // alone may take 45 s). Quit and recovery callers wait this long.
+        public const int RecoveryBoundMs = 60000;
         public static void RecoverActive() {
             try { using (var handle = System.Threading.EventWaitHandle.OpenExisting(EventName)) handle.Set(); }
             catch (System.Threading.WaitHandleCannotBeOpenedException) {}
             // Wait for the owner to finish restoring before emergency fallback.
             using (var mutex = new System.Threading.Mutex(false, MutexName)) {
                 bool acquired;
-                try { acquired = mutex.WaitOne(10000); }
+                try { acquired = mutex.WaitOne(RecoveryBoundMs); }
                 catch (System.Threading.AbandonedMutexException) { acquired = true; }
                 if (!acquired) throw new InvalidOperationException("Supervisor has not stopped. Retry recovery after it exits.");
                 mutex.ReleaseMutex();
@@ -1136,6 +1146,12 @@ namespace Caelestia.Takeover {
             this.launch = launch; this.hide = hide; this.restart = restart; this.invisible = invisible && hide;
             this.isolatedTest = isolatedTest;
             this.testLogDelayMs = testLogDelayMs;
+            Directory.CreateDirectory(launch.StateDirectory);
+            // Create and reset the recovery event before publishing "starting" so
+            // any RecoverActive() signal during banner recovery is preserved.
+            recovery = new System.Threading.EventWaitHandle(false, System.Threading.EventResetMode.ManualReset, eventName);
+            recovery.Reset();
+            Status("starting", 0);
             RestoreBanners();
             showCallback = OnTaskbarShow; // Root the delegate for the entire hook lifetime.
             showHook = new TaskbarHookBinding(
@@ -1143,24 +1159,24 @@ namespace Caelestia.Takeover {
                 Native.UnhookShows);
             showHandler = new TaskbarShowHandler(showPolicy, Native.EventTaskbar,
                 delegate(Bar bar) { if (invisible) Reconcile(bar); }, Native.HideObserved, Native.Record);
-            Directory.CreateDirectory(launch.StateDirectory);
             saved = isolatedTest ? new Snapshot() : Native.Capture();
+            string adoptedBaseline = isolatedTest ? null : AdoptUncleanBaseline(saved);
+            adoptedUncleanBaseline = adoptedBaseline != null;
             regions = new RegionSuppression(saved, Native.CaptureRegion, delegate(SavedRegion ignored) { SaveSnapshot(); },
                 Native.ApplyEmptyRegion, Native.RestoreRegion);
             // Durable before the first native change, usable if this helper is
             // killed. Tick retries it until it succeeds; nothing starts before.
             startup = new StartupPersistence(delegate {
                 SaveSnapshot();
+                RetireBaseline(adoptedBaseline);
                 if (hide) Native.SuppressSecondaryTaskbars(saved, SaveSnapshot);
-            }, LogPersistFailure);
+            }, LogPersistFailure, 60);
             Native.RecordAction = delegate(TaskbarAction action) {
                 SupervisorSafety.Log(delegate {
                     File.AppendAllText(Path.Combine(launch.StateDirectory, "taskbar-actions.jsonl"),
                         json.Serialize(action) + Environment.NewLine);
                 });
             };
-            recovery = new System.Threading.EventWaitHandle(false, System.Threading.EventResetMode.ManualReset, eventName);
-            recovery.Reset();
             // A hidden top-level window receives Explorer's broadcast. A
             // message-only HWND would not receive TaskbarCreated.
             CreateHandle(new CreateParams { Caption = "Caelestia desktop watchdog", Style = unchecked((int)0x80000000) });
@@ -1171,6 +1187,76 @@ namespace Caelestia.Takeover {
             timer.Tick += Tick;
             timer.Start();
             nextStart = DateTime.UtcNow;
+        }
+        // A hard-killed supervisor never restored the desktop, so the current
+        // state (for example a hidden taskbar) is not the user's original. Reuse
+        // the newest unrestored sibling snapshot as this run's baseline.
+        string AdoptUncleanBaseline(Snapshot target) {
+            try {
+                var parent = Path.GetDirectoryName(launch.StateDirectory.TrimEnd('\\'));
+                string own = Path.GetFileName(launch.StateDirectory.TrimEnd('\\'));
+                if (parent == null || !Directory.Exists(parent)) return null;
+                string best = null; DateTime bestTime = DateTime.MinValue;
+                foreach (var dir in Directory.GetDirectories(parent, "supervisor-*")) {
+                    if (String.Equals(Path.GetFileName(dir), own, StringComparison.OrdinalIgnoreCase)) continue;
+                    var file = Path.Combine(dir, "desktop-before.json");
+                    if (!File.Exists(file) || SupervisorAlive(Path.Combine(dir, "watchdog.json"))) continue;
+                    var time = File.GetLastWriteTimeUtc(file);
+                    if (time > bestTime) { best = file; bestTime = time; }
+                }
+                if (best == null) return null;
+                var prior = json.Deserialize<Snapshot>(File.ReadAllText(best));
+                if (prior == null) return null;
+                target.TaskbarFlags = prior.TaskbarFlags;
+                target.MultiMonitorTaskbarSaved = prior.MultiMonitorTaskbarSaved;
+                target.MultiMonitorTaskbar = prior.MultiMonitorTaskbar;
+                if (prior.Displays != null && prior.Displays.Count != 0) target.Displays = prior.Displays;
+                if (prior.Bars != null && prior.Bars.Count != 0) target.Bars = prior.Bars;
+                if (prior.Regions != null) target.Regions = prior.Regions;
+                return best;
+            } catch (Exception error) {
+                if (!(error is IOException || error is UnauthorizedAccessException || error is ArgumentException
+                    || error is InvalidOperationException)) throw;
+                return null;
+            }
+        }
+        // True while the recorded watchdog is still running, or finished cleanly.
+        static bool SupervisorAlive(string statusPath) {
+            try {
+                if (!File.Exists(statusPath)) return false;
+                var status = new JavaScriptSerializer().Deserialize<Dictionary<string, object>>(File.ReadAllText(statusPath));
+                object phase;
+                if (status.TryGetValue("phase", out phase) && phase != null) {
+                    var name = phase.ToString();
+                    if (name == "clean-exit" || name == "recovered" || name == "crash-give-up" || name == "watchdog-error") return true;
+                }
+                object pid;
+                if (!status.TryGetValue("watchdogPid", out pid)) return false;
+                using (var process = Process.GetProcessById(Convert.ToInt32(pid))) {
+                    if (process.HasExited) return false;
+                    var procName = process.ProcessName ?? "";
+                    if (!String.Equals(procName, "powershell", StringComparison.OrdinalIgnoreCase)
+                        && !String.Equals(procName, "pwsh", StringComparison.OrdinalIgnoreCase)) return false;
+                    object utc;
+                    if (status.TryGetValue("utc", out utc) && utc != null) {
+                        DateTimeOffset recorded;
+                        if (DateTimeOffset.TryParse(utc.ToString(), out recorded)) {
+                            try {
+                                if (process.StartTime.ToUniversalTime() > recorded.UtcDateTime.AddSeconds(5)) return false;
+                            } catch (System.ComponentModel.Win32Exception) { }
+                        }
+                    }
+                    return true;
+                }
+            } catch (ArgumentException) { return false; }
+              catch (InvalidOperationException) { return false; }
+              catch (IOException) { return true; }
+        }
+        // The adopted snapshot now lives in this run's journal; retire the old
+        // one so a later run cannot mistake it for a still-unrestored baseline.
+        static void RetireBaseline(string path) {
+            if (path == null) return;
+            SupervisorSafety.Log(delegate { File.Move(path, path + ".adopted"); });
         }
         void SaveSnapshot() {
             Native.SaveSnapshot(Path.Combine(launch.StateDirectory, "desktop-before.json"), saved);
@@ -1437,7 +1523,7 @@ namespace Caelestia.Takeover {
             } finally {
                 try { RestoreBanners(); }
                 finally {
-                    try { if (!isolatedTest) Native.RestoreOwned(saved, ownedPid, launch.RestoreWorkAreas, hide); }
+                    try { if (!isolatedTest) Native.RestoreOwned(saved, ownedPid, launch.RestoreWorkAreas, hide || adoptedUncleanBaseline); }
                     finally {
                         Native.RecordAction = null;
                         recovery.Dispose();
