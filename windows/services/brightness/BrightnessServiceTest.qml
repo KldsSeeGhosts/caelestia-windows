@@ -382,6 +382,10 @@ QtObject {
     readonly property FakeBackend noIdBackend: FakeBackend { queryIdsSupported: false }
     readonly property BrightnessService hdrCase: BrightnessService {}
     readonly property FakeBackend hdrBackend: FakeBackend {}
+    readonly property BrightnessService identityCase: BrightnessService {}
+    readonly property FakeBackend identityBackend: FakeBackend {}
+    readonly property QtObject reusedScreen: QtObject { property string name: "MAG321UX OLED" }
+    readonly property QtObject unchangedScreen: QtObject { property string name: "MAG321UX OLED" }
 
     readonly property EmptyBackend emptyBackend: EmptyBackend {}
     readonly property SilentBackend silentBackend: SilentBackend {}
@@ -461,6 +465,25 @@ QtObject {
     }
 
     function run(): void {
+        // Qt can reuse the object without changing the screens array.
+        identityCase.screens = [reusedScreen, unchangedScreen];
+        identityCase.enabled = true;
+        identityCase.backend = identityBackend;
+        check(identityCase.queryMonitor("MAG321UX OLED"), "initial reused-name query");
+        identityBackend.deliverQuery();
+        const unchangedRecord = identityCase.stateFor("MAG321UX OLED");
+        reusedScreen.name = "DELL S2725QS";
+        identityBackend.displayConfigurationChanged();
+        check(identityCase.stateFor("DELL S2725QS") !== null,
+            "identity-only hotplug creates the corrected Dell brightness record");
+        check(identityCase.stateFor("MAG321UX OLED") === unchangedRecord,
+            "identity-only hotplug keeps the MSI brightness record");
+        check(identityBackend.pendingQueries === 2, "both corrected monitor names are re-queried");
+        identityBackend.deliverQuery();
+        identityBackend.deliverQuery();
+        check(identityCase.stateFor("DELL S2725QS").brightnessKnown,
+            "the corrected Dell record accepts its own correlated query result");
+
         // A native HDR route reports normalized SDR white and confirms its
         // rounded read-back; a topology notification switches the same screen.
         hdrCase.screens = [{name: "HDR1"}];
