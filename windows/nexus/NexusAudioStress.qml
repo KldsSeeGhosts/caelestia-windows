@@ -52,14 +52,14 @@ ShellRoot {
     }
 
     Timer {
-        interval: 400
+        interval: 100
         repeat: true
         running: true
         onTriggered: {
             if (!root.pages)
                 root.pages = root.findPages(nexus);
             if (!root.pages || !root.pages.currentItem) {
-                if (++root.waits > 30) {
+                if (++root.waits > 120) {
                     console.error("NEXUS_AUDIO_STRESS_FAIL page never loaded");
                     Qt.exit(1);
                 }
@@ -68,7 +68,7 @@ ShellRoot {
             if (root.switches > 0) {
                 const expected = root.sequence[(root.switches - 1) % root.sequence.length];
                 if (root.pages.currentItem.currentItem?.title !== PageRegistry.pages[expected].label) {
-                    if (++root.waits > 30) {
+                    if (++root.waits > 120) {
                         console.error("NEXUS_AUDIO_STRESS_FAIL page did not settle", expected);
                         Qt.exit(1);
                     }
