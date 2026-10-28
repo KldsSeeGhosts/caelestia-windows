@@ -446,11 +446,12 @@ is not verified.
 
 ### Grok Bot roster
 
-The bar avatar and roster are off by default. A separate producer must write a
-local snapshot; the Linux Grok Bot persistence reader is not a Windows
-producer. Configure the snapshot path in the shell profile's `grokbot.json`
-to opt in. See [the Grok Bot notes](../grokbot/README.md) for the exact
-contract, privacy considerations and unavailable app-focus and image features.
+The bar avatar and roster are off by default. Create `grokbot.json` in the
+shell profile's config directory with `{"enabled": true}` to start the
+Windows persistence reader. It requires the scheme runtime's Python and keeps
+a local snapshot containing message previews. See [the Grok Bot notes](../grokbot/README.md)
+for privacy details, the snapshot contract and unavailable app-focus and image
+features.
 
 ### Turning the display panels off
 
