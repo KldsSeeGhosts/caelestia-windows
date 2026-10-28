@@ -11,7 +11,9 @@ import qs.services
 Item {
     id: root
 
-    property alias source: img.source
+    // Windows: allow WallpaperSelect to cull offscreen thumbnail decodes.
+    property string source: ""
+    property bool thumbnailActive: true
     property alias text: label.text
     property alias radius: imgWrapper.radius
     property alias imgHeight: imgWrapper.implicitHeight
@@ -40,7 +42,7 @@ Item {
                 anchors.centerIn: parent
 
                 opacity: img.ready ? 0 : 1
-                active: opacity > 0
+                active: opacity > 0 && root.thumbnailActive
 
                 sourceComponent: StyledRect {
                     implicitWidth: loadingIndicator.implicitSize + Tokens.padding.large * 2
@@ -69,7 +71,8 @@ Item {
                 id: img
 
                 anchors.fill: parent
-                playing: stateLayer.containsMouse
+                source: root.thumbnailActive ? root.source : ""
+                playing: root.thumbnailActive && stateLayer.containsMouse
             }
         }
 
