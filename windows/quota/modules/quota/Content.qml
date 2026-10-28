@@ -172,13 +172,15 @@ Item {
         boundsBehavior: Flickable.StopAtBounds
         Row {
             id: providerRow
+            // Few providers sit together in the centre instead of spreading out.
+            x: Math.max(0, (strip.width - width) / 2)
             spacing: 0
             Repeater {
                 model: Quota.providerGroups
                 delegate: QuotaRing {
                     required property var modelData
                     required property int index
-                    width: Math.max(48, strip.width / Math.max(1, Quota.providerGroups.length))
+                    width: Math.max(48, Math.min(60, strip.width / Math.max(1, Quota.providerGroups.length)))
                     group: modelData
                     selected: root.provider && root.provider.provider === modelData.provider
                     summary: Logic.providerSummary(modelData)
