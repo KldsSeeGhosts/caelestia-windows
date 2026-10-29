@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [string]$Prefix,
-    [ValidateSet('Start', 'State', 'Quit', 'Restart')][string]$Command = 'Start',
+    [ValidateSet('Start', 'State', 'Quit', 'Restart', 'Settings')][string]$Command = 'Start',
     [switch]$Smoke,
     [ValidateRange(0, 15)][int]$ScreenIndex,
     [ValidateSet('Disabled', 'Observe', 'Interactive')][string]$TilingMode = 'Disabled',
@@ -17,6 +17,21 @@ if (-not $Prefix) {
 }
 $Prefix = Resolve-CaelestiaDirectory $Prefix
 $record = Read-CaelestiaInstall $Prefix
+# Repository callers can still target the stable root. Route before building
+# a ProcessStartInfo so leftover legacy qs.exe files are never launched.
+if ($record.version -eq 2) {
+    $runtime = Resolve-CaelestiaRuntimePrefix $Prefix -Running:($Command -ne 'Start')
+    if ($Command -eq 'Settings') {
+        if ($Smoke) { throw '-Smoke requires -Command Start.' }
+        $null = Invoke-CaelestiaIpc $runtime settings
+        return
+    }
+    $arguments = @{}
+    foreach ($key in $PSBoundParameters.Keys) { $arguments[$key] = $PSBoundParameters[$key] }
+    $arguments.Prefix = $runtime
+    & (Join-Path $runtime 'Start-Caelestia.ps1') @arguments
+    return
+}
 $installRoot = if ($record.installRoot) { [string]$record.installRoot } else { $Prefix }
 $profile = Resolve-CaelestiaDirectory $record.profile
 $stage = Join-Path $Prefix 'shell'
@@ -26,8 +41,9 @@ if ($PSBoundParameters.ContainsKey('ScreenIndex') -and -not $Smoke) { throw '-Sc
 
 # A normal restart is a transactional in-process reload: Quickshell retains
 # existing windows until the new graph loads. Never quit/reinstall for this.
-if ($Command -in @('State', 'Restart')) {
+if ($Command -in @('State', 'Restart', 'Settings')) {
     if ($Command -eq 'State') { Invoke-CaelestiaIpc $Prefix state; return }
+    if ($Command -eq 'Settings') { $null = Invoke-CaelestiaIpc $Prefix settings; return }
     $reloadClock = [Diagnostics.Stopwatch]::StartNew()
     $previous = (Invoke-CaelestiaIpc $Prefix restart).Trim()
     Write-Verbose ('Reload IPC acknowledged after {0:N3}s.' -f $reloadClock.Elapsed.TotalSeconds)

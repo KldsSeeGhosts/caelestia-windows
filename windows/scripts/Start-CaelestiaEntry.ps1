@@ -2,7 +2,7 @@
 [CmdletBinding()]
 param(
     [string]$Prefix = $PSScriptRoot,
-    [ValidateSet('Start', 'State', 'Quit', 'Restart')][string]$Command = 'Start',
+    [ValidateSet('Start', 'State', 'Quit', 'Restart', 'Settings')][string]$Command = 'Start',
     [switch]$Smoke,
     [ValidateRange(0, 15)][int]$ScreenIndex,
     [ValidateSet('Disabled', 'Observe', 'Interactive')][string]$TilingMode = 'Disabled',
@@ -15,6 +15,11 @@ param(
 $Prefix = Resolve-CaelestiaDirectory $Prefix
 $runtime = Resolve-CaelestiaRuntimePrefix $Prefix -Running:($Command -ne 'Start')
 if ($runtime -eq $PSScriptRoot) { throw 'Installation migration is incomplete. Run the installer again.' }
+if ($Command -eq 'Settings') {
+    if ($Smoke) { throw '-Smoke requires -Command Start.' }
+    $null = Invoke-CaelestiaIpc $runtime settings
+    return
+}
 $arguments = @{}
 foreach ($key in $PSBoundParameters.Keys) { $arguments[$key] = $PSBoundParameters[$key] }
 $arguments.Prefix = $runtime

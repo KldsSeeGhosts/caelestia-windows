@@ -23,6 +23,7 @@ powershell -NoProfile -File windows/scripts/Install-Caelestia.ps1
 & "$env:LOCALAPPDATA\Programs\caelestia-windows\Start-Caelestia.ps1"
 & "$env:LOCALAPPDATA\Programs\caelestia-windows\Start-Caelestia.ps1" -Command State
 & "$env:LOCALAPPDATA\Programs\caelestia-windows\Start-Caelestia.ps1" -Command Restart
+& "$env:LOCALAPPDATA\Programs\caelestia-windows\Start-Caelestia.ps1" -Command Settings
 & "$env:LOCALAPPDATA\Programs\caelestia-windows\Start-Caelestia.ps1" -Command Quit
 powershell -NoProfile -File windows/scripts/Uninstall-Caelestia.ps1
 ```

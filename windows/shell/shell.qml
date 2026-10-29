@@ -20,6 +20,7 @@ import qs.modules.background
 import qs.modules.drawers
 import qs.modules.clipboard
 import qs.modules.launcher.services
+import qs.modules.nexus as Nexus
 
 // Original upstream drawer geometry and motion, with the combined Windows
 // facades, per-monitor AppBar reservation and opt-in Windows controllers.
@@ -115,6 +116,12 @@ ShellRoot {
             return previous;
         }
         function state(): string { return JSON.stringify(root.snapshot()); }
+        function settings(): bool {
+            if (root.smoke)
+                return false;
+            Nexus.WindowFactory.openPage(4); // Existing System > Updates slot.
+            return true;
+        }
         function panel(screenName: string, name: string): bool {
             if (root.smoke || !["launcher", "dashboard", "session", "sidebar", "utilities"].includes(name))
                 return false;
