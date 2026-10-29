@@ -7,7 +7,7 @@ It never contacts a real CPA server and contains no credentials or real account
 data.
 
 Usage:
-    py -I stub_cpa.py --port 0 --port-file <path> [--admin-key <key>]
+    py -I stub_cpa.py --port 0 --port-file <path> [--admin-key <key>] [--scenario default|states]
 
 The selected port is written to --port-file so the test can point the smoke
 profile at it.
@@ -174,9 +174,139 @@ SUMMARY = {
 }
 
 
+def raw_window(window_id: str, label: str, used: int | None, resets_at: str) -> dict[str, Any]:
+    """A window with no usable reading when used is None."""
+    return {
+        "id": window_id,
+        "label": label,
+        "usedPercent": used,
+        "remainingPercent": None if used is None else 100 - used,
+        "resetAt": resets_at,
+        "source": "provider",
+    }
+
+
+RESET_MONTH = (NOW + dt.timedelta(days=19)).isoformat()
+
+# State coverage for the redesigned drawer: a very long account name with an
+# empty 5-hour window, stale, reconnect, disabled and unreported accounts, a
+# Cursor-style API/Auto pair and a monthly-only provider. All values are synthetic.
+STATES = {
+    "schemaVersion": 1,
+    "generatedAt": NOW.isoformat(),
+    "refreshedAt": NOW.isoformat(),
+    "ttlMs": 60000,
+    "status": "ok",
+    "error": None,
+    "providers": [
+        {
+            "id": "codex",
+            "label": "Codex",
+            "status": "ok",
+            "error": None,
+            "accounts": [
+                {
+                    "id": "codex-long",
+                    "label": "a-very-long-synthetic-account-name-for-wrapping-checks@example.test",
+                    "plan": "Pro 20x with an extra long plan label",
+                    "status": "ok",
+                    "error": None,
+                    "windows": [
+                        window("five-hour", "5-hour", 100, RESET_5H),
+                        window("weekly", "Weekly", 40, RESET_WEEK),
+                    ],
+                },
+                {
+                    "id": "codex-stale",
+                    "label": "stale@example.test",
+                    "plan": "Plus",
+                    "status": "error",
+                    "error": {"code": "timeout"},
+                    "windows": [
+                        window("five-hour", "5-hour", 30, RESET_5H),
+                        window("weekly", "Weekly", 20, RESET_WEEK),
+                    ],
+                },
+                {
+                    "id": "codex-unreported",
+                    "label": "unreported@example.test",
+                    "plan": "Free",
+                    "status": "ok",
+                    "error": None,
+                    "windows": [raw_window("five-hour", "5-hour", None, RESET_5H)],
+                },
+            ],
+        },
+        {
+            "id": "claude",
+            "label": "Claude",
+            "status": "ok",
+            "error": None,
+            "accounts": [
+                {
+                    "id": "claude-auth",
+                    "label": "reconnect@example.test",
+                    "plan": "Max",
+                    "status": "error",
+                    "error": {"code": "unauthorized"},
+                    "windows": [window("weekly", "Weekly", 50, RESET_WEEK)],
+                },
+                {
+                    "id": "claude-disabled",
+                    "label": "disabled@example.test",
+                    "plan": "Pro",
+                    "status": "disabled",
+                    "error": None,
+                    "windows": [window("weekly", "Weekly", 10, RESET_WEEK)],
+                },
+            ],
+        },
+        {
+            "id": "cursor",
+            "label": "Cursor",
+            "status": "ok",
+            "error": None,
+            "accounts": [
+                {
+                    "id": "cursor-main",
+                    "label": "cursor@example.test",
+                    "plan": "Pro",
+                    "status": "ok",
+                    "error": None,
+                    "windows": [
+                        window("auto", "Auto", 35, RESET_MONTH),
+                        window("api", "API", 62, RESET_MONTH),
+                    ],
+                }
+            ],
+        },
+        {
+            "id": "zai",
+            "label": "Z.ai",
+            "status": "ok",
+            "error": None,
+            "accounts": [
+                {
+                    "id": "zai-monthly",
+                    "label": "zai@example.test",
+                    "plan": "GLM Coding",
+                    "status": "ok",
+                    "error": None,
+                    "windows": [window("monthly", "Monthly", 27, RESET_MONTH)],
+                }
+            ],
+        },
+    ],
+    "todayCostUsd": 0.42,
+}
+
+SCENARIOS = {"default": SUMMARY, "states": STATES}
+
+
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     admin_key = "smoke-placeholder"
+    summary: dict[str, Any] = SUMMARY
 
     def log_message(self, format: str, *args: Any) -> None:  # noqa: A002
         # Keep the smoke output free of request noise.
@@ -200,7 +330,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         path = urlsplit(self.path).path
         if path == "/v0/management/quota/summary":
-            self._send(200, SUMMARY)
+            self._send(200, self.summary)
         elif path == "/v0/management/auth-files":
             self._send(200, AUTH_FILES)
         else:
@@ -241,9 +371,11 @@ def main() -> int:
     parser.add_argument("--port", type=int, default=0)
     parser.add_argument("--port-file", required=True)
     parser.add_argument("--admin-key", default="smoke-placeholder")
+    parser.add_argument("--scenario", choices=sorted(SCENARIOS), default="default")
     args, _ = parser.parse_known_args()
 
     Handler.admin_key = args.admin_key
+    Handler.summary = SCENARIOS[args.scenario]
     server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
     with open(args.port_file, "w", encoding="utf-8") as handle:
         handle.write(str(server.server_address[1]))
