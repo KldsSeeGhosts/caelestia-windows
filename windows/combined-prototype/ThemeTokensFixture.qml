@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import Caelestia.Config
 import qs.services
 
 ShellRoot {
@@ -11,15 +12,7 @@ ShellRoot {
         id: exporter
         outputPath: Quickshell.env("THEME_TOKEN_TEST_FILE")
         bundledFontPath: "C:/fixture/font.ttf"
-        rounding: fixtureRounding
         uiFont: Qt.font({ family: root.phase === 0 ? "Google Sans Flex" : "Example UI" })
-    }
-    QtObject {
-        id: fixtureRounding
-        property int small: 8
-        property int medium: 12
-        property int large: 16
-        property int full: 2147483647
     }
     FileView {
         id: reader
@@ -33,12 +26,12 @@ ShellRoot {
                         || data.font.file !== "C:/fixture/font.ttf")
                     return root.fail("initial tokens");
                 root.phase = 1;
-                fixtureRounding.medium = 19;
+                GlobalConfig.appearance.rounding.scale = 1.5;
                 Colours.load(JSON.stringify({ mode: "light", colours: { primary: "abcdef" } }), false);
                 check.restart();
             } else {
                 if (data.mode !== "light" || data.colours.primary !== "#abcdef"
-                        || data.radii.normal !== 19 || data.font.family !== "Example UI" || data.font.file !== null)
+                        || data.radii.normal !== 18 || data.font.family !== "Example UI" || data.font.file !== null)
                     return root.fail("change-driven rewrite");
                 console.log("THEME_TOKENS_FIXTURE_PASS");
                 Qt.quit();
