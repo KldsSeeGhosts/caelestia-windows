@@ -38,6 +38,7 @@ ShellRoot {
     readonly property int previewHeight: Math.min(620, (selectedScreen?.height ?? 780) - inset * 2)
 
     settings.watchFiles: false
+    ThemeTokens {}
 
     WindowsBackground {
         id: desktopBackground

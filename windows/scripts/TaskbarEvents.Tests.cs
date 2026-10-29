@@ -12,6 +12,16 @@ public static class TaskbarEventsTests {
         if (!value) throw new Exception(message);
     }
     public static int Run() {
+        var bothStreams = new LogDrain(true, true);
+        Check(!bothStreams.Complete, "both redirected streams initially await EOF");
+        bothStreams.EndStream();
+        Check(!bothStreams.Complete, "one EOF does not complete a two-stream drain");
+        bothStreams.EndStream();
+        Check(bothStreams.Complete, "both EOF callbacks complete the drain");
+        var singleStream = new LogDrain(false, true);
+        singleStream.EndStream();
+        Check(singleStream.Complete && new LogDrain(false, false).Complete,
+            "one or zero redirected streams use the correct EOF count");
         var installed = new List<uint>();
         var removed = new List<IntPtr>();
         bool fail = false;
@@ -610,14 +620,18 @@ public static class TaskbarEventsTests {
         });
         starter.Start();
         Check(enteredInstall.WaitOne(5000), "delayed install entered");
-        Check(!completedStart.WaitOne(200), "timeout waits for in-flight install to finish before child start");
-        releaseInstall.Set();
-        Check(completedStart.WaitOne(5000), "timed-out startup completes after install returns");
+        Check(completedStart.WaitOne(1000), "timed-out install cannot indefinitely block the supervisor");
         starter.Join();
-        Check(!timeoutResult && !timeoutHook.Running && !timeoutHook.Installed && timeoutRemoves == 1,
-            "timeout removes and joins the late install before child start");
-        Check(timeoutReports.Count == 1 && timeoutReports[0] == "shortcut-hook-timeout",
-            "timeout is reported distinctly");
+        Check(!timeoutResult && timeoutHook.Running && !timeoutHook.Active,
+            "timed-out install remains cancelled and inactive");
+        Check(timeoutReports.Count == 2 && timeoutReports[0] == "shortcut-hook-stop-timeout" &&
+            timeoutReports[1] == "shortcut-hook-timeout", "both timeout phases are reported");
+        Check(!timeoutHook.EnsureStarted() && timeoutInstalls == 1,
+            "no replacement starts while the cancelled install is still running");
+        releaseInstall.Set();
+        Check(SpinWait.SpinUntil(delegate { return !timeoutHook.Running; }, 5000),
+            "cancelled install eventually exits");
+        Check(!timeoutHook.Installed && timeoutRemoves == 1, "late install is removed");
         Check(timeoutHook.EnsureStarted() && timeoutHook.Installed && timeoutInstalls == 2,
             "next child start retries the timed-out install");
         timeoutHook.Dispose();
@@ -625,6 +639,27 @@ public static class TaskbarEventsTests {
         enteredInstall.Close();
         releaseInstall.Close();
         completedStart.Close();
+
+        var enteredRemove = new ManualResetEvent(false);
+        var releaseRemove = new ManualResetEvent(false);
+        var disposeHook = new TaskbarShortcutHook(
+            delegate(Native.LowLevelKeyboardProc callback) { return new IntPtr(12); },
+            delegate(IntPtr hook) { enteredRemove.Set(); releaseRemove.WaitOne(); },
+            delegate(int vk, uint scanCode, bool extended) { return 3; },
+            delegate(string operation) {}, 30);
+        Check(disposeHook.EnsureStarted(), "dispose-timeout hook starts");
+        Check(!disposeHook.Stop() && enteredRemove.WaitOne(1000), "stuck unhook has a bounded stop");
+        Check(!disposeHook.EnsureStarted(), "a cancelled hook pending removal is not treated as installed");
+        disposeHook.Activate();
+        Check(!disposeHook.Active, "a cancelled hook cannot be reactivated");
+        disposeHook.Dispose();
+        Check(enteredRemove.WaitOne(1000) && disposeHook.Running && !disposeHook.Active,
+            "dispose returns while a stuck unhook remains cancelled");
+        releaseRemove.Set();
+        Check(SpinWait.SpinUntil(delegate { return !disposeHook.Running; }, 5000),
+            "late unhook exits safely after dispose");
+        enteredRemove.Close();
+        releaseRemove.Close();
         return assertions;
     }
 }

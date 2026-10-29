@@ -90,6 +90,7 @@ Available Caelestia global shortcut names:
 | Shortcut `name` | Description | Source component |
 | --- | --- | --- |
 | `caelestia:nexus` | Open the Nexus settings window | `daemons/Shortcuts.qml` |
+| `caelestia:screenshot` | Open Glazier's screenshot picker and editor | `daemons/Shortcuts.qml` |
 | `caelestia:launcher` | Toggle launcher (fires on release unless interrupted) | `daemons/Shortcuts.qml` |
 | `caelestia:launcherInterrupt` | Interrupt lone-Super launcher tap | `daemons/Shortcuts.qml` |
 | `caelestia:dashboard` | Toggle top dashboard drawer | `daemons/Shortcuts.qml` |
@@ -108,6 +109,35 @@ Available Caelestia global shortcut names:
 | `caelestia:brightnessDown` | Decrease monitor brightness | `services/Brightness.qml` |
 
 All handlers in the table are staged in production, plus `caelestia:volumeUp`, `caelestia:volumeDown`, and `caelestia:volumeMute` from the audio adapter. Service actions retain their control gates. Production targets the focused monitor; bounded previews target their selected screen.
+
+### Glazier screenshots
+
+Install Glazier at `%LOCALAPPDATA%\Programs\Glazier\glazier.exe`, or create
+`%LOCALAPPDATA%\caelestia-windows\config\glazier.json` with an absolute path:
+
+```json
+{"executable": "D:\\Apps\\Glazier\\glazier.exe"}
+```
+
+If that file does not exist, Caelestia falls back to the default install path.
+The launcher also offers Screenshot. No screenshot key is bound by default. To
+add one, add this example to the `binds` array of your user `keybinds.json`:
+
+```json
+{"keys": "Ctrl+Alt+S", "action": "global", "name": "caelestia:screenshot", "description": "Screenshot"}
+```
+
+IPC callers can use `screenshot capture` or the upstream `picker open`,
+`openFreeze`, `openClip`, and `openFreezeClip` functions. All open Glazier's
+frozen picker and editor; Glazier determines how the resulting image is saved
+or copied.
+
+Choose a chord that does not conflict with other applications. Glazier itself
+defaults to PrintScreen and Win+Shift+S for screenshots and Win+Shift+R for
+recording. To reuse one of its screenshot chords in Caelestia, remove that chord
+from `hotkeys` in `%APPDATA%\Glazier\config.toml` first; avoid its
+`recording_hotkey` too. Glazier recording is controlled through its own tray
+or shortcut, not through a command-line recording action.
 
 `caelestia:nexus` opens the upstream Nexus settings window as a detached top-level window (`modules/nexus/WindowFactory.qml`). **No default key is shipped for it**; add a `global` bind with `"name": "caelestia:nexus"` to use it. If the chord includes the Windows key, add `"register": true` so the window comes to the front instead of opening behind the focused application:
 
@@ -156,6 +186,8 @@ $prefix = "$env:LOCALAPPDATA\Programs\caelestia-windows"
 | Lone modifier tap or hold | The keyboard hook |
 
 Only a `WM_HOTKEY` delivery gives the shell permission to take the foreground, so a bind that opens a window (Nexus, a picker) needs `"register": true` when its chord has the Windows key; without it the window can open behind the focused application. Leave it off for everything else.
+
+A hook-backed Win chord also swallows the Windows key release and replays a masked one, so Explorer's own Win+<key> handling (including its Win+V clipboard flyout) cannot run after the chord. Binding `Super+V` to `caelestia:clipboard` therefore opens only the Caelestia picker.
 
 `"register": true` has these consequences:
 

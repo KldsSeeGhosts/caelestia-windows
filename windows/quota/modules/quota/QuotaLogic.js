@@ -20,6 +20,8 @@ function windowHours(label) {
 
 function windowKey(limit) {
     const label = title(limit);
+    if (label.includes("·"))
+        return label;
     const hours = windowHours(label);
     if (hours)
         return hours + "h";
@@ -32,6 +34,23 @@ function windowKey(limit) {
     if (/^auto$/i.test(label))
         return "Auto";
     return label.split("·").pop().trim();
+}
+
+function pace(limit, now) {
+    const left = timeRemaining(limit, now);
+    const remain = remaining(limit);
+    const elapsed = 1 - left;
+    if (left < 0 || remain === null || elapsed < 0.1 || 1 - remain < 0.02)
+        return null;
+    const used = 1 - remain;
+    const projected = 1 - used / elapsed;
+    if (projected >= -1e-9)
+        return {left: Math.max(0, Math.round(projected * 100))};
+    const span = windowHours(title(limit)) * 3600000 || 604800000;
+    const minutes = Math.max(1, Math.round(elapsed * span * remain / used / 60000));
+    const hours = Math.floor(minutes / 60);
+    return {duration: hours >= 24 ? Math.floor(hours / 24) + "d " + hours % 24 + "h"
+        : hours ? hours + "h" : minutes + "m"};
 }
 
 function primaryWindows(account) {

@@ -29,6 +29,7 @@ Singleton {
     property string lastError: ""
     property string operation: ""
     property var pending: []
+    readonly property int helperTimeout: 30000
 
     signal schemeListChanged()
     signal schemeChanged()
@@ -46,15 +47,44 @@ Singleton {
         return [...args];
     }
 
+    function supersedes(incomingArgs: var, queuedJob: var): bool {
+        if (queuedJob.kind !== "apply" && queuedJob.kind !== "set")
+            return false;
+        const incomingCmd = String(incomingArgs[0] ?? "");
+        const queuedCmd = String(queuedJob.args?.[0] ?? "");
+        if (incomingCmd === "apply-wallpaper") {
+            const smartIdx = incomingArgs.indexOf("--smart");
+            const isSmart = smartIdx >= 0 && incomingArgs[smartIdx + 1] === "1";
+            if (isSmart)
+                return true;
+            return queuedCmd === "apply-wallpaper" || queuedCmd === "set";
+        }
+        if (incomingCmd === "set")
+            return queuedCmd === "apply-wallpaper" || queuedCmd === "set";
+        return incomingCmd !== "" && incomingCmd === queuedCmd;
+    }
+
+    function coalescePending(queue: var, kind: string, args: var): var {
+        const cloned = cloneArgs(args);
+        const filtered = (kind === "apply" || kind === "set")
+            ? queue.filter(job => !supersedes(cloned, job))
+            : [...queue];
+        filtered.push({
+            kind: kind,
+            args: cloned
+        });
+        return filtered;
+    }
+
     function enqueue(kind: string, args): void {
         if (!available) {
             status = "unavailable";
             return;
         }
-        pending.push({
-            kind: kind,
-            args: cloneArgs(args)
-        });
+        // Coalesce only genuinely superseded state changes so independent
+        // mode/variant/scheme updates survive while bursts collapse. Explicit
+        // commands such as `list` always stay queued.
+        pending = coalescePending(pending, kind, args);
         pump();
     }
 
@@ -106,6 +136,20 @@ Singleton {
             console.log(`CAELESTIA_SCHEME_APPLIED name=${currentName} flavour=${currentFlavour} mode=${currentMode} variant=${currentVariant} primary=${data.colours?.primary ?? data.colours?.m3primary ?? ""}`);
             schemeChanged();
         }
+        Qt.callLater(root.pump);
+    }
+
+    function abort(message: string): void {
+        if (!proc.running || operation === "")
+            return;
+        const kind = operation;
+        operation = "";
+        console.warn(`CAELESTIA_SCHEME_TIMEOUT ${kind}: ${message}`);
+        proc.signal(9);
+        proc.running = false;
+        status = "error";
+        lastError = message;
+        failed(message);
         Qt.callLater(root.pump);
     }
 
@@ -163,9 +207,22 @@ Singleton {
         }
 
         onExited: code => {
+            // abort() already failed and advanced a job whose helper was killed.
+            if (root.operation === "") {
+                Qt.callLater(root.pump);
+                return;
+            }
             if (code !== 0 && stderrCollector.text.trim().length > 0)
                 console.warn("CAELESTIA_SCHEME_STDERR " + stderrCollector.text.trim());
             root.finish(code, stdoutCollector.text);
         }
+    }
+
+    // A hung bridge would otherwise block every later wallpaper and theme
+    // change, because the queue only advances on helper exit.
+    Timer {
+        interval: root.helperTimeout
+        running: proc.running && root.operation !== ""
+        onTriggered: root.abort(`Scheme generation timed out after ${root.helperTimeout / 1000}s; the helper was stopped.`)
     }
 }

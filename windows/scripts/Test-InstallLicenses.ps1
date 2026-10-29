@@ -36,39 +36,60 @@ foreach ($source in @("$repoRoot\assets", "$repoRoot\windows\assets")) {
     }
 }
 New-Item -ItemType Directory -Path "$profile\config" -Force | Out-Null
+# A populated profile needs this prefix's ownership marker (written by an
+# earlier install in real use); an unmarked one must be refused.
+$foreign = Join-Path $testRoot 'foreign-profile'
+New-Item -ItemType Directory -Path $foreign -Force | Out-Null
+'not a caelestia profile' | Set-Content -LiteralPath (Join-Path $foreign 'notes.txt')
+$refused = $false
+$foreignArguments = $arguments.Clone()
+$foreignArguments.ProfileRoot = $foreign
+try { & "$PSScriptRoot\Install-Caelestia.ps1" @foreignArguments } catch { $refused = "$_" -match 'ownership marker' }
+if (-not $refused -or (Test-Path -LiteralPath (Join-Path $foreign 'profile-owner.json'))) { throw 'An unmarked populated profile was not refused.' }
+Write-CaelestiaProfileOwner $profile $prefix 'license-test' $true
 $marker = Join-Path $profile 'config\packaging-test.txt'
 'preserve this profile' | Set-Content -LiteralPath $marker
 $markerHash = (Get-FileHash -LiteralPath $marker).Hash
 try {
     foreach ($phase in @('install', 'update')) {
         & "$PSScriptRoot\Install-Caelestia.ps1" @arguments
+        $runtime = Resolve-CaelestiaRuntimePrefix $prefix
         foreach ($entry in $pairs.GetEnumerator()) {
             $source = Join-Path $repoRoot $entry.Key
-            $target = Join-Path "$prefix\licenses" $entry.Value
+            $target = Join-Path "$runtime\licenses" $entry.Value
             if (-not (Test-Path -LiteralPath $target -PathType Leaf) -or
                 (Get-FileHash -LiteralPath $source).Hash -ne (Get-FileHash -LiteralPath $target).Hash) {
                 throw "Missing or changed $phase notice: $($entry.Value)"
             }
         }
         foreach ($file in @('LGPL-3.0.txt', 'GPL-3.0.txt')) {
-            if ((Get-FileHash -LiteralPath "$prefix\licenses\$file").Hash -ne
-                (Get-FileHash -LiteralPath "$prefix\licenses\Qt\$file").Hash) { throw "Qt license differs: $file" }
+            if ((Get-FileHash -LiteralPath "$runtime\licenses\$file").Hash -ne
+                (Get-FileHash -LiteralPath "$runtime\licenses\Qt\$file").Hash) { throw "Qt license differs: $file" }
         }
         # Check all prefix-supplied license files and SBOMs, not just one sample.
         foreach ($file in Get-ChildItem -LiteralPath $QtPrefix -Recurse -File) {
             $relative = $file.FullName.Substring($QtPrefix.Length + 1)
             $target = $null
             if ($relative.StartsWith('licenses\', [StringComparison]::OrdinalIgnoreCase)) {
-                $target = Join-Path "$prefix\licenses\Qt" $relative.Substring(9)
+                $target = Join-Path "$runtime\licenses\Qt" $relative.Substring(9)
             } elseif ($relative.StartsWith('sbom\', [StringComparison]::OrdinalIgnoreCase)) {
-                $target = Join-Path "$prefix\licenses\Qt-sbom" $relative.Substring(5)
+                $target = Join-Path "$runtime\licenses\Qt-sbom" $relative.Substring(5)
+            } elseif ($relative -imatch '(^|\\)LICENSES\\') {
+                # SPDX-named texts (LGPL-3.0-only.txt, ...) keep their Qt-relative path.
+                $target = Join-Path "$runtime\licenses\Qt" $relative
             } elseif ($file.Name -match '(^|[._-])(LICENSE|LICENCE|COPYING|NOTICE|OFL)([._-].*)?$') {
-                $target = Join-Path "$prefix\licenses\Qt" $relative
+                $target = Join-Path "$runtime\licenses\Qt" $relative
             }
             if ($target -and (-not (Test-Path -LiteralPath $target) -or
                 (Get-FileHash -LiteralPath $file.FullName).Hash -ne (Get-FileHash -LiteralPath $target).Hash)) {
                 throw "Missing or changed Qt notice: $relative"
             }
+        }
+        # Deployed Qt modules must come with Qt's license texts or SBOMs.
+        if ((Get-ChildItem -LiteralPath $runtime -Filter 'Qt6*.dll' | Select-Object -First 1) -and
+            -not (Get-ChildItem -LiteralPath "$runtime\licenses\Qt", "$runtime\licenses\Qt-sbom" -File -Recurse -ErrorAction SilentlyContinue |
+                Where-Object { $_.Name -notin @('LGPL-3.0.txt', 'GPL-3.0.txt') } | Select-Object -First 1)) {
+            throw "Qt libraries are deployed but only the generic LGPL/GPL texts accompany them ($phase)."
         }
         if ((Get-FileHash -LiteralPath $marker).Hash -ne $markerHash) { throw 'Profile changed.' }
         if (-not (Test-Path -LiteralPath $integration.Shortcut)) { throw 'Install shortcut missing.' }

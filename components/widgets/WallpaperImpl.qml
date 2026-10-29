@@ -27,8 +27,10 @@ Item {
     onSourceChanged: {
         transitionAnim.stop();
 
+        // Always toggle capture so transition.from changes and re-acquires
+        // live's texture provider after its layer was disabled while idle.
+        currentCapture = currentCapture === capture1 ? capture2 : capture1;
         if (transitionProgress < 1) {
-            currentCapture = currentCapture === capture1 ? capture2 : capture1;
             currentCapture.sourceItem = transition;
         } else {
             currentCapture.sourceItem = live;
@@ -89,7 +91,8 @@ Item {
         anchors.fill: parent
         playing: PersistentState.wallpaperPlaying
         animate: false
-        layer.enabled: true
+        // Only needed as a shader source while a transition runs.
+        layer.enabled: root.transitionProgress < 1
 
         onReadyChanged: {
             if (ready && source === root.source)

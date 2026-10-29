@@ -22,10 +22,6 @@ if ($shellLive) { $Prototype = 'combined' }
 New-Item -ItemType Directory -Force -Path $Destination | Out-Null
 $files = [ordered]@{
     'windows/shell-prototype/shell.qml' = 'shell.qml'
-    'windows/assets/material-symbols-rounded/MaterialSymbolsRounded.ttf' = 'assets/material-symbols-rounded/MaterialSymbolsRounded.ttf'
-    'windows/assets/material-symbols-rounded/LICENSE' = 'assets/material-symbols-rounded/LICENSE'
-    'windows/assets/rubik/Rubik.ttf' = 'assets/rubik/Rubik.ttf'
-    'windows/assets/rubik/OFL.txt' = 'assets/rubik/OFL.txt'
     'windows/assets/README.md' = 'assets/README.md'
     'windows/shell-prototype/WindowsFonts.qml' = 'WindowsFonts.qml'
 }
@@ -33,10 +29,11 @@ $sourceLock = Get-Content -LiteralPath (Join-Path $repoRoot 'windows/sources.loc
 foreach ($font in $sourceLock.fonts) {
     foreach ($fontFile in $font.files) {
         $path = Join-Path $repoRoot $fontFile.path
-        if ((Get-FileHash -LiteralPath $path).Hash -ne $fontFile.sha256) {
+        if ((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() -ne $fontFile.sha256.ToLowerInvariant()) {
             throw "Bundled font checksum mismatch: $($fontFile.path)"
         }
-        $files.Add($fontFile.path, $fontFile.path.Substring('windows/'.Length))
+        $destRel = if ($fontFile.path.StartsWith('windows/')) { $fontFile.path.Substring('windows/'.Length) } else { $fontFile.path }
+        $files[$fontFile.path] = $destRel
     }
 }
 if ($Prototype -ne 'shell') {
@@ -44,7 +41,7 @@ if ($Prototype -ne 'shell') {
     $files.Add("windows/$Prototype-prototype/shell.qml", 'shell.qml')
 }
 $manifest = Get-Content -LiteralPath (Join-Path $repoRoot 'windows\shell-prototype\sources.json') -Raw | ConvertFrom-Json
-foreach ($entry in $manifest.PSObject.Properties) { $files.Add($entry.Name, $entry.Value) }
+foreach ($entry in $manifest.PSObject.Properties) { $files[$entry.Name] = $entry.Value }
 if ($Prototype -eq 'tray') {
     # The base manifest stages an unavailable Tray adapter. This slice stages
     # the original component plus its item/menu dependencies instead.
@@ -128,6 +125,8 @@ if ($shellLive) {
     $files.Remove('services/Screens.qml')
     $files.Add('windows/shell/Screens.qml', 'services/Screens.qml')
 }
+$sha256 = [Security.Cryptography.SHA256]::Create()
+try {
 $hashes = foreach ($entry in $files.GetEnumerator()) {
     $source = [IO.Path]::GetFullPath((Join-Path $repoRoot $entry.Key))
     $target = [IO.Path]::GetFullPath((Join-Path $Destination $entry.Value))
@@ -135,8 +134,13 @@ $hashes = foreach ($entry in $files.GetEnumerator()) {
         -not $target.StartsWith($Destination + '\', [StringComparison]::OrdinalIgnoreCase)) {
         throw "Staging path escapes its root: $($entry.Key)"
     }
-    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $target) | Out-Null
-    Copy-Item -LiteralPath $source -Destination $target -Force
+    [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($target)) | Out-Null
+    # Read/hash/copy the same bytes once. The old loop copied then reopened
+    # both files to hash every unchanged asset, including the bundled fonts.
+    $bytes = [IO.File]::ReadAllBytes($source)
+    $sourceHash = [BitConverter]::ToString($sha256.ComputeHash($bytes)).Replace('-', '')
+    [IO.File]::WriteAllBytes($target, $bytes)
+    $transformed = $entry.Value -in @('shell.qml', 'modules/bar/components/workspaces/Workspace.qml')
     if ($entry.Value -eq 'shell.qml') {
         $shell = [IO.File]::ReadAllText($target)
         # Every bounded host uses the same process-local Nerd fonts, including
@@ -166,9 +170,16 @@ $hashes = foreach ($entry in $files.GetEnumerator()) {
     }
     [ordered]@{
         source = $entry.Key; staged = $entry.Value
-        sourceSha256 = (Get-FileHash -LiteralPath $source).Hash
-        stagedSha256 = (Get-FileHash -LiteralPath $target).Hash
+        sourceSha256 = $sourceHash
+        stagedSha256 = $(if ($transformed) {
+            [BitConverter]::ToString($sha256.ComputeHash([IO.File]::ReadAllBytes($target))).Replace('-', '')
+        } else {
+            # Retain timestamps so a repeated install can skip unchanged files.
+            [IO.File]::SetLastWriteTimeUtc($target, [IO.File]::GetLastWriteTimeUtc($source))
+            $sourceHash
+        })
     }
 }
 $hashes | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $Destination 'sources.json') -Encoding UTF8
+} finally { $sha256.Dispose() }
 Write-Output $Destination

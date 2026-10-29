@@ -93,7 +93,8 @@ WindowsClipboard::WindowsClipboard(QObject* parent)
                 emit itemsChanged();
                 break;
             }
-            emit imageReady(id, url);
+            if (!url.isEmpty())
+                emit imageReady(id, url);
         });
 
     connect(m_worker, &WindowsClipboardWorker::openUrl, this,

@@ -15,6 +15,7 @@ class PStateRoot : public settings::RootNode {
 
 public:
     explicit PStateRoot(const QString& path, PStateRoot* fallback = nullptr, QObject* parent = nullptr);
+    ~PStateRoot() override;
 };
 
 class RStateRoot : public settings::RootNode {
@@ -27,6 +28,7 @@ class RStateRoot : public settings::RootNode {
 
 public:
     explicit RStateRoot(const QString& path, RStateRoot* fallback = nullptr, QObject* parent = nullptr);
+    ~RStateRoot() override;
 };
 
 SETTINGS_SINGLETON_DECL(PersistentState, PStateRoot, PersistentState)

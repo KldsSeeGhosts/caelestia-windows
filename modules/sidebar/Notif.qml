@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Layouts
+import Quickshell.Services.Notifications
 import Caelestia.Config
 import Caelestia.I18n
 import qs.components
@@ -17,12 +18,15 @@ StyledRect {
 
     readonly property StyledText body: (expandedContent.item as ExpandedBody)?.body ?? null
     readonly property real nonAnimHeight: expanded ? summary.implicitHeight + expandedContent.implicitHeight + expandedContent.anchors.topMargin + Tokens.padding.medium * 2 : summaryHeightMetrics.height
+    // Windows: Quickshell's urgency is a NotificationUrgency enum, not the
+    // string upstream compares against. Accept both shapes.
+    readonly property bool urgencyCritical: root.modelData?.urgency === NotificationUrgency.Critical || root.modelData?.urgency === "critical"
 
     implicitHeight: nonAnimHeight
 
     radius: Tokens.rounding.medium
     color: {
-        const c = root.modelData?.urgency === "critical" ? Colours.palette.m3secondaryContainer : Colours.layer(Colours.palette.m3surfaceContainerHigh, 2);
+        const c = root.urgencyCritical ? Colours.palette.m3secondaryContainer : Colours.layer(Colours.palette.m3surfaceContainerHigh, 2);
         return expanded ? c : Qt.alpha(c, 0);
     }
 
@@ -63,7 +67,7 @@ StyledRect {
 
         width: parent.width
         text: root.modelData?.summary ?? ""
-        color: root.modelData?.urgency === "critical" ? Colours.palette.m3onSecondaryContainer : Colours.palette.m3onSurface
+        color: root.urgencyCritical ? Colours.palette.m3onSecondaryContainer : Colours.palette.m3onSurface
         elide: Text.ElideRight
         wrapMode: Text.WordWrap
         maximumLineCount: 1
@@ -90,7 +94,7 @@ StyledRect {
 
         sourceComponent: StyledText {
             text: String(root.modelData?.body ?? "").replace(/\n/g, " ")
-            color: root.modelData?.urgency === "critical" ? Colours.palette.m3secondary : Colours.palette.m3outline
+            color: root.urgencyCritical ? Colours.palette.m3secondary : Colours.palette.m3outline
             elide: Text.ElideRight
         }
     }
@@ -137,7 +141,7 @@ StyledRect {
             Layout.fillWidth: true
             textFormat: Text.MarkdownText
             text: String(root.modelData?.body ?? "").replace(/(.)\n(?!\n)/g, "$1\n\n") || Tr.tr("No body here! :/")
-            color: root.modelData?.urgency === "critical" ? Colours.palette.m3secondary : Colours.palette.m3outline
+            color: root.urgencyCritical ? Colours.palette.m3secondary : Colours.palette.m3outline
             wrapMode: Text.WordWrap
 
             onLinkActivated: link => {

@@ -4,6 +4,7 @@ import QtQuick
 import Quickshell
 import Caelestia.Config
 import qs.components.misc
+import qs.services
 import Caelestia.Windows.Audio
 
 AudioService {
@@ -50,13 +51,45 @@ AudioService {
             onPressed: root.setMuted(!root.muted)
         }
     ]
-    // Original Caelestia CavaProvider/BeatTracker over WASAPI loopback. They
-    // start only when an original ServiceRef references them, so the dashboard
-    // media panel and background visualiser keep their upstream lifetime.
+    // Original Caelestia CavaProvider/BeatTracker over WASAPI loopback. The
+    // native Service types do not expose their ref count to QML, so defer
+    // construction until a component that consumes analysis is present: the
+    // configured background visualiser surface, or the open dashboard (its
+    // media panel and the beat-driven Dashboard card). While neither exists,
+    // AudioService returns its unavailable fallbacks, so every consumer
+    // binding still resolves (zero bars, zero BPM) without a provider thread.
+    readonly property bool dashboardVisible: {
+        if (!root.enabled)
+            return false;
+        for (const screen of Quickshell.screens) {
+            if (!GlobalConfig.forScreen(screen.name).dashboard.enabled)
+                continue;
+            const state = ShellState.forScreen(screen);
+            if (state && state.dashboard === true)
+                return true;
+        }
+        return false;
+    }
+    readonly property bool visualiserVisible: {
+        if (!root.enabled)
+            return false;
+        // The background window owns the only background visualiser consumer.
+        for (const screen of Quickshell.screens) {
+            if (!GlobalConfig.forScreen(screen.name).background.visualiser.enabled)
+                continue;
+            if (ShellState.componentsFor(screen)?.background)
+                return true;
+        }
+        return false;
+    }
+    readonly property bool cavaRequested: root.enabled
+        && (root.visualiserVisible || root.dashboardVisible)
+    readonly property bool beatRequested: root.enabled && root.dashboardVisible
+
     readonly property Loader _cavaLoader: Loader {
         id: cavaLoader
 
-        active: root.enabled
+        active: root.cavaRequested
         sourceComponent: CavaProvider {
             bars: root.visualiserBars
         }
@@ -65,7 +98,7 @@ AudioService {
     readonly property Loader _beatLoader: Loader {
         id: beatLoader
 
-        active: root.enabled
+        active: root.beatRequested
         sourceComponent: BeatTracker {}
     }
 }

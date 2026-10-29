@@ -5,6 +5,7 @@ import Caelestia.State
 import qs.components
 import qs.components.effects
 import qs.services
+import qs.utils
 
 Item {
     id: root
@@ -67,8 +68,10 @@ Item {
 
         Image {
             anchors.fill: parent
+            // Paths.absolutePath percent-encodes each segment, so '#' and '%'
+            // in a wallpaper name cannot truncate or corrupt the file URL.
             source: root.modelData.engine && !root.modelData.preview ? ""
-                : "file:///" + (root.modelData.preview || root.modelData.path)
+                : Paths.absolutePath(root.modelData.preview || root.modelData.path)
             asynchronous: true
             sourceSize: {
                 const dpr = (QsWindow.window as QsWindow)?.devicePixelRatio ?? 1;

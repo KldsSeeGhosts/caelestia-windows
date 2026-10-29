@@ -883,6 +883,9 @@ QtObject {
             root._onSystemBrightnessChanged(screenName, brightness);
         }
         function onDisplayConfigurationChanged(): void {
+            // The same ShellScreen may now have another identity after hotplug.
+            // Its list membership need not change, so reconcile name-keyed state.
+            root._syncStates();
             for (const state of root._states) {
                 if (state.writePending || state.querying) {
                     state.hasQueuedWrite = false;

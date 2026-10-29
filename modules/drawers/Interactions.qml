@@ -17,6 +17,8 @@ CustomMouseArea {
     required property Bar.BarWrapper bar
     required property real borderThickness
     required property bool fullscreen
+    // Windows: supplied by the per-screen shared-edge adapter.
+    property var windowsHover: null
 
     property point dragStart
     property bool dashboardShortcutActive
@@ -44,7 +46,9 @@ CustomMouseArea {
     }
 
     function inRightPanel(panel: Item, x: real, y: real): bool {
-        return x > Math.min(width - Config.border.minThickness, bar.implicitWidth + panel.x) && withinPanelHeight(panel, x, y);
+        // Windows: leave the other right-edge interactions unchanged.
+        return (!fullscreen && panel === panels.osdWrapper && (windowsHover?.inOsd(x, y) ?? false))
+            || (x > Math.min(width - Config.border.minThickness, bar.implicitWidth + panel.x) && withinPanelHeight(panel, x, y));
     }
 
     function inTopPanel(panel: Item, x: real, y: real): bool {
@@ -54,7 +58,9 @@ CustomMouseArea {
 
     function inBottomPanel(panel: Item, x: real, y: real, isCorner = false): bool {
         const panelHeight = panel.height * (1 - (panel.offsetScale ?? 0)); // qmllint disable missing-property
-        return y > height - Math.max(Config.border.minThickness, Config.border.thickness + panelHeight) - (isCorner ? Config.border.rounding : 0) && withinPanelWidth(panel, x, y);
+        // Windows: only the utilities corner gets a shared-bottom-edge strip.
+        return (isCorner && panel === panels.utilities && (windowsHover?.inUtilities(x, y) ?? false))
+            || (y > height - Math.max(Config.border.minThickness, Config.border.thickness + panelHeight) - (isCorner ? Config.border.rounding : 0) && withinPanelWidth(panel, x, y));
     }
 
     // Upstream b6b2adf0 removed launcher hover-close, so a keybind or start
@@ -361,7 +367,9 @@ CustomMouseArea {
         function onUtilitiesChanged() {
             if (root.screenState.utilities) {
                 // Utilities became visible, immediately check if this should be shortcut mode
-                const inUtilitiesArea = root.inBottomPanel(root.panels.utilities, root.mouseX, root.mouseY);
+                // Windows: use the same corner zone as hover activation.
+                const inUtilitiesArea = root.inBottomPanel(root.panels.utilities, root.mouseX, root.mouseY)
+                    || (root.windowsHover?.inUtilities(root.mouseX, root.mouseY) ?? false);
                 if (!inUtilitiesArea) {
                     root.utilitiesShortcutActive = true;
                 }

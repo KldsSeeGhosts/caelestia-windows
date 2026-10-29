@@ -5,6 +5,15 @@ components and motion while adapting platform services. The dependency derives
 from the Windows Quickshell fork used by ii-windows. Hyprland remains a Linux
 Wayland compositor; Windows continues to own application composition through DWM.
 
+Caelestia exports its resolved appearance to the profile's
+`state\caelestia\theme-tokens.json`. To use it in Glazier, set `theme_file`
+in `%APPDATA%\Glazier\config.toml` to the absolute path of that file and
+choose Glazier's Reload settings. The default profile is
+`%LOCALAPPDATA%\caelestia-windows`; use the actual profile path if customized.
+The file is updated when the scheme or appearance changes, and Glazier reads
+it at the next capture. It contains versioned semantic colours, the UI font
+and optional private font path, and rounding tokens.
+
 ## Credits and attribution
 
 This port has three layers:
@@ -263,8 +272,9 @@ isolated prototype passes.
 
 ## Dependency maintenance
 
-The current backend pin is in the private
-[Caelestia backend fork](https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/tree/c0e748c815e516ad8e8157eb1132a0bc14a15368).
+The current backend pin is recorded in [`sources.lock.json`](sources.lock.json) in the
+[Caelestia backend fork](https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/tree/233448431f06ab05fbcb014193661eea0e4546a4).
+Blank weather location uses HTTPS IP geolocation (`ipapi.co`); set `services.weatherLocation` in `shell.json` to use a fixed city or coordinates instead.
 It retains the audited `nunreasonable/quickshell` baseline `e8ae0ef1` and adds
 a native mask handoff change: reconcile Qt hover when `WS_EX_TRANSPARENT`
 changes, because the move that triggered the hook can already have reached the

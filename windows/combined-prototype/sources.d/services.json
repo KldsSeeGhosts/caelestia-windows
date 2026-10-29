@@ -11,6 +11,8 @@
   "services/Weather.qml": "services/Weather.qml",
   "windows/combined-prototype/adapters/services/Wallpapers.qml": "services/Wallpapers.qml",
   "windows/combined-prototype/adapters/services/Colours.qml": "services/Colours.qml",
+  "windows/combined-prototype/adapters/services/ThemeTokens.qml": "services/ThemeTokens.qml",
+  "windows/combined-prototype/adapters/services/UpdateManager.qml": "services/UpdateManager.qml",
   "windows/combined-prototype/adapters/services/SchemeGenerator.qml": "services/SchemeGenerator.qml",
   "windows/services/wallpaperengine/WallpaperEngine.qml": "services/WallpaperEngine.qml",
   "windows/services/wallpaperengine/bridge.py": "services/wallpaperengine_bridge.py",

@@ -34,25 +34,27 @@ Item {
         return h;
     }
 
+    readonly property var visibleToasts: {
+        const toasts = [];
+        let count = 0;
+        for (const toast of Toaster.toasts) {
+            if (!root.shouldShowToast(toast))
+                continue;
+            toasts.push(toast);
+            if (!toast.closed) {
+                count++;
+                if (count > root.Config.utilities.maxToasts)
+                    break;
+            }
+        }
+        return toasts;
+    }
+
     Repeater {
         id: repeater
 
         model: ScriptModel {
-            values: {
-                const toasts = [];
-                let count = 0;
-                for (const toast of Toaster.toasts) {
-                    if (!root.shouldShowToast(toast))
-                        continue;
-                    toasts.push(toast);
-                    if (!toast.closed) {
-                        count++;
-                        if (count > root.Config.utilities.maxToasts)
-                            break;
-                    }
-                }
-                return toasts;
-            }
+            values: root.visibleToasts
             onValuesChanged: root.flagChanged()
         }
 
@@ -67,8 +69,11 @@ Item {
 
         readonly property bool previewHidden: {
             let extraHidden = 0;
-            for (let i = 0; i < index; i++)
-                if (Toaster.toasts[i].closed)
+            // The repeater model is the filtered list; index into that list,
+            // not into the unfiltered Toaster.toasts source.
+            const toasts = root.visibleToasts;
+            for (let i = 0; i < index && i < toasts.length; i++)
+                if (toasts[i].closed)
                     extraHidden++;
             return index >= Config.utilities.maxToasts + extraHidden;
         }

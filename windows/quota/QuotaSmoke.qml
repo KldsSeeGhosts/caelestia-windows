@@ -8,7 +8,7 @@
 //
 //   * configured: a local synthetic CPA Manager stub serves the pre-aggregated
 //     quota summary; the drawer opens on the Claude group, the model-scoped
-//     window and the usage disclosure render, and dark/light screenshots are
+//     window, provider sections and spend card render, and dark/light screenshots are
 //     saved;
 //   * offline: the endpoint refuses connections and, when the configured run
 //     left a cached summary, the drawer keeps that reading with the one friendly
@@ -190,12 +190,12 @@ ShellRoot {
         return count;
     }
 
-    // The Content root is the only item that exposes the usage disclosure state.
+    // The Content root exposes the drawer reveal state.
     function findContent(item): var {
         for (const child of item.children) {
             if (!child)
                 continue;
-            if (child.usageOpen !== undefined)
+            if (child.objectName === "quotaContent")
                 return child;
             const found = root.findContent(child);
             if (found)
@@ -204,26 +204,13 @@ ShellRoot {
         return null;
     }
 
-    function findVerticalBody(item): var {
+    function findNamed(item, name): var {
+        if (item.objectName === name) return item;
         for (const child of item.children) {
-            if (!child)
-                continue;
-            if (child.contentY !== undefined && child.contentHeight !== undefined
-                    && child.flickableDirection === Flickable.VerticalFlick)
-                return child;
-            const found = root.findVerticalBody(child);
-            if (found)
-                return found;
+            const found = root.findNamed(child, name);
+            if (found) return found;
         }
         return null;
-    }
-
-    function scrollToBottom(content): void {
-        if (!content)
-            return;
-        const body = root.findVerticalBody(content);
-        if (body)
-            body.contentY = Math.max(0, body.contentHeight - body.height);
     }
 
     function scopedWindows(accounts): int {
@@ -492,8 +479,6 @@ ShellRoot {
                 root.fail("quota Content root was not found");
                 return;
             }
-            content.usageOpen = true;
-            root.scrollToBottom(content);
             driver.step = 3;
             driver.retries = 0;
             return;
@@ -503,8 +488,17 @@ ShellRoot {
             if (driver.captured)
                 return;
             const content = root.findContent(quota);
-            if (!content || !content.usageOpen) {
-                root.fail("usage disclosure did not open");
+            const amount = root.findNamed(quota, "quotaSpendAmount");
+            if (!Quota.spend.today || !Quota.spend.yesterday || !Quota.spend.month) {
+                if (driver.retries++ < 20)
+                    return;
+                root.fail("per-provider spend did not load");
+                return;
+            }
+            if (!content || !content.revealed || !root.findNamed(quota, "quotaSpend")
+                    || !root.findNamed(quota, "quotaSection") || !root.findNamed(quota, "quotaProviderTab") || !amount || amount.text !== "$3.71"
+                    || Quota.spend.month.rows.length !== 6) {
+                root.fail("spend card or provider sections did not render");
                 return;
             }
             const meters = root.countMeters(quota);
@@ -524,10 +518,9 @@ ShellRoot {
                 label: Quota.activeGroup?.label ?? "",
                 accounts: Quota.activeGroupAccounts.length,
                 meters: meters, scoped: root.scopedWindows(Quota.activeGroupAccounts),
-                usageOpen: content.usageOpen, todayCostUsd: Quota.todayCostUsd
+                sectionsAndSpend: true, todayCostUsd: Quota.todayCostUsd
             }));
             driver.captured = true;
-            root.scrollToBottom(content);
             root.capture(() => {
                 if (root.applyLightPalette()) {
                     driver.step = 4;
@@ -553,11 +546,10 @@ ShellRoot {
                 return;
             driver.lightCaptured = true;
             const content = root.findContent(quota);
-            if (!content || !content.usageOpen) {
-                root.fail("usage disclosure closed before the light capture");
+            if (!content || !content.revealed) {
+                root.fail("drawer closed before the light capture");
                 return;
             }
-            root.scrollToBottom(content);
             root.captureLight(() => root.closeDrawer());
             return;
         }

@@ -33,15 +33,15 @@ PlayersService {
     // The original services/Players.qml global shortcuts over the Windows
     // player facade. QtObject has no default property, so the shortcut objects
     // live in an explicit list; each still registers itself on construction.
-    // Transport requires the separate controls opt-in through
-    // canControl()/canTogglePlaying() on the active player.
+    // Every action goes through the service's can* gates so the controls opt-in
+    // and the native per-player capability flags are enforced here too.
     readonly property list<QtObject> _shortcuts: [
         CustomShortcut {
             name: "mediaToggle"
             description: "Toggle media playback"
             onPressed: {
                 const active = root.active;
-                if (active && active.canTogglePlaying)
+                if (root.canTogglePlaying(active))
                     active.togglePlaying();
             }
         },
@@ -50,7 +50,7 @@ PlayersService {
             description: "Previous track"
             onPressed: {
                 const active = root.active;
-                if (active && active.canGoPrevious)
+                if (root.canGoPrevious(active))
                     active.previous();
             }
         },
@@ -59,14 +59,20 @@ PlayersService {
             description: "Next track"
             onPressed: {
                 const active = root.active;
-                if (active && active.canGoNext)
+                if (root.canGoNext(active))
                     active.next();
             }
         },
         CustomShortcut {
             name: "mediaStop"
             description: "Stop media playback"
-            onPressed: root.active?.stop()
+            onPressed: {
+                const active = root.active;
+                // GSMTC has no stop; canStop() is always false at this backend,
+                // so the shortcut stays registered but sends nothing.
+                if (root.canStop(active))
+                    active.stop();
+            }
         }
     ]
 }

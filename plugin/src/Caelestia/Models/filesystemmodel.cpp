@@ -1,7 +1,11 @@
 #include "filesystemmodel.hpp"
 
 #include <qdiriterator.h>
+#include <qloggingcategory.h>
+// Windows: file listing does not require a multimedia backend.
+#ifndef CAELESTIA_PORTABLE_UI
 #include <qmediaformat.h>
+#endif
 #include <qtconcurrentrun.h>
 
 #include <algorithm>
@@ -242,7 +246,9 @@ void FileSystemModel::watchDirIfRecursive(const QString& path) {
         future.then(this, [currentDir, showHidden, this](const QStringList& paths) {
             if (currentDir == m_dir && showHidden == m_showHidden && !paths.isEmpty()) {
                 // Ignore if dir or showHidden has changed
-                m_watcher.addPaths(paths);
+                const auto failed = m_watcher.addPaths(paths);
+                if (!failed.isEmpty())
+                    qWarning() << "FileSystemModel: failed to watch" << failed.size() << "directories, e.g." << failed.first();
             }
         });
     }
@@ -262,7 +268,8 @@ void FileSystemModel::updateWatcher() {
         return;
     }
 
-    m_watcher.addPath(m_path);
+    if (!m_watcher.addPath(m_path))
+        qWarning() << "FileSystemModel: failed to watch" << m_path;
     watchDirIfRecursive(m_path);
 }
 
@@ -283,6 +290,7 @@ void FileSystemModel::updateEntries() {
         future.cancel();
     }
     m_futures.clear();
+    m_scanGenerations.clear();
 
     updateEntriesForDir(m_path);
 }
@@ -314,16 +322,24 @@ void FileSystemModel::updateEntriesForDir(const QString& dir) {
         m_futures[dir].cancel();
     m_futures.insert(dir, future);
 
+    // An older scan finishing late must not untrack a newer scan of the same dir
+    const auto generation = ++m_scanCounter;
+    m_scanGenerations[dir] = generation;
+    const auto untrack = [dir, generation, this] {
+        if (m_scanGenerations.value(dir) != generation)
+            return;
+        m_futures.remove(dir);
+        m_scanGenerations.remove(dir);
+    };
+
     future
         .then(this,
-            [dir, this](const PathDiff& result) {
-                m_futures.remove(dir);
+            [untrack, this](const PathDiff& result) {
+                untrack();
                 if (!result.removed.isEmpty() || !result.added.isEmpty())
                     applyChanges(result.removed, result.added);
             })
-        .onCanceled(this, [dir, this] {
-            m_futures.remove(dir);
-        });
+        .onCanceled(this, untrack);
 }
 
 FileSystemModel::ScanFilters FileSystemModel::filtersFor(
@@ -345,9 +361,15 @@ FileSystemModel::ScanFilters FileSystemModel::filtersFor(
 
         QSet<QString> videoMimeTypes;
         if (videos) {
+            // Windows: enumerate known video types, playback belongs to the OS.
+#ifdef CAELESTIA_PORTABLE_UI
+            const auto formats = QMimeDatabase().allMimeTypes();
+            for (const auto& mimeType : formats) {
+#else
             const auto formats = QMediaFormat().supportedFileFormats(QMediaFormat::Decode);
             for (const auto format : formats) {
                 const auto mimeType = QMediaFormat(format).mimeType();
+#endif
                 if (!mimeType.name().startsWith(u"video/"_s))
                     continue;
                 videoMimeTypes << mimeType.name();

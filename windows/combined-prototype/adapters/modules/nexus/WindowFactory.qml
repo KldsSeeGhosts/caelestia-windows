@@ -134,6 +134,12 @@ Singleton {
             color: Colours.tPalette.m3surface
             surfaceFormat.opaque: false
 
+            // Hyprland draws no decorations for upstream's window, so neither
+            // does this one: Nexus is its own chrome (nav pane, close button).
+            // The backend keeps resize borders, snap, minimize and the taskbar
+            // entry; the grip below supplies the move.
+            frameless: true
+
             onVisibleChanged: {
                 if (!visible)
                     destroy();
@@ -151,6 +157,31 @@ Singleton {
             title: {
                 const idx = nexus?.nState?.currentPageIdx ?? win.pageIdx;
                 return Tr.tr("Nexus — %1").arg(PageRegistry.pages[idx]?.label ?? "");
+            }
+
+            // Move grip along the top edge, below Nexus so its search field and
+            // close button keep their own presses. Double-click toggles
+            // maximize, as a native title bar does.
+            Item {
+                anchors.top: parent.top
+                anchors.left: parent.left
+                anchors.right: parent.right
+                implicitHeight: Tokens.padding.extraLarge
+
+                DragHandler {
+                    target: null
+                    // Never take a drag over from a control (the search field
+                    // overlaps the grip's lower edge).
+                    grabPermissions: PointerHandler.CanTakeOverFromHandlersOfDifferentType
+                    onActiveChanged: {
+                        if (active)
+                            win.startSystemMove();
+                    }
+                }
+
+                TapHandler {
+                    onDoubleTapped: win.maximized = !win.maximized
+                }
             }
 
             Nexus {

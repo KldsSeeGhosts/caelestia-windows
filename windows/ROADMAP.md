@@ -2,8 +2,7 @@
 
 The native backend build and portable component rendering are now demonstrated.
 Gates below are acceptance criteria, not claims of a complete shell.
-[Caelestia Windows in Linear](https://linear.app/ermin-zeherovic/project/caelestia-windows-c69c05fa35b7)
-tracks the milestones and implementation issues.
+The repository issue tracker and milestone gates below track implementation progress.
 
 ## Status snapshot, 2026-10-25
 
@@ -45,10 +44,10 @@ ERM-491 (dependency/backend audit), ERM-492 (original bar/session loading),
 ERM-493 (input/focus) and ERM-494 (final compatibility gate).
 M1 work was sequenced as:
 
-1. [ERM-491: dependency and backend API audit](https://linear.app/ermin-zeherovic/issue/ERM-491), done.
-2. [ERM-492: load the original bar and one drawer](https://linear.app/ermin-zeherovic/issue/ERM-492), done with archived evidence.
-3. [ERM-493: hover, input, focus, and dismissal](https://linear.app/ermin-zeherovic/issue/ERM-493), done.
-4. [ERM-494: native DPI, monitor, transparency, and lifecycle gate](https://linear.app/ermin-zeherovic/issue/ERM-494), done.
+1. ERM-491: dependency and backend API audit, done.
+2. ERM-492: load the original bar and one drawer, done with archived evidence.
+3. ERM-493: hover, input, focus, and dismissal, done.
+4. ERM-494: native DPI, monitor, transparency, and lifecycle gate, done.
 
 ## M0: source and reproducibility
 

@@ -7,11 +7,13 @@
 #include <utility>
 #include <vector>
 
+#include <qbuffer.h>
 #include <qcryptographichash.h>
 #include <qdatetime.h>
 #include <qdir.h>
 #include <qfile.h>
 #include <qfileinfo.h>
+#include <qimage.h>
 #include <qlocale.h>
 #include <qloggingcategory.h>
 #include <qmetaobject.h>
@@ -57,6 +59,12 @@ constexpr int EVENT_COALESCE_MS = 150;
 // A clipboard image larger than this is not materialized for preview. The
 // history entry itself is untouched and copy/paste still works.
 constexpr quint64 MAX_PREVIEW_BYTES = 64ULL * 1024ULL * 1024ULL;
+// Display previews are downscaled thumbnails kept under a total byte budget;
+// the oldest are evicted first. Full images are only written for an explicit
+// open, and only the most recent opened files are kept.
+constexpr int PREVIEW_MAX_DIMENSION = 640;
+constexpr qint64 PREVIEW_TOTAL_BUDGET = 32LL * 1024 * 1024;
+constexpr int MAX_OPENED_FILES = 16;
 constexpr int MAX_ITEMS = 100;
 constexpr qsizetype MAX_NAME_HEX = 16;
 // Per-item WinRT reads are awaited in short slices so a provider that never
@@ -311,6 +319,12 @@ struct WindowsClipboardWorker::Impl {
     // so the exposed list follows this explicit order.
     QStringList order;
     QHash<QString, QString> previewFiles;
+    // Byte size per preview and write order (oldest first) for the budget.
+    // Entries whose id left previewFiles are stale and ignored.
+    QHash<QString, qint64> previewSizes;
+    QStringList previewOrder;
+    // Files written for an explicit open (full images, text), oldest first.
+    QStringList openedFiles;
     std::shared_ptr<EventBridge> bridge;
     winrt::event_token historyToken {};
     winrt::event_token enabledToken {};
@@ -431,7 +445,7 @@ struct WindowsClipboardWorker::Impl {
                         list.clear();
                     } else {
                         // Previews that no longer belong to an item are deleted
-                        // here. Opened text files stay until shutdown.
+                        // here. Opened files are pruned to the most recent few.
                         for (auto it = previewFiles.begin(); it != previewFiles.end();) {
                             if (next.contains(it.key())) {
                                 ++it;
@@ -880,7 +894,7 @@ void WindowsClipboardWorker::publishSnapshot(quint64 generation, const QVariantL
 
 QString WindowsClipboardWorker::ensurePreview(const QString& id, bool explicitOpen) {
     auto& impl = *m_impl;
-    if (impl.previewFiles.contains(id))
+    if (!explicitOpen && impl.previewFiles.contains(id))
         return impl.previewFiles.value(id);
 
     const auto found = impl.items.constFind(id);
@@ -922,6 +936,25 @@ QString WindowsClipboardWorker::ensurePreview(const QString& id, bool explicitOp
     if (bytes.isEmpty())
         return {};
 
+    // A display preview is a thumbnail; only an explicit open keeps the original.
+    QString extension = extensionFor(bytes);
+    if (!explicitOpen) {
+        QImage image = QImage::fromData(bytes);
+        if (image.isNull())
+            return {};
+        if (image.width() > PREVIEW_MAX_DIMENSION || image.height() > PREVIEW_MAX_DIMENSION) {
+            image = image.scaled(PREVIEW_MAX_DIMENSION, PREVIEW_MAX_DIMENSION, Qt::KeepAspectRatio,
+                Qt::SmoothTransformation);
+        }
+        QByteArray thumbnail;
+        QBuffer buffer(&thumbnail);
+        buffer.open(QIODevice::WriteOnly);
+        if (!image.save(&buffer, "PNG"))
+            return {};
+        bytes = thumbnail;
+        extension = QStringLiteral("png");
+    }
+
     QCryptographicHash hash(QCryptographicHash::Sha256);
     hash.addData(bytes);
 
@@ -932,15 +965,56 @@ QString WindowsClipboardWorker::ensurePreview(const QString& id, bool explicitOp
         return {};
     }
 
-    const auto path =
-        impl.cache.writeFreshFile(QString::fromLatin1(hash.result().toHex().left(MAX_NAME_HEX)), extensionFor(bytes), bytes);
+    const auto path = impl.cache.writeFreshFile(
+        QString::fromLatin1(hash.result().toHex().left(MAX_NAME_HEX)), extension, bytes);
     if (path.isEmpty()) {
         qCWarning(logClipboard) << "Could not write a clipboard preview file.";
         return {};
     }
 
+    if (explicitOpen) {
+        trackOpenedFile(path);
+        return path;
+    }
+
     impl.previewFiles.insert(id, path);
+    impl.previewSizes.insert(id, bytes.size());
+    impl.previewOrder.removeAll(id);
+    impl.previewOrder.append(id);
+    evictPreviews(id);
     return path;
+}
+
+// Evicts the oldest previews until the total fits the budget. `keep` (the one
+// just written) is never evicted.
+void WindowsClipboardWorker::evictPreviews(const QString& keep) {
+    auto& impl = *m_impl;
+    qint64 total = 0;
+    for (const auto& id: std::as_const(impl.previewOrder)) {
+        if (impl.previewFiles.contains(id))
+            total += impl.previewSizes.value(id);
+    }
+    for (auto it = impl.previewOrder.begin(); it != impl.previewOrder.end();) {
+        const auto id = *it;
+        if (!impl.previewFiles.contains(id)) {
+            impl.previewSizes.remove(id);
+            it = impl.previewOrder.erase(it);
+        } else if (total > PREVIEW_TOTAL_BUDGET && id != keep) {
+            total -= impl.previewSizes.take(id);
+            impl.cache.removeFile(impl.previewFiles.take(id));
+            it = impl.previewOrder.erase(it);
+            emit imageReady(id, QString());
+        } else {
+            ++it;
+        }
+    }
+}
+
+void WindowsClipboardWorker::trackOpenedFile(const QString& path) {
+    auto& impl = *m_impl;
+    impl.openedFiles.append(path);
+    while (impl.openedFiles.size() > MAX_OPENED_FILES)
+        impl.cache.removeFile(impl.openedFiles.takeFirst());
 }
 
 void WindowsClipboardWorker::removePreview(const QString& id) {
@@ -953,6 +1027,8 @@ void WindowsClipboardWorker::clearPreviews() {
     for (const auto& path: m_impl->previewFiles)
         m_impl->cache.removeFile(path);
     m_impl->previewFiles.clear();
+    m_impl->previewSizes.clear();
+    m_impl->previewOrder.clear();
 }
 
 void WindowsClipboardWorker::setCacheRoot(const QString& directory) {
@@ -1150,6 +1226,7 @@ void WindowsClipboardWorker::openItem(const QString& id) {
                     QStringLiteral("The temporary text file could not be written."));
                 return;
             }
+            trackOpenedFile(path);
             emit openUrl(QUrl::fromLocalFile(path).toString());
             return;
         }

@@ -121,6 +121,8 @@ PageBase {
         }
 
         GridLayout {
+            id: localGrid
+
             Layout.fillWidth: true
             visible: grid.count > 0
 
@@ -145,6 +147,9 @@ PageBase {
                     // Empty placeholders for sizing
                     opacity: modelData ? 1 : 0
                     enabled: modelData
+                    thumbnailActive: root.visible && !!modelData
+                        && localGrid.y + y + height > root.flickable.contentY - height
+                        && localGrid.y + y < root.flickable.contentY + root.flickable.height + height
 
                     // Wallpaper Engine entries carry a project.json `path` for
                     // selection and a real image in `preview`. Feed the preview

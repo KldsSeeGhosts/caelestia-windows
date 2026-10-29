@@ -4,6 +4,7 @@ import QtQuick
 import Quickshell
 import Caelestia.Config
 import qs.components.misc
+import qs.services
 
 // Windows facade for the bounded parts of services/Brightness.qml. It preserves
 // the original singleton surface for the staged UI: one typed Monitor object per
@@ -43,14 +44,20 @@ BrightnessService {
 
     readonly property list<Monitor> monitors: variants.instances
 
-    // Windows has no focused-monitor concept. A host may assign the screen that
-    // received the action; otherwise only a single-monitor desktop has an
-    // unambiguous active monitor.
+    // Windows has no per-window brightness target. The bar can address the
+    // screen that received the action, and the global shortcuts use the
+    // focused monitor reported by the Hypr facade; otherwise only a
+    // single-monitor desktop has an unambiguous active monitor.
     property ShellScreen activeScreen: null
     readonly property var activeMonitor: {
         const screen = root.activeScreen;
         if (screen)
             return root.monitors.find(monitor => monitor.modelData === screen) ?? null;
+        // The Hypr facade exposes one Windows-wide focused monitor. Match it by
+        // name because the brightness Monitor wraps a different Screen object.
+        const focused = Hypr.focusedMonitor;
+        if (focused?.name)
+            return root.monitors.find(monitor => monitor.modelData.name === focused.name) ?? null;
         return root.monitors.length === 1 ? root.monitors[0] : null;
     }
     readonly property real brightnessIncrement: GlobalConfig.services.brightnessIncrement

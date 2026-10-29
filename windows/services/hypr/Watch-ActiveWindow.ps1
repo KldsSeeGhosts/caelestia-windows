@@ -121,28 +121,43 @@ public static class CaelestiaForeground {
 
 $previous = ''
 $lastApplication = [IntPtr]::Zero
+$failures = 0
 do {
-    $foreground = [CaelestiaForeground]::GetForegroundWindow()
-    if ([CaelestiaForeground]::IsApplication($foreground)) {
-        $lastApplication = $foreground
-    } elseif ([CaelestiaForeground]::IsDesktop($foreground) -or
-        -not [CaelestiaForeground]::IsShellSurface($foreground) -or
-        -not [CaelestiaForeground]::IsApplication($lastApplication)) {
-        $lastApplication = [IntPtr]::Zero
-    }
-    # Preserve the last real application while the task switcher, Task View,
-    # Start/Search or one of the shell's own panels owns focus. The desktop
-    # still clears it.
-    $address = if ($lastApplication -eq [IntPtr]::Zero) { '' } else { $lastApplication.ToInt64().ToString('x') }
-    $line = @{
-        address = $address
-        title = if ($address) { [CaelestiaForeground]::Title($lastApplication) } else { '' }
-        appId = if ($address) { [CaelestiaForeground]::Application($lastApplication) } else { '' }
-    } | ConvertTo-Json -Compress
-    if ($Once -or $line -ne $previous) {
-        [Console]::Out.WriteLine($line)
-        [Console]::Out.Flush()
-        $previous = $line
+    try {
+        $foreground = [CaelestiaForeground]::GetForegroundWindow()
+        if ([CaelestiaForeground]::IsApplication($foreground)) {
+            $lastApplication = $foreground
+        } elseif ([CaelestiaForeground]::IsDesktop($foreground) -or
+            -not [CaelestiaForeground]::IsShellSurface($foreground) -or
+            -not [CaelestiaForeground]::IsApplication($lastApplication)) {
+            $lastApplication = [IntPtr]::Zero
+        }
+        # Preserve the last real application while the task switcher, Task View,
+        # Start/Search or one of the shell's own panels owns focus. The desktop
+        # still clears it.
+        $address = if ($lastApplication -eq [IntPtr]::Zero) { '' } else { $lastApplication.ToInt64().ToString('x') }
+        $line = @{
+            address = $address
+            title = if ($address) { [CaelestiaForeground]::Title($lastApplication) } else { '' }
+            appId = if ($address) { [CaelestiaForeground]::Application($lastApplication) } else { '' }
+        } | ConvertTo-Json -Compress
+        if ($Once -or $line -ne $previous) {
+            [Console]::Out.WriteLine($line)
+            [Console]::Out.Flush()
+            $previous = $line
+        }
+        $failures = 0
+    } catch {
+        # A transient Win32, process query or console error must not end the
+        # resident watcher. Keep the last good foreground state and retry.
+        # -Once still fails loudly, and a persistent failure exits so the shell
+        # can restart the helper with backoff instead of spinning forever.
+        # Log nothing here: the host does not drain stderr, and a write to a
+        # closed pipe would turn one transient error into an exit.
+        $failures++
+        if ($Once -or $failures -ge 20) { throw }
+        Start-Sleep -Milliseconds 250
+        continue
     }
     if (-not $Once) { Start-Sleep -Milliseconds 250 }
 } while (-not $Once)

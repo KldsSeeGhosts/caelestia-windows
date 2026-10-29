@@ -15,13 +15,29 @@ if ($profile -eq $Prefix -or $Prefix.StartsWith($profile + '\', [StringCompariso
     throw 'Installation and profile must be separate directories.'
 }
 $integration = Get-CaelestiaIntegration $Prefix
-# Only this prefix's executable may be stopped. Never kill other qs instances.
-$processes = @(Get-CaelestiaProcesses $Prefix)
-if ($processes.Count) {
-    & (Join-Path $Prefix 'Start-Caelestia.ps1') -Prefix $Prefix -Command Quit
-    foreach ($process in $processes) {
-        if (-not $process.WaitForExit(10000)) { throw 'Shell did not quit. Stop this installation before uninstalling.' }
+# Decide up front whether -Purge may delete the profile, so a refusal leaves
+# the installation untouched.
+if ($Purge -and (Test-Path -LiteralPath $profile)) {
+    $owner = Read-CaelestiaProfileOwner $profile
+    if (-not $owner -or $owner.prefix -ne $Prefix -or $owner.exclusive -ne $true -or
+        ($record.installId -and $owner.installId -ne $record.installId)) {
+        throw "Refusing -Purge: $profile is not marked as created exclusively for $Prefix. Remove it manually if it is yours."
     }
+    Assert-CaelestiaNoReparsePoints $profile
+}
+# Only this prefix's executable may be stopped. Never kill other qs instances.
+# Quit also stops a supervisor that is starting or in restart backoff (no
+# qs.exe) and restores banners/desktop state before the journal can be purged.
+$launcher = Join-Path $Prefix 'Start-Caelestia.ps1'
+$processes = @(Get-CaelestiaProcesses $Prefix)
+if (Test-Path -LiteralPath $launcher) {
+    & $launcher -Prefix $Prefix -Command Quit | Out-Null
+}
+foreach ($process in $processes) {
+    if (-not $process.WaitForExit(60000)) { throw 'Shell did not quit. Stop this installation before uninstalling.' }
+}
+if (@(Get-CaelestiaSupervisors $profile).Count -or @(Get-CaelestiaProcesses $Prefix).Count) {
+    throw 'Caelestia is still running. Stop this installation before uninstalling.'
 }
 $run = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
 if (Get-ItemProperty -LiteralPath $run -Name $integration.RunName -ErrorAction SilentlyContinue) {
@@ -33,9 +49,11 @@ if (Test-Path -LiteralPath $integration.Shortcut) { Remove-Item -LiteralPath $in
 # packaged notices under licenses/; runtime venv notices stay with the profile
 # unless -Purge was explicitly requested.
 $Prefix = Resolve-CaelestiaDirectory $Prefix
+Assert-CaelestiaNoReparsePoints $Prefix
 Remove-Item -LiteralPath $Prefix -Recurse -Force
 if ($Purge -and (Test-Path -LiteralPath $profile)) {
     $profile = Resolve-CaelestiaDirectory $profile
+    Assert-CaelestiaNoReparsePoints $profile
     Remove-Item -LiteralPath $profile -Recurse -Force
 }
 Write-Output "Uninstalled Caelestia: $Prefix"
