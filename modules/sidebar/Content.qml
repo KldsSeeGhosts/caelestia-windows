@@ -9,6 +9,8 @@ Item {
 
     required property Props props
     required property ScreenState screenState
+    // Windows supplies its existing opt-in mirroring status/control row.
+    property var mirrorControl: null
 
     ColumnLayout {
         id: layout
@@ -28,6 +30,7 @@ Item {
 
                 props: root.props
                 screenState: root.screenState
+                mirrorControl: root.mirrorControl
             }
         }
 
