@@ -33,6 +33,8 @@ StyledRect {
     readonly property int spacing: Config.bar.tray.background ? Tokens.spacing.medium : Tokens.spacing.extraSmall
 
     property bool expanded
+    // Windows uses an explicit toggle instead of upstream's hover lifecycle.
+    property bool autoCollapse: true
 
     readonly property real nonAnimHeight: {
         if (!Config.bar.tray.compact)

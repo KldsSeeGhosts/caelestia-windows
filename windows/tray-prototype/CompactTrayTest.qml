@@ -2,8 +2,10 @@
 import QtQuick
 import Quickshell
 import Caelestia.Config
+import qs.components
 import qs.services
-import qs.modules.bar.components as BarComponents
+import qs.modules.bar as Bar
+import qs.modules.bar.popouts as BarPopouts
 
 // Headless checks of the real Windows adapter, without constructing a native
 // tray host or sending requests to another application's windows.
@@ -13,6 +15,7 @@ ShellRoot {
     property int assertions: 0
     property int phase: 0
     property real expandedHeight: 0
+    readonly property var tray: bar.children.find(child => child.entryId === "tray")?.item ?? null
 
     function verify(condition, message): void {
         if (!condition) {
@@ -34,9 +37,21 @@ ShellRoot {
         }));
     }
 
-    BarComponents.Tray {
-        id: tray
-        sourceItems: root.makeItems(12)
+    Bar.Bar {
+        id: bar
+        screen: null
+        screenState: ScreenState { modelData: null }
+        popouts: BarPopouts.Wrapper { screen: null; offsetScale: 0 }
+        fullscreen: false
+        width: 60
+        height: 800
+    }
+
+    Binding {
+        target: root.tray
+        property: "sourceItems"
+        value: root.makeItems(12)
+        when: root.tray !== null
     }
 
     Timer {
@@ -59,6 +74,11 @@ ShellRoot {
                 button.clicked(null);
             } else if (root.phase === 1) {
                 root.verify(tray.expanded, "button expands tray");
+                root.verify(!tray.autoCollapse, "Windows uses manual expansion");
+                bar.closeTray();
+                root.verify(tray.expanded, "pointer leave does not collapse manual tray");
+                bar.checkPopout(-1);
+                root.verify(tray.expanded, "hovering another bar entry does not collapse manual tray");
                 root.verify(tray.items.itemAt(0).enabled, "expanded icons interactive");
                 root.verify(tray.visibleListHeight < tray.layout.implicitHeight, "long list capped");
                 root.expandedHeight = tray.implicitHeight;
@@ -75,6 +95,10 @@ ShellRoot {
                 WindowsTray.activationEnabled = false;
             } else if (root.phase === 3) {
                 root.verify(!tray.items.itemAt(0).enabled, "observation-only icons disabled");
+                tray.autoCollapse = true;
+                bar.closeTray();
+                root.verify(!tray.expanded, "upstream automatic collapse remains supported");
+                tray.autoCollapse = false;
                 tray.sourceItems = [];
             } else {
                 root.verify(tray.items.count === 0, "removed apps disappear");

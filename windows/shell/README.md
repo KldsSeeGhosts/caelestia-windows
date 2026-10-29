@@ -107,7 +107,8 @@ uses Direct3D 11; smoke excludes developer PATH entries.
 ### Background apps
 
 The tray above the clock defaults to a compact pill. Click its chevron to
-expand or collapse it; leaving the bar collapses it. The expanded list scrolls
+expand or collapse it; it stays open until the chevron is clicked again.
+The expanded list scrolls
 after roughly five icons so it cannot crowd out the clock. Hover an icon for
 its name, left-click for the app's primary action, or right-click for the app's
 native menu, including Exit when that app provides it. These are notification

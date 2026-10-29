@@ -15,6 +15,7 @@ $runtime = if ($record.version -eq 2) {
     $Prefix
 }
 $mappings = @(
+    @('modules/bar/Bar.qml', 'shell/modules/bar/Bar.qml'),
     @('modules/bar/components/Tray.qml', 'shell/modules/bar/components/TrayContent.qml'),
     @('modules/bar/components/TrayItem.qml', 'shell/modules/bar/components/TrayItem.qml'),
     @('windows/combined-prototype/adapters/modules/bar/components/Tray.qml', 'shell/modules/bar/components/Tray.qml'),

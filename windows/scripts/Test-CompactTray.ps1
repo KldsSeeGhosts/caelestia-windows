@@ -13,7 +13,10 @@ $run = Join-Path ([IO.Path]::GetTempPath()) ('caelestia-compact-tray-' + [guid]:
 $profile = Join-Path $run 'profile'
 $stage = & "$PSScriptRoot\Stage-ShellPrototype.ps1" -Destination "$run\shell" -ProfileRoot $profile -Prototype combined
 New-Item -ItemType Directory -Path "$profile\config" -Force | Out-Null
-Copy-Item -LiteralPath "$repoRoot\windows\shell\shell.json" -Destination "$profile\config\shell.json"
+$config = Get-Content -LiteralPath "$repoRoot\windows\shell\shell.json" -Raw | ConvertFrom-Json
+# Exercise the actual Bar hover-close route without constructing other services.
+$config.bar.entries = @($config.bar.entries | Where-Object { $_.id -eq 'tray' })
+$config | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath "$profile\config\shell.json" -Encoding UTF8
 Copy-Item -LiteralPath "$repoRoot\windows\tray-prototype\CompactTrayTest.qml" -Destination "$stage\shell.qml" -Force
 $qmlRoot = Join-Path $BuildRoot 'install\qml'
 $info = New-Object Diagnostics.ProcessStartInfo

@@ -10,6 +10,7 @@ TrayContent {
     id: root
 
     sourceItems: WindowsTray.list
+    autoCollapse: false
     implicitHeight: items.count > 0 ? nonAnimHeight : 0
     maximumListHeight: (Tokens.font.body.small.pointSize * 2 + Tokens.spacing.small) * 5.5 - Tokens.spacing.small
     itemInteractionsEnabled: WindowsTray.activationEnabled && (expanded || !Config.bar.tray.compact)

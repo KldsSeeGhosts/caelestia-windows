@@ -4,6 +4,7 @@ import QtQuick
 Item {
     readonly property bool available: false
     property bool expanded: false
+    readonly property bool autoCollapse: true
     readonly property int padding: 0
     readonly property int spacing: 0
     readonly property alias layout: emptyLayout
