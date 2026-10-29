@@ -13,8 +13,9 @@ Background {
     id: root
 
     // Wallpaper Engine owns WorkerW. Disable the entire host (including the
-    // clock) until layering above WE has been validated. Discovery starts
-    // fail-closed so startup cannot briefly cover the external wallpaper.
+    // clock) until layering above WE has been validated. This is only an
+    // ownership guard, not proof that WE has presented on either monitor.
+    // Discovery starts fail-closed so startup cannot cover a running engine.
     readonly property bool enabled: Quickshell.env("CAELESTIA_WINDOWS_BACKGROUND") === "1"
         && !Wallpapers.externalWallpaperActive
     readonly property bool smoke: Quickshell.env("CAELESTIA_SHELL_SMOKE") === "1"
@@ -42,11 +43,15 @@ Background {
 
     function checkReady(screen: ShellScreen): bool {
         if (Wallpapers.externalWallpaperActive) {
+            // Host readiness here only means we yielded successfully. There
+            // is no backend acknowledgement of external output on this screen.
+            const yielded = screens.length === 0 && !Native.DesktopLayer.active;
             console.log("CAELESTIA_BACKGROUND_STATE", JSON.stringify({
-                active: Native.DesktopLayer.active, ready: screens.length === 0,
-                owner: "wallpaper-engine", clock: false
+                active: Native.DesktopLayer.active, ready: yielded,
+                owner: WallpaperEngine.running ? "wallpaper-engine-process" : "undiscovered",
+                externalOutputReady: null, clock: false
             }));
-            return screens.length === 0 && !Native.DesktopLayer.active;
+            return yielded;
         }
         const window = instances.find(w => w.modelData === screen);
         const clock = window ? CUtils.findChild(window.contentItem, "desktopClock") : null;

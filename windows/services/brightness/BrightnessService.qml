@@ -73,6 +73,11 @@ QtObject {
     readonly property var monitorStates: _states
     readonly property int monitorCount: _states.length
 
+    // Feedback is a level change, not route discovery, a reset or a failed
+    // read. Windows broadcasts wallpaper settings through the same native
+    // display-configuration signal used to refresh brightness routes (#146).
+    signal brightnessFeedback(string screenName, real value)
+
     readonly property bool nativeRequested: backend !== null
     readonly property bool ready: enabled && !backendError && backend !== null
     // Feature-detected on the object: typeof strictRoutes is "undefined" on the
@@ -158,6 +163,7 @@ QtObject {
         // enable cycle or an earlier backend can never match this one.
         // A `real`: backend ids are 64-bit and an `int` would truncate them.
         property real queryId: 0
+        property string queryRoute: ""
         // An uncorrelated route change arrived while a write was in flight; the
         // record queries again once that write settles.
         property bool routeStale: false
@@ -342,6 +348,7 @@ QtObject {
             state.brightness = 0;
             state.querying = false;
             state.queryId = 0;
+            state.queryRoute = "";
             state.writePending = false;
             state.hasQueuedWrite = false;
             state.queuedValue = 0;
@@ -414,12 +421,13 @@ QtObject {
         }
         state.querying = true;
         state.state = "querying";
+        state.queryRoute = state.route;
         state.route = "";
         state.available = false;
         state.brightnessKnown = false;
-        state.brightness = 0;
-        state.lastConfirmed = 0;
-        state.lastConfirmedKnown = false;
+        // Keep the last displayed/confirmed level while revalidating the
+        // route. Unknown is not a measured zero, and writes remain gated by
+        // querying/state/brightnessKnown.
         state.expectedRoute = "";
         state.pendingValue = 0;
         // A route refresh is the explicit user action that clears a latch.
@@ -543,6 +551,7 @@ QtObject {
         // Show the requested level at once, like the original Monitor does.
         // Waiting for each DDC/CI confirmation made the handle jump back to an
         // older drag target. lastConfirmed keeps the snap-back level.
+        const changed = state.brightnessKnown && Math.abs(state.brightness - target) > 0.000001;
         state.brightness = target;
         state.brightnessKnown = true;
         // Coalesce a drag: keep the terminal result as the only completion and
@@ -552,9 +561,14 @@ QtObject {
             state.hasQueuedWrite = true;
             state.lastOutcome = "pending";
             coalescedWrites++;
+            if (changed)
+                brightnessFeedback(state.screenName, target);
             return true;
         }
-        return _startWrite(state, target);
+        const accepted = _startWrite(state, target);
+        if (accepted && changed)
+            brightnessFeedback(state.screenName, state.brightness);
+        return accepted;
     }
 
     // Enable the one-way strict mode immediately before the first write. The
@@ -691,6 +705,12 @@ QtObject {
         const level = Number(brightness);
         const readable = available === true && Number.isFinite(level);
         const clamped = readable ? Math.max(0, Math.min(1, level)) : 0;
+        // Same-route observations can discover real hardware changes (DDC
+        // has no push event). First discovery, HDR/route changes and failed
+        // reads only resync the UI, without opening the OSD.
+        const feedback = readable && state.lastConfirmedKnown
+            && state.queryRoute === route
+            && Math.abs(state.lastConfirmed - clamped) > 0.000001;
         state.querying = false;
         state.route = route;
         state.available = available === true;
@@ -707,6 +727,8 @@ QtObject {
             state.lastError = available === true
                 ? ""
                 : routeLabel(route) + " did not report a readable brightness level.";
+            if (feedback)
+                brightnessFeedback(state.screenName, clamped);
             _requeryIfRouteStale(state);
             return;
         }
@@ -717,6 +739,8 @@ QtObject {
             state.lastConfirmedKnown = readable;
             state.lastConfirmed = clamped;
             state.lastError = "";
+            if (feedback)
+                brightnessFeedback(state.screenName, clamped);
             _requeryIfRouteStale(state);
             return;
         }
@@ -852,13 +876,18 @@ QtObject {
         const value = Number(brightness);
         if (!Number.isFinite(value))
             return;
-        state.brightness = Math.max(0, Math.min(1, value));
+        const clamped = Math.max(0, Math.min(1, value));
+        const changed = state.lastConfirmedKnown
+            && Math.abs(state.brightness - clamped) > 0.000001;
+        state.brightness = clamped;
         state.brightnessKnown = true;
         state.lastConfirmed = state.brightness;
         state.lastConfirmedKnown = true;
         // Only WMI and \\.\LCD start a read-back; DDC/CI has no confirmation.
         if (state.state === "hardware" && !state.latched)
             state.available = true;
+        if (changed)
+            brightnessFeedback(state.screenName, clamped);
     }
 
     property Connections _backendConnections: Connections {
