@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [string]$Prefix,
-    [ValidateSet('Start', 'State', 'Quit', 'Restart', 'Settings')][string]$Command = 'Start',
+    [ValidateSet('Start', 'State', 'Quit', 'Restart', 'Settings', 'NotifyTest')][string]$Command = 'Start',
     [switch]$Smoke,
     [ValidateRange(0, 15)][int]$ScreenIndex,
     [ValidateSet('Disabled', 'Observe', 'Interactive')][string]$TilingMode = 'Disabled',
@@ -10,6 +10,43 @@ param(
     [switch]$SkipSchemeRuntime,
     [switch]$Wait
 )
+
+if ($Smoke -and $Command -ne 'Start') { throw '-Smoke requires -Command Start.' }
+if ($PSBoundParameters.ContainsKey('ScreenIndex') -and -not $Smoke) { throw '-ScreenIndex requires -Smoke.' }
+
+# Send through Windows, not notifySend()/QML. The existing WinRT listener will
+# mirror this like any other app only if the user has already allowed mirroring.
+# Does not read the profile or alter consent, settings or shell lifecycle.
+if ($Command -eq 'NotifyTest') {
+    if ($env:OS -ne 'Windows_NT') { throw 'NotifyTest requires an interactive Windows desktop.' }
+    # PowerShell 7 has no built-in WinRT projection. Use inbox Windows PowerShell
+    # without loading the user's PowerShell profile or changing execution policy.
+    if ($PSVersionTable.PSEdition -eq 'Core') {
+        & (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') -NoLogo -NoProfile -NonInteractive -File $PSCommandPath -Command NotifyTest
+        if ($LASTEXITCODE -ne 0) { throw 'Windows PowerShell could not submit the test toast.' }
+        return
+    }
+    $ErrorActionPreference = 'Stop'
+    $null = [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime]
+    $null = [Windows.UI.Notifications.ToastNotification, Windows.UI.Notifications, ContentType = WindowsRuntime]
+    $null = [Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime]
+    # Reuse the inbox PowerShell shortcut's AUMID, as in Microsoft's Intune
+    # toast example. Do not register a new identity or enable a disabled sender.
+    # https://learn.microsoft.com/en-us/intune/device-management/tools/ref-remediation-scripts
+    $appId = '{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\WindowsPowerShell\v1.0\powershell.exe'
+    $notifier = [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier($appId)
+    if ($notifier.Setting.ToString() -ne 'Enabled') {
+        throw 'Windows notifications for Windows PowerShell are disabled or unavailable. No settings were changed.'
+    }
+    $xml = [Windows.Data.Xml.Dom.XmlDocument]::new()
+    $xml.LoadXml(@'
+<toast><visual><binding template="ToastGeneric"><text>Caelestia test notification</text><text>This is a test notification. No user data is included.</text></binding></visual></toast>
+'@)
+    $toast = [Windows.UI.Notifications.ToastNotification]::new($xml)
+    $notifier.Show($toast)
+    Write-Output 'Test toast submitted to Windows as Windows PowerShell. Delivery is not confirmed; check the popup and notification history. Caelestia mirroring requires existing consent and opt-in.'
+    return
+}
 
 . (Join-Path $PSScriptRoot 'Caelestia-InstallCommon.ps1')
 if (-not $Prefix) {
@@ -36,8 +73,6 @@ $installRoot = if ($record.installRoot) { [string]$record.installRoot } else { $
 $profile = Resolve-CaelestiaDirectory $record.profile
 $stage = Join-Path $Prefix 'shell'
 $exe = Join-Path $Prefix 'qs.exe'
-if ($Smoke -and $Command -ne 'Start') { throw '-Smoke requires -Command Start.' }
-if ($PSBoundParameters.ContainsKey('ScreenIndex') -and -not $Smoke) { throw '-ScreenIndex requires -Smoke.' }
 
 # A normal restart is a transactional in-process reload: Quickshell retains
 # existing windows until the new graph loads. Never quit/reinstall for this.
