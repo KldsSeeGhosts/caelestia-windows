@@ -93,6 +93,16 @@ def project(path: Path) -> dict:
 def snapshot(status_only: bool = False) -> dict:
     active = running()
     try:
+        return catalog_snapshot(active, status_only)
+    except (OSError, ValueError, KeyError) as error:
+        # Process liveness is independent of config/catalogue readability.
+        # In particular, a stopped engine plus a partial config write must
+        # release the shell's external-owner guard, not retain stale "running".
+        return {"ok": True, "running": active, "discoveryError": str(error)}
+
+
+def catalog_snapshot(active: bool, status_only: bool) -> dict:
+    try:
         libs = libraries()
     except FileNotFoundError:
         return {"ok": True, "detected": False, "running": active, "active": {}, "items": [], "monitors": {}}
@@ -160,6 +170,8 @@ def main() -> None:
             if os.environ.get("CAELESTIA_COMBINED_LIVE") != "1" or os.environ.get("CAELESTIA_SHELL_SMOKE") == "1":
                 raise ValueError("Wallpaper Engine controls are disabled")
             state = snapshot()
+            if state.get("discoveryError"):
+                raise ValueError(state["discoveryError"])
             target = Path(args.project or "").resolve()
             if not state["detected"] or not state["running"]:
                 raise ValueError("Wallpaper Engine is not running")
