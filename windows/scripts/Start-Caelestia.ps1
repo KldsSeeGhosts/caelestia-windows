@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [string]$Prefix,
-    [ValidateSet('Start', 'State', 'Quit', 'Restart')][string]$Command = 'Start',
+    [ValidateSet('Start', 'State', 'Quit', 'Restart', 'Settings')][string]$Command = 'Start',
     [switch]$Smoke,
     [ValidateRange(0, 15)][int]$ScreenIndex,
     [ValidateSet('Disabled', 'Observe', 'Interactive')][string]$TilingMode = 'Disabled',
@@ -17,6 +17,22 @@ if (-not $Prefix) {
 }
 $Prefix = Resolve-CaelestiaDirectory $Prefix
 $record = Read-CaelestiaInstall $Prefix
+# Repository callers can still target the stable root. Route before building
+# a ProcessStartInfo so leftover legacy qs.exe files are never launched.
+if ($record.version -eq 2) {
+    $runtime = Resolve-CaelestiaRuntimePrefix $Prefix -Running:($Command -ne 'Start')
+    if ($Command -eq 'Settings') {
+        if ($Smoke) { throw '-Smoke requires -Command Start.' }
+        $null = Invoke-CaelestiaIpc $runtime settings
+        return
+    }
+    $arguments = @{}
+    foreach ($key in $PSBoundParameters.Keys) { $arguments[$key] = $PSBoundParameters[$key] }
+    $arguments.Prefix = $runtime
+    & (Join-Path $runtime 'Start-Caelestia.ps1') @arguments
+    return
+}
+$installRoot = if ($record.installRoot) { [string]$record.installRoot } else { $Prefix }
 $profile = Resolve-CaelestiaDirectory $record.profile
 $stage = Join-Path $Prefix 'shell'
 $exe = Join-Path $Prefix 'qs.exe'
@@ -25,8 +41,9 @@ if ($PSBoundParameters.ContainsKey('ScreenIndex') -and -not $Smoke) { throw '-Sc
 
 # A normal restart is a transactional in-process reload: Quickshell retains
 # existing windows until the new graph loads. Never quit/reinstall for this.
-if ($Command -in @('State', 'Restart')) {
+if ($Command -in @('State', 'Restart', 'Settings')) {
     if ($Command -eq 'State') { Invoke-CaelestiaIpc $Prefix state; return }
+    if ($Command -eq 'Settings') { $null = Invoke-CaelestiaIpc $Prefix settings; return }
     $reloadClock = [Diagnostics.Stopwatch]::StartNew()
     $previous = (Invoke-CaelestiaIpc $Prefix restart).Trim()
     Write-Verbose ('Reload IPC acknowledged after {0:N3}s.' -f $reloadClock.Elapsed.TotalSeconds)
@@ -42,7 +59,7 @@ if ($Command -eq 'Start') {
     # Automatically claim only an empty profile; pre-populated directories
     # without an existing marker are never auto-marked exclusive.
     if (-not (Read-CaelestiaProfileOwner $profile) -and (Test-CaelestiaProfileEmpty $profile)) {
-        Write-CaelestiaProfileOwner $profile $Prefix $(if ($record.installId) { [string]$record.installId } else { [guid]::NewGuid().ToString('N') }) $true
+        Write-CaelestiaProfileOwner $profile $installRoot $(if ($record.installId) { [string]$record.installId } else { [guid]::NewGuid().ToString('N') }) $true
     }
     foreach ($dir in @('config', 'state', 'cache', 'data', 'runtime', 'logs')) {
         New-Item -ItemType Directory -Force -Path (Join-Path $profile $dir) | Out-Null
@@ -85,6 +102,9 @@ $info.EnvironmentVariables['CAELESTIA_STATE_DIR'] = Join-Path $profile 'state'
 $info.EnvironmentVariables['CAELESTIA_BANNER_HELPER'] = Join-Path $PSScriptRoot 'Banner-Suppression.ps1'
 $info.EnvironmentVariables['CAELESTIA_RUNTIME_DIR'] = Join-Path $profile 'runtime'
 $info.EnvironmentVariables['CAELESTIA_PROFILE_ROOT'] = $profile
+$info.EnvironmentVariables['CAELESTIA_INSTALL_ROOT'] = $installRoot
+$info.EnvironmentVariables['CAELESTIA_VERSION_ID'] = [string]$record.versionId
+$info.EnvironmentVariables['CAELESTIA_SOURCE_REVISION'] = [string]$record.sourceRevision
 foreach ($directory in @('config', 'state', 'data', 'cache')) {
     $info.EnvironmentVariables["XDG_$($directory.ToUpperInvariant())_HOME"] = Join-Path $profile $directory
 }

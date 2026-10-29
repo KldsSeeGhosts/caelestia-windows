@@ -95,7 +95,12 @@ QtObject {
 
         // System
         Component {
-            PlaceholderComp {}
+            // Updates (upstream is still a placeholder; Windows page lives in the adapters)
+            StackPage {
+                Component {
+                    UpdatesPage {}
+                }
+            }
         },
         Component {
             PlaceholderComp {}

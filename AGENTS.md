@@ -64,7 +64,10 @@ installs, restarts the shell or tests live.
 
 - **Paths:** the prefix is `%LOCALAPPDATA%\Programs\caelestia-windows`. The
   profile is `%LOCALAPPDATA%\caelestia-windows`, with `config\shell.json` and
-  `config\keybinds.json`.
+  `config\keybinds.json`. Payloads live under `<prefix>\versions\<id>`;
+  `<prefix>\install.json` selects current/previous. Never run or hash
+  `<prefix>\qs.exe` as the active runtime: resolve the selected/running version
+  with `Resolve-CaelestiaRuntimePrefix` from `Caelestia-InstallCommon.ps1`.
 - **Install:**
   - For a running installation, run `Install-Caelestia.ps1 -BuildRoot <build> -Prefix <prefix> -ProfileRoot <profile> -Restart`.
     Do not quit first: it prepares while live, performs the final handoff,
@@ -77,6 +80,9 @@ installs, restarts the shell or tests live.
     `runtime\supervisor-*\watchdog-error.log` and `watchdog.stderr.log`.
   - Use `Start-Caelestia.ps1 -Command Restart` for an in-process QML reload,
     not quit/install/start. Native binary changes still require an update.
+  - Use the stable root launcher/maintenance scripts. Do not overwrite version
+    payloads in place. Settings > Updates or `Manage-Caelestia.ps1 -Command Rollback`
+    selects the retained previous version, restarts and preserves the profile.
 - **Opt-in only:** desktop takeover, autostart, taskbar and tiling changes.
   Keep only one tiling manager active.
 

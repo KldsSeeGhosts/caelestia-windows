@@ -28,15 +28,23 @@ function Resolve-CaelestiaDirectory([string]$Path) {
 
 function Read-CaelestiaInstall([string]$Prefix) {
     $record = Get-Content -LiteralPath (Join-Path $Prefix 'install.json') -Raw | ConvertFrom-Json
-    if ($record.product -ne 'caelestia-windows' -or $record.version -ne 1 -or $record.prefix -ne $Prefix) {
+    if ($record.product -ne 'caelestia-windows' -or $record.version -notin @(1, 2) -or $record.prefix -ne $Prefix) {
         throw "Not a recognized Caelestia installation: $Prefix"
+    }
+    if ($record.version -eq 2) {
+        Assert-CaelestiaVersionId ([string]$record.current)
+        if ($record.previous) { Assert-CaelestiaVersionId ([string]$record.previous) }
     }
     return $record
 }
 
 function Get-CaelestiaProcesses([string]$Prefix) {
     $exe = Join-Path $Prefix 'qs.exe'
-    return @(Get-Process -Name qs -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe })
+    $versions = Join-Path $Prefix 'versions'
+    return @(Get-Process -Name qs -ErrorAction SilentlyContinue | Where-Object {
+        $_.Path -eq $exe -or ($_.Path -and
+            [IO.Path]::GetDirectoryName([IO.Path]::GetDirectoryName($_.Path)) -eq $versions)
+    })
 }
 
 # Live desktop supervisors recorded under the profile. A supervisor in
@@ -99,6 +107,7 @@ function Get-WindowsPowerShellPath {
 
 # IPC never provisions Python, loads the account picture or starts a watchdog.
 function Invoke-CaelestiaIpc([string]$Prefix, [string]$Command, [int]$TimeoutMs = 10000) {
+    $Prefix = Resolve-CaelestiaRuntimePrefix $Prefix -Running
     $info = New-Object Diagnostics.ProcessStartInfo
     $info.FileName = Join-Path $Prefix 'qs.exe'
     $info.WorkingDirectory = $Prefix
@@ -128,7 +137,8 @@ function Wait-CaelestiaReady([string]$Prefix, [int]$TimeoutSeconds = 20, [string
             $remaining = [int]($deadline - [DateTime]::UtcNow).TotalMilliseconds
             if ($remaining -le 0) { break }
             $state = Invoke-CaelestiaIpc $Prefix state ([Math]::Min(1000, $remaining)) | ConvertFrom-Json
-            if (($state.lifecycle.ready -eq $true -or ($LegacyReady -and $state.screens -gt 0 -and $state.windows.Count -eq $state.screens)) -and
+            if (($state.lifecycle.ready -eq $true -or ($LegacyReady -and -not $state.PSObject.Properties['lifecycle'] -and
+                    $state.screens -gt 0 -and $state.windows.Count -eq $state.screens)) -and
                 (-not $PreviousGeneration -or $state.lifecycle.generation -ne $PreviousGeneration)) { return }
         } catch { }
         if ($TaskName -and $clock.Elapsed.TotalSeconds -ge 1) {
@@ -266,3 +276,5 @@ function Get-CaelestiaIntegration([string]$Prefix) {
         Shortcut = Join-Path ([Environment]::GetFolderPath('Programs')) "Caelestia Windows$suffix.lnk"
     }
 }
+
+. (Join-Path $PSScriptRoot 'Caelestia-Versions.ps1')

@@ -22,6 +22,7 @@ param(
 # A temporary deployed runtime, with read-only smoke on one secondary display.
 # No takeover supervisor, taskbar changes, global recovery or desktop input.
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'Caelestia-InstallCommon.ps1')
 $startedAt = [DateTime]::UtcNow
 $deadline = $startedAt.AddSeconds($TimeoutSeconds)
 $repoRoot = (Resolve-Path -LiteralPath "$PSScriptRoot\..\..").Path
@@ -30,6 +31,7 @@ if (-not $OutputRoot) { $OutputRoot = Join-Path $repoRoot ('windows\.local\frame
 New-Item -ItemType Directory -Force -Path $OutputRoot | Out-Null
 $temporaryRoot = Join-Path $env:TEMP ('caelestia-frame-' + [guid]::NewGuid().ToString('N'))
 $prefix = Join-Path $temporaryRoot 'install'
+$runtimePrefix = $prefix
 $profile = Join-Path $temporaryRoot 'profile'
 $powershellExe = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
 $launcher = $null
@@ -96,7 +98,7 @@ function Invoke-QsIpc([string[]]$IpcArgs, [int]$TimeoutMs = 5000, [switch]$Allow
         if ($_ -match '[\s"]') { '"' + ($_ -replace '"', '\"') + '"' } else { $_ }
     })
     $info = New-Object Diagnostics.ProcessStartInfo
-    $info.FileName = "$prefix\qs.exe"
+    $info.FileName = "$runtimePrefix\qs.exe"
     $info.Arguments = $quoted -join ' '
     $info.WorkingDirectory = $prefix
     $info.UseShellExecute = $false
@@ -128,7 +130,7 @@ function Invoke-QsIpc([string[]]$IpcArgs, [int]$TimeoutMs = 5000, [switch]$Allow
     return $result
 }
 function ShellState {
-    $result = Invoke-QsIpc @('ipc', '--path', "$prefix\shell\shell.qml", 'call', 'shell', 'state') 5000 -AllowTimeout
+    $result = Invoke-QsIpc @('ipc', '--path', "$runtimePrefix\shell\shell.qml", 'call', 'shell', 'state') 5000 -AllowTimeout
     if ($result.timedOut -or $result.exitCode -ne 0) { return $null }
     try { return $result.stdout | ConvertFrom-Json } catch { return $null }
 }
@@ -145,7 +147,7 @@ function Stop-OwnedProcesses {
     # This exact executable path identifies only this test's children, even when
     # the live shell has a running supervisor and identical process name.
     $owned = @(Get-Process qs -ErrorAction SilentlyContinue | ForEach-Object {
-        try { if ($_.Path -eq "$prefix\qs.exe") { $_ } } catch {}
+        try { if ($_.Path -eq "$runtimePrefix\qs.exe") { $_ } } catch {}
     })
     foreach ($child in $owned) {
         if ($child.HasExited) { continue }
@@ -181,9 +183,10 @@ if ($ReusePrefix) {
     $profile = Join-Path $temporaryRoot 'profile'
     Assert ((Split-Path -Leaf $prefix) -eq 'install') 'ReusePrefix must be the install directory of a caelestia-frame-* run.'
     Assert ((Split-Path -Leaf $temporaryRoot) -like 'caelestia-frame-*') 'ReusePrefix must be a caelestia-frame-* temporary run.'
-    Assert (Test-Path -LiteralPath "$prefix\qs.exe") "Reused prefix has no deployed runtime: $prefix"
     Assert (Test-Path -LiteralPath "$prefix\install.json") "Reused prefix has no install record: $prefix"
-    Assert (Test-Path -LiteralPath "$prefix\shell\shell.qml") "Reused prefix has no staged shell: $prefix"
+    $runtimePrefix = Resolve-CaelestiaRuntimePrefix $prefix
+    Assert (Test-Path -LiteralPath "$runtimePrefix\qs.exe") "Reused prefix has no deployed runtime: $prefix"
+    Assert (Test-Path -LiteralPath "$runtimePrefix\shell\shell.qml") "Reused prefix has no staged shell: $prefix"
     Assert (Test-Path -LiteralPath "$profile\config") "Reused prefix has no temporary profile: $profile"
     $summary.prefix = $prefix
     $summary.profile = $profile
@@ -202,6 +205,7 @@ try {
             -Prefix $prefix -ProfileRoot $profile *> "$OutputRoot\install.log"
     }
     Set-Phase 'installed'
+    $runtimePrefix = Resolve-CaelestiaRuntimePrefix $prefix
 
     # Seed the temporary profile exactly as Start-Caelestia would, so the
     # fixture phase also works with -SkipSmoke and a reused install.
@@ -211,7 +215,7 @@ try {
     foreach ($name in @('shell.json', 'keybinds.json', 'windows.json')) {
         $target = Join-Path $profile "config\$name"
         if (-not (Test-Path -LiteralPath $target)) {
-            Copy-Item -LiteralPath "$prefix\defaults\$name" -Destination $target
+            Copy-Item -LiteralPath "$runtimePrefix\defaults\$name" -Destination $target
         }
     }
 
@@ -258,7 +262,7 @@ try {
         $summary.keyboard = $state.keyboard
         Set-Phase 'smoke-complete'
 
-        $quit = Invoke-QsIpc @('ipc', '--path', "$prefix\shell\shell.qml", 'call', 'shell', 'quit') 5000
+        $quit = Invoke-QsIpc @('ipc', '--path', "$runtimePrefix\shell\shell.qml", 'call', 'shell', 'quit') 5000
         Assert ($quit.exitCode -eq 0) "Could not quit the installed smoke: $($quit.stderr)"
         Assert ($launcher.WaitForExit(15000)) 'The smoke launcher did not finish after quit.'
         Assert ($launcher.ExitCode -eq 0) 'The installed smoke failed; inspect launch logs.'
@@ -267,18 +271,18 @@ try {
 
     # Exercise stable fullscreen reservations using the actual exclusions.
     # A real fullscreen target would also change the installed live shell.
-    Copy-Item -LiteralPath "$repoRoot\windows\combined-prototype\FrameExclusionsTest.qml" -Destination "$prefix\shell\frame-test.qml" -Force
+    Copy-Item -LiteralPath "$repoRoot\windows\combined-prototype\FrameExclusionsTest.qml" -Destination "$runtimePrefix\shell\frame-test.qml" -Force
     $info = New-Object Diagnostics.ProcessStartInfo
-    $info.FileName = "$prefix\qs.exe"
-    $info.Arguments = '--no-color --path "' + "$prefix\shell\frame-test.qml" + '"'
-    $info.WorkingDirectory = $prefix
+    $info.FileName = "$runtimePrefix\qs.exe"
+    $info.Arguments = '--no-color --path "' + "$runtimePrefix\shell\frame-test.qml" + '"'
+    $info.WorkingDirectory = $runtimePrefix
     $info.UseShellExecute = $false
     $info.CreateNoWindow = $true
     $info.RedirectStandardOutput = $true
     $info.RedirectStandardError = $true
-    $info.EnvironmentVariables['PATH'] = "$prefix;$env:SystemRoot\System32;$env:SystemRoot"
-    $info.EnvironmentVariables['QML_IMPORT_PATH'] = "$prefix\shell\imports;$prefix\qml"
-    $info.EnvironmentVariables['QML2_IMPORT_PATH'] = "$prefix\shell\imports;$prefix\qml"
+    $info.EnvironmentVariables['PATH'] = "$runtimePrefix;$env:SystemRoot\System32;$env:SystemRoot"
+    $info.EnvironmentVariables['QML_IMPORT_PATH'] = "$runtimePrefix\shell\imports;$runtimePrefix\qml"
+    $info.EnvironmentVariables['QML2_IMPORT_PATH'] = "$runtimePrefix\shell\imports;$runtimePrefix\qml"
     $info.EnvironmentVariables['CAELESTIA_CONFIG_DIR'] = "$profile\config"
     $info.EnvironmentVariables['CAELESTIA_STATE_DIR'] = "$profile\state"
     $info.EnvironmentVariables['CAELESTIA_RUNTIME_DIR'] = "$profile\runtime"

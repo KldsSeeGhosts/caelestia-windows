@@ -55,6 +55,10 @@ public static class LifecycleIpcFixture {
         try { Wait-CaelestiaReady $root -TimeoutSeconds 1 } catch { $refused = $_ -match 'did not become ready' }
         if (-not $refused) { throw "Readiness accepted $mode." }
     }
+    Set-Mode not-ready
+    $refused = $false
+    try { Wait-CaelestiaReady $root -TimeoutSeconds 1 -LegacyReady } catch { $refused = $_ -match 'did not become ready' }
+    if (-not $refused) { throw 'Legacy compatibility bypassed an explicit not-ready state.' }
     Set-Mode failure
     $refused = $false
     try { Invoke-CaelestiaIpc $root state }
