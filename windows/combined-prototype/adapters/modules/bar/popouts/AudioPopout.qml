@@ -7,7 +7,8 @@ import qs.services
 // hooks. This adapter applies exactly the read-only wiring the bounded audio
 // prototype host uses: every control hook follows the facade's control
 // availability, which is false whenever CAELESTIA_WINDOWS_AUDIO_CONTROLS is
-// off, and the original settings button is not staged.
+// off, and the original settings button is not staged. The per-app mixer
+// (AudioMixer.qml) loads under the master volume through the `mixer` hook.
 AudioPopoutContent {
     outputControlsEnabled: Audio.outputControlsAvailable
     outputSelectionEnabled: Audio.sinks.some(node => Audio.canControl(node))
@@ -15,4 +16,7 @@ AudioPopoutContent {
     volumeAvailable: Audio.outputAvailable
     nodeControlsAvailable: node => Audio.canControl(node)
     settingsEnabled: false
+    mixer: Component {
+        AudioMixer {}
+    }
 }

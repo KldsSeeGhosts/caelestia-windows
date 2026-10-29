@@ -68,6 +68,17 @@ QtObject {
     }
     readonly property string outputReason: outputAvailable ? "" : (ready ? "No ready default audio output is available." : reason)
     readonly property string inputReason: inputAvailable ? "" : (ready ? "No ready default audio input is available." : reason)
+    // Shared by the app volume page and the bar mixer: empty while every listed
+    // application stream is controllable, otherwise why some or all are not.
+    readonly property string streamControlsReason: {
+        if (!ready || !controlsEnabled)
+            return reason;
+        const blocked = streams.filter(stream => !canControl(stream));
+        if (blocked.length === 0)
+            return "";
+        const errors = blocked.map(stream => errorText(stream.audio.controlError)).filter(error => error.length > 0);
+        return errors.length > 0 ? "Windows audio reported a stream error: " + errors.join(" ") : reason;
+    }
 
     readonly property bool muted: getStreamMuted(sink)
     readonly property real volume: getStreamVolume(sink)

@@ -17,7 +17,7 @@ Caelestia for Windows provides a full QtQuick desktop shell alongside or in plac
 
 It runs the original Caelestia QML components, Material 3 Expressive shapes (`M3Shapes`), shaders, and spring/bezier motion curves natively on Windows, providing:
 
-- **Left vertical bar:** App launcher button (logo), workspace indicators, active window title, system tray icons, clock, status icons (audio, Wi-Fi/Ethernet, Bluetooth, battery), status popouts, and power button. In full-screen shell mode, the bar registers a native Windows AppBar so maximized and tiled windows stop at the bar edge.
+- **Left vertical bar:** App launcher button (logo), workspace indicators, active window title, system tray icons, clock, status icons (audio, Wi-Fi/Ethernet, Bluetooth, battery), status popouts (the audio popout also lists per-app volumes with mute), and power button. In full-screen shell mode, the bar registers a native Windows AppBar so maximized and tiled windows stop at the bar edge.
 - **Launcher:** Instant app search over Windows `AppsFolder` and Start menu shortcuts (using Caelestia's original `fzf` smart-case and `fuzzysort` ranking), command actions (`>`), built-in math evaluator (`> calc`), and wallpaper switcher (`> wallpaper`).
 - **Dashboard:** Four-tab top drawer with user profile, calendar, weather forecast, media player controls (via Windows GSMTC), and live hardware performance graphs (CPU, GPU, RAM, storage, and network throughput sparklines).
 - **Desktop background:** Original Caelestia wallpaper surface (with shader transitions), desktop clock, and audio visualizer layer embedded directly into the Windows `Progman`/`WorkerW` desktop plane (either behind or above Explorer desktop icons).

@@ -26,6 +26,7 @@
   "windows/combined-prototype/adapters/modules/bar/popouts/Wrapper.qml": "modules/bar/popouts/Wrapper.qml",
   "windows/combined-prototype/adapters/modules/bar/popouts/ActiveWindow.qml": "modules/bar/popouts/ActiveWindow.qml",
   "windows/combined-prototype/adapters/modules/bar/popouts/AudioPopout.qml": "modules/bar/popouts/AudioPopout.qml",
+  "windows/combined-prototype/adapters/modules/bar/popouts/AudioMixer.qml": "modules/bar/popouts/AudioMixer.qml",
   "windows/combined-prototype/adapters/modules/bar/popouts/Network.qml": "modules/bar/popouts/Network.qml",
   "windows/combined-prototype/adapters/modules/bar/popouts/Bluetooth.qml": "modules/bar/popouts/Bluetooth.qml",
   "windows/combined-prototype/adapters/modules/bar/popouts/Battery.qml": "modules/bar/popouts/Battery.qml",
