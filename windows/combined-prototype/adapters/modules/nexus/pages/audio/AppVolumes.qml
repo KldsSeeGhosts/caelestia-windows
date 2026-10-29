@@ -24,7 +24,15 @@ PageBase {
     title: Tr.tr("App volumes")
     isSubPage: true
 
-    readonly property string controlsReason: Audio.streamControlsReason
+    readonly property string controlsReason: {
+        if (!Audio.enabled || Audio.status !== "ready" || !Audio.controlsEnabled)
+            return Audio.reason;
+        const blocked = Audio.streams.filter(stream => !Audio.canControl(stream));
+        if (blocked.length === 0)
+            return "";
+        const errors = blocked.map(stream => Audio.errorText(stream?.audio?.controlError)).filter(error => error.length > 0);
+        return errors.length > 0 ? "Windows audio reported a stream error: " + errors.join(" ") : Audio.reason;
+    }
 
     ColumnLayout {
         anchors.horizontalCenter: parent.horizontalCenter

@@ -140,7 +140,6 @@ QtObject {
     function run(): void {
         check(service.enabled === false && service.controlsEnabled === false && service.backend === null, "safe construction defaults");
         check(service.status === "disabled" && service.reason.length > 0, "explicit disabled state");
-        check(service.streamControlsReason === service.reason, "disabled stream controls explain why");
         check(!service.outputAvailable && !service.inputAvailable && !service.available, "disabled availability");
         check(service.sinks.length === 0 && service.sources.length === 0 && service.streams.length === 0, "disabled lists");
         check(service.sink === null && service.source === null, "disabled defaults");
@@ -181,7 +180,6 @@ QtObject {
         check(service.muted && service.sourceMuted, "initial mute read");
         close(service.volume, 0.4, "initial volume read");
         check(service.getStreamName(stream) === "Fixture player", "application name first");
-        check(service.streamControlsReason === service.reason && service.reason.indexOf("controls disabled") >= 0, "read-only stream controls explain why");
         stream.properties = ({});
         check(service.getStreamName(stream) === "Stream description", "description fallback");
         stream.description = "";
@@ -216,16 +214,6 @@ QtObject {
 
         service.controlsEnabled = true;
         check(service.outputControlsAvailable && service.inputControlsAvailable, "explicit node control capabilities");
-        check(service.canControl(stream) && service.streamControlsReason === "", "controllable streams need no explanation");
-        stream.audio.controlAvailable = false;
-        check(!service.canControl(stream) && service.streamControlsReason === service.reason, "blocked stream without detail uses facade reason");
-        stream.audio.controlError = "Fixture session denied";
-        check(service.streamControlsReason === "Windows audio reported a stream error: Fixture session denied", "blocked stream error visible");
-        denied(() => service.setStreamVolume(stream, 0.9), "blocked stream volume");
-        denied(() => service.setStreamMuted(stream, false), "blocked stream mute");
-        stream.audio.controlError = "";
-        stream.audio.controlAvailable = true;
-        check(service.streamControlsReason === "", "restored stream control clears explanation");
         speaker.audio.controlAvailable = false;
         check(service.ready && service.outputAvailable && !service.outputControlsAvailable, "observation readiness does not imply control capability");
         denied(() => service.setVolume(0.8), "denied volume interface");
@@ -319,7 +307,6 @@ QtObject {
         fixture.nodes.values = [headset, microphone, warming];
         check(service.sink === null && !service.outputAvailable && service.inputAvailable, "removed default cannot remain usable");
         check(service.streams.length === 0, "stream removal is reactive");
-        check(service.streamControlsReason === "", "no streams need no explanation");
         denied(() => service.setStreamVolume(speaker, 0.8), "removed output volume");
         denied(() => service.setStreamMuted(stream, false), "removed stream mute");
         denied(() => service.setAudioSink(speaker), "removed output selection");

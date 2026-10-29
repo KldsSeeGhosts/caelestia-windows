@@ -22,8 +22,6 @@ Item {
     property bool settingsEnabled: true
     property bool volumeAvailable: true
     property var nodeControlsAvailable: node => true
-    // Windows host: optional per-app mixer shown under the master volume.
-    property Component mixer: null
 
     implicitWidth: Tokens.sizes.bar.audioWidth
     implicitHeight: layout.implicitHeight + Tokens.padding.medium * 2
@@ -113,14 +111,6 @@ Item {
                 value: Audio.volume
                 onInteraction: value => Audio.setVolume(value)
             }
-        }
-
-        Loader {
-            Layout.fillWidth: true
-            Layout.topMargin: Tokens.spacing.medium
-            active: root.mixer !== null
-            visible: active
-            sourceComponent: root.mixer
         }
 
         IconTextButton {
