@@ -156,6 +156,11 @@ Item {
         contentHeight: stack.implicitHeight
         flickableDirection: Flickable.VerticalFlick
         boundsBehavior: Flickable.StopAtBounds
+        StyledScrollBar.vertical: StyledScrollBar {
+            objectName: "quotaScrollBar"
+            flickable: body
+            policy: ScrollBar.AlwaysOn
+        }
         Column {
             id: stack
             width: body.width

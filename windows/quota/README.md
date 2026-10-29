@@ -47,7 +47,7 @@ The response is mapped onto the original drawer model:
 | `accounts[].windows[]` | quota meters (`usedPercent`, `resetAt` countdown) |
 | window id with a model scope (`seven-day-opus`, …) | extra meters after the account's main windows |
 | `todayCostUsd` | the spend card's Today total until analytics answer |
-| analytics `channel_share[].cost` | the spend card's donut and legend |
+| analytics `channel_share[].cost` | the compact spend disclosure's per-provider breakdown |
 | `providers[].status/error`, `accounts[].status/error` | saved, disabled, reconnect and error notices |
 
 `remainingPercent` is used only when `usedPercent` is absent. Windows whose

@@ -279,6 +279,15 @@ ShellRoot {
             const row = i.parent.mapToItem(body.contentItem, 0, 0);
             return at.x < row.x - 1 || at.x + i.width > row.x + i.parent.width + 1;
         });
+        const paceGroups = [];
+        root.collectNamed(body.contentItem, "quotaMeterPaceGroup", paceGroups);
+        const paceTogether = paceGroups.filter(g => g.visible).every(g => {
+            const text = root.findNamed(g, "quotaMeterPace");
+            const flame = root.findNamed(g, "quotaMeterFlame");
+            return text && flame && text.visible === g.fits
+                && flame.visible === (g.fits && g.hasFlame)
+                && (!flame.visible || Math.abs(text.x - flame.x - flame.width - 2) <= 1);
+        });
         const overflow = innerOverflow || rows.some(r => r.left < -1 || r.right > body.width + 1)
             || spendPos.x < -1 || spendPos.x + spend.width > body.width + 1;
         const keepalive = root.findNamed(quota, "quotaKeepalive");
@@ -289,6 +298,7 @@ ShellRoot {
         });
         return {
             body: body, spend: spend, details: details, rows: rows, footerOk: footerOk, overflow: overflow,
+            paceTogether: paceTogether, scrollCue: !!root.findNamed(quota, "quotaScrollBar"),
             tabCount: tabs.length,
             tabTop: tabs.length ? tabs[0].mapToItem(body.contentItem, 0, 0).y : -1,
             bodyH: body.height, contentH: body.contentHeight, contentY: body.contentY, quotaH: quota.height,
@@ -314,6 +324,8 @@ ShellRoot {
             return "first limit starts too low: " + m.rows[0].top;
         if (m.overflow)
             return "content overflows the drawer width";
+        if (!m.paceTogether || !m.scrollCue)
+            return "pace icon/text or scroll cue is inconsistent";
         if (!m.footerOk)
             return "refresh or keepalive left the footer";
         if (m.quotaH > root.geometry.h + 1)
@@ -343,6 +355,8 @@ ShellRoot {
             return "drawer parts missing";
         if (m.overflow)
             return "content overflows the drawer width";
+        if (!m.paceTogether || !m.scrollCue)
+            return "pace icon/text or scroll cue is inconsistent";
         if (!m.footerOk)
             return "refresh or keepalive left the footer";
         if (m.quotaH > root.geometry.h + 1)

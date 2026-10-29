@@ -128,28 +128,47 @@ Column {
             color: root.muted
             font.features: ({"tnum": 1})
         }
-        MaterialIcon {
-            visible: !!root.pace && !!root.pace.duration
-            Layout.rightMargin: -6
-            text: "local_fire_department"
-            fill: 1
-            color: Colours.palette.m3error
-            fontStyle: Tokens.font.icon.size(11).build()
-        }
-        StyledText {
-            objectName: "quotaMeterPace"
+        Item {
+            id: paceGroup
+            objectName: "quotaMeterPaceGroup"
             visible: !!root.pace
             Layout.fillWidth: true
             Layout.minimumWidth: 0
-            horizontalAlignment: Text.AlignRight
-            // Shorter wording on a narrow drawer, so the projection is not cut off.
-            text: !root.pace ? "" : root.pace.duration ? (root.width < 260 ? qsTr("Out in ~%1") : qsTr("Runs out in ~%1")).arg(root.pace.duration)
-                : (root.width < 260 ? qsTr("~%1% at reset") : qsTr("~%1% left at reset")).arg(root.pace.left)
-            elide: Text.ElideRight
-            color: root.muted
-            font.family: root.family
-            font.pixelSize: 12
-            font.features: ({"tnum": 1})
+            readonly property bool hasFlame: !!root.pace && !!root.pace.duration
+            readonly property real wantedWidth: paceText.implicitWidth + (hasFlame ? flame.implicitWidth + 2 : 0)
+            readonly property bool fits: width >= wantedWidth
+            implicitWidth: wantedWidth
+            implicitHeight: Math.max(paceText.implicitHeight, hasFlame ? flame.implicitHeight : 0)
+
+            // Keep the icon beside its text; omit the whole secondary projection
+            // if it cannot fit instead of leaving an unexplained flame behind.
+            MaterialIcon {
+                id: flame
+                objectName: "quotaMeterFlame"
+                visible: paceGroup.hasFlame && paceGroup.fits
+                anchors.right: paceText.left
+                anchors.rightMargin: 2
+                anchors.verticalCenter: parent.verticalCenter
+                text: "local_fire_department"
+                fill: 1
+                color: Colours.palette.m3error
+                fontStyle: Tokens.font.icon.size(11).build()
+            }
+            StyledText {
+                id: paceText
+                objectName: "quotaMeterPace"
+                visible: paceGroup.fits
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                width: Math.min(implicitWidth, parent.width)
+                horizontalAlignment: Text.AlignRight
+                text: !root.pace ? "" : root.pace.duration ? (root.width < 260 ? qsTr("Out in ~%1") : qsTr("Runs out in ~%1")).arg(root.pace.duration)
+                    : (root.width < 260 ? qsTr("~%1% at reset") : qsTr("~%1% left at reset")).arg(root.pace.left)
+                color: root.muted
+                font.family: root.family
+                font.pixelSize: 12
+                font.features: ({"tnum": 1})
+            }
         }
     }
     HoverHandler { id: meterHover }
