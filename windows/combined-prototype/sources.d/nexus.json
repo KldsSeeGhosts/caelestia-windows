@@ -54,6 +54,7 @@
   "windows/combined-prototype/adapters/modules/nexus/pages/ServicesPage.qml": "modules/nexus/pages/ServicesPage.qml",
   "windows/combined-prototype/adapters/modules/nexus/pages/WindowManagementPage.qml": "modules/nexus/pages/WindowManagementPage.qml",
   "windows/combined-prototype/adapters/modules/nexus/pages/AboutPage.qml": "modules/nexus/pages/AboutPage.qml",
+  "windows/combined-prototype/adapters/modules/nexus/pages/UpdatesPage.qml": "modules/nexus/pages/UpdatesPage.qml",
   "windows/combined-prototype/adapters/modules/nexus/pages/bluetooth/BtDeviceInfo.qml": "modules/nexus/pages/bluetooth/BtDeviceInfo.qml",
   "windows/combined-prototype/adapters/modules/nexus/pages/bluetooth/BluetoothPairing.qml": "modules/nexus/pages/bluetooth/BluetoothPairing.qml",
   "windows/combined-prototype/adapters/modules/nexus/pages/network/AddNetworkPage.qml": "modules/nexus/pages/network/AddNetworkPage.qml",
