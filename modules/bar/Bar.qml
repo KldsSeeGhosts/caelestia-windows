@@ -25,7 +25,8 @@ ColumnLayout {
 
         for (let i = 0; i < repeater.count; i++) {
             const tray = (repeater.itemAt(i) as EntryWrapper)?.item as Tray;
-            if (tray)
+            // Windows click-toggle trays stay open until explicitly toggled.
+            if (tray && tray.autoCollapse)
                 tray.expanded = false;
         }
     }
