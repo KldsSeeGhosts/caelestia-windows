@@ -8,6 +8,7 @@ import Caelestia.I18n
 import Caelestia.Services
 import qs.services
 import qs.utils
+import qs.modules.nexus
 
 Searcher {
     id: root
@@ -24,6 +25,7 @@ Searcher {
 
         model: [
             {name: "Calculator", description: "Arithmetic and functions", icon: "calculate", command: ["autocomplete", "calc"]},
+            {name: "Settings", description: "Open Caelestia settings (Nexus)", icon: "settings", command: ["settings"]},
             {name: "Screenshot", description: "Capture and annotate with Glazier", icon: "screenshot_region", command: ["screenshot"]},
             {name: "Wallpaper", description: "Browse wallpaper folder", icon: "wallpaper", command: ["autocomplete", "wallpaper"]},
             {name: "Choose wallpaper file", description: "Open Windows image picker (Live controls)", icon: "image", command: ["chooseWallpaper"]},
@@ -53,6 +55,9 @@ Searcher {
 
             if (command[0] === "autocomplete" && command.length > 1) {
                 list.search.text = `${GlobalConfig.launcher.actionPrefix}${command[1]} `;
+            } else if (command[0] === "settings") {
+                list.screenState.launcher = false;
+                WindowFactory.create();
             } else if (command[0] === "chooseWallpaper") {
                 Wallpapers.choose();
             } else if (command[0] === "screenshot") {

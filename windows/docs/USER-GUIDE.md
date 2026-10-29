@@ -17,7 +17,7 @@ Caelestia for Windows provides a full QtQuick desktop shell alongside or in plac
 
 It runs the original Caelestia QML components, Material 3 Expressive shapes (`M3Shapes`), shaders, and spring/bezier motion curves natively on Windows, providing:
 
-- **Left vertical bar:** App launcher button (logo), workspace indicators, active window title, system tray icons, clock, status icons (audio, Wi-Fi/Ethernet, Bluetooth, battery), status popouts, and power button. In full-screen shell mode, the bar registers a native Windows AppBar so maximized and tiled windows stop at the bar edge.
+- **Left vertical bar:** App launcher button (logo), workspace indicators, active window title, system tray icons, clock, status icons (audio, Wi-Fi/Ethernet, Bluetooth, battery), status popouts, and power button. The audio popout follows upstream: output/input devices, master volume, and **Open settings** for Nexus Audio. App-volume controls live in **Audio > App volumes**, not in the popout. In full-screen shell mode, the bar registers a native Windows AppBar so maximized and tiled windows stop at the bar edge.
 - **Launcher:** Instant app search over Windows `AppsFolder` and Start menu shortcuts (using Caelestia's original `fzf` smart-case and `fuzzysort` ranking), command actions (`>`), built-in math evaluator (`> calc`), and wallpaper switcher (`> wallpaper`).
 - **Dashboard:** Four-tab top drawer with user profile, calendar, weather forecast, media player controls (via Windows GSMTC), and live hardware performance graphs (CPU, GPU, RAM, storage, and network throughput sparklines).
 - **Desktop background:** Original Caelestia wallpaper surface (with shader transitions), desktop clock, and audio visualizer layer embedded directly into the Windows `Progman`/`WorkerW` desktop plane (either behind or above Explorer desktop icons).
@@ -514,7 +514,7 @@ Open it from:
 1. the `caelestia:nexus` global shortcut — registered but not bound by default; add a `global` bind in `config/keybinds.json`;
 2. the utilities drawer's **settings** quick toggle.
 
-The bar popout wrapper still supports upstream's detached mode: when a popout requests it, the wrapper opens this window on the requested page instead of an inline overlay. The staged Windows audio and Bluetooth popouts currently show their content attached (the Bluetooth popout offers the Windows Settings action instead), so no shipped control requests it yet.
+The bar popout wrapper supports upstream's detached mode: the audio popout's **Open settings** button opens Nexus on **Audio**, where **App volumes** opens the existing mixer. As on upstream, the mixer lists individual audio streams; an application with multiple sessions can appear more than once. The Bluetooth popout instead offers the Windows Settings action.
 
 Nexus writes the global `Caelestia.Config` layer, so every change lands in `%LOCALAPPDATA%\caelestia-windows\config\shell.json` and applies live; the settings file watcher also reloads the window when you edit that file by hand. Only schema keys are written, so no option is quarantined.
 
