@@ -12,7 +12,7 @@ import qs.modules.nexus.common
 
 // Windows adaptation of modules/nexus/pages/NetworkPage.qml.
 //
-// Kept from upstream: the page title, spacing, Wi-Fi toggle, rescan cadence,
+// Kept from upstream: the page title, spacing, Wi-Fi toggle,
 // network list, "show all"/"saved networks"/"add network" rows and the whole
 // List motion. Changed for Windows:
 //   * the wired section uses the backend's single connected flag instead of
@@ -31,6 +31,8 @@ PageBase {
     // The Windows scanner runs only while a caller says the list is visible and
     // the controls opt-in is on. Every window and sub-page registers its own
     // interest, so closing one Nexus window cannot stop another window's scan.
+    // The native backend scans on show and every eight seconds while visible;
+    // a second page timer duplicates that work and overwrites command feedback.
     function setVisibility(visible: bool): void {
         if (visible)
             Nmcli.acquireListVisibility(root);
@@ -61,30 +63,6 @@ PageBase {
         anchors.top: parent.top
         width: root.cappedWidth
         spacing: Tokens.spacing.extraSmall / 2
-
-        Timer {
-            running: root.visible && Nmcli.wifiEnabled
-            repeat: true
-            triggeredOnStart: true
-            interval: GlobalConfig.nexus.networkRescanInterval
-            onTriggered: Nmcli.rescanWifi()
-        }
-
-        Timer {
-            id: wifiScanDelay
-
-            interval: 100
-            onTriggered: Nmcli.rescanWifi()
-        }
-
-        Connections {
-            function onWifiEnabledChanged(): void {
-                if (Nmcli.wifiEnabled)
-                    wifiScanDelay.start();
-            }
-
-            target: Nmcli
-        }
 
         // Wired connection. The pinned backend reports a connected flag only,
         // so no address, speed or usage rows are fabricated.
