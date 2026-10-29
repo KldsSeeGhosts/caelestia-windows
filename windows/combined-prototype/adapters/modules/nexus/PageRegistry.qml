@@ -62,7 +62,7 @@ QtObject {
         {
             label: Tr.tr("Updates"),
             icon: "update",
-            description: Tr.tr("System updates"),
+            description: Tr.tr("Installed versions, rollback"),
             category: "system"
         },
         {

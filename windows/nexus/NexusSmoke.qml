@@ -368,8 +368,21 @@ ShellRoot {
                 root.searchField.clear();
                 root.typeQuery("clock");
                 root.inputDriver.keyClick(Qt.Key_Return);
-                root.check(root.nexusItem.nState.pendingSearchRoute?.path.join(",") === "2,10",
-                    "new page did not replace the pending route");
+                // Native key delivery can pump events and apply the replacement
+                // before this assertion. Accept queued OR correctly applied;
+                // the next step still checks the resulting Clock page.
+                const ns = root.nexusItem.nState;
+                const clockQueued = ns.pendingSearchRoute?.path.join(",") === "2,10";
+                const clockApplied = ns.currentPageIdx === root.searchResults.results[0]?.pageIndex
+                    && ns.subPageIdxStack.join(",") === "2,10";
+                root.check(clockQueued || clockApplied,
+                    "new page did not replace the pending route " + JSON.stringify({
+                        query: root.searchField.text,
+                        first: root.searchResults.results[0],
+                        pending: ns.pendingSearchRoute,
+                        pageIndex: ns.currentPageIdx,
+                        path: ns.subPageIdxStack
+                    }));
                 root.step++;
                 driver.interval = 900;
                 return;

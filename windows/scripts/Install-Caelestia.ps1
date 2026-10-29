@@ -133,6 +133,9 @@ $old = $null
 if ((Test-Path -LiteralPath $Prefix) -and (Get-ChildItem -LiteralPath $Prefix -Force | Select-Object -First 1)) {
     if (Test-Path -LiteralPath (Join-Path $Prefix 'install.json')) {
         $old = Read-CaelestiaInstall $Prefix
+        if ($old.installRoot -and $old.installRoot -ne $Prefix) {
+            throw 'Do not install into an immutable version directory. Use its stable installRoot.'
+        }
         if ($old.profile -ne $ProfileRoot) { throw 'An update must retain the installed ProfileRoot.' }
     } elseif (-not $Force -or -not ((Test-Path -LiteralPath (Join-Path $Prefix 'qs.exe')) -or (Test-Path -LiteralPath (Join-Path $Prefix 'Start-Caelestia.ps1')))) {
         # Only an interrupted Caelestia copy (no install.json) can be replaced, and only with -Force.
@@ -172,12 +175,6 @@ $installId = if ($old -and $old.installId) { [string]$old.installId } else { [gu
 # The payload is a sibling of the prefix, so the final swap is a same-volume rename.
 $payload = "$Prefix.staging-$PID"
 $preparation = [Diagnostics.Stopwatch]::StartNew()
-$handoff = $null
-$stoppedForUpdate = $false
-$replacementActive = $false
-$backupReady = $false
-$updateCommitted = $false
-$launchTask = $null
 New-Item -ItemType Directory -Force -Path $prefixParent | Out-Null
 New-Item -ItemType Directory -Path $payload | Out-Null
 try {
@@ -196,7 +193,7 @@ try {
     Copy-Item -LiteralPath "$repoRoot\windows\shell\shell.json" -Destination "$payload\defaults\shell.json"
     Copy-Item -LiteralPath "$repoRoot\windows\shell\windows.json" -Destination "$payload\defaults\windows.json"
     Copy-Item -LiteralPath "$repoRoot\defaults\windows\keybinds.json" -Destination "$payload\defaults\keybinds.json"
-    foreach ($script in @('Start-Caelestia.ps1', 'Uninstall-Caelestia.ps1', 'Caelestia-InstallCommon.ps1', 'Start-DesktopShell.ps1', 'Watch-DesktopShell.ps1', 'Restore-Desktop.ps1', 'DesktopTakeover.cs', 'Install-SchemeRuntime.ps1', 'Get-AccountPicture.ps1', 'Banner-Suppression.ps1')) {
+    foreach ($script in @('Start-Caelestia.ps1', 'Start-CaelestiaEntry.ps1', 'Manage-Caelestia.ps1', 'Caelestia-Versions.ps1', 'Uninstall-Caelestia.ps1', 'Caelestia-InstallCommon.ps1', 'Start-DesktopShell.ps1', 'Watch-DesktopShell.ps1', 'Restore-Desktop.ps1', 'DesktopTakeover.cs', 'Install-SchemeRuntime.ps1', 'Get-AccountPicture.ps1', 'Banner-Suppression.ps1')) {
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot $script) -Destination $payload
     }
     # Compile once while the old shell is alive, not on every watchdog launch.
@@ -270,77 +267,14 @@ try {
         product = 'caelestia-windows'; version = 1; prefix = $Prefix; profile = $ProfileRoot
         installId = $installId
         sourceRevision = (& git -C $repoRoot rev-parse HEAD).Trim()
+        backendRevision = $(if ($buildInfo) { $buildInfo.backendRevision } else { '' })
         executableSha256 = (Get-FileHash -LiteralPath "$payload\qs.exe").Hash
     } | ConvertTo-Json | Set-Content -LiteralPath "$payload\install.json" -Encoding UTF8
     Remove-Item -LiteralPath "$payload\.caelestia-staging.json" -Force -ErrorAction SilentlyContinue
 
-    # Everything expensive and fallible above runs with the old desktop intact.
-    # Keep a rollback copy before stopping, including for the in-place fallback
-    # used when an application holds the prefix as its working directory.
-    if ($Restart) {
-        # Validate launch permissions and pay ScheduledTasks module startup
-        # before stopping the desktop, not after files have been replaced.
-        $launchTask = New-CaelestiaLaunchTask $Prefix
-    }
-    if ($Restart -and $old) {
-        Assert-CaelestiaNoReparsePoints $Prefix
-        & robocopy.exe $Prefix $backup /E /XJ /R:2 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null
-        if ($LASTEXITCODE -ge 8) { throw "Preparing rollback failed (robocopy exit $LASTEXITCODE)." }
-        $global:LASTEXITCODE = 0
-        $backupReady = $true
-    }
-    if ($Restart) {
-        Write-Output ('Prepared replacement in {0:N2}s; beginning desktop handoff.' -f $preparation.Elapsed.TotalSeconds)
-        $handoff = [Diagnostics.Stopwatch]::StartNew()
-        if ($old) {
-            $stoppedForUpdate = $true
-            & (Join-Path $Prefix 'Start-Caelestia.ps1') -Prefix $Prefix -Command Quit | Out-Null
-        }
-        Write-Verbose ('Previous shell stopped at handoff +{0:N3}s.' -f $handoff.Elapsed.TotalSeconds)
-    }
-    # Recheck at the commit boundary, never overwrite a live executable.
-    if ((Get-CaelestiaProcesses $Prefix) -or @(Get-CaelestiaSupervisors $ProfileRoot).Count) {
-        throw 'Caelestia is still running; the prepared replacement was not activated.'
-    }
-
-    # Swap the complete payload in; removed files from an older build do not
-    # linger, and a failed swap puts the previous prefix back.
-    $hadPrefix = Test-Path -LiteralPath $Prefix
-    $inPlace = $backupReady
-    if ($hadPrefix -and -not $inPlace) {
-        try {
-            [IO.Directory]::Move($Prefix, $backup)
-            $backupReady = $true
-        }
-        catch [IO.IOException] {
-            # Apps launched from the shell inherit the prefix as their working
-            # directory, which blocks renaming it. Mirror the payload in place
-            # instead; /MIR still removes files the new build no longer has.
-            $inPlace = $true
-        }
-    }
-    if ($inPlace) {
-        Assert-CaelestiaNoReparsePoints $Prefix
-        & robocopy.exe $payload $Prefix /MIR /XJ /R:2 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null
-        # Even a partially failed mirror needs rollback.
-        $replacementActive = $true
-        if ($LASTEXITCODE -ge 8) { throw "Updating $Prefix in place failed (robocopy exit $LASTEXITCODE)." }
-        $global:LASTEXITCODE = 0
-    }
-    if (-not $inPlace) {
-        try { [IO.Directory]::Move($payload, $Prefix) }
-        catch {
-            if ($hadPrefix -and -not (Test-Path -LiteralPath $Prefix)) { [IO.Directory]::Move($backup, $Prefix) }
-            throw
-        }
-        $replacementActive = $true
-    }
-    if ($Restart) {
-        Write-Verbose ('Payload activated at handoff +{0:N3}s.' -f $handoff.Elapsed.TotalSeconds)
-        Start-CaelestiaDetached $Prefix -TaskName $launchTask
-        Write-Output ('Caelestia ready; stop-to-ready handoff {0:N2}s.' -f $handoff.Elapsed.TotalSeconds)
-    }
     Write-CaelestiaProfileOwner $ProfileRoot $Prefix $installId $profileExclusive
+    Write-Output ('Payload assembled in {0:N2}s.' -f $preparation.Elapsed.TotalSeconds)
+    $runtimePrefix = Install-CaelestiaVersion $Prefix $payload -Restart:$Restart
     $launcher = Join-Path $Prefix 'Start-Caelestia.ps1'
     $powershell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
     $arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $launcher + '"'
@@ -351,7 +285,7 @@ try {
     $shortcut.TargetPath = $powershell
     $shortcut.Arguments = $arguments
     $shortcut.WorkingDirectory = $Prefix
-    $shortcut.IconLocation = "$Prefix\qs.exe,0"
+    $shortcut.IconLocation = "$runtimePrefix\qs.exe,0"
     $shortcut.Description = 'Caelestia for Windows'
     $shortcut.Save()
     if ($Autostart) {
@@ -359,34 +293,11 @@ try {
         New-Item -Path $run -Force | Out-Null
         New-ItemProperty -Path $run -Name $integration.RunName -PropertyType String -Value ('"' + $powershell + '" ' + $arguments) -Force | Out-Null
     }
-    $updateCommitted = $true
-    if ($backupReady) {
-        try {
-            Assert-CaelestiaNoReparsePoints $backup
-            Remove-Item -LiteralPath $backup -Recurse -Force
-            $backupReady = $false
-        } catch {
-            # Never roll back a healthy replacement from a partially deleted
-            # backup merely because antivirus/indexing delayed its removal.
-            Write-Warning "Installed successfully; old-file cleanup was deferred at $backup."
-        }
-    }
+    Remove-CaelestiaRetiredVersions $Prefix
     Write-Output "Installed Caelestia: $Prefix"
     Write-Output "Run: powershell -NoProfile -File `"$launcher`""
     Write-Output "Profile (seeded on first launch): $ProfileRoot"
-} catch {
-    $updateError = $_
-    if ($Restart -and -not $updateCommitted -and $stoppedForUpdate -and $backupReady) {
-        try {
-            Restore-CaelestiaUpdate $Prefix $ProfileRoot $backup $replacementActive
-            Write-Warning 'Update failed; the previous Caelestia build is running.'
-        } catch {
-            throw "Update failed: $($updateError.Exception.Message). Recovery failed: $($_.Exception.Message). Previous files retained at $backup."
-        }
-    }
-    throw $updateError
 } finally {
-    if ($launchTask) { Unregister-ScheduledTask -TaskName $launchTask -Confirm:$false -ErrorAction SilentlyContinue }
     # The staging directory is renamed on success; remove only this run's leftover.
     if (Test-Path -LiteralPath $payload) {
         $safePayload = Resolve-CaelestiaDirectory $payload
