@@ -32,9 +32,18 @@ Focused checks:
 
 ```powershell
 node windows/tests/RunningApps.test.js
+windows/scripts/Test-RunningApps.ps1 -Preflight -QtPrefix <Qt-prefix> -BuildRoot <build> -ExpectedRuntimeHash <sha256>
 windows/scripts/Test-RunningApps.ps1 -QtPrefix <Qt-prefix> -BuildRoot <build>
 ```
 
 The QML check uses an offscreen disposable profile and fake native handles.
+Use the undeployed build executable with its matching full Qt development
+prefix and artifact QML plugins. A deployed Windows-only runtime is not an
+offscreen runner. The harness checks versions and metadata, resets native
+control gates before starting Qt, and retains both output streams on failure
+or timeout. Qt environment values are process-local, not QML environment
+pragmas. The preflight opens no windows; the fixture additionally instantiates
+and dismisses the multi-window chooser offscreen.
+
 Real focus, popup dismissal, icon extraction, multi-desktop activation, and save
 prompts require a separate native QA pass. No native backend pin change is needed.

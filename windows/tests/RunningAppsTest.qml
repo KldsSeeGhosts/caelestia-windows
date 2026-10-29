@@ -1,5 +1,6 @@
 import QtQuick
 import Quickshell
+import Caelestia
 import qs.services as Services
 import qs.modules.bar.components.workspaces as BarWorkspaces
 
@@ -78,7 +79,16 @@ ShellRoot {
                     check(!root.fixtures[0].wayland.minimized, "activation restores fixture");
                     check(root.fixtures[2].wayland.activations === 0, "closed/hidden target not dispatched");
                     Services.RunningApps.request("1", "close");
+                    pill.selectApp("fixture-app", pill);
                 } else if (root.phase === 4) {
+                    // CUtils searches visual items only; PopupWindow is a
+                    // non-visual child with its own separate content tree.
+                    const popup = Array.from(pill.data).find(child => child.objectName === "runningAppsChooser");
+                    check(popup?.visible, "multi-window chooser opens");
+                    check(CUtils.findChild(popup.contentItem, "runningAppsWindowList")?.count === 2,
+                        "chooser instantiates both window rows");
+                    popup.visible = false;
+                    check(!popup.visible, "chooser can dismiss");
                     check(root.fixtures[0].wayland.closes === 1, "graceful close request");
                     check(Services.RunningApps.windows["1"] !== undefined, "no optimistic close removal");
                     for (const window of root.fixtures)

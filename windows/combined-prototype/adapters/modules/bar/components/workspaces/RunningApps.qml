@@ -199,6 +199,7 @@ StyledRect {
 
             ListView {
                 id: windowList
+                objectName: "runningAppsWindowList"
                 anchors.top: heading.bottom
                 anchors.bottom: parent.bottom
                 anchors.left: parent.left
