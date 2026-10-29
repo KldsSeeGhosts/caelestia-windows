@@ -36,6 +36,27 @@ The deployed runtime includes Qt, CRT, portable Caelestia and M3Shapes plugins,
 fonts and license notices. Normal launches retain PATH for applications. Qt
 uses Direct3D 11; smoke excludes developer PATH entries.
 
+### Background apps
+
+The tray above the clock defaults to a compact pill. Click its chevron to
+expand or collapse it; leaving the bar collapses it. The expanded list scrolls
+after roughly five icons so it cannot crowd out the clock. Hover an icon for
+its name, left-click for the app's primary action, or right-click for the app's
+native menu, including Exit when that app provides it. These are notification
+area apps, not a list of every running window or background process.
+Icons retain their original app-provided colours (`bar.tray.recolour: false`).
+
+Existing profiles are preserved on update. To enable this in an older
+`config/shell.json`, enable the `bar.entries` item with `"id": "tray"` and set
+`bar.tray.compact` and `bar.tray.background` to `true`. Keep `bar.popouts.tray`
+`false`: Windows uses app-owned native menus, not upstream's Qt menu handles.
+An empty tray takes no space.
+
+After deploying tray changes, `windows/scripts/Test-InstalledTray.ps1` checks
+the running version selected by the installed launcher against these sources.
+Checking only the stable prefix's legacy `shell/` directory is insufficient
+after migration to versioned payloads.
+
 ## Profile and controllers
 
 The stable profile defaults to `%LOCALAPPDATA%\caelestia-windows`. First launch
