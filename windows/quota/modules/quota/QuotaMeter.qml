@@ -8,7 +8,8 @@ import qs.components
 import qs.services
 import "QuotaLogic.js" as Logic
 
-// OpenUsage meter: name and pace above a thin bar, remaining and reset below.
+// Meter: window name and actual % left above a thin bar, reset and the quieter
+// projected pace below.
 Column {
     id: root
 
@@ -18,14 +19,15 @@ Column {
     property string family: ""
     readonly property var remaining: Logic.remaining(limit)
     readonly property real timeLeft: Logic.timeRemaining(limit, nowMs)
-    readonly property var pace: quotaState === "ok" ? Logic.pace(limit, nowMs) : null
+    // No projection for a stale reading or a window that is already empty.
+    readonly property var pace: quotaState === "ok" && remaining !== null && remaining > 0 ? Logic.pace(limit, nowMs) : null
     readonly property bool low: remaining !== null && remaining <= 0.15
     readonly property color meterColour: quotaState !== "ok" ? Colours.palette.m3outline
         : low ? Colours.palette.m3error : Colours.palette.m3primary
     readonly property color muted: Colours.palette.m3onSurfaceVariant
     readonly property string label: Logic.title(limit)
 
-    spacing: 6
+    spacing: 5
     Accessible.role: Accessible.StaticText
     Accessible.name: label + ": " + (remaining === null ? qsTr("Not reported") : qsTr("%1% remaining").arg(Math.round(remaining * 100)))
 
@@ -52,6 +54,7 @@ Column {
             + ":" + String(d.getMinutes()).padStart(2, "0") + (d.getHours() >= 12 ? " PM" : " AM");
     }
 
+    // The reading leads: window name, then the actual share still left.
     RowLayout {
         width: root.width
         spacing: 8
@@ -73,22 +76,13 @@ Column {
                 family: root.family
             }
         }
-        // Like OpenUsage, the pace stays muted; a red flame marks a window that runs out early.
-        MaterialIcon {
-            visible: !!root.pace && !!root.pace.duration
-            Layout.rightMargin: -6
-            text: "local_fire_department"
-            fill: 1
-            color: Colours.palette.m3error
-            fontStyle: Tokens.font.icon.size(11).build()
-        }
         StyledText {
-            visible: !!root.pace
-            text: !root.pace ? "" : root.pace.duration ? qsTr("Runs out in ~%1").arg(root.pace.duration)
-                : qsTr("~%1% left at reset").arg(root.pace.left)
-            color: root.muted
+            objectName: "quotaMeterLeft"
+            text: root.remaining === null ? qsTr("Not reported") : qsTr("%1% left").arg(Math.round(root.remaining * 100))
+            color: root.quotaState !== "ok" ? root.muted : root.low ? Colours.palette.m3error : Colours.palette.m3onSurface
             font.family: root.family
-            font.pixelSize: 12
+            font.pixelSize: 14
+            font.weight: Font.DemiBold
             font.features: ({"tnum": 1})
         }
     }
@@ -118,25 +112,43 @@ Column {
         }
     }
 
+    // Reset on the left; the projected pace stays muted on the right, with a
+    // red flame only for a window that runs out early.
     RowLayout {
         width: root.width
         spacing: 8
-        StyledText {
-            text: root.remaining === null ? qsTr("Not reported") : qsTr("%1% left").arg(Math.round(root.remaining * 100))
-            color: root.quotaState !== "ok" ? root.muted : root.low ? Colours.palette.m3error : Colours.palette.m3onSurface
-            font.family: root.family
-            font.pixelSize: 13
-            font.features: ({"tnum": 1})
-        }
+        // The reset keeps its full text; the pace gives way first on a narrow drawer.
         StyledText {
             Layout.fillWidth: true
-            Layout.minimumWidth: 0
-            horizontalAlignment: Text.AlignRight
+            Layout.minimumWidth: implicitWidth
             text: root.duration(root.limit.resetsAt || "")
-            elide: Text.ElideLeft
+            elide: Text.ElideRight
             font.family: root.family
             font.pixelSize: 13
             color: root.muted
+            font.features: ({"tnum": 1})
+        }
+        MaterialIcon {
+            visible: !!root.pace && !!root.pace.duration
+            Layout.rightMargin: -6
+            text: "local_fire_department"
+            fill: 1
+            color: Colours.palette.m3error
+            fontStyle: Tokens.font.icon.size(11).build()
+        }
+        StyledText {
+            objectName: "quotaMeterPace"
+            visible: !!root.pace
+            Layout.fillWidth: true
+            Layout.minimumWidth: 0
+            horizontalAlignment: Text.AlignRight
+            // Shorter wording on a narrow drawer, so the projection is not cut off.
+            text: !root.pace ? "" : root.pace.duration ? (root.width < 260 ? qsTr("Out in ~%1") : qsTr("Runs out in ~%1")).arg(root.pace.duration)
+                : (root.width < 260 ? qsTr("~%1% at reset") : qsTr("~%1% left at reset")).arg(root.pace.left)
+            elide: Text.ElideRight
+            color: root.muted
+            font.family: root.family
+            font.pixelSize: 12
             font.features: ({"tnum": 1})
         }
     }
