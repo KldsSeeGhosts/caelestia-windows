@@ -96,6 +96,8 @@ Item {
                         subLabel: Gpu.name || (Gpu.detecting ? Tr.tr("Detecting GPU...") : Tr.trCtx("None", "GPU name"))
                         usage: Gpu.percentage
                         temperature: Gpu.temperature
+                        // Windows: the card adds a dedicated VRAM meter from the service.
+                        memorySource: Gpu
                         accent: Colours.palette.m3secondary
 
                         ServiceRef {

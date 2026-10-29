@@ -17,6 +17,9 @@ StyledRect {
     required property color accent
     required property real usage
     required property real temperature
+    // Windows: accepted so the shared GPU card loads here; only the Windows
+    // adapter draws the dedicated VRAM meter from it.
+    property var memorySource: null
 
     color: Colours.tPalette.m3surfaceContainer
     radius: Tokens.rounding.extraLarge
