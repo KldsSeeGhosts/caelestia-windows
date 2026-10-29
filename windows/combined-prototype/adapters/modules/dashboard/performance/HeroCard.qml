@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Layouts
+import "VramMeter.js" as Vram
 import M3Shapes
 import Caelestia.Config
 import Caelestia.I18n
@@ -17,6 +18,10 @@ StyledRect {
     required property color accent
     required property real usage
     required property real temperature
+    // Windows: the GPU card passes the Gpu service here to add a dedicated
+    // VRAM meter under the temperature. Left null, the card is unchanged.
+    property var memorySource: null
+    readonly property var vram: memorySource ? Vram.evaluate(memorySource.vramUsed, memorySource.vramTotal) : null
 
     color: Colours.tPalette.m3surfaceContainer
     radius: Tokens.rounding.extraLarge
@@ -106,6 +111,35 @@ StyledRect {
             implicitHeight: Tokens.padding.small
             fgColour: root.accent
             indeterminate: isNaN(root.usage) || isNaN(root.temperature)
+        }
+
+        // Same row and bar as the temperature, stacked below it so the card
+        // keeps its width and the name and usage shape stay clear.
+        RowLayout {
+            Layout.topMargin: Tokens.spacing.small
+            Layout.leftMargin: -Tokens.padding.extraSmall
+            spacing: Tokens.spacing.extraSmall
+            visible: root.vram !== null
+
+            MaterialIcon {
+                Layout.topMargin: Math.round(fontInfo.pointSize * 0.08)
+                text: "memory_alt"
+                color: root.accent
+                fontStyle: Tokens.font.icon.medium
+                fill: 1
+            }
+
+            StyledText {
+                text: root.vram?.valid ? Units.formatKibUsage(root.vram.usedBytes / 1024, root.vram.totalBytes / 1024) : Tr.tr("Unavailable")
+                font: Tokens.font.body.builders.medium.build()
+            }
+        }
+
+        StyledProgressBar {
+            visible: root.vram?.valid ?? false
+            value: root.vram?.ratio ?? 0
+            implicitHeight: Tokens.padding.small
+            fgColour: root.accent
         }
     }
 

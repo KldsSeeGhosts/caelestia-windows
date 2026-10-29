@@ -17,7 +17,7 @@ Caelestia for Windows provides a full QtQuick desktop shell alongside or in plac
 
 It runs the original Caelestia QML components, Material 3 Expressive shapes (`M3Shapes`), shaders, and spring/bezier motion curves natively on Windows, providing:
 
-- **Left vertical bar:** App launcher button (logo), workspace indicators, active window title, system tray icons, clock, status icons (audio, Wi-Fi/Ethernet, Bluetooth, battery), status popouts, and power button. In full-screen shell mode, the bar registers a native Windows AppBar so maximized and tiled windows stop at the bar edge.
+- **Left vertical bar:** App launcher button (logo), workspace indicators, active window title, system tray icons, clock, status icons (audio, Wi-Fi/Ethernet, Bluetooth, battery), status popouts, and power button. The audio popout follows upstream: output/input devices, master volume, and **Open settings** for Nexus Audio. App-volume controls live in **Audio > App volumes**, not in the popout. In full-screen shell mode, the bar registers a native Windows AppBar so maximized and tiled windows stop at the bar edge.
 - **Launcher:** Instant app search over Windows `AppsFolder` and Start menu shortcuts (using Caelestia's original `fzf` smart-case and `fuzzysort` ranking), command actions (`>`), built-in math evaluator (`> calc`), and wallpaper switcher (`> wallpaper`).
 - **Dashboard:** Four-tab top drawer with user profile, calendar, weather forecast, media player controls (via Windows GSMTC), and live hardware performance graphs (CPU, GPU, RAM, storage, and network throughput sparklines).
 - **Desktop background:** Original Caelestia wallpaper surface (with shader transitions), desktop clock, and audio visualizer layer embedded directly into the Windows `Progman`/`WorkerW` desktop plane (either behind or above Explorer desktop icons).
@@ -174,6 +174,50 @@ ownership of the desktop background. The desktop clock defaults off.
    - **Bottom-left power button:** Opens the **Session** menu.
    - **Clicking outside or pressing `Escape`:** Dismisses the active drawer and returns keyboard focus to your previous window.
 3. **Notification mirroring consent:** Caelestia never triggers a Windows permission prompt at startup. An existing Allowed grant is discovered automatically. Otherwise, to mirror Windows notifications into Caelestia's popups and sidebar, open the right-edge notification sidebar and click **Request access** once. While mirroring is active, Caelestia requests per-app native banner suppression by default, leaving notifications in Windows Action Center. The original settings are journaled and restored on quit, mirror deactivation, or crash recovery, except where you changed a setting yourself. System toasts and Windows Defender are excluded, and the first toast from a newly seen app may also show a native banner. Set `windows.notifications.replaceSystemBanners` to `false` or list AUMIDs in `windows.notifications.keepSystemBanners` in `config/windows.json` to keep native banners. See the [configuration reference](CONFIGURATION.md). Immediate application of Windows' setting and end-to-end delivery still require live verification.
+
+### Send a real test notification
+
+From PowerShell in your interactive Windows desktop session:
+
+```powershell
+& "$env:LOCALAPPDATA\Programs\caelestia-windows\Start-Caelestia.ps1" -Command NotifyTest
+```
+
+For a custom installation, use its `Start-Caelestia.ps1` instead. The repository
+launcher `windows/scripts/Start-Caelestia.ps1 -Command NotifyTest` also works
+without installing or restarting the shell.
+
+This submits a real Windows toast under the existing **Windows PowerShell**
+notification identity, with the fixed title `Caelestia test notification` and
+body `This is a test notification. No user data is included.` It uses the
+normal Windows toast listener, not a synthetic QML notification. PowerShell 7
+hands this command to inbox Windows PowerShell with `-NoProfile`.
+The command does not request permissions, enable mirroring or change notification
+settings. Existing opted-in banner-replacement behavior still applies.
+If Windows PowerShell notifications are disabled or
+unavailable, the command reports an error and leaves them alone. A submission
+message is not proof of delivery; Windows notification policy and Do not disturb
+can still prevent a banner.
+
+To test Caelestia's popup and sidebar, the shell must already be running with
+notification mirroring opted in and access **Allowed** using the sidebar's
+existing consent flow. Without that, the toast only exercises Windows delivery.
+
+1. With no fullscreen app active and Caelestia's Do not disturb off, send the
+   command and check for the Caelestia popup, then open the right-edge sidebar
+   (`Super+N`) and find the fixed title in history. Allow a few seconds for the
+   Windows listener. A native Windows banner alone does not verify Caelestia.
+2. Play a fullscreen video and send another test toast without leaving fullscreen
+   (for example, queue it with `Start-Sleep -Seconds 10` before the command).
+   Confirm no Caelestia popup covers the video. Leave fullscreen and confirm the
+   new test notification still reached sidebar history.
+3. Native banners are controlled separately by Windows and Caelestia's existing
+   banner-replacement settings. The first toast from a newly seen sender may
+   still show a native banner. Do not treat Windows' own fullscreen suppression
+   as proof of Caelestia's suppression.
+
+Popup, sidebar history and fullscreen suppression require live Windows checks;
+headless tests cannot verify delivery or appearance.
 
 ---
 
@@ -514,7 +558,7 @@ Open it from:
 1. the `caelestia:nexus` global shortcut — registered but not bound by default; add a `global` bind in `config/keybinds.json`;
 2. the utilities drawer's **settings** quick toggle.
 
-The bar popout wrapper still supports upstream's detached mode: when a popout requests it, the wrapper opens this window on the requested page instead of an inline overlay. The staged Windows audio and Bluetooth popouts currently show their content attached (the Bluetooth popout offers the Windows Settings action instead), so no shipped control requests it yet.
+The bar popout wrapper supports upstream's detached mode: the audio popout's **Open settings** button opens Nexus on **Audio**, where **App volumes** opens the existing mixer. As on upstream, the mixer lists individual audio streams; an application with multiple sessions can appear more than once. The Bluetooth popout instead offers the Windows Settings action.
 
 Nexus writes the global `Caelestia.Config` layer, so every change lands in `%LOCALAPPDATA%\caelestia-windows\config\shell.json` and applies live; the settings file watcher also reloads the window when you edit that file by hand. Only schema keys are written, so no option is quarantined.
 

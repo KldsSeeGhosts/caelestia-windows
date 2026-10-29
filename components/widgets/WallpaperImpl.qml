@@ -91,8 +91,10 @@ Item {
         anchors.fill: parent
         playing: PersistentState.wallpaperPlaying
         animate: false
-        // Only needed as a shader source while a transition runs.
-        layer.enabled: root.transitionProgress < 1
+        // Windows: retain the original texture-provider lifetime across
+        // idle -> capture -> transition (#146), rather than re-creating the
+        // shader input during the handoff. Other platforms keep idle gating.
+        layer.enabled: Qt.platform.os === "windows" || root.transitionProgress < 1
 
         onReadyChanged: {
             if (ready && source === root.source)

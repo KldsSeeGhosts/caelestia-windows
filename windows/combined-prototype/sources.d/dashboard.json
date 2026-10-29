@@ -20,5 +20,6 @@
   "components/widgets/CoverArt.qml": "components/widgets/CoverArt.qml",
   "windows/combined-prototype/adapters/modules/dashboard/Media.qml": "modules/dashboard/Media.qml",
   "modules/dashboard/performance/NetworkCard.qml": "modules/dashboard/performance/NetworkCard.qml",
-  "windows/combined-prototype/adapters/modules/dashboard/performance/HeroCard.qml": "modules/dashboard/performance/HeroCard.qml"
+  "windows/combined-prototype/adapters/modules/dashboard/performance/HeroCard.qml": "modules/dashboard/performance/HeroCard.qml",
+  "windows/combined-prototype/adapters/modules/dashboard/performance/VramMeter.js": "modules/dashboard/performance/VramMeter.js"
 }

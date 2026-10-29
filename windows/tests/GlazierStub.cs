@@ -44,10 +44,24 @@ class GlazierStub
                         { "event_sequence", 0 }, { "last_record_args", new string[0] }
                     };
                 string command = args.Length > 0 ? args[0] : "";
+                string scenario = Environment.GetEnvironmentVariable("GLAZIER_TEST_SCENARIO");
+                if (scenario == "cold-start" && !State.ContainsKey("last_attempt"))
+                    State["offline"] = true;
                 switch (command)
                 {
                     case "--record":
+                        State["last_attempt"] = true;
                         State["last_record_args"] = args;
+                        if (scenario == "cold-start")
+                        {
+                            State.Remove("offline");
+                            State["host_id"] = "cold-host";
+                            State["state"] = "idle";
+                            Event("error", null, "Synthetic cold-start failure");
+                            break;
+                        }
+                        if (scenario == "start-timeout")
+                            break; // valid idle replies, but recording never starts
                         State["elapsed_ms"] = 1250;
                         State["state"] = Array.IndexOf(args, "--fullscreen") >= 0 ? "recording" : "selecting";
                         State["region_ticks"] = 0;

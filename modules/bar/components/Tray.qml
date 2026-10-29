@@ -13,6 +13,7 @@ StyledRect {
     readonly property alias layout: layout
     readonly property alias items: items
     readonly property alias expandIcon: expandIcon
+    readonly property alias viewport: viewport
 
     // Windows staging hooks. Defaults preserve upstream Linux behavior: the
     // native SystemTray model is used and interactions keep their original
@@ -22,6 +23,9 @@ StyledRect {
     property var sourceItems: null
     property bool itemInteractionsEnabled: true
     property bool itemNativeMenuMode: false
+    // Windows can bound the expanded tray without changing upstream sizing.
+    property real maximumListHeight: Infinity
+    readonly property real visibleListHeight: Math.min(layout.implicitHeight, maximumListHeight)
 
     signal itemMenuRequested(var item, real x, real y)
 
@@ -29,13 +33,15 @@ StyledRect {
     readonly property int spacing: Config.bar.tray.background ? Tokens.spacing.medium : Tokens.spacing.extraSmall
 
     property bool expanded
+    // Windows uses an explicit toggle instead of upstream's hover lifecycle.
+    property bool autoCollapse: true
 
     readonly property real nonAnimHeight: {
         if (!Config.bar.tray.compact)
-            return layout.implicitHeight + padding * 2;
+            return visibleListHeight + padding * 2;
         const pad = (Config.bar.tray.background ? Tokens.padding.extraSmall : 0) + padding;
         if (expanded)
-            return expandIcon.implicitHeight + layout.implicitHeight + spacing + pad;
+            return expandIcon.implicitHeight + visibleListHeight + spacing + pad;
         return Math.max(Config.bar.tray.background ? width : 0, expandIcon.implicitHeight + pad);
     }
 
@@ -48,49 +54,60 @@ StyledRect {
     color: Qt.alpha(Colours.tPalette.m3surfaceContainer, (Config.bar.tray.background && items.count > 0) ? Colours.tPalette.m3surfaceContainer.a : 0)
     radius: Tokens.rounding.full
 
-    Column {
-        id: layout
-
-        anchors.horizontalCenter: parent.horizontalCenter
-        anchors.top: parent.top
-        anchors.topMargin: root.padding
-        spacing: Tokens.spacing.small
-
+    // Windows caps this viewport; Infinity preserves the original Linux list.
+    Flickable {
+        id: viewport
+        x: 0
+        y: root.padding
+        width: root.width
+        height: root.visibleListHeight
+        contentWidth: width
+        contentHeight: layout.implicitHeight
+        clip: true
+        interactive: (root.expanded || !Config.bar.tray.compact) && contentHeight > height
+        boundsBehavior: Flickable.StopAtBounds
         opacity: root.expanded || !Config.bar.tray.compact ? 1 : 0
 
-        add: Transition {
-            Anim {
-                properties: "scale"
-                from: 0
-                to: 1
-                easing: Tokens.anim.standardDecel
-            }
-        }
+        Column {
+            id: layout
 
-        move: Transition {
-            Anim {
-                properties: "scale"
-                to: 1
-                easing: Tokens.anim.standardDecel
-            }
-            Anim {
-                properties: "x,y"
-            }
-        }
+            anchors.horizontalCenter: parent.horizontalCenter
+            spacing: Tokens.spacing.small
 
-        Repeater {
-            id: items
-
-            model: ScriptModel {
-                values: (root.sourceItems ?? SystemTray.items.values).filter(i => i.status !== Status.Passive && !GlobalConfig.bar.tray.hiddenIcons.includes(i.id))
+            add: Transition {
+                Anim {
+                    properties: "scale"
+                    from: 0
+                    to: 1
+                    easing: Tokens.anim.standardDecel
+                }
             }
 
-            TrayItem {
-                id: trayItem
+            move: Transition {
+                Anim {
+                    properties: "scale"
+                    to: 1
+                    easing: Tokens.anim.standardDecel
+                }
+                Anim {
+                    properties: "x,y"
+                }
+            }
 
-                interactionsEnabled: root.itemInteractionsEnabled
-                nativeMenuMode: root.itemNativeMenuMode
-                onNativeMenuRequested: (x, y) => root.itemMenuRequested(trayItem.modelData, x, y)
+            Repeater {
+                id: items
+
+                model: ScriptModel {
+                    values: (root.sourceItems ?? SystemTray.items.values).filter(i => i.status !== Status.Passive && !GlobalConfig.bar.tray.hiddenIcons.includes(i.id))
+                }
+
+                TrayItem {
+                    id: trayItem
+
+                    interactionsEnabled: root.itemInteractionsEnabled
+                    nativeMenuMode: root.itemNativeMenuMode
+                    onNativeMenuRequested: (x, y) => root.itemMenuRequested(trayItem.modelData, x, y)
+                }
             }
         }
 

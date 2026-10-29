@@ -1,21 +1,57 @@
 import QtQuick
+import QtQuick.Controls
 import Quickshell
+import Caelestia.Config
 import qs.services
 
-// Windows combined host wiring for the original bar tray, matching the bounded
-// tray prototype host. The facade singleton is staged as WindowsTray so its
-// name never shadows this Tray component type that the original Bar
-// instantiates directly. The delegate list comes from the read-only facade
-// instead of the native SystemTray model, item interactions follow the
-// activation opt-in (off in the combined launcher) and a menu request routes
-// through the facade, which refuses it while activation is disabled. The
-// original geometry, spacing, expand behavior and ColouredIcon tinting are
-// untouched in TrayContent.qml.
+// Retain the original tray styling and native app-owned context menus. Windows
+// has no Qt semantic menu handle, so popouts.tray stays off; expand explicitly.
 TrayContent {
     id: root
 
+    // Pointer handlers are QObjects and cannot inherit screen-attached tokens.
+    readonly property bool trayCompact: Config.bar.tray.compact
+    readonly property real trayRowHeight: Tokens.font.body.small.pointSize * 2 + Tokens.spacing.small
+
     sourceItems: WindowsTray.list
-    itemInteractionsEnabled: WindowsTray.activationEnabled
+    autoCollapse: false
+    implicitHeight: items.count > 0 ? nonAnimHeight : 0
+    maximumListHeight: (Tokens.font.body.small.pointSize * 2 + Tokens.spacing.small) * 5.5 - Tokens.spacing.small
+    itemInteractionsEnabled: WindowsTray.activationEnabled && (expanded || !Config.bar.tray.compact)
     itemNativeMenuMode: WindowsTray.activationEnabled
     onItemMenuRequested: (item, x, y) => WindowsTray.openMenu(item, QsWindow.window, x, y)
+
+    // Mouse wheels must scroll even when the pointer is over an icon's
+    // MouseArea, and must not fall through to the bar's volume/brightness.
+    WheelHandler {
+        parent: root.viewport
+        target: null
+        enabled: root.expanded || !root.trayCompact
+        onWheel: event => {
+            const delta = event.pixelDelta.y || event.angleDelta.y / 120 * root.trayRowHeight * 3;
+            root.viewport.contentY = Math.max(0, Math.min(root.viewport.contentHeight - root.viewport.height, root.viewport.contentY - delta));
+            event.accepted = true;
+        }
+    }
+
+    MouseArea {
+        objectName: "trayExpandButton"
+        z: 1
+        x: 0
+        y: root.expanded ? root.expandIcon.y : 0
+        width: root.width
+        height: root.expanded ? root.expandIcon.height : root.height
+        enabled: Config.bar.tray.compact && root.items.count > 0
+        hoverEnabled: true
+        cursorShape: Qt.PointingHandCursor
+        onClicked: root.expanded = !root.expanded
+
+        ToolTip.visible: containsMouse
+        ToolTip.delay: 500
+        ToolTip.text: "Background apps"
+        Accessible.role: Accessible.Button
+        Accessible.name: "Background apps"
+        Accessible.description: root.expanded ? "Collapse background apps" : "Expand background apps"
+        Accessible.onPressAction: root.expanded = !root.expanded
+    }
 }

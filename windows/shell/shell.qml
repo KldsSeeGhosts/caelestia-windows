@@ -204,6 +204,17 @@ ShellRoot {
                 tiling: Tiling.backendEnabled,
                 keepAwake: idleInhibitor.inhibiting,
                 recorder: Recorder.running
+            },
+            // Status only. Never serialize notification text, app IDs or history.
+            notifications: {
+                enabled: Notifs.enabled,
+                status: Notifs.status,
+                mirrorOptIn: Notifs.mirrorOptIn,
+                access: Notifs.mirrorAccessState,
+                mirrorStatus: Notifs.mirrorStatus,
+                mirrorActive: Notifs.systemMirrorActive,
+                doNotDisturb: Notifs.doNotDisturb,
+                fullscreenPolicy: GlobalConfig.notifs.fullscreen === 0 ? "On" : "Off"
             }
         };
     }

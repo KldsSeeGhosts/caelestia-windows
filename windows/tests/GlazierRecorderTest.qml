@@ -18,8 +18,13 @@ ShellRoot {
     property string audit: ""
     property bool missing: Quickshell.env("GLAZIER_TEST_MISSING") === "1"
     property bool disabled: Quickshell.env("GLAZIER_TEST_DISABLED") === "1"
+    property string scenario: Quickshell.env("GLAZIER_TEST_SCENARIO")
     property int pendingCaptures: 0
     property var props: ({ recordingMode: "", recordingListExpanded: false, recordingConfirmDelete: "" })
+
+    Component.onCompleted: check(Quickshell.stateDir.replace(/\\/g, "/")
+        === Quickshell.env("GLAZIER_STUB_ROOT").replace(/\\/g, "/") + "/profile/state",
+        "staged StateDir stays inside the disposable profile")
 
     WindowsFonts {}
     FontLoader {
@@ -54,6 +59,13 @@ ShellRoot {
         nameFilters: Recorder.nameFilters
     }
 
+    FileView {
+        id: ownershipStore
+        path: root.scenario.startsWith("store-") ? Quickshell.stateDir + "/caelestia/recordings.json" : ""
+        printErrors: false
+        blockAllReads: true
+    }
+
     function check(value, message): void {
         if (!value) {
             console.error("GLAZIER_RECORDER_FAIL", step, message);
@@ -74,6 +86,24 @@ ShellRoot {
     }
 
     function containsText(item, text): bool { return findText(item, text) !== null; }
+
+    function findDelete(item, baseName): var {
+        if (item.modelData?.baseName === baseName) {
+            for (const child of item.children ?? []) {
+                if (child.icon === "delete_forever")
+                    return child;
+            }
+        }
+        for (const child of item.children ?? []) {
+            const found = findDelete(child, baseName);
+            if (found) return found;
+        }
+        return null;
+    }
+
+    function ownedFixture(index): string {
+        return Recorder.outputDir + "/fixture-" + index + ".mp4";
+    }
 
     function fixture(command): void {
         helper.command = [Recorder.executable, command];
@@ -122,6 +152,85 @@ ShellRoot {
                 return;
             if (bodyFont.status !== FontLoader.Ready || iconFont.status !== FontLoader.Ready)
                 return;
+            if (root.scenario === "cold-start" || root.scenario === "start-timeout") {
+                if (!Recorder.canStart) return;
+                if (root.step === 0) {
+                    if (root.scenario === "cold-start" && !Recorder.connectionFailed) return;
+                    if (root.scenario === "start-timeout" && !Recorder.hostId) return;
+                    root.check(Recorder.start(), "failed-start attempt accepted");
+                    root.step++;
+                } else if (root.step === 1) {
+                    const expected = root.scenario === "cold-start" ? "Synthetic cold-start failure" : "Glazier did not start recording.";
+                    if (!Recorder.lastError.startsWith(expected)) return;
+                    root.check(!Recorder.pendingStart && !Recorder.running, "failure ends pending Start");
+                    root.fixture("--status");
+                    root.step++;
+                } else {
+                    root.check(Recorder.applyResponse(root.audit), "valid idle reply after failed Start");
+                    root.check(Recorder.lastError !== "" && Recorder.status === Recorder.lastError,
+                        "valid idle reply does not erase failed Start");
+                    console.log("GLAZIER_RECORDER_START_FAILURE_PASS", root.assertions);
+                    Qt.quit();
+                }
+                return;
+            }
+            if (root.scenario.startsWith("store-")) {
+                if (!Recorder.canStart || !Recorder.hostId || root.ticks < 8) return;
+                if (root.scenario === "store-missing" || root.scenario === "store-corrupt") {
+                    if (root.step === 0) {
+                        root.check(Recorder.finishedFiles.length === 0, "missing/corrupt store grants no ownership");
+                        root.check(!Recorder.owns(root.ownedFixture(0)), "unreported older recording not owned");
+                        Recorder.remember(root.ownedFixture(500));
+                        root.check(Recorder.owns(root.ownedFixture(500)), "store recovers on a new finished file");
+                        root.step++;
+                        return;
+                    }
+                } else if (root.scenario === "store-write" && root.step === 0) {
+                    for (let i = 0; i <= 500; i++)
+                        Recorder.remember(root.ownedFixture(i));
+                    Recorder.remember(root.ownedFixture(500)); // duplicates do not evict another file
+                    root.check(Recorder.finishedFiles.length === 500 && !Recorder.owns(root.ownedFixture(0))
+                        && Recorder.owns(root.ownedFixture(1)) && Recorder.owns(root.ownedFixture(500)),
+                        "only newest 500 distinct reported files owned");
+                    root.step++;
+                    return;
+                } else {
+                    if (root.scenario === "store-restart" && Recorder.finishedFiles.length !== 500) return;
+                    const oldButton = root.findDelete(card, "fixture-0");
+                    const ownedButton = root.findDelete(card, "fixture-500");
+                    const foreignButton = root.findDelete(card, "fixture-unreported");
+                    if (!oldButton || !ownedButton || !foreignButton) return;
+                    root.check(!ownedButton.disabled && foreignButton.disabled,
+                        "original list enables owned Delete and disables unreported Delete");
+                    if (root.scenario === "store-write" && root.step === 1) {
+                        root.check(oldButton.disabled, "cap-evicted recording Delete disabled");
+                        Recorder.remember(root.ownedFixture(0));
+                        root.step++;
+                        return;
+                    }
+                    root.check(!oldButton.disabled && !Recorder.owns(root.ownedFixture(1)),
+                        "Delete binding updates when a finished file enters the capped set");
+                    root.check(Recorder.owns(root.ownedFixture(500).toUpperCase().replace(/\//g, "\\")),
+                        "normalized ownership survives persistence");
+                    if (root.scenario === "store-write" && root.step === 2) {
+                        root.fixture("--fixture-error");
+                        root.step++;
+                        return;
+                    }
+                    if (root.scenario === "store-restart")
+                        root.check(Recorder.lastError === "", "shell restart suppresses old host journal error");
+                }
+                // Wait for the real FileView's asynchronous atomic write before
+                // exiting; the next process must read committed bytes, not RAM.
+                ownershipStore.reload();
+                try {
+                    if (JSON.stringify(JSON.parse(ownershipStore.text())) !== JSON.stringify(Recorder.finishedFiles)) return;
+                } catch (_) { return; }
+                root.check(true, "ownership committed under the disposable profile");
+                console.log("GLAZIER_RECORDER_STORE_PASS", root.assertions);
+                Qt.quit();
+                return;
+            }
             if (root.disabled) {
                 if (root.ticks < 8) return;
                 root.check(!Recorder.permitted && !Recorder.probed && !Recorder.available && !Recorder.canStart,
@@ -272,25 +381,32 @@ ShellRoot {
                 root.step++;
                 break;
             case 18:
-                if (Recorder.lastError.indexOf("not running") < 0) return;
+                if (Recorder.status !== "Glazier stopped") return;
                 if (root.pendingCaptures) return;
                 root.check(!Recorder.running && Recorder.elapsed === 0, "host loss clears stale recording");
                 const reply = (host, events) => JSON.stringify({ version: 1, ok: true, state: "idle", elapsed_ms: 0,
                     host_id: host, output_directory: "C:/x", events: events });
                 const err = sequence => ({ sequence: sequence, type: "error", message: "boom" });
+                Recorder.hostId = "";
+                Recorder.eventSequence = 0;
+                Recorder.baselinePending = true;
                 root.check(Recorder.applyResponse(reply("replay-host", [err(1),
                     { sequence: 2, type: "finished", output_path: "C:\\x\\Old.mp4" }])) && Recorder.lastError === "",
-                    "first response from a new host is a baseline: old error not replayed");
+                    "shell initial response is a baseline: old error not replayed");
                 root.check(Recorder.owns("c:/x/old.mp4") && !Recorder.owns("C:/x/other.mp4"), "baseline finished file is owned");
                 root.check(!Paths.deleteRecording("C:/x/other.mp4") && Recorder.lastError.indexOf("Only recordings") === 0,
                     "delete of a file Glazier did not report is refused");
                 root.check(Recorder.applyResponse(reply("replay-host", [err(3)])) && Recorder.lastError === "boom",
                     "events after the baseline apply");
+                root.check(Recorder.applyResponse(reply("replay-host", [err(3)])) && Recorder.lastError === "boom",
+                    "idle poll does not clear a recording failure");
                 root.check(!Recorder.applyResponse("{\"version\":1,"), "partial status rejected");
                 root.check(!Recorder.incompatible, "partial status is transient, not incompatible");
                 root.check(!Recorder.applyResponse('{"version":1}'), "incomplete status rejected");
                 root.check(!Recorder.incompatible, "incomplete status is transient, not incompatible");
                 root.check(Recorder.applyResponse(reply("replay-host", [])), "valid status after a partial response recovers");
+                root.check(Recorder.lastError === "boom" && Recorder.connectionError === "",
+                    "transport recovery preserves recording failure");
                 root.check(Recorder.available && !Recorder.incompatible && Recorder.canStart,
                     "recorder re-enabled after a partial response");
                 root.check(!Recorder.applyResponse(""), "empty status is transient");
@@ -307,6 +423,12 @@ ShellRoot {
                 root.check(Recorder.applyResponse(reply("replay-host", [])), "compatible status clears incompatibility");
                 root.check(!Recorder.incompatible && Recorder.available && Recorder.canStart,
                     "recorder recovers from explicit incompatibility");
+                root.check(Recorder.applyResponse(reply("replay-host", [{ sequence: 4, type: "started" }]))
+                    && Recorder.lastError === "", "recording clears prior failure before host replacement");
+                root.check(Recorder.applyResponse(reply("replacement-host", [err(1)])) && Recorder.lastError === "boom",
+                    "replacement host first-response error is visible without Start pending");
+                root.check(Recorder.applyResponse(reply("replacement-host", [{ sequence: 2, type: "started" }]))
+                    && Recorder.lastError === "", "started event clears recording failure");
                 let q = [];
                 q = SchemeGenerator.coalescePending(q, "list", ["list"]);
                 q = SchemeGenerator.coalescePending(q, "set", ["set-mode", "--mode", "light"]);

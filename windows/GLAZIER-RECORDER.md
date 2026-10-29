@@ -8,7 +8,8 @@ is named in the original Record card and its start menu is disabled.
 The executable is resolved from `%LOCALAPPDATA%\Programs\Glazier\glazier.exe`,
 then PATH. `CAELESTIA_GLAZIER_EXE` is an explicit override, including for tests.
 Install a compatible version before enabling this integration. A stopped v1 host
-reports "not running" until Start launches it; this does not disable cold start. A missing Glazier is probed again every 30 s.
+reports "Glazier stopped" until Start launches it; this does not disable cold
+start. A missing Glazier is probed again every 30 s.
 
 The upstream Recorder contract remains `running`, `paused`, `elapsed`, `refCount`,
 `start(extraArgs)`, `stop()`, `togglePause()`. Upstream modes map as follows:
@@ -30,10 +31,18 @@ stdio to NUL and disowns inherited handles. Short-lived status/pause/resume/stop
 clients use `Process`. No recorder is killed to stop a recording.
 
 Status is polled even with the card closed, every 500 ms while the card is open or
-something is happening and every 5 s while idle. Glazier owns the elapsed
+something is happening, every 15 s while idle and every 5 s after a connection
+failure. Glazier owns the elapsed
 clock and finalization. The last 32 sequenced events are deduplicated per host.
-The first response from a host is a baseline: its older events are not replayed
-(no stale error), though its finished files are noted.
+The shell's initial host response is a baseline: its older events are not
+replayed (no stale error), though its finished files are noted. Start waits for
+that initial observation, or a compatible stopped-host response, because v1
+events have no timestamp to distinguish an older failure from a new attempt.
+Once observed, a stopped or replaced host's first-response errors are fresh,
+even without a pending Start. Recording errors and the 15 s Start timeout
+survive valid idle polls and connection recovery; a new Start, `started` event
+or confirmed recording clears them. Transient connection errors clear on a
+valid host response.
 Only a finalized `finished.output_path` updates `lastFile`. A lost host clears
 stale recording indicators and reports the failure. Live-off and smoke profiles
 neither probe nor launch Glazier.
@@ -66,8 +75,19 @@ Record card and recordings list under a temporary directory. Qt runs offscreen.
 It checks start, pause, resume, finalizing/finished, sound/region flags, unpublished
 file exclusion, file-URL conversion/deletion, error/missing/incompatible
 states, cancellation, host loss, live-off/smoke gates, and a
-tray-initiated recording reflected in the original card. It does not run the
+tray-initiated recording reflected in the original card. It preserves the staged
+profile-directory pragmas and checks the actual profile-local store for
+missing/corrupt recovery, the 500-entry cap and ownership across a second shell
+process, including suppression of an old host error on restart. The original
+list's Delete state is checked for owned, unreported and cap-evicted files and
+when ownership changes. Separate cold-start-error and real 15 s timeout scenarios
+check that subsequent valid idle responses retain the failure. It does not run the
 installed Glazier, capture a screen, use a microphone, or operate the desktop.
+
+For portable logic-only regression checks, run
+`node windows/tests/GlazierRecorderLogic.test.js` from a disposable working
+directory (use the script's absolute path). It executes the adapter's JavaScript
+with in-memory process/store doubles, not Quickshell, real persistence or UI.
 
 The graphical delete confirmation is not covered by this fixture. A separate
 rapid open/delete/restart experiment hit a Qt Quick access violation in the

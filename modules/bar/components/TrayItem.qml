@@ -1,6 +1,7 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import QtQuick.Controls
 import Quickshell.Services.SystemTray
 import Caelestia.Config
 import qs.components.effects
@@ -30,6 +31,12 @@ MouseArea {
     signal nativeMenuRequested(real x, real y)
 
     acceptedButtons: Qt.LeftButton | Qt.RightButton
+    // Windows compact trays must not leave invisible icons accepting clicks.
+    enabled: interactionsEnabled
+    hoverEnabled: nativeMenuMode
+    ToolTip.visible: nativeMenuMode && containsMouse
+    ToolTip.delay: 500
+    ToolTip.text: modelData.title || modelData.id
     implicitWidth: Tokens.font.body.small.pointSize * 2
     implicitHeight: Tokens.font.body.small.pointSize * 2
 

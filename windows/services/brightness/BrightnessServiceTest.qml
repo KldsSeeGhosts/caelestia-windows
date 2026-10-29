@@ -384,6 +384,15 @@ QtObject {
     readonly property FakeBackend hdrBackend: FakeBackend {}
     readonly property BrightnessService identityCase: BrightnessService {}
     readonly property FakeBackend identityBackend: FakeBackend {}
+    readonly property BrightnessService feedbackCase: BrightnessService {}
+    readonly property FakeBackend feedbackBackend: FakeBackend {}
+    property var feedbackEvents: []
+    property Connections feedbackLog: Connections {
+        target: test.feedbackCase
+        function onBrightnessFeedback(screenName, value): void {
+            test.feedbackEvents = test.feedbackEvents.concat([{screen: screenName, value: value}]);
+        }
+    }
     readonly property QtObject reusedScreen: QtObject { property string name: "MAG321UX OLED" }
     readonly property QtObject unchangedScreen: QtObject { property string name: "MAG321UX OLED" }
 
@@ -465,6 +474,73 @@ QtObject {
     }
 
     function run(): void {
+        // #146: wallpaper WM_SETTINGCHANGE arrives as displayConfigurationChanged.
+        // Two-monitor route discovery/revalidation must not synthesize 0 -> level
+        // feedback. Real same-route observations and user writes still notify.
+        feedbackCase.screens = [{name: "LEFT"}, {name: "RIGHT"}];
+        feedbackCase.enabled = true;
+        feedbackCase.controlsEnabled = true;
+        feedbackCase.backend = feedbackBackend;
+        feedbackBackend.probeRoute = "ddc";
+        check(feedbackCase.queryAll() === 2, "feedback baseline queries both screens");
+        feedbackBackend.deliverQuery();
+        feedbackBackend.deliverQuery();
+        check(feedbackEvents.length === 0, "initial discovery is not OSD feedback");
+        for (let index = 0; index < 4; index++) {
+            feedbackBackend.displayConfigurationChanged();
+            close(feedbackCase.stateFor("LEFT").brightness, 0.5, "left query retains displayed level");
+            close(feedbackCase.stateFor("RIGHT").brightness, 0.5, "right query retains displayed level");
+            check(!feedbackCase.interactive("LEFT") && !feedbackCase.interactive("RIGHT"),
+                "retained levels do not authorize writes during query");
+            feedbackBackend.deliverQuery();
+            feedbackBackend.deliverQuery();
+        }
+        check(feedbackEvents.length === 0, "repeated unchanged settings broadcasts are silent");
+        feedbackBackend.systemBrightnessChanged("LEFT", 0.7);
+        check(feedbackEvents.length === 1 && feedbackEvents[0].screen === "LEFT",
+            "real hardware brightness event targets only the left OSD");
+        feedbackBackend.systemBrightnessChanged("LEFT", 0.7);
+        feedbackBackend.systemBrightnessChanged("RIGHT", 0.5);
+        feedbackBackend.systemBrightnessChanged("LEFT", NaN);
+        feedbackBackend.systemBrightnessChanged("MISSING", 0.2);
+        check(feedbackEvents.length === 1, "duplicates/invalid/unmatched hardware events are silent");
+        feedbackBackend.probeLevel = 0.8;
+        check(feedbackCase.queryMonitor("RIGHT"), "query a changed physical DDC-style level");
+        feedbackBackend.deliverQuery();
+        check(feedbackEvents.length === 2 && feedbackEvents[1].screen === "RIGHT",
+            "same-route observation of a real change still targets the right OSD");
+        feedbackBackend.probeRoute = "sdr-white";
+        feedbackBackend.probeLevel = 0;
+        check(feedbackCase.queryMonitor("RIGHT"), "color-mode route change");
+        feedbackBackend.deliverQuery();
+        close(feedbackCase.stateFor("RIGHT").brightness, 0, "route change resyncs real zero");
+        check(feedbackEvents.length === 2, "route change is not an adjustment");
+        feedbackBackend.systemBrightnessChanged("RIGHT", 0.3);
+        feedbackBackend.systemBrightnessChanged("RIGHT", 0);
+        check(feedbackEvents.length === 4 && feedbackEvents[3].value === 0,
+            "hardware change to real zero is not suppressed");
+        feedbackBackend.probeAvailable = false;
+        check(feedbackCase.queryMonitor("RIGHT"), "failed route read");
+        feedbackBackend.deliverQuery();
+        check(feedbackEvents.length === 4 && !feedbackCase.stateFor("RIGHT").brightnessKnown,
+            "failed read has no invented OSD feedback");
+        feedbackBackend.probeAvailable = true;
+        feedbackBackend.probeLevel = 0.4;
+        check(feedbackCase.queryMonitor("RIGHT"), "recover unreadable route");
+        feedbackBackend.deliverQuery();
+        check(feedbackEvents.length === 4, "recovery establishes a silent baseline");
+        check(feedbackCase.write("LEFT", 0.6), "explicit left brightness adjustment");
+        check(feedbackCase.write("LEFT", 0.65), "coalesced left brightness adjustment");
+        check(feedbackEvents.length === 6 && feedbackEvents[5].screen === "LEFT",
+            "accepted user and coalesced writes preserve immediate per-screen feedback");
+        feedbackBackend.completeWrite();
+        feedbackBackend.completeWrite();
+        check(feedbackEvents.length === 6, "write confirmations do not duplicate feedback");
+        feedbackBackend.systemBrightnessChanged("LEFT", 0.65);
+        check(feedbackEvents.length === 6, "matching write read-back does not duplicate feedback");
+        feedbackCase.enabled = false;
+        check(feedbackEvents.length === 6, "disable/reset is not an adjustment");
+
         // Qt can reuse the object without changing the screens array.
         identityCase.screens = [reusedScreen, unchangedScreen];
         identityCase.enabled = true;
