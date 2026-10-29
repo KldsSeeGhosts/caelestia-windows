@@ -13,14 +13,37 @@ Add-Type -Path (Join-Path $repoRoot 'windows\tests\GlazierStub.cs') -OutputAssem
     -OutputType WindowsApplication -ReferencedAssemblies System.Web.Extensions
 $stage = & "$PSScriptRoot\Stage-ShellPrototype.ps1" -Prototype combined `
     -Destination (Join-Path $stageRoot 'stage') -ProfileRoot (Join-Path $stageRoot 'profile')
-Copy-Item -LiteralPath (Join-Path $repoRoot 'windows\tests\GlazierRecorderTest.qml') -Destination (Join-Path $stage 'shell.qml')
+$shellPath = Join-Path $stage 'shell.qml'
+# Keep the stage's profile routing when replacing its entry point. Environment
+# variables alone do not override Quickshell's DataDir/StateDir/CacheDir.
+$pragmas = @([regex]::Matches([IO.File]::ReadAllText($shellPath),
+    '(?m)^//@ pragma (?:DataDir|StateDir|CacheDir) [^\r\n]+') | ForEach-Object { $_.Value })
+if ($pragmas.Count -ne 3) { throw 'Expected all three staged profile-directory pragmas.' }
+$testQml = [IO.File]::ReadAllText((Join-Path $repoRoot 'windows\tests\GlazierRecorderTest.qml'))
+[IO.File]::WriteAllText($shellPath, (($pragmas -join "`n") + "`n" + $testQml), (New-Object Text.UTF8Encoding($false)))
 New-Item -ItemType Directory -Path (Join-Path $stageRoot 'profile\config'), (Join-Path $stageRoot 'output') | Out-Null
 # A temp MP4 must not appear in the original recordings list.
 [IO.File]::WriteAllText((Join-Path $stageRoot 'output\.glazier-unpublished.mp4'), 'fixture')
-foreach ($scenario in @('normal', 'missing', 'disabled', 'smoke')) {
+$ownershipFile = Join-Path $stageRoot 'profile\state\caelestia\recordings.json'
+foreach ($scenario in @('normal', 'cold-start', 'start-timeout', 'store-missing', 'store-corrupt',
+    'store-write', 'store-restart', 'missing', 'disabled', 'smoke')) {
     $missing = $scenario -eq 'missing'
     $disabled = $scenario -in @('disabled', 'smoke')
     $stateFile = Join-Path $stageRoot 'state.json'
+    if ($scenario -notin @('store-restart', 'missing', 'disabled', 'smoke')) {
+        # Only this run's synthetic stub/profile state is reset. Restart reuses
+        # committed ownership and the host journal from the preceding process.
+        Remove-Item -LiteralPath $stateFile, $ownershipFile -Force -ErrorAction SilentlyContinue
+    }
+    if ($scenario -eq 'store-corrupt') {
+        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $ownershipFile) | Out-Null
+        [IO.File]::WriteAllText($ownershipFile, '{synthetic corrupt JSON')
+    }
+    if ($scenario -eq 'store-write') {
+        foreach ($name in @('fixture-0.mp4', 'fixture-500.mp4', 'fixture-unreported.mp4')) {
+            [IO.File]::WriteAllText((Join-Path $stageRoot "output\$name"), 'synthetic fixture')
+        }
+    }
     $beforeWrite = if (Test-Path -LiteralPath $stateFile) { (Get-Item -LiteralPath $stateFile).LastWriteTimeUtc } else { $null }
     $info = New-Object Diagnostics.ProcessStartInfo
     $info.FileName = Join-Path $BuildRoot 'quickshell\qs.exe'
@@ -42,6 +65,7 @@ foreach ($scenario in @('normal', 'missing', 'disabled', 'smoke')) {
     $info.EnvironmentVariables['GLAZIER_STUB_ROOT'] = $stageRoot
     $info.EnvironmentVariables['GLAZIER_TEST_MISSING'] = $(if ($missing) { '1' } else { '0' })
     $info.EnvironmentVariables['GLAZIER_TEST_DISABLED'] = $(if ($disabled) { '1' } else { '0' })
+    $info.EnvironmentVariables['GLAZIER_TEST_SCENARIO'] = $scenario
     $process = [Diagnostics.Process]::Start($info)
     $stdout = $process.StandardOutput.ReadToEndAsync()
     $stderr = $process.StandardError.ReadToEndAsync()
@@ -52,7 +76,11 @@ foreach ($scenario in @('normal', 'missing', 'disabled', 'smoke')) {
     }
     $output = $stdout.GetAwaiter().GetResult() + $stderr.GetAwaiter().GetResult()
     [IO.File]::WriteAllText((Join-Path $stageRoot "run-$scenario.log"), $output)
-    $marker = $(if ($missing) { 'GLAZIER_RECORDER_MISSING_PASS' } elseif ($disabled) { 'GLAZIER_RECORDER_DISABLED_PASS' } else { 'GLAZIER_RECORDER_PASS' })
+    $marker = $(if ($missing) { 'GLAZIER_RECORDER_MISSING_PASS' }
+        elseif ($disabled) { 'GLAZIER_RECORDER_DISABLED_PASS' }
+        elseif ($scenario.StartsWith('store-')) { 'GLAZIER_RECORDER_STORE_PASS' }
+        elseif ($scenario -in @('cold-start', 'start-timeout')) { 'GLAZIER_RECORDER_START_FAILURE_PASS' }
+        else { 'GLAZIER_RECORDER_PASS' })
     if ($timedOut -or $process.ExitCode -ne 0 -or $output -notmatch $marker -or
         $output -match 'GLAZIER_RECORDER_FAIL|TypeError|ReferenceError|is not a type|binding loop') {
         $output -split "`n" | Select-Object -Last 22 | Write-Output
@@ -60,6 +88,13 @@ foreach ($scenario in @('normal', 'missing', 'disabled', 'smoke')) {
     }
     if ($disabled -and (Get-Item -LiteralPath $stateFile).LastWriteTimeUtc -ne $beforeWrite) {
         throw "Disabled/smoke recorder invoked the stub: $scenario"
+    }
+    if ($scenario.StartsWith('store-')) {
+        $saved = @(Get-Content -LiteralPath $ownershipFile -Raw | ConvertFrom-Json)
+        $expectedCount = if ($scenario -in @('store-write', 'store-restart')) { 500 } else { 1 }
+        if ($saved.Count -ne $expectedCount) {
+            throw "Unexpected persisted ownership count in synthetic $scenario fixture."
+        }
     }
     [regex]::Match($output, "$marker \d+").Value | Write-Output
 }
