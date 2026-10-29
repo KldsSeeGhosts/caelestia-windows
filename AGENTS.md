@@ -66,13 +66,17 @@ installs, restarts the shell or tests live.
   profile is `%LOCALAPPDATA%\caelestia-windows`, with `config\shell.json` and
   `config\keybinds.json`.
 - **Install:**
-  1. Run `Start-Caelestia.ps1 -Command Quit`.
-  2. Run `Install-Caelestia.ps1 -BuildRoot <build> -Prefix <prefix> -ProfileRoot <profile>`.
-  3. Start the shell through a one-off interactive scheduled task running the
-     HKCU Run entry `CaelestiaWindows`. A shell started from an agent's own
-     shell dies with it.
-  4. Confirm with `-Command State`. If the shell is not running, read
-     `runtime\supervisor-*\watchdog-error.log` in the profile.
+  - For a running installation, run `Install-Caelestia.ps1 -BuildRoot <build> -Prefix <prefix> -ProfileRoot <profile> -Restart`.
+    Do not quit first: it prepares while live, performs the final handoff,
+    starts through an interactive scheduled task, verifies readiness and rolls
+    back on startup failure.
+  - Without `-Restart`, quit first and install, then start through a one-off
+    interactive scheduled task running the HKCU Run entry `CaelestiaWindows`.
+    A shell started from an agent's own shell dies with it.
+  - Confirm with `-Command State`. If the shell is not running, read both
+    `runtime\supervisor-*\watchdog-error.log` and `watchdog.stderr.log`.
+  - Use `Start-Caelestia.ps1 -Command Restart` for an in-process QML reload,
+    not quit/install/start. Native binary changes still require an update.
 - **Opt-in only:** desktop takeover, autostart, taskbar and tiling changes.
   Keep only one tiling manager active.
 
