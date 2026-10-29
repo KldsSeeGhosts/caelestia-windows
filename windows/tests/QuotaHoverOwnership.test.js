@@ -202,3 +202,19 @@ test("the production wiring exists on both Panels files", () => {
     }
     assert.match(interactions, /const inQuotaArea = inQuotaZone && !panels\.quotaHoverBlocked;/);
 });
+
+test("per-screen State exposes only the requested panel flags", () => {
+    const source = read("windows/shell/shell.qml");
+    const match = source.match(/panels: \{([\s\S]*?)\n                \}/);
+    assert.ok(match);
+    const panelState = {
+        dashboard: false, quota: false, sidebar: true, session: true,
+        account: "private-sentinel",
+    };
+    const actual = vm.runInNewContext(`({${match[1]}})`, {
+        scope: { window: { screenState: panelState } },
+    });
+    assert.deepEqual(JSON.parse(JSON.stringify(actual)), {
+        dashboard: false, quota: false, sidebar: true, session: true,
+    });
+});
