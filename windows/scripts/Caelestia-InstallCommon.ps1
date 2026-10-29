@@ -97,6 +97,120 @@ function Get-WindowsPowerShellPath {
     return Join-Path $PSHOME 'powershell.exe'
 }
 
+# IPC never provisions Python, loads the account picture or starts a watchdog.
+function Invoke-CaelestiaIpc([string]$Prefix, [string]$Command, [int]$TimeoutMs = 10000) {
+    $info = New-Object Diagnostics.ProcessStartInfo
+    $info.FileName = Join-Path $Prefix 'qs.exe'
+    $info.WorkingDirectory = $Prefix
+    $info.Arguments = 'ipc --path "' + (Join-Path $Prefix 'shell\shell.qml') + '" call shell ' + $Command
+    $info.UseShellExecute = $false
+    $info.CreateNoWindow = $true
+    $info.RedirectStandardOutput = $true
+    $info.RedirectStandardError = $true
+    $process = [Diagnostics.Process]::Start($info)
+    try {
+        $outTask = $process.StandardOutput.ReadToEndAsync()
+        $errTask = $process.StandardError.ReadToEndAsync()
+        if (-not $process.WaitForExit($TimeoutMs)) { $process.Kill(); throw 'Shell IPC timed out.' }
+        $output = $outTask.GetAwaiter().GetResult()
+        # Consume diagnostics, but do not echo shell state or user data on failure.
+        $null = $errTask.GetAwaiter().GetResult()
+        if ($process.ExitCode -ne 0) { throw "Shell IPC $Command failed (exit $($process.ExitCode))." }
+        return $output
+    } finally { $process.Dispose() }
+}
+
+function Wait-CaelestiaReady([string]$Prefix, [int]$TimeoutSeconds = 20, [string]$PreviousGeneration = '', [switch]$LegacyReady, [string]$TaskName = '') {
+    $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+    $clock = [Diagnostics.Stopwatch]::StartNew()
+    do {
+        try {
+            $remaining = [int]($deadline - [DateTime]::UtcNow).TotalMilliseconds
+            if ($remaining -le 0) { break }
+            $state = Invoke-CaelestiaIpc $Prefix state ([Math]::Min(1000, $remaining)) | ConvertFrom-Json
+            if (($state.lifecycle.ready -eq $true -or ($LegacyReady -and $state.screens -gt 0 -and $state.windows.Count -eq $state.screens)) -and
+                (-not $PreviousGeneration -or $state.lifecycle.generation -ne $PreviousGeneration)) { return }
+        } catch { }
+        if ($TaskName -and $clock.Elapsed.TotalSeconds -ge 1) {
+            # A constructor/launcher failure must not consume the entire
+            # readiness timeout before a safe retry or rollback.
+            $task = Get-ScheduledTask -TaskName $TaskName -ErrorAction Stop
+            if ($task.State -eq 'Ready') {
+                $result = Get-ScheduledTaskInfo -TaskName $TaskName -ErrorAction Stop
+                if ($result.LastRunTime.Year -gt 2000) { throw 'Scheduled Caelestia launch exited before readiness.' }
+            }
+        }
+        Start-Sleep -Milliseconds 50
+    } while ([DateTime]::UtcNow -lt $deadline)
+    throw "Caelestia did not become ready within $TimeoutSeconds seconds. See the profile logs and runtime\supervisor-*\watchdog*.log."
+}
+
+# Task Scheduler owns the process tree, not the invoking agent/terminal's job.
+# On-demand only, interactive and non-elevated, with no autostart registration.
+function New-CaelestiaLaunchTask([string]$Prefix) {
+    $taskName = 'Caelestia-Start-' + [guid]::NewGuid().ToString('N')
+    $launcher = Join-Path $Prefix 'Start-Caelestia.ps1'
+    $action = New-ScheduledTaskAction -Execute (Get-WindowsPowerShellPath) `
+        -Argument ('-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $launcher + '" -Prefix "' + $Prefix + '"') `
+        -WorkingDirectory $Prefix
+    $principal = New-ScheduledTaskPrincipal -UserId ([Security.Principal.WindowsIdentity]::GetCurrent().Name) -LogonType Interactive -RunLevel Limited
+    $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero)
+    Register-ScheduledTask -TaskName $taskName -Action $action -Principal $principal -Settings $settings -ErrorAction Stop | Out-Null
+    return $taskName
+}
+
+function Start-CaelestiaDetached([string]$Prefix, [switch]$LegacyReady, [string]$TaskName = '') {
+    if (-not $TaskName) { $TaskName = New-CaelestiaLaunchTask $Prefix }
+    $launcher = Join-Path $Prefix 'Start-Caelestia.ps1'
+    try {
+        for ($attempt = 0; $attempt -lt 2; $attempt++) {
+            try {
+                Start-ScheduledTask -TaskName $taskName -ErrorAction Stop
+                Wait-CaelestiaReady $Prefix -LegacyReady:$LegacyReady -TaskName $taskName
+                return
+            } catch {
+                $launchError = $_
+                # Do not allow a slow launcher to start later over a retry or
+                # rollback. Restore owned state before attempting another run.
+                Stop-ScheduledTask -TaskName $taskName -ErrorAction Stop
+                & $launcher -Prefix $Prefix -Command Quit | Out-Null
+                if ($attempt -eq 1) { throw $launchError }
+                Write-Warning 'Caelestia startup failed; retrying once after cleanup.'
+            }
+        }
+    } finally {
+        Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
+    }
+}
+
+function Restore-CaelestiaUpdate([string]$Prefix, [string]$ProfileRoot, [string]$Backup, [bool]$ReplacementActive) {
+    # Recovery must also work after a failed/partial mirror, where the new
+    # launch script may not exist. Use the untouched backup's launcher to quit.
+    $record = Get-Content -LiteralPath (Join-Path $Backup 'install.json') -Raw | ConvertFrom-Json
+    if ($record.product -ne 'caelestia-windows' -or $record.prefix -ne $Prefix -or $record.profile -ne $ProfileRoot) {
+        throw 'Rollback does not belong to this installation.'
+    }
+    $running = (Get-CaelestiaProcesses $Prefix) -or @(Get-CaelestiaSupervisors $ProfileRoot).Count
+    if (-not $ReplacementActive -and $running) {
+        # Quit itself failed before any files changed. Do not launch a second
+        # supervisor over the old one if it is still serving the desktop.
+        Wait-CaelestiaReady $Prefix -LegacyReady
+        return
+    }
+    if ($ReplacementActive) {
+        if ($running) { & (Join-Path $Backup 'Start-Caelestia.ps1') -Prefix $Prefix -Command Quit | Out-Null }
+        if ((Get-CaelestiaProcesses $Prefix) -or @(Get-CaelestiaSupervisors $ProfileRoot).Count) {
+            throw 'Replacement is still running; rollback files were retained.'
+        }
+        Assert-CaelestiaNoReparsePoints $Prefix
+        Assert-CaelestiaNoReparsePoints $Backup
+        & robocopy.exe $Backup $Prefix /MIR /XJ /R:2 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null
+        if ($LASTEXITCODE -ge 8) { throw "Rollback failed (robocopy exit $LASTEXITCODE)." }
+        $global:LASTEXITCODE = 0
+    }
+    Start-CaelestiaDetached $Prefix -LegacyReady
+}
+
 # Walk without following links; a junction inside a tree being deleted would
 # otherwise send Remove-Item -Recurse into its target.
 function Assert-CaelestiaNoReparsePoints([string]$Root) {

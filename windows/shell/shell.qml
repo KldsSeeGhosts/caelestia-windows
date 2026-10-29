@@ -5,6 +5,7 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import QtQuick.Window
 import Quickshell
 import Quickshell.Io
 import Caelestia
@@ -25,6 +26,8 @@ import qs.modules.launcher.services
 ShellRoot {
     id: root
 
+    // Changes on a successful QML reload, not on a watchdog/process restart alone.
+    readonly property string generation: Date.now().toString(36) + Math.random().toString(36).slice(2)
     readonly property bool externalWallpaperActive: WallpaperEngine.ownsDesktop
     readonly property bool smoke: Quickshell.env("CAELESTIA_SHELL_SMOKE") === "1"
     // Isolated install validation may reserve only the secondary monitor.
@@ -60,6 +63,12 @@ ShellRoot {
             id: scope
             required property ShellScreen modelData
             readonly property alias window: content
+            property bool firstFrame: false
+
+            Connections {
+                target: content.contentItem.Window.window
+                function onFrameSwapped(): void { scope.firstFrame = true; }
+            }
 
             Exclusions {
                 screen: scope.modelData
@@ -98,7 +107,13 @@ ShellRoot {
     IpcHandler {
         target: "shell"
         function quit(): void { Qt.quit(); }
-        function restart(): void { Quickshell.reload(true); }
+        function restart(): string {
+            const previous = root.generation;
+            // Soft reload transfers the existing native windows to the new
+            // graph. A hard reload unnecessarily destroys/recreates them.
+            Quickshell.reload(false);
+            return previous;
+        }
         function state(): string { return JSON.stringify(root.snapshot()); }
         function panel(screenName: string, name: string): bool {
             if (root.smoke || !["launcher", "dashboard", "session", "sidebar", "utilities"].includes(name))
@@ -123,6 +138,13 @@ ShellRoot {
 
     function snapshot(): var {
         return {
+            lifecycle: {
+                generation: root.generation,
+                ready: root.shellScreens.length > 0
+                    && drawers.instances.length === root.shellScreens.length
+                    && drawers.instances.every(scope => scope.firstFrame && scope.window.backingWindowVisible
+                        && scope.window.width > 0 && scope.window.height > 0)
+            },
             smoke: root.smoke,
             smokeComplete: root.smoke && smokeCheck.step >= 5,
             screens: root.shellScreens.length,
