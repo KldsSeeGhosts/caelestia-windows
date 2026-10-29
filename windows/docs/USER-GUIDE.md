@@ -175,6 +175,50 @@ ownership of the desktop background. The desktop clock defaults off.
    - **Clicking outside or pressing `Escape`:** Dismisses the active drawer and returns keyboard focus to your previous window.
 3. **Notification mirroring consent:** Caelestia never triggers a Windows permission prompt at startup. An existing Allowed grant is discovered automatically. Otherwise, to mirror Windows notifications into Caelestia's popups and sidebar, open the right-edge notification sidebar and click **Request access** once. While mirroring is active, Caelestia requests per-app native banner suppression by default, leaving notifications in Windows Action Center. The original settings are journaled and restored on quit, mirror deactivation, or crash recovery, except where you changed a setting yourself. System toasts and Windows Defender are excluded, and the first toast from a newly seen app may also show a native banner. Set `windows.notifications.replaceSystemBanners` to `false` or list AUMIDs in `windows.notifications.keepSystemBanners` in `config/windows.json` to keep native banners. See the [configuration reference](CONFIGURATION.md). Immediate application of Windows' setting and end-to-end delivery still require live verification.
 
+### Send a real test notification
+
+From PowerShell in your interactive Windows desktop session:
+
+```powershell
+& "$env:LOCALAPPDATA\Programs\caelestia-windows\Start-Caelestia.ps1" -Command NotifyTest
+```
+
+For a custom installation, use its `Start-Caelestia.ps1` instead. The repository
+launcher `windows/scripts/Start-Caelestia.ps1 -Command NotifyTest` also works
+without installing or restarting the shell.
+
+This submits a real Windows toast under the existing **Windows PowerShell**
+notification identity, with the fixed title `Caelestia test notification` and
+body `This is a test notification. No user data is included.` It uses the
+normal Windows toast listener, not a synthetic QML notification. PowerShell 7
+hands this command to inbox Windows PowerShell with `-NoProfile`.
+The command does not request permissions, enable mirroring or change notification
+settings. Existing opted-in banner-replacement behavior still applies.
+If Windows PowerShell notifications are disabled or
+unavailable, the command reports an error and leaves them alone. A submission
+message is not proof of delivery; Windows notification policy and Do not disturb
+can still prevent a banner.
+
+To test Caelestia's popup and sidebar, the shell must already be running with
+notification mirroring opted in and access **Allowed** using the sidebar's
+existing consent flow. Without that, the toast only exercises Windows delivery.
+
+1. With no fullscreen app active and Caelestia's Do not disturb off, send the
+   command and check for the Caelestia popup, then open the right-edge sidebar
+   (`Super+N`) and find the fixed title in history. Allow a few seconds for the
+   Windows listener. A native Windows banner alone does not verify Caelestia.
+2. Play a fullscreen video and send another test toast without leaving fullscreen
+   (for example, queue it with `Start-Sleep -Seconds 10` before the command).
+   Confirm no Caelestia popup covers the video. Leave fullscreen and confirm the
+   new test notification still reached sidebar history.
+3. Native banners are controlled separately by Windows and Caelestia's existing
+   banner-replacement settings. The first toast from a newly seen sender may
+   still show a native banner. Do not treat Windows' own fullscreen suppression
+   as proof of Caelestia's suppression.
+
+Popup, sidebar history and fullscreen suppression require live Windows checks;
+headless tests cannot verify delivery or appearance.
+
 ---
 
 ## Configuration
