@@ -17,7 +17,12 @@ $config = Get-Content -LiteralPath "$repoRoot\windows\shell\shell.json" -Raw | C
 # Exercise the actual Bar hover-close route without constructing other services.
 $config.bar.entries = @($config.bar.entries | Where-Object { $_.id -eq 'tray' })
 $config | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath "$profile\config\shell.json" -Encoding UTF8
-Copy-Item -LiteralPath "$repoRoot\windows\tray-prototype\CompactTrayTest.qml" -Destination "$stage\shell.qml" -Force
+# Keep Quickshell's isolated directory routing on the replacement entry.
+$pragmas = @([regex]::Matches([IO.File]::ReadAllText("$stage\shell.qml"),
+    '(?m)^//@ pragma (?:DataDir|StateDir|CacheDir) [^\r\n]+') | ForEach-Object { $_.Value })
+if ($pragmas.Count -ne 3) { throw 'Expected three isolated profile-directory pragmas.' }
+$fixture = [IO.File]::ReadAllText("$repoRoot\windows\tray-prototype\CompactTrayTest.qml")
+[IO.File]::WriteAllText("$stage\shell.qml", (($pragmas -join "`n") + "`n" + $fixture), (New-Object Text.UTF8Encoding($false)))
 $qmlRoot = Join-Path $BuildRoot 'install\qml'
 $info = New-Object Diagnostics.ProcessStartInfo
 $info.FileName = Join-Path $BuildRoot 'quickshell\qs.exe'
@@ -49,6 +54,6 @@ $output = $outTask.GetAwaiter().GetResult() + $errTask.GetAwaiter().GetResult()
 $output | Set-Content -LiteralPath "$run\result.log" -Encoding UTF8
 $passed = -not $timedOut -and $process.ExitCode -eq 0 -and
     $output -match 'COMPACT_TRAY_PASS assertions=\d+' -and
-    $output -notmatch 'COMPACT_TRAY_FAIL|ReferenceError|TypeError|SyntaxError|binding loop|Cannot assign|Unable to assign'
+    $output -notmatch 'COMPACT_TRAY_FAIL|ReferenceError|TypeError|SyntaxError|binding loop|Cannot assign|Unable to assign|accessed without a screen set on QQuickWheelHandler'
 [ordered]@{ passed = $passed; exitCode = $process.ExitCode; log = "$run\result.log" } | ConvertTo-Json
 if (-not $passed) { throw "Compact tray failed. See $run\result.log." }

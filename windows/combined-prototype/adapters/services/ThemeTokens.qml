@@ -15,7 +15,8 @@ QtObject {
     property var palette: Colours.palette
     property bool light: Colours.light
     property font uiFont: Tokens.font.body.medium
-    property var rounding: Tokens.rounding
+    // This one profile-wide export has no screen-attached QQuickItem.
+    property var rounding: GlobalConfig.appearance.rounding
 
     readonly property string contents: JSON.stringify({
         version: 1,
@@ -51,6 +52,8 @@ QtObject {
     Component.onCompleted: writeTimer.restart()
 
     property FileView output: FileView {
+        // Write-only export: a new profile has no existing file to preload.
+        preload: false
         path: root.outputPath
         atomicWrites: true
     }
