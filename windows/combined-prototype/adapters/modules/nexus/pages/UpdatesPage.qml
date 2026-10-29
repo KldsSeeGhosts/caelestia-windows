@@ -128,7 +128,7 @@ PageBase {
             confirming = false;
     }
 
-    Process {
+    property Process statusProcess: Process {
         id: statusProc
 
         command: []
