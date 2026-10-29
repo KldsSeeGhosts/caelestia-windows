@@ -133,6 +133,9 @@ $old = $null
 if ((Test-Path -LiteralPath $Prefix) -and (Get-ChildItem -LiteralPath $Prefix -Force | Select-Object -First 1)) {
     if (Test-Path -LiteralPath (Join-Path $Prefix 'install.json')) {
         $old = Read-CaelestiaInstall $Prefix
+        if ($old.installRoot -and $old.installRoot -ne $Prefix) {
+            throw 'Do not install into an immutable version directory. Use its stable installRoot.'
+        }
         if ($old.profile -ne $ProfileRoot) { throw 'An update must retain the installed ProfileRoot.' }
     } elseif (-not $Force -or -not ((Test-Path -LiteralPath (Join-Path $Prefix 'qs.exe')) -or (Test-Path -LiteralPath (Join-Path $Prefix 'Start-Caelestia.ps1')))) {
         # Only an interrupted Caelestia copy (no install.json) can be replaced, and only with -Force.

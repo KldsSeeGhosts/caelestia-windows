@@ -40,6 +40,9 @@ try {
     $aHash = (Get-FileHash (Join-Path $a 'install.json')).Hash
     Assert ($recordA.version -eq 2 -and (Resolve-CaelestiaRuntimePrefix $prefix) -eq $a) 'Fresh install is not routed to its version.'
     Assert ((& (Join-Path $PSScriptRoot 'Start-Caelestia.ps1') -Prefix $prefix -Command State) -eq 'fixture') 'Repository launcher did not route to the selected payload.'
+    $failed = $false
+    try { Install-CaelestiaVersion $a (New-Payload $a 'nested') } catch { $failed = $_ -match 'immutable version directory' }
+    Assert $failed 'An immutable payload was accepted as an install root.'
     $b = Install-CaelestiaVersion $prefix (New-Payload $prefix 'B')
     $recordB = Read-CaelestiaInstall $prefix
     Assert ($recordB.previous -eq $recordA.current) 'Update did not retain its previous version.'

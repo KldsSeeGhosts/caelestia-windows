@@ -113,6 +113,9 @@ function Copy-CaelestiaRootEntries([string]$Prefix, [string]$Runtime) {
 
 function Install-CaelestiaVersion([string]$Prefix, [string]$Payload, [switch]$Restart) {
     $old = if (Test-Path -LiteralPath (Join-Path $Prefix 'install.json')) { Read-CaelestiaInstall $Prefix } else { $null }
+    if ($old -and $old.installRoot -and $old.installRoot -ne $Prefix) {
+        throw 'Do not install into an immutable version directory. Use its stable installRoot.'
+    }
     $legacy = $old -and $old.version -eq 1
     $previous = if ($old -and -not $legacy) { [string]$old.current } else { '' }
     $candidate = Get-Content -LiteralPath (Join-Path $Payload 'install.json') -Raw | ConvertFrom-Json
