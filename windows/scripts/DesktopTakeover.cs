@@ -90,6 +90,13 @@ namespace Caelestia.Takeover {
         // late callback from this child can no longer reach the shared logs.
         public bool Retired;
     }
+    public static class RestartPolicy {
+        // One immediate recovery, then backoff. The third quick failure still
+        // gives up, so a bad build cannot spin in an unbounded restart loop.
+        public static int DelaySeconds(int quickCrashes) {
+            return quickCrashes <= 1 ? 0 : Math.Min(30, 1 << Math.Min(5, quickCrashes - 2));
+        }
+    }
     public static class TransientIo {
         // A scanner or indexer can hold a file for a moment. Retry a few times
         // with doubling pauses (25, 50, 100, 200 ms), then surface the error.
@@ -1277,6 +1284,9 @@ namespace Caelestia.Takeover {
             string state;
             if (launch.Environment == null || !launch.Environment.TryGetValue("CAELESTIA_STATE_DIR", out state)
                 || String.IsNullOrEmpty(state)) return;
+            // Most sessions never suppress banners. Avoid spawning PowerShell
+            // on every launch, crash and quit when there is nothing to restore.
+            if (!File.Exists(Path.Combine(state, "banner-suppression.json"))) return;
             string helper = Path.Combine(launch.WorkingDirectory, "Banner-Suppression.ps1");
             if (!File.Exists(helper)) {
                 if (File.Exists(Path.Combine(state, "banner-suppression.json")))
@@ -1485,9 +1495,16 @@ namespace Caelestia.Takeover {
                 if (code == 0) { Finish("clean-exit", 0); return; }
                 quickCrashes = (DateTime.UtcNow - started).TotalSeconds < 30 ? quickCrashes + 1 : 0;
                 if (!restart || quickCrashes >= 3) { Finish("crash-give-up", code); return; }
-                if (!isolatedTest) Native.RestoreOwned(saved, pid, launch.RestoreWorkAreas, hide);
-                nextStart = DateTime.UtcNow.AddSeconds(Math.Min(30, Math.Pow(2, Math.Max(1, quickCrashes))));
+                int delay = RestartPolicy.DelaySeconds(quickCrashes);
+                if (!isolatedTest) {
+                    if (delay == 0) Native.RestoreOwned(saved, pid, launch.RestoreWorkAreas, false);
+                    else Native.RestoreOwned(saved, pid, launch.RestoreWorkAreas, hide);
+                }
+                nextStart = DateTime.UtcNow.AddSeconds(delay);
                 Status("restart-backoff", 0);
+                // Start in this tick rather than spending another 250 ms with
+                // no shell. The supervisor keeps ownership during this retry.
+                if (delay == 0) Start();
             } catch (Exception error) {
                 Fail(error, "");
             }

@@ -23,6 +23,21 @@ $exe = Join-Path $Prefix 'qs.exe'
 if ($Smoke -and $Command -ne 'Start') { throw '-Smoke requires -Command Start.' }
 if ($PSBoundParameters.ContainsKey('ScreenIndex') -and -not $Smoke) { throw '-ScreenIndex requires -Smoke.' }
 
+# A normal restart is a transactional in-process reload: Quickshell retains
+# existing windows until the new graph loads. Never quit/reinstall for this.
+if ($Command -in @('State', 'Restart')) {
+    if ($Command -eq 'State') { Invoke-CaelestiaIpc $Prefix state; return }
+    $reloadClock = [Diagnostics.Stopwatch]::StartNew()
+    $previous = (Invoke-CaelestiaIpc $Prefix restart).Trim()
+    Write-Verbose ('Reload IPC acknowledged after {0:N3}s.' -f $reloadClock.Elapsed.TotalSeconds)
+    # New shells return the retired generation with the restart acknowledgement,
+    # saving a separate preflight IPC round trip. Old shells return no value.
+    Wait-CaelestiaReady $Prefix -PreviousGeneration $previous -LegacyReady:([string]::IsNullOrEmpty($previous))
+    Write-Verbose ('New generation rendered after {0:N3}s.' -f $reloadClock.Elapsed.TotalSeconds)
+    Write-Output 'Caelestia reloaded in place.'
+    return
+}
+
 if ($Command -eq 'Start') {
     # Automatically claim only an empty profile; pre-populated directories
     # without an existing marker are never auto-marked exclusive.
@@ -223,6 +238,7 @@ if ($Smoke) {
         -StateDirectory (Join-Path $profile ('runtime\supervisor-' + [guid]::NewGuid().ToString('N'))) `
         -ConfigPath $supervisorConfig -StdoutPath $stdoutPath -StderrPath $stderrPath
     $process = $supervised.Watchdog
+    Wait-CaelestiaReady $Prefix
     Write-Output "Started supervised Caelestia. Profile: $profile; status: $($supervised.StatusPath)"
 }
 if (-not $Smoke -and -not $Wait) { return }

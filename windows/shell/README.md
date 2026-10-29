@@ -28,7 +28,31 @@ powershell -NoProfile -File windows/scripts/Uninstall-Caelestia.ps1
 ```
 
 Installer flags: `-BuildRoot`, `-QtPrefix`, `-VCRuntimeRoot`, `-Prefix`,
-`-ProfileRoot`, and opt-in `-Autostart`. Installation does not launch the shell.
+`-ProfileRoot`, opt-in `-Autostart`, and `-Restart`. Ordinary installation does
+not launch the shell and requires it to be stopped.
+
+For an update, do **not** quit first:
+
+```powershell
+& windows/scripts/Install-Caelestia.ps1 -BuildRoot C:\b-topic -Restart
+```
+
+This assembles Qt, QML, licenses and a rollback copy while the old shell remains
+running. Only then does it quit, mirror the prepared payload and launch through
+an on-demand, non-elevated interactive scheduled task. It waits for responsive
+IPC and a first frame from every drawer before retiring the old files. A failed
+replacement is stopped and the previous build is restored/restarted; the update
+still reports failure. Preparation and stop-to-ready times are printed separately.
+This reduces the desktop gap, not the total packaging work, and is not a
+zero-frame handoff between different native executables.
+
+`-Command Restart` is the normal lightweight restart: it reloads QML **inside
+the existing shell process**, retaining the watchdog and windows. It waits for
+a new QML generation to render, and fails if the reload is rejected instead of
+mistaking the still-running old graph for success. It does not install source
+changes or reload native DLLs. Profile settings/keybinds are already watched and
+usually need neither command.
+
 Uninstall accepts `-Prefix` and optional `-Purge`; ordinary uninstall preserves
 configuration. All IPC commands select this installation's exact QML path.
 
@@ -62,7 +86,9 @@ records its durable snapshot/status under `runtime/supervisor-<id>/`.
 Quickshell also retains native instance bookkeeping under
 `%LOCALAPPDATA%\quickshell`.
 
-Taskbar hiding is opt-in. The watchdog restarts crashes with bounded backoff,
+Taskbar hiding is opt-in. The watchdog retries the first crash immediately,
+retaining taskbar suppression during that retry. Repeated quick crashes use
+bounded backoff and give up after three failures. The watchdog
 restores its owned desktop changes on exit, and never starts a second tiler.
 `Restore-Desktop.ps1` is the emergency recovery command; restarting Explorer
 requires its separate explicit flag.
@@ -98,7 +124,7 @@ captured, stop the experiment; do not interpret it as acceptance.
 Each HWND's original region is recorded in `desktop-before.json` before
 mutation, including taskbars discovered later. Recovery verifies the HWND,
 Explorer PID and process creation time before restoring it, not just monitor
-identity. Clean quit, crash give-up, watchdog recovery and restart backoff
+identity. Clean quit, crash give-up, watchdog recovery and delayed restart backoff
 restore regions along with the existing desktop state. If the supervisor is
 forcibly killed, run `Restore-Desktop.ps1 -SnapshotPath <desktop-before.json>`;
 without that snapshot exact prior regions cannot be reconstructed. Restarting
