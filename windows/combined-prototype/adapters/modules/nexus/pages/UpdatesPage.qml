@@ -44,8 +44,8 @@ PageBase {
     property bool confirming: false
     // Set on submit and kept after success: the shell restarts, so the page
     // never re-enables the action.
-    property bool rollbackSubmitted: false
-    property bool rollbackFailed: false
+    readonly property bool rollbackSubmitted: UpdateManager.submitted
+    readonly property bool rollbackFailed: UpdateManager.failed
 
     readonly property bool loaded: loadState === "ready" && info !== null
     readonly property bool busy: loadState === "loading" || rollbackSubmitted
@@ -83,7 +83,7 @@ PageBase {
         if (loadState === "error")
             return Tr.tr("Version status could not be read. Try refreshing.");
         if (rollbackFailed)
-            return Tr.tr("The rollback could not be requested. Nothing was changed.");
+            return Tr.tr("Rollback could not complete. Refresh to check the selected version.");
         if (rollbackSubmitted)
             return Tr.tr("Rollback requested. Caelestia will restart shortly.");
         return "";
@@ -102,13 +102,10 @@ PageBase {
     }
 
     function requestRollback(): void {
-        if (!canRollback || rollbackProc.running)
+        if (!canRollback)
             return;
         confirming = false;
-        rollbackFailed = false;
-        rollbackSubmitted = true;
-        rollbackProc.command = powershellCommand(["-Command", "Rollback"]);
-        rollbackProc.running = true;
+        UpdateManager.request(powershellCommand(["-Command", "Rollback", "-ExpectedCurrent", selectedId]));
     }
 
     function powershellCommand(extra: var): var {
@@ -157,20 +154,6 @@ PageBase {
                 root.loadState = "error";
                 // Exit code only: the output can carry user paths.
                 console.warn(`CAELESTIA_UPDATES_STATUS_FAIL exit=${code}`);
-            }
-        }
-    }
-
-    Process {
-        id: rollbackProc
-
-        command: []
-
-        onExited: code => {
-            if (code !== 0) {
-                root.rollbackSubmitted = false;
-                root.rollbackFailed = true;
-                console.warn(`CAELESTIA_UPDATES_ROLLBACK_FAIL exit=${code}`);
             }
         }
     }

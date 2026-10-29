@@ -37,14 +37,57 @@ For an update, do **not** quit first:
 & windows/scripts/Install-Caelestia.ps1 -BuildRoot C:\b-topic -Restart
 ```
 
-This assembles Qt, QML, licenses and a rollback copy while the old shell remains
-running. Only then does it quit, mirror the prepared payload and launch through
-an on-demand, non-elevated interactive scheduled task. It waits for responsive
-IPC and a first frame from every drawer before retiring the old files. A failed
-replacement is stopped and the previous build is restored/restarted; the update
-still reports failure. Preparation and stop-to-ready times are printed separately.
-This reduces the desktop gap, not the total packaging work, and is not a
-zero-frame handoff between different native executables.
+This assembles Qt, QML and licenses in a new immutable version while the old shell
+remains running. Only then does it quit, atomically select the prepared version
+and launch through an on-demand, non-elevated interactive scheduled task. A
+responsive IPC endpoint and first frame from every drawer are required before
+success. Failed activation selects/restarts the previous version and still
+reports failure. No running executable or DLL is overwritten.
+
+The layout is:
+
+```text
+<prefix>/
+  Start-Caelestia.ps1             stable launcher, shortcuts and Run entry
+  Manage-Caelestia.ps1            status and confirmed rollback
+  Uninstall-Caelestia.ps1
+  install.json                   schema 2: current and previous version ids
+  versions/<timestamp-revision-id>/
+    install.json                 schema 1 runtime/provenance manifest
+    qs.exe, shell/, qml/, plugins/, licenses/, ...
+```
+
+The profile remains outside this tree. `State`, `Quit` and `Restart` route to
+the actual running version; `Start` uses the selected version. Current and
+previous payloads are retained. Older owned versions are removed only after
+successful installation, never if still running, linked, unrecognized or
+locked. Their removal is best effort and cannot fail a healthy update.
+
+The first update migrates a flat installation by retaining a legacy version
+before changing its root launcher. Legacy runtime files may also remain at the
+root for compatibility; subsequent installs use only version directories.
+No junctions or symlinks are used, and no credentials are stored in the tree.
+
+Settings > Updates shows the running/selected build and retained previous
+version. Rollback requires confirmation and runs as independent scheduled
+maintenance, so closing Settings does not cancel it. It preserves the profile.
+The same operation can be requested from PowerShell:
+
+```powershell
+& "<prefix>\Manage-Caelestia.ps1" -Command Status
+& "<prefix>\Manage-Caelestia.ps1" -Command Rollback
+```
+
+Rollback toggles the selected and previous versions, allowing a return to the
+newer build. `-Wait` executes maintenance synchronously for diagnostics; normal
+requests queue it outside the shell's process tree.
+
+No Windows release packages/feed are published yet. The page explicitly reports
+that downloads are unavailable; it does not treat source commits as installable
+updates, prompt for authentication, or perform background network checks.
+This layout is a foundation for a verified package channel and warm successor
+handoff, not a claim of zero-frame native executable replacement. Native updates
+still stop the old shell before starting the replacement.
 
 `-Command Restart` is the normal lightweight restart: it reloads QML **inside
 the existing shell process**, retaining the watchdog and windows. It waits for

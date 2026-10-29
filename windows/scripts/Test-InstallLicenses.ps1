@@ -53,31 +53,32 @@ $markerHash = (Get-FileHash -LiteralPath $marker).Hash
 try {
     foreach ($phase in @('install', 'update')) {
         & "$PSScriptRoot\Install-Caelestia.ps1" @arguments
+        $runtime = Resolve-CaelestiaRuntimePrefix $prefix
         foreach ($entry in $pairs.GetEnumerator()) {
             $source = Join-Path $repoRoot $entry.Key
-            $target = Join-Path "$prefix\licenses" $entry.Value
+            $target = Join-Path "$runtime\licenses" $entry.Value
             if (-not (Test-Path -LiteralPath $target -PathType Leaf) -or
                 (Get-FileHash -LiteralPath $source).Hash -ne (Get-FileHash -LiteralPath $target).Hash) {
                 throw "Missing or changed $phase notice: $($entry.Value)"
             }
         }
         foreach ($file in @('LGPL-3.0.txt', 'GPL-3.0.txt')) {
-            if ((Get-FileHash -LiteralPath "$prefix\licenses\$file").Hash -ne
-                (Get-FileHash -LiteralPath "$prefix\licenses\Qt\$file").Hash) { throw "Qt license differs: $file" }
+            if ((Get-FileHash -LiteralPath "$runtime\licenses\$file").Hash -ne
+                (Get-FileHash -LiteralPath "$runtime\licenses\Qt\$file").Hash) { throw "Qt license differs: $file" }
         }
         # Check all prefix-supplied license files and SBOMs, not just one sample.
         foreach ($file in Get-ChildItem -LiteralPath $QtPrefix -Recurse -File) {
             $relative = $file.FullName.Substring($QtPrefix.Length + 1)
             $target = $null
             if ($relative.StartsWith('licenses\', [StringComparison]::OrdinalIgnoreCase)) {
-                $target = Join-Path "$prefix\licenses\Qt" $relative.Substring(9)
+                $target = Join-Path "$runtime\licenses\Qt" $relative.Substring(9)
             } elseif ($relative.StartsWith('sbom\', [StringComparison]::OrdinalIgnoreCase)) {
-                $target = Join-Path "$prefix\licenses\Qt-sbom" $relative.Substring(5)
+                $target = Join-Path "$runtime\licenses\Qt-sbom" $relative.Substring(5)
             } elseif ($relative -imatch '(^|\\)LICENSES\\') {
                 # SPDX-named texts (LGPL-3.0-only.txt, ...) keep their Qt-relative path.
-                $target = Join-Path "$prefix\licenses\Qt" $relative
+                $target = Join-Path "$runtime\licenses\Qt" $relative
             } elseif ($file.Name -match '(^|[._-])(LICENSE|LICENCE|COPYING|NOTICE|OFL)([._-].*)?$') {
-                $target = Join-Path "$prefix\licenses\Qt" $relative
+                $target = Join-Path "$runtime\licenses\Qt" $relative
             }
             if ($target -and (-not (Test-Path -LiteralPath $target) -or
                 (Get-FileHash -LiteralPath $file.FullName).Hash -ne (Get-FileHash -LiteralPath $target).Hash)) {
@@ -85,8 +86,8 @@ try {
             }
         }
         # Deployed Qt modules must come with Qt's license texts or SBOMs.
-        if ((Get-ChildItem -LiteralPath $prefix -Filter 'Qt6*.dll' | Select-Object -First 1) -and
-            -not (Get-ChildItem -LiteralPath "$prefix\licenses\Qt", "$prefix\licenses\Qt-sbom" -File -Recurse -ErrorAction SilentlyContinue |
+        if ((Get-ChildItem -LiteralPath $runtime -Filter 'Qt6*.dll' | Select-Object -First 1) -and
+            -not (Get-ChildItem -LiteralPath "$runtime\licenses\Qt", "$runtime\licenses\Qt-sbom" -File -Recurse -ErrorAction SilentlyContinue |
                 Where-Object { $_.Name -notin @('LGPL-3.0.txt', 'GPL-3.0.txt') } | Select-Object -First 1)) {
             throw "Qt libraries are deployed but only the generic LGPL/GPL texts accompany them ($phase)."
         }

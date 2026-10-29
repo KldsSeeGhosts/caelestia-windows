@@ -17,6 +17,7 @@ if (-not $Prefix) {
 }
 $Prefix = Resolve-CaelestiaDirectory $Prefix
 $record = Read-CaelestiaInstall $Prefix
+$installRoot = if ($record.installRoot) { [string]$record.installRoot } else { $Prefix }
 $profile = Resolve-CaelestiaDirectory $record.profile
 $stage = Join-Path $Prefix 'shell'
 $exe = Join-Path $Prefix 'qs.exe'
@@ -42,7 +43,7 @@ if ($Command -eq 'Start') {
     # Automatically claim only an empty profile; pre-populated directories
     # without an existing marker are never auto-marked exclusive.
     if (-not (Read-CaelestiaProfileOwner $profile) -and (Test-CaelestiaProfileEmpty $profile)) {
-        Write-CaelestiaProfileOwner $profile $Prefix $(if ($record.installId) { [string]$record.installId } else { [guid]::NewGuid().ToString('N') }) $true
+        Write-CaelestiaProfileOwner $profile $installRoot $(if ($record.installId) { [string]$record.installId } else { [guid]::NewGuid().ToString('N') }) $true
     }
     foreach ($dir in @('config', 'state', 'cache', 'data', 'runtime', 'logs')) {
         New-Item -ItemType Directory -Force -Path (Join-Path $profile $dir) | Out-Null
@@ -85,6 +86,9 @@ $info.EnvironmentVariables['CAELESTIA_STATE_DIR'] = Join-Path $profile 'state'
 $info.EnvironmentVariables['CAELESTIA_BANNER_HELPER'] = Join-Path $PSScriptRoot 'Banner-Suppression.ps1'
 $info.EnvironmentVariables['CAELESTIA_RUNTIME_DIR'] = Join-Path $profile 'runtime'
 $info.EnvironmentVariables['CAELESTIA_PROFILE_ROOT'] = $profile
+$info.EnvironmentVariables['CAELESTIA_INSTALL_ROOT'] = $installRoot
+$info.EnvironmentVariables['CAELESTIA_VERSION_ID'] = [string]$record.versionId
+$info.EnvironmentVariables['CAELESTIA_SOURCE_REVISION'] = [string]$record.sourceRevision
 foreach ($directory in @('config', 'state', 'data', 'cache')) {
     $info.EnvironmentVariables["XDG_$($directory.ToUpperInvariant())_HOME"] = Join-Path $profile $directory
 }
