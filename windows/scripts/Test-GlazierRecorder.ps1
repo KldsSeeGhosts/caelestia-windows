@@ -90,7 +90,10 @@ foreach ($scenario in @('normal', 'cold-start', 'start-timeout', 'store-missing'
         throw "Disabled/smoke recorder invoked the stub: $scenario"
     }
     if ($scenario.StartsWith('store-')) {
-        $saved = @(Get-Content -LiteralPath $ownershipFile -Raw | ConvertFrom-Json)
+        # WinPS 5.1 emits a parsed JSON array as one pipeline item. Enumerate
+        # the assigned value so this count checks records, not the wrapper.
+        $saved = Get-Content -LiteralPath $ownershipFile -Raw | ConvertFrom-Json
+        $saved = @($saved)
         $expectedCount = if ($scenario -in @('store-write', 'store-restart')) { 500 } else { 1 }
         if ($saved.Count -ne $expectedCount) {
             throw "Unexpected persisted ownership count in synthetic $scenario fixture."
