@@ -9,6 +9,10 @@ import qs.services
 TrayContent {
     id: root
 
+    // Pointer handlers are QObjects and cannot inherit screen-attached tokens.
+    readonly property bool trayCompact: Config.bar.tray.compact
+    readonly property real trayRowHeight: Tokens.font.body.small.pointSize * 2 + Tokens.spacing.small
+
     sourceItems: WindowsTray.list
     autoCollapse: false
     implicitHeight: items.count > 0 ? nonAnimHeight : 0
@@ -22,10 +26,9 @@ TrayContent {
     WheelHandler {
         parent: root.viewport
         target: null
-        enabled: root.expanded || !Config.bar.tray.compact
+        enabled: root.expanded || !root.trayCompact
         onWheel: event => {
-            const rowHeight = Tokens.font.body.small.pointSize * 2 + Tokens.spacing.small;
-            const delta = event.pixelDelta.y || event.angleDelta.y / 120 * rowHeight * 3;
+            const delta = event.pixelDelta.y || event.angleDelta.y / 120 * root.trayRowHeight * 3;
             root.viewport.contentY = Math.max(0, Math.min(root.viewport.contentHeight - root.viewport.height, root.viewport.contentY - delta));
             event.accepted = true;
         }

@@ -24,6 +24,8 @@ Item {
     property real sourceVolume
     property bool sourceMuted
     property real brightness
+    // Windows distinguishes actual feedback from route/query bookkeeping.
+    property bool brightnessOsdOnChange: true
 
     function show(): void {
         screenState.osd = true;
@@ -74,7 +76,8 @@ Item {
 
     Connections {
         function onBrightnessChanged(): void {
-            root.show();
+            if (root.brightnessOsdOnChange)
+                root.show();
             root.brightness = root.monitor?.brightness ?? 0;
         }
 

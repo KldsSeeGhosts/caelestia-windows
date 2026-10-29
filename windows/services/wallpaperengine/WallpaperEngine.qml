@@ -19,9 +19,11 @@ Singleton {
     property bool detected: false
     property bool running: false
     property bool snapshotReady: !Boolean(python)
-    // Fail closed before discovery when a helper is configured, and keep
-    // yielding even if integration is disabled: a running external desktop
-    // owner must never be covered.
+    // This is an ownership guard, NOT rendered-output readiness. The bridge
+    // has no first-frame or per-screen presentation acknowledgement (#146).
+    // Yield before discovery when a helper is configured, and keep yielding
+    // to a known running process even if integration is disabled. Startup
+    // scan failure falls back to the shell; it cannot prove WE is absent.
     readonly property bool ownsDesktop: !snapshotReady || running
     property string status: python ? "discovering" : "unavailable"
     property string lastError: ""
@@ -115,6 +117,15 @@ Singleton {
         status = !enabled ? "disabled" : running && detected ? "ready" : "absent";
         lastError = "";
         matchColours();
+    }
+
+    function applyDiscoveryFailure(data): void {
+        // A readable process list still establishes start/stop even if the
+        // selected-project config is locked/partial. Keep the last catalogue,
+        // but never let its stale running flag hold the desktop hostage.
+        running = data.running;
+        snapshotReady = true;
+        scanFailed(data.discoveryError);
     }
 
     function applyStatus(data): void {
@@ -237,7 +248,9 @@ Singleton {
                 const data = JSON.parse(scanOutput.text);
                 if (code !== 0 || !data.ok)
                     throw new Error(data.error || "discovery failed");
-                if (scan.statusOnly)
+                if (data.discoveryError)
+                    root.applyDiscoveryFailure(data);
+                else if (scan.statusOnly)
                     root.applyStatus(data);
                 else
                     root.applySnapshot(data);
