@@ -25,7 +25,10 @@ Singleton {
     // only files Delete may remove.
     property var finishedFiles: []
     property string lastError: ""
+    property string connectionError: ""
     property bool pendingStart: false
+    // Only the shell's initial observation can contain pre-restart errors.
+    property bool baselinePending: true
     property string hostId: ""
     property real eventSequence: 0
     property bool connectionFailed: false
@@ -36,12 +39,16 @@ Singleton {
     // Fast only while healthy and something is happening or the card is open;
     // a failed host retries slowly and a quiet shell polls occasionally.
     readonly property bool pollFast: pendingStart || (!connectionFailed && (state !== "idle" || refCount > 0))
-    readonly property bool canStart: permitted && available && !incompatible && state === "idle" && !pendingStart
+    // Observe the initial journal (or stopped host) before accepting Start;
+    // protocol v1 cannot distinguish old errors from a pre-baseline attempt.
+    readonly property bool canStart: permitted && available && !incompatible && !baselinePending && state === "idle" && !pendingStart
     readonly property string status: {
         if (!permitted)
             return Quickshell.env("CAELESTIA_SHELL_SMOKE") === "1" ? "Suppressed during smoke." : "Live controls are off.";
         if (lastError)
             return lastError;
+        if (connectionError)
+            return connectionError;
         if (!probed)
             return "Checking Glazier...";
         if (!available)
@@ -57,7 +64,7 @@ Singleton {
         state = "idle";
         elapsed = 0;
         pendingStart = false;
-        lastError = message;
+        connectionError = message;
     }
 
     function normalize(path): string {
@@ -135,8 +142,9 @@ Singleton {
             // Start to launch Glazier. Keep pendingStart until it responds.
             incompatible = false;
             available = Boolean(executable);
+            baselinePending = false; // a future host starts during this shell session
             if (!pendingStart)
-                disconnected("Glazier is not running (Start launches it).");
+                disconnected("Glazier stopped");
             return false;
         }
         if (["idle", "selecting", "ready", "recording", "paused", "finalizing"].indexOf(data.state) < 0
@@ -148,16 +156,20 @@ Singleton {
         }
         available = true;
         incompatible = false;
-        if (connectionFailed)
-            lastError = "";
+        connectionError = "";
         connectionFailed = false;
         state = data.state;
         elapsed = data.elapsed_ms / 1000;
         outputDir = data.output_directory.replace(/\\/g, "/");
-        // The first response from a host is its baseline: that journal predates
-        // this shell, so only note finished files and keep old errors quiet.
-        const replay = hostId !== data.host_id;
-        if (replay) {
+        // A confirmed recording also recovers a failed Start if its started
+        // event has already rolled out of Glazier's bounded journal.
+        if (running)
+            lastError = "";
+        // Baseline once on shell startup, not on every host change. After an
+        // offline observation, a new host's errors are fresh.
+        const replay = baselinePending;
+        baselinePending = false;
+        if (hostId !== data.host_id) {
             hostId = data.host_id;
             eventSequence = 0;
         }
@@ -207,6 +219,7 @@ Singleton {
         if (!region)
             args.push("--fullscreen");
         lastError = "";
+        connectionError = "";
         lastFile = "";
         pendingStart = true;
         // #81: the backend detached path redirects all stdio to NUL and disowns
@@ -308,8 +321,13 @@ Singleton {
         id: startTimeout
         interval: 15000
         onTriggered: {
-            if (root.pendingStart)
-                root.disconnected("Glazier did not start recording. Check Glazier and its control protocol version.");
+            if (root.pendingStart) {
+                root.pendingStart = false;
+                // A healthy idle reply is not a successful Start. Keep this
+                // failure until a new attempt or a started event, like errors
+                // reported by Glazier itself.
+                root.lastError = "Glazier did not start recording. Check Glazier and its control protocol version.";
+            }
         }
     }
 }
