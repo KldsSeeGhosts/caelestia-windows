@@ -1,4 +1,4 @@
-﻿pragma ComponentBehavior: Bound
+pragma ComponentBehavior: Bound
 
 import QtQuick
 import Quickshell
@@ -17,7 +17,7 @@ Background {
     // yield the desktop rather than cover a running engine. Discovery starts
     // fail-closed so startup cannot cover a running engine.
     readonly property bool backgroundRequested: Quickshell.env("CAELESTIA_WINDOWS_BACKGROUND") === "1"
-    readonly property bool underlaySupported: typeof Native.DesktopLayer.underlayActive === "boolean"
+    readonly property bool underlaySupported: "underlayActive" in Native.DesktopLayer
     readonly property bool underlayActive: underlaySupported && Native.DesktopLayer.underlayActive
     readonly property bool externalActive: Wallpapers.externalWallpaperActive
     readonly property bool enabled: backgroundRequested
@@ -49,9 +49,8 @@ Background {
         }
     }
     onBackgroundRequestedChanged: reconcileDesktop()
-    onUnderlaySupportedChanged: reconcileDesktop()
     onExternalActiveChanged: reconcileDesktop()
-    onEnabledChanged: reconcileDesktop()
+    onDesktopIconsChanged: reconcileDesktop()
     Component.onCompleted: reconcileDesktop()
 
     function checkReady(screen: ShellScreen): bool {

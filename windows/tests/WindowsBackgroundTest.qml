@@ -22,7 +22,7 @@ Item {
     // icons embedding and no refused SetParent is the underlay.
     property QtObject underlaySupportedHost: QtObject {
         property bool embedRefused: false
-        property bool underlayActive: !embedRefused && aboveIcons.length === 0
+        property bool underlayActive: enabled && !embedRefused && aboveIcons.length === 0
         property bool active: false
         property bool enabled: false
         property var aboveIcons: []
@@ -106,6 +106,7 @@ Item {
         try {
             // The real screens expression expands the catalog on our own
             // desktop and closes when the host is not embedded.
+            reconcileDesktop();
             screensCatalog = [screen, secondScreen];
             instances = [backgroundWindow];
             nativeLayer = root.underlaySupportedHost;
