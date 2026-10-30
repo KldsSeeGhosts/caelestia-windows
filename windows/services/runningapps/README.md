@@ -20,8 +20,12 @@ list. Tray-only/background applications stay in the existing tray.
 - The viewport reserves one to five complete icon rows according to available
   bar space. Additional apps scroll inside it. Wheel events cannot reach the
   surrounding workspace, volume, or brightness shortcuts.
-- First-seen app/window ordering is stable for the lifetime of those windows.
-  Nothing is pinned or persisted.
+- First-seen app/window ordering follows source encounter order, never numeric
+  id, title, focus or MRU order. Minimize, focus, title, duplicate-handle and
+  desktop updates do not reorder entries. A temporarily app-cloaked window
+  keeps its slot and returns to it when uncloaked; a window that actually
+  closes releases its slot, and a later recreation is appended. Nothing is
+  pinned or persisted.
 
 `RunningAppsModel.qml` projects injected observations. `RunningApps.qml` shares
 the existing opted-in Hypr facade and requires its existing dispatch gate for

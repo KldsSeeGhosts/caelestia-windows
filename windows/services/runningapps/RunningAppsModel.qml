@@ -12,24 +12,21 @@ QtObject {
     property var windowIds: []
     property var groups: ({})
     property var windows: ({})
+    // Insertion history survives temporary app cloaks. groupIds/windowIds are
+    // the visible projection; these sequences restore an uncloaked slot.
+    property var groupOrder: []
+    property var windowOrder: []
 
-    readonly property var observations: source.filter(t => t
-        && t.lastIpcObject?.mapped && t.lastIpcObject?.class && t.wayland).map(t => ({
-        id: t.address,
-        appId: t.lastIpcObject.class,
-        title: t.title || t.lastIpcObject.class,
-        native: t.wayland,
-        minimized: t.wayland.minimized,
-        active: t.activated,
-        desktop: t.workspace?.id ?? 0
-    }))
+    readonly property var observations: Logic.observe(source)
 
     onObservationsChanged: refresh()
 
     function refresh(): void {
-        const next = Logic.project(observations, groupIds, windowIds);
+        const next = Logic.project(observations, groupOrder, windowOrder);
         windows = next.byId;
         groups = next.groups;
+        groupOrder = next.groupOrder;
+        windowOrder = next.windowOrder;
         // Primitive keys preserve delegate identity through title/state updates.
         if (groupIds.join("\n") !== next.groupIds.join("\n"))
             groupIds = next.groupIds;
