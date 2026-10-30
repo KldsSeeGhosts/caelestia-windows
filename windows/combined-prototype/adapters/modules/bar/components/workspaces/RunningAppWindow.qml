@@ -46,6 +46,7 @@ Item {
                 }
             }
             StateLayer {
+                objectName: "runningAppActivate"
                 radius: Tokens.rounding.medium
                 enabled: root.actionsEnabled
                 onClicked: root.activateRequested()
@@ -61,12 +62,14 @@ Item {
         }
 
         Action {
+            objectName: "runningAppMinimize"
             icon: "minimize"
             label: "Minimize"
             enabled: root.actionsEnabled && !(root.window?.minimized ?? true)
             onClicked: root.minimizeRequested()
         }
         Action {
+            objectName: "runningAppClose"
             icon: "close"
             label: "Close"
             enabled: root.actionsEnabled
@@ -87,6 +90,7 @@ Item {
             opacity: parent.enabled ? 1 : 0.5
         }
         StateLayer {
+            objectName: parent.objectName + "Button"
             radius: Tokens.rounding.full
             enabled: parent.enabled
             onClicked: parent.clicked()

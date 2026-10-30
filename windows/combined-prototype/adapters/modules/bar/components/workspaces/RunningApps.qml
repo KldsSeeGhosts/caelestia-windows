@@ -17,6 +17,15 @@ StyledRect {
     property string selectedApp: ""
     readonly property real padding: Tokens.padding.small
     readonly property var selectedGroup: Services.RunningApps.groups[selectedApp] ?? null
+    // The chooser is its own native popup. A click on the parent window must
+    // still dismiss it where the platform does not deliver the native
+    // outside-click close (the offscreen harness included).
+    readonly property Item dismissHost: {
+        let item = root;
+        while (item.parent)
+            item = item.parent;
+        return item;
+    }
 
     function appName(group): string {
         // Re-resolve friendly names when the existing catalog finishes scanning.
@@ -42,6 +51,16 @@ StyledRect {
         Services.RunningApps.request(id, "activate");
     }
 
+    function openChooser(key: string, item: Item): void {
+        if (!Services.RunningApps.groups[key] || !Services.RunningApps.actionsEnabled)
+            return;
+        selectedApp = key;
+        chooser.anchor.item = item;
+        // A chooser opened for a new gesture starts at the first window.
+        windowList.currentIndex = 0;
+        chooser.visible = true;
+    }
+
     function selectApp(key: string, item: Item): void {
         const group = Services.RunningApps.groups[key];
         if (!group || !Services.RunningApps.actionsEnabled)
@@ -50,9 +69,7 @@ StyledRect {
             activate(group.windowIds[0]);
             return;
         }
-        selectedApp = key;
-        chooser.anchor.item = item;
-        chooser.visible = true;
+        openChooser(key, item);
     }
 
     onSelectedGroupChanged: {
@@ -132,13 +149,10 @@ StyledRect {
                 acceptedButtons: Qt.LeftButton | Qt.RightButton
                 onEntered: root.interactionStarted()
                 onClicked: event => {
-                    if (event.button === Qt.RightButton) {
-                        root.selectedApp = app.modelData;
-                        chooser.anchor.item = app;
-                        chooser.visible = true;
-                    } else {
+                    if (event.button === Qt.RightButton)
+                        root.openChooser(app.modelData, app);
+                    else
                         root.selectApp(app.modelData, app);
-                    }
                 }
                 activeFocusOnTab: true
                 Keys.onReturnPressed: root.selectApp(app.modelData, app)
@@ -215,7 +229,7 @@ StyledRect {
                 Keys.onReturnPressed: {
                     const ids = root.selectedGroup?.windowIds ?? [];
                     if (ids.length)
-                        root.activate(ids[Math.max(0, currentIndex)]);
+                        root.activate(ids[Math.max(0, Math.min(ids.length - 1, currentIndex))]);
                 }
 
                 delegate: RunningAppWindow {
@@ -234,6 +248,21 @@ StyledRect {
                 }
             }
         }
+    }
+
+    // Sits above the bar only for the chooser's lifetime, so an outside press
+    // dismisses instead of acting on whatever was underneath.
+    MouseArea {
+        id: outsideDismiss
+        objectName: "runningAppsOutsideDismiss"
+        parent: root.dismissHost
+        width: parent ? parent.width : 0
+        height: parent ? parent.height : 0
+        z: 1000000
+        visible: chooser.visible
+        enabled: visible
+        acceptedButtons: Qt.LeftButton | Qt.RightButton
+        onClicked: chooser.visible = false
     }
 
     Behavior on implicitHeight { Anim {} }

@@ -30,6 +30,9 @@ ShellRoot {
     property var queueThird
     property var queueReplacement
     property var retryFixture
+    property var interactionFirst
+    property var interactionSecond
+    property var interactionThird
     readonly property var screen: Quickshell.screens.length ? Quickshell.screens[0] : null
     readonly property var screenState: screen ? Services.ShellState.forScreen(screen) : null
 
@@ -154,6 +157,46 @@ ShellRoot {
     function refreshBar(): void {
         barPill = CUtils.findChild(bar, "runningAppsPill");
         barWorkspaces = CUtils.findChild(bar, "taskbarWorkspaces");
+    }
+
+    function chooser(): var {
+        return Array.from(pill.data).find(child => child.objectName === "runningAppsChooser") ?? null;
+    }
+
+    function chooserList(popup): var {
+        return popup ? CUtils.findChild(popup.contentItem, "runningAppsWindowList") : null;
+    }
+
+    function appRow(key: string): var {
+        const apps = listFor(pill);
+        if (!apps)
+            return null;
+        for (let i = 0; i < apps.count; i++) {
+            const item = apps.itemAtIndex(i);
+            if (item?.modelData === key)
+                return item;
+        }
+        return null;
+    }
+
+    function focusAt(popup): string {
+        const list = root.chooserList(popup);
+        if (!list)
+            return "";
+        for (let i = 0; i < list.count; i++) {
+            const row = list.itemAtIndex(i);
+            if (!row)
+                continue;
+            for (const name of ["runningAppActivate", "runningAppMinimizeButton", "runningAppCloseButton"]) {
+                if (root.rowButton(row, name)?.activeFocus)
+                    return "row" + i + ":" + name;
+            }
+        }
+        return list.activeFocus ? "list" : "";
+    }
+
+    function rowButton(row, name: string): var {
+        return row ? CUtils.findChild(row, name) : null;
     }
 
     function sendPillWheel(): bool {
@@ -585,8 +628,113 @@ ShellRoot {
                         "deliberate retry posts exactly one more close");
                     check(root.retryFixture.counts.unsafeCloses === 0,
                         "deliberate retry was safe");
-                    Services.RunningApps.source = [];
+                    root.interactionFirst = root.makeFixture("40", "fixture-interaction");
+                    root.interactionSecond = root.makeFixture("41", "fixture-interaction");
+                    root.interactionThird = root.makeFixture("42", "fixture-interaction");
+                    Services.RunningApps.source =
+                        [root.interactionFirst, root.interactionSecond, root.interactionThird];
                 } else if (root.phase === 43) {
+                    check(Services.RunningApps.groupIds.length === 1,
+                        "interaction fixtures project one app");
+                    check(Services.RunningApps.groups["fixture-interaction"]?.windowIds.length === 3,
+                        "interaction app has three windows");
+                } else if (root.phase === 44) {
+                    const row = root.appRow("fixture-interaction");
+                    check(row !== null, "interaction app row is visible");
+                    check(input.mouseClick(row, row.width / 2, row.height / 2,
+                        Qt.LeftButton, Qt.NoModifier, 0), "interaction click delivered");
+                } else if (root.phase === 45) {
+                    const popup = root.chooser();
+                    check(popup?.visible === true, "interaction chooser opened");
+                    check(root.chooserList(popup)?.count === 3, "interaction rows projected");
+                    check(root.focusAt(popup) === "list", "chooser starts with list keyboard focus");
+                    check(input.keyClick(Qt.Key_Escape, Qt.NoModifier, 0), "Escape event delivered");
+                    check(!popup.visible, "Escape dismisses the chooser");
+                } else if (root.phase === 46) {
+                    const row = root.appRow("fixture-interaction");
+                    check(input.mouseClick(row, row.width / 2, row.height / 2,
+                        Qt.LeftButton, Qt.NoModifier, 0), "second chooser click delivered");
+                } else if (root.phase === 47) {
+                    const popup = root.chooser();
+                    check(popup?.visible === true, "chooser reopens after Escape");
+                    check(root.focusAt(popup) === "list", "reopened chooser takes list focus");
+                    input.keyClick(Qt.Key_Tab, Qt.NoModifier, 0);
+                    check(root.focusAt(popup) === "row0:runningAppActivate",
+                        "Tab reaches the first row's activate action");
+                    input.keyClick(Qt.Key_Tab, Qt.NoModifier, 0);
+                    check(root.focusAt(popup) === "row0:runningAppMinimizeButton",
+                        "Tab reaches the first row's minimize action");
+                    input.keyClick(Qt.Key_Tab, Qt.NoModifier, 0);
+                    check(root.focusAt(popup) === "row0:runningAppCloseButton",
+                        "Tab reaches the first row's close action");
+                    input.keyClick(Qt.Key_Tab, Qt.NoModifier, 0);
+                    check(root.focusAt(popup) === "row1:runningAppActivate",
+                        "Tab crosses to the next window row");
+                    check(input.keyClick(Qt.Key_Escape, Qt.NoModifier, 0),
+                        "Escape event delivered from a row action");
+                    check(!popup.visible, "Escape from a row action dismisses the chooser");
+                } else if (root.phase === 48) {
+                    const row = root.appRow("fixture-interaction");
+                    check(input.mouseClick(row, row.width / 2, row.height / 2,
+                        Qt.LeftButton, Qt.NoModifier, 0), "selection chooser click delivered");
+                    const popup = root.chooser();
+                    check(popup?.visible === true, "selection chooser opens");
+                    check(root.chooserList(popup)?.currentIndex === 0,
+                        "chooser opens on the first window");
+                } else if (root.phase === 49) {
+                    const popup = root.chooser();
+                    input.keyClick(Qt.Key_Down, Qt.NoModifier, 0);
+                    check(root.chooserList(popup)?.currentIndex === 1,
+                        "Down selects the second window");
+                    check(input.keyClick(Qt.Key_Return, Qt.NoModifier, 0),
+                        "Return event delivered to the chooser");
+                    check(!popup.visible, "chooser dismisses before activation");
+                } else if (root.phase === 50) {
+                    check(root.interactionSecond.counts.activations === 1,
+                        "Return activates the selected second window");
+                    check(root.interactionFirst.counts.activations === 0
+                        && root.interactionThird.counts.activations === 0,
+                        "Return does not activate another window");
+                    const row = root.appRow("fixture-interaction");
+                    check(input.mouseClick(row, row.width / 2, row.height / 2,
+                        Qt.LeftButton, Qt.NoModifier, 0), "reopen after selection click delivered");
+                } else if (root.phase === 51) {
+                    const popup = root.chooser();
+                    check(popup?.visible === true, "chooser reopens after a selection");
+                    check(root.chooserList(popup)?.currentIndex === 0,
+                        "reopened chooser resets to the first window");
+                    input.keyClick(Qt.Key_Down, Qt.NoModifier, 0);
+                    input.keyClick(Qt.Key_Down, Qt.NoModifier, 0);
+                    check(root.chooserList(popup)?.currentIndex === 2,
+                        "keyboard selection reaches the third window");
+                    // A window closes while the chooser is open. Return lands
+                    // before the deferred list layout clamps currentIndex, so
+                    // activation must clamp the row itself.
+                    Services.RunningApps.source = [root.interactionFirst, root.interactionSecond];
+                    check(input.keyClick(Qt.Key_Return, Qt.NoModifier, 0),
+                        "Return after list shrink delivered");
+                    check(!popup.visible, "chooser dismisses on activation after list shrink");
+                } else if (root.phase === 52) {
+                    check(root.interactionSecond.counts.activations === 2,
+                        "activation after list shrink selects the remaining row");
+                    check(root.interactionFirst.counts.activations === 0
+                        && root.interactionThird.counts.activations === 0,
+                        "list-shrink activation sends no stale target");
+                    const row = root.appRow("fixture-interaction");
+                    check(input.mouseClick(row, row.width / 2, row.height / 2,
+                        Qt.LeftButton, Qt.NoModifier, 0), "outside-click chooser click delivered");
+                } else if (root.phase === 53) {
+                    const popup = root.chooser();
+                    check(popup?.visible === true, "outside-click chooser opens");
+                    check(root.chooserList(popup)?.count === 2, "shrunk rows are projected");
+                    check(input.mouseClick(pill, 5, 470, Qt.LeftButton, Qt.NoModifier, 0),
+                        "outside click delivered to the parent window");
+                    check(!popup.visible, "outside click dismisses the chooser");
+                    check(root.interactionSecond.counts.activations === 2,
+                        "outside click activates nothing");
+                } else if (root.phase === 54) {
+                    Services.RunningApps.source = [];
+                } else if (root.phase === 55) {
                     check(Services.RunningApps.groupIds.length === 0, "empty model");
                     interval = 700;
                 } else {

@@ -36,8 +36,10 @@ preview. The pill is absent when no windows are open.
 
 Click an app icon to restore/focus its window. If the app has several windows,
 click to choose by title and virtual desktop. Right-click any app icon to open
-its window chooser with Minimize and Close actions. Close uses the application's
-normal close behavior, including save prompts; it does not terminate a process.
+its window chooser with Minimize and Close actions. Escape or a click outside
+dismisses the chooser; it starts on the first window each time. Close uses the
+application's normal close behavior, including save prompts; it does not
+terminate a process.
 Apps on other desktops remain reachable, while tray-only apps stay in the tray.
 
 The pill has a bounded height. Scroll over it to reach additional applications;

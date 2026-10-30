@@ -23,8 +23,12 @@ list. Tray-only/background applications stay in the existing tray.
   cancels a save prompt can deliberately retry after that window. The model
   retains the window until it actually closes, including while a save prompt is
   open.
-- Hover only shows descriptive tooltips. Escape or an outside click dismisses
-  the chooser.
+- Hover only shows descriptive tooltips. Escape dismisses the chooser from the
+  window list and from every Tab-focused row action. An outside click dismisses
+  it too: the native popup requests the platform close, backed by a parent-window
+  click-away layer so the same interaction is deterministic offscreen. A chooser
+  opened for a new gesture starts on the first window, and Return clamps a
+  selection left stale by a shrinking window list.
 - The viewport reserves one to five complete icon rows according to available
   bar space. Additional apps scroll inside it. A short list still consumes wheel
   input without moving, so it cannot trigger the workspace, volume, or
@@ -83,14 +87,25 @@ after confirmation. It then covers bounded timeout, disappearance, reused ids,
 disabled controls and a destroyed native handle, drives two concurrent close
 requests through serialized activation, and simulates a cancelled save prompt:
 the first close leaves the window open, a duplicate inside the coalescing window
-is ignored, and a deliberate retry posts exactly one more close. Use the
-undeployed build executable with its matching full Qt development prefix and
-artifact QML plugins. A deployed Windows-only runtime is not an offscreen
+is ignored, and a deliberate retry posts exactly one more close.
+
+The interaction pass opens the chooser with a real synthetic left click on the
+pill row, then sends Escape from the list and from Tab-focused row actions. It
+checks the Tab order through a row's activate, minimize and close actions, then
+into the next row, reopens after an earlier selection and confirms the selection
+resets, and shrinks the window list immediately before Return to exercise the
+stale-index clamp.
+A real synthetic click on the parent window outside the popup exercises the
+click-away layer. All of these checks drive Qt input events; they do not call
+the chooser's open/close methods or assign `visible` directly.
+
+Use the undeployed build executable with its matching full Qt development prefix
+and artifact QML plugins. A deployed Windows-only runtime is not an offscreen
 runner. The harness checks versions and metadata, resets native control gates
 before starting Qt, and retains both output streams on failure or timeout. Qt
 environment values are process-local, not QML environment pragmas. The preflight
-opens no windows; the fixture additionally instantiates and dismisses the
-multi-window chooser offscreen.
+opens no windows; the fixture additionally instantiates, traverses and dismisses
+the multi-window chooser offscreen.
 
 The harness records `sourceMatchesBuild` from the build metadata and the current
 checkout. This is provenance, not a pass gate: QML is staged from the checkout,
@@ -99,5 +114,7 @@ revision. A true value means the native artifact and both native submodules were
 built from this exact clean revision; false does not by itself mean the QML
 under test is stale.
 
-Real focus, popup dismissal, icon extraction, multi-desktop activation, and save
-prompts require a separate native QA pass. No native backend pin change is needed.
+Real pointer and focus delivery to the native popup, icon extraction,
+multi-desktop activation, and save prompts require a separate native QA pass.
+The offscreen parent-window click-away path proves dismissal behavior, not
+Windows' native Qt::Popup click routing. No native backend pin change is needed.
