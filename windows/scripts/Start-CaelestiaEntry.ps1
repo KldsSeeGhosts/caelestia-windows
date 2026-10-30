@@ -1,7 +1,7 @@
 # Installed at the stable root as Start-Caelestia.ps1.
 [CmdletBinding()]
 param(
-    [string]$Prefix = $PSScriptRoot,
+    [string]$Prefix,
     [ValidateSet('Start', 'State', 'Quit', 'Restart', 'Settings', 'NotifyTest')][string]$Command = 'Start',
     [switch]$Smoke,
     [ValidateRange(0, 15)][int]$ScreenIndex,
@@ -11,6 +11,9 @@ param(
     [switch]$SkipSchemeRuntime,
     [switch]$Wait
 )
+# Windows PowerShell -File can bind parameter defaults before $PSScriptRoot
+# is populated. Resolve the default in the script body for sign-in launches.
+if (-not $Prefix) { $Prefix = $PSScriptRoot }
 . (Join-Path $PSScriptRoot 'Caelestia-InstallCommon.ps1')
 $Prefix = Resolve-CaelestiaDirectory $Prefix
 # NotifyTest uses the selected launcher, even if an older payload is running:
