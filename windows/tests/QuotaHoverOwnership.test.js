@@ -190,8 +190,10 @@ test("the block is exactly requested-or-visible for either drawer", () => {
     }
 });
 
-test("the production wiring exists on both Panels files", () => {
+test("the production wiring exists on all Panels variants", () => {
     assert.match(read("modules/drawers/Panels.qml"), /readonly property bool quotaHoverBlocked: false/);
+    assert.match(read("windows/shell-prototype/adapters/modules/drawers/Panels.qml"),
+        /readonly property bool quotaHoverBlocked: false/);
     assert.match(panelsAdapter, /readonly property alias sidebar: sidebar/);
     assert.match(panelsAdapter, /readonly property alias session: session/);
     // The block reads the real shouldBeActive flags, which the wrappers define.
