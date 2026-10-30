@@ -1,7 +1,11 @@
 import QtQuick
+import QtTest
 import Quickshell
 import Caelestia
+import qs.components.controls
 import qs.services as Services
+import qs.modules.bar as Bar
+import qs.modules.bar.popouts as BarPopouts
 import qs.modules.bar.components.workspaces as BarWorkspaces
 
 ShellRoot {
@@ -9,6 +13,12 @@ ShellRoot {
     property int assertions: 0
     property int phase: 0
     property var fixtures: []
+    property var barPill
+    property var barWorkspaces
+    property int hyprRefusals: 0
+    property int dispatcherWheels: 0
+    readonly property var screen: Quickshell.screens.length ? Quickshell.screens[0] : null
+    readonly property var screenState: screen ? Services.ShellState.forScreen(screen) : null
 
     Component {
         id: fixture
@@ -41,14 +51,80 @@ ShellRoot {
         }
     }
 
+    TestEvent { id: input }
+
+    // Mount the original bar over the same Windows running-app projection.
+    // The window-level MouseArea is declared after the bar, exactly as
+    // Interactions is above the bar in ContentWindow.
+    FloatingWindow {
+        id: barHost
+        visible: true
+        implicitWidth: 480
+        implicitHeight: 600
+
+        BarPopouts.Wrapper {
+            id: barPopouts
+            screen: root.screen
+            offsetScale: 0
+        }
+
+        // Mount the original bar at its intrinsic width so its centered
+        // workspaces entry is reachable by synthetic coordinates. The narrow
+        // production bar's own layout is outside this focused wheel check.
+        Bar.Bar {
+            id: bar
+            width: 300
+            height: 600
+            screen: root.screen
+            screenState: root.screenState
+            popouts: barPopouts
+            fullscreen: false
+        }
+
+        CustomMouseArea {
+            anchors.fill: parent
+            onWheel: event => {
+                root.dispatcherWheels++;
+                if (event.x < bar.width)
+                    bar.handleWheel(event.y, event.angleDelta);
+            }
+        }
+    }
+
     function check(ok, message): void {
         assertions++;
         if (!ok)
             throw new Error(message);
     }
 
+    function listFor(item): var {
+        return item ? Array.from(item.data).find(child => child.contentY !== undefined) : null;
+    }
+
+    function refreshBar(): void {
+        barPill = CUtils.findChild(bar, "runningAppsPill");
+        barWorkspaces = CUtils.findChild(bar, "taskbarWorkspaces");
+    }
+
+    function sendPillWheel(): bool {
+        return input.mouseWheel(pill, pill.width / 2, pill.height / 2,
+            Qt.NoButton, Qt.NoModifier, 0, -120, 0);
+    }
+
+    function sendBarPillWheel(): bool {
+        return input.mouseWheel(barPill, barPill.width / 2, barPill.height / 2,
+            Qt.NoButton, Qt.NoModifier, 0, -120, 0);
+    }
+
+    function sendWorkspaceWheel(): bool {
+        // The top of the original workspace content, above the running-app pill.
+        return input.mouseWheel(barWorkspaces, 10, 10,
+            Qt.NoButton, Qt.NoModifier, 0, -120, 0);
+    }
+
+
     Timer {
-        interval: 40
+        interval: 80
         repeat: true
         running: true
         onTriggered: {
@@ -96,8 +172,59 @@ ShellRoot {
                     check(Services.RunningApps.groupIds.length === 7, "all-minimized list retained");
                     Services.RunningApps.request("1", "minimize");
                     Services.RunningApps.actionsEnabled = false;
-                    Services.RunningApps.source = [];
+                    for (const window of root.fixtures) {
+                        window.wayland.minimized = false;
+                        window.mapped = true;
+                    }
                 } else if (root.phase === 5) {
+                    root.refreshBar();
+                    check(root.barPill !== null && root.barPill.implicitHeight > 0,
+                        "bar mounts the bounded running-app pill");
+                    check(root.barWorkspaces !== null, "bar mounts its workspaces entry");
+                    check(root.sendPillWheel(), "offscreen wheel delivered to the pill");
+                } else if (root.phase === 6) {
+                    const apps = root.listFor(pill);
+                    check(apps?.contentY > 0, "wheel scrolls an overflowing pill");
+                    if (apps)
+                        apps.contentY = 0;
+                    root.refreshBar();
+                    root.hyprRefusals = Services.Hypr.refusals;
+                    root.dispatcherWheels = 0;
+                    check(root.sendBarPillWheel(), "bar-dispatched wheel delivered");
+                } else if (root.phase === 7) {
+                    const barApps = root.listFor(root.barPill);
+                    check(root.dispatcherWheels > 0, "pill wheel reaches the window-level dispatcher");
+                    check(barApps?.contentY > 0, "bar dispatcher scrolls the running-app viewport");
+                    check(Services.Hypr.refusals === root.hyprRefusals,
+                        "pill wheel does not reach the workspace shortcut");
+                    if (barApps)
+                        barApps.contentY = 0;
+                    root.hyprRefusals = Services.Hypr.refusals;
+                    check(root.sendWorkspaceWheel(), "workspace wheel delivered");
+                } else if (root.phase === 8) {
+                    check(root.listFor(root.barPill)?.contentY === 0,
+                        "workspace wheel does not scroll the running-app viewport");
+                    check(Services.Hypr.refusals > root.hyprRefusals,
+                        "workspace wheel still reaches the bar shortcut");
+                    // One app group means contentHeight fits the viewport.
+                    Services.RunningApps.source = root.fixtures.slice(0, 2);
+                } else if (root.phase === 9) {
+                    root.refreshBar();
+                    const barApps = root.listFor(root.barPill);
+                    check(Services.RunningApps.groupIds.length === 1, "short list projected");
+                    check(barApps && barApps.contentHeight <= barApps.height,
+                        "short list does not overflow");
+                    root.hyprRefusals = Services.Hypr.refusals;
+                    root.dispatcherWheels = 0;
+                    check(root.sendBarPillWheel(), "short-list wheel delivered");
+                } else if (root.phase === 10) {
+                    check(root.dispatcherWheels > 0, "short-list wheel reaches the window-level dispatcher");
+                    check(root.listFor(root.barPill)?.contentY === 0,
+                        "short list consumes wheel without moving");
+                    check(Services.Hypr.refusals === root.hyprRefusals,
+                        "short-list wheel does not reach the workspace shortcut");
+                    Services.RunningApps.source = [];
+                } else if (root.phase === 11) {
                     check(Services.RunningApps.groupIds.length === 0, "empty model");
                     interval = 700;
                 } else {

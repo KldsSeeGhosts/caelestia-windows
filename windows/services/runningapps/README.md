@@ -18,8 +18,11 @@ list. Tray-only/background applications stay in the existing tray.
 - Hover only shows descriptive tooltips. Escape or an outside click dismisses
   the chooser.
 - The viewport reserves one to five complete icon rows according to available
-  bar space. Additional apps scroll inside it. Wheel events cannot reach the
-  surrounding workspace, volume, or brightness shortcuts.
+  bar space. Additional apps scroll inside it. The window-level interactions
+  MouseArea sits above the bar, so it dispatches wheel input through the bar to
+  the pill: an overflowing list scrolls, a short list still consumes the event,
+  and wheel input outside the pill keeps the workspace, volume, and brightness
+  shortcuts.
 - First-seen app/window ordering follows source encounter order, never numeric
   id, title, focus or MRU order. Minimize, focus, title, duplicate-handle and
   desktop updates do not reorder entries. A temporarily app-cloaked window
@@ -41,7 +44,9 @@ windows/scripts/Test-RunningApps.ps1 -QtPrefix <Qt-prefix> -BuildRoot <build>
 ```
 
 The QML check uses an offscreen disposable profile and fake native handles.
-Use the undeployed build executable with its matching full Qt development
+It mounts the original bar with the window-level MouseArea above it, then sends
+synthetic wheel events for an overflowing list, a short list, and the workspace
+area. Use the undeployed build executable with its matching full Qt development
 prefix and artifact QML plugins. A deployed Windows-only runtime is not an
 offscreen runner. The harness checks versions and metadata, resets native
 control gates before starting Qt, and retains both output streams on failure
