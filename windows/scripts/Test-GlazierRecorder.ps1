@@ -26,8 +26,9 @@ New-Item -ItemType Directory -Path (Join-Path $stageRoot 'profile\config'), (Joi
 [IO.File]::WriteAllText((Join-Path $stageRoot 'output\.glazier-unpublished.mp4'), 'fixture')
 $ownershipFile = Join-Path $stageRoot 'profile\state\caelestia\recordings.json'
 foreach ($scenario in @('normal', 'cold-start', 'start-timeout', 'store-missing', 'store-corrupt',
-    'store-write', 'store-restart', 'missing', 'disabled', 'smoke')) {
+    'store-write', 'store-restart', 'missing', 'disabled', 'smoke', 'layout')) {
     $missing = $scenario -eq 'missing'
+    $layout = $scenario -eq 'layout'
     $disabled = $scenario -in @('disabled', 'smoke')
     $stateFile = Join-Path $stageRoot 'state.json'
     if ($scenario -notin @('store-restart', 'missing', 'disabled', 'smoke')) {
@@ -61,7 +62,7 @@ foreach ($scenario in @('normal', 'cold-start', 'start-timeout', 'store-missing'
     $info.EnvironmentVariables['CAELESTIA_CONFIG_DIR'] = Join-Path $stageRoot 'profile\config'
     $info.EnvironmentVariables['CAELESTIA_COMBINED_LIVE'] = $(if ($scenario -eq 'disabled') { '0' } else { '1' })
     $info.EnvironmentVariables['CAELESTIA_SHELL_SMOKE'] = $(if ($scenario -eq 'smoke') { '1' } else { '0' })
-    $info.EnvironmentVariables['CAELESTIA_GLAZIER_EXE'] = $(if ($missing) { Join-Path $stageRoot 'missing.exe' } else { $stub })
+    $info.EnvironmentVariables['CAELESTIA_GLAZIER_EXE'] = $(if ($missing -or $layout) { Join-Path $stageRoot 'missing.exe' } else { $stub })
     $info.EnvironmentVariables['GLAZIER_STUB_ROOT'] = $stageRoot
     $info.EnvironmentVariables['GLAZIER_TEST_MISSING'] = $(if ($missing) { '1' } else { '0' })
     $info.EnvironmentVariables['GLAZIER_TEST_DISABLED'] = $(if ($disabled) { '1' } else { '0' })
@@ -76,7 +77,8 @@ foreach ($scenario in @('normal', 'cold-start', 'start-timeout', 'store-missing'
     }
     $output = $stdout.GetAwaiter().GetResult() + $stderr.GetAwaiter().GetResult()
     [IO.File]::WriteAllText((Join-Path $stageRoot "run-$scenario.log"), $output)
-    $marker = $(if ($missing) { 'GLAZIER_RECORDER_MISSING_PASS' }
+    $marker = $(if ($layout) { 'GLAZIER_RECORDER_LAYOUT_PASS' }
+        elseif ($missing) { 'GLAZIER_RECORDER_MISSING_PASS' }
         elseif ($disabled) { 'GLAZIER_RECORDER_DISABLED_PASS' }
         elseif ($scenario.StartsWith('store-')) { 'GLAZIER_RECORDER_STORE_PASS' }
         elseif ($scenario -in @('cold-start', 'start-timeout')) { 'GLAZIER_RECORDER_START_FAILURE_PASS' }

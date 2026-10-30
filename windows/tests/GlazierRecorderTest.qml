@@ -21,6 +21,18 @@ ShellRoot {
     property string scenario: Quickshell.env("GLAZIER_TEST_SCENARIO")
     property int pendingCaptures: 0
     property var props: ({ recordingMode: "", recordingListExpanded: false, recordingConfirmDelete: "" })
+    property string layoutExpected: ""
+    property int layoutIndex: -1
+    property var layoutHeights: []
+    // The real Recorder.status strings, rendered in the real card at 430 px.
+    property var layoutStatuses: [
+        { name: "unavailable", lastError: "", connectionError: "", available: false, state: "idle", lines: 2 },
+        { name: "not-found", lastError: "Glazier was not found. Install Glazier with control protocol v1.", connectionError: "", available: false, state: "idle", lines: 2 },
+        { name: "start-failure", lastError: "Glazier did not start recording. Check Glazier and its control protocol version.", connectionError: "", available: false, state: "idle", lines: 2 },
+        { name: "stopped", lastError: "", connectionError: "Glazier stopped", available: true, state: "idle", lines: 1 },
+        { name: "ready", lastError: "", connectionError: "", available: true, state: "idle", lines: 1 },
+        { name: "running", lastError: "", connectionError: "", available: true, state: "recording", lines: 1 }
+    ]
 
     Component.onCompleted: check(Quickshell.stateDir.replace(/\\/g, "/")
         === Quickshell.env("GLAZIER_STUB_ROOT").replace(/\\/g, "/") + "/profile/state",
@@ -39,7 +51,8 @@ ShellRoot {
 
     FloatingWindow {
         visible: Quickshell.env("QT_QPA_PLATFORM") === "offscreen"
-        implicitWidth: 660
+        // The status layout scenario renders the card at the real 430 px width.
+        implicitWidth: root.scenario === "layout" ? 470 : 660
         implicitHeight: 520
         color: Colours.palette.m3background
         Record {
@@ -86,6 +99,83 @@ ShellRoot {
     }
 
     function containsText(item, text): bool { return findText(item, text) !== null; }
+
+    function findExact(item, text): var {
+        if (item.text !== undefined && String(item.text) === text)
+            return item;
+        for (const child of item.children ?? []) {
+            const found = findExact(child, text);
+            if (found) return found;
+        }
+        return null;
+    }
+
+    function findKey(item, key): var {
+        if (item[key] !== undefined)
+            return item;
+        for (const child of item.children ?? []) {
+            const found = findKey(child, key);
+            if (found) return found;
+        }
+        return null;
+    }
+
+    function findLoader(item): var {
+        if (item.sourceComponent !== undefined && item.item !== undefined)
+            return item;
+        for (const child of item.children ?? []) {
+            const found = findLoader(child);
+            if (found) return found;
+        }
+        return null;
+    }
+
+    function applyLayoutStatus(index): void {
+        const status = root.layoutStatuses[index];
+        Recorder.probed = true;
+        Recorder.executable = "";
+        Recorder.available = status.available;
+        Recorder.lastError = status.lastError;
+        Recorder.connectionError = status.connectionError;
+        Recorder.pendingStart = false;
+        Recorder.state = status.state;
+        root.layoutExpected = Recorder.status;
+    }
+
+    function checkLayout(status): bool {
+        const text = root.findExact(card, root.layoutExpected);
+        const loader = root.findLoader(card);
+        const split = root.findKey(card, "menuItems");
+        if (!text || text.lineCount <= 0 || !loader || !loader.item || loader.height <= 0 || !split)
+            return false;
+        // Wait for the list/controls height animation to settle before geometry.
+        if (Math.abs(loader.height - loader.implicitHeight) > 0.5)
+            return false;
+        root.check(text.maximumLineCount === 2, status.name + ": status allows two lines");
+        root.check(text.lineCount === status.lines, status.name + ": status uses " + status.lines + " line(s)");
+        root.check(!text.truncated, status.name + ": status is not truncated");
+        const row = split.parent;
+        const rowBottom = row.mapToItem(card, 0, row.height).y;
+        const statusTop = text.mapToItem(card, 0, 0).y;
+        const statusBottom = statusTop + text.height;
+        const statusLeft = text.mapToItem(card, 0, 0).x;
+        const statusRight = statusLeft + text.width;
+        const loaderTop = loader.mapToItem(card, 0, 0).y;
+        const loaderBottom = loaderTop + loader.height;
+        const contentLeft = loader.mapToItem(card, 0, 0).x;
+        const contentRight = contentLeft + loader.width;
+        root.check(statusTop >= rowBottom - 0.5, status.name + ": status sits below the header row");
+        root.check(statusLeft >= contentLeft - 0.5 && statusRight <= contentRight + 0.5,
+            status.name + ": full-width status stays inside the card");
+        root.check(statusBottom <= loaderTop + 0.5, status.name + ": status stays above the list/controls");
+        root.check(loaderBottom <= card.height + 0.5, status.name + ": card bottom edge stays below the list/controls");
+        root.check(split.mapToItem(card, split.width, 0).x <= card.width + 0.5,
+            status.name + ": mode button stays inside the card");
+        root.check(Math.abs(card.nonAnimHeight - card.height) < 0.5,
+            status.name + ": card height matches drawer animation height");
+        root.layoutHeights[root.layoutIndex] = card.height;
+        return true;
+    }
 
     function findDelete(item, baseName): var {
         if (item.modelData?.baseName === baseName) {
@@ -229,6 +319,34 @@ ShellRoot {
                 root.check(true, "ownership committed under the disposable profile");
                 console.log("GLAZIER_RECORDER_STORE_PASS", root.assertions);
                 Qt.quit();
+                return;
+            }
+            if (root.scenario === "layout") {
+                if (!Recorder.probed || root.ticks < 8) return;
+                if (Math.abs(card.width - 430) > 0.5) {
+                    if (root.ticks > 100)
+                        root.check(false, "layout fixture width is " + card.width);
+                    return;
+                }
+                if (root.layoutIndex < 0) {
+                    root.check(true, "layout fixture renders the card at 430");
+                    root.applyLayoutStatus(0);
+                    root.layoutIndex = 0;
+                    return;
+                }
+                if (root.layoutIndex >= root.layoutStatuses.length) {
+                    root.check(Math.abs(card.nonAnimHeight - card.height) < 0.5,
+                        "wrapped card height matches the drawer animation height");
+                    root.check(root.layoutHeights[1] > root.layoutHeights[4] + 1,
+                        "a two-line status grows the card above a one-line status");
+                    console.log("GLAZIER_RECORDER_LAYOUT_PASS", root.assertions);
+                    Qt.quit();
+                    return;
+                }
+                if (!root.checkLayout(root.layoutStatuses[root.layoutIndex]))
+                    return;
+                if (++root.layoutIndex < root.layoutStatuses.length)
+                    root.applyLayoutStatus(root.layoutIndex);
                 return;
             }
             if (root.disabled) {
