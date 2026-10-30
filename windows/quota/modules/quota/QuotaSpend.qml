@@ -1,20 +1,21 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
-import QtQuick.Shapes
 import QtQuick.Layouts
 import QtQuick.Controls
 import Caelestia.Config
 import qs.components
 import qs.services
 
-// OpenUsage's spend card: Today / Yesterday / 30 Days, a cost donut and a
-// provider legend.
+// Spend is secondary to the provider limits above it: one quiet row (range and
+// total) that opens into the range tabs and a per-provider breakdown. It starts
+// collapsed on Today whenever the drawer opens; nothing is persisted.
 Rectangle {
     id: root
     objectName: "quotaSpend"
 
     required property string family
+    property bool expanded: false
     property string range: "today"
     readonly property var ranges: [
         { key: "today", label: qsTr("Today") },
@@ -22,6 +23,7 @@ Rectangle {
         { key: "month", label: qsTr("30 Days") }
     ]
     readonly property var current: Quota.spend[range] || null
+    readonly property string rangeLabel: ranges[Math.max(0, ranges.findIndex(r => r.key === range))].label
     // Until the first analytics reply, Today falls back to the summary's total.
     readonly property var total: current ? current.total : range === "today" ? Quota.todayCostUsd : null
     // Four providers, then the rest folded into Other, as in OpenUsage.
@@ -32,19 +34,12 @@ Rectangle {
         const other = rows.slice(3).reduce((sum, row) => sum + row.cost, 0);
         return rows.slice(0, 3).concat([{ provider: "other", cost: other }]);
     }
-    readonly property var slices: {
-        const sum = legend.reduce((total, row) => total + row.cost, 0);
-        const gap = legend.length > 1 ? 2 : 0;
-        const out = [];
-        let start = -90;
-        for (const row of legend) {
-            const sweep = sum > 0 ? row.cost / sum * 360 : 0;
-            out.push({ provider: row.provider, start: start + gap / 2, sweep: Math.max(0.5, sweep - gap) });
-            start += sweep;
-        }
-        return out;
-    }
+    readonly property real legendSum: legend.reduce((sum, row) => sum + row.cost, 0)
 
+    function reset(): void {
+        root.expanded = false;
+        root.range = "today";
+    }
     function label(provider: string): string {
         if (provider === "other")
             return qsTr("Other");
@@ -75,7 +70,7 @@ Rectangle {
         return value >= 100 ? "$" + Math.round(value) : "$" + Number(value).toFixed(2);
     }
 
-    implicitHeight: body.implicitHeight + 28
+    implicitHeight: body.implicitHeight
     radius: 14
     color: Qt.alpha(Colours.palette.m3onSurface, 0.05)
 
@@ -87,100 +82,38 @@ Rectangle {
 
     Column {
         id: body
-        x: 14; y: 14
-        width: parent.width - 28
-        spacing: 16
+        width: parent.width
 
-        Rectangle {
-            id: tabs
-            readonly property real segment: (width - 6) / root.ranges.length
-            readonly property int index: Math.max(0, root.ranges.findIndex(r => r.key === root.range))
+        AbstractButton {
+            id: header
+            objectName: "quotaSpendToggle"
             width: parent.width
-            height: 34
-            radius: height / 2
-            color: Qt.alpha(Colours.palette.m3onSurface, 0.06)
-            Rectangle {
-                x: 3 + tabs.segment * tabs.index
-                y: 3
-                width: tabs.segment
-                height: tabs.height - 6
-                radius: height / 2
-                color: Colours.light ? Colours.palette.m3surfaceContainerLowest : Qt.alpha(Colours.palette.m3onSurface, 0.14)
-                Behavior on x { Anim { type: Anim.Emphasized } }
+            height: 40
+            hoverEnabled: true
+            onClicked: root.expanded = !root.expanded
+            Accessible.name: qsTr("Spend, %1, %2, %3").arg(root.rangeLabel).arg(root.compactMoney(root.total))
+                .arg(root.expanded ? qsTr("expanded") : qsTr("collapsed"))
+            background: Rectangle {
+                radius: root.radius
+                color: header.hovered || header.down ? Qt.alpha(Colours.palette.m3onSurface, header.down ? 0.08 : 0.04) : "transparent"
+                border.width: header.activeFocus ? 1 : 0
+                border.color: Colours.palette.m3primary
             }
-            Row {
-                x: 3; y: 3
-                Repeater {
-                    model: root.ranges
-                    delegate: AbstractButton {
-                        id: tab
-                        required property var modelData
-                        readonly property bool selected: root.range === modelData.key
-                        width: tabs.segment
-                        height: tabs.height - 6
-                        hoverEnabled: true
-                        onClicked: root.range = modelData.key
-                        Accessible.name: modelData.label
-                        background: Rectangle {
-                            radius: height / 2
-                            color: "transparent"
-                            border.width: tab.activeFocus ? 1 : 0
-                            border.color: Colours.palette.m3primary
-                        }
-                        contentItem: Label {
-                            text: tab.modelData.label
-                            horizontalAlignment: Text.AlignHCenter
-                            verticalAlignment: Text.AlignVCenter
-                            font.weight: tab.selected ? Font.DemiBold : Font.Medium
-                            color: tab.selected || tab.hovered ? Colours.palette.m3onSurface : Colours.palette.m3onSurfaceVariant
-                        }
-                    }
-                }
-            }
-        }
-
-        RowLayout {
-            width: parent.width
-            spacing: 20
-
-            Item {
-                Layout.preferredWidth: 112
-                Layout.preferredHeight: 112
-                Shape {
-                    anchors.fill: parent
-                    preferredRendererType: Shape.CurveRenderer
-                    ShapePath {
-                        strokeWidth: 16
-                        strokeColor: Qt.alpha(Colours.palette.m3onSurface, 0.08)
-                        fillColor: "transparent"
-                        PathAngleArc { centerX: 56; centerY: 56; radiusX: 48; radiusY: 48; startAngle: 0; sweepAngle: 360 }
-                    }
-                }
-                Repeater {
-                    model: root.slices
-                    delegate: Shape {
-                        id: slice
-                        required property var modelData
-                        anchors.fill: parent
-                        preferredRendererType: Shape.CurveRenderer
-                        ShapePath {
-                            strokeWidth: 16
-                            strokeColor: root.colour(slice.modelData.provider)
-                            fillColor: "transparent"
-                            capStyle: ShapePath.FlatCap
-                            PathAngleArc {
-                                centerX: 56; centerY: 56; radiusX: 48; radiusY: 48
-                                startAngle: slice.modelData.start
-                                sweepAngle: slice.modelData.sweep
-                            }
-                        }
-                    }
+            contentItem: RowLayout {
+                spacing: 8
+                Label {
+                    Layout.leftMargin: 14
+                    text: qsTr("Spend")
+                    font.weight: Font.DemiBold
                 }
                 Label {
+                    text: root.rangeLabel
+                    color: Colours.palette.m3onSurfaceVariant
+                }
+                Item { Layout.fillWidth: true }
+                Label {
                     objectName: "quotaSpendAmount"
-                    anchors.centerIn: parent
                     text: root.compactMoney(root.total)
-                    font.pixelSize: 17
                     font.weight: Font.DemiBold
                     HoverHandler { id: totalHover }
                     QuotaToolTip {
@@ -190,28 +123,97 @@ Rectangle {
                         family: root.family
                     }
                 }
+                MaterialIcon {
+                    Layout.rightMargin: 10
+                    text: "expand_more"
+                    color: Colours.palette.m3onSurfaceVariant
+                    fontStyle: Tokens.font.icon.size(16).build()
+                    rotation: root.expanded ? 180 : 0
+                    Behavior on rotation { Anim {} }
+                }
+            }
+        }
+
+        Column {
+            id: details
+            objectName: "quotaSpendDetails"
+            visible: root.expanded
+            x: 14
+            width: parent.width - 28
+            spacing: 12
+            bottomPadding: 14
+
+            Rectangle {
+                id: tabs
+                readonly property real segment: (width - 6) / root.ranges.length
+                readonly property int index: Math.max(0, root.ranges.findIndex(r => r.key === root.range))
+                width: parent.width
+                height: 30
+                radius: height / 2
+                color: Qt.alpha(Colours.palette.m3onSurface, 0.06)
+                Rectangle {
+                    x: 3 + tabs.segment * tabs.index
+                    y: 3
+                    width: tabs.segment
+                    height: tabs.height - 6
+                    radius: height / 2
+                    color: Colours.light ? Colours.palette.m3surfaceContainerLowest : Qt.alpha(Colours.palette.m3onSurface, 0.14)
+                    Behavior on x { Anim { type: Anim.Emphasized } }
+                }
+                Row {
+                    x: 3; y: 3
+                    Repeater {
+                        model: root.ranges
+                        delegate: AbstractButton {
+                            id: tab
+                            required property var modelData
+                            readonly property bool selected: root.range === modelData.key
+                            objectName: "quotaSpendRange"
+                            width: tabs.segment
+                            height: tabs.height - 6
+                            hoverEnabled: true
+                            onClicked: root.range = modelData.key
+                            Accessible.name: modelData.label
+                            background: Rectangle {
+                                radius: height / 2
+                                color: "transparent"
+                                border.width: tab.activeFocus ? 1 : 0
+                                border.color: Colours.palette.m3primary
+                            }
+                            contentItem: Label {
+                                text: tab.modelData.label
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
+                                elide: Text.ElideRight
+                                font.weight: tab.selected ? Font.DemiBold : Font.Medium
+                                color: tab.selected || tab.hovered ? Colours.palette.m3onSurface : Colours.palette.m3onSurfaceVariant
+                            }
+                        }
+                    }
+                }
             }
 
-            Column {
-                Layout.fillWidth: true
-                Layout.alignment: Qt.AlignVCenter
-                spacing: 10
-                Label {
-                    visible: root.legend.length === 0
-                    width: parent.width
-                    text: root.current ? qsTr("No spend recorded") : qsTr("Per-provider spend not loaded yet")
-                    wrapMode: Text.WordWrap
-                    color: Colours.palette.m3onSurfaceVariant
-                }
-                Repeater {
-                    model: root.legend
-                    delegate: RowLayout {
-                        id: entry
-                        required property var modelData
+            Label {
+                visible: root.legend.length === 0
+                width: parent.width
+                text: root.current ? qsTr("No spend recorded") : qsTr("Per-provider spend not loaded yet")
+                wrapMode: Text.WordWrap
+                color: Colours.palette.m3onSurfaceVariant
+            }
+
+            Repeater {
+                model: root.legend
+                delegate: Column {
+                    id: entry
+                    required property var modelData
+                    readonly property real share: root.legendSum > 0 ? entry.modelData.cost / root.legendSum : 0
+                    width: details.width
+                    spacing: 5
+                    RowLayout {
                         width: parent.width
                         spacing: 8
                         Rectangle {
-                            implicitWidth: 9; implicitHeight: 9; radius: 4.5
+                            implicitWidth: 8; implicitHeight: 8; radius: 4
                             color: root.colour(entry.modelData.provider)
                         }
                         Label {
@@ -225,7 +227,28 @@ Rectangle {
                             color: Colours.palette.m3onSurfaceVariant
                         }
                     }
+                    Rectangle {
+                        width: parent.width
+                        height: 3
+                        radius: 1.5
+                        color: Qt.alpha(Colours.palette.m3onSurface, 0.08)
+                        Rectangle {
+                            width: entry.share > 0 ? Math.max(parent.height, parent.width * entry.share) : 0
+                            height: parent.height
+                            radius: parent.radius
+                            color: root.colour(entry.modelData.provider)
+                            Behavior on width { Anim {} }
+                        }
+                    }
                 }
+            }
+
+            Label {
+                width: parent.width
+                text: qsTr("API-equivalent cost from CPA Manager's usage analytics.")
+                wrapMode: Text.WordWrap
+                color: Colours.palette.m3onSurfaceVariant
+                font.pixelSize: 11
             }
         }
     }

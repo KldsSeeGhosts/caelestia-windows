@@ -256,10 +256,13 @@ CustomMouseArea {
         // Show dashboard on hover
         // Windows: the ported quota drawer owns the top-right strip. Keep it
         // mutually exclusive with the centred dashboard so both cannot load.
-        const inQuotaArea = panels.quotaEnabled && inTopPanel(panels.quota, x, y);
+        // The sidebar and session own the right edge, so a pointer in the quota
+        // strip does not open it behind them (panels.quotaHoverBlocked).
+        const inQuotaZone = panels.quotaEnabled && inTopPanel(panels.quota, x, y);
+        const inQuotaArea = inQuotaZone && !panels.quotaHoverBlocked;
         if (panels.quotaEnabled)
             screenState.quota = inQuotaArea;
-        const showDashboard = Config.dashboard.enabled && Config.dashboard.showOnHover && !inQuotaArea && inTopPanel(panels.dashboard, x, y);
+        const showDashboard = Config.dashboard.enabled && Config.dashboard.showOnHover && !inQuotaZone && inTopPanel(panels.dashboard, x, y);
 
         // Always update visibility based on hover if not in shortcut mode
         if (!dashboardShortcutActive) {
@@ -267,7 +270,7 @@ CustomMouseArea {
         } else if (showDashboard) {
             // If hovering over dashboard area while in shortcut mode, transition to hover control
             dashboardShortcutActive = false;
-        } else if (inQuotaArea) {
+        } else if (inQuotaZone) {
             // Windows: hovering the quota strip leaves dashboard shortcut mode.
             dashboardShortcutActive = false;
             screenState.dashboard = false;

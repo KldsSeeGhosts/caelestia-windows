@@ -41,7 +41,14 @@ ShellRoot {
     readonly property ScreenState screenState: ShellState.forScreen(root.selectedScreen)
     readonly property int inset: 60
     readonly property int previewWidth: Math.min(900, (selectedScreen?.width ?? 1060) - inset * 2)
-    readonly property int previewHeight: Math.min(620, (selectedScreen?.height ?? 780) - inset * 2)
+    // The offscreen screen is small, but the 520 dp default drawer has to fit in the frame.
+    readonly property int previewHeight: 660
+    // Configured drawer size, "<width>x<height>", as written to quota.json by Test-Quota.ps1.
+    readonly property var geometry: {
+        const match = /^(\d+)x(\d+)$/.exec(Quickshell.env("CAELESTIA_QUOTA_SMOKE_GEOMETRY") || "");
+        return match ? { w: Number(match[1]), h: Number(match[2]) } : { w: 384, h: 520 };
+    }
+    readonly property string spendScreenshotPath: Quickshell.env("CAELESTIA_QUOTA_SPEND_SCREENSHOT")
     readonly property string screenshotPath: Quickshell.env("CAELESTIA_SHELL_SCREENSHOT")
     readonly property string lightScreenshotPath: Quickshell.env("CAELESTIA_QUOTA_LIGHT_SCREENSHOT")
     readonly property string lightSchemePath: Quickshell.env("CAELESTIA_QUOTA_LIGHT_SCHEME")
@@ -213,6 +220,201 @@ ShellRoot {
         return null;
     }
 
+    function collectMeters(item, out): void {
+        for (const child of item.children) {
+            if (!child)
+                continue;
+            if (child.limit !== undefined && child.remaining !== undefined)
+                out.push(child);
+            root.collectMeters(child, out);
+        }
+    }
+
+    function collectNamed(item, name, out): void {
+        for (const child of item.children) {
+            if (!child)
+                continue;
+            if (child.objectName === name)
+                out.push(child);
+            root.collectNamed(child, name, out);
+        }
+    }
+
+    // True when any text item under `item` matches `pattern`.
+    function hasText(item, pattern): bool {
+        for (const child of item.children) {
+            if (!child)
+                continue;
+            if (typeof child.text === "string" && child.visible && pattern.test(child.text))
+                return true;
+            if (root.hasText(child, pattern))
+                return true;
+        }
+        return false;
+    }
+
+    // Layout facts for the open drawer, in the scroll body's coordinates.
+    function measure(quota): var {
+        const body = root.findNamed(quota, "quotaBody");
+        const spend = root.findNamed(quota, "quotaSpend");
+        const details = root.findNamed(quota, "quotaSpendDetails");
+        const content = root.findContent(quota);
+        if (!body || !spend || !details || !content)
+            return null;
+        const tabs = [];
+        root.collectNamed(quota, "quotaProviderTab", tabs);
+        const meters = [];
+        root.collectMeters(body.contentItem, meters);
+        const rows = meters.map(m => {
+            const top = m.mapToItem(body.contentItem, 0, 0);
+            return { label: m.label, top: top.y, bottom: top.y + m.height, left: top.x, right: top.x + m.width };
+        }).sort((a, b) => a.top - b.top);
+        const spendPos = spend.mapToItem(body.contentItem, 0, 0);
+        // Pace and "% left" must stay inside their meter row.
+        const inner = [];
+        root.collectNamed(body.contentItem, "quotaMeterPace", inner);
+        root.collectNamed(body.contentItem, "quotaMeterLeft", inner);
+        const innerOverflow = inner.some(i => {
+            const at = i.mapToItem(body.contentItem, 0, 0);
+            const row = i.parent.mapToItem(body.contentItem, 0, 0);
+            return at.x < row.x - 1 || at.x + i.width > row.x + i.parent.width + 1;
+        });
+        const paceGroups = [];
+        root.collectNamed(body.contentItem, "quotaMeterPaceGroup", paceGroups);
+        const paceTogether = paceGroups.filter(g => g.visible).every(g => {
+            const text = root.findNamed(g, "quotaMeterPace");
+            const flame = root.findNamed(g, "quotaMeterFlame");
+            return text && flame && text.visible === g.fits
+                && flame.visible === (g.fits && g.hasFlame)
+                && (!flame.visible || Math.abs(text.x - flame.x - flame.width - 2) <= 1);
+        });
+        const overflow = innerOverflow || rows.some(r => r.left < -1 || r.right > body.width + 1)
+            || spendPos.x < -1 || spendPos.x + spend.width > body.width + 1;
+        const keepalive = root.findNamed(quota, "quotaKeepalive");
+        const refresh = root.findNamed(quota, "quotaRefresh");
+        const footerOk = !!keepalive && !!refresh && [keepalive, refresh].every(b => {
+            const pos = b.mapToItem(content, 0, 0);
+            return b.visible && pos.x >= 0 && pos.x + b.width <= content.width + 1 && pos.y >= 0 && pos.y + b.height <= content.height + 1;
+        });
+        return {
+            body: body, spend: spend, details: details, rows: rows, footerOk: footerOk, overflow: overflow,
+            paceTogether: paceTogether, scrollCue: !!root.findNamed(quota, "quotaScrollBar"),
+            tabCount: tabs.length,
+            tabTop: tabs.length ? tabs[0].mapToItem(body.contentItem, 0, 0).y : -1,
+            bodyH: body.height, contentH: body.contentHeight, contentY: body.contentY, quotaH: quota.height,
+            spendTop: spendPos.y, spendH: spend.height
+        };
+    }
+
+    // Provider-first hierarchy: tabs above limits, limits above a collapsed
+    // spend row, everything inside the drawer. Returns "" when it holds.
+    function hierarchyError(quota, fitMeters): string {
+        const m = root.measure(quota);
+        if (!m)
+            return "drawer parts missing";
+        if (m.rows.length < 2)
+            return "fewer than two meters: " + m.rows.length;
+        if (m.tabCount > 1 && !(m.tabTop < m.rows[0].top))
+            return "provider tabs are not above the first limit";
+        if (m.spend.expanded || m.details.visible || m.spendH > 44)
+            return "spend is not a collapsed row: h=" + m.spendH + " expanded=" + m.spend.expanded;
+        if (!(m.spendTop >= m.rows[m.rows.length - 1].bottom))
+            return "spend row is above the limits";
+        if (m.rows[0].top > 150)
+            return "first limit starts too low: " + m.rows[0].top;
+        if (m.overflow)
+            return "content overflows the drawer width";
+        if (!m.paceTogether || !m.scrollCue)
+            return "pace icon/text or scroll cue is inconsistent";
+        if (!m.footerOk)
+            return "refresh or keepalive left the footer";
+        if (m.quotaH > root.geometry.h + 1)
+            return "drawer exceeds its configured height: " + m.quotaH;
+        if (m.contentY !== 0)
+            return "drawer did not open at the top: " + m.contentY;
+        if (root.geometry.h >= 520) {
+            const fit = m.rows.slice(0, fitMeters);
+            if (fit.some(r => r.bottom > m.bodyH))
+                return "primary limits need scrolling: bodyH=" + m.bodyH + " bottoms=" + fit.map(r => r.bottom).join(",");
+        } else if (!(m.contentH > m.bodyH)) {
+            return "small drawer should scroll: content=" + m.contentH + " body=" + m.bodyH;
+        }
+        console.log("CAELESTIA_QUOTA_SMOKE_HIERARCHY", JSON.stringify({
+            geometry: root.geometry, quotaH: m.quotaH, bodyH: m.bodyH, contentH: m.contentH,
+            firstTop: m.rows[0].top, lastBottom: m.rows[m.rows.length - 1].bottom,
+            spendTop: m.spendTop, spendH: m.spendH, meters: m.rows.length, fitMeters: fitMeters
+        }));
+        return "";
+    }
+
+    // Honest-state checks for the states fixture, per provider group. Returns ""
+    // when the group shows exactly what CPA reported and nothing invented.
+    function statesError(quota, provider): string {
+        const m = root.measure(quota);
+        if (!m)
+            return "drawer parts missing";
+        if (m.overflow)
+            return "content overflows the drawer width";
+        if (!m.paceTogether || !m.scrollCue)
+            return "pace icon/text or scroll cue is inconsistent";
+        if (!m.footerOk)
+            return "refresh or keepalive left the footer";
+        if (m.quotaH > root.geometry.h + 1)
+            return "drawer exceeds its configured height: " + m.quotaH;
+        const meters = [];
+        root.collectMeters(m.body.contentItem, meters);
+        const titles = meters.map(x => x.label).join("|");
+        const names = [];
+        root.collectNamed(m.body.contentItem, "quotaAccountName", names);
+        const wide = names.find(n => n.mapToItem(m.body.contentItem, 0, 0).x + n.width > m.body.width + 1);
+        if (wide)
+            return "account name overflows the drawer width: x=" + wide.mapToItem(m.body.contentItem, 0, 0).x
+                + " w=" + wide.width + " implicit=" + wide.implicitWidth + " body=" + m.body.width;
+        const tabs = [];
+        root.collectNamed(quota, "quotaProviderTab", tabs);
+        if (tabs.length !== 4)
+            return "provider tabs: " + tabs.length;
+        const tab = tabs.find(t => t.modelData.provider === provider);
+        const left = meters.map(x => x.remaining === null ? "null" : String(Math.round(x.remaining * 100)));
+        if (provider === "codex") {
+            if (titles !== "5-hour|Weekly|5-hour|Weekly|5-hour" || left.join(",") !== "0,60,70,80,null")
+                return "Codex readings: " + titles + " " + left.join(",");
+            if (names.length !== 3)
+                return "Codex account captions: " + names.length;
+            if (!tab || tab.worst !== 0)
+                return "Codex tab should show the lowest window, 0%";
+            if (meters[0].pace !== null)
+                return "an empty (0% left) window shows a projected pace";
+            if (meters[2].pace !== null || meters[3].pace !== null || meters[4].pace !== null)
+                return "a stale or unreported account shows a projected pace";
+            if (!root.hasText(m.body.contentItem, /did not answer the quota request/)
+                    || !root.hasText(m.body.contentItem, /has not been reported/)
+                    || !root.hasText(m.body.contentItem, /^Not reported$/))
+                return "stale or unreported notice missing";
+        } else if (provider === "claude") {
+            if (titles !== "Weekly|Weekly" || left.join(",") !== "50,90")
+                return "Claude readings: " + titles + " " + left.join(",");
+            if (meters[0].pace !== null || meters[1].pace !== null)
+                return "a reconnect or disabled account shows a projected pace";
+            if (!root.hasText(m.body.contentItem, /authorization needs attention/)
+                    || !root.hasText(m.body.contentItem, /Disabled in CPA/))
+                return "reconnect or disabled notice missing";
+        } else if (provider === "cursor") {
+            if (titles !== "API|Auto" || left.join(",") !== "38,65")
+                return "Cursor readings: " + titles + " " + left.join(",");
+        } else if (provider === "zai") {
+            if (titles !== "Monthly" || left.join(",") !== "73" || meters[0].pace !== null)
+                return "Z.ai invented a window or pace: " + titles + " " + left.join(",");
+        } else {
+            return "unexpected provider " + provider;
+        }
+        console.log("CAELESTIA_QUOTA_SMOKE_STATE", JSON.stringify({
+            provider: provider, geometry: root.geometry, meters: meters.length, titles: titles, left: left.join(","),
+            contentH: m.contentH, bodyH: m.bodyH
+        }));
+        return "";
+    }
+
     function scopedWindows(accounts): int {
         let count = 0;
         for (const account of accounts) {
@@ -261,6 +463,10 @@ ShellRoot {
 
         property int step: 0
         property int retries: 0
+        property int layoutRetries: 0
+        property int groupIndex: 0
+        property int spendPhase: 0
+        property double requestStamp: 0
         property bool captured: false
         property bool lightCaptured: false
 
@@ -352,6 +558,28 @@ ShellRoot {
                 return;
             }
 
+            if (root.mode === "states") {
+                if (Quota.providers.length !== 7) {
+                    if (driver.retries++ < 60)
+                        return;
+                    root.fail("states summary did not load: status=" + Quota.status
+                        + " providers=" + Quota.providers.length + " error=" + Quota.error);
+                    return;
+                }
+                if (Quota.hasError || Quota.status !== "partial" || Quota.providerGroups.length !== 4) {
+                    root.fail("states summary shape: status=" + Quota.status + " error=" + Quota.error
+                        + " groups=" + Quota.providerGroups.length);
+                    return;
+                }
+                console.log("CAELESTIA_QUOTA_SMOKE_STATES_SUMMARY", JSON.stringify({
+                    status: Quota.status, providers: Quota.providers.length, groups: Quota.providerGroups.length
+                }));
+                root.screenState.quota = true;
+                driver.step = 1;
+                driver.retries = 0;
+                return;
+            }
+
             if (Quota.providers.length !== 5) {
                 if (driver.retries++ < 60)
                     return;
@@ -420,6 +648,16 @@ ShellRoot {
                 return;
             }
             const meters = root.countMeters(quota);
+            if (root.mode === "states") {
+                if (meters < 2) {
+                    root.fail("states meters did not render: " + meters);
+                    return;
+                }
+                driver.step = 7;
+                driver.groupIndex = 0;
+                driver.retries = 0;
+                return;
+            }
             if (root.mode === "configured") {
                 if (Quota.hasError || Quota.status !== "ok") {
                     root.fail("configured drawer lost its summary after opening");
@@ -429,6 +667,16 @@ ShellRoot {
                     root.fail("quota meters did not render: " + meters);
                     return;
                 }
+                // Codex is the default provider: two accounts of 5-hour and weekly
+                // windows, all four readings above the spend row without scrolling.
+                const problem = root.hierarchyError(quota, 4);
+                if (problem !== "") {
+                    if (driver.layoutRetries++ < 20)
+                        return;
+                    root.fail("Codex hierarchy: " + problem);
+                    return;
+                }
+                driver.layoutRetries = 0;
                 console.log("CAELESTIA_QUOTA_SMOKE_OPEN", JSON.stringify({
                     mode: root.mode, width: quota.width, height: quota.height, meters: meters,
                     status: Quota.status, error: Quota.error, provider: Quota.activeProvider?.provider ?? ""
@@ -506,6 +754,32 @@ ShellRoot {
                 root.fail("Claude meters did not render: " + meters);
                 return;
             }
+            // The first Claude account's 5-hour and weekly windows lead the card.
+            const problem = root.hierarchyError(quota, 2);
+            if (problem !== "") {
+                if (driver.layoutRetries++ < 20)
+                    return;
+                root.fail("Claude hierarchy: " + problem);
+                return;
+            }
+            const claudeMeters = [];
+            root.collectMeters(quota, claudeMeters);
+            const titles = claudeMeters.map(m => m.label);
+            if (titles.length !== 5 || titles[0] !== "5-hour" || titles[1] !== "Weekly" || titles[2].indexOf("·") < 0) {
+                root.fail("Claude window order: " + titles.join(" | "));
+                return;
+            }
+            if (root.geometry.h < 520) {
+                // Short drawer: the spend row stays reachable by bounded scrolling.
+                const m = root.measure(quota);
+                m.body.contentY = Math.max(0, m.body.contentHeight - m.body.height);
+                const end = root.measure(quota);
+                if (end.spendTop + end.spendH > end.contentY + end.bodyH + 1) {
+                    root.fail("spend row unreachable by scrolling");
+                    return;
+                }
+                m.body.contentY = 0;
+            }
             if (root.lightScreenshotPath && root.lightSchemePath && !lightScheme.loaded) {
                 if (driver.retries++ < 20)
                     return;
@@ -521,13 +795,151 @@ ShellRoot {
                 sectionsAndSpend: true, todayCostUsd: Quota.todayCostUsd
             }));
             driver.captured = true;
+            driver.spendPhase = 0;
             root.capture(() => {
+                driver.step = 6;
+                driver.retries = 0;
+            });
+            return;
+        }
+
+        // Spend disclosure: collapsed on open, opens on activation, never refreshes,
+        // and resets to collapsed on Today when the drawer hides.
+        if (driver.step === 6) {
+            const spend = root.findNamed(quota, "quotaSpend");
+            const toggle = root.findNamed(quota, "quotaSpendToggle");
+            const body = root.findNamed(quota, "quotaBody");
+            const content = root.findContent(quota);
+            const details = root.findNamed(quota, "quotaSpendDetails");
+            if (!spend || !toggle || !body || !content || !details) {
+                root.fail("spend disclosure parts missing");
+                return;
+            }
+            if (driver.spendPhase === 0) {
+                if (spend.expanded || spend.range !== "today") {
+                    root.fail("spend did not start collapsed on Today");
+                    return;
+                }
+                driver.requestStamp = Quota.lastRequestAt;
+                toggle.clicked();
+                driver.spendPhase = 1;
+                driver.retries = 0;
+                return;
+            }
+            if (driver.spendPhase === 1) {
+                const bottom = spend.mapToItem(body.contentItem, 0, spend.height).y;
+                if (!details.visible || bottom > body.contentY + body.height + 1) {
+                    if (driver.retries++ < 20)
+                        return;
+                    root.fail("spend details did not open into view: visible=" + details.visible
+                        + " bottom=" + bottom + " contentY=" + body.contentY + " body=" + body.height);
+                    return;
+                }
+                if (Quota.lastRequestAt !== driver.requestStamp || Quota.loading) {
+                    root.fail("opening spend triggered a refresh");
+                    return;
+                }
+                const rows = [];
+                root.collectNamed(spend, "quotaSpendRange", rows);
+                if (spend.legend.length !== 4 || rows.length !== 3 || !root.hasText(spend, /API-equivalent/)) {
+                    root.fail("spend details: legend=" + spend.legend.length + " ranges=" + rows.length);
+                    return;
+                }
+                console.log("CAELESTIA_QUOTA_SMOKE_SPEND", JSON.stringify({
+                    open: true, range: spend.range, legend: spend.legend.length, height: spend.height
+                }));
+                driver.spendPhase = 2;
+                driver.retries = 0;
+                root.captureTo(root.spendScreenshotPath, () => {
+                    driver.spendPhase = 3;
+                });
+                return;
+            }
+            if (driver.spendPhase === 3) {
+                const rows = [];
+                root.collectNamed(spend, "quotaSpendRange", rows);
+                rows[2].clicked();
+                driver.spendPhase = 4;
+                driver.retries = 0;
+                return;
+            }
+            if (driver.spendPhase === 4) {
+                const amount = root.findNamed(spend, "quotaSpendAmount");
+                if (spend.range !== "month" || !amount || amount.text !== "$393"
+                        || spend.legend.length !== 4 || spend.legend[3].provider !== "other") {
+                    if (driver.retries++ < 20)
+                        return;
+                    root.fail("30 Days breakdown: range=" + spend.range + " total=" + (amount ? amount.text : "?")
+                        + " legend=" + spend.legend.length);
+                    return;
+                }
+                toggle.clicked();
+                driver.spendPhase = 5;
+                driver.retries = 0;
+                return;
+            }
+            if (driver.spendPhase === 5) {
+                if (spend.expanded || details.visible) {
+                    if (driver.retries++ < 20)
+                        return;
+                    root.fail("spend row did not collapse");
+                    return;
+                }
+                // The explicit reset: expand and move to Yesterday, then hide.
+                toggle.clicked();
+                spend.range = "yesterday";
+                body.contentY = 0;
+                content.resetScroll();
+                if (spend.expanded || spend.range !== "today" || body.contentY !== 0) {
+                    root.fail("hide did not reset spend: expanded=" + spend.expanded + " range=" + spend.range);
+                    return;
+                }
+                if (Quota.lastRequestAt !== driver.requestStamp) {
+                    root.fail("spend disclosure triggered a refresh");
+                    return;
+                }
+                console.log("CAELESTIA_QUOTA_SMOKE_SPEND", JSON.stringify({ collapsedAfterReset: true, range: spend.range }));
                 if (root.applyLightPalette()) {
                     driver.step = 4;
                     driver.retries = 0;
                 } else {
                     root.closeDrawer();
                 }
+            }
+            return;
+        }
+
+        // States fixture: one pass per provider group.
+        if (driver.step === 7) {
+            const group = Quota.providerGroups[driver.groupIndex];
+            if (!group) {
+                root.closeDrawer();
+                return;
+            }
+            if (!Quota.activeGroup || Quota.activeGroup.provider !== group.provider) {
+                Quota.selectGroup(group.provider);
+                driver.retries = 0;
+                return;
+            }
+            if (driver.captured || driver.retries++ < 3)
+                return;
+            const problem = root.statesError(quota, group.provider);
+            if (problem !== "") {
+                if (driver.layoutRetries++ < 20)
+                    return;
+                root.fail("states " + group.provider + ": " + problem);
+                return;
+            }
+            driver.layoutRetries = 0;
+            const base = root.screenshotPath;
+            const next = () => {
+                driver.groupIndex++;
+                driver.retries = 0;
+            };
+            driver.captured = true;
+            root.captureTo(base ? base.replace(/\.png$/, "-" + group.provider + ".png") : "", () => {
+                driver.captured = false;
+                next();
             });
             return;
         }

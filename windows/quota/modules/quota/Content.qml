@@ -11,8 +11,9 @@ import qs.components.controls
 import qs.services
 import "QuotaLogic.js" as Logic
 
-// OpenUsage layout: a spend card, a provider strip, then the chosen provider's
-// header and card of meters, above a fixed footer.
+// Provider limits first: the provider strip, then the chosen provider's header
+// and card of meters, then a collapsed spend row, above a fixed footer that
+// holds refresh and keepalive.
 Item {
     id: root
     objectName: "quotaContent"
@@ -30,8 +31,10 @@ Item {
     implicitHeight: Math.min(stack.implicitHeight, QuotaConfig.panelHeight - Tokens.padding.large * 2 - footer.height - 12)
         + 12 + footer.height
 
+    // Called when the drawer hides: back to the top, spend collapsed on Today.
     function resetScroll(): void {
         body.contentY = 0;
+        spend.reset();
     }
     function accountState(account: var): string {
         return Logic.accountState(account, Quota.nowMs, root.staleAfter, root.hasError);
@@ -136,6 +139,13 @@ Item {
 
     StyledFlickable {
         id: body
+        objectName: "quotaBody"
+        // Opening the spend row scrolls its details into view once they are laid out.
+        property bool revealSpend: false
+        onContentHeightChanged: if (revealSpend) {
+            revealSpend = false;
+            contentY = Math.max(0, contentHeight - height);
+        }
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.right: parent.right
@@ -146,42 +156,15 @@ Item {
         contentHeight: stack.implicitHeight
         flickableDirection: Flickable.VerticalFlick
         boundsBehavior: Flickable.StopAtBounds
+        StyledScrollBar.vertical: StyledScrollBar {
+            objectName: "quotaScrollBar"
+            flickable: body
+            policy: ScrollBar.AlwaysOn
+        }
         Column {
             id: stack
             width: body.width
             spacing: 6
-
-            RowLayout {
-                width: parent.width
-                height: 32
-                spacing: 2
-                Label { leftPadding: 4; text: qsTr("Spend"); font.pixelSize: 16; font.weight: Font.DemiBold }
-                MaterialIcon {
-                    text: "info"
-                    color: root.muted
-                    fontStyle: Tokens.font.icon.size(11).build()
-                    HoverHandler { id: infoHover }
-                    QuotaToolTip { visible: infoHover.hovered; text: qsTr("API-equivalent cost from CPA Manager's usage analytics."); boundsItem: root; family: root.family }
-                }
-                Item { Layout.fillWidth: true }
-                IconButton {
-                    implicitWidth: 30
-                    implicitHeight: 30
-                    icon: "refresh"
-                    type: IconButton.Text
-                    font: Tokens.font.icon.small
-                    enabled: !root.loading && Quota.configured
-                    onClicked: Quota.refresh(true)
-                    Accessible.name: qsTr("Refresh quota")
-                    QuotaToolTip { visible: parent.hovered; text: qsTr("Refresh now"); boundsItem: root; family: root.family }
-                }
-            }
-            QuotaSpend {
-                width: parent.width
-                family: root.family
-            }
-
-            Item { width: 1; height: 4 }
 
             // One logo per provider with its lowest "% left", so only the
             // chosen provider's card is open instead of one long list.
@@ -191,7 +174,7 @@ Item {
                 readonly property int index: Math.max(0, Quota.providerGroups.findIndex(g => Quota.activeGroup && g.provider === Quota.activeGroup.provider))
                 visible: Quota.providerGroups.length > 1
                 width: parent.width
-                height: visible ? 58 : 0
+                height: visible ? 54 : 0
                 radius: 16
                 color: Qt.alpha(Colours.palette.m3onSurface, 0.06)
                 Rectangle {
@@ -218,6 +201,9 @@ Item {
                             height: strip.height - 6
                             hoverEnabled: true
                             onClicked: Quota.selectGroup(modelData.provider)
+                            // Windows AbstractButton activates on Space, not Return/Enter.
+                            Keys.onReturnPressed: tab.click()
+                            Keys.onEnterPressed: tab.click()
                             Accessible.name: modelData.label + ", " + (worst === null ? qsTr("no reading") : qsTr("%1% left").arg(Math.round(worst * 100)))
                             background: Rectangle {
                                 radius: 13
@@ -270,8 +256,6 @@ Item {
                 }
             }
 
-            Item { width: 1; height: 6 }
-
             Rectangle {
                 visible: Quota.providerGroups.length === 0
                 width: parent.width
@@ -296,8 +280,7 @@ Item {
                     readonly property bool single: modelData.accounts.length === 1
                     objectName: "quotaSection"
                     width: stack.width
-                    spacing: 6
-                    bottomPadding: 10
+                    spacing: 4
 
                     SectionHeader {
                         title: section.modelData.label
@@ -313,12 +296,12 @@ Item {
                         Column {
                             id: card
                             width: parent.width
-                            padding: 16
-                            spacing: 28
+                            padding: 14
+                            spacing: 12
                             Label {
                                 readonly property string peak: section.modelData.provider === "zai" ? root.zaiPeakText() : ""
                                 visible: peak !== ""
-                                width: card.width - 32
+                                width: card.width - 28
                                 text: peak
                                 font.pixelSize: 12
                                 color: root.muted
@@ -329,11 +312,19 @@ Item {
                                 delegate: Column {
                                     id: account
                                     required property var modelData
+                                    required property int index
                                     readonly property string quotaState: root.accountState(modelData)
                                     readonly property string notice: root.accountNotice(modelData, quotaState)
-                                    width: card.width - 32
-                                    spacing: 18
+                                    width: card.width - 28
+                                    spacing: 10
 
+                                    // A hairline tells accounts apart without the old tall gap.
+                                    Rectangle {
+                                        visible: account.index > 0
+                                        width: parent.width
+                                        height: 1
+                                        color: root.hairline
+                                    }
                                     // Account caption: only needed to tell several accounts apart, or to flag one.
                                     Column {
                                         visible: !section.single || account.notice !== ""
@@ -343,23 +334,27 @@ Item {
                                             visible: !section.single
                                             width: parent.width
                                             spacing: 6
-                                            Label {
-                                                Layout.minimumWidth: 0
-                                                text: root.accountName(account.modelData)
-                                                font.weight: Font.DemiBold
-                                                color: root.muted
-                                                elide: Text.ElideRight
-                                            }
+                                            // The state mark leads, so a stale or disabled account reads as such first.
                                             MaterialIcon {
                                                 visible: account.quotaState !== "ok"
                                                 text: account.quotaState === "stale" || account.quotaState === "none" ? "schedule" : "warning"
                                                 color: account.quotaState === "auth" ? Colours.palette.m3error : root.muted
                                                 fontStyle: Tokens.font.icon.size(10).build()
                                             }
-                                            Item { Layout.fillWidth: true }
                                             Label {
+                                                objectName: "quotaAccountName"
+                                                Layout.fillWidth: true
+                                                Layout.minimumWidth: 0
+                                                text: root.accountName(account.modelData)
+                                                font.weight: Font.DemiBold
+                                                elide: Text.ElideRight
+                                            }
+                                            Label {
+                                                Layout.maximumWidth: parent.width * 0.4
+                                                Layout.minimumWidth: 0
                                                 text: root.tierName(account.modelData)
                                                 color: root.muted
+                                                elide: Text.ElideRight
                                             }
                                         }
                                         Label {
@@ -400,6 +395,15 @@ Item {
                     }
                 }
             }
+
+            // Secondary: collapsed to one row until opened.
+            QuotaSpend {
+                id: spend
+                visible: Quota.providerGroups.length > 0 || Quota.todayCostUsd !== null
+                width: parent.width
+                family: root.family
+                onExpandedChanged: body.revealSpend = expanded
+            }
         }
     }
     Item {
@@ -410,8 +414,8 @@ Item {
         Column {
             anchors.left: parent.left
             anchors.leftMargin: 4
-            anchors.right: keepalive.left
-            anchors.rightMargin: 8
+            anchors.right: refresh.left
+            anchors.rightMargin: 4
             anchors.bottom: parent.bottom
             spacing: 1
             Label {
@@ -434,13 +438,33 @@ Item {
                 elide: Text.ElideRight
             }
         }
-        // Keepalive pill, in the place of OpenUsage's Options button.
+        // Explicit refresh only; opening or closing anything never refreshes.
+        IconButton {
+            id: refresh
+            objectName: "quotaRefresh"
+            anchors.right: keepalive.left
+            anchors.rightMargin: 4
+            anchors.verticalCenter: keepalive.verticalCenter
+            implicitWidth: 30
+            implicitHeight: 30
+            icon: "refresh"
+            type: IconButton.Text
+            font: Tokens.font.icon.small
+            enabled: !root.loading && Quota.configured
+            onClicked: Quota.refresh(true)
+            Accessible.name: qsTr("Refresh quota")
+            QuotaToolTip { visible: parent.hovered; text: qsTr("Refresh now"); boundsItem: root; family: root.family }
+        }
+        // Keepalive pill, in the place of OpenUsage's Options button. At narrow
+        // widths it keeps only its icon so the status text still fits.
         AbstractButton {
             id: keepalive
+            objectName: "quotaKeepalive"
+            readonly property bool compact: root.width < 320
             anchors.right: parent.right
             anchors.bottom: parent.bottom
             height: 30
-            leftPadding: 12; rightPadding: 14
+            leftPadding: compact ? 9 : 12; rightPadding: compact ? 9 : 14
             enabled: !Quota.keepaliveRunning && Quota.configured
             hoverEnabled: true
             onClicked: Quota.triggerKeepalive()
@@ -461,6 +485,7 @@ Item {
                     fontStyle: Tokens.font.icon.size(12).build()
                 }
                 Label {
+                    visible: !keepalive.compact
                     anchors.verticalCenter: parent.verticalCenter
                     text: qsTr("Keepalive")
                     font.weight: Font.DemiBold

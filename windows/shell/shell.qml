@@ -165,7 +165,14 @@ ShellRoot {
                 barZone: scope.window.bar.exclusiveZone,
                 borderZone: scope.window.borderLayoutThickness,
                 dpr: scope.window.devicePixelRatio,
-                appFullscreen: scope.window.hasFullscreen
+                appFullscreen: scope.window.hasFullscreen,
+                // Content-free readback for drawer interaction diagnostics.
+                panels: {
+                    dashboard: scope.window.screenState.dashboard,
+                    quota: scope.window.screenState.quota,
+                    sidebar: scope.window.screenState.sidebar,
+                    session: scope.window.screenState.session
+                }
             })),
             backgroundScreens: desktopBackground.screens.map(s => s.name),
             backgroundWindows: desktopBackground.instances.map(w => ({
