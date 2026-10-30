@@ -54,7 +54,7 @@ $header = @("//@ pragma DataDir $profile\data", "//@ pragma StateDir $profile\st
 [IO.File]::WriteAllText("$stage\running-apps-test.qml",
     (($header -join "`n") + "`n" + [IO.File]::ReadAllText("$repoRoot\windows\tests\$testName")),
     [Text.UTF8Encoding]::new($false))
-foreach ($directory in @('config', 'state', 'runtime', 'cache', 'data')) {
+foreach ($directory in @('config', 'state', 'runtime', 'cache', 'data', 'tmp', 'home\AppData\Roaming', 'home\AppData\Local')) {
     New-Item -ItemType Directory -Force -Path (Join-Path $profile $directory) | Out-Null
 }
 $info = New-Object Diagnostics.ProcessStartInfo
@@ -73,11 +73,22 @@ foreach ($variable in @($info.EnvironmentVariables.Keys | Where-Object {
 $info.EnvironmentVariables['PATH'] = "$QtPrefix\bin;$qmlRoot\Caelestia\lib;$qmlRoot\M3Shapes;$env:PATH"
 $info.EnvironmentVariables['QML_IMPORT_PATH'] = "$stage\imports;$qmlRoot;$QtPrefix\qml"
 $info.EnvironmentVariables['QML2_IMPORT_PATH'] = "$stage\imports;$qmlRoot;$QtPrefix\qml"
+foreach ($name in @('TEMP', 'TMP')) { $info.EnvironmentVariables[$name] = "$profile\tmp" }
+$info.EnvironmentVariables['USERPROFILE'] = "$profile\home"
+$info.EnvironmentVariables['HOME'] = "$profile\home"
+$info.EnvironmentVariables['APPDATA'] = "$profile\home\AppData\Roaming"
+$info.EnvironmentVariables['LOCALAPPDATA'] = "$profile\home\AppData\Local"
 $info.EnvironmentVariables['CAELESTIA_CONFIG_DIR'] = "$profile\config"
 $info.EnvironmentVariables['CAELESTIA_PROFILE_ROOT'] = $profile
 $info.EnvironmentVariables['CAELESTIA_STATE_DIR'] = "$profile\state"
+$info.EnvironmentVariables['CAELESTIA_CACHE_DIR'] = "$profile\cache"
 $info.EnvironmentVariables['CAELESTIA_RUNTIME_DIR'] = "$profile\runtime"
+$info.EnvironmentVariables['XDG_CONFIG_HOME'] = "$profile\config"
+$info.EnvironmentVariables['XDG_STATE_HOME'] = "$profile\state"
+$info.EnvironmentVariables['XDG_CACHE_HOME'] = "$profile\cache"
+$info.EnvironmentVariables['XDG_DATA_HOME'] = "$profile\data"
 $info.EnvironmentVariables['QML_DISK_CACHE_PATH'] = "$profile\cache"
+$info.EnvironmentVariables['QT_LOGGING_RULES'] = 'quickshell.windows.tracker.debug=false;quickshell.windows.inputmask.debug=false'
 $info.EnvironmentVariables['QT_QPA_PLATFORM'] = 'offscreen'
 $info.EnvironmentVariables['QT_PLUGIN_PATH'] = "$QtPrefix\plugins"
 $info.EnvironmentVariables['QS_WINDOWS_TRAY_HOOK'] = '0'

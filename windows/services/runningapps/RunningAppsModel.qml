@@ -27,6 +27,11 @@ QtObject {
     // target forever: if the user cancels the native save prompt, a deliberate
     // retry works once the window expires.
     property var recentCloses: []
+    // Monotonic tick counter driven by closeTimer (100 ms per tick) so system
+    // clock adjustments cannot extend or shorten close timeouts or coalescing.
+    property int closeTick: 0
+    readonly property int closeTimeoutTicks: 20
+    readonly property int closeCoalesceTicks: 10
     readonly property int closeTimeoutMs: 2000
     readonly property int closeCoalesceMs: 1000
 
@@ -61,8 +66,7 @@ QtObject {
     function pruneRecentCloses(): void {
         if (!recentCloses.length)
             return;
-        const now = Date.now();
-        const next = recentCloses.filter(entry => entry.expiresAt > now && tracksTarget(entry));
+        const next = recentCloses.filter(entry => entry.expiresTick > closeTick && tracksTarget(entry));
         if (next.length !== recentCloses.length)
             recentCloses = next;
     }
@@ -103,14 +107,14 @@ QtObject {
             return;
         while (pendingCloses.length) {
             const request = pendingCloses[0];
-            if (request.deadline)
+            if (request.deadlineTick)
                 return;
             if (!tracksTarget(request)) {
                 pendingCloses = pendingCloses.slice(1);
                 continue;
             }
             const next = pendingCloses.slice();
-            next[0] = Object.assign({}, request, { deadline: Date.now() + closeTimeoutMs });
+            next[0] = Object.assign({}, request, { deadlineTick: closeTick + closeTimeoutTicks });
             pendingCloses = next;
             try {
                 request.native.activate();
@@ -128,11 +132,13 @@ QtObject {
             pendingCloses = [];
             return;
         }
+        if (recentCloses.length)
+            pruneRecentCloses();
         promoteClose();
         if (!pendingCloses.length)
             return;
         const request = pendingCloses[0];
-        if (!request.deadline)
+        if (!request.deadlineTick)
             return;
         const window = resolveTarget(request.id, request.native);
         if (!window) {
@@ -145,7 +151,7 @@ QtObject {
             // observation cannot post a second WM_CLOSE. Record the coalescing
             // window first, then roll it back if the native call did not post.
             pendingCloses = pendingCloses.slice(1);
-            const recent = { id: request.id, native: request.native, expiresAt: Date.now() + closeCoalesceMs };
+            const recent = { id: request.id, native: request.native, expiresTick: closeTick + closeCoalesceTicks };
             recentCloses = recentCloses.concat(recent);
             try {
                 request.native.close();
@@ -156,7 +162,7 @@ QtObject {
             promoteClose();
             return;
         }
-        if (Date.now() >= request.deadline) {
+        if (closeTick >= request.deadlineTick) {
             pendingCloses = pendingCloses.slice(1);
             console.warn("Caelestia: running-app close cancelled because activation was not confirmed.");
             promoteClose();
@@ -169,8 +175,11 @@ QtObject {
     readonly property Timer closeTimer: Timer {
         interval: 100
         repeat: true
-        running: root.actionsEnabled && root.pendingCloses.length > 0
-        onTriggered: root.flushCloses()
+        running: root.actionsEnabled && (root.pendingCloses.length > 0 || root.recentCloses.length > 0)
+        onTriggered: {
+            root.closeTick++;
+            root.flushCloses();
+        }
     }
 
     function request(id: string, action: string): void {
@@ -207,7 +216,7 @@ QtObject {
         if (!actionsEnabled || !native || !root.resolveTarget(id, native) || hasCloseState(id, native))
             return;
         // The deadline starts only when promoteClose() reaches this request.
-        pendingCloses = pendingCloses.concat({ id, native, deadline: 0 });
+        pendingCloses = pendingCloses.concat({ id, native, deadlineTick: 0 });
         promoteClose();
         Qt.callLater(() => root.flushCloses());
     }
