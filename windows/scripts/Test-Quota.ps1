@@ -3,16 +3,31 @@ param(
     [Parameter(Mandatory)][string]$QtPrefix,
     [Parameter(Mandatory)][string]$BuildRoot,
     [string]$RunRoot,
-    [ValidateSet('configured', 'offline', 'unconfigured')]
-    [string[]]$Modes = @('configured', 'offline', 'unconfigured')
+    [ValidateSet('configured', 'states', 'offline', 'unconfigured')]
+    [string[]]$Modes = @('configured', 'states', 'offline', 'unconfigured'),
+    # Drawer sizes as "<width>x<height>". configured runs every size, states
+    # runs the sizes at least 400 high, offline and unconfigured use the first.
+    [ValidatePattern('^\d+x\d+$')]
+    [string[]]$Geometries = @('384x520', '280x520', '280x300'),
+    # Optional guard: refuse to run unless qs.exe has this SHA-256.
+    [string]$ExpectedQsSha256
 )
 # Offscreen CPA quota smoke. Stages the production graph, then runs
-# windows/quota/QuotaSmoke.qml in three isolated profiles:
+# windows/quota/QuotaSmoke.qml in isolated profiles:
 #
 #   configured    a synthetic local CPA Manager stub serves the pre-aggregated
-#                 quota summary; the drawer opens on Claude with meters, a
-#                 model-scoped window, provider sections and spend card, and dark/light
-#                 screenshots are saved;
+#                 quota summary; the drawer opens on Codex, then Claude, with the
+#                 provider strip above the limits, the first account's windows
+#                 visible without scrolling, a model-scoped window and a spend row
+#                 that starts collapsed and opens into the Today / Yesterday /
+#                 30 Days breakdown without refreshing. Dark, light and
+#                 spend-open screenshots are saved. It runs at the 384x520
+#                 default, the 280 minimum width and a short 280x300 drawer;
+#   states        a second synthetic scenario: a very long account name, 0% left,
+#                 stale, reconnect, disabled and unreported accounts, Cursor
+#                 API/Auto windows and a monthly-only provider. Each provider is
+#                 checked for reported windows only (no invented 5-hour or weekly
+#                 limit) and for overflow, and screenshotted;
 #   offline       the CPA endpoint refuses connections; with the configured
 #                 run's cached summary the saved reading stays visible behind
 #                 one friendly error, and the run must settle without hanging;
@@ -27,7 +42,6 @@ $BuildRoot = [IO.Path]::GetFullPath($BuildRoot)
 if (-not $RunRoot) { $RunRoot = Join-Path $env:TEMP 'caelestia-quota-smoke' }
 $run = Join-Path ([IO.Path]::GetFullPath($RunRoot)) (Get-Date -Format 'yyyyMMdd-HHmmss-fff')
 $stage = & "$PSScriptRoot\Stage-ShellPrototype.ps1" -Destination (Join-Path $run 'stage') -ProfileRoot (Join-Path $run 'stage-profile') -Prototype shell-live
-Copy-Item -LiteralPath "$repoRoot\windows\quota\QuotaSmoke.qml" -Destination "$stage\quota-smoke.qml"
 Copy-Item -LiteralPath "$repoRoot\windows\quota\fixtures\light-scheme.json" -Destination "$stage\quota-light-scheme.json"
 
 $python = (& py -3 -c 'import sys; print(sys.executable)' 2>$null | Select-Object -Last 1)
@@ -42,6 +56,26 @@ $exe = Join-Path $BuildRoot 'quickshell\qs.exe'
 foreach ($required in @($exe, "$qmlRoot\Caelestia\Config\qmldir", "$qmlRoot\Caelestia\Windows\qmldir", $stubScript, "$stage\quota-light-scheme.json")) {
     if (-not (Test-Path -LiteralPath $required)) { throw "Missing quota smoke prerequisite: $required" }
 }
+
+# Check the Qt bootstrap before anything starts: no qt.conf beside qs.exe, and
+# the offscreen platform plugin and QtCore from the same 6.11.2 prefix. A
+# mismatch stops here; nothing retries with guessed plugin paths.
+if (Test-Path -LiteralPath (Join-Path (Split-Path -Parent $exe) 'qt.conf')) {
+    throw 'qt.conf sits beside qs.exe and would redirect the Qt plugins.'
+}
+foreach ($binary in @("$QtPrefix\plugins\platforms\qoffscreen.dll", "$QtPrefix\bin\Qt6Core.dll")) {
+    if (-not (Test-Path -LiteralPath $binary)) { throw "Missing Qt binary: $binary" }
+    $version = (Get-Item -LiteralPath $binary).VersionInfo.FileVersion
+    if ($version -notlike '6.11.2*') { throw "Unexpected Qt version $version for $binary" }
+}
+if ($ExpectedQsSha256 -and (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash -ne $ExpectedQsSha256) {
+    throw "qs.exe does not match the expected SHA-256 ($exe)."
+}
+# The staged entry carries the isolated profile-directory pragmas; the smoke
+# host copy below must keep all three.
+$stageShell = [IO.File]::ReadAllText("$stage\shell.qml")
+$pragmaPattern = '(?m)^//@ pragma (?:DataDir|StateDir|CacheDir) [^\r\n]+'
+if ([regex]::Matches($stageShell, $pragmaPattern).Count -ne 3) { throw 'Expected three isolated profile-directory pragmas in the staged entry.' }
 
 $offscreenOnly = 'QFontDatabase: Cannot find font directory|This plugin does not support setting window masks'
 # The banner helper belongs to the host install, not this isolated stage. Its
@@ -59,13 +93,13 @@ function Write-Utf8NoBom([string]$Path, [string]$Text) {
     [IO.File]::WriteAllText($Path, $Text, (New-Object Text.UTF8Encoding($false)))
 }
 
-function Start-Stub([string]$Root) {
+function Start-Stub([string]$Root, [string]$Scenario = 'default') {
     $portFile = Join-Path $Root 'stub-port.txt'
     $info = New-Object Diagnostics.ProcessStartInfo
     $info.FileName = $python
     # Windows PowerShell 5.1 has no ProcessStartInfo.ArgumentList; quote the
     # two paths explicitly instead.
-    $info.Arguments = '"{0}" --port 0 --port-file "{1}"' -f $stubScript, $portFile
+    $info.Arguments = '"{0}" --port 0 --port-file "{1}" --scenario {2}' -f $stubScript, $portFile, $Scenario
     $info.UseShellExecute = $false
     $info.CreateNoWindow = $true
     $info.RedirectStandardOutput = $true
@@ -88,22 +122,31 @@ function Start-Stub([string]$Root) {
 
 $script:configuredCache = $null
 
-function Invoke-QuotaSmoke([string]$Mode) {
-    $modeRoot = Join-Path $run $Mode
+function Invoke-QuotaSmoke([string]$Mode, [string]$Geometry) {
+    $modeRoot = Join-Path $run "$Mode-$Geometry"
     $profile = Join-Path $modeRoot 'profile'
-    foreach ($directory in @('config', 'state', 'runtime', 'cache', 'data')) {
+    foreach ($directory in @('config', 'state', 'runtime', 'cache', 'data', 'tmp', 'home\AppData\Roaming', 'home\AppData\Local')) {
         New-Item -ItemType Directory -Force (Join-Path $profile $directory) | Out-Null
     }
+    $width, $height = $Geometry -split 'x'
     # Keep the bar wrapper's Loader inactive; the quota drawer is the subject.
     Write-Utf8NoBom "$profile\config\shell.json" '{"bar":{"persistent":false}}'
+    # The replacement entry keeps all three directory pragmas, pointed at this
+    # run's own profile, so Quickshell's data, state and cache dirs stay inside it.
+    $header = @("DataDir $profile\data", "StateDir $profile\state", "CacheDir $profile\cache") |
+        ForEach-Object { "//@ pragma $_" }
+    $entry = Join-Path $stage "quota-smoke-$Mode-$Geometry.qml"
+    [IO.File]::WriteAllText($entry, (($header -join "`n") + "`n" + [IO.File]::ReadAllText("$repoRoot\windows\quota\QuotaSmoke.qml")),
+        (New-Object Text.UTF8Encoding($false)))
+    if ([regex]::Matches([IO.File]::ReadAllText($entry), $pragmaPattern).Count -ne 3) { throw 'Smoke entry lost a profile-directory pragma.' }
 
     $stub = $null
     $baseUrl = ''
     $savedCache = $false
     $cachePath = Join-Path $profile 'cache\quota-summary.json'
     try {
-        if ($Mode -eq 'configured') {
-            $stub = Start-Stub $modeRoot
+        if ($Mode -eq 'configured' -or $Mode -eq 'states') {
+            $stub = Start-Stub $modeRoot $(if ($Mode -eq 'states') { 'states' } else { 'default' })
             $baseUrl = $stub.BaseUrl
         } elseif ($Mode -eq 'offline') {
             # Port 9 is discard; a local connection is refused immediately.
@@ -116,24 +159,39 @@ function Invoke-QuotaSmoke([string]$Mode) {
             }
         }
         if ($Mode -ne 'unconfigured') {
-            Write-Utf8NoBom "$profile\config\quota.json" '{"enabled":true,"refreshIntervalMs":600000,"geometry":{"width":384,"height":600}}'
+            Write-Utf8NoBom "$profile\config\quota.json" ('{{"enabled":true,"refreshIntervalMs":600000,"geometry":{{"width":{0},"height":{1}}}}}' -f $width, $height)
             $configJson = [ordered]@{ baseUrl = $baseUrl; adminKey = 'smoke-placeholder' } | ConvertTo-Json
             Write-Utf8NoBom "$profile\config\cpa-agents.json" $configJson
         }
 
         $screenshot = Join-Path $modeRoot 'quota.png'
         $lightScreenshot = Join-Path $modeRoot 'quota-light.png'
+        $spendScreenshot = Join-Path $modeRoot 'quota-spend.png'
         $info = New-Object Diagnostics.ProcessStartInfo
         $info.FileName = $exe
-        $info.Arguments = '--no-color --log-times --path "' + "$stage\quota-smoke.qml" + '"'
+        $info.Arguments = '--no-color --log-times --path "' + $entry + '"'
         $info.WorkingDirectory = $stage
         $info.UseShellExecute = $false
         $info.CreateNoWindow = $true
         $info.RedirectStandardOutput = $true
         $info.RedirectStandardError = $true
-        $info.EnvironmentVariables['PATH'] = "$QtPrefix\bin;$qmlRoot\Caelestia\lib;$qmlRoot\M3Shapes;$env:PATH"
+        # Start from nothing inherited that could steer the shell: drop every
+        # CAELESTIA_* and QS_WINDOWS_* value, then set only what this run owns.
+        # Path overrides are removed, not set to 0; the gates below are switched off.
+        foreach ($variable in @($info.EnvironmentVariables.Keys | Where-Object { $_ -like 'CAELESTIA_*' -or $_ -like 'QS_WINDOWS_*' })) {
+            $info.EnvironmentVariables.Remove($variable)
+        }
+        $system32 = Join-Path $env:SystemRoot 'System32'
+        $info.EnvironmentVariables['PATH'] = "$QtPrefix\bin;$qmlRoot\Caelestia\lib;$qmlRoot\M3Shapes;$system32;$env:SystemRoot"
+        $info.EnvironmentVariables['QT_PLUGIN_PATH'] = "$QtPrefix\plugins"
         $info.EnvironmentVariables['QML_IMPORT_PATH'] = "$stage\imports;$qmlRoot;$QtPrefix\qml"
         $info.EnvironmentVariables['QML2_IMPORT_PATH'] = "$stage\imports;$qmlRoot;$QtPrefix\qml"
+        # Temp and user-profile locations stay inside this run's profile.
+        foreach ($name in @('TEMP', 'TMP')) { $info.EnvironmentVariables[$name] = "$profile\tmp" }
+        $info.EnvironmentVariables['USERPROFILE'] = "$profile\home"
+        $info.EnvironmentVariables['HOME'] = "$profile\home"
+        $info.EnvironmentVariables['APPDATA'] = "$profile\home\AppData\Roaming"
+        $info.EnvironmentVariables['LOCALAPPDATA'] = "$profile\home\AppData\Local"
         $info.EnvironmentVariables['QML_DISK_CACHE_PATH'] = "$profile\cache"
         $info.EnvironmentVariables['CAELESTIA_CONFIG_DIR'] = "$profile\config"
         $info.EnvironmentVariables['CAELESTIA_STATE_DIR'] = "$profile\state"
@@ -145,6 +203,8 @@ function Invoke-QuotaSmoke([string]$Mode) {
         $info.EnvironmentVariables['XDG_CACHE_HOME'] = "$profile\cache"
         $info.EnvironmentVariables['XDG_DATA_HOME'] = "$profile\data"
         $info.EnvironmentVariables['CAELESTIA_QUOTA_SMOKE_MODE'] = $Mode
+        $info.EnvironmentVariables['CAELESTIA_QUOTA_SMOKE_GEOMETRY'] = $Geometry
+        $info.EnvironmentVariables['CAELESTIA_QUOTA_SPEND_SCREENSHOT'] = ([Uri]$spendScreenshot).AbsoluteUri
         $info.EnvironmentVariables['CAELESTIA_QUOTA_SMOKE_SAVED'] = $(if ($savedCache) { '1' } else { '0' })
         $info.EnvironmentVariables['CAELESTIA_QUOTA_LIGHT_SCHEME'] = "$stage\quota-light-scheme.json"
         $info.EnvironmentVariables['CAELESTIA_SHELL_SMOKE'] = '1'
@@ -156,10 +216,6 @@ function Invoke-QuotaSmoke([string]$Mode) {
         $info.EnvironmentVariables['QSG_RHI_BACKEND'] = 'd3d11'
         $info.EnvironmentVariables['QS_WINDOWS_TRAY_HOOK'] = '0'
         $info.EnvironmentVariables['QS_WINDOWS_BLUR'] = '0'
-        foreach ($variable in @($info.EnvironmentVariables.Keys |
-                Where-Object { $_ -like 'CAELESTIA_WINDOWS_*' -or $_ -in @('CAELESTIA_COMBINED_LIVE', 'CAELESTIA_TRAY_FIXTURE', 'CAELESTIA_SHELL_LIVE') })) {
-            $info.EnvironmentVariables.Remove($variable)
-        }
 
         $process = [Diagnostics.Process]::Start($info)
         $outTask = $process.StandardOutput.ReadToEndAsync()
@@ -195,9 +251,20 @@ function Invoke-QuotaSmoke([string]$Mode) {
                 $text -match '"claudeLimits":3' -and $text -match '"scoped":1' -and
                 $text -match '"todayCostUsd":3.71' -and
                 $text -match 'CAELESTIA_QUOTA_SMOKE_SWITCH .*"sectionsAndSpend":true' -and
+                ([regex]::Matches($text, 'CAELESTIA_QUOTA_SMOKE_HIERARCHY ')).Count -eq 2 -and
+                $text -match 'CAELESTIA_QUOTA_SMOKE_SPEND .*"open":true' -and
+                $text -match 'CAELESTIA_QUOTA_SMOKE_SPEND .*"collapsedAfterReset":true' -and
                 (Test-Path -LiteralPath $screenshot) -and (Get-Item -LiteralPath $screenshot).Length -gt 0 -and
+                (Test-Path -LiteralPath $spendScreenshot) -and (Get-Item -LiteralPath $spendScreenshot).Length -gt 0 -and
                 (Test-Path -LiteralPath $lightScreenshot) -and (Get-Item -LiteralPath $lightScreenshot).Length -gt 0 -and
                 $cacheProviders -eq 5 -and -not $cacheLeaks
+        } elseif ($Mode -eq 'states') {
+            $stateShots = @('codex', 'claude', 'cursor', 'zai') | ForEach-Object { Join-Path $modeRoot "quota-$_.png" }
+            $passed = $passed -and
+                $text -match 'CAELESTIA_QUOTA_SMOKE_STATES_SUMMARY .*"status":"partial"' -and
+                ([regex]::Matches($text, 'CAELESTIA_QUOTA_SMOKE_STATE ')).Count -eq 4 -and
+                -not ($stateShots | Where-Object { -not (Test-Path -LiteralPath $_) -or (Get-Item -LiteralPath $_).Length -le 0 }) -and
+                $cacheProviders -eq 7 -and -not $cacheLeaks
         } elseif ($Mode -eq 'offline') {
             $meterPattern = if ($savedCache) { '"meters":([2-9]|[1-9][0-9])' } else { '"meters":0' }
             $passed = $passed -and
@@ -215,6 +282,7 @@ function Invoke-QuotaSmoke([string]$Mode) {
 
         return [ordered]@{
             mode = $Mode
+            geometry = $Geometry
             passed = $passed
             timedOut = $timedOut
             exitCode = $process.ExitCode
@@ -226,6 +294,7 @@ function Invoke-QuotaSmoke([string]$Mode) {
             savedCache = $savedCache
             screenshot = $screenshot
             lightScreenshot = $lightScreenshot
+            spendScreenshot = $spendScreenshot
             stdout = $stdoutPath
             stderr = $stderrPath
             baseUrl = $baseUrl
@@ -240,12 +309,22 @@ function Invoke-QuotaSmoke([string]$Mode) {
 
 $results = @()
 foreach ($mode in $Modes) {
-    $result = Invoke-QuotaSmoke $mode
-    $results += $result
-    $result | ConvertTo-Json -Depth 6
-    if (-not $result.passed) {
-        Write-Host "Quota smoke failed: $mode ($($result.stdout))" -ForegroundColor Red
+    $sizes = switch ($mode) {
+        'configured' { $Geometries }
+        'states' { @($Geometries | Where-Object { [int]($_ -split 'x')[1] -ge 400 }) }
+        default { @($Geometries | Select-Object -First 1) }
     }
+    foreach ($geometry in $sizes) {
+        $result = Invoke-QuotaSmoke $mode $geometry
+        $results += $result
+        $result | ConvertTo-Json -Depth 6
+        if (-not $result.passed) {
+            Write-Host "Quota smoke failed: $mode $geometry ($($result.stdout))" -ForegroundColor Red
+            break
+        }
+    }
+    # A failed run stops the rest; nothing retries with other settings.
+    if ($results.Count -and -not $results[-1].passed) { break }
 }
 
 $passed = ($results | Where-Object { -not $_.passed }).Count -eq 0

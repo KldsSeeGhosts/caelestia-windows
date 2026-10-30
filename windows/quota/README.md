@@ -47,7 +47,7 @@ The response is mapped onto the original drawer model:
 | `accounts[].windows[]` | quota meters (`usedPercent`, `resetAt` countdown) |
 | window id with a model scope (`seven-day-opus`, …) | extra meters after the account's main windows |
 | `todayCostUsd` | the spend card's Today total until analytics answer |
-| analytics `channel_share[].cost` | the spend card's donut and legend |
+| analytics `channel_share[].cost` | the compact spend disclosure's per-provider breakdown |
 | `providers[].status/error`, `accounts[].status/error` | saved, disabled, reconnect and error notices |
 
 `remainingPercent` is used only when `usedPercent` is absent. Windows whose
@@ -74,10 +74,31 @@ drawer shows the previous reading instantly on start.
 | `scripts/cpa_keepalive.py` | `scripts/cpa_keepalive.py` |
 | `assets/provider-icons/*` | `assets/provider-icons/*` |
 
-The Windows drawer follows [OpenUsage](https://github.com/robinebers/openusage)'s
-layout: a spend card (range tabs, donut, legend), then every provider as a header and one card of
-label/bar/reset meters with a pace tick, above a status and keepalive footer;
-the tooltip and data semantics are adapted from the overlay.
+The Windows drawer keeps [OpenUsage](https://github.com/robinebers/openusage)'s
+meters and provider strip but puts the provider limits first. Top to bottom:
+
+1. the provider strip, one logo per provider with its lowest window's `% left`;
+2. the chosen provider's header and one card with each account's windows, in the
+   order CPA reported them (shortest first, then weekly). A meter reads window
+   name and actual `% left` above the bar, the reset below it, and the projected
+   pace small and muted beside the reset. Accounts are separated by a hairline;
+   a stale, reconnect, disabled or unreported account keeps its notice and shows
+   no projected pace. Windows are never invented: a provider that reports only
+   `API`/`Auto` or a monthly window shows exactly those;
+3. a collapsed spend row (range and total). Opening it shows the Today / Yesterday
+   / 30 Days tabs and a per-provider breakdown, labelled API-equivalent cost. It
+   starts collapsed on Today every time the drawer opens; nothing is persisted, and
+   opening it never refreshes;
+4. the footer with the update status, refresh and keepalive (icon only below
+   320 dp wide).
+
+The tooltip and data semantics are adapted from the overlay.
+
+`windows/scripts/Test-Quota.ps1` checks this offscreen: the configured stub at
+the 384x520 default, the 280 dp minimum width and a short 280x300 drawer; a
+`states` scenario (long account name, 0% left, stale, reconnect, disabled and
+unreported accounts, `API`/`Auto` and monthly-only providers); the offline and
+unconfigured profiles. Native DPI, pointer and touch checks are separate.
 
 The drawer is wired into the shared drawer graph:
 
