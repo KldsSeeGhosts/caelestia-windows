@@ -12,12 +12,17 @@ list. Tray-only/background applications stay in the existing tray.
   app does not minimize it.
 - Left-click a multi-window app to choose a window by title and desktop.
 - Right-click any app for its window chooser, including Minimize and Close.
-- Close first requests restore/activation, waits for the backend to observe the
-  target as both active and not minimized, and only then posts one native close
-  request. A bounded timeout, target disappearance or replacement, or disabled
-  controls cancels the request, and duplicate requests cannot post a second
-  close. The model retains the window until it actually closes, including while
-  a save prompt is open.
+- Close first requests restore/activation and waits for the backend to observe
+  the target as both active and not minimized, then posts one native close
+  request. Close requests are serialized: only the head may change foreground,
+  and the next request starts after the head dispatches, cancels or times out,
+  so concurrent requests do not steal each other's activation. A bounded
+  timeout, target disappearance or replacement, or disabled controls cancels
+  the request. A dispatched close coalesces duplicates for a short bounded
+  window, so one request posts at most one native close, while a user who
+  cancels a save prompt can deliberately retry after that window. The model
+  retains the window until it actually closes, including while a save prompt is
+  open.
 - Hover only shows descriptive tooltips. Escape or an outside click dismisses
   the chooser.
 - The viewport reserves one to five complete icon rows according to available
@@ -47,6 +52,16 @@ the backend restores with `ShowWindowAsync` and can defer foreground activation
 by 400 ms after a virtual-desktop switch. The chooser is dismissed before the
 request, and a timeout cancels rather than posting an unobserved `WM_CLOSE`.
 
+Only the head of the pending close queue calls `activate()`. This prevents two
+close requests from racing for foreground and making the earlier request time
+out, but it does not prove that a save prompt was resolved: activating the next
+request can still move foreground away from an earlier prompt. The model only
+bounds duplicate `WM_CLOSE` dispatches; it cannot observe the prompt outcome.
+After a dispatch, duplicate requests are ignored for `closeCoalesceMs` (1 s),
+and a target that is still open can then be closed again deliberately. A target
+that times out before dispatch leaves no coalescing entry, so an immediate retry
+is allowed.
+
 Focused checks:
 
 ```powershell
@@ -64,15 +79,25 @@ by the pill's WheelHandler, and only wheel input outside the pill reaches the
 bar's existing workspace shortcut. QtTest synthesizes angle-delta wheel events;
 high-resolution pixel-delta input is not separately synthesized offscreen. The
 same fixture defers fake activation to prove zero early closes and exactly one
-after confirmation, then covers bounded timeout, disappearance, reused ids,
-disabled controls and a destroyed native handle. Use the undeployed build
-executable with its matching full Qt development prefix and artifact QML
-plugins. A deployed Windows-only runtime is not an offscreen runner. The harness
-checks versions and metadata, resets native control gates before starting Qt,
-and retains both output streams on failure or timeout. Qt environment values are
-process-local, not QML environment pragmas. The preflight opens no windows; the
-fixture additionally instantiates and dismisses the multi-window chooser
-offscreen.
+after confirmation. It then covers bounded timeout, disappearance, reused ids,
+disabled controls and a destroyed native handle, drives two concurrent close
+requests through serialized activation, and simulates a cancelled save prompt:
+the first close leaves the window open, a duplicate inside the coalescing window
+is ignored, and a deliberate retry posts exactly one more close. Use the
+undeployed build executable with its matching full Qt development prefix and
+artifact QML plugins. A deployed Windows-only runtime is not an offscreen
+runner. The harness checks versions and metadata, resets native control gates
+before starting Qt, and retains both output streams on failure or timeout. Qt
+environment values are process-local, not QML environment pragmas. The preflight
+opens no windows; the fixture additionally instantiates and dismisses the
+multi-window chooser offscreen.
+
+The harness records `sourceMatchesBuild` from the build metadata and the current
+checkout. This is provenance, not a pass gate: QML is staged from the checkout,
+so a QML-only change can run against a native artifact built from an earlier
+revision. A true value means the native artifact and both native submodules were
+built from this exact clean revision; false does not by itself mean the QML
+under test is stale.
 
 Real focus, popup dismissal, icon extraction, multi-desktop activation, and save
 prompts require a separate native QA pass. No native backend pin change is needed.

@@ -18,12 +18,17 @@ QtObject {
     property var windowOrder: []
     // A close waits for the backend to observe restore and activation. One
     // entry belongs to one target lifetime; a target that disappears, is
-    // replaced or times out is dropped without a late WM_CLOSE.
+    // replaced or times out is dropped without a late WM_CLOSE. Only the head
+    // may activate the foreground; later requests wait their turn so two close
+    // activations cannot compete and make the earlier request time out.
     property var pendingCloses: []
-    // A dispatched close stays associated with its target lifetime so duplicate
-    // requests cannot post a second WM_CLOSE while the application is open.
-    property var closedTargets: []
+    // A dispatched close coalesces duplicate requests for a bounded window.
+    // This suppresses a double-click's second WM_CLOSE without blacklisting the
+    // target forever: if the user cancels the native save prompt, a deliberate
+    // retry works once the window expires.
+    property var recentCloses: []
     readonly property int closeTimeoutMs: 2000
+    readonly property int closeCoalesceMs: 1000
 
     readonly property var observations: Logic.observe(source)
 
@@ -53,10 +58,20 @@ QtObject {
         }
     }
 
+    function pruneRecentCloses(): void {
+        if (!recentCloses.length)
+            return;
+        const now = Date.now();
+        const next = recentCloses.filter(entry => entry.expiresAt > now && tracksTarget(entry));
+        if (next.length !== recentCloses.length)
+            recentCloses = next;
+    }
+
     function hasCloseState(id: string, native): bool {
         try {
+            pruneRecentCloses();
             return pendingCloses.some(request => request.id === id && request.native === native)
-                || closedTargets.some(request => request.id === id && request.native === native);
+                || recentCloses.some(request => request.id === id && request.native === native);
         } catch (error) {
             return false;
         }
@@ -75,10 +90,37 @@ QtObject {
             windowIds = next.windowIds;
         if (pendingCloses.length)
             pendingCloses = pendingCloses.filter(tracksTarget);
-        if (closedTargets.length)
-            closedTargets = closedTargets.filter(tracksTarget);
+        if (recentCloses.length)
+            pruneRecentCloses();
         if (pendingCloses.length)
             Qt.callLater(() => root.flushCloses());
+    }
+
+    // Start the head request only. A queued request gets its full timeout after
+    // it reaches the head, not while an earlier activation is still pending.
+    function promoteClose(): void {
+        if (!actionsEnabled)
+            return;
+        while (pendingCloses.length) {
+            const request = pendingCloses[0];
+            if (request.deadline)
+                return;
+            if (!tracksTarget(request)) {
+                pendingCloses = pendingCloses.slice(1);
+                continue;
+            }
+            const next = pendingCloses.slice();
+            next[0] = Object.assign({}, request, { deadline: Date.now() + closeTimeoutMs });
+            pendingCloses = next;
+            try {
+                request.native.activate();
+            } catch (error) {
+                pendingCloses = pendingCloses.slice(1);
+                console.warn("Caelestia: running-app close was cancelled before activation.");
+                continue;
+            }
+            return;
+        }
     }
 
     function flushCloses(): void {
@@ -86,30 +128,39 @@ QtObject {
             pendingCloses = [];
             return;
         }
-        const waiting = [];
-        for (const request of pendingCloses) {
-            const window = resolveTarget(request.id, request.native);
-            if (!window)
-                continue;
-            if (window.active && !window.minimized) {
-                try {
-                    request.native.close();
-                } catch (error) {
-                    console.warn("Caelestia: running-app close could not be dispatched.");
-                }
-                // One graceful close per target lifetime. A cancelled native
-                // save prompt must not turn a retry into a second WM_CLOSE.
-                closedTargets = closedTargets.concat({ id: request.id, native: request.native });
-                continue;
-            }
-            if (Date.now() < request.deadline) {
-                waiting.push(request);
-                continue;
-            }
-            console.warn("Caelestia: running-app close cancelled because activation was not confirmed.");
+        promoteClose();
+        if (!pendingCloses.length)
+            return;
+        const request = pendingCloses[0];
+        if (!request.deadline)
+            return;
+        const window = resolveTarget(request.id, request.native);
+        if (!window) {
+            pendingCloses = pendingCloses.slice(1);
+            promoteClose();
+            return;
         }
-        if (waiting.length !== pendingCloses.length)
-            pendingCloses = waiting;
+        if (window.active && !window.minimized) {
+            // Remove the request before dispatching so a synchronous
+            // observation cannot post a second WM_CLOSE. Record the coalescing
+            // window first, then roll it back if the native call did not post.
+            pendingCloses = pendingCloses.slice(1);
+            const recent = { id: request.id, native: request.native, expiresAt: Date.now() + closeCoalesceMs };
+            recentCloses = recentCloses.concat(recent);
+            try {
+                request.native.close();
+            } catch (error) {
+                recentCloses = recentCloses.filter(entry => entry !== recent);
+                console.warn("Caelestia: running-app close could not be dispatched.");
+            }
+            promoteClose();
+            return;
+        }
+        if (Date.now() >= request.deadline) {
+            pendingCloses = pendingCloses.slice(1);
+            console.warn("Caelestia: running-app close cancelled because activation was not confirmed.");
+            promoteClose();
+        }
     }
 
     // Activation can wait for a virtual-desktop switch in the backend. Observe
@@ -155,14 +206,9 @@ QtObject {
     function requestClose(id: string, native): void {
         if (!actionsEnabled || !native || !root.resolveTarget(id, native) || hasCloseState(id, native))
             return;
-        pendingCloses = pendingCloses.concat({ id, native, deadline: Date.now() + closeTimeoutMs });
-        try {
-            native.activate();
-        } catch (error) {
-            pendingCloses = pendingCloses.filter(request => request.id !== id);
-            console.warn("Caelestia: running-app close was cancelled before activation.");
-            return;
-        }
+        // The deadline starts only when promoteClose() reaches this request.
+        pendingCloses = pendingCloses.concat({ id, native, deadline: 0 });
+        promoteClose();
         Qt.callLater(() => root.flushCloses());
     }
 }

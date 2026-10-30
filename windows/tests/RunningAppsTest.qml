@@ -23,6 +23,13 @@ ShellRoot {
     property var reusedFixture
     property var replacedFixture
     property var destroyedFixture
+    property var multiFirst
+    property var multiSecond
+    property var queueFirst
+    property var queueSecond
+    property var queueThird
+    property var queueReplacement
+    property var retryFixture
     readonly property var screen: Quickshell.screens.length ? Quickshell.screens[0] : null
     readonly property var screenState: screen ? Services.ShellState.forScreen(screen) : null
 
@@ -43,6 +50,7 @@ ShellRoot {
             property string appId
             property bool mapped: true
             property bool deferActivation: false
+            property bool savePromptOpen: false
             property var counts: null
             property var lastIpcObject: ({ class: appId, mapped: mapped })
             property var workspace: ({ id: 1 })
@@ -65,7 +73,13 @@ ShellRoot {
                         throw new Error("close preceded observed activation/restore");
                     }
                     target.counts.closes++;
+                    // The fake window stays open after WM_CLOSE, like a native
+                    // save prompt. The test can cancel it explicitly.
+                    target.savePromptOpen = true;
                 }
+            }
+            function cancelSavePrompt(): void {
+                savePromptOpen = false;
             }
         }
     }
@@ -416,8 +430,163 @@ ShellRoot {
                     check(root.destroyedFixture.counts.closes === 0
                         && root.destroyedFixture.counts.unsafeCloses === 0,
                         "destroyed target receives no close");
-                    Services.RunningApps.source = [];
+                    root.multiFirst = root.makeFixture("11", "fixture-multi");
+                    root.multiSecond = root.makeFixture("12", "fixture-multi");
+                    for (const item of [root.multiFirst, root.multiSecond]) {
+                        item.deferActivation = true;
+                        item.activated = false;
+                        item.wayland.minimized = false;
+                    }
+                    Services.RunningApps.source =
+                        Services.RunningApps.source.concat([root.multiFirst, root.multiSecond]);
                 } else if (root.phase === 28) {
+                    check(Services.RunningApps.windows["11"] !== undefined
+                        && Services.RunningApps.windows["12"] !== undefined,
+                        "multi-window close fixtures are projected");
+                    Services.RunningApps.request("11", "close");
+                    Services.RunningApps.request("12", "close");
+                } else if (root.phase === 29) {
+                    check(root.multiFirst.counts.activations === 1,
+                        "first concurrent close activates");
+                    check(root.multiSecond.counts.activations === 0,
+                        "second concurrent close waits its turn");
+                    check(Services.RunningApps.pendingCloses.length === 2,
+                        "both concurrent closes are queued");
+                    check(root.multiFirst.counts.closes === 0
+                        && root.multiSecond.counts.closes === 0,
+                        "queued closes wait for observed activation");
+                    root.multiFirst.wayland.completeActivation();
+                    interval = 250;
+                } else if (root.phase === 30) {
+                    check(root.multiFirst.counts.closes === 1,
+                        "first queued close dispatches after activation");
+                    check(root.multiFirst.counts.unsafeCloses === 0,
+                        "first queued close was safe");
+                    check(root.multiSecond.counts.activations === 1,
+                        "second close activates only after the first dispatches");
+                    check(root.multiSecond.counts.closes === 0,
+                        "second close still waits for its own activation");
+                    root.multiSecond.wayland.completeActivation();
+                    interval = 250;
+                } else if (root.phase === 31) {
+                    check(root.multiSecond.counts.closes === 1,
+                        "second queued close dispatches after activation");
+                    check(root.multiSecond.counts.unsafeCloses === 0,
+                        "second queued close was safe");
+                    check(Services.RunningApps.pendingCloses.length === 0,
+                        "concurrent close queue drains");
+                    root.queueFirst = root.makeFixture("20", "fixture-queue");
+                    root.queueSecond = root.makeFixture("21", "fixture-queue");
+                    root.queueThird = root.makeFixture("22", "fixture-queue");
+                    for (const item of [root.queueFirst, root.queueSecond, root.queueThird]) {
+                        item.deferActivation = true;
+                        item.activated = false;
+                        item.wayland.minimized = false;
+                    }
+                    Services.RunningApps.source = Services.RunningApps.source.concat(
+                        [root.queueFirst, root.queueSecond, root.queueThird]);
+                } else if (root.phase === 32) {
+                    Services.RunningApps.request("20", "close");
+                    Services.RunningApps.request("21", "close");
+                    Services.RunningApps.request("22", "close");
+                } else if (root.phase === 33) {
+                    check(root.queueFirst.counts.activations === 1,
+                        "timeout head activates first");
+                    check(root.queueSecond.counts.activations === 0
+                        && root.queueThird.counts.activations === 0,
+                        "later close requests do not compete for foreground");
+                    check(Services.RunningApps.pendingCloses.length === 3,
+                        "three close requests are queued");
+                    interval = 2200;
+                } else if (root.phase === 34) {
+                    interval = 80;
+                    check(root.queueFirst.counts.closes === 0
+                        && root.queueFirst.counts.unsafeCloses === 0,
+                        "timed-out head sends no close");
+                    check(root.queueSecond.counts.activations === 1,
+                        "next request activates after the head times out");
+                    check(root.queueThird.counts.activations === 0,
+                        "third request remains queued");
+                    check(Services.RunningApps.pendingCloses.length === 2,
+                        "timeout leaves later requests queued");
+                    root.queueReplacement = root.makeFixture("22", "fixture-queue");
+                    root.queueReplacement.deferActivation = true;
+                    root.queueReplacement.activated = false;
+                    root.queueReplacement.wayland.minimized = false;
+                    const next = Services.RunningApps.source.slice();
+                    next[next.indexOf(root.queueThird)] = root.queueReplacement;
+                    Services.RunningApps.source = next;
+                } else if (root.phase === 35) {
+                    check(Services.RunningApps.pendingCloses.length === 1,
+                        "replaced queued target cancels its request");
+                    check(root.queueThird.counts.activations === 0
+                        && root.queueThird.counts.closes === 0,
+                        "old queued target never activates or closes");
+                    check(root.queueReplacement.counts.activations === 0
+                        && root.queueReplacement.counts.closes === 0,
+                        "replacement target inherits no close");
+                    root.queueSecond.wayland.completeActivation();
+                    interval = 250;
+                } else if (root.phase === 36) {
+                    check(root.queueSecond.counts.closes === 1,
+                        "promoted close dispatches after activation");
+                    check(root.queueSecond.counts.unsafeCloses === 0,
+                        "promoted close was safe");
+                    check(Services.RunningApps.pendingCloses.length === 0,
+                        "close queue drains after identity cancellation");
+                    root.retryFixture = root.makeFixture("30", "fixture-retry");
+                    root.retryFixture.deferActivation = true;
+                    root.retryFixture.activated = false;
+                    root.retryFixture.wayland.minimized = false;
+                    Services.RunningApps.source =
+                        Services.RunningApps.source.concat(root.retryFixture);
+                } else if (root.phase === 37) {
+                    Services.RunningApps.request("30", "close");
+                } else if (root.phase === 38) {
+                    check(root.retryFixture.counts.activations === 1,
+                        "retry fixture activates before close");
+                    check(Services.RunningApps.pendingCloses.length === 1,
+                        "retry fixture close is pending");
+                    root.retryFixture.wayland.completeActivation();
+                    interval = 250;
+                } else if (root.phase === 39) {
+                    check(root.retryFixture.counts.closes === 1,
+                        "first close dispatches once");
+                    check(root.retryFixture.savePromptOpen,
+                        "first close left the window open like a save prompt");
+                    root.retryFixture.cancelSavePrompt();
+                    check(!root.retryFixture.savePromptOpen,
+                        "cancelled prompt leaves the window open");
+                    // A duplicate inside the coalescing window is ignored.
+                    Services.RunningApps.request("30", "close");
+                    interval = 1100;
+                } else if (root.phase === 40) {
+                    interval = 80;
+                    check(root.retryFixture.counts.closes === 1,
+                        "duplicate close inside the coalescing window is ignored");
+                    check(root.retryFixture.counts.activations === 1,
+                        "coalesced duplicate does not reactivate");
+                    check(Services.RunningApps.pendingCloses.length === 0,
+                        "coalesced duplicate leaves no pending request");
+                    // The user deliberately retries after the prompt was cancelled.
+                    Services.RunningApps.request("30", "close");
+                } else if (root.phase === 41) {
+                    check(root.retryFixture.counts.activations === 2,
+                        "deliberate retry activates the still-open target");
+                    // The target is still active, so the retry may dispatch in
+                    // the same turn instead of waiting for another observation.
+                    check(root.retryFixture.counts.closes === 2
+                        || Services.RunningApps.pendingCloses.length === 1,
+                        "deliberate retry posts one more close");
+                    root.retryFixture.wayland.completeActivation();
+                    interval = 250;
+                } else if (root.phase === 42) {
+                    check(root.retryFixture.counts.closes === 2,
+                        "deliberate retry posts exactly one more close");
+                    check(root.retryFixture.counts.unsafeCloses === 0,
+                        "deliberate retry was safe");
+                    Services.RunningApps.source = [];
+                } else if (root.phase === 43) {
                     check(Services.RunningApps.groupIds.length === 0, "empty model");
                     interval = 700;
                 } else {

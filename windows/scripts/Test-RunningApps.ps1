@@ -17,6 +17,14 @@ if (Test-Path -LiteralPath "$BuildRoot\quickshell\qt.conf") {
 $buildInfo = Get-Content -LiteralPath "$BuildRoot\logs\build.json" -Raw | ConvertFrom-Json
 $sourceRevision = (& git -C $repoRoot rev-parse HEAD).Trim()
 $sourceDirty = [bool](& git -C $repoRoot status --porcelain)
+# The native artifact also depends on the two pinned QML/native submodules.
+# Compare them so sourceMatchesBuild cannot claim provenance from the root
+# revision alone while a submodule points somewhere else.
+$backendRevision = (& git -C "$repoRoot\windows\deps\quickshell" rev-parse HEAD).Trim()
+$m3shapesRevision = (& git -C "$repoRoot\windows\deps\m3shapes" rev-parse HEAD).Trim()
+if (-not $backendRevision -or -not $m3shapesRevision) {
+    throw 'Running-app checks require initialized backend and M3Shapes submodules.'
+}
 foreach ($required in @($executable, "$QtPrefix\bin\Qt6Core.dll",
     "$QtPrefix\plugins\platforms\qoffscreen.dll", "$qmlRoot\Caelestia\Config\qmldir",
     "$qmlRoot\Caelestia\Windows\qmldir", "$qmlRoot\M3Shapes\qmldir")) {
@@ -103,7 +111,17 @@ $result = [ordered]@{
     sourceDirty = $sourceDirty
     buildSourceRevision = $buildInfo.sourceRevision
     buildSourceDirty = [bool]$buildInfo.sourceDirty
-    sourceMatchesBuild = ($buildInfo.sourceRevision -eq $sourceRevision -and -not $sourceDirty -and -not $buildInfo.sourceDirty)
+    backendRevision = $backendRevision
+    buildBackendRevision = $buildInfo.backendRevision
+    m3shapesRevision = $m3shapesRevision
+    buildM3ShapesRevision = $buildInfo.m3shapesRevision
+    # Provenance only. QML is staged from the checkout, so a false value does
+    # not mean the fixture ran stale QML; it means the native artifact cannot be
+    # claimed to have been built from this exact clean revision.
+    sourceMatchesBuild = ($buildInfo.sourceRevision -eq $sourceRevision -and
+        -not $sourceDirty -and -not $buildInfo.sourceDirty -and
+        $buildInfo.backendRevision -eq $backendRevision -and
+        $buildInfo.m3shapesRevision -eq $m3shapesRevision)
     fixture = $testName
     assertions = if ($assertionMatch.Success) { [int]$assertionMatch.Groups[1].Value } else { 0 }
     executable = $executable
