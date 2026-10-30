@@ -68,9 +68,8 @@ ShellRoot {
             offsetScale: 0
         }
 
-        // Mount the original bar at its intrinsic width so its centered
-        // workspaces entry is reachable by synthetic coordinates. The narrow
-        // production bar's own layout is outside this focused wheel check.
+        // This fixture uses a wide layout; production-width coverage remains
+        // separate because the headless ActiveWindow reports 300px wide.
         Bar.Bar {
             id: bar
             width: 300

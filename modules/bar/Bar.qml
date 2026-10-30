@@ -82,6 +82,7 @@ ColumnLayout {
         // MouseArea, so it receives real wheel input through this dispatcher.
         const workspaces = ch?.item as Workspaces;
         if (workspaces && ch?.entryId === "workspaces"
+            && typeof workspaces.handleWheel === "function"
             && workspaces.handleWheel(workspaces.mapFromItem(root, 0, y).y, angleDelta))
             return;
         if (ch?.entryId === "workspaces" && Config.bar.scrollActions.workspaces) {
