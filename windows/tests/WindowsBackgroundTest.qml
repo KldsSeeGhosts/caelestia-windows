@@ -18,10 +18,11 @@ Item {
 
     // The two backend shapes the adapter must support. The current runtime has
     // no underlayActive property. The feature-detected shape mirrors the
-    // backend contract: an embedded WorkerW window with no insert-after and no
-    // icons embedding is the underlay, so aboveIcons decides it here.
+    // backend contract: an embedded WorkerW window with no insert-after, no
+    // icons embedding and no refused SetParent is the underlay.
     property QtObject underlaySupportedHost: QtObject {
-        property bool underlayActive: aboveIcons.length === 0
+        property bool embedRefused: false
+        property bool underlayActive: !embedRefused && aboveIcons.length === 0
         property bool active: false
         property bool enabled: false
         property var aboveIcons: []
@@ -148,6 +149,16 @@ Item {
             check(screens.length === 0, "unacknowledged underlay fails closed");
             nativeLayer.aboveIcons = [];
             check(underlayActive && hostEnabled && screens.length === 2, "clearing the embed restores the underlay");
+
+            // A refused SetParent leaves the window top level. The backend must
+            // deny the acknowledgement so the adapter unmounts instead of
+            // covering the external wallpaper.
+            nativeLayer.embedRefused = true;
+            check(!underlayActive, "refused embed denies the underlay");
+            check(!hostEnabled, "refused embed yields");
+            check(screens.length === 0, "refused embed fails closed");
+            nativeLayer.embedRefused = false;
+            check(underlayActive && hostEnabled && screens.length === 2, "accepted embed restores the underlay");
 
             // Host discovery must be reconciled from the request, not just from
             // the window lifetime, so the first scan can find WorkerW.
