@@ -36,6 +36,7 @@ Item {
     // Windows: neutral stand-in so shared drawers load under upstream shell.qml;
     // the Windows Panels adapter replaces both with the real quota drawer.
     readonly property bool quotaEnabled: false
+    readonly property bool quotaHoverBlocked: false
     readonly property Item quota: Item {
         property real offsetScale: 1
         visible: false

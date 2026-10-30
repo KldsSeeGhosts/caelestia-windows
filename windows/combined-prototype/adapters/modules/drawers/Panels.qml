@@ -35,11 +35,24 @@ Item {
     // Windows: the top-right quota drawer, staged from windows/quota.
     readonly property alias quota: quota
     readonly property bool quotaEnabled: QuotaConfig.enabled
+    // The sidebar and session drawers own the right edge, so quota hover steps
+    // aside from the moment either is requested until it is fully hidden again.
+    // Requested and visible are both checked: opening shows before it animates
+    // in, and closing keeps the panel on screen until it slides out.
+    readonly property bool quotaHoverBlocked: sidebar.shouldBeActive || sidebar.visible || session.shouldBeActive || session.visible
     readonly property alias popouts: popoutsWrapper.content
     readonly property alias popoutsWrapper: popoutsWrapper
     readonly property alias utilities: utilities
     readonly property alias toasts: toasts
     readonly property alias sidebar: sidebar
+
+    // A quota drawer that was already open yields at once. Only quota closes:
+    // the sidebar and session are never dismissed from here, and quota reopens
+    // only from a fresh pointer move after both are gone.
+    onQuotaHoverBlockedChanged: {
+        if (quotaHoverBlocked)
+            screenState.quota = false;
+    }
 
     anchors.fill: parent
     anchors.margins: borderThickness
