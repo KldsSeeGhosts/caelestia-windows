@@ -22,7 +22,7 @@ function New-Payload([string]$Prefix, [string]$Label) {
     $path = Join-Path $root ('payload-' + [guid]::NewGuid().ToString('N'))
     [IO.Directory]::CreateDirectory($path) | Out-Null
     [IO.File]::WriteAllText((Join-Path $path 'qs.exe'), $Label)
-    [IO.File]::WriteAllText((Join-Path $path 'Start-Caelestia.ps1'), 'param($Prefix,$Command) if ($Command -eq "State") { "fixture" }')
+    [IO.File]::WriteAllText((Join-Path $path 'Start-Caelestia.ps1'), 'param($Prefix,$Command = "Start") if ($Command -eq "State") { "fixture" } elseif ($Command -eq "Start") { "fixture-start" }')
     foreach ($name in @('Start-CaelestiaEntry.ps1', 'Caelestia-InstallCommon.ps1', 'Caelestia-Versions.ps1', 'Manage-Caelestia.ps1', 'Uninstall-Caelestia.ps1')) {
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $path
     }
@@ -40,6 +40,15 @@ try {
     $aHash = (Get-FileHash (Join-Path $a 'install.json')).Hash
     Assert ($recordA.version -eq 2 -and (Resolve-CaelestiaRuntimePrefix $prefix) -eq $a) 'Fresh install is not routed to its version.'
     Assert ((& (Join-Path $PSScriptRoot 'Start-Caelestia.ps1') -Prefix $prefix -Command State) -eq 'fixture') 'Repository launcher did not route to the selected payload.'
+    # Match the Run entry: a fresh Windows PowerShell -File process, no -Prefix.
+    # In-process invocation does not reproduce $PSScriptRoot parameter defaults.
+    $entry = Join-Path $prefix 'Start-Caelestia.ps1'
+    $output = & (Get-WindowsPowerShellPath) -NoProfile -ExecutionPolicy Bypass -File $entry
+    Assert ($LASTEXITCODE -eq 0 -and $output -eq 'fixture-start') 'Sign-in launcher did not start the selected payload without -Prefix.'
+    $output = & (Get-WindowsPowerShellPath) -NoProfile -ExecutionPolicy Bypass -File $entry -Command State
+    Assert ($LASTEXITCODE -eq 0 -and $output -eq 'fixture') 'Installed launcher did not route State without -Prefix.'
+    $output = & (Get-WindowsPowerShellPath) -NoProfile -ExecutionPolicy Bypass -File $entry -Prefix $prefix -Command State
+    Assert ($LASTEXITCODE -eq 0 -and $output -eq 'fixture') 'Installed launcher did not preserve an explicit -Prefix.'
     $failed = $false
     try { Install-CaelestiaVersion $a (New-Payload $a 'nested') } catch { $failed = $_ -match 'immutable version directory' }
     Assert $failed 'An immutable payload was accepted as an install root.'
