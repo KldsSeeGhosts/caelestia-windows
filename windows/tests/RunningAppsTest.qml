@@ -20,6 +20,13 @@ ShellRoot {
     readonly property var screen: Quickshell.screens.length ? Quickshell.screens[0] : null
     readonly property var screenState: screen ? Services.ShellState.forScreen(screen) : null
 
+    // The shell loads this font. Without it the ActiveWindow entry falls back
+    // to literal icon names and widens the bar's layout past its 60px width.
+    FontLoader {
+        id: materialSymbols
+        source: Quickshell.shellPath("assets/material-symbols-rounded/MaterialSymbolsRounded.ttf")
+    }
+
     Component {
         id: fixture
         QtObject {
@@ -53,9 +60,9 @@ ShellRoot {
 
     TestEvent { id: input }
 
-    // Mount the original bar over the same Windows running-app projection.
-    // The window-level MouseArea is declared after the bar, exactly as
-    // Interactions is above the bar in ContentWindow.
+    // Match ContentWindow: the bar is a child of the window-sized Interactions
+    // mouse area, which only sees wheel input that the bar does not consume.
+    // Panels is omitted because this fixture only exercises the wheel path.
     FloatingWindow {
         id: barHost
         visible: true
@@ -68,24 +75,23 @@ ShellRoot {
             offsetScale: 0
         }
 
-        // This fixture uses a wide layout; production-width coverage remains
-        // separate because the headless ActiveWindow reports 300px wide.
-        Bar.Bar {
-            id: bar
-            width: 300
-            height: 600
-            screen: root.screen
-            screenState: root.screenState
-            popouts: barPopouts
-            fullscreen: false
-        }
-
         CustomMouseArea {
+            id: barInteractions
             anchors.fill: parent
-            onWheel: event => {
+            function onWheel(event: WheelEvent): void {
                 root.dispatcherWheels++;
-                if (event.x < bar.width)
+                if (event.x < bar.implicitWidth)
                     bar.handleWheel(event.y, event.angleDelta);
+            }
+
+            Bar.BarWrapper {
+                id: bar
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
+                screen: root.screen
+                screenState: root.screenState
+                popouts: barPopouts
+                fullscreen: false
             }
         }
     }
@@ -121,7 +127,6 @@ ShellRoot {
             Qt.NoButton, Qt.NoModifier, 0, -120, 0);
     }
 
-
     Timer {
         interval: 80
         repeat: true
@@ -129,12 +134,15 @@ ShellRoot {
         onTriggered: {
             try {
                 if (root.phase === 0) {
+                    if (materialSymbols.status !== FontLoader.Ready)
+                        return;
                     for (let i = 0; i < 9; i++)
                         root.fixtures.push(fixture.createObject(root, {
                             address: String(i + 1), appId: i < 2 ? "fixture-app" : "fixture-" + i
                         }));
                     Services.RunningApps.source = root.fixtures;
                     Services.RunningApps.actionsEnabled = false;
+                    root.screenState.bar = true;
                 } else if (root.phase === 1) {
                     check(Services.RunningApps.groupIds.length === 8, "per-app grouping");
                     check(pill.implicitHeight > 0 && pill.implicitHeight <= 136, "overflow stays bounded");
@@ -177,9 +185,18 @@ ShellRoot {
                     }
                 } else if (root.phase === 5) {
                     root.refreshBar();
+                    if (!root.barPill || root.barPill.implicitHeight <= 0
+                            || bar.width < bar.contentWidth - 0.5)
+                        return;
                     check(root.barPill !== null && root.barPill.implicitHeight > 0,
                         "bar mounts the bounded running-app pill");
                     check(root.barWorkspaces !== null, "bar mounts its workspaces entry");
+                    check(bar.width >= bar.contentWidth - 0.5, "bar reaches its production width");
+                    const pillX = root.barPill.mapToItem(bar, 0, 0).x;
+                    check(pillX >= 0 && pillX + root.barPill.width <= bar.width,
+                        "pill layout is inside the production-width bar");
+                    root.hyprRefusals = Services.Hypr.refusals;
+                    root.dispatcherWheels = 0;
                     check(root.sendPillWheel(), "offscreen wheel delivered to the pill");
                 } else if (root.phase === 6) {
                     const apps = root.listFor(pill);
@@ -189,18 +206,22 @@ ShellRoot {
                     root.refreshBar();
                     root.hyprRefusals = Services.Hypr.refusals;
                     root.dispatcherWheels = 0;
-                    check(root.sendBarPillWheel(), "bar-dispatched wheel delivered");
+                    check(root.sendBarPillWheel(), "bar-mounted pill wheel delivered");
                 } else if (root.phase === 7) {
                     const barApps = root.listFor(root.barPill);
-                    check(root.dispatcherWheels > 0, "pill wheel reaches the window-level dispatcher");
-                    check(barApps?.contentY > 0, "bar dispatcher scrolls the running-app viewport");
+                    check(root.dispatcherWheels === 0,
+                        "overflow wheel is consumed by the pill's Flickable");
+                    check(barApps?.contentY > 0, "production overflow wheel scrolls natively");
                     check(Services.Hypr.refusals === root.hyprRefusals,
-                        "pill wheel does not reach the workspace shortcut");
+                        "overflow wheel does not reach the workspace shortcut");
                     if (barApps)
                         barApps.contentY = 0;
                     root.hyprRefusals = Services.Hypr.refusals;
+                    root.dispatcherWheels = 0;
                     check(root.sendWorkspaceWheel(), "workspace wheel delivered");
                 } else if (root.phase === 8) {
+                    check(root.dispatcherWheels > 0,
+                        "workspace wheel reaches the window-level mouse area");
                     check(root.listFor(root.barPill)?.contentY === 0,
                         "workspace wheel does not scroll the running-app viewport");
                     check(Services.Hypr.refusals > root.hyprRefusals,
@@ -217,7 +238,8 @@ ShellRoot {
                     root.dispatcherWheels = 0;
                     check(root.sendBarPillWheel(), "short-list wheel delivered");
                 } else if (root.phase === 10) {
-                    check(root.dispatcherWheels > 0, "short-list wheel reaches the window-level dispatcher");
+                    check(root.dispatcherWheels === 0,
+                        "short list consumes wheel before the window-level mouse area");
                     check(root.listFor(root.barPill)?.contentY === 0,
                         "short list consumes wheel without moving");
                     check(Services.Hypr.refusals === root.hyprRefusals,

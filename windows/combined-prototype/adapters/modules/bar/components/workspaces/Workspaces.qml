@@ -30,17 +30,9 @@ Column {
     }
 
     spacing: runningApps.implicitHeight > 0 ? Tokens.spacing.medium : 0
-    // Column derives its implicit width from WorkspacesContent, which already
-    // reserves the bar's inner width.
-
-    // The bar dispatcher reaches the running-app viewport through this entry.
-    // Return true when the wheel belongs to the pill, including a short list
-    // that must still consume the event.
-    function handleWheel(y: real, angleDelta: point): bool {
-        if (!runningApps.visible || y < runningApps.y || y >= runningApps.y + runningApps.height)
-            return false;
-        return runningApps.handleWheel(angleDelta);
-    }
+    // Column's implicitWidth is read-only. WorkspacesContent already reserves
+    // the bar's inner width, so assigning it would prevent this adapter from
+    // loading.
 
     WorkspacesContent {
         id: workspaceContent

@@ -159,21 +159,9 @@ StyledRect {
         target: null
         onWheel: event => {
             const delta = event.pixelDelta.y || event.angleDelta.y / 120 * root.rowSize * 3;
-            root.scrollBy(delta);
+            apps.contentY = Math.max(0, Math.min(Math.max(0, apps.contentHeight - apps.height), apps.contentY - delta));
             event.accepted = true;
         }
-    }
-
-    // The window-level Interactions MouseArea is stacked above the bar, so the
-    // handler above cannot see real pointer events. Bar.handleWheel reaches this
-    // method through the workspaces entry and consumes the same wheel there.
-    function scrollBy(delta: real): void {
-        apps.contentY = Math.max(0, Math.min(Math.max(0, apps.contentHeight - apps.height), apps.contentY - delta));
-    }
-
-    function handleWheel(angleDelta: point): bool {
-        scrollBy(angleDelta.y / 120 * root.rowSize * 3);
-        return true;
     }
 
     PopupWindow {

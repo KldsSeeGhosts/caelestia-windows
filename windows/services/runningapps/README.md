@@ -18,11 +18,9 @@ list. Tray-only/background applications stay in the existing tray.
 - Hover only shows descriptive tooltips. Escape or an outside click dismisses
   the chooser.
 - The viewport reserves one to five complete icon rows according to available
-  bar space. Additional apps scroll inside it. The window-level interactions
-  MouseArea sits above the bar, so it dispatches wheel input through the bar to
-  the pill: an overflowing list scrolls, a short list still consumes the event,
-  and wheel input outside the pill keeps the workspace, volume, and brightness
-  shortcuts.
+  bar space. Additional apps scroll inside it. A short list still consumes wheel
+  input without moving, so it cannot trigger the workspace, volume, or
+  brightness shortcuts. Wheel input outside the pill keeps those bar shortcuts.
 - First-seen app/window ordering follows source encounter order, never numeric
   id, title, focus or MRU order. Minimize, focus, title, duplicate-handle and
   desktop updates do not reorder entries. A temporarily app-cloaked window
@@ -44,15 +42,20 @@ windows/scripts/Test-RunningApps.ps1 -QtPrefix <Qt-prefix> -BuildRoot <build>
 ```
 
 The QML check uses an offscreen disposable profile and fake native handles.
-It mounts the original bar with the window-level MouseArea above it, then sends
-synthetic wheel events for an overflowing list, a short list, and the workspace
-area. Use the undeployed build executable with its matching full Qt development
-prefix and artifact QML plugins. A deployed Windows-only runtime is not an
-offscreen runner. The harness checks versions and metadata, resets native
-control gates before starting Qt, and retains both output streams on failure
-or timeout. Qt environment values are process-local, not QML environment
-pragmas. The preflight opens no windows; the fixture additionally instantiates
-and dismisses the multi-window chooser offscreen.
+It mounts the bar inside a window-sized Interactions-style MouseArea like
+ContentWindow, loads the bundled Material Symbols font, and sends synthetic
+wheel events for an overflowing list, a short list, and the workspace area.
+The overflowing list scrolls through the Flickable, the short list is consumed
+by the pill's WheelHandler, and only wheel input outside the pill reaches the
+bar's existing workspace shortcut. QtTest synthesizes angle-delta wheel events;
+high-resolution pixel-delta input is not separately synthesized offscreen. Use
+the undeployed build executable with its matching full Qt development prefix
+and artifact QML plugins. A deployed Windows-only runtime is not an offscreen
+runner. The harness checks versions and metadata, resets native control gates
+before starting Qt, and retains both output streams on failure or timeout. Qt
+environment values are process-local, not QML environment pragmas. The preflight
+opens no windows; the fixture additionally instantiates and dismisses the
+multi-window chooser offscreen.
 
 Real focus, popup dismissal, icon extraction, multi-desktop activation, and save
 prompts require a separate native QA pass. No native backend pin change is needed.

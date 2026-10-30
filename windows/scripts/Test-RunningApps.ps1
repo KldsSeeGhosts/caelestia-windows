@@ -92,7 +92,7 @@ $stderrText = $stderr.GetAwaiter().GetResult()
 [IO.File]::WriteAllText("$run\stderr.log", $stderrText)
 $output = $stdoutText + $stderrText
 Write-Output $output
-$marker = if ($Preflight) { 'CAELESTIA_RUNNING_APPS_ENV_PASS' } else { 'CAELESTIA_RUNNING_APPS_PASS 33' }
+$marker = if ($Preflight) { 'CAELESTIA_RUNNING_APPS_ENV_PASS' } else { 'CAELESTIA_RUNNING_APPS_PASS 36' }
 $bootstrapFailure = $output -match 'qt\.qpa\.plugin|no Qt platform plugin|Qt platform plugin could|FATAL|CRITICAL'
 $result = [ordered]@{
     preflight = $Preflight.IsPresent

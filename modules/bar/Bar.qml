@@ -78,13 +78,6 @@ ColumnLayout {
 
     function handleWheel(y: real, angleDelta: point): void {
         const ch = childAt(width / 2, y) as EntryWrapper;
-        // Windows: the running-app pill sits under the window-level interactions
-        // MouseArea, so it receives real wheel input through this dispatcher.
-        const workspaces = ch?.item as Workspaces;
-        if (workspaces && ch?.entryId === "workspaces"
-            && typeof workspaces.handleWheel === "function"
-            && workspaces.handleWheel(workspaces.mapFromItem(root, 0, y).y, angleDelta))
-            return;
         if (ch?.entryId === "workspaces" && Config.bar.scrollActions.workspaces) {
             // Workspace scroll
             const mon = Hypr.monitorFor(screen);
