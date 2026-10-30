@@ -201,6 +201,9 @@ Item {
                             height: strip.height - 6
                             hoverEnabled: true
                             onClicked: Quota.selectGroup(modelData.provider)
+                            // Windows AbstractButton activates on Space, not Return/Enter.
+                            Keys.onReturnPressed: tab.click()
+                            Keys.onEnterPressed: tab.click()
                             Accessible.name: modelData.label + ", " + (worst === null ? qsTr("no reading") : qsTr("%1% left").arg(Math.round(worst * 100)))
                             background: Rectangle {
                                 radius: 13
