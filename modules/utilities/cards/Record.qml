@@ -15,7 +15,7 @@ StyledRect {
 
     required property var props
     required property ScreenState screenState
-    readonly property real nonAnimHeight: btnLayout.implicitHeight + listOrControls.implicitHeight + layout.spacing + layout.anchors.margins * 2
+    readonly property real nonAnimHeight: btnLayout.implicitHeight + statusText.implicitHeight + listOrControls.implicitHeight + layout.spacing * 2 + layout.anchors.margins * 2
 
     implicitHeight: layout.implicitHeight + layout.anchors.margins * 2
 
@@ -61,6 +61,7 @@ StyledRect {
 
             ColumnLayout {
                 Layout.fillWidth: true
+                Layout.alignment: Qt.AlignVCenter
                 spacing: 0
 
                 StyledText {
@@ -68,16 +69,6 @@ StyledRect {
                     text: Tr.tr("Screen recorder")
                     font: Tokens.font.body.medium
                     elide: Text.ElideRight
-                }
-
-                StyledText {
-                    Layout.fillWidth: true
-                    // Windows: expose Glazier availability, picker and failure states.
-                    text: Recorder.status ?? (Recorder.paused ? Tr.trCtx("Paused", "recorder state") : Recorder.running ? Tr.trCtx("Running...", "recorder state") : Tr.trCtx("Ready", "recorder state"))
-                    color: Colours.palette.m3onSurfaceVariant
-                    font: Tokens.font.body.small
-                    elide: Text.ElideRight
-                    animate: true
                 }
             }
 
@@ -115,6 +106,21 @@ StyledRect {
                     }
                 ]
             }
+        }
+
+        StyledText {
+            id: statusText
+
+            Layout.fillWidth: true
+            // Windows: expose Glazier availability, picker and failure states.
+            text: Recorder.status ?? (Recorder.paused ? Tr.trCtx("Paused", "recorder state") : Recorder.running ? Tr.trCtx("Running...", "recorder state") : Tr.trCtx("Ready", "recorder state"))
+            color: Colours.palette.m3onSurfaceVariant
+            font: Tokens.font.body.small
+            // Windows: the full-width status wraps to two lines instead of one cut-off line.
+            wrapMode: Text.WordWrap
+            maximumLineCount: 2
+            elide: Text.ElideRight
+            animate: true
         }
 
         Loader {

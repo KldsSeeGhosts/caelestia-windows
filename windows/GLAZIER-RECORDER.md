@@ -54,7 +54,16 @@ ignored), and Delete is disabled for any other file. Recordings Glazier made
 before this was introduced stay listed but cannot be deleted from the card; use
 the folder button. Output paths are never logged or displayed.
 
+Path-identity hardening (#109 item 4): ownership is by the normalised
+(lowercased) path string, not by OS file identity (volume/file ID), so a file
+replaced at the same path, reached through a retargeted parent/junction, or
+differing only by case in a directory with Windows per-directory case
+sensitivity enabled is treated as the recording Glazier reported. For a local
+single-user desktop shell this is deferred with no behaviour change.
+
 The original Record card, RecordingList and delete confirmation are staged.
+The card's full-width status wraps to at most two lines at the utilities width,
+so the availability and failure messages are not cut off.
 Small `Windows:` hooks expose availability/status and name filters; the Windows
 Paths adapter binds the recordings directory to Glazier's configured output.
 Player/folder actions use Windows default applications, and delete converts
