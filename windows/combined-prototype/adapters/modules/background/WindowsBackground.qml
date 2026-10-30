@@ -19,6 +19,7 @@ Background {
     readonly property bool backgroundRequested: Quickshell.env("CAELESTIA_WINDOWS_BACKGROUND") === "1"
     readonly property bool underlaySupported: typeof Native.DesktopLayer.underlayActive === "boolean"
     readonly property bool underlayActive: underlaySupported && Native.DesktopLayer.underlayActive
+    readonly property bool externalActive: Wallpapers.externalWallpaperActive
     readonly property bool enabled: backgroundRequested
         && (underlayActive || !Wallpapers.externalWallpaperActive)
     readonly property bool smoke: Quickshell.env("CAELESTIA_SHELL_SMOKE") === "1"
@@ -38,7 +39,10 @@ Background {
         // even before it reports the underlay. That is what turns a fail-closed
         // external wallpaper into an acknowledged underlay instead of a gap.
         if (backgroundRequested && (underlaySupported || !Wallpapers.externalWallpaperActive)) {
-            Native.DesktopLayer.aboveIcons = desktopIcons === "Replace" ? ["caelestia-background"] : [];
+            // aboveIcons embeds into the icon host, which would cover the
+            // WorkerW underlay and Wallpaper Engine. Never embed while an
+            // external wallpaper is active.
+            Native.DesktopLayer.aboveIcons = desktopIcons === "Replace" && !externalActive ? ["caelestia-background"] : [];
             Native.DesktopLayer.enabled = true;
         } else {
             Native.DesktopLayer.enabled = false;
@@ -46,6 +50,7 @@ Background {
     }
     onBackgroundRequestedChanged: reconcileDesktop()
     onUnderlaySupportedChanged: reconcileDesktop()
+    onExternalActiveChanged: reconcileDesktop()
     onEnabledChanged: reconcileDesktop()
     Component.onCompleted: reconcileDesktop()
 

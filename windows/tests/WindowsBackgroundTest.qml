@@ -1,8 +1,8 @@
 import QtQuick
 
 // Exercises the WindowsBackground underlay state machine without Quickshell.
-// The runner splices the real property/function blocks from the adapter, so
-// this fixture only supplies the backend, service and screen mocks below.
+// The runner splices the real property, screen and function blocks from the
+// adapter, so this fixture only supplies the backend and service mocks below.
 Item {
     id: root
 
@@ -17,10 +17,11 @@ Item {
     })
 
     // The two backend shapes the adapter must support. The current runtime has
-    // no underlayActive property; the feature-detected shape acknowledges the
-    // embed after DesktopHost discovers WorkerW.
+    // no underlayActive property. The feature-detected shape mirrors the
+    // backend contract: an embedded WorkerW window with no insert-after and no
+    // icons embedding is the underlay, so aboveIcons decides it here.
     property QtObject underlaySupportedHost: QtObject {
-        property bool underlayActive: false
+        property bool underlayActive: aboveIcons.length === 0
         property bool active: false
         property bool enabled: false
         property var aboveIcons: []
@@ -51,9 +52,16 @@ Item {
         }
     }
 
-    property var screens: []
-    property var instances: []
+    // The real screens binding filters this catalog, so the yield and mount
+    // paths are exercised through the production expression.
     property var screen: ({ name: "FixtureScreen" })
+    property var secondScreen: ({ name: "SecondScreen" })
+    property var screensCatalog: []
+    property bool smoke: false
+    property int screenIndex: 0
+    property var quickshellScreens: root.screensCatalog
+
+    property var instances: []
     property QtObject clock: QtObject {
         property real width: 240
         property real height: 80
@@ -75,6 +83,7 @@ Item {
     }
 
     // WINDOWS_BACKGROUND_PROPERTIES
+    // WINDOWS_BACKGROUND_SCREENS
     // RECONCILE_DESKTOP
     // CHECK_READY
 
@@ -94,39 +103,51 @@ Item {
 
     Component.onCompleted: {
         try {
-            // The ordinary desktop, before any external owner exists. The
-            // shared readiness contract must still work without an underlay.
+            // The real screens expression expands the catalog on our own
+            // desktop and closes when the host is not embedded.
+            screensCatalog = [screen, secondScreen];
             instances = [backgroundWindow];
+            nativeLayer = root.underlaySupportedHost;
             nativeLayer.active = true;
-            check(!underlayActive, "no underlay before the backend acknowledges one");
+            check(underlaySupported, "feature detection finds the backend property");
+            check(underlayActive, "an empty icon embed is the underlay");
+            check(!externalActive, "no external owner yet");
+            check(backgroundRequested && hostEnabled, "requested background hosts its own desktop");
+            check(desktopIcons === "Behind", "icons default to behind");
+            check(screens.length === 2, "own desktop mounts every screen");
             check(checkReady(screen), "own desktop presents the ready background");
             nativeLayer.active = false;
-            instances = [];
+            check(screens.length === 0, "inactive desktop host mounts no screens");
+            check(!checkReady(screen), "inactive own desktop is not ready");
+            nativeLayer.active = true;
 
-            // The opt-in gate owns both mounting and host discovery.
-            check(backgroundRequested, "background requested from the environment");
-            check(desktopIcons === "Behind", "icons default to behind");
-            check(hostEnabled, "requested background hosts its own desktop");
-            check(underlaySupported, "feature detection finds the backend property");
+            // The opt-in gate owns both screens and host discovery.
             environmentValues = ({ CAELESTIA_WINDOWS_BACKGROUND: "0" });
             check(!backgroundRequested && !hostEnabled, "environment gate disables the host");
+            check(screens.length === 0, "environment gate unmounts the screens");
             restoreEnvironment();
-            check(backgroundRequested && hostEnabled, "environment gate restores the host");
+            check(backgroundRequested && hostEnabled && screens.length === 2, "environment gate restores the host");
 
             // A backend without the acknowledgement keeps the fail-closed yield.
             nativeLayer = root.legacyHost;
             check(!underlaySupported && !underlayActive, "legacy backend has no underlay");
             wallpapers.externalWallpaperActive = true;
+            check(externalActive, "external owner observed");
             check(!hostEnabled, "legacy backend yields to an external owner");
+            check(screens.length === 0, "legacy yield unmounts the screens");
 
-            // A supporting backend mounts the window while it discovers WorkerW,
-            // then keeps it mounted once the embed is acknowledged.
+            // A supporting backend acknowledges the empty-icon embed and keeps
+            // the windows mounted over the external owner.
             nativeLayer = root.underlaySupportedHost;
-            check(underlaySupported && !underlayActive, "supporting backend reports no embed yet");
-            check(!hostEnabled, "supporting backend yields until the embed is acknowledged");
-            nativeLayer.underlayActive = true;
-            check(underlayActive, "acknowledged embed is observed");
+            check(underlaySupported && underlayActive, "supporting backend acknowledges the empty-icon embed");
             check(hostEnabled, "acknowledged underlay hosts over the external owner");
+            check(screens.length === 2, "acknowledged underlay mounts every screen");
+            nativeLayer.aboveIcons = ["caelestia-background"];
+            check(!underlayActive, "an above-icons embed is not an underlay");
+            check(!hostEnabled, "supporting backend yields without the underlay");
+            check(screens.length === 0, "unacknowledged underlay fails closed");
+            nativeLayer.aboveIcons = [];
+            check(underlayActive && hostEnabled && screens.length === 2, "clearing the embed restores the underlay");
 
             // Host discovery must be reconciled from the request, not just from
             // the window lifetime, so the first scan can find WorkerW.
@@ -135,20 +156,44 @@ Item {
             reconcileDesktop();
             check(nativeLayer.enabled, "reconcile enables the desktop host");
             check(nativeLayer.aboveIcons.length === 0, "icons stay behind by default");
+            check(underlayActive, "reconcile keeps the empty-icon underlay");
 
-            // The Replace setting embeds the background above the icon view.
+            // Replace embeds above the icon view, but never while an external
+            // owner is active: that embedding would cover the WorkerW underlay.
             environmentValues = ({ CAELESTIA_WINDOWS_BACKGROUND: "1", CAELESTIA_WINDOWS_DESKTOP_ICONS: "Replace" });
             check(desktopIcons === "Replace", "icons override from the environment");
+            nativeLayer.aboveIcons = ["stale"];
+            reconcileDesktop();
+            check(nativeLayer.aboveIcons.length === 0, "replace icons never embed over an external owner");
+            check(underlayActive, "external replace keeps the underlay acknowledged");
+            check(hostEnabled && screens.length === 2, "external replace keeps the screens mounted");
+
+            // The same Replace setting embeds above the icons on our own
+            // desktop, which is not an underlay.
+            wallpapers.externalWallpaperActive = false;
             reconcileDesktop();
             check(nativeLayer.aboveIcons.length === 1 && nativeLayer.aboveIcons[0] === "caelestia-background",
-                "replace icons embed the background");
+                "replace icons embed on the own desktop");
+            check(!underlayActive, "above-icons embedding is not the underlay");
+            check(hostEnabled && screens.length === 2, "own desktop mounts screens above icons");
+            check(checkReady(screen), "own desktop above the icons is ready");
+
+            // Starting an external owner must withdraw that embedding even
+            // while the underlay keeps the host enabled. The fixture drives the
+            // reconciler directly; the changed handler is checked statically.
+            wallpapers.externalWallpaperActive = true;
+            check(externalActive, "external owner transition observed");
+            reconcileDesktop();
+            check(nativeLayer.aboveIcons.length === 0 && underlayActive,
+                "external owner transition withdraws the above-icons embed");
+            check(hostEnabled && screens.length === 2, "external owner transition keeps the screens mounted");
             restoreEnvironment();
             reconcileDesktop();
+            check(nativeLayer.aboveIcons.length === 0 && underlayActive, "behind icons restores the underlay");
 
             // A legacy backend is disabled under an external owner and enabled
             // again once the owner stops.
             nativeLayer = root.legacyHost;
-            wallpapers.externalWallpaperActive = true;
             nativeLayer.enabled = true;
             reconcileDesktop();
             check(!nativeLayer.enabled, "legacy reconcile disables the host under an external owner");
@@ -158,19 +203,23 @@ Item {
 
             // Requesting the background off always releases the host.
             nativeLayer = root.underlaySupportedHost;
-            nativeLayer.underlayActive = true;
+            nativeLayer.aboveIcons = [];
             nativeLayer.enabled = true;
             wallpapers.externalWallpaperActive = true;
             environmentValues = ({ CAELESTIA_WINDOWS_BACKGROUND: "0" });
             reconcileDesktop();
             check(!nativeLayer.enabled, "requested-off reconcile releases the host");
             restoreEnvironment();
+            check(underlayActive && hostEnabled && screens.length === 2, "requested background restores the underlay");
 
             // Underlay readiness uses the ordinary presentation contract.
-            nativeLayer.underlayActive = true;
+            nativeLayer = root.underlaySupportedHost;
+            nativeLayer.aboveIcons = [];
             nativeLayer.active = true;
+            wallpapers.externalWallpaperActive = true;
             wallpaperEngine.running = true;
             instances = [backgroundWindow];
+            check(hostEnabled && underlayActive, "underlay mounts over the external owner");
             check(checkReady(screen), "underlay presents the ready background");
             backgroundWindow.visible = false;
             check(!checkReady(screen), "hidden underlay is not ready");
@@ -204,21 +253,21 @@ Item {
             // embed. The same window stays ready across that handoff.
             wallpapers.externalWallpaperActive = false;
             check(underlayActive, "underlay acknowledgement survives the owner stopping");
+            check(hostEnabled && screens.length === 2, "background stays mounted across the owner stopping");
             check(checkReady(screen), "underlay stays ready across the owner stopping");
 
-            // Without the acknowledgement the adapter must yield, and a
-            // supporting backend may yield even while its host is active.
+            // Without the acknowledgement the adapter must yield. A non-empty
+            // above-icons embed is what distinguishes that state, and the real
+            // screens expression must fail closed.
             wallpapers.externalWallpaperActive = true;
-            nativeLayer.underlayActive = false;
-            check(!hostEnabled, "yield disables the background windows");
-            screens = [];
+            nativeLayer.aboveIcons = ["caelestia-background"];
+            check(!underlayActive, "above-icons embed denies the underlay");
+            check(!hostEnabled, "unacknowledged underlay yields");
+            check(screens.length === 0, "non-empty above-icons fails closed while external");
             nativeLayer.active = false;
             check(checkReady(screen), "yield with the desktop host inactive");
             nativeLayer.active = true;
             check(checkReady(screen), "supporting backend yields with the host active");
-            screens = [screen];
-            check(!checkReady(screen), "yield requires an empty background screen set");
-            screens = [];
 
             // A legacy backend cannot yield while its host is active: that
             // would leave its wallpaper mounted over the external owner.

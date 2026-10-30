@@ -17,13 +17,16 @@ function Get-UniqueMatch([string]$Text, [string]$Pattern) {
 # Splice the real state machine, not a copy. The fixture only supplies the
 # backend, service and screen mocks, so drift in the adapter fails this test.
 $properties = Get-UniqueMatch $background '(?ms)^    readonly property bool backgroundRequested:.*?(?=^    readonly property bool smoke:)'
+$screens = Get-UniqueMatch $background '(?ms)^    screens: enabled && Native\.DesktopLayer\.active.*?^        : \[\]'
 $icons = Get-UniqueMatch $background '(?m)^    readonly property string desktopIcons: [^\r\n]+'
 $reconcile = Get-UniqueMatch $background '(?ms)^    function reconcileDesktop\(\): void \{.*?^    \}'
 $ready = Get-UniqueMatch $background '(?ms)^    function checkReady\(screen: ShellScreen\): bool \{.*?^    \}'
 
 # Host discovery must re-run for every input that decides whether the backend
-# embeds this window, including the first scan before any underlay exists.
-foreach ($trigger in @('onBackgroundRequestedChanged', 'onUnderlaySupportedChanged', 'onEnabledChanged', 'Component.onCompleted')) {
+# embeds this window, including the first scan before any underlay exists and
+# the icon embedding when an external owner starts or stops.
+foreach ($trigger in @('onBackgroundRequestedChanged', 'onUnderlaySupportedChanged', 'onExternalActiveChanged',
+        'onEnabledChanged', 'Component.onCompleted')) {
     $null = Get-UniqueMatch $background "(?m)^    $([regex]::Escape($trigger)): reconcileDesktop\(\)\r?$"
 }
 
@@ -33,6 +36,13 @@ $properties = $properties.Replace('Quickshell.env', 'root.environment.env')
 $properties = $properties.Replace('Native.DesktopLayer', 'root.nativeLayer')
 $properties = $properties.Replace('Wallpapers.externalWallpaperActive', 'root.wallpapers.externalWallpaperActive')
 $properties = $properties.Replace('readonly property bool enabled:', 'readonly property bool hostEnabled:')
+$screens = $screens.Replace('screens: enabled &&', 'screens: hostEnabled &&')
+# Item has no `screens`; declare the production binding on the fixture root.
+$screens = $screens.Replace('    screens: hostEnabled &&', '    property var screens: hostEnabled &&')
+$screens = $screens.Replace('Native.DesktopLayer', 'root.nativeLayer')
+$screens = $screens.Replace('Screens.screens', 'root.screensCatalog')
+$screens = $screens.Replace('Quickshell.env', 'root.environment.env')
+$screens = $screens.Replace('Quickshell.screens', 'root.quickshellScreens')
 $icons = $icons.Replace('Quickshell.env', 'root.environment.env')
 $reconcile = $reconcile.Replace('Native.DesktopLayer', 'root.nativeLayer')
 $reconcile = $reconcile.Replace('Wallpapers.externalWallpaperActive', 'root.wallpapers.externalWallpaperActive')
@@ -45,6 +55,7 @@ $ready = $ready.Replace('GlobalConfig.forScreen', 'root.globalConfig.forScreen')
 $ready = $ready.Replace('Wallpapers.current', 'root.wallpapers.current')
 
 $fixture = $fixture.Replace('    // WINDOWS_BACKGROUND_PROPERTIES', (($properties.TrimEnd(), $icons.TrimEnd()) -join "`n"))
+$fixture = $fixture.Replace('    // WINDOWS_BACKGROUND_SCREENS', $screens.TrimEnd())
 $fixture = $fixture.Replace('    // RECONCILE_DESKTOP', $reconcile.TrimEnd())
 $fixture = $fixture.Replace('    // CHECK_READY', $ready.TrimEnd())
 
@@ -101,12 +112,12 @@ try {
 
     # The assertion count is part of the marker: a scenario silently dropped
     # from the fixture must fail the run, not just shrink the number.
-    $marker = [regex]::Match($output, 'CAELESTIA_BACKGROUND_UNDERLAY_PASS 39\b')
+    $marker = [regex]::Match($output, 'CAELESTIA_BACKGROUND_UNDERLAY_PASS 63\b')
     if ($exitCode -ne 0 -or -not $marker.Success -or
         $output -match 'CAELESTIA_BACKGROUND_UNDERLAY_FAIL|TypeError|ReferenceError|binding loop') {
         throw 'Windows background fixture failed.'
     }
-    Write-Output 'PASS background underlay: 39 assertions across the acknowledged and legacy backends.'
+    Write-Output 'PASS background underlay: 63 assertions across the acknowledged and legacy backends.'
 } finally {
     $safeStage = [IO.Path]::GetFullPath($stage).TrimEnd('\')
     if ((Split-Path -Parent $safeStage) -ne [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\') -or

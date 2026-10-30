@@ -188,8 +188,8 @@ ShellRoot {
                 detected: WallpaperEngine.detected,
                 count: WallpaperEngine.items.length,
                 current: WallpaperEngine.current?.path ?? "",
-                // True only after the backend acknowledged the desktop embed
-                // beneath a running external wallpaper.
+                // True while the desktop host is embedded as a WorkerW
+                // underlay, ready to sit beneath an external wallpaper.
                 underlayActive: desktopBackground.underlayActive
             },
             scheme: {
