@@ -28,6 +28,25 @@ It runs the original Caelestia QML components, Material 3 Expressive shapes (`M3
 
 ---
 
+## Running windows
+
+A running-app pill below the workspace switcher provides access to open windows,
+including minimized windows. It does not replace the active-window title or
+preview. The pill is absent when no windows are open.
+
+Click an app icon to restore/focus its window. If the app has several windows,
+click to choose by title and virtual desktop. Right-click any app icon to open
+its window chooser with Minimize and Close actions. Escape or a click on the
+bar outside the chooser dismisses it (other desktop clicks use native popup
+focus dismissal); it starts on the first window each time. Close uses the
+application's normal close behavior, including save prompts; it does not
+terminate a process.
+Apps on other desktops remain reachable, while tray-only apps stay in the tray.
+
+The pill has a bounded height. Scroll over it to reach additional applications;
+this does not trigger workspace or volume shortcuts. Alt+Tab and Win+Tab retain
+their native Windows behavior.
+
 ## Requirements
 
 - **Operating system:** Windows 11 64-bit (x64). Native virtual desktop switching, window-to-workspace moves, and `WorkerW` desktop background embedding are verified on Windows 11 24H2 build families `26100`, `26200`, and `26300` (using an in-process COM provider—no third-party `VirtualDesktopAccessor.dll` download is required on supported 24H2 builds). On earlier Windows 11 builds, the bar, drawers, and services run with virtual-desktop workspace dispatch disabled.

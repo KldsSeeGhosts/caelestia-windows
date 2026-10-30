@@ -1,0 +1,5 @@
+{
+  "windows/services/runningapps/RunningApps.qml": "services/RunningApps.qml",
+  "windows/services/runningapps/RunningAppsModel.qml": "services/RunningAppsModel.qml",
+  "windows/services/runningapps/RunningApps.js": "services/RunningApps.js"
+}
