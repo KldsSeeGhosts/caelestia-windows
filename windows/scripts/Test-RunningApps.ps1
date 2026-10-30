@@ -88,7 +88,7 @@ $info.EnvironmentVariables['XDG_STATE_HOME'] = "$profile\state"
 $info.EnvironmentVariables['XDG_CACHE_HOME'] = "$profile\cache"
 $info.EnvironmentVariables['XDG_DATA_HOME'] = "$profile\data"
 $info.EnvironmentVariables['QML_DISK_CACHE_PATH'] = "$profile\cache"
-$info.EnvironmentVariables['QT_LOGGING_RULES'] = 'quickshell.windows.tracker.debug=false;quickshell.windows.inputmask.debug=false'
+$info.EnvironmentVariables['QT_LOGGING_RULES'] = 'quickshell.windows.*.debug=false;quickshell.windows.*.info=false'
 $info.EnvironmentVariables['QT_QPA_PLATFORM'] = 'offscreen'
 $info.EnvironmentVariables['QT_PLUGIN_PATH'] = "$QtPrefix\plugins"
 $info.EnvironmentVariables['QS_WINDOWS_TRAY_HOOK'] = '0'

@@ -393,6 +393,21 @@ ShellRoot {
                     check(root.timeoutFixture.counts.closes === 0
                         && root.timeoutFixture.counts.unsafeCloses === 0,
                         "late restore cannot revive an expired close");
+                    // Simulate an event-loop stall where activation completes
+                    // before the first delayed flush callback runs after 2s.
+                    root.timeoutFixture.deferActivation = true;
+                    root.timeoutFixture.activated = false;
+                    root.timeoutFixture.wayland.minimized = true;
+                    Services.RunningApps.requestClose("7", root.timeoutFixture.wayland);
+                    check(Services.RunningApps.pendingCloses.length === 1,
+                        "stalled-callback close starts pending");
+                    root.timeoutFixture.wayland.completeActivation();
+                    Services.RunningApps.flushCloses(2300);
+                    check(Services.RunningApps.pendingCloses.length === 0,
+                        "stalled-callback close expires on late flush");
+                    check(root.timeoutFixture.counts.closes === 0
+                        && root.timeoutFixture.counts.unsafeCloses === 0,
+                        "stalled-callback close does not dispatch after deadline");
                     root.removedFixture = root.fixtures[7];
                     root.removedFixture.deferActivation = true;
                     root.removedFixture.activated = false;

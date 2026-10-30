@@ -27,13 +27,33 @@ QtObject {
     // target forever: if the user cancels the native save prompt, a deliberate
     // retry works once the window expires.
     property var recentCloses: []
-    // Monotonic tick counter driven by closeTimer (100 ms per tick) so system
-    // clock adjustments cannot extend or shorten close timeouts or coalescing.
-    property int closeTick: 0
-    readonly property int closeTimeoutTicks: 20
-    readonly property int closeCoalesceTicks: 10
+    // Monotonic elapsed time in ms. Advances by at least 100 ms per timer
+    // callback and by the actual positive wall-clock delta when the event loop
+    // stalls, while never moving backward or jumping forward excessively if
+    // the system clock is adjusted.
+    property double monotonicMs: 0
+    property double lastWallMs: 0
     readonly property int closeTimeoutMs: 2000
     readonly property int closeCoalesceMs: 1000
+
+    function nowMs(minStepMs: int): double {
+        const wall = Date.now();
+        if (lastWallMs <= 0) {
+            lastWallMs = wall;
+            monotonicMs += Math.max(0, minStepMs);
+            return monotonicMs;
+        }
+        const delta = wall - lastWallMs;
+        lastWallMs = wall;
+        // A positive delta up to 60s reflects real elapsed time (including
+        // event-loop stalls); negative or huge jumps (clock sync) fall back to
+        // the minimum step so deadlines stay bounded in both directions.
+        const step = (delta >= 0 && delta <= 60000)
+            ? Math.max(minStepMs, delta)
+            : Math.max(minStepMs, 100);
+        monotonicMs += step;
+        return monotonicMs;
+    }
 
     readonly property var observations: Logic.observe(source)
 
@@ -63,17 +83,18 @@ QtObject {
         }
     }
 
-    function pruneRecentCloses(): void {
+    function pruneRecentCloses(now: double): void {
         if (!recentCloses.length)
             return;
-        const next = recentCloses.filter(entry => entry.expiresTick > closeTick && tracksTarget(entry));
+        const current = now > 0 ? now : nowMs(0);
+        const next = recentCloses.filter(entry => entry.expiresAt > current && tracksTarget(entry));
         if (next.length !== recentCloses.length)
             recentCloses = next;
     }
 
     function hasCloseState(id: string, native): bool {
         try {
-            pruneRecentCloses();
+            pruneRecentCloses(nowMs(0));
             return pendingCloses.some(request => request.id === id && request.native === native)
                 || recentCloses.some(request => request.id === id && request.native === native);
         } catch (error) {
@@ -95,26 +116,27 @@ QtObject {
         if (pendingCloses.length)
             pendingCloses = pendingCloses.filter(tracksTarget);
         if (recentCloses.length)
-            pruneRecentCloses();
+            pruneRecentCloses(nowMs(0));
         if (pendingCloses.length)
-            Qt.callLater(() => root.flushCloses());
+            Qt.callLater(() => root.flushCloses(0));
     }
 
     // Start the head request only. A queued request gets its full timeout after
     // it reaches the head, not while an earlier activation is still pending.
-    function promoteClose(): void {
+    function promoteClose(now: double): void {
         if (!actionsEnabled)
             return;
+        const current = now > 0 ? now : nowMs(0);
         while (pendingCloses.length) {
             const request = pendingCloses[0];
-            if (request.deadlineTick)
+            if (request.deadline)
                 return;
             if (!tracksTarget(request)) {
                 pendingCloses = pendingCloses.slice(1);
                 continue;
             }
             const next = pendingCloses.slice();
-            next[0] = Object.assign({}, request, { deadlineTick: closeTick + closeTimeoutTicks });
+            next[0] = Object.assign({}, request, { deadline: current + closeTimeoutMs });
             pendingCloses = next;
             try {
                 request.native.activate();
@@ -127,23 +149,32 @@ QtObject {
         }
     }
 
-    function flushCloses(): void {
+    function flushCloses(minStepMs: int): void {
         if (!actionsEnabled) {
             pendingCloses = [];
             return;
         }
+        const now = nowMs(minStepMs);
         if (recentCloses.length)
-            pruneRecentCloses();
-        promoteClose();
+            pruneRecentCloses(now);
+        promoteClose(now);
         if (!pendingCloses.length)
             return;
         const request = pendingCloses[0];
-        if (!request.deadlineTick)
+        if (!request.deadline)
             return;
         const window = resolveTarget(request.id, request.native);
         if (!window) {
             pendingCloses = pendingCloses.slice(1);
-            promoteClose();
+            promoteClose(now);
+            return;
+        }
+        // Check deadline expiry BEFORE dispatching close so an activation that
+        // lands after the timeout (e.g. during an event-loop stall) is rejected.
+        if (now >= request.deadline) {
+            pendingCloses = pendingCloses.slice(1);
+            console.warn("Caelestia: running-app close cancelled because activation was not confirmed.");
+            promoteClose(now);
             return;
         }
         if (window.active && !window.minimized) {
@@ -151,7 +182,7 @@ QtObject {
             // observation cannot post a second WM_CLOSE. Record the coalescing
             // window first, then roll it back if the native call did not post.
             pendingCloses = pendingCloses.slice(1);
-            const recent = { id: request.id, native: request.native, expiresTick: closeTick + closeCoalesceTicks };
+            const recent = { id: request.id, native: request.native, expiresAt: now + closeCoalesceMs };
             recentCloses = recentCloses.concat(recent);
             try {
                 request.native.close();
@@ -159,13 +190,7 @@ QtObject {
                 recentCloses = recentCloses.filter(entry => entry !== recent);
                 console.warn("Caelestia: running-app close could not be dispatched.");
             }
-            promoteClose();
-            return;
-        }
-        if (closeTick >= request.deadlineTick) {
-            pendingCloses = pendingCloses.slice(1);
-            console.warn("Caelestia: running-app close cancelled because activation was not confirmed.");
-            promoteClose();
+            promoteClose(now);
         }
     }
 
@@ -176,10 +201,7 @@ QtObject {
         interval: 100
         repeat: true
         running: root.actionsEnabled && (root.pendingCloses.length > 0 || root.recentCloses.length > 0)
-        onTriggered: {
-            root.closeTick++;
-            root.flushCloses();
-        }
+        onTriggered: root.flushCloses(100)
     }
 
     function request(id: string, action: string): void {
@@ -216,8 +238,8 @@ QtObject {
         if (!actionsEnabled || !native || !root.resolveTarget(id, native) || hasCloseState(id, native))
             return;
         // The deadline starts only when promoteClose() reaches this request.
-        pendingCloses = pendingCloses.concat({ id, native, deadlineTick: 0 });
-        promoteClose();
-        Qt.callLater(() => root.flushCloses());
+        pendingCloses = pendingCloses.concat({ id, native, deadline: 0 });
+        promoteClose(nowMs(0));
+        Qt.callLater(() => root.flushCloses(0));
     }
 }
