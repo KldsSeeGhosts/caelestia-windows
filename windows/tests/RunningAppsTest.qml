@@ -285,7 +285,7 @@ ShellRoot {
                     root.deferredFixture = root.fixtures[5];
                     root.deferredFixture.deferActivation = true;
                     root.deferredFixture.activated = false;
-                    root.deferredFixture.wayland.minimized = true;
+                    root.deferredFixture.wayland.minimized = false;
                     Services.RunningApps.request("6", "close");
                     Services.RunningApps.request("6", "close");
                 } else if (root.phase === 12) {
@@ -294,7 +294,7 @@ ShellRoot {
                     check(root.deferredFixture.counts.closes === 0,
                         "deferred activation sends no early close");
                     check(root.deferredFixture.counts.unsafeCloses === 0,
-                        "no close before restore and activation");
+                        "no close while activation is unconfirmed");
                     check(Services.RunningApps.pendingCloses.length === 1, "close is pending activation");
                     root.deferredFixture.wayland.completeActivation();
                 } else if (root.phase === 13) {
@@ -311,26 +311,31 @@ ShellRoot {
                         "duplicate close after dispatch is not repeated");
                     root.timeoutFixture = root.fixtures[6];
                     root.timeoutFixture.deferActivation = true;
-                    root.timeoutFixture.activated = false;
+                    // A minimized window can still carry a stale active flag;
+                    // the minimized observation alone must block the close.
+                    root.timeoutFixture.activated = true;
                     root.timeoutFixture.wayland.minimized = true;
                     Services.RunningApps.request("7", "close");
                 } else if (root.phase === 15) {
                     check(Services.RunningApps.pendingCloses.length === 1,
-                        "unconfirmed activation is pending");
+                        "unconfirmed restore is pending");
                     check(root.timeoutFixture.counts.activations === 1
-                        && root.timeoutFixture.counts.closes === 0,
-                        "unconfirmed activation sends no close");
+                        && root.timeoutFixture.counts.closes === 0
+                        && root.timeoutFixture.counts.unsafeCloses === 0,
+                        "minimized target sends no close");
                     interval = 2200;
                 } else if (root.phase === 16) {
                     interval = 80;
                     check(Services.RunningApps.pendingCloses.length === 0,
                         "unconfirmed close times out");
-                    check(root.timeoutFixture.counts.closes === 0,
+                    check(root.timeoutFixture.counts.closes === 0
+                        && root.timeoutFixture.counts.unsafeCloses === 0,
                         "timeout sends no close");
                     root.timeoutFixture.wayland.completeActivation();
                 } else if (root.phase === 17) {
-                    check(root.timeoutFixture.counts.closes === 0,
-                        "late activation cannot revive an expired close");
+                    check(root.timeoutFixture.counts.closes === 0
+                        && root.timeoutFixture.counts.unsafeCloses === 0,
+                        "late restore cannot revive an expired close");
                     root.removedFixture = root.fixtures[7];
                     root.removedFixture.deferActivation = true;
                     root.removedFixture.activated = false;
