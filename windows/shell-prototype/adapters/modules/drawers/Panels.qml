@@ -26,6 +26,7 @@ Item {
     // keep an inert slot so the shared drawer files stay valid.
     readonly property alias quota: quota
     readonly property bool quotaEnabled: false
+    readonly property bool quotaHoverBlocked: false
     readonly property alias popouts: popoutsWrapper.content
     readonly property alias popoutsWrapper: popoutsWrapper
     readonly property alias utilities: utilities
