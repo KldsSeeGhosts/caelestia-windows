@@ -25,10 +25,11 @@ $ready = Get-UniqueMatch $background '(?ms)^    function checkReady\(screen: She
 # Host discovery must re-run for every input that decides whether the backend
 # embeds this window, including the first scan before any underlay exists and
 # the icon embedding when an external owner starts or stops.
-foreach ($trigger in @('onBackgroundRequestedChanged', 'onUnderlaySupportedChanged', 'onExternalActiveChanged',
-        'onEnabledChanged', 'Component.onCompleted')) {
-    $null = Get-UniqueMatch $background "(?m)^    $([regex]::Escape($trigger)): reconcileDesktop\(\)\r?$"
+$handlers = foreach ($trigger in @('onBackgroundRequestedChanged', 'onExternalActiveChanged',
+        'onDesktopIconsChanged')) {
+    Get-UniqueMatch $background "(?m)^    $([regex]::Escape($trigger)): reconcileDesktop\(\)\r?$"
 }
+$null = Get-UniqueMatch $background '(?m)^    Component\.onCompleted: reconcileDesktop\(\)\r?$'
 
 # Map production singletons onto fixture properties. `enabled` is renamed to
 # avoid overriding the Item property that reads it.
@@ -56,7 +57,7 @@ $ready = $ready.Replace('Wallpapers.current', 'root.wallpapers.current')
 
 $fixture = $fixture.Replace('    // WINDOWS_BACKGROUND_PROPERTIES', (($properties.TrimEnd(), $icons.TrimEnd()) -join "`n"))
 $fixture = $fixture.Replace('    // WINDOWS_BACKGROUND_SCREENS', $screens.TrimEnd())
-$fixture = $fixture.Replace('    // RECONCILE_DESKTOP', $reconcile.TrimEnd())
+$fixture = $fixture.Replace('    // RECONCILE_DESKTOP', (($reconcile.TrimEnd(), ($handlers -join "`n")) -join "`n"))
 $fixture = $fixture.Replace('    // CHECK_READY', $ready.TrimEnd())
 
 $stage = Join-Path ([IO.Path]::GetTempPath()) ('caelestia-background-' + [guid]::NewGuid().ToString('N'))
