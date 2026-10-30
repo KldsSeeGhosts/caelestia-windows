@@ -12,12 +12,16 @@ import qs.services
 Background {
     id: root
 
-    // Wallpaper Engine owns WorkerW. Disable the entire host (including the
-    // clock) until layering above WE has been validated. This is only an
-    // ownership guard, not proof that WE has presented on either monitor.
-    // Discovery starts fail-closed so startup cannot cover a running engine.
-    readonly property bool enabled: Quickshell.env("CAELESTIA_WINDOWS_BACKGROUND") === "1"
-        && !Wallpapers.externalWallpaperActive
+    // Wallpaper Engine owns WorkerW. Host the clock and wallpaper as the
+    // underlay beneath it when the backend acknowledges the embed; otherwise
+    // yield the desktop rather than cover a running engine. Discovery starts
+    // fail-closed so startup cannot cover a running engine.
+    readonly property bool backgroundRequested: Quickshell.env("CAELESTIA_WINDOWS_BACKGROUND") === "1"
+    readonly property bool underlaySupported: typeof Native.DesktopLayer.underlayActive === "boolean"
+    readonly property bool underlayActive: underlaySupported && Native.DesktopLayer.underlayActive
+    readonly property bool externalActive: Wallpapers.externalWallpaperActive
+    readonly property bool enabled: backgroundRequested
+        && (underlayActive || !Wallpapers.externalWallpaperActive)
     readonly property bool smoke: Quickshell.env("CAELESTIA_SHELL_SMOKE") === "1"
     readonly property int screenIndex: Number(Quickshell.env("CAELESTIA_SHELL_SCREEN") || "0")
     readonly property string desktopIcons: Quickshell.env("CAELESTIA_WINDOWS_DESKTOP_ICONS") || "Behind"
@@ -31,21 +35,30 @@ Background {
         : []
 
     function reconcileDesktop(): void {
-        if (enabled) {
-            Native.DesktopLayer.aboveIcons = desktopIcons === "Replace" ? ["caelestia-background"] : [];
+        // Keep the host enabled while the backend can still discover WorkerW,
+        // even before it reports the underlay. That is what turns a fail-closed
+        // external wallpaper into an acknowledged underlay instead of a gap.
+        if (backgroundRequested && (underlaySupported || !Wallpapers.externalWallpaperActive)) {
+            // aboveIcons embeds into the icon host, which would cover the
+            // WorkerW underlay and Wallpaper Engine. Never embed while an
+            // external wallpaper is active.
+            Native.DesktopLayer.aboveIcons = desktopIcons === "Replace" && !externalActive ? ["caelestia-background"] : [];
             Native.DesktopLayer.enabled = true;
         } else {
             Native.DesktopLayer.enabled = false;
         }
     }
+    onBackgroundRequestedChanged: reconcileDesktop()
+    onUnderlaySupportedChanged: reconcileDesktop()
+    onExternalActiveChanged: reconcileDesktop()
     onEnabledChanged: reconcileDesktop()
     Component.onCompleted: reconcileDesktop()
 
     function checkReady(screen: ShellScreen): bool {
-        if (Wallpapers.externalWallpaperActive) {
+        if (Wallpapers.externalWallpaperActive && !underlayActive) {
             // Host readiness here only means we yielded successfully. There
             // is no backend acknowledgement of external output on this screen.
-            const yielded = screens.length === 0 && !Native.DesktopLayer.active;
+            const yielded = screens.length === 0 && (!Native.DesktopLayer.active || underlaySupported);
             console.log("CAELESTIA_BACKGROUND_STATE", JSON.stringify({
                 active: Native.DesktopLayer.active, ready: yielded,
                 owner: WallpaperEngine.running ? "wallpaper-engine-process" : "undiscovered",
@@ -61,8 +74,21 @@ Background {
         const ready = Native.DesktopLayer.active && window && window.visible
             && clockReady
             && wallpaper && wallpaper.source.length > 0 && wallpaper.transitionProgress >= 1;
+        if (Wallpapers.externalWallpaperActive) {
+            // Wallpaper Engine owns the desktop, but the backend embedded this
+            // window beneath it. The ordinary readiness contract still applies:
+            // the underlay must present before the handoff exposes it.
+            console.log("CAELESTIA_BACKGROUND_STATE", JSON.stringify({
+                active: Native.DesktopLayer.active, icons: desktopIcons,
+                underlay: true, screen: screen.name, ready: !!ready,
+                owner: WallpaperEngine.running ? "wallpaper-engine-underlay" : "undiscovered-underlay",
+                clockEnabled: clockEnabled, clockPresent: !!clock,
+                wallpaper: Wallpapers.current, width: window?.width ?? 0, height: window?.height ?? 0
+            }));
+            return !!ready;
+        }
         console.log("CAELESTIA_BACKGROUND_STATE", JSON.stringify({
-            active: Native.DesktopLayer.active, icons: desktopIcons,
+            active: Native.DesktopLayer.active, icons: desktopIcons, underlay: underlayActive,
             screens: screens.map(s => s.name), screen: screen.name, ready: !!ready,
             clockEnabled: clockEnabled, clockPresent: !!clock,
             wallpaper: Wallpapers.current, width: window?.width ?? 0, height: window?.height ?? 0

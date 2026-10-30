@@ -187,7 +187,10 @@ ShellRoot {
                 running: WallpaperEngine.running,
                 detected: WallpaperEngine.detected,
                 count: WallpaperEngine.items.length,
-                current: WallpaperEngine.current?.path ?? ""
+                current: WallpaperEngine.current?.path ?? "",
+                // True while the desktop host is embedded as a WorkerW
+                // underlay, ready to sit beneath an external wallpaper.
+                underlayActive: desktopBackground.underlayActive
             },
             scheme: {
                 available: SchemeGenerator.available,
@@ -286,7 +289,8 @@ ShellRoot {
                     && state.scheme.schemes > 0 && state.scheme.variants > 0))
                 && Quickshell.env("QS_WINDOWS_TRAY_HOOK") === "0"
                 && state.keyboard.layout !== "??" && state.keyboard.layout.length > 0
-                && state.backgroundWindows.length === (root.externalWallpaperActive ? 0 : state.screens)
+                && state.backgroundWindows.length === (root.externalWallpaperActive
+                    && !desktopBackground.underlayActive ? 0 : state.screens)
                 && state.backgroundWindows.every(w => {
                     const screen = Quickshell.screens.find(s => s.name === w.modelScreen);
                     return screen && w.screen === w.modelScreen
