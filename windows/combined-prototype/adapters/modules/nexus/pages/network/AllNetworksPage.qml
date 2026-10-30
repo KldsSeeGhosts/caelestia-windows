@@ -25,6 +25,7 @@ PageBase {
     // This sub-page registers its own visibility owner. The parent Network page
     // may still hold an owner, and a second Nexus window must not be affected
     // when this one is popped or destroyed.
+    // The native backend owns the immediate scan and periodic scan timer.
     function setVisibility(visible: bool): void {
         if (visible)
             Nmcli.acquireListVisibility(root);
@@ -32,7 +33,7 @@ PageBase {
             Nmcli.releaseListVisibility(root);
     }
 
-    Component.onCompleted: root.setVisibility(true)
+    Component.onCompleted: root.setVisibility(root.visible)
     Component.onDestruction: Nmcli.releaseListVisibility(root)
     onVisibleChanged: root.setVisibility(root.visible)
 
@@ -41,14 +42,6 @@ PageBase {
         anchors.top: parent.top
         width: root.cappedWidth
         spacing: Tokens.spacing.extraSmall / 2
-
-        Timer {
-            running: root.visible && Nmcli.wifiEnabled
-            repeat: true
-            triggeredOnStart: true
-            interval: GlobalConfig.nexus.networkRescanInterval
-            onTriggered: Nmcli.rescanWifi()
-        }
 
         // The parent Network page is hidden while this sub-page is open, so
         // repeat the facade's last connect/forget result here.
