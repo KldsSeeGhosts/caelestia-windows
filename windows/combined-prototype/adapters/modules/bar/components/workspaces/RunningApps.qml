@@ -223,6 +223,7 @@ StyledRect {
                     required property int index
                     width: windowList.width
                     window: Services.RunningApps.windows[modelData] ?? null
+                    actionsEnabled: Services.RunningApps.actionsEnabled
                     keyboardSelected: windowList.activeFocus && windowList.currentIndex === index
                     onActivateRequested: root.activate(modelData)
                     onMinimizeRequested: Services.RunningApps.request(modelData, "minimize")

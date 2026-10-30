@@ -12,9 +12,12 @@ list. Tray-only/background applications stay in the existing tray.
   app does not minimize it.
 - Left-click a multi-window app to choose a window by title and desktop.
 - Right-click any app for its window chooser, including Minimize and Close.
-- Close is a normal native close request, not process termination. The model
-  retains the window until it actually closes, including while a save prompt is
-  open.
+- Close first requests restore/activation, waits for the backend to observe the
+  target as both active and not minimized, and only then posts one native close
+  request. A bounded timeout, target disappearance or replacement, or disabled
+  controls cancels the request, and duplicate requests cannot post a second
+  close. The model retains the window until it actually closes, including while
+  a save prompt is open.
 - Hover only shows descriptive tooltips. Escape or an outside click dismisses
   the chooser.
 - The viewport reserves one to five complete icon rows according to available
@@ -33,6 +36,17 @@ the existing opted-in Hypr facade and requires its existing dispatch gate for
 controls. Read-only smoke cannot activate, minimize, or close native windows.
 The pure grouping logic has no process enumeration or launching.
 
+The pinned backend's `activated` observation is its tracked foreground
+application, derived from `GetForegroundWindow()`; it is not a direct foreground
+query from QML. Shell overlay windows deliberately preserve the last application
+there, so the gate is an observable proxy, not proof of Win32 foreground. An
+other-desktop window is DWM-cloaked, and the tracker clears the active
+observation when the foreground is not shown; minimized state is observed
+separately. The close timer also waits for that minimized observation because
+the backend restores with `ShowWindowAsync` and can defer foreground activation
+by 400 ms after a virtual-desktop switch. The chooser is dismissed before the
+request, and a timeout cancels rather than posting an unobserved `WM_CLOSE`.
+
 Focused checks:
 
 ```powershell
@@ -48,14 +62,17 @@ wheel events for an overflowing list, a short list, and the workspace area.
 The overflowing list scrolls through the Flickable, the short list is consumed
 by the pill's WheelHandler, and only wheel input outside the pill reaches the
 bar's existing workspace shortcut. QtTest synthesizes angle-delta wheel events;
-high-resolution pixel-delta input is not separately synthesized offscreen. Use
-the undeployed build executable with its matching full Qt development prefix
-and artifact QML plugins. A deployed Windows-only runtime is not an offscreen
-runner. The harness checks versions and metadata, resets native control gates
-before starting Qt, and retains both output streams on failure or timeout. Qt
-environment values are process-local, not QML environment pragmas. The preflight
-opens no windows; the fixture additionally instantiates and dismisses the
-multi-window chooser offscreen.
+high-resolution pixel-delta input is not separately synthesized offscreen. The
+same fixture defers fake activation to prove zero early closes and exactly one
+after confirmation, then covers bounded timeout, disappearance, reused ids,
+disabled controls and a destroyed native handle. Use the undeployed build
+executable with its matching full Qt development prefix and artifact QML
+plugins. A deployed Windows-only runtime is not an offscreen runner. The harness
+checks versions and metadata, resets native control gates before starting Qt,
+and retains both output streams on failure or timeout. Qt environment values are
+process-local, not QML environment pragmas. The preflight opens no windows; the
+fixture additionally instantiates and dismisses the multi-window chooser
+offscreen.
 
 Real focus, popup dismissal, icon extraction, multi-desktop activation, and save
 prompts require a separate native QA pass. No native backend pin change is needed.

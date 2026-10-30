@@ -9,6 +9,7 @@ Item {
     id: root
     required property var window
     property bool keyboardSelected: false
+    property bool actionsEnabled: true
     signal activateRequested
     signal minimizeRequested
     signal closeRequested
@@ -46,6 +47,7 @@ Item {
             }
             StateLayer {
                 radius: Tokens.rounding.medium
+                enabled: root.actionsEnabled
                 onClicked: root.activateRequested()
                 activeFocusOnTab: true
                 Keys.onReturnPressed: root.activateRequested()
@@ -61,12 +63,13 @@ Item {
         Action {
             icon: "minimize"
             label: "Minimize"
-            enabled: !(root.window?.minimized ?? true)
+            enabled: root.actionsEnabled && !(root.window?.minimized ?? true)
             onClicked: root.minimizeRequested()
         }
         Action {
             icon: "close"
             label: "Close"
+            enabled: root.actionsEnabled
             onClicked: root.closeRequested()
         }
     }
@@ -78,9 +81,14 @@ Item {
         implicitWidth: Tokens.font.body.small.pointSize * 2 + Tokens.padding.small
         implicitHeight: implicitWidth
 
-        MaterialIcon { anchors.centerIn: parent; text: parent.icon }
+        MaterialIcon {
+            anchors.centerIn: parent
+            text: parent.icon
+            opacity: parent.enabled ? 1 : 0.5
+        }
         StateLayer {
             radius: Tokens.rounding.full
+            enabled: parent.enabled
             onClicked: parent.clicked()
             activeFocusOnTab: true
             Keys.onReturnPressed: parent.clicked()

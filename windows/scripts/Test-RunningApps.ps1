@@ -15,6 +15,8 @@ if (Test-Path -LiteralPath "$BuildRoot\quickshell\qt.conf") {
     throw 'Headless checks require the undeployed build executable, not a runtime with deployed qt.conf.'
 }
 $buildInfo = Get-Content -LiteralPath "$BuildRoot\logs\build.json" -Raw | ConvertFrom-Json
+$sourceRevision = (& git -C $repoRoot rev-parse HEAD).Trim()
+$sourceDirty = [bool](& git -C $repoRoot status --porcelain)
 foreach ($required in @($executable, "$QtPrefix\bin\Qt6Core.dll",
     "$QtPrefix\plugins\platforms\qoffscreen.dll", "$qmlRoot\Caelestia\Config\qmldir",
     "$qmlRoot\Caelestia\Windows\qmldir", "$qmlRoot\M3Shapes\qmldir")) {
@@ -92,10 +94,18 @@ $stderrText = $stderr.GetAwaiter().GetResult()
 [IO.File]::WriteAllText("$run\stderr.log", $stderrText)
 $output = $stdoutText + $stderrText
 Write-Output $output
-$marker = if ($Preflight) { 'CAELESTIA_RUNNING_APPS_ENV_PASS' } else { 'CAELESTIA_RUNNING_APPS_PASS 36' }
+$marker = if ($Preflight) { 'CAELESTIA_RUNNING_APPS_ENV_PASS' } else { 'CAELESTIA_RUNNING_APPS_PASS [1-9][0-9]*' }
+$assertionMatch = [regex]::Match($output, 'CAELESTIA_RUNNING_APPS_PASS ([0-9]+)')
 $bootstrapFailure = $output -match 'qt\.qpa\.plugin|no Qt platform plugin|Qt platform plugin could|FATAL|CRITICAL'
 $result = [ordered]@{
     preflight = $Preflight.IsPresent
+    sourceRevision = $sourceRevision
+    sourceDirty = $sourceDirty
+    buildSourceRevision = $buildInfo.sourceRevision
+    buildSourceDirty = [bool]$buildInfo.sourceDirty
+    sourceMatchesBuild = ($buildInfo.sourceRevision -eq $sourceRevision -and -not $sourceDirty -and -not $buildInfo.sourceDirty)
+    fixture = $testName
+    assertions = if ($assertionMatch.Success) { [int]$assertionMatch.Groups[1].Value } else { 0 }
     executable = $executable
     executableSha256 = $runtimeHash
     qtVersion = $qtCore
@@ -109,6 +119,7 @@ $result = [ordered]@{
     exitCode = $process.ExitCode
     stdout = "$run\stdout.log"
     stderr = "$run\stderr.log"
+    evidenceDirectory = $run
 }
 $result | ConvertTo-Json | Set-Content -LiteralPath "$run\result.json" -Encoding UTF8
 $result | ConvertTo-Json
