@@ -16,7 +16,8 @@ TrayContent {
     sourceItems: WindowsTray.list
     autoCollapse: false
     implicitHeight: items.count > 0 ? nonAnimHeight : 0
-    maximumListHeight: (Tokens.font.body.small.pointSize * 2 + Tokens.spacing.small) * 5.5 - Tokens.spacing.small
+    // Whole rows only: a half-cut icon at the bottom reads as a rendering bug.
+    maximumListHeight: (Tokens.font.body.small.pointSize * 2 + Tokens.spacing.small) * 5 - Tokens.spacing.small
     itemInteractionsEnabled: WindowsTray.activationEnabled && (expanded || !Config.bar.tray.compact)
     itemNativeMenuMode: WindowsTray.activationEnabled
     onItemMenuRequested: (item, x, y) => WindowsTray.openMenu(item, QsWindow.window, x, y)
@@ -28,8 +29,11 @@ TrayContent {
         target: null
         enabled: root.expanded || !root.trayCompact
         onWheel: event => {
-            const delta = event.pixelDelta.y || event.angleDelta.y / 120 * root.trayRowHeight * 3;
-            root.viewport.contentY = Math.max(0, Math.min(root.viewport.contentHeight - root.viewport.height, root.viewport.contentY - delta));
+            // One row per notch, so icons stay aligned to the capsule.
+            const direction = (event.pixelDelta.y || event.angleDelta.y) > 0 ? -1 : 1;
+            const row = root.trayRowHeight;
+            const next = (Math.round(root.viewport.contentY / row) + direction) * row;
+            root.viewport.contentY = Math.max(0, Math.min(root.viewport.contentHeight - root.viewport.height, next));
             event.accepted = true;
         }
     }
