@@ -128,7 +128,7 @@ StyledRect {
             IconImage {
                 id: appIcon
                 anchors.centerIn: parent
-                implicitSize: Math.round(root.rowSize * 0.6)
+                implicitSize: Math.round(root.rowSize * 0.62)
                 asynchronous: true
                 source: root.appIcon(app.group)
                 opacity: app.group?.allMinimized ? 0.45 : 1
@@ -245,7 +245,7 @@ StyledRect {
                     Layout.alignment: Qt.AlignVCenter
                     implicitSize: headerText.implicitHeight
                     asynchronous: true
-                    source: root.appIcon(root.selectedGroup)
+                    source: root.selectedGroup ? root.appIcon(root.selectedGroup) : ""
                 }
 
                 ColumnLayout {
