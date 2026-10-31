@@ -35,7 +35,8 @@ Item {
     StyledRect {
         anchors.fill: parent
         radius: Tokens.rounding.medium
-        color: root.keyboardSelected ? Colours.palette.m3secondaryContainer : "transparent"
+        // The first row is selected as the menu opens, so keep it a quiet tint.
+        color: root.keyboardSelected ? Colours.layer(Colours.palette.m3surfaceContainerHigh, 2) : "transparent"
     }
 
     StateLayer {
@@ -73,8 +74,7 @@ Item {
                 text: root.window?.title ?? ""
                 font: Tokens.font.body.medium
                 // The focused window is the only one in the accent colour.
-                color: root.keyboardSelected ? Colours.palette.m3onSecondaryContainer
-                    : root.window?.active ? Colours.palette.m3primary : Colours.palette.m3onSurface
+                color: root.window?.active ? Colours.palette.m3primary : Colours.palette.m3onSurface
                 elide: Text.ElideRight
                 opacity: root.window?.minimized ? 0.7 : 1
             }

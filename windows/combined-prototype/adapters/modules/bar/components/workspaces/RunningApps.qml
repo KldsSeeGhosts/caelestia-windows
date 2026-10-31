@@ -208,7 +208,7 @@ StyledRect {
         property real barOverhang: 0
         readonly property real gap: barOverhang + root.Tokens.spacing.medium
         readonly property real shadowRoom: root.Tokens.padding.large
-        implicitWidth: 264 + gap + shadowRoom
+        implicitWidth: 304 + gap + shadowRoom
         implicitHeight: Math.min(440, (screen?.height ?? 720) * 0.7, content.implicitHeight) + shadowRoom * 2
         color: "transparent"
         onVisibleChanged: {
