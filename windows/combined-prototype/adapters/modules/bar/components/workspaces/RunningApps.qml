@@ -96,8 +96,9 @@ StyledRect {
         return count ? Math.min(maximumHeight, count * rowSize + padding * 2) : 0;
     }
     visible: implicitHeight > 0
+    // Icons stand on the bar by themselves; only the active app is highlighted.
     radius: Tokens.rounding.full
-    color: Services.Colours.tPalette.m3surfaceContainer
+    color: "transparent"
     clip: true
 
     ListView {
