@@ -26,7 +26,7 @@ Item {
         return desktop && desktop !== (Hypr.focusedWorkspace?.id ?? desktop) ? qsTr("Desktop %1").arg(desktop) : "";
     }
 
-    height: details.implicitHeight + Tokens.padding.medium * 2
+    height: details.implicitHeight + Tokens.padding.small * 2 + Tokens.padding.extraSmall
 
     HoverHandler {
         id: hover
@@ -35,8 +35,7 @@ Item {
     StyledRect {
         anchors.fill: parent
         radius: Tokens.rounding.medium
-        color: root.keyboardSelected ? Colours.palette.m3secondaryContainer
-            : root.window?.active ? Colours.layer(Colours.palette.m3surfaceContainerHigh, 2) : "transparent"
+        color: root.keyboardSelected ? Colours.palette.m3secondaryContainer : "transparent"
     }
 
     StateLayer {
@@ -73,7 +72,9 @@ Item {
                 Layout.fillWidth: true
                 text: root.window?.title ?? ""
                 font: Tokens.font.body.medium
-                color: root.keyboardSelected ? Colours.palette.m3onSecondaryContainer : Colours.palette.m3onSurface
+                // The focused window is the only one in the accent colour.
+                color: root.keyboardSelected ? Colours.palette.m3onSecondaryContainer
+                    : root.window?.active ? Colours.palette.m3primary : Colours.palette.m3onSurface
                 elide: Text.ElideRight
                 opacity: root.window?.minimized ? 0.7 : 1
             }

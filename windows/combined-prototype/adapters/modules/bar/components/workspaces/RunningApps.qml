@@ -208,7 +208,7 @@ StyledRect {
         property real barOverhang: 0
         readonly property real gap: barOverhang + root.Tokens.spacing.medium
         readonly property real shadowRoom: root.Tokens.padding.large
-        implicitWidth: 320 + gap + shadowRoom
+        implicitWidth: 264 + gap + shadowRoom
         implicitHeight: Math.min(440, (screen?.height ?? 720) * 0.7, content.implicitHeight) + shadowRoom * 2
         color: "transparent"
         onVisibleChanged: {
@@ -230,43 +230,35 @@ StyledRect {
             anchors.topMargin: chooser.shadowRoom
             anchors.bottomMargin: chooser.shadowRoom
             implicitHeight: header.implicitHeight + windowList.contentHeight
-                + Tokens.padding.large * 2 + Tokens.spacing.medium
+                + Tokens.padding.small * 3 + Tokens.padding.medium
             radius: Tokens.rounding.large
             color: Services.Colours.palette.m3surfaceContainer
 
+            // A menu title, not a card header: the rows already say how many
+            // windows there are.
             RowLayout {
                 id: header
                 anchors.top: parent.top
                 anchors.left: parent.left
                 anchors.right: parent.right
-                anchors.margins: Tokens.padding.large
-                spacing: Tokens.spacing.medium
+                anchors.topMargin: Tokens.padding.medium
+                anchors.leftMargin: Tokens.padding.small + Tokens.padding.medium
+                anchors.rightMargin: Tokens.padding.small + Tokens.padding.medium
+                spacing: Tokens.spacing.small
 
                 IconImage {
                     Layout.alignment: Qt.AlignVCenter
-                    implicitSize: headerText.implicitHeight
+                    implicitSize: Math.round(headerLabel.implicitHeight * 1.1)
                     asynchronous: true
                     source: root.selectedGroup ? root.appIcon(root.selectedGroup) : ""
                 }
-
-                ColumnLayout {
-                    id: headerText
+                StyledText {
+                    id: headerLabel
                     Layout.fillWidth: true
-                    spacing: 0
-
-                    StyledText {
-                        Layout.fillWidth: true
-                        text: root.appName(root.selectedGroup)
-                        elide: Text.ElideRight
-                        font: Tokens.font.title.small
-                    }
-                    StyledText {
-                        Layout.fillWidth: true
-                        readonly property int count: root.selectedGroup?.windowIds.length ?? 0
-                        text: count === 1 ? qsTr("1 window") : qsTr("%1 windows").arg(count)
-                        color: Services.Colours.palette.m3onSurfaceVariant
-                        elide: Text.ElideRight
-                    }
+                    text: root.appName(root.selectedGroup)
+                    color: Services.Colours.palette.m3onSurfaceVariant
+                    elide: Text.ElideRight
+                    font: Tokens.font.label.medium
                 }
             }
 
@@ -277,11 +269,11 @@ StyledRect {
                 anchors.bottom: parent.bottom
                 anchors.left: parent.left
                 anchors.right: parent.right
-                anchors.topMargin: Tokens.spacing.medium
+                anchors.topMargin: Tokens.padding.small
                 anchors.leftMargin: Tokens.padding.small
                 anchors.rightMargin: Tokens.padding.small
-                anchors.bottomMargin: Tokens.padding.large
-                spacing: Tokens.spacing.extraSmall
+                anchors.bottomMargin: Tokens.padding.small
+                spacing: 0
                 clip: true
                 boundsBehavior: Flickable.StopAtBounds
                 model: ScriptModel { values: root.selectedGroup?.windowIds ?? [] }
