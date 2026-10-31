@@ -96,9 +96,8 @@ StyledRect {
         return count ? Math.min(maximumHeight, count * rowSize + padding * 2) : 0;
     }
     visible: implicitHeight > 0
-    // Icons stand on the bar by themselves; only the active app is highlighted.
     radius: Tokens.rounding.full
-    color: "transparent"
+    color: Services.Colours.tPalette.m3surfaceContainer
     clip: true
 
     ListView {
@@ -120,12 +119,6 @@ StyledRect {
             width: apps.width
             height: root.rowSize
 
-            StyledRect {
-                anchors.fill: parent
-                anchors.margins: Tokens.padding.extraSmall / 2
-                radius: Tokens.rounding.full
-                color: app.group?.active ? Services.Colours.palette.m3secondaryContainer : "transparent"
-            }
             IconImage {
                 id: appIcon
                 anchors.centerIn: parent
@@ -199,14 +192,15 @@ StyledRect {
     PopupWindow {
         id: chooser
         objectName: "runningAppsChooser"
-        anchor.edges: Edges.Right | Edges.Top
-        anchor.gravity: Edges.Right | Edges.Bottom
+        // Right edge only: the menu is centred vertically on the icon.
+        anchor.edges: Edges.Right
+        anchor.gravity: Edges.Right
         anchor.adjustment: PopupAdjustment.Slide
         grabFocus: true
         // The window is transparent margin around the card: a gap from the
         // bar on the left and room for the shadow on the other sides.
         property real barOverhang: 0
-        readonly property real gap: barOverhang + root.Tokens.spacing.medium
+        readonly property real gap: barOverhang + root.Tokens.spacing.small
         readonly property real shadowRoom: root.Tokens.padding.large
         implicitWidth: 304 + gap + shadowRoom
         implicitHeight: Math.min(440, (screen?.height ?? 720) * 0.7, content.implicitHeight) + shadowRoom * 2
@@ -229,43 +223,14 @@ StyledRect {
             anchors.rightMargin: chooser.shadowRoom
             anchors.topMargin: chooser.shadowRoom
             anchors.bottomMargin: chooser.shadowRoom
-            implicitHeight: header.implicitHeight + windowList.contentHeight
-                + Tokens.padding.small * 3 + Tokens.padding.medium
+            implicitHeight: windowList.contentHeight + Tokens.padding.small * 2
             radius: Tokens.rounding.large
             color: Services.Colours.palette.m3surfaceContainer
-
-            // A menu title, not a card header: the rows already say how many
-            // windows there are.
-            RowLayout {
-                id: header
-                anchors.top: parent.top
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.topMargin: Tokens.padding.medium
-                anchors.leftMargin: Tokens.padding.small + Tokens.padding.medium
-                anchors.rightMargin: Tokens.padding.small + Tokens.padding.medium
-                spacing: Tokens.spacing.small
-
-                IconImage {
-                    Layout.alignment: Qt.AlignVCenter
-                    implicitSize: Math.round(headerLabel.implicitHeight * 1.1)
-                    asynchronous: true
-                    source: root.selectedGroup ? root.appIcon(root.selectedGroup) : ""
-                }
-                StyledText {
-                    id: headerLabel
-                    Layout.fillWidth: true
-                    text: root.appName(root.selectedGroup)
-                    color: Services.Colours.palette.m3onSurfaceVariant
-                    elide: Text.ElideRight
-                    font: Tokens.font.label.medium
-                }
-            }
 
             ListView {
                 id: windowList
                 objectName: "runningAppsWindowList"
-                anchors.top: header.bottom
+                anchors.top: parent.top
                 anchors.bottom: parent.bottom
                 anchors.left: parent.left
                 anchors.right: parent.right
