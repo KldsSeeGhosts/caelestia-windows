@@ -168,7 +168,7 @@ StyledRect {
                 activeFocusOnTab: true
                 Keys.onReturnPressed: root.selectApp(app.modelData, app)
                 Keys.onSpacePressed: root.selectApp(app.modelData, app)
-                ToolTip.visible: containsMouse
+                ToolTip.visible: containsMouse && !chooser.visible
                 ToolTip.delay: 500
                 ToolTip.text: root.describe(app.group)
                 Accessible.role: Accessible.Button
