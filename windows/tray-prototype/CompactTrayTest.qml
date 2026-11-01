@@ -68,6 +68,8 @@ ShellRoot {
                 root.verify(!tray.expanded, "initially collapsed");
                 root.verify(!tray.items.itemAt(0).enabled, "collapsed icons cannot intercept clicks");
                 root.verify(button && button.enabled, "expand button enabled");
+                root.verify(button.acceptedButtons === (Qt.LeftButton | Qt.RightButton),
+                    "right-click also expands the collapsed pill");
                 // Only break the activation binding. Observation stays disabled,
                 // so the native Loader cannot construct SystemTray.
                 WindowsTray.activationEnabled = true;
@@ -80,6 +82,14 @@ ShellRoot {
                 bar.checkPopout(-1);
                 root.verify(tray.expanded, "hovering another bar entry does not collapse manual tray");
                 root.verify(tray.items.itemAt(0).enabled, "expanded icons interactive");
+                // The menu request is refused (observation stays off) but the
+                // facade records the coordinates it would hand the backend.
+                tray.itemMenuRequested(tray.sourceItems[0], 30, 42);
+                const menuPoint = WindowsTray.lastMenuCoordinates;
+                root.verify(menuPoint[0] >= tray.mapToItem(null, tray.width, 0).x,
+                    "menu opens past the tray's outer edge, not under the bar");
+                root.verify(menuPoint[1] === Math.round(42 - Tokens.font.body.small.pointSize),
+                    "menu point lifted from the icon centre to its top");
                 root.verify(tray.visibleListHeight < tray.layout.implicitHeight, "long list capped");
                 root.expandedHeight = tray.implicitHeight;
                 const viewport = tray.viewport;
