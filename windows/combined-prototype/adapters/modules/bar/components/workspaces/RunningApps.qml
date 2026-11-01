@@ -2,10 +2,12 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Layouts
 import Quickshell
 import Quickshell.Widgets
 import Caelestia.Config
 import qs.components
+import qs.components.effects
 import qs.services as Services
 
 StyledRect {
@@ -15,6 +17,10 @@ StyledRect {
     required property real rowSize
     signal interactionStarted
     property string selectedApp: ""
+    property string hoverKey: ""
+    property Item hoverItem: null
+    // The bar that hosts the pill; the chooser opens past its outer edge.
+    property Item edgeItem: null
     readonly property real padding: Tokens.padding.small
     readonly property var selectedGroup: Services.RunningApps.groups[selectedApp] ?? null
     // The chooser is its own native popup. A click on the parent window must
@@ -51,11 +57,35 @@ StyledRect {
         Services.RunningApps.request(id, "activate");
     }
 
-    function openChooser(key: string, item: Item): void {
+    // Pointing at an icon shows the chooser after a short delay and it goes
+    // away when the pointer leaves both the icon and the chooser. A click
+    // pins it instead: it then takes focus and an outside click dismisses it.
+    function hoverChanged(key: string, item: Item, inside: bool): void {
+        if (inside) {
+            closeTimer.stop();
+            hoverKey = key;
+            hoverItem = item;
+            hoverTimer.interval = chooser.visible ? 120 : 350;
+            hoverTimer.restart();
+        } else {
+            hoverTimer.stop();
+            if (chooser.visible && chooser.hoverOpened)
+                closeTimer.restart();
+        }
+    }
+
+    function openChooser(key: string, item: Item, hover = false): void {
         if (!Services.RunningApps.groups[key] || !Services.RunningApps.actionsEnabled)
             return;
+        if (hover && chooser.visible && (chooser.anchor.item === item || !chooser.hoverOpened))
+            return;
+        // The focus grab is fixed while the popup is up, so reopen to change it.
+        chooser.visible = false;
+        chooser.hoverOpened = hover;
         selectedApp = key;
         chooser.anchor.item = item;
+        // Clear the rest of the bar so the card floats beside it, not over it.
+        chooser.barOverhang = edgeItem ? Math.max(0, edgeItem.width - item.mapToItem(edgeItem, item.width, 0).x) : 0;
         // A chooser opened for a new gesture starts at the first window.
         windowList.currentIndex = 0;
         chooser.visible = true;
@@ -83,9 +113,12 @@ StyledRect {
 
     objectName: "runningAppsPill"
     implicitWidth: Tokens.sizes.bar.innerWidth
-    // Reserve the same viewport while applications open/close. It disappears
-    // only when there are no windows, including minimized ones.
-    implicitHeight: Services.RunningApps.groupIds.length ? maximumHeight : 0
+    // Fit the open apps up to the row budget, then scroll. It disappears only
+    // when there are no windows, including minimized ones.
+    implicitHeight: {
+        const count = Services.RunningApps.groupIds.length;
+        return count ? Math.min(maximumHeight, count * rowSize + padding * 2) : 0;
+    }
     visible: implicitHeight > 0
     radius: Tokens.rounding.full
     color: Services.Colours.tPalette.m3surfaceContainer
@@ -110,37 +143,39 @@ StyledRect {
             width: apps.width
             height: root.rowSize
 
-            StyledRect {
-                anchors.fill: parent
-                anchors.margins: Tokens.padding.extraSmall
-                radius: Tokens.rounding.full
-                color: app.group?.active ? Services.Colours.palette.m3primaryContainer : "transparent"
-            }
             IconImage {
                 id: appIcon
                 anchors.centerIn: parent
-                implicitSize: Tokens.font.body.small.pointSize * 2
+                implicitSize: Math.round(root.rowSize * 0.62)
                 asynchronous: true
                 source: root.appIcon(app.group)
-                opacity: app.group?.allMinimized ? 0.55 : 1
+                opacity: app.group?.allMinimized ? 0.45 : 1
+
+                Behavior on opacity { Anim {} }
             }
             MaterialIcon {
                 anchors.centerIn: parent
                 text: "apps"
                 visible: appIcon.status === Image.Error || appIcon.status === Image.Null
                 color: Services.Colours.palette.m3onSurfaceVariant
-                opacity: app.group?.allMinimized ? 0.55 : 1
+                opacity: appIcon.opacity
             }
+            // Dock-style state on the bar's outer edge: a dot per running app,
+            // a longer pill for several windows, an outline when all are
+            // minimized. It sits beside the icon instead of colliding with it.
             StyledRect {
-                anchors.bottom: parent.bottom
-                anchors.horizontalCenter: parent.horizontalCenter
-                anchors.bottomMargin: Tokens.padding.extraSmall
-                implicitWidth: app.group?.windowIds.length > 1 ? 8 : 4
-                implicitHeight: 4
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
+                implicitWidth: 3
+                implicitHeight: app.group?.windowIds.length > 1 ? Math.round(root.rowSize * 0.4) : 6
                 radius: Tokens.rounding.full
-                color: app.group?.allMinimized ? "transparent" : Services.Colours.palette.m3primary
-                border.width: app.group?.minimized ? 1 : 0
-                border.color: Services.Colours.palette.m3onSurfaceVariant
+                color: app.group?.allMinimized ? "transparent"
+                    : app.group?.active ? Services.Colours.palette.m3primary
+                    : Services.Colours.palette.m3onSurfaceVariant
+                border.width: app.group?.allMinimized ? 1 : 0
+                border.color: Services.Colours.palette.m3outline
+
+                Behavior on implicitHeight { Anim {} }
             }
             StateLayer {
                 id: appButton
@@ -148,6 +183,7 @@ StyledRect {
                 radius: Tokens.rounding.full
                 acceptedButtons: Qt.LeftButton | Qt.RightButton
                 onEntered: root.interactionStarted()
+                onContainsMouseChanged: root.hoverChanged(app.modelData, app, containsMouse)
                 onClicked: event => {
                     if (event.button === Qt.RightButton)
                         root.openChooser(app.modelData, app);
@@ -157,9 +193,6 @@ StyledRect {
                 activeFocusOnTab: true
                 Keys.onReturnPressed: root.selectApp(app.modelData, app)
                 Keys.onSpacePressed: root.selectApp(app.modelData, app)
-                ToolTip.visible: containsMouse
-                ToolTip.delay: 500
-                ToolTip.text: root.describe(app.group)
                 Accessible.role: Accessible.Button
                 Accessible.name: root.describe(app.group)
                 Accessible.onPressAction: root.selectApp(app.modelData, app)
@@ -181,44 +214,65 @@ StyledRect {
     PopupWindow {
         id: chooser
         objectName: "runningAppsChooser"
-        anchor.edges: Edges.Right | Edges.Top
-        anchor.gravity: Edges.Right | Edges.Bottom
+        // Right edge only: the menu is centred vertically on the icon.
+        anchor.edges: Edges.Right
+        anchor.gravity: Edges.Right
         anchor.adjustment: PopupAdjustment.Slide
-        grabFocus: true
-        implicitWidth: root.Tokens.sizes.bar.windowPreviewSize
-        implicitHeight: Math.min(420, (screen?.height ?? 720) * 0.7, content.implicitHeight)
+        // A pointer-revealed chooser must not steal focus or swallow clicks.
+        grabFocus: !hoverOpened
+        property bool hoverOpened: false
+        // The window is transparent margin around the card: a gap from the
+        // bar on the left and room for the shadow on the other sides.
+        property real barOverhang: 0
+        readonly property real gap: barOverhang + root.Tokens.spacing.small
+        readonly property real shadowRoom: root.Tokens.padding.medium
+        implicitWidth: 232 + gap + shadowRoom
+        implicitHeight: Math.min(320, (screen?.height ?? 720) * 0.6, content.implicitHeight) + shadowRoom * 2
         color: "transparent"
         onVisibleChanged: {
-            if (visible)
+            if (visible && !hoverOpened)
                 windowList.forceActiveFocus();
+            if (!visible) {
+                hoverTimer.stop();
+                closeTimer.stop();
+            }
+        }
+
+        HoverHandler {
+            onHoveredChanged: {
+                if (hovered)
+                    closeTimer.stop();
+                else if (chooser.hoverOpened)
+                    closeTimer.restart();
+            }
+        }
+
+        Elevation {
+            anchors.fill: content
+            radius: content.radius
+            level: 1
         }
 
         StyledRect {
             id: content
             anchors.fill: parent
-            implicitHeight: heading.implicitHeight + windowList.contentHeight + Tokens.padding.large * 3
-            radius: Tokens.rounding.large
+            anchors.leftMargin: chooser.gap
+            anchors.rightMargin: chooser.shadowRoom
+            anchors.topMargin: chooser.shadowRoom
+            anchors.bottomMargin: chooser.shadowRoom
+            implicitHeight: windowList.contentHeight + Tokens.padding.extraSmall * 2
+            radius: Tokens.rounding.medium
             color: Services.Colours.palette.m3surfaceContainer
-
-            StyledText {
-                id: heading
-                anchors.top: parent.top
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.margins: Tokens.padding.large
-                text: root.appName(root.selectedGroup)
-                elide: Text.ElideRight
-                font: Tokens.font.body.medium
-            }
 
             ListView {
                 id: windowList
                 objectName: "runningAppsWindowList"
-                anchors.top: heading.bottom
+                anchors.top: parent.top
                 anchors.bottom: parent.bottom
                 anchors.left: parent.left
                 anchors.right: parent.right
-                anchors.margins: Tokens.padding.large
+                anchors.margins: Tokens.padding.extraSmall
+                spacing: 0
                 clip: true
                 boundsBehavior: Flickable.StopAtBounds
                 model: ScriptModel { values: root.selectedGroup?.windowIds ?? [] }
@@ -259,10 +313,24 @@ StyledRect {
         width: parent ? parent.width : 0
         height: parent ? parent.height : 0
         z: 1000000
-        visible: chooser.visible
+        visible: chooser.visible && !chooser.hoverOpened
         enabled: visible
         acceptedButtons: Qt.LeftButton | Qt.RightButton
         onClicked: chooser.visible = false
+    }
+
+    Timer {
+        id: hoverTimer
+        onTriggered: root.openChooser(root.hoverKey, root.hoverItem, true)
+    }
+
+    Timer {
+        id: closeTimer
+        interval: 250
+        onTriggered: {
+            if (chooser.hoverOpened)
+                chooser.visible = false;
+        }
     }
 
     Behavior on implicitHeight { Anim {} }
