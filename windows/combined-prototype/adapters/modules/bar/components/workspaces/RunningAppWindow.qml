@@ -18,15 +18,14 @@ Item {
     // reached by keyboard. They remain focusable while hidden so Tab works.
     readonly property bool showActions: hover.hovered || keyboardSelected || minimizeAction.hasFocus
         || closeAction.hasFocus || activateLayer.activeFocus
+    // A minimized window is just dimmed; a second line is only spent on a
+    // window that lives on another desktop.
     readonly property string subtitle: {
-        if (window?.minimized)
-            return qsTr("Minimized");
         const desktop = window?.desktop ?? 0;
-        // Only call out a desktop when it is not the one on screen.
         return desktop && desktop !== (Hypr.focusedWorkspace?.id ?? desktop) ? qsTr("Desktop %1").arg(desktop) : "";
     }
 
-    height: details.implicitHeight + Tokens.padding.small * 2 + Tokens.padding.extraSmall
+    height: Math.max(details.implicitHeight, minimizeAction.implicitHeight) + Tokens.padding.extraSmall
 
     HoverHandler {
         id: hover
@@ -58,8 +57,8 @@ Item {
 
     RowLayout {
         anchors.fill: parent
-        anchors.leftMargin: Tokens.padding.medium
-        anchors.rightMargin: Tokens.padding.small
+        anchors.leftMargin: Tokens.padding.small
+        anchors.rightMargin: Tokens.padding.extraSmall
         spacing: Tokens.spacing.small
 
         ColumnLayout {
@@ -72,11 +71,11 @@ Item {
                 id: titleText
                 Layout.fillWidth: true
                 text: root.window?.title ?? ""
-                font: Tokens.font.body.medium
+                font: Tokens.font.body.small
                 // The focused window is the only one in the accent colour.
                 color: root.window?.active ? Colours.palette.m3primary : Colours.palette.m3onSurface
                 elide: Text.ElideRight
-                opacity: root.window?.minimized ? 0.7 : 1
+                opacity: root.window?.minimized ? 0.6 : 1
             }
             StyledText {
                 Layout.fillWidth: true
@@ -112,7 +111,7 @@ Item {
         signal clicked
         readonly property bool hasFocus: layer.activeFocus
         Layout.alignment: Qt.AlignVCenter
-        implicitWidth: glyph.implicitHeight + Tokens.padding.small * 2
+        implicitWidth: glyph.implicitHeight + Tokens.padding.extraSmall * 2
         implicitHeight: implicitWidth
         opacity: root.showActions ? (enabled ? 1 : 0.38) : 0
 

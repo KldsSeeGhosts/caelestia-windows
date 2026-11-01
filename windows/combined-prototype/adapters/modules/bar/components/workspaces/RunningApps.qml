@@ -17,6 +17,8 @@ StyledRect {
     required property real rowSize
     signal interactionStarted
     property string selectedApp: ""
+    property string hoverKey: ""
+    property Item hoverItem: null
     // The bar that hosts the pill; the chooser opens past its outer edge.
     property Item edgeItem: null
     readonly property real padding: Tokens.padding.small
@@ -55,9 +57,31 @@ StyledRect {
         Services.RunningApps.request(id, "activate");
     }
 
-    function openChooser(key: string, item: Item): void {
+    // Pointing at an icon shows the chooser after a short delay and it goes
+    // away when the pointer leaves both the icon and the chooser. A click
+    // pins it instead: it then takes focus and an outside click dismisses it.
+    function hoverChanged(key: string, item: Item, inside: bool): void {
+        if (inside) {
+            closeTimer.stop();
+            hoverKey = key;
+            hoverItem = item;
+            hoverTimer.interval = chooser.visible ? 120 : 350;
+            hoverTimer.restart();
+        } else {
+            hoverTimer.stop();
+            if (chooser.visible && chooser.hoverOpened)
+                closeTimer.restart();
+        }
+    }
+
+    function openChooser(key: string, item: Item, hover = false): void {
         if (!Services.RunningApps.groups[key] || !Services.RunningApps.actionsEnabled)
             return;
+        if (hover && chooser.visible && (chooser.anchor.item === item || !chooser.hoverOpened))
+            return;
+        // The focus grab is fixed while the popup is up, so reopen to change it.
+        chooser.visible = false;
+        chooser.hoverOpened = hover;
         selectedApp = key;
         chooser.anchor.item = item;
         // Clear the rest of the bar so the card floats beside it, not over it.
@@ -159,6 +183,7 @@ StyledRect {
                 radius: Tokens.rounding.full
                 acceptedButtons: Qt.LeftButton | Qt.RightButton
                 onEntered: root.interactionStarted()
+                onContainsMouseChanged: root.hoverChanged(app.modelData, app, containsMouse)
                 onClicked: event => {
                     if (event.button === Qt.RightButton)
                         root.openChooser(app.modelData, app);
@@ -168,9 +193,6 @@ StyledRect {
                 activeFocusOnTab: true
                 Keys.onReturnPressed: root.selectApp(app.modelData, app)
                 Keys.onSpacePressed: root.selectApp(app.modelData, app)
-                ToolTip.visible: containsMouse && !chooser.visible
-                ToolTip.delay: 500
-                ToolTip.text: root.describe(app.group)
                 Accessible.role: Accessible.Button
                 Accessible.name: root.describe(app.group)
                 Accessible.onPressAction: root.selectApp(app.modelData, app)
@@ -196,24 +218,39 @@ StyledRect {
         anchor.edges: Edges.Right
         anchor.gravity: Edges.Right
         anchor.adjustment: PopupAdjustment.Slide
-        grabFocus: true
+        // A pointer-revealed chooser must not steal focus or swallow clicks.
+        grabFocus: !hoverOpened
+        property bool hoverOpened: false
         // The window is transparent margin around the card: a gap from the
         // bar on the left and room for the shadow on the other sides.
         property real barOverhang: 0
         readonly property real gap: barOverhang + root.Tokens.spacing.small
-        readonly property real shadowRoom: root.Tokens.padding.large
-        implicitWidth: 304 + gap + shadowRoom
-        implicitHeight: Math.min(440, (screen?.height ?? 720) * 0.7, content.implicitHeight) + shadowRoom * 2
+        readonly property real shadowRoom: root.Tokens.padding.medium
+        implicitWidth: 232 + gap + shadowRoom
+        implicitHeight: Math.min(320, (screen?.height ?? 720) * 0.6, content.implicitHeight) + shadowRoom * 2
         color: "transparent"
         onVisibleChanged: {
-            if (visible)
+            if (visible && !hoverOpened)
                 windowList.forceActiveFocus();
+            if (!visible) {
+                hoverTimer.stop();
+                closeTimer.stop();
+            }
+        }
+
+        HoverHandler {
+            onHoveredChanged: {
+                if (hovered)
+                    closeTimer.stop();
+                else if (chooser.hoverOpened)
+                    closeTimer.restart();
+            }
         }
 
         Elevation {
             anchors.fill: content
             radius: content.radius
-            level: 2
+            level: 1
         }
 
         StyledRect {
@@ -223,8 +260,8 @@ StyledRect {
             anchors.rightMargin: chooser.shadowRoom
             anchors.topMargin: chooser.shadowRoom
             anchors.bottomMargin: chooser.shadowRoom
-            implicitHeight: windowList.contentHeight + Tokens.padding.small * 2
-            radius: Tokens.rounding.large
+            implicitHeight: windowList.contentHeight + Tokens.padding.extraSmall * 2
+            radius: Tokens.rounding.medium
             color: Services.Colours.palette.m3surfaceContainer
 
             ListView {
@@ -234,10 +271,7 @@ StyledRect {
                 anchors.bottom: parent.bottom
                 anchors.left: parent.left
                 anchors.right: parent.right
-                anchors.topMargin: Tokens.padding.small
-                anchors.leftMargin: Tokens.padding.small
-                anchors.rightMargin: Tokens.padding.small
-                anchors.bottomMargin: Tokens.padding.small
+                anchors.margins: Tokens.padding.extraSmall
                 spacing: 0
                 clip: true
                 boundsBehavior: Flickable.StopAtBounds
@@ -279,10 +313,24 @@ StyledRect {
         width: parent ? parent.width : 0
         height: parent ? parent.height : 0
         z: 1000000
-        visible: chooser.visible
+        visible: chooser.visible && !chooser.hoverOpened
         enabled: visible
         acceptedButtons: Qt.LeftButton | Qt.RightButton
         onClicked: chooser.visible = false
+    }
+
+    Timer {
+        id: hoverTimer
+        onTriggered: root.openChooser(root.hoverKey, root.hoverItem, true)
+    }
+
+    Timer {
+        id: closeTimer
+        interval: 250
+        onTriggered: {
+            if (chooser.hoverOpened)
+                chooser.visible = false;
+        }
     }
 
     Behavior on implicitHeight { Anim {} }
