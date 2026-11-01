@@ -67,27 +67,40 @@ StyledRect {
             hoverItem = item;
             hoverTimer.interval = chooser.visible ? 120 : 350;
             hoverTimer.restart();
-        } else {
+        } else if (hoverKey === key) {
+            // Moving to a neighbouring icon can enter it before this one is
+            // left; by then another icon owns the hover and this exit is stale.
+            hoverKey = "";
             hoverTimer.stop();
             if (chooser.visible && chooser.hoverOpened)
                 closeTimer.restart();
         }
     }
 
-    function openChooser(key: string, item: Item, hover = false): void {
-        if (!Services.RunningApps.groups[key] || !Services.RunningApps.actionsEnabled)
-            return;
-        if (hover && chooser.visible && (chooser.anchor.item === item || !chooser.hoverOpened))
-            return;
-        // The focus grab is fixed while the popup is up, so reopen to change it.
-        chooser.visible = false;
-        chooser.hoverOpened = hover;
+    function aim(key: string, item: Item): void {
         selectedApp = key;
         chooser.anchor.item = item;
         // Clear the rest of the bar so the card floats beside it, not over it.
         chooser.barOverhang = edgeItem ? Math.max(0, edgeItem.width - item.mapToItem(edgeItem, item.width, 0).x) : 0;
         // A chooser opened for a new gesture starts at the first window.
         windowList.currentIndex = 0;
+    }
+
+    function openChooser(key: string, item: Item, hover = false): void {
+        if (!Services.RunningApps.groups[key] || !Services.RunningApps.actionsEnabled)
+            return;
+        if (hover && chooser.visible) {
+            // Pointing at another icon moves the open chooser to it.
+            if (chooser.hoverOpened && chooser.anchor.item !== item) {
+                aim(key, item);
+                chooser.anchor.updateAnchor();
+            }
+            return;
+        }
+        // The focus grab is fixed while the popup is up, so reopen to change it.
+        chooser.visible = false;
+        chooser.hoverOpened = hover;
+        aim(key, item);
         chooser.visible = true;
     }
 
@@ -321,7 +334,10 @@ StyledRect {
 
     Timer {
         id: hoverTimer
-        onTriggered: root.openChooser(root.hoverKey, root.hoverItem, true)
+        onTriggered: {
+            if (root.hoverKey)
+                root.openChooser(root.hoverKey, root.hoverItem, true);
+        }
     }
 
     Timer {
