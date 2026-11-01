@@ -34,6 +34,8 @@ ShellRoot {
     property var interactionSecond
     property var interactionThird
     property var hoverOther
+    property var hoverThird
+    property var hoverFourth
     property real hoverAt: 0
     readonly property var screen: Quickshell.screens.length ? Quickshell.screens[0] : null
     readonly property var screenState: screen ? Services.ShellState.forScreen(screen) : null
@@ -753,7 +755,10 @@ ShellRoot {
                     // Pointing at an icon reveals the chooser; pointing at the next
                     // icon moves it there; leaving the pill closes it.
                     root.hoverOther = root.makeFixture("91", "fixture-hover-other");
-                    Services.RunningApps.source = [root.interactionFirst, root.interactionSecond, root.hoverOther];
+                    root.hoverThird = root.makeFixture("92", "fixture-hover-third");
+                    root.hoverFourth = root.makeFixture("93", "fixture-hover-fourth");
+                    Services.RunningApps.source = [root.interactionFirst, root.interactionSecond,
+                        root.hoverOther, root.hoverThird, root.hoverFourth];
                 } else if (root.phase === 55) {
                     const row = root.appRow("fixture-interaction");
                     check(row && root.appRow("fixture-hover-other"), "hover fixtures are listed");
@@ -794,14 +799,49 @@ ShellRoot {
                     const popup = root.chooser();
                     check(popup?.visible === true && popup.anchor.item === root.appRow("fixture-interaction"),
                         "the chooser moves back up as well");
+                    const other = root.appRow("fixture-hover-other");
+                    check(input.mouseMove(other, other.width / 2, other.height / 2,
+                        Qt.NoButton, Qt.NoModifier, 0), "rapid sweep starts");
+                } else if (root.phase === 60 || root.phase === 61) {
+                    const key = root.phase === 60 ? "fixture-hover-third" : "fixture-hover-fourth";
+                    const row = root.appRow(key);
+                    check(row && input.mouseMove(row, row.width / 2, row.height / 2,
+                        Qt.NoButton, Qt.NoModifier, 0), "rapid sweep crosses " + key);
+                } else if (root.phase === 62) {
+                    const row = root.appRow("fixture-interaction");
+                    check(input.mouseMove(row, row.width / 2, row.height / 2,
+                        Qt.NoButton, Qt.NoModifier, 0), "rapid sweep returns without leaving the pill");
+                    root.hoverAt = Date.now();
+                } else if (root.phase === 63) {
+                    if (Date.now() - root.hoverAt < 400)
+                        return;
+                    const popup = root.chooser();
+                    check(popup?.visible === true && popup.anchor.item === root.appRow("fixture-interaction"),
+                        "rapid sweep settles on the final icon without a leave/re-enter");
+                    const other = root.appRow("fixture-hover-other");
+                    check(input.mouseMove(other, other.width / 2, other.height / 2,
+                        Qt.NoButton, Qt.NoModifier, 0), "next icon owns a pending hover switch");
+                    // Native popup leave can arrive after the next icon's enter.
+                    // Deliver that ordering deterministically as well as sweeping
+                    // with real input, which offscreen Qt cannot reproduce fully.
+                    const popupHover = Array.from(popup.contentItem.data).find(child => child.hovered !== undefined);
+                    check(popupHover && !popupHover.hovered, "pointer is on the icon, not the popup");
+                    popupHover.hoveredChanged();
+                    root.hoverAt = Date.now();
+                } else if (root.phase === 64) {
+                    if (Date.now() - root.hoverAt < 400)
+                        return;
+                    const popup = root.chooser();
+                    check(popup?.visible === true && popup.anchor.item === root.appRow("fixture-hover-other"),
+                        "late popup leave cannot close the newly hovered icon's chooser");
                     check(input.mouseMove(pill, 5, 470, Qt.NoButton, Qt.NoModifier, 0), "hover leave delivered");
                     root.hoverAt = Date.now();
-                } else if (root.phase === 60) {
+                } else if (root.phase === 65) {
                     if (Date.now() - root.hoverAt < 700)
                         return;
                     check(root.chooser()?.visible === false, "leaving the pill closes the revealed chooser");
                     Services.RunningApps.source = [];
-                } else if (root.phase === 61) {
+                } else if (root.phase === 66) {
                     check(Services.RunningApps.groupIds.length === 0, "empty model");
                     interval = 700;
                 } else {
