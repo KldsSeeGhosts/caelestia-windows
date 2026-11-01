@@ -2,10 +2,12 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Layouts
 import Quickshell
 import Quickshell.Widgets
 import Caelestia.Config
 import qs.components
+import qs.components.effects
 import qs.services as Services
 
 StyledRect {
@@ -15,6 +17,8 @@ StyledRect {
     required property real rowSize
     signal interactionStarted
     property string selectedApp: ""
+    // The bar that hosts the pill; the chooser opens past its outer edge.
+    property Item edgeItem: null
     readonly property real padding: Tokens.padding.small
     readonly property var selectedGroup: Services.RunningApps.groups[selectedApp] ?? null
     // The chooser is its own native popup. A click on the parent window must
@@ -56,6 +60,8 @@ StyledRect {
             return;
         selectedApp = key;
         chooser.anchor.item = item;
+        // Clear the rest of the bar so the card floats beside it, not over it.
+        chooser.barOverhang = edgeItem ? Math.max(0, edgeItem.width - item.mapToItem(edgeItem, item.width, 0).x) : 0;
         // A chooser opened for a new gesture starts at the first window.
         windowList.currentIndex = 0;
         chooser.visible = true;
@@ -83,9 +89,12 @@ StyledRect {
 
     objectName: "runningAppsPill"
     implicitWidth: Tokens.sizes.bar.innerWidth
-    // Reserve the same viewport while applications open/close. It disappears
-    // only when there are no windows, including minimized ones.
-    implicitHeight: Services.RunningApps.groupIds.length ? maximumHeight : 0
+    // Fit the open apps up to the row budget, then scroll. It disappears only
+    // when there are no windows, including minimized ones.
+    implicitHeight: {
+        const count = Services.RunningApps.groupIds.length;
+        return count ? Math.min(maximumHeight, count * rowSize + padding * 2) : 0;
+    }
     visible: implicitHeight > 0
     radius: Tokens.rounding.full
     color: Services.Colours.tPalette.m3surfaceContainer
@@ -110,37 +119,39 @@ StyledRect {
             width: apps.width
             height: root.rowSize
 
-            StyledRect {
-                anchors.fill: parent
-                anchors.margins: Tokens.padding.extraSmall
-                radius: Tokens.rounding.full
-                color: app.group?.active ? Services.Colours.palette.m3primaryContainer : "transparent"
-            }
             IconImage {
                 id: appIcon
                 anchors.centerIn: parent
-                implicitSize: Tokens.font.body.small.pointSize * 2
+                implicitSize: Math.round(root.rowSize * 0.62)
                 asynchronous: true
                 source: root.appIcon(app.group)
-                opacity: app.group?.allMinimized ? 0.55 : 1
+                opacity: app.group?.allMinimized ? 0.45 : 1
+
+                Behavior on opacity { Anim {} }
             }
             MaterialIcon {
                 anchors.centerIn: parent
                 text: "apps"
                 visible: appIcon.status === Image.Error || appIcon.status === Image.Null
                 color: Services.Colours.palette.m3onSurfaceVariant
-                opacity: app.group?.allMinimized ? 0.55 : 1
+                opacity: appIcon.opacity
             }
+            // Dock-style state on the bar's outer edge: a dot per running app,
+            // a longer pill for several windows, an outline when all are
+            // minimized. It sits beside the icon instead of colliding with it.
             StyledRect {
-                anchors.bottom: parent.bottom
-                anchors.horizontalCenter: parent.horizontalCenter
-                anchors.bottomMargin: Tokens.padding.extraSmall
-                implicitWidth: app.group?.windowIds.length > 1 ? 8 : 4
-                implicitHeight: 4
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
+                implicitWidth: 3
+                implicitHeight: app.group?.windowIds.length > 1 ? Math.round(root.rowSize * 0.4) : 6
                 radius: Tokens.rounding.full
-                color: app.group?.allMinimized ? "transparent" : Services.Colours.palette.m3primary
-                border.width: app.group?.minimized ? 1 : 0
-                border.color: Services.Colours.palette.m3onSurfaceVariant
+                color: app.group?.allMinimized ? "transparent"
+                    : app.group?.active ? Services.Colours.palette.m3primary
+                    : Services.Colours.palette.m3onSurfaceVariant
+                border.width: app.group?.allMinimized ? 1 : 0
+                border.color: Services.Colours.palette.m3outline
+
+                Behavior on implicitHeight { Anim {} }
             }
             StateLayer {
                 id: appButton
@@ -157,7 +168,7 @@ StyledRect {
                 activeFocusOnTab: true
                 Keys.onReturnPressed: root.selectApp(app.modelData, app)
                 Keys.onSpacePressed: root.selectApp(app.modelData, app)
-                ToolTip.visible: containsMouse
+                ToolTip.visible: containsMouse && !chooser.visible
                 ToolTip.delay: 500
                 ToolTip.text: root.describe(app.group)
                 Accessible.role: Accessible.Button
@@ -181,44 +192,53 @@ StyledRect {
     PopupWindow {
         id: chooser
         objectName: "runningAppsChooser"
-        anchor.edges: Edges.Right | Edges.Top
-        anchor.gravity: Edges.Right | Edges.Bottom
+        // Right edge only: the menu is centred vertically on the icon.
+        anchor.edges: Edges.Right
+        anchor.gravity: Edges.Right
         anchor.adjustment: PopupAdjustment.Slide
         grabFocus: true
-        implicitWidth: root.Tokens.sizes.bar.windowPreviewSize
-        implicitHeight: Math.min(420, (screen?.height ?? 720) * 0.7, content.implicitHeight)
+        // The window is transparent margin around the card: a gap from the
+        // bar on the left and room for the shadow on the other sides.
+        property real barOverhang: 0
+        readonly property real gap: barOverhang + root.Tokens.spacing.small
+        readonly property real shadowRoom: root.Tokens.padding.large
+        implicitWidth: 304 + gap + shadowRoom
+        implicitHeight: Math.min(440, (screen?.height ?? 720) * 0.7, content.implicitHeight) + shadowRoom * 2
         color: "transparent"
         onVisibleChanged: {
             if (visible)
                 windowList.forceActiveFocus();
         }
 
+        Elevation {
+            anchors.fill: content
+            radius: content.radius
+            level: 2
+        }
+
         StyledRect {
             id: content
             anchors.fill: parent
-            implicitHeight: heading.implicitHeight + windowList.contentHeight + Tokens.padding.large * 3
+            anchors.leftMargin: chooser.gap
+            anchors.rightMargin: chooser.shadowRoom
+            anchors.topMargin: chooser.shadowRoom
+            anchors.bottomMargin: chooser.shadowRoom
+            implicitHeight: windowList.contentHeight + Tokens.padding.small * 2
             radius: Tokens.rounding.large
             color: Services.Colours.palette.m3surfaceContainer
-
-            StyledText {
-                id: heading
-                anchors.top: parent.top
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.margins: Tokens.padding.large
-                text: root.appName(root.selectedGroup)
-                elide: Text.ElideRight
-                font: Tokens.font.body.medium
-            }
 
             ListView {
                 id: windowList
                 objectName: "runningAppsWindowList"
-                anchors.top: heading.bottom
+                anchors.top: parent.top
                 anchors.bottom: parent.bottom
                 anchors.left: parent.left
                 anchors.right: parent.right
-                anchors.margins: Tokens.padding.large
+                anchors.topMargin: Tokens.padding.small
+                anchors.leftMargin: Tokens.padding.small
+                anchors.rightMargin: Tokens.padding.small
+                anchors.bottomMargin: Tokens.padding.small
+                spacing: 0
                 clip: true
                 boundsBehavior: Flickable.StopAtBounds
                 model: ScriptModel { values: root.selectedGroup?.windowIds ?? [] }

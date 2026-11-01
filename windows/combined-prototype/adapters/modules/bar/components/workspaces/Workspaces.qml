@@ -44,6 +44,7 @@ Column {
         id: runningApps
         maximumHeight: root.appBudget
         rowSize: root.rowSize
+        edgeItem: root.owningBar
         visible: !root.fullscreen
         onInteractionStarted: root.owningBar?.popouts.close()
     }

@@ -16,10 +16,21 @@ TrayContent {
     sourceItems: WindowsTray.list
     autoCollapse: false
     implicitHeight: items.count > 0 ? nonAnimHeight : 0
-    maximumListHeight: (Tokens.font.body.small.pointSize * 2 + Tokens.spacing.small) * 5.5 - Tokens.spacing.small
+    // Whole rows only: a half-cut icon at the bottom reads as a rendering bug.
+    maximumListHeight: (Tokens.font.body.small.pointSize * 2 + Tokens.spacing.small) * 5 - Tokens.spacing.small
     itemInteractionsEnabled: WindowsTray.activationEnabled && (expanded || !Config.bar.tray.compact)
     itemNativeMenuMode: WindowsTray.activationEnabled
-    onItemMenuRequested: (item, x, y) => WindowsTray.openMenu(item, QsWindow.window, x, y)
+    // The app opens its menu at the cursor, so ask the backend to place the
+    // cursor just past the bar's outer edge; there the bar cannot cover the menu.
+    function menuX(): real {
+        let bar = root.parent;
+        while (bar && bar.vPadding === undefined)
+            bar = bar.parent;
+        const edge = bar ?? root;
+        return edge.mapToItem(null, edge.width, 0).x + Tokens.spacing.small;
+    }
+
+    onItemMenuRequested: (item, x, y) => WindowsTray.openMenu(item, QsWindow.window, menuX(), y)
 
     // Mouse wheels must scroll even when the pointer is over an icon's
     // MouseArea, and must not fall through to the bar's volume/brightness.
@@ -28,8 +39,11 @@ TrayContent {
         target: null
         enabled: root.expanded || !root.trayCompact
         onWheel: event => {
-            const delta = event.pixelDelta.y || event.angleDelta.y / 120 * root.trayRowHeight * 3;
-            root.viewport.contentY = Math.max(0, Math.min(root.viewport.contentHeight - root.viewport.height, root.viewport.contentY - delta));
+            // One row per notch, so icons stay aligned to the capsule.
+            const direction = (event.pixelDelta.y || event.angleDelta.y) > 0 ? -1 : 1;
+            const row = root.trayRowHeight;
+            const next = (Math.round(root.viewport.contentY / row) + direction) * row;
+            root.viewport.contentY = Math.max(0, Math.min(root.viewport.contentHeight - root.viewport.height, next));
             event.accepted = true;
         }
     }
