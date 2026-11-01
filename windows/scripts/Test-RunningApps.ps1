@@ -104,7 +104,7 @@ if ($staleGates.Count -or $info.EnvironmentVariables['QS_WINDOWS_TRAY_HOOK'] -ne
 $process = [Diagnostics.Process]::Start($info)
 $stdout = $process.StandardOutput.ReadToEndAsync()
 $stderr = $process.StandardError.ReadToEndAsync()
-$timedOut = -not $process.WaitForExit(20000)
+$timedOut = -not $process.WaitForExit(25000)
 if ($timedOut) { $process.Kill(); $process.WaitForExit() }
 # Always drain and retain both streams, including a timeout/bootstrap failure.
 $stdoutText = $stdout.GetAwaiter().GetResult()

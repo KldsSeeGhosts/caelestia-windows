@@ -71,8 +71,9 @@ StyledRect {
             // Moving to a neighbouring icon can enter it before this one is
             // left; by then another icon owns the hover and this exit is stale.
             hoverKey = "";
+            hoverItem = null;
             hoverTimer.stop();
-            if (chooser.visible && chooser.hoverOpened)
+            if (chooser.visible && chooser.hoverOpened && !chooserHover.hovered)
                 closeTimer.restart();
         }
     }
@@ -252,10 +253,13 @@ StyledRect {
         }
 
         HoverHandler {
+            id: chooserHover
             onHoveredChanged: {
                 if (hovered)
                     closeTimer.stop();
-                else if (chooser.hoverOpened)
+                // A native popup leave can arrive after the next icon's enter.
+                // That icon owns the chooser now, so do not arm a stale close.
+                else if (chooser.hoverOpened && !root.hoverKey)
                     closeTimer.restart();
             }
         }
@@ -344,7 +348,9 @@ StyledRect {
         id: closeTimer
         interval: 250
         onTriggered: {
-            if (chooser.hoverOpened)
+            // Recheck ownership even if the timeout was already queued when
+            // the pointer entered an icon or the popup.
+            if (chooser.hoverOpened && !root.hoverKey && !chooserHover.hovered)
                 chooser.visible = false;
         }
     }
