@@ -33,6 +33,8 @@ ShellRoot {
     property var interactionFirst
     property var interactionSecond
     property var interactionThird
+    property var hoverOther
+    property real hoverAt: 0
     readonly property var screen: Quickshell.screens.length ? Quickshell.screens[0] : null
     readonly property var screenState: screen ? Services.ShellState.forScreen(screen) : null
 
@@ -748,8 +750,58 @@ ShellRoot {
                     check(root.interactionSecond.counts.activations === 2,
                         "outside click activates nothing");
                 } else if (root.phase === 54) {
-                    Services.RunningApps.source = [];
+                    // Pointing at an icon reveals the chooser; pointing at the next
+                    // icon moves it there; leaving the pill closes it.
+                    root.hoverOther = root.makeFixture("91", "fixture-hover-other");
+                    Services.RunningApps.source = [root.interactionFirst, root.interactionSecond, root.hoverOther];
                 } else if (root.phase === 55) {
+                    const row = root.appRow("fixture-interaction");
+                    check(row && root.appRow("fixture-hover-other"), "hover fixtures are listed");
+                    // Start from a pointer that is not over any icon.
+                    check(input.mouseMove(pill, 5, 470, Qt.NoButton, Qt.NoModifier, 0), "hover reset delivered");
+                    root.hoverAt = Date.now();
+                } else if (root.phase === 56) {
+                    if (Date.now() - root.hoverAt < 500)
+                        return;
+                    const row = root.appRow("fixture-interaction");
+                    check(input.mouseMove(row, row.width / 2, row.height / 2, Qt.NoButton, Qt.NoModifier, 0), "hover enter delivered");
+                    root.hoverAt = Date.now();
+                } else if (root.phase === 57) {
+                    if (Date.now() - root.hoverAt < 700)
+                        return;
+                    const popup = root.chooser();
+                    check(popup?.visible === true, "pointing at an icon reveals the chooser");
+                    check(popup.hoverOpened, "a pointer-revealed chooser is not pinned");
+                    check(popup.anchor.item === root.appRow("fixture-interaction"),
+                        "the chooser sits on the pointed icon");
+                    const other = root.appRow("fixture-hover-other");
+                    check(input.mouseMove(other, other.width / 2, other.height / 2, Qt.NoButton, Qt.NoModifier, 0), "hover move delivered");
+                    root.hoverAt = Date.now();
+                } else if (root.phase === 58) {
+                    if (Date.now() - root.hoverAt < 700)
+                        return;
+                    const popup = root.chooser();
+                    check(popup?.visible === true, "the chooser survives moving to the next icon");
+                    check(popup.anchor.item === root.appRow("fixture-hover-other"),
+                        "the chooser follows the pointer to the next icon");
+                    check(pill.selectedApp === "fixture-hover-other", "the next icon's windows are listed");
+                    const back = root.appRow("fixture-interaction");
+                    check(input.mouseMove(back, back.width / 2, back.height / 2, Qt.NoButton, Qt.NoModifier, 0), "hover back delivered");
+                    root.hoverAt = Date.now();
+                } else if (root.phase === 59) {
+                    if (Date.now() - root.hoverAt < 700)
+                        return;
+                    const popup = root.chooser();
+                    check(popup?.visible === true && popup.anchor.item === root.appRow("fixture-interaction"),
+                        "the chooser moves back up as well");
+                    check(input.mouseMove(pill, 5, 470, Qt.NoButton, Qt.NoModifier, 0), "hover leave delivered");
+                    root.hoverAt = Date.now();
+                } else if (root.phase === 60) {
+                    if (Date.now() - root.hoverAt < 700)
+                        return;
+                    check(root.chooser()?.visible === false, "leaving the pill closes the revealed chooser");
+                    Services.RunningApps.source = [];
+                } else if (root.phase === 61) {
                     check(Services.RunningApps.groupIds.length === 0, "empty model");
                     interval = 700;
                 } else {
