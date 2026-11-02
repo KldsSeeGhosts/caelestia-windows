@@ -18,8 +18,8 @@ import qs.modules.nexus.common
 // staged WindowsBluetooth facade and connect/disconnect/forget go through its
 // gated helpers. Upstream also exposes Trusted, Blocked and Wake allowed; the
 // WinRT device object has no such setters (the facade's setTrusted/setBlocked/
-// setWakeAllowed always refuse), so those switches stay visible but disabled
-// with the reason instead of pretending to write.
+// setWakeAllowed always refuse), so those three switches are replaced by one
+// Settings link instead of three permanently-off toggles.
 PageBase {
     id: root
 
@@ -164,31 +164,16 @@ PageBase {
             }
         }
 
-        // Connection group
-        ToggleRow {
-            verticalPadding: Tokens.padding.large
+        // Trust, blocking and wake permissions belong to Windows. A single
+        // Settings row says so instead of three disabled switches that always
+        // read as a real "off" state.
+        NavRow {
             first: true
-            text: Tr.trCtx("Trusted", "bluetooth device state")
-            subtext: Tr.tr("Windows manages automatic connection for paired devices")
-            checked: false
-            enabled: false
-        }
-
-        ToggleRow {
-            verticalPadding: Tokens.padding.large
-            text: Tr.trCtx("Blocked", "bluetooth device state")
-            subtext: Tr.tr("Windows Settings manages blocked devices")
-            checked: false
-            enabled: false
-        }
-
-        ToggleRow {
-            verticalPadding: Tokens.padding.large
             last: true
-            text: Tr.tr("Wake allowed")
-            subtext: Tr.tr("Windows manages device wake permissions")
-            checked: false
-            enabled: false
+            icon: "settings_bluetooth"
+            text: Tr.tr("Device settings")
+            subtext: Tr.tr("Trust, blocking and wake are managed by Windows")
+            onClicked: Qt.openUrlExternally("ms-settings:bluetooth")
         }
 
         // Information

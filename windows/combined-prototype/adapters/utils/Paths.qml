@@ -7,10 +7,10 @@ import qs.services
 
 // Resolve the original shell's asset namespace inside the isolated stage.
 QtObject {
-    readonly property string home: Quickshell.env("USERPROFILE").replace(/\\/g, "/")
+    readonly property string home: (Quickshell.env("USERPROFILE") || "").replace(/\\/g, "/")
 
     readonly property string cache: Quickshell.cacheDir.replace(/\\/g, "/")
-    readonly property url configFile: "file:///" + Quickshell.env("CAELESTIA_CONFIG_DIR").replace(/\\/g, "/") + "/shell.json"
+    readonly property url configFile: "file:///" + (Quickshell.env("CAELESTIA_CONFIG_DIR") || "").replace(/\\/g, "/") + "/shell.json"
 
     // Profile-local state. The staged shell.qml pins Quickshell.stateDir to
     // <build>/combined-prototype-profile/state, and the scheme bridge writes

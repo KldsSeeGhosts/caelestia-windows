@@ -200,7 +200,10 @@ PageBase {
             Layout.fillWidth: true
 
             asynchronous: true
-            active: grid.count === 0
+            // The grid model pads itself with null placeholders up to
+            // wallpapersPerRow, so grid.count is never zero. The real list
+            // length decides whether there is anything to show.
+            active: root.localWalls.length === 0
             visible: active
 
             sourceComponent: StyledRect {

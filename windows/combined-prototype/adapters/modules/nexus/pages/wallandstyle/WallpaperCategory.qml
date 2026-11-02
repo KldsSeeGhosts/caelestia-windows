@@ -57,7 +57,9 @@ PageBase {
                 text: modelData?.name ?? ""
                 onClicked: {
                     Wallpapers.setWallpaper(modelData.path);
-                    root.nState.closeSubPage();
+                    // Upstream calls closeSubPage() twice here, which pops this
+                    // page and its parent at once. The sibling pages close the
+                    // one page they belong to, so the duplicate is dropped.
                     root.nState.closeSubPage();
                 }
             }

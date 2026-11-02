@@ -28,9 +28,15 @@ PageBase {
     title: root.nState.selectedNetworkSsid || Tr.trCtx("Network", "wifi network name")
     isSubPage: true
 
+    // `ap` goes null for a moment whenever the facade rebuilds its scan
+    // results, and closing on that transient threw the user back to the
+    // network list mid-rescan. Wait for a quiet period before giving up; a
+    // returning access point stops the timer.
     onApChanged: {
-        if (!root.ap)
-            nState.closeSubPage();
+        if (root.ap)
+            closeTimer.stop();
+        else
+            closeTimer.start();
     }
 
     ColumnLayout {
@@ -38,6 +44,16 @@ PageBase {
         anchors.top: parent.top
         width: root.cappedWidth
         spacing: Tokens.spacing.extraSmall / 2
+
+        Timer {
+            id: closeTimer
+
+            interval: 1500
+            onTriggered: {
+                if (!root.ap)
+                    nState.closeSubPage();
+            }
+        }
 
         SectionHeader {
             first: true
