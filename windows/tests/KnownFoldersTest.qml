@@ -108,6 +108,11 @@ ShellRoot {
         check(Paths.resolveWallpapersDir(knownWith, legacyWith, "//server/share/", "", {}) === "//server/share/", "explicit share root was altered");
         check(Paths.joinPath("D:/", "a.png") === "D:/a.png", "joining under a drive root doubled the separator");
         check(Paths.joinPath("D:/walls", "a.png") === "D:/walls/a.png", "joining under a folder lost the separator");
+        check(Paths.joinPath("", "a.png") === "a.png", "joining under an empty folder produced a rooted path");
+        check(Paths.joinPath("D:", "a.png") === "D:a.png", "joining under a drive-relative folder added a separator");
+        check(Paths.joinPath("/", "a.png") === "/a.png", "joining under the root doubled the separator");
+        check(Paths.normalizePath("/") === "/", "a bare separator was trimmed away");
+        check(Paths.normalizePath("D:") === "D:", "a drive-relative path was altered");
         check(Paths.resolveWallpapersDir("D:/", "D:/", "", "", {}) === "D:/Wallpapers", "a drive-root Pictures folder doubled the separator");
     }
 

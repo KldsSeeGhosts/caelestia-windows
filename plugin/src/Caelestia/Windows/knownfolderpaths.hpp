@@ -21,9 +21,11 @@ inline QString normalizeFolderPath(const QString& input) {
         return path + u'/';
     }
 
+    // A bare separator is the root of the current drive and stays one.
+    const bool separatorsOnly = !path.isEmpty() && path.count(u'/') == path.size();
     while (path.endsWith(u'/'))
         path.chop(1);
-    return path;
+    return separatorsOnly ? QStringLiteral("/") : path;
 }
 
 // Resolve a Windows known folder so redirected folders (OneDrive folder backup

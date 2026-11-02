@@ -1,11 +1,15 @@
 #pragma once
 
 #include <functional>
+#include <memory>
+#include <mutex>
+#include <system_error>
 #include <thread>
+#include <vector>
 
 #include <qcoreapplication.h>
+#include <qhash.h>
 #include <qobject.h>
-#include <qpointer.h>
 #include <qqmlintegration.h>
 
 #include "knownfolderpaths.hpp"
@@ -31,7 +35,19 @@ class KnownFolders : public QObject {
     Q_PROPERTY(QString commonPrograms READ commonPrograms CONSTANT)
 
 public:
-    using QObject::QObject;
+    explicit KnownFolders(QObject* parent = nullptr)
+        : QObject(parent) {
+        // The delivery receiver lives and dies with this object on the GUI
+        // thread; events still queued for it are dropped when it is destroyed.
+        m_bridge->receiver = new QObject(this);
+        if (auto* app = QCoreApplication::instance()) {
+            // The backend deletes the application before it ends the process,
+            // so stop delivering as soon as shutdown begins.
+            connect(app, &QCoreApplication::aboutToQuit, this, [bridge = m_bridge] { bridge->close(); });
+        }
+    }
+
+    ~KnownFolders() override { m_bridge->close(); }
 
     QString pictures() const { return m_pictures; }
 
@@ -61,28 +77,92 @@ public:
     // Looks for wallpaper images in a folder on a worker thread and reports the
     // answer through imagesProbed on the GUI thread. The enumeration can stall
     // for a long time on an unavailable network share, so it never runs on the
-    // GUI thread. The worker is detached on purpose: joining it at shutdown
-    // would hold the exit of the shell for as long as the share keeps stalling,
-    // and it touches only its own copies and a guarded pointer.
+    // GUI thread, and a request for a folder that is already being probed joins
+    // that probe (process-wide, ignoring case and trailing separators), so
+    // repeated requests against a hung share cannot pile up threads.
+    //
+    // The worker is detached on purpose: joining it at shutdown would hold the
+    // exit of the shell for as long as the share keeps stalling. It reaches the
+    // GUI thread only through the delivery bridge below.
     Q_INVOKABLE void probeImages(const QString& path) {
-        std::thread([self = QPointer<KnownFolders>(this), probe = m_probe, path] {
-            const bool found = probe(path);
-            if (auto* app = QCoreApplication::instance()) {
-                QMetaObject::invokeMethod(
-                    app,
-                    [self, path, found] {
-                        if (self)
-                            emit self->imagesProbed(path, found);
-                    },
-                    Qt::QueuedConnection);
-            }
-        }).detach();
+        const auto key = normalizeFolderPath(path).toLower();
+        auto& registry = inflight();
+        {
+            std::lock_guard lock(registry.mutex);
+            const auto pending = registry.waiters.find(key);
+            const bool join = pending != registry.waiters.end();
+            registry.waiters[key].push_back({ m_bridge, this, path });
+            if (join)
+                return;
+        }
+
+        try {
+            std::thread([key, path, probe = m_probe] {
+                const bool found = probe(path);
+
+                std::vector<Waiter> waiters;
+                {
+                    auto& registry = inflight();
+                    std::lock_guard lock(registry.mutex);
+                    waiters = std::move(registry.waiters[key]);
+                    registry.waiters.remove(key);
+                }
+                for (const auto& waiter : waiters)
+                    deliver(waiter, found);
+            }).detach();
+        } catch (const std::system_error&) {
+            // No thread could be started: forget the request so a later one retries.
+            std::lock_guard lock(registry.mutex);
+            registry.waiters.remove(key);
+        }
     }
 
 signals:
     void imagesProbed(const QString& path, bool found);
 
 private:
+    // Joint ownership of the hand-off between workers and the GUI thread. The
+    // receiver is touched only under the mutex, and close() clears it before
+    // the receiver is destroyed, so a worker never posts to a dead object. A
+    // close waits only for a post in progress, never for an enumeration.
+    struct Bridge {
+        std::mutex mutex;
+        QObject* receiver = nullptr;
+
+        void close() {
+            std::lock_guard lock(mutex);
+            receiver = nullptr;
+        }
+    };
+
+    struct Waiter {
+        std::shared_ptr<Bridge> bridge;
+        KnownFolders* owner; // valid whenever the bridge receiver is: it is the owner's child
+        QString path;
+    };
+
+    struct Inflight {
+        std::mutex mutex;
+        QHash<QString, std::vector<Waiter>> waiters;
+    };
+
+    // Never destroyed: a detached worker may still be running at process exit.
+    static Inflight& inflight() {
+        static auto* registry = new Inflight;
+        return *registry;
+    }
+
+    static void deliver(const Waiter& waiter, bool found) {
+        std::lock_guard lock(waiter.bridge->mutex);
+        if (!waiter.bridge->receiver)
+            return;
+        QMetaObject::invokeMethod(
+            waiter.bridge->receiver,
+            [owner = waiter.owner, path = waiter.path, found] { emit owner->imagesProbed(path, found); },
+            Qt::QueuedConnection);
+    }
+
+    const std::shared_ptr<Bridge> m_bridge = std::make_shared<Bridge>();
     ImageProbe m_probe = folderContainsImages;
 
     const QString m_pictures = resolveKnownFolder(FOLDERID_Pictures);

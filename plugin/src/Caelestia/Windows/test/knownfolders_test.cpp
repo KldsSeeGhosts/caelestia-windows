@@ -26,6 +26,38 @@ namespace {
 using namespace Qt::StringLiterals;
 using caelestia::shell::windows::folderContainsImages;
 
+// A probe the test controls: it blocks until released, like an enumeration of
+// an unavailable network share. Shared with the detached worker, which can
+// outlive the test function.
+struct Gate {
+    std::mutex mutex;
+    std::condition_variable changed;
+    bool entered = false;
+    bool released = false;
+
+    // Called by the probe: announces itself, then waits for release().
+    bool block() {
+        std::unique_lock lock(mutex);
+        entered = true;
+        changed.notify_all();
+        changed.wait(lock, [&] { return released; });
+        return true;
+    }
+
+    bool waitEntered() {
+        std::unique_lock lock(mutex);
+        return changed.wait_for(lock, std::chrono::seconds(10), [&] { return entered; });
+    }
+
+    void release() {
+        {
+            std::lock_guard lock(mutex);
+            released = true;
+        }
+        changed.notify_all();
+    }
+};
+
 bool writeFile(const QString& path) {
     QFile file(path);
     return file.open(QIODevice::WriteOnly) && file.write("x") == 1;
@@ -166,6 +198,10 @@ private slots:
         QTest::newRow("share folder native") << u"\\\\server\\share\\Pictures\\"_s << u"//server/share/Pictures"_s;
         // Qt drops the extended-length prefix; the root keeps its separator.
         QTest::newRow("extended drive root") << u"\\\\?\\C:\\"_s << u"C:/"_s;
+        QTest::newRow("bare separator") << u"/"_s << u"/"_s;
+        QTest::newRow("bare native separator") << u"\\"_s << u"/"_s;
+        QTest::newRow("repeated bare separators") << u"///"_s << u"/"_s;
+        QTest::newRow("rooted folder") << u"/Users/x/"_s << u"/Users/x"_s;
         QTest::newRow("plain folder") << u"C:/Users/x/"_s << u"C:/Users/x"_s;
         QTest::newRow("no separator") << u"C:/Users/x"_s << u"C:/Users/x"_s;
     }
@@ -284,6 +320,89 @@ private slots:
         state->gate.notify_all();
         QTest::qWait(200);
         QCoreApplication::processEvents();
+    }
+
+    void probeAfterApplicationShutdownBeginsIsNotDelivered() {
+        // The backend deletes the application right after aboutToQuit. A probe
+        // still blocked at that point must neither be waited for nor deliver
+        // anything when it finally completes.
+        const auto gate = std::make_shared<Gate>();
+        caelestia::shell::windows::KnownFolders folders;
+        folders.setImageProbe([gate](const QString&) { return gate->block(); });
+        QSignalSpy spy(&folders, &caelestia::shell::windows::KnownFolders::imagesProbed);
+
+        folders.probeImages(u"//offline/shutdown"_s);
+        QVERIFY(gate->waitEntered());
+
+        // The signal is private to Qt, so emit it by name.
+        QVERIFY(QMetaObject::invokeMethod(QCoreApplication::instance(), "aboutToQuit", Qt::DirectConnection));
+
+        QElapsedTimer timer;
+        timer.start();
+        gate->release();
+        QTest::qWait(300);
+        QCoreApplication::processEvents();
+        QCOMPARE(spy.count(), 0);
+        QVERIFY2(timer.elapsed() < 5000, "shutdown waited for the probe");
+    }
+
+    void probeThatCompletesDuringTeardownNeverTouchesFreedMemory() {
+        // Race the worker's post against destruction of the receiver. Every
+        // round uses its own path, so no round joins another's probe.
+        for (int i = 0; i < 300; ++i) {
+            auto folders = std::make_unique<caelestia::shell::windows::KnownFolders>();
+            folders->setImageProbe([](const QString&) { return true; });
+            folders->probeImages(u"//race/%1"_s.arg(i));
+            if (i % 3 == 0)
+                QCoreApplication::processEvents();
+            if (i % 7 == 0)
+                QThread::yieldCurrentThread();
+            folders.reset();
+        }
+        QTest::qWait(200);
+        QCoreApplication::processEvents();
+    }
+
+    void requestsForOneFolderShareASingleProbe() {
+        const auto gate = std::make_shared<Gate>();
+        const auto calls = std::make_shared<std::atomic<int>>(0);
+        const auto probe = [gate, calls](const QString&) {
+            ++*calls;
+            return gate->block();
+        };
+
+        caelestia::shell::windows::KnownFolders first;
+        caelestia::shell::windows::KnownFolders second;
+        first.setImageProbe(probe);
+        second.setImageProbe(probe);
+        QSignalSpy firstSpy(&first, &caelestia::shell::windows::KnownFolders::imagesProbed);
+        QSignalSpy secondSpy(&second, &caelestia::shell::windows::KnownFolders::imagesProbed);
+
+        // Repeated requests, case and trailing separator differences, and
+        // another instance all join the pending probe.
+        first.probeImages(u"//offline/hung/Walls"_s);
+        QVERIFY(gate->waitEntered());
+        for (int i = 0; i < 50; ++i)
+            first.probeImages(u"//offline/hung/Walls"_s);
+        first.probeImages(u"//OFFLINE/hung/walls/"_s);
+        second.probeImages(u"//offline/hung/Walls"_s);
+
+        QTest::qWait(100);
+        QCOMPARE(calls->load(), 1);
+        QCOMPARE(firstSpy.count(), 0);
+
+        gate->release();
+        QTRY_COMPARE_WITH_TIMEOUT(firstSpy.count(), 52, 10000);
+        QTRY_COMPARE_WITH_TIMEOUT(secondSpy.count(), 1, 10000);
+        QCOMPARE(calls->load(), 1);
+        // Each requester gets the path it asked with.
+        QCOMPARE(firstSpy.last().at(0).toString(), u"//OFFLINE/hung/walls/"_s);
+        QCOMPARE(firstSpy.last().at(1).toBool(), true);
+
+        // Once answered, the folder can be probed again.
+        first.probeImages(u"//offline/hung/Walls"_s);
+        QTRY_COMPARE_WITH_TIMEOUT(firstSpy.count(), 53, 10000);
+        QCOMPARE(calls->load(), 2);
     }
 
     void explicitOverrideWins() {

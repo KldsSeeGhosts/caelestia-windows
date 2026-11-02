@@ -63,7 +63,11 @@ QtObject {
         return Native.KnownFolders.normalizePath(String(path || ""));
     }
     function joinPath(dir, name): string {
-        return dir.endsWith("/") ? dir + name : dir + "/" + name;
+        // A drive-relative "D:" joins without a separator: "D:/a" would leave
+        // the drive's current directory. An empty dir joins to a relative name.
+        if (!dir || dir.endsWith("/") || /^[A-Za-z]:$/.test(dir))
+            return dir + name;
+        return dir + "/" + name;
     }
     function samePath(a, b): bool {
         return normalizePath(a).toLowerCase() === normalizePath(b).toLowerCase();
