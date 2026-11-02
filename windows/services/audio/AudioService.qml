@@ -9,7 +9,7 @@ QtObject {
     property bool enabled: false
     property bool controlsEnabled: false
     property real maxVolume: 1
-    property real audioIncrement: 0.1
+    property real audioIncrement: 0.05
 
     // A loader or fixture can supply a known failure/denial. With an older
     // backend, ready=false cannot identify a Windows access-denied HRESULT.

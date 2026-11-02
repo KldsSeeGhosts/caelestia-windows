@@ -282,6 +282,13 @@ QtObject {
         noOp(() => service.decrementVolume(0), "zero output decrement");
         noOp(() => service.incrementSourceVolume(0), "zero input increment");
         noOp(() => service.decrementSourceVolume(0), "zero input decrement");
+        close(service.audioIncrement, 0.05, "Windows default is five percent");
+        check(service.incrementVolume() && service.incrementSourceVolume(), "default increments");
+        close(service.volume, 0.55, "default output increment is five percent");
+        close(service.sourceVolume, 0.55, "default input increment is five percent");
+        check(service.decrementVolume() && service.decrementSourceVolume(), "default decrements");
+        close(service.volume, 0.5, "default output decrement is five percent");
+        close(service.sourceVolume, 0.5, "default input decrement is five percent");
         service.audioIncrement = 0.1;
         check(service.incrementVolume() && service.decrementSourceVolume(), "omitted step uses configured increment");
         close(service.volume, 0.6, "configured output increment");
