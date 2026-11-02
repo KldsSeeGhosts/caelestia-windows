@@ -158,10 +158,15 @@ revisions against `windows/sources.lock.json`. A QML error, missing import or
 plugin DLL, missing pass marker, or 90-second timeout fails the run.
 
 The exit code is 0 on pass and 1 on failure, with a one-line summary. The
-temporary stage, profile and stdout/stderr are removed on pass, and kept and
-printed on failure. `-TimeoutSeconds`, `-RunRoot` and `-Keep` help with
-debugging. The command does not install anything, run the live shell, or read
-the live profile.
+temporary stage, profile, stdout/stderr and Quickshell text log are removed on
+pass, and kept with matched diagnostics printed on failure. The smoke also
+fails if its captured output contains a MAC-like address or any
+`quickshell.windows.bluetooth` activity, and it redacts those patterns from
+failure output. `-TimeoutSeconds`, `-RunRoot` and `-Keep` help with debugging.
+`QS_RUNTIME_DIR` only selects where Quickshell writes its own run/log files; it
+is not a containment boundary and accepts relative, traversal and UNC paths.
+The command does not install anything, run the live shell, or read the live
+profile.
 
 ## Native bar/session prototype
 

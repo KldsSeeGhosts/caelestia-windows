@@ -23,9 +23,11 @@ param(
 #
 # It does not install, start the live shell, reserve work area, register
 # autostart or hotkeys, read the live profile, or read notification content.
-# It fails on a runtime/QML diagnostic, a missing PASS marker or ready state, or
-# a timeout. A pass removes the run directory; a failure keeps it and prints its
-# path. Exit code is 0 on pass and 1 on failure.
+# It fails on a runtime/QML diagnostic, a missing PASS marker or ready state, a
+# MAC-like address or quickshell.windows.bluetooth activity in the captured
+# logs, or a timeout. Failure output redacts MAC addresses and device paths.
+# A pass removes the run directory; a failure keeps it and prints its path.
+# Exit code is 0 on pass and 1 on failure.
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
 $BuildRoot = [IO.Path]::GetFullPath($BuildRoot)
@@ -227,8 +229,37 @@ try {
     $stderr = $errTask.GetAwaiter().GetResult()
     [IO.File]::WriteAllText((Join-Path $logRoot 'stdout.log'), $stdout)
     [IO.File]::WriteAllText((Join-Path $logRoot 'stderr.log'), $stderr)
+
+    # Quickshell writes its own text log under QS_RUNTIME_DIR. Include it in the
+    # privacy/diagnostic scan and keep a copy with the run artifacts.
+    $quickshellLog = ''
+    $runtimeRun = Join-Path $profile 'runtime\run'
+    if (Test-Path -LiteralPath $runtimeRun) {
+        $quickshellLog = (@(Get-ChildItem -LiteralPath $runtimeRun -Recurse -File -Filter '*.log' -ErrorAction SilentlyContinue |
+            Sort-Object FullName | ForEach-Object { [IO.File]::ReadAllText($_.FullName) }) -join "`n")
+        [IO.File]::WriteAllText((Join-Path $logRoot 'quickshell.log'), $quickshellLog)
+    }
     $exitCode = $process.ExitCode
-    $text = "$stdout`n$stderr"
+    $text = "$stdout`n$stderr`n$quickshellLog"
+
+    # A public smoke log must never carry a Bluetooth adapter address or device
+    # activity. These patterns also redact the failure output below.
+    # QS_RUNTIME_DIR is an isolation path, not a containment boundary: it
+    # accepts relative, traversal and UNC paths by design.
+    $macPattern = '(?i)(?<![0-9a-f])(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2}(?![0-9a-f])'
+    $devicePathPattern = '(?i)\\\\\?\\[^\s"''<>]*'
+    $bluetoothPattern = 'quickshell\.windows\.bluetooth'
+    $privacyFailure = ''
+    if ([regex]::IsMatch($text, $macPattern)) {
+        $privacyFailure = 'a MAC-like address appeared in the smoke logs'
+    } elseif (@($text -split "`n" | Where-Object { $_ -match $bluetoothPattern }).Count -gt 0) {
+        $privacyFailure = 'native Bluetooth adapter/device activity appeared in the smoke logs'
+    }
+    function Get-SafeLine([string]$line) {
+        $line = [regex]::Replace($line, $macPattern, '<redacted-mac>')
+        $line = [regex]::Replace($line, $devicePathPattern, '<redacted-device-path>')
+        return $line
+    }
 
     # Offscreen QPA emits these two environment warnings of its own. They are
     # not QML diagnostics and are the only lines excluded by name.
@@ -244,7 +275,7 @@ try {
                 $_ -match 'is not defined|Cannot read property|Unable to assign|Cannot assign to|is not installed|Failed to load component|No such file or directory'
             })
     }
-    $diagnostics = Get-Diagnostics $text
+    $diagnostics = @(Get-Diagnostics $text | ForEach-Object { $_.TrimEnd() } | Where-Object { $_.Trim() } | Select-Object -Unique)
 
     $stateMatch = [regex]::Match($text, 'CAELESTIA_SHELL_LIVE_STATE (\{[^\r\n]+\})')
     if ($stateMatch.Success) {
@@ -262,7 +293,9 @@ try {
             -not $state.statisticsActive -and -not $state.networkStatisticsActive -and $controlsOff
     }
 
-    if ($timedOut) {
+    if ($privacyFailure) {
+        $failure = $privacyFailure
+    } elseif ($timedOut) {
         $failure = "timed out after $TimeoutSeconds s waiting for the smoke to exit"
     } elseif ($exitCode -ne 0) {
         $failure = "qs.exe exited with code $exitCode"
@@ -295,10 +328,9 @@ if ($passed) {
 Write-Output "FAIL Test-Smoke: $failure"
 if ($diagnostics.Count -gt 0) {
     Write-Output 'Relevant diagnostics:'
-    $diagnostics | Select-Object -First 25 | ForEach-Object { Write-Output "  $_" }
-} elseif ($text) {
-    Write-Output 'Last runtime lines:'
-    @($text -split "`n" | Where-Object { $_.Trim() }) | Select-Object -Last 20 | ForEach-Object { Write-Output "  $_" }
+    $diagnostics | Select-Object -First 25 | ForEach-Object { Write-Output ('  ' + (Get-SafeLine $_)) }
+} else {
+    Write-Output 'No matched diagnostics; inspect the kept run directory.'
 }
 Write-Output "Run directory kept: $run"
 exit 1
