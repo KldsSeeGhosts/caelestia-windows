@@ -11,6 +11,7 @@
 
 #include <utility>
 
+#include "redact.hpp"
 #include "util/i18n.hpp"
 
 namespace {
@@ -21,6 +22,8 @@ Q_LOGGING_CATEGORY(lcSettingsFile, "caelestia.settings.file", QtInfoMsg)
 
 namespace caelestia::shell::settings {
 
+// Layer files live under per-monitor directories named after the monitor, so
+// every log of m_path goes through logId().
 using Qt::StringLiterals::operator""_s;
 using util::i18n::mark;
 
@@ -127,7 +130,7 @@ void SettingsFile::onLoadDebounced() {
     if (load(isFinalTry) == LoadResult::ParseError && !isFinalTry) {
         // Likely a partial write, retry after another debounce
         ++m_loadRetries;
-        qCDebug(lcSettingsFile, "Retrying load of %s (%d/%d)", qUtf8Printable(m_path), m_loadRetries, k_maxLoadRetries);
+        qCDebug(lcSettingsFile, "Retrying load of %s (%d/%d)", qUtf8Printable(logId(m_path)), m_loadRetries, k_maxLoadRetries);
         m_loadDebounce->start();
     }
 }
@@ -145,7 +148,7 @@ SettingsFile::LoadResult SettingsFile::load(bool reportErrors) {
     }
 
     if (!file.open(QIODevice::ReadOnly)) {
-        qCWarning(lcSettingsFile, "Failed to open %s for reading: %s", qUtf8Printable(m_path),
+        qCWarning(lcSettingsFile, "Failed to open %s for reading: %s", qUtf8Printable(logId(m_path)),
             qUtf8Printable(file.errorString()));
         emit readFailed(mark(u"Failed to open: %1"_s, { file.errorString() }));
         return LoadResult::Error;
@@ -159,11 +162,11 @@ SettingsFile::LoadResult SettingsFile::load(bool reportErrors) {
 
     if (error.error != QJsonParseError::NoError) {
         if (reportErrors) {
-            qCWarning(lcSettingsFile, "Failed to parse %s as JSON: %s", qUtf8Printable(m_path),
+            qCWarning(lcSettingsFile, "Failed to parse %s as JSON: %s", qUtf8Printable(logId(m_path)),
                 qUtf8Printable(error.errorString()));
             emit readFailed(mark(u"Failed to parse: %1"_s, { error.errorString() }));
         } else {
-            qCDebug(lcSettingsFile, "Failed to parse %s as JSON: %s", qUtf8Printable(m_path),
+            qCDebug(lcSettingsFile, "Failed to parse %s as JSON: %s", qUtf8Printable(logId(m_path)),
                 qUtf8Printable(error.errorString()));
         }
         return LoadResult::ParseError;
@@ -180,7 +183,7 @@ SettingsFile::LoadResult SettingsFile::load(bool reportErrors) {
     m_lastData = json;
     emit changed();
 
-    qCDebug(lcSettingsFile) << "Read JSON from" << m_path;
+    qCDebug(lcSettingsFile) << "Read JSON from" << logId(m_path);
     qCDebug(lcSettingsFile) << " " << json;
 
     return LoadResult::Changed;
@@ -205,7 +208,7 @@ void SettingsFile::save() {
 
 void SettingsFile::scheduleSaveRetry() {
     if (m_saveRetries >= k_maxSaveRetries) {
-        qCWarning(lcSettingsFile, "Giving up saving %s after %d retries", qUtf8Printable(m_path), m_saveRetries);
+        qCWarning(lcSettingsFile, "Giving up saving %s after %d retries", qUtf8Printable(logId(m_path)), m_saveRetries);
         return;
     }
 
@@ -233,7 +236,7 @@ void SettingsFile::writeNow() {
     QSaveFile file(m_path);
 
     if (!file.open(QIODevice::WriteOnly)) {
-        qCWarning(lcSettingsFile, "Failed to open %s for writing: %s", qUtf8Printable(m_path),
+        qCWarning(lcSettingsFile, "Failed to open %s for writing: %s", qUtf8Printable(logId(m_path)),
             qUtf8Printable(file.errorString()));
         emit writeFailed(mark(u"Failed to open: %1"_s, { file.errorString() }));
         scheduleSaveRetry();
@@ -243,7 +246,7 @@ void SettingsFile::writeNow() {
     file.write(data);
 
     if (!file.commit()) {
-        qCWarning(lcSettingsFile, "Failed to write %s: %s", qUtf8Printable(m_path), qUtf8Printable(file.errorString()));
+        qCWarning(lcSettingsFile, "Failed to write %s: %s", qUtf8Printable(logId(m_path)), qUtf8Printable(file.errorString()));
         emit writeFailed(mark(u"Failed to write: %1"_s, { file.errorString() }));
         scheduleSaveRetry();
         return;
@@ -255,7 +258,7 @@ void SettingsFile::writeNow() {
     m_saveRetries = 0;
     m_saveRetry->stop();
     m_lastData = json;
-    qCDebug(lcSettingsFile) << "Saved" << m_path;
+    qCDebug(lcSettingsFile) << "Saved" << logId(m_path);
 
     initWatcher(); // The file may have just been created, or replaced by the rename
 }

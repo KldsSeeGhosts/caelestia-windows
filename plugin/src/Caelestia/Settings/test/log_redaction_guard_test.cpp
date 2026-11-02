@@ -91,6 +91,13 @@ QRegularExpressionMatch rawScreenValue(const QString& code) {
     return pattern.match(code);
 }
 
+// A settings file's path contains the per-monitor directory, which is named
+// after the monitor, so the path is as sensitive as the name.
+QRegularExpressionMatch rawLayerPath(const QString& code) {
+    static const auto pattern = QRegularExpression(QStringLiteral(R"(\bm_path\b)"));
+    return pattern.match(code);
+}
+
 bool isLogStart(const QString& line) {
     static const auto pattern = QRegularExpression(
         QStringLiteral(R"(\bqC(?:Debug|Info|Warning|Critical)\b|\bq(?:Debug|Info|Warning|Critical)\s*\()")
@@ -116,6 +123,13 @@ private slots:
         QVERIFY(rawScreenValue(QStringLiteral("qCDebug(lc) << screenName;")).hasMatch());
         QVERIFY(rawScreenValue(QStringLiteral("qCDebug(lc) << nameFor(layer);")).hasMatch());
         QVERIFY(rawScreenValue(QStringLiteral("qCDebug(lc) << screen->geometry() << screen;")).hasMatch());
+    }
+
+    void layerPathsAreRaw() {
+        QVERIFY(rawLayerPath(QStringLiteral("qCWarning(lc, , qUtf8Printable(m_path));")).hasMatch());
+        QVERIFY(rawLayerPath(QStringLiteral("qCDebug(lc) << m_path;")).hasMatch());
+        // Wrapped in logId() it is stripped before matching.
+        QVERIFY(!rawLayerPath(stripSafeCalls(QStringLiteral("qCDebug(lc) << logId(m_path);"))).hasMatch());
     }
 
     void screenNamesAreRedacted() {
@@ -163,7 +177,9 @@ private slots:
                 index = cursor;
 
                 const auto code = stripSafeCalls(stripLineComments(stripStrings(statement)));
-                const auto raw = rawScreenValue(code);
+                auto raw = rawScreenValue(code);
+                if (!raw.hasMatch() && relative == QStringLiteral("Settings/settingsfile.cpp"))
+                    raw = rawLayerPath(code);
                 if (raw.hasMatch()) {
                     failures.append(QStringLiteral("%1:%2: raw screen value `%3` is streamed to a log")
                                         .arg(relative)

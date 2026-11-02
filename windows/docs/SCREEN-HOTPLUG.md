@@ -117,17 +117,15 @@ Names are allocated once, on first discovery:
 - otherwise the lowest free ` (2)`, ` (3)`... suffix.
 
 Existing assignments are never renumbered, disconnected monitors stay in the
-file, and the file is written atomically (`QSaveFile`, temp then replace). Each
-entry records the date it was last seen. At most 64 are kept; the least recently
-seen disconnected ones are dropped first and a connected monitor never is. A
-disconnected reservation whose label is shared with any other reservation is
-never dropped either: it anchors that label's numbering, and forgetting it would
-hand its name, and the settings stored under it, to the next monitor with that
-label. If every candidate is protected the file simply grows past 64. A
-user who already has monitor A alone keeps `X` and its settings when identical
-monitor B is connected; B gets `X (2)`. Removing B never renames A, and a restart
-reloads the same assignments. A genuine label that ends in `(2)` is just a
-label; it is reserved exactly like any other.
+file for good, and the file is written atomically (`QSaveFile`, temp then
+replace). There is no size cap and nothing is evicted: an entry is about 100
+bytes, so even thousands of monitors stay small, and a name is therefore never
+handed to a different monitor, or the settings stored under it. Each entry
+records the date it was last seen, for diagnostics only. A user who already has
+monitor A alone keeps `X` and its settings when identical monitor B is
+connected; B gets `X (2)`. Removing B never renames A, and a restart reloads the
+same assignments. A genuine label that ends in `(2)` is just a label; it is
+reserved exactly like any other.
 
 If the file exists but cannot be read or parsed, it is left untouched: the
 registry runs on in-memory names for that session, never saves, and logs a fixed
@@ -138,15 +136,26 @@ when the QScreen is replaced or its target changes behind the same GDI source.
 Their names are reserved in memory for as long as the session id survives, so
 unplugging one of two identical session-only monitors never renames the other;
 only a new session id is allocated a name, and it avoids every persistent name.
-When the same live screen later gains an interface path, `identityUpgraded`
-carries everything the screen owns from the session id to the persistent one:
-for gamma the ramps, factors and restoration obligations, for brightness the
-routes, last values, queued writes, the in-flight ownership that keeps a second
-write out, and the settle timers. Work already running under the old id (a
-worker completion, a timer, a native write that is still executing) resolves to
-the current id through an alias that lives as long as the screen. Brightness and gamma drop
-session-keyed state only when the id leaves the topology, so a replacement
-monitor starts fresh.
+
+A screen's identity is resolved once, when it is discovered, from DisplayConfig
+and EnumDisplayDevices together; the interface path of either source wins. There
+are no live identity upgrades. If a session-only screen later gains a path (for
+example in a remote session) the registry treats it as a removal followed by an
+addition: it emits `identityRetired` for the old id, and the screen then appears
+under its persistent id with a name allocated like any new monitor's. The same
+signal is emitted, before anything is torn down, when a screen leaves the
+topology, so every id is retired the same way.
+
+`identityRetired` is emitted while the id still resolves to the live screen.
+Gamma restores the saved original ramp at that point and then drops its state;
+brightness drops its route, values, queued write, busy state and settle timer.
+Each bumps a per-id lifetime counter, and any worker or native call that was
+started under the old lifetime is dropped when it completes: a write reports
+failure once, a probe reports the request as unavailable, a read-back publishes
+nothing, and a gamma call that spans a retire never records a snapshot or
+ownership (a write that was already running is put back). A monitor that comes
+back with the same persistent id therefore starts clean and is never left busy
+by work from before it left.
 
 `ShellScreen.name` is the unique name. It stays name-shaped for upstream QML
 that compares or displays `screen.name`, but native routing resolves it through
@@ -157,8 +166,8 @@ the global screen list still republish after identity changes.
 
 | Consumer | Key before | After |
 | --- | --- | --- |
-| `src/windows/system/brightness.cpp` route, last value, generation, in-flight, settle timers | friendly name | persistent `stableId`; session keys follow an id upgrade of the same screen and are pruned on removal. Probes/drives still use the live QScreen's HMONITOR |
-| `src/windows/system/gamma.cpp` backlight/dim factors, floors, saved ramps, restoration set | friendly name | `stableId`; `CreateDC` resolves the live GDI source, never an opaque id. Session keys follow an id upgrade of the same screen (ramps and restoration included) and are pruned on removal |
+| `src/windows/system/brightness.cpp` route, last value, generation, in-flight, settle timers | friendly name | persistent `stableId`; everything is dropped when the id is retired (removal, or another identity) and in-flight completions of the old lifetime are discarded. Probes/drives still use the live QScreen's HMONITOR |
+| `src/windows/system/gamma.cpp` backlight/dim factors, floors, saved ramps, restoration set | friendly name | `stableId`; `CreateDC` resolves the live GDI source, never an opaque id. On retire the saved ramp is restored first, then the state is dropped; native calls that span a retire abort |
 | `src/windows/system/night_light.cpp` | friendly name pass-through | unique name resolved by gamma |
 | `src/windows/system/screenshot.cpp`, `screen_recorder.cpp`, `input.cpp`, `desktop_drop.cpp`, `tools/brightness_probe.cpp` | friendly label selection/publication | unique name, resolved through the registry; no label scan |
 | `src/windows/tiling.cpp` `screen:` selectors and `tiling_scope.cpp` | friendly name | unique name; layout ownership remains desktop GUID plus QScreen pointer |
