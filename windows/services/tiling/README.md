@@ -3,9 +3,7 @@
 M3-2 stages 4/5 groundwork: constructing the backend's `Tiling` controller
 behind bounded opt-ins, applying its options without enabling it, and
 explaining fitting failures on Caelestia's original toast surface. The M3-1
-audit's one-active-tiler and construction-side-effect rules apply; see
-`windows/audits/M3-BACKEND-API.md` ("Tiling options and lifecycle", "Startup
-effects and safety").
+audit's one-active-tiler and construction-side-effect rules apply.
 
 | file | role |
 | --- | --- |
