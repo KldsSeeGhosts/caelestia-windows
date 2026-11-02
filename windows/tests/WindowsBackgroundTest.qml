@@ -19,10 +19,14 @@ Item {
     // The two backend shapes the adapter must support. The current runtime has
     // no underlayActive property. The feature-detected shape mirrors the
     // backend contract: an embedded WorkerW window with no insert-after, no
-    // icons embedding and no refused SetParent is the underlay.
+    // icons embedding, no refused SetParent and a visible foreign wallpaper
+    // window still inside the host is the underlay. When that window leaves,
+    // the acknowledgement drops even though the host stays embedded (#220).
     property QtObject underlaySupportedHost: QtObject {
         property bool embedRefused: false
+        property bool coveredByForeign: false
         property bool underlayActive: enabled && !embedRefused && aboveIcons.length === 0
+            && coveredByForeign
         property bool active: false
         property bool enabled: false
         property var aboveIcons: []
@@ -38,7 +42,11 @@ Item {
         property bool externalWallpaperActive: false
         property string current: "file:///wallpaper.png"
     }
-    property QtObject wallpaperEngine: QtObject { property bool running: false }
+    property QtObject wallpaperEngine: QtObject {
+        property bool running: false
+        property int scans: 0
+        function refresh(deep): void { scans++ }
+    }
     property QtObject globalConfig: QtObject {
         function forScreen(name): var { return root.screenConfig; }
     }
@@ -86,6 +94,7 @@ Item {
     // WINDOWS_BACKGROUND_PROPERTIES
     // WINDOWS_BACKGROUND_SCREENS
     // RECONCILE_DESKTOP
+    // UNDERLAY_HANDLER
     // CHECK_READY
 
     property int assertions: 0
@@ -112,7 +121,7 @@ Item {
             nativeLayer = root.underlaySupportedHost;
             nativeLayer.active = true;
             check(underlaySupported, "feature detection finds the backend property");
-            check(underlayActive, "an empty icon embed is the underlay");
+            check(!underlayActive, "own desktop has no foreign wallpaper window");
             check(!externalActive, "no external owner yet");
             check(backgroundRequested && hostEnabled, "requested background hosts its own desktop");
             check(desktopIcons === "Behind", "icons default to behind");
@@ -138,10 +147,11 @@ Item {
             check(!hostEnabled, "legacy backend yields to an external owner");
             check(screens.length === 0, "legacy yield unmounts the screens");
 
-            // A supporting backend acknowledges the empty-icon embed and keeps
-            // the windows mounted over the external owner.
+            // A supporting backend acknowledges the foreign wallpaper window
+            // in the host and keeps the windows mounted over the external owner.
             nativeLayer = root.underlaySupportedHost;
-            check(underlaySupported && underlayActive, "supporting backend acknowledges the empty-icon embed");
+            nativeLayer.coveredByForeign = true;
+            check(underlaySupported && underlayActive, "supporting backend acknowledges the foreign owner");
             check(hostEnabled, "acknowledged underlay hosts over the external owner");
             check(screens.length === 2, "acknowledged underlay mounts every screen");
             nativeLayer.aboveIcons = ["caelestia-background"];
@@ -216,6 +226,7 @@ Item {
             // Requesting the background off always releases the host.
             nativeLayer = root.underlaySupportedHost;
             nativeLayer.aboveIcons = [];
+            nativeLayer.coveredByForeign = true;
             nativeLayer.enabled = true;
             wallpapers.externalWallpaperActive = true;
             environmentValues = ({ CAELESTIA_WINDOWS_BACKGROUND: "0" });
@@ -261,12 +272,24 @@ Item {
             check(checkReady(screen), "underlay readiness does not depend on process discovery");
             wallpaperEngine.running = true;
 
-            // The external owner may stop before the backend releases the
-            // embed. The same window stays ready across that handoff.
+            // The external wallpaper window can leave the host before the
+            // process scan clears the owner. The backend drops the
+            // acknowledgement, the adapter yields, and it asks for an
+            // immediate re-scan instead of waiting for the idle poll.
+            wallpaperEngine.scans = 0;
+            nativeLayer.coveredByForeign = false;
+            check(!underlayActive, "the backend drops the underlay acknowledgement at handback");
+            check(externalActive, "the process guard may still see the external owner");
+            check(wallpaperEngine.scans === 1, "the handback requests an immediate owner re-scan");
+            check(!hostEnabled, "an unacknowledged underlay yields during the handback");
+            check(screens.length === 0, "the handback yield unmounts the screens");
+
+            // With the owner confirmed gone, the same backend state mounts the
+            // background in the visible, non-underlay position.
             wallpapers.externalWallpaperActive = false;
-            check(underlayActive, "underlay acknowledgement survives the owner stopping");
-            check(hostEnabled && screens.length === 2, "background stays mounted across the owner stopping");
-            check(checkReady(screen), "underlay stays ready across the owner stopping");
+            check(!underlayActive && !externalActive, "the handback has no external owner");
+            check(hostEnabled && screens.length === 2, "the handback remounts the visible background");
+            check(checkReady(screen), "the handback background is ready");
 
             // Without the acknowledgement the adapter must yield. A non-empty
             // above-icons embed is what distinguishes that state, and the real

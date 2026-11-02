@@ -27,9 +27,14 @@ ShellRoot {
     settings.watchFiles: false
 
     // Mirrors the WindowsDesktopLayer shape consumed by WindowsBackground.
+    // underlayActive also needs the external wallpaper window inside the host;
+    // when it leaves, the backend drops the acknowledgement but keeps the
+    // host enabled (#220).
     property QtObject desktopLayer: QtObject {
         property bool active: true
-        property bool underlayActive: true
+        property bool coveredByForeign: true
+        property bool underlayActive: enabled && !embedRefused && aboveIcons.length === 0
+            && coveredByForeign
         property bool enabled: true
         property bool embedRefused: false
         property var aboveIcons: []
@@ -123,14 +128,17 @@ ShellRoot {
             }
             stop();
             try {
+                check(root.desktopLayer.underlayActive, "the backend acknowledges the external wallpaper window");
                 check(root.hostEnabled, "the background host stays enabled while the external owner stops");
                 check(root.desktopClock.blurEnabled, "the desktop clock blur is active for this fixture");
                 check(wn(behindClock) === "A", "the desktop clock starts on the first window");
 
-                // Wallpaper Engine quits; the backend re-embeds the host and
-                // recreates the QQuickWindow for the moved item tree.
+                // Wallpaper Engine quits; the backend drops the underlay
+                // acknowledgement and recreates the QQuickWindow for the
+                // moved item tree in the visible, own-desktop position.
                 root.wallpapers.externalWallpaperActive = false;
-                root.desktopLayer.underlayActive = false;
+                root.desktopLayer.coveredByForeign = false;
+                check(!root.desktopLayer.underlayActive, "the handback drops the underlay acknowledgement");
                 check(root.hostEnabled, "the handback keeps the background host mounted");
                 contentA.parent = null;
                 contentA.parent = winB.contentItem;

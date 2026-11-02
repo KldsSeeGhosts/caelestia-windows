@@ -13,9 +13,11 @@ Background {
     id: root
 
     // Wallpaper Engine owns WorkerW. Host the clock and wallpaper as the
-    // underlay beneath it when the backend acknowledges the embed; otherwise
-    // yield the desktop rather than cover a running engine. Discovery starts
-    // fail-closed so startup cannot cover a running engine.
+    // underlay beneath it when the backend sees the external wallpaper window
+    // in the host; otherwise yield the desktop rather than cover a running
+    // engine. Discovery starts fail-closed so startup cannot cover a running
+    // engine. The acknowledgement drops when that window leaves the host
+    // (#220), which is the handback signal for the ownership guard.
     readonly property bool backgroundRequested: Quickshell.env("CAELESTIA_WINDOWS_BACKGROUND") === "1"
     readonly property bool underlaySupported: "underlayActive" in Native.DesktopLayer
     readonly property bool underlayActive: underlaySupported && Native.DesktopLayer.underlayActive
@@ -51,6 +53,13 @@ Background {
     onBackgroundRequestedChanged: reconcileDesktop()
     onExternalActiveChanged: reconcileDesktop()
     onDesktopIconsChanged: reconcileDesktop()
+    onUnderlayActiveChanged: {
+        // The external wallpaper window left the host, so the backend has
+        // dropped its acknowledgement. Re-scan now instead of waiting for the
+        // idle poll, so the ownership guard hands the desktop back promptly.
+        if (!underlayActive && externalActive)
+            WallpaperEngine.refresh(false);
+    }
     Component.onCompleted: reconcileDesktop()
 
     function checkReady(screen: ShellScreen): bool {

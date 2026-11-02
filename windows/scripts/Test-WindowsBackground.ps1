@@ -20,6 +20,7 @@ $properties = Get-UniqueMatch $background '(?ms)^    readonly property bool back
 $screens = Get-UniqueMatch $background '(?ms)^    screens: enabled && Native\.DesktopLayer\.active.*?^        : \[\]'
 $icons = Get-UniqueMatch $background '(?m)^    readonly property string desktopIcons: [^\r\n]+'
 $reconcile = Get-UniqueMatch $background '(?ms)^    function reconcileDesktop\(\): void \{.*?^    \}'
+$underlay = Get-UniqueMatch $background '(?ms)^    onUnderlayActiveChanged: \{.*?^    \}'
 $ready = Get-UniqueMatch $background '(?ms)^    function checkReady\(screen: ShellScreen\): bool \{.*?^    \}'
 
 # Host discovery must re-run for every input that decides whether the backend
@@ -47,6 +48,7 @@ $screens = $screens.Replace('Quickshell.screens', 'root.quickshellScreens')
 $icons = $icons.Replace('Quickshell.env', 'root.environment.env')
 $reconcile = $reconcile.Replace('Native.DesktopLayer', 'root.nativeLayer')
 $reconcile = $reconcile.Replace('Wallpapers.externalWallpaperActive', 'root.wallpapers.externalWallpaperActive')
+$underlay = $underlay.Replace('WallpaperEngine', 'root.wallpaperEngine')
 $ready = $ready.Replace('screen: ShellScreen', 'screen')
 $ready = $ready.Replace('Native.DesktopLayer', 'root.nativeLayer')
 $ready = $ready.Replace('Wallpapers.externalWallpaperActive', 'root.wallpapers.externalWallpaperActive')
@@ -58,6 +60,7 @@ $ready = $ready.Replace('Wallpapers.current', 'root.wallpapers.current')
 $fixture = $fixture.Replace('    // WINDOWS_BACKGROUND_PROPERTIES', (($properties.TrimEnd(), $icons.TrimEnd()) -join "`n"))
 $fixture = $fixture.Replace('    // WINDOWS_BACKGROUND_SCREENS', $screens.TrimEnd())
 $fixture = $fixture.Replace('    // RECONCILE_DESKTOP', (($reconcile.TrimEnd(), ($handlers -join "`n")) -join "`n"))
+$fixture = $fixture.Replace('    // UNDERLAY_HANDLER', $underlay.TrimEnd())
 $fixture = $fixture.Replace('    // CHECK_READY', $ready.TrimEnd())
 
 $stage = Join-Path ([IO.Path]::GetTempPath()) ('caelestia-background-' + [guid]::NewGuid().ToString('N'))
@@ -106,19 +109,19 @@ try {
         @('"owner":"undiscovered-underlay"'),
         @('"owner":"wallpaper-engine-process"', '"externalOutputReady":null'),
         @('"underlay":false'),
-        @('"underlay":true', '"screens":[]')
+        @('"underlay":false', '"screens":[]')
     )) {
         if (-not (Test-State $case)) { throw "Missing background state: $($case -join ' ')" }
     }
 
     # The assertion count is part of the marker: a scenario silently dropped
     # from the fixture must fail the run, not just shrink the number.
-    $marker = [regex]::Match($output, 'CAELESTIA_BACKGROUND_UNDERLAY_PASS 67\b')
+    $marker = [regex]::Match($output, 'CAELESTIA_BACKGROUND_UNDERLAY_PASS 72\b')
     if ($exitCode -ne 0 -or -not $marker.Success -or
         $output -match 'CAELESTIA_BACKGROUND_UNDERLAY_FAIL|TypeError|ReferenceError|binding loop') {
         throw 'Windows background fixture failed.'
     }
-    Write-Output 'PASS background underlay: 67 assertions across the acknowledged and legacy backends.'
+    Write-Output 'PASS background underlay: 72 assertions across the acknowledged and legacy backends.'
 } finally {
     $safeStage = [IO.Path]::GetFullPath($stage).TrimEnd('\')
     if ((Split-Path -Parent $safeStage) -ne [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\') -or
