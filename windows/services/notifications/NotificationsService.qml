@@ -83,8 +83,20 @@ QtObject {
     // Consent observation is independent of active mirroring: the observer
     // stays applied in Denied/Unavailable so a re-grant is seen with the
     // notification centre closed.
+    //
+    // Observation lives in the backend for the life of the process, not of this
+    // object, so this object cannot rely on its own flag to know the backend's
+    // state. It owns observation by generation: it claims a token from the
+    // backend, every write carries it, and the backend ignores a write from a
+    // superseded token. A replacement therefore always states its desired state
+    // explicitly on its first reconcile, and an outgoing object's late disable
+    // (teardown, reload) can no longer switch off its replacement's observation.
+    // observationApplied only caches what this token last wrote.
     property int observationWrites: 0
     property bool observationApplied: false
+    property int observationToken: 0
+    property var observationBackend: null
+    property bool observationSynced: false
     property int deniedPolls: 0
     property bool deniedPollExhausted: false
     property int mirroredCount: 0
@@ -449,16 +461,18 @@ QtObject {
         const usable = staged && backend?.ready === true;
 
         if (!usable) {
-            root.disableObservation();
+            // A running service always states that it is not observing (its
+            // first reconcile includes this), so a replacement that is opted
+            // out switches off whatever its predecessor left behind.
+            if (root.enabled && backend)
+                root.syncObservation(false);
+            else
+                root.disableObservation();
             root.disableMirroring();
             return;
         }
 
-        if (!root.observationApplied && typeof backend.setAccessObservation === "function") {
-            root.observationApplied = true;
-            root.observationWrites++;
-            backend.setAccessObservation(true);
-        }
+        root.syncObservation(true);
 
         const desired = usable
             && root.reportedAccess === 2
@@ -478,12 +492,49 @@ QtObject {
         backend.setMirroring(true);
     }
 
-    function disableObservation(): void {
-        if (!root.observationApplied)
+    // Writes the desired observation state under this object's generation. The
+    // first write to a backend claims a new generation and is always sent, even
+    // when the desired state is "off"; after that only changes are written.
+    function syncObservation(wanted): void {
+        const backend = root.backend;
+        if (!backend || typeof backend.claimAccessObservation !== "function"
+                || typeof backend.setAccessObservation !== "function")
             return;
+
+        if (root.observationBackend !== backend) {
+            root.observationToken = backend.claimAccessObservation();
+            root.observationBackend = backend;
+            root.observationSynced = false;
+        }
+        if (root.observationSynced && root.observationApplied === wanted)
+            return;
+
+        root.observationSynced = true;
+        root.observationApplied = wanted;
+        if (wanted)
+            root.observationWrites++;
+        backend.setAccessObservation(wanted, root.observationToken);
+    }
+
+    // Stops observation only for a generation this object has actually claimed;
+    // an object that never wrote has nothing to stop.
+    function disableObservation(): void {
+        if (root.observationBackend !== null && root.observationBackend === root.backend)
+            root.syncObservation(false);
+    }
+
+    // Gives up this object's generation: used when the backend is replaced and
+    // when the object is destroyed. The backend refuses it if a newer holder has
+    // claimed since, so a late teardown cannot disable the new holder.
+    function releaseObservation(): void {
+        const held = root.observationBackend;
+        const token = root.observationToken;
+        root.observationBackend = null;
+        root.observationToken = 0;
+        root.observationSynced = false;
         root.observationApplied = false;
-        if (root.backend && typeof root.backend.setAccessObservation === "function")
-            root.backend.setAccessObservation(false);
+        if (held && token !== 0 && typeof held.setAccessObservation === "function")
+            held.setAccessObservation(false, token);
     }
 
     function disableMirroring(): void {
@@ -630,10 +681,11 @@ QtObject {
 
     onBackendChanged: {
         root.accessProbeBackend = null;
-        root.observationApplied = false;
+        root.releaseObservation();
         root.refreshAccess();
         root.probeExistingAccess();
     }
+    Component.onDestruction: root.releaseObservation()
     // Removing the mirror opt-in or a backend component failure must reconcile
     // mirroring immediately, not only on the next access signal.
     onMirrorOptInChanged: {

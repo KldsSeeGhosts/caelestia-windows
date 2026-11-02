@@ -94,10 +94,25 @@ QtObject {
             mirrorSystemNotifications = enabled === true;
         }
 
-        // Non-prompting consent observation, separate from mirroring.
-        function setAccessObservation(enabled): void {
+        // Non-prompting consent observation, separate from mirroring, owned by
+        // generation like the native backend. With a host the generation and the
+        // observing state are process-lifetime and shared across backends.
+        property var host: null
+        property int localGeneration: 0
+        property int claimCalls: 0
+        property int lastObservationToken: 0
+
+        function claimAccessObservation(): int {
+            claimCalls++;
+            return host ? host.claim() : ++localGeneration;
+        }
+
+        function setAccessObservation(enabled, token): void {
             setAccessObservationCalls++;
             lastAccessObservation = enabled === true;
+            lastObservationToken = token;
+            if (host)
+                host.write(enabled === true, token);
         }
 
         // The consent-fix revision's non-prompting status query.
@@ -111,6 +126,32 @@ QtObject {
         function activateMirrored(id): bool {
             activateMirroredCalls++;
             activateMirroredIds.push(String(id));
+            return true;
+        }
+    }
+
+    // The process-lifetime observation state of the native server: it outlives
+    // every service object, hands out generations and ignores a write from any
+    // generation but the latest (token 0 is never valid).
+    component ObservationHost: QtObject {
+        property int generation: 0
+        property bool observing: false
+        property int writes: 0
+        property int refused: 0
+        property var history: []
+
+        function claim(): int {
+            return ++generation;
+        }
+
+        function write(enabled, token): bool {
+            history.push((enabled ? "on" : "off") + "@" + token);
+            if (token === 0 || token !== generation) {
+                refused++;
+                return false;
+            }
+            writes++;
+            observing = enabled;
             return true;
         }
     }
@@ -388,6 +429,115 @@ QtObject {
 
     readonly property Component actionComponent: Component {
         FakeAction {}
+    }
+
+    // Service objects created and destroyed at runtime, to prove observation
+    // ownership across teardown and replacement against a process-lifetime host.
+    readonly property Component observationHostComponent: Component {
+        ObservationHost {}
+    }
+
+    readonly property Component observationBackendComponent: Component {
+        FakeBackend {}
+    }
+
+    readonly property Component observationServiceComponent: Component {
+        NotificationsService {
+            profileRoot: "C:/fixtures/profile"
+            stateDirectory: "C:/fixtures/profile/state"
+            shellAssetsDirectory: "C:/fixtures/shell/assets"
+        }
+    }
+
+    property var observationScenarios: ({})
+
+    function makeObservationService(host, mirrorOptIn): var {
+        const fakeBackend = observationBackendComponent.createObject(test, {host: host});
+        const created = observationServiceComponent.createObject(test, {
+            enabled: true,
+            mirrorOptIn: mirrorOptIn,
+            backend: fakeBackend
+        });
+        return {service: created, backend: fakeBackend};
+    }
+
+    // Phase one (synchronous): build the instances and start their teardown. A
+    // QML destroy() is deferred to the event loop, so the outcome is verified
+    // in finishAsync once the loop has run.
+    function setupObservationOwnership(): void {
+        const scenarios = {};
+
+        // Destroy while observing: the backend outlives the object, so the
+        // object must switch its own observation off.
+        const hostA = observationHostComponent.createObject(test);
+        const a = makeObservationService(hostA, true);
+        check(hostA.observing && a.service.observationApplied
+            && a.service.observationToken === hostA.generation && hostA.generation === 1,
+            "an opted-in service observes under its claimed generation");
+        a.service.destroy();
+        scenarios.a = {host: hostA};
+
+        // Opted-out replacement: the predecessor is still alive (a reload built
+        // the new object first) and observation is on in the backend. The
+        // replacement's first reconcile must say "off" explicitly instead of
+        // inferring it from its own cleared flag.
+        const hostB = observationHostComponent.createObject(test);
+        const b1 = makeObservationService(hostB, true);
+        check(hostB.observing, "the predecessor observes before the replacement exists");
+        const b2 = makeObservationService(hostB, false);
+        check(!hostB.observing && !b2.service.observationApplied
+            && b2.service.observationToken === 2 && hostB.generation === 2
+            && b2.backend.setAccessObservationCalls === 1
+            && b2.backend.lastAccessObservation === false,
+            "an opted-out replacement explicitly switches observation off");
+        b1.service.destroy();
+        scenarios.b = {host: hostB, replacement: b2};
+
+        // Old instance destroyed after the new one enabled observation: the
+        // outgoing generation's disable is refused.
+        const hostC = observationHostComponent.createObject(test);
+        const c1 = makeObservationService(hostC, true);
+        const c2 = makeObservationService(hostC, true);
+        check(hostC.observing && c2.service.observationToken === 2 && hostC.generation === 2,
+            "the replacement takes the newer generation and observes");
+        c1.service.destroy();
+        scenarios.c = {host: hostC, replacement: c2};
+
+        test.observationScenarios = scenarios;
+    }
+
+    // Phase two (after the event loop): the destructions have run.
+    function verifyObservationOwnership(): void {
+        const scenarios = test.observationScenarios;
+
+        // The last write is the object's own release under its live generation.
+        check(!scenarios.a.host.observing && scenarios.a.host.refused === 0
+            && scenarios.a.host.history[scenarios.a.host.history.length - 1] === "off@1",
+            "destroying an observing service switches its observation off: observing="
+            + scenarios.a.host.observing + " refused=" + scenarios.a.host.refused
+            + " writes=" + scenarios.a.host.writes + " history=" + scenarios.a.host.history.join(","));
+
+        check(!scenarios.b.host.observing && scenarios.b.host.refused === 1,
+            "the predecessor's late teardown is refused and the replacement stays off");
+        // The opted-out replacement can still opt in later under its generation.
+        scenarios.b.replacement.service.mirrorOptIn = true;
+        check(scenarios.b.host.observing && scenarios.b.replacement.service.observationApplied,
+            "the replacement still controls observation after the predecessor is gone");
+        scenarios.b.replacement.service.destroy();
+
+        check(scenarios.c.host.observing && scenarios.c.host.refused === 1,
+            "an old instance destroyed after the new one enabled observation cannot disable it");
+        scenarios.c.replacement.service.destroy();
+    }
+
+    // Phase three: the replacement objects destroyed above released their
+    // generations, so nothing is left observing.
+    function verifyObservationReleased(): void {
+        const scenarios = test.observationScenarios;
+        check(!scenarios.b.host.observing,
+            "destroying the current holder switches observation off");
+        check(!scenarios.c.host.observing && scenarios.c.host.refused === 1,
+            "the current holder's own teardown is honoured");
     }
 
     function makeAction(identifier, text): FakeAction {
@@ -2206,6 +2356,7 @@ QtObject {
         check(test.asyncRecord.timer.interval === 40, "async timer interval");
         check(test.asyncRecord.timer.running, "async timer is running");
         check(test.asyncRecord.timeStrTimer.running, "visible popup updates its age");
+        test.setupObservationOwnership();
         realExpiry.start();
         guard.start();
     }
@@ -2235,6 +2386,7 @@ QtObject {
             && test.evictedRecord.closed === true
             && test.evictedRecord.locks.size === 1,
             "the locked evicted record is still alive after the event loop ran");
+        test.verifyObservationOwnership();
         test.evictedRecord.unlock(test.evictedLockKey);
         test.evictedLockKey = null;
         test.asyncRecord.time = new Date(Date.now() - 10 * 60000);
@@ -2273,6 +2425,7 @@ QtObject {
         }
         check(evictedDestroyed,
             "the evicted record is destroyed once its last lock is released");
+        test.verifyObservationReleased();
         guard.stop();
         console.log("CAELESTIA_NOTIFICATIONS_FIXTURE_PASS " + JSON.stringify({assertions: assertions}));
         Qt.quit();

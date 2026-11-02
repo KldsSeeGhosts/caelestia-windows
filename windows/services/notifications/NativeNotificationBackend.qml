@@ -90,10 +90,21 @@ QtObject {
 
     // Non-prompting consent observation, independent of active mirroring.
     // Older backends lack it; the service then keeps the bounded denied poll.
-    function setAccessObservation(enabled): void {
-        if (typeof server.setSystemAccessObservation !== "function")
+    // Observation lives as long as the process, so it is owned by generation:
+    // the service claims a token and every write carries it, and the backend
+    // refuses a write from a superseded token (a late teardown must not switch
+    // off a replacement's observation). Token 0 is never valid.
+    function claimAccessObservation(): int {
+        if (typeof server.claimSystemAccessObservation !== "function")
+            return 0;
+        return server.claimSystemAccessObservation();
+    }
+
+    function setAccessObservation(enabled, token): void {
+        if (typeof server.setSystemAccessObservation !== "function"
+                || typeof server.claimSystemAccessObservation !== "function")
             return;
-        server.setSystemAccessObservation(enabled === true);
+        server.setSystemAccessObservation(enabled === true, token ?? 0);
     }
 
     // Activates a mirrored record's source app without dismissing the real
