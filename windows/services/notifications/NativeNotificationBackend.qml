@@ -1,10 +1,11 @@
 import QtQuick
 import Quickshell.Services.Notifications
 
-// Loaded by URL only after Notifs.enabled. Constructing NotificationServer
-// claims the per-session notification bus mutex or starts the backend's own
-// bounded five-second claim retry (server.cpp claimSession), and connects the
-// local delivery signal. Construction sends no system access request.
+// Loaded by URL only after Notifs.enabled. Constructing the native
+// notification server claims the per-session notification bus mutex on a
+// dedicated thread or waits there for the current owner to release or abandon
+// it (server.cpp claimSession), and connects the local delivery signal.
+// Construction sends no system access request.
 //
 // mirrorSystemNotifications is set to false at construction, before the
 // post-reload hook applies it. At the pinned backend the default is true
@@ -16,25 +17,24 @@ import Quickshell.Services.Notifications
 // requestAccess() is the single consent path. It is invoked only from
 // NotificationsService.requestAccess(), which the original notification-center
 // button calls while the state is Unspecified; nothing in this wrapper calls it.
-// The pinned backend itself only raises an OS prompt when Windows reports
-// Unspecified, and GetAccessStatus is read from inside its worker.
+// The pinned backend raises the OS prompt asynchronously on the UI thread when
+// Windows reports Unspecified, and its worker only reads the result.
 //
 // The pinned backend exposes a non-prompting refreshAccessStatus() query, a
 // process-lifetime accessRequested latch and an activateMirrored() path that
 // does not dismiss the real toast. Uses remain feature-detected for older
 // backends; absent activation is refused rather than dismissing the toast.
 //
-// The pinned backend does not publish whether the claim succeeded, is retrying,
-// or was forwarded (server.cpp lines 55-91 only log and retry internally), so
-// ownership stays "unknown". The service keeps the explicit "contended" state
-// for a backend revision that exposes it.
+// Session-bus ownership is real mutex ownership, not the existence of a named
+// object: the backend's lock thread waits without polling and publishes "owner"
+// once it holds the mutex and "contended" while another shell does.
 QtObject {
     id: root
 
     readonly property bool ready: started
     property bool started: false
 
-    readonly property string ownership: "unknown"
+    readonly property string ownership: server.ownership
 
     signal notificationReceived(var notification)
 

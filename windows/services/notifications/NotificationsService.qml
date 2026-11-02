@@ -467,10 +467,10 @@ QtObject {
             root.backend.setMirroring(false);
     }
 
-    // The pinned backend performs the bounded five-second claim retry in C++
-    // (server.cpp claimSession), but exposes no claim/ownership property to
-    // QML. Values other than the known set are therefore "unknown" and never
-    // guessed into "owner" or "contended".
+    // The backend publishes real session-bus ownership: "owner" once its lock
+    // thread holds the mutex and "contended" while another shell owns it
+    // (server.cpp claimSession). Values outside the known set are "unknown"
+    // and never guessed into "owner" or "contended".
     readonly property string ownership: {
         const value = backend?.ownership;
         return value === "owner" || value === "contended" || value === "forwarding"
@@ -537,7 +537,7 @@ QtObject {
     }
 
     readonly property string ownershipNote: ownershipKnown
-        ? "" : "The pinned backend does not publish session-bus ownership; its five-second claim retry stays inside the backend."
+        ? "" : "The Windows notification backend has not reported session-bus ownership yet."
 
     // ---- Records and the preserved Notifs contract ------------------------
 
