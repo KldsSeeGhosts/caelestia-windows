@@ -21,7 +21,12 @@ StyledWindow {
     // Automated rendering can exercise the original graph without taking input.
     property bool interactionEnabled: true
 
-    readonly property ScreenState screenState: ShellState.forScreen(screen)
+    // Windows: a removed screen's state Variants instance is destroyed before
+    // this window, so keep an inert state for the deferred teardown (#215).
+    readonly property ScreenState teardownState: ScreenState {
+        modelData: root.screen
+    }
+    readonly property ScreenState screenState: ShellState.forScreen(screen) ?? teardownState
 
     readonly property HyprlandMonitor monitor: Hypr.monitorFor(screen)
     readonly property bool hasSpecialWorkspace: (monitor?.lastIpcObject.specialWorkspace?.name.length ?? 0) > 0
