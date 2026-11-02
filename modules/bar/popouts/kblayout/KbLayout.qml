@@ -86,7 +86,9 @@ ColumnLayout {
 
             required property int layoutIndex
             required property string label
-            readonly property bool isDisabled: layoutIndex > 3
+            // Windows lists every installed input locale, so the XKB cap does
+            // not apply there. The Windows adapter model supplies the entries.
+            readonly property bool isDisabled: Qt.platform.os !== "windows" && layoutIndex > 3
 
             width: list.width
             height: Math.max(36, rowText.implicitHeight + Tokens.padding.small)
