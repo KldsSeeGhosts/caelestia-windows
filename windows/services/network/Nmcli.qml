@@ -165,8 +165,10 @@ NetworkService {
         const stale = [];
         // Two wired entries can share an interface name, and the synthesized
         // record has no interface at all, so the fallback key can repeat too.
-        // Qualify a repeated key with its occurrence within this sync, or the
-        // second entry would alias the first one's wrapper and stay untracked.
+        // Pair each key with its occurrence within this sync, or the second
+        // entry would alias the first one's wrapper and stay untracked. The
+        // pair is serialized as a tuple, so no interface name (even one that
+        // looks like a suffixed key) can collide with another entry.
         const seen = new Map();
         let changed = sources.length !== root._ethernetDevices.length;
 
@@ -175,9 +177,9 @@ NetworkService {
             const base = root.ethernetKey(raw);
             const occurrence = seen.get(base) ?? 0;
             seen.set(base, occurrence + 1);
-            // The first occurrence keeps the bare key, so the ordinary
-            // single-entry case still reuses its wrapper across syncs.
-            const key = occurrence === 0 ? base : base + "#" + occurrence;
+            // The ordinary single-entry case is occurrence 0 and still
+            // reuses its wrapper across syncs.
+            const key = JSON.stringify([base, occurrence]);
             let device = previous[key];
             if (!device) {
                 device = root.ethernetDeviceComponent.createObject(null, {

@@ -392,8 +392,11 @@ QtObject {
     // target. The shortened interval keeps the fixture's real-time wait small.
     readonly property BrightnessService slowWriteCase: BrightnessService {}
     readonly property FakeBackend slowWriteBackend: FakeBackend {}
-    readonly property BrightnessService lostResultCase: BrightnessService { writeTimeoutMs: 100 }
+    readonly property BrightnessService lostResultCase: BrightnessService { writeTimeoutMs: 300 }
     readonly property FakeBackend lostResultBackend: FakeBackend {}
+    // (c) The recovery query's result is lost too: the same bound expires it.
+    readonly property BrightnessService lostQueryCase: BrightnessService { writeTimeoutMs: 100 }
+    readonly property FakeBackend lostQueryBackend: FakeBackend {}
     property var feedbackEvents: []
     property Connections feedbackLog: Connections {
         target: test.feedbackCase
@@ -1780,10 +1783,11 @@ QtObject {
         }
     }
 
-    // The shortened bound has certainly elapsed; the recovery query is in
-    // flight and the queued target must still be there.
+    // The first 300 ms bound has elapsed but the recovery query's own bound
+    // (another 300 ms) has not; the query is in flight and the queued target
+    // must still be there.
     readonly property Timer lostResultCheck: Timer {
-        interval: 250
+        interval: 450
         onTriggered: {
             try {
                 const state = lostResultCase.stateFor("LOST1");
@@ -1797,7 +1801,8 @@ QtObject {
                     "the recovery does not snap back to the pre-write guess");
                 check(state.querying, "the recovery asks hardware for the true level");
                 check(lostResultBackend.queryCalls === 2, "the recovery query reached the backend");
-                check(!state.writeWatchdog.running, "the recovery stops the watchdog");
+                check(state.writeWatchdog.running,
+                    "the recovery query stays bounded by the watchdog");
                 check(!lostResultCase.canWrite("LOST1"),
                     "the recovery query gates a new write until it settles");
                 // The worker finishes the slow write first: its late result is
@@ -1822,6 +1827,61 @@ QtObject {
                 close(recovered.brightness, 0.9, "the drained target applies");
                 check(lostResultBackend.pendingQueries === 0 && lostResultBackend.pendingWrites === 0,
                     "the recovery leaves nothing outstanding");
+                check(!recovered.writeWatchdog.running,
+                    "a settled recovery stops the watchdog");
+
+                // (c) Lost write result, then a lost recovery query result.
+                lostQueryCase.screens = [{name: "LOST2"}];
+                lostQueryCase.enabled = true;
+                lostQueryCase.controlsEnabled = true;
+                lostQueryCase.backend = lostQueryBackend;
+                check(lostQueryCase.queryMonitor("LOST2"), "lost-query case route query");
+                lostQueryBackend.deliverQuery();
+                check(lostQueryCase.write("LOST2", 0.8), "lost-query write accepted");
+                check(lostQueryCase.write("LOST2", 0.9), "lost-query queued target");
+                lostQueryCheck.start();
+            } catch (error) {
+                console.error("CAELESTIA_BRIGHTNESS_FIXTURE_FAIL " + error.message);
+                Qt.exit(1);
+            }
+        }
+    }
+
+    // Both bounds (about 200 ms) have elapsed with neither the write result
+    // nor the recovery query result delivered.
+    readonly property Timer lostQueryCheck: Timer {
+        interval: 600
+        onTriggered: {
+            try {
+                const state = lostQueryCase.stateFor("LOST2");
+                check(lostQueryCase.lostWriteResults === 1 && lostQueryCase.lostQueryResults === 1,
+                    "each lost result is counted once");
+                check(!state.querying && !state.writePending,
+                    "a lost recovery query does not wedge the record");
+                check(!state.writeWatchdog.running, "nothing is left armed");
+                check(!state.hasQueuedWrite, "the retained drag target is settled");
+                check(state.lastOutcome === "failed", "the settled target reports the failed outcome");
+                check(state.lastError.length > 0, "the failure is explained");
+                check(lostQueryBackend.setCalls === 1,
+                    "the queued target is not dispatched into a dead worker");
+                check(lostQueryBackend.queryCalls === 2, "only the one recovery query was issued");
+                close(state.brightness, 0.5, "the unconfirmed level snaps back to the last confirmation");
+                // Late results for the expired requests are ignored.
+                lostQueryBackend.completeWrite();
+                lostQueryBackend.deliverQuery();
+                check(!state.querying && !state.writePending && state.lastOutcome === "failed",
+                    "late write and query results are ignored");
+                check(lostQueryBackend.setCalls === 1, "a late result dispatches nothing");
+                check(lostQueryCase.canWrite("LOST2"), "the record is writable again");
+                check(lostQueryCase.write("LOST2", 0.7), "a later user write is accepted");
+                check(lostQueryBackend.setCalls === 2, "the user write reached the backend");
+                lostQueryBackend.completeWrite();
+                check(state.lastOutcome === "hardware-requested", "the user write settles normally");
+                check(lostQueryCase.queryMonitor("LOST2"), "a route refresh is accepted");
+                lostQueryBackend.deliverQuery();
+                check(!state.querying && state.lastOutcome === "queried", "the refresh settles the record");
+                check(lostQueryBackend.pendingQueries === 0 && lostQueryBackend.pendingWrites === 0,
+                    "nothing is left outstanding");
                 destructionCheck.start();
             } catch (error) {
                 console.error("CAELESTIA_BRIGHTNESS_FIXTURE_FAIL " + error.message);

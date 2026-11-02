@@ -110,12 +110,7 @@ Singleton {
                 // binding, so reporting here would re-enter its evaluation and
                 // leave bannerWanted true while bannerFailed is already true.
                 // bannerStarting keeps this and onRunningChanged to one report.
-                Qt.callLater(() => {
-                    if (!bannerProcess.running && root.bannerStarting) {
-                        root.bannerStarting = false;
-                        root.bannerStartFailed();
-                    }
-                });
+                bannerStartCheck.start();
             }
         }
     }
@@ -386,6 +381,21 @@ Singleton {
         }
     }
 
+    // Deferred spawn-failure report. Owned by this object rather than queued
+    // with Qt.callLater, so destroying the service (for example a QML reload)
+    // cancels a pending check instead of running it on a dead object.
+    readonly property Timer _bannerStartCheck: Timer {
+        id: bannerStartCheck
+        interval: 0
+        repeat: false
+        onTriggered: {
+            if (!bannerProcess.running && root.bannerStarting) {
+                root.bannerStarting = false;
+                root.bannerStartFailed();
+            }
+        }
+    }
+
     readonly property Process _bannerProcess: Process {
         id: bannerProcess
         command: [Quickshell.env("SystemRoot") + "/System32/WindowsPowerShell/v1.0/powershell.exe",
@@ -411,12 +421,7 @@ Singleton {
             if (!bannerProcess.running && root.bannerStarting) {
                 // Defer so a real exit is handled by onExited first; a failed
                 // spawn never emits it.
-                Qt.callLater(() => {
-                    if (!bannerProcess.running && root.bannerStarting) {
-                        root.bannerStarting = false;
-                        root.bannerStartFailed();
-                    }
-                });
+                bannerStartCheck.start();
             }
         }
         onExited: code => {

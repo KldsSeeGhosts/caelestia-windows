@@ -216,10 +216,20 @@ Singleton {
             // same deferred single-handler shape as onRunningChanged below, so
             // keepaliveRunning is released outside the Process's own state
             // change and both paths can never report twice.
-            Qt.callLater(() => {
-                if (!keepaliveProcess.running && root.keepaliveRunning)
-                    root.keepaliveStartFailed();
-            });
+            keepaliveStartCheck.start();
+        }
+    }
+
+    // Deferred spawn-failure report. Owned by this object rather than queued
+    // with Qt.callLater, so destroying the service (for example a QML reload)
+    // cancels a pending check instead of running it on a dead object.
+    Timer {
+        id: keepaliveStartCheck
+        interval: 0
+        repeat: false
+        onTriggered: {
+            if (!keepaliveProcess.running && root.keepaliveRunning)
+                root.keepaliveStartFailed();
         }
     }
 
@@ -260,10 +270,7 @@ Singleton {
             if (!keepaliveProcess.running && root.keepaliveRunning) {
                 // Defer so onExited wins for a process that did run; a failed
                 // spawn never emits it.
-                Qt.callLater(() => {
-                    if (!keepaliveProcess.running && root.keepaliveRunning)
-                        root.keepaliveStartFailed();
-                });
+                keepaliveStartCheck.start();
             }
         }
 

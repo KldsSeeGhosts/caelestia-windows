@@ -79,6 +79,7 @@ QtObject {
     property int clearedDimmingRequests: 0
     property int refusedWrites: 0
     property int lostWriteResults: 0
+    property int lostQueryResults: 0
     property bool everWrote: false
     // True once a write was forwarded for a software route or the backend
     // reported a software route for a hardware write.
@@ -219,11 +220,13 @@ QtObject {
         // that may confirm or fail a strict write, so a result that never
         // arrives would block writes here forever. The bound is generous
         // because a slow write is still a healthy write; expiry re-reads the
-        // display rather than failing the write.
+        // display rather than failing the write. The same bound then covers the
+        // recovery query it starts, so a second lost result cannot leave the
+        // record querying forever.
         readonly property Timer writeWatchdog: Timer {
             interval: root.effectiveWriteTimeoutMs
             repeat: false
-            onTriggered: root._onWriteResultLost(monitorState)
+            onTriggered: root._onWatchdogExpired(monitorState)
         }
     }
 
@@ -404,6 +407,7 @@ QtObject {
         for (const state of _states) {
             if (!state.querying)
                 continue;
+            state.writeWatchdog.stop();
             state.querying = false;
             state.queryId = 0;
             state.state = "unknown";
@@ -668,6 +672,13 @@ QtObject {
     // still running on the one worker, so it reads the value the write applied.
     // A late result stays ignored by the writePending guard in
     // _onBrightnessWriteResult(); the query reconciles the record.
+    function _onWatchdogExpired(state): void {
+        if (state.writePending)
+            _onWriteResultLost(state);
+        else if (state.querying)
+            _onRecoveryQueryLost(state);
+    }
+
     function _onWriteResultLost(state): void {
         if (!state.writePending)
             return;
@@ -680,13 +691,40 @@ QtObject {
         const started = queryMonitor(state.screenName);
         state.lastOutcome = "failed";
         state.lastError = "No brightness write result arrived from the display.";
-        if (!started && state.hasQueuedWrite) {
+        if (started) {
+            // The recovery query is bounded by the same watchdog.
+            state.writeWatchdog.restart();
+        } else if (state.hasQueuedWrite) {
             // No query means no hardware value to adopt, so the queued target
             // cannot be applied safely. Drop it and let the next drag write
             // normally; the displayed level is left as the user set it.
             state.hasQueuedWrite = false;
             state.resyncSerial++;
         }
+    }
+
+    // The recovery query's result never arrived either, so the worker cannot
+    // be trusted. Expire the request (a late result no longer matches), leave
+    // querying, and settle the retained drag target as failed instead of
+    // dispatching it into a dead worker. The record regains the capability it
+    // held before the lost write, so a later user write or route refresh is
+    // accepted; a write that is lost again just recovers through this path
+    // again. The unconfirmed displayed level snaps back to the last
+    // confirmation.
+    function _onRecoveryQueryLost(state): void {
+        if (!state.querying)
+            return;
+        lostQueryResults++;
+        state.querying = false;
+        state.queryId = 0;
+        const route = state.queryRoute;
+        state.route = route;
+        state.available = true;
+        state.state = route === "software" ? "software-only" : "hardware";
+        state.hasQueuedWrite = false;
+        state.lastOutcome = "failed";
+        state.lastError = "No brightness result arrived from the display; refresh the route to retry.";
+        _snapBack(state);
     }
 
     // Applies a queued drag target through write()'s live authorization, which
@@ -789,6 +827,7 @@ QtObject {
         const feedback = readable && state.lastConfirmedKnown
             && state.queryRoute === route
             && Math.abs(state.lastConfirmed - clamped) > 0.000001;
+        state.writeWatchdog.stop();
         state.querying = false;
         state.route = route;
         state.available = available === true;
