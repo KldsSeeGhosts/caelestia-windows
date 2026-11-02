@@ -13,7 +13,7 @@ The pure state object is
 has no process, detached-execution or arbitrary-command path; tests inject a
 recording fake. [`NativeSessionBackend.qml`](NativeSessionBackend.qml) is the
 thin facade over the pinned singleton, and the staged
-[`SessionManager.qml`](../../shell-prototype/adapters/Caelestia/Services/SessionManager.qml)
+[`SessionManager.qml`](../../shell/adapters/imports/Caelestia/Services/SessionManager.qml)
 singleton wires the environment opt-ins and a lazy `Loader`.
 
 Upstream `SessionManager.exec(list<string>): bool` remains the command entry
