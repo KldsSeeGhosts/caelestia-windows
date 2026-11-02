@@ -204,12 +204,13 @@ Singleton {
     // cheap status mode (#125). Discovery never launches Wallpaper Engine.
     // Poll at 15 s only while WE is present and running; absent, stopped or
     // failed scans back off to 60 s, still noticing a start within a minute.
-    // The timer stops when the integration is disabled or no helper is set.
+    // Disabled integration stops polling, except while a WE process is still
+    // known to run: ownership must still be handed back when it quits.
     readonly property int pollInterval: detected && running && status !== "error" ? 15000 : 60000
     Timer {
         id: pollTimer
         interval: root.pollInterval
-        running: root.enabled && root.python !== ""
+        running: (root.enabled || root.running) && root.python !== ""
         repeat: true
         onTriggered: root.refresh(false)
     }

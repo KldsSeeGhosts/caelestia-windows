@@ -14,7 +14,7 @@ scan also catches atomic replacements and process changes, with a full catalogue
 refresh every 20 idle scans or when state changes. The scan runs every 15 s only
 while WE is detected and running; it backs off to 60 s when WE is absent or
 stopped (a start is still noticed within a minute) or the last scan failed, and
-stops entirely when the integration is disabled or no helper is configured.
+stops when no helper is configured, or when the integration is disabled and no process is known to be running (ownership is still handed back when it quits).
 Invalid/partially written configs retain the last good catalogue and report an
 error, but independently observed process start/stop still updates the ownership
 guard. If the process scan itself fails, the existing failure policy retains
