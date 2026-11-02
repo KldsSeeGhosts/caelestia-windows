@@ -3,6 +3,7 @@ pragma Singleton
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import Quickshell.Windows as Native
 
 // Windows: Glazier owns capture, audio, timing and MP4 finalization. Never infer
 // a successful recording from the lifetime of the short-lived command client.
@@ -247,32 +248,33 @@ Singleton {
             send(paused ? "--resume" : "--pause");
     }
 
-    Process {
-        id: probe
-        running: root.permitted && !root.probed
-        command: ["powershell.exe", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command",
-            "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; "
-            + "$override=$env:CAELESTIA_GLAZIER_EXE; if ($override) { if (Test-Path -LiteralPath $override -PathType Leaf) { $override }; exit }; "
-            + "$installed=Join-Path $env:LOCALAPPDATA 'Programs\\Glazier\\glazier.exe'; "
-            + "if (Test-Path -LiteralPath $installed -PathType Leaf) { $installed } "
-            + "else { $cmd=Get-Command glazier.exe -ErrorAction SilentlyContinue; if ($cmd) { $cmd.Source } }"]
-        stdout: StdioCollector {
-            onStreamFinished: {
-                root.executable = text.trim();
-                root.available = root.executable !== "";
-            }
+    // Resolve with native path checks instead of a PowerShell child: a missing
+    // Glazier is re-probed every 30 s, and that periodic probe must not spawn a
+    // process (or a 30-80 MB interpreter) each time.
+    function probe(): void {
+        if (!permitted)
+            return;
+        const override = Quickshell.env("CAELESTIA_GLAZIER_EXE") || "";
+        let found = "";
+        if (override) {
+            found = Native.FsUtils.classify(override) === "file" ? override : "";
+        } else {
+            const installed = (Quickshell.env("LOCALAPPDATA") || "") + "/Programs/Glazier/glazier.exe";
+            found = Native.FsUtils.classify(installed) === "file" ? installed
+                : Native.FsUtils.findExecutable("glazier.exe");
         }
-        onExited: code => {
-            root.probed = true;
-            if (code !== 0 || root.executable === "") {
-                root.available = false;
-                root.lastError = "Glazier was not found. Install Glazier with control protocol v1.";
-            } else {
-                root.lastError = "";
-                root.poll();
-            }
+        executable = found;
+        available = found !== "";
+        probed = true;
+        if (found) {
+            lastError = "";
+            poll();
+        } else {
+            lastError = "Glazier was not found. Install Glazier with control protocol v1.";
         }
     }
+
+    Component.onCompleted: probe()
 
     function poll(): void {
         if (permitted && executable && !statusProcess.running && !commandProcess.running)
@@ -292,19 +294,22 @@ Singleton {
 
     // Poll even when the card is closed: tray/hotkey actions must be reflected.
     // Fast only when active or open; retry a failed host at 5 s, idle at 15 s.
+    // 1 s is plenty for Glazier's seconds-granularity state changes and halves
+    // the status-client spawn rate while recording.
     Timer {
-        interval: root.pollFast ? 500 : root.connectionFailed ? 5000 : 15000
+        interval: root.pollFast ? 1000 : root.connectionFailed ? 5000 : 15000
         running: root.permitted && root.executable !== ""
         repeat: true
         onTriggered: root.poll()
     }
 
-    // Notice a Glazier installed while the shell is running.
+    // Notice a Glazier installed while the shell is running. The probe is a
+    // native path check, so a 30 s re-check costs no process creation.
     Timer {
         interval: 30000
         running: root.permitted && root.probed && root.executable === ""
         repeat: true
-        onTriggered: root.probed = false
+        onTriggered: root.probe()
     }
 
     Timer {
