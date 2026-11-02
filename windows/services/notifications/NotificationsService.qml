@@ -80,6 +80,11 @@ QtObject {
     property int mirrorWrites: 0
     property int mirrorDisables: 0
     property bool mirroringApplied: false
+    // Consent observation is independent of active mirroring: the observer
+    // stays applied in Denied/Unavailable so a re-grant is seen with the
+    // notification centre closed.
+    property int observationWrites: 0
+    property bool observationApplied: false
     property int deniedPolls: 0
     property bool deniedPollExhausted: false
     property int mirroredCount: 0
@@ -167,6 +172,7 @@ QtObject {
             root.probeExistingAccess();
             return;
         }
+        root.disableObservation();
         root.disableMirroring();
         for (const record of root.list.slice()) {
             record.closed = true;
@@ -427,11 +433,11 @@ QtObject {
         root.settingsOpenRequests++;
     }
 
-    // Mirroring is reconciled in both directions. An applied mirror is
-    // withdrawn when access is lost, the mirror opt-in is removed, the backend
-    // becomes unavailable or the service is disabled — the disable write also
-    // stops the backend's own ten-second access polling. Re-granted access
-    // re-enables it with one fresh write, and no state writes repeatedly.
+    // Consent observation and active mirroring are reconciled separately. The
+    // observer runs while the user has the feature opted in and a usable owner
+    // backend exists, in every access state, so a re-grant is noticed with the
+    // notification centre closed. Active mirroring (and therefore banner
+    // suppression) follows the observed Allowed status.
     //
     // Property-change handlers can run before dependent bindings (mirrorStaged,
     // accessState) have re-evaluated, so the desired state is recomputed from
@@ -440,7 +446,21 @@ QtObject {
         const backend = root.backend;
         const staged = root.enabled && root.mirrorOptIn && root.backendError === ""
             && !!backend && backend?.ownership !== "contended";
-        const desired = staged && backend?.ready === true
+        const usable = staged && backend?.ready === true;
+
+        if (!usable) {
+            root.disableObservation();
+            root.disableMirroring();
+            return;
+        }
+
+        if (!root.observationApplied && typeof backend.setAccessObservation === "function") {
+            root.observationApplied = true;
+            root.observationWrites++;
+            backend.setAccessObservation(true);
+        }
+
+        const desired = usable
             && root.reportedAccess === 2
             && (root.useExistingAccess || root.consentRequested || backend?.accessRequested === true);
 
@@ -450,12 +470,20 @@ QtObject {
         }
         if (root.mirroringApplied)
             return;
-        if (!backend || typeof backend.setMirroring !== "function")
+        if (typeof backend.setMirroring !== "function")
             return;
 
         root.mirrorWrites++;
         root.mirroringApplied = true;
         backend.setMirroring(true);
+    }
+
+    function disableObservation(): void {
+        if (!root.observationApplied)
+            return;
+        root.observationApplied = false;
+        if (root.backend && typeof root.backend.setAccessObservation === "function")
+            root.backend.setAccessObservation(false);
     }
 
     function disableMirroring(): void {
@@ -465,6 +493,26 @@ QtObject {
         root.mirrorDisables++;
         if (root.backend && typeof root.backend.setMirroring === "function")
             root.backend.setMirroring(false);
+    }
+
+    // Ownership is real mutex ownership. A contended shell stops observing and
+    // mirroring; becoming owner runs the same start pass as a fresh shell:
+    // probe existing consent, re-observe, and reconcile mirroring/suppression.
+    function handleOwnershipChange(): void {
+        // Read the backend value directly: this handler can run before the
+        // computed ownership/contended bindings have re-evaluated.
+        const value = root.backend?.ownership;
+        if (value === "contended") {
+            root.disableObservation();
+            root.disableMirroring();
+            root.refreshAccess();
+            return;
+        }
+        if (value !== "owner")
+            return;
+        root.accessProbeBackend = null;
+        root.probeExistingAccess();
+        root.refreshAccess();
     }
 
     // The backend publishes real session-bus ownership: "owner" once its lock
@@ -574,10 +622,15 @@ QtObject {
             root.refreshAccess();
             root.probeExistingAccess();
         }
+
+        function onOwnershipChanged(): void {
+            root.handleOwnershipChange();
+        }
     }
 
     onBackendChanged: {
         root.accessProbeBackend = null;
+        root.observationApplied = false;
         root.refreshAccess();
         root.probeExistingAccess();
     }

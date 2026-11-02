@@ -72,6 +72,8 @@ QtObject {
         property int requestAccessCalls: 0
         property int setMirroringCalls: 0
         property bool lastMirroringValue: false
+        property int setAccessObservationCalls: 0
+        property bool lastAccessObservation: false
         property int refreshAccessStatusCalls: 0
         property int activateMirroredCalls: 0
         property var activateMirroredIds: []
@@ -90,6 +92,12 @@ QtObject {
             setMirroringCalls++;
             lastMirroringValue = enabled === true;
             mirrorSystemNotifications = enabled === true;
+        }
+
+        // Non-prompting consent observation, separate from mirroring.
+        function setAccessObservation(enabled): void {
+            setAccessObservationCalls++;
+            lastAccessObservation = enabled === true;
         }
 
         // The consent-fix revision's non-prompting status query.
@@ -214,6 +222,28 @@ QtObject {
         profileRoot: "C:/fixtures/profile"
         stateDirectory: "C:/fixtures/profile/state"
         backend: deniedFixture
+        accessPollBudget: 5
+    }
+
+    // Ownership transitions and the closed-centre re-grant path keep their own
+    // counters so the long mirroring fixture stays readable.
+    readonly property FakeBackend ownershipFixture: FakeBackend {}
+    readonly property NotificationsService ownershipService: NotificationsService {
+        enabled: true
+        mirrorOptIn: true
+        useExistingAccess: true
+        profileRoot: "C:/fixtures/profile"
+        stateDirectory: "C:/fixtures/profile/state"
+        backend: ownershipFixture
+    }
+
+    readonly property FakeBackend revocationFixture: FakeBackend {}
+    readonly property NotificationsService revocationService: NotificationsService {
+        enabled: true
+        mirrorOptIn: true
+        profileRoot: "C:/fixtures/profile"
+        stateDirectory: "C:/fixtures/profile/state"
+        backend: revocationFixture
         accessPollBudget: 5
     }
 
@@ -1468,6 +1498,12 @@ QtObject {
         // --- Mirroring: every access state -----------------------------------
         stageMirror(mirrorService, mirrorFixture, 0);
         check(mirrorService.mirrorStaged, "the mirror opt-in stages mirroring");
+        check(mirrorService.observationApplied
+            && mirrorFixture.setAccessObservationCalls === 1
+            && mirrorFixture.lastAccessObservation === true,
+            "staging starts consent observation independently of mirroring");
+        check(!mirrorService.mirroringApplied,
+            "observation alone does not enable active mirroring");
         check(mirrorService.accessState === "Unspecified",
             "un-queried access is the undecided consent state");
         check(mirrorService.canRequestAccess, "consent is available from Unspecified");
@@ -1728,6 +1764,9 @@ QtObject {
             "lost access withdraws the applied mirror with one disable write");
         check(!mirrorService.mirroringApplied && !mirrorService.systemMirrorActive,
             "the withdrawal is recorded in the service state");
+        check(mirrorService.observationApplied
+            && mirrorFixture.setAccessObservationCalls === 1,
+            "revocation keeps consent observation running for a re-grant");
 
         // Re-granted access re-enables with exactly one fresh write.
         mirrorFixture.systemNotificationAccess = 2;
@@ -1736,6 +1775,9 @@ QtObject {
             && mirrorFixture.setMirroringCalls === 3
             && mirrorFixture.lastMirroringValue === true,
             "re-granted access re-enables mirroring once");
+        check(mirrorService.observationApplied
+            && mirrorFixture.setAccessObservationCalls === 1,
+            "the observer survives the denied interval without a rewrite");
         mirrorService.refreshAccess();
         mirrorService.refreshAccess();
         check(mirrorService.mirrorWrites === 2 && mirrorFixture.setMirroringCalls === 3,
@@ -1753,10 +1795,18 @@ QtObject {
             + " applied=" + mirrorService.mirroringApplied
             + " status=" + mirrorService.mirrorStatus
             + " writes=" + mirrorService.mirrorWrites);
+        check(!mirrorService.observationApplied
+            && mirrorFixture.setAccessObservationCalls === 2
+            && mirrorFixture.lastAccessObservation === false,
+            "removing the opt-in is the only user action that stops observation");
         mirrorService.mirrorOptIn = true;
         check(mirrorService.mirrorWrites === 3 && mirrorFixture.setMirroringCalls === 5
             && mirrorFixture.lastMirroringValue === true,
             "restoring the opt-in re-enables the cached mirror");
+        check(mirrorService.observationApplied
+            && mirrorFixture.setAccessObservationCalls === 3
+            && mirrorFixture.lastAccessObservation === true,
+            "restoring the opt-in restarts observation");
 
         // A backend component failure is service unavailability; the disable
         // write also stops the backend's own access polling.
@@ -1764,13 +1814,105 @@ QtObject {
         check(mirrorService.mirrorDisables === 3 && mirrorFixture.setMirroringCalls === 6
             && mirrorFixture.lastMirroringValue === false,
             "backend unavailability withdraws the mirror");
+        check(!mirrorService.observationApplied
+            && mirrorFixture.setAccessObservationCalls === 4,
+            "backend unavailability stops observation");
         mirrorService.backendError = "";
         check(mirrorService.mirrorWrites === 4 && mirrorFixture.setMirroringCalls === 7
             && mirrorFixture.lastMirroringValue === true,
             "recovered availability re-enables the mirror");
+        check(mirrorService.observationApplied
+            && mirrorFixture.setAccessObservationCalls === 5,
+            "recovered availability restarts observation");
         mirrorService.enabled = false;
         check(mirrorService.mirrorDisables === 4 && mirrorFixture.setMirroringCalls === 8,
             "disabling the service withdraws the mirror once");
+        check(!mirrorService.observationApplied
+            && mirrorFixture.setAccessObservationCalls === 6
+            && mirrorFixture.lastAccessObservation === false,
+            "disabling the service stops observation once");
+
+        // --- Revocation with the notification centre closed ------------------
+        // The backend observes consent independently of mirroring after the
+        // service withdraws the active mirror on Denied. With the centre closed
+        // there is no service-owned poll; the backend observer is the only path
+        // that can see the re-grant.
+        revocationFixture.accessRequested = true;
+        stageMirror(revocationService, revocationFixture, 2);
+        revocationFixture.systemMirrorActive = true;
+        check(revocationService.mirroringApplied
+            && revocationService.bannerSuppressionAllowed,
+            "the closed-centre fixture starts with an allowed active mirror");
+        const revocationObservations = revocationFixture.setAccessObservationCalls;
+        check(revocationService.observationApplied && revocationObservations >= 1,
+            "the closed-centre fixture is observing consent");
+
+        revocationFixture.systemNotificationAccess = 3;
+        revocationService.refreshAccess();
+        revocationFixture.systemMirrorActive = false; // the worker stops on denial
+        check(revocationService.accessState === "Denied"
+            && !revocationService.bannerSuppressionAllowed,
+            "revocation withdraws suppression immediately");
+        check(!revocationService.mirroringApplied
+            && revocationFixture.lastMirroringValue === false,
+            "revocation stops active mirroring");
+        check(revocationService.observationApplied
+            && revocationFixture.setAccessObservationCalls === revocationObservations,
+            "revocation does not stop consent observation");
+        check(!revocationService.deniedPollingActive,
+            "the closed centre contributes no denied polling");
+
+        revocationFixture.systemNotificationAccess = 2;
+        revocationService.refreshAccess();
+        revocationFixture.systemMirrorActive = true;
+        check(revocationService.mirroringApplied
+            && revocationFixture.lastMirroringValue === true,
+            "a re-grant re-enables mirroring with the centre closed");
+        check(revocationService.bannerSuppressionAllowed,
+            "a re-grant restores banner suppression");
+        check(revocationFixture.setAccessObservationCalls === revocationObservations,
+            "recovery used the existing observer, not a new write");
+        check(revocationFixture.requestAccessCalls === 0,
+            "the closed-centre recovery never prompts");
+
+        // --- Ownership transitions -------------------------------------------
+        stageMirror(ownershipService, ownershipFixture, 2);
+        ownershipFixture.systemMirrorActive = true;
+        check(ownershipService.bannerSuppressionAllowed,
+            "the owner baseline suppresses banners");
+        const ownerProbes = ownershipFixture.refreshAccessStatusCalls;
+        const ownerWrites = ownershipService.mirrorWrites;
+        const ownerObservations = ownershipFixture.setAccessObservationCalls;
+
+        ownershipFixture.ownership = "contended";
+        ownershipFixture.systemMirrorActive = false;
+        check(!ownershipService.observationApplied
+            && ownershipFixture.lastAccessObservation === false,
+            "losing ownership stops consent observation");
+        check(!ownershipService.mirroringApplied
+            && ownershipFixture.lastMirroringValue === false,
+            "losing ownership stops mirroring");
+        check(!ownershipService.bannerSuppressionAllowed,
+            "losing ownership withdraws suppression");
+
+        ownershipFixture.ownership = "owner";
+        check(ownershipFixture.refreshAccessStatusCalls === ownerProbes + 1,
+            "becoming owner probes existing access like a fresh start: "
+            + ownershipFixture.refreshAccessStatusCalls + " vs " + (ownerProbes + 1));
+        check(ownershipService.observationApplied
+            && ownershipFixture.setAccessObservationCalls === ownerObservations + 2,
+            "becoming owner restarts consent observation after the contended stop: applied="
+            + ownershipService.observationApplied + " calls="
+            + ownershipFixture.setAccessObservationCalls + " expected=" + (ownerObservations + 2));
+        check(ownershipService.mirroringApplied
+            && ownershipService.mirrorWrites === ownerWrites + 1
+            && ownershipFixture.lastMirroringValue === true,
+            "becoming owner reconciles mirroring from the observed grant: applied="
+            + ownershipService.mirroringApplied + " writes=" + ownershipService.mirrorWrites
+            + " expected=" + (ownerWrites + 1) + " last=" + ownershipFixture.lastMirroringValue);
+        ownershipFixture.systemMirrorActive = true;
+        check(ownershipService.bannerSuppressionAllowed,
+            "becoming owner restores suppression");
 
         // --- Bounded denied polling -------------------------------------------
         stageMirror(deniedService, deniedFixture, 0);
@@ -1783,6 +1925,10 @@ QtObject {
             "denied access state is exposed");
         check(deniedService.mirrorWrites === 0 && deniedFixture.setMirroringCalls === 0,
             "denied access never enables mirroring");
+        check(deniedService.observationApplied
+            && deniedFixture.setAccessObservationCalls === 1
+            && deniedFixture.lastAccessObservation === true,
+            "denied access keeps the separate consent observer on");
         check(!deniedService.deniedPollingActive,
             "denied polling stays off while the center is hidden");
         deniedService.centerVisible = true;
@@ -1882,6 +2028,8 @@ QtObject {
 
         // --- The pinned backend revision stays feature-detected and safe -----
         stageMirror(pinnedService, pinnedFixture, 0);
+        check(!pinnedService.observationApplied && pinnedService.observationWrites === 0,
+            "the pinned backend without observation stays feature-detected");
         check(pinnedService.requestAccess(), "the pinned path still starts explicitly");
         pinnedFixture.systemNotificationAccess = 2;
         pinnedService.refreshAccess();

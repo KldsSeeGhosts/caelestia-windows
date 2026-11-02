@@ -12,7 +12,9 @@ import Quickshell.Services.Notifications
 // (qml.hpp line 112); leaving it there would construct the system mirror,
 // request notification-listener access and start reading real toasts. Mirroring
 // is enabled only by the service's setMirroring() after a non-prompting query
-// or the explicit consent button produces an Allowed status.
+// or the explicit consent button produces an Allowed status. setAccessObservation()
+// is separate: it keeps the backend's non-prompting consent observer alive
+// while the feature is opted in, in every access state, without reading toasts.
 //
 // requestAccess() is the single consent path. It is invoked only from
 // NotificationsService.requestAccess(), which the original notification-center
@@ -84,6 +86,14 @@ QtObject {
     // reads the access status and never prompts for Allowed/Denied/Unavailable.
     function setMirroring(enabled): void {
         server.mirrorSystemNotifications = enabled === true;
+    }
+
+    // Non-prompting consent observation, independent of active mirroring.
+    // Older backends lack it; the service then keeps the bounded denied poll.
+    function setAccessObservation(enabled): void {
+        if (typeof server.setSystemAccessObservation !== "function")
+            return;
+        server.setSystemAccessObservation(enabled === true);
     }
 
     // Activates a mirrored record's source app without dismissing the real
