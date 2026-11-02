@@ -14,7 +14,7 @@ New-Item -ItemType Directory -Force -Path $run | Out-Null
 
 $exe = Join-Path $BuildRoot 'caelestia\lib\focus-follows-mouse-tests.exe'
 if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) {
-    throw "Missing focus-follows-mouse test: $exe (run windows/scripts/Build-Prototype.ps1 first)."
+    throw "Missing focus-follows-mouse test: $exe (run windows/scripts/Build-Prototype.ps1 -Tests first)."
 }
 
 # The test uses a fake system boundary; it never reads or writes the real

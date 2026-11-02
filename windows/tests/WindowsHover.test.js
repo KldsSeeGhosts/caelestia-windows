@@ -3,7 +3,7 @@ const fs = require("node:fs");
 const vm = require("node:vm");
 const path = require("node:path");
 const logic = {};
-vm.runInNewContext(fs.readFileSync(path.join(__dirname, "WindowsHover.js"), "utf8"), logic);
+vm.runInNewContext(fs.readFileSync(path.join(__dirname, "../shell/adapters/modules/drawers/WindowsHover.js"), "utf8"), logic);
 let assertions = 0;
 function equal(actual, expected, label) {
     assertions++;

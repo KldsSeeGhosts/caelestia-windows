@@ -13,15 +13,27 @@ $lock = Get-Content -LiteralPath (Join-Path $repoRoot 'windows\sources.lock.json
 if ($lock.schemaVersion -ne 1) {
     throw 'Unsupported Windows source manifest schema.'
 }
-# The combined prototype splits its staging map per feature under sources.d.
-# Merging here fails on a duplicate destination or a source staged twice, so an
-# ambiguous fragment cannot reach a build.
-. (Join-Path $PSScriptRoot 'CombinedSources.ps1')
-$combinedManifest = Get-CombinedSourcesManifest (Join-Path $repoRoot 'windows\combined-prototype')
-$combinedFragments = @(Get-ChildItem -LiteralPath (Join-Path $repoRoot 'windows\combined-prototype\sources.d') -Filter '*.json' -File)
+# One production staging map, shared by the installer and the private shell test
+# host. Every entry must name a production file: the release drops the prototype
+# and fixture folders, so a production reference to one is a build blocker.
+$stagingManifestPath = Join-Path $repoRoot 'windows\shell\sources.json'
+$stagingManifest = Get-Content -LiteralPath $stagingManifestPath -Raw | ConvertFrom-Json
+$stagingEntries = @($stagingManifest.PSObject.Properties)
+$stagingPrototypeEntries = @($stagingEntries | Where-Object { $_.Name -match '^windows/[^/]+-prototype/' })
+$stagingDuplicateTargets = @($stagingEntries | Group-Object Value | Where-Object Count -gt 1)
+$stagingMissingSources = @($stagingEntries | Where-Object { -not (Test-Path -LiteralPath (Join-Path $repoRoot $_.Name) -PathType Leaf) })
 
 $blockers = New-Object 'System.Collections.Generic.List[string]'
 $tools = New-Object 'System.Collections.Generic.List[object]'
+if ($stagingPrototypeEntries.Count -ne 0) {
+    $blockers.Add("The production staging map references prototype folders: $($stagingPrototypeEntries[0].Name)")
+}
+if ($stagingDuplicateTargets.Count -ne 0) {
+    $blockers.Add("The production staging map stages '$($stagingDuplicateTargets[0].Group[0].Value)' from more than one source.")
+}
+if ($stagingMissingSources.Count -ne 0) {
+    $blockers.Add("The production staging map names a missing source: $($stagingMissingSources[0].Name)")
+}
 $onWindows = [Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT
 if (-not $onWindows) {
     $blockers.Add('Run this native Windows prerequisite check in Windows PowerShell.')
@@ -119,8 +131,9 @@ $report = [pscustomobject][ordered]@{
     }
     tools = @($tools.ToArray())
     stagingManifest = [pscustomobject][ordered]@{
-        fragments = $combinedFragments.Count
-        entries = @($combinedManifest.PSObject.Properties).Count
+        path = 'windows/shell/sources.json'
+        entries = $stagingEntries.Count
+        prototypeReferences = @($stagingPrototypeEntries | ForEach-Object { $_.Name })
     }
     nativeToolchainReady = $blockers.Count -eq 0
     blockers = @($blockers.ToArray())
