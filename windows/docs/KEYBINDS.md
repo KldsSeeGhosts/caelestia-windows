@@ -4,13 +4,13 @@ Back to the [Caelestia for Windows user guide](USER-GUIDE.md).
 
 On Linux, Caelestia relies on Hyprland (`hyprland.conf` or `keybinds.lua`) to capture global shortcuts and run window/workspace dispatchers. On Windows, the Quickshell backend provides a built-in `HotkeyManager` (`Quickshell.Windows.Hotkeys`) that registers chords without the Windows key through `RegisterHotKey` and runs every chord with the Windows key, and every lone-modifier tap or hold, through a low-level keyboard hook (`WH_KEYBOARD_LL`). A `Win+<Key>` bind can opt in to `RegisterHotKey` with `"register": true`; see [Routing](#routing-registerhotkey-or-the-keyboard-hook).
 
-Defaults are staged at `shell/defaults/windows/keybinds.json`. Production seeds `config/keybinds.json` under the recorded profile on first launch only.
+Defaults are staged from `defaults/windows/keybinds.json`. Production seeds `config/keybinds.json` under the recorded profile on first launch only.
 
 ---
 
 ## Where `keybinds.json` lives
 
-1. **Built-in defaults:** Shipped in the shell directory at `defaults/windows/keybinds.json`.
+1. **Built-in defaults:** Shipped in the repository at `defaults/windows/keybinds.json`.
 2. **User overrides:** `CAELESTIA_WINDOWS_KEYBINDS` selects an explicit file first. Otherwise `"configFile":"keybinds.json"` resolves under `CAELESTIA_CONFIG_DIR` when that file exists, so production uses `%LOCALAPPDATA%\caelestia-windows\config\keybinds.json`. The legacy fallback `"userFile":"caelestia/windows/keybinds.json"` resolves under Qt GenericDataLocation.
 
 `HotkeyManager` watches your `keybinds.json` file and reloads bindings automatically within 200 ms whenever you save changes. It also re-evaluates punctuation keys automatically when your active Windows keyboard layout changes.

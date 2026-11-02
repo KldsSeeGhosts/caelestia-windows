@@ -12,9 +12,9 @@ Inspected checkout: `windows/m1-bar-drawer`, initially
 paths and 1-based source lines at inspection time. Backend paths are prefixed
 with `windows/deps/quickshell/`.
 
-Read the repository/global AGENTS instructions, `windows/README.md`,
-`windows/ROADMAP.md`, and `windows/HANDOFF.md`. Parent owns implementation,
-runtime validation, and Linear.
+Read the repository/global AGENTS instructions, `windows/README.md`, and
+`windows/ROADMAP.md`. Parent owns implementation, runtime validation, and
+Linear.
 
 ## Findings that block an unchanged original drawer
 

@@ -22,7 +22,7 @@ are relative to this document; line numbers refer to the revisions above.
 Concurrent M2 edits are not evidence for these findings.
 
 Read [AGENTS.md](../../AGENTS.md), [Windows README](../README.md),
-[ROADMAP](../ROADMAP.md), [HANDOFF](../HANDOFF.md), and the M1
+[ROADMAP](../ROADMAP.md), and the M1
 [dependency](M1-DEPENDENCIES.md) and [backend API](M1-BACKEND-API.md) audits.
 M1 established a bounded original bar/session prototype, with unavailable
 services. It did not validate Windows services.
