@@ -20,11 +20,18 @@ Singleton {
         for (const filter of filterList) {
             if (regexChecker.test(filter)) {
                 let re = _regexCache[filter];
-                if (!re) {
-                    re = new RegExp(filter);
+                if (re === undefined) {
+                    // Windows: a user pattern that does not compile is skipped (and
+                    // remembered as such). The engine's error text carries the
+                    // pattern, so it is never logged.
+                    try {
+                        re = new RegExp(filter);
+                    } catch (error) {
+                        re = null;
+                    }
                     _regexCache[filter] = re;
                 }
-                if (re.test(target))
+                if (re && re.test(target))
                     return true;
             } else {
                 if (filter === target)

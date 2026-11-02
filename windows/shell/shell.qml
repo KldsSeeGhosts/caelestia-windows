@@ -107,6 +107,23 @@ ShellRoot {
         value: ShellState.anySidebarOpen()
     }
 
+    // The native classifier recognises Windows' own shell UI by class and
+    // host process. Taskbar eligibility (tool, no-activate and owned windows)
+    // is a separate question: such a window is not a shell surface, and a
+    // fullscreen one still counts as fullscreen. This list adds a positive
+    // shell identity for third-party shell windows the classifier cannot tell
+    // apart; it never changes the taskbar or fullscreen rules, is empty by
+    // default and reloads live. Selectors use the tiling dialect: exe:,
+    // class:, title:, or an unprefixed exe/class pattern (`screen:` is
+    // rejected, and so is a title pattern that matches an empty title).
+    Binding {
+        target: Native.ShellSurfaces
+        property: "extra"
+        // The backend validates element types and rejects `screen:` rules;
+        // never coerce unknown config entries into selector text here.
+        value: GlobalConfig.windows?.shellSurfaces?.extra ?? []
+    }
+
     // IPC selects this installation; tiling retains its separate opt-in.
     IpcHandler {
         target: "shell"
