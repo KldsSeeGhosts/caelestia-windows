@@ -90,12 +90,40 @@ ShellRoot {
     }
     Window { id: winB; width: 640; height: 400; visible: true }
 
+    // True once every active Loader under the clock, including the nested
+    // asynchronous blur Loader that owns the capture, has finished loading.
+    function loadersReady(item): bool {
+        for (const child of item.children) {
+            if ("sourceComponent" in child && "status" in child
+                    && child.active && child.status !== Loader.Ready)
+                return false;
+            if (!loadersReady(child))
+                return false;
+        }
+        return true;
+    }
+    function fail(error): void {
+        console.error("CAELESTIA_BACKGROUND_HANDBACK_FAIL " + error);
+        Qt.exit(1);
+    }
+
+    // Wait for the capture to exist instead of a fixed delay, so a slow load
+    // cannot reparent before the defective capture is created.
+    property int waitedMs: 0
     Timer {
-        interval: 1600; running: true
+        interval: 100; running: true; repeat: true
         onTriggered: {
+            root.waitedMs += interval;
+            if (!(root.desktopClock && root.loadersReady(root.desktopClock))) {
+                if (root.waitedMs >= 10000) {
+                    stop();
+                    root.fail("the desktop clock and its blur capture did not load");
+                }
+                return;
+            }
+            stop();
             try {
                 check(root.hostEnabled, "the background host stays enabled while the external owner stops");
-                check(root.desktopClock !== null, "the desktop clock loaded");
                 check(root.desktopClock.blurEnabled, "the desktop clock blur is active for this fixture");
                 check(wn(behindClock) === "A", "the desktop clock starts on the first window");
 
@@ -109,11 +137,24 @@ ShellRoot {
 
                 check(wn(behindClock) === "B", "the wallpaper follows the recreated window");
                 check(wn(root.desktopClock) === "B", "the desktop clock follows the recreated window");
+                settle.start();
+            } catch (error) {
+                root.fail(error);
+            }
+        }
+    }
+    // Let the moved tree go through an event-loop and render turn before
+    // passing, so deferred failures surface too.
+    Timer {
+        id: settle
+        interval: 300
+        onTriggered: {
+            try {
+                check(wn(behindClock) === "B", "the wallpaper stays on the recreated window after a render turn");
                 console.log("CAELESTIA_BACKGROUND_HANDBACK_PASS " + assertions);
                 Qt.quit();
             } catch (error) {
-                console.error("CAELESTIA_BACKGROUND_HANDBACK_FAIL " + error);
-                Qt.exit(1);
+                root.fail(error);
             }
         }
     }
