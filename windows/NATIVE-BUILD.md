@@ -90,7 +90,10 @@ powershell -NoProfile -File windows/scripts/Build-Prototype.ps1 `
 ```
 
 `-BuildRoot` selects another output directory and `-Jobs` changes parallelism
-(default 4). The default directory is `windows/.local/build`.
+(default 4). The default directory is `windows/.local/build`. `-Tests` also
+builds the native test executables used by
+`windows/scripts/Test-ClipboardHistory.ps1`, `Test-DisplayPower.ps1` and
+`Test-FocusFollowsMouse.ps1`; production builds omit them.
 
 The build also produces `quickshell/brightness-probe.exe`. It uses the native
 brightness controller without starting the shell. Set Qt's bin directory in
