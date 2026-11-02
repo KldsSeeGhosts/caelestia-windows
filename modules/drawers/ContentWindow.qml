@@ -31,7 +31,8 @@ StyledWindow {
     readonly property HyprlandMonitor monitor: Hypr.monitorFor(screen)
     readonly property bool hasSpecialWorkspace: (monitor?.lastIpcObject.specialWorkspace?.name.length ?? 0) > 0
     // Windows workspaces span monitors; Hyprland workspaces already belong to one.
-    readonly property bool hasFullscreenOnNormalWs: monitor?.activeWorkspace?.toplevels.values.some(t => t.monitor === root.monitor && t.lastIpcObject.fullscreen > 1) ?? false
+    // Windows: the backend's fullscreen-occluder verdict (the one AppBar uses) also counts, because a fullscreen window hidden from the task list is not a toplevel.
+    readonly property bool hasFullscreenOnNormalWs: (monitor?.lastIpcObject.fullscreenOccluder ?? false) || (monitor?.activeWorkspace?.toplevels.values.some(t => t.monitor === root.monitor && t.lastIpcObject.fullscreen > 1) ?? false)
     readonly property bool hasFullscreen: {
         if (hasSpecialWorkspace) {
             const specialName = monitor?.lastIpcObject.specialWorkspace?.name;

@@ -21,7 +21,17 @@ PageBase {
     }
 
     function matchedByRegex(filterList: list<string>, id: string): bool {
-        return filterList.some(f => isRegexEntry(f) && new RegExp(f).test(id));
+        // Windows: a user pattern that does not compile matches nothing; the
+        // error text carries the pattern, so it is not logged.
+        return filterList.some(f => {
+            if (!isRegexEntry(f))
+                return false;
+            try {
+                return new RegExp(f).test(id);
+            } catch (error) {
+                return false;
+            }
+        });
     }
 
     onAppChanged: {

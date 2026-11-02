@@ -98,7 +98,11 @@ corresponding profile values. With no override, profile settings apply.
   matches app id, executable name/basename and window class). An empty list
   means "all eligible windows" on the backend, which is exactly why
   interactive refuses to enable without one: enabling would immediately lay
-  out every eligible window on the desktop.
+  out every eligible window on the desktop. An allowlist whose entries all fail
+  the backend's validation (for example an unterminated `[`) is not "empty": it
+  matches nothing, and interactive refuses it using the backend's validated
+  `includedRuleCount`, not the raw list length. A `title:` selector that would
+  match an empty title is rejected the same way.
 - `CAELESTIA_WINDOWS_TILING_EXCLUDED`, same dialect, always applied.
   Exclusions win over inclusions; the host process is never managed by the
   backend itself.
