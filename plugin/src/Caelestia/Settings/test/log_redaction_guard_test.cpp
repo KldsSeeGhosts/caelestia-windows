@@ -81,6 +81,16 @@ QString stripSafeCalls(QString text) {
     return text;
 }
 
+// A raw per-screen value: the screen itself, its name, or a name lookup. Reading
+// another property of a screen (screen->geometry(), m_screen->devicePixelRatio())
+// streams no identifier, so only an accessor other than name() is let through.
+QRegularExpressionMatch rawScreenValue(const QString& code) {
+    static const auto pattern = QRegularExpression(
+        QStringLiteral(R"(\b(?:screen|m_screen)\b(?!\s*(?:->|\.)\s*(?!name\b)[A-Za-z_])|\b(?:screenName|nameFor)\b)")
+    );
+    return pattern.match(code);
+}
+
 bool isLogStart(const QString& line) {
     static const auto pattern = QRegularExpression(
         QStringLiteral(R"(\bqC(?:Debug|Info|Warning|Critical)\b|\bq(?:Debug|Info|Warning|Critical)\s*\()")
@@ -94,12 +104,23 @@ class PluginLogRedactionGuardTest: public QObject {
     Q_OBJECT
 
 private slots:
+    void otherScreenPropertiesAreNotIdentifiers() {
+        // Properties that carry no identifier.
+        QVERIFY(!rawScreenValue(QStringLiteral("qCDebug(lc) << screen->geometry();")).hasMatch());
+        QVERIFY(!rawScreenValue(QStringLiteral("qCDebug(lc) << m_screen->devicePixelRatio();")).hasMatch());
+        QVERIFY(!rawScreenValue(QStringLiteral("qCDebug(lc) << screen . size ();")).hasMatch());
+        // The screen itself, its name and name lookups still are.
+        QVERIFY(rawScreenValue(QStringLiteral("qCDebug(lc) << screen;")).hasMatch());
+        QVERIFY(rawScreenValue(QStringLiteral("qCDebug(lc) << screen->name();")).hasMatch());
+        QVERIFY(rawScreenValue(QStringLiteral("qCDebug(lc) << m_screen.name();")).hasMatch());
+        QVERIFY(rawScreenValue(QStringLiteral("qCDebug(lc) << screenName;")).hasMatch());
+        QVERIFY(rawScreenValue(QStringLiteral("qCDebug(lc) << nameFor(layer);")).hasMatch());
+        QVERIFY(rawScreenValue(QStringLiteral("qCDebug(lc) << screen->geometry() << screen;")).hasMatch());
+    }
+
     void screenNamesAreRedacted() {
         auto root = QDir(QStringLiteral(CAELESTIA_PLUGIN_SRC));
         QVERIFY2(root.exists(), qPrintable(QStringLiteral("Source root missing: %1").arg(root.path())));
-
-        static const auto rawPattern =
-            QRegularExpression(QStringLiteral(R"(\b(?:screen|m_screen|screenName|nameFor)\b)"));
 
         auto failures = QStringList();
         auto iterator = QDirIterator(
@@ -142,7 +163,7 @@ private slots:
                 index = cursor;
 
                 const auto code = stripSafeCalls(stripLineComments(stripStrings(statement)));
-                const auto raw = rawPattern.match(code);
+                const auto raw = rawScreenValue(code);
                 if (raw.hasMatch()) {
                     failures.append(QStringLiteral("%1:%2: raw screen value `%3` is streamed to a log")
                                         .arg(relative)

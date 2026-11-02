@@ -45,7 +45,9 @@ RStateRoot::~RStateRoot() {
     flushPending();
 }
 
-SETTINGS_SINGLETON_IMPL(PersistentState, PStateRoot, stateDir(), monitorStateDir(), u"state.json"_s, Handler)
-SETTINGS_SINGLETON_IMPL(RuntimeState, RStateRoot, runtimeDir(), monitorRuntimeDir(), u"state.json"_s, Handler)
+SETTINGS_SINGLETON_IMPL(
+    PersistentState, PStateRoot, stateDir(), monitorStateDir(), u"state/persistent"_s, u"state.json"_s, Handler)
+SETTINGS_SINGLETON_IMPL(
+    RuntimeState, RStateRoot, runtimeDir(), monitorRuntimeDir(), u"state/runtime"_s, u"state.json"_s, Handler)
 
 } // namespace caelestia::shell::state

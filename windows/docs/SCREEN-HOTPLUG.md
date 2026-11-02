@@ -107,23 +107,38 @@ these separate concepts:
 ### Persisted name reservations
 
 The profile state dir holds `screen-names.json`. It maps each **persistent**
-`stableId` to its assigned name plus optional legacy metadata. Names are
-allocated once, on first discovery:
+`stableId` to its assigned name plus optional legacy metadata. The key is the
+unsalted SHA-256 of the id (`sha256:<hex>`), so the file never holds an
+interface path; it is stable across runs, unlike the per-process `logId()`.
+Entries written with a raw `path:` key are rewritten as hashes on first read.
+Names are allocated once, on first discovery:
 
 - the plain label if no reservation already owns it case-insensitively;
 - otherwise the lowest free ` (2)`, ` (3)`... suffix.
 
 Existing assignments are never renumbered, disconnected monitors stay in the
-file, and the file is written atomically (`QSaveFile`, temp then replace). Only
-`path:` ids are stored. A user who already has monitor A alone keeps `X` and its
-settings when identical monitor B is connected; B gets `X (2)`. Removing B never
-renames A, and a restart reloads the same assignments. A genuine label that ends
-in `(2)` is just a label; it is reserved exactly like any other.
+file, and the file is written atomically (`QSaveFile`, temp then replace). Each
+entry records the date it was last seen. At most 64 are kept; the least recently
+seen disconnected ones are dropped first and a connected monitor never is. A
+user who already has monitor A alone keeps `X` and its settings when identical
+monitor B is connected; B gets `X (2)`. Removing B never renames A, and a restart
+reloads the same assignments. A genuine label that ends in `(2)` is just a
+label; it is reserved exactly like any other.
+
+If the file exists but cannot be read or parsed, it is left untouched: the
+registry runs on in-memory names for that session, never saves, and logs a fixed
+message without the path.
 
 Session-local ids never enter the reservation file and get a new lifetime token
 when the QScreen is replaced or its target changes behind the same GDI source.
-Brightness and gamma drop session-keyed state when that id leaves the topology,
-so a replacement monitor starts fresh.
+Their names are reserved in memory for as long as the session id survives, so
+unplugging one of two identical session-only monitors never renames the other;
+only a new session id is allocated a name, and it avoids every persistent name.
+When the same live screen later gains an interface path, `identityUpgraded`
+carries brightness routes and gamma ramps, factors and restoration obligations
+from the session id to the persistent one. Brightness and gamma drop
+session-keyed state only when the id leaves the topology, so a replacement
+monitor starts fresh.
 
 `ShellScreen.name` is the unique name. It stays name-shaped for upstream QML
 that compares or displays `screen.name`, but native routing resolves it through
@@ -134,8 +149,8 @@ the global screen list still republish after identity changes.
 
 | Consumer | Key before | After |
 | --- | --- | --- |
-| `src/windows/system/brightness.cpp` route, last value, generation, in-flight, settle timers | friendly name | persistent `stableId`; session keys are pruned on removal. Probes/drives still use the live QScreen's HMONITOR |
-| `src/windows/system/gamma.cpp` backlight/dim factors, floors, saved ramps, restoration set | friendly name | `stableId`; `CreateDC` resolves the live GDI source, never an opaque id. Session keys are pruned on removal |
+| `src/windows/system/brightness.cpp` route, last value, generation, in-flight, settle timers | friendly name | persistent `stableId`; session keys follow an id upgrade of the same screen and are pruned on removal. Probes/drives still use the live QScreen's HMONITOR |
+| `src/windows/system/gamma.cpp` backlight/dim factors, floors, saved ramps, restoration set | friendly name | `stableId`; `CreateDC` resolves the live GDI source, never an opaque id. Session keys follow an id upgrade of the same screen (ramps and restoration included) and are pruned on removal |
 | `src/windows/system/night_light.cpp` | friendly name pass-through | unique name resolved by gamma |
 | `src/windows/system/screenshot.cpp`, `screen_recorder.cpp`, `input.cpp`, `desktop_drop.cpp`, `tools/brightness_probe.cpp` | friendly label selection/publication | unique name, resolved through the registry; no label scan |
 | `src/windows/tiling.cpp` `screen:` selectors and `tiling_scope.cpp` | friendly name | unique name; layout ownership remains desktop GUID plus QScreen pointer |
@@ -170,11 +185,19 @@ When the backend allocates a generated suffix for the first time and
 as `Other Monitor (2)` never triggers a copy.
 
 The plugin's `LayerRegistry` reads that reservation by name, copies the legacy
-file once, and records the completed layer suffix in `legacyCopied` in the
-reservation. The old directory is never moved, rewritten or deleted. A deleted
-destination is not recopied, because completion is recorded independently of
-the destination. Failures are logged as a count only. The logic is inert outside
-Windows and without reservation metadata.
+file once, and records the completed layer in `legacyCopied` in the
+reservation. A layer is identified by its storage area and file, not the file
+name alone: `config/shell.json`, `config/shell-tokens.json`,
+`state/persistent/state.json` and `state/runtime/state.json`, so copying one
+never stops another from migrating. The old directory is never moved, rewritten
+or deleted. A deleted destination is not recopied, because completion is
+recorded independently of the destination.
+
+Copy and record are one step. The record is opened for writing before the copy
+and committed after it. If the commit fails, the copied file stays and the
+failure is remembered for the session, so the copy is not repeated; an unreadable
+record is never overwritten. Failures are logged as a count only. The logic is
+inert outside Windows and without reservation metadata.
 
 A legacy `monitors/<plain label>/` directory was shared by every monitor with
 that label; it cannot reveal which physical monitor owned the settings. The copy
