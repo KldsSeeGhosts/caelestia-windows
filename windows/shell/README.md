@@ -309,6 +309,17 @@ tiler before enabling control. `windows.tiling` in `shell.json` supports live ru
 [the schema](../services/tiling/README.md). Omitted launcher switches allow the
 profile to apply.
 
+## Public offscreen smoke
+
+`windows/scripts/Test-Smoke.ps1 -BuildRoot <build> -QtPrefix <qt>` is the
+public smoke command. It stages this production map, runs the built `qs.exe`
+with `QT_QPA_PLATFORM=offscreen` and the software backend under an isolated
+temporary profile, and exits 0 once every drawer has presented its first frame.
+All services and control paths stay off. It never installs or reads the live
+profile, and it fails on a QML diagnostic, missing import, wrong pin, missing
+plugin DLL or a 90-second timeout. See
+[the build guide](../NATIVE-BUILD.md#smoke).
+
 ## Temporary installed smoke
 
 Install with separate `-Prefix` and `-ProfileRoot` under a temporary directory.
