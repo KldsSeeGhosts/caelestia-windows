@@ -21,7 +21,12 @@ StyledWindow {
     // Automated rendering can exercise the original graph without taking input.
     property bool interactionEnabled: true
 
-    readonly property ScreenState screenState: ShellState.forScreen(screen)
+    // Windows: on hot-unplug a screen's state leaves the ShellState lookup
+    // before this window is deleted, so keep a fallback for teardown (#215).
+    readonly property ScreenState teardownState: ScreenState {
+        modelData: root.screen
+    }
+    readonly property ScreenState screenState: ShellState.forScreen(screen) ?? teardownState
 
     readonly property HyprlandMonitor monitor: Hypr.monitorFor(screen)
     readonly property bool hasSpecialWorkspace: (monitor?.lastIpcObject.specialWorkspace?.name.length ?? 0) > 0
