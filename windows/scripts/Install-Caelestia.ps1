@@ -282,10 +282,13 @@ try {
         if ($scheme.available) {
             Write-Output ('Scheme runtime prepared in {0:N2}s.' -f $scheme.seconds)
         } else {
-            Write-Warning 'Scheme runtime was not prepared; Caelestia will start with its fixed palette. The install continues; see scheme\runtime.json and retry with Install-SchemeRuntime.ps1.'
+            Write-Warning 'Scheme runtime was not prepared; Caelestia will start with its fixed palette. The install continues; see scheme\provision.log and provision-state.json, then retry with Install-SchemeRuntime.ps1.'
         }
     }
     $runtimePrefix = Install-CaelestiaVersion $Prefix $payload -Restart:$Restart
+    # Pruning is deferred while any shell or supervisor can still be using a
+    # generation; the next install without a live shell removes the rest.
+    Remove-CaelestiaSchemeGenerations $Prefix $ProfileRoot
     $launcher = Join-Path $Prefix 'Start-Caelestia.ps1'
     $powershell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
     $arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $launcher + '"'

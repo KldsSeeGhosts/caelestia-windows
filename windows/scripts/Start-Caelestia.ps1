@@ -111,18 +111,40 @@ if ($Command -eq 'Start') {
     }
 }
 
+$schemeRevision = ''
+if ($Command -eq 'Start' -and -not $SkipSchemeRuntime) {
+    try { $schemeRevision = Get-CaelestiaSchemeRevision $Prefix } catch { $schemeRevision = '' }
+}
 $schemeRuntime = $null
 if ($Command -eq 'Start' -and -not $SkipSchemeRuntime) {
     if ($PreparedSchemeRuntime) {
-        $schemeRuntime = Get-CaelestiaPreparedSchemeRuntime $profile
+        # Activation consumes only a completed generation for this payload's
+        # pinned revision. Missing, failed or mismatched records keep the fixed
+        # palette instead of provisioning inside the readiness budget.
+        if ($schemeRevision) { $schemeRuntime = Get-CaelestiaPreparedSchemeRuntime $profile $schemeRevision $Prefix }
         if ($null -eq $schemeRuntime) {
             # The installer reports the failure while the previous version is
             # still live. Keep the new shell running on its fixed palette.
-            Write-CaelestiaSchemeRuntimeLog $profile 'Scheme runtime was not prepared; starting with the fixed palette. Run Install-SchemeRuntime.ps1 to retry.'
+            Write-CaelestiaSchemeRuntimeLog $profile 'Scheme runtime was not prepared; starting with the fixed palette. Install or the next normal start can retry it.'
         }
     } else {
-        $schemeRuntime = & (Join-Path $PSScriptRoot 'Install-SchemeRuntime.ps1') -ProfileRoot $profile |
-            Select-Object -Last 1 | ConvertFrom-Json
+        # A valid published generation needs no provisioning. Otherwise try to
+        # repair without waiting; a busy lock keeps the fixed palette.
+        if ($schemeRevision) { $schemeRuntime = Get-CaelestiaPreparedSchemeRuntime $profile $schemeRevision $Prefix }
+        if ($null -eq $schemeRuntime) {
+            try {
+                $schemeResult = & (Join-Path $PSScriptRoot 'Install-SchemeRuntime.ps1') -ProfileRoot $profile -LockWaitSeconds 0 |
+                    Select-Object -Last 1 | ConvertFrom-Json
+                if ($schemeResult -and $schemeResult.available -eq $true -and
+                    (-not $schemeRevision -or [string]$schemeResult.revision -eq $schemeRevision)) {
+                    $schemeRuntime = $schemeResult
+                } elseif ($schemeResult -and $schemeResult.inProgress -eq $true) {
+                    Write-CaelestiaSchemeRuntimeLog $profile 'Another scheme provisioning run is in progress; starting with the fixed palette.'
+                }
+            } catch {
+                Write-CaelestiaSchemeRuntimeLog $profile 'Scheme runtime preparation could not run; starting with the fixed palette.'
+            }
+        }
     }
 }
 $schemeAvailable = $null -ne $schemeRuntime -and $schemeRuntime.available -eq $true

@@ -124,16 +124,80 @@ function Get-WindowsPowerShellPath {
     return Join-Path $PSHOME 'powershell.exe'
 }
 
+# Scheme CLI revision pinned by a repository or installed payload.
+function Get-CaelestiaSchemeRevision([string]$RuntimePrefix) {
+    try {
+        $lockPath = Join-Path $RuntimePrefix '..\sources.lock.json'
+        if (Test-Path -LiteralPath (Join-Path $RuntimePrefix 'install.json')) {
+            $installed = Join-Path $RuntimePrefix 'licenses\sources.lock.json'
+            if (Test-Path -LiteralPath $installed -PathType Leaf) { $lockPath = $installed }
+        }
+        if (-not (Test-Path -LiteralPath $lockPath -PathType Leaf)) { return '' }
+        $lock = Get-Content -LiteralPath $lockPath -Raw | ConvertFrom-Json
+        return [string]$lock.schemeCli.revision
+    } catch {
+        return ''
+    }
+}
+
+# Generation directories are hash-derived names only. runtime.json is local
+# data, so never feed an arbitrary path into a process start.
+function Test-CaelestiaSchemeGeneration([string]$Generation) {
+    return $Generation -match '^[a-f0-9]{16,64}(-[a-f0-9]{8})?$'
+}
+
+# One provisioning run per profile, across installer prepare, normal starts and
+# repairs. The lock covers both the generation build and the atomic publish of
+# runtime.json; starts take it without waiting and fall back to the fixed
+# palette when another process is already provisioning.
+function New-CaelestiaSchemeLock([string]$ProfileRoot) {
+    $key = Get-CaelestiaInstallLockKey $ProfileRoot
+    $mutex = $null
+    try {
+        $mutex = [Threading.Mutex]::new($false, 'Global\CaelestiaScheme-' + $key)
+    } catch [System.UnauthorizedAccessException] {
+        $mutex = [Threading.Mutex]::new($false, 'Local\CaelestiaScheme-' + $key)
+    }
+    return [pscustomobject]@{ Mutex = $mutex; Held = $false }
+}
+
+function Enter-CaelestiaSchemeLock([string]$ProfileRoot, [int]$WaitSeconds = 0) {
+    $lock = New-CaelestiaSchemeLock $ProfileRoot
+    try {
+        try { $lock.Held = $lock.Mutex.WaitOne([Math]::Max(0, $WaitSeconds) * 1000) }
+        catch [Threading.AbandonedMutexException] { $lock.Held = $true }
+    } catch {
+        $lock.Mutex.Dispose()
+        throw
+    }
+    if (-not $lock.Held) {
+        $lock.Mutex.Dispose()
+        return $null
+    }
+    return $lock
+}
+
+function Exit-CaelestiaSchemeLock($Lock) {
+    if (-not $Lock) { return }
+    try {
+        if ($Lock.Held) { $Lock.Mutex.ReleaseMutex() }
+    } finally {
+        $Lock.Held = $false
+        $Lock.Mutex.Dispose()
+    }
+}
+
 # Optional profile-local Python dependencies. The installer runs this while the
 # previous shell still serves the desktop, so activation never waits for a venv,
 # pip or the network. A failure is returned instead of thrown: the shell keeps
-# its fixed palette and the installation remains valid.
+# its fixed palette and the installation remains valid. The wait is bounded and
+# only used outside the readiness budget.
 function Install-CaelestiaSchemeRuntime([string]$RuntimePrefix, [string]$ProfileRoot) {
     $clock = [Diagnostics.Stopwatch]::StartNew()
     $record = $null
     $message = ''
     try {
-        $record = & (Join-Path $RuntimePrefix 'Install-SchemeRuntime.ps1') -ProfileRoot $ProfileRoot |
+        $record = & (Join-Path $RuntimePrefix 'Install-SchemeRuntime.ps1') -ProfileRoot $ProfileRoot -LockWaitSeconds 900 |
             Select-Object -Last 1 | ConvertFrom-Json
     } catch {
         $message = $_.Exception.Message
@@ -151,18 +215,159 @@ function Install-CaelestiaSchemeRuntime([string]$RuntimePrefix, [string]$Profile
     }
 }
 
-# Activation reads only a completed provisioning record; it never creates a
-# venv or installs packages. Missing or failed records start the fixed palette.
-function Get-CaelestiaPreparedSchemeRuntime([string]$ProfileRoot) {
+# Activation reads only a completed, revision-matched generation. It never
+# creates a venv or installs packages. Missing, failed or mismatched records
+# start the fixed palette.
+function Get-CaelestiaPreparedSchemeRuntime([string]$ProfileRoot, [string]$ExpectedRevision = '', [string]$RuntimePrefix = '') {
     try {
-        $record = Get-Content -LiteralPath (Join-Path $ProfileRoot 'scheme\runtime.json') -Raw | ConvertFrom-Json
+        $schemeRoot = [IO.Path]::GetFullPath((Join-Path $ProfileRoot 'scheme')).TrimEnd('\')
+        $record = Get-Content -LiteralPath (Join-Path $schemeRoot 'runtime.json') -Raw | ConvertFrom-Json
         if ($record.available -ne $true) { return $null }
+        if ($ExpectedRevision -and [string]$record.revision -ne $ExpectedRevision) { return $null }
+        if (-not (Test-CaelestiaSchemeGeneration ([string]$record.generation))) { return $null }
+        $runtimesRoot = [IO.Path]::GetFullPath((Join-Path $schemeRoot 'runtimes')).TrimEnd('\')
+        $generationRoot = [IO.Path]::GetFullPath((Join-Path $runtimesRoot ([string]$record.generation))).TrimEnd('\')
+        if (-not $generationRoot.StartsWith($runtimesRoot + '\', [StringComparison]::OrdinalIgnoreCase)) { return $null }
+        $generation = Get-Content -LiteralPath (Join-Path $generationRoot 'generation.json') -Raw | ConvertFrom-Json
+        if ([string]$generation.revision -ne [string]$record.revision) { return $null }
+        if ($RuntimePrefix) {
+            $targetHelper = Join-Path $RuntimePrefix 'scheme\win_scheme.py'
+            $targetRequirements = Join-Path $RuntimePrefix 'scheme\requirements.lock.txt'
+            if (-not (Test-Path -LiteralPath $targetHelper -PathType Leaf) -or
+                -not (Test-Path -LiteralPath $targetRequirements -PathType Leaf)) { return $null }
+            $helperHash = (Get-FileHash -LiteralPath $targetHelper -Algorithm SHA256).Hash.ToLowerInvariant()
+            $requirementsHash = (Get-FileHash -LiteralPath $targetRequirements -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ([string]$generation.helperSha256 -ne $helperHash -or
+                [string]$generation.requirementsSha256 -ne $requirementsHash) { return $null }
+        }
         foreach ($path in @([string]$record.python, [string]$record.helper)) {
-            if (-not $path -or -not (Test-Path -LiteralPath $path -PathType Leaf)) { return $null }
+            if (-not $path) { return $null }
+            $full = [IO.Path]::GetFullPath($path)
+            if (-not $full.StartsWith($generationRoot + '\', [StringComparison]::OrdinalIgnoreCase)) { return $null }
+            if (-not (Test-Path -LiteralPath $full -PathType Leaf)) { return $null }
         }
         return $record
     } catch {
         return $null
+    }
+}
+
+# Point runtime.json at an existing generation for the requested revision
+# without provisioning. Activation calls this before the readiness clock; a
+# busy lock or a missing generation returns null and the shell starts fixed.
+function Set-CaelestiaSchemeRuntimeForRevision([string]$ProfileRoot, [string]$Revision, [string]$RuntimePrefix = '') {
+    try {
+        if (-not $Revision) { return $null }
+        $expectedHelperHash = ''
+        $expectedRequirementsHash = ''
+        if ($RuntimePrefix) {
+            $targetHelper = Join-Path $RuntimePrefix 'scheme\win_scheme.py'
+            $targetRequirements = Join-Path $RuntimePrefix 'scheme\requirements.lock.txt'
+            if (-not (Test-Path -LiteralPath $targetHelper -PathType Leaf) -or
+                -not (Test-Path -LiteralPath $targetRequirements -PathType Leaf)) { return $null }
+            $expectedHelperHash = (Get-FileHash -LiteralPath $targetHelper -Algorithm SHA256).Hash.ToLowerInvariant()
+            $expectedRequirementsHash = (Get-FileHash -LiteralPath $targetRequirements -Algorithm SHA256).Hash.ToLowerInvariant()
+        }
+        $lock = Enter-CaelestiaSchemeLock $ProfileRoot 0
+        if (-not $lock) { return $null }
+        try {
+            $schemeRoot = Join-Path $ProfileRoot 'scheme'
+            $runtimesRoot = [IO.Path]::GetFullPath((Join-Path $schemeRoot 'runtimes')).TrimEnd('\')
+            if (-not (Test-Path -LiteralPath $runtimesRoot -PathType Container)) { return $null }
+            foreach ($directory in @(Get-ChildItem -LiteralPath $runtimesRoot -Directory -Force | Sort-Object Name)) {
+                if ($directory.Name -like '.staging-*') { continue }
+                $python = Join-Path $directory.FullName 'venv\Scripts\python.exe'
+                $helper = Join-Path $directory.FullName 'win_scheme.py'
+                $meta = Join-Path $directory.FullName 'generation.json'
+                if (-not (Test-Path -LiteralPath $python -PathType Leaf) -or
+                    -not (Test-Path -LiteralPath $helper -PathType Leaf) -or
+                    -not (Test-Path -LiteralPath $meta -PathType Leaf)) { continue }
+                try { $generation = Get-Content -LiteralPath $meta -Raw | ConvertFrom-Json } catch { continue }
+                if ([string]$generation.revision -ne $Revision) { continue }
+                if ($RuntimePrefix -and
+                    ([string]$generation.helperSha256 -ne $expectedHelperHash -or
+                     [string]$generation.requirementsSha256 -ne $expectedRequirementsHash)) { continue }
+                $record = [ordered]@{
+                    available = $true
+                    revision = $Revision
+                    generation = $directory.Name
+                    python = $python
+                    helper = $helper
+                    provisionedAt = $(if ($generation.created) { [string]$generation.created } else { (Get-Date).ToString('o') })
+                }
+                Write-CaelestiaJsonAtomic (Join-Path $schemeRoot 'runtime.json') $record
+                return [pscustomobject]$record
+            }
+            return $null
+        } finally {
+            Exit-CaelestiaSchemeLock $lock
+        }
+    } catch {
+        return $null
+    }
+}
+
+# Remove scheme generations no installed version can reference. Only run with
+# no shell or supervisor alive and under the provisioning lock; deferring
+# pruning to the next install is safer than deleting a generator in use.
+function Remove-CaelestiaSchemeGenerations([string]$Prefix, [string]$ProfileRoot) {
+    try {
+        if (@(Get-CaelestiaProcesses $Prefix).Count -or @(Get-CaelestiaSupervisors $ProfileRoot).Count) { return }
+        $lock = Enter-CaelestiaSchemeLock $ProfileRoot 0
+        if (-not $lock) { return }
+        try {
+            $schemeRoot = Join-Path $ProfileRoot 'scheme'
+            $runtimesRoot = [IO.Path]::GetFullPath((Join-Path $schemeRoot 'runtimes')).TrimEnd('\')
+            if (-not (Test-Path -LiteralPath $runtimesRoot -PathType Container)) { return }
+            # A helper can outlive its shell briefly. Never remove a generation its
+            # interpreter is still running from.
+            foreach ($process in @(Get-Process -Name python -ErrorAction SilentlyContinue)) {
+                try {
+                    if ($process.Path -and $process.Path.StartsWith($runtimesRoot + '\', [StringComparison]::OrdinalIgnoreCase)) { return }
+                } catch { }
+            }
+            $revisions = @{}
+            $installed = @()
+            try {
+                $record = Read-CaelestiaInstall $Prefix
+                if ($record.version -eq 2) {
+                    foreach ($id in @($record.current, $record.previous)) {
+                        if (-not $id) { continue }
+                        try { $installed += Get-CaelestiaVersionPrefix $Prefix ([string]$id) } catch { }
+                    }
+                } else {
+                    $installed = @($Prefix)
+                }
+            } catch { }
+            foreach ($root in $installed) {
+                try {
+                    $revision = Get-CaelestiaSchemeRevision $root
+                    if ($revision) { $revisions[$revision] = $true }
+                } catch { }
+            }
+            $published = ''
+            try {
+                $published = [string](Get-Content -LiteralPath (Join-Path $schemeRoot 'runtime.json') -Raw | ConvertFrom-Json).generation
+            } catch { }
+            foreach ($directory in @(Get-ChildItem -LiteralPath $runtimesRoot -Directory -Force -ErrorAction SilentlyContinue)) {
+                if ($directory.Name -eq $published) { continue }
+                $generationRevision = ''
+                try {
+                    $generationRevision = [string](Get-Content -LiteralPath (Join-Path $directory.FullName 'generation.json') -Raw | ConvertFrom-Json).revision
+                } catch { }
+                if ($generationRevision -and $revisions.ContainsKey($generationRevision)) { continue }
+                try {
+                    $safe = Resolve-CaelestiaDirectory $directory.FullName
+                    if ((Split-Path -Parent $safe) -ne $runtimesRoot) { continue }
+                    Assert-CaelestiaNoReparsePoints $safe
+                    Remove-Item -LiteralPath $safe -Recurse -Force
+                } catch { }
+            }
+        } finally {
+            Exit-CaelestiaSchemeLock $lock
+        }
+    } catch {
+        # Cleanup must never fail an otherwise healthy install.
     }
 }
 
@@ -231,12 +436,13 @@ function Wait-CaelestiaReady([string]$Prefix, [int]$TimeoutSeconds = 20, [string
 
 # Task Scheduler owns the process tree, not the invoking agent/terminal's job.
 # On-demand only, interactive and non-elevated, with no autostart registration.
-function New-CaelestiaLaunchTask([string]$Prefix, [switch]$PreparedSchemeRuntime) {
+function New-CaelestiaLaunchTask([string]$Prefix, [switch]$PreparedSchemeRuntime, [switch]$DisableSchemeProvisioning) {
     $taskName = 'Caelestia-Start-' + [guid]::NewGuid().ToString('N')
     $launcher = Join-Path $Prefix 'Start-Caelestia.ps1'
     $launchArguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $launcher + '" -Prefix "' + $Prefix + '"'
     # Activation only consumes the scheme runtime prepared before the handoff.
     if ($PreparedSchemeRuntime) { $launchArguments += ' -PreparedSchemeRuntime' }
+    elseif ($DisableSchemeProvisioning) { $launchArguments += ' -SkipSchemeRuntime' }
     $action = New-ScheduledTaskAction -Execute (Get-WindowsPowerShellPath) `
         -Argument $launchArguments `
         -WorkingDirectory $Prefix
@@ -246,8 +452,10 @@ function New-CaelestiaLaunchTask([string]$Prefix, [switch]$PreparedSchemeRuntime
     return $taskName
 }
 
-function Start-CaelestiaDetached([string]$Prefix, [switch]$LegacyReady, [string]$TaskName = '', [switch]$PreparedSchemeRuntime) {
-    if (-not $TaskName) { $TaskName = New-CaelestiaLaunchTask $Prefix -PreparedSchemeRuntime:$PreparedSchemeRuntime }
+function Start-CaelestiaDetached([string]$Prefix, [switch]$LegacyReady, [string]$TaskName = '', [switch]$PreparedSchemeRuntime, [switch]$DisableSchemeProvisioning) {
+    if (-not $TaskName) {
+        $TaskName = New-CaelestiaLaunchTask $Prefix -PreparedSchemeRuntime:$PreparedSchemeRuntime -DisableSchemeProvisioning:$DisableSchemeProvisioning
+    }
     $launcher = Join-Path $Prefix 'Start-Caelestia.ps1'
     try {
         for ($attempt = 0; $attempt -lt 2; $attempt++) {
@@ -302,7 +510,20 @@ function Restore-CaelestiaUpdate([string]$Prefix, [string]$ProfileRoot, [string]
         if ($LASTEXITCODE -ge 8) { throw "Rollback failed (robocopy exit $LASTEXITCODE)." }
         $global:LASTEXITCODE = 0
     }
-    Start-CaelestiaDetached $Prefix -LegacyReady
+    # This recovery path can start a pre-versioning launcher. Never let its
+    # provisioner run inside the readiness clock; consume a prepared generation
+    # when it supports one, otherwise disable provisioning for this start.
+    $launcherText = ''
+    try { $launcherText = [IO.File]::ReadAllText((Join-Path $Prefix 'Start-Caelestia.ps1')) } catch { }
+    if ($launcherText -match '\[switch\]\$PreparedSchemeRuntime\b') {
+        $restoreRuntime = Resolve-CaelestiaRuntimePrefix $Prefix
+        $null = Set-CaelestiaSchemeRuntimeForRevision $ProfileRoot (Get-CaelestiaSchemeRevision $restoreRuntime) $restoreRuntime
+        Start-CaelestiaDetached $Prefix -LegacyReady -PreparedSchemeRuntime
+    } elseif ($launcherText -match '\[switch\]\$SkipSchemeRuntime\b') {
+        Start-CaelestiaDetached $Prefix -LegacyReady -DisableSchemeProvisioning
+    } else {
+        Start-CaelestiaDetached $Prefix -LegacyReady
+    }
 }
 
 # Walk without following links; a junction inside a tree being deleted would

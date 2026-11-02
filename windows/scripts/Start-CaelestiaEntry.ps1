@@ -28,17 +28,21 @@ if ($Command -eq 'Settings') {
 }
 $arguments = @{}
 foreach ($key in $PSBoundParameters.Keys) { $arguments[$key] = $PSBoundParameters[$key] }
-# A retained pre-versioning payload predates -PreparedSchemeRuntime. The
-# installer already prepared its profile runtime, so its cached check is fast;
-# drop the switch instead of failing its parameter binding.
+# A retained pre-versioning payload can neither consume the prepared record
+# nor be trusted to skip provisioning on its own. During activation, disable
+# its provisioner instead of letting pip run inside the readiness budget. A
+# normal start (no -PreparedSchemeRuntime) keeps its old behaviour.
 if ($arguments.ContainsKey('PreparedSchemeRuntime')) {
+    $prepared = $false
+    $skip = $false
     try {
         $target = [IO.File]::ReadAllText((Join-Path $runtime 'Start-Caelestia.ps1'))
-        if ($target -notmatch '\[switch\]\$PreparedSchemeRuntime\b') {
-            $arguments.Remove('PreparedSchemeRuntime')
-        }
-    } catch {
+        $prepared = $target -match '\[switch\]\$PreparedSchemeRuntime\b'
+        $skip = $target -match '\[switch\]\$SkipSchemeRuntime\b'
+    } catch { }
+    if (-not $prepared) {
         $arguments.Remove('PreparedSchemeRuntime')
+        if ($skip) { $arguments['SkipSchemeRuntime'] = $true }
     }
 }
 $arguments.Prefix = $runtime

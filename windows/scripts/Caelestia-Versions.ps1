@@ -157,6 +157,9 @@ function Install-CaelestiaVersion([string]$Prefix, [string]$Payload, [switch]$Re
         }
         Copy-CaelestiaRootEntries $Prefix $runtime
         Write-CaelestiaJsonAtomic (Join-Path $Prefix 'install.json') (New-CaelestiaRootRecord $Prefix $newRecord $previous)
+        # Point runtime.json at this version's existing generation before the
+        # readiness clock starts. If it is missing, activation starts fixed.
+        $null = Set-CaelestiaSchemeRuntimeForRevision $newRecord.profile (Get-CaelestiaSchemeRevision $runtime) $runtime
         $activated = $true
         if ($Restart) {
             Start-CaelestiaDetached $Prefix -TaskName $launchTask -PreparedSchemeRuntime
@@ -184,6 +187,7 @@ function Install-CaelestiaVersion([string]$Prefix, [string]$Payload, [switch]$Re
             Copy-CaelestiaRootEntries $Prefix $runtime
             $earlier = if ($old.version -eq 2) { [string]$old.previous } else { '' }
             Write-CaelestiaJsonAtomic (Join-Path $Prefix 'install.json') (New-CaelestiaRootRecord $Prefix $priorRecord $earlier)
+            $null = Set-CaelestiaSchemeRuntimeForRevision $newRecord.profile (Get-CaelestiaSchemeRevision $priorPath) $priorPath
             if ($Restart) { Start-CaelestiaDetached $Prefix -LegacyReady -PreparedSchemeRuntime }
             Write-Warning 'Activation failed; the previous version was selected again.'
         }
@@ -202,6 +206,9 @@ function Switch-CaelestiaVersion([string]$Prefix, [string]$Id, [switch]$Restart)
     if ((Get-FileHash -LiteralPath (Join-Path $runtime 'qs.exe')).Hash -ne $record.executableSha256) {
         throw 'Retained executable checksum mismatch.'
     }
+    $previousRuntime = Get-CaelestiaVersionPrefix $Prefix ([string]$old.current)
+    $previousRevision = Get-CaelestiaSchemeRevision $previousRuntime
+    $targetRevision = Get-CaelestiaSchemeRevision $runtime
     $launchTask = $null
     $activated = $false
     try {
@@ -213,6 +220,9 @@ function Switch-CaelestiaVersion([string]$Prefix, [string]$Id, [switch]$Restart)
             throw 'Quit this installation before switching versions, or request a restart.'
         }
         Write-CaelestiaJsonAtomic (Join-Path $Prefix 'install.json') (New-CaelestiaRootRecord $Prefix $record $old.current)
+        # A retained generation for this revision is repointed before the
+        # readiness clock; a missing one leaves the fixed palette.
+        $null = Set-CaelestiaSchemeRuntimeForRevision $old.profile $targetRevision $runtime
         $activated = $true
         if ($Restart) { Start-CaelestiaDetached $Prefix -LegacyReady -TaskName $launchTask -PreparedSchemeRuntime }
     } catch {
@@ -223,8 +233,10 @@ function Switch-CaelestiaVersion([string]$Prefix, [string]$Id, [switch]$Restart)
                 throw 'Version switch failed and the replacement has not exited; selector was not changed again.'
             }
             Write-CaelestiaJsonAtomic (Join-Path $Prefix 'install.json') $old
+            $null = Set-CaelestiaSchemeRuntimeForRevision $old.profile $previousRevision $previousRuntime
             if ($Restart) { Start-CaelestiaDetached $Prefix -LegacyReady -PreparedSchemeRuntime }
         } elseif ($Restart -and -not @(Get-CaelestiaProcesses $Prefix).Count -and -not @(Get-CaelestiaSupervisors $old.profile).Count) {
+            $null = Set-CaelestiaSchemeRuntimeForRevision $old.profile $previousRevision $previousRuntime
             Start-CaelestiaDetached $Prefix -LegacyReady -PreparedSchemeRuntime
         }
         throw $failure
