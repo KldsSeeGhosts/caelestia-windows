@@ -46,17 +46,30 @@ Item {
             anchors.fill: parent
             active: root.blurEnabled
 
-            sourceComponent: MultiEffect {
-                source: ShaderEffectSource {
+            sourceComponent: Item {
+                anchors.fill: parent
+
+                // #214: an inline MultiEffect.source value has no visual
+                // parent and keeps a window reference on the wallpaper when a
+                // per-screen window is recreated. Keep this capture parented;
+                // do not fold it back into the source property.
+                ShaderEffectSource {
+                    id: desktopClockBlurSource
+
                     sourceItem: root.wallpaper
                     sourceRect: Qt.rect(root.absX, root.absY, root.width, root.height)
                 }
-                maskSource: backgroundPlate
-                maskEnabled: true
-                blurEnabled: true
-                blur: 1
-                blurMax: 64
-                autoPaddingEnabled: false
+
+                MultiEffect {
+                    anchors.fill: parent
+                    source: desktopClockBlurSource
+                    maskSource: backgroundPlate
+                    maskEnabled: true
+                    blurEnabled: true
+                    blur: 1
+                    blurMax: 64
+                    autoPaddingEnabled: false
+                }
             }
         }
 
