@@ -204,7 +204,13 @@ Python is an accepted runtime dependency; `-SkipSchemeRuntime` skips
 preparation during this install, and an existing prepared runtime is still
 used. Retained payloads that predate the generation layout start with scheme
 provisioning disabled during a rollback, so no activation runs pip inside the
-readiness budget. Wallpaper Engine is detected automatically, supplies the
+readiness budget. A rollback target keeps its own launcher's start behaviour:
+only launchers from this change onwards guarantee that no Python runs during
+activation, and an older retained launcher (for example one that still
+discovers a Wallpaper Engine interpreter at start) behaves as it always did.
+Update and rollback check the target's scheme generation, within a 15 s budget
+that tries the newest generation first and falls back to older healthy ones,
+before the running shell is stopped. Wallpaper Engine is detected automatically, supplies the
 launcher picker and palette preview, and retains ownership of the desktop
 background. The desktop clock defaults off.
 

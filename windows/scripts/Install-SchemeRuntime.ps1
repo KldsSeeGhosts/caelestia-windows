@@ -88,6 +88,7 @@ function Invoke-Bounded([string]$File, [string[]]$Arguments, [string]$Step) {
     $errTask = $process.StandardError.ReadToEndAsync()
     if (-not $process.WaitForExit($StepTimeoutSeconds * 1000)) {
         try { $process.Kill() } catch { }
+        $script:failure = [ordered]@{ step = $Step; exitCode = 'timeout' }
         throw "$Step timed out after $StepTimeoutSeconds s (offline or slow network?)"
     }
     $text = ($outTask.GetAwaiter().GetResult() + "`n" + $errTask.GetAwaiter().GetResult()).Trim()
@@ -95,6 +96,7 @@ function Invoke-Bounded([string]$File, [string[]]$Arguments, [string]$Step) {
     if ($clean) { Add-Content -LiteralPath $provisionLog -Value "[$Step] $clean" }
     if ($process.ExitCode -ne 0) {
         $tail = ($clean -split "`n" | Where-Object { $_.Trim() } | Select-Object -Last 3) -join ' | '
+        $script:failure = [ordered]@{ step = $Step; exitCode = [string]$process.ExitCode }
         throw "$Step failed (exit $($process.ExitCode)): $tail"
     }
 }
@@ -271,13 +273,19 @@ try {
         Write-Result $true 'provisioned' $publishedId
     } catch {
         $message = Protect-Text $_.Exception.Message
-        Write-History "FAILED: $message"
+        # The step and exit code are fields of their own, so redacting a path in
+        # the tool output can never drop them.
+        $failedStep = if ($script:failure) { [string]$script:failure.step } else { '' }
+        $failedExit = if ($script:failure) { [string]$script:failure.exitCode } else { '' }
+        Write-History "FAILED step=$failedStep exit=$failedExit : $message"
         Write-Warning "Scheme runtime unavailable: $message"
         Write-JsonAtomic $statePath ([ordered]@{
             available = $false
             revision = $CliRevision
             key = $generationId
             generation = $publishedId
+            step = $failedStep
+            exitCode = $failedExit
             message = $message
             attemptedAt = (Get-Date).ToString('o')
         })

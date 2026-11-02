@@ -154,6 +154,8 @@ public static class FakeSchemePython {
                     Console.WriteLine(exe);
                 }
                 Log("check");
+                // A hang.txt next to this python makes only this generation hang.
+                if (File.Exists(Path.Combine(Path.GetDirectoryName(exe), "hang.txt"))) Thread.Sleep(30000);
                 int wait = 0;
                 Int32.TryParse(Environment.GetEnvironmentVariable("CAELESTIA_TEST_CHECK_SECONDS"), out wait);
                 if (wait > 0) Thread.Sleep(wait * 1000);
@@ -225,6 +227,7 @@ function New-LauncherPayload([string]$Prefix, [string]$ProfileRoot, [string]$Lab
         @'
 [CmdletBinding()]
 param([string]$Prefix, [string]$Command = 'Start', [switch]$SkipSchemeRuntime)
+if ($Command -eq 'Quit' -and $env:CAELESTIA_TEST_PROVISION_LOG) { Add-Content -LiteralPath $env:CAELESTIA_TEST_PROVISION_LOG -Value "0,0,quit" }
 if ($Command -ne 'Start') { return }
 if (-not $SkipSchemeRuntime) {
     $null = & (Join-Path $PSScriptRoot 'Install-SchemeRuntime.ps1') -ProfileRoot (Join-Path $PSScriptRoot 'fixture-profile.txt') -LockWaitSeconds 0
@@ -491,6 +494,40 @@ param([string]$Prefix, [string]$Command = 'Start', [switch]$SkipSchemeRuntime)
     Assert ($legacyOutput -match 'legacy-router-ok:Start skip=True') 'The router did not disable provisioning on a legacy activation.'
     Write-Output 'PASS router: a legacy payload starts with provisioning disabled and no prepared switch.'
 
+    # Update and rollback pick and verify the target's generation BEFORE the
+    # running shell is stopped, so a slow probe is not an outage, and the
+    # verified generation is repointed without a second probe.
+    $vqPrefix = Join-Path $root 'vq'
+    $vqProfile = Join-Path $root 'vqp'
+    [IO.Directory]::CreateDirectory($vqProfile) | Out-Null
+    Write-CaelestiaProfileOwner $vqProfile $vqPrefix 'vq-test' $true
+    $vqLog = Join-Path $root 'vq.log'
+    $script:runLauncher = $true
+    $env:CAELESTIA_TEST_PROVISION_LOG = $vqLog
+    try {
+        $null = Install-CaelestiaVersion $vqPrefix (New-LauncherPayload $vqPrefix $vqProfile 'A' 'fail' -LegacyStart)
+        $vqTarget = New-LauncherPayload $vqPrefix $vqProfile 'B' 'fail'
+        $null = New-TestGeneration (Join-Path $vqProfile 'scheme\runtimes') ('3' * 40) 'test' (Get-CaelestiaSchemeIdentity $vqTarget 'test').Id
+        $null = Install-CaelestiaVersion $vqPrefix $vqTarget -Restart
+        $bId = (Read-CaelestiaInstall $vqPrefix).current
+        $events = @(Get-Content -LiteralPath $vqLog | ForEach-Object { ($_ -split ',')[2] })
+        Assert ($events -contains 'quit' -and $events -contains 'check') 'The update did not probe the generation and stop the old shell.'
+        Assert ([array]::IndexOf($events, 'check') -lt [array]::IndexOf($events, 'quit')) 'Update stopped the old shell before verifying the generation.'
+        Assert (@($events | Where-Object { $_ -eq 'check' }).Count -eq 1) 'Update probed the generation again after stopping the old shell.'
+        Assert ((Read-Pointer $vqProfile).generation -eq ('3' * 40) -and (Read-Pointer $vqProfile).available -eq $true) 'Update did not publish the verified generation.'
+        # Roll back to it from a launcher that records its quit.
+        $null = Install-CaelestiaVersion $vqPrefix (New-LauncherPayload $vqPrefix $vqProfile 'C' 'fail' -LegacyStart)
+        Remove-Item -LiteralPath $vqLog -Force
+        $null = Switch-CaelestiaVersion $vqPrefix $bId -Restart
+        $events = @(Get-Content -LiteralPath $vqLog | ForEach-Object { ($_ -split ',')[2] })
+        Assert ($events -contains 'quit' -and [array]::IndexOf($events, 'check') -ge 0 -and [array]::IndexOf($events, 'check') -lt [array]::IndexOf($events, 'quit')) 'Rollback stopped the running shell before verifying the generation.'
+        Assert (@($events | Where-Object { $_ -eq 'check' }).Count -eq 1) 'Rollback probed the generation again after stopping the shell.'
+        Write-Output 'PASS verify-first: update and rollback verify the generation before the running shell is stopped.'
+    } finally {
+        $script:runLauncher = $false
+        $env:CAELESTIA_TEST_PROVISION_LOG = $null
+    }
+
     # Rolling back to a legacy payload with a 22 s fake provisioner must not
     # spend the readiness budget or roll forward again.
     $legacyPrefix = Join-Path $root 'legacy-rollback'
@@ -629,7 +666,7 @@ Start-Sleep -Seconds 60
         ${function:Get-CaelestiaProcessImagePaths} = { param($Process) throw 'injected: image paths are unreadable' }
         Remove-CaelestiaSchemeGenerations $prunePrefix $pruneProfile
         Assert ((Test-Path -LiteralPath $imageGeneration) -and (Get-DirectoryListing $imageGeneration) -eq $imageBefore) 'Pruning damaged a generation with a loaded DLL while process inspection failed.'
-        Assert (-not (Test-Path -LiteralPath (Join-Path $pruneRuntimes '.trash\*'))) 'Pruning moved a generation with a loaded DLL.'
+        Assert (@(Get-ChildItem -LiteralPath (Join-Path $pruneRuntimes '.trash') -Force -ErrorAction SilentlyContinue).Count -eq 0) 'Pruning moved a generation with a loaded DLL.'
         # Readable inspection alone also protects it, without the image probe.
         ${function:Test-CaelestiaSchemeImagesFree} = { param($Directory) $true }
         $loaderId = $loader.Id
@@ -644,6 +681,50 @@ Start-Sleep -Seconds 60
     }
     Remove-CaelestiaSchemeGenerations $prunePrefix $pruneProfile
     Assert (-not (Test-Path -LiteralPath $imageGeneration)) 'A generation was not removed once its DLL was unloaded.'
+
+    # The window between the image check and the rename. A directory cannot be
+    # renamed while any handle is open inside it, so the check's handles cannot
+    # span the rename; instead the check is repeated at the new location and a
+    # generation that gained a mapped image is put straight back.
+    Add-Type -Namespace TRace -Name K -MemberDefinition @'
+[System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+public static extern System.IntPtr LoadLibraryW(string path);
+[System.Runtime.InteropServices.DllImport("kernel32.dll")]
+public static extern bool FreeLibrary(System.IntPtr module);
+'@
+    $raceGeneration = New-TestGeneration $pruneRuntimes ('b2' * 20) 'rev-z' ('b2' * 32)
+    New-Item -ItemType Directory -Force -Path (Join-Path $raceGeneration 'lib') | Out-Null
+    $raceDll = Join-Path $raceGeneration 'lib\version.dll'
+    Copy-Item -LiteralPath (Join-Path $env:SystemRoot 'System32\version.dll') -Destination $raceDll
+    'sibling' | Set-Content -LiteralPath (Join-Path $raceGeneration 'lib\data.txt') -Encoding UTF8
+    # While the check's handles are held, no image of the generation can be
+    # mapped or launched, and the directory cannot be renamed.
+    $held = Open-CaelestiaSchemeImageHandles $raceGeneration
+    try {
+        Assert ($null -ne $held -and $held.Count -ge 1) 'The image check opened no handles.'
+        Assert ([TRace.K]::LoadLibraryW($raceDll) -eq [IntPtr]::Zero) 'An image mapped while the check held its handles.'
+        $renameBlocked = $false
+        try { [IO.Directory]::Move($raceGeneration, $raceGeneration + '.x') } catch { $renameBlocked = $true }
+        Assert $renameBlocked 'A directory was renamed while image handles were open inside it.'
+    } finally { foreach ($stream in $held) { $stream.Dispose() } }
+    $raceBefore = Get-DirectoryListing $raceGeneration
+    $race = @{ Module = [IntPtr]::Zero }
+    $originalHook = ${function:Invoke-CaelestiaSchemePruneHook}
+    try {
+        # After the check passed and before the rename, a consumer maps an image.
+        ${function:Invoke-CaelestiaSchemePruneHook} = { param($Stage, $Directory)
+            if ($Stage -eq 'checked' -and $Directory -like '*b2b2b2*') { $race.Module = [TRace.K]::LoadLibraryW($raceDll) }
+        }.GetNewClosure()
+        Remove-CaelestiaSchemeGenerations $prunePrefix $pruneProfile
+        Assert ($race.Module -ne [IntPtr]::Zero) 'The race hook did not map the image.'
+        Assert ((Test-Path -LiteralPath $raceGeneration) -and (Get-DirectoryListing $raceGeneration) -eq $raceBefore) 'A generation whose image was mapped after the check was left moved.'
+        Assert (@(Get-ChildItem -LiteralPath (Join-Path $pruneRuntimes '.trash') -Force -ErrorAction SilentlyContinue).Count -eq 0) 'A generation whose image was mapped after the check stayed in .trash.'
+    } finally {
+        ${function:Invoke-CaelestiaSchemePruneHook} = $originalHook
+        if ($race.Module -ne [IntPtr]::Zero) { $null = [TRace.K]::FreeLibrary($race.Module) }
+    }
+    Remove-CaelestiaSchemeGenerations $prunePrefix $pruneProfile
+    Assert (-not (Test-Path -LiteralPath $raceGeneration)) 'A generation was not removed once its image was unmapped.'
 
     # Interrupted staging directories (no lock holder owns them) are pruned, and
     # a partially deleted trash entry is finished by the next prune.
@@ -747,6 +828,27 @@ Start-Sleep -Seconds 60
     Assert ($null -eq (Get-CaelestiaPreparedSchemeRuntime $vprofile 'rev-h' $hp)) 'Activation accepted a changed pyvenv.cfg.'
     [IO.File]::WriteAllText($config, $configText)
     Assert ($null -ne (Get-CaelestiaPreparedSchemeRuntime $vprofile 'rev-h' $hp)) 'Restoring pyvenv.cfg did not restore the receipt.'
+    $baseDirectory = Join-Path $vGeneration 'base'
+    [IO.File]::WriteAllText((Join-Path $baseDirectory 'python312.dll'), 'runtime dll v1')
+    [IO.File]::WriteAllText((Join-Path $baseDirectory 'python3.dll'), 'stable abi dll')
+    $null = Set-CaelestiaSchemeRuntimeForRevision $vprofile 'rev-h' $hp
+    Assert ($null -ne (Get-CaelestiaPreparedSchemeRuntime $vprofile 'rev-h' $hp)) 'A receipt that covers runtime DLLs was rejected.'
+    Assert ((Read-Pointer $vprofile).verification.runtimeDlls -match 'python312\.dll' -and (Read-Pointer $vprofile).verification.runtimeDlls -match 'python3\.dll') 'The receipt does not record the runtime DLLs.'
+    $runtimeDll = Join-Path $baseDirectory 'python312.dll'
+    $runtimeDllTime = (Get-Item -LiteralPath $runtimeDll).LastWriteTimeUtc
+    [IO.File]::WriteAllText($runtimeDll, 'runtime dll v2, replaced')
+    Assert ($null -eq (Get-CaelestiaPreparedSchemeRuntime $vprofile 'rev-h' $hp)) 'Activation accepted a replaced python3XX.dll.'
+    [IO.File]::WriteAllText($runtimeDll, 'runtime dll v1')
+    (Get-Item -LiteralPath $runtimeDll).LastWriteTimeUtc = $runtimeDllTime
+    Assert ($null -ne (Get-CaelestiaPreparedSchemeRuntime $vprofile 'rev-h' $hp)) 'Restoring python3XX.dll did not restore the receipt.'
+    (Get-Item -LiteralPath $runtimeDll).LastWriteTimeUtc = $runtimeDllTime.AddMinutes(-3)
+    Assert ($null -eq (Get-CaelestiaPreparedSchemeRuntime $vprofile 'rev-h' $hp)) 'Activation accepted a python3XX.dll with a new timestamp.'
+    (Get-Item -LiteralPath $runtimeDll).LastWriteTimeUtc = $runtimeDllTime
+    $stableTime = (Get-Item -LiteralPath (Join-Path $baseDirectory 'python3.dll')).LastWriteTimeUtc
+    Remove-Item -LiteralPath (Join-Path $baseDirectory 'python3.dll') -Force
+    Assert ($null -eq (Get-CaelestiaPreparedSchemeRuntime $vprofile 'rev-h' $hp)) 'Activation accepted a missing python3.dll.'
+    [IO.File]::WriteAllText((Join-Path $baseDirectory 'python3.dll'), 'stable abi dll')
+    (Get-Item -LiteralPath (Join-Path $baseDirectory 'python3.dll')).LastWriteTimeUtc = $stableTime
     $baseExe = Join-Path $vGeneration 'base\python.exe'
     $baseTime = (Get-Item -LiteralPath $baseExe).LastWriteTimeUtc
     (Get-Item -LiteralPath $baseExe).LastWriteTimeUtc = $baseTime.AddMinutes(-7)
@@ -759,6 +861,28 @@ Start-Sleep -Seconds 60
         Assert (-not (Test-CaelestiaSchemeHealth $vGeneration 2)) 'A hung venv python was reported healthy.'
         Assert ($probeClock.Elapsed.TotalSeconds -lt 15) 'A hung interpreter was not bounded by its timeout.'
     } finally { $env:CAELESTIA_TEST_CHECK_SECONDS = $null }
+    # One time budget covers all candidates, newest first, each probed for only
+    # a slice of it; a healthy older generation is still reached.
+    $bprofile = Join-Path $root 'bp'
+    $bRuntimes = Join-Path $bprofile 'scheme\runtimes'
+    foreach ($spec in @(@('4', -1), @('5', -2), @('6', -3))) {
+        $hung = New-TestGeneration $bRuntimes ($spec[0] * 40) 'rev-h' $hid $now.AddMinutes($spec[1])
+        'hang' | Set-Content -LiteralPath (Join-Path $hung 'venv\Scripts\hang.txt')
+    }
+    $null = New-TestGeneration $bRuntimes ('8' * 40) 'rev-h' $hid $now.AddMinutes(-30)
+    $budgetClock = [Diagnostics.Stopwatch]::StartNew()
+    $none = Set-CaelestiaSchemeRuntimeForRevision $bprofile 'rev-h' $hp -BudgetSeconds 6 -CandidateSeconds 2
+    $budgetElapsed = $budgetClock.Elapsed.TotalSeconds
+    Assert ($null -eq $none) 'Repoint returned a generation although the probe budget ran out on hung candidates.'
+    Assert ($budgetElapsed -lt 12) "Three hung candidates cost $([Math]::Round($budgetElapsed, 1)) s; the budget was not enforced."
+    Remove-Item -LiteralPath (Join-Path (Join-Path (Join-Path $bRuntimes ('5' * 40)) 'venv\Scripts') 'hang.txt'), (Join-Path (Join-Path (Join-Path $bRuntimes ('6' * 40)) 'venv\Scripts') 'hang.txt') -Force
+    # Only the newest hangs now: the next candidate must still be tried.
+    'hang' | Set-Content -LiteralPath (Join-Path (Join-Path (Join-Path $bRuntimes ('4' * 40)) 'venv\Scripts') 'hang.txt')
+    $budgetClock.Restart()
+    $fallback = Set-CaelestiaSchemeRuntimeForRevision $bprofile 'rev-h' $hp -BudgetSeconds 6 -CandidateSeconds 2
+    Assert ($fallback -and $fallback.generation -eq ('5' * 40)) 'A hung newest generation starved a healthy fallback.'
+    Assert ($budgetClock.Elapsed.TotalSeconds -lt 10) 'The hung newest generation cost more than its slice.'
+
     # A real venv records its base in pyvenv.cfg; losing that base must fail the check.
     $realPy = Get-Command py.exe -ErrorAction SilentlyContinue
     if ($realPy) {
@@ -1049,6 +1173,9 @@ Start-Sleep -Seconds 60
             (Get-Content -LiteralPath (Join-Path $ipProfile 'scheme\provision-state.json') -Raw)
         ) -join "`n"
         Assert ($leakSources -match 'could not open <path>\.py') 'The failure record lost its redacted detail.'
+        $failedState = Get-Content -LiteralPath (Join-Path $ipProfile 'scheme\provision-state.json') -Raw | ConvertFrom-Json
+        Assert ($failedState.exitCode -eq '1' -and $failedState.step -match 'materialyoucolor') 'The step and exit code are not recorded as fields of their own.'
+        Assert ((Get-Content -LiteralPath (Join-Path $ipProfile 'scheme\provision.log') -Raw) -match 'FAILED step=installing materialyoucolor/pillow exit=1 :') 'The history line lost the step and exit code.'
         Assert ($leakSources -notmatch 'Zq|Py 3\.12') 'A custom-prefix path reached provisioning diagnostics.'
         Write-Output 'PASS diagnostics: a custom-prefix path is redacted from warnings, state and history.'
     } finally {
@@ -1157,5 +1284,7 @@ public static class LegacyInstallLockFixture {
     if ((Split-Path -Parent $safe) -ne [IO.Path]::GetFullPath($env:TEMP).TrimEnd('\') -or
         (Split-Path -Leaf $safe) -notlike 'caelestia-version-test-*') { throw 'Unsafe test cleanup.' }
     Assert-CaelestiaNoReparsePoints $safe
-    Remove-Item -LiteralPath $safe -Recurse -Force
+    # A cleanup problem is reported, but must not hide the failure that got us here.
+    try { Remove-Item -LiteralPath $safe -Recurse -Force -ErrorAction Stop }
+    catch { Write-Warning "Test directory was not fully deleted: $safe" }
 }

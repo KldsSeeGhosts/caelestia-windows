@@ -146,6 +146,9 @@ function Install-CaelestiaVersion([string]$Prefix, [string]$Payload, [switch]$Re
             Write-CaelestiaJsonAtomic (Join-Path $legacyPath 'install.json') $legacyRecord
         }
         if ($Restart) { $launchTask = New-CaelestiaLaunchTask $Prefix -PreparedSchemeRuntime }
+        # Pick and verify this version's scheme generation while the old shell
+        # still serves the desktop, so a slow or hung check is not an outage.
+        $verifiedScheme = Select-CaelestiaSchemeGeneration $newRecord.profile (Get-CaelestiaSchemeRevision $runtime) $runtime
         Write-Host "Prepared version $id; beginning activation."
         $clock = [Diagnostics.Stopwatch]::StartNew()
         if ($Restart -and $old) {
@@ -157,9 +160,9 @@ function Install-CaelestiaVersion([string]$Prefix, [string]$Payload, [switch]$Re
         }
         Copy-CaelestiaRootEntries $Prefix $runtime
         Write-CaelestiaJsonAtomic (Join-Path $Prefix 'install.json') (New-CaelestiaRootRecord $Prefix $newRecord $previous)
-        # Point runtime.json at this version's existing generation before the
-        # readiness clock starts. If it is missing, activation starts fixed.
-        $null = Set-CaelestiaSchemeRuntimeForRevision $newRecord.profile (Get-CaelestiaSchemeRevision $runtime) $runtime
+        # Point runtime.json at the generation verified above before the
+        # readiness clock starts. If none was found, activation starts fixed.
+        $null = Set-CaelestiaSchemeRuntimeForRevision $newRecord.profile (Get-CaelestiaSchemeRevision $runtime) $runtime -Verified $verifiedScheme
         $activated = $true
         if ($Restart) {
             Start-CaelestiaDetached $Prefix -TaskName $launchTask -PreparedSchemeRuntime
@@ -211,6 +214,8 @@ function Switch-CaelestiaVersion([string]$Prefix, [string]$Id, [switch]$Restart)
     $targetRevision = Get-CaelestiaSchemeRevision $runtime
     $launchTask = $null
     $activated = $false
+    # Verify the target's generation before the running shell is stopped.
+    $verifiedScheme = Select-CaelestiaSchemeGeneration $old.profile $targetRevision $runtime
     try {
         if ($Restart) {
             $launchTask = New-CaelestiaLaunchTask $Prefix -PreparedSchemeRuntime
@@ -220,9 +225,9 @@ function Switch-CaelestiaVersion([string]$Prefix, [string]$Id, [switch]$Restart)
             throw 'Quit this installation before switching versions, or request a restart.'
         }
         Write-CaelestiaJsonAtomic (Join-Path $Prefix 'install.json') (New-CaelestiaRootRecord $Prefix $record $old.current)
-        # A retained generation for this revision is repointed before the
-        # readiness clock; a missing one leaves the fixed palette.
-        $null = Set-CaelestiaSchemeRuntimeForRevision $old.profile $targetRevision $runtime
+        # The generation verified above is repointed before the readiness
+        # clock; a missing one leaves the fixed palette.
+        $null = Set-CaelestiaSchemeRuntimeForRevision $old.profile $targetRevision $runtime -Verified $verifiedScheme
         $activated = $true
         if ($Restart) { Start-CaelestiaDetached $Prefix -LegacyReady -TaskName $launchTask -PreparedSchemeRuntime }
     } catch {
