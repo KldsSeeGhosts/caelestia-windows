@@ -88,18 +88,20 @@ Background {
             // the underlay must present before the handoff exposes it.
             console.log("CAELESTIA_BACKGROUND_STATE", JSON.stringify({
                 active: Native.DesktopLayer.active, icons: desktopIcons,
-                underlay: true, screen: screen.name, ready: !!ready,
+                underlay: true, screen: screens.indexOf(screen), ready: !!ready,
                 owner: WallpaperEngine.running ? "wallpaper-engine-underlay" : "undiscovered-underlay",
                 clockEnabled: clockEnabled, clockPresent: !!clock,
-                wallpaper: Wallpapers.current, width: window?.width ?? 0, height: window?.height ?? 0
+                hasWallpaper: String(Wallpapers.current ?? "").length > 0,
+                width: window?.width ?? 0, height: window?.height ?? 0
             }));
             return !!ready;
         }
         console.log("CAELESTIA_BACKGROUND_STATE", JSON.stringify({
             active: Native.DesktopLayer.active, icons: desktopIcons, underlay: underlayActive,
-            screens: screens.map(s => s.name), screen: screen.name, ready: !!ready,
+            screens: screens.map((_, index) => index), screen: screens.indexOf(screen), ready: !!ready,
             clockEnabled: clockEnabled, clockPresent: !!clock,
-            wallpaper: Wallpapers.current, width: window?.width ?? 0, height: window?.height ?? 0
+            hasWallpaper: String(Wallpapers.current ?? "").length > 0,
+            width: window?.width ?? 0, height: window?.height ?? 0
         }));
         return !!ready;
     }

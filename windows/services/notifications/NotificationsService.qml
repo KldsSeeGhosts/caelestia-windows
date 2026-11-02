@@ -1733,6 +1733,6 @@ QtObject {
         // Restored history has no backend notification to invoke. Keep the
         // original object shape and consume the action without a process call.
         if (record && record.service)
-            console.log("Caelestia notifications: historical action consumed:", identifier);
+            console.log("Caelestia notifications: historical action consumed");
     }
 }
