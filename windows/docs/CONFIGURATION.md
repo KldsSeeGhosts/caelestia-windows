@@ -394,7 +394,8 @@ gaps for a single tiled window, and `borderColours: true`. Example:
 Rules are wildcard arrays or semicolon-separated strings. `exe:`, `class:` and
 `title:` select individual window facts. `float` and disabled-monitor patterns
 are exclusions and win over inclusions. Interactive requires a non-empty include
-list; live changes stop the session before applying new rules/gaps.
+list; live changes stop the session before applying new rules/gaps. A malformed
+selector is ignored and logged by index, never by pattern text.
 `singleWindowGapsOut` replaces `gapsOut` when exactly one window is tiled on a
 monitor/workspace, excluding minimized and maximized windows. Maximized windows
 continue to fill the Windows work area. `borderColours` applies scheme primary
@@ -436,11 +437,13 @@ Layout selection remains a backend option outside this profile schema.
 
 ### Shell-surface selectors
 
-The window tracker and tiler never treat Windows' own shell UI as application
-windows. The native classifier uses generic properties: shell classes and host
-processes, CoreWindow under a shell host, tool windows, non-activating
-(`WS_EX_NOACTIVATE`) overlays, topmost owned flyouts, and DWM cloaking at the
-call sites. No executable name is special-cased.
+The window tracker follows the taskbar's own style contract: `WS_EX_APPWINDOW`
+forces a task-list entry, while a tool window, a no-activate
+(`WS_EX_NOACTIVATE`) window or an owned popup has none. That is separate from
+positive shell identity, which is only a known shell class or host process,
+`CoreWindow` under a shell host, and the optional list below. A tool-window
+fullscreen video is therefore still an occlusion surface even though it is not
+in the task list.
 
 A third-party shell can create an activatable, taskbar-hidden popup that exposes
 none of those properties. Add typed selectors for those windows under
@@ -453,11 +456,13 @@ default and changes apply live:
 
 Selectors use the same wildcard dialect as tiling: `exe:` matches the executable
 file name or basename, `class:` the Win32 class, `title:` the title, and an
-unprefixed pattern the app id, executable or class. Matching is case-insensitive
-and whole-value; arrays and semicolon-separated strings are accepted. A
-`screen:` rule has no meaning for a shell surface, because classification is not
-monitor-scoped. Marking a window here excludes it from the task model, the
-active-window fallback and tiling.
+unprefixed pattern the executable or class. Matching is case-insensitive and
+whole-value; arrays and semicolon-separated strings are accepted. Non-string
+elements are ignored and only counted in the log. `screen:` rules are rejected
+here because a shell surface is not monitor-scoped. A malformed selector is
+ignored and logged by index, never by pattern text. Marking a window here
+excludes it from the task model, the active-window fallback and tiling, and
+prevents it from seeding AppBar fullscreen.
 
 ---
 

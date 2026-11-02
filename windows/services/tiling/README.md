@@ -58,7 +58,8 @@ The Windows-only `windows` map holds service extensions; the facade validates
   semicolon-separated strings. Case-insensitive whole-value wildcard matching
   (`*`, `?`, character classes), not regular expressions. `exe:` matches
   executable filename/basename, `class:` matches Win32 class, `title:` matches
-  title. Unprefixed rules retain the shared app ID/exe/class match.
+  title. Unprefixed rules retain the shared app ID/exe/class match. A selector
+  that does not compile is ignored and logged by index, never by pattern text.
 - `float` is an exclusion alias: matching windows stay unmanaged. Exclude,
   float and disabled-monitor rules win over every inclusion.
 - `monitors` maps Qt screen-name wildcard patterns to booleans. All monitors

@@ -115,12 +115,9 @@ ShellRoot {
     Binding {
         target: Native.ShellSurfaces
         property: "extra"
-        value: {
-            const configured = GlobalConfig.windows?.shellSurfaces?.extra;
-            if (typeof configured === "string")
-                return configured.split(";").map(rule => rule.trim()).filter(rule => rule);
-            return Array.from(configured ?? []).map(rule => String(rule).trim()).filter(rule => rule);
-        }
+        // The backend validates element types and rejects `screen:` rules;
+        // never coerce unknown config entries into selector text here.
+        value: GlobalConfig.windows?.shellSurfaces?.extra ?? []
     }
 
     // IPC selects this installation; tiling retains its separate opt-in.
