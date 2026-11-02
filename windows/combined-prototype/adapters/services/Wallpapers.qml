@@ -80,8 +80,14 @@ Singleton {
     function preview(path): void { previewPath = path; showPreview = true; }
     function stopPreview(): void { showPreview = false; }
     function setWallpaper(path): bool {
-        if (!controlsEnabled)
+        if (!controlsEnabled) {
+            // Every caller closes its picker or sub-page right after this call,
+            // so the refusal has to speak here. Smoke stays silent, like the
+            // other gated facade entry points.
+            if (Quickshell.env("CAELESTIA_SHELL_SMOKE") !== "1")
+                Toaster.toast("Wallpaper", "Wallpaper changes are turned off", "wallpaper");
             return false;
+        }
         if (WallpaperEngine.items.some(item => item.path === path))
             return WallpaperEngine.open(path);
         const local = String(path).replace(/^file:\/\/\//, "");

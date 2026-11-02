@@ -193,17 +193,14 @@ PageBase {
         // Windows-owned connection settings. Upstream lists VPN providers and a
         // static-IP form here; neither has a Windows adapter, so the honest
         // equivalent is a link to the place Windows keeps them.
-        ToggleRow {
+        NavRow {
             Layout.topMargin: Tokens.spacing.large
-            Layout.fillWidth: true
             first: true
             last: true
+            icon: "vpn_key"
             text: Tr.tr("VPN")
-            font: Tokens.font.body.medium
-            horizontalPadding: Tokens.padding.largeIncreased
-            subtext: Tr.tr("Windows Settings manages VPN profiles")
-            checked: false
-            enabled: false
+            subtext: Tr.tr("Managed in Windows Settings")
+            onClicked: Qt.openUrlExternally("ms-settings:network-vpn")
         }
 
         NavRow {

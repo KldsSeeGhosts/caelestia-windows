@@ -86,8 +86,14 @@ Item {
             attach();
         else
             incubator.onStatusChanged = status => {
-                if (status === Component.Ready)
+                if (status === Component.Ready) {
                     attach();
+                } else if (status === Component.Error) {
+                    // Without this the container just stays blank. The page
+                    // index and its static registry label identify the failure
+                    // without touching any user data.
+                    console.warn(`Nexus: page ${idx} (${PageRegistry.pages[idx]?.label ?? "unknown"}) failed to load`);
+                }
             };
     }
 
