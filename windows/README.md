@@ -165,9 +165,8 @@ for commands and the limits of its quick installation smoke.
   `killwindow` translation is a graceful `WM_CLOSE`. No `Tiling`, `WindowManager`
   or `Taskbar` object is constructed. The fixture covers default-off
   construction, mapping, the global-focus limitation, every allowlisted and
-  refused dispatch form and injection attempts. Native Observe and Dispatch,
-  and the original components against a live desktop, now run in the installed
-  shell.
+  refused dispatch form and injection attempts. Only the native Disabled mode is recorded here;
+  the adapter has since been integrated into the installed shell.
 - A default-off [tiling slice](tiling-prototype/README.md) grounds M3-2 stages
   4/5 and the M3-3 fitting-failure explanation.
   `CAELESTIA_WINDOWS_TILING=off|observe|interactive` gates everything: `off`
@@ -181,8 +180,8 @@ for commands and the limits of its quick installation smoke.
   allowlist; older builds are feature-detected and refuse. The fixture covers
   both backend shapes (139 assertions);
   [tiling evidence](validation/2026-10-25-m3-tiling-slice/README.md) records
-  the Disabled-only native runs; native Observe and Interactive runs are
-  exercised on the installed shell.
+  the Disabled-only native runs. Tiling has since been integrated into the
+  installed shell.
 
 ## Checkout and inspect
 
@@ -255,8 +254,8 @@ The backend fork fixes mask handoff without replacing the original interaction
 paths. M2's [service audit](audits/M2-SERVICES.md) sequences ERM-495 through
 ERM-508. Audio integration and truthful backend control errors were the first
 slice; remaining service acceptance, actual hardware-denial/recovery and
-dynamic themes remain open, while M3 and M4 are integrated in the installed
-shell.
+dynamic themes remain open. M3 and M4 work has since been integrated into
+the installed shell; the roadmap lists open acceptance items.
 
 ## Toolchain direction
 

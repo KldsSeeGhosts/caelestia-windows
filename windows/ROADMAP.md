@@ -128,8 +128,8 @@ Native observation, injected failure handling and real writes/recovery are
 distinct validation claims. The [source audit](audits/M2-SERVICES.md) records
 all service gaps, Linux process/path boundaries and staged acceptance work.
 These slices started default disabled; observation requires separate
-child-process opt-ins and the battery slice performs no writes. The installed
-shell now runs every service.
+child-process opt-ins and the battery slice performs no writes. Later slices
+brought the other services into the installed shell.
 
 ERM-495/496/497 are complete for the bounded audio slice. Clean `fb6665ab`
 passes 238 adapter assertions, 16 native fake-COM cases, native 150%/175%
@@ -181,16 +181,15 @@ impossible, the UI must explain the outcome.
 M3-2 stages 0-3 have a default-off [Hypr adapter and prototype](hypr-prototype/README.md):
 observation maps the backend's monitors/workspaces/toplevels/focused data,
 dispatch is a separate allowlist opt-in, special-workspace UI is inactive and
-per-monitor ownership is explicitly not claimed. Native Observe and Dispatch
-now run in the installed shell. Stages 4/5 have bounded
+per-monitor ownership is explicitly not claimed. Only the native Disabled mode
+is recorded; the adapter has since been integrated into the installed shell. Stages 4/5 have bounded
 [groundwork](tiling-prototype/README.md): a pure tiling service with an
 off/observe/interactive opt-in, an allowlist-gated interactive mode, a
 feature-detected wrapper for the backend `Tiling` controller, and the
 fitting-failure explanation decided on the original toast surface. The
-fixture covers both backend pin shapes; native Observe and Interactive runs
-are exercised on the installed shell. Live tiling against real windows and
-the M3-2 decorations and taskbar stages are integrated; the full M3 scenario
-matrix remains open.
+fixture covers both backend pin shapes; only the native Disabled mode is
+recorded. Tiling has since been integrated into the installed shell; the
+remaining M3-2 stages and the full M3 scenario matrix remain open.
 
 ## M4: complete shell and packaging
 
