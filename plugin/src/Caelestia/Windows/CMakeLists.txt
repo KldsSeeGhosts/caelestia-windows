@@ -51,6 +51,9 @@ option(CAELESTIA_WINDOWS_TESTS "Build Caelestia Windows plugin tests" OFF)
 # executable. windows/scripts/Test-ClipboardHistory.ps1 runs it alongside the
 # QML smoke.
 find_package(Qt6 QUIET COMPONENTS Test)
+if(CAELESTIA_WINDOWS_TESTS AND NOT Qt6Test_FOUND)
+    message(WARNING "CAELESTIA_WINDOWS_TESTS is ON but Qt Test was not found; the plugin tests are skipped.")
+endif()
 if(CAELESTIA_WINDOWS_TESTS AND Qt6Test_FOUND)
     add_executable(clipboard-logic-tests
         Clipboard/test/clipboardlogic_test.cpp
