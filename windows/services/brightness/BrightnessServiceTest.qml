@@ -386,6 +386,10 @@ QtObject {
     readonly property FakeBackend identityBackend: FakeBackend {}
     readonly property BrightnessService feedbackCase: BrightnessService {}
     readonly property FakeBackend feedbackBackend: FakeBackend {}
+    // A lost terminal result is bounded by the per-monitor watchdog. The
+    // shortened timeout keeps the fixture's real-time wait small.
+    readonly property BrightnessService timeoutCase: BrightnessService { writeTimeoutMs: 50 }
+    readonly property FakeBackend timeoutBackend: FakeBackend {}
     property var feedbackEvents: []
     property Connections feedbackLog: Connections {
         target: test.feedbackCase
@@ -1686,7 +1690,65 @@ QtObject {
             && noIdBackend.legacySetCalls === 0,
             "the adapter never used a legacy write path");
 
-        destructionCheck.start();
+        // A strict write whose terminal result never arrives (worker died,
+        // reload race) must expire instead of leaving the slider unwritable
+        // until hotplug. The fake keeps the write in flight, so a real result
+        // can be delivered late and must be ignored.
+        timeoutCase.screens = [{name: "TIMEOUT1"}];
+        timeoutCase.enabled = true;
+        timeoutCase.controlsEnabled = true;
+        timeoutCase.backend = timeoutBackend;
+        check(timeoutCase.queryMonitor("TIMEOUT1"), "timeout case route query");
+        timeoutBackend.deliverQuery();
+        close(timeoutCase.stateFor("TIMEOUT1").brightness, 0.5, "timeout case baseline level");
+        check(timeoutCase.write("TIMEOUT1", 0.8), "timeout case write accepted");
+        check(timeoutCase.write("TIMEOUT1", 0.9), "timeout case second drag coalesces");
+        check(!timeoutCase.canWrite("TIMEOUT1"), "a pending write still gates the next one");
+        check(timeoutCase.stateFor("TIMEOUT1").writeTimer.running,
+            "a pending write arms its watchdog");
+        writeTimeoutCheck.start();
+    }
+
+    // Runs after the watchdog interval has certainly elapsed, then hands over
+    // to the destruction check that reports the fixture result.
+    readonly property Timer writeTimeoutCheck: Timer {
+        interval: 250
+        onTriggered: {
+            try {
+                const state = timeoutCase.stateFor("TIMEOUT1");
+                check(!state.writePending, "a lost write result is expired");
+                check(!state.hasQueuedWrite, "an expired write drops its queued drag target");
+                check(state.lastOutcome === "failed", "an expired write records a failed outcome");
+                check(state.lastError.indexOf("No brightness write result arrived") === 0,
+                    "an expired write reports the timeout");
+                check(timeoutCase.expiredWrites === 1, "the expired write is counted once");
+                check(!state.writeTimer.running, "the watchdog stops when it expires the write");
+                check(timeoutCase.canWrite("TIMEOUT1"),
+                    "the monitor is writable again after the timeout");
+                close(state.brightness, 0.5, "an expired write snaps back to the confirmed level");
+                // The late result for the expired write is dropped, then the
+                // next write is a normal end-to-end confirmation.
+                timeoutBackend.completeWrite();
+                check(!timeoutCase.stateFor("TIMEOUT1").writePending,
+                    "a late result does not revive the expired write");
+                check(timeoutCase.stateFor("TIMEOUT1").lastOutcome === "failed",
+                    "a late result does not overwrite the timeout outcome");
+                close(timeoutCase.stateFor("TIMEOUT1").brightness, 0.5,
+                    "a late result does not apply its value");
+                check(timeoutCase.write("TIMEOUT1", 0.7),
+                    "a write after the timeout is accepted");
+                timeoutBackend.completeWrite();
+                const settled = timeoutCase.stateFor("TIMEOUT1");
+                check(!settled.writePending && settled.lastOutcome === "hardware-requested",
+                    "a write after the timeout completes normally");
+                close(settled.brightness, 0.7, "the retried write applies");
+                check(!settled.writeTimer.running, "the watchdog stops on the terminal result");
+                destructionCheck.start();
+            } catch (error) {
+                console.error("CAELESTIA_BRIGHTNESS_FIXTURE_FAIL " + error.message);
+                Qt.exit(1);
+            }
+        }
     }
 
     readonly property Timer destructionCheck: Timer {

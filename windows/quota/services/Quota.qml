@@ -211,6 +211,21 @@ Singleton {
         keepaliveDone = 0;
         keepaliveError = "";
         keepaliveProcess.running = true;
+        if (!keepaliveProcess.running) {
+            // FailedToStart clears running without emitting exited, so this
+            // and onRunningChanged below are the only paths that release the
+            // ring when Python cannot be spawned.
+            keepaliveStartFailed();
+        }
+    }
+
+    // The asynchronous FailedToStart case: running can drop right after the
+    // assignment above without an exited emission.
+    function keepaliveStartFailed(): void {
+        if (!root.keepaliveRunning)
+            return;
+        root.keepaliveRunning = false;
+        root.keepaliveError = qsTr("Keepalive helper failed to start");
     }
 
     Process {
@@ -234,6 +249,17 @@ Singleton {
                         root.keepaliveError = msg.error || "Keepalive failed";
                     }
                 } catch (e) {}
+            }
+        }
+
+        onRunningChanged: {
+            if (!keepaliveProcess.running && root.keepaliveRunning) {
+                // Defer so onExited wins for a process that did run; a failed
+                // spawn never emits it.
+                Qt.callLater(() => {
+                    if (!keepaliveProcess.running && root.keepaliveRunning)
+                        root.keepaliveStartFailed();
+                });
             }
         }
 
@@ -555,6 +581,11 @@ Singleton {
             root.spend = next;
             root.writeCache();
         };
+        // Best effort, like the summary above: a transport failure or timeout
+        // keeps the last good figures, sets no drawer error and logs nothing
+        // (no body or key is read here).
+        request.onerror = function () {};
+        request.ontimeout = function () {};
         try {
             request.open("POST", root.baseUrl + root.analyticsUrlSuffix);
             request.setRequestHeader("Authorization", "Bearer " + root.adminKey);

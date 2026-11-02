@@ -56,6 +56,10 @@ Singleton {
     property var keepSystemBanners: []
     property bool bannerStopping: false
     property bool bannerStarted: false
+    // A spawn attempt is in flight. Quickshell clears Process.running on
+    // FailedToStart without emitting exited, so this flag lets the post-start
+    // check and onRunningChanged report it.
+    property bool bannerStarting: false
     property bool bannerRecoveryComplete: false
     property bool bannerFailed: false
     property var pendingBannerApps: []
@@ -74,6 +78,19 @@ Singleton {
             bannerProcess.write(JSON.stringify({command: "configure", keep: keepSystemBanners}) + "\n");
     }
 
+    // A worker that could not be spawned has the same consequence as one that
+    // exited unexpectedly: replacement is off until the recovery pass runs, so
+    // it must not start the helper again on its own (no tight respawn loop).
+    function bannerStartFailed(): void {
+        if (!root.bannerWanted)
+            return;
+        root.bannerStarted = false;
+        root.bannerFailed = true;
+        root.bannerRecoveryComplete = false;
+        console.warn("Caelestia banner helper failed to start");
+        root.recoverBanners();
+    }
+
     function reconcileBanners(): void {
         if (!bannerWanted) {
             if ((bannerConfigReady && !replaceSystemBanners) || bannerFailed
@@ -84,7 +101,13 @@ Singleton {
                 bannerProcess.write('{"command":"stop"}\n');
             }
         } else if (!bannerProcess.running && !bannerStopping) {
+            bannerStarting = true;
             bannerProcess.running = true;
+            if (!bannerProcess.running && bannerStarting) {
+                // FailedToStart already cleared running synchronously.
+                bannerStarting = false;
+                bannerStartFailed();
+            }
         }
     }
 
@@ -363,6 +386,7 @@ Singleton {
         stdout: SplitParser { onRead: line => {} }
         stderr: SplitParser { onRead: line => console.warn("Caelestia banner helper:", line) }
         onStarted: {
+            root.bannerStarting = false;
             root.bannerStarted = true;
             if (!root.bannerWanted) {
                 root.bannerStopping = true;
@@ -374,8 +398,21 @@ Singleton {
                 bannerProcess.write(JSON.stringify({command: "app", name: name}) + "\n");
             root.pendingBannerApps = [];
         }
+        onRunningChanged: {
+            if (!bannerProcess.running && root.bannerStarting) {
+                // Defer so a real exit is handled by onExited first; a failed
+                // spawn never emits it.
+                Qt.callLater(() => {
+                    if (!bannerProcess.running && root.bannerStarting) {
+                        root.bannerStarting = false;
+                        root.bannerStartFailed();
+                    }
+                });
+            }
+        }
         onExited: code => {
             const expected = root.bannerStopping;
+            root.bannerStarting = false;
             root.bannerStarted = false;
             root.bannerStopping = false;
             if (code !== 0 || !expected) {

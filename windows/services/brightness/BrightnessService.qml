@@ -1,8 +1,11 @@
+pragma ComponentBehavior: Bound
+
 import QtQuick
 
 // Windows adaptation of the bounded parts of services/Brightness.qml. This
-// object imports no Quickshell or native module, creates no timers and runs no
-// probe on its own. It is a route-policy state machine over an injected backend.
+// object imports no Quickshell or native module, starts no probe on its own and
+// spawns no process; it is a route-policy state machine over an injected
+// backend. Its only timers are the per-monitor write watchdogs.
 //
 // STRICT-ROUTE CONTRACT (windows/deps/quickshell strict-route fork):
 //   property bool strictRoutes (one-way: enable only while idle)
@@ -30,7 +33,8 @@ import QtQuick
 // silently retries \\.\LCD and falls back to software gamma and then reports
 // ok = true. With strict routes the backend never falls back and emits exactly
 // one brightnessWriteResult() per accepted write, so that signal is the only
-// write confirmation and a pending write is not cleared by any other signal.
+// write confirmation. A pending write is cleared by it or, when the result is
+// lost, by the bounded per-monitor watchdog below; no other signal settles one.
 //
 // Route queries remain safe in both builds. query()/probe() share startProbe();
 // at the old pin that path drops software gamma dimming this process applied
@@ -57,6 +61,12 @@ QtObject {
     property string policyError: ""
     property bool strictRoutesEnabled: false
 
+    // Bounded wait for the terminal strict-route result. The worker normally
+    // answers well inside it; a lost result (the worker died, or a reload
+    // dropped the signal) must not leave that monitor's slider unwritable
+    // until hotplug.
+    property int writeTimeoutMs: 4000
+
     // Evidence counters. They are informational for hosts and fixtures; no
     // caller may infer success from them.
     property int queryRequests: 0
@@ -64,6 +74,7 @@ QtObject {
     property int coalescedWrites: 0
     property int clearedDimmingRequests: 0
     property int refusedWrites: 0
+    property int expiredWrites: 0
     property bool everWrote: false
     // True once a write was forwarded for a software route or the backend
     // reported a software route for a hardware write.
@@ -103,6 +114,8 @@ QtObject {
     readonly property bool writesAllowed: enabled && controlsEnabled && strictBackend
         && queryIdsSupported
         && policyError.length === 0
+    readonly property int effectiveWriteTimeoutMs: Number.isFinite(writeTimeoutMs)
+        && writeTimeoutMs > 0 ? writeTimeoutMs : 4000
     readonly property string status: {
         if (!enabled)
             return "disabled";
@@ -153,6 +166,8 @@ QtObject {
     }
 
     component MonitorState: QtObject {
+        id: monitorState
+
         property string screenName: ""
         // Bumped when the screen is removed; a fresh record for the same name
         // is created with the bumped value.
@@ -196,6 +211,14 @@ QtObject {
         // failed | refused
         property string lastOutcome: "none"
         property string lastError: ""
+        // Bounds the one terminal completion: brightnessWriteResult() is the
+        // only signal that may confirm or fail a strict write, so a result
+        // that never arrives is expired here instead of blocking writes.
+        readonly property Timer writeTimer: Timer {
+            interval: root.effectiveWriteTimeoutMs
+            repeat: false
+            onTriggered: root._onWriteTimeout(monitorState)
+        }
     }
 
     function screenNameOf(screen): string {
@@ -341,6 +364,7 @@ QtObject {
 
     function _resetStates(): void {
         for (const state of _states) {
+            state.writeTimer.stop();
             state.state = "unknown";
             state.route = "";
             state.available = false;
@@ -612,11 +636,13 @@ QtObject {
         state.lastError = "";
         writeRequests++;
         everWrote = true;
+        state.writeTimer.restart();
         try {
             // Under strict routes the backend uses the stored route and never
             // falls back; brightnessWriteResult() is the only completion.
             backend.setBrightness(state.screenName, state.route === "ddc", value);
         } catch (error) {
+            state.writeTimer.stop();
             state.writePending = false;
             state.hasQueuedWrite = false;
             state.lastOutcome = "failed";
@@ -625,6 +651,22 @@ QtObject {
             return false;
         }
         return true;
+    }
+
+    // The terminal result never arrived. Settle the record exactly like a
+    // failed dispatch so the value snaps back and the monitor is writable
+    // again. A late result is ignored by the writePending guard in
+    // _onBrightnessWriteResult(), and the watchdog is stopped there too.
+    function _onWriteTimeout(state): void {
+        if (!state.writePending)
+            return;
+        state.writePending = false;
+        state.hasQueuedWrite = false;
+        state.lastOutcome = "failed";
+        state.lastError = "No brightness write result arrived within "
+            + effectiveWriteTimeoutMs + " ms.";
+        expiredWrites++;
+        _snapBack(state);
     }
 
     function _snapBack(state): void {
@@ -764,6 +806,7 @@ QtObject {
         // write for the current record can be confirmed.
         if (!state || !state.writePending)
             return;
+        state.writeTimer.stop();
         state.writePending = false;
         const reportedRoute = typeof method === "string" ? method : "";
         const reportedError = typeof error === "string" ? error : "";

@@ -44,7 +44,8 @@ other panels keep their own unavailable adapters.
 ## Service states and route policy
 
 [`BrightnessService.qml`](../services/brightness/BrightnessService.qml) imports
-no Quickshell or native module, creates no timers and never queries on its own.
+no Quickshell or native module, never queries on its own and spawns no process;
+its only timers are the per-monitor write watchdogs.
 The singleton wrapper [`Brightness.qml`](../services/brightness/Brightness.qml)
 preserves the original contract for staged consumers: `monitors` (one typed
 `Monitor` per `Quickshell.screens` entry), `getMonitorForScreen()`,
@@ -93,7 +94,9 @@ Policy, enforced in the pure state object:
    pending, later values coalesce to the newest drag target and are sent after
    the terminal result. A failure drops the queue and snaps the slider back to
    the last confirmed value; a pending write never disables the slider
-   mid-gesture.
+   mid-gesture. A terminal result that never arrives is expired per monitor
+   after `writeTimeoutMs` (default 4 s) and settles the same way, so a lost
+   signal cannot wedge that monitor until hotplug.
 
 A strict-route enable refusal is latched as a separate `policyError`, not as a
 per-monitor route latch, and an explicit route refresh clears it. Each screen
@@ -104,7 +107,8 @@ screen cannot authorize the reconnected monitor.
 `brightnessWriteResult` is the only strict confirmation. Success means the
 backend accepted the write through the stored route, not that a read-back
 confirmed the requested level. WMI and `\\.\LCD` may later emit
-`systemBrightnessChanged`; DDC/CI has no read-back.
+`systemBrightnessChanged`; DDC/CI has no read-back. A result that arrives after
+its watchdog expired it is ignored while no write is pending.
 
 ## Opt-ins and startup policy
 
