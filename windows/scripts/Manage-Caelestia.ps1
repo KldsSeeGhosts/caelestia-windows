@@ -63,12 +63,10 @@ if (-not $Wait) {
     @{ operationId = $operationId } | ConvertTo-Json -Compress
     return
 }
-$mutex = New-CaelestiaInstallMutex $Prefix
-$locked = $false
+$installLock = Enter-CaelestiaInstallLock $Prefix
 $operationId = if ($TaskName -match '^Caelestia-Maintenance-([a-f0-9]{32})$') { $Matches[1] } else { [guid]::NewGuid().ToString('N') }
 try {
-    try { $locked = $mutex.WaitOne(0) } catch [Threading.AbandonedMutexException] { $locked = $true }
-    if (-not $locked) { throw 'An installation or rollback is already in progress.' }
+    if (-not $installLock) { throw 'An installation or rollback is already in progress.' }
     # Re-read under the same lock as Install-Caelestia.
     $record = Read-CaelestiaInstall $Prefix
     if ($record.version -ne 2 -or -not $record.previous) { throw 'No previous version is retained.' }
@@ -80,8 +78,7 @@ try {
     Write-Operation $operationId 'failed'
     throw
 } finally {
-    if ($locked) { $mutex.ReleaseMutex() }
-    $mutex.Dispose()
+    Exit-CaelestiaInstallLock $installLock
     if ($TaskName -match '^Caelestia-Maintenance-[a-f0-9]{32}$') {
         Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
     }

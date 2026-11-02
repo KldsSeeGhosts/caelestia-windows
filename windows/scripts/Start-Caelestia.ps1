@@ -215,6 +215,7 @@ if ($Command -ne 'Start') {
     $info.RedirectStandardOutput = $true
     $info.RedirectStandardError = $true
     $output = ''
+    $errors = ''
     $ipcFailure = $null
     try {
         $process = [Diagnostics.Process]::Start($info)
@@ -223,9 +224,13 @@ if ($Command -ne 'Start') {
         if (-not $process.WaitForExit(10000)) { $process.Kill(); throw 'Shell IPC timed out.' }
         $output = $outTask.GetAwaiter().GetResult()
         # Consume diagnostics, but never echo shell state or user data on failure.
-        $null = $errTask.GetAwaiter().GetResult()
+        $errors = $errTask.GetAwaiter().GetResult()
         if ($process.ExitCode -ne 0) { throw "Shell IPC $Command failed (exit $($process.ExitCode)). See the profile logs." }
     } catch {
+        # Partially captured IPC output can contain shell state or user data.
+        # Clear it before Quit recovery, which continues and later emits output.
+        $output = ''
+        $errors = ''
         # Quit must still reach a supervisor that is starting or in restart
         # backoff, when no shell exists to answer IPC.
         if ($Command -ne 'Quit') { throw }

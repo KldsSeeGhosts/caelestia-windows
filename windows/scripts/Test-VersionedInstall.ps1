@@ -131,6 +131,61 @@ try {
     }
     Write-Output 'PASS migration: legacy payload retained without recursion; failed first version falls back to migrated legacy.'
 
+    # Migration window: an installed copy from before the Global lock holds
+    # only Local\CaelestiaInstall-<key>. The new lock must take both names so
+    # installation and selector writes still serialize with that copy. The
+    # legacy owner runs in a separate process; mutex ownership is per thread,
+    # so an in-process holder would let this same thread re-enter recursively.
+    Add-Type -OutputAssembly (Join-Path $root 'legacy-install-lock.exe') -OutputType ConsoleApplication -TypeDefinition @'
+using System;
+using System.IO;
+using System.Threading;
+public static class LegacyInstallLockFixture {
+    public static int Main(string[] args) {
+        using (var mutex = new Mutex(false, args[0])) {
+            if (!mutex.WaitOne(0)) return 2;
+            File.WriteAllText("held.txt", "held");
+            var deadline = DateTime.UtcNow.AddSeconds(20);
+            while (DateTime.UtcNow < deadline && !File.Exists("stop.txt")) Thread.Sleep(25);
+            mutex.ReleaseMutex();
+        }
+        return 0;
+    }
+}
+'@
+    $lockPrefix = $prefix
+    $lockExe = Join-Path $root 'legacy-install-lock.exe'
+    $lockName = 'Local\CaelestiaInstall-' + (Get-CaelestiaInstallLockKey $lockPrefix)
+    $heldFile = Join-Path $root 'held.txt'
+    $stopFile = Join-Path $root 'stop.txt'
+    $holder = Start-Process -FilePath $lockExe -ArgumentList $lockName -WorkingDirectory $root -PassThru
+    try {
+        $deadline = [DateTime]::UtcNow.AddSeconds(10)
+        while (-not (Test-Path -LiteralPath $heldFile) -and [DateTime]::UtcNow -lt $deadline -and -not $holder.HasExited) {
+            Start-Sleep -Milliseconds 50
+        }
+        Assert (Test-Path -LiteralPath $heldFile) 'The legacy install lock holder did not start.'
+        Assert ($null -eq (Enter-CaelestiaInstallLock $lockPrefix)) 'The new install lock ignored an old Local lock owner.'
+        $refused = $false
+        try { & (Join-Path $PSScriptRoot 'Manage-Caelestia.ps1') -Prefix $prefix -Command Rollback -Wait }
+        catch { $refused = $_.Exception.Message -match 'already in progress' }
+        Assert $refused 'The manager did not refuse a rollback while an old install held the Local lock.'
+        Assert ((Read-CaelestiaInstall $prefix).current -eq $recordA.current) 'A blocked rollback still changed the selector.'
+    } finally {
+        [IO.File]::WriteAllText($stopFile, '')
+        if (-not $holder.WaitForExit(5000)) { $holder.Kill(); $holder.WaitForExit() }
+    }
+    $lock = Enter-CaelestiaInstallLock $lockPrefix
+    Assert ($null -ne $lock) 'The new install lock stayed blocked after the old owner exited.'
+    try {
+        $oldOwner = Start-Process -FilePath $lockExe -ArgumentList $lockName -WorkingDirectory $root -PassThru -Wait
+        Assert ($oldOwner.ExitCode -eq 2) 'An old install could take the legacy Local lock while the new lock was held.'
+    } finally { Exit-CaelestiaInstallLock $lock }
+    $lock = Enter-CaelestiaInstallLock $lockPrefix
+    Assert ($null -ne $lock) 'The new install lock did not release cleanly.'
+    Exit-CaelestiaInstallLock $lock
+    Write-Output 'PASS lock: a legacy Local owner blocks install/rollback, and the new Global+Local lock excludes it in turn.'
+
     # Uninstall renames the installation aside before deleting it, so a locked
     # file leaves the installation intact and still resolvable instead of
     # half-deleted. The same test then uninstalls cleanly and leaves no tombstone.

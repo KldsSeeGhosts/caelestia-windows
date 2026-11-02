@@ -29,7 +29,15 @@ try {
     if ([IO.File]::ReadAllText($stdoutPath) -ne 'live-session' -or [IO.File]::ReadAllText($stdoutPrevious) -ne 'newer-session') {
         throw 'A locked log was truncated or damaged the previous log.'
     }
-    Write-Output 'PASS logs: previous session retained, .prev replaced, locked file is non-fatal.'
+    # A locked .prev must leave the newest session's log appendable, not
+    # truncate it just because rotation failed.
+    [IO.File]::WriteAllText($stdoutPath, 'rotation-target')
+    $lockedPrevious = [IO.File]::Open($stdoutPrevious, 'Open', 'ReadWrite', 'None')
+    try { Move-CaelestiaLogToPrevious $stdoutPath } finally { $lockedPrevious.Dispose() }
+    if ([IO.File]::ReadAllText($stdoutPath) -ne 'rotation-target' -or [IO.File]::ReadAllText($stdoutPrevious) -ne 'newer-session') {
+        throw 'A locked previous log truncated the current log or damaged the previous log.'
+    }
+    Write-Output 'PASS logs: previous session retained, .prev replaced, locked file is non-fatal and keeps the newest log.'
 
     # Cleanup failure must not replace the original launch error or trigger a
     # retry against task/launcher state that could not be verified.
@@ -65,6 +73,12 @@ public static class LifecycleIpcFixture {
         string mode = File.ReadAllText("mode.txt");
         if (mode == "timeout") { Thread.Sleep(10000); return 0; }
         if (mode == "failure") {
+            Console.Out.WriteLine("private-state-sentinel");
+            Console.Error.WriteLine("private-error-sentinel");
+            return 3;
+        }
+        if (mode == "quit-failure") {
+            File.WriteAllText("quit-called.txt", "1");
             Console.Out.WriteLine("private-state-sentinel");
             Console.Error.WriteLine("private-error-sentinel");
             return 3;
@@ -116,6 +130,21 @@ public static class LifecycleIpcFixture {
     try { Invoke-CaelestiaIpc $root state 250 } catch { $refused = $_ -match 'timed out' }
     if (-not $refused -or $clock.Elapsed.TotalSeconds -gt 2) { throw 'IPC timeout was not bounded.' }
     Write-Output 'PASS IPC: generation change, readiness, legacy rollback, failure privacy and bounded timeout.'
+
+    # The launcher's own Quit path must swallow a failed IPC without emitting
+    # the output it captured before the exit-code check.
+    $quitPrefix = Join-Path $root 'quit-prefix'
+    [IO.Directory]::CreateDirectory((Join-Path $quitPrefix 'shell')) | Out-Null
+    Copy-Item -LiteralPath (Join-Path $root 'qs.exe') -Destination (Join-Path $quitPrefix 'qs.exe')
+    [IO.File]::WriteAllText((Join-Path $quitPrefix 'mode.txt'), 'quit-failure')
+    @{
+        product = 'caelestia-windows'; version = 1; prefix = $quitPrefix
+        profile = (Join-Path $quitPrefix 'profile')
+    } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $quitPrefix 'install.json') -Encoding UTF8
+    $quitOutput = & (Join-Path $PSScriptRoot 'Start-Caelestia.ps1') -Prefix $quitPrefix -Command Quit 2>&1 | Out-String
+    if (-not (Test-Path -LiteralPath (Join-Path $quitPrefix 'quit-called.txt'))) { throw 'The launcher Quit path did not reach IPC.' }
+    if ($quitOutput -match 'private-') { throw 'The launcher Quit path leaked failed IPC output.' }
+    Write-Output 'PASS quit: failed IPC output is not echoed by the launcher.'
 
     # Compile only. No supervisor or native desktop operations run here.
     Add-Type -Path (Join-Path $PSScriptRoot 'DesktopTakeover.cs') -ReferencedAssemblies System.Windows.Forms, System.Web.Extensions
