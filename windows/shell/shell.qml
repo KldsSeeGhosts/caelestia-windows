@@ -31,6 +31,9 @@ ShellRoot {
     readonly property string generation: Date.now().toString(36) + Math.random().toString(36).slice(2)
     readonly property bool externalWallpaperActive: WallpaperEngine.ownsDesktop
     readonly property bool smoke: Quickshell.env("CAELESTIA_SHELL_SMOKE") === "1"
+    // Offscreen public smoke: skip the native monitor/panel schedule below and
+    // exit after the drawers present their first frame.
+    readonly property bool smokeCi: Quickshell.env("CAELESTIA_SHELL_SMOKE_CI") === "1"
     // Isolated install validation may reserve only the secondary monitor.
     // Normal starts always retain the complete per-monitor shell.
     readonly property int smokeScreenIndex: Number(Quickshell.env("CAELESTIA_SHELL_SCREEN") || "-1")
@@ -260,14 +263,38 @@ ShellRoot {
 
     // Quick install smoke: load the session and dashboard on every monitor,
     // suppress input/native writes, verify monitor-sized windows, then await IPC quit.
+    // CAELESTIA_SHELL_SMOKE_CI instead skips the native-only panel schedule and
+    // exits by itself once every drawer has presented its first frame.
     Timer {
         id: smokeCheck
         property int step: 0
-        interval: 3000
+        interval: root.smokeCi ? 1000 : 3000
         repeat: true
         running: root.smoke
         onTriggered: {
             step++;
+            if (root.smokeCi) {
+                const state = root.snapshot();
+                const ready = state.lifecycle.ready
+                    && Object.values(state.controls).every(value => value === false)
+                    && !state.statisticsActive && !state.networkStatisticsActive;
+                if (!ready) {
+                    if (step < 60)
+                        return;
+                    console.error("CAELESTIA_SHELL_SMOKE_FAIL not ready");
+                    stop();
+                    Qt.exit(1);
+                    return;
+                }
+                // Give late bindings a moment after the first presented frame.
+                if (step < 3)
+                    return;
+                console.log("CAELESTIA_SHELL_LIVE_STATE", JSON.stringify(state));
+                console.log("CAELESTIA_SHELL_SMOKE_PASS");
+                stop();
+                Qt.exit(0);
+                return;
+            }
             for (const screen of root.shellScreens) {
                 const state = ShellState.forScreen(screen);
                 if (state) {

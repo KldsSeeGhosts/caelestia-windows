@@ -135,6 +135,34 @@ The script:
 6. Records command arguments, logs, source revisions (including M3Shapes), and
    tool versions under `logs/`. No packages are published.
 
+## Smoke
+
+The public smoke command is:
+
+```powershell
+$devRoot = Join-Path $env:LOCALAPPDATA 'caelestia-dev'
+powershell -NoProfile -File windows/scripts/Test-Smoke.ps1 `
+    -BuildRoot C:\b-smoke `
+    -QtPrefix "$devRoot\Qt\6.11.2\msvc2022_64"
+```
+
+It stages the production map in `windows/shell/sources.json` exactly as the
+installer does (`Stage-ShellPrototype.ps1 -Prototype shell-live`), starts the
+built `quickshell/qs.exe` against an isolated temporary profile, and waits for
+every drawer's first frame. The process uses `QT_QPA_PLATFORM=offscreen` and
+the Qt Quick software backend. Tray hook, blur, tiling, background/desktop
+embedding, notification mirroring, hotkeys, Wallpaper Engine and every service
+control are off; an empty keybind list and `CAELESTIA_SHELL_SMOKE_CI` let the
+shell exit itself. The script also checks the build's backend and M3Shapes
+revisions against `windows/sources.lock.json`. A QML error, missing import or
+plugin DLL, missing pass marker, or 90-second timeout fails the run.
+
+The exit code is 0 on pass and 1 on failure, with a one-line summary. The
+temporary stage, profile and stdout/stderr are removed on pass, and kept and
+printed on failure. `-TimeoutSeconds`, `-RunRoot` and `-Keep` help with
+debugging. The command does not install anything, run the live shell, or read
+the live profile.
+
 ## Native bar/session prototype
 
 After rebuilding for the Windows focus helper:
