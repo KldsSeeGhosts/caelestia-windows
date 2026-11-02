@@ -232,6 +232,22 @@ ShellRoot {
         };
     }
 
+    // Diagnostics only: the public snapshot keeps the current project path and
+    // the screen names (friendly monitor names or device paths) for IPC and
+    // property consumers, but neither may reach the log. Screens are logged by
+    // index and count.
+    function loggingSnapshot(): var {
+        const state = root.snapshot();
+        state.wallpaperEngine = Object.assign({}, state.wallpaperEngine, {
+            current: state.wallpaperEngine.current ? "set" : ""
+        });
+        state.windows = state.windows.map((w, i) => Object.assign({}, w, { screen: i }));
+        state.backgroundScreens = state.backgroundScreens.length;
+        state.backgroundWindows = state.backgroundWindows.map((w, i) =>
+            Object.assign({}, w, { screen: i, modelScreen: i }));
+        return state;
+    }
+
     Component.onCompleted: {
         ShellState.shellRoot = root;
         Hypr.logStartupStatus();
@@ -289,7 +305,7 @@ ShellRoot {
                 // Give late bindings a moment after the first presented frame.
                 if (step < 3)
                     return;
-                console.log("CAELESTIA_SHELL_LIVE_STATE", JSON.stringify(state));
+                console.log("CAELESTIA_SHELL_LIVE_STATE", JSON.stringify(root.loggingSnapshot()));
                 console.log("CAELESTIA_SHELL_SMOKE_PASS");
                 stop();
                 Qt.exit(0);
@@ -305,7 +321,7 @@ ShellRoot {
             if (step < 5)
                 return;
             const state = root.snapshot();
-            console.log("CAELESTIA_SHELL_LIVE_STATE", JSON.stringify(state));
+            console.log("CAELESTIA_SHELL_LIVE_STATE", JSON.stringify(root.loggingSnapshot()));
             const valid = state.screens > 0 && state.windows.length === state.screens
                 && state.windows.every(w => w.width === w.screenWidth
                     && w.height === w.screenHeight && w.barWidth > 0)
