@@ -1882,6 +1882,40 @@ QtObject {
                 check(!state.querying && state.lastOutcome === "queried", "the refresh settles the record");
                 check(lostQueryBackend.pendingQueries === 0 && lostQueryBackend.pendingWrites === 0,
                     "nothing is left outstanding");
+
+                // (d) Both results lost while the route is revoked: a route
+                // change during the write must not be undone by the recovery.
+                check(lostQueryCase.write("LOST2", 0.6), "revoked-route write accepted");
+                lostQueryBackend.routes = Object.assign({}, lostQueryBackend.routes, {LOST2: "ddc"});
+                lostQueryBackend.routeChanged("LOST2", "ddc");
+                revokedRouteCheck.start();
+            } catch (error) {
+                console.error("CAELESTIA_BRIGHTNESS_FIXTURE_FAIL " + error.message);
+                Qt.exit(1);
+            }
+        }
+    }
+
+    readonly property Timer revokedRouteCheck: Timer {
+        interval: 600
+        onTriggered: {
+            try {
+                const state = lostQueryCase.stateFor("LOST2");
+                check(lostQueryCase.lostWriteResults === 2 && lostQueryCase.lostQueryResults === 2,
+                    "the revoked-route results are counted as lost");
+                check(!state.querying && !state.writePending, "the revoked-route record is not wedged");
+                check(!lostQueryCase.canWrite("LOST2"),
+                    "a revoked route is not restored as writable");
+                check(!state.available && state.state === "failed",
+                    "the revoked-route record stays read-only");
+                lostQueryBackend.completeWrite();
+                while (lostQueryBackend.pendingQueries > 0)
+                    lostQueryBackend.deliverQuery();
+                check(!lostQueryCase.canWrite("LOST2"), "late results do not restore the route");
+                check(lostQueryCase.queryMonitor("LOST2"), "an explicit refresh is accepted");
+                lostQueryBackend.deliverQuery();
+                check(!state.querying && state.lastOutcome === "queried",
+                    "the explicit refresh re-validates the route");
                 destructionCheck.start();
             } catch (error) {
                 console.error("CAELESTIA_BRIGHTNESS_FIXTURE_FAIL " + error.message);

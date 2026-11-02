@@ -688,7 +688,11 @@ QtObject {
         // result is still why this record is being re-read, so it is recorded
         // after the query starts. The displayed value and any queued drag
         // target are left untouched.
+        // An automatic recovery query is not the explicit user refresh that
+        // may clear a policy latch (see _requeryIfRouteStale).
+        const latched = state.latched;
         const started = queryMonitor(state.screenName);
+        state.latched = latched;
         state.lastOutcome = "failed";
         state.lastError = "No brightness write result arrived from the display.";
         if (started) {
@@ -707,10 +711,11 @@ QtObject {
     // be trusted. Expire the request (a late result no longer matches), leave
     // querying, and settle the retained drag target as failed instead of
     // dispatching it into a dead worker. The record regains the capability it
-    // held before the lost write, so a later user write or route refresh is
-    // accepted; a write that is lost again just recovers through this path
-    // again. The unconfirmed displayed level snaps back to the last
-    // confirmation.
+    // held before the lost write only while that authorization is still valid:
+    // no route invalidation arrived and the backend still reports the same
+    // route. Otherwise it stays read-only until an explicit route refresh. A
+    // write that is lost again just recovers through this path again. The
+    // unconfirmed displayed level snaps back to the last confirmation.
     function _onRecoveryQueryLost(state): void {
         if (!state.querying)
             return;
@@ -718,9 +723,20 @@ QtObject {
         state.querying = false;
         state.queryId = 0;
         const route = state.queryRoute;
-        state.route = route;
-        state.available = true;
-        state.state = route === "software" ? "software-only" : "hardware";
+        const stillValid = route !== "" && !state.routeStale
+            && _currentRoute(state.screenName) === route;
+        // Do not auto-query a worker that just lost two results; the user's
+        // refresh re-validates the route.
+        state.routeStale = false;
+        if (stillValid) {
+            state.route = route;
+            state.available = true;
+            state.state = route === "software" ? "software-only" : "hardware";
+        } else {
+            state.route = "";
+            state.available = false;
+            state.state = "failed";
+        }
         state.hasQueuedWrite = false;
         state.lastOutcome = "failed";
         state.lastError = "No brightness result arrived from the display; refresh the route to retry.";
