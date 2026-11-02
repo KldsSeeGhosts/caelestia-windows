@@ -17,8 +17,10 @@ Item {
 
     required property PopoutState popouts
 
-    implicitWidth: loader.item?.implicitWidth ?? 0
-    implicitHeight: loader.item?.implicitHeight ?? 0
+    // The Loader's implicit size follows the loaded item's actual size, which keeps
+    // the upstream content's explicit `width: 300` (its implicitWidth would not).
+    implicitWidth: loader.implicitWidth
+    implicitHeight: loader.implicitHeight
 
     Loader {
         id: loader
