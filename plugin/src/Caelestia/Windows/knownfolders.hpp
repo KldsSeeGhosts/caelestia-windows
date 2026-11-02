@@ -1,8 +1,11 @@
 #pragma once
 
-#include <qdiriterator.h>
-#include <qfileinfo.h>
+#include <functional>
+#include <thread>
+
+#include <qcoreapplication.h>
 #include <qobject.h>
+#include <qpointer.h>
 #include <qqmlintegration.h>
 
 #include "knownfolderpaths.hpp"
@@ -46,23 +49,42 @@ public:
 
     QString commonPrograms() const { return m_commonPrograms; }
 
-    // The same image extensions the wallpaper scanner accepts. Extension
-    // matching is case-insensitive on every platform, and the scan stops at
-    // the first image.
-    Q_INVOKABLE bool containsImages(const QString& path) const {
-        if (path.isEmpty())
-            return false;
+    using ImageProbe = std::function<bool(const QString&)>;
 
-        QDirIterator it(path, QDir::Files | QDir::NoDotAndDotDot);
-        while (it.hasNext()) {
-            const auto suffix = QFileInfo(it.next()).suffix().toLower();
-            if (suffix == u"png" || suffix == u"jpg" || suffix == u"jpeg" || suffix == u"bmp" || suffix == u"webp")
-                return true;
-        }
-        return false;
+    // Test seam: replaces the folder enumeration. Set it before probing.
+    void setImageProbe(ImageProbe probe) { m_probe = std::move(probe); }
+
+    // Normalise a path the way the Known Folders are normalised, so QML and
+    // the plugin agree on drive and share roots.
+    Q_INVOKABLE static QString normalizePath(const QString& path) { return normalizeFolderPath(path); }
+
+    // Looks for wallpaper images in a folder on a worker thread and reports the
+    // answer through imagesProbed on the GUI thread. The enumeration can stall
+    // for a long time on an unavailable network share, so it never runs on the
+    // GUI thread. The worker is detached on purpose: joining it at shutdown
+    // would hold the exit of the shell for as long as the share keeps stalling,
+    // and it touches only its own copies and a guarded pointer.
+    Q_INVOKABLE void probeImages(const QString& path) {
+        std::thread([self = QPointer<KnownFolders>(this), probe = m_probe, path] {
+            const bool found = probe(path);
+            if (auto* app = QCoreApplication::instance()) {
+                QMetaObject::invokeMethod(
+                    app,
+                    [self, path, found] {
+                        if (self)
+                            emit self->imagesProbed(path, found);
+                    },
+                    Qt::QueuedConnection);
+            }
+        }).detach();
     }
 
+signals:
+    void imagesProbed(const QString& path, bool found);
+
 private:
+    ImageProbe m_probe = folderContainsImages;
+
     const QString m_pictures = resolveKnownFolder(FOLDERID_Pictures);
     const QString m_videos = resolveKnownFolder(FOLDERID_Videos);
     const QString m_desktop = resolveKnownFolder(FOLDERID_Desktop);

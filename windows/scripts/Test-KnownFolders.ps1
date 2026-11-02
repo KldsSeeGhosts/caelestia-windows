@@ -37,6 +37,10 @@ try {
     }
     Set-Content -LiteralPath (Join-Path $fixtures 'known-with\Wallpapers\known.png') -Value 'x' -NoNewline
     Set-Content -LiteralPath (Join-Path $fixtures 'legacy-with\Wallpapers\legacy.jpg') -Value 'x' -NoNewline
+    # Not recursive, and a folder named like an image is not an image.
+    New-Item -ItemType Directory -Force -Path (Join-Path $fixtures 'nested-only\Wallpapers\nested'), `
+        (Join-Path $fixtures 'nested-only\Wallpapers\folder.png') | Out-Null
+    Set-Content -LiteralPath (Join-Path $fixtures 'nested-only\Wallpapers\nested\deep.png') -Value 'x' -NoNewline
 
     if (-not (Test-Path -LiteralPath $testExe -PathType Leaf)) {
         throw "Missing known-folder test: $testExe (run windows/scripts/Build-Prototype.ps1 -Tests first)."
