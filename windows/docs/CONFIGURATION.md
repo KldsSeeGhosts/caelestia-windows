@@ -434,6 +434,31 @@ The underlying `Quickshell.Windows.Tiling` singleton exposes the following layou
 The table above lists native backend defaults, also used by the Windows facade.
 Layout selection remains a backend option outside this profile schema.
 
+### Shell-surface selectors
+
+The window tracker and tiler never treat Windows' own shell UI as application
+windows. The native classifier uses generic properties: shell classes and host
+processes, CoreWindow under a shell host, tool windows, non-activating
+(`WS_EX_NOACTIVATE`) overlays, topmost owned flyouts, and DWM cloaking at the
+call sites. No executable name is special-cased.
+
+A third-party shell can create an activatable, taskbar-hidden popup that exposes
+none of those properties. Add typed selectors for those windows under
+`windows.shellSurfaces.extra` in `config/shell.json`; the list is empty by
+default and changes apply live:
+
+```json
+{"windows":{"shellSurfaces":{"extra":["exe:some-shell.exe","title:Task Switcher"]}}}
+```
+
+Selectors use the same wildcard dialect as tiling: `exe:` matches the executable
+file name or basename, `class:` the Win32 class, `title:` the title, and an
+unprefixed pattern the app id, executable or class. Matching is case-insensitive
+and whole-value; arrays and semicolon-separated strings are accepted. A
+`screen:` rule has no meaning for a shell surface, because classification is not
+monitor-scoped. Marking a window here excludes it from the task model, the
+active-window fallback and tiling.
+
 ---
 
 ## Clipboard history configuration

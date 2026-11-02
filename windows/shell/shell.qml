@@ -107,6 +107,22 @@ ShellRoot {
         value: ShellState.anySidebarOpen()
     }
 
+    // The native classifier covers Windows' own shell surfaces and the
+    // documented tool/no-activate/taskbar-less styles. This list is the
+    // explicit fallback for third-party shell windows that use none of them;
+    // it is empty by default and reloads live. Selectors use the tiling
+    // dialect: exe:, class:, title:, or an unprefixed app/exe/class pattern.
+    Binding {
+        target: Native.ShellSurfaces
+        property: "extra"
+        value: {
+            const configured = GlobalConfig.windows?.shellSurfaces?.extra;
+            if (typeof configured === "string")
+                return configured.split(";").map(rule => rule.trim()).filter(rule => rule);
+            return Array.from(configured ?? []).map(rule => String(rule).trim()).filter(rule => rule);
+        }
+    }
+
     // IPC selects this installation; tiling retains its separate opt-in.
     IpcHandler {
         target: "shell"
