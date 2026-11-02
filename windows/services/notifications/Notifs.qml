@@ -481,8 +481,7 @@ Singleton {
                 // of the user's history: the service's load-failure latch
                 // keeps it untouched for the rest of the session.
                 console.warn("Caelestia notification history could not be loaded ("
-                    + root.service.historyError + "); it will not be overwritten this session: "
-                    + root.service.historyPath);
+                    + root.service.historyError + "); it will not be overwritten this session");
             }
         }
         onLoadFailed: error => {

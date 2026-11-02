@@ -121,7 +121,7 @@ Singleton {
         if (code !== 0 || !data || data.ok !== true) {
             status = "error";
             lastError = String(data?.error ?? (text.trim() || `scheme generator exited ${code}`));
-            console.warn(`CAELESTIA_SCHEME_FAIL ${kind}: ${lastError}`);
+            console.warn(`CAELESTIA_SCHEME_FAIL ${kind} code=${code} bytes=${lastError.length}`);
             failed(lastError);
         } else if (kind === "list") {
             schemes = data.schemes ?? {};
