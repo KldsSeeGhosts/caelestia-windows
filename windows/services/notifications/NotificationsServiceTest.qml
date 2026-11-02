@@ -102,9 +102,19 @@ QtObject {
         property int claimCalls: 0
         property int lastObservationToken: 0
 
+        property int claimedToken: 0
+
         function claimAccessObservation(): int {
             claimCalls++;
-            return host ? host.claim() : ++localGeneration;
+            claimedToken = host ? host.claim() : ++localGeneration;
+            return claimedToken;
+        }
+
+        // The native facade holds its claimed generation as a lease and
+        // releases it when destroyed, through the same generation check.
+        Component.onDestruction: {
+            if (host && claimedToken !== 0)
+                host.write(false, claimedToken);
         }
 
         function setAccessObservation(enabled, token): void {
@@ -503,6 +513,23 @@ QtObject {
         c1.service.destroy();
         scenarios.c = {host: hostC, replacement: c2};
 
+        // Facade destroyed first, service afterwards: the service's own release
+        // finds no live facade, so only the facade's lease can switch it off.
+        const hostD = observationHostComponent.createObject(test);
+        const d = makeObservationService(hostD, true);
+        check(hostD.observing, "the facade-order fixture starts observing");
+        d.backend.destroy();
+        scenarios.d = {host: hostD, service: d.service};
+
+        // A stale facade destroyed after a replacement facade claimed.
+        const hostE = observationHostComponent.createObject(test);
+        const e1 = makeObservationService(hostE, true);
+        const e2 = makeObservationService(hostE, true);
+        check(hostE.observing && e2.service.observationToken === 2,
+            "the replacement facade's service holds the newer generation");
+        e1.backend.destroy();
+        scenarios.e = {host: hostE, stale: e1, replacement: e2};
+
         test.observationScenarios = scenarios;
     }
 
@@ -528,6 +555,23 @@ QtObject {
         check(scenarios.c.host.observing && scenarios.c.host.refused === 1,
             "an old instance destroyed after the new one enabled observation cannot disable it");
         scenarios.c.replacement.service.destroy();
+
+        // The facade's lease switched observation off before the service, which
+        // is destroyed next and must release against a facade that is gone.
+        check(!scenarios.d.host.observing && scenarios.d.host.refused === 0,
+            "a destroyed facade's lease switches observation off: history="
+            + scenarios.d.host.history.join(","));
+        const writesBeforeService = scenarios.d.host.history.length;
+        scenarios.d.service.destroy();
+        scenarios.d.writesBeforeService = writesBeforeService;
+
+        // The stale facade's lease was refused; the newer holder still observes.
+        check(scenarios.e.host.observing && scenarios.e.host.refused === 1,
+            "a stale facade destroyed after a replacement cannot disable it: history="
+            + scenarios.e.host.history.join(","));
+        scenarios.e.stale.service.destroy();
+        scenarios.e.replacement.backend.destroy();
+        scenarios.e.replacement.service.destroy();
     }
 
     // Phase three: the replacement objects destroyed above released their
@@ -538,6 +582,11 @@ QtObject {
             "destroying the current holder switches observation off");
         check(!scenarios.c.host.observing && scenarios.c.host.refused === 1,
             "the current holder's own teardown is honoured");
+        check(!scenarios.d.host.observing
+            && scenarios.d.host.history.length === scenarios.d.writesBeforeService,
+            "a service destroyed after its facade writes nothing to the gone facade");
+        check(!scenarios.e.host.observing,
+            "the replacement facade's lease switches observation off");
     }
 
     function makeAction(identifier, text): FakeAction {
