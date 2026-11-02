@@ -159,7 +159,7 @@ Singleton {
         lastPaletteKey = key;
         SchemeGenerator.applyWallpaper(current.preview, GlobalConfig.services.smartScheme);
         if (debugLogging)
-            console.log("CAELESTIA_WE_CURRENT", JSON.stringify({monitor: monitor, title: current.title, project: current.path, preview: current.preview}));
+            console.log("CAELESTIA_WE_CURRENT", JSON.stringify({monitor: monitor}));
     }
 
     function open(path: string): bool {

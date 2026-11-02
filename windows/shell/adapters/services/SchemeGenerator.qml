@@ -213,7 +213,7 @@ Singleton {
                 return;
             }
             if (code !== 0 && stderrCollector.text.trim().length > 0)
-                console.warn("CAELESTIA_SCHEME_STDERR " + stderrCollector.text.trim());
+                console.warn("CAELESTIA_SCHEME_STDERR bytes=" + stderrCollector.text.length);
             root.finish(code, stdoutCollector.text);
         }
     }

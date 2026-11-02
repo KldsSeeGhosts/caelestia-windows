@@ -91,7 +91,8 @@ Background {
                 underlay: true, screen: screen.name, ready: !!ready,
                 owner: WallpaperEngine.running ? "wallpaper-engine-underlay" : "undiscovered-underlay",
                 clockEnabled: clockEnabled, clockPresent: !!clock,
-                wallpaper: Wallpapers.current, width: window?.width ?? 0, height: window?.height ?? 0
+                hasWallpaper: String(Wallpapers.current ?? "").length > 0,
+                width: window?.width ?? 0, height: window?.height ?? 0
             }));
             return !!ready;
         }
@@ -99,7 +100,8 @@ Background {
             active: Native.DesktopLayer.active, icons: desktopIcons, underlay: underlayActive,
             screens: screens.map(s => s.name), screen: screen.name, ready: !!ready,
             clockEnabled: clockEnabled, clockPresent: !!clock,
-            wallpaper: Wallpapers.current, width: window?.width ?? 0, height: window?.height ?? 0
+            hasWallpaper: String(Wallpapers.current ?? "").length > 0,
+            width: window?.width ?? 0, height: window?.height ?? 0
         }));
         return !!ready;
     }
