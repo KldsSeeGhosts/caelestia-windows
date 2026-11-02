@@ -563,6 +563,21 @@ param([string]$Prefix, [string]$Command = 'Start', [switch]$SkipSchemeRuntime)
         Assert ($published) 'The concurrent run did not report its generation.'
         $generationRoot = Join-Path $generationProfile "scheme\runtimes\$published"
         $before = Get-DirectoryHash $generationRoot
+        # A cache hit validates the published generation without touching it.
+        $cacheOut = Join-Path $root 'cache.out'
+        $cacheErr = Join-Path $root 'cache.err'
+        $cacheArguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $calculator +
+            '" -ProfileRoot "' + $generationProfile + '" -LockWaitSeconds 30'
+        $cacheRun = Start-Process -FilePath (Get-WindowsPowerShellPath) -ArgumentList $cacheArguments `
+            -WindowStyle Hidden -PassThru -RedirectStandardOutput $cacheOut -RedirectStandardError $cacheErr
+        if (-not $cacheRun.WaitForExit(120000)) {
+            $cacheRun.Kill()
+            $cacheRun.WaitForExit()
+            throw 'Cached scheme validation timed out.'
+        }
+        $cacheResult = Read-SchemeResult $cacheOut
+        Assert ($cacheResult -and $cacheResult.available -eq $true -and $cacheResult.generation -eq $published) 'A cache hit did not reuse the published generation.'
+        Assert ((Get-DirectoryHash $generationRoot) -eq $before) 'A cache hit modified the published generation.'
         $repairOut = Join-Path $root 'repair.out'
         $repairErr = Join-Path $root 'repair.err'
         $repairArguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $calculator +
