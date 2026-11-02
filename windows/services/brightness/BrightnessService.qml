@@ -1,8 +1,11 @@
+pragma ComponentBehavior: Bound
+
 import QtQuick
 
 // Windows adaptation of the bounded parts of services/Brightness.qml. This
-// object imports no Quickshell or native module, creates no timers and runs no
-// probe on its own. It is a route-policy state machine over an injected backend.
+// object imports no Quickshell or native module, starts no probe on its own and
+// spawns no process; it is a route-policy state machine over an injected
+// backend. Its only timers are the per-monitor lost-result watchdogs.
 //
 // STRICT-ROUTE CONTRACT (windows/deps/quickshell strict-route fork):
 //   property bool strictRoutes (one-way: enable only while idle)
@@ -30,7 +33,11 @@ import QtQuick
 // silently retries \\.\LCD and falls back to software gamma and then reports
 // ok = true. With strict routes the backend never falls back and emits exactly
 // one brightnessWriteResult() per accepted write, so that signal is the only
-// write confirmation and a pending write is not cleared by any other signal.
+// write confirmation. A pending write is cleared by it or, when the result is
+// lost, by the per-monitor lost-result watchdog below; no other signal settles
+// one. That watchdog never decides that a slow write failed: a healthy DDC/CI
+// write can take seconds on the backend's single worker, so it only recovers a
+// result that never comes and then re-reads the display.
 //
 // Route queries remain safe in both builds. query()/probe() share startProbe();
 // at the old pin that path drops software gamma dimming this process applied
@@ -57,6 +64,13 @@ QtObject {
     property string policyError: ""
     property bool strictRoutesEnabled: false
 
+    // A hard bound for recovering a lost terminal strict-route result (the
+    // worker died, or a reload dropped the signal), never a write deadline: the
+    // backend serializes writes on one worker, so a healthy DDC/CI write can
+    // exceed the old 4 s guess. It is deliberately far above any healthy write;
+    // when it expires the display is re-read instead of being declared failed.
+    property int writeTimeoutMs: 15000
+
     // Evidence counters. They are informational for hosts and fixtures; no
     // caller may infer success from them.
     property int queryRequests: 0
@@ -64,6 +78,8 @@ QtObject {
     property int coalescedWrites: 0
     property int clearedDimmingRequests: 0
     property int refusedWrites: 0
+    property int lostWriteResults: 0
+    property int lostQueryResults: 0
     property bool everWrote: false
     // True once a write was forwarded for a software route or the backend
     // reported a software route for a hardware write.
@@ -103,6 +119,8 @@ QtObject {
     readonly property bool writesAllowed: enabled && controlsEnabled && strictBackend
         && queryIdsSupported
         && policyError.length === 0
+    readonly property int effectiveWriteTimeoutMs: Number.isFinite(writeTimeoutMs)
+        && writeTimeoutMs > 0 ? writeTimeoutMs : 15000
     readonly property string status: {
         if (!enabled)
             return "disabled";
@@ -153,6 +171,8 @@ QtObject {
     }
 
     component MonitorState: QtObject {
+        id: monitorState
+
         property string screenName: ""
         // Bumped when the screen is removed; a fresh record for the same name
         // is created with the bumped value.
@@ -196,6 +216,18 @@ QtObject {
         // failed | refused
         property string lastOutcome: "none"
         property string lastError: ""
+        // Lost-result recovery only: brightnessWriteResult() is the one signal
+        // that may confirm or fail a strict write, so a result that never
+        // arrives would block writes here forever. The bound is generous
+        // because a slow write is still a healthy write; expiry re-reads the
+        // display rather than failing the write. The same bound then covers the
+        // recovery query it starts, so a second lost result cannot leave the
+        // record querying forever.
+        readonly property Timer writeWatchdog: Timer {
+            interval: root.effectiveWriteTimeoutMs
+            repeat: false
+            onTriggered: root._onWatchdogExpired(monitorState)
+        }
     }
 
     function screenNameOf(screen): string {
@@ -341,6 +373,7 @@ QtObject {
 
     function _resetStates(): void {
         for (const state of _states) {
+            state.writeWatchdog.stop();
             state.state = "unknown";
             state.route = "";
             state.available = false;
@@ -374,6 +407,7 @@ QtObject {
         for (const state of _states) {
             if (!state.querying)
                 continue;
+            state.writeWatchdog.stop();
             state.querying = false;
             state.queryId = 0;
             state.state = "unknown";
@@ -612,11 +646,13 @@ QtObject {
         state.lastError = "";
         writeRequests++;
         everWrote = true;
+        state.writeWatchdog.restart();
         try {
             // Under strict routes the backend uses the stored route and never
             // falls back; brightnessWriteResult() is the only completion.
             backend.setBrightness(state.screenName, state.route === "ddc", value);
         } catch (error) {
+            state.writeWatchdog.stop();
             state.writePending = false;
             state.hasQueuedWrite = false;
             state.lastOutcome = "failed";
@@ -625,6 +661,102 @@ QtObject {
             return false;
         }
         return true;
+    }
+
+    // The terminal result never arrived: the worker died or a reload dropped
+    // the signal. This is lost-result recovery, not a failed write. A healthy
+    // DDC/CI write can run for seconds on the backend's single worker, so the
+    // displayed value is left alone and a queued drag target is kept; instead
+    // the record reports the lost result and asks hardware for the truth
+    // through the normal query path. That query is ordered behind any write
+    // still running on the one worker, so it reads the value the write applied.
+    // A late result stays ignored by the writePending guard in
+    // _onBrightnessWriteResult(); the query reconciles the record.
+    function _onWatchdogExpired(state): void {
+        if (state.writePending)
+            _onWriteResultLost(state);
+        else if (state.querying)
+            _onRecoveryQueryLost(state);
+    }
+
+    function _onWriteResultLost(state): void {
+        if (!state.writePending)
+            return;
+        state.writePending = false;
+        lostWriteResults++;
+        // queryMonitor() clears the outcome for a fresh route check; the lost
+        // result is still why this record is being re-read, so it is recorded
+        // after the query starts. The displayed value and any queued drag
+        // target are left untouched.
+        // An automatic recovery query is not the explicit user refresh that
+        // may clear a policy latch (see _requeryIfRouteStale).
+        const latched = state.latched;
+        const started = queryMonitor(state.screenName);
+        state.latched = latched;
+        state.lastOutcome = "failed";
+        state.lastError = "No brightness write result arrived from the display.";
+        if (started) {
+            // The recovery query is bounded by the same watchdog.
+            state.writeWatchdog.restart();
+        } else if (state.hasQueuedWrite) {
+            // No query means no hardware value to adopt, so the queued target
+            // cannot be applied safely. Drop it and let the next drag write
+            // normally; the displayed level is left as the user set it.
+            state.hasQueuedWrite = false;
+            state.resyncSerial++;
+        }
+    }
+
+    // The recovery query's result never arrived either, so the worker cannot
+    // be trusted. Expire the request (a late result no longer matches), leave
+    // querying, and settle the retained drag target as failed instead of
+    // dispatching it into a dead worker. The record regains the capability it
+    // held before the lost write only while that authorization is still valid:
+    // no route invalidation arrived and the backend still reports the same
+    // route. Otherwise it stays read-only until an explicit route refresh. A
+    // write that is lost again just recovers through this path again. The
+    // unconfirmed displayed level snaps back to the last confirmation.
+    function _onRecoveryQueryLost(state): void {
+        if (!state.querying)
+            return;
+        lostQueryResults++;
+        state.querying = false;
+        state.queryId = 0;
+        const route = state.queryRoute;
+        const stillValid = route !== "" && !state.routeStale
+            && _currentRoute(state.screenName) === route;
+        // Do not auto-query a worker that just lost two results; the user's
+        // refresh re-validates the route.
+        state.routeStale = false;
+        if (stillValid) {
+            state.route = route;
+            state.available = true;
+            state.state = route === "software" ? "software-only" : "hardware";
+        } else {
+            state.route = "";
+            state.available = false;
+            state.state = "failed";
+        }
+        state.hasQueuedWrite = false;
+        state.lastOutcome = "failed";
+        state.lastError = "No brightness result arrived from the display; refresh the route to retry.";
+        _snapBack(state);
+    }
+
+    // Applies a queued drag target through write()'s live authorization, which
+    // re-checks the controls opt-in, the policy latch, the route and the
+    // pending state on the current record. The queue is captured and cleared
+    // first, so a refused or dropped target sends no backend call and cannot
+    // stay queued forever. A record that left the list (or was reconnected) is
+    // never dispatched for.
+    function _drainQueuedWrite(state): void {
+        if (!state.hasQueuedWrite)
+            return;
+        const next = state.queuedValue;
+        state.hasQueuedWrite = false;
+        if (_states.indexOf(state) >= 0
+            && state.generation === _generationFor(state.screenName))
+            write(state.screenName, next);
     }
 
     function _snapBack(state): void {
@@ -711,6 +843,7 @@ QtObject {
         const feedback = readable && state.lastConfirmedKnown
             && state.queryRoute === route
             && Math.abs(state.lastConfirmed - clamped) > 0.000001;
+        state.writeWatchdog.stop();
         state.querying = false;
         state.route = route;
         state.available = available === true;
@@ -729,10 +862,7 @@ QtObject {
                 : routeLabel(route) + " did not report a readable brightness level.";
             if (feedback)
                 brightnessFeedback(state.screenName, clamped);
-            _requeryIfRouteStale(state);
-            return;
-        }
-        if (route === "software") {
+        } else if (route === "software") {
             state.state = "software-only";
             state.brightnessKnown = readable;
             state.brightness = clamped;
@@ -741,14 +871,19 @@ QtObject {
             state.lastError = "";
             if (feedback)
                 brightnessFeedback(state.screenName, clamped);
-            _requeryIfRouteStale(state);
-            return;
+        } else {
+            state.state = "unsupported";
+            state.brightnessKnown = false;
+            state.brightness = 0;
+            state.lastConfirmedKnown = false;
+            state.lastError = "The backend reported no brightness route for this display.";
         }
-        state.state = "unsupported";
-        state.brightnessKnown = false;
-        state.brightness = 0;
-        state.lastConfirmedKnown = false;
-        state.lastError = "The backend reported no brightness route for this display.";
+        // A lost-result recovery query settles the record from hardware; a drag
+        // target queued behind the lost write is then dispatched through
+        // write()'s live authorization, exactly like the terminal result
+        // handler. An ordinary query never has a queued target, so this is
+        // inert for it.
+        _drainQueuedWrite(state);
         _requeryIfRouteStale(state);
     }
 
@@ -764,6 +899,7 @@ QtObject {
         // write for the current record can be confirmed.
         if (!state || !state.writePending)
             return;
+        state.writeWatchdog.stop();
         state.writePending = false;
         const reportedRoute = typeof method === "string" ? method : "";
         const reportedError = typeof error === "string" ? error : "";
@@ -805,19 +941,12 @@ QtObject {
         state.lastError = "";
         if (state.expectedRoute === "software")
             gammaTouched = true;
-        if (state.hasQueuedWrite) {
-            const next = state.queuedValue;
-            state.hasQueuedWrite = false;
-            // The queued dispatch goes through write()'s authorization of the
-            // current state, exactly like an initial dispatch: the controls
-            // opt-in can have been revoked, the service disabled or a policy
-            // failure latched while the first write was in flight, and write()
-            // re-checks the route and pending state on the live record. A
-            // refused or dropped queue sends no backend call.
-            if (_states.indexOf(state) >= 0
-                && state.generation === _generationFor(state.screenName))
-                write(state.screenName, next);
-        }
+        // The queued dispatch goes through write()'s authorization of the
+        // current state, exactly like an initial dispatch: the controls opt-in
+        // can have been revoked, the service disabled or a policy failure
+        // latched while the first write was in flight, and write() re-checks
+        // the route and pending state on the live record.
+        _drainQueuedWrite(state);
         _requeryIfRouteStale(state);
     }
 

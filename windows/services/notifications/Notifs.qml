@@ -56,6 +56,10 @@ Singleton {
     property var keepSystemBanners: []
     property bool bannerStopping: false
     property bool bannerStarted: false
+    // A spawn attempt is in flight. Quickshell clears Process.running on
+    // FailedToStart without emitting exited, so this flag lets the post-start
+    // check and onRunningChanged report it.
+    property bool bannerStarting: false
     property bool bannerRecoveryComplete: false
     property bool bannerFailed: false
     property var pendingBannerApps: []
@@ -74,6 +78,19 @@ Singleton {
             bannerProcess.write(JSON.stringify({command: "configure", keep: keepSystemBanners}) + "\n");
     }
 
+    // A worker that could not be spawned has the same consequence as one that
+    // exited unexpectedly: replacement is off until the recovery pass runs, so
+    // it must not start the helper again on its own (no tight respawn loop).
+    function bannerStartFailed(): void {
+        if (!root.bannerWanted)
+            return;
+        root.bannerStarted = false;
+        root.bannerFailed = true;
+        root.bannerRecoveryComplete = false;
+        console.warn("Caelestia banner helper failed to start");
+        root.recoverBanners();
+    }
+
     function reconcileBanners(): void {
         if (!bannerWanted) {
             if ((bannerConfigReady && !replaceSystemBanners) || bannerFailed
@@ -84,7 +101,17 @@ Singleton {
                 bannerProcess.write('{"command":"stop"}\n');
             }
         } else if (!bannerProcess.running && !bannerStopping) {
+            bannerStarting = true;
             bannerProcess.running = true;
+            if (!bannerProcess.running) {
+                // FailedToStart already cleared running synchronously. Defer:
+                // this runs inside the bannerWanted change handler, and
+                // bannerFailed/bannerRecoveryComplete are dependencies of that
+                // binding, so reporting here would re-enter its evaluation and
+                // leave bannerWanted true while bannerFailed is already true.
+                // bannerStarting keeps this and onRunningChanged to one report.
+                bannerStartCheck.start();
+            }
         }
     }
 
@@ -354,6 +381,21 @@ Singleton {
         }
     }
 
+    // Deferred spawn-failure report. Owned by this object rather than queued
+    // with Qt.callLater, so destroying the service (for example a QML reload)
+    // cancels a pending check instead of running it on a dead object.
+    readonly property Timer _bannerStartCheck: Timer {
+        id: bannerStartCheck
+        interval: 0
+        repeat: false
+        onTriggered: {
+            if (!bannerProcess.running && root.bannerStarting) {
+                root.bannerStarting = false;
+                root.bannerStartFailed();
+            }
+        }
+    }
+
     readonly property Process _bannerProcess: Process {
         id: bannerProcess
         command: [Quickshell.env("SystemRoot") + "/System32/WindowsPowerShell/v1.0/powershell.exe",
@@ -363,6 +405,7 @@ Singleton {
         stdout: SplitParser { onRead: line => {} }
         stderr: SplitParser { onRead: line => console.warn("Caelestia banner helper:", line) }
         onStarted: {
+            root.bannerStarting = false;
             root.bannerStarted = true;
             if (!root.bannerWanted) {
                 root.bannerStopping = true;
@@ -374,8 +417,16 @@ Singleton {
                 bannerProcess.write(JSON.stringify({command: "app", name: name}) + "\n");
             root.pendingBannerApps = [];
         }
+        onRunningChanged: {
+            if (!bannerProcess.running && root.bannerStarting) {
+                // Defer so a real exit is handled by onExited first; a failed
+                // spawn never emits it.
+                bannerStartCheck.start();
+            }
+        }
         onExited: code => {
             const expected = root.bannerStopping;
+            root.bannerStarting = false;
             root.bannerStarted = false;
             root.bannerStopping = false;
             if (code !== 0 || !expected) {

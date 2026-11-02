@@ -211,6 +211,35 @@ Singleton {
         keepaliveDone = 0;
         keepaliveError = "";
         keepaliveProcess.running = true;
+        if (!keepaliveProcess.running) {
+            // FailedToStart clears running without emitting exited. Use the
+            // same deferred single-handler shape as onRunningChanged below, so
+            // keepaliveRunning is released outside the Process's own state
+            // change and both paths can never report twice.
+            keepaliveStartCheck.start();
+        }
+    }
+
+    // Deferred spawn-failure report. Owned by this object rather than queued
+    // with Qt.callLater, so destroying the service (for example a QML reload)
+    // cancels a pending check instead of running it on a dead object.
+    Timer {
+        id: keepaliveStartCheck
+        interval: 0
+        repeat: false
+        onTriggered: {
+            if (!keepaliveProcess.running && root.keepaliveRunning)
+                root.keepaliveStartFailed();
+        }
+    }
+
+    // The asynchronous FailedToStart case: running can drop right after the
+    // assignment above without an exited emission.
+    function keepaliveStartFailed(): void {
+        if (!root.keepaliveRunning)
+            return;
+        root.keepaliveRunning = false;
+        root.keepaliveError = qsTr("Keepalive helper failed to start");
     }
 
     Process {
@@ -234,6 +263,14 @@ Singleton {
                         root.keepaliveError = msg.error || "Keepalive failed";
                     }
                 } catch (e) {}
+            }
+        }
+
+        onRunningChanged: {
+            if (!keepaliveProcess.running && root.keepaliveRunning) {
+                // Defer so onExited wins for a process that did run; a failed
+                // spawn never emits it.
+                keepaliveStartCheck.start();
             }
         }
 
@@ -555,6 +592,11 @@ Singleton {
             root.spend = next;
             root.writeCache();
         };
+        // Best effort, like the summary above: a transport failure or timeout
+        // keeps the last good figures, sets no drawer error and logs nothing
+        // (no body or key is read here).
+        request.onerror = function () {};
+        request.ontimeout = function () {};
         try {
             request.open("POST", root.baseUrl + root.analyticsUrlSuffix);
             request.setRequestHeader("Authorization", "Bearer " + root.adminKey);
