@@ -190,8 +190,16 @@ profile (for example the installer, or another start repairing a lost Python),
 that shell stays on the fixed palette until the next shell start, even after the
 other run finishes. A generation is used only if it was built from exactly the
 current inputs and its Python still runs; a venv whose base Python was
-uninstalled is repaired by a new generation, never reused. Provisioning logs
-and records contain no machine paths.
+uninstalled is repaired by a new generation, never reused. When a check passes,
+`runtime.json` records a receipt (the base interpreter's path, size and
+timestamp, a hash of `pyvenv.cfg` and the generation id); when a check fails the
+record is replaced with an "unavailable" one. A starting shell accepts the
+record only while that receipt still matches, using file metadata alone, and
+otherwise uses the fixed palette. Starting the shell never runs Python or
+discovers an interpreter: the system Python that the Wallpaper Engine bridge
+uses when there is no scheme runtime is found while preparing and recorded in
+`runtime.json`. If nothing was recorded, that bridge is unavailable for the
+start. Provisioning logs and records contain no machine paths.
 Python is an accepted runtime dependency; `-SkipSchemeRuntime` skips
 preparation during this install, and an existing prepared runtime is still
 used. Retained payloads that predate the generation layout start with scheme

@@ -177,8 +177,11 @@ shell start; it never waits for the provisioner. Generations used by the
 current and previous installed versions are retained; older ones are pruned on
 a later install only when no shell or supervisor is running. Pruning first
 renames a generation into `scheme/runtimes/.trash`, which fails (and keeps the
-generation whole until the next prune) while anything still uses it, and only
-then deletes it. Use
+generation whole until the next prune) while a working directory or open file is
+inside. A rename does not prove no code runs from it, so the generation is also
+kept while any of its `.exe`/`.dll`/`.pyd` images refuses write access (the OS
+does so for a mapped image, even for processes whose modules cannot be read);
+only then is it deleted. Use
 `-SkipSchemeRuntime` on the installer or launcher to skip preparation. If
 preparation failed, Caelestia starts on the fixed palette and
 `logs/scheme-runtime.log` reports it; rerun `Install-SchemeRuntime.ps1` from the

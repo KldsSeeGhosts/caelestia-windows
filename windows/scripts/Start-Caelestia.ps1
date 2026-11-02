@@ -151,10 +151,13 @@ if ($Command -eq 'Start' -and -not $SkipSchemeRuntime) {
     }
 }
 $schemeAvailable = $null -ne $schemeRuntime -and $schemeRuntime.available -eq $true
-$wePython = if ($schemeAvailable) { [string]$schemeRuntime.python } elseif ($Command -eq 'Start') {
-    $pythonLauncher = Get-Command py.exe -ErrorAction SilentlyContinue
-    if ($pythonLauncher) { & $pythonLauncher.Source -3 -c 'import sys; print(sys.executable)' }
-}
+# Starting the shell never launches Python or any discovery process. The
+# Wallpaper Engine bridge's interpreter was resolved while preparing and is
+# only read back from runtime.json; with nothing recorded the feature is
+# unavailable for this start. This holds for -SkipSchemeRuntime too.
+$wePython = if ($schemeAvailable) { [string]$schemeRuntime.python }
+    elseif ($Command -eq 'Start') { Get-CaelestiaSchemeInterpreter $profile }
+    else { '' }
 
 $info = New-Object Diagnostics.ProcessStartInfo
 $info.FileName = $exe

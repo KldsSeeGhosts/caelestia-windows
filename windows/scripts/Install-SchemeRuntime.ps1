@@ -30,7 +30,6 @@ if (-not $CliRevision) {
 $ProfileRoot = [IO.Path]::GetFullPath($ProfileRoot)
 $schemeRoot = Join-Path $ProfileRoot 'scheme'
 $runtimesRoot = Join-Path $schemeRoot 'runtimes'
-$stamp = Join-Path $schemeRoot 'runtime.json'
 $statePath = Join-Path $schemeRoot 'provision-state.json'
 $historyLog = Join-Path $schemeRoot 'provision.log'
 $helperSource = Join-Path $PSScriptRoot 'scheme\win_scheme.py'
@@ -146,30 +145,22 @@ if (-not $schemeLock) {
 try {
     New-Item -ItemType Directory -Force -Path $schemeRoot | Out-Null
 
-    # A published generation for this exact revision and input set is reused
-    # read-only. Nothing in it is touched, so a running shell keeps stable bytes.
-    if (-not $Force -and (Test-Path -LiteralPath $stamp)) {
-        try {
-            $record = Get-Content -LiteralPath $stamp -Raw | ConvertFrom-Json
-            if ($record.available -eq $true -and [string]$record.revision -eq $CliRevision -and
-                (Test-CaelestiaSchemeGeneration ([string]$record.generation))) {
-                $publishedRoot = Join-Path $runtimesRoot ([string]$record.generation)
-                if (Test-RuntimeAt $publishedRoot) {
-                    Write-Result $true 'cached' ([string]$record.generation)
-                    return
-                }
-            }
-        } catch {
-            # A corrupt marker falls through to a fresh generation.
-        }
+    # The system Python a bridge may need without a scheme runtime (Wallpaper
+    # Engine discovery) is resolved here, with a time limit, and recorded in
+    # runtime.json. Activation only reads it and never starts Python itself.
+    if (-not (Get-CaelestiaSchemeInterpreter $ProfileRoot)) {
+        $systemPython = Resolve-CaelestiaSystemPython
+        if ($systemPython) { Set-CaelestiaSchemeInterpreter $ProfileRoot $systemPython }
     }
 
-    # Reuse the newest verified generation built from exactly these inputs, for
-    # example a sibling from an earlier repair, instead of building another.
+    # Reuse the newest verified generation built from exactly these inputs (the
+    # published one, or a sibling from an earlier repair) instead of building
+    # another. Nothing in it is touched, so a running shell keeps stable bytes;
+    # a candidate that fails its check is revoked from runtime.json.
     if (-not $Force) {
         $existing = Get-CaelestiaVerifiedSchemeGeneration $ProfileRoot $CliRevision $identity.Id
         if ($existing) {
-            $null = Write-CaelestiaSchemePointer $ProfileRoot $CliRevision $existing
+            $null = Publish-CaelestiaSchemeRuntime $ProfileRoot $CliRevision $existing.Directory.FullName
             Write-Result $true 'cached' $existing.Name
             return
         }
@@ -272,14 +263,9 @@ try {
         [IO.Directory]::Move($staging, $target)
         $staging = ''
 
-        Write-JsonAtomic $stamp ([ordered]@{
-            available = $true
-            revision = $CliRevision
-            generation = $publishedId
-            python = (Join-Path $target 'venv\Scripts\python.exe')
-            helper = (Join-Path $target 'win_scheme.py')
-            provisionedAt = (Get-Date).ToString('o')
-        })
+        if (-not (Publish-CaelestiaSchemeRuntime $ProfileRoot $CliRevision $target)) {
+            throw 'could not record the verification of the new runtime'
+        }
         Remove-Item -LiteralPath $statePath -Force -ErrorAction SilentlyContinue
         Write-History "READY revision $CliRevision generation $publishedId"
         Write-Result $true 'provisioned' $publishedId

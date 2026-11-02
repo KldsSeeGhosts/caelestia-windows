@@ -205,40 +205,172 @@ function Get-CaelestiaSchemeIdentity([string]$RuntimePrefix, [string]$Revision) 
     }
 }
 
-# Diagnostics must not carry machine paths. Redact by shape, not by a list of
-# known prefixes: any absolute Windows path (drive, UNC or \\?\) and any file
-# URL becomes <path>/<file-url>, keeping only a short leaf extension.
+# Diagnostics must not carry machine paths. Redaction is by shape, not by a list
+# of known prefixes, and prefers over-redacting to leaking:
+#   - inside a quoted string holding an absolute Windows path (drive, UNC,
+#     \\?\ or a file URL) the whole quoted text is replaced;
+#   - an unquoted absolute path is replaced through the end of the line, or up
+#     to the next double quote, or a single quote, pipe, semicolon or comma that
+#     is followed by whitespace, so file names with spaces cannot leak.
+# Only a short leaf extension survives, as <path>.ext.
 function Protect-CaelestiaText([string]$Text) {
     if (-not $Text) { return '' }
-    $clean = [regex]::Replace($Text, 'file:/{1,3}[^\s"''<>|]*', '<file-url>', 'IgnoreCase')
-    $path = '(?:\\\\\?\\(?:UNC\\|[A-Za-z]:[\\/]+)?|(?<![\\\w])\\\\|(?<![A-Za-z0-9])[A-Za-z]:[\\/]+)' +
-        '(?:[^\\/\r\n"''<>|*?:]+[\\/]+)*[^\\/\s"''<>|*?:]*'
-    return [regex]::Replace($clean, $path, {
+    $start = '(?:file:/{1,3}|\\\\\?\\(?:UNC\\|[A-Za-z]:[\\/]+)?|(?<![\\\w])\\{2,4}[^\\/\s"''<>|?*:]+[\\/]|(?<![A-Za-z0-9])[A-Za-z]:[\\/]+)'
+    $extension = { param($value) $m = [regex]::Match($value, '\.[A-Za-z0-9]{1,8}$'); return $m.Value }
+    $quoted = {
         param($match)
-        $extension = [regex]::Match($match.Value, '\.[A-Za-z0-9]{1,8}$')
-        return '<path>' + $extension.Value
-    }, 'IgnoreCase')
+        if ($match.Groups[2].Value -notmatch $start) { return $match.Value }
+        $q = $match.Groups[1].Value
+        return $q + '<path>' + (& $extension $match.Groups[2].Value) + $q
+    }.GetNewClosure()
+    $clean = $Text
+    # A single quote inside a word (Bob's) is an apostrophe, not a delimiter.
+    foreach ($pattern in @('(")([^"\r\n]*)"', '(?<!\w)('')((?:[^''\r\n]|''(?=\w))*)''(?!\w)')) {
+        $clean = [regex]::Replace($clean, $pattern, $quoted)
+    }
+    $unquoted = $start + '[^\r\n]*?(?=$|"|[''|;,](?:\s|$)|\r|\n)'
+    return [regex]::Replace($clean, $unquoted, {
+        param($match)
+        if ($match.Value.StartsWith('file:', [StringComparison]::OrdinalIgnoreCase)) { return '<file-url>' }
+        return '<path>' + (& $extension $match.Value)
+    }.GetNewClosure(), 'IgnoreCase, Multiline')
+}
+
+# Run a program with a hard time limit and no window. A timeout kills the whole
+# tree and returns $null; it bounds a hung interpreter and never waits for
+# another process. Output is returned only for callers that need to parse it.
+function Invoke-CaelestiaBounded([string]$File, [string]$Arguments, [int]$TimeoutSeconds, [string]$WorkingDirectory = '') {
+    $process = $null
+    try {
+        $info = New-Object Diagnostics.ProcessStartInfo
+        $info.FileName = $File
+        $info.Arguments = $Arguments
+        # Never run from inside a generation: a cwd there would block pruning.
+        $info.WorkingDirectory = $(if ($WorkingDirectory) { $WorkingDirectory } else { $env:SystemRoot })
+        $info.UseShellExecute = $false
+        $info.CreateNoWindow = $true
+        $info.RedirectStandardOutput = $true
+        $info.RedirectStandardError = $true
+        $info.EnvironmentVariables['PYTHONDONTWRITEBYTECODE'] = '1'
+        $process = [Diagnostics.Process]::Start($info)
+        $outTask = $process.StandardOutput.ReadToEndAsync()
+        $null = $process.StandardError.ReadToEndAsync()
+        if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
+            try { & taskkill.exe /PID $process.Id /T /F 2>&1 | Out-Null } catch { }
+            try { $process.Kill() } catch { }
+            return $null
+        }
+        $process.WaitForExit()
+        return [pscustomobject]@{ ExitCode = $process.ExitCode; Output = $outTask.GetAwaiter().GetResult() }
+    } catch {
+        return $null
+    } finally {
+        if ($process) { $process.Dispose() }
+    }
+}
+
+# The system Python a bridge may need when no scheme runtime exists (Wallpaper
+# Engine discovery uses only the standard library). Resolved ONLY while
+# preparing, under a time limit; activation reads it from runtime.json and
+# never starts Python itself.
+function Resolve-CaelestiaSystemPython([int]$TimeoutSeconds = 15) {
+    $launcher = Get-Command py.exe -ErrorAction SilentlyContinue
+    if (-not $launcher) { return '' }
+    $result = Invoke-CaelestiaBounded $launcher.Source '-3 -c "import sys; print(sys.executable)"' $TimeoutSeconds
+    if (-not $result -or $result.ExitCode -ne 0) { return '' }
+    $line = @($result.Output -split "`r?`n" | Where-Object { $_.Trim() } | Select-Object -First 1)
+    if ($line.Count -and [IO.Path]::IsPathRooted($line[0].Trim()) -and (Test-Path -LiteralPath $line[0].Trim() -PathType Leaf)) {
+        return $line[0].Trim()
+    }
+    return ''
+}
+
+function Read-CaelestiaSchemeRuntimeRecord([string]$ProfileRoot) {
+    try { return (Get-Content -LiteralPath (Join-Path (Join-Path $ProfileRoot 'scheme') 'runtime.json') -Raw | ConvertFrom-Json) } catch { return $null }
+}
+
+# File metadata only: no process is started. Empty when nothing was recorded.
+function Get-CaelestiaSchemeInterpreter([string]$ProfileRoot) {
+    $record = Read-CaelestiaSchemeRuntimeRecord $ProfileRoot
+    if (-not $record) { return '' }
+    $path = [string]$record.interpreter
+    if ($path -and [IO.Path]::IsPathRooted($path) -and (Test-Path -LiteralPath $path -PathType Leaf)) { return $path }
+    return ''
+}
+
+# runtime.json is written only through here, so the discovered interpreter is
+# carried across every publish and revocation.
+function Write-CaelestiaSchemeRecord([string]$ProfileRoot, $Record) {
+    if (-not $Record.Contains('interpreter')) {
+        $existing = Read-CaelestiaSchemeRuntimeRecord $ProfileRoot
+        if ($existing -and [string]$existing.interpreter) { $Record['interpreter'] = [string]$existing.interpreter }
+    }
+    Write-CaelestiaJsonAtomic (Join-Path (Join-Path $ProfileRoot 'scheme') 'runtime.json') $Record
+}
+
+function Set-CaelestiaSchemeInterpreter([string]$ProfileRoot, [string]$Interpreter) {
+    $record = [ordered]@{ available = $false; message = 'no verified scheme runtime yet' }
+    $existing = Read-CaelestiaSchemeRuntimeRecord $ProfileRoot
+    if ($existing) {
+        $record = [ordered]@{}
+        foreach ($property in $existing.PSObject.Properties) { $record[$property.Name] = $property.Value }
+    }
+    $record['interpreter'] = $Interpreter
+    Write-CaelestiaSchemeRecord $ProfileRoot $record
 }
 
 # A venv is only usable while the interpreter it was created from still
 # exists: its python.exe is a launcher that follows pyvenv.cfg's home.
+function Get-CaelestiaSchemeBaseInterpreter([string]$GenerationRoot) {
+    $config = Join-Path (Join-Path $GenerationRoot 'venv') 'pyvenv.cfg'
+    if (-not (Test-Path -LiteralPath $config -PathType Leaf)) { return $null }
+    foreach ($line in [IO.File]::ReadAllLines($config)) {
+        if ($line -match '^\s*home\s*=\s*(.+?)\s*$') {
+            $base = Join-Path $Matches[1] 'python.exe'
+            if (Test-Path -LiteralPath $base -PathType Leaf) { return (Get-Item -LiteralPath $base -Force) }
+            return $null
+        }
+    }
+    return $null
+}
+
 function Test-CaelestiaSchemeBase([string]$GenerationRoot) {
     try {
-        $venv = Join-Path $GenerationRoot 'venv'
-        if (-not (Test-Path -LiteralPath (Join-Path $venv 'Scripts\python.exe') -PathType Leaf) -or
+        if (-not (Test-Path -LiteralPath (Join-Path $GenerationRoot 'venv\Scripts\python.exe') -PathType Leaf) -or
             -not (Test-Path -LiteralPath (Join-Path $GenerationRoot 'win_scheme.py') -PathType Leaf) -or
             -not (Test-Path -LiteralPath (Join-Path $GenerationRoot 'generation.json') -PathType Leaf)) { return $false }
-        $config = Join-Path $venv 'pyvenv.cfg'
-        if (-not (Test-Path -LiteralPath $config -PathType Leaf)) { return $false }
-        foreach ($line in [IO.File]::ReadAllLines($config)) {
-            if ($line -match '^\s*home\s*=\s*(.+?)\s*$') {
-                return (Test-Path -LiteralPath (Join-Path $Matches[1] 'python.exe') -PathType Leaf)
-            }
-        }
-        return $false
+        return $null -ne (Get-CaelestiaSchemeBaseInterpreter $GenerationRoot)
     } catch {
         return $false
     }
+}
+
+# Receipt of a passed health probe: what the probe depended on, as cheap file
+# metadata. Activation re-reads these and starts no process.
+function Get-CaelestiaSchemeFingerprint([string]$GenerationRoot) {
+    try {
+        $base = Get-CaelestiaSchemeBaseInterpreter $GenerationRoot
+        if (-not $base) { return $null }
+        return [ordered]@{
+            generation = (Split-Path -Leaf $GenerationRoot)
+            baseInterpreter = $base.FullName
+            baseSize = [string]$base.Length
+            baseWriteUtc = [string]$base.LastWriteTimeUtc.Ticks
+            pyvenvSha256 = (Get-FileHash -LiteralPath (Join-Path (Join-Path $GenerationRoot 'venv') 'pyvenv.cfg') -Algorithm SHA256).Hash.ToLowerInvariant()
+        }
+    } catch {
+        return $null
+    }
+}
+
+function Test-CaelestiaSchemeReceipt([string]$GenerationRoot, $Receipt) {
+    if (-not $Receipt) { return $false }
+    $fresh = Get-CaelestiaSchemeFingerprint $GenerationRoot
+    if (-not $fresh) { return $false }
+    foreach ($key in $fresh.Keys) {
+        if ([string]$Receipt.$key -ne [string]$fresh[$key]) { return $false }
+    }
+    return $true
 }
 
 # Full health: the base interpreter exists and the venv's python really runs
@@ -247,32 +379,8 @@ function Test-CaelestiaSchemeBase([string]$GenerationRoot) {
 # clock only.
 function Test-CaelestiaSchemeHealth([string]$GenerationRoot, [int]$TimeoutSeconds = 15) {
     if (-not (Test-CaelestiaSchemeBase $GenerationRoot)) { return $false }
-    $process = $null
-    try {
-        $info = New-Object Diagnostics.ProcessStartInfo
-        $info.FileName = Join-Path $GenerationRoot 'venv\Scripts\python.exe'
-        $info.Arguments = '-I -c "import materialyoucolor, PIL, caelestia"'
-        # Never run from inside the generation: a cwd there would block pruning.
-        $info.WorkingDirectory = $env:SystemRoot
-        $info.UseShellExecute = $false
-        $info.CreateNoWindow = $true
-        $info.RedirectStandardOutput = $true
-        $info.RedirectStandardError = $true
-        $info.EnvironmentVariables['PYTHONDONTWRITEBYTECODE'] = '1'
-        $process = [Diagnostics.Process]::Start($info)
-        $null = $process.StandardOutput.ReadToEndAsync()
-        $null = $process.StandardError.ReadToEndAsync()
-        if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
-            try { & taskkill.exe /PID $process.Id /T /F 2>&1 | Out-Null } catch { }
-            try { $process.Kill() } catch { }
-            return $false
-        }
-        return $process.ExitCode -eq 0
-    } catch {
-        return $false
-    } finally {
-        if ($process) { $process.Dispose() }
-    }
+    $result = Invoke-CaelestiaBounded (Join-Path $GenerationRoot 'venv\Scripts\python.exe') '-I -c "import materialyoucolor, PIL, caelestia"' $TimeoutSeconds
+    return $null -ne $result -and $result.ExitCode -eq 0
 }
 
 # One provisioning run per profile, across installer prepare, normal starts and
@@ -345,11 +453,12 @@ function Install-CaelestiaSchemeRuntime([string]$RuntimePrefix, [string]$Profile
 }
 
 # Activation reads only a completed generation whose recorded identity matches
-# the identity freshly computed from this payload's inputs. It never creates a
-# venv or installs packages, and it starts no process, because it can run
-# inside the readiness clock: the repoint and the normal-start path verify
-# health outside it (-Verify). Missing, failed or mismatched records start the
-# fixed palette.
+# the identity freshly computed from this payload's inputs, and whose
+# verification receipt still matches the files it was issued for. It never
+# creates a venv or installs packages and it starts no process, because it runs
+# inside the readiness clock: health is checked by repoint and by a normal
+# start (-Verify), outside it. A missing, failed, rejected or mismatched record
+# starts the fixed palette.
 function Get-CaelestiaPreparedSchemeRuntime([string]$ProfileRoot, [string]$ExpectedRevision = '', [string]$RuntimePrefix = '', [switch]$Verify) {
     try {
         $schemeRoot = [IO.Path]::GetFullPath((Join-Path $ProfileRoot 'scheme')).TrimEnd('\')
@@ -374,16 +483,49 @@ function Get-CaelestiaPreparedSchemeRuntime([string]$ProfileRoot, [string]$Expec
             if (-not (Test-Path -LiteralPath $full -PathType Leaf)) { return $null }
         }
         if (-not (Test-CaelestiaSchemeBase $generationRoot)) { return $null }
-        if ($Verify -and -not (Test-CaelestiaSchemeHealth $generationRoot)) { return $null }
+        if (-not (Test-CaelestiaSchemeReceipt $generationRoot $record.verification)) { return $null }
+        if ($Verify -and -not (Test-CaelestiaSchemeHealth $generationRoot)) {
+            Revoke-CaelestiaSchemeGeneration $ProfileRoot ([string]$record.generation) 'the health check failed'
+            return $null
+        }
         return $record
     } catch {
         return $null
     }
 }
 
+# Replace the published record with an "unavailable" one when its generation
+# fails a check, so a rejected generation can never be activated. Call with the
+# lock held (-Locked), or without it to take the lock without waiting.
+function Revoke-CaelestiaSchemeGeneration([string]$ProfileRoot, [string]$Generation, [string]$Reason, [switch]$Locked) {
+    try {
+        $lock = $null
+        if (-not $Locked) {
+            $lock = Enter-CaelestiaSchemeLock $ProfileRoot 0
+            if (-not $lock) { return }
+        }
+        try {
+            $current = Read-CaelestiaSchemeRuntimeRecord $ProfileRoot
+            if ($current -and $current.available -eq $true -and [string]$current.generation -eq $Generation) {
+                Write-CaelestiaSchemeRecord $ProfileRoot ([ordered]@{
+                    available = $false
+                    revision = [string]$current.revision
+                    generation = $Generation
+                    message = $Reason
+                    rejectedAt = (Get-Date).ToString('o')
+                })
+            }
+        } finally {
+            if ($lock) { Exit-CaelestiaSchemeLock $lock }
+        }
+    } catch { }
+}
+
 # The newest verified generation built from exactly this identity (and CLI
-# revision), or $null. Unverified generations are never candidates. Call under
-# the scheme lock and outside the readiness clock: it runs the venv's python.
+# revision), or $null. Unverified generations are never candidates, and a
+# candidate that fails its check is revoked if it is the published one. Call
+# under the scheme lock and outside the readiness clock: it runs the venv's
+# python.
 function Get-CaelestiaVerifiedSchemeGeneration([string]$ProfileRoot, [string]$Revision, [string]$IdentityId = '') {
     $runtimesRoot = [IO.Path]::GetFullPath((Join-Path (Join-Path $ProfileRoot 'scheme') 'runtimes')).TrimEnd('\')
     if (-not (Test-Path -LiteralPath $runtimesRoot -PathType Container)) { return $null }
@@ -397,25 +539,32 @@ function Get-CaelestiaVerifiedSchemeGeneration([string]$ProfileRoot, [string]$Re
     }
     foreach ($candidate in @($candidates | Sort-Object -Property @{ Expression = { $_.Created }; Descending = $true }, @{ Expression = { $_.Name }; Descending = $true })) {
         if (Test-CaelestiaSchemeHealth $candidate.Directory.FullName) { return $candidate }
+        Revoke-CaelestiaSchemeGeneration $ProfileRoot $candidate.Name 'the health check failed' -Locked
     }
     return $null
 }
 
-function Write-CaelestiaSchemePointer([string]$ProfileRoot, [string]$Revision, $Candidate) {
-    $schemeRoot = Join-Path $ProfileRoot 'scheme'
+# Publish a generation that has just passed its health probe, with the receipt
+# activation will check. Rewrites runtime.json only when something changed.
+# Call under the scheme lock.
+function Publish-CaelestiaSchemeRuntime([string]$ProfileRoot, [string]$Revision, [string]$GenerationRoot) {
+    $receipt = Get-CaelestiaSchemeFingerprint $GenerationRoot
+    if (-not $receipt) { return $null }
+    $created = ''
+    try { $created = [string](Get-Content -LiteralPath (Join-Path $GenerationRoot 'generation.json') -Raw | ConvertFrom-Json).created } catch { }
     $record = [ordered]@{
         available = $true
         revision = $Revision
-        generation = $Candidate.Name
-        python = Join-Path $Candidate.Directory.FullName 'venv\Scripts\python.exe'
-        helper = Join-Path $Candidate.Directory.FullName 'win_scheme.py'
-        provisionedAt = $(if ($Candidate.Meta.created) { [string]$Candidate.Meta.created } else { (Get-Date).ToString('o') })
+        generation = $receipt.generation
+        python = Join-Path $GenerationRoot 'venv\Scripts\python.exe'
+        helper = Join-Path $GenerationRoot 'win_scheme.py'
+        provisionedAt = $(if ($created) { $created } else { (Get-Date).ToString('o') })
+        verification = $receipt
     }
-    $current = $null
-    try { $current = Get-Content -LiteralPath (Join-Path $schemeRoot 'runtime.json') -Raw | ConvertFrom-Json } catch { }
-    if (-not ($current -and $current.available -eq $true -and [string]$current.generation -eq $Candidate.Name)) {
-        Write-CaelestiaJsonAtomic (Join-Path $schemeRoot 'runtime.json') $record
-    }
+    $current = Read-CaelestiaSchemeRuntimeRecord $ProfileRoot
+    $same = $current -and $current.available -eq $true -and [string]$current.generation -eq $receipt.generation -and
+        [string]$current.revision -eq $Revision -and (Test-CaelestiaSchemeReceipt $GenerationRoot $current.verification)
+    if (-not $same) { Write-CaelestiaSchemeRecord $ProfileRoot $record }
     return [pscustomobject]$record
 }
 
@@ -439,12 +588,38 @@ function Set-CaelestiaSchemeRuntimeForRevision([string]$ProfileRoot, [string]$Re
         try {
             $candidate = Get-CaelestiaVerifiedSchemeGeneration $ProfileRoot $Revision $expectedIdentity
             if (-not $candidate) { return $null }
-            return Write-CaelestiaSchemePointer $ProfileRoot $Revision $candidate
+            return Publish-CaelestiaSchemeRuntime $ProfileRoot $Revision $candidate.Directory.FullName
         } finally {
             Exit-CaelestiaSchemeLock $lock
         }
     } catch {
         return $null
+    }
+}
+
+# Paths of every image a process has mapped: its executable and loaded modules.
+# Throws when they cannot be read. A function of its own so tests can inject
+# failures.
+function Get-CaelestiaProcessImagePaths($Process) {
+    $paths = @($Process.Path)
+    foreach ($module in $Process.Modules) { $paths += $module.FileName }
+    return @($paths | Where-Object { $_ })
+}
+
+# True when no executable image under the directory is mapped by any process.
+# The OS refuses write access to a mapped image, so this holds whatever
+# process inspection could or could not read; any failure counts as "in use".
+function Test-CaelestiaSchemeImagesFree([string]$Directory) {
+    try {
+        foreach ($file in [IO.Directory]::EnumerateFiles($Directory, '*', [IO.SearchOption]::AllDirectories)) {
+            if ($file -notmatch '\.(exe|dll|pyd|sys|node)$') { continue }
+            # Nothing is written: the OS refuses write access to a mapped image.
+            $stream = [IO.File]::Open($file, [IO.FileMode]::Open, [IO.FileAccess]::Write, [IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete)
+            $stream.Dispose()
+        }
+        return $true
+    } catch {
+        return $false
     }
 }
 
@@ -467,13 +642,15 @@ function Move-CaelestiaSchemeToTrash([string]$Directory, [string]$RuntimesRoot) 
     }
 }
 
-# Everything in .trash was already renamed away from any reference. A partial
-# delete (a scanner holding a file, say) simply stays for the next prune.
+# Everything in .trash was already renamed away from any reference. A mapped
+# image or a partial delete (a scanner holding a file, say) simply stays for the
+# next prune; an entry is deleted only while none of its images is in use.
 function Remove-CaelestiaSchemeTrash([string]$RuntimesRoot) {
     $trash = Join-Path $RuntimesRoot '.trash'
     if (-not (Test-Path -LiteralPath $trash -PathType Container)) { return }
     foreach ($entry in @(Get-ChildItem -LiteralPath $trash -Directory -Force -ErrorAction SilentlyContinue)) {
         try {
+            if (-not (Test-CaelestiaSchemeImagesFree $entry.FullName)) { continue }
             Assert-CaelestiaNoReparsePoints $entry.FullName
             Remove-Item -LiteralPath $entry.FullName -Recurse -Force
         } catch { }
@@ -482,8 +659,12 @@ function Remove-CaelestiaSchemeTrash([string]$RuntimesRoot) {
 }
 
 # Remove scheme generations no installed version can reference. Only run with
-# no shell or supervisor alive and under the provisioning lock; a generation
-# that cannot be renamed away is in use and is left for the next prune.
+# no shell or supervisor alive and under the provisioning lock. A generation is
+# removed only with proof nobody uses it: every image in it opens for write
+# (the OS refuses while a process maps one, whatever process inspection can
+# read), the rename into .trash succeeds (no working directory
+# or open file inside), and no readable process runs an image from it. A
+# generation that fails any test is kept whole and retried at the next prune.
 function Remove-CaelestiaSchemeGenerations([string]$Prefix, [string]$ProfileRoot) {
     try {
         if (@(Get-CaelestiaProcesses $Prefix).Count -or @(Get-CaelestiaSupervisors $ProfileRoot).Count) { return }
@@ -493,16 +674,19 @@ function Remove-CaelestiaSchemeGenerations([string]$Prefix, [string]$ProfileRoot
             $schemeRoot = Join-Path $ProfileRoot 'scheme'
             $runtimesRoot = [IO.Path]::GetFullPath((Join-Path $schemeRoot 'runtimes')).TrimEnd('\')
             if (-not (Test-Path -LiteralPath $runtimesRoot -PathType Container)) { return }
-            # Extra guard beside the rename, which a running image does not
-            # block: skip any generation a process executes from.
+            # Processes whose images cannot be read (protected or elevated ones
+            # are common) cannot be ruled out here, which is why the image probe
+            # above is the authority; only a count is logged.
             $busy = @{}
+            $unreadable = 0
             foreach ($process in @(Get-Process -ErrorAction SilentlyContinue)) {
                 try {
-                    $path = $process.Path
-                    if ($path -and $path.StartsWith($runtimesRoot + '\', [StringComparison]::OrdinalIgnoreCase)) {
-                        $busy[$path.Substring($runtimesRoot.Length + 1).Split('\')[0].ToLowerInvariant()] = $true
+                    foreach ($path in @(Get-CaelestiaProcessImagePaths $process)) {
+                        if ($path.StartsWith($runtimesRoot + '\', [StringComparison]::OrdinalIgnoreCase)) {
+                            $busy[$path.Substring($runtimesRoot.Length + 1).Split('\')[0].ToLowerInvariant()] = $true
+                        }
                     }
-                } catch { }
+                } catch { $unreadable++ }
             }
             $revisions = @{}
             $installed = @()
@@ -527,21 +711,26 @@ function Remove-CaelestiaSchemeGenerations([string]$Prefix, [string]$ProfileRoot
             try {
                 $published = [string](Get-Content -LiteralPath (Join-Path $schemeRoot 'runtime.json') -Raw | ConvertFrom-Json).generation
             } catch { }
+            $kept = 0
             foreach ($directory in @(Get-ChildItem -LiteralPath $runtimesRoot -Directory -Force -ErrorAction SilentlyContinue)) {
                 $name = $directory.Name
                 if ($name -eq '.trash') { continue }
                 # Every builder holds this lock, so a staging directory seen
                 # here belongs to an interrupted run.
                 if ($name -like '.staging-*') { $null = Move-CaelestiaSchemeToTrash $directory.FullName $runtimesRoot; continue }
-                if ($name -eq $published -or $busy.ContainsKey($name.ToLowerInvariant())) { continue }
+                if ($name -eq $published) { continue }
                 $generationRevision = ''
                 try {
                     $generationRevision = [string](Get-Content -LiteralPath (Join-Path $directory.FullName 'generation.json') -Raw | ConvertFrom-Json).revision
                 } catch { }
                 if ($generationRevision -and $revisions.ContainsKey($generationRevision)) { continue }
-                $null = Move-CaelestiaSchemeToTrash $directory.FullName $runtimesRoot
+                if ($busy.ContainsKey($name.ToLowerInvariant()) -or -not (Test-CaelestiaSchemeImagesFree $directory.FullName)) { $kept++; continue }
+                if (-not (Move-CaelestiaSchemeToTrash $directory.FullName $runtimesRoot)) { $kept++ }
             }
             Remove-CaelestiaSchemeTrash $runtimesRoot
+            if ($kept -or $unreadable) {
+                Write-CaelestiaSchemeRuntimeLog $ProfileRoot "Scheme prune kept $kept generation(s) that may be in use; $unreadable process(es) could not be inspected."
+            }
         } finally {
             Exit-CaelestiaSchemeLock $lock
         }

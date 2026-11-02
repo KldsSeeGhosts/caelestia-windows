@@ -81,7 +81,8 @@ public static class SchemeProvisioningFixture {
         File.AppendAllText(Path.Combine(Environment.CurrentDirectory, "shell-started.txt"), "started\n");
         File.WriteAllText(Path.Combine(Environment.CurrentDirectory, "shell-scheme.txt"),
             (Environment.GetEnvironmentVariable("CAELESTIA_SCHEME_PYTHON") ?? "") + "\n" +
-            (Environment.GetEnvironmentVariable("CAELESTIA_SCHEME_HELPER") ?? ""));
+            (Environment.GetEnvironmentVariable("CAELESTIA_SCHEME_HELPER") ?? "") + "\n" +
+            (Environment.GetEnvironmentVariable("CAELESTIA_WE_PYTHON") ?? ""));
         File.WriteAllText(ready, "ready");
         return 0;
     }
@@ -108,6 +109,14 @@ public static class FakeSchemePython {
     }
     public static int Main(string[] args) {
         string exe = Process.GetCurrentProcess().MainModule.FileName;
+        if (Path.GetFileName(exe).Equals("py.exe", StringComparison.OrdinalIgnoreCase)) {
+            // Any start of the launcher is logged; the stall models a slow or
+            // hung interpreter discovery.
+            Log("py-launcher");
+            int launcherSeconds = 0;
+            Int32.TryParse(Environment.GetEnvironmentVariable("CAELESTIA_TEST_PY_LAUNCHER_SECONDS"), out launcherSeconds);
+            if (launcherSeconds > 0) Thread.Sleep(launcherSeconds * 1000);
+        }
         for (int i = 0; i + 2 < args.Length; i++) {
             if (args[i] == "-m" && args[i + 1] == "venv") {
                 string venv = args[i + 2];
@@ -141,6 +150,8 @@ public static class FakeSchemePython {
                 if (code.Contains("site.getsitepackages")) {
                     string venv = Path.GetDirectoryName(Path.GetDirectoryName(exe));
                     Console.WriteLine(Path.Combine(venv, "Lib", "site-packages"));
+                } else if (code.Contains("sys.executable")) {
+                    Console.WriteLine(exe);
                 }
                 Log("check");
                 int wait = 0;
@@ -404,16 +415,47 @@ try {
         $python = Join-Path $generationRoot 'venv\Scripts\python.exe'
         $helper = Join-Path $generationRoot 'win_scheme.py'
         $null = New-TestGeneration (Join-Path $schemeRoot 'runtimes') $generation 'test' (Get-CaelestiaSchemeIdentity $cRuntime 'test').Id $null
-        @{
-            available = $true; revision = 'test'; generation = $generation
-            python = $python; helper = $helper
-        } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $schemeRoot 'runtime.json') -Encoding UTF8
+        $null = Publish-CaelestiaSchemeRuntime $schemeProfile 'test' $generationRoot
         $dRuntime = Install-CaelestiaVersion $schemePrefix (New-LauncherPayload $schemePrefix $schemeProfile 'D' 'fail') -Restart
         Assert ((Read-CaelestiaInstall $schemePrefix).current -eq (Split-Path -Leaf $dRuntime)) 'A prepared runtime rolled back the activation.'
         $applied = Get-Content -LiteralPath (Join-Path $dRuntime 'shell-scheme.txt') -Raw
         Assert ($applied -match [regex]::Escape($python) -and $applied -match [regex]::Escape($helper)) 'A prepared runtime was not passed to the shell.'
         Assert (-not (Test-Path -LiteralPath (Join-Path $dRuntime 'scheme-provision-called.txt'))) 'A prepared runtime was provisioned again.'
         Write-Output 'PASS scheme ready: a prepared runtime reaches the shell without provisioning.'
+
+        # Activation must never start Python. With no scheme runtime the old
+        # code ran py.exe to find an interpreter for the Wallpaper Engine
+        # bridge; a stalled launcher then consumed the readiness budget.
+        # The interpreter is now recorded while preparing and only read back.
+        $stallDirectory = Split-Path -Parent (Get-FakePythonFixture)
+        $stallLog = Join-Path $root 'launcher-stall.log'
+        $savedPath = $env:PATH
+        try {
+            $env:PATH = "$stallDirectory;$savedPath"
+            $env:CAELESTIA_TEST_PROVISION_LOG = $stallLog
+            $env:CAELESTIA_TEST_PY_LAUNCHER_SECONDS = '25'
+            Remove-Item -LiteralPath (Join-Path $schemeRoot 'runtime.json') -Force
+            Remove-Item -LiteralPath (Join-Path $schemeRoot 'runtimes') -Recurse -Force
+            $clock = [Diagnostics.Stopwatch]::StartNew()
+            $eRuntime = Install-CaelestiaVersion $schemePrefix (New-LauncherPayload $schemePrefix $schemeProfile 'E' 'fail') -Restart
+            $elapsedE = $clock.Elapsed.TotalSeconds
+            Assert ((Read-CaelestiaInstall $schemePrefix).current -eq (Split-Path -Leaf $eRuntime)) 'A stalled interpreter launcher rolled back the activation.'
+            Assert ($elapsedE -lt 15) "Activation waited $([Math]::Round($elapsedE, 1)) s on a Python launcher."
+            Assert (-not ((Test-Path -LiteralPath $stallLog) -and (Get-Content -LiteralPath $stallLog -Raw) -match 'py-launcher')) 'Activation started the Python launcher.'
+            Assert (-not ([IO.File]::ReadAllText((Join-Path $eRuntime 'shell-scheme.txt')) -split "`n")[2].Trim()) 'Activation invented a Wallpaper Engine interpreter.'
+            # A recorded interpreter reaches the bridge without being discovered.
+            $recorded = Get-FakePythonFixture
+            Set-CaelestiaSchemeInterpreter $schemeProfile $recorded
+            $fRuntime = Install-CaelestiaVersion $schemePrefix (New-LauncherPayload $schemePrefix $schemeProfile 'F' 'fail') -Restart
+            Assert (-not ((Test-Path -LiteralPath $stallLog) -and (Get-Content -LiteralPath $stallLog -Raw) -match 'py-launcher')) 'Activation started the Python launcher with a recorded interpreter.'
+            Assert ((([IO.File]::ReadAllText((Join-Path $fRuntime 'shell-scheme.txt')) -split "`n")[2]).Trim() -eq $recorded) 'The recorded interpreter did not reach the Wallpaper Engine bridge.'
+            Assert (-not (Test-Path -LiteralPath (Join-Path $fRuntime 'scheme-provision-called.txt'))) 'Activation provisioned again.'
+        } finally {
+            $env:PATH = $savedPath
+            $env:CAELESTIA_TEST_PROVISION_LOG = $null
+            $env:CAELESTIA_TEST_PY_LAUNCHER_SECONDS = $null
+        }
+        Write-Output 'PASS activation: no Python is started; the Wallpaper Engine interpreter is read from the prepared record.'
     } finally {
         $script:runLauncher = $false
     }
@@ -557,6 +599,52 @@ param([string]$Prefix, [string]$Command = 'Start', [switch]$SkipSchemeRuntime)
     Remove-CaelestiaSchemeGenerations $prunePrefix $pruneProfile
     Assert (-not (Test-Path -LiteralPath $openGeneration)) 'A generation was not removed after its file closed.'
 
+    # A rename does not prove nobody runs code from a generation: a loaded DLL
+    # did not block it. Pruning fails closed: a mapped image keeps the whole
+    # generation, even when process inspection cannot read anything.
+    $imageGeneration = New-TestGeneration $pruneRuntimes ('a1' * 20) 'rev-z' ('a1' * 32)
+    New-Item -ItemType Directory -Force -Path (Join-Path $imageGeneration 'lib') | Out-Null
+    $loadedDll = Join-Path $imageGeneration 'lib\version.dll'
+    Copy-Item -LiteralPath (Join-Path $env:SystemRoot 'System32\version.dll') -Destination $loadedDll
+    'sibling' | Set-Content -LiteralPath (Join-Path $imageGeneration 'lib\data.txt') -Encoding UTF8
+    $imageBefore = Get-DirectoryListing $imageGeneration
+    $loaderScript = Join-Path $root 'load-dll.ps1'
+    $loadedMarker = Join-Path $root 'dll-loaded.txt'
+    @'
+param([string]$Dll, [string]$Marker)
+Add-Type -Namespace T -Name K -MemberDefinition '[System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)] public static extern System.IntPtr LoadLibraryW(string path);'
+if ([T.K]::LoadLibraryW($Dll) -eq [IntPtr]::Zero) { exit 3 }
+Set-Content -LiteralPath $Marker -Value loaded
+Start-Sleep -Seconds 60
+'@ | Set-Content -LiteralPath $loaderScript -Encoding UTF8
+    $loader = Start-Process -FilePath (Get-WindowsPowerShellPath) -WindowStyle Hidden -PassThru `
+        -ArgumentList ('-NoProfile -ExecutionPolicy Bypass -File "' + $loaderScript + '" -Dll "' + $loadedDll + '" -Marker "' + $loadedMarker + '"')
+    $originalImagePaths = ${function:Get-CaelestiaProcessImagePaths}
+    $originalImagesFree = ${function:Test-CaelestiaSchemeImagesFree}
+    try {
+        $deadline = [DateTime]::UtcNow.AddSeconds(30)
+        while (-not (Test-Path -LiteralPath $loadedMarker) -and [DateTime]::UtcNow -lt $deadline -and -not $loader.HasExited) { Start-Sleep -Milliseconds 50 }
+        Assert (Test-Path -LiteralPath $loadedMarker) 'The DLL loader did not start.'
+        # Process inspection that cannot read any process.
+        ${function:Get-CaelestiaProcessImagePaths} = { param($Process) throw 'injected: image paths are unreadable' }
+        Remove-CaelestiaSchemeGenerations $prunePrefix $pruneProfile
+        Assert ((Test-Path -LiteralPath $imageGeneration) -and (Get-DirectoryListing $imageGeneration) -eq $imageBefore) 'Pruning damaged a generation with a loaded DLL while process inspection failed.'
+        Assert (-not (Test-Path -LiteralPath (Join-Path $pruneRuntimes '.trash\*'))) 'Pruning moved a generation with a loaded DLL.'
+        # Readable inspection alone also protects it, without the image probe.
+        ${function:Test-CaelestiaSchemeImagesFree} = { param($Directory) $true }
+        $loaderId = $loader.Id
+        ${function:Get-CaelestiaProcessImagePaths} = { param($Process) if ($Process.Id -eq $loaderId) { @($loadedDll) } else { @() } }.GetNewClosure()
+        Remove-CaelestiaSchemeGenerations $prunePrefix $pruneProfile
+        Assert ((Test-Path -LiteralPath $imageGeneration) -and (Get-DirectoryListing $imageGeneration) -eq $imageBefore) 'Process module inspection did not protect a generation with a loaded DLL.'
+    } finally {
+        ${function:Get-CaelestiaProcessImagePaths} = $originalImagePaths
+        ${function:Test-CaelestiaSchemeImagesFree} = $originalImagesFree
+        if (-not $loader.HasExited) { $loader.Kill() }
+        $loader.WaitForExit()
+    }
+    Remove-CaelestiaSchemeGenerations $prunePrefix $pruneProfile
+    Assert (-not (Test-Path -LiteralPath $imageGeneration)) 'A generation was not removed once its DLL was unloaded.'
+
     # Interrupted staging directories (no lock holder owns them) are pruned, and
     # a partially deleted trash entry is finished by the next prune.
     $staleStaging = Join-Path $pruneRuntimes ('.staging-' + [guid]::NewGuid().ToString('N'))
@@ -611,23 +699,60 @@ param([string]$Prefix, [string]$Command = 'Start', [switch]$SkipSchemeRuntime)
     Assert ((Read-Pointer $hprofile).generation -eq ('5' * 40)) 'A second activation undid the repaired generation.'
     Remove-Item -LiteralPath (Join-Path (Join-Path $hRuntimes ('5' * 40)) 'base\python.exe') -Force
     Remove-Item -LiteralPath (Join-Path (Join-Path $hRuntimes ('9' * 40)) 'base\python.exe') -Force
-    $pointerBefore = Get-Content -LiteralPath (Join-Path $hprofile 'scheme\runtime.json') -Raw
     Assert ($null -eq (Set-CaelestiaSchemeRuntimeForRevision $hprofile 'rev-h' $hp)) 'Repoint returned an unverified generation.'
-    Assert ((Get-Content -LiteralPath (Join-Path $hprofile 'scheme\runtime.json') -Raw) -eq $pointerBefore) 'Repoint replaced a pointer with an unverified generation.'
+    # A failed check revokes the published generation: it must not stay
+    # activatable just because its files exist.
+    $revoked = Read-Pointer $hprofile
+    Assert ($revoked.available -eq $false -and $revoked.generation -eq ('5' * 40)) 'A failed check left the rejected generation published.'
+    Assert ($null -eq (Get-CaelestiaPreparedSchemeRuntime $hprofile 'rev-h' $hp)) 'Activation accepted a generation that failed its check.'
 
     $vprofile = Join-Path $root 'vp'
     $vGeneration = New-TestGeneration (Join-Path $vprofile 'scheme\runtimes') ('7' * 40) 'rev-h' $hid
-    @{ available = $true; revision = 'rev-h'; generation = ('7' * 40)
-       python = (Join-Path $vGeneration 'venv\Scripts\python.exe'); helper = (Join-Path $vGeneration 'win_scheme.py') } |
-        ConvertTo-Json | Set-Content -LiteralPath (Join-Path $vprofile 'scheme\runtime.json') -Encoding UTF8
+    $published = Publish-CaelestiaSchemeRuntime $vprofile 'rev-h' $vGeneration
+    Assert ($published.verification.baseInterpreter -and $published.verification.pyvenvSha256) 'The published record carries no verification receipt.'
     Assert ($null -ne (Get-CaelestiaPreparedSchemeRuntime $vprofile 'rev-h' $hp -Verify)) 'A healthy runtime was rejected.'
+    # Activation accepts a receipt by file metadata alone: no process starts.
+    $probeLog = Join-Path $root 'probe.log'
+    $env:CAELESTIA_TEST_PROVISION_LOG = $probeLog
+    try {
+        Assert ($null -ne (Get-CaelestiaPreparedSchemeRuntime $vprofile 'rev-h' $hp)) 'Activation rejected a runtime with a valid receipt.'
+        Assert (-not (Test-Path -LiteralPath $probeLog)) 'Activation started a process to check the runtime.'
+    } finally { $env:CAELESTIA_TEST_PROVISION_LOG = $null }
+    # A check that fails (here: the venv python cannot import) revokes the
+    # record, through repoint and through a start.
     $env:CAELESTIA_TEST_CHECK_EXIT = '3'
     try {
         Assert (-not (Test-CaelestiaSchemeHealth $vGeneration)) 'A venv python that fails its import was reported healthy.'
-        Assert ($null -eq (Get-CaelestiaPreparedSchemeRuntime $vprofile 'rev-h' $hp -Verify)) 'A start accepted a runtime whose python fails.'
-        # Activation runs inside the readiness clock and must not start Python.
-        Assert ($null -ne (Get-CaelestiaPreparedSchemeRuntime $vprofile 'rev-h' $hp)) 'Activation ran the interpreter probe.'
+        Assert ($null -eq (Set-CaelestiaSchemeRuntimeForRevision $vprofile 'rev-h' $hp)) 'Repoint returned a generation whose python fails.'
+        Assert ((Read-Pointer $vprofile).available -eq $false) 'A failed repoint left the rejected generation published.'
+        Assert ($null -eq (Get-CaelestiaPreparedSchemeRuntime $vprofile 'rev-h' $hp)) 'Activation reused a generation that failed its check.'
     } finally { $env:CAELESTIA_TEST_CHECK_EXIT = $null }
+    $null = Set-CaelestiaSchemeRuntimeForRevision $vprofile 'rev-h' $hp
+    Assert ($null -ne (Get-CaelestiaPreparedSchemeRuntime $vprofile 'rev-h' $hp)) 'A healthy generation was not republished.'
+    $env:CAELESTIA_TEST_CHECK_EXIT = '3'
+    try {
+        Assert ($null -eq (Get-CaelestiaPreparedSchemeRuntime $vprofile 'rev-h' $hp -Verify)) 'A start accepted a runtime whose python fails.'
+        Assert ((Read-Pointer $vprofile).available -eq $false) 'A failed start check left the rejected generation published.'
+    } finally { $env:CAELESTIA_TEST_CHECK_EXIT = $null }
+    $null = Set-CaelestiaSchemeRuntimeForRevision $vprofile 'rev-h' $hp
+    # The receipt covers the base interpreter and pyvenv.cfg. Changing either
+    # invalidates it without a process: here pyvenv.cfg points at another
+    # interpreter that exists but was never verified.
+    $config = Join-Path $vGeneration 'venv\pyvenv.cfg'
+    $configText = [IO.File]::ReadAllText($config)
+    $otherBase = Join-Path $vGeneration 'base2'
+    New-Item -ItemType Directory -Force -Path $otherBase | Out-Null
+    Copy-Item -LiteralPath (Get-FakePythonFixture) -Destination (Join-Path $otherBase 'python.exe')
+    [IO.File]::WriteAllText($config, "home = $otherBase`r`n")
+    Assert ($null -eq (Get-CaelestiaPreparedSchemeRuntime $vprofile 'rev-h' $hp)) 'Activation accepted a changed pyvenv.cfg.'
+    [IO.File]::WriteAllText($config, $configText)
+    Assert ($null -ne (Get-CaelestiaPreparedSchemeRuntime $vprofile 'rev-h' $hp)) 'Restoring pyvenv.cfg did not restore the receipt.'
+    $baseExe = Join-Path $vGeneration 'base\python.exe'
+    $baseTime = (Get-Item -LiteralPath $baseExe).LastWriteTimeUtc
+    (Get-Item -LiteralPath $baseExe).LastWriteTimeUtc = $baseTime.AddMinutes(-7)
+    Assert ($null -eq (Get-CaelestiaPreparedSchemeRuntime $vprofile 'rev-h' $hp)) 'Activation accepted a base interpreter that changed.'
+    (Get-Item -LiteralPath $baseExe).LastWriteTimeUtc = $baseTime
+    Assert ($null -ne (Get-CaelestiaPreparedSchemeRuntime $vprofile 'rev-h' $hp)) 'Restoring the base interpreter did not restore the receipt.'
     $env:CAELESTIA_TEST_CHECK_SECONDS = '30'
     try {
         $probeClock = [Diagnostics.Stopwatch]::StartNew()
@@ -640,7 +765,9 @@ param([string]$Prefix, [string]$Command = 'Start', [switch]$SkipSchemeRuntime)
         $realRoot = Join-Path $root 'rv'
         New-Item -ItemType Directory -Force -Path $realRoot | Out-Null
         & $realPy.Source -3 -m venv (Join-Path $realRoot 'venv') 2>$null
-        if ($LASTEXITCODE -eq 0) {
+        $realVenvOk = $LASTEXITCODE -eq 0
+        if (-not $realVenvOk) { Write-Output 'SKIP real venv: py could not create a virtual environment.' }
+        if ($realVenvOk) {
             'x' | Set-Content -LiteralPath (Join-Path $realRoot 'win_scheme.py') -Encoding UTF8
             '{}' | Set-Content -LiteralPath (Join-Path $realRoot 'generation.json') -Encoding UTF8
             Assert (Test-CaelestiaSchemeBase $realRoot) 'A real venv failed the base check.'
@@ -650,6 +777,9 @@ param([string]$Prefix, [string]$Command = 'Start', [switch]$SkipSchemeRuntime)
             Assert (-not (Test-CaelestiaSchemeBase $realRoot)) 'A real venv with a lost base interpreter passed the base check.'
         }
         $global:LASTEXITCODE = 0
+        if ($realVenvOk) { Write-Output 'PASS real venv: pyvenv.cfg home is honoured; a lost base interpreter fails the check.' }
+    } else {
+        Write-Output 'SKIP real venv: the Python launcher (py) is not available on this machine.'
     }
     Write-Output 'PASS health: lost or failing base interpreters are rejected; selection is verified and newest-first; activation starts no process.'
 
@@ -678,8 +808,32 @@ param([string]$Prefix, [string]$Command = 'Start', [switch]$SkipSchemeRuntime)
         'fetching https://pypi.org/simple/pillow/ exit code 3'
     ) -join "`n")
     Assert ($redacted -notmatch 'Zq|Py 3\.12|Team Dir|Scripts|AppData') "Redaction leaked a path fragment: $redacted"
-    Assert ($redacted -match 'failed at <path>\.exe with exit 1' -and $redacted -match '<file-url> here' -and $redacted -match '<path>\.json') 'Redaction did not keep the leaf extension and surrounding text.'
+    Assert ($redacted -match 'failed at <path>' -and $redacted -match 'bad <file-url>' -and $redacted -match '<path>\.json') 'Redaction did not keep the surrounding text and leaf extension.'
     Assert ($redacted -match 'https://pypi\.org/simple/pillow/ exit code 3') 'Redaction altered a web URL.'
+    # File names with spaces, quotes, UNC, forward slashes and file URLs must
+    # not leak any part of the name; over-redacting is acceptable.
+    $spaced = @(
+        'D:\Example\Confidential Person.txt',
+        'could not open D:\Example Dir\Confidential Person.txt: access denied',
+        'cannot read "D:\Example Dir\Confidential Person.txt" now',
+        "cannot read 'D:\Example Dir\Confidential Person.txt' now",
+        '\\fileserver\Example Share\Confidential Person.txt',
+        'open \\fileserver\Example Share\Confidential Person.txt, then retry',
+        'C:/Users/Example Person/Confidential Person.txt',
+        'wrote "C:/Users/Example Person/Confidential Person.txt"; done',
+        'file:///D:/Example%20Dir/Confidential%20Person.txt',
+        'file:///D:/Example Dir/Confidential Person.txt',
+        'path=''C:\Users\Bob''s Files\Confidential Person.txt'' end',
+        '{"file":"D:\\Example Dir\\Confidential Person.txt","n":1}',
+        'seen D:\Example\Confidential Person.txt | next'
+    )
+    foreach ($sample in $spaced) {
+        $cleaned = Protect-CaelestiaText $sample
+        Assert ($cleaned -notmatch 'Example|Confidential|Person|Bob|fileserver') "Redaction leaked part of '$sample': $cleaned"
+        Assert ($cleaned -match '<path>|<file-url>') "Redaction left no placeholder for '$sample': $cleaned"
+    }
+    Assert ((Protect-CaelestiaText 'cannot read "D:\Example Dir\Confidential Person.txt" now') -eq 'cannot read "<path>.txt" now') 'A quoted path was not replaced as one unit.'
+    Assert ((Protect-CaelestiaText 'exit 1 after 3 retries') -eq 'exit 1 after 3 retries') 'Redaction changed text with no path.'
     Write-Output 'PASS redaction: any absolute Windows path or file URL is replaced, whatever the prefix.'
 
     # Concurrency and immutability: installer prepare and a normal start race
