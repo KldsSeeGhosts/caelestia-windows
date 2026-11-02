@@ -1,7 +1,11 @@
 #pragma once
 
+#include <qdir.h>
+#include <qfile.h>
+#include <qfileinfo.h>
 #include <qhash.h>
 #include <qobject.h>
+#include <qregularexpression.h>
 #include <qstringview.h>
 
 #include "node.hpp"
@@ -41,6 +45,20 @@ inline QString stripLeadingSlashes(QStringView str) {
     return str.toString();
 }
 
+// Windows gives each screen a unique name by adding " (2)", " (3)"... only
+// when two friendly labels collide (see the backend ScreenIdentityRegistry).
+// A screen that gained a suffix may have inherited the old, shared
+// "monitors/<label>" directory. On first use, copy that legacy layer instead
+// of overwriting or deleting it; the new layer then writes its own file. This
+// leaves existing per-monitor settings working non-destructively.
+inline QString legacyLayerName(const QString& name) {
+    static const QRegularExpression suffix(QStringLiteral(" \\(([2-9]|[1-9][0-9]+)\\)$"));
+    const auto match = suffix.match(name);
+    if (!match.hasMatch())
+        return {};
+    return name.left(match.capturedStart()).trimmed();
+}
+
 } // namespace detail
 
 template <LayerType T>
@@ -67,7 +85,16 @@ template <LayerType T> T* LayerRegistry<T>::get(const QString& name, T* fallback
     if (created)
         *created = true;
 
-    auto* const layer = new T(pathFor(name), fallback, m_parent);
+    const auto path = pathFor(name);
+    QDir().mkpath(QFileInfo(path).absolutePath());
+    if (!QFileInfo::exists(path)) {
+        const auto legacy = detail::legacyLayerName(name);
+        const auto legacyPath = legacy.isEmpty() ? QString() : pathFor(legacy);
+        if (!legacyPath.isEmpty() && QFileInfo(legacyPath).isFile())
+            QFile::copy(legacyPath, path);
+    }
+
+    auto* const layer = new T(path, fallback, m_parent);
     m_layers.insert(name, layer);
     return layer;
 }

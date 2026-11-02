@@ -16,3 +16,14 @@ qml_module(caelestia-settings
         caelestia-util
 )
 target_link_libraries(caelestia-settings PUBLIC caelestia-util)
+
+# Legacy per-monitor settings compatibility when two identical monitors gain a
+# collision suffix. Uses a temporary directory, never the real profile.
+find_package(Qt6 QUIET COMPONENTS Test)
+if(Qt6Test_FOUND)
+    add_executable(layer-registry-tests test/layerregistry_test.cpp)
+    target_include_directories(layer-registry-tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}"
+    )
+    target_link_libraries(layer-registry-tests PRIVATE caelestia-settings Qt::Qml Qt::Test)
+endif()
