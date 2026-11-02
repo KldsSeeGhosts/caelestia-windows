@@ -72,6 +72,8 @@ QtObject {
         property int requestAccessCalls: 0
         property int setMirroringCalls: 0
         property bool lastMirroringValue: false
+        property int setAccessObservationCalls: 0
+        property bool lastAccessObservation: false
         property int refreshAccessStatusCalls: 0
         property int activateMirroredCalls: 0
         property var activateMirroredIds: []
@@ -92,6 +94,37 @@ QtObject {
             mirrorSystemNotifications = enabled === true;
         }
 
+        // Non-prompting consent observation, separate from mirroring, owned by
+        // generation like the native backend. With a host the generation and the
+        // observing state are process-lifetime and shared across backends.
+        property var host: null
+        property int localGeneration: 0
+        property int claimCalls: 0
+        property int lastObservationToken: 0
+
+        property int claimedToken: 0
+
+        function claimAccessObservation(): int {
+            claimCalls++;
+            claimedToken = host ? host.claim() : ++localGeneration;
+            return claimedToken;
+        }
+
+        // The native facade holds its claimed generation as a lease and
+        // releases it when destroyed, through the same generation check.
+        Component.onDestruction: {
+            if (host && claimedToken !== 0)
+                host.write(false, claimedToken);
+        }
+
+        function setAccessObservation(enabled, token): void {
+            setAccessObservationCalls++;
+            lastAccessObservation = enabled === true;
+            lastObservationToken = token;
+            if (host)
+                host.write(enabled === true, token);
+        }
+
         // The consent-fix revision's non-prompting status query.
         function refreshAccessStatus(): void {
             refreshAccessStatusCalls++;
@@ -103,6 +136,32 @@ QtObject {
         function activateMirrored(id): bool {
             activateMirroredCalls++;
             activateMirroredIds.push(String(id));
+            return true;
+        }
+    }
+
+    // The process-lifetime observation state of the native server: it outlives
+    // every service object, hands out generations and ignores a write from any
+    // generation but the latest (token 0 is never valid).
+    component ObservationHost: QtObject {
+        property int generation: 0
+        property bool observing: false
+        property int writes: 0
+        property int refused: 0
+        property var history: []
+
+        function claim(): int {
+            return ++generation;
+        }
+
+        function write(enabled, token): bool {
+            history.push((enabled ? "on" : "off") + "@" + token);
+            if (token === 0 || token !== generation) {
+                refused++;
+                return false;
+            }
+            writes++;
+            observing = enabled;
             return true;
         }
     }
@@ -214,6 +273,28 @@ QtObject {
         profileRoot: "C:/fixtures/profile"
         stateDirectory: "C:/fixtures/profile/state"
         backend: deniedFixture
+        accessPollBudget: 5
+    }
+
+    // Ownership transitions and the closed-centre re-grant path keep their own
+    // counters so the long mirroring fixture stays readable.
+    readonly property FakeBackend ownershipFixture: FakeBackend {}
+    readonly property NotificationsService ownershipService: NotificationsService {
+        enabled: true
+        mirrorOptIn: true
+        useExistingAccess: true
+        profileRoot: "C:/fixtures/profile"
+        stateDirectory: "C:/fixtures/profile/state"
+        backend: ownershipFixture
+    }
+
+    readonly property FakeBackend revocationFixture: FakeBackend {}
+    readonly property NotificationsService revocationService: NotificationsService {
+        enabled: true
+        mirrorOptIn: true
+        profileRoot: "C:/fixtures/profile"
+        stateDirectory: "C:/fixtures/profile/state"
+        backend: revocationFixture
         accessPollBudget: 5
     }
 
@@ -358,6 +439,154 @@ QtObject {
 
     readonly property Component actionComponent: Component {
         FakeAction {}
+    }
+
+    // Service objects created and destroyed at runtime, to prove observation
+    // ownership across teardown and replacement against a process-lifetime host.
+    readonly property Component observationHostComponent: Component {
+        ObservationHost {}
+    }
+
+    readonly property Component observationBackendComponent: Component {
+        FakeBackend {}
+    }
+
+    readonly property Component observationServiceComponent: Component {
+        NotificationsService {
+            profileRoot: "C:/fixtures/profile"
+            stateDirectory: "C:/fixtures/profile/state"
+            shellAssetsDirectory: "C:/fixtures/shell/assets"
+        }
+    }
+
+    property var observationScenarios: ({})
+
+    function makeObservationService(host, mirrorOptIn): var {
+        const fakeBackend = observationBackendComponent.createObject(test, {host: host});
+        const created = observationServiceComponent.createObject(test, {
+            enabled: true,
+            mirrorOptIn: mirrorOptIn,
+            backend: fakeBackend
+        });
+        return {service: created, backend: fakeBackend};
+    }
+
+    // Phase one (synchronous): build the instances and start their teardown. A
+    // QML destroy() is deferred to the event loop, so the outcome is verified
+    // in finishAsync once the loop has run.
+    function setupObservationOwnership(): void {
+        const scenarios = {};
+
+        // Destroy while observing: the backend outlives the object, so the
+        // object must switch its own observation off.
+        const hostA = observationHostComponent.createObject(test);
+        const a = makeObservationService(hostA, true);
+        check(hostA.observing && a.service.observationApplied
+            && a.service.observationToken === hostA.generation && hostA.generation === 1,
+            "an opted-in service observes under its claimed generation");
+        a.service.destroy();
+        scenarios.a = {host: hostA};
+
+        // Opted-out replacement: the predecessor is still alive (a reload built
+        // the new object first) and observation is on in the backend. The
+        // replacement's first reconcile must say "off" explicitly instead of
+        // inferring it from its own cleared flag.
+        const hostB = observationHostComponent.createObject(test);
+        const b1 = makeObservationService(hostB, true);
+        check(hostB.observing, "the predecessor observes before the replacement exists");
+        const b2 = makeObservationService(hostB, false);
+        check(!hostB.observing && !b2.service.observationApplied
+            && b2.service.observationToken === 2 && hostB.generation === 2
+            && b2.backend.setAccessObservationCalls === 1
+            && b2.backend.lastAccessObservation === false,
+            "an opted-out replacement explicitly switches observation off");
+        b1.service.destroy();
+        scenarios.b = {host: hostB, replacement: b2};
+
+        // Old instance destroyed after the new one enabled observation: the
+        // outgoing generation's disable is refused.
+        const hostC = observationHostComponent.createObject(test);
+        const c1 = makeObservationService(hostC, true);
+        const c2 = makeObservationService(hostC, true);
+        check(hostC.observing && c2.service.observationToken === 2 && hostC.generation === 2,
+            "the replacement takes the newer generation and observes");
+        c1.service.destroy();
+        scenarios.c = {host: hostC, replacement: c2};
+
+        // Facade destroyed first, service afterwards: the service's own release
+        // finds no live facade, so only the facade's lease can switch it off.
+        const hostD = observationHostComponent.createObject(test);
+        const d = makeObservationService(hostD, true);
+        check(hostD.observing, "the facade-order fixture starts observing");
+        d.backend.destroy();
+        scenarios.d = {host: hostD, service: d.service};
+
+        // A stale facade destroyed after a replacement facade claimed.
+        const hostE = observationHostComponent.createObject(test);
+        const e1 = makeObservationService(hostE, true);
+        const e2 = makeObservationService(hostE, true);
+        check(hostE.observing && e2.service.observationToken === 2,
+            "the replacement facade's service holds the newer generation");
+        e1.backend.destroy();
+        scenarios.e = {host: hostE, stale: e1, replacement: e2};
+
+        test.observationScenarios = scenarios;
+    }
+
+    // Phase two (after the event loop): the destructions have run.
+    function verifyObservationOwnership(): void {
+        const scenarios = test.observationScenarios;
+
+        // The last write is the object's own release under its live generation.
+        check(!scenarios.a.host.observing && scenarios.a.host.refused === 0
+            && scenarios.a.host.history[scenarios.a.host.history.length - 1] === "off@1",
+            "destroying an observing service switches its observation off: observing="
+            + scenarios.a.host.observing + " refused=" + scenarios.a.host.refused
+            + " writes=" + scenarios.a.host.writes + " history=" + scenarios.a.host.history.join(","));
+
+        check(!scenarios.b.host.observing && scenarios.b.host.refused === 1,
+            "the predecessor's late teardown is refused and the replacement stays off");
+        // The opted-out replacement can still opt in later under its generation.
+        scenarios.b.replacement.service.mirrorOptIn = true;
+        check(scenarios.b.host.observing && scenarios.b.replacement.service.observationApplied,
+            "the replacement still controls observation after the predecessor is gone");
+        scenarios.b.replacement.service.destroy();
+
+        check(scenarios.c.host.observing && scenarios.c.host.refused === 1,
+            "an old instance destroyed after the new one enabled observation cannot disable it");
+        scenarios.c.replacement.service.destroy();
+
+        // The facade's lease switched observation off before the service, which
+        // is destroyed next and must release against a facade that is gone.
+        check(!scenarios.d.host.observing && scenarios.d.host.refused === 0,
+            "a destroyed facade's lease switches observation off: history="
+            + scenarios.d.host.history.join(","));
+        const writesBeforeService = scenarios.d.host.history.length;
+        scenarios.d.service.destroy();
+        scenarios.d.writesBeforeService = writesBeforeService;
+
+        // The stale facade's lease was refused; the newer holder still observes.
+        check(scenarios.e.host.observing && scenarios.e.host.refused === 1,
+            "a stale facade destroyed after a replacement cannot disable it: history="
+            + scenarios.e.host.history.join(","));
+        scenarios.e.stale.service.destroy();
+        scenarios.e.replacement.backend.destroy();
+        scenarios.e.replacement.service.destroy();
+    }
+
+    // Phase three: the replacement objects destroyed above released their
+    // generations, so nothing is left observing.
+    function verifyObservationReleased(): void {
+        const scenarios = test.observationScenarios;
+        check(!scenarios.b.host.observing,
+            "destroying the current holder switches observation off");
+        check(!scenarios.c.host.observing && scenarios.c.host.refused === 1,
+            "the current holder's own teardown is honoured");
+        check(!scenarios.d.host.observing
+            && scenarios.d.host.history.length === scenarios.d.writesBeforeService,
+            "a service destroyed after its facade writes nothing to the gone facade");
+        check(!scenarios.e.host.observing,
+            "the replacement facade's lease switches observation off");
     }
 
     function makeAction(identifier, text): FakeAction {
@@ -1468,6 +1697,12 @@ QtObject {
         // --- Mirroring: every access state -----------------------------------
         stageMirror(mirrorService, mirrorFixture, 0);
         check(mirrorService.mirrorStaged, "the mirror opt-in stages mirroring");
+        check(mirrorService.observationApplied
+            && mirrorFixture.setAccessObservationCalls === 1
+            && mirrorFixture.lastAccessObservation === true,
+            "staging starts consent observation independently of mirroring");
+        check(!mirrorService.mirroringApplied,
+            "observation alone does not enable active mirroring");
         check(mirrorService.accessState === "Unspecified",
             "un-queried access is the undecided consent state");
         check(mirrorService.canRequestAccess, "consent is available from Unspecified");
@@ -1728,6 +1963,9 @@ QtObject {
             "lost access withdraws the applied mirror with one disable write");
         check(!mirrorService.mirroringApplied && !mirrorService.systemMirrorActive,
             "the withdrawal is recorded in the service state");
+        check(mirrorService.observationApplied
+            && mirrorFixture.setAccessObservationCalls === 1,
+            "revocation keeps consent observation running for a re-grant");
 
         // Re-granted access re-enables with exactly one fresh write.
         mirrorFixture.systemNotificationAccess = 2;
@@ -1736,6 +1974,9 @@ QtObject {
             && mirrorFixture.setMirroringCalls === 3
             && mirrorFixture.lastMirroringValue === true,
             "re-granted access re-enables mirroring once");
+        check(mirrorService.observationApplied
+            && mirrorFixture.setAccessObservationCalls === 1,
+            "the observer survives the denied interval without a rewrite");
         mirrorService.refreshAccess();
         mirrorService.refreshAccess();
         check(mirrorService.mirrorWrites === 2 && mirrorFixture.setMirroringCalls === 3,
@@ -1753,10 +1994,18 @@ QtObject {
             + " applied=" + mirrorService.mirroringApplied
             + " status=" + mirrorService.mirrorStatus
             + " writes=" + mirrorService.mirrorWrites);
+        check(!mirrorService.observationApplied
+            && mirrorFixture.setAccessObservationCalls === 2
+            && mirrorFixture.lastAccessObservation === false,
+            "removing the opt-in is the only user action that stops observation");
         mirrorService.mirrorOptIn = true;
         check(mirrorService.mirrorWrites === 3 && mirrorFixture.setMirroringCalls === 5
             && mirrorFixture.lastMirroringValue === true,
             "restoring the opt-in re-enables the cached mirror");
+        check(mirrorService.observationApplied
+            && mirrorFixture.setAccessObservationCalls === 3
+            && mirrorFixture.lastAccessObservation === true,
+            "restoring the opt-in restarts observation");
 
         // A backend component failure is service unavailability; the disable
         // write also stops the backend's own access polling.
@@ -1764,13 +2013,105 @@ QtObject {
         check(mirrorService.mirrorDisables === 3 && mirrorFixture.setMirroringCalls === 6
             && mirrorFixture.lastMirroringValue === false,
             "backend unavailability withdraws the mirror");
+        check(!mirrorService.observationApplied
+            && mirrorFixture.setAccessObservationCalls === 4,
+            "backend unavailability stops observation");
         mirrorService.backendError = "";
         check(mirrorService.mirrorWrites === 4 && mirrorFixture.setMirroringCalls === 7
             && mirrorFixture.lastMirroringValue === true,
             "recovered availability re-enables the mirror");
+        check(mirrorService.observationApplied
+            && mirrorFixture.setAccessObservationCalls === 5,
+            "recovered availability restarts observation");
         mirrorService.enabled = false;
         check(mirrorService.mirrorDisables === 4 && mirrorFixture.setMirroringCalls === 8,
             "disabling the service withdraws the mirror once");
+        check(!mirrorService.observationApplied
+            && mirrorFixture.setAccessObservationCalls === 6
+            && mirrorFixture.lastAccessObservation === false,
+            "disabling the service stops observation once");
+
+        // --- Revocation with the notification centre closed ------------------
+        // The backend observes consent independently of mirroring after the
+        // service withdraws the active mirror on Denied. With the centre closed
+        // there is no service-owned poll; the backend observer is the only path
+        // that can see the re-grant.
+        revocationFixture.accessRequested = true;
+        stageMirror(revocationService, revocationFixture, 2);
+        revocationFixture.systemMirrorActive = true;
+        check(revocationService.mirroringApplied
+            && revocationService.bannerSuppressionAllowed,
+            "the closed-centre fixture starts with an allowed active mirror");
+        const revocationObservations = revocationFixture.setAccessObservationCalls;
+        check(revocationService.observationApplied && revocationObservations >= 1,
+            "the closed-centre fixture is observing consent");
+
+        revocationFixture.systemNotificationAccess = 3;
+        revocationService.refreshAccess();
+        revocationFixture.systemMirrorActive = false; // the worker stops on denial
+        check(revocationService.accessState === "Denied"
+            && !revocationService.bannerSuppressionAllowed,
+            "revocation withdraws suppression immediately");
+        check(!revocationService.mirroringApplied
+            && revocationFixture.lastMirroringValue === false,
+            "revocation stops active mirroring");
+        check(revocationService.observationApplied
+            && revocationFixture.setAccessObservationCalls === revocationObservations,
+            "revocation does not stop consent observation");
+        check(!revocationService.deniedPollingActive,
+            "the closed centre contributes no denied polling");
+
+        revocationFixture.systemNotificationAccess = 2;
+        revocationService.refreshAccess();
+        revocationFixture.systemMirrorActive = true;
+        check(revocationService.mirroringApplied
+            && revocationFixture.lastMirroringValue === true,
+            "a re-grant re-enables mirroring with the centre closed");
+        check(revocationService.bannerSuppressionAllowed,
+            "a re-grant restores banner suppression");
+        check(revocationFixture.setAccessObservationCalls === revocationObservations,
+            "recovery used the existing observer, not a new write");
+        check(revocationFixture.requestAccessCalls === 0,
+            "the closed-centre recovery never prompts");
+
+        // --- Ownership transitions -------------------------------------------
+        stageMirror(ownershipService, ownershipFixture, 2);
+        ownershipFixture.systemMirrorActive = true;
+        check(ownershipService.bannerSuppressionAllowed,
+            "the owner baseline suppresses banners");
+        const ownerProbes = ownershipFixture.refreshAccessStatusCalls;
+        const ownerWrites = ownershipService.mirrorWrites;
+        const ownerObservations = ownershipFixture.setAccessObservationCalls;
+
+        ownershipFixture.ownership = "contended";
+        ownershipFixture.systemMirrorActive = false;
+        check(!ownershipService.observationApplied
+            && ownershipFixture.lastAccessObservation === false,
+            "losing ownership stops consent observation");
+        check(!ownershipService.mirroringApplied
+            && ownershipFixture.lastMirroringValue === false,
+            "losing ownership stops mirroring");
+        check(!ownershipService.bannerSuppressionAllowed,
+            "losing ownership withdraws suppression");
+
+        ownershipFixture.ownership = "owner";
+        check(ownershipFixture.refreshAccessStatusCalls === ownerProbes + 1,
+            "becoming owner probes existing access like a fresh start: "
+            + ownershipFixture.refreshAccessStatusCalls + " vs " + (ownerProbes + 1));
+        check(ownershipService.observationApplied
+            && ownershipFixture.setAccessObservationCalls === ownerObservations + 2,
+            "becoming owner restarts consent observation after the contended stop: applied="
+            + ownershipService.observationApplied + " calls="
+            + ownershipFixture.setAccessObservationCalls + " expected=" + (ownerObservations + 2));
+        check(ownershipService.mirroringApplied
+            && ownershipService.mirrorWrites === ownerWrites + 1
+            && ownershipFixture.lastMirroringValue === true,
+            "becoming owner reconciles mirroring from the observed grant: applied="
+            + ownershipService.mirroringApplied + " writes=" + ownershipService.mirrorWrites
+            + " expected=" + (ownerWrites + 1) + " last=" + ownershipFixture.lastMirroringValue);
+        ownershipFixture.systemMirrorActive = true;
+        check(ownershipService.bannerSuppressionAllowed,
+            "becoming owner restores suppression");
 
         // --- Bounded denied polling -------------------------------------------
         stageMirror(deniedService, deniedFixture, 0);
@@ -1783,6 +2124,10 @@ QtObject {
             "denied access state is exposed");
         check(deniedService.mirrorWrites === 0 && deniedFixture.setMirroringCalls === 0,
             "denied access never enables mirroring");
+        check(deniedService.observationApplied
+            && deniedFixture.setAccessObservationCalls === 1
+            && deniedFixture.lastAccessObservation === true,
+            "denied access keeps the separate consent observer on");
         check(!deniedService.deniedPollingActive,
             "denied polling stays off while the center is hidden");
         deniedService.centerVisible = true;
@@ -1882,6 +2227,8 @@ QtObject {
 
         // --- The pinned backend revision stays feature-detected and safe -----
         stageMirror(pinnedService, pinnedFixture, 0);
+        check(!pinnedService.observationApplied && pinnedService.observationWrites === 0,
+            "the pinned backend without observation stays feature-detected");
         check(pinnedService.requestAccess(), "the pinned path still starts explicitly");
         pinnedFixture.systemNotificationAccess = 2;
         pinnedService.refreshAccess();
@@ -2058,6 +2405,7 @@ QtObject {
         check(test.asyncRecord.timer.interval === 40, "async timer interval");
         check(test.asyncRecord.timer.running, "async timer is running");
         check(test.asyncRecord.timeStrTimer.running, "visible popup updates its age");
+        test.setupObservationOwnership();
         realExpiry.start();
         guard.start();
     }
@@ -2087,6 +2435,7 @@ QtObject {
             && test.evictedRecord.closed === true
             && test.evictedRecord.locks.size === 1,
             "the locked evicted record is still alive after the event loop ran");
+        test.verifyObservationOwnership();
         test.evictedRecord.unlock(test.evictedLockKey);
         test.evictedLockKey = null;
         test.asyncRecord.time = new Date(Date.now() - 10 * 60000);
@@ -2125,6 +2474,7 @@ QtObject {
         }
         check(evictedDestroyed,
             "the evicted record is destroyed once its last lock is released");
+        test.verifyObservationReleased();
         guard.stop();
         console.log("CAELESTIA_NOTIFICATIONS_FIXTURE_PASS " + JSON.stringify({assertions: assertions}));
         Qt.quit();
