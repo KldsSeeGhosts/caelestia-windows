@@ -26,6 +26,12 @@ QtObject {
     readonly property bool supportsScopedRules: typeof Tiling.supportsScopedRules === "boolean"
         && Tiling.supportsScopedRules
 
+    // Allowlist entries the backend accepted after validation; -1 on a build
+    // that cannot report it. The service refuses to enable an allowlist that
+    // is configured but left empty by validation.
+    readonly property int includedRuleCount: root.supportsIncluded
+        && typeof Tiling.includedRuleCount === "number" ? Tiling.includedRuleCount : -1
+
     // The telemetry surface is only trusted when both signals and the error
     // string exist; a partial backend reports unsupported.
     readonly property bool supportsTelemetry: typeof Tiling.lastError === "string"

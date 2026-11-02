@@ -119,9 +119,14 @@ Singleton {
             return false;
 
         if (iconRule.regex) {
-            const re = new RegExp(iconRule.regex, iconRule.flags ?? "");
-            if (re.test(name))
-                return true;
+            // Windows: an icon rule that does not compile matches nothing; the
+            // error text carries the user's pattern, so it is not logged.
+            try {
+                if (new RegExp(iconRule.regex, iconRule.flags ?? "").test(name))
+                    return true;
+            } catch (error) {
+                return false;
+            }
         } else if (iconRule.name === name) {
             return true;
         }

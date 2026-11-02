@@ -352,7 +352,7 @@ See [CONFIGURATION.md](CONFIGURATION.md) for a full annotated reference. Below a
 - **Apps:** Indexed automatically from Windows `shell:AppsFolder` and Start menu directories. Use `launcher.favouriteApps` to pin apps to the top and `launcher.hiddenApps` (exact names or regexes) to hide clutter like uninstallers.
 - **Search prefixes:** Type `@` (`launcher.specialPrefix`) to filter by category/field, or `>` (`launcher.actionPrefix`) to run shell actions:
   - `> calc 2*(3+4)^2` evaluates math expressions (click or press `Enter` to copy the result, or click the calculator icon to open Windows Calculator).
-  - `> wallpaper` opens the horizontal wallpaper carousel reading images from `paths.wallpaperDir` (defaults to `%USERPROFILE%\Pictures\Wallpapers`, or override via `CAELESTIA_WALLPAPER_DIR`). Note: the carousel displays an odd number of wallpapers at a time, so keep 1 or 3+ images in the folder.
+  - `> wallpaper` opens the horizontal wallpaper carousel reading images from `paths.wallpaperDir` (defaults to the `Wallpapers` subfolder of the Windows Pictures known folder, so a OneDrive-redirected Pictures folder works; override with `paths.wallpaperDir` or `CAELESTIA_WALLPAPER_DIR`). Note: the carousel displays an odd number of wallpapers at a time, so keep 1 or 3+ images in the folder.
   - `> light` / `> dark` switches color mode; `> scheme` / `> variant` selects color schemes using the profile-local pinned Caelestia CLI generator. Python and network access are required for its first-launch provision.
 - **Vim navigation:** Set `"vimKeybinds": true` under `launcher` (and `session`) to navigate lists with `Ctrl+J`/`Ctrl+K` or `Tab`.
 
@@ -394,6 +394,15 @@ alpha values are blended against surface. Colours follow focus and scheme
 changes and return to the system default when disabled, unmanaged or on normal
 shell exit. Older Windows skips colouring. These settings reload live.
 See [the complete tiling schema](../services/tiling/README.md).
+
+Windows shell windows are recognised generically, and the taskbar's tool,
+no-activate and owned rules keep transient overlays out of the tracked-app list.
+If a third-party shell's popup still appears as an app or gets tiled, add it to
+`windows.shellSurfaces.extra` in `config/shell.json`, for example
+`{"windows":{"shellSurfaces":{"extra":["exe:some-shell.exe"]}}}`. Selectors use
+the tiling dialect (unprefixed rules match executable or class, and `screen:` is
+rejected) and apply live; the list is empty by default. See
+[shell-surface selectors](CONFIGURATION.md#shell-surface-selectors).
 
 Production supports `-TilingMode Disabled|Observe|Interactive`, `-TilingIncluded`
 and `-TilingExcluded`. Explicit switches override environment, which overrides
