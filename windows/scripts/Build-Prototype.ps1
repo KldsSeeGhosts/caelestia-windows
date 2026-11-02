@@ -5,7 +5,10 @@ param(
     [Parameter(Mandatory)][string]$Cli11Include,
     [string]$ToolsBin,
     [string]$BuildRoot,
-    [ValidateRange(1, 64)][int]$Jobs = 4
+    [ValidateRange(1, 64)][int]$Jobs = 4,
+    # Private harnesses only. Public exports omit the test sources, so test
+    # executables are off by default.
+    [switch]$Tests
 )
 
 $ErrorActionPreference = 'Stop'
@@ -98,9 +101,11 @@ $sourceRevision = if ($shortRevExit -eq 0 -and $rawShortRevision) { "$rawShortRe
 if (-not $sourceRevision) { $sourceRevision = 'unknown' }
 $fullSourceRevision = if ($fullRevExit -eq 0 -and $rawFullRevision) { "$rawFullRevision".Trim() } else { $sourceRevision }
 
+$testOption = if ($Tests) { 'ON' } else { 'OFF' }
 Invoke-BuildCommand 'configure-plugins' (@('-S', $repoRoot, '-B', "$BuildRoot\caelestia") + $common +
     @('-DCAELESTIA_PORTABLE_UI=ON', '-DENABLE_MODULES=plugin', '-DINSTALL_QMLDIR=qml',
-    "-DCMAKE_INSTALL_PREFIX=$installRoot", "-DVERSION=$sourceVersion", "-DGIT_REVISION=$sourceRevision"))
+    "-DCMAKE_INSTALL_PREFIX=$installRoot", "-DVERSION=$sourceVersion", "-DGIT_REVISION=$sourceRevision",
+    "-DCAELESTIA_WINDOWS_TESTS=$testOption"))
 Invoke-BuildCommand 'build-plugins' @('--build', "$BuildRoot\caelestia", '--parallel', "$Jobs")
 Invoke-BuildCommand 'install-plugins' @('--install', "$BuildRoot\caelestia")
 

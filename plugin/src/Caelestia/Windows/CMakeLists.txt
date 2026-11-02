@@ -43,11 +43,15 @@ target_include_directories(caelestia-windows PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/Focus"
 )
 
+# Public exports omit the test sources, so the native fixtures are built only
+# on explicit request: windows/scripts/Build-Prototype.ps1 -Tests.
+option(CAELESTIA_WINDOWS_TESTS "Build Caelestia Windows plugin tests" OFF)
+
 # The clipboard's WinRT-free decisions are checked by a small Qt Test
 # executable. windows/scripts/Test-ClipboardHistory.ps1 runs it alongside the
 # QML smoke.
 find_package(Qt6 QUIET COMPONENTS Test)
-if(Qt6Test_FOUND)
+if(CAELESTIA_WINDOWS_TESTS AND Qt6Test_FOUND)
     add_executable(clipboard-logic-tests
         Clipboard/test/clipboardlogic_test.cpp
     )
