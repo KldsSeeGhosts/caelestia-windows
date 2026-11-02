@@ -103,10 +103,19 @@ Singleton {
         } else if (!bannerProcess.running && !bannerStopping) {
             bannerStarting = true;
             bannerProcess.running = true;
-            if (!bannerProcess.running && bannerStarting) {
-                // FailedToStart already cleared running synchronously.
-                bannerStarting = false;
-                bannerStartFailed();
+            if (!bannerProcess.running) {
+                // FailedToStart already cleared running synchronously. Defer:
+                // this runs inside the bannerWanted change handler, and
+                // bannerFailed/bannerRecoveryComplete are dependencies of that
+                // binding, so reporting here would re-enter its evaluation and
+                // leave bannerWanted true while bannerFailed is already true.
+                // bannerStarting keeps this and onRunningChanged to one report.
+                Qt.callLater(() => {
+                    if (!bannerProcess.running && root.bannerStarting) {
+                        root.bannerStarting = false;
+                        root.bannerStartFailed();
+                    }
+                });
             }
         }
     }

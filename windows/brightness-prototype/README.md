@@ -45,7 +45,7 @@ other panels keep their own unavailable adapters.
 
 [`BrightnessService.qml`](../services/brightness/BrightnessService.qml) imports
 no Quickshell or native module, never queries on its own and spawns no process;
-its only timers are the per-monitor write watchdogs.
+its only timers are the per-monitor lost-result watchdogs.
 The singleton wrapper [`Brightness.qml`](../services/brightness/Brightness.qml)
 preserves the original contract for staged consumers: `monitors` (one typed
 `Monitor` per `Quickshell.screens` entry), `getMonitorForScreen()`,
@@ -94,9 +94,14 @@ Policy, enforced in the pure state object:
    pending, later values coalesce to the newest drag target and are sent after
    the terminal result. A failure drops the queue and snaps the slider back to
    the last confirmed value; a pending write never disables the slider
-   mid-gesture. A terminal result that never arrives is expired per monitor
-   after `writeTimeoutMs` (default 4 s) and settles the same way, so a lost
-   signal cannot wedge that monitor until hotplug.
+   mid-gesture. A terminal result that never arrives (the worker died, or a
+   reload dropped the signal) is recovered per monitor after `writeTimeoutMs`
+   (a generous hard bound, default 15 s). That bound is not a write deadline:
+   the backend serializes on one worker and a healthy DDC/CI write can take
+   seconds. Recovery therefore keeps the displayed value and any queued drag
+   target, records the lost result, and re-reads the display through the normal
+   query path; the query runs behind any write still on the worker, adopts the
+   hardware level and then dispatches the queued target.
 
 A strict-route enable refusal is latched as a separate `policyError`, not as a
 per-monitor route latch, and an explicit route refresh clears it. Each screen
@@ -108,7 +113,8 @@ screen cannot authorize the reconnected monitor.
 backend accepted the write through the stored route, not that a read-back
 confirmed the requested level. WMI and `\\.\LCD` may later emit
 `systemBrightnessChanged`; DDC/CI has no read-back. A result that arrives after
-its watchdog expired it is ignored while no write is pending.
+its watchdog recovered the write is ignored while no write is pending; the
+recovery query is what reconciles the record.
 
 ## Opt-ins and startup policy
 

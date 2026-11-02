@@ -212,10 +212,14 @@ Singleton {
         keepaliveError = "";
         keepaliveProcess.running = true;
         if (!keepaliveProcess.running) {
-            // FailedToStart clears running without emitting exited, so this
-            // and onRunningChanged below are the only paths that release the
-            // ring when Python cannot be spawned.
-            keepaliveStartFailed();
+            // FailedToStart clears running without emitting exited. Use the
+            // same deferred single-handler shape as onRunningChanged below, so
+            // keepaliveRunning is released outside the Process's own state
+            // change and both paths can never report twice.
+            Qt.callLater(() => {
+                if (!keepaliveProcess.running && root.keepaliveRunning)
+                    root.keepaliveStartFailed();
+            });
         }
     }
 
