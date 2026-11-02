@@ -120,6 +120,10 @@ Existing assignments are never renumbered, disconnected monitors stay in the
 file, and the file is written atomically (`QSaveFile`, temp then replace). Each
 entry records the date it was last seen. At most 64 are kept; the least recently
 seen disconnected ones are dropped first and a connected monitor never is. A
+disconnected reservation whose label is shared with any other reservation is
+never dropped either: it anchors that label's numbering, and forgetting it would
+hand its name, and the settings stored under it, to the next monitor with that
+label. If every candidate is protected the file simply grows past 64. A
 user who already has monitor A alone keeps `X` and its settings when identical
 monitor B is connected; B gets `X (2)`. Removing B never renames A, and a restart
 reloads the same assignments. A genuine label that ends in `(2)` is just a
@@ -135,8 +139,12 @@ Their names are reserved in memory for as long as the session id survives, so
 unplugging one of two identical session-only monitors never renames the other;
 only a new session id is allocated a name, and it avoids every persistent name.
 When the same live screen later gains an interface path, `identityUpgraded`
-carries brightness routes and gamma ramps, factors and restoration obligations
-from the session id to the persistent one. Brightness and gamma drop
+carries everything the screen owns from the session id to the persistent one:
+for gamma the ramps, factors and restoration obligations, for brightness the
+routes, last values, queued writes, the in-flight ownership that keeps a second
+write out, and the settle timers. Work already running under the old id (a
+worker completion, a timer, a native write that is still executing) resolves to
+the current id through an alias that lives as long as the screen. Brightness and gamma drop
 session-keyed state only when the id leaves the topology, so a replacement
 monitor starts fresh.
 
