@@ -83,7 +83,7 @@
   "modules/bar/popouts/ClipWrapper.qml": "modules/bar/popouts/ClipWrapper.qml",
   "modules/bar/popouts/Content.qml": "modules/bar/popouts/Content.qml",
   "modules/bar/popouts/kblayout/KbLayout.qml": "modules/bar/popouts/kblayout/KbLayout.qml",
-  "modules/bar/popouts/kblayout/KbLayoutModel.qml": "modules/bar/popouts/kblayout/KbLayoutModel.qml",
+  "windows/shell/adapters/modules/bar/popouts/kblayout/KbLayoutModel.qml": "modules/bar/popouts/kblayout/KbLayoutModel.qml",
   "modules/bar/popouts/LockStatus.qml": "modules/bar/popouts/LockStatus.qml",
   "modules/bar/popouts/Network.qml": "modules/bar/popouts/NetworkContent.qml",
   "modules/bar/popouts/PopoutState.qml": "modules/bar/popouts/PopoutState.qml",
