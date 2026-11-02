@@ -9,6 +9,7 @@ param(
     [string]$TilingIncluded = '',
     [string]$TilingExcluded = '',
     [switch]$SkipSchemeRuntime,
+    [switch]$PreparedSchemeRuntime,
     [switch]$Wait
 )
 # Windows PowerShell -File can bind parameter defaults before $PSScriptRoot
@@ -27,5 +28,22 @@ if ($Command -eq 'Settings') {
 }
 $arguments = @{}
 foreach ($key in $PSBoundParameters.Keys) { $arguments[$key] = $PSBoundParameters[$key] }
+# A retained pre-versioning payload can neither consume the prepared record
+# nor be trusted to skip provisioning on its own. During activation, disable
+# its provisioner instead of letting pip run inside the readiness budget. A
+# normal start (no -PreparedSchemeRuntime) keeps its old behaviour.
+if ($arguments.ContainsKey('PreparedSchemeRuntime')) {
+    $prepared = $false
+    $skip = $false
+    try {
+        $target = [IO.File]::ReadAllText((Join-Path $runtime 'Start-Caelestia.ps1'))
+        $prepared = $target -match '\[switch\]\$PreparedSchemeRuntime\b'
+        $skip = $target -match '\[switch\]\$SkipSchemeRuntime\b'
+    } catch { }
+    if (-not $prepared) {
+        $arguments.Remove('PreparedSchemeRuntime')
+        if ($skip) { $arguments['SkipSchemeRuntime'] = $true }
+    }
+}
 $arguments.Prefix = $runtime
 & (Join-Path $runtime 'Start-Caelestia.ps1') @arguments

@@ -40,8 +40,10 @@ powershell -NoProfile -File windows/scripts/Uninstall-Caelestia.ps1
 ```
 
 Installer flags: `-BuildRoot`, `-QtPrefix`, `-VCRuntimeRoot`, `-Prefix`,
-`-ProfileRoot`, opt-in `-Autostart`, and `-Restart`. Ordinary installation does
-not launch the shell and requires it to be stopped.
+`-ProfileRoot`, opt-in `-Autostart`, and `-Restart`. `-SkipSchemeRuntime` skips
+preparing the optional Python scheme runtime during this install; an existing
+prepared runtime is still used, and a later launcher start may provision one.
+Ordinary installation does not launch the shell and requires it to be stopped.
 
 For an update, do **not** quit first:
 
@@ -49,12 +51,24 @@ For an update, do **not** quit first:
 & windows/scripts/Install-Caelestia.ps1 -BuildRoot C:\b-topic -Restart
 ```
 
-This assembles Qt, QML and licenses in a new immutable version while the old shell
-remains running. Only then does it quit, atomically select the prepared version
-and launch through an on-demand, non-elevated interactive scheduled task. A
-responsive IPC endpoint and first frame from every drawer are required before
-success. Failed activation selects/restarts the previous version and still
-reports failure. No running executable or DLL is overwritten.
+This assembles Qt, QML, licenses and the optional profile-local Python scheme
+runtime in a new immutable version while the old shell remains running. Scheme
+dependencies are built in an immutable generation under
+`scheme/runtimes/<generation>`; `scheme/runtime.json` is published atomically
+only after that generation verifies. A profile-scoped lock serialises installer
+preparation, normal starts and repairs, so two provisioners never write at once
+and a published generation is never modified. Only then does it quit,
+atomically select the prepared version and launch through an on-demand,
+non-elevated interactive scheduled task. Provisioning is reported as its own
+phase; the 20 s activation readiness budget measures only the new shell
+starting, so a cold venv or slow download cannot trigger a rollback. If
+provisioning fails, the install continues, the shell starts on its fixed
+palette and `scheme-runtime.log` records the fallback. A responsive IPC endpoint
+and first frame from every drawer are required before success. Failed
+activation selects/restarts the previous version and still reports failure. A
+retained payload that predates the generation layout is started with scheme
+provisioning disabled, so a rollback cannot run pip inside the readiness
+budget; it uses the fixed palette. No running executable or DLL is overwritten.
 
 The layout is:
 
@@ -151,11 +165,32 @@ seeds these files once, preserving edits across restart/update/uninstall:
 - `config/windows.json`: `{"windows":{"hideTaskbar":false,"restartOnCrash":true}}`.
   These supervisor settings apply at the next launch.
 
-The first launch provisions the pinned Caelestia CLI and Python dependencies in
-`scheme/venv` under this profile. Use `-SkipSchemeRuntime` to keep the fixed
-palette. Wallpaper Engine discovery and preview colour matching share the
-combined services; its options are watched under `windows.wallpaperEngine` in
-`config/windows.json`.
+The installer provisions the pinned Caelestia CLI and Python dependencies in an
+immutable generation under `scheme/runtimes/<generation>` before activation.
+`scheme/runtime.json` points at the verified generation for the selected
+version's revision. A launcher started outside the installer (for example the
+Run entry on a later sign-in) reuses that generation and repairs by building a
+new one. Activations never wait for provisioning: when no matching generation
+is published, the shell starts on its fixed palette. A start that finds
+provisioning already in progress also stays on the fixed palette until the next
+shell start; it never waits for the provisioner. Generations used by the
+current and previous installed versions are retained; older ones are pruned on
+a later install only when no shell or supervisor is running. Pruning first
+renames a generation into `scheme/runtimes/.trash`, which fails (and keeps the
+generation whole until the next prune) while a working directory or open file is
+inside. A rename does not prove no code runs from it, so the generation is also
+kept while any of its `.exe`/`.dll`/`.pyd` images refuses write access (the OS
+does so for a mapped image, even for processes whose modules cannot be read).
+A directory cannot be renamed while any file inside is open, so the image check
+is repeated at the new location and a generation that gained a mapped image in
+between is moved straight back; deletion then holds the images open while it
+runs. Use
+`-SkipSchemeRuntime` on the installer or launcher to skip preparation. If
+preparation failed, Caelestia starts on the fixed palette and
+`logs/scheme-runtime.log` reports it; rerun `Install-SchemeRuntime.ps1` from the
+selected version directory to retry. Wallpaper Engine discovery and preview
+colour matching share the combined services; its options are watched under
+`windows.wallpaperEngine` in `config/windows.json`.
 
 State, cache, data, runtime and logs remain in that profile. Normal and smoke
 runs capture `logs/shell.stdout.log` and `logs/shell.stderr.log`; the watchdog
