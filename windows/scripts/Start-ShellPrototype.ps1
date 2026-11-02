@@ -6,6 +6,9 @@ param(
     [string]$ProfileRoot,
     [string]$TilingConfigFile,
     [switch]$Smoke,
+    # Smoke callers that cache the result (Caelestia-M1Regression.ps1) need the
+    # failed result instead of a terminating error.
+    [switch]$NoThrow,
     [switch]$Wait,
     [switch]$MonitorCycle,
     [switch]$TraceInput,
@@ -319,6 +322,15 @@ if ($Transparency) {
     $configText = $configObject | ConvertTo-Json -Depth 10
 }
 $configText | Set-Content -LiteralPath $config -Encoding UTF8
+if ($Notifications) {
+    # Banner policy lives in windows.json, which the real install always ships.
+    # An isolated profile without it makes Notifs.qml log a load warning, and
+    # the smoke rejects any runtime warning as a failure.
+    $windowsConfig = Join-Path $profileRoot 'config\windows.json'
+    if (-not (Test-Path -LiteralPath $windowsConfig)) {
+        '{"windows":{"notifications":{}}}' | Set-Content -LiteralPath $windowsConfig -Encoding UTF8
+    }
+}
 $logRoot = Join-Path $RunRoot 'logs'
 # Dynamic colours: the combined prototype uses the real caelestia CLI scheme
 # generator from a profile-local virtual environment. Provisioning is
@@ -483,10 +495,18 @@ if ($ScaleFactor -ne 'native') {
 $info.EnvironmentVariables['CAELESTIA_SHELL_SCALE'] = $ScaleFactor
 $info.EnvironmentVariables['CAELESTIA_SHELL_SCREEN'] = [string]$ScreenIndex
 $info.EnvironmentVariables['CAELESTIA_SHELL_SMOKE'] = $(if ($Smoke) { '1' } else { '0' })
+# A live shell can leave the isolated smoke window occluded, and DWM then
+# throttles its frame callbacks. That stalls grabToImage and the session
+# animation until the watchdog fires (#233). Smoke renders without vsync so
+# the window keeps producing frames while another shell owns the desktop.
+if ($Smoke) { $info.EnvironmentVariables['QSG_NO_VSYNC'] = '1' }
 if ($Smoke) {
     $emptyKeys = Join-Path $profileRoot 'runtime\smoke-keybinds.json'
     '{"binds":[]}' | Set-Content -LiteralPath $emptyKeys -Encoding UTF8
     $info.EnvironmentVariables['CAELESTIA_WINDOWS_KEYBINDS'] = $emptyKeys
+    # Stage-ShellPrototype reads this to place the window beyond the target
+    # screen. Smoke never needs a visible window and must not cover the desktop.
+    $info.EnvironmentVariables['CAELESTIA_SHELL_OFFSCREEN'] = '1'
 }
 $info.EnvironmentVariables['CAELESTIA_RUNTIME_PROBE'] = $(if ($RuntimeProbe) { '1' } else { '0' })
 $info.EnvironmentVariables['CAELESTIA_SHELL_MONITOR_CYCLE'] = $(if ($MonitorCycle) { '1' } else { '0' })
@@ -623,6 +643,6 @@ $result['sessionButtons'] = @($sessionButtonRecords.ToArray())
 $result = $result | ConvertTo-Json -Depth 12
 $result | Set-Content -LiteralPath (Join-Path $logRoot "$runName.json") -Encoding UTF8
 Write-Output $result
-if (($Smoke -and -not $passed) -or $exitCode -ne 0) {
+if (-not $NoThrow -and (($Smoke -and -not $passed) -or $exitCode -ne 0)) {
     throw "$kind prototype failed. See $stdoutPath and $stderrPath."
 }

@@ -1,7 +1,9 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][string]$QtPrefix,
-    [string]$BuildRoot
+    [string]$BuildRoot,
+    # Optional shared M1 result cache; one path per suite invocation.
+    [string]$M1CachePath
 )
 
 $ErrorActionPreference = 'Stop'
@@ -49,8 +51,8 @@ function Assert-DisabledTiling($State, [string]$Label) {
 }
 function Assert-TilingLog($Result, [string]$Label) {
     $combined = (Get-Content -LiteralPath $Result.stdout -Raw) + "`n" + (Get-Content -LiteralPath $Result.stderr -Raw)
-    $statusCount = [regex]::Matches($combined, 'CAELESTIA_TILING_STATUS tiling=off included=0 excluded=0 status=disabled').Count
-    Assert ($statusCount -eq 1) "$Label did not print exactly one 'tiling=off included=0 excluded=0 status=disabled' status line ($statusCount)."
+    $statusCount = [regex]::Matches($combined, 'CAELESTIA_TILING_STATUS tiling=off included=0 excluded=0 gapsIn=5 gapsOut=10 status=disabled').Count
+    Assert ($statusCount -eq 1) "$Label did not print exactly one 'tiling=off included=0 excluded=0 gapsIn=5 gapsOut=10 status=disabled' status line ($statusCount)."
     Assert ($combined -notmatch 'CAELESTIA_TILING_BACKEND_READY') "$Label constructed the native tiling wrapper."
     Assert ($combined -notmatch 'CAELESTIA_TILING_FAIL') "$Label reported a smoke failure."
     Assert ($combined -notmatch 'CAELESTIA_TILING_FIXTURE_FAIL') "$Label reported a fixture failure."
@@ -78,8 +80,8 @@ try {
         Assert-DisabledTiling $result.tilingSnapshots[1].state "Final disabled smoke"
         Assert-TilingLog $result "Tiling Disabled screen $screen"
     }
-    $regression = & "$PSScriptRoot\Start-ShellPrototype.ps1" -QtPrefix $QtPrefix -BuildRoot $BuildRoot `
-        -Smoke -ScaleFactor native -ScreenIndex 0 | ConvertFrom-Json
+    $regression = & "$PSScriptRoot\Caelestia-M1Regression.ps1" -QtPrefix $QtPrefix -BuildRoot $BuildRoot `
+        -CachePath $M1CachePath
     Assert $regression.passed 'Original M1 bar/session smoke regression failed.'
     $records.Add([ordered]@{ kind = 'm1-regression'; result = $regression })
     $regressionLog = (Get-Content -LiteralPath $regression.stdout -Raw) + "`n" + (Get-Content -LiteralPath $regression.stderr -Raw)

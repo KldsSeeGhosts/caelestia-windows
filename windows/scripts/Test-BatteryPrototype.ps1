@@ -2,6 +2,8 @@
 param(
     [Parameter(Mandatory)][string]$QtPrefix,
     [string]$BuildRoot,
+    # Optional shared M1 result cache; one path per suite invocation.
+    [string]$M1CachePath,
     # Focused review gate: only ReadOnly/Profiles battery smoke. Omits Disabled,
     # M1 and audio native runs while retaining fixture/state-preservation checks.
     [switch]$ReadOnlyProfilesOnly
@@ -35,11 +37,14 @@ function Assert-PowerReadable($State) {
 function Desktop-Identity($State) {
     # Foreground/cursor movement and unrelated application processes are outside
     # this read-only gate. Compare physical work areas and the existing shells.
+    # Concurrent bounded smokes own a transient qs process; this harness waits
+    # for its own child to exit, so it excludes qs/quickshell from the shared
+    # snapshot instead of claiming another agent's run.
     [ordered]@{
         monitors = $State.monitors
         taskbar = $State.taskbar
         explorerRunning = $State.explorerRunning
-        processes = $State.relevantProcesses
+        processes = @($State.relevantProcesses | Where-Object { $_.name -notin @('qs', 'quickshell') })
     } | ConvertTo-Json -Depth 10 -Compress
 }
 
@@ -97,13 +102,16 @@ try {
         }
     }
     if (-not $ReadOnlyProfilesOnly) {
-        $regression = & "$PSScriptRoot\Start-ShellPrototype.ps1" -QtPrefix $QtPrefix -BuildRoot $BuildRoot `
-            -Smoke -ScaleFactor native -ScreenIndex 0 | ConvertFrom-Json
+        $regression = & "$PSScriptRoot\Caelestia-M1Regression.ps1" -QtPrefix $QtPrefix -BuildRoot $BuildRoot `
+            -CachePath $M1CachePath
         Assert $regression.passed 'Original M1 bar/session smoke regression failed.'
         $records.Add([ordered]@{ kind = 'm1-regression'; result = $regression })
+        $M1CachePath = $regression.m1CachePath
         # The shared launcher/staging scripts also serve the audio slice; re-run
-        # its full acceptance harness as the regression gate.
-        $audioRegression = & "$PSScriptRoot\Test-AudioPrototype.ps1" -QtPrefix $QtPrefix -BuildRoot $BuildRoot | ConvertFrom-Json
+        # its full acceptance harness as the regression gate with this suite's
+        # cached M1 result, so the nested harness does not repeat the smoke.
+        $audioRegression = & "$PSScriptRoot\Test-AudioPrototype.ps1" -QtPrefix $QtPrefix -BuildRoot $BuildRoot `
+            -M1CachePath $M1CachePath | ConvertFrom-Json
         Assert $audioRegression.passed 'Audio prototype regression gate failed.'
         $records.Add([ordered]@{ kind = 'audio-regression'; result = $audioRegression })
     }

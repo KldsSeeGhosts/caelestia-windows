@@ -1,7 +1,9 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][string]$QtPrefix,
-    [string]$BuildRoot
+    [string]$BuildRoot,
+    # Optional shared M1 result cache; one path per suite invocation.
+    [string]$M1CachePath
 )
 
 $ErrorActionPreference = 'Stop'
@@ -62,7 +64,11 @@ function Assert-CombinedServiceLines([string]$StdoutPath) {
                 Assert ($value -eq '0') "Combined run sent a network command."
             }
             if ($key -eq 'mode') {
-                Assert ($value -eq 'Observe') "Session was not in observation-only mode."
+                # Session is always observation-only; tiling's separate mode
+                # word must stay off because this harness never opts in.
+                $expectedMode = if ($line.Groups['name'].Value -eq 'tiling') { 'off' } else { 'Observe' }
+                Assert ($value -eq $expectedMode) `
+                    "Service '$($line.Groups['name'].Value)' reported mode=$value, expected $expectedMode."
             }
         }
     }
@@ -90,8 +96,8 @@ try {
         }
         Assert-CombinedServiceLines $result.stdout
     }
-    $regression = & "$PSScriptRoot\Start-ShellPrototype.ps1" -QtPrefix $QtPrefix -BuildRoot $BuildRoot `
-        -Smoke -ScaleFactor native -ScreenIndex 0 | ConvertFrom-Json
+    $regression = & "$PSScriptRoot\Caelestia-M1Regression.ps1" -QtPrefix $QtPrefix -BuildRoot $BuildRoot `
+        -CachePath $M1CachePath
     Assert $regression.passed 'Original M1 bar/session smoke regression failed.'
     $records.Add([ordered]@{ kind = 'm1-regression'; result = $regression })
 } catch {

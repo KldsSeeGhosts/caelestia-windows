@@ -120,6 +120,28 @@ $hashes = foreach ($entry in $files.GetEnumerator()) {
             throw 'Expected one ShellRoot for the Windows font loader.'
         }
         $shell = $shell.Replace('ShellRoot {', "ShellRoot {`n    WindowsFonts { id: windowsFonts }")
+        if (-not $shellLive) {
+            # A smoke window must never cover the live desktop. Shift its outer
+            # margins to the target screen's bottom-right corner, leaving one
+            # pixel visible so DWM still presents frames. The window still needs
+            # the real Windows panel backend, so QT_QPA_PLATFORM=offscreen cannot
+            # load this host. Start-ShellPrototype sets the flag for -Smoke only.
+            foreach ($edge in @(@{ Property = 'left'; Size = 'width' }, @{ Property = 'top'; Size = 'height' })) {
+                $pattern = '(?m)^\s*margins\.' + $edge.Property + ':'
+                $margins = [regex]::Matches($shell, $pattern)
+                if ($margins.Count -ne 1) {
+                    throw "Expected one margins.$($edge.Property) for off-screen smoke placement, found $($margins.Count)."
+                }
+                $property = $edge.Property
+                $size = $edge.Size
+                $shell = [regex]::Replace($shell, '(?m)^(\s*)margins\.' + $property + ':\s*(.+)$', {
+                        param($match)
+                        $match.Groups[1].Value + "margins.$property`: (" + $match.Groups[2].Value.Trim() +
+                            ") + (Quickshell.env(""CAELESTIA_SHELL_OFFSCREEN"") === ""1"" && win.screen" +
+                            " ? win.screen.$size - 81 : 0)"
+                    })
+            }
+        }
         $header = @("DataDir $ProfileRoot\data", "StateDir $ProfileRoot\state", "CacheDir $ProfileRoot\cache") |
             ForEach-Object { "//@ pragma $_" }
         [IO.File]::WriteAllText($target, (($header -join "`n") + "`n" + $shell), (New-Object Text.UTF8Encoding($false)))

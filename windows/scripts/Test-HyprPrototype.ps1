@@ -1,7 +1,9 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][string]$QtPrefix,
-    [string]$BuildRoot
+    [string]$BuildRoot,
+    # Optional shared M1 result cache; one path per suite invocation.
+    [string]$M1CachePath
 )
 
 $ErrorActionPreference = 'Stop'
@@ -81,8 +83,8 @@ try {
         Assert-DisabledHypr $result.hyprSnapshots[1].state 'Final disabled smoke'
         Assert-HyprLog $result "Hypr Disabled screen $screen"
     }
-    $regression = & "$PSScriptRoot\Start-ShellPrototype.ps1" -QtPrefix $QtPrefix -BuildRoot $BuildRoot `
-        -Smoke -ScaleFactor native -ScreenIndex 0 | ConvertFrom-Json
+    $regression = & "$PSScriptRoot\Caelestia-M1Regression.ps1" -QtPrefix $QtPrefix -BuildRoot $BuildRoot `
+        -CachePath $M1CachePath
     Assert $regression.passed 'Original M1 bar/session smoke regression failed.'
     $records.Add([ordered]@{ kind = 'm1-regression'; result = $regression })
     $regressionLog = (Get-Content -LiteralPath $regression.stdout -Raw) + "`n" + (Get-Content -LiteralPath $regression.stderr -Raw)
