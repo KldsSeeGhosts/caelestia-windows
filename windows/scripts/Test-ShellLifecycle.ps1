@@ -9,6 +9,50 @@ if ($shellSource -notmatch 'Quickshell\.reload\(false\)' -or $shellSource -match
 $root = Resolve-CaelestiaDirectory (Join-Path ([IO.Path]::GetTempPath()) ('caelestia-lifecycle-' + [guid]::NewGuid().ToString('N')))
 [IO.Directory]::CreateDirectory($root) | Out-Null
 try {
+    # A new start keeps the previous session's log, replaces the older .prev,
+    # and never fails when a live shell still has the current log open.
+    $logs = Join-Path $root 'logs'
+    [IO.Directory]::CreateDirectory($logs) | Out-Null
+    $stdoutPath = Join-Path $logs 'shell.stdout.log'
+    $stdoutPrevious = Join-Path $logs 'shell.stdout.prev.log'
+    [IO.File]::WriteAllText($stdoutPath, 'previous-session')
+    Move-CaelestiaLogToPrevious $stdoutPath
+    if ([IO.File]::ReadAllText($stdoutPrevious) -ne 'previous-session' -or [IO.File]::ReadAllText($stdoutPath) -ne '') {
+        throw 'Log rotation did not keep the previous session.'
+    }
+    [IO.File]::WriteAllText($stdoutPath, 'newer-session')
+    Move-CaelestiaLogToPrevious $stdoutPath
+    if ([IO.File]::ReadAllText($stdoutPrevious) -ne 'newer-session') { throw 'Log rotation did not replace the older previous log.' }
+    [IO.File]::WriteAllText($stdoutPath, 'live-session')
+    $lockedLog = [IO.File]::Open($stdoutPath, 'Open', 'Read', 'None')
+    try { Move-CaelestiaLogToPrevious $stdoutPath } finally { $lockedLog.Dispose() }
+    if ([IO.File]::ReadAllText($stdoutPath) -ne 'live-session' -or [IO.File]::ReadAllText($stdoutPrevious) -ne 'newer-session') {
+        throw 'A locked log was truncated or damaged the previous log.'
+    }
+    Write-Output 'PASS logs: previous session retained, .prev replaced, locked file is non-fatal.'
+
+    # Cleanup failure must not replace the original launch error or trigger a
+    # retry against task/launcher state that could not be verified.
+    & {
+        function Start-ScheduledTask { [CmdletBinding()] param([string]$TaskName) }
+        function Stop-ScheduledTask { [CmdletBinding()] param([string]$TaskName) throw 'fixture cleanup failure' }
+        function Wait-CaelestiaReady {
+            [CmdletBinding()] param([string]$Prefix, [switch]$LegacyReady, [string]$TaskName)
+            $script:waits++
+            throw 'fixture launch failure'
+        }
+        function Unregister-ScheduledTask { [CmdletBinding()] param([string]$TaskName, [switch]$Confirm) }
+        $script:waits = 0
+        $detached = Join-Path $root 'detached'
+        [IO.Directory]::CreateDirectory($detached) | Out-Null
+        [IO.File]::WriteAllText((Join-Path $detached 'Start-Caelestia.ps1'), '')
+        $failed = $false
+        try { Start-CaelestiaDetached $detached -TaskName 'fixture-task' 3>$null }
+        catch { $failed = $_.Exception.Message -match 'fixture launch failure' -and $_.Exception.Message -notmatch 'fixture cleanup failure' }
+        if (-not $failed -or $script:waits -ne 1) { throw 'Cleanup failure masked the launch error or allowed a retry.' }
+    }
+    Write-Output 'PASS startup: cleanup failure preserves the launch error and prevents a retry.'
+
     # A real child process exercises IPC timeout, exit and pipe handling without
     # launching Qt, registering shortcuts or touching the session supervisor.
     Add-Type -OutputAssembly (Join-Path $root 'qs.exe') -OutputType ConsoleApplication -TypeDefinition @'

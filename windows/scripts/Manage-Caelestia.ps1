@@ -63,10 +63,7 @@ if (-not $Wait) {
     @{ operationId = $operationId } | ConvertTo-Json -Compress
     return
 }
-$hash = [Security.Cryptography.SHA256]::Create()
-try { $key = [BitConverter]::ToString($hash.ComputeHash([Text.Encoding]::UTF8.GetBytes($Prefix.ToLowerInvariant()))).Replace('-', '') }
-finally { $hash.Dispose() }
-$mutex = [Threading.Mutex]::new($false, ('Local\CaelestiaInstall-' + $key))
+$mutex = New-CaelestiaInstallMutex $Prefix
 $locked = $false
 $operationId = if ($TaskName -match '^Caelestia-Maintenance-([a-f0-9]{32})$') { $Matches[1] } else { [guid]::NewGuid().ToString('N') }
 try {

@@ -79,6 +79,22 @@ function Get-CaelestiaSupervisors([string]$ProfileRoot) {
     return $found
 }
 
+# Keep the previous session's log for crash diagnosis. Moving the file can fail
+# while a live shell still holds it; fall back to the old truncate behavior and
+# never fail startup because of a log.
+function Move-CaelestiaLogToPrevious([string]$Path) {
+    try {
+        if ([IO.File]::Exists($Path)) {
+            $previous = Join-Path ([IO.Path]::GetDirectoryName($Path)) ([IO.Path]::GetFileNameWithoutExtension($Path) + '.prev' + [IO.Path]::GetExtension($Path))
+            # Replace overwrites .prev in one step; the old .prev survives if
+            # the current log is locked.
+            if ([IO.File]::Exists($previous)) { [IO.File]::Replace($Path, $previous, [System.Management.Automation.Language.NullString]::Value) }
+            else { [IO.File]::Move($Path, $previous) }
+        }
+    } catch { }
+    try { [IO.File]::WriteAllText($Path, '') } catch { }
+}
+
 # Newest desktop-before.json left behind by a hard-killed supervisor that never
 # reached a terminal phase.
 function Get-CaelestiaUnrestoredSnapshot([string]$ProfileRoot) {
@@ -180,10 +196,17 @@ function Start-CaelestiaDetached([string]$Prefix, [switch]$LegacyReady, [string]
                 return
             } catch {
                 $launchError = $_
-                # Do not allow a slow launcher to start later over a retry or
-                # rollback. Restore owned state before attempting another run.
-                Stop-ScheduledTask -TaskName $taskName -ErrorAction Stop
-                & $launcher -Prefix $Prefix -Command Quit | Out-Null
+                try {
+                    # Do not allow a slow launcher to start later over a retry or
+                    # rollback. Restore owned state before attempting another run.
+                    Stop-ScheduledTask -TaskName $taskName -ErrorAction Stop
+                    & $launcher -Prefix $Prefix -Command Quit | Out-Null
+                } catch {
+                    # Cleanup must not replace the startup error, and if the
+                    # launcher/task state cannot be verified, never retry over it.
+                    Write-Warning "Caelestia cleanup after a failed launch did not complete: $($_.Exception.Message)"
+                    throw $launchError
+                }
                 if ($attempt -eq 1) { throw $launchError }
                 Write-Warning 'Caelestia startup failed; retrying once after cleanup.'
             }
@@ -274,6 +297,20 @@ function Get-CaelestiaIntegration([string]$Prefix) {
     return @{
         RunName = "CaelestiaWindows$suffix"
         Shortcut = Join-Path ([Environment]::GetFolderPath('Programs')) "Caelestia Windows$suffix.lnk"
+    }
+}
+
+# One install or rollback per prefix, across every logon session: a console
+# and an RDP session of the same user must not race. The prefix-derived name
+# keeps unrelated installs apart. Opening a Global mutex created by another
+# user can be denied; report that clearly instead of an access exception.
+function New-CaelestiaInstallMutex([string]$Prefix) {
+    $hash = [Security.Cryptography.SHA256]::Create()
+    try { $key = [BitConverter]::ToString($hash.ComputeHash([Text.Encoding]::UTF8.GetBytes($Prefix.ToLowerInvariant()))).Replace('-', '') }
+    finally { $hash.Dispose() }
+    try { return [Threading.Mutex]::new($false, 'Global\CaelestiaInstall-' + $key) }
+    catch [System.UnauthorizedAccessException] {
+        throw "The Caelestia installation lock for $Prefix belongs to another user. Wait for that operation to finish or choose a different prefix."
     }
 }
 

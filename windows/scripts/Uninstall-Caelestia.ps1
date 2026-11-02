@@ -39,18 +39,34 @@ foreach ($process in $processes) {
 if (@(Get-CaelestiaSupervisors $profile).Count -or @(Get-CaelestiaProcesses $Prefix).Count) {
     throw 'Caelestia is still running. Stop this installation before uninstalling.'
 }
-$run = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
-if (Get-ItemProperty -LiteralPath $run -Name $integration.RunName -ErrorAction SilentlyContinue) {
-    Remove-ItemProperty -LiteralPath $run -Name $integration.RunName
-}
-if (Test-Path -LiteralPath $integration.Shortcut) { Remove-Item -LiteralPath $integration.Shortcut -Force }
-# Re-resolve immediately before recursive removal. Only a marked installation
+# Re-resolve immediately before moving the tree. Windows refuses to rename a
+# directory that still has open files, so a locked installation aborts here
+# with nothing changed and stays resolvable, instead of becoming a half-deleted
+# prefix that can no longer be found or uninstalled. Only a marked installation
 # and its recorded, separate profile can be removed. The prefix includes all
 # packaged notices under licenses/; runtime venv notices stay with the profile
 # unless -Purge was explicitly requested.
 $Prefix = Resolve-CaelestiaDirectory $Prefix
 Assert-CaelestiaNoReparsePoints $Prefix
-Remove-Item -LiteralPath $Prefix -Recurse -Force
+$tombstone = $Prefix + '.uninstall-' + [guid]::NewGuid().ToString('N')
+try { [IO.Directory]::Move($Prefix, $tombstone) }
+catch {
+    throw "Cannot uninstall Caelestia because $Prefix is still in use (a file is open or locked). Close Caelestia and any programs using it, then retry. The installation was not changed."
+}
+# The installation is out of the way. Remove its per-user integration, then the
+# renamed tree; a cleanup failure must not report a partially failed uninstall.
+$run = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+if (Get-ItemProperty -LiteralPath $run -Name $integration.RunName -ErrorAction SilentlyContinue) {
+    Remove-ItemProperty -LiteralPath $run -Name $integration.RunName
+}
+if (Test-Path -LiteralPath $integration.Shortcut) { Remove-Item -LiteralPath $integration.Shortcut -Force }
+try {
+    $safeTombstone = Resolve-CaelestiaDirectory $tombstone
+    Assert-CaelestiaNoReparsePoints $safeTombstone
+    Remove-Item -LiteralPath $safeTombstone -Recurse -Force
+} catch {
+    Write-Warning "Caelestia was uninstalled, but its files could not be fully deleted: $tombstone. Remove that directory manually. $($_.Exception.Message)"
+}
 if ($Purge -and (Test-Path -LiteralPath $profile)) {
     $profile = Resolve-CaelestiaDirectory $profile
     Assert-CaelestiaNoReparsePoints $profile

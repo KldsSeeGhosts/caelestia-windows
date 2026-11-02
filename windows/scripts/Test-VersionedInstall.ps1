@@ -130,6 +130,27 @@ try {
         Assert ((Get-ChildItem (Join-Path $legacy 'versions') -Directory).Count -eq 2) 'Legacy copy recursed into versions.'
     }
     Write-Output 'PASS migration: legacy payload retained without recursion; failed first version falls back to migrated legacy.'
+
+    # Uninstall renames the installation aside before deleting it, so a locked
+    # file leaves the installation intact and still resolvable instead of
+    # half-deleted. The same test then uninstalls cleanly and leaves no tombstone.
+    $lockedApp = Join-Path $root 'locked-app'
+    $null = Install-CaelestiaVersion $lockedApp (New-Payload $lockedApp 'locked')
+    $held = Join-Path $lockedApp 'held.bin'
+    [IO.File]::WriteAllText($held, 'held')
+    $heldStream = [IO.File]::Open($held, 'Open', 'Read', 'None')
+    try {
+        $refused = $false
+        try { & (Join-Path $PSScriptRoot 'Uninstall-Caelestia.ps1') -Prefix $lockedApp }
+        catch { $refused = $_.Exception.Message -match 'still in use' }
+        Assert $refused 'Uninstall did not refuse an installation with an open file.'
+        Assert (Test-Path -LiteralPath (Join-Path $lockedApp 'install.json')) 'A locked uninstall damaged the installation.'
+        Assert (@(Get-ChildItem -LiteralPath $root -Directory -Filter 'locked-app.uninstall-*').Count -eq 0) 'A locked uninstall left a tombstone.'
+    } finally { $heldStream.Dispose() }
+    $null = & (Join-Path $PSScriptRoot 'Uninstall-Caelestia.ps1') -Prefix $lockedApp
+    Assert (-not (Test-Path -LiteralPath $lockedApp)) 'Uninstall left the prefix.'
+    Assert (@(Get-ChildItem -LiteralPath $root -Directory -Filter 'locked-app.uninstall-*').Count -eq 0) 'Uninstall left a tombstone.'
+    Write-Output 'PASS uninstall: a locked installation is unchanged; a clean run removes prefix and tombstone.'
 } finally {
     $safe = Resolve-CaelestiaDirectory $root
     if ((Split-Path -Parent $safe) -ne [IO.Path]::GetFullPath($env:TEMP).TrimEnd('\') -or

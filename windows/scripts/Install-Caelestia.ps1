@@ -89,10 +89,7 @@ foreach ($file in @("$BuildRoot\quickshell\qs.exe", $deploy, "$qmlRoot\Caelestia
 }
 # Serialize preparation as well as activation. Otherwise two simultaneous
 # updates can both pass the staging scan and overwrite the same rollback tree.
-$lockHash = [Security.Cryptography.SHA256]::Create()
-try { $lockKey = [BitConverter]::ToString($lockHash.ComputeHash([Text.Encoding]::UTF8.GetBytes($Prefix.ToLowerInvariant()))).Replace('-', '') }
-finally { $lockHash.Dispose() }
-$installMutex = [Threading.Mutex]::new($false, ('Local\CaelestiaInstall-' + $lockKey))
+$installMutex = New-CaelestiaInstallMutex $Prefix
 $locked = $false
 try {
 try { $locked = $installMutex.WaitOne(0) } catch [Threading.AbandonedMutexException] { $locked = $true }
