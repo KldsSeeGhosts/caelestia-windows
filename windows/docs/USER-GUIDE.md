@@ -210,7 +210,11 @@ activation, and an older retained launcher (for example one that still
 discovers a Wallpaper Engine interpreter at start) behaves as it always did.
 Update and rollback check the target's scheme generation, within a 15 s budget
 that tries the newest generation first and falls back to older healthy ones,
-before the running shell is stopped. Wallpaper Engine is detected automatically, supplies the
+before the running shell is stopped. That check is final: if nothing could be
+verified in time, the shell is stopped once and starts on the fixed palette, and
+nothing is probed again after it has stopped. If a prune cannot restore a
+retired generation after a late mapping, it stays in `scheme/runtimes/.trash`
+and the next prune cleans it up; `logs/scheme-runtime.log` records the count. Wallpaper Engine is detected automatically, supplies the
 launcher picker and palette preview, and retains ownership of the desktop
 background. The desktop clock defaults off.
 

@@ -21,6 +21,9 @@ function Unregister-ScheduledTask { }
 function Start-CaelestiaDetached {
     param([string]$Prefix, [switch]$LegacyReady, [string]$TaskName = '', [switch]$PreparedSchemeRuntime)
     $script:started++
+    if ($env:CAELESTIA_TEST_PROVISION_LOG) {
+        Add-Content -LiteralPath $env:CAELESTIA_TEST_PROVISION_LOG -Value ('{0},0,launch' -f [DateTime]::UtcNow.Ticks)
+    }
     if (-not $PreparedSchemeRuntime) { throw 'Activation did not request the prepared scheme runtime.' }
     if ($script:failStart) { $script:failStart = $false; throw 'Injected startup failure.' }
     if (-not $script:runLauncher) { return }
@@ -216,6 +219,23 @@ function Get-DirectoryListing([string]$Directory) {
         $_.FullName.Substring($Directory.Length + 1) + ':' + $_.Length
     }) -join "`n")
 }
+# The shell was stopped at the 'quit' event and relaunched at 'launch'. After
+# the stop nothing may be probed, and the stopped interval, which has no probe
+# time in it, must stay small.
+function Assert-NoPostQuitProbe([string]$Log, [string]$What) {
+    $events = @(Get-Content -LiteralPath $Log | ForEach-Object {
+        $parts = $_ -split ','
+        [pscustomobject]@{ Ticks = [long]$parts[0]; Event = $parts[2] }
+    })
+    $quit = $events | Where-Object { $_.Event -eq 'quit' } | Select-Object -First 1
+    Assert ($null -ne $quit) "$What never stopped the old shell."
+    $launch = $events | Where-Object { $_.Event -eq 'launch' -and $_.Ticks -ge $quit.Ticks } | Select-Object -First 1
+    Assert ($null -ne $launch) "$What never relaunched the shell."
+    Assert (@($events | Where-Object { $_.Event -eq 'check' -and $_.Ticks -lt $quit.Ticks }).Count -ge 1) "$What did not probe before stopping the shell."
+    Assert (@($events | Where-Object { $_.Event -eq 'check' -and $_.Ticks -gt $quit.Ticks }).Count -eq 0) "$What probed a generation after the shell had stopped."
+    $stopped = ($launch.Ticks - $quit.Ticks) / 1e7
+    Assert ($stopped -lt 3) "$What left the shell stopped for $([Math]::Round($stopped, 1)) s."
+}
 function New-LauncherPayload([string]$Prefix, [string]$ProfileRoot, [string]$Label, [string]$ProvisionMode, [switch]$LegacyStart) {
     $path = Join-Path $root ('launcher-' + [guid]::NewGuid().ToString('N'))
     [IO.Directory]::CreateDirectory($path) | Out-Null
@@ -227,7 +247,7 @@ function New-LauncherPayload([string]$Prefix, [string]$ProfileRoot, [string]$Lab
         @'
 [CmdletBinding()]
 param([string]$Prefix, [string]$Command = 'Start', [switch]$SkipSchemeRuntime)
-if ($Command -eq 'Quit' -and $env:CAELESTIA_TEST_PROVISION_LOG) { Add-Content -LiteralPath $env:CAELESTIA_TEST_PROVISION_LOG -Value "0,0,quit" }
+if ($Command -eq 'Quit' -and $env:CAELESTIA_TEST_PROVISION_LOG) { Add-Content -LiteralPath $env:CAELESTIA_TEST_PROVISION_LOG -Value ("{0},0,quit" -f [DateTime]::UtcNow.Ticks) }
 if ($Command -ne 'Start') { return }
 if (-not $SkipSchemeRuntime) {
     $null = & (Join-Path $PSScriptRoot 'Install-SchemeRuntime.ps1') -ProfileRoot (Join-Path $PSScriptRoot 'fixture-profile.txt') -LockWaitSeconds 0
@@ -528,6 +548,47 @@ param([string]$Prefix, [string]$Command = 'Start', [switch]$SkipSchemeRuntime)
         $env:CAELESTIA_TEST_PROVISION_LOG = $null
     }
 
+    # A pre-selection that found nothing usable is final: the shell is stopped
+    # once and relaunched on the fixed palette. Two generations hang their
+    # probe; nothing may be probed again after the stop, for update or rollback.
+    $fvPrefix = Join-Path $root 'fv'
+    $fvProfile = Join-Path $root 'fvp'
+    [IO.Directory]::CreateDirectory($fvProfile) | Out-Null
+    Write-CaelestiaProfileOwner $fvProfile $fvPrefix 'fv-test' $true
+    $fvLog = Join-Path $root 'fv.log'
+    $script:CaelestiaSchemeProbeBudgetSeconds = 5
+    $script:CaelestiaSchemeProbeSliceSeconds = 2
+    $script:runLauncher = $true
+    $env:CAELESTIA_TEST_PROVISION_LOG = $fvLog
+    try {
+        $null = Install-CaelestiaVersion $fvPrefix (New-LauncherPayload $fvPrefix $fvProfile 'A' 'fail' -LegacyStart)
+        $fvTarget = New-LauncherPayload $fvPrefix $fvProfile 'B' 'fail'
+        $fvIdentity = (Get-CaelestiaSchemeIdentity $fvTarget 'test').Id
+        $fvNow = [DateTime]::UtcNow
+        foreach ($spec in @(@('1', -1), @('2', -2))) {
+            $hungRoot = New-TestGeneration (Join-Path $fvProfile 'scheme\runtimes') ($spec[0] * 40) 'test' $fvIdentity $fvNow.AddMinutes($spec[1])
+            'hang' | Set-Content -LiteralPath (Join-Path $hungRoot 'venv\Scripts\hang.txt')
+        }
+        $null = Install-CaelestiaVersion $fvPrefix $fvTarget -Restart
+        $fvB = Resolve-CaelestiaRuntimePrefix $fvPrefix
+        Assert-NoPostQuitProbe $fvLog 'Update'
+        Assert ((Read-Pointer $fvProfile).available -eq $false) 'Update left a rejected generation published.'
+        Assert (-not ([IO.File]::ReadAllText((Join-Path $fvB 'shell-scheme.txt')) -split "`n")[0].Trim()) 'Update launched with a scheme runtime that was never verified.'
+        Assert (Test-Path -LiteralPath (Join-Path $fvB 'shell-started.txt')) 'Update did not start the shell on the fixed palette.'
+        $bId = (Read-CaelestiaInstall $fvPrefix).current
+        $null = Install-CaelestiaVersion $fvPrefix (New-LauncherPayload $fvPrefix $fvProfile 'C' 'fail' -LegacyStart)
+        Remove-Item -LiteralPath $fvLog -Force
+        $null = Switch-CaelestiaVersion $fvPrefix $bId -Restart
+        Assert-NoPostQuitProbe $fvLog 'Rollback'
+        Assert ((Read-Pointer $fvProfile).available -eq $false) 'Rollback left a rejected generation published.'
+        Write-Output 'PASS pre-selection is final: update and rollback never probe after the shell has stopped and start on the fixed palette.'
+    } finally {
+        $script:CaelestiaSchemeProbeBudgetSeconds = 15
+        $script:CaelestiaSchemeProbeSliceSeconds = 8
+        $script:runLauncher = $false
+        $env:CAELESTIA_TEST_PROVISION_LOG = $null
+    }
+
     # Rolling back to a legacy payload with a 22 s fake provisioner must not
     # spend the readiness budget or roll forward again.
     $legacyPrefix = Join-Path $root 'legacy-rollback'
@@ -726,6 +787,37 @@ public static extern bool FreeLibrary(System.IntPtr module);
     Remove-CaelestiaSchemeGenerations $prunePrefix $pruneProfile
     Assert (-not (Test-Path -LiteralPath $raceGeneration)) 'A generation was not removed once its image was unmapped.'
 
+    # If the move back fails (here an open file inside blocks the rename) the
+    # generation stays whole in .trash, a path-free line is logged, and the next
+    # prune removes it.
+    $strandGeneration = New-TestGeneration $pruneRuntimes ('c3' * 20) 'rev-z' ('c3' * 32)
+    New-Item -ItemType Directory -Force -Path (Join-Path $strandGeneration 'lib') | Out-Null
+    Copy-Item -LiteralPath (Join-Path $env:SystemRoot 'System32\version.dll') -Destination (Join-Path $strandGeneration 'lib\version.dll')
+    'sibling' | Set-Content -LiteralPath (Join-Path $strandGeneration 'lib\data.txt') -Encoding UTF8
+    $strandBefore = Get-DirectoryListing $strandGeneration
+    $strand = @{ Module = [IntPtr]::Zero; Stream = $null }
+    $originalHook = ${function:Invoke-CaelestiaSchemePruneHook}
+    try {
+        ${function:Invoke-CaelestiaSchemePruneHook} = { param($Stage, $Directory)
+            if ($Stage -eq 'moved' -and $Directory -like '*c3c3c3*') {
+                $strand.Module = [TRace.K]::LoadLibraryW((Join-Path $Directory 'lib\version.dll'))
+                $strand.Stream = [IO.File]::Open((Join-Path $Directory 'lib\data.txt'), 'Open', 'Read', ([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete))
+            }
+        }.GetNewClosure()
+        Remove-CaelestiaSchemeGenerations $prunePrefix $pruneProfile
+        $stranded = @(Get-ChildItem -LiteralPath (Join-Path $pruneRuntimes '.trash') -Directory -Force -ErrorAction SilentlyContinue)
+        Assert ($stranded.Count -eq 1 -and (Get-DirectoryListing $stranded[0].FullName) -eq $strandBefore) 'A generation that could not be moved back was damaged or lost.'
+        Assert (-not (Test-Path -LiteralPath $strandGeneration)) 'The stranded generation is still at its original path.'
+        $strandLog = Get-Content -LiteralPath (Join-Path $pruneProfile 'logs\scheme-runtime.log') -Raw
+        Assert ($strandLog -match 'could not move 1 generation\(s\) back' -and $strandLog -notmatch [regex]::Escape($root)) 'The failed move-back was not logged without paths.'
+    } finally {
+        ${function:Invoke-CaelestiaSchemePruneHook} = $originalHook
+        if ($strand.Stream) { $strand.Stream.Dispose() }
+        if ($strand.Module -ne [IntPtr]::Zero) { $null = [TRace.K]::FreeLibrary($strand.Module) }
+    }
+    Remove-CaelestiaSchemeGenerations $prunePrefix $pruneProfile
+    Assert (-not (Test-Path -LiteralPath (Join-Path $pruneRuntimes '.trash'))) 'The next prune did not clean up the stranded generation.'
+
     # Interrupted staging directories (no lock holder owns them) are pruned, and
     # a partially deleted trash entry is finished by the next prune.
     $staleStaging = Join-Path $pruneRuntimes ('.staging-' + [guid]::NewGuid().ToString('N'))
@@ -849,6 +941,21 @@ public static extern bool FreeLibrary(System.IntPtr module);
     Assert ($null -eq (Get-CaelestiaPreparedSchemeRuntime $vprofile 'rev-h' $hp)) 'Activation accepted a missing python3.dll.'
     [IO.File]::WriteAllText((Join-Path $baseDirectory 'python3.dll'), 'stable abi dll')
     (Get-Item -LiteralPath (Join-Path $baseDirectory 'python3.dll')).LastWriteTimeUtc = $stableTime
+    # A receipt that changes between selection and publish is final as well: no
+    # second probe, and the record becomes "unavailable".
+    $decision = Select-CaelestiaSchemeGeneration $vprofile 'rev-h' $hp
+    Assert ($decision -and $decision.Root) 'Selection did not find the healthy generation.'
+    (Get-Item -LiteralPath $runtimeDll).LastWriteTimeUtc = $runtimeDllTime.AddMinutes(-9)
+    $lateLog = Join-Path $root 'late.log'
+    $env:CAELESTIA_TEST_PROVISION_LOG = $lateLog
+    try { $late = Set-CaelestiaSchemeRuntimeForRevision $vprofile 'rev-h' $hp -Verified $decision }
+    finally { $env:CAELESTIA_TEST_PROVISION_LOG = $null }
+    Assert ($null -eq $late) 'A changed receipt was published.'
+    Assert (-not (Test-Path -LiteralPath $lateLog)) 'A changed receipt triggered another probe.'
+    Assert ((Read-Pointer $vprofile).available -eq $false) 'A changed receipt left the record published.'
+    (Get-Item -LiteralPath $runtimeDll).LastWriteTimeUtc = $runtimeDllTime
+    $null = Set-CaelestiaSchemeRuntimeForRevision $vprofile 'rev-h' $hp
+    Assert ($null -ne (Get-CaelestiaPreparedSchemeRuntime $vprofile 'rev-h' $hp)) 'Republishing after a restored receipt failed.'
     $baseExe = Join-Path $vGeneration 'base\python.exe'
     $baseTime = (Get-Item -LiteralPath $baseExe).LastWriteTimeUtc
     (Get-Item -LiteralPath $baseExe).LastWriteTimeUtc = $baseTime.AddMinutes(-7)

@@ -140,6 +140,11 @@ function Get-CaelestiaSchemeRevision([string]$RuntimePrefix) {
     }
 }
 
+# Total time one generation search may spend probing candidates, and the slice
+# one candidate gets. Tests shrink these; nothing else should.
+$script:CaelestiaSchemeProbeBudgetSeconds = 15
+$script:CaelestiaSchemeProbeSliceSeconds = 8
+
 # Generation directories are hash-derived names only. runtime.json is local
 # data, so never feed an arbitrary path into a process start.
 function Test-CaelestiaSchemeGeneration([string]$Generation) {
@@ -531,7 +536,7 @@ function Revoke-CaelestiaSchemeGeneration([string]$ProfileRoot, [string]$Generat
 # candidate that fails its check is revoked if it is the published one. Call
 # under the scheme lock and outside the readiness clock: it runs the venv's
 # python.
-function Get-CaelestiaVerifiedSchemeGeneration([string]$ProfileRoot, [string]$Revision, [string]$IdentityId = '', [int]$BudgetSeconds = 15, [int]$CandidateSeconds = 8) {
+function Get-CaelestiaVerifiedSchemeGeneration([string]$ProfileRoot, [string]$Revision, [string]$IdentityId = '', [int]$BudgetSeconds = $script:CaelestiaSchemeProbeBudgetSeconds, [int]$CandidateSeconds = $script:CaelestiaSchemeProbeSliceSeconds) {
     $runtimesRoot = [IO.Path]::GetFullPath((Join-Path (Join-Path $ProfileRoot 'scheme') 'runtimes')).TrimEnd('\')
     if (-not (Test-Path -LiteralPath $runtimesRoot -PathType Container)) { return $null }
     $candidates = @()
@@ -587,7 +592,7 @@ function Publish-CaelestiaSchemeRuntime([string]$ProfileRoot, [string]$Revision,
 # Only a verified generation is ever chosen, the newest one for the payload's
 # identity, so a repoint can never move from a working generation to a broken
 # one, and an older sibling cannot undo a repair.
-function Set-CaelestiaSchemeRuntimeForRevision([string]$ProfileRoot, [string]$Revision, [string]$RuntimePrefix = '', $Verified = $null, [int]$BudgetSeconds = 15, [int]$CandidateSeconds = 8) {
+function Set-CaelestiaSchemeRuntimeForRevision([string]$ProfileRoot, [string]$Revision, [string]$RuntimePrefix = '', $Verified = $null, [int]$BudgetSeconds = $script:CaelestiaSchemeProbeBudgetSeconds, [int]$CandidateSeconds = $script:CaelestiaSchemeProbeSliceSeconds) {
     try {
         if (-not $Revision) { return $null }
         $expectedIdentity = ''
@@ -599,12 +604,24 @@ function Set-CaelestiaSchemeRuntimeForRevision([string]$ProfileRoot, [string]$Re
         $lock = Enter-CaelestiaSchemeLock $ProfileRoot 0
         if (-not $lock) { return $null }
         try {
-            # A generation verified earlier (while the old shell was still
-            # running) is published without another probe, as long as its
-            # receipt still matches.
-            if ($Verified -and $Verified.Revision -eq $Revision -and $Verified.IdentityId -eq $expectedIdentity -and
-                (Test-CaelestiaSchemeReceipt $Verified.Root $Verified.Receipt)) {
-                return Publish-CaelestiaSchemeRuntime $ProfileRoot $Revision $Verified.Root
+            # A selection made earlier, while the old shell still served the
+            # desktop, is final. Its generation is published without another
+            # probe as long as its receipt still matches. If it found nothing
+            # usable, or the receipt changed since, the record is replaced with
+            # an "unavailable" one and the shell starts on its fixed palette:
+            # nothing is probed after the shell has stopped.
+            if ($Verified) {
+                if ($Verified.Root -and $Verified.Revision -eq $Revision -and $Verified.IdentityId -eq $expectedIdentity -and
+                    (Test-CaelestiaSchemeReceipt $Verified.Root $Verified.Receipt)) {
+                    return Publish-CaelestiaSchemeRuntime $ProfileRoot $Revision $Verified.Root
+                }
+                Write-CaelestiaSchemeRecord $ProfileRoot ([ordered]@{
+                    available = $false
+                    revision = $Revision
+                    message = 'no verified scheme runtime for this version; using the fixed palette'
+                    decidedAt = (Get-Date).ToString('o')
+                })
+                return $null
             }
             $candidate = Get-CaelestiaVerifiedSchemeGeneration $ProfileRoot $Revision $expectedIdentity $BudgetSeconds $CandidateSeconds
             if (-not $candidate) { return $null }
@@ -620,7 +637,7 @@ function Set-CaelestiaSchemeRuntimeForRevision([string]$ProfileRoot, [string]$Re
 # Pick and verify the generation for a revision without publishing it. Callers
 # run this before stopping the running shell, so the (bounded) probes cost no
 # outage, and then hand the result to Set-CaelestiaSchemeRuntimeForRevision.
-function Select-CaelestiaSchemeGeneration([string]$ProfileRoot, [string]$Revision, [string]$RuntimePrefix = '', [int]$BudgetSeconds = 15, [int]$CandidateSeconds = 8) {
+function Select-CaelestiaSchemeGeneration([string]$ProfileRoot, [string]$Revision, [string]$RuntimePrefix = '', [int]$BudgetSeconds = $script:CaelestiaSchemeProbeBudgetSeconds, [int]$CandidateSeconds = $script:CaelestiaSchemeProbeSliceSeconds) {
     try {
         if (-not $Revision) { return $null }
         $expectedIdentity = ''
@@ -629,16 +646,24 @@ function Select-CaelestiaSchemeGeneration([string]$ProfileRoot, [string]$Revisio
             if (-not $identity) { return $null }
             $expectedIdentity = $identity.Id
         }
-        $lock = Enter-CaelestiaSchemeLock $ProfileRoot 0
-        if (-not $lock) { return $null }
+        # Root stays $null when nothing usable was found (or the lock was busy
+        # or a step failed): the decision is still final, see
+        # Set-CaelestiaSchemeRuntimeForRevision -Verified.
+        $decision = [pscustomobject]@{ Revision = $Revision; IdentityId = $expectedIdentity; Root = $null; Receipt = $null }
         try {
-            $candidate = Get-CaelestiaVerifiedSchemeGeneration $ProfileRoot $Revision $expectedIdentity $BudgetSeconds $CandidateSeconds
-            if (-not $candidate) { return $null }
-            $root = $candidate.Directory.FullName
-            return [pscustomobject]@{ Revision = $Revision; IdentityId = $expectedIdentity; Root = $root; Receipt = (Get-CaelestiaSchemeFingerprint $root) }
-        } finally {
-            Exit-CaelestiaSchemeLock $lock
-        }
+            $lock = Enter-CaelestiaSchemeLock $ProfileRoot 0
+            if (-not $lock) { return $decision }
+            try {
+                $candidate = Get-CaelestiaVerifiedSchemeGeneration $ProfileRoot $Revision $expectedIdentity $BudgetSeconds $CandidateSeconds
+                if ($candidate) {
+                    $decision.Root = $candidate.Directory.FullName
+                    $decision.Receipt = Get-CaelestiaSchemeFingerprint $decision.Root
+                }
+            } finally {
+                Exit-CaelestiaSchemeLock $lock
+            }
+        } catch { }
+        return $decision
     } catch {
         return $null
     }
@@ -684,7 +709,8 @@ function Test-CaelestiaSchemeImagesFree([string]$Directory) {
 }
 
 # Test seam: runs after a generation passed the image check and before it is
-# renamed into .trash. A no-op in production.
+# renamed into .trash ('checked'), and again right after the rename ('moved').
+# A no-op in production.
 function Invoke-CaelestiaSchemePruneHook([string]$Stage, [string]$Directory) { }
 
 # Exclusive ownership of a retired generation (or interrupted staging
@@ -785,6 +811,7 @@ function Remove-CaelestiaSchemeGenerations([string]$Prefix, [string]$ProfileRoot
                 $published = [string](Get-Content -LiteralPath (Join-Path $schemeRoot 'runtime.json') -Raw | ConvertFrom-Json).generation
             } catch { }
             $kept = 0
+            $stranded = 0
             foreach ($directory in @(Get-ChildItem -LiteralPath $runtimesRoot -Directory -Force -ErrorAction SilentlyContinue)) {
                 $name = $directory.Name
                 if ($name -eq '.trash') { continue }
@@ -806,12 +833,22 @@ function Remove-CaelestiaSchemeGenerations([string]$Prefix, [string]$ProfileRoot
                 # put straight back, so its consumer's path is restored.
                 $moved = Move-CaelestiaSchemeToTrash $directory.FullName $runtimesRoot
                 if (-not $moved) { $kept++; continue }
+                Invoke-CaelestiaSchemePruneHook 'moved' $moved
                 if (-not (Test-CaelestiaSchemeImagesFree $moved)) {
                     $kept++
-                    try { [IO.Directory]::Move($moved, $directory.FullName) } catch { }
+                    try {
+                        [IO.Directory]::Move($moved, $directory.FullName)
+                    } catch {
+                        # Retired generation only: it stays whole in .trash and
+                        # the next prune retries; nothing is lost.
+                        $stranded++
+                    }
                 }
             }
             Remove-CaelestiaSchemeTrash $runtimesRoot
+            if ($stranded) {
+                Write-CaelestiaSchemeRuntimeLog $ProfileRoot "Scheme prune could not move $stranded generation(s) back after a late image mapping; they stay in .trash until the next prune."
+            }
             if ($kept -or $unreadable) {
                 Write-CaelestiaSchemeRuntimeLog $ProfileRoot "Scheme prune kept $kept generation(s) that may be in use; $unreadable process(es) could not be inspected."
             }
