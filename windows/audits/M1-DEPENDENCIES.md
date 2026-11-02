@@ -26,11 +26,13 @@ did not run or independently reproduce those tests. Pointer-driven hover,
 focus/dismissal, native monitor/DPI transitions, transparency and lifecycle
 acceptance remain separate M1 gates.
 
-The actual staging source of truth is
+For the M1 slice the staging source of truth is
 [`windows/shell-prototype/sources.json`](../shell-prototype/sources.json):
 42 explicit mappings, plus the entry point and five font/license/provenance
 files added by
 [`Stage-ShellPrototype.ps1`](../scripts/Stage-ShellPrototype.ps1).
+Production stages the separate map in
+[`windows/shell/sources.json`](../shell/sources.json).
 Relative to the initial set below it adds original:
 
 ```text

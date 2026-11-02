@@ -601,7 +601,7 @@ Nexus edits that global file, not per-monitor overlays. If a value is overridden
 
 ### Windows adapter boundary
 
-Unmodified upstream files are staged directly. Only files that need a Windows service or type live under `windows/combined-prototype/adapters/modules/nexus/` (Bluetooth, network, audio controls, wallpaper picker, apps, services, about, the shared network and audio-device lists, the page container and registries, `NexusState`, `WindowFactory` and the Windows-only Window management page), each with a header or inline comment that states exactly what changed and why. See [CONFIGURATION.md](CONFIGURATION.md) for the `shell.json` schema.
+Unmodified upstream files are staged directly. Only files that need a Windows service or type live under `windows/shell/adapters/modules/nexus/` (Bluetooth, network, audio controls, wallpaper picker, apps, services, about, the shared network and audio-device lists, the page container and registries, `NexusState`, `WindowFactory` and the Windows-only Window management page), each with a header or inline comment that states exactly what changed and why. See [CONFIGURATION.md](CONFIGURATION.md) for the `shell.json` schema.
 
 The Windows-only **Window management** page exposes `windows.tiling` (`enabled`, `mode`, `gapsIn`, `gapsOut`, `singleWindowGapsOut`, `borderColours`) and `windows.focusFollowsMouse` (`enabled`, `delay`, `raise`). The include, exclude, float and monitor rules remain in `shell.json` as described in [CONFIGURATION.md](CONFIGURATION.md#tiling-and-gaps-configuration).
 

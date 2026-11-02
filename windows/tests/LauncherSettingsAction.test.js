@@ -7,7 +7,7 @@ const vm = require("node:vm");
 const { test } = require("node:test");
 
 const repo = path.resolve(__dirname, "../..");
-const adapter = "windows/combined-prototype/adapters/modules/launcher/services/Actions.qml";
+const adapter = "windows/shell/adapters/modules/launcher/services/Actions.qml";
 const read = file => fs.readFileSync(path.join(repo, file), "utf8");
 const source = read(adapter);
 const searcher = read("utils/Searcher.qml");
@@ -24,7 +24,7 @@ function script(file, exports) {
 }
 
 test("production stages the Windows Settings action and existing action delegate", () => {
-    const manifest = JSON.parse(read("windows/combined-prototype/sources.d/launcher.json"));
+    const manifest = JSON.parse(read("windows/shell/sources.json"));
     assert.equal(manifest[adapter], "modules/launcher/services/Actions.qml");
     assert.equal(manifest["modules/launcher/items/ActionItem.qml"], "modules/launcher/items/ActionItem.qml");
     assert.match(source, /^import qs\.modules\.nexus$/m);
@@ -84,6 +84,6 @@ test("Settings closes the launcher before calling the existing Nexus route, with
     list.screenState.launcher = true;
     context.onClicked(list);
     assert.equal(opens, 2);
-    assert.match(read("windows/combined-prototype/adapters/daemons/Shortcuts.qml"),
+    assert.match(read("windows/shell/adapters/daemons/Shortcuts.qml"),
         /name: "nexus"[\s\S]*?WindowFactory\.create\(\)/);
 });

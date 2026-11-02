@@ -105,7 +105,7 @@ The drawer is wired into the shared drawer graph:
 - `components/ScreenState.qml` gains `quota`.
 - `modules/drawers/{ContentWindow,Interactions,Regions}.qml` add the close
   paths, hover area, input region and blob deformation.
-- `windows/combined-prototype/adapters/modules/drawers/Panels.qml` imports
+- `windows/shell/adapters/modules/drawers/Panels.qml` imports
   `qs.modules.quota`, exposes `quota`, and anchors `Quota.Wrapper` top-right.
 - `windows/shell-prototype/adapters/modules/drawers/Panels.qml` keeps an inert
   `quota` slot so the non-combined prototypes still stage the shared files.

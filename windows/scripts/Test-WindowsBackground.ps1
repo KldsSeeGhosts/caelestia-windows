@@ -5,7 +5,7 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
 $runner = Join-Path $QtPrefix 'bin\qml.exe'
 if (-not (Test-Path -LiteralPath $runner -PathType Leaf)) { throw "Missing QML runner: $runner" }
-$background = Get-Content -LiteralPath (Join-Path $repoRoot 'windows\combined-prototype\adapters\modules\background\WindowsBackground.qml') -Raw
+$background = Get-Content -LiteralPath (Join-Path $repoRoot 'windows\shell\adapters\modules\background\WindowsBackground.qml') -Raw
 $fixture = Get-Content -LiteralPath (Join-Path $repoRoot 'windows\tests\WindowsBackgroundTest.qml') -Raw
 
 function Get-UniqueMatch([string]$Text, [string]$Pattern) {
