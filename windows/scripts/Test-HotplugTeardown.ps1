@@ -150,7 +150,7 @@ $diagnostics = @($output -split "`r?`n" | Where-Object {
     $_ -match 'TypeError|ReferenceError|binding loop|CAELESTIA_HOTPLUG_TEARDOWN_FAIL' -and $_ -notmatch $offscreenOnly
 })
 $passed = -not $timedOut -and $process.ExitCode -eq 0 `
-    -and $output -match 'CAELESTIA_HOTPLUG_TEARDOWN_PASS 14' `
+    -and $output -match 'CAELESTIA_HOTPLUG_TEARDOWN_PASS 21\b' `
     -and $diagnostics.Count -eq 0
 $result = [ordered]@{
     passed = $passed

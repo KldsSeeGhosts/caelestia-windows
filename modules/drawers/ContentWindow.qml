@@ -21,8 +21,8 @@ StyledWindow {
     // Automated rendering can exercise the original graph without taking input.
     property bool interactionEnabled: true
 
-    // Windows: a removed screen's state Variants instance is destroyed before
-    // this window, so keep an inert state for the deferred teardown (#215).
+    // Windows: on hot-unplug a screen's state leaves the ShellState lookup
+    // before this window is deleted, so keep a fallback for teardown (#215).
     readonly property ScreenState teardownState: ScreenState {
         modelData: root.screen
     }

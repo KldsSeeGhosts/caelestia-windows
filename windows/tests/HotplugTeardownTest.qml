@@ -64,7 +64,15 @@ Item {
                 check(windows.instances.length === 1, "the per-screen window must exist before removal");
 
                 const screenWindow = windows.instances[0];
+                const liveState = ShellState.forScreen(screenWindow.screen);
                 check(screenWindow.screenState !== null, "the screen state is null before removal");
+                check(screenWindow.screenState === liveState, "a live window must use the canonical screen state");
+
+                // An opened panel must reach the window through the canonical
+                // state, so a window stuck on its fallback fails here.
+                liveState.sidebar = true;
+                check(screenWindow.screenState.sidebar === true, "opening the sidebar did not reach the window");
+                check(screenWindow.sidebarActive === Config.sidebar.enabled, "the sidebar wrapper ignored the open panel");
 
                 // Hot-unplug. Variants erases the window from its model
                 // immediately, but its deletion is deferred, so the teardown
@@ -81,6 +89,32 @@ Item {
                 check(screenWindow.quotaActive === false, "the quota wrapper did not evaluate");
                 check(screenWindow.keyboardFocusWanted === false, "the drawer keyboard focus did not evaluate");
                 check(screenWindow.scrimOpacity === 0, "the drawer scrim did not evaluate");
+                check(screenWindow.screenState === screenWindow.teardownState, "teardown must use the window's fallback state");
+
+                // Reconnect: the screen comes back and gets a new window.
+                root.removedWindow = screenWindow;
+                Screens.screens = Quickshell.screens;
+                reconnect.start();
+            } catch (e) {
+                console.error("CAELESTIA_HOTPLUG_TEARDOWN_FAIL " + e);
+                Qt.exit(1);
+            }
+        }
+    }
+
+    property var removedWindow: null
+    Timer {
+        id: reconnect
+
+        interval: 200
+
+        onTriggered: {
+            try {
+                check(windows.instances.length === 1, "the reconnected screen has no window");
+                const screenWindow = windows.instances[0];
+                check(screenWindow !== root.removedWindow, "the reconnected screen reused the removed window");
+                check(screenWindow.screenState === ShellState.forScreen(screenWindow.screen),
+                    "the reconnected window must use the canonical screen state");
 
                 console.log("CAELESTIA_HOTPLUG_TEARDOWN_PASS " + root.assertions);
                 Qt.quit();
