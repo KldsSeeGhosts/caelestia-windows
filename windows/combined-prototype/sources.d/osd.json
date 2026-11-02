@@ -1,6 +1,0 @@
-{
-  "modules/osd/Wrapper.qml": "modules/osd/OsdWrapper.qml",
-  "windows/combined-prototype/adapters/modules/osd/Wrapper.qml": "modules/osd/Wrapper.qml",
-  "modules/osd/Content.qml": "modules/osd/OsdContent.qml",
-  "windows/combined-prototype/adapters/modules/osd/Content.qml": "modules/osd/Content.qml"
-}

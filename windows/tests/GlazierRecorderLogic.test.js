@@ -7,7 +7,7 @@ const path = require("node:path");
 const vm = require("node:vm");
 
 const source = fs.readFileSync(path.join(__dirname,
-    "../combined-prototype/adapters/services/Recorder.qml"), "utf8");
+    "../shell/adapters/services/Recorder.qml"), "utf8");
 function capture(pattern) {
     const match = source.match(pattern);
     assert.ok(match, "adapter source block found");

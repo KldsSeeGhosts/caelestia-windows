@@ -16,9 +16,9 @@ project "Caelestia Windows".
 - Real use beats simulation. Prefer a short live check over more offscreen
   tests.
 - Stay faithful to upstream Caelestia: keep its original components and
-  motion. Put Windows changes in adapters under
-  `windows/combined-prototype/adapters/`, and keep any edit to an upstream file
-  small and commented. Fix platform gaps once, in the backend.
+  motion. Put Windows changes in adapters under `windows/shell/adapters/`, and
+  keep any edit to an upstream file small and commented. Fix platform gaps once,
+  in the backend.
 - Report what was and was not verified.
 - A Claude model (Opus or Sonnet) has the final say on UI and design choices
   that need taste.

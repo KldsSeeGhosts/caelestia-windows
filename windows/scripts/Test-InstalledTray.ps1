@@ -18,7 +18,7 @@ $mappings = @(
     @('modules/bar/Bar.qml', 'shell/modules/bar/Bar.qml'),
     @('modules/bar/components/Tray.qml', 'shell/modules/bar/components/TrayContent.qml'),
     @('modules/bar/components/TrayItem.qml', 'shell/modules/bar/components/TrayItem.qml'),
-    @('windows/combined-prototype/adapters/modules/bar/components/Tray.qml', 'shell/modules/bar/components/Tray.qml'),
+    @('windows/shell/adapters/modules/bar/components/Tray.qml', 'shell/modules/bar/components/Tray.qml'),
     @('windows/services/tray/Tray.qml', 'shell/services/WindowsTray.qml')
 )
 $files = foreach ($pair in $mappings) {

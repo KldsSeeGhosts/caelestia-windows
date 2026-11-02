@@ -8,13 +8,13 @@ const test = require("node:test");
 const repo = path.resolve(__dirname, "../..");
 const read = file => fs.readFileSync(path.join(repo, file), "utf8").replace(/\r\n/g, "\n");
 const GIB = 1024 ** 3;
-const gpuFacade = "windows/combined-prototype/adapters/imports/Caelestia/Services/Gpu.qml";
-const heroCard = "windows/combined-prototype/adapters/modules/dashboard/performance/HeroCard.qml";
+const gpuFacade = "windows/shell/adapters/imports/Caelestia/Services/Gpu.qml";
+const heroCard = "windows/shell/adapters/modules/dashboard/performance/HeroCard.qml";
 
 const meter = {};
 // The QML-only ".pragma library" line is the one thing Node cannot parse.
 vm.runInNewContext(
-    read("windows/combined-prototype/adapters/modules/dashboard/performance/VramMeter.js")
+    read("windows/shell/adapters/modules/dashboard/performance/VramMeter.js")
         .replace(/^\.pragma library\r?$/m, ""), meter);
 const evaluate = (used, total) => JSON.parse(JSON.stringify(meter.evaluate(used, total)));
 
@@ -133,8 +133,8 @@ test("the Windows card shows used / total GiB, an Unavailable state and the temp
     }
     assert.match(memory, /visible: root\.vram\?\.valid \?\? false/);
     assert.match(memory, /value: root\.vram\?\.ratio \?\? 0/);
-    const manifest = JSON.parse(read("windows/combined-prototype/sources.d/dashboard.json"));
+    const manifest = JSON.parse(read("windows/shell/sources.json"));
     assert.equal(
-        manifest["windows/combined-prototype/adapters/modules/dashboard/performance/VramMeter.js"],
+        manifest["windows/shell/adapters/modules/dashboard/performance/VramMeter.js"],
         "modules/dashboard/performance/VramMeter.js");
 });

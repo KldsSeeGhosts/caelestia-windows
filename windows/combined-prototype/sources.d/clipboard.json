@@ -1,8 +1,0 @@
-{
-  "windows/services/clipboard/ClipboardHistory.js": "modules/clipboard/ClipboardHistory.js",
-  "windows/services/clipboard/ClipboardOverlay.qml": "modules/clipboard/ClipboardOverlay.qml",
-  "windows/services/clipboard/ClipboardHistory.qml": "services/ClipboardHistory.qml",
-  "windows/services/clipboard/NativeClipboardBackend.qml": "services/NativeClipboardBackend.qml",
-  "windows/services/clipboard/upstream/SOURCE.md": "modules/clipboard/upstream/SOURCE.md",
-  "windows/services/clipboard/upstream/LICENSE-MIT.txt": "modules/clipboard/upstream/LICENSE-MIT.txt"
-}

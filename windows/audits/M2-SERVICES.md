@@ -1,4 +1,4 @@
-﻿# M2 Windows service source audit
+# M2 Windows service source audit
 
 Current media follow-up: clean root `d9cdcf9a` and backend `14010429` implement
 a default-off Players adapter and original dashboard player details. Native
@@ -162,7 +162,7 @@ Windows APIs. Matching names do not establish equivalent behavior.
   ([session.cpp](../deps/quickshell/src/windows/system/session.cpp),
   lines 21-38, 57-109). Original session content falls back to detached execution
   on `exec=false`; retain the consuming
-  [unavailable adapter](../shell-prototype/adapters/Caelestia/Services/SessionManager.qml),
+  [unavailable adapter](../shell/adapters/imports/Caelestia/Services/SessionManager.qml),
   lines 9-14, for ERM-496.
 
 ## First slice: Audio contract and original UI boundary

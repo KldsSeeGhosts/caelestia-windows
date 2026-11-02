@@ -8,9 +8,9 @@ const repo = path.resolve(__dirname, "../..");
 const read = file => fs.readFileSync(path.join(repo, file), "utf8");
 
 test("production sidebar forwards the existing explicit-consent status row", () => {
-    const manifest = JSON.parse(read("windows/combined-prototype/sources.d/sidebar.json"));
+    const manifest = JSON.parse(read("windows/shell/sources.json"));
     assert.equal(manifest["modules/sidebar/Content.qml"], "modules/sidebar/SidebarContent.qml");
-    const adapter = "windows/combined-prototype/adapters/modules/sidebar/Content.qml";
+    const adapter = "windows/shell/adapters/modules/sidebar/Content.qml";
     assert.equal(manifest[adapter], "modules/sidebar/Content.qml");
     assert.match(read(adapter), /SidebarContent\s*\{\s*mirrorControl:\s*Notifs\.mirrorControlEnabled \? Notifs : null/);
     assert.match(read("modules/sidebar/Content.qml"), /property var mirrorControl:\s*null/);

@@ -71,7 +71,7 @@ ShellRoot {
         value: root
     }
 
-    // windows/combined-prototype/adapters/daemons/Shortcuts.qml keeps the
+    // windows/shell/adapters/daemons/Shortcuts.qml keeps the
     // original GlobalShortcut names over this host's ScreenState. The backend
     // supplies the Windows key combinations from defaults/windows/keybinds.json.
     Shortcuts {}

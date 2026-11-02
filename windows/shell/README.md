@@ -13,6 +13,17 @@ controls share the combined adapters. There is no preview control window.
 This is a production entry with loading/install smoke, not a validated shell
 release. Hardware controls, hotplug, sleep/wake and daily use need acceptance.
 
+## Staging map
+
+[`sources.json`](sources.json) is the one production staging map: every file the
+installer stages, as source to staged path. `Stage-ShellPrototype.ps1 -Prototype
+shell-live` reads it; the combined test host stages the same map and adds only
+its test overlay. The production adapters it names live next to it under
+[`adapters/`](adapters/), and `WindowsFonts.qml` plus `helpers/KeepAwake.ps1`
+stay here too. Staging keeps the font-loader and workspace-font transforms in
+the script. A source under a `windows/*-prototype/` folder fails staging, so the
+released tree cannot depend on a prototype or fixture folder.
+
 ## Install and run
 
 Build as described in [NATIVE-BUILD.md](../NATIVE-BUILD.md), then run from the
