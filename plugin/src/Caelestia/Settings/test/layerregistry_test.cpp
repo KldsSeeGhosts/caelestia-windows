@@ -1,10 +1,13 @@
 // Legacy per-monitor settings stay reachable when two identical monitors gain
 // a collision suffix. The old monitors/<label> layer is copied, never moved or
-// overwritten, and the new layer then owns its own file.
+// overwritten, and the new layer then owns its own file. The copy is driven
+// only by explicit backend reservation metadata, never by string inference.
 
 #include <qdir.h>
 #include <qfile.h>
 #include <qfileinfo.h>
+#include <qjsondocument.h>
+#include <qjsonobject.h>
 #include <qtest.h>
 #include <qtemporarydir.h>
 
@@ -49,14 +52,50 @@ private:
 
 namespace {
 
-void writeState(const QString& path, bool wallpaperPlaying) {
+void writeText(const QString& path, const QByteArray& content) {
     QDir().mkpath(QFileInfo(path).absolutePath());
     QFile file(path);
     QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Truncate));
-    file.write(QStringLiteral("{\"wallpaperPlaying\": %1}")
-                   .arg(wallpaperPlaying ? QStringLiteral("true") : QStringLiteral("false"))
-                   .toUtf8());
+    file.write(content);
     file.close();
+}
+
+void writeState(const QString& path, bool wallpaperPlaying) {
+    writeText(path, QStringLiteral("{\"wallpaperPlaying\": %1}")
+                        .arg(wallpaperPlaying ? QStringLiteral("true") : QStringLiteral("false"))
+                        .toUtf8());
+}
+
+void writeReservation(
+    const QString& path,
+    const QString& id,
+    const QString& name,
+    const QString& legacyLabel = {}
+) {
+    auto reservation = QJsonObject();
+    reservation.insert(QStringLiteral("name"), name);
+    reservation.insert(QStringLiteral("label"), legacyLabel.isEmpty() ? name : legacyLabel);
+    if (!legacyLabel.isEmpty())
+        reservation.insert(QStringLiteral("legacyLabel"), legacyLabel);
+    auto reservations = QJsonObject();
+    reservations.insert(id, reservation);
+    auto root = QJsonObject();
+    root.insert(QStringLiteral("version"), 1);
+    root.insert(QStringLiteral("reservations"), reservations);
+    writeText(path, QJsonDocument(root).toJson(QJsonDocument::Indented));
+}
+
+bool copiedStateLayer(const QString& path, const QString& name) {
+    const auto reservations = readReservations(path);
+    for (auto it = reservations.begin(); it != reservations.end(); ++it) {
+        const auto object = it.value().toObject();
+        if (object.value(QStringLiteral("name")).toString().compare(name, Qt::CaseInsensitive) != 0)
+            continue;
+        for (const auto& entry : object.value(QStringLiteral("legacyCopied")).toArray())
+            if (entry.toString() == QStringLiteral("state.json"))
+                return true;
+    }
+    return false;
 }
 
 } // namespace
@@ -69,43 +108,77 @@ private slots:
         QTemporaryDir temp;
         QVERIFY(temp.isValid());
         const auto monitors = temp.path() + QStringLiteral("/monitors");
-        const auto legacyDir = monitors + QStringLiteral("/Generic Monitor");
-        const auto legacyFile = legacyDir + QStringLiteral("/state.json");
+        const auto metadata = temp.path() + QStringLiteral("/screen-names.json");
+        const auto legacyFile = monitors + QStringLiteral("/Generic Monitor/state.json");
         writeState(legacyFile, false);
+        writeReservation(metadata, QStringLiteral("path:generic-b"), QStringLiteral("Generic Monitor (2)"),
+            QStringLiteral("Generic Monitor"));
 
-        QObject owner;
-        LayerRegistry<TestRoot> layers(monitors, QStringLiteral("state.json"), &owner);
-        auto* plain = layers.get(QStringLiteral("Generic Monitor"), nullptr);
-        plain->load();
-        QCOMPARE(plain->wallpaperPlaying(), false);
+        {
+            QObject owner;
+            LayerRegistry<TestRoot> layers(monitors, QStringLiteral("state.json"), &owner, metadata);
+            auto* plain = layers.get(QStringLiteral("Generic Monitor"), nullptr);
+            plain->load();
+            QCOMPARE(plain->wallpaperPlaying(), false);
 
-        // The second identical monitor used to share the plain label's layer.
-        auto* suffixed = layers.get(QStringLiteral("Generic Monitor (2)"), nullptr);
-        suffixed->load();
-        QCOMPARE(suffixed->wallpaperPlaying(), false);
-        QCOMPARE(layers.nameFor(suffixed), QStringLiteral("Generic Monitor (2)"));
-        QVERIFY(QFileInfo::exists(monitors + QStringLiteral("/Generic Monitor (2)/state.json")));
+            auto* suffixed = layers.get(QStringLiteral("Generic Monitor (2)"), nullptr);
+            suffixed->load();
+            QCOMPARE(suffixed->wallpaperPlaying(), false);
+            QCOMPARE(layers.nameFor(suffixed), QStringLiteral("Generic Monitor (2)"));
+            QVERIFY(QFileInfo::exists(monitors + QStringLiteral("/Generic Monitor (2)/state.json")));
+            QVERIFY(copiedStateLayer(metadata, QStringLiteral("Generic Monitor (2)")));
+        }
 
-        // The legacy file is untouched and the plain layer keeps its identity.
+        // Deleting the destination must not restore a copy on the next start:
+        // the completed copy is recorded in the reservation.
+        QVERIFY(QFile::remove(monitors + QStringLiteral("/Generic Monitor (2)/state.json")));
+        {
+            QObject owner;
+            LayerRegistry<TestRoot> layers(monitors, QStringLiteral("state.json"), &owner, metadata);
+            auto* suffixed = layers.get(QStringLiteral("Generic Monitor (2)"), nullptr);
+            suffixed->load();
+            QVERIFY(!QFileInfo::exists(monitors + QStringLiteral("/Generic Monitor (2)/state.json")));
+            QCOMPARE(suffixed->wallpaperPlaying(), true);
+        }
+
+        // The legacy file is untouched.
         QFile legacy(legacyFile);
         QVERIFY(legacy.open(QIODevice::ReadOnly));
         const auto content = QString::fromUtf8(legacy.readAll());
         QVERIFY(content.contains(QStringLiteral("\"wallpaperPlaying\": false")));
-        QCOMPARE(layers.get(QStringLiteral("Generic Monitor"), nullptr), plain);
     }
 
-    void realSuffixOrMissingLegacyDoesNotCopy() {
+    void genuineSuffixLabelNeverCopies() {
         QTemporaryDir temp;
         QVERIFY(temp.isValid());
         const auto monitors = temp.path() + QStringLiteral("/monitors");
-        QObject owner;
-        LayerRegistry<TestRoot> layers(monitors, QStringLiteral("state.json"), &owner);
+        const auto metadata = temp.path() + QStringLiteral("/screen-names.json");
+        writeState(monitors + QStringLiteral("/Other Monitor/state.json"), false);
+        // A genuine label that merely looks like a generated suffix carries no
+        // legacyLabel.
+        writeReservation(metadata, QStringLiteral("path:other"), QStringLiteral("Other Monitor (2)"));
 
+        QObject owner;
+        LayerRegistry<TestRoot> layers(monitors, QStringLiteral("state.json"), &owner, metadata);
         auto* plain = layers.get(QStringLiteral("Other Monitor (2)"), nullptr);
         plain->load();
-        QVERIFY(QFileInfo(monitors + QStringLiteral("/Other Monitor (2)")).isDir());
-        QVERIFY(!QFileInfo::exists(monitors + QStringLiteral("/Other Monitor/state.json")));
+        QVERIFY(!QFileInfo::exists(monitors + QStringLiteral("/Other Monitor (2)/state.json")));
         QCOMPARE(plain->wallpaperPlaying(), true);
+    }
+
+    void missingLegacyLayerDoesNotFailOrMarkCopied() {
+        QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        const auto monitors = temp.path() + QStringLiteral("/monitors");
+        const auto metadata = temp.path() + QStringLiteral("/screen-names.json");
+        writeReservation(metadata, QStringLiteral("path:generic-b"), QStringLiteral("Generic Monitor (2)"),
+            QStringLiteral("Generic Monitor"));
+
+        QObject owner;
+        LayerRegistry<TestRoot> layers(monitors, QStringLiteral("state.json"), &owner, metadata);
+        auto* suffixed = layers.get(QStringLiteral("Generic Monitor (2)"), nullptr);
+        suffixed->load();
+        QVERIFY(!copiedStateLayer(metadata, QStringLiteral("Generic Monitor (2)")));
     }
 };
 

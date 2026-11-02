@@ -89,57 +89,97 @@ are not rewritten by this fix.
 ## Display identity and QML names (#241)
 
 The friendly monitor name is a label, not an identity. `DisplayIdentity` keeps
-three separate concepts:
+these separate concepts:
 
 - `deviceName`: the current GDI source, e.g. `\\.\DISPLAY1`. Qt can reuse it
   for another physical monitor, so it is only used to join a QScreen to the
-  current DisplayConfig record.
-- `stableId`: the persistent target identity, taken from the DisplayConfig
-  target device path (`DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_NAME` and
-  `DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME`). When a driver supplies no path,
-  it falls back to the adapter LUID plus target id. It is opaque, never shown
-  in QML and never logged raw; every log uses `logId()`.
+  current DisplayConfig/EnumDisplayDevices record.
+- `stableId`: an interface path when either API supplies one
+  (`DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_NAME` with
+  `DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME`, or EnumDisplayDevices with
+  `EDD_GET_DEVICE_INTERFACE_NAME`), written as `path:...`. This is the only
+  persistent identity. If neither API supplies a path, the id is explicitly
+  session-local: `session:<lifetime>:target:<LUID>:<target>` or
+  `session:<lifetime>:source:<GDI source>`. It is opaque, never shown in QML and
+  never logged raw; every log uses `logId()`.
 - `friendlyName` and `uniqueName`: the display label and the QML-facing name.
-  `uniqueName` equals the label unless two connected monitors share it. Then
-  the first target (ordered by `stableId`) keeps the plain label and the rest
-  get ` (2)`, ` (3)`... before another group's plain label is displaced. The
-  assignment is deterministic for the same topology, so it survives a refresh
-  and a reboot. A label that literally ends in `(n)` keeps its plain form.
+
+### Persisted name reservations
+
+The profile state dir holds `screen-names.json`. It maps each **persistent**
+`stableId` to its assigned name plus optional legacy metadata. Names are
+allocated once, on first discovery:
+
+- the plain label if no reservation already owns it case-insensitively;
+- otherwise the lowest free ` (2)`, ` (3)`... suffix.
+
+Existing assignments are never renumbered, disconnected monitors stay in the
+file, and the file is written atomically (`QSaveFile`, temp then replace). Only
+`path:` ids are stored. A user who already has monitor A alone keeps `X` and its
+settings when identical monitor B is connected; B gets `X (2)`. Removing B never
+renames A, and a restart reloads the same assignments. A genuine label that ends
+in `(2)` is just a label; it is reserved exactly like any other.
+
+Session-local ids never enter the reservation file and get a new lifetime token
+when the QScreen is replaced or its target changes behind the same GDI source.
+Brightness and gamma drop session-keyed state when that id leaves the topology,
+so a replacement monitor starts fresh.
 
 `ShellScreen.name` is the unique name. It stays name-shaped for upstream QML
 that compares or displays `screen.name`, but native routing resolves it through
 the registry rather than comparing labels. `displayConfigurationChanged` and
-the global screen list still republish after identity changes, so bindings and
-imperative lookups see a renamed reused QScreen.
+the global screen list still republish after identity changes.
 
-Every per-screen consumer found in the backend, plugin and shipping QML:
+### Consumer list
 
 | Consumer | Key before | After |
 | --- | --- | --- |
-| `src/windows/system/brightness.cpp` route, last value, generation, in-flight, settle timers | friendly name | subscriber's stableId; probe/drive still use the live QScreen's HMONITOR |
-| `src/windows/system/gamma.cpp` backlight/dim factors, floors, saved ramps, restoration set | friendly name | stableId; `CreateDC` resolves the live GDI source, never an opaque id |
+| `src/windows/system/brightness.cpp` route, last value, generation, in-flight, settle timers | friendly name | persistent `stableId`; session keys are pruned on removal. Probes/drives still use the live QScreen's HMONITOR |
+| `src/windows/system/gamma.cpp` backlight/dim factors, floors, saved ramps, restoration set | friendly name | `stableId`; `CreateDC` resolves the live GDI source, never an opaque id. Session keys are pruned on removal |
 | `src/windows/system/night_light.cpp` | friendly name pass-through | unique name resolved by gamma |
-| `src/windows/system/screenshot.cpp`, `screen_recorder.cpp`, `input.cpp`, `desktop_drop.cpp`, `tools/brightness_probe.cpp` | friendly label selection/publication | unique name, still resolved to a QScreen; no label scan |
+| `src/windows/system/screenshot.cpp`, `screen_recorder.cpp`, `input.cpp`, `desktop_drop.cpp`, `tools/brightness_probe.cpp` | friendly label selection/publication | unique name, resolved through the registry; no label scan |
 | `src/windows/tiling.cpp` `screen:` selectors and `tiling_scope.cpp` | friendly name | unique name; layout ownership remains desktop GUID plus QScreen pointer |
 | `src/windows/hyprland/monitor.cpp` Hypr monitor emulation and `Hypr.monitorFor` | friendly name | unique name; pointer identity is still preferred |
-| `src/windows/panel_window.cpp`, `hyprland/connection.cpp` logs/notifications | friendly name | unique name only in redacted logs and QML labels |
-| Plugin `Config`, `Tokens`, `PersistentState`, `RuntimeState` per-screen layers (`monitors/<name>/shell.json`, `shell-tokens.json`, `state.json`) | friendly name directory | unique name directory; a suffixed screen copies the legacy plain-label layer on first use, non-destructively |
+| `src/windows/panel_window.cpp`, `hyprland/connection.cpp` logs/notifications | friendly name | redacted `logId()` or a unique QML label only |
+| Plugin `Config`, `Tokens`, `PersistentState`, `RuntimeState` per-screen layers (`monitors/<name>/shell.json`, `shell-tokens.json`, `state.json`) | friendly name directory | unique name directory; explicit reservation metadata can copy a legacy plain-label layer once |
 | `services/Screens.qml`, `modules/background/Background.qml`, `WindowsBackground.qml` | `GlobalConfig.forScreen(screen.name)` | same call with the unique name |
 | `components/containers/StyledWindow.qml`, Nexus `WindowFactory.qml`, `LockSurface.qml` | `Config.screen: screen.name` | same, unique name selects its own layer |
-| `modules/bar/BarWrapper.qml` `bar.excludedScreens` | regex against the label | regex against the unique name; a legacy label regex still matches both `Label` and `Label (2)` unless anchored |
-| `windows/shell/shell.json` `windows.tiling.monitors` and `include`/`exclude` `screen:` selectors | monitor label | unique name; legacy unanchored label patterns keep matching every suffixed peer |
+| `modules/bar/BarWrapper.qml` `bar.excludedScreens` | regex against the label | regex against the unique name; an unanchored legacy label regex still matches both `Label` and `Label (2)` |
+| `windows/shell/shell.json` `windows.tiling.monitors` and `include`/`exclude` `screen:` selectors | monitor label | unique name; see the exact-match rule below |
 | `windows/services/brightness/*`, OSD `brightnessFeedback`, IPC `shell.panel(screenName, ...)`, Hypr monitor names | friendly name | unique name; the backend resolves it to the target |
 | Wallpaper and background per-screen enablement/clock/wallpaper settings | `Config`/`Tokens` layer by name | unique name layer, with the legacy copy above |
-| `windows/shell/shell.qml` `State`/`backgroundScreens` diagnostics | label | unique name (display label with a suffix only on collision) |
+| `windows/shell/shell.qml` `State`/`backgroundScreens` diagnostics | label | unique name (label with a suffix only on collision) |
 
-Legacy compatibility: a suffixed unique name whose exact
-`monitors/<unique>/` directory does not exist copies `monitors/<label>/` (and
-therefore `shell.json`, `shell-tokens.json`, `state.json`) before loading it.
-The old directory is never moved, rewritten or deleted; the new screen writes
-its own file afterwards. A user with one monitor or the first of two identical
-monitors keeps the exact old directory name. Tiling `screen:` and bar regex
-patterns are unanchored by default, so an old label pattern continues to match
-the plain and suffixed forms.
+### Tiling screen selectors are exact
+
+`ScopeRules::compile()` uses `NonPathWildcardConversion`, so the generated
+regular expression is anchored. `screen:Generic Monitor` matches **only** the
+plain name; it does not match `Generic Monitor (2)`. To target a suffixed
+monitor, write its exact unique name, e.g. `screen:Generic Monitor (2)`. To
+target both, use a wildcard, e.g. `screen:Generic Monitor*`. The same applies to
+`windows.tiling.monitors` keys, which are converted to `screen:<key>` patterns:
+a legacy `Generic Monitor` key excludes only the monitor that owns the plain
+name, not its suffixed sibling. Bar `excludedScreens` is a regex, so its
+patterns are unanchored unless the user adds `^`/`$`.
+
+### Legacy migration is metadata-driven
+
+When the backend allocates a generated suffix for the first time and
+`monitors/<plain label>/` already exists, the reservation records
+`legacyLabel: <plain label>`. There is no string inference: a genuine label such
+as `Other Monitor (2)` never triggers a copy.
+
+The plugin's `LayerRegistry` reads that reservation by name, copies the legacy
+file once, and records the completed layer suffix in `legacyCopied` in the
+reservation. The old directory is never moved, rewritten or deleted. A deleted
+destination is not recopied, because completion is recorded independently of
+the destination. Failures are logged as a count only. The logic is inert outside
+Windows and without reservation metadata.
+
+A legacy `monitors/<plain label>/` directory was shared by every monitor with
+that label; it cannot reveal which physical monitor owned the settings. The copy
+is a convenience so existing settings are not lost, not recovered ownership. Both
+screens may start with the same settings and then diverge.
 
 ## Validation and integration
 

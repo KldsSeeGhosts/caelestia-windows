@@ -1,5 +1,7 @@
 #include "rootnodes.hpp"
 
+#include "settings/redact.hpp"
+
 namespace caelestia::shell::state {
 
 using Qt::StringLiterals::operator""_s;
@@ -7,20 +9,23 @@ using Qt::StringLiterals::operator""_s;
 namespace {
 
 QString nameFor(const QString& key) {
-    return key.isEmpty() ? u"global"_s : key;
+    return key.isEmpty() ? u"global"_s : settings::logId(key);
 }
 
 struct Handler {
     static void loaded(settings::RootNode* layer, const QString& screen) {
-        qCDebug(lcState) << "Loaded state for" << nameFor(screen) << "with" << layer->diagnostics().count() << "issues";
+        const auto name = nameFor(screen);
+        qCDebug(lcState) << "Loaded state for" << name << "with" << layer->diagnostics().count() << "issues";
     }
 
     static void loadFailed(const QString& error, const QString& screen) {
-        qCWarning(lcState) << "Failed to load state for" << nameFor(screen) << ':' << error;
+        const auto name = nameFor(screen);
+        qCWarning(lcState) << "Failed to load state for" << name << ':' << error;
     }
 
     static void saveFailed(const QString& error, const QString& screen) {
-        qCWarning(lcState) << "Failed to save state for" << nameFor(screen) << ':' << error;
+        const auto name = nameFor(screen);
+        qCWarning(lcState) << "Failed to save state for" << name << ':' << error;
     }
 };
 

@@ -12,6 +12,7 @@ qml_module(caelestia-settings
         rootnode.cpp
         settingsfile.cpp
         changebatcher.cpp
+        redact.cpp
     LIBRARIES
         caelestia-util
 )
@@ -26,4 +27,10 @@ if(Qt6Test_FOUND)
         "${CMAKE_CURRENT_SOURCE_DIR}"
     )
     target_link_libraries(layer-registry-tests PRIVATE caelestia-settings Qt::Qml Qt::Test)
+
+    add_executable(plugin-log-redaction-guard test/log_redaction_guard_test.cpp)
+    target_compile_definitions(plugin-log-redaction-guard PRIVATE
+        CAELESTIA_PLUGIN_SRC="${CMAKE_CURRENT_SOURCE_DIR}/.."
+    )
+    target_link_libraries(plugin-log-redaction-guard PRIVATE Qt::Core Qt::Test)
 endif()
