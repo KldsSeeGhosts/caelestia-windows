@@ -24,8 +24,6 @@ $pairs = [ordered]@{
     'windows\deps\quickshell\LICENSE-GPL' = 'GPL-3.0.txt'
     'windows\deps\quickshell\src\windows\third_party\material_color\LICENSE' = 'Quickshell-third-party\material_color\LICENSE'
     'windows\deps\quickshell\src\windows\third_party\virtual_desktop\LICENSE' = 'Quickshell-third-party\virtual_desktop\LICENSE'
-    'windows\licenses\fonts\caskaydia-cove\LICENSE' = 'fonts\caskaydia-cove\LICENSE'
-    'windows\licenses\fonts\nerd-font-symbols\LICENSE' = 'fonts\nerd-font-symbols\LICENSE'
 }
 # Verify every actual font notice too, including fonts merged after this test.
 foreach ($source in @("$repoRoot\assets", "$repoRoot\windows\assets")) {
