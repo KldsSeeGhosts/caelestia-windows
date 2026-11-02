@@ -530,19 +530,39 @@ param([string]$Prefix, [string]$Command = 'Start', [switch]$SkipSchemeRuntime)
                 -WindowStyle Hidden -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
             return [pscustomobject]@{ Process = $process; Stdout = $stdout }
         }
-        $startJob = Start-SchemeProvision 0 'concurrent-start'
         $prepareJob = Start-SchemeProvision 30 'concurrent-prepare'
-        foreach ($job in @($startJob, $prepareJob)) {
-            if (-not $job.Process.WaitForExit(120000)) {
-                $job.Process.Kill()
-                $job.Process.WaitForExit()
-                throw "Concurrent scheme provisioning timed out: $($job.Stdout)"
+        # Wait for the installer's provisioner to reach the venv step while it
+        # holds the lock, then start a normal start against the same profile.
+        $deadline = [DateTime]::UtcNow.AddSeconds(60)
+        $provisioning = $false
+        while ([DateTime]::UtcNow -lt $deadline) {
+            if (Test-Path -LiteralPath $fakeLog) {
+                try {
+                    if ((Get-Content -LiteralPath $fakeLog -Raw) -match 'venv') { $provisioning = $true; break }
+                } catch { }
             }
+            Start-Sleep -Milliseconds 50
+        }
+        Assert $provisioning 'Installer preparation did not start.'
+        $startClock = [Diagnostics.Stopwatch]::StartNew()
+        $startJob = Start-SchemeProvision 0 'concurrent-start'
+        if (-not $startJob.Process.WaitForExit(10000)) {
+            $startJob.Process.Kill()
+            $startJob.Process.WaitForExit()
+            throw 'A start waited for the provisioner.'
+        }
+        $startElapsed = $startClock.Elapsed.TotalSeconds
+        if (-not $prepareJob.Process.WaitForExit(120000)) {
+            $prepareJob.Process.Kill()
+            $prepareJob.Process.WaitForExit()
+            throw "Concurrent scheme provisioning timed out: $($prepareJob.Stdout)"
         }
         $startResult = Read-SchemeResult $startJob.Stdout
         $prepareResult = Read-SchemeResult $prepareJob.Stdout
         Assert ($null -ne $startResult -and $null -ne $prepareResult) 'A concurrent provisioning process produced no result.'
-        Assert (($startResult.available -eq $true) -or ($prepareResult.available -eq $true)) 'Neither concurrent process published a runtime.'
+        Assert ($startResult.inProgress -eq $true -and $startResult.available -eq $false) 'A start did not report provisioning in progress.'
+        Assert ($startElapsed -lt 5) "A start waited $([Math]::Round($startElapsed, 1)) s for the provisioner."
+        Assert ($prepareResult.available -eq $true) 'Installer preparation did not publish a runtime.'
         $events = @(Get-Content -LiteralPath $fakeLog | ForEach-Object {
             $parts = $_ -split ','
             [pscustomobject]@{ Ticks = [long]$parts[0]; Event = $parts[2] }
