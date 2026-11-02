@@ -49,14 +49,10 @@ Item {
             sourceComponent: Item {
                 anchors.fill: parent
 
-                // Windows #214: keep the capture as a real child item. As an
-                // inline value of MultiEffect.source it had no visual parent,
-                // so it kept a window reference on the wallpaper. Quickshell
-                // recreates per-screen background windows when the desktop
-                // host or its scale changes; the wallpaper then stayed on the
-                // dead window and Qt later crashed in QQuickWindowPrivate::
-                // dirtyItem after "Cannot use same item on different windows".
-                // Do not fold this back into the MultiEffect source property.
+                // #214: an inline MultiEffect.source value has no visual
+                // parent and keeps a window reference on the wallpaper when a
+                // per-screen window is recreated. Keep this capture parented;
+                // do not fold it back into the source property.
                 ShaderEffectSource {
                     id: desktopClockBlurSource
 
