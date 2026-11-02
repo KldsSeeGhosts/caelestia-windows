@@ -363,6 +363,15 @@ changes and return to the system default when disabled, unmanaged or on normal
 shell exit. Older Windows skips colouring. These settings reload live.
 See [the complete tiling schema](../services/tiling/README.md).
 
+Windows shell windows are recognised generically, and the taskbar's tool,
+no-activate and owned rules keep transient overlays out of the tracked-app list.
+If a third-party shell's popup still appears as an app or gets tiled, add it to
+`windows.shellSurfaces.extra` in `config/shell.json`, for example
+`{"windows":{"shellSurfaces":{"extra":["exe:some-shell.exe"]}}}`. Selectors use
+the tiling dialect (unprefixed rules match executable or class, and `screen:` is
+rejected) and apply live; the list is empty by default. See
+[shell-surface selectors](CONFIGURATION.md#shell-surface-selectors).
+
 Production supports `-TilingMode Disabled|Observe|Interactive`, `-TilingIncluded`
 and `-TilingExcluded`. Explicit switches override environment, which overrides
 profile values. Without an override, the profile applies. Smoke forces tiling off.

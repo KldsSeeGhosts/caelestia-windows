@@ -43,7 +43,7 @@ if (-not $process.WaitForExit(20000)) {
 $output = $stdout.GetAwaiter().GetResult() + $stderr.GetAwaiter().GetResult()
 $exitCode = $process.ExitCode
 Write-Output $output
-if ($exitCode -ne 0 -or $output -notmatch 'CAELESTIA_PER_MONITOR_FULLSCREEN_PASS 13' -or
+if ($exitCode -ne 0 -or $output -notmatch 'CAELESTIA_PER_MONITOR_FULLSCREEN_PASS 17' -or
     $output -match 'CAELESTIA_PER_MONITOR_FULLSCREEN_FAIL|TypeError|ReferenceError|binding loop') {
     throw 'Per-monitor fullscreen fixture failed.'
 }

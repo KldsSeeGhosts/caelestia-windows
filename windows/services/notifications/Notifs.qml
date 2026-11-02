@@ -256,6 +256,10 @@ Singleton {
         const monitor = Hypr.focusedMonitor;
         if (!monitor)
             return false;
+        // The backend's fullscreen-occluder verdict, shared with ContentWindow:
+        // a fullscreen window hidden from the task list is not a toplevel.
+        if (monitor.lastIpcObject?.fullscreenOccluder === true)
+            return true;
         const specialName = monitor.lastIpcObject?.specialWorkspace?.name;
         const workspace = specialName
             ? Hypr.workspaces.values.find(ws => ws.name === specialName)
