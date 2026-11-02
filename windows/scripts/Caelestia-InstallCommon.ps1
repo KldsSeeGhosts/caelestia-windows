@@ -79,6 +79,25 @@ function Get-CaelestiaSupervisors([string]$ProfileRoot) {
     return $found
 }
 
+# Keep the previous session's log for crash diagnosis. Moving the file can fail
+# while a live shell still holds it or when .prev is locked; on failure keep the
+# current log intact and let the new session append to it, because truncating it
+# would lose the newest diagnostics. Never fail startup because of a log.
+function Move-CaelestiaLogToPrevious([string]$Path) {
+    $rotated = $false
+    try {
+        if ([IO.File]::Exists($Path)) {
+            $previous = Join-Path ([IO.Path]::GetDirectoryName($Path)) ([IO.Path]::GetFileNameWithoutExtension($Path) + '.prev' + [IO.Path]::GetExtension($Path))
+            # Replace overwrites .prev in one step; the old .prev survives if
+            # the current log is locked.
+            if ([IO.File]::Exists($previous)) { [IO.File]::Replace($Path, $previous, [System.Management.Automation.Language.NullString]::Value) }
+            else { [IO.File]::Move($Path, $previous) }
+        }
+        $rotated = $true
+    } catch { }
+    if ($rotated) { try { [IO.File]::WriteAllText($Path, '') } catch { } }
+}
+
 # Newest desktop-before.json left behind by a hard-killed supervisor that never
 # reached a terminal phase.
 function Get-CaelestiaUnrestoredSnapshot([string]$ProfileRoot) {
@@ -180,10 +199,17 @@ function Start-CaelestiaDetached([string]$Prefix, [switch]$LegacyReady, [string]
                 return
             } catch {
                 $launchError = $_
-                # Do not allow a slow launcher to start later over a retry or
-                # rollback. Restore owned state before attempting another run.
-                Stop-ScheduledTask -TaskName $taskName -ErrorAction Stop
-                & $launcher -Prefix $Prefix -Command Quit | Out-Null
+                try {
+                    # Do not allow a slow launcher to start later over a retry or
+                    # rollback. Restore owned state before attempting another run.
+                    Stop-ScheduledTask -TaskName $taskName -ErrorAction Stop
+                    & $launcher -Prefix $Prefix -Command Quit | Out-Null
+                } catch {
+                    # Cleanup must not replace the startup error, and if the
+                    # launcher/task state cannot be verified, never retry over it.
+                    Write-Warning "Caelestia cleanup after a failed launch did not complete: $($_.Exception.Message)"
+                    throw $launchError
+                }
                 if ($attempt -eq 1) { throw $launchError }
                 Write-Warning 'Caelestia startup failed; retrying once after cleanup.'
             }
@@ -274,6 +300,76 @@ function Get-CaelestiaIntegration([string]$Prefix) {
     return @{
         RunName = "CaelestiaWindows$suffix"
         Shortcut = Join-Path ([Environment]::GetFolderPath('Programs')) "Caelestia Windows$suffix.lnk"
+    }
+}
+
+# Prefix-derived key shared by the new Global lock and the legacy Local name.
+function Get-CaelestiaInstallLockKey([string]$Prefix) {
+    $hash = [Security.Cryptography.SHA256]::Create()
+    try { return [BitConverter]::ToString($hash.ComputeHash([Text.Encoding]::UTF8.GetBytes($Prefix.ToLowerInvariant()))).Replace('-', '') }
+    finally { $hash.Dispose() }
+}
+
+# One install or rollback per prefix, across every logon session: a console
+# and an RDP session of the same user must not race. The prefix-derived name
+# keeps unrelated installs apart. Opening a Global mutex created by another
+# user can be denied; report that clearly instead of an access exception.
+function New-CaelestiaInstallLock([string]$Prefix) {
+    $key = Get-CaelestiaInstallLockKey $Prefix
+    $globalMutex = $null
+    try {
+        $globalMutex = [Threading.Mutex]::new($false, 'Global\CaelestiaInstall-' + $key)
+        $localMutex = [Threading.Mutex]::new($false, 'Local\CaelestiaInstall-' + $key)
+    } catch [System.UnauthorizedAccessException] {
+        if ($globalMutex) { $globalMutex.Dispose() }
+        throw "The Caelestia installation lock for $Prefix belongs to another user. Wait for that operation to finish or choose a different prefix."
+    } catch {
+        if ($globalMutex) { $globalMutex.Dispose() }
+        throw
+    }
+    return [pscustomobject]@{
+        Global = $globalMutex; GlobalHeld = $false
+        Local = $localMutex; LocalHeld = $false
+    }
+}
+
+# Migration window: an older installed copy holds only the legacy Local name.
+# Take both, always Global first and then Local, so installation, activation,
+# selector writes and rollback serialize with that copy. Release in reverse.
+# The Local lock can be dropped once no installed version uses it. Returns
+# $null when either name is owned elsewhere; the caller reports its usual
+# "already in progress" error.
+function Enter-CaelestiaInstallLock([string]$Prefix) {
+    $lock = New-CaelestiaInstallLock $Prefix
+    try {
+        try { $lock.GlobalHeld = $lock.Global.WaitOne(0) } catch [Threading.AbandonedMutexException] { $lock.GlobalHeld = $true }
+        if ($lock.GlobalHeld) {
+            try { $lock.LocalHeld = $lock.Local.WaitOne(0) } catch [Threading.AbandonedMutexException] { $lock.LocalHeld = $true }
+        }
+    } catch {
+        Exit-CaelestiaInstallLock $lock
+        throw
+    }
+    if (-not $lock.GlobalHeld -or -not $lock.LocalHeld) {
+        Exit-CaelestiaInstallLock $lock
+        return $null
+    }
+    return $lock
+}
+
+function Exit-CaelestiaInstallLock($Lock) {
+    if (-not $Lock) { return }
+    try {
+        if ($Lock.LocalHeld) { $Lock.Local.ReleaseMutex() }
+    } finally {
+        $Lock.LocalHeld = $false
+        try {
+            if ($Lock.GlobalHeld) { $Lock.Global.ReleaseMutex() }
+        } finally {
+            $Lock.GlobalHeld = $false
+            $Lock.Local.Dispose()
+            $Lock.Global.Dispose()
+        }
     }
 }
 

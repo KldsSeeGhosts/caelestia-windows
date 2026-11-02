@@ -215,6 +215,7 @@ if ($Command -ne 'Start') {
     $info.RedirectStandardOutput = $true
     $info.RedirectStandardError = $true
     $output = ''
+    $errors = ''
     $ipcFailure = $null
     try {
         $process = [Diagnostics.Process]::Start($info)
@@ -222,9 +223,14 @@ if ($Command -ne 'Start') {
         $errTask = $process.StandardError.ReadToEndAsync()
         if (-not $process.WaitForExit(10000)) { $process.Kill(); throw 'Shell IPC timed out.' }
         $output = $outTask.GetAwaiter().GetResult()
+        # Consume diagnostics, but never echo shell state or user data on failure.
         $errors = $errTask.GetAwaiter().GetResult()
-        if ($process.ExitCode -ne 0) { throw "Shell IPC failed: $output $errors" }
+        if ($process.ExitCode -ne 0) { throw "Shell IPC $Command failed (exit $($process.ExitCode)). See the profile logs." }
     } catch {
+        # Partially captured IPC output can contain shell state or user data.
+        # Clear it before Quit recovery, which continues and later emits output.
+        $output = ''
+        $errors = ''
         # Quit must still reach a supervisor that is starting or in restart
         # backoff, when no shell exists to answer IPC.
         if ($Command -ne 'Quit') { throw }
@@ -273,9 +279,15 @@ if ($Command -ne 'Start') {
 }
 
 $info.Arguments = '--no-duplicate --no-color --log-times --path "' + (Join-Path $stage 'shell.qml') + '"'
-$stdoutPath = Join-Path $profile 'logs\shell.stdout.log'
-$stderrPath = Join-Path $profile 'logs\shell.stderr.log'
-foreach ($path in @($stdoutPath, $stderrPath)) { [IO.File]::WriteAllText($path, '') }
+# Rotate the live shell's logs so the previous session's crash output survives.
+# Smoke writes its own files, so it cannot rotate away the live session's logs.
+$logName = if ($Smoke) { 'shell.smoke' } else { 'shell' }
+$stdoutPath = Join-Path $profile "logs\$logName.stdout.log"
+$stderrPath = Join-Path $profile "logs\$logName.stderr.log"
+if (-not $Smoke) {
+    Move-CaelestiaLogToPrevious $stdoutPath
+    Move-CaelestiaLogToPrevious $stderrPath
+}
 $supervisorConfig = Join-Path $profile 'config\windows.json'
 $supervised = $null
 if ($Smoke) {

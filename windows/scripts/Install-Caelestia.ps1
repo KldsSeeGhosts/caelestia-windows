@@ -89,14 +89,9 @@ foreach ($file in @("$BuildRoot\quickshell\qs.exe", $deploy, "$qmlRoot\Caelestia
 }
 # Serialize preparation as well as activation. Otherwise two simultaneous
 # updates can both pass the staging scan and overwrite the same rollback tree.
-$lockHash = [Security.Cryptography.SHA256]::Create()
-try { $lockKey = [BitConverter]::ToString($lockHash.ComputeHash([Text.Encoding]::UTF8.GetBytes($Prefix.ToLowerInvariant()))).Replace('-', '') }
-finally { $lockHash.Dispose() }
-$installMutex = [Threading.Mutex]::new($false, ('Local\CaelestiaInstall-' + $lockKey))
-$locked = $false
+$installLock = Enter-CaelestiaInstallLock $Prefix
 try {
-try { $locked = $installMutex.WaitOne(0) } catch [Threading.AbandonedMutexException] { $locked = $true }
-if (-not $locked) { throw "Another installation is in progress for $Prefix." }
+if (-not $installLock) { throw "Another installation is in progress for $Prefix." }
 # Recover from an interrupted earlier swap or staging run only when the sibling
 # directory carries Caelestia ownership evidence and has no reparse points.
 $prefixParent = Split-Path -Parent $Prefix
@@ -307,6 +302,5 @@ try {
     }
 }
 } finally {
-    if ($locked) { $installMutex.ReleaseMutex() }
-    $installMutex.Dispose()
+    Exit-CaelestiaInstallLock $installLock
 }
