@@ -99,8 +99,9 @@ for commands and the limits of its quick installation smoke.
   and off. Rendering, both monitor-cycle origins and lifecycle checks pass.
   [Final acceptance](validation/2026-10-25-m1-acceptance/README.md) records the
   evidence, limits and rejected preliminary KSG Shell notification failure.
-- The earlier ordinary-window [component probe](prototype/README.md) remains
-  available, with [archived synthetic 100%, 150%, and 175% results](validation/2026-10-25-component-probe/README.md).
+- The earlier ordinary-window component probe has been retired. Its
+  [archived synthetic 100%, 150%, and 175% results](validation/2026-10-25-component-probe/README.md)
+  remain as historical evidence.
 - M2 began with an [opt-in audio prototype](audio-prototype/README.md).
   It preserves the original audio controls and core public service API.
   Disabled/read-only modes, hardware/failure fixtures and native observation
