@@ -36,8 +36,10 @@ project "Caelestia Windows".
 - **Parallel threads:** each thread works on its own branch and never edits
   another thread's branch or worktree. Update from `origin/dev` before
   merging, and resolve conflicts by keeping both sides.
-- **Cleanup:** once your PR merges, delete your worktree and your local and
-  remote branches, in this repository and the backend fork.
+- **Cleanup:** once your PR merges, delete your worktree, your build root
+  (`C:\b-<topic>`) and your local and remote branches, in this repository and
+  the backend fork. Reviewers delete their temporary clones and build roots
+  too. Build roots are about 1 GB each and pile up fast.
 - **Keep out of commits:** logs, screenshots, run archives and credentials.
   Leave `windows/validation/` unchanged until the pre-publication cleanup.
 - **PR evidence:** show visible changes with screenshots. Commit them to the
