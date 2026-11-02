@@ -121,7 +121,7 @@ Singleton {
         if (code !== 0 || !data || data.ok !== true) {
             status = "error";
             lastError = String(data?.error ?? (text.trim() || `scheme generator exited ${code}`));
-            console.warn(`CAELESTIA_SCHEME_FAIL ${kind}: ${lastError}`);
+            console.warn(`CAELESTIA_SCHEME_FAIL ${kind} code=${code} bytes=${lastError.length}`);
             failed(lastError);
         } else if (kind === "list") {
             schemes = data.schemes ?? {};
@@ -213,7 +213,7 @@ Singleton {
                 return;
             }
             if (code !== 0 && stderrCollector.text.trim().length > 0)
-                console.warn("CAELESTIA_SCHEME_STDERR " + stderrCollector.text.trim());
+                console.warn("CAELESTIA_SCHEME_STDERR bytes=" + stderrCollector.text.length);
             root.finish(code, stdoutCollector.text);
         }
     }

@@ -93,7 +93,7 @@ function Suppress-One([string]$name, [string[]]$keep) {
         if (-not $key) { $key = $root.CreateSubKey($name) }
         $present = @($key.GetValueNames()) -contains 'ShowBanner'
         if ($present -and $key.GetValueKind('ShowBanner') -ne [Microsoft.Win32.RegistryValueKind]::DWord) {
-            [Console]::Error.WriteLine("Skipping non-DWORD ShowBanner: $name")
+            [Console]::Error.WriteLine("Skipping a non-DWORD ShowBanner value")
             return
         }
         $old = if ($present) { [int]$key.GetValue('ShowBanner') } else { 0 }
