@@ -194,7 +194,7 @@ Controls the bottom application and action launcher drawer.
 **Windows differences:**
 
 - **App catalog:** Enumerates Windows `shell:AppsFolder` and Start menu shortcuts. Launch counts are stored in `%LOCALAPPDATA%\caelestia-windows\state\apps-frequencies.json`.
-- **Wallpapers:** `paths.wallpaperDir` defaults to `%USERPROFILE%\Pictures\Wallpapers` (can also be overridden via the `CAELESTIA_WALLPAPER_DIR` environment variable). Selecting a wallpaper in `> wallpaper` applies it to the Windows desktop via `Quickshell.Windows.Wallpaper`.
+- **Wallpapers:** `paths.wallpaperDir` defaults to the `Wallpapers` subfolder of the Windows Pictures known folder (for example `%USERPROFILE%\Pictures\Wallpapers`, or a Pictures folder redirected to OneDrive). An explicit `paths.wallpaperDir` or the `CAELESTIA_WALLPAPER_DIR` environment variable still wins. Known Folders are resolved once at startup, so a folder redirection changed while the shell is running takes effect after a restart. When Pictures is redirected, the shell checks the new `Wallpapers` folder and the old `<profile>\Pictures\Wallpapers` folder for images in the background, so an unavailable share or an unpopulated OneDrive folder cannot stall startup; the old folder is used only when the new one has no images. "No images" means no locally available images were found: a remote or cloud folder that is offline, or not yet downloaded, counts as empty, which does not confirm that the remote folder really is. Selecting a wallpaper in `> wallpaper` applies it to the Windows desktop via `Quickshell.Windows.Wallpaper`.
 - **Actions (`launcher.actions`):** Session actions in the launcher (`Shutdown`, `Reboot`, `Logout`, `Lock`, `Sleep`) route through the Windows session service allowlist; arbitrary Linux shell commands (`systemctl`, `loginctl`, `caelestia` CLI) are translated if they match the session allowlist or refused without running a detached process.
 
 ### `dashboard` and `services`
@@ -394,7 +394,8 @@ gaps for a single tiled window, and `borderColours: true`. Example:
 Rules are wildcard arrays or semicolon-separated strings. `exe:`, `class:` and
 `title:` select individual window facts. `float` and disabled-monitor patterns
 are exclusions and win over inclusions. Interactive requires a non-empty include
-list; live changes stop the session before applying new rules/gaps.
+list; live changes stop the session before applying new rules/gaps. A malformed
+selector is ignored and logged by index, never by pattern text.
 `singleWindowGapsOut` replaces `gapsOut` when exactly one window is tiled on a
 monitor/workspace, excluding minimized and maximized windows. Maximized windows
 continue to fill the Windows work area. `borderColours` applies scheme primary
@@ -433,6 +434,35 @@ The underlying `Quickshell.Windows.Tiling` singleton exposes the following layou
 
 The table above lists native backend defaults, also used by the Windows facade.
 Layout selection remains a backend option outside this profile schema.
+
+### Shell-surface selectors
+
+The window tracker follows the taskbar's own style contract: `WS_EX_APPWINDOW`
+forces a task-list entry, while a tool window, a no-activate
+(`WS_EX_NOACTIVATE`) window or an owned popup has none. That is separate from
+positive shell identity, which is only a known shell class or host process,
+`CoreWindow` under a shell host, and the optional list below. A tool-window
+fullscreen video is therefore still an occlusion surface even though it is not
+in the task list.
+
+A third-party shell can create an activatable, taskbar-hidden popup that exposes
+none of those properties. Add typed selectors for those windows under
+`windows.shellSurfaces.extra` in `config/shell.json`; the list is empty by
+default and changes apply live:
+
+```json
+{"windows":{"shellSurfaces":{"extra":["exe:some-shell.exe","title:Task Switcher"]}}}
+```
+
+Selectors use the same wildcard dialect as tiling: `exe:` matches the executable
+file name or basename, `class:` the Win32 class, `title:` the title, and an
+unprefixed pattern the executable or class. Matching is case-insensitive and
+whole-value; arrays and semicolon-separated strings are accepted. Non-string
+elements are ignored and only counted in the log. `screen:` rules are rejected
+here because a shell surface is not monitor-scoped. A malformed selector is
+ignored and logged by index, never by pattern text. Marking a window here
+excludes it from the task model, the active-window fallback and tiling, and
+prevents it from seeding AppBar fullscreen.
 
 ---
 

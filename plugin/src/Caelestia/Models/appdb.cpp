@@ -186,13 +186,20 @@ void AppDb::setFavouriteApps(const QStringList& favApps) {
     emit favouriteAppsChanged();
     m_favouriteAppsRegex.clear();
     m_favouriteAppsRegex.reserve(m_favouriteApps.size());
+    qsizetype invalid = 0;
     for (const QString& item : std::as_const(m_favouriteApps)) {
         const QRegularExpression re(regexifyString(item));
         if (re.isValid()) {
             m_favouriteAppsRegex << re;
         } else {
-            qCWarning(lcAppDb) << "setFavouriteApps: regular expression is not valid:" << re.pattern();
+            invalid++;
         }
+    }
+    // The entries are user configuration (an app id or a pattern): log the
+    // count only, never the text.
+    if (invalid > 0) {
+        qCWarning(lcAppDb) << "setFavouriteApps:" << invalid << "of" << m_favouriteApps.size()
+                           << "entries are not valid regular expressions and were ignored";
     }
 
     emit appsChanged();

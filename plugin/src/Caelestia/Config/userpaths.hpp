@@ -15,8 +15,15 @@ using Qt::StringLiterals::operator""_s;
 class CAELESTIA_CONFIG_API UserPaths : public settings::ObjectNode {
     CONFIG_NODE(UserPaths, settings::ObjectNode)
 
+#ifdef Q_OS_WIN
+    // The Windows Paths adapter resolves the Pictures Known Folder, which may
+    // be redirected. Keep the default empty so paths.wallpaperDir only carries
+    // a path the user explicitly configured.
+    CONFIG_GLOBAL_PROPERTY(QString, wallpaperDir, {})
+#else
     CONFIG_GLOBAL_PROPERTY(
         QString, wallpaperDir, QStandardPaths::writableLocation(QStandardPaths::PicturesLocation) + u"/Wallpapers"_s)
+#endif
     CONFIG_GLOBAL_PROPERTY(
         QString, lyricsDir, QStandardPaths::writableLocation(QStandardPaths::MusicLocation) + u"/Lyrics/"_s)
     CONFIG_PROPERTY(QString, sessionGif, u"root:/assets/kurukuru.gif"_s)

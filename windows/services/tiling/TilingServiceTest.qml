@@ -28,10 +28,15 @@ QtObject {
         property var excludedApplied: null
         property var includedApplied: null
         property int enableRequests: 0
+        // Mirrors Tiling.includedRuleCount: -1 until options are applied, then
+        // the entries that survive validation. The real backend rejects an
+        // unterminated character class, which `[` stands in for here.
+        property int includedRuleCount: -1
 
         function applyOptions(excluded, included, gapsIn, gapsOut): void {
             excludedApplied = excluded;
             includedApplied = included;
+            includedRuleCount = included.filter(pattern => pattern.indexOf("[") < 0).length;
             gapsInApplied = gapsIn;
             gapsOutApplied = gapsOut;
         }
@@ -68,6 +73,7 @@ QtObject {
     readonly property FakeTilingBackend offBackend: FakeTilingBackend {}
     readonly property FakeTilingBackend observeBackend: FakeTilingBackend {}
     readonly property FakeTilingBackend noListBackend: FakeTilingBackend {}
+    readonly property FakeTilingBackend invalidListBackend: FakeTilingBackend {}
     readonly property LegacyTilingBackend legacyBackend: LegacyTilingBackend {}
     readonly property FakeTilingBackend smokeBackend: FakeTilingBackend {}
     readonly property FakeTilingBackend liveBackend: FakeTilingBackend {}
@@ -255,6 +261,33 @@ QtObject {
         checkEqual(toasts[0].message, "Add apps to the tiling list to turn it on.",
             "included-empty refusal toast message");
         checkEqual(toasts[0].type, 3, "included-empty refusal toast is an error");
+        resetToasts();
+
+        // --- Interactive with an allowlist the backend rejected entirely -----------
+        // The raw list is non-empty, but validation left nothing: the backend
+        // would match no window, and the gate must not read the length alone.
+        service.backend = null;
+        service.configure("interactive", "title:[", "", false);
+        check(service.includedPatterns.length === 1, "malformed entry survives the parse");
+        service.backend = invalidListBackend;
+        checkEqual(invalidListBackend.includedRuleCount, 0, "backend validated nothing");
+        checkEqual(service.status, "refused", "all-invalid allowlist is refused");
+        checkEqual(service.reason,
+            "No entry in the tiling list is a valid selector; interactive tiling stays off.",
+            "included-invalid refusal reason");
+        checkEqual(invalidListBackend.enableRequests, 0, "all-invalid allowlist never enables");
+        check(!invalidListBackend.enabled, "all-invalid allowlist leaves the tiler disabled");
+        checkEqual(toasts.length, 1, "included-invalid refusal decided one toast");
+        checkEqual(toasts[0].message, "None of the entries in the tiling list is valid.",
+            "included-invalid refusal toast message");
+        checkEqual(toasts[0].type, 3, "included-invalid refusal toast is an error");
+        resetToasts();
+
+        // One valid entry is enough for the same backend to enable.
+        service.configure("interactive", "title:[;exe:editor.exe", "", false);
+        checkEqual(invalidListBackend.includedRuleCount, 1, "one entry validated");
+        checkEqual(invalidListBackend.enableRequests, 1, "a usable allowlist enables");
+        checkEqual(toasts.length, 0, "a usable allowlist decides no refusal toast");
         resetToasts();
 
         // --- Interactive without backend allowlist support -----------------------
