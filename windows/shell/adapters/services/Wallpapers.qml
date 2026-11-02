@@ -53,12 +53,22 @@ Singleton {
 
     Component.onCompleted: reload()
 
+    // Paths.wallsdir can change once after startup, when the background probe
+    // finds the wallpapers in the legacy folder; scan again for the new folder.
+    Connections {
+        target: Paths
+        function onWallsdirChanged(): void {
+            root.reload();
+        }
+    }
+
     function reload(): void {
-        files = Native.FsUtils.listDir(Paths.wallsdir).filter(n => /\.(png|jpe?g|bmp|webp)$/i.test(n)).map(n => ({
-                    path: Paths.wallsdir + "/" + n,
+        const dir = Paths.wallsdir;
+        files = Native.FsUtils.listDir(dir).filter(n => /\.(png|jpe?g|bmp|webp)$/i.test(n)).map(n => ({
+                    path: Paths.joinPath(dir, n),
                     relativePath: n,
                     name: n,
-                    parentDir: Paths.wallsdir
+                    parentDir: dir
                 }));
     }
     function getCategoryFor(w): string {
