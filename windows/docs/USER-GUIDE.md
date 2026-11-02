@@ -176,9 +176,14 @@ First launch seeds `config/shell.json`, `config/keybinds.json` and `config/windo
 
 The launcher sets `CAELESTIA_CONFIG_DIR`, `CAELESTIA_STATE_DIR`, and `CAELESTIA_RUNTIME_DIR`; staged QML DataDir/StateDir/CacheDir pragmas and `QML_DISK_CACHE_PATH` confine the remaining paths to the recorded profile.
 
-The first launch provisions `scheme/venv` inside this profile with pinned Python
-packages and the Caelestia CLI. Python is an accepted runtime dependency;
-`-SkipSchemeRuntime` keeps the fixed palette. Wallpaper Engine is detected
+The installer provisions `scheme/venv` inside this profile with the pinned
+Python packages and Caelestia CLI while the previous version is still running.
+Activation then only starts the shell, so a cold or slow first install does not
+spend its readiness budget downloading packages or roll back a healthy launch.
+If preparation fails, the install continues and Caelestia starts with the fixed
+palette; `logs/scheme-runtime.log` records the fallback. Python is an accepted
+runtime dependency; `-SkipSchemeRuntime` skips preparation during this install,
+and an existing prepared runtime is still used. Wallpaper Engine is detected
 automatically, supplies the launcher picker and palette preview, and retains
 ownership of the desktop background. The desktop clock defaults off.
 

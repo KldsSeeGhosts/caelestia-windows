@@ -12,7 +12,8 @@ $QtPrefix = (Resolve-Path -LiteralPath $QtPrefix).Path
 $testRoot = Resolve-CaelestiaDirectory (Join-Path $env:TEMP ('caelestia-license-test-' + [guid]::NewGuid().ToString('N')))
 $prefix = Join-Path $testRoot 'app'
 $profile = Join-Path $testRoot 'profile'
-$arguments = @{ BuildRoot = $BuildRoot; QtPrefix = $QtPrefix; Prefix = $prefix; ProfileRoot = $profile }
+# The license check covers packaging, not the optional Python download.
+$arguments = @{ BuildRoot = $BuildRoot; QtPrefix = $QtPrefix; Prefix = $prefix; ProfileRoot = $profile; SkipSchemeRuntime = $true }
 if ($VCRuntimeRoot) { $arguments.VCRuntimeRoot = $VCRuntimeRoot }
 $integration = Get-CaelestiaIntegration $prefix
 $pairs = [ordered]@{

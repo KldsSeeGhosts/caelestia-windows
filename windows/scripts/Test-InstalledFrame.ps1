@@ -202,7 +202,7 @@ Set-Phase 'baseline'
 try {
     if (-not $ReusePrefix) {
         & "$PSScriptRoot\Install-Caelestia.ps1" -QtPrefix $QtPrefix -BuildRoot $BuildRoot `
-            -Prefix $prefix -ProfileRoot $profile *> "$OutputRoot\install.log"
+            -Prefix $prefix -ProfileRoot $profile -SkipSchemeRuntime *> "$OutputRoot\install.log"
     }
     Set-Phase 'installed'
     $runtimePrefix = Resolve-CaelestiaRuntimePrefix $prefix

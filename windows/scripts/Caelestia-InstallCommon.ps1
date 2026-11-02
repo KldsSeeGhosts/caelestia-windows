@@ -124,6 +124,59 @@ function Get-WindowsPowerShellPath {
     return Join-Path $PSHOME 'powershell.exe'
 }
 
+# Optional profile-local Python dependencies. The installer runs this while the
+# previous shell still serves the desktop, so activation never waits for a venv,
+# pip or the network. A failure is returned instead of thrown: the shell keeps
+# its fixed palette and the installation remains valid.
+function Install-CaelestiaSchemeRuntime([string]$RuntimePrefix, [string]$ProfileRoot) {
+    $clock = [Diagnostics.Stopwatch]::StartNew()
+    $record = $null
+    $message = ''
+    try {
+        $record = & (Join-Path $RuntimePrefix 'Install-SchemeRuntime.ps1') -ProfileRoot $ProfileRoot |
+            Select-Object -Last 1 | ConvertFrom-Json
+    } catch {
+        $message = $_.Exception.Message
+    }
+    $available = $null -ne $record -and $record.available -eq $true
+    if ($available) {
+        $message = 'ready'
+    } elseif (-not $message) {
+        $message = if ($record -and $record.message) { [string]$record.message } else { 'no provisioning result' }
+    }
+    return [pscustomobject]@{
+        available = $available
+        seconds = $clock.Elapsed.TotalSeconds
+        message = $message
+    }
+}
+
+# Activation reads only a completed provisioning record; it never creates a
+# venv or installs packages. Missing or failed records start the fixed palette.
+function Get-CaelestiaPreparedSchemeRuntime([string]$ProfileRoot) {
+    try {
+        $record = Get-Content -LiteralPath (Join-Path $ProfileRoot 'scheme\runtime.json') -Raw | ConvertFrom-Json
+        if ($record.available -ne $true) { return $null }
+        foreach ($path in @([string]$record.python, [string]$record.helper)) {
+            if (-not $path -or -not (Test-Path -LiteralPath $path -PathType Leaf)) { return $null }
+        }
+        return $record
+    } catch {
+        return $null
+    }
+}
+
+# Keep activation diagnostics out of the shell's own stdout/stderr logs. Never
+# include the profile or another user path in this file.
+function Write-CaelestiaSchemeRuntimeLog([string]$ProfileRoot, [string]$Message) {
+    try {
+        $logs = Join-Path $ProfileRoot 'logs'
+        New-Item -ItemType Directory -Force -Path $logs | Out-Null
+        Add-Content -LiteralPath (Join-Path $logs 'scheme-runtime.log') `
+            -Value ("{0} {1}" -f (Get-Date).ToString('o'), $Message) -Encoding UTF8
+    } catch { }
+}
+
 # IPC never provisions Python, loads the account picture or starts a watchdog.
 function Invoke-CaelestiaIpc([string]$Prefix, [string]$Command, [int]$TimeoutMs = 10000) {
     $Prefix = Resolve-CaelestiaRuntimePrefix $Prefix -Running
@@ -148,6 +201,8 @@ function Invoke-CaelestiaIpc([string]$Prefix, [string]$Command, [int]$TimeoutMs 
     } finally { $process.Dispose() }
 }
 
+# Readiness covers only the new shell starting. Optional provisioning must
+# complete before the handoff (Install-CaelestiaSchemeRuntime), never here.
 function Wait-CaelestiaReady([string]$Prefix, [int]$TimeoutSeconds = 20, [string]$PreviousGeneration = '', [switch]$LegacyReady, [string]$TaskName = '') {
     $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
     $clock = [Diagnostics.Stopwatch]::StartNew()
@@ -176,11 +231,14 @@ function Wait-CaelestiaReady([string]$Prefix, [int]$TimeoutSeconds = 20, [string
 
 # Task Scheduler owns the process tree, not the invoking agent/terminal's job.
 # On-demand only, interactive and non-elevated, with no autostart registration.
-function New-CaelestiaLaunchTask([string]$Prefix) {
+function New-CaelestiaLaunchTask([string]$Prefix, [switch]$PreparedSchemeRuntime) {
     $taskName = 'Caelestia-Start-' + [guid]::NewGuid().ToString('N')
     $launcher = Join-Path $Prefix 'Start-Caelestia.ps1'
+    $launchArguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $launcher + '" -Prefix "' + $Prefix + '"'
+    # Activation only consumes the scheme runtime prepared before the handoff.
+    if ($PreparedSchemeRuntime) { $launchArguments += ' -PreparedSchemeRuntime' }
     $action = New-ScheduledTaskAction -Execute (Get-WindowsPowerShellPath) `
-        -Argument ('-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $launcher + '" -Prefix "' + $Prefix + '"') `
+        -Argument $launchArguments `
         -WorkingDirectory $Prefix
     $principal = New-ScheduledTaskPrincipal -UserId ([Security.Principal.WindowsIdentity]::GetCurrent().Name) -LogonType Interactive -RunLevel Limited
     $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero)
@@ -188,8 +246,8 @@ function New-CaelestiaLaunchTask([string]$Prefix) {
     return $taskName
 }
 
-function Start-CaelestiaDetached([string]$Prefix, [switch]$LegacyReady, [string]$TaskName = '') {
-    if (-not $TaskName) { $TaskName = New-CaelestiaLaunchTask $Prefix }
+function Start-CaelestiaDetached([string]$Prefix, [switch]$LegacyReady, [string]$TaskName = '', [switch]$PreparedSchemeRuntime) {
+    if (-not $TaskName) { $TaskName = New-CaelestiaLaunchTask $Prefix -PreparedSchemeRuntime:$PreparedSchemeRuntime }
     $launcher = Join-Path $Prefix 'Start-Caelestia.ps1'
     try {
         for ($attempt = 0; $attempt -lt 2; $attempt++) {

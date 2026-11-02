@@ -7,15 +7,36 @@ $root = Resolve-CaelestiaDirectory (Join-Path $env:TEMP ('caelestia-version-test
 $script:started = 0
 $script:failStart = $false
 $script:runningPaths = @()
+$script:runLauncher = $false
 function Get-CaelestiaProcesses([string]$Prefix) {
     foreach ($path in $script:runningPaths) { [pscustomobject]@{ Path = $path } }
 }
 function Get-CaelestiaSupervisors { return @() }
-function New-CaelestiaLaunchTask { return 'fixture-no-task' }
+function New-CaelestiaLaunchTask {
+    param([string]$Prefix, [switch]$PreparedSchemeRuntime)
+    if (-not $PreparedSchemeRuntime) { throw 'Activation did not request the prepared scheme runtime.' }
+    return 'fixture-no-task'
+}
 function Unregister-ScheduledTask { }
 function Start-CaelestiaDetached {
+    param([string]$Prefix, [switch]$LegacyReady, [string]$TaskName = '', [switch]$PreparedSchemeRuntime)
     $script:started++
+    if (-not $PreparedSchemeRuntime) { throw 'Activation did not request the prepared scheme runtime.' }
     if ($script:failStart) { $script:failStart = $false; throw 'Injected startup failure.' }
+    if (-not $script:runLauncher) { return }
+    # Reproduce the scheduled-task handoff: the launcher runs asynchronously,
+    # and the installer only waits 20 s for the shell to become ready. A cold
+    # provisioner inside that launch would consume the budget and fail here.
+    $info = New-Object Diagnostics.ProcessStartInfo
+    $info.FileName = Get-WindowsPowerShellPath
+    $info.Arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' +
+        (Join-Path $Prefix 'Start-Caelestia.ps1') + '" -Prefix "' + $Prefix + '" -PreparedSchemeRuntime'
+    $info.UseShellExecute = $false
+    $info.CreateNoWindow = $true
+    $process = [Diagnostics.Process]::Start($info)
+    try { Wait-CaelestiaReady $Prefix } finally {
+        if (-not $process.WaitForExit(5000)) { $process.Kill(); $process.WaitForExit() }
+    }
 }
 function Assert($Condition, [string]$Message) { if (-not $Condition) { throw $Message } }
 function New-Payload([string]$Prefix, [string]$Label) {
@@ -30,6 +51,79 @@ function New-Payload([string]$Prefix, [string]$Label) {
         product = 'caelestia-windows'; version = 1; prefix = $Prefix
         profile = (Join-Path $root 'profile'); installId = 'version-test'
         sourceRevision = $Label; executableSha256 = (Get-FileHash (Join-Path $path 'qs.exe')).Hash
+    } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $path 'install.json') -Encoding UTF8
+    return $path
+}
+function Get-SchemeQsFixture {
+    if (-not $script:schemeQs) {
+        $script:schemeQs = Join-Path $root 'scheme-qs.exe'
+        Add-Type -OutputAssembly $script:schemeQs -OutputType ConsoleApplication -TypeDefinition @'
+using System;
+using System.IO;
+public static class SchemeProvisioningFixture {
+    public static int Main(string[] args) {
+        string command = args.Length > 0 ? args[args.Length - 1] : "";
+        string ready = Path.Combine(Environment.CurrentDirectory, "shell-ready.txt");
+        if (command == "state") {
+            // A real shell answers only after it has rendered. The provisioner
+            // must delay this marker, not the IPC probe itself.
+            bool rendered = File.Exists(ready);
+            Console.WriteLine("{\"lifecycle\":{\"generation\":\"scheme\",\"ready\":" +
+                (rendered ? "true" : "false") + "},\"screens\":1,\"windows\":[" +
+                (rendered ? "{}" : "") + "]}");
+            return 0;
+        }
+        if (command == "quit") {
+            if (File.Exists(ready)) File.Delete(ready);
+            return 0;
+        }
+        if (command == "restart" || command == "settings") return 0;
+        File.AppendAllText(Path.Combine(Environment.CurrentDirectory, "shell-started.txt"), "started\n");
+        File.WriteAllText(Path.Combine(Environment.CurrentDirectory, "shell-scheme.txt"),
+            (Environment.GetEnvironmentVariable("CAELESTIA_SCHEME_PYTHON") ?? "") + "\n" +
+            (Environment.GetEnvironmentVariable("CAELESTIA_SCHEME_HELPER") ?? ""));
+        File.WriteAllText(ready, "ready");
+        return 0;
+    }
+}
+'@
+    }
+    return $script:schemeQs
+}
+function New-LauncherPayload([string]$Prefix, [string]$ProfileRoot, [string]$Label, [string]$ProvisionMode) {
+    $path = Join-Path $root ('launcher-' + [guid]::NewGuid().ToString('N'))
+    [IO.Directory]::CreateDirectory($path) | Out-Null
+    Copy-Item -LiteralPath (Get-SchemeQsFixture) -Destination (Join-Path $path 'qs.exe')
+    foreach ($name in @('Start-Caelestia.ps1', 'Start-CaelestiaEntry.ps1', 'Caelestia-InstallCommon.ps1', 'Caelestia-Versions.ps1', 'Manage-Caelestia.ps1', 'Uninstall-Caelestia.ps1')) {
+        Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $path
+    }
+    @'
+param($StartInfo, $StateDirectory, $ConfigPath, $StdoutPath, $StderrPath)
+$process = [Diagnostics.Process]::Start($StartInfo)
+$null = $process.WaitForExit(5000)
+[pscustomobject]@{ Watchdog = $process; StatusPath = (Join-Path $StateDirectory 'watchdog.json') }
+'@ | Set-Content -LiteralPath (Join-Path $path 'Start-DesktopShell.ps1') -Encoding UTF8
+    @'
+param([string]$ProfileRoot)
+$mode = (Get-Content -LiteralPath (Join-Path $PSScriptRoot 'provision-mode.txt') -Raw).Trim()
+Add-Content -LiteralPath (Join-Path $PSScriptRoot 'scheme-provision-called.txt') -Value $mode
+if ($mode -eq 'fail') { throw 'injected provisioning failure' }
+Start-Sleep -Seconds 22
+'{"available":true,"python":"stub","helper":"stub","message":"slow"}'
+'@ | Set-Content -LiteralPath (Join-Path $path 'Install-SchemeRuntime.ps1') -Encoding UTF8
+    @'
+param([string]$CacheRoot)
+''
+'@ | Set-Content -LiteralPath (Join-Path $path 'Get-AccountPicture.ps1') -Encoding UTF8
+    New-Item -ItemType Directory -Path (Join-Path $path 'defaults'), (Join-Path $path 'shell') | Out-Null
+    foreach ($name in @('shell.json', 'keybinds.json', 'windows.json')) {
+        '{}' | Set-Content -LiteralPath (Join-Path $path "defaults\$name") -Encoding UTF8
+    }
+    $ProvisionMode | Set-Content -LiteralPath (Join-Path $path 'provision-mode.txt') -Encoding UTF8
+    @{
+        product = 'caelestia-windows'; version = 1; prefix = $Prefix; profile = $ProfileRoot
+        installId = 'scheme-test'; sourceRevision = $Label
+        executableSha256 = (Get-FileHash (Join-Path $path 'qs.exe')).Hash
     } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $path 'install.json') -Encoding UTF8
     return $path
 }
@@ -130,6 +224,113 @@ try {
         Assert ((Get-ChildItem (Join-Path $legacy 'versions') -Directory).Count -eq 2) 'Legacy copy recursed into versions.'
     }
     Write-Output 'PASS migration: legacy payload retained without recursion; failed first version falls back to migrated legacy.'
+
+    # Scheme dependencies are optional and are prepared before the activation
+    # handoff. Activation must never run the provisioner inside its 20 s
+    # readiness budget, and a failed provisioning record must still start the
+    # shell on its fixed palette instead of rolling the update back.
+    $schemePrefix = Join-Path $root 'scheme-app'
+    $schemeProfile = Join-Path $root 'scheme-profile'
+    [IO.Directory]::CreateDirectory($schemeProfile) | Out-Null
+    Write-CaelestiaProfileOwner $schemeProfile $schemePrefix 'scheme-test' $true
+    $script:runLauncher = $true
+    try {
+        $null = Install-CaelestiaVersion $schemePrefix (New-LauncherPayload $schemePrefix $schemeProfile 'A' 'slow')
+        $clock = [Diagnostics.Stopwatch]::StartNew()
+        $bRuntime = Install-CaelestiaVersion $schemePrefix (New-LauncherPayload $schemePrefix $schemeProfile 'B' 'slow') -Restart
+        $elapsed = $clock.Elapsed.TotalSeconds
+        $record = Read-CaelestiaInstall $schemePrefix
+        Assert ($record.current -eq (Split-Path -Leaf $bRuntime)) 'A cold slow provisioner rolled back the activation.'
+        Assert ($elapsed -lt 15) "Activation waited $([Math]::Round($elapsed, 1)) s for the provisioner."
+        Assert (Test-Path -LiteralPath (Join-Path $bRuntime 'shell-started.txt') -PathType Leaf) 'The shell did not start on the fixed palette.'
+        Assert (-not (Test-Path -LiteralPath (Join-Path $bRuntime 'scheme-provision-called.txt'))) 'Activation ran the slow provisioner.'
+        $applied = Get-Content -LiteralPath (Join-Path $bRuntime 'shell-scheme.txt') -Raw
+        Assert (-not $applied.Trim()) 'A cold profile passed scheme runtime paths to the shell.'
+        $log = Get-Content -LiteralPath (Join-Path $schemeProfile 'logs\scheme-runtime.log') -Raw
+        Assert ($log -match 'fixed palette') 'The fixed-palette fallback was not reported.'
+        $exposed = $log -match [regex]::Escape($schemeProfile)
+        if ($env:USERNAME) { $exposed = $exposed -or ($log -match [regex]::Escape($env:USERNAME)) }
+        Assert (-not $exposed) 'The activation log exposed a user path.'
+        Write-Output 'PASS scheme activation: cold slow provisioning stays out of the readiness budget.'
+
+        $schemeRoot = Join-Path $schemeProfile 'scheme'
+        New-Item -ItemType Directory -Force -Path $schemeRoot | Out-Null
+        @{
+            available = $false; revision = 'test'; message = 'injected provisioning failure'
+            attemptedAt = (Get-Date).ToString('o')
+        } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $schemeRoot 'runtime.json') -Encoding UTF8
+        $cRuntime = Install-CaelestiaVersion $schemePrefix (New-LauncherPayload $schemePrefix $schemeProfile 'C' 'fail') -Restart
+        Assert ((Read-CaelestiaInstall $schemePrefix).current -eq (Split-Path -Leaf $cRuntime)) 'A provisioning failure rolled back the activation.'
+        Assert (Test-Path -LiteralPath (Join-Path $cRuntime 'shell-started.txt') -PathType Leaf) 'A provisioning failure stopped the shell.'
+        Assert (-not (Test-Path -LiteralPath (Join-Path $cRuntime 'scheme-provision-called.txt'))) 'A failed record retried provisioning during activation.'
+        Assert (-not (Get-Content -LiteralPath (Join-Path $cRuntime 'shell-scheme.txt') -Raw).Trim()) 'A failed record passed scheme runtime paths to the shell.'
+        Write-Output 'PASS scheme failure: a failed record keeps the shell running on the fixed palette.'
+
+        $python = Join-Path $schemeRoot 'venv\Scripts\python.exe'
+        $helper = Join-Path $schemeRoot 'win_scheme.py'
+        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $python) | Out-Null
+        'fixture' | Set-Content -LiteralPath $python -Encoding UTF8
+        'fixture' | Set-Content -LiteralPath $helper -Encoding UTF8
+        @{
+            available = $true; revision = 'test'; python = $python; helper = $helper
+        } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $schemeRoot 'runtime.json') -Encoding UTF8
+        $dRuntime = Install-CaelestiaVersion $schemePrefix (New-LauncherPayload $schemePrefix $schemeProfile 'D' 'fail') -Restart
+        Assert ((Read-CaelestiaInstall $schemePrefix).current -eq (Split-Path -Leaf $dRuntime)) 'A prepared runtime rolled back the activation.'
+        $applied = Get-Content -LiteralPath (Join-Path $dRuntime 'shell-scheme.txt') -Raw
+        Assert ($applied -match [regex]::Escape($python) -and $applied -match [regex]::Escape($helper)) 'A prepared runtime was not passed to the shell.'
+        Assert (-not (Test-Path -LiteralPath (Join-Path $dRuntime 'scheme-provision-called.txt'))) 'A prepared runtime was provisioned again.'
+        Write-Output 'PASS scheme ready: a prepared runtime reaches the shell without provisioning.'
+    } finally {
+        $script:runLauncher = $false
+    }
+
+    # A retained pre-versioning payload has no -PreparedSchemeRuntime parameter.
+    # The stable router must drop it instead of failing parameter binding.
+    $legacyRouterPrefix = Join-Path $root 'legacy-router'
+    $legacyRouterVersion = Join-Path $legacyRouterPrefix 'versions\v1'
+    [IO.Directory]::CreateDirectory($legacyRouterVersion) | Out-Null
+    @'
+param($Prefix, $Command = "Start")
+"legacy-router-ok:$Command"
+'@ | Set-Content -LiteralPath (Join-Path $legacyRouterVersion 'Start-Caelestia.ps1') -Encoding UTF8
+    @{
+        product = 'caelestia-windows'; version = 1; prefix = $legacyRouterVersion
+        profile = (Join-Path $root 'legacy-router-profile'); installId = 'legacy-router'
+        installRoot = $legacyRouterPrefix; versionId = 'v1'
+        sourceRevision = 'legacy'; executableSha256 = 'legacy'
+    } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $legacyRouterVersion 'install.json') -Encoding UTF8
+    @{
+        product = 'caelestia-windows'; version = 2; prefix = $legacyRouterPrefix
+        profile = (Join-Path $root 'legacy-router-profile'); installId = 'legacy-router'
+        current = 'v1'; previous = ''
+    } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $legacyRouterPrefix 'install.json') -Encoding UTF8
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Start-CaelestiaEntry.ps1') -Destination (Join-Path $legacyRouterPrefix 'Start-Caelestia.ps1')
+    foreach ($name in @('Caelestia-InstallCommon.ps1', 'Caelestia-Versions.ps1')) {
+        Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $legacyRouterPrefix
+    }
+    $legacyOutput = & (Join-Path $legacyRouterPrefix 'Start-Caelestia.ps1') -Prefix $legacyRouterPrefix -Command Start -PreparedSchemeRuntime
+    Assert ($legacyOutput -match 'legacy-router-ok:Start') 'The router passed the prepared switch to a legacy payload.'
+    Write-Output 'PASS router: a legacy payload still starts without the prepared-runtime switch.'
+
+    # The installer phase itself is non-throwing and reports its own elapsed
+    # time, so a slow or failed provisioner cannot fail the install or hide
+    # behind shell readiness.
+    $provisionRoot = Join-Path $root 'provision-helper'
+    [IO.Directory]::CreateDirectory($provisionRoot) | Out-Null
+    @'
+param([string]$ProfileRoot)
+Start-Sleep -Seconds 1
+'{"available":true,"message":"ready"}'
+'@ | Set-Content -LiteralPath (Join-Path $provisionRoot 'Install-SchemeRuntime.ps1') -Encoding UTF8
+    $prepared = Install-CaelestiaSchemeRuntime $provisionRoot $schemeProfile
+    Assert ($prepared.available -and $prepared.seconds -ge 1) 'Provisioning was not reported as a separate completed phase.'
+    @'
+param([string]$ProfileRoot)
+throw 'injected provisioning failure'
+'@ | Set-Content -LiteralPath (Join-Path $provisionRoot 'Install-SchemeRuntime.ps1') -Encoding UTF8
+    $failedProvision = Install-CaelestiaSchemeRuntime $provisionRoot $schemeProfile
+    Assert (-not $failedProvision.available -and $failedProvision.message -match 'injected provisioning failure') 'A provisioning failure escaped the installer phase.'
+    Write-Output 'PASS scheme phase: installer preparation is timed separately and never throws.'
 
     # Migration window: an installed copy from before the Global lock holds
     # only Local\CaelestiaInstall-<key>. The new lock must take both names so

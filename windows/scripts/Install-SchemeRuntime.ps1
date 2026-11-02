@@ -110,7 +110,7 @@ if (-not $Force -and (Test-Path -LiteralPath $stamp)) {
     }
 }
 
-Write-Host "Provisioning profile-local scheme runtime under $runtimeRoot"
+Write-Host 'Provisioning the profile-local scheme runtime.'
 try {
     if (-not (Test-Path -LiteralPath $python)) {
         $launcher = Get-Command py -ErrorAction SilentlyContinue

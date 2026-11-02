@@ -8,6 +8,9 @@ param(
     [string]$TilingIncluded = '',
     [string]$TilingExcluded = '',
     [switch]$SkipSchemeRuntime,
+    # Activation only consumes a runtime the installer prepared before the
+    # handoff; it must never run pip inside the readiness budget.
+    [switch]$PreparedSchemeRuntime,
     [switch]$Wait
 )
 
@@ -110,8 +113,17 @@ if ($Command -eq 'Start') {
 
 $schemeRuntime = $null
 if ($Command -eq 'Start' -and -not $SkipSchemeRuntime) {
-    $schemeRuntime = & (Join-Path $PSScriptRoot 'Install-SchemeRuntime.ps1') -ProfileRoot $profile |
-        Select-Object -Last 1 | ConvertFrom-Json
+    if ($PreparedSchemeRuntime) {
+        $schemeRuntime = Get-CaelestiaPreparedSchemeRuntime $profile
+        if ($null -eq $schemeRuntime) {
+            # The installer reports the failure while the previous version is
+            # still live. Keep the new shell running on its fixed palette.
+            Write-CaelestiaSchemeRuntimeLog $profile 'Scheme runtime was not prepared; starting with the fixed palette. Run Install-SchemeRuntime.ps1 to retry.'
+        }
+    } else {
+        $schemeRuntime = & (Join-Path $PSScriptRoot 'Install-SchemeRuntime.ps1') -ProfileRoot $profile |
+            Select-Object -Last 1 | ConvertFrom-Json
+    }
 }
 $schemeAvailable = $null -ne $schemeRuntime -and $schemeRuntime.available -eq $true
 $wePython = if ($schemeAvailable) { [string]$schemeRuntime.python } elseif ($Command -eq 'Start') {

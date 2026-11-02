@@ -9,6 +9,7 @@ param(
     [string]$TilingIncluded = '',
     [string]$TilingExcluded = '',
     [switch]$SkipSchemeRuntime,
+    [switch]$PreparedSchemeRuntime,
     [switch]$Wait
 )
 # Windows PowerShell -File can bind parameter defaults before $PSScriptRoot
@@ -27,5 +28,18 @@ if ($Command -eq 'Settings') {
 }
 $arguments = @{}
 foreach ($key in $PSBoundParameters.Keys) { $arguments[$key] = $PSBoundParameters[$key] }
+# A retained pre-versioning payload predates -PreparedSchemeRuntime. The
+# installer already prepared its profile runtime, so its cached check is fast;
+# drop the switch instead of failing its parameter binding.
+if ($arguments.ContainsKey('PreparedSchemeRuntime')) {
+    try {
+        $target = [IO.File]::ReadAllText((Join-Path $runtime 'Start-Caelestia.ps1'))
+        if ($target -notmatch '\[switch\]\$PreparedSchemeRuntime\b') {
+            $arguments.Remove('PreparedSchemeRuntime')
+        }
+    } catch {
+        $arguments.Remove('PreparedSchemeRuntime')
+    }
+}
 $arguments.Prefix = $runtime
 & (Join-Path $runtime 'Start-Caelestia.ps1') @arguments

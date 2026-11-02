@@ -145,7 +145,7 @@ function Install-CaelestiaVersion([string]$Prefix, [string]$Payload, [switch]$Re
             $legacyRecord | Add-Member -NotePropertyName versionId -NotePropertyValue $previous -Force
             Write-CaelestiaJsonAtomic (Join-Path $legacyPath 'install.json') $legacyRecord
         }
-        if ($Restart) { $launchTask = New-CaelestiaLaunchTask $Prefix }
+        if ($Restart) { $launchTask = New-CaelestiaLaunchTask $Prefix -PreparedSchemeRuntime }
         Write-Host "Prepared version $id; beginning activation."
         $clock = [Diagnostics.Stopwatch]::StartNew()
         if ($Restart -and $old) {
@@ -159,7 +159,7 @@ function Install-CaelestiaVersion([string]$Prefix, [string]$Payload, [switch]$Re
         Write-CaelestiaJsonAtomic (Join-Path $Prefix 'install.json') (New-CaelestiaRootRecord $Prefix $newRecord $previous)
         $activated = $true
         if ($Restart) {
-            Start-CaelestiaDetached $Prefix -TaskName $launchTask
+            Start-CaelestiaDetached $Prefix -TaskName $launchTask -PreparedSchemeRuntime
             Write-Host ('Caelestia ready; version activation {0:N2}s.' -f $clock.Elapsed.TotalSeconds)
         }
         return $runtime
@@ -184,7 +184,7 @@ function Install-CaelestiaVersion([string]$Prefix, [string]$Payload, [switch]$Re
             Copy-CaelestiaRootEntries $Prefix $runtime
             $earlier = if ($old.version -eq 2) { [string]$old.previous } else { '' }
             Write-CaelestiaJsonAtomic (Join-Path $Prefix 'install.json') (New-CaelestiaRootRecord $Prefix $priorRecord $earlier)
-            if ($Restart) { Start-CaelestiaDetached $Prefix -LegacyReady }
+            if ($Restart) { Start-CaelestiaDetached $Prefix -LegacyReady -PreparedSchemeRuntime }
             Write-Warning 'Activation failed; the previous version was selected again.'
         }
         throw $failure
@@ -206,7 +206,7 @@ function Switch-CaelestiaVersion([string]$Prefix, [string]$Id, [switch]$Restart)
     $activated = $false
     try {
         if ($Restart) {
-            $launchTask = New-CaelestiaLaunchTask $Prefix
+            $launchTask = New-CaelestiaLaunchTask $Prefix -PreparedSchemeRuntime
             & (Join-Path $Prefix 'Start-Caelestia.ps1') -Prefix $Prefix -Command Quit | Out-Null
         }
         if (@(Get-CaelestiaProcesses $Prefix).Count -or @(Get-CaelestiaSupervisors $old.profile).Count) {
@@ -214,7 +214,7 @@ function Switch-CaelestiaVersion([string]$Prefix, [string]$Id, [switch]$Restart)
         }
         Write-CaelestiaJsonAtomic (Join-Path $Prefix 'install.json') (New-CaelestiaRootRecord $Prefix $record $old.current)
         $activated = $true
-        if ($Restart) { Start-CaelestiaDetached $Prefix -LegacyReady -TaskName $launchTask }
+        if ($Restart) { Start-CaelestiaDetached $Prefix -LegacyReady -TaskName $launchTask -PreparedSchemeRuntime }
     } catch {
         $failure = $_
         if ($activated) {
@@ -223,9 +223,9 @@ function Switch-CaelestiaVersion([string]$Prefix, [string]$Id, [switch]$Restart)
                 throw 'Version switch failed and the replacement has not exited; selector was not changed again.'
             }
             Write-CaelestiaJsonAtomic (Join-Path $Prefix 'install.json') $old
-            if ($Restart) { Start-CaelestiaDetached $Prefix -LegacyReady }
+            if ($Restart) { Start-CaelestiaDetached $Prefix -LegacyReady -PreparedSchemeRuntime }
         } elseif ($Restart -and -not @(Get-CaelestiaProcesses $Prefix).Count -and -not @(Get-CaelestiaSupervisors $old.profile).Count) {
-            Start-CaelestiaDetached $Prefix -LegacyReady
+            Start-CaelestiaDetached $Prefix -LegacyReady -PreparedSchemeRuntime
         }
         throw $failure
     } finally {
