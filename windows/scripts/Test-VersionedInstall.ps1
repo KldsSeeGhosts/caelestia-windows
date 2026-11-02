@@ -114,6 +114,7 @@ public static class FakeSchemePython {
                 Directory.CreateDirectory(Path.Combine(venv, "Scripts"));
                 Directory.CreateDirectory(Path.Combine(venv, "Lib", "site-packages"));
                 File.Copy(exe, Path.Combine(venv, "Scripts", "python.exe"), true);
+                File.WriteAllText(Path.Combine(venv, "pyvenv.cfg"), "home = " + Path.GetDirectoryName(exe) + "\r\n");
                 Log("venv");
                 return 0;
             }
@@ -121,6 +122,11 @@ public static class FakeSchemePython {
         for (int i = 0; i + 1 < args.Length; i++) {
             if (args[i] == "-m" && args[i + 1] == "pip") {
                 Log("pip-start");
+                string failText = Environment.GetEnvironmentVariable("CAELESTIA_TEST_PIP_FAIL");
+                if (!String.IsNullOrEmpty(failText)) {
+                    Console.Error.WriteLine("ERROR: could not open " + failText);
+                    return 1;
+                }
                 int seconds = 1;
                 string raw = Environment.GetEnvironmentVariable("CAELESTIA_TEST_PIP_SECONDS");
                 if (!String.IsNullOrEmpty(raw)) Int32.TryParse(raw, out seconds);
@@ -137,7 +143,12 @@ public static class FakeSchemePython {
                     Console.WriteLine(Path.Combine(venv, "Lib", "site-packages"));
                 }
                 Log("check");
-                return 0;
+                int wait = 0;
+                Int32.TryParse(Environment.GetEnvironmentVariable("CAELESTIA_TEST_CHECK_SECONDS"), out wait);
+                if (wait > 0) Thread.Sleep(wait * 1000);
+                int exitCode = 0;
+                Int32.TryParse(Environment.GetEnvironmentVariable("CAELESTIA_TEST_CHECK_EXIT"), out exitCode);
+                return exitCode;
             }
         }
         Log("other");
@@ -145,6 +156,8 @@ public static class FakeSchemePython {
     }
 }
 '@
+        # The venv launcher follows pyvenv.cfg's home to a python.exe.
+        Copy-Item -LiteralPath $script:fakePython -Destination (Join-Path $directory 'python.exe')
     }
     return $script:fakePython
 }
@@ -162,6 +175,33 @@ function Get-DirectoryHash([string]$Directory) {
         $null = $builder.Append("`n")
     }
     return $builder.ToString()
+}
+# A generation whose interpreter is the fake python, with its own base
+# interpreter directory so a test can break it. Created sets the directory's
+# creation time, which orders generations of one identity.
+function New-TestGeneration([string]$Runtimes, [string]$Name, [string]$Revision, [string]$IdentityId, [object]$Created = $null, [switch]$BrokenBase) {
+    $generationRoot = Join-Path $Runtimes $Name
+    $scripts = Join-Path $generationRoot 'venv\Scripts'
+    $baseDirectory = Join-Path $generationRoot 'base'
+    New-Item -ItemType Directory -Force -Path $scripts, $baseDirectory | Out-Null
+    $fake = Get-FakePythonFixture
+    Copy-Item -LiteralPath $fake -Destination (Join-Path $scripts 'python.exe')
+    if (-not $BrokenBase) { Copy-Item -LiteralPath $fake -Destination (Join-Path $baseDirectory 'python.exe') }
+    [IO.File]::WriteAllText((Join-Path $generationRoot 'venv\pyvenv.cfg'), "home = $baseDirectory`r`n")
+    'fixture' | Set-Content -LiteralPath (Join-Path $generationRoot 'win_scheme.py') -Encoding UTF8
+    @{ revision = $Revision; generation = $Name; identity = $IdentityId } |
+        ConvertTo-Json | Set-Content -LiteralPath (Join-Path $generationRoot 'generation.json') -Encoding UTF8
+    if ($Created) { (Get-Item -LiteralPath $generationRoot).CreationTimeUtc = $Created }
+    return $generationRoot
+}
+function Read-Pointer([string]$ProfileRoot) {
+    return (Get-Content -LiteralPath (Join-Path $ProfileRoot 'scheme\runtime.json') -Raw | ConvertFrom-Json)
+}
+# Names and sizes only, so a file held open exclusively can still be compared.
+function Get-DirectoryListing([string]$Directory) {
+    return ((Get-ChildItem -LiteralPath $Directory -Recurse -File | Sort-Object FullName | ForEach-Object {
+        $_.FullName.Substring($Directory.Length + 1) + ':' + $_.Length
+    }) -join "`n")
 }
 function New-LauncherPayload([string]$Prefix, [string]$ProfileRoot, [string]$Label, [string]$ProvisionMode, [switch]$LegacyStart) {
     $path = Join-Path $root ('launcher-' + [guid]::NewGuid().ToString('N'))
@@ -211,6 +251,7 @@ param([string]$CacheRoot)
     '{"schemeCli":{"revision":"test"}}' | Set-Content -LiteralPath (Join-Path $path 'licenses\sources.lock.json') -Encoding UTF8
     'fixture-helper' | Set-Content -LiteralPath (Join-Path $path 'scheme\win_scheme.py') -Encoding UTF8
     'fixture-requirements' | Set-Content -LiteralPath (Join-Path $path 'scheme\requirements.lock.txt') -Encoding UTF8
+    'fixture-shim' | Set-Content -LiteralPath (Join-Path $path 'scheme\fcntl.py') -Encoding UTF8
     $ProvisionMode | Set-Content -LiteralPath (Join-Path $path 'provision-mode.txt') -Encoding UTF8
     @{
         product = 'caelestia-windows'; version = 1; prefix = $Prefix; profile = $ProfileRoot
@@ -362,14 +403,7 @@ try {
         $generationRoot = Join-Path $schemeRoot "runtimes\$generation"
         $python = Join-Path $generationRoot 'venv\Scripts\python.exe'
         $helper = Join-Path $generationRoot 'win_scheme.py'
-        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $python) | Out-Null
-        'fixture' | Set-Content -LiteralPath $python -Encoding UTF8
-        'fixture' | Set-Content -LiteralPath $helper -Encoding UTF8
-        @{
-            revision = 'test'; generation = $generation
-            helperSha256 = (Get-FileHash -LiteralPath (Join-Path $cRuntime 'scheme\win_scheme.py') -Algorithm SHA256).Hash.ToLowerInvariant()
-            requirementsSha256 = (Get-FileHash -LiteralPath (Join-Path $cRuntime 'scheme\requirements.lock.txt') -Algorithm SHA256).Hash.ToLowerInvariant()
-        } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $generationRoot 'generation.json') -Encoding UTF8
+        $null = New-TestGeneration (Join-Path $schemeRoot 'runtimes') $generation 'test' (Get-CaelestiaSchemeIdentity $cRuntime 'test').Id $null
         @{
             available = $true; revision = 'test'; generation = $generation
             python = $python; helper = $helper
@@ -461,9 +495,8 @@ param([string]$Prefix, [string]$Command = 'Start', [switch]$SkipSchemeRuntime)
             Set-Content -LiteralPath (Join-Path $pair[0] 'licenses\sources.lock.json') -Encoding UTF8
         'fixture-helper' | Set-Content -LiteralPath (Join-Path $pair[0] 'scheme\win_scheme.py') -Encoding UTF8
         'fixture-requirements' | Set-Content -LiteralPath (Join-Path $pair[0] 'scheme\requirements.lock.txt') -Encoding UTF8
+        'fixture-shim' | Set-Content -LiteralPath (Join-Path $pair[0] 'scheme\fcntl.py') -Encoding UTF8
     }
-    $pruneHelperHash = (Get-FileHash -LiteralPath (Join-Path $versionA 'scheme\win_scheme.py') -Algorithm SHA256).Hash.ToLowerInvariant()
-    $pruneRequirementsHash = (Get-FileHash -LiteralPath (Join-Path $versionA 'scheme\requirements.lock.txt') -Algorithm SHA256).Hash.ToLowerInvariant()
     @{
         product = 'caelestia-windows'; version = 2; prefix = $prunePrefix
         profile = $pruneProfile; installId = 'prune-test'; current = 'vB'; previous = 'vA'
@@ -471,36 +504,183 @@ param([string]$Prefix, [string]$Command = 'Start', [switch]$SkipSchemeRuntime)
     $pruneSchemeRoot = Join-Path $pruneProfile 'scheme'
     $pruneRuntimes = Join-Path $pruneSchemeRoot 'runtimes'
     New-Item -ItemType Directory -Force -Path $pruneRuntimes | Out-Null
-    foreach ($generation in @(
-        @('gA', 'rev-a'), @('gB', 'rev-b'), @('gC', 'rev-c')
-    )) {
-        $generationRoot = Join-Path $pruneRuntimes $generation[0]
-        New-Item -ItemType Directory -Force -Path (Join-Path $generationRoot 'venv\Scripts') | Out-Null
-        'fixture' | Set-Content -LiteralPath (Join-Path $generationRoot 'venv\Scripts\python.exe') -Encoding UTF8
-        'fixture' | Set-Content -LiteralPath (Join-Path $generationRoot 'win_scheme.py') -Encoding UTF8
-        @{
-            revision = $generation[1]; generation = $generation[0]
-            helperSha256 = $pruneHelperHash; requirementsSha256 = $pruneRequirementsHash
-        } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $generationRoot 'generation.json') -Encoding UTF8
-    }
-    @{ available = $true; revision = 'rev-b'; generation = 'gB' } |
+    $gA = 'a' * 40; $gB = 'b' * 40; $gC = 'c' * 40; $gD = 'd' * 40
+    $null = New-TestGeneration $pruneRuntimes $gA 'rev-a' (Get-CaelestiaSchemeIdentity $versionA 'rev-a').Id
+    $null = New-TestGeneration $pruneRuntimes $gB 'rev-b' (Get-CaelestiaSchemeIdentity $versionB 'rev-b').Id
+    $null = New-TestGeneration $pruneRuntimes $gC 'rev-c' ('c' * 64)
+    @{ available = $true; revision = 'rev-b'; generation = $gB } |
         ConvertTo-Json | Set-Content -LiteralPath (Join-Path $pruneSchemeRoot 'runtime.json') -Encoding UTF8
     $script:runningPaths = @()
     Remove-CaelestiaSchemeGenerations $prunePrefix $pruneProfile
-    Assert ((Test-Path -LiteralPath (Join-Path $pruneRuntimes 'gA')) -and (Test-Path -LiteralPath (Join-Path $pruneRuntimes 'gB'))) 'Pruning removed a current or previous generation.'
-    Assert (-not (Test-Path -LiteralPath (Join-Path $pruneRuntimes 'gC'))) 'Pruning kept an unreferenced generation.'
+    Assert ((Test-Path -LiteralPath (Join-Path $pruneRuntimes $gA)) -and (Test-Path -LiteralPath (Join-Path $pruneRuntimes $gB))) 'Pruning removed a current or previous generation.'
+    Assert (-not (Test-Path -LiteralPath (Join-Path $pruneRuntimes $gC))) 'Pruning kept an unreferenced generation.'
     $repoint = Set-CaelestiaSchemeRuntimeForRevision $pruneProfile 'rev-a' $versionA
     $repointRecord = Get-Content -LiteralPath (Join-Path $pruneSchemeRoot 'runtime.json') -Raw | ConvertFrom-Json
-    Assert ($repoint -and $repoint.generation -eq 'gA' -and $repointRecord.generation -eq 'gA') 'Activation did not repoint runtime.json to the retained revision.'
-    Assert ($repointRecord.python -match '\\gA\\') 'Repointed runtime does not use its generation paths.'
-    $runningGeneration = Join-Path $pruneRuntimes 'gD'
-    New-Item -ItemType Directory -Force -Path $runningGeneration | Out-Null
-    @{ revision = 'rev-d'; generation = 'gD' } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $runningGeneration 'generation.json') -Encoding UTF8
+    Assert ($repoint -and $repoint.generation -eq $gA -and $repointRecord.generation -eq $gA) 'Activation did not repoint runtime.json to the retained revision.'
+    Assert ($repointRecord.python -match "\\$gA\\") 'Repointed runtime does not use its generation paths.'
+    $runningGeneration = New-TestGeneration $pruneRuntimes $gD 'rev-d' ('d' * 64)
     $script:runningPaths = @((Join-Path $prunePrefix 'versions\vA\qs.exe'))
     Remove-CaelestiaSchemeGenerations $prunePrefix $pruneProfile
     Assert (Test-Path -LiteralPath $runningGeneration) 'Pruning deleted a generation while a shell was running.'
     $script:runningPaths = @()
+    Remove-CaelestiaSchemeGenerations $prunePrefix $pruneProfile
     Write-Output 'PASS generations: current/previous retained, unrelated pruned only while idle, rollback repoints the record.'
+
+    # Pruning takes exclusive ownership by renaming the generation into
+    # runtimes\.trash first. A process whose working directory or open file is
+    # inside keeps the generation whole; only a successful rename allows a delete.
+    $workGeneration = New-TestGeneration $pruneRuntimes ('e' * 40) 'rev-z' ('e' * 64)
+    New-Item -ItemType Directory -Force -Path (Join-Path $workGeneration 'work') | Out-Null
+    'in use' | Set-Content -LiteralPath (Join-Path $workGeneration 'work\state.txt') -Encoding UTF8
+    $workBefore = Get-DirectoryHash $workGeneration
+    $holder = Start-Process -FilePath (Get-WindowsPowerShellPath) -ArgumentList '-NoProfile', '-Command', 'Start-Sleep -Seconds 60' `
+        -WorkingDirectory (Join-Path $workGeneration 'work') -WindowStyle Hidden -PassThru
+    try {
+        Remove-CaelestiaSchemeGenerations $prunePrefix $pruneProfile
+        Assert (Test-Path -LiteralPath $workGeneration) 'Pruning removed a generation a live process works in.'
+        Assert ((Get-DirectoryHash $workGeneration) -eq $workBefore) 'Pruning deleted part of a generation a live process works in.'
+        Assert (-not (Test-Path -LiteralPath (Join-Path $pruneRuntimes '.trash'))) 'Pruning left the busy generation in .trash.'
+    } finally {
+        if (-not $holder.HasExited) { $holder.Kill() }
+        $holder.WaitForExit()
+    }
+    Remove-CaelestiaSchemeGenerations $prunePrefix $pruneProfile
+    Assert (-not (Test-Path -LiteralPath $workGeneration)) 'A retired generation was not removed once nothing used it.'
+
+    $openGeneration = New-TestGeneration $pruneRuntimes ('f' * 40) 'rev-z' ('f' * 64)
+    $openBefore = Get-DirectoryListing $openGeneration
+    $openStream = [IO.File]::Open((Join-Path $openGeneration 'win_scheme.py'), 'Open', 'Read', 'None')
+    try {
+        Remove-CaelestiaSchemeGenerations $prunePrefix $pruneProfile
+        Assert ((Test-Path -LiteralPath $openGeneration) -and (Get-DirectoryListing $openGeneration) -eq $openBefore) 'Pruning damaged a generation with an open file.'
+    } finally { $openStream.Dispose() }
+    Remove-CaelestiaSchemeGenerations $prunePrefix $pruneProfile
+    Assert (-not (Test-Path -LiteralPath $openGeneration)) 'A generation was not removed after its file closed.'
+
+    # Interrupted staging directories (no lock holder owns them) are pruned, and
+    # a partially deleted trash entry is finished by the next prune.
+    $staleStaging = Join-Path $pruneRuntimes ('.staging-' + [guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Force -Path (Join-Path $staleStaging 'venv') | Out-Null
+    'partial' | Set-Content -LiteralPath (Join-Path $staleStaging 'venv\partial.txt') -Encoding UTF8
+    $leftover = Join-Path $pruneRuntimes '.trash\old.deadbeef'
+    New-Item -ItemType Directory -Force -Path $leftover | Out-Null
+    'held' | Set-Content -LiteralPath (Join-Path $leftover 'held.txt') -Encoding UTF8
+    'free' | Set-Content -LiteralPath (Join-Path $leftover 'free.txt') -Encoding UTF8
+    $leftoverStream = [IO.File]::Open((Join-Path $leftover 'held.txt'), 'Open', 'Read', 'None')
+    try {
+        Remove-CaelestiaSchemeGenerations $prunePrefix $pruneProfile
+        Assert (-not (Test-Path -LiteralPath $staleStaging)) 'Pruning kept an interrupted staging directory.'
+        Assert ((Test-Path -LiteralPath (Join-Path $leftover 'held.txt')) -and -not (Test-Path -LiteralPath (Join-Path $leftover 'free.txt'))) `
+            'A partial delete was not left in .trash for the next prune.'
+    } finally { $leftoverStream.Dispose() }
+    Remove-CaelestiaSchemeGenerations $prunePrefix $pruneProfile
+    Assert (-not (Test-Path -LiteralPath $leftover)) 'The next prune did not finish a partial delete.'
+    Assert ((Test-Path -LiteralPath (Join-Path $pruneRuntimes $gA)) -and (Test-Path -LiteralPath (Join-Path $pruneRuntimes $gB))) 'Cleanup removed a retained generation.'
+    Write-Output 'PASS prune: rename-first ownership keeps busy generations whole, staging and partial deletes are cleaned.'
+
+    # Health is verified, not assumed: a lost base interpreter, a failing or a
+    # hung venv python is unhealthy, and selection only ever considers verified
+    # generations, newest first.
+    $hp = Join-Path $root 'hp'
+    $hprofile = Join-Path $root 'hprof'
+    New-Item -ItemType Directory -Force -Path (Join-Path $hp 'scheme') | Out-Null
+    foreach ($name in @('requirements.lock.txt', 'win_scheme.py', 'fcntl.py')) {
+        "health-$name" | Set-Content -LiteralPath (Join-Path $hp "scheme\$name") -Encoding UTF8
+    }
+    $hid = (Get-CaelestiaSchemeIdentity $hp 'rev-h').Id
+    $hRuntimes = Join-Path $hprofile 'scheme\runtimes'
+    $now = [DateTime]::UtcNow
+    $oldGood = New-TestGeneration $hRuntimes ('9' * 40) 'rev-h' $hid $now.AddMinutes(-30)
+    $brokenNewest = New-TestGeneration $hRuntimes ('1' * 40) 'rev-h' $hid $now.AddMinutes(-1) -BrokenBase
+    Assert (Test-CaelestiaSchemeHealth $oldGood) 'A working venv python was reported unhealthy.'
+    Assert (-not (Test-CaelestiaSchemeBase $brokenNewest)) 'A venv whose base interpreter is gone passed the file check.'
+    Assert (-not (Test-CaelestiaSchemeHealth $brokenNewest)) 'A venv whose base interpreter is gone was reported healthy.'
+    @{ available = $true; revision = 'rev-h'; generation = ('1' * 40)
+       python = (Join-Path $brokenNewest 'venv\Scripts\python.exe'); helper = (Join-Path $brokenNewest 'win_scheme.py') } |
+        ConvertTo-Json | Set-Content -LiteralPath (Join-Path $hprofile 'scheme\runtime.json') -Encoding UTF8
+    Assert ($null -eq (Get-CaelestiaPreparedSchemeRuntime $hprofile 'rev-h' $hp)) 'A runtime with a lost base interpreter was accepted by activation.'
+    Assert ($null -eq (Get-CaelestiaPreparedSchemeRuntime $hprofile 'rev-h' $hp -Verify)) 'A runtime with a lost base interpreter was accepted by a start.'
+    # Names sort the broken (newest) generation first: the old first-by-name
+    # choice would have picked it.
+    $chosen = Set-CaelestiaSchemeRuntimeForRevision $hprofile 'rev-h' $hp
+    Assert ($chosen -and $chosen.generation -eq ('9' * 40) -and (Read-Pointer $hprofile).generation -eq ('9' * 40)) 'Repoint chose an unverified generation.'
+    $null = New-TestGeneration $hRuntimes ('5' * 40) 'rev-h' $hid $now.AddMinutes(-10)
+    $chosen = Set-CaelestiaSchemeRuntimeForRevision $hprofile 'rev-h' $hp
+    Assert ($chosen -and $chosen.generation -eq ('5' * 40)) 'Repoint did not prefer the newest verified generation.'
+    $chosen = Set-CaelestiaSchemeRuntimeForRevision $hprofile 'rev-h' $hp
+    Assert ((Read-Pointer $hprofile).generation -eq ('5' * 40)) 'A second activation undid the repaired generation.'
+    Remove-Item -LiteralPath (Join-Path (Join-Path $hRuntimes ('5' * 40)) 'base\python.exe') -Force
+    Remove-Item -LiteralPath (Join-Path (Join-Path $hRuntimes ('9' * 40)) 'base\python.exe') -Force
+    $pointerBefore = Get-Content -LiteralPath (Join-Path $hprofile 'scheme\runtime.json') -Raw
+    Assert ($null -eq (Set-CaelestiaSchemeRuntimeForRevision $hprofile 'rev-h' $hp)) 'Repoint returned an unverified generation.'
+    Assert ((Get-Content -LiteralPath (Join-Path $hprofile 'scheme\runtime.json') -Raw) -eq $pointerBefore) 'Repoint replaced a pointer with an unverified generation.'
+
+    $vprofile = Join-Path $root 'vp'
+    $vGeneration = New-TestGeneration (Join-Path $vprofile 'scheme\runtimes') ('7' * 40) 'rev-h' $hid
+    @{ available = $true; revision = 'rev-h'; generation = ('7' * 40)
+       python = (Join-Path $vGeneration 'venv\Scripts\python.exe'); helper = (Join-Path $vGeneration 'win_scheme.py') } |
+        ConvertTo-Json | Set-Content -LiteralPath (Join-Path $vprofile 'scheme\runtime.json') -Encoding UTF8
+    Assert ($null -ne (Get-CaelestiaPreparedSchemeRuntime $vprofile 'rev-h' $hp -Verify)) 'A healthy runtime was rejected.'
+    $env:CAELESTIA_TEST_CHECK_EXIT = '3'
+    try {
+        Assert (-not (Test-CaelestiaSchemeHealth $vGeneration)) 'A venv python that fails its import was reported healthy.'
+        Assert ($null -eq (Get-CaelestiaPreparedSchemeRuntime $vprofile 'rev-h' $hp -Verify)) 'A start accepted a runtime whose python fails.'
+        # Activation runs inside the readiness clock and must not start Python.
+        Assert ($null -ne (Get-CaelestiaPreparedSchemeRuntime $vprofile 'rev-h' $hp)) 'Activation ran the interpreter probe.'
+    } finally { $env:CAELESTIA_TEST_CHECK_EXIT = $null }
+    $env:CAELESTIA_TEST_CHECK_SECONDS = '30'
+    try {
+        $probeClock = [Diagnostics.Stopwatch]::StartNew()
+        Assert (-not (Test-CaelestiaSchemeHealth $vGeneration 2)) 'A hung venv python was reported healthy.'
+        Assert ($probeClock.Elapsed.TotalSeconds -lt 15) 'A hung interpreter was not bounded by its timeout.'
+    } finally { $env:CAELESTIA_TEST_CHECK_SECONDS = $null }
+    # A real venv records its base in pyvenv.cfg; losing that base must fail the check.
+    $realPy = Get-Command py.exe -ErrorAction SilentlyContinue
+    if ($realPy) {
+        $realRoot = Join-Path $root 'rv'
+        New-Item -ItemType Directory -Force -Path $realRoot | Out-Null
+        & $realPy.Source -3 -m venv (Join-Path $realRoot 'venv') 2>$null
+        if ($LASTEXITCODE -eq 0) {
+            'x' | Set-Content -LiteralPath (Join-Path $realRoot 'win_scheme.py') -Encoding UTF8
+            '{}' | Set-Content -LiteralPath (Join-Path $realRoot 'generation.json') -Encoding UTF8
+            Assert (Test-CaelestiaSchemeBase $realRoot) 'A real venv failed the base check.'
+            $config = Join-Path $realRoot 'venv\pyvenv.cfg'
+            $text = [IO.File]::ReadAllText($config) -replace '(?m)^home\s*=.*$', ('home = ' + (Join-Path $root 'gone-python'))
+            [IO.File]::WriteAllText($config, $text)
+            Assert (-not (Test-CaelestiaSchemeBase $realRoot)) 'A real venv with a lost base interpreter passed the base check.'
+        }
+        $global:LASTEXITCODE = 0
+    }
+    Write-Output 'PASS health: lost or failing base interpreters are rejected; selection is verified and newest-first; activation starts no process.'
+
+    # Every file copied into a generation is part of its identity, so a shim or
+    # helper change invalidates cached generations everywhere they are compared.
+    $hp2 = Join-Path $root 'hp2'
+    Copy-Item -LiteralPath $hp -Destination $hp2 -Recurse
+    $idBefore = Get-CaelestiaSchemeIdentity $hp2 'rev-h'
+    'changed shim' | Set-Content -LiteralPath (Join-Path $hp2 'scheme\fcntl.py') -Encoding UTF8
+    $idAfter = Get-CaelestiaSchemeIdentity $hp2 'rev-h'
+    Assert ($idBefore.Id -ne $idAfter.Id -and $idBefore.ShimSha256 -ne $idAfter.ShimSha256 -and $idBefore.HelperSha256 -eq $idAfter.HelperSha256) 'The fcntl shim is not part of the generation identity.'
+    Assert ($null -eq (Get-CaelestiaPreparedSchemeRuntime $vprofile 'rev-h' $hp2)) 'Activation accepted a generation built with a different shim.'
+    Assert ($null -eq (Set-CaelestiaSchemeRuntimeForRevision $vprofile 'rev-h' $hp2)) 'Repoint accepted a generation built with a different shim.'
+    Assert ($null -ne (Set-CaelestiaSchemeRuntimeForRevision $vprofile 'rev-h' $hp)) 'Repoint rejected a generation built with the current inputs.'
+    Write-Output 'PASS identity: shim and helper changes invalidate prepared and repointed generations.'
+
+    # Diagnostics are redacted by pattern, so custom install, Python and temp
+    # paths cannot reach logs. Markers start with Zq so a leak is unmistakable.
+    $redacted = Protect-CaelestiaText (@(
+        'failed at D:\ZqCustom Tools\Py 3.12\Scripts\pip.exe with exit 1',
+        'cannot read \\zqserver\ZqShare\Team Dir\cache\wheel.whl',
+        'open \\?\E:\ZqOpt\caelestia\lib\site.py failed',
+        'bad file:///F:/ZqFile%20Where/a.txt here',
+        '{"path":"G:\\ZqApps\\Caelestia\\x.json"}',
+        'temp C:/Users/ZqPerson/AppData/Local/Temp/pip-1/x',
+        'fetching https://pypi.org/simple/pillow/ exit code 3'
+    ) -join "`n")
+    Assert ($redacted -notmatch 'Zq|Py 3\.12|Team Dir|Scripts|AppData') "Redaction leaked a path fragment: $redacted"
+    Assert ($redacted -match 'failed at <path>\.exe with exit 1' -and $redacted -match '<file-url> here' -and $redacted -match '<path>\.json') 'Redaction did not keep the leaf extension and surrounding text.'
+    Assert ($redacted -match 'https://pypi\.org/simple/pillow/ exit code 3') 'Redaction altered a web URL.'
+    Write-Output 'PASS redaction: any absolute Windows path or file URL is replaced, whatever the prefix.'
 
     # Concurrency and immutability: installer prepare and a normal start race
     # on a cold profile with a fake Python that records its pip steps. One
@@ -521,11 +701,11 @@ param([string]$Prefix, [string]$Command = 'Start', [switch]$SkipSchemeRuntime)
         # Both installer preparation and Start-Caelestia run this provisioning
         # step; drive it directly with the same lock waits they use.
         $calculator = Join-Path $PSScriptRoot 'Install-SchemeRuntime.ps1'
-        function Start-SchemeProvision([int]$LockWaitSeconds, [string]$Name) {
+        function Start-SchemeProvision([int]$LockWaitSeconds, [string]$Name, [string]$Profile = $generationProfile) {
             $stdout = Join-Path $root "$Name.out"
             $stderr = Join-Path $root "$Name.err"
             $arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $calculator +
-                '" -ProfileRoot "' + $generationProfile + '" -LockWaitSeconds ' + $LockWaitSeconds
+                '" -ProfileRoot "' + $Profile + '" -LockWaitSeconds ' + $LockWaitSeconds
             $process = Start-Process -FilePath (Get-WindowsPowerShellPath) -ArgumentList $arguments `
                 -WindowStyle Hidden -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
             return [pscustomobject]@{ Process = $process; Stdout = $stdout }
@@ -616,6 +796,107 @@ param([string]$Prefix, [string]$Command = 'Start', [switch]$SkipSchemeRuntime)
         $history = Get-Content -LiteralPath (Join-Path $generationProfile 'scheme\provision.log') -Raw
         Assert ($history -notmatch [regex]::Escape($generationProfile)) 'Provisioning history exposed a profile path.'
         Write-Output 'PASS scheme generations: one provisioner at a time, repair publishes a new generation, published bytes stay unchanged.'
+
+        # Every spelling of one profile path takes the same lock: a second
+        # provisioner started with a different spelling must see it in progress
+        # instead of running pip at the same time.
+        $canonProfile = Join-Path $root 'cp'
+        [IO.Directory]::CreateDirectory($canonProfile) | Out-Null
+        $canonical = Get-CaelestiaCanonicalPath $canonProfile
+        $spellings = @(
+            ($canonProfile + '\'), ($canonProfile + '\\'), $canonProfile.ToUpperInvariant(), $canonProfile.Replace('\', '/'),
+            ('\\?\' + $canonProfile), ($canonProfile + '\sub\..')
+        )
+        $shortPath = (New-Object -ComObject Scripting.FileSystemObject).GetFolder($canonProfile).ShortPath
+        if ($shortPath) { $spellings += $shortPath }
+        foreach ($spelling in $spellings) {
+            Assert ((Get-CaelestiaCanonicalPath $spelling) -eq $canonical) "A profile path spelling was not canonicalised: $spelling"
+        }
+        Assert ((Get-CaelestiaCanonicalPath 'C:\') -eq 'c:\' -and (Get-CaelestiaCanonicalPath 'C:\\') -eq 'c:\') 'A drive root lost its separator.'
+        $canonLog = Join-Path $root 'canon.log'
+        $env:CAELESTIA_TEST_PROVISION_LOG = $canonLog
+        $env:CAELESTIA_TEST_PIP_SECONDS = '2'
+        $first = Start-SchemeProvision 30 'canon-first' $canonProfile
+        $deadline = [DateTime]::UtcNow.AddSeconds(60)
+        $started = $false
+        while ([DateTime]::UtcNow -lt $deadline -and -not $started) {
+            if (Test-Path -LiteralPath $canonLog) { try { $started = (Get-Content -LiteralPath $canonLog -Raw) -match 'venv' } catch { } }
+            if (-not $started) { Start-Sleep -Milliseconds 50 }
+        }
+        Assert $started 'The first provisioner did not start.'
+        # A trailing separator reaches the script through the argument quoting.
+        $second = Start-SchemeProvision 0 'canon-second' ($canonProfile.ToUpperInvariant() + '\\')
+        if (-not $second.Process.WaitForExit(10000)) { $second.Process.Kill(); $second.Process.WaitForExit(); throw 'A second spelling waited for the provisioner.' }
+        $secondResult = Read-SchemeResult $second.Stdout
+        Assert ($secondResult -and $secondResult.inProgress -eq $true) 'A different spelling of the profile path took a different lock.'
+        if (-not $first.Process.WaitForExit(120000)) { $first.Process.Kill(); $first.Process.WaitForExit(); throw 'The first provisioner timed out.' }
+        $pipStarts = @((Get-Content -LiteralPath $canonLog) | Where-Object { $_ -match ',pip-start$' })
+        Assert ($pipStarts.Count -eq 2) "Expected one provisioner's pip steps, saw $($pipStarts.Count)."
+        Write-Output 'PASS lock identity: equivalent profile paths share one provisioning lock.'
+
+        # A changed shim builds a new generation instead of reusing the cache,
+        # and a lost base interpreter is repaired with a verified sibling that
+        # activation then keeps.
+        $env:CAELESTIA_TEST_PIP_SECONDS = '0'
+        $ip = Join-Path $root 'ip'
+        New-Item -ItemType Directory -Force -Path (Join-Path $ip 'scheme') | Out-Null
+        foreach ($name in @('Install-SchemeRuntime.ps1', 'Caelestia-InstallCommon.ps1', 'Caelestia-Versions.ps1')) {
+            Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $ip
+        }
+        foreach ($name in @('requirements.lock.txt', 'win_scheme.py', 'fcntl.py')) {
+            Copy-Item -LiteralPath (Join-Path $PSScriptRoot "scheme\$name") -Destination (Join-Path $ip 'scheme')
+        }
+        $ipProfile = Join-Path $root 'ipp'
+        function Invoke-Provisioner([string[]]$Extra = @()) {
+            $out = Join-Path $root ('prov-' + [guid]::NewGuid().ToString('N').Substring(0, 6) + '.out')
+            $err = $out + '.err'
+            $arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + (Join-Path $ip 'Install-SchemeRuntime.ps1') +
+                '" -ProfileRoot "' + $ipProfile + '" -CliRevision rev-x -LockWaitSeconds 30 ' + ($Extra -join ' ')
+            $run = Start-Process -FilePath (Get-WindowsPowerShellPath) -ArgumentList $arguments -WindowStyle Hidden -PassThru `
+                -RedirectStandardOutput $out -RedirectStandardError $err
+            if (-not $run.WaitForExit(120000)) { $run.Kill(); $run.WaitForExit(); throw 'The provisioner timed out.' }
+            return [pscustomobject]@{ Result = (Read-SchemeResult $out); Stdout = $out; Stderr = $err }
+        }
+        $run1 = Invoke-Provisioner
+        Assert ($run1.Result.available -eq $true -and $run1.Result.message -eq 'provisioned') 'The first provision did not build a generation.'
+        $run2 = Invoke-Provisioner
+        Assert ($run2.Result.message -eq 'cached' -and $run2.Result.generation -eq $run1.Result.generation) 'An unchanged payload did not reuse its generation.'
+        'a different shim' | Set-Content -LiteralPath (Join-Path $ip 'scheme\fcntl.py') -Encoding UTF8
+        $run3 = Invoke-Provisioner
+        Assert ($run3.Result.message -eq 'provisioned' -and $run3.Result.generation -ne $run1.Result.generation) 'A changed shim reused a cached generation.'
+        $runtimes = Join-Path $ipProfile 'scheme\runtimes'
+        Assert (Test-Path -LiteralPath (Join-Path $runtimes $run1.Result.generation)) 'A shim change removed the earlier generation.'
+        $newShim = Join-Path $runtimes "$($run3.Result.generation)\venv\Lib\site-packages\fcntl.py"
+        Assert ((Get-Content -LiteralPath $newShim -Raw).Trim() -eq 'a different shim') 'The new generation does not contain the new shim.'
+        $newMeta = Get-Content -LiteralPath (Join-Path $runtimes "$($run3.Result.generation)\generation.json") -Raw | ConvertFrom-Json
+        Assert ($newMeta.identity -eq (Get-CaelestiaSchemeIdentity $ip 'rev-x').Id -and $newMeta.shimSha256) 'The generation does not record the identity it was built from.'
+
+        $pyvenvCfg = Join-Path $runtimes "$($run3.Result.generation)\venv\pyvenv.cfg"
+        [IO.File]::WriteAllText($pyvenvCfg, "home = $(Join-Path $root 'gone-python')`r`n")
+        $run4 = Invoke-Provisioner
+        Assert ($run4.Result.available -eq $true -and $run4.Result.generation -ne $run3.Result.generation) 'A lost base interpreter was not repaired with a new generation.'
+        $heldPointer = Read-Pointer $ipProfile
+        Assert ($heldPointer.generation -eq $run4.Result.generation) 'The repaired generation was not published.'
+        $kept = Set-CaelestiaSchemeRuntimeForRevision $ipProfile 'rev-x' $ip
+        Assert ($kept.generation -eq $run4.Result.generation -and (Read-Pointer $ipProfile).generation -eq $run4.Result.generation) 'Activation swapped the repaired generation back to the broken one.'
+        Write-Output 'PASS identity: a shim change builds a new generation; a lost base interpreter is repaired and stays repaired.'
+
+        # A failing provision reports no machine paths in its warning, record
+        # or history, whatever the install, Python or temp location.
+        $env:CAELESTIA_TEST_PIP_FAIL = 'Z:\ZqCustom Prefix\Py 3.12\site.py'
+        try {
+            'a failing shim' | Set-Content -LiteralPath (Join-Path $ip 'scheme\fcntl.py') -Encoding UTF8
+            $run5 = Invoke-Provisioner -Extra @('-Force')
+        } finally { $env:CAELESTIA_TEST_PIP_FAIL = $null }
+        Assert ($run5.Result.available -eq $false) 'The injected provisioning failure was not reported.'
+        $leakSources = @(
+            (Get-Content -LiteralPath $run5.Stdout -Raw), (Get-Content -LiteralPath $run5.Stderr -Raw),
+            (Get-Content -LiteralPath (Join-Path $ipProfile 'scheme\provision.log') -Raw),
+            (Get-Content -LiteralPath (Join-Path $ipProfile 'scheme\provision-state.json') -Raw)
+        ) -join "`n"
+        Assert ($leakSources -match 'could not open <path>\.py') 'The failure record lost its redacted detail.'
+        Assert ($leakSources -notmatch 'Zq|Py 3\.12') 'A custom-prefix path reached provisioning diagnostics.'
+        Write-Output 'PASS diagnostics: a custom-prefix path is redacted from warnings, state and history.'
     } finally {
         $env:PATH = $oldPath
         $env:CAELESTIA_TEST_PROVISION_LOG = $oldProvisionLog

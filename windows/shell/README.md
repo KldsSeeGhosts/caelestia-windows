@@ -171,9 +171,14 @@ immutable generation under `scheme/runtimes/<generation>` before activation.
 version's revision. A launcher started outside the installer (for example the
 Run entry on a later sign-in) reuses that generation and repairs by building a
 new one. Activations never wait for provisioning: when no matching generation
-is published, the shell starts on its fixed palette. Generations used by the
+is published, the shell starts on its fixed palette. A start that finds
+provisioning already in progress also stays on the fixed palette until the next
+shell start; it never waits for the provisioner. Generations used by the
 current and previous installed versions are retained; older ones are pruned on
-a later install only when no shell or supervisor is running. Use
+a later install only when no shell or supervisor is running. Pruning first
+renames a generation into `scheme/runtimes/.trash`, which fails (and keeps the
+generation whole until the next prune) while anything still uses it, and only
+then deletes it. Use
 `-SkipSchemeRuntime` on the installer or launcher to skip preparation. If
 preparation failed, Caelestia starts on the fixed palette and
 `logs/scheme-runtime.log` reports it; rerun `Install-SchemeRuntime.ps1` from the

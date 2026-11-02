@@ -39,22 +39,9 @@ $requirements = Join-Path $PSScriptRoot 'scheme\requirements.lock.txt'
 $provisionLog = ''
 $staging = ''
 
-# No profile or user path belongs in a log or warning.
-function Protect-Text([string]$Text) {
-    if (-not $Text) { return '' }
-    $clean = $Text
-    foreach ($pair in @(
-        @($ProfileRoot, '<profile>'),
-        @($env:USERPROFILE, '<user>'),
-        @($env:LOCALAPPDATA, '<localappdata>')
-    )) {
-        if ($pair[0]) {
-            $clean = [regex]::Replace($clean, [regex]::Escape([string]$pair[0]), $pair[1],
-                [Text.RegularExpressions.RegexOptions]::IgnoreCase)
-        }
-    }
-    return $clean
-}
+# No machine path belongs in a log or warning: redaction is by pattern
+# (Protect-CaelestiaText), so custom install, Python and temp paths are covered.
+function Protect-Text([string]$Text) { return Protect-CaelestiaText $Text }
 
 function Write-History([string]$Message) {
     try {
@@ -113,25 +100,12 @@ function Invoke-Bounded([string]$File, [string[]]$Arguments, [string]$Step) {
     }
 }
 
-function Get-FileHashHex([string]$Path) {
-    return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
-}
-
-# Generation identity covers every input that can change the installed bytes,
-# not just the CLI revision: a helper or requirements change must never mutate
-# a generation a running shell may still be using.
-function Get-GenerationId {
-    $sha = [Security.Cryptography.SHA256]::Create()
-    try {
-        $material = $CliRevision + "`n" +
-            (Get-FileHashHex $requirements) + "`n" +
-            (Get-FileHashHex $helperSource) + "`n" +
-            (Get-FileHashHex $shimSource)
-        return ([BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($material)))).Replace('-', '').ToLowerInvariant()
-    } finally {
-        $sha.Dispose()
-    }
-}
+# Generation identity covers every input that goes into the generation (the
+# CLI revision, requirements, helper and fcntl shim), not just the revision: a
+# change to any of them must never mutate a generation a running shell may use.
+$identity = Get-CaelestiaSchemeIdentity $PSScriptRoot $CliRevision
+if (-not $identity) { throw 'the scheme runtime inputs are missing from this payload' }
+$generationId = $identity.Id
 
 function Write-Result([bool]$Available, [string]$Message, [string]$Generation = '', [bool]$InProgress = $false) {
     $python = ''
@@ -152,35 +126,18 @@ function Write-Result([bool]$Available, [string]$Message, [string]$Generation = 
     } | ConvertTo-Json -Compress
 }
 
-function Test-RuntimeAt([string]$Root, [string]$ExpectedGeneration = '') {
-    $python = Join-Path $Root 'venv\Scripts\python.exe'
-    $helper = Join-Path $Root 'win_scheme.py'
-    $meta = Join-Path $Root 'generation.json'
-    if (-not (Test-Path -LiteralPath $python -PathType Leaf) -or
-        -not (Test-Path -LiteralPath $helper -PathType Leaf) -or
-        -not (Test-Path -LiteralPath $meta -PathType Leaf)) {
-        return $false
-    }
+# A generation is reusable only when it was built from exactly the inputs
+# computed now and its interpreter still runs.
+function Test-RuntimeAt([string]$Root) {
     try {
-        $record = Get-Content -LiteralPath $meta -Raw | ConvertFrom-Json
-        if ([string]$record.revision -ne $CliRevision) { return $false }
-        if ([string]$record.requirementsSha256 -ne (Get-FileHashHex $requirements) -or
-            [string]$record.helperSha256 -ne (Get-FileHashHex $helperSource)) { return $false }
-        if ($ExpectedGeneration -and [string]$record.generation -ne $ExpectedGeneration) { return $false }
-        $previousBytecode = $env:PYTHONDONTWRITEBYTECODE
-        $env:PYTHONDONTWRITEBYTECODE = '1'
-        try {
-            $null = & $python -c "import materialyoucolor, PIL, caelestia" 2>$null
-            return $LASTEXITCODE -eq 0
-        } finally {
-            $env:PYTHONDONTWRITEBYTECODE = $previousBytecode
-        }
+        $record = Get-Content -LiteralPath (Join-Path $Root 'generation.json') -Raw | ConvertFrom-Json
+        if ([string]$record.revision -ne $CliRevision -or [string]$record.identity -ne $identity.Id) { return $false }
+        return (Test-CaelestiaSchemeHealth $Root)
     } catch {
         return $false
     }
 }
 
-$generationId = Get-GenerationId
 $schemeLock = Enter-CaelestiaSchemeLock $ProfileRoot $LockWaitSeconds
 if (-not $schemeLock) {
     Write-Result $false 'another scheme provisioning run is in progress' '' $true
@@ -197,13 +154,24 @@ try {
             if ($record.available -eq $true -and [string]$record.revision -eq $CliRevision -and
                 (Test-CaelestiaSchemeGeneration ([string]$record.generation))) {
                 $publishedRoot = Join-Path $runtimesRoot ([string]$record.generation)
-                if (Test-RuntimeAt $publishedRoot ([string]$record.generation)) {
+                if (Test-RuntimeAt $publishedRoot) {
                     Write-Result $true 'cached' ([string]$record.generation)
                     return
                 }
             }
         } catch {
             # A corrupt marker falls through to a fresh generation.
+        }
+    }
+
+    # Reuse the newest verified generation built from exactly these inputs, for
+    # example a sibling from an earlier repair, instead of building another.
+    if (-not $Force) {
+        $existing = Get-CaelestiaVerifiedSchemeGeneration $ProfileRoot $CliRevision $identity.Id
+        if ($existing) {
+            $null = Write-CaelestiaSchemePointer $ProfileRoot $CliRevision $existing
+            Write-Result $true 'cached' $existing.Name
+            return
         }
     }
 
@@ -223,23 +191,9 @@ try {
     }
 
     $publishedId = $generationId
-    if (-not $Force -and (Test-Path -LiteralPath (Join-Path $runtimesRoot $publishedId))) {
-        if (Test-RuntimeAt (Join-Path $runtimesRoot $publishedId) $publishedId) {
-            Write-JsonAtomic $stamp ([ordered]@{
-                available = $true
-                revision = $CliRevision
-                generation = $publishedId
-                python = (Join-Path (Join-Path $runtimesRoot $publishedId) 'venv\Scripts\python.exe')
-                helper = (Join-Path (Join-Path $runtimesRoot $publishedId) 'win_scheme.py')
-                provisionedAt = (Get-Date).ToString('o')
-            })
-            Write-Result $true 'cached' $publishedId
-            return
-        }
+    if ($Force -or (Test-Path -LiteralPath (Join-Path $runtimesRoot $publishedId))) {
         # Never mutate a published generation, even a broken one that may be
         # mapped into a live process. Build a sibling instead.
-        $publishedId = $generationId + '-' + [guid]::NewGuid().ToString('N').Substring(0, 8)
-    } elseif ($Force) {
         $publishedId = $generationId + '-' + [guid]::NewGuid().ToString('N').Substring(0, 8)
     }
 
@@ -301,11 +255,13 @@ try {
             revision = $CliRevision
             generation = $publishedId
             created = (Get-Date).ToString('o')
-            requirementsSha256 = (Get-FileHashHex $requirements)
-            helperSha256 = (Get-FileHashHex $helperSource)
+            identity = $identity.Id
+            requirementsSha256 = $identity.RequirementsSha256
+            helperSha256 = $identity.HelperSha256
+            shimSha256 = $identity.ShimSha256
         } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $staging 'generation.json') -Encoding UTF8
 
-        if (-not (Test-RuntimeAt $staging $publishedId)) {
+        if (-not (Test-RuntimeAt $staging)) {
             throw 'the installed runtime cannot import materialyoucolor/PIL/caelestia'
         }
 

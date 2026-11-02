@@ -129,8 +129,11 @@ if ($Command -eq 'Start' -and -not $SkipSchemeRuntime) {
         }
     } else {
         # A valid published generation needs no provisioning. Otherwise try to
-        # repair without waiting; a busy lock keeps the fixed palette.
-        if ($schemeRevision) { $schemeRuntime = Get-CaelestiaPreparedSchemeRuntime $profile $schemeRevision $Prefix }
+        # repair without waiting; a busy lock keeps the fixed palette, and the
+        # shell stays on it until the next shell start (a start never waits for
+        # a provisioner that is already running). -Verify runs the venv's
+        # python, so a lost base interpreter is repaired here, not trusted.
+        if ($schemeRevision) { $schemeRuntime = Get-CaelestiaPreparedSchemeRuntime $profile $schemeRevision $Prefix -Verify }
         if ($null -eq $schemeRuntime) {
             try {
                 $schemeResult = & (Join-Path $PSScriptRoot 'Install-SchemeRuntime.ps1') -ProfileRoot $profile -LockWaitSeconds 0 |

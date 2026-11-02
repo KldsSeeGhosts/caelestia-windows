@@ -185,6 +185,13 @@ write at once. Activation then only starts the shell, so a cold or slow first
 install does not spend its readiness budget downloading packages or roll back a
 healthy launch. If preparation fails, the install continues and Caelestia
 starts with the fixed palette; `logs/scheme-runtime.log` records the fallback.
+A start never waits for a provisioner: if it finds one already running for the
+profile (for example the installer, or another start repairing a lost Python),
+that shell stays on the fixed palette until the next shell start, even after the
+other run finishes. A generation is used only if it was built from exactly the
+current inputs and its Python still runs; a venv whose base Python was
+uninstalled is repaired by a new generation, never reused. Provisioning logs
+and records contain no machine paths.
 Python is an accepted runtime dependency; `-SkipSchemeRuntime` skips
 preparation during this install, and an existing prepared runtime is still
 used. Retained payloads that predate the generation layout start with scheme
