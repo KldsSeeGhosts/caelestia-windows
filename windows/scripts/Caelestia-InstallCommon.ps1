@@ -592,7 +592,7 @@ function Publish-CaelestiaSchemeRuntime([string]$ProfileRoot, [string]$Revision,
 # Only a verified generation is ever chosen, the newest one for the payload's
 # identity, so a repoint can never move from a working generation to a broken
 # one, and an older sibling cannot undo a repair.
-function Set-CaelestiaSchemeRuntimeForRevision([string]$ProfileRoot, [string]$Revision, [string]$RuntimePrefix = '', $Verified = $null, [int]$BudgetSeconds = $script:CaelestiaSchemeProbeBudgetSeconds, [int]$CandidateSeconds = $script:CaelestiaSchemeProbeSliceSeconds) {
+function Set-CaelestiaSchemeRuntimeForRevision([string]$ProfileRoot, [string]$Revision, [string]$RuntimePrefix = '', $Verified = $null, [switch]$NoProbe, [int]$BudgetSeconds = $script:CaelestiaSchemeProbeBudgetSeconds, [int]$CandidateSeconds = $script:CaelestiaSchemeProbeSliceSeconds) {
     try {
         if (-not $Revision) { return $null }
         $expectedIdentity = ''
@@ -615,6 +615,22 @@ function Set-CaelestiaSchemeRuntimeForRevision([string]$ProfileRoot, [string]$Re
                     (Test-CaelestiaSchemeReceipt $Verified.Root $Verified.Receipt)) {
                     return Publish-CaelestiaSchemeRuntime $ProfileRoot $Revision $Verified.Root
                 }
+                Write-CaelestiaSchemeRecord $ProfileRoot ([ordered]@{
+                    available = $false
+                    revision = $Revision
+                    message = 'no verified scheme runtime for this version; using the fixed palette'
+                    decidedAt = (Get-Date).ToString('o')
+                })
+                return $null
+            }
+            # -NoProbe is for every caller that runs after the shell has been
+            # stopped: it must never start a process. Without a decision made
+            # earlier, the published record is kept only if its receipt still
+            # matches (file metadata alone); otherwise the shell starts on its
+            # fixed palette.
+            if ($NoProbe) {
+                $accepted = Get-CaelestiaPreparedSchemeRuntime $ProfileRoot $Revision $RuntimePrefix
+                if ($accepted) { return $accepted }
                 Write-CaelestiaSchemeRecord $ProfileRoot ([ordered]@{
                     available = $false
                     revision = $Revision
@@ -664,6 +680,22 @@ function Select-CaelestiaSchemeGeneration([string]$ProfileRoot, [string]$Revisio
             }
         } catch { }
         return $decision
+    } catch {
+        return $null
+    }
+}
+
+# The decision for the version a failed activation would fall back to, taken
+# before the running shell is stopped so recovery never has to probe. It is the
+# target's own decision when both use the same inputs.
+function Select-CaelestiaRestoreScheme([string]$ProfileRoot, [string]$RestorePrefix, $TargetDecision) {
+    try {
+        $revision = Get-CaelestiaSchemeRevision $RestorePrefix
+        if (-not $revision) { return $null }
+        $identity = Get-CaelestiaSchemeIdentity $RestorePrefix $revision
+        if (-not $identity) { return $null }
+        if ($TargetDecision -and $TargetDecision.Revision -eq $revision -and $TargetDecision.IdentityId -eq $identity.Id) { return $TargetDecision }
+        return Select-CaelestiaSchemeGeneration $ProfileRoot $revision $RestorePrefix
     } catch {
         return $null
     }
@@ -1006,7 +1038,8 @@ function Restore-CaelestiaUpdate([string]$Prefix, [string]$ProfileRoot, [string]
     try { $launcherText = [IO.File]::ReadAllText((Join-Path $Prefix 'Start-Caelestia.ps1')) } catch { }
     if ($launcherText -match '\[switch\]\$PreparedSchemeRuntime\b') {
         $restoreRuntime = Resolve-CaelestiaRuntimePrefix $Prefix
-        $null = Set-CaelestiaSchemeRuntimeForRevision $ProfileRoot (Get-CaelestiaSchemeRevision $restoreRuntime) $restoreRuntime
+        # The shell is stopped here: receipt-only, never a probe.
+        $null = Set-CaelestiaSchemeRuntimeForRevision $ProfileRoot (Get-CaelestiaSchemeRevision $restoreRuntime) $restoreRuntime -NoProbe
         Start-CaelestiaDetached $Prefix -LegacyReady -PreparedSchemeRuntime
     } elseif ($launcherText -match '\[switch\]\$SkipSchemeRuntime\b') {
         Start-CaelestiaDetached $Prefix -LegacyReady -DisableSchemeProvisioning

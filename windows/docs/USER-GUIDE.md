@@ -212,7 +212,10 @@ Update and rollback check the target's scheme generation, within a 15 s budget
 that tries the newest generation first and falls back to older healthy ones,
 before the running shell is stopped. That check is final: if nothing could be
 verified in time, the shell is stopped once and starts on the fixed palette, and
-nothing is probed again after it has stopped. If a prune cannot restore a
+nothing is probed again after it has stopped. The same holds for recovery: the
+previous version's generation is decided before the shell is stopped too, so a
+failed activation that falls back to it relaunches without probing, and with
+nothing verified (or a busy scheme lock) it starts on the fixed palette. If a prune cannot restore a
 retired generation after a late mapping, it stays in `scheme/runtimes/.trash`
 and the next prune cleans it up; `logs/scheme-runtime.log` records the count. Wallpaper Engine is detected automatically, supplies the
 launcher picker and palette preview, and retains ownership of the desktop

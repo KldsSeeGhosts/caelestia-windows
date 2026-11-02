@@ -222,19 +222,24 @@ function Get-DirectoryListing([string]$Directory) {
 # The shell was stopped at the 'quit' event and relaunched at 'launch'. After
 # the stop nothing may be probed, and the stopped interval, which has no probe
 # time in it, must stay small.
-function Assert-NoPostQuitProbe([string]$Log, [string]$What) {
+function Assert-NoPostQuitProbe([string]$Log, [string]$What, [double]$MaxStopped = 3, [switch]$LastLaunch, [switch]$NoProbesExpected) {
     $events = @(Get-Content -LiteralPath $Log | ForEach-Object {
         $parts = $_ -split ','
         [pscustomobject]@{ Ticks = [long]$parts[0]; Event = $parts[2] }
     })
     $quit = $events | Where-Object { $_.Event -eq 'quit' } | Select-Object -First 1
     Assert ($null -ne $quit) "$What never stopped the old shell."
-    $launch = $events | Where-Object { $_.Event -eq 'launch' -and $_.Ticks -ge $quit.Ticks } | Select-Object -First 1
-    Assert ($null -ne $launch) "$What never relaunched the shell."
-    Assert (@($events | Where-Object { $_.Event -eq 'check' -and $_.Ticks -lt $quit.Ticks }).Count -ge 1) "$What did not probe before stopping the shell."
+    $launches = @($events | Where-Object { $_.Event -eq 'launch' -and $_.Ticks -ge $quit.Ticks })
+    Assert ($launches.Count -ge 1) "$What never relaunched the shell."
+    $launch = if ($LastLaunch) { $launches[-1] } else { $launches[0] }
+    if ($NoProbesExpected) {
+        Assert (@($events | Where-Object { $_.Event -eq 'check' }).Count -eq 0) "$What probed a generation although the scheme lock was busy."
+    } else {
+        Assert (@($events | Where-Object { $_.Event -eq 'check' -and $_.Ticks -lt $quit.Ticks }).Count -ge 1) "$What did not probe before stopping the shell."
+    }
     Assert (@($events | Where-Object { $_.Event -eq 'check' -and $_.Ticks -gt $quit.Ticks }).Count -eq 0) "$What probed a generation after the shell had stopped."
     $stopped = ($launch.Ticks - $quit.Ticks) / 1e7
-    Assert ($stopped -lt 3) "$What left the shell stopped for $([Math]::Round($stopped, 1)) s."
+    Assert ($stopped -lt $MaxStopped) "$What left the shell stopped for $([Math]::Round($stopped, 1)) s."
 }
 function New-LauncherPayload([string]$Prefix, [string]$ProfileRoot, [string]$Label, [string]$ProvisionMode, [switch]$LegacyStart) {
     $path = Join-Path $root ('launcher-' + [guid]::NewGuid().ToString('N'))
@@ -587,6 +592,146 @@ param([string]$Prefix, [string]$Command = 'Start', [switch]$SkipSchemeRuntime)
         $script:CaelestiaSchemeProbeSliceSeconds = 8
         $script:runLauncher = $false
         $env:CAELESTIA_TEST_PROVISION_LOG = $null
+    }
+
+    # Failure recovery runs after the shell has stopped, so it must never probe:
+    # the fallback's decision is taken before the quit, with the target's. Each
+    # scenario has hung generations for the target and a healthy one for the
+    # version being restored.
+    $script:failSelectorWrite = $false
+    $script:originalJsonWriter = ${function:Write-CaelestiaJsonAtomic}
+    function Write-CaelestiaJsonAtomic([string]$Path, $Value) {
+        if ($script:failSelectorWrite -and $Path -like '*\install.json') {
+            $script:failSelectorWrite = $false
+            throw 'Injected selector write failure.'
+        }
+        & $script:originalJsonWriter $Path $Value
+    }
+    $script:recoveryCount = 0
+    function Invoke-RecoveryScenario([string]$Kind) {
+        $script:recoveryCount++
+        $n = $script:recoveryCount
+        $rcPrefix = Join-Path $root "rc$n"
+        $rcProfile = Join-Path $root "rcp$n"
+        $rcLog = Join-Path $root "rc$n.log"
+        [IO.Directory]::CreateDirectory($rcProfile) | Out-Null
+        Write-CaelestiaProfileOwner $rcProfile $rcPrefix "rc-test-$n" $true
+        $script:CaelestiaSchemeProbeBudgetSeconds = 5
+        $script:CaelestiaSchemeProbeSliceSeconds = 2
+        $script:runLauncher = $true
+        try {
+            $target = New-LauncherPayload $rcPrefix $rcProfile 'T' 'fail'
+            $restore = New-LauncherPayload $rcPrefix $rcProfile 'R' 'fail' -LegacyStart
+            'restore helper' | Set-Content -LiteralPath (Join-Path $restore 'scheme\win_scheme.py') -Encoding UTF8
+            $targetId = (Get-CaelestiaSchemeIdentity $target 'test').Id
+            $restoreId = (Get-CaelestiaSchemeIdentity $restore 'test').Id
+            $targetVersion = ''
+            if ($Kind -ne 'update') {
+                $null = Install-CaelestiaVersion $rcPrefix $target
+                $targetVersion = (Read-CaelestiaInstall $rcPrefix).current
+            }
+            $null = Install-CaelestiaVersion $rcPrefix $restore
+            $restoreVersion = (Read-CaelestiaInstall $rcPrefix).current
+            $runtimes = Join-Path $rcProfile 'scheme\runtimes'
+            $now = [DateTime]::UtcNow
+            $null = New-TestGeneration $runtimes ('4' * 40) 'test' $restoreId $now.AddMinutes(-10)
+            foreach ($spec in @(@('1', -1), @('2', -2))) {
+                $hungRoot = New-TestGeneration $runtimes ($spec[0] * 40) 'test' $targetId $now.AddMinutes($spec[1])
+                'hang' | Set-Content -LiteralPath (Join-Path $hungRoot 'venv\Scripts\hang.txt')
+            }
+            Remove-Item -LiteralPath $rcLog -Force -ErrorAction SilentlyContinue
+            $env:CAELESTIA_TEST_PROVISION_LOG = $rcLog
+            $expected = 'Injected startup failure'
+            try {
+                switch ($Kind) {
+                    'update' { $script:failStart = $true; $null = Install-CaelestiaVersion $rcPrefix $target -Restart }
+                    'rollback' { $script:failStart = $true; $null = Switch-CaelestiaVersion $rcPrefix $targetVersion -Restart }
+                    'selector' { $script:failSelectorWrite = $true; $expected = 'Injected selector write failure'; $null = Switch-CaelestiaVersion $rcPrefix $targetVersion -Restart }
+                }
+                throw "The $Kind scenario did not fail as injected."
+            } catch {
+                if ($_ -notmatch $expected) { throw }
+            }
+            Assert-NoPostQuitProbe $rcLog "Recovery after a failed $Kind" -MaxStopped 6 -LastLaunch
+            Assert ((Read-CaelestiaInstall $rcPrefix).current -eq $restoreVersion) "Recovery after a failed $Kind did not select the previous version."
+            $pointer = Read-Pointer $rcProfile
+            Assert ($pointer.available -eq $true -and $pointer.generation -eq ('4' * 40)) "Recovery after a failed $Kind did not publish the restored version's generation."
+        } finally {
+            $script:CaelestiaSchemeProbeBudgetSeconds = 15
+            $script:CaelestiaSchemeProbeSliceSeconds = 8
+            $script:runLauncher = $false
+            $script:failStart = $false
+            $script:failSelectorWrite = $false
+            $env:CAELESTIA_TEST_PROVISION_LOG = $null
+        }
+    }
+    Invoke-RecoveryScenario 'update'
+    Invoke-RecoveryScenario 'rollback'
+    Invoke-RecoveryScenario 'selector'
+    Write-Output 'PASS recovery: failed update activation, failed rollback activation and a selector-write failure restore the previous version without probing after the stop.'
+
+    # Update while another process holds the scheme lock: nothing can be probed
+    # or published, the shell still restarts (on the fixed palette) without
+    # waiting, and nothing is probed after the stop.
+    Add-Type -OutputAssembly (Join-Path $root 'scheme-lock-holder.exe') -OutputType ConsoleApplication -TypeDefinition @'
+using System;
+using System.IO;
+using System.Threading;
+public static class SchemeLockHolderFixture {
+    public static int Main(string[] args) {
+        Mutex mutex;
+        try { mutex = new Mutex(false, "Global\\" + args[0]); }
+        catch (UnauthorizedAccessException) { mutex = new Mutex(false, "Local\\" + args[0]); }
+        if (!mutex.WaitOne(0)) return 2;
+        File.WriteAllText("held.txt", "held");
+        var deadline = DateTime.UtcNow.AddSeconds(90);
+        while (DateTime.UtcNow < deadline && !File.Exists("stop.txt")) Thread.Sleep(25);
+        mutex.ReleaseMutex();
+        return 0;
+    }
+}
+'@
+    $lcPrefix = Join-Path $root 'lc'
+    $lcProfile = Join-Path $root 'lcp'
+    $lcLog = Join-Path $root 'lc.log'
+    [IO.Directory]::CreateDirectory($lcProfile) | Out-Null
+    Write-CaelestiaProfileOwner $lcProfile $lcPrefix 'lc-test' $true
+    $script:runLauncher = $true
+    $holderDirectory = Join-Path $root 'lock-holder'
+    [IO.Directory]::CreateDirectory($holderDirectory) | Out-Null
+    $holder = $null
+    try {
+        $lcTarget = New-LauncherPayload $lcPrefix $lcProfile 'T' 'fail'
+        $null = Install-CaelestiaVersion $lcPrefix (New-LauncherPayload $lcPrefix $lcProfile 'R' 'fail' -LegacyStart)
+        $null = New-TestGeneration (Join-Path $lcProfile 'scheme\runtimes') ('5' * 40) 'test' (Get-CaelestiaSchemeIdentity $lcTarget 'test').Id
+        $lockName = 'CaelestiaScheme-' + (Get-CaelestiaInstallLockKey (Get-CaelestiaCanonicalPath $lcProfile))
+        $holder = Start-Process -FilePath (Join-Path $root 'scheme-lock-holder.exe') -ArgumentList $lockName -WorkingDirectory $holderDirectory -PassThru -WindowStyle Hidden
+        $deadline = [DateTime]::UtcNow.AddSeconds(15)
+        while (-not (Test-Path -LiteralPath (Join-Path $holderDirectory 'held.txt')) -and [DateTime]::UtcNow -lt $deadline -and -not $holder.HasExited) { Start-Sleep -Milliseconds 25 }
+        Assert (Test-Path -LiteralPath (Join-Path $holderDirectory 'held.txt')) 'The scheme lock holder did not start.'
+        $env:CAELESTIA_TEST_PROVISION_LOG = $lcLog
+        $lockClock = [Diagnostics.Stopwatch]::StartNew()
+        $null = Install-CaelestiaVersion $lcPrefix $lcTarget -Restart
+        $lockElapsed = $lockClock.Elapsed.TotalSeconds
+        Assert ($lockElapsed -lt 15) "An update waited $([Math]::Round($lockElapsed, 1)) s on a busy scheme lock."
+        Assert-NoPostQuitProbe $lcLog 'Update under lock contention' -NoProbesExpected
+        $lcRuntime = Resolve-CaelestiaRuntimePrefix $lcPrefix
+        Assert (Test-Path -LiteralPath (Join-Path $lcRuntime 'shell-started.txt')) 'The update did not start the shell while the scheme lock was busy.'
+        Assert (-not ([IO.File]::ReadAllText((Join-Path $lcRuntime 'shell-scheme.txt')) -split "`n")[0].Trim()) 'A scheme runtime reached the shell although the lock was busy.'
+        Assert (-not (Test-Path -LiteralPath (Join-Path $lcProfile 'scheme\runtime.json'))) 'A busy lock still allowed runtime.json to be written.'
+        # Recovery: once the lock is free, the next repoint finds the generation.
+        [IO.File]::WriteAllText((Join-Path $holderDirectory 'stop.txt'), '')
+        Assert ($holder.WaitForExit(10000)) 'The scheme lock holder did not exit.'
+        $later = Set-CaelestiaSchemeRuntimeForRevision $lcProfile 'test' $lcRuntime
+        Assert ($later -and $later.generation -eq ('5' * 40)) 'The generation was not usable after the lock was released.'
+        Write-Output 'PASS lock contention: an update under a busy scheme lock probes nothing, starts on the fixed palette and recovers on the next repoint.'
+    } finally {
+        $script:runLauncher = $false
+        $env:CAELESTIA_TEST_PROVISION_LOG = $null
+        if ($holder -and -not $holder.HasExited) {
+            [IO.File]::WriteAllText((Join-Path $holderDirectory 'stop.txt'), '')
+            if (-not $holder.WaitForExit(5000)) { $holder.Kill(); $holder.WaitForExit() }
+        }
     }
 
     # Rolling back to a legacy payload with a 22 s fake provisioner must not
@@ -956,6 +1101,23 @@ public static extern bool FreeLibrary(System.IntPtr module);
     (Get-Item -LiteralPath $runtimeDll).LastWriteTimeUtc = $runtimeDllTime
     $null = Set-CaelestiaSchemeRuntimeForRevision $vprofile 'rev-h' $hp
     Assert ($null -ne (Get-CaelestiaPreparedSchemeRuntime $vprofile 'rev-h' $hp)) 'Republishing after a restored receipt failed.'
+    # -NoProbe (every call made after the shell has stopped): the published
+    # record is kept only while its receipt matches, and nothing is started.
+    $noProbeLog = Join-Path $root 'noprobe.log'
+    $env:CAELESTIA_TEST_PROVISION_LOG = $noProbeLog
+    try {
+        $kept = Set-CaelestiaSchemeRuntimeForRevision $vprofile 'rev-h' $hp -NoProbe
+        Assert ($kept -and $kept.generation -eq ('7' * 40)) 'A matching receipt was not kept in no-probe mode.'
+        (Get-Item -LiteralPath $runtimeDll).LastWriteTimeUtc = $runtimeDllTime.AddMinutes(-4)
+        $dropped = Set-CaelestiaSchemeRuntimeForRevision $vprofile 'rev-h' $hp -NoProbe
+        Assert ($null -eq $dropped -and (Read-Pointer $vprofile).available -eq $false) 'A changed receipt was kept in no-probe mode.'
+        Assert (-not (Test-Path -LiteralPath $noProbeLog)) 'No-probe mode started a process.'
+    } finally {
+        $env:CAELESTIA_TEST_PROVISION_LOG = $null
+        (Get-Item -LiteralPath $runtimeDll).LastWriteTimeUtc = $runtimeDllTime
+    }
+    $null = Set-CaelestiaSchemeRuntimeForRevision $vprofile 'rev-h' $hp
+    Assert ($null -ne (Get-CaelestiaPreparedSchemeRuntime $vprofile 'rev-h' $hp)) 'Republishing after the no-probe check failed.'
     $baseExe = Join-Path $vGeneration 'base\python.exe'
     $baseTime = (Get-Item -LiteralPath $baseExe).LastWriteTimeUtc
     (Get-Item -LiteralPath $baseExe).LastWriteTimeUtc = $baseTime.AddMinutes(-7)
