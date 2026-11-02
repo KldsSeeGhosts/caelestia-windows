@@ -46,17 +46,34 @@ Item {
             anchors.fill: parent
             active: root.blurEnabled
 
-            sourceComponent: MultiEffect {
-                source: ShaderEffectSource {
+            sourceComponent: Item {
+                anchors.fill: parent
+
+                // Windows #214: keep the capture as a real child item. As an
+                // inline value of MultiEffect.source it had no visual parent,
+                // so it kept a window reference on the wallpaper. Quickshell
+                // recreates per-screen background windows when the desktop
+                // host or its scale changes; the wallpaper then stayed on the
+                // dead window and Qt later crashed in QQuickWindowPrivate::
+                // dirtyItem after "Cannot use same item on different windows".
+                // Do not fold this back into the MultiEffect source property.
+                ShaderEffectSource {
+                    id: desktopClockBlurSource
+
                     sourceItem: root.wallpaper
                     sourceRect: Qt.rect(root.absX, root.absY, root.width, root.height)
                 }
-                maskSource: backgroundPlate
-                maskEnabled: true
-                blurEnabled: true
-                blur: 1
-                blurMax: 64
-                autoPaddingEnabled: false
+
+                MultiEffect {
+                    anchors.fill: parent
+                    source: desktopClockBlurSource
+                    maskSource: backgroundPlate
+                    maskEnabled: true
+                    blurEnabled: true
+                    blur: 1
+                    blurMax: 64
+                    autoPaddingEnabled: false
+                }
             }
         }
 
