@@ -403,7 +403,7 @@ Singleton {
             "-Command", "Worker"]
         stdinEnabled: true
         stdout: SplitParser { onRead: line => {} }
-        stderr: SplitParser { onRead: line => console.warn("Caelestia banner helper:", line) }
+        stderr: SplitParser { onRead: line => console.warn("Caelestia banner helper stderr bytes=" + line.length) }
         onStarted: {
             root.bannerStarting = false;
             root.bannerStarted = true;
@@ -446,7 +446,7 @@ Singleton {
         command: [Quickshell.env("SystemRoot") + "/System32/WindowsPowerShell/v1.0/powershell.exe",
             "-NoProfile", "-File", root.bannerHelper, "-StateDirectory", Quickshell.stateDir,
             "-Command", "Restore"]
-        stderr: SplitParser { onRead: line => console.warn("Caelestia banner recovery:", line) }
+        stderr: SplitParser { onRead: line => console.warn("Caelestia banner recovery stderr bytes=" + line.length) }
         onExited: code => {
             if (code === 0) {
                 root.bannerRecoveryComplete = true;
