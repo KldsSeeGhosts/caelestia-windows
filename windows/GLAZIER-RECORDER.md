@@ -9,7 +9,8 @@ The executable is resolved from `%LOCALAPPDATA%\Programs\Glazier\glazier.exe`,
 then PATH. `CAELESTIA_GLAZIER_EXE` is an explicit override, including for tests.
 Install a compatible version before enabling this integration. A stopped v1 host
 reports "Glazier stopped" until Start launches it; this does not disable cold
-start. A missing Glazier is probed again every 30 s.
+start. A missing Glazier is re-checked every 30 s by a native path lookup, with
+no helper process.
 
 The upstream Recorder contract remains `running`, `paused`, `elapsed`, `refCount`,
 `start(extraArgs)`, `stop()`, `togglePause()`. Upstream modes map as follows:
@@ -30,7 +31,7 @@ Start uses `Quickshell.execDetached`, whose Windows #81 implementation redirects
 stdio to NUL and disowns inherited handles. Short-lived status/pause/resume/stop
 clients use `Process`. No recorder is killed to stop a recording.
 
-Status is polled even with the card closed, every 500 ms while the card is open or
+Status is polled even with the card closed, every 1 s while the card is open or
 something is happening, every 15 s while idle and every 5 s after a connection
 failure. Glazier owns the elapsed
 clock and finalization. The last 32 sequenced events are deduplicated per host.

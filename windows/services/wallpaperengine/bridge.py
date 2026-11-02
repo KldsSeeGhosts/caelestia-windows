@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import ctypes
 from ctypes import wintypes
+import getpass
 import json
 import os
 from pathlib import Path
@@ -113,7 +114,12 @@ def catalog_snapshot(active: bool, status_only: bool) -> dict:
     config = read_json(config_path)
     # Only the active user's wallpaperconfig. Do not recurse through recent
     # layouts, which contain stale selectedwallpapers with the same keys.
-    user = next((key for key in config if key.casefold() == os.getlogin().casefold()), None)
+    try:
+        login = os.getlogin()
+    except OSError:
+        # Service-spawned helpers have no console to resolve the login name.
+        login = os.environ.get("USERNAME") or getpass.getuser()
+    user = next((key for key in config if key.casefold() == login.casefold()), None)
     if user is None:
         candidates = [key for key, value in config.items()
                       if isinstance(value, dict) and "wallpaperconfig" in value.get("general", {})]

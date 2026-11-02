@@ -171,7 +171,14 @@ Singleton {
     }
 
     onCurrentChanged: matchColours()
-    onEnabledChanged: { lastPaletteKey = ""; matchColours(); }
+    onEnabledChanged: {
+        lastPaletteKey = "";
+        // Disabling stops the idle timer; re-enabling must not wait for its
+        // backed-off interval before the first scan.
+        if (enabled)
+            refresh(false);
+        matchColours();
+    }
     onRunningChanged: { lastPaletteKey = ""; matchColours(); }
     Component.onCompleted: refresh(false)
 
@@ -195,7 +202,18 @@ Singleton {
     // Catches WE starting/stopping and selection changes the config watcher
     // misses, including atomic replacement of config.json. Idle ticks run the
     // cheap status mode (#125). Discovery never launches Wallpaper Engine.
-    Timer { interval: 15000; running: true; repeat: true; onTriggered: root.refresh(false) }
+    // Poll at 15 s only while WE is present and running; absent, stopped or
+    // failed scans back off to 60 s, still noticing a start within a minute.
+    // Disabled integration stops polling, except while a WE process is still
+    // known to run: ownership must still be handed back when it quits.
+    readonly property int pollInterval: detected && running && status !== "error" ? 15000 : 60000
+    Timer {
+        id: pollTimer
+        interval: root.pollInterval
+        running: (root.enabled || root.running) && root.python !== ""
+        repeat: true
+        onTriggered: root.refresh(false)
+    }
     // A hung or unspawnable scan must not claim the desktop forever (#125).
     Timer {
         id: scanWatchdog
