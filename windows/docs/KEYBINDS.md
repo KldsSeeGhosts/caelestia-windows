@@ -170,11 +170,16 @@ The picker also has an IPC target, so it can be opened without a key bind:
 
 ```powershell
 $prefix = "$env:LOCALAPPDATA\Programs\caelestia-windows"
-& "$prefix\qs.exe" -p "$prefix\shell" ipc call clipboard toggle
-& "$prefix\qs.exe" -p "$prefix\shell" ipc call clipboard open
-& "$prefix\qs.exe" -p "$prefix\shell" ipc call clipboard close
-& "$prefix\qs.exe" -p "$prefix\shell" ipc call clipboard state
+# The shell runs from the selected version, not the prefix root.
+$runtime = Join-Path $prefix ("versions\" + (Get-Content "$prefix\install.json" -Raw | ConvertFrom-Json).current)
+& "$runtime\qs.exe" -p "$runtime\shell" ipc call clipboard toggle
+& "$runtime\qs.exe" -p "$runtime\shell" ipc call clipboard open
+& "$runtime\qs.exe" -p "$runtime\shell" ipc call clipboard close
+& "$runtime\qs.exe" -p "$runtime\shell" ipc call clipboard state
 ```
+
+Calling the prefix root's `qs.exe -p "$prefix\shell"` instead reports "No running
+instances", because the running shell's path is the version directory.
 
 ## Routing: RegisterHotKey or the keyboard hook
 
@@ -346,12 +351,14 @@ The action is also callable without a key:
 
 ```powershell
 $prefix = "$env:LOCALAPPDATA\Programs\caelestia-windows"
-& "$prefix\qs.exe" -p "$prefix\shell" ipc call displays off
+$runtime = Join-Path $prefix ("versions\" + (Get-Content "$prefix\install.json" -Raw | ConvertFrom-Json).current)
+& "$runtime\qs.exe" -p "$runtime\shell" ipc call displays off
 ```
 
-Only fakes have exercised this path. Whether Windows retains the monitor
-topology and window placement is a live QA check, not a guarantee; physically
-switching a monitor off may still remove it.
+Live-checked on two monitors (#11): the panels go dark, and the monitor
+topology, scale and window placement are kept. Prefer it over a monitor's power
+button: on DisplayPort the button is a hot-unplug, so Windows removes the
+monitor and rearranges the desktop (see #215).
 
 ### 4. `"exec"` — launch an external command
 
