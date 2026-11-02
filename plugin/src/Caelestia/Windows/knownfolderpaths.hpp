@@ -1,0 +1,30 @@
+#pragma once
+
+#include <qdir.h>
+#include <qstring.h>
+
+#include <shlobj.h>
+
+namespace caelestia::shell::windows {
+
+// Resolve a Windows known folder so redirected folders (OneDrive folder backup
+// or Folder Properties) are found where Windows actually keeps them. An
+// explicit path from the user's config always wins over the system default.
+// KF_FLAG_DONT_VERIFY keeps an offline redirected folder resolvable.
+inline QString resolveKnownFolder(REFKNOWNFOLDERID id, const QString& overridePath = {}) {
+    auto path = overridePath.trimmed();
+    if (!path.isEmpty()) {
+        path = QDir::fromNativeSeparators(path);
+    } else {
+        PWSTR raw = nullptr;
+        if (FAILED(SHGetKnownFolderPath(id, KF_FLAG_DONT_VERIFY, nullptr, &raw)) || raw == nullptr)
+            return {};
+        path = QDir::fromNativeSeparators(QString::fromWCharArray(raw));
+        CoTaskMemFree(raw);
+    }
+
+    while (path.size() > 3 && path.endsWith(u'/')) path.chop(1);
+    return path;
+}
+
+} // namespace caelestia::shell::windows

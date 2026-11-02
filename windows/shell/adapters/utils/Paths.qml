@@ -3,6 +3,8 @@ pragma Singleton
 import QtQuick
 import Quickshell
 import Caelestia
+import Caelestia.Config
+import Caelestia.Windows as Native
 import qs.services
 
 // Resolve the original shell's asset namespace inside the isolated stage.
@@ -17,8 +19,18 @@ QtObject {
     // <profile>/state/caelestia/scheme.json (the upstream CLI's own layout).
     readonly property string state: (Quickshell.stateDir + "/caelestia").replace(/\\/g, "/")
 
-    readonly property string wallsdir: (Quickshell.env("CAELESTIA_WALLPAPER_DIR") || (home + "/Pictures/Wallpapers")).replace(/\\/g, "/")
+    // Windows may redirect these folders (for example OneDrive folder backup),
+    // so ask the shell for their real paths instead of appending to the profile.
+    readonly property string pictures: (Native.KnownFolders.pictures || (home + "/Pictures")).replace(/\\/g, "/")
+    readonly property string videos: (Native.KnownFolders.videos || (home + "/Videos")).replace(/\\/g, "/")
+
+    readonly property string wallsdir: (Quickshell.env("CAELESTIA_WALLPAPER_DIR") || expandPath(GlobalConfig.paths.wallpaperDir) || (pictures + "/Wallpapers")).replace(/\\/g, "/")
     readonly property string recsdir: Recorder.outputDir
+    function expandPath(path: string): string {
+        if (!path || !path.trim())
+            return "";
+        return path.trim().replace(/\\/g, "/").replace(/^(?:~|\$(?:HOME|\{HOME\}))(?=\/|$)/, home);
+    }
     function shortenHome(path: string): string { return path.replace(home, "~"); }
     // Use Windows default applications, not upstream's mpv/thunar commands.
     function openRecording(path: string): bool {
