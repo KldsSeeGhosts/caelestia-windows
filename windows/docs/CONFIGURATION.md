@@ -194,7 +194,7 @@ Controls the bottom application and action launcher drawer.
 **Windows differences:**
 
 - **App catalog:** Enumerates Windows `shell:AppsFolder` and Start menu shortcuts. Launch counts are stored in `%LOCALAPPDATA%\caelestia-windows\state\apps-frequencies.json`.
-- **Wallpapers:** `paths.wallpaperDir` defaults to the `Wallpapers` subfolder of the Windows Pictures known folder (for example `%USERPROFILE%\Pictures\Wallpapers`, or a Pictures folder redirected to OneDrive). An explicit `paths.wallpaperDir` or the `CAELESTIA_WALLPAPER_DIR` environment variable still wins. Selecting a wallpaper in `> wallpaper` applies it to the Windows desktop via `Quickshell.Windows.Wallpaper`.
+- **Wallpapers:** `paths.wallpaperDir` defaults to the `Wallpapers` subfolder of the Windows Pictures known folder (for example `%USERPROFILE%\Pictures\Wallpapers`, or a Pictures folder redirected to OneDrive). An explicit `paths.wallpaperDir` or the `CAELESTIA_WALLPAPER_DIR` environment variable still wins. Known Folders are resolved once at startup, so a folder redirection changed while the shell is running takes effect after a restart. Selecting a wallpaper in `> wallpaper` applies it to the Windows desktop via `Quickshell.Windows.Wallpaper`.
 - **Actions (`launcher.actions`):** Session actions in the launcher (`Shutdown`, `Reboot`, `Logout`, `Lock`, `Sleep`) route through the Windows session service allowlist; arbitrary Linux shell commands (`systemctl`, `loginctl`, `caelestia` CLI) are translated if they match the session allowlist or refused without running a detached process.
 
 ### `dashboard` and `services`

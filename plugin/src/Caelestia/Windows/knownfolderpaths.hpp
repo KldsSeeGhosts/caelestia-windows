@@ -16,14 +16,21 @@ inline QString resolveKnownFolder(REFKNOWNFOLDERID id, const QString& overridePa
     if (!path.isEmpty()) {
         path = QDir::fromNativeSeparators(path);
     } else {
-        PWSTR raw = nullptr;
-        if (FAILED(SHGetKnownFolderPath(id, KF_FLAG_DONT_VERIFY, nullptr, &raw)) || raw == nullptr)
+        // The caller must free the shell buffer, including when the call fails.
+        struct CoTaskMemBuffer {
+            PWSTR value = nullptr;
+
+            ~CoTaskMemBuffer() { CoTaskMemFree(value); }
+        } buffer;
+
+        if (FAILED(SHGetKnownFolderPath(id, KF_FLAG_DONT_VERIFY, nullptr, &buffer.value)) || buffer.value == nullptr) {
             return {};
-        path = QDir::fromNativeSeparators(QString::fromWCharArray(raw));
-        CoTaskMemFree(raw);
+        }
+        path = QDir::fromNativeSeparators(QString::fromWCharArray(buffer.value));
     }
 
-    while (path.size() > 3 && path.endsWith(u'/')) path.chop(1);
+    while (path.size() > 3 && path.endsWith(u'/'))
+        path.chop(1);
     return path;
 }
 

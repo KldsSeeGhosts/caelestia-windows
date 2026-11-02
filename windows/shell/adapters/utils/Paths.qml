@@ -24,12 +24,41 @@ QtObject {
     readonly property string pictures: (Native.KnownFolders.pictures || (home + "/Pictures")).replace(/\\/g, "/")
     readonly property string videos: (Native.KnownFolders.videos || (home + "/Videos")).replace(/\\/g, "/")
 
-    readonly property string wallsdir: (Quickshell.env("CAELESTIA_WALLPAPER_DIR") || expandPath(GlobalConfig.paths.wallpaperDir) || (pictures + "/Wallpapers")).replace(/\\/g, "/")
+    readonly property string wallsdir: resolveWallpapersDir(pictures, home + "/Pictures", GlobalConfig.paths.wallpaperDir, Quickshell.env("CAELESTIA_WALLPAPER_DIR"))
     readonly property string recsdir: Recorder.outputDir
+    function normalizePath(path): string {
+        return String(path || "").replace(/\\/g, "/").replace(/\/+$/, "");
+    }
+    function samePath(a, b): bool {
+        return normalizePath(a).toLowerCase() === normalizePath(b).toLowerCase();
+    }
     function expandPath(path: string): string {
         if (!path || !path.trim())
             return "";
         return path.trim().replace(/\\/g, "/").replace(/^(?:~|\$(?:HOME|\{HOME\}))(?=\/|$)/, home);
+    }
+    function resolveWallpapersDir(knownPictures, legacyPictures, configured, envOverride): string {
+        const env = envOverride ? expandPath(envOverride) : "";
+        if (env)
+            return normalizePath(env);
+
+        const knownDefault = normalizePath(normalizePath(knownPictures) + "/Wallpapers");
+        const explicit = expandPath(configured);
+
+        // Older configs could contain the computed Pictures Known Folder
+        // default. Treat that exact value as "not configured" so the legacy
+        // fallback below can still find wallpapers the old adapter scanned.
+        if (explicit && !samePath(explicit, knownDefault))
+            return normalizePath(explicit);
+
+        if (Native.KnownFolders.containsImages(knownDefault))
+            return knownDefault;
+
+        const legacyDefault = normalizePath(normalizePath(legacyPictures) + "/Wallpapers");
+        if (!samePath(legacyDefault, knownDefault) && Native.KnownFolders.containsImages(legacyDefault))
+            return legacyDefault;
+
+        return knownDefault;
     }
     function shortenHome(path: string): string { return path.replace(home, "~"); }
     // Use Windows default applications, not upstream's mpv/thunar commands.

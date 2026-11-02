@@ -8,8 +8,9 @@ param(
 )
 # Checks the Windows known-folder resolution without touching the live profile:
 # the plugin resolver is compared with SHGetKnownFolderPath, and the staged QML
-# confirms that Paths uses it while an explicit paths.wallpaperDir still wins.
-# The whole run lives in a disposable directory under the temp path.
+# confirms that Paths uses it, preserves legacy wallpapers, and still honours an
+# explicit paths.wallpaperDir. The whole run lives in a disposable directory
+# under the temp path.
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
 $BuildRoot = [IO.Path]::GetFullPath($BuildRoot)
@@ -27,6 +28,16 @@ try {
     foreach ($directory in @('config', 'state', 'runtime', 'cache', 'data')) {
         New-Item -ItemType Directory -Force -Path (Join-Path $profile $directory) | Out-Null
     }
+
+    # Upgrade fixtures: one folder with an image, one without, for both the
+    # Known Folder and the legacy profile Pictures location.
+    $fixtures = Join-Path $run 'fixtures'
+    foreach ($name in @('known-with', 'known-empty', 'legacy-with', 'legacy-empty')) {
+        New-Item -ItemType Directory -Force -Path (Join-Path $fixtures "$name\Wallpapers") | Out-Null
+    }
+    Set-Content -LiteralPath (Join-Path $fixtures 'known-with\Wallpapers\known.png') -Value 'x' -NoNewline
+    Set-Content -LiteralPath (Join-Path $fixtures 'legacy-with\Wallpapers\legacy.jpg') -Value 'x' -NoNewline
+
     if (-not (Test-Path -LiteralPath $testExe -PathType Leaf)) {
         throw "Missing known-folder test: $testExe (run windows/scripts/Build-Prototype.ps1 -Tests first)."
     }
@@ -71,6 +82,7 @@ try {
     $environment['CAELESTIA_STATE_DIR'] = "$profile\state"
     $environment['CAELESTIA_RUNTIME_DIR'] = "$profile\runtime"
     $environment['CAELESTIA_PROFILE_ROOT'] = $profile
+    $environment['CAELESTIA_KNOWN_FOLDERS_FIXTURE_ROOT'] = $fixtures
     $environment['QS_RUNTIME_DIR'] = "$profile\runtime"
     $environment['QT_QPA_PLATFORM'] = 'offscreen'
     $process = [Diagnostics.Process]::Start($info)
