@@ -232,13 +232,19 @@ ShellRoot {
         };
     }
 
-    // Diagnostics only: the public snapshot keeps the current project path for
-    // IPC and property consumers, but it must never reach the log.
+    // Diagnostics only: the public snapshot keeps the current project path and
+    // the screen names (friendly monitor names or device paths) for IPC and
+    // property consumers, but neither may reach the log. Screens are logged by
+    // index and count.
     function loggingSnapshot(): var {
         const state = root.snapshot();
         state.wallpaperEngine = Object.assign({}, state.wallpaperEngine, {
             current: state.wallpaperEngine.current ? "set" : ""
         });
+        state.windows = state.windows.map((w, i) => Object.assign({}, w, { screen: i }));
+        state.backgroundScreens = state.backgroundScreens.length;
+        state.backgroundWindows = state.backgroundWindows.map((w, i) =>
+            Object.assign({}, w, { screen: i, modelScreen: i }));
         return state;
     }
 
