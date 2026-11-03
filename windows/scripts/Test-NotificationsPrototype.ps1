@@ -1,18 +1,22 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][string]$QtPrefix,
-    [string]$BuildRoot
+    [string]$BuildRoot,
+    [string]$RunRoot,
+    [switch]$Offscreen
 )
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
 if (-not $BuildRoot) { $BuildRoot = Join-Path $repoRoot 'windows\.local\build' }
 $BuildRoot = [IO.Path]::GetFullPath($BuildRoot)
+if (-not $RunRoot) { $RunRoot = Join-Path $BuildRoot 'run' }
+$RunRoot = [IO.Path]::GetFullPath($RunRoot)
 $output = Join-Path $BuildRoot ('notifications-validation-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
 New-Item -ItemType Directory -Force -Path $output | Out-Null
 $records = New-Object Collections.Generic.List[object]
 $failure = $null
-$profile = Join-Path $BuildRoot 'notifications-prototype-profile'
+$profile = Join-Path $RunRoot 'notifications-prototype-profile'
 $historyPath = Join-Path $profile 'state\notifs.json'
 # These are test-owned paths. The ordinary user profile is never read or
 # written; the legacy path is measured only to prove it did not change.
@@ -88,7 +92,11 @@ function Assert-Common($State, [string]$Mode) {
         Assert ($State.pathConfined -eq $true) 'Local mode did not report confined paths.'
         Assert ($State.historyInsideProfile -eq $true) 'History path is outside the isolated profile.'
         Assert ($State.systemNotificationAccess -eq 0) 'Local mode changed system notification access.'
-        Assert ($State.ownership -eq 'unknown') 'Unexpected native ownership was invented.'
+        # The isolated smoke bus starts unknown and settles on owner once the
+        # lock thread acquires it. Contended/forwarding means the smoke joined
+        # a real shell's bus, which the run-scoped bus name must prevent.
+        Assert ($State.ownership -in @('owner', 'unknown')) `
+            "Local mode reported notification ownership '$($State.ownership)'."
     }
 }
 function Read-History {
@@ -111,12 +119,13 @@ try {
     # run is a real arrival rather than a restored record.
     Remove-Item -LiteralPath $historyPath -Force -ErrorAction SilentlyContinue
 
-    $screenCount = $beforeDesktop.monitors.Count
+    $screenCount = if ($Offscreen) { 1 } else { $beforeDesktop.monitors.Count }
     Assert ($screenCount -gt 0) 'No measured monitor available.'
 
     # Disabled mode on every screen: no native server, no original UI.
     for ($screen = 0; $screen -lt $screenCount; $screen++) {
         $result = & "$PSScriptRoot\Start-ShellPrototype.ps1" -QtPrefix $QtPrefix -BuildRoot $BuildRoot `
+            -RunRoot $RunRoot -Offscreen:$Offscreen `
             -Notifications -NotificationsMode Disabled -Smoke -ScaleFactor native -ScreenIndex $screen | ConvertFrom-Json
         Assert $result.passed "Notifications disabled UI failed on screen $screen."
         $records.Add([ordered]@{ kind = 'disabled'; result = $result })
@@ -128,6 +137,7 @@ try {
 
     # First local run: fresh profile, one persistent local notification.
     $runA = & "$PSScriptRoot\Start-ShellPrototype.ps1" -QtPrefix $QtPrefix -BuildRoot $BuildRoot `
+        -RunRoot $RunRoot -Offscreen:$Offscreen `
         -Notifications -NotificationsMode Local -Smoke -ScaleFactor native -ScreenIndex 0 | ConvertFrom-Json
     Assert $runA.passed 'Local notifications persist run failed.'
     $records.Add([ordered]@{ kind = 'local-persist'; result = $runA })
@@ -155,6 +165,7 @@ try {
     # Second local run: restore in a new process, expire and dismiss one new
     # notification, then leave the restored entry intact.
     $runB = & "$PSScriptRoot\Start-ShellPrototype.ps1" -QtPrefix $QtPrefix -BuildRoot $BuildRoot `
+        -RunRoot $RunRoot -Offscreen:$Offscreen `
         -Notifications -NotificationsMode Local -Smoke -ScaleFactor native -ScreenIndex 0 | ConvertFrom-Json
     Assert $runB.passed 'Local notifications expire/dismiss run failed.'
     $records.Add([ordered]@{ kind = 'local-expire-dismiss'; result = $runB })
@@ -179,6 +190,7 @@ try {
     # restored list and the local path still works at each monitor origin.
     for ($screen = 1; $screen -lt $screenCount; $screen++) {
         $result = & "$PSScriptRoot\Start-ShellPrototype.ps1" -QtPrefix $QtPrefix -BuildRoot $BuildRoot `
+            -RunRoot $RunRoot -Offscreen:$Offscreen `
             -Notifications -NotificationsMode Local -Smoke -ScaleFactor native -ScreenIndex $screen | ConvertFrom-Json
         Assert $result.passed "Notifications local UI failed on screen $screen."
         $records.Add([ordered]@{ kind = 'local-extra-screen'; result = $result })
@@ -192,6 +204,7 @@ try {
 
     # The ordinary M1 bar/session profile remains available and unchanged.
     $regression = & "$PSScriptRoot\Start-ShellPrototype.ps1" -QtPrefix $QtPrefix -BuildRoot $BuildRoot `
+        -RunRoot $RunRoot -Offscreen:$Offscreen `
         -Smoke -ScaleFactor native -ScreenIndex 0 | ConvertFrom-Json
     Assert $regression.passed 'Original M1 bar/session smoke regression failed.'
     $records.Add([ordered]@{ kind = 'm1-regression'; result = $regression })
