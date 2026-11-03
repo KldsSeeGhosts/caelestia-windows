@@ -1,9 +1,11 @@
 import QtQuick
 
-// Offscreen regression for #267. Test-WallpaperColours.ps1 splices the real
-// currentImage binding, applyPalette(), the scheme state loaders and their
-// handlers out of Wallpapers.qml into this fixture, so drift in the adapter
-// fails the run instead of passing against a copy. The mock generator writes
+// Offscreen regression for #267 and #270. Test-WallpaperColours.ps1 splices
+// the real currentImage binding, applyPalette(), the scheme state loaders and
+// their handlers out of Wallpapers.qml into this fixture, so drift in the
+// adapter fails the run instead of passing against a copy. The fast status
+// scan and the catalogue snapshot both move currentImage, and must dedupe to
+// one generation. The mock generator writes
 // the scheme name and its source image into `files` like the bridge writes
 // scheme.json and state/caelestia/wallpaper/path.txt, then reports
 // schemeChanged. No file watch is modelled: a fresh profile has none, so the
@@ -134,19 +136,30 @@ QtObject {
             check(root.calls.length === 2, "a Windows wallpaper change did not regenerate");
             check(root.lastCall().path === "C:/walls/new-windows.jpg", "the changed Windows wallpaper was not applied");
 
+            // 3b. Wallpaper Engine starts and the config watcher's status scan
+            // applies the selection before the catalogue snapshot arrives.
+            // That snapshot carries the same project and must not run the
+            // generator a second time.
+            root.engine.current = { path: "C:/we/project.json", preview: "C:/we/preview-2.jpg" };
+            root.engine.running = true;
+            check(root.calls.length === 3, "the fast status selection did not regenerate");
+            root.engine.snapshotReady = false;
+            root.engine.snapshotReady = true;
+            check(root.calls.length === 3, "the full snapshot after the fast status scan regenerated");
+            check(root.lastCall().path === "C:/we/preview-2.jpg", "the fast status selection used the wrong preview");
+
             // 4. A repeated call for the same image is deduplicated.
             root.applyPalette(false);
-            check(root.calls.length === 2, "the same image regenerated twice");
+            check(root.calls.length === 3, "the same image regenerated twice");
 
-            // 5. Wallpaper Engine relaunches on the same project.
+            // 5. Wallpaper Engine switches to another project.
             root.engine.current = { path: "C:/we/project.json", preview: "C:/we/preview.jpg" };
-            root.engine.running = true;
-            check(root.calls.length === 3, "Wallpaper Engine relaunching did not regenerate");
-            check(root.lastCall().path === "C:/we/preview.jpg", "the relaunched preview was not applied");
+            check(root.calls.length === 4, "Wallpaper Engine switching project did not regenerate");
+            check(root.lastCall().path === "C:/we/preview.jpg", "the other project's preview was not applied");
 
             // 6. The smart-scheme toggle regenerates the same image.
             root.services.smartScheme = false;
-            check(root.calls.length === 4, "the smart-scheme toggle did not regenerate");
+            check(root.calls.length === 5, "the smart-scheme toggle did not regenerate");
             check(root.lastCall().path === "C:/we/preview.jpg", "the toggled palette used the wrong image");
             check(root.lastCall().smart === false, "the current smart-scheme setting was not passed");
 
@@ -154,7 +167,7 @@ QtObject {
             root.schemeGenerator.setScheme("catppuccin", root.currentImage);
             check(root.schemeName === "catppuccin", "the fixed scheme was not picked up");
             root.engine.running = false;
-            check(root.calls.length === 4, "a fixed scheme was overwritten");
+            check(root.calls.length === 5, "a fixed scheme was overwritten");
 
             // 8. Fixed -> dynamic -> an earlier image. The picker's dynamic
             // generation records the image it used, so the earlier preview is
@@ -162,13 +175,13 @@ QtObject {
             root.schemeGenerator.setScheme("dynamic", root.currentImage);
             root.engine.current = { path: "C:/we/project.json", preview: "C:/we/preview.jpg" };
             root.engine.running = true;
-            check(root.calls.length === 5, "returning to an earlier image did not regenerate");
+            check(root.calls.length === 6, "returning to an earlier image did not regenerate");
             check(root.lastCall().path === "C:/we/preview.jpg", "the earlier preview was not applied");
 
             // 9. No generator: the fixed palette stays and nothing runs.
             root.schemeGenerator.available = false;
             root.engine.running = false;
-            check(root.calls.length === 5, "colours were generated without a generator");
+            check(root.calls.length === 6, "colours were generated without a generator");
 
             // 10. Fresh profile, as a new process: neither scheme.json nor
             // path.txt exists, so their directories do not either and nothing

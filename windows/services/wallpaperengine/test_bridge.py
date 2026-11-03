@@ -1,8 +1,10 @@
 """Read-only discovery regressions. No Windows API, profile or process access."""
 
 import importlib.util
+import json
 from pathlib import Path
 import sys
+import tempfile
 import types
 import unittest
 from unittest.mock import patch
@@ -58,6 +60,59 @@ class SnapshotTests(unittest.TestCase):
         self.assertTrue(result["running"])
         self.assertFalse(result["detected"])
         self.assertEqual(result["monitors"], {})
+
+    def test_status_snapshot_resolves_selected_projects(self):
+        # The config watcher's fast path must carry the active projects, not
+        # just their config paths, so a wallpaper change can skip the
+        # workshop-wide catalogue walk.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project_dir = root / "steamapps/workshop/content/431960/100"
+            project_dir.mkdir(parents=True)
+            (project_dir / "preview.jpg").write_bytes(b"preview")
+            (project_dir / "project.json").write_text(
+                json.dumps({"title": "Fixture", "preview": "preview.jpg"}), encoding="utf-8"
+            )
+            install_dir = root / "steamapps/common/Wallpaper Engine"
+            install_dir.mkdir(parents=True)
+            (install_dir / "wallpaper64.exe").write_bytes(b"")
+            (install_dir / "config.json").write_text(
+                json.dumps({
+                    "tester": {
+                        "general": {
+                            "wallpaperconfig": {
+                                "selectedwallpapers": {
+                                    "Monitor0": {"file": str(project_dir / "project.json")},
+                                    "Monitor1": {"file": str(root / "missing/project.json")},
+                                }
+                            }
+                        }
+                    }
+                }),
+                encoding="utf-8",
+            )
+            with patch.object(bridge, "libraries", return_value=[root]), patch.object(
+                bridge, "install", return_value=install_dir
+            ), patch.object(bridge, "running", return_value=True), patch.object(
+                bridge.os, "getlogin", return_value="tester"
+            ):
+                result = bridge.snapshot(status_only=True)
+                full = bridge.snapshot(status_only=False)
+
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["detected"])
+        self.assertEqual(result["active"], {
+            "Monitor0": str(project_dir / "project.json"),
+            "Monitor1": str(root / "missing/project.json"),
+        })
+        self.assertEqual(result["monitors"]["Monitor0"]["title"], "Fixture")
+        self.assertEqual(result["monitors"]["Monitor0"]["preview"], (project_dir / "preview.jpg").resolve().as_posix())
+        # A broken selection keeps its monitor key so the shell can fall back
+        # instead of applying the previous project's palette indefinitely.
+        self.assertEqual(result["monitors"]["Monitor1"], {
+            "path": "", "preview": "", "title": "", "engine": True,
+        })
+        self.assertEqual(full["monitors"], result["monitors"])
 
 
 if __name__ == "__main__":

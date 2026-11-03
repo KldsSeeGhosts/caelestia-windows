@@ -1,11 +1,13 @@
 [CmdletBinding()]
 param([Parameter(Mandatory)][string]$QtPrefix)
 
-# Offscreen regression for #267: Wallpapers.qml is the single owner of dynamic
-# palette regeneration. The fixture splices the real currentImage binding,
-# applyPalette() and its image/smart-scheme/discovery handlers, so a second
-# generation path, the old startup gate or a stale handler fails instead of
-# passing on a copy. The mock generator records its source like path.txt does.
+# Offscreen regression for #267 and #270: Wallpapers.qml is the single owner of
+# dynamic palette regeneration. The fixture splices the real currentImage
+# binding, applyPalette() and its image/smart-scheme/discovery handlers, so a
+# second generation path, the old startup gate or a stale handler fails instead
+# of passing on a copy. The WE config watcher must start a status scan from the
+# complete read, not from the debounce, and the status payload carries the
+# selected projects. The mock generator records its source like path.txt does.
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
 $runner = Join-Path $QtPrefix 'bin\qml.exe'
@@ -44,6 +46,16 @@ if ($setName -match 'applyPalette' -or $setSource -match 'applyPalette' -or $rel
 # the currentImage change, and the dedupe must use the persisted bridge source.
 if ($engine -match 'matchColours|lastPaletteKey|SchemeGenerator') {
     throw 'WallpaperEngine still contains a palette generation path.'
+}
+# The selection change must start its status scan from the complete config
+# read; the debounce may only remain as the missed-notification fallback.
+if ($engine -notmatch 'function refreshActive\(\): void \{' -or
+    $engine -notmatch 'root\.refreshActive\(\);' -or
+    $engine -notmatch 'data\.monitors') {
+    throw 'WallpaperEngine does not apply a status scan on the config change.'
+}
+if ($engine -match 'onTriggered: root\.refresh\(true\)') {
+    throw 'WallpaperEngine still waits for the debounce before refreshing the selection.'
 }
 if (([regex]::Matches($wallpapers, 'SchemeGenerator\.applyWallpaper\(')).Count -ne 1) {
     throw 'Wallpapers should call SchemeGenerator.applyWallpaper exactly once.'
@@ -108,7 +120,7 @@ try {
     Write-Output $output
 
     # The assertion count is part of the marker: dropping a scenario must fail.
-    $marker = [regex]::Match($output, 'CAELESTIA_WALLPAPER_COLOURS_PASS 27\b')
+    $marker = [regex]::Match($output, 'CAELESTIA_WALLPAPER_COLOURS_PASS 30\b')
     if ($process.ExitCode -ne 0 -or -not $marker.Success -or
         $output -match 'CAELESTIA_WALLPAPER_COLOURS_FAIL|TypeError|ReferenceError|binding loop') {
         throw 'Wallpaper colours fixture failed.'
