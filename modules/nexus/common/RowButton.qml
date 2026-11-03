@@ -23,7 +23,8 @@ ConnectedRect {
 
     // Windows port (#210): keyboard focus and activation. Upstream rows only
     // activate through the StateLayer's MouseArea. Focus shows as the state
-    // layer at M3's focus opacity, and Enter/Space play the press ripple. A
+    // layer at M3's focus opacity under a FocusRing, and Enter/Space play the
+    // press ripple. A
     // row faded out (DialogRowButton while its dialog is open) or disabled
     // leaves the tab chain.
     function activate(): void {
@@ -53,6 +54,14 @@ ConnectedRect {
 
         stateOpacity: root.activeFocus && !root.disabled ? 0.1 : containsMouse ? 0.08 : 0 // Windows port (#210)
         onClicked: e => root.clicked(e)
+    }
+
+    FocusRing { // Windows port (#210)
+        showing: root.activeFocus && !root.disabled
+        topLeftRadius: root.topLeftRadius
+        topRightRadius: root.topRightRadius
+        bottomLeftRadius: root.bottomLeftRadius
+        bottomRightRadius: root.bottomRightRadius
     }
 
     RowLayout {

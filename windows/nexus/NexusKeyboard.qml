@@ -4,13 +4,17 @@
 // Keyboard, with the same isolated profile and disabled service facades as the
 // smoke. It covers:
 //
-//   1. RowButton: Tab focus, the state-layer focus indicator, exactly one
-//      activation per Return, keypad Enter and Space, pointer activation, and
-//      disabled, faded and hidden rows leaving the tab chain;
-//   2. every Nexus page and every sub-page: Tab walks a closed cycle that never
-//      stalls or lands on a hidden or disabled item, reaches every visible,
-//      enabled row, and scrolls the focused row into view. A reveal stops when
-//      focus leaves the page and when a pointer scroll takes contentY.
+//   1. RowButton: Tab focus, the focus indicator (state layer and FocusRing),
+//      exactly one activation per Return, keypad Enter and Space, pointer
+//      activation, and disabled, faded and hidden rows leaving the tab chain;
+//      ToggleRow: the row's FocusRing on keyboard focus only, Return toggling;
+//   2. the nav list: Return on a focused entry opens its page;
+//   3. every Nexus page and every sub-page: Tab walks a closed cycle that never
+//      stalls or lands on a hidden or disabled item, shows a FocusRing on every
+//      stop except text fields (they show a caret and outline), reaches every
+//      visible, enabled row, and scrolls the focused row into view. A reveal
+//      stops when focus leaves the page and when a pointer scroll takes
+//      contentY.
 //
 // It types into the offscreen window only. It never activates a real page row
 // (several open ms-settings: links), takes no screenshots and does not touch
@@ -82,6 +86,22 @@ ShellRoot {
             && child.stateOpacity !== undefined) ?? null;
     }
 
+    // The FocusRing (#210) that is showing in an item's subtree, else null.
+    function ringOf(item): var {
+        for (const child of item?.children ?? []) {
+            if (child?.isFocusRing === true && child.showing)
+                return child;
+            const found = root.ringOf(child);
+            if (found)
+                return found;
+        }
+        return null;
+    }
+
+    function isTextInput(item): bool {
+        return item?.cursorPosition !== undefined;
+    }
+
     // Visible on screen: every ancestor up to the window is visible and not
     // faded out, and the item is enabled.
     function shown(item): bool {
@@ -130,6 +150,8 @@ ShellRoot {
             if (item === seen[0])
                 break; // closed cycle (a single stop cycles onto itself)
             root.check(item !== previous, `${label}: Tab trapped on ${root.describe(item)}`);
+            root.check(root.isTextInput(item) || root.ringOf(item) !== null,
+                `${label}: Tab reached ${root.describe(item)} without a focus ring`);
             seen.push(item);
             previous = item;
         }
@@ -189,7 +211,9 @@ ShellRoot {
             readonly property alias fadedRow: fadedRow
             readonly property alias hiddenRow: hiddenRow
             readonly property alias last: last
+            readonly property alias toggle: toggle
 
+            ToggleRow { id: toggle; text: "Toggle" }
             RowButton { id: first; first: true; text: "First"; onClicked: parent.clicks++ }
             RowButton { id: disabledRow; text: "Disabled"; disabled: true; onClicked: parent.disabledClicks++ }
             RowButton { id: fadedRow; text: "Faded"; opacity: 0; onClicked: parent.disabledClicks++ }
@@ -213,6 +237,11 @@ ShellRoot {
         root.check(f.first.activeFocusOnTab, "RowButton is not in the tab chain");
         root.settle(() => Math.abs(layer.stateOpacity - 0.1) < 0.001); // opacity Behavior
         root.check(Math.abs(layer.stateOpacity - 0.1) < 0.001, `focus indicator opacity ${layer.stateOpacity}`);
+        const ring = root.ringOf(f.first);
+        root.check(ring !== null, "focused RowButton shows no focus ring");
+        root.settle(() => ring.opacity > 0.99);
+        root.check(ring.visible && ring.opacity > 0.99 && ring.border.width >= 2,
+            `focus ring is not drawn (opacity ${ring.opacity}, border ${ring.border.width})`);
         for (const key of [Qt.Key_Return, Qt.Key_Enter, Qt.Key_Space])
             root.input.keyClick(key);
         root.check(f.clicks === 3, `Return, Enter and Space gave ${f.clicks} activations`);
@@ -224,6 +253,7 @@ ShellRoot {
         const resting = layer.containsMouse ? 0.08 : 0;
         root.settle(() => Math.abs(layer.stateOpacity - resting) < 0.001);
         root.check(Math.abs(layer.stateOpacity - resting) < 0.001, "focus indicator stayed after focus left");
+        root.check(!ring.showing, "focus ring stayed after focus left");
         root.input.keyClick(Qt.Key_Space);
         root.check(f.clicks === 13, "NavRow did not activate on Space");
         root.input.keyClick(Qt.Key_Tab, Qt.ShiftModifier);
@@ -239,6 +269,53 @@ ShellRoot {
         root.input.mouseClick(f.first);
         root.check(f.clicks === 14, "pointer activation changed");
         root.check(!f.first.activeFocus, "pointer click took keyboard focus");
+
+        // ToggleRow: the row's ring shows for keyboard focus, not a click.
+        f.toggle.forceActiveFocus(Qt.TabFocusReason);
+        root.check(root.ringOf(f.toggle) !== null, "focused ToggleRow shows no focus ring");
+        root.check(root.ringOf(f.toggle.indicator) === null, "ToggleRow also ringed its switch");
+        const wasChecked = f.toggle.checked;
+        root.input.keyClick(Qt.Key_Return);
+        root.check(f.toggle.checked !== wasChecked, "Return did not toggle a ToggleRow");
+        root.input.keyClick(Qt.Key_Space);
+        root.check(f.toggle.checked === wasChecked, "Space did not toggle a ToggleRow");
+        root.win.contentItem.forceActiveFocus();
+        root.input.mouseClick(f.toggle);
+        root.check(root.ringOf(f.toggle) === null, "a pointer click showed the focus ring");
+    }
+
+    // Return on a focused nav entry opens that page.
+    function navChecks(): void {
+        const list = root.findByObjectName(root.nexusItem, "nexusSearchResults");
+        root.check(list !== null, "nav list not found");
+        const entries = [];
+        root.collectFocusable(list.contentItem, entries);
+        const target = root.nexusItem.nState.currentPageIdx === 1 ? 0 : 1;
+        const entry = entries.find(e => e.modelData?.pageIndex === target);
+        root.check(!!entry, `nav entry for page ${target} not found among ${entries.length}`);
+        entry.forceActiveFocus(Qt.TabFocusReason);
+        root.check(root.ringOf(entry) !== null, "focused nav entry shows no focus ring");
+        root.input.keyClick(Qt.Key_Return);
+        root.check(root.nexusItem.nState.currentPageIdx === target, "Return on a nav entry did not open its page");
+    }
+
+    function findByObjectName(item, name): var {
+        for (const child of item?.children ?? []) {
+            if (child?.objectName === name)
+                return child;
+            const found = root.findByObjectName(child, name);
+            if (found)
+                return found;
+        }
+        return null;
+    }
+
+    function collectFocusable(item, out): void {
+        for (const child of item?.children ?? []) {
+            if (child?.activeFocusOnTab)
+                out.push(child);
+            root.collectFocusable(child, out);
+        }
     }
 
     property real heldY: 0
@@ -320,6 +397,7 @@ ShellRoot {
             root.fixture.destroy();
             root.fixture = null;
         }, null]);
+        q.push(["nav entry", () => root.navChecks(), null]);
         q.push(["reveal fixture", () => root.prepareReveal(), () => root.revealLaidOut()]);
         q.push(["reveal cancelled", () => root.startCancelledReveal(), () => root.waits >= 4]);
         q.push(["reveal cancelled check", () => root.checkCancelledReveal(), null]);
