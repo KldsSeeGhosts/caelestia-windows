@@ -4,7 +4,6 @@ param(
     [string]$BuildRoot,
     [string]$RunRoot,
     [switch]$Offscreen,
-    # Optional shared M1 result cache; one path per suite invocation.
     [string]$M1CachePath
 )
 

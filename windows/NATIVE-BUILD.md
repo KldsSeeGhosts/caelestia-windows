@@ -306,13 +306,9 @@ executes once for the invocation instead of once per harness:
 $repo = (Resolve-Path .).Path
 $qtPrefix = "$env:LOCALAPPDATA\caelestia-dev\Qt\6.11.2\msvc2022_64"
 $buildRoot = 'C:\b-cull'
-# Keep the run root short and outside %TEMP%. Native DLL loading and the
-# SchemeRuntime virtual environment still hit Windows path limits (#318).
+# Short run root outside %TEMP% (Windows path limits, #318).
 $runRoot = 'C:\b-cull\run'
 New-Item -ItemType Directory -Force -Path $runRoot | Out-Null
-# One cache path per invocation, shared by the hosts in this loop. The cache
-# records its inputs and M1 reruns on a mismatch, but a unique path also keeps
-# separate runs separate.
 $m1Cache = Join-Path $runRoot ('m1-result-' + [guid]::NewGuid().ToString('N') + '.json')
 Push-Location $runRoot
 try {

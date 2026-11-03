@@ -4,7 +4,6 @@ param(
     [string]$BuildRoot,
     [string]$RunRoot,
     [switch]$Offscreen,
-    # Optional shared M1 result cache; one path per suite invocation.
     [string]$M1CachePath
 )
 
@@ -28,9 +27,6 @@ function Assert($Condition, [string]$Message) {
 function Desktop-Identity($State) {
     # Foreground/cursor movement and unrelated application processes are outside
     # this read-only gate. Compare physical work areas and the existing shells.
-    # Concurrent bounded smokes own a transient qs process; this harness waits
-    # for its own child to exit, so it excludes qs/quickshell from the shared
-    # snapshot instead of claiming another agent's run.
     [ordered]@{
         monitors = $State.monitors
         taskbar = $State.taskbar

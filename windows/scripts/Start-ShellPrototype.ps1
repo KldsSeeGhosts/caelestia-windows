@@ -10,8 +10,6 @@ param(
     # keeps test frames independent of desktop composition, a live shell, and
     # monitor state, and never opens a native window.
     [switch]$Offscreen,
-    # Smoke callers that cache the result (Caelestia-M1Regression.ps1) need the
-    # failed result instead of a terminating error.
     [switch]$NoThrow,
     [switch]$Wait,
     [switch]$MonitorCycle,

@@ -1,3 +1,7 @@
+<#
+.SYNOPSIS
+Runs the M1 bar/session smoke once per suite invocation and reuses its result.
+#>
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][string]$QtPrefix,
@@ -9,11 +13,6 @@ param(
     [string]$CachePath
 )
 
-# Runs the M1 bar/session smoke at most once per suite invocation and returns
-# the same Start-ShellPrototype result to every caller. The cache lives under
-# the disposable build root, never in the staged profile or the installation.
-# A cache is reused only when the build record and the staged QML payload still
-# match the inputs recorded with it, so a shared path cannot report a stale pass.
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
 if (-not $BuildRoot) { $BuildRoot = Join-Path $repoRoot 'windows\.local\build' }
@@ -21,6 +20,7 @@ $BuildRoot = [IO.Path]::GetFullPath($BuildRoot)
 $QtPrefix = [IO.Path]::GetFullPath($QtPrefix)
 if (-not $RunRoot) { $RunRoot = Join-Path $repoRoot 'windows\.local\build' }
 $RunRoot = [IO.Path]::GetFullPath($RunRoot)
+$profileRoot = Join-Path $RunRoot 'shell-prototype-profile'
 if (-not $CachePath) {
     $cacheRoot = Join-Path $BuildRoot 'm1-regression'
     New-Item -ItemType Directory -Force -Path $cacheRoot | Out-Null
@@ -30,17 +30,17 @@ $CachePath = [IO.Path]::GetFullPath($CachePath)
 $cacheParent = Split-Path -Parent $CachePath
 if ($cacheParent) { New-Item -ItemType Directory -Force -Path $cacheParent | Out-Null }
 
-# The smoke stages its QML from this checkout, and the staged shell.qml embeds
-# the profile path, so probe with the same profile name the smoke uses and hash
-# the manifest the real run also records. A changed payload reruns M1.
-function Get-StagedPayloadSha256 {
+function Get-StagedPayloadSha256([string]$ProfileRoot) {
     $probe = Join-Path $RunRoot ('m1-payload-probe-' + [guid]::NewGuid().ToString('N'))
     try {
         & (Join-Path $PSScriptRoot 'Stage-ShellPrototype.ps1') -Destination $probe `
-            -ProfileRoot (Join-Path $RunRoot 'shell-prototype-profile') -Prototype shell | Out-Null
-        (Get-FileHash -LiteralPath (Join-Path $probe 'sources.json') -Algorithm SHA256).Hash
+            -ProfileRoot $ProfileRoot -Prototype shell | Out-Null
+        [pscustomobject]@{
+            hash = (Get-FileHash -LiteralPath (Join-Path $probe 'sources.json') -Algorithm SHA256).Hash
+            error = ''
+        }
     } catch {
-        $null
+        [pscustomobject]@{ hash = ''; error = $_.Exception.Message }
     } finally {
         Remove-Item -LiteralPath $probe -Recurse -Force -ErrorAction SilentlyContinue
     }
@@ -68,24 +68,42 @@ $prerequisitesPresent =
     (Test-Path -LiteralPath (Join-Path $BuildRoot 'quickshell\qs.exe') -PathType Leaf)
 
 $cachedResult = $null
-if ($inputsReadable -and $prerequisitesPresent -and (Test-Path -LiteralPath $CachePath -PathType Leaf)) {
+$cacheMiss = $null
+if (-not $prerequisitesPresent) {
+    $cacheMiss = 'missing-prerequisite'
+} elseif (-not $inputsReadable) {
+    $cacheMiss = 'unreadable'
+} elseif (-not (Test-Path -LiteralPath $CachePath -PathType Leaf)) {
+    $cacheMiss = 'missing-cache'
+} else {
     try {
         $cached = Get-Content -LiteralPath $CachePath -Raw | ConvertFrom-Json
         $recorded = $cached.inputs
-        $sameInputs = $recorded -and
-            [string]::Equals([string]$recorded.buildRoot, $BuildRoot, [StringComparison]::OrdinalIgnoreCase) -and
-            [string]::Equals([string]$recorded.qtPrefix, $QtPrefix, [StringComparison]::OrdinalIgnoreCase) -and
-            [string]::Equals([string]$recorded.sourceRevision, $inputs.sourceRevision, [StringComparison]::Ordinal) -and
-            [string]::Equals([string]$recorded.backendRevision, $inputs.backendRevision, [StringComparison]::Ordinal) -and
-            ([bool]$recorded.offscreen) -eq $Offscreen.IsPresent
-        if ($sameInputs) {
-            $inputs.payloadSha256 = Get-StagedPayloadSha256
-            $sameInputs = $inputs.payloadSha256 -and
-                [string]::Equals([string]$recorded.payloadSha256, $inputs.payloadSha256, [StringComparison]::OrdinalIgnoreCase)
+        if (-not $recorded) {
+            $cacheMiss = 'unreadable'
+        } elseif (-not [string]::Equals([string]$recorded.buildRoot, $BuildRoot, [StringComparison]::OrdinalIgnoreCase)) {
+            $cacheMiss = 'input-mismatch: buildRoot'
+        } elseif (-not [string]::Equals([string]$recorded.qtPrefix, $QtPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+            $cacheMiss = 'input-mismatch: qtPrefix'
+        } elseif (-not [string]::Equals([string]$recorded.sourceRevision, $inputs.sourceRevision, [StringComparison]::Ordinal)) {
+            $cacheMiss = 'input-mismatch: sourceRevision'
+        } elseif (-not [string]::Equals([string]$recorded.backendRevision, $inputs.backendRevision, [StringComparison]::Ordinal)) {
+            $cacheMiss = 'input-mismatch: backendRevision'
+        } elseif (([bool]$recorded.offscreen) -ne $Offscreen.IsPresent) {
+            $cacheMiss = 'input-mismatch: offscreen'
+        } else {
+            $payload = Get-StagedPayloadSha256 $profileRoot
+            if (-not $payload.hash) {
+                $cacheMiss = 'payload-probe-failed: ' + $payload.error
+            } elseif (-not [string]::Equals([string]$recorded.payloadSha256, $payload.hash, [StringComparison]::OrdinalIgnoreCase)) {
+                $cacheMiss = 'input-mismatch: payloadSha256'
+            } else {
+                $inputs.payloadSha256 = $payload.hash
+                $cachedResult = $cached.result
+            }
         }
-        if ($sameInputs) { $cachedResult = $cached.result }
     } catch {
-        $cachedResult = $null
+        $cacheMiss = 'unreadable'
     }
 }
 if ($cachedResult) {
@@ -95,14 +113,22 @@ if ($cachedResult) {
     return
 }
 
-# -NoThrow lets the result (including a failed or timed-out run) be cached so
-# the next harness in the same suite does not repeat the same broken smoke.
-$result = & "$PSScriptRoot\Start-ShellPrototype.ps1" -QtPrefix $QtPrefix -BuildRoot $BuildRoot `
-    -RunRoot $RunRoot -Offscreen:$Offscreen -Smoke -ScaleFactor native -ScreenIndex 0 -NoThrow | ConvertFrom-Json
+$cacheable = $inputsReadable -and $prerequisitesPresent
+try {
+    $result = & "$PSScriptRoot\Start-ShellPrototype.ps1" -QtPrefix $QtPrefix -BuildRoot $BuildRoot `
+        -RunRoot $RunRoot -ProfileRoot $profileRoot -Offscreen:$Offscreen -Smoke -ScaleFactor native -ScreenIndex 0 -NoThrow | ConvertFrom-Json
+} catch {
+    $result = [pscustomobject]@{ passed = $false; failure = $_.Exception.Message }
+}
 $result | Add-Member -NotePropertyName m1Cached -NotePropertyValue $false -Force
 $result | Add-Member -NotePropertyName m1CachePath -NotePropertyValue $CachePath -Force
 $inputs.payloadSha256 = $(if ($result.sources -and (Test-Path -LiteralPath $result.sources -PathType Leaf)) {
     (Get-FileHash -LiteralPath $result.sources -Algorithm SHA256).Hash
 } else { '' })
-[ordered]@{ inputs = $inputs; result = $result } | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $CachePath -Encoding UTF8
+if ($cacheable) {
+    [ordered]@{ inputs = $inputs; result = $result } | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $CachePath -Encoding UTF8
+}
+if ($cacheMiss) {
+    $result | Add-Member -NotePropertyName m1CacheMiss -NotePropertyValue $cacheMiss -Force
+}
 Write-Output $result

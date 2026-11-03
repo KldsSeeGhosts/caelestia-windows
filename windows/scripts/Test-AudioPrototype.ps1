@@ -6,7 +6,6 @@ param(
     # Run every UI smoke on the offscreen QPA. This is the normal test mode:
     # no window is shown and frame presentation never depends on DWM.
     [switch]$Offscreen,
-    # Optional shared M1 result cache; one path per suite invocation.
     [string]$M1CachePath
 )
 
@@ -39,9 +38,6 @@ function Assert-AudioReadable($State) {
 function Desktop-Identity($State) {
     # Foreground/cursor movement and unrelated application processes are outside
     # this read-only gate. Compare physical work areas and the existing shells.
-    # Concurrent bounded smokes own a transient qs process; this harness waits
-    # for its own child to exit, so it excludes qs/quickshell from the shared
-    # snapshot instead of claiming another agent's run.
     [ordered]@{
         monitors = $State.monitors
         taskbar = $State.taskbar
