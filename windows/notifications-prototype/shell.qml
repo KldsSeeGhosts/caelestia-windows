@@ -39,6 +39,7 @@ ShellRoot {
     property int restoredCount: 0
     property var restoredIds: []
     property bool runB: false
+    property bool localOwnerSkipped: false
     property int postedId: 0
     property string postedRecordId: ""
     property string testSummary: "Caelestia Windows local notification"
@@ -222,8 +223,12 @@ ShellRoot {
                 root.fail("local mode did not activate the native backend loader");
                 return;
             }
-            if (state.status !== "local") {
+            if (state.status !== "local" && state.status !== "contended") {
                 root.fail("local service did not settle: " + state.status + " (" + state.reason + ")");
+                return;
+            }
+            if (state.contended && state.ownership !== "contended") {
+                root.fail("contended service did not report contended ownership");
                 return;
             }
             if (!state.historyLoaded) {
@@ -316,8 +321,8 @@ ShellRoot {
                 return;
             }
         } else {
-            if (state.status !== "local" || !state.pathConfined
-                    || !state.historyInsideProfile) {
+            if ((state.status !== "local" && state.status !== "contended")
+                    || !state.pathConfined || !state.historyInsideProfile) {
                 root.fail("local service state changed during smoke");
                 return;
             }
@@ -325,7 +330,18 @@ ShellRoot {
                 root.fail("real Windows notification dismissal was attempted");
                 return;
             }
-            if (!root.runB) {
+            if (state.contended) {
+                if (!root.localOwnerSkipped || state.ownership !== "contended"
+                        || state.postedId !== 0 || state.listCount !== 0
+                        || state.popupCount !== 0 || state.deliveryUnconfirmed
+                        || state.deliveryConfirmation !== "idle") {
+                    root.fail("contended shell delivered or changed ownership during smoke");
+                    return;
+                }
+            } else if (root.localOwnerSkipped) {
+                root.fail("contended ownership disappeared during smoke");
+                return;
+            } else if (!root.runB) {
                 if (state.listCount !== root.restoredCount + 1 || state.popupCount !== 1) {
                     root.fail("persist run did not retain one popped-up local notification");
                     return;
@@ -538,6 +554,25 @@ ShellRoot {
                     return;
                 root.initialNotificationState = state;
                 if (Notifs.enabled) {
+                    if (state.contended) {
+                        // A live shell owns the session bus. Local delivery is
+                        // refused while contended, so assert that refusal and
+                        // skip the local-owner scenarios. The backend unit
+                        // tests cover local delivery and forwarding.
+                        root.localOwnerSkipped = true;
+                        root.postedId = Notifs.postLocalTest(root.testSummary, root.testBody, []);
+                        const refusalState = root.notificationState();
+                        if (root.postedId !== 0 || refusalState.postedPresent
+                                || refusalState.listCount !== 0 || refusalState.deliveryUnconfirmed
+                                || refusalState.deliveryConfirmation !== "idle"
+                                || refusalState.reason.indexOf("Another notification owner") < 0) {
+                            root.fail("contended shell did not refuse local delivery");
+                            return;
+                        }
+                        console.log("CAELESTIA_NOTIFICATIONS_SKIP local-owner owner held by live shell");
+                        root.phase = 6;
+                        return;
+                    }
                     // A replacement send has no local replace path in this
                     // slice. It must be refused before notifySend rather than
                     // left pending and reported as forwarded/unconfirmed.
@@ -559,7 +594,7 @@ ShellRoot {
                 return;
             }
 
-            if (!Notifs.enabled) {
+            if (!Notifs.enabled || root.phase === 6) {
                 root.finalize();
                 return;
             }

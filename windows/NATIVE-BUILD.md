@@ -196,6 +196,16 @@ powershell -NoProfile -File windows/scripts/Start-ShellPrototype.ps1 `
     -QtPrefix "$devRoot\Qt\6.11.2\msvc2022_64" -Smoke -ScaleFactor native -ScreenIndex 0
 ```
 
+Add `-Offscreen` to run the smoke on the Qt offscreen QPA with the software
+backend and the basic render loop. It opens no native window and captures
+complete without DWM or vsync. The smoke uses the session notification bus, so
+an installed shell running beside it owns that bus; the notification smoke then
+reports `contended` and marks its local-owner delivery scenarios SKIPPED while
+the backend unit tests cover the local and forwarding paths. The service test
+wrappers accept `-Offscreen` and `-RunRoot`; use a short run root (for example
+`C:\r-233`) because the SchemeRuntime virtual environment lives under it and
+native DLL loading still has Windows path limits.
+
 Add `-MonitorCycle` to a native smoke run with at least two monitors to
 open/capture/close, move the same ContentWindow to the next monitor, repeat,
 and return. Results include `actualScreens` metadata and a `captures` array.

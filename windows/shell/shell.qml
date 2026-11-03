@@ -93,6 +93,7 @@ ShellRoot {
 
             WindowsFocusGuard {
                 target: content.contentItem
+                foregroundSource: Native.Foreground
                 active: !root.smoke && ((content.screenState?.session ?? false)
                     || (content.screenState?.launcher ?? false))
                 onDismissRequested: {

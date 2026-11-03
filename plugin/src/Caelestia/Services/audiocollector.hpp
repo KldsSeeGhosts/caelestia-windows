@@ -51,9 +51,11 @@ class AudioCollector;
 #ifdef CAELESTIA_WINDOWS_AUDIO
 
 namespace caelestia::shell::windows {
+
 // Default-render-endpoint WASAPI loopback capture. Defined in
 // Windows/Audio/wasapiloopback.cpp.
 class WasapiLoopbackWorker;
+
 } // namespace caelestia::shell::windows
 
 #else
@@ -95,6 +97,13 @@ public:
     // WASAPI shared-mode mixes are usually 32-bit float; skip the qint16
     // conversion the PipeWire S16 stream needs.
     void loadChunk(const float* samples, quint32 count);
+
+    // WASAPI loopback stops raising packet events while the endpoint is idle,
+    // so a reader's own frame clock decides when no new chunk has arrived. The
+    // reader holds its last window for a few device periods, then feeds silence
+    // instead of replaying it forever. No capture timer is involved.
+    void setCapturePeriod(quint32 microseconds);
+    [[nodiscard]] bool captureIdle() const;
 #endif
     quint32 readChunk(float* out, quint32 count = 0);
     quint32 readChunk(double* out, quint32 count = 0);
@@ -108,6 +117,10 @@ private:
     ac::SpinLock m_samplesLock;
     util::RingBuffer<float> m_pending; // Writer thread only, holds chunks which arrived while a reader had the lock
     std::atomic<bool> m_discardPending;
+#ifdef CAELESTIA_WINDOWS_AUDIO
+    std::atomic<qint64> m_lastCaptureNs { 0 };
+    std::atomic<quint32> m_capturePeriodUs { 0 };
+#endif
     quint32 m_sampleCount;
 
     template <typename T> quint32 readLatest(T* out, quint32 count);

@@ -288,12 +288,27 @@ ShellRoot {
         Qt.exit(1);
     }
 
-    function capturePhase(name: string): void {
+    // saveItem renders asynchronously. A step must not close or replace the
+    // captured panel until the grab has finished, or the next state change can
+    // destroy items the grab is still rendering. The gate also keeps the
+    // fixed-interval timer from advancing while a grab is in flight.
+    function capturePhase(name: string, continuation): void {
+        if (check.capturePending) {
+            root.fail("overlapping capture " + name);
+            return;
+        }
+        check.capturePending = true;
         const path = Quickshell.env("CAELESTIA_SHELL_SCREENSHOT");
         const phasePath = path.replace(/\.png$/, "-" + name + ".png");
         CUtils.saveItem(win.contentItem, Qt.resolvedUrl(phasePath), () => {
             console.log("CAELESTIA_COMBINED_CAPTURE", phasePath);
-        }, () => root.fail("screenshot " + name));
+            check.capturePending = false;
+            if (typeof continuation === "function")
+                continuation();
+        }, () => {
+            check.capturePending = false;
+            root.fail("screenshot " + name);
+        });
     }
 
     FontLoader {
@@ -334,6 +349,7 @@ ShellRoot {
     WindowsFocusGuard {
         id: focusGuard
         target: win.contentItem
+        foregroundSource: Native.Foreground
         active: !root.smoke && !root.runtimeProbe && ((win.screenState?.session ?? false) || (win.screenState?.launcher ?? false))
         onOutcome: status => console.log("CAELESTIA_SHELL_FOCUS", status)
         onDismissRequested: {
@@ -618,7 +634,20 @@ ShellRoot {
         }
     }
 
+    // Construct the lazily resolved service facades before the original
+    // components can resolve the shared managers behind them. NativeAppCatalog
+    // reports scan completion only through applicationsChanged, so a loader
+    // created after a fast startup scan would wait for a second signal. The
+    // production shell constructs these through the launcher and media UI;
+    // this host's smoke reads them through functions, so it must request them.
+    function preloadFacades(): void {
+        const counts = [Apps.count, Players.playerCount];
+        if (counts.length !== 2)
+            root.fail("service facade preload");
+    }
+
     Component.onCompleted: {
+        root.preloadFacades();
         Hypr.logStartupStatus();
         Tiling.logStartupStatus();
         FocusFollowsMouse.logStartupStatus();
@@ -667,11 +696,14 @@ ShellRoot {
         property string popoutName: ""
         property bool popoutsStarted: false
         property var notification: null
+        property bool capturePending: false
 
         running: root.smoke && !root.backgroundSmoke && root.selectedScreen !== null
         repeat: true
         interval: 1200
         onTriggered: {
+            if (check.capturePending)
+                return;
             const panels = ShellState.componentsFor(win.screen)?.panels;
             if (!panels || !win.screenState) {
                 root.fail("missing original component graph");
@@ -767,8 +799,7 @@ ShellRoot {
                     root.fail("original toast surface did not load");
                     return;
                 }
-                root.capturePhase("session");
-                win.screenState.session = false;
+                root.capturePhase("session", () => { win.screenState.session = false; });
             } else if (step === 2) {
                 if (panels.session.visible || panels.session.offsetScale < 0.99) {
                     root.fail("original session close animation");
@@ -800,8 +831,9 @@ ShellRoot {
                 }
                 console.log("CAELESTIA_COMBINED_POPOUT", check.popoutName,
                     popout.implicitWidth, popout.implicitHeight);
-                root.capturePhase("popout-" + check.popoutName);
-                panels.popouts.hasCurrent = false;
+                root.capturePhase("popout-" + check.popoutName, () => {
+                    panels.popouts.hasCurrent = false;
+                });
             } else if (step === 5) {
                 if (panels.popouts.hasCurrent) {
                     root.fail("popout did not close: " + check.popoutName);
@@ -813,9 +845,10 @@ ShellRoot {
                     root.fail("OSD did not open");
                     return;
                 }
-                root.capturePhase("osd");
-                win.screenState.osd = false;
-                win.screenState.launcher = true;
+                root.capturePhase("osd", () => {
+                    win.screenState.osd = false;
+                    win.screenState.launcher = true;
+                });
             } else if (step === 7) {
                 if (!panels.launcher.visible || panels.launcher.offsetScale >= 1) {
                     root.fail("launcher did not open");
@@ -831,10 +864,11 @@ ShellRoot {
                 if (WindowsCalculator.result !== "98") {
                     root.fail("calculator"); return;
                 }
-                root.capturePhase("launcher");
-                win.screenState.launcher = false;
-                win.screenState.dashboardTab = 1;
-                win.screenState.dashboard = true;
+                root.capturePhase("launcher", () => {
+                    win.screenState.launcher = false;
+                    win.screenState.dashboardTab = 1;
+                    win.screenState.dashboard = true;
+                });
             } else if (step === 8) {
                 if (!panels.dashboard.visible || panels.dashboard.offsetScale >= 1) {
                     root.fail("media dashboard panel did not open");
@@ -863,8 +897,7 @@ ShellRoot {
                     bars: Audio.cava.bars, values: Audio.cava.values.length,
                     bpm: Audio.beatTracker.bpm
                 }));
-                root.capturePhase("dashboard");
-                win.screenState.dashboardTab = 0;
+                root.capturePhase("dashboard", () => { win.screenState.dashboardTab = 0; });
             } else if (step === 9) {
                 console.log("CAELESTIA_WE_PICKER", JSON.stringify({
                     status: WallpaperEngine.status, running: WallpaperEngine.running,
@@ -900,15 +933,14 @@ ShellRoot {
                     }
                 }
                 console.log("CAELESTIA_COMBINED_BEAT", Audio.beatTracker.bpm);
-                root.capturePhase("dashboard-dash");
-                win.screenState.dashboardTab = 2;
+                root.capturePhase("dashboard-dash", () => { win.screenState.dashboardTab = 2; });
             } else if (step === 10) {
-                root.capturePhase("dashboard-performance");
-                win.screenState.dashboardTab = 3;
+                root.capturePhase("dashboard-performance", () => { win.screenState.dashboardTab = 3; });
             } else if (step === 11) {
-                root.capturePhase("dashboard-weather");
-                win.screenState.dashboard = false;
-                win.screenState.utilities = true;
+                root.capturePhase("dashboard-weather", () => {
+                    win.screenState.dashboard = false;
+                    win.screenState.utilities = true;
+                });
             } else if (step === 12) {
                 if (!panels.utilities.visible || panels.utilities.implicitHeight <= 0) {
                     root.fail("utilities"); return;
@@ -934,19 +966,27 @@ ShellRoot {
                     recorder: recorderCard.implicitHeight,
                     toggles: togglesCard.implicitHeight
                 }));
-                root.capturePhase("utilities");
-                win.screenState.utilities = false;
-                Toaster.toast("Caelestia", "Original shell toast", "check");
-                check.notification = smokeNotificationFactory.createObject(root);
-                if (!check.notification || !Notifs.service.handleNotification(check.notification)) {
-                    root.fail("notification fixture"); return;
-                }
+                root.capturePhase("utilities", () => {
+                    win.screenState.utilities = false;
+                    Toaster.toast("Caelestia", "Original shell toast", "check");
+                    // A live shell owning the session bus makes local delivery
+                    // refuse the fixture by design. The backend unit tests cover
+                    // local delivery and forwarding; skip the popup/history
+                    // assertions here instead of failing the combined smoke.
+                    if (Notifs.contended) {
+                        console.log("CAELESTIA_COMBINED_SKIP notification owner held by live shell");
+                        return;
+                    }
+                    check.notification = smokeNotificationFactory.createObject(root);
+                    if (!check.notification || !Notifs.service.handleNotification(check.notification))
+                        root.fail("notification fixture");
+                });
             } else if (step === 13) {
-                if (!Notifs.popups.some(record => record.notification === check.notification)) {
+                if (check.notification !== null
+                        && !Notifs.popups.some(record => record.notification === check.notification)) {
                     root.fail("notification popup did not render"); return;
                 }
-                root.capturePhase("notification");
-                win.screenState.sidebar = true;
+                root.capturePhase("notification", () => { win.screenState.sidebar = true; });
             } else if (step === 14) {
                 if (!panels.sidebar.visible || panels.sidebar.implicitWidth <= 0) {
                     root.fail("sidebar"); return;
@@ -966,23 +1006,30 @@ ShellRoot {
                 console.log("CAELESTIA_WE_CAROUSEL count=" + list.count);
                 root.capturePhase("wallpaper-picker");
             } else if (step === 17) {
-                // saveItem is asynchronous. Keep the picker visible for the
-                // capture instead of closing it in the capture's own frame.
+                // The capture gate kept the picker visible until its grab
+                // finished; this step closes it for the history capture.
                 win.screenState.launcher = false;
                 win.screenState.sidebar = true;
             } else if (step === 18) {
-                if (!Notifs.list.some(record => record.notification === check.notification)) {
+                if (check.notification !== null
+                        && !Notifs.list.some(record => record.notification === check.notification)) {
                     root.fail("notification history did not retain the fixture");
                     return;
                 }
-                root.capturePhase("notification");
-                root.serviceLines(root.serviceStates());
-                const path = Quickshell.env("CAELESTIA_SHELL_SCREENSHOT");
-                CUtils.saveItem(win.contentItem, Qt.resolvedUrl(path), () => {
-                    console.log("CAELESTIA_COMBINED_CAPTURE", path);
-                    console.log("CAELESTIA_COMBINED_PASS", CUtils.qtVersion);
-                    Qt.quit();
-                }, () => root.fail("screenshot final"));
+                root.capturePhase("notification", () => {
+                    root.serviceLines(root.serviceStates());
+                    const path = Quickshell.env("CAELESTIA_SHELL_SCREENSHOT");
+                    check.capturePending = true;
+                    CUtils.saveItem(win.contentItem, Qt.resolvedUrl(path), () => {
+                        console.log("CAELESTIA_COMBINED_CAPTURE", path);
+                        console.log("CAELESTIA_COMBINED_PASS", CUtils.qtVersion);
+                        check.capturePending = false;
+                        Qt.quit();
+                    }, () => {
+                        check.capturePending = false;
+                        root.fail("screenshot final");
+                    });
+                });
             }
             step++;
         }
@@ -992,6 +1039,12 @@ ShellRoot {
         running: root.smoke
         interval: 55000
         onTriggered: {
+            // Keep the final step and every facade state in the timeout output
+            // so a failed smoke can be diagnosed without a rerun.
+            console.error("CAELESTIA_COMBINED_STATE", JSON.stringify({
+                step: check.step, capturePending: check.capturePending,
+                services: root.serviceStates()
+            }));
             console.error("CAELESTIA_COMBINED_FAIL: timeout");
             Qt.exit(1);
         }

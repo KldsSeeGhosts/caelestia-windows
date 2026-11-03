@@ -1,13 +1,17 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][string]$QtPrefix,
-    [string]$BuildRoot
+    [string]$BuildRoot,
+    [string]$RunRoot,
+    [switch]$Offscreen
 )
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
 if (-not $BuildRoot) { $BuildRoot = Join-Path $repoRoot 'windows\.local\build' }
 $BuildRoot = [IO.Path]::GetFullPath($BuildRoot)
+if (-not $RunRoot) { $RunRoot = Join-Path $BuildRoot 'run' }
+$RunRoot = [IO.Path]::GetFullPath($RunRoot)
 $output = Join-Path $BuildRoot ('combined-validation-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
 New-Item -ItemType Directory -Force -Path $output | Out-Null
 $records = New-Object Collections.Generic.List[object]
@@ -62,7 +66,11 @@ function Assert-CombinedServiceLines([string]$StdoutPath) {
                 Assert ($value -eq '0') "Combined run sent a network command."
             }
             if ($key -eq 'mode') {
-                Assert ($value -eq 'Observe') "Session was not in observation-only mode."
+                # Session is observation-only; tiling's separate mode word
+                # must stay off because this harness never opts in.
+                $expectedMode = if ($line.Groups['name'].Value -eq 'tiling') { 'off' } else { 'Observe' }
+                Assert ($value -eq $expectedMode) `
+                    "Service '$($line.Groups['name'].Value)' reported mode=$value, expected $expectedMode."
             }
         }
     }
@@ -77,10 +85,11 @@ try {
     # desktop; the combined smoke sends no input, opens every panel
     # programmatically, refuses every write through the facades and captures
     # one screenshot per phase.
-    $screenCount = $beforeDesktop.monitors.Count
+    $screenCount = if ($Offscreen) { 1 } else { $beforeDesktop.monitors.Count }
     Assert ($screenCount -gt 0) 'No measured monitor available.'
     for ($screen = 0; $screen -lt $screenCount; $screen++) {
         $result = & "$PSScriptRoot\Start-ShellPrototype.ps1" -QtPrefix $QtPrefix -BuildRoot $BuildRoot `
+            -RunRoot $RunRoot -Offscreen:$Offscreen `
             -Combined -Smoke -ScaleFactor native -ScreenIndex $screen | ConvertFrom-Json
         Assert $result.passed "Combined smoke failed on screen $screen."
         $records.Add([ordered]@{ kind = 'combined'; screen = $screen; result = $result })
@@ -91,6 +100,7 @@ try {
         Assert-CombinedServiceLines $result.stdout
     }
     $regression = & "$PSScriptRoot\Start-ShellPrototype.ps1" -QtPrefix $QtPrefix -BuildRoot $BuildRoot `
+        -RunRoot $RunRoot -Offscreen:$Offscreen `
         -Smoke -ScaleFactor native -ScreenIndex 0 | ConvertFrom-Json
     Assert $regression.passed 'Original M1 bar/session smoke regression failed.'
     $records.Add([ordered]@{ kind = 'm1-regression'; result = $regression })
