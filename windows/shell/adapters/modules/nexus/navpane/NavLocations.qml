@@ -95,6 +95,46 @@ VerticalFadeFlickable {
                 RadiusBehavior on bottomLeftRadius {}
                 RadiusBehavior on bottomRightRadius {}
 
+                function activate(): void {
+                    if (root.query.trim() || root.nState.pendingSearchRoute)
+                        root.openResult(item.modelData);
+                    else
+                        root.nState.currentPageIdx = item.modelData.pageIndex;
+                }
+
+                // Windows (#210): nav entries take Tab focus like Nexus rows.
+                // Enter/Space play the press ripple and open the page. The
+                // indicator marks keyboard focus only, as on RowButton.
+                property bool pointerUsed
+                readonly property bool focusVisible: activeFocus && !pointerUsed
+                activeFocusOnTab: true
+                Keys.onPressed: event => {
+                    if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
+                        event.accepted = true;
+                        if (!event.isAutoRepeat) {
+                            stateLayer.press(width / 2, height / 2);
+                            item.activate();
+                        }
+                    }
+                }
+                Accessible.role: Accessible.Button
+                Accessible.name: modelData.label
+                Accessible.onPressAction: activate()
+                onActiveFocusChanged: {
+                    pointerUsed = false;
+                    if (!activeFocus)
+                        return;
+                    // Keep the focused entry inside the scrolled list.
+                    const min = -root.topMargin;
+                    const max = Math.max(min, root.contentHeight + root.bottomMargin - root.height);
+                    let to = root.contentY;
+                    if (y - root.topMargin < to)
+                        to = y - root.topMargin;
+                    else if (y + height + root.bottomMargin > to + root.height)
+                        to = y + height + root.bottomMargin - root.height;
+                    root.contentY = Math.max(min, Math.min(max, to));
+                }
+
                 StateLayer {
                     id: stateLayer
 
@@ -103,13 +143,20 @@ VerticalFadeFlickable {
                     topRightRadius: parent.topRightRadius
                     bottomLeftRadius: parent.bottomLeftRadius
                     bottomRightRadius: parent.bottomRightRadius
+                    stateOpacity: item.focusVisible ? 0.1 : containsMouse ? 0.08 : 0
 
-                    onClicked: {
-                        if (root.query.trim() || root.nState.pendingSearchRoute)
-                            root.openResult(item.modelData);
-                        else
-                            root.nState.currentPageIdx = item.modelData.pageIndex;
-                    }
+                    onPressed: focusRing.pointerPressed()
+                    onClicked: item.activate()
+                }
+
+                FocusRing {
+                    id: focusRing
+
+                    showing: item.focusVisible
+                    topLeftRadius: item.topLeftRadius
+                    topRightRadius: item.topRightRadius
+                    bottomLeftRadius: item.bottomLeftRadius
+                    bottomRightRadius: item.bottomRightRadius
                 }
 
                 RowLayout {
