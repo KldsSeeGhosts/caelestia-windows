@@ -113,6 +113,22 @@ if(CAELESTIA_WINDOWS_TESTS AND Qt6Test_FOUND)
         "${CMAKE_CURRENT_SOURCE_DIR}"
     )
     target_link_libraries(knownfolders-tests PRIVATE Qt::Core Qt::Qml Qt::Test shell32 ole32)
+
+    # The loopback mix-format parser and downmix are pure, so their decisions
+    # run offscreen. Event-driven capture itself needs a live output device.
+    add_executable(wasapi-format-tests
+        Audio/test/wasapiformat_test.cpp
+        Audio/wasapiformat.cpp
+        Audio/wasapiformat.hpp
+    )
+    target_include_directories(wasapi-format-tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/Audio"
+    )
+    target_compile_definitions(wasapi-format-tests PRIVATE
+        NOMINMAX
+        WIN32_LEAN_AND_MEAN
+    )
+    target_link_libraries(wasapi-format-tests PRIVATE Qt::Core Qt::Test)
 endif()
 
 # WASAPI loopback analysis: CavaProvider/BeatTracker/ServiceRef for the
