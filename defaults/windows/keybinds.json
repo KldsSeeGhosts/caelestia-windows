@@ -10,6 +10,24 @@
       "description": "Toggle the launcher (lone Super tap)"
     },
     {
+      "keys": "PrintScreen",
+      "action": "global",
+      "name": "caelestia:screenshot",
+      "description": "Screenshot with Glazier"
+    },
+    {
+      "keys": "Win+Shift+S",
+      "action": "global",
+      "name": "caelestia:screenshot",
+      "description": "Screenshot with Glazier"
+    },
+    {
+      "keys": "Win+Shift+R",
+      "action": "global",
+      "name": "caelestia:record",
+      "description": "Record the screen with Glazier"
+    },
+    {
       "keys": "Super+K",
       "action": "global",
       "name": "caelestia:showall",

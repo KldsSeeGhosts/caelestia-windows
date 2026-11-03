@@ -25,6 +25,7 @@ $pairs = [ordered]@{
     'windows\deps\quickshell\LICENSE-GPL' = 'GPL-3.0.txt'
     'windows\deps\quickshell\src\windows\third_party\material_color\LICENSE' = 'Quickshell-third-party\material_color\LICENSE'
     'windows\deps\quickshell\src\windows\third_party\virtual_desktop\LICENSE' = 'Quickshell-third-party\virtual_desktop\LICENSE'
+    'windows\deps\glazier\THIRD_PARTY_NOTICES.md' = 'Glazier-THIRD_PARTY_NOTICES.md'
     'windows\licenses\fonts\caskaydia-cove\LICENSE' = 'fonts\caskaydia-cove\LICENSE'
     'windows\licenses\fonts\nerd-font-symbols\LICENSE' = 'fonts\nerd-font-symbols\LICENSE'
 }
@@ -66,6 +67,27 @@ try {
         foreach ($file in @('LGPL-3.0.txt', 'GPL-3.0.txt')) {
             if ((Get-FileHash -LiteralPath "$runtime\licenses\$file").Hash -ne
                 (Get-FileHash -LiteralPath "$runtime\licenses\Qt\$file").Hash) { throw "Qt license differs: $file" }
+        }
+        # Glazier lives inside the versioned payload, so the running version and
+        # the retained rollback version each carry a matching executable.
+        $glazier = Join-Path $runtime 'glazier.exe'
+        if (-not (Test-Path -LiteralPath $glazier -PathType Leaf) -or (Get-Item -LiteralPath $glazier).Length -eq 0) {
+            throw "Bundled Glazier is missing from the $phase payload."
+        }
+        $runtimeRecord = Read-CaelestiaInstall $runtime
+        $glazierHash = (Get-FileHash -LiteralPath $glazier -Algorithm SHA256).Hash
+        if ($runtimeRecord.glazierSha256 -ne $glazierHash) { throw "Bundled Glazier checksum mismatch ($phase)." }
+        if ($runtimeRecord.glazierRevision -ne (Get-Content -LiteralPath "$BuildRoot\logs\build.json" -Raw | ConvertFrom-Json).glazierRevision) {
+            throw "Bundled Glazier revision does not match build.json ($phase)."
+        }
+        $rootRecord = Read-CaelestiaInstall $prefix
+        if ($rootRecord.version -eq 2 -and $rootRecord.previous) {
+            $previousRuntime = Get-CaelestiaVersionPrefix $prefix $rootRecord.previous
+            $previousGlazier = Join-Path $previousRuntime 'glazier.exe'
+            if (-not (Test-Path -LiteralPath $previousGlazier -PathType Leaf) -or
+                (Get-FileHash -LiteralPath $previousGlazier -Algorithm SHA256).Hash -ne $glazierHash) {
+                throw "Rollback payload does not carry the same bundled Glazier ($phase)."
+            }
         }
         # Check all prefix-supplied license files and SBOMs, not just one sample.
         foreach ($file in Get-ChildItem -LiteralPath $QtPrefix -Recurse -File) {

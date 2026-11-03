@@ -86,6 +86,17 @@ try {
     if ([string]$buildRecord.m3shapesRevision -ne [string]$lock.m3shapes.revision) {
         throw "M3Shapes pin mismatch: build has $($buildRecord.m3shapesRevision), windows/sources.lock.json pins $($lock.m3shapes.revision)."
     }
+    if ($buildRecord.glazierBundled -eq $false) {
+        throw 'Build skipped the bundled Glazier; rebuild without -SkipGlazier.'
+    }
+    if ([string]$buildRecord.glazierRevision -ne [string]$lock.glazier.revision) {
+        throw "Glazier pin mismatch: build has $($buildRecord.glazierRevision), windows/sources.lock.json pins $($lock.glazier.revision)."
+    }
+    $stagedGlazier = Join-Path $BuildRoot 'install\glazier.exe'
+    if (-not (Test-Path -LiteralPath $stagedGlazier -PathType Leaf) -or
+        (Get-FileHash -LiteralPath $stagedGlazier -Algorithm SHA256).Hash.ToLowerInvariant() -ne [string]$buildRecord.glazierSha256) {
+        throw 'The staged bundled Glazier is missing or does not match build.json.'
+    }
 
     if ($StageRoot) {
         $stage = [IO.Path]::GetFullPath($StageRoot)
@@ -103,6 +114,9 @@ try {
                 throw "Staged production tree is incomplete: $(Join-Path $stage $name)"
             }
         }
+        # Mirror the installed payload layout: the shell resolves its bundled
+        # tool beside the staged shell's parent, not from a separate install.
+        Copy-Item -LiteralPath $stagedGlazier -Destination (Join-Path $run 'glazier.exe')
     }
 
     # Seed only the profile files these services read. An empty keybind list

@@ -88,8 +88,18 @@ foreach ($sourceRoot in @($BuildRoot, $QtPrefix, $VCRuntimeRoot, $repoRoot, $Pro
 }
 $qmlRoot = Join-Path $BuildRoot 'install\qml'
 $deploy = Join-Path $QtPrefix 'bin\windeployqt.exe'
-foreach ($file in @("$BuildRoot\quickshell\qs.exe", $deploy, "$qmlRoot\Caelestia\Windows\qmldir", "$qmlRoot\M3Shapes\qmldir")) {
+# Glazier is bundled beside qs.exe, never downloaded or resolved from a
+# machine-wide location. The whole versioned payload carries it.
+$glazierSource = Join-Path $BuildRoot 'install\glazier.exe'
+foreach ($file in @("$BuildRoot\quickshell\qs.exe", $glazierSource, $deploy, "$qmlRoot\Caelestia\Windows\qmldir", "$qmlRoot\M3Shapes\qmldir")) {
     if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw "Missing runtime prerequisite: $file" }
+}
+if ($buildInfo -and $buildInfo.glazierBundled -eq $false) {
+    throw 'This build skipped the bundled Glazier; rebuild without -SkipGlazier before installing.'
+}
+if ($buildInfo -and $buildInfo.glazierSha256 -and
+    (Get-FileHash -LiteralPath $glazierSource -Algorithm SHA256).Hash.ToLowerInvariant() -ne [string]$buildInfo.glazierSha256) {
+    throw 'The staged glazier.exe does not match build.json; rebuild the payload.'
 }
 # Serialize preparation as well as activation. Otherwise two simultaneous
 # updates can both pass the staging scan and overwrite the same rollback tree.
@@ -179,6 +189,7 @@ New-Item -ItemType Directory -Path $payload | Out-Null
 try {
     [ordered]@{ product = 'caelestia-windows'; prefix = $Prefix; pid = $PID } | ConvertTo-Json | Set-Content -LiteralPath "$payload\.caelestia-staging.json" -Encoding UTF8
     Copy-Item -LiteralPath "$BuildRoot\quickshell\qs.exe" -Destination $payload
+    Copy-Item -LiteralPath $glazierSource -Destination $payload
     New-Item -ItemType Directory -Path "$payload\qml", "$payload\defaults" | Out-Null
     Copy-Item -LiteralPath "$qmlRoot\Caelestia" -Destination "$payload\qml" -Recurse
     Copy-Item -LiteralPath "$qmlRoot\M3Shapes" -Destination "$payload\qml" -Recurse
@@ -212,6 +223,11 @@ try {
     Copy-Item -LiteralPath "$repoRoot\windows\deps\quickshell\LICENSE-GPL" -Destination "$payload\licenses\GPL-3.0.txt"
     Copy-Item -LiteralPath "$repoRoot\windows\deps\quickshell\LICENSE" -Destination "$payload\licenses\LGPL-3.0.txt"
     Copy-Item -LiteralPath "$repoRoot\windows\deps\quickshell\src\windows\third_party\material_color\LICENSE" -Destination "$payload\licenses\MaterialColor-LICENSE"
+    # The Glazier pin has no LICENSE file yet (release gate); keep its own
+    # third-party notices with the payload meanwhile.
+    if (Test-Path -LiteralPath "$repoRoot\windows\deps\glazier\THIRD_PARTY_NOTICES.md" -PathType Leaf) {
+        Copy-Item -LiteralPath "$repoRoot\windows\deps\glazier\THIRD_PARTY_NOTICES.md" -Destination "$payload\licenses\Glazier-THIRD_PARTY_NOTICES.md"
+    }
     Copy-Item -LiteralPath "$repoRoot\windows\sources.lock.json" -Destination "$payload\licenses"
     # Keep component-relative paths and copyright/NOTICE files, including new
     # fonts and backend dependencies added after this packaging script.
@@ -267,7 +283,9 @@ try {
         installId = $installId
         sourceRevision = (& git -C $repoRoot rev-parse HEAD).Trim()
         backendRevision = $(if ($buildInfo) { $buildInfo.backendRevision } else { '' })
+        glazierRevision = $(if ($buildInfo) { [string]$buildInfo.glazierRevision } else { '' })
         executableSha256 = (Get-FileHash -LiteralPath "$payload\qs.exe").Hash
+        glazierSha256 = (Get-FileHash -LiteralPath "$payload\glazier.exe").Hash
     } | ConvertTo-Json | Set-Content -LiteralPath "$payload\install.json" -Encoding UTF8
     Remove-Item -LiteralPath "$payload\.caelestia-staging.json" -Force -ErrorAction SilentlyContinue
 
