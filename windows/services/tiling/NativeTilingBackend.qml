@@ -104,6 +104,9 @@ QtObject {
         Tiling.enabled = false;
     }
 
+    // Safe under a reload: the shared manager accepts this write only from the
+    // newest engine's lease, so a retiring wrapper cannot stop the session its
+    // replacement claimed (tiling.cpp, TilingLease).
     Component.onDestruction: root.requestDisable()
 
     Component.onCompleted: {
