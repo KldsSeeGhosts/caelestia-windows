@@ -19,9 +19,11 @@ Singleton {
     readonly property string actualCurrent: WallpaperEngine.enabled && WallpaperEngine.running && WallpaperEngine.current?.path
         ? WallpaperEngine.current.path : fileCurrent
     // Image consumers (mode/variant generation and the desktop) need the
-    // preview, while launcher selection needs the project.json identity.
-    readonly property string currentImage: WallpaperEngine.enabled && WallpaperEngine.running && WallpaperEngine.current?.preview
-        ? WallpaperEngine.current.preview : fileCurrent
+    // preview, while launcher selection needs the project.json identity. The
+    // ownership claim, not the bare process, decides which image is visible:
+    // after a genuine handback the engine still runs but the shell shows its
+    // own wallpaper again, and the source change repaints the desktop (#214).
+    readonly property string currentImage: externalWallpaperActive && WallpaperEngine.current?.preview ? WallpaperEngine.current.preview : fileCurrent
     property bool showPreview: false
     property string previewPath
     readonly property string current: showPreview && !externalWallpaperActive ? previewPath : currentImage

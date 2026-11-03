@@ -30,29 +30,49 @@ ShellRoot {
     // Mirrors the WindowsDesktopLayer shape consumed by WindowsBackground.
     // underlayActive also needs the external wallpaper window inside the host;
     // when it leaves, the backend drops the acknowledgement but keeps the
-    // host enabled (#220).
+    // host enabled (#220). A plain property updated from the inputs models the
+    // backend getter and avoids a false binding loop when the ownership guard
+    // reconciles the adapter from underlayActiveChanged.
     property QtObject desktopLayer: QtObject {
         property bool active: true
         property bool coveredByForeign: true
-        property bool underlayActive: enabled && !embedRefused && aboveIcons.length === 0
-            && coveredByForeign
+        property bool underlayActive: false
         property bool enabled: true
         property bool embedRefused: false
         property var aboveIcons: []
+        function updateUnderlay(): void {
+            underlayActive = enabled && !embedRefused && aboveIcons.length === 0 && coveredByForeign;
+        }
+        onEnabledChanged: updateUnderlay()
+        onEmbedRefusedChanged: updateUnderlay()
+        onAboveIconsChanged: updateUnderlay()
+        onCoveredByForeignChanged: updateUnderlay()
+        Component.onCompleted: updateUnderlay()
+    }
+    property QtObject wallpaperEngine: QtObject {
+        property bool running: true
+        property bool snapshotReady: true
+        property int scans: 0
+        function refresh(deep): void { scans++ }
+        // WINDOWS_BACKGROUND_OWNERSHIP
+        Component.onCompleted: seedDesktopClaim()
     }
     property QtObject wallpapers: QtObject {
-        property bool externalWallpaperActive: true
+        property bool externalWallpaperActive: root.wallpaperEngine.ownsDesktop
+        property string fileCurrent: "file:///own-wallpaper.png"
+        property string current: root.wallpaperEngine.ownsDesktop ? "file:///we-preview.png" : fileCurrent
     }
     readonly property bool backgroundRequested: true
-    readonly property bool underlaySupported: true
+    readonly property bool underlaySupported: "underlayActive" in desktopLayer
     readonly property bool externalActive: wallpapers.externalWallpaperActive
-    // WindowsBackground keeps the desktop claimed once the backend has
-    // acknowledged the underlay. The fixture starts in that state and the
-    // claim survives the handback while the engine process keeps running.
-    // A refused embed is not a handback and still fails closed.
-    property bool desktopClaimed: true
+    // WindowsBackground.yielded, kept in step with the adapter by review.
+    // The ownership claim itself is the spliced WallpaperEngine block. The
+    // claim keeps the host mounted while the backend withdraws the
+    // acknowledgement and the guard releases it, so no window is recreated
+    // twice on a handback.
     readonly property bool yielded: desktopLayer.embedRefused
-        || (externalActive && !desktopLayer.underlayActive && !desktopClaimed)
+        || (externalActive && !desktopLayer.underlayActive
+            && (!wallpaperEngine.desktopClaimed || desktopLayer.aboveIcons.length > 0))
     // WindowsBackground.enabled, kept in step with the adapter by review.
     readonly property bool hostEnabled: backgroundRequested && !yielded
 
@@ -142,12 +162,15 @@ ShellRoot {
 
                 // Wallpaper Engine's control command closes the wallpaper but
                 // leaves wallpaper64.exe running. The backend drops the
-                // underlay acknowledgement; the adapter keeps the
-                // acknowledged desktop and its own background mounted, and
-                // recreates the QQuickWindow for the moved item tree.
+                // underlay acknowledgement; the ownership guard releases the
+                // external claim, so the shell's own wallpaper and clock stay
+                // mounted instead of a black external-owned WorkerW (#214).
                 root.desktopLayer.coveredByForeign = false;
                 check(!root.desktopLayer.underlayActive, "the handback drops the underlay acknowledgement");
-                check(root.wallpapers.externalWallpaperActive, "the engine process still runs after the handback");
+                check(root.wallpaperEngine.running, "the engine process still runs after the handback");
+                check(!root.wallpapers.externalWallpaperActive, "the handback releases the external claim");
+                check(root.wallpapers.current === root.wallpapers.fileCurrent,
+                    "the handback shows the shell's own wallpaper, not the external preview");
                 check(root.hostEnabled, "the handback keeps the background host mounted");
                 check(root.desktopClock !== null, "the handback keeps its own background instance");
                 contentA.parent = null;
@@ -155,6 +178,16 @@ ShellRoot {
 
                 check(wn(behindClock) === "B", "the wallpaper follows the recreated window");
                 check(wn(root.desktopClock) === "B", "the desktop clock follows the recreated window");
+
+                // A refused embed is not a handback: the refused panel stays
+                // top level, so the adapter must unmount rather than keep a
+                // full-screen background over applications.
+                root.desktopLayer.embedRefused = true;
+                check(!root.hostEnabled, "a refused embed after the handback fails closed");
+                root.desktopLayer.embedRefused = false;
+                check(!root.hostEnabled, "clearing the refusal without a fresh acknowledgement stays fail-closed");
+                root.wallpaperEngine.running = false;
+                check(root.hostEnabled, "the stopped process restores the own desktop");
                 settle.start();
             } catch (error) {
                 root.fail(error);

@@ -2,7 +2,11 @@ import QtQuick
 
 // Exercises the WindowsBackground underlay state machine without Quickshell.
 // The runner splices the real property, screen and function blocks from the
-// adapter, so this fixture only supplies the backend and service mocks below.
+// adapter, plus the real WallpaperEngine desktop-ownership block, so this
+// fixture only supplies the backend and service mocks below. The ownership
+// block is the #214 guard: a running process is a claim, and only a genuine
+// backend handback (no refused embed, no above-icons embed, host still
+// enabled) releases it so the shell's own wallpaper becomes visible.
 Item {
     id: root
 
@@ -25,11 +29,20 @@ Item {
     property QtObject underlaySupportedHost: QtObject {
         property bool embedRefused: false
         property bool coveredByForeign: false
-        property bool underlayActive: enabled && !embedRefused && aboveIcons.length === 0
-            && coveredByForeign
+        // A plain property updated from the inputs, like the backend getter.
+        // A binding here would re-enter while the ownership guard reconciles
+        // the adapter and report a false binding loop.
+        property bool underlayActive: false
         property bool active: false
         property bool enabled: false
         property var aboveIcons: []
+        function updateUnderlay(): void {
+            underlayActive = enabled && !embedRefused && aboveIcons.length === 0 && coveredByForeign;
+        }
+        onEnabledChanged: updateUnderlay()
+        onEmbedRefusedChanged: updateUnderlay()
+        onAboveIconsChanged: updateUnderlay()
+        onCoveredByForeignChanged: updateUnderlay()
     }
     property QtObject legacyHost: QtObject {
         property bool active: false
@@ -38,14 +51,21 @@ Item {
     }
     property var nativeLayer: root.underlaySupportedHost
 
-    property QtObject wallpapers: QtObject {
-        property bool externalWallpaperActive: false
-        property string current: "file:///wallpaper.png"
-    }
     property QtObject wallpaperEngine: QtObject {
         property bool running: false
+        property bool snapshotReady: true
         property int scans: 0
         function refresh(deep): void { scans++ }
+        // WINDOWS_BACKGROUND_OWNERSHIP
+        Component.onCompleted: seedDesktopClaim()
+    }
+    // The visible wallpaper follows the production ownership guard: while the
+    // engine owns the desktop the shell renders its preview, and after a
+    // handback it renders the shell's own wallpaper again (#214).
+    property QtObject wallpapers: QtObject {
+        property bool externalWallpaperActive: root.wallpaperEngine.ownsDesktop
+        property string fileCurrent: "file:///own-wallpaper.png"
+        property string current: root.wallpaperEngine.ownsDesktop ? "file:///we-preview.png" : fileCurrent
     }
     property QtObject globalConfig: QtObject {
         function forScreen(name): var { return root.screenConfig; }
@@ -76,7 +96,7 @@ Item {
         property real height: 80
     }
     property QtObject wallpaperItem: QtObject {
-        property string source: "file:///wallpaper.png"
+        property string source: root.wallpapers.current
         property real transitionProgress: 1
     }
     property QtObject windowContent: QtObject {
@@ -142,7 +162,7 @@ Item {
             // A backend without the acknowledgement keeps the fail-closed yield.
             nativeLayer = root.legacyHost;
             check(!underlaySupported && !underlayActive, "legacy backend has no underlay");
-            wallpapers.externalWallpaperActive = true;
+            wallpaperEngine.running = true;
             check(externalActive, "external owner observed");
             check(!hostEnabled, "legacy backend yields to an external owner");
             check(screens.length === 0, "legacy yield unmounts the screens");
@@ -177,14 +197,14 @@ Item {
             check(!underlayActive, "a refusal after the acknowledgement drops the underlay");
             check(embedRefused, "the adapter sees the refused embed");
             check(externalActive, "the engine process still runs during the refusal");
-            check(!desktopClaimed, "the refused embed withdraws the desktop claim");
+            check(!wallpaperEngine.desktopClaimed, "the refused embed withdraws the desktop claim");
             check(!hostEnabled, "the refused embed fails closed");
             check(screens.length === 0, "the refused embed unmounts every screen");
             check(wallpaperEngine.scans === 1, "the refused embed re-scans the owner");
             check(checkReady(screen), "the refused embed reports a released desktop");
             nativeLayer.embedRefused = false;
             check(underlayActive, "an accepted re-embed restores the underlay");
-            check(desktopClaimed, "an accepted re-embed restores the claim");
+            check(wallpaperEngine.desktopClaimed, "an accepted re-embed restores the claim");
             check(hostEnabled && screens.length === 2, "an accepted re-embed remounts every screen");
 
             // A non-empty above-icons embed also denies the acknowledgement
@@ -217,7 +237,7 @@ Item {
 
             // The same Replace setting embeds above the icons on our own
             // desktop, which is not an underlay.
-            wallpapers.externalWallpaperActive = false;
+            wallpaperEngine.running = false;
             reconcileDesktop();
             check(nativeLayer.aboveIcons.length === 1 && nativeLayer.aboveIcons[0] === "caelestia-background",
                 "replace icons embed on the own desktop");
@@ -228,7 +248,7 @@ Item {
             // Starting an external owner must withdraw that embedding even
             // while the underlay keeps the host enabled. The fixture drives the
             // reconciler directly; the changed handler is checked statically.
-            wallpapers.externalWallpaperActive = true;
+            wallpaperEngine.running = true;
             check(externalActive, "external owner transition observed");
             reconcileDesktop();
             check(nativeLayer.aboveIcons.length === 0 && underlayActive,
@@ -244,7 +264,7 @@ Item {
             nativeLayer.enabled = true;
             reconcileDesktop();
             check(!nativeLayer.enabled, "legacy reconcile disables the host under an external owner");
-            wallpapers.externalWallpaperActive = false;
+            wallpaperEngine.running = false;
             reconcileDesktop();
             check(nativeLayer.enabled, "legacy reconcile hosts its own desktop");
 
@@ -253,7 +273,7 @@ Item {
             nativeLayer.aboveIcons = [];
             nativeLayer.coveredByForeign = true;
             nativeLayer.enabled = true;
-            wallpapers.externalWallpaperActive = true;
+            wallpaperEngine.running = true;
             environmentValues = ({ CAELESTIA_WINDOWS_BACKGROUND: "0" });
             reconcileDesktop();
             check(!nativeLayer.enabled, "requested-off reconcile releases the host");
@@ -264,7 +284,6 @@ Item {
             nativeLayer = root.underlaySupportedHost;
             nativeLayer.aboveIcons = [];
             nativeLayer.active = true;
-            wallpapers.externalWallpaperActive = true;
             wallpaperEngine.running = true;
             instances = [backgroundWindow];
             check(hostEnabled && underlayActive, "underlay mounts over the external owner");
@@ -278,6 +297,9 @@ Item {
             wallpaperItem.source = "";
             check(!checkReady(screen), "missing underlay wallpaper is not ready");
             wallpaperItem.source = "file:///wallpaper.png";
+            // Restore the production source binding after the missing-source
+            // case so the handback checks the visible wallpaper path.
+            wallpaperItem.source = Qt.binding(function() { return root.wallpapers.current; });
             clock.width = 0;
             check(!checkReady(screen), "unsized clock is not ready");
             clock.width = 240;
@@ -297,37 +319,80 @@ Item {
             check(checkReady(screen), "underlay readiness does not depend on process discovery");
             wallpaperEngine.running = true;
 
+            // A same-process wallpaper return in Replace mode (#214 P2).
+            // Configure Replace while the underlay is acknowledged, close the
+            // wallpaper without stopping wallpaper64.exe, then reopen it. The
+            // handback must leave the background in the underlay position: the
+            // backend's underlayActive getter requires an empty aboveIcons, so
+            // a replace embed would prevent the returning wallpaper from ever
+            // being acknowledged and the handback latch could never clear.
+            environmentValues = ({ CAELESTIA_WINDOWS_BACKGROUND: "1", CAELESTIA_WINDOWS_DESKTOP_ICONS: "Replace" });
+            check(desktopIcons === "Replace", "replace icons configured before the same-process return");
+            check(underlayActive && externalActive, "replace keeps the acknowledged underlay");
+            check(nativeLayer.aboveIcons.length === 0, "replace does not embed above an acknowledged wallpaper");
+
+            nativeLayer.coveredByForeign = false;
+            check(!underlayActive && !externalActive, "the replace handback releases the external claim");
+            check(wallpaperEngine.desktopHandedBack, "the replace handback keeps the latch while the process runs");
+            check(nativeLayer.aboveIcons.length === 0, "the replace handback does not cover the returning engine");
+            check(hostEnabled && screens.length === 2, "the replace handback mounts the own desktop");
+            check(wallpapers.current === wallpapers.fileCurrent, "the replace handback shows the own wallpaper");
+
+            nativeLayer.coveredByForeign = true;
+            check(underlayActive, "a wallpaper reopened by the same process is acknowledged");
+            check(externalActive && !wallpaperEngine.desktopHandedBack, "the reopened wallpaper reclaims the desktop");
+            check(wallpapers.current === "file:///we-preview.png", "the reclaim shows the engine wallpaper again");
+            check(hostEnabled && screens.length === 2, "the reclaim keeps the host and screens");
+            check(nativeLayer.aboveIcons.length === 0, "the reclaim keeps the underlay position");
+
+            // Replace returns to the own desktop once the process is gone, so
+            // the guard must not permanently withdraw the icons embed.
+            wallpaperEngine.running = false;
+            check(nativeLayer.aboveIcons.length === 1 && nativeLayer.aboveIcons[0] === "caelestia-background",
+                "replace embeds above the icons once the process stops");
+
+            // Restore the acknowledged, running state the default handback
+            // case below starts from.
+            restoreEnvironment();
+            nativeLayer.coveredByForeign = true;
+            wallpaperEngine.running = true;
+            check(underlayActive && externalActive && !wallpaperEngine.desktopHandedBack,
+                "the behind-icons underlay is restored for the default handback");
+
             // The external wallpaper window can leave the host while the
-            // process scan still sees wallpaper64.exe. The backend drops the
-            // acknowledgement; that is the #220 handback, so the process no
-            // longer owns the desktop and the adapter restores its own
-            // background instead of yielding an unowned desktop (#214).
+            // process scan still sees wallpaper64.exe. That is a genuine
+            // handback: the backend drops the acknowledgement, the ownership
+            // guard releases the external claim, and the shell shows its own
+            // wallpaper and clock instead of an unowned WorkerW (#214).
             wallpaperEngine.scans = 0;
             nativeLayer.coveredByForeign = false;
             check(!underlayActive, "the backend drops the underlay acknowledgement at handback");
-            check(externalActive, "the engine process keeps running after the handback");
+            check(!externalActive, "the handback releases the external claim");
             check(wallpaperEngine.scans === 1, "the handback requests an immediate owner re-scan");
             check(hostEnabled, "the handback restores the background host");
             check(screens.length === 2, "the handback remounts every background screen");
             check(instances.length === 1 && instances[0] === backgroundWindow,
                 "the handback has its own background instances");
             check(checkReady(screen), "the handback background presents over the desktop host");
+            check(wallpapers.current === wallpapers.fileCurrent,
+                "the handback shows the shell's own wallpaper, not the external preview");
             console.log("CAELESTIA_BACKGROUND_HANDBACK_STATE", JSON.stringify({
                 external: externalActive, underlay: underlayActive,
-                host: hostEnabled, screens: screens.length, instances: instances.length
+                host: hostEnabled, screens: screens.length, instances: instances.length,
+                ownWallpaper: wallpapers.current === wallpapers.fileCurrent
             }));
 
             // A new engine process starts fail-closed again: its wallpaper
             // must be discovered as the underlay before the shell yields.
-            wallpapers.externalWallpaperActive = false;
+            wallpaperEngine.running = false;
             check(hostEnabled && screens.length === 2, "the stopped process keeps the handback background mounted");
-            wallpapers.externalWallpaperActive = true;
+            wallpaperEngine.running = true;
             check(externalActive && !underlayActive, "a new process starts unacknowledged");
             check(!hostEnabled && screens.length === 0, "a new process fails closed before discovery");
 
             // With the owner confirmed gone, the same backend state mounts the
             // background in the visible, non-underlay position.
-            wallpapers.externalWallpaperActive = false;
+            wallpaperEngine.running = false;
             check(!underlayActive && !externalActive, "the handback has no external owner");
             check(hostEnabled && screens.length === 2, "the handback remounts the visible background");
             check(checkReady(screen), "the handback background is ready");
@@ -335,7 +400,7 @@ Item {
             // Without the acknowledgement the adapter must yield. A non-empty
             // above-icons embed is what distinguishes that state, and the real
             // screens expression must fail closed.
-            wallpapers.externalWallpaperActive = true;
+            wallpaperEngine.running = true;
             nativeLayer.aboveIcons = ["caelestia-background"];
             check(!underlayActive, "above-icons embed denies the underlay");
             check(!hostEnabled, "unacknowledged underlay yields");

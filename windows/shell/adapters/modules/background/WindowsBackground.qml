@@ -12,34 +12,35 @@ import qs.services
 Background {
     id: root
 
-    // Wallpaper Engine owns WorkerW. Host the clock and wallpaper as the
-    // underlay beneath it when the backend sees the external wallpaper window
-    // in the host; otherwise yield the desktop rather than cover a running
-    // engine. Discovery starts fail-closed so startup cannot cover a running
-    // engine. The acknowledgement drops when that window leaves the host
-    // (#220), which is the handback signal for the ownership guard.
+    // Wallpaper Engine owns WorkerW while the backend acknowledges its
+    // wallpaper window in the host. Host the clock and wallpaper as the
+    // underlay beneath it; otherwise yield the desktop rather than cover a
+    // running engine. Discovery starts fail-closed so startup cannot cover a
+    // running engine. The ownership claim lives in WallpaperEngine, so a
+    // genuine handback releases it and this adapter mounts the shell's own
+    // desktop again (#214). A refused embed is not a handback and still fails
+    // closed: mounting there would leave a full-screen window over the
+    // applications.
     readonly property bool backgroundRequested: Quickshell.env("CAELESTIA_WINDOWS_BACKGROUND") === "1"
     readonly property bool underlaySupported: "underlayActive" in Native.DesktopLayer
     readonly property bool underlayActive: underlaySupported && Native.DesktopLayer.underlayActive
-    // A refused SetParent withdraws the underlay acknowledgement while the
-    // host stays active and the refused panel stays top level. That is not a
-    // handback: mounting there would leave a full-screen window over the
-    // applications, so it must fail closed.
     readonly property bool embedRefused: "embedRefused" in Native.DesktopLayer
         && Native.DesktopLayer.embedRefused
     readonly property bool externalActive: Wallpapers.externalWallpaperActive
-    // A detected wallpaper process is an ownership claim, not proof of
-    // ownership. The backend's underlay acknowledgement proves the claim by
-    // finding a visible wallpaper window in the desktop host. Wallpaper Engine
-    // keeps running after its wallpaper is closed, though: the window leaves
-    // the host while wallpaper64.exe stays alive, and the process scan alone
-    // would keep yielding a desktop nobody owns (#214). Once the desktop has
-    // been acknowledged, keep the Caelestia background mounted when that
-    // window leaves. A later process start has no claim and is fail-closed
-    // until the underlay proves it. An embedding failure is never a handback.
-    property bool desktopClaimed: false
+    // A handed-back engine can show another wallpaper without restarting
+    // wallpaper64.exe. While the process still runs the host must stay in the
+    // underlay position, even with Replace icons: the backend only
+    // acknowledges an underlay when aboveIcons is empty, so an above-icons
+    // embed would hide the returning wallpaper's claim and the handback latch
+    // could never clear (#214). Replace resumes once the process stops.
+    readonly property bool engineRunning: WallpaperEngine.running
+    // Keep the host mounted across the handback: the backend withdraws the
+    // acknowledgement before WallpaperEngine releases the claim, and a
+    // transient yield there would recreate every background window. An
+    // above-icons embed is our own and must still fail closed.
     readonly property bool yielded: embedRefused
-        || (externalActive && !underlayActive && !desktopClaimed)
+        || (externalActive && !underlayActive
+            && (!WallpaperEngine.desktopClaimed || Native.DesktopLayer.aboveIcons.length > 0))
     readonly property bool enabled: backgroundRequested && !yielded
     readonly property bool smoke: Quickshell.env("CAELESTIA_SHELL_SMOKE") === "1"
     readonly property int screenIndex: Number(Quickshell.env("CAELESTIA_SHELL_SCREEN") || "0")
@@ -60,55 +61,31 @@ Background {
         if (backgroundRequested && (underlaySupported || !Wallpapers.externalWallpaperActive)) {
             // aboveIcons embeds into the icon host, which would cover the
             // WorkerW underlay and Wallpaper Engine. Never embed while an
-            // external wallpaper is active.
-            Native.DesktopLayer.aboveIcons = desktopIcons === "Replace" && !externalActive ? ["caelestia-background"] : [];
+            // external wallpaper is active, and stay in the underlay position
+            // while the engine process can still show another wallpaper: the
+            // backend cannot acknowledge that return through a non-empty
+            // aboveIcons, so the shell would never reclaim the desktop (#214).
+            Native.DesktopLayer.aboveIcons = desktopIcons === "Replace" && !externalActive && !engineRunning
+                ? ["caelestia-background"] : [];
             Native.DesktopLayer.enabled = true;
         } else {
             Native.DesktopLayer.enabled = false;
         }
     }
     onBackgroundRequestedChanged: reconcileDesktop()
-    onExternalActiveChanged: {
-        // A new engine process starts fail-closed unless the backend already
-        // acknowledges its wallpaper window as the underlay.
-        if (!underlayActive)
-            desktopClaimed = false;
-        reconcileDesktop();
-    }
+    onExternalActiveChanged: reconcileDesktop()
     onDesktopIconsChanged: reconcileDesktop()
+    onEngineRunningChanged: reconcileDesktop()
     onUnderlayActiveChanged: {
-        if (underlayActive) {
-            // The backend proved the engine's wallpaper window is in the
-            // host. From here the Caelestia background stays mounted on this
-            // desktop when the window leaves while the process keeps running
-            // (#214).
-            desktopClaimed = true;
-        } else if (embedRefused || Native.DesktopLayer.aboveIcons.length > 0) {
-            // A refused embed or an above-icons embed is ours, not the engine
-            // handing the desktop back, so it must fail closed.
-            desktopClaimed = false;
-        }
         // The external wallpaper window left the host, so the backend has
         // dropped its acknowledgement. Re-scan now instead of waiting for the
         // idle poll, so a process that really stopped is noticed promptly.
-        if (!underlayActive && externalActive)
+        // WallpaperEngine owns the claim and releases it on a genuine
+        // handback (#214).
+        if (!underlayActive)
             WallpaperEngine.refresh(false);
     }
-    onEmbedRefusedChanged: {
-        // A refusal can arrive while the acknowledgement is already
-        // withdrawn (a recreated panel after a handback). Never keep a stale
-        // claim through it; only a fresh acknowledgement restores the claim.
-        if (embedRefused)
-            desktopClaimed = false;
-        else if (underlayActive)
-            desktopClaimed = true;
-    }
-    Component.onCompleted: {
-        // A QML reload keeps the native host and its acknowledgement; start
-        // claimed so a handback after the reload is not mistaken for startup.
-        desktopClaimed = underlayActive;
-        reconcileDesktop();
-    }
+    Component.onCompleted: reconcileDesktop()
 
     function checkReady(screen: ShellScreen): bool {
         if (yielded) {
