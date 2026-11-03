@@ -9,6 +9,7 @@
 #endif
 
 #include <algorithm>
+#include <chrono>
 #include <mutex>
 #include <span>
 #include <stop_token>
@@ -183,6 +184,9 @@ void AudioCollector::clearBuffer() {
     const std::scoped_lock lock(m_samplesLock);
     m_samples.clear();
     m_discardPending.store(true, std::memory_order_release);
+#ifdef CAELESTIA_WINDOWS_AUDIO
+    m_lastCaptureNs.store(0, std::memory_order_release);
+#endif
 }
 
 void AudioCollector::loadChunk(const qint16* samples, quint32 count) {
@@ -224,6 +228,34 @@ void AudioCollector::loadChunk(const float* samples, quint32 count) {
     m_pending.pushTo(m_samples);
     m_pending.clear();
     m_samples.push(std::span(samples, count));
+
+    // Stamp only after the samples are in the ring buffer, so a reader that
+    // sees the new timestamp reads them instead of the previous window.
+    const auto now =
+        std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch())
+            .count();
+    m_lastCaptureNs.store(now, std::memory_order_release);
+}
+
+void AudioCollector::setCapturePeriod(quint32 microseconds) {
+    m_capturePeriodUs.store(microseconds, std::memory_order_release);
+}
+
+bool AudioCollector::captureIdle() const {
+    const auto last = m_lastCaptureNs.load(std::memory_order_acquire);
+    if (last == 0) {
+        return true;
+    }
+
+    // The engine period is the capture thread's natural clock. Four periods
+    // covers packet coalescing and consumer timer jitter without hiding a
+    // stopped stream for the old 300 ms polling window.
+    const auto period = m_capturePeriodUs.load(std::memory_order_acquire);
+    const auto threshold = static_cast<qint64>(period == 0 ? 100000 : std::max<quint32>(period * 4, 20000));
+    const auto now =
+        std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch())
+            .count();
+    return now - last > threshold;
 }
 
 #endif

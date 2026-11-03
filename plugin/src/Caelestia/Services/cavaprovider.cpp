@@ -40,12 +40,23 @@ void CavaProcessor::process() {
         return;
     }
 
-    const int count = static_cast<int>(AudioCollector::instance().readChunk(m_in));
-
 #ifdef CAELESTIA_WINDOWS_AUDIO
+    // A loopback capture that has gone idle raises no packet event. Hold the
+    // last window for a few device periods, then feed the analyzer silence
+    // instead of replaying it forever.
+    int count;
+    if (AudioCollector::instance().captureIdle()) {
+        std::fill(m_in, m_in + ac::k_chunkSize, 0.0);
+        count = static_cast<int>(ac::k_chunkSize);
+    } else {
+        count = static_cast<int>(AudioCollector::instance().readChunk(m_in));
+    }
+
     // Windows: run the ported FFT/bar plan instead of libcava.
     m_plan->execute(m_in, count, m_out);
 #else
+    const int count = static_cast<int>(AudioCollector::instance().readChunk(m_in));
+
     // Process in data via cava
     cava_execute(m_in, count, m_out, m_plan);
 #endif
