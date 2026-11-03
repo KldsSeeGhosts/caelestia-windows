@@ -113,6 +113,29 @@ if(CAELESTIA_WINDOWS_TESTS AND Qt6Test_FOUND)
         "${CMAKE_CURRENT_SOURCE_DIR}"
     )
     target_link_libraries(knownfolders-tests PRIVATE Qt::Core Qt::Qml Qt::Test shell32 ole32)
+
+    # The focus guard's event policy runs the production source with a fake
+    # Win32 foreground model. No real window is activated, so this is safe
+    # offscreen and never changes the desktop.
+    add_executable(windowsfocusguard-tests
+        test/windowsfocusguard_test.cpp
+        windowsfocusguard.hpp
+    )
+    target_compile_definitions(windowsfocusguard-tests PRIVATE
+        NOMINMAX
+        WIN32_LEAN_AND_MEAN
+    )
+    target_include_directories(windowsfocusguard-tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}"
+    )
+    target_link_libraries(windowsfocusguard-tests PRIVATE
+        Qt::Core
+        Qt::Gui
+        Qt::Quick
+        Qt::Qml
+        Qt::Test
+        user32
+    )
 endif()
 
 # WASAPI loopback analysis: CavaProvider/BeatTracker/ServiceRef for the

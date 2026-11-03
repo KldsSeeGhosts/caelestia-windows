@@ -47,6 +47,14 @@ bool WindowsFocusGuard::notBefore(DWORD time, DWORD reference) {
     return static_cast<LONG>(time - reference) >= 0;
 }
 
+quint64 WindowsFocusGuard::sourceSequence() const {
+    if (!m_foregroundSource)
+        return 0;
+    bool ok = false;
+    const auto sequence = m_foregroundSource->property("sequence").toULongLong(&ok);
+    return ok ? sequence : 0;
+}
+
 void WindowsFocusGuard::sampleExternalForeground() {
     const auto foreground = identify(GetForegroundWindow());
     if (foreground.hwnd && foreground.process != GetCurrentProcessId())
@@ -64,11 +72,11 @@ void WindowsFocusGuard::setForegroundSource(QObject* source) {
         // The backend observer is a QML singleton from another module, so the
         // signal is resolved by name rather than by a link-time type.
         m_foregroundConnection = connect(source,
-            SIGNAL(foregroundChanged(qulonglong,uint)),
-            this, SLOT(onForegroundChanged(qulonglong,uint)));
+            SIGNAL(foregroundChanged(qulonglong,uint,qulonglong)),
+            this, SLOT(onForegroundChanged(qulonglong,uint,qulonglong)));
         if (!m_foregroundConnection) {
             qCWarning(logFocusGuard)
-                << "The foreground source does not provide foregroundChanged(qulonglong,uint).";
+                << "The foreground source does not provide foregroundChanged(qulonglong,uint,qulonglong).";
         }
     }
 
@@ -118,6 +126,7 @@ void WindowsFocusGuard::bindWindow(QQuickWindow* window) {
     if (m_active && window) {
         m_savedExternal = m_lastExternal;
         m_activatedAt = GetTickCount();
+        m_activationSequence = sourceSequence();
         m_dismissSignaled = false;
         queueActivation(m_generation);
     } else {
@@ -138,6 +147,7 @@ void WindowsFocusGuard::setActive(bool active) {
     const auto generation = ++m_generation;
     if (active) {
         m_activatedAt = GetTickCount();
+        m_activationSequence = sourceSequence();
         m_dismissSignaled = false;
         m_savedExternal = m_lastExternal;
         queueActivation(generation);
@@ -147,26 +157,42 @@ void WindowsFocusGuard::setActive(bool active) {
     emit activeChanged();
 }
 
-void WindowsFocusGuard::onForegroundChanged(qulonglong hwnd, uint time) {
+void WindowsFocusGuard::onForegroundChanged(qulonglong hwnd, uint time, qulonglong sequence) {
+    const auto native = identify(reinterpret_cast<HWND>(static_cast<quintptr>(hwnd)));
+    const bool external = native.hwnd && native.process != GetCurrentProcessId();
+
+    // Ordered external history. An event queued before the activation boundary
+    // is the application the panel is covering, even when the panel already
+    // owns the foreground by the time it is delivered. Record it before the
+    // early returns below so closing restores that application, not the one
+    // seen at activation.
+    if (external && (!m_active || sequence <= m_activationSequence)) {
+        m_lastExternal = native;
+        if (m_active)
+            m_savedExternal = native;
+    }
+
     // The panel still owns the foreground. This is its own activation or a
     // title change, not a choice made outside it.
     const auto target = identify(m_window.data());
     if (target.hwnd && GetForegroundWindow() == target.hwnd)
         return;
 
-    const auto native = identify(reinterpret_cast<HWND>(static_cast<quintptr>(hwnd)));
     if (native.hwnd && native.process == GetCurrentProcessId())
         return;
 
     // Track the user's last application even while inactive. The panel can own
     // the foreground by the time the active binding runs, so the sample there
     // would see our own window and the restore target must already be current.
-    if (native.hwnd)
+    if (external)
         m_lastExternal = native;
 
-    // A queued event from before this activation cannot describe the user's
-    // latest choice. Event time is the tick count at which Windows raised it.
-    if (!m_active || m_dismissSignaled || !notBefore(time, m_activatedAt))
+    // Only an event queued after this activation may dismiss the panel. A
+    // queued event from before it can share the activation tick, so compare the
+    // ordered sequence first; equal ticks alone are a genuine choice.
+    if (!m_active || m_dismissSignaled || sequence <= m_activationSequence)
+        return;
+    if (!notBefore(time, m_activatedAt))
         return;
 
     m_dismissSignaled = true;

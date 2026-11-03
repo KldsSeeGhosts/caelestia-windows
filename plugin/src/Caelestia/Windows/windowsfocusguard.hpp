@@ -37,8 +37,10 @@ public:
     void setActive(bool active);
 
     // A Quickshell.Windows.Foreground instance, or any object with a
-    // foregroundChanged(qulonglong hwnd, uint time) signal carrying the tick
-    // count of the EVENT_SYSTEM_FOREGROUND that produced the change.
+    // foregroundChanged(qulonglong hwnd, uint time, qulonglong sequence) signal
+    // and a sequence property. The signal carries every raw foreground event;
+    // the property is the source's latest queued sequence, including events not
+    // delivered yet, so activation can record an ordered boundary.
     [[nodiscard]] QObject* foregroundSource() const { return m_foregroundSource.data(); }
     void setForegroundSource(QObject* source);
 
@@ -56,7 +58,7 @@ signals:
     void dismissRequested();
 
 private slots:
-    void onForegroundChanged(qulonglong hwnd, uint time);
+    void onForegroundChanged(qulonglong hwnd, uint time, qulonglong sequence);
 
 private:
     struct NativeWindow {
@@ -69,6 +71,7 @@ private:
     [[nodiscard]] static NativeWindow identify(QQuickWindow* window);
     [[nodiscard]] static bool valid(const NativeWindow& window);
     [[nodiscard]] static bool notBefore(DWORD time, DWORD reference);
+    [[nodiscard]] quint64 sourceSequence() const;
     void sampleExternalForeground();
     void bindWindow(QQuickWindow* window);
     void queueActivation(quint64 generation);
@@ -83,6 +86,7 @@ private:
     QMetaObject::Connection m_windowDestroyedConnection;
     QMetaObject::Connection m_foregroundConnection;
     DWORD m_activatedAt = 0;
+    quint64 m_activationSequence = 0;
     bool m_dismissSignaled = false;
     NativeWindow m_lastExternal;
     NativeWindow m_savedExternal;
