@@ -85,7 +85,7 @@ public:
     // exit of the shell for as long as the share keeps stalling. It reaches the
     // GUI thread only through the delivery bridge below.
     Q_INVOKABLE void probeImages(const QString& path) {
-        const auto key = normalizeFolderPath(path).toLower();
+        const auto key = probeKey(path);
         auto& registry = inflight();
         {
             std::lock_guard lock(registry.mutex);
@@ -150,6 +150,17 @@ private:
     static Inflight& inflight() {
         static auto* registry = new Inflight;
         return *registry;
+    }
+
+    static QString probeKey(const QString& path) {
+        auto key = normalizeFolderPath(path);
+        // normalizeFolderPath keeps a share root's separator only when the
+        // caller wrote one, so "//server/share" and "//server/share/" would
+        // otherwise start one probe each for the same root. An unterminated
+        // bare root is the only form with exactly three separators.
+        if (key.startsWith(QStringLiteral("//")) && key.count(u'/') == 3 && !key.endsWith(u'/'))
+            key += u'/';
+        return key.toLower();
     }
 
     static void deliver(const Waiter& waiter, bool found) {
