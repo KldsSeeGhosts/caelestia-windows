@@ -12,7 +12,11 @@ param(
     [switch]$Restart,
     # Accept a QtPrefix that differs from build.json, or a populated profile
     # this installer did not create (never purged by Uninstall).
-    [switch]$Force
+    [switch]$Force,
+    # Skip preparing the optional profile-local Python scheme runtime during
+    # this install. An existing prepared runtime is still used; a later
+    # launcher start may provision one. Useful offline and in installer tests.
+    [switch]$SkipSchemeRuntime
 )
 
 . (Join-Path $PSScriptRoot 'Caelestia-InstallCommon.ps1')
@@ -269,7 +273,22 @@ try {
 
     Write-CaelestiaProfileOwner $ProfileRoot $Prefix $installId $profileExclusive
     Write-Output ('Payload assembled in {0:N2}s.' -f $preparation.Elapsed.TotalSeconds)
+    # Prepare the optional scheme runtime here, while the previous shell still
+    # serves the desktop. Activation then only starts the shell; a cold venv or
+    # slow network cannot consume its readiness budget or cause a rollback.
+    # This phase never fails the install: the shell keeps its fixed palette.
+    if (-not $SkipSchemeRuntime) {
+        $scheme = Install-CaelestiaSchemeRuntime $payload $ProfileRoot
+        if ($scheme.available) {
+            Write-Output ('Scheme runtime prepared in {0:N2}s.' -f $scheme.seconds)
+        } else {
+            Write-Warning 'Scheme runtime was not prepared; Caelestia will start with its fixed palette. The install continues; see scheme\provision.log and provision-state.json, then retry with Install-SchemeRuntime.ps1.'
+        }
+    }
     $runtimePrefix = Install-CaelestiaVersion $Prefix $payload -Restart:$Restart
+    # Pruning is deferred while any shell or supervisor can still be using a
+    # generation; the next install without a live shell removes the rest.
+    Remove-CaelestiaSchemeGenerations $Prefix $ProfileRoot
     $launcher = Join-Path $Prefix 'Start-Caelestia.ps1'
     $powershell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
     $arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $launcher + '"'

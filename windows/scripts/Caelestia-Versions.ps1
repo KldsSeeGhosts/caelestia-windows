@@ -145,7 +145,15 @@ function Install-CaelestiaVersion([string]$Prefix, [string]$Payload, [switch]$Re
             $legacyRecord | Add-Member -NotePropertyName versionId -NotePropertyValue $previous -Force
             Write-CaelestiaJsonAtomic (Join-Path $legacyPath 'install.json') $legacyRecord
         }
-        if ($Restart) { $launchTask = New-CaelestiaLaunchTask $Prefix }
+        if ($Restart) { $launchTask = New-CaelestiaLaunchTask $Prefix -PreparedSchemeRuntime }
+        # Pick and verify this version's scheme generation while the old shell
+        # still serves the desktop, so a slow or hung check is not an outage.
+        $verifiedScheme = Select-CaelestiaSchemeGeneration $newRecord.profile (Get-CaelestiaSchemeRevision $runtime) $runtime
+        # Also decide the fallback now: once the shell stops, nothing may probe.
+        $restoreScheme = $null
+        if ($previous) {
+            try { $restoreScheme = Select-CaelestiaRestoreScheme $newRecord.profile (Get-CaelestiaVersionPrefix $Prefix $previous) $verifiedScheme } catch { }
+        }
         Write-Host "Prepared version $id; beginning activation."
         $clock = [Diagnostics.Stopwatch]::StartNew()
         if ($Restart -and $old) {
@@ -157,9 +165,12 @@ function Install-CaelestiaVersion([string]$Prefix, [string]$Payload, [switch]$Re
         }
         Copy-CaelestiaRootEntries $Prefix $runtime
         Write-CaelestiaJsonAtomic (Join-Path $Prefix 'install.json') (New-CaelestiaRootRecord $Prefix $newRecord $previous)
+        # Point runtime.json at the generation verified above before the
+        # readiness clock starts. If none was found, activation starts fixed.
+        $null = Set-CaelestiaSchemeRuntimeForRevision $newRecord.profile (Get-CaelestiaSchemeRevision $runtime) $runtime -Verified $verifiedScheme -NoProbe
         $activated = $true
         if ($Restart) {
-            Start-CaelestiaDetached $Prefix -TaskName $launchTask
+            Start-CaelestiaDetached $Prefix -TaskName $launchTask -PreparedSchemeRuntime
             Write-Host ('Caelestia ready; version activation {0:N2}s.' -f $clock.Elapsed.TotalSeconds)
         }
         return $runtime
@@ -184,7 +195,8 @@ function Install-CaelestiaVersion([string]$Prefix, [string]$Payload, [switch]$Re
             Copy-CaelestiaRootEntries $Prefix $runtime
             $earlier = if ($old.version -eq 2) { [string]$old.previous } else { '' }
             Write-CaelestiaJsonAtomic (Join-Path $Prefix 'install.json') (New-CaelestiaRootRecord $Prefix $priorRecord $earlier)
-            if ($Restart) { Start-CaelestiaDetached $Prefix -LegacyReady }
+            $null = Set-CaelestiaSchemeRuntimeForRevision $newRecord.profile (Get-CaelestiaSchemeRevision $priorPath) $priorPath -Verified $restoreScheme -NoProbe
+            if ($Restart) { Start-CaelestiaDetached $Prefix -LegacyReady -PreparedSchemeRuntime }
             Write-Warning 'Activation failed; the previous version was selected again.'
         }
         throw $failure
@@ -202,19 +214,29 @@ function Switch-CaelestiaVersion([string]$Prefix, [string]$Id, [switch]$Restart)
     if ((Get-FileHash -LiteralPath (Join-Path $runtime 'qs.exe')).Hash -ne $record.executableSha256) {
         throw 'Retained executable checksum mismatch.'
     }
+    $previousRuntime = Get-CaelestiaVersionPrefix $Prefix ([string]$old.current)
+    $previousRevision = Get-CaelestiaSchemeRevision $previousRuntime
+    $targetRevision = Get-CaelestiaSchemeRevision $runtime
     $launchTask = $null
     $activated = $false
+    # Verify the target's generation before the running shell is stopped.
+    $verifiedScheme = Select-CaelestiaSchemeGeneration $old.profile $targetRevision $runtime
+    # Also decide the fallback now: once the shell stops, nothing may probe.
+    $restoreScheme = Select-CaelestiaRestoreScheme $old.profile $previousRuntime $verifiedScheme
     try {
         if ($Restart) {
-            $launchTask = New-CaelestiaLaunchTask $Prefix
+            $launchTask = New-CaelestiaLaunchTask $Prefix -PreparedSchemeRuntime
             & (Join-Path $Prefix 'Start-Caelestia.ps1') -Prefix $Prefix -Command Quit | Out-Null
         }
         if (@(Get-CaelestiaProcesses $Prefix).Count -or @(Get-CaelestiaSupervisors $old.profile).Count) {
             throw 'Quit this installation before switching versions, or request a restart.'
         }
         Write-CaelestiaJsonAtomic (Join-Path $Prefix 'install.json') (New-CaelestiaRootRecord $Prefix $record $old.current)
+        # The generation verified above is repointed before the readiness
+        # clock; a missing one leaves the fixed palette.
+        $null = Set-CaelestiaSchemeRuntimeForRevision $old.profile $targetRevision $runtime -Verified $verifiedScheme -NoProbe
         $activated = $true
-        if ($Restart) { Start-CaelestiaDetached $Prefix -LegacyReady -TaskName $launchTask }
+        if ($Restart) { Start-CaelestiaDetached $Prefix -LegacyReady -TaskName $launchTask -PreparedSchemeRuntime }
     } catch {
         $failure = $_
         if ($activated) {
@@ -223,9 +245,11 @@ function Switch-CaelestiaVersion([string]$Prefix, [string]$Id, [switch]$Restart)
                 throw 'Version switch failed and the replacement has not exited; selector was not changed again.'
             }
             Write-CaelestiaJsonAtomic (Join-Path $Prefix 'install.json') $old
-            if ($Restart) { Start-CaelestiaDetached $Prefix -LegacyReady }
+            $null = Set-CaelestiaSchemeRuntimeForRevision $old.profile $previousRevision $previousRuntime -Verified $restoreScheme -NoProbe
+            if ($Restart) { Start-CaelestiaDetached $Prefix -LegacyReady -PreparedSchemeRuntime }
         } elseif ($Restart -and -not @(Get-CaelestiaProcesses $Prefix).Count -and -not @(Get-CaelestiaSupervisors $old.profile).Count) {
-            Start-CaelestiaDetached $Prefix -LegacyReady
+            $null = Set-CaelestiaSchemeRuntimeForRevision $old.profile $previousRevision $previousRuntime -Verified $restoreScheme -NoProbe
+            Start-CaelestiaDetached $Prefix -LegacyReady -PreparedSchemeRuntime
         }
         throw $failure
     } finally {

@@ -176,11 +176,50 @@ First launch seeds `config/shell.json`, `config/keybinds.json` and `config/windo
 
 The launcher sets `CAELESTIA_CONFIG_DIR`, `CAELESTIA_STATE_DIR`, and `CAELESTIA_RUNTIME_DIR`; staged QML DataDir/StateDir/CacheDir pragmas and `QML_DISK_CACHE_PATH` confine the remaining paths to the recorded profile.
 
-The first launch provisions `scheme/venv` inside this profile with pinned Python
-packages and the Caelestia CLI. Python is an accepted runtime dependency;
-`-SkipSchemeRuntime` keeps the fixed palette. Wallpaper Engine is detected
-automatically, supplies the launcher picker and palette preview, and retains
-ownership of the desktop background. The desktop clock defaults off.
+The installer provisions the pinned Python packages and Caelestia CLI into an
+immutable generation under `scheme/runtimes/` inside this profile while the
+previous version is still running. `scheme/runtime.json` is published
+atomically only after the generation verifies. A profile-scoped lock serialises
+installer preparation, normal starts and repairs, so two provisioners never
+write at once. Activation then only starts the shell, so a cold or slow first
+install does not spend its readiness budget downloading packages or roll back a
+healthy launch. If preparation fails, the install continues and Caelestia
+starts with the fixed palette; `logs/scheme-runtime.log` records the fallback.
+A start never waits for a provisioner: if it finds one already running for the
+profile (for example the installer, or another start repairing a lost Python),
+that shell stays on the fixed palette until the next shell start, even after the
+other run finishes. A generation is used only if it was built from exactly the
+current inputs and its Python still runs; a venv whose base Python was
+uninstalled is repaired by a new generation, never reused. When a check passes,
+`runtime.json` records a receipt (the base interpreter's path, size and
+timestamp, a hash of `pyvenv.cfg` and the generation id); when a check fails the
+record is replaced with an "unavailable" one. A starting shell accepts the
+record only while that receipt still matches, using file metadata alone, and
+otherwise uses the fixed palette. Starting the shell never runs Python or
+discovers an interpreter: the system Python that the Wallpaper Engine bridge
+uses when there is no scheme runtime is found while preparing and recorded in
+`runtime.json`. If nothing was recorded, that bridge is unavailable for the
+start. Provisioning logs and records contain no machine paths.
+Python is an accepted runtime dependency; `-SkipSchemeRuntime` skips
+preparation during this install, and an existing prepared runtime is still
+used. Retained payloads that predate the generation layout start with scheme
+provisioning disabled during a rollback, so no activation runs pip inside the
+readiness budget. A rollback target keeps its own launcher's start behaviour:
+only launchers from this change onwards guarantee that no Python runs during
+activation, and an older retained launcher (for example one that still
+discovers a Wallpaper Engine interpreter at start) behaves as it always did.
+Update and rollback check the target's scheme generation, within a 15 s budget
+that tries the newest generation first and falls back to older healthy ones,
+before the running shell is stopped. That check is final: if nothing could be
+verified in time, the shell is stopped once and starts on the fixed palette, and
+nothing is probed again after it has stopped. The same holds for recovery: the
+previous version's generation is decided before the shell is stopped too, so a
+failed activation that falls back to it relaunches without probing, and with
+nothing verified (or a busy scheme lock) it starts on the fixed palette. If a prune cannot restore a
+retired generation after a late mapping, it stays in `scheme/runtimes/.trash`
+and the next prune cleans it up; `logs/scheme-runtime.log` records the count. Wallpaper Engine is detected automatically, supplies the
+launcher picker and palette preview, and retains ownership of the desktop
+background. The desktop clock defaults off.
 
 ### What to expect on first launch
 

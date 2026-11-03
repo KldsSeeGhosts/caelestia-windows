@@ -7,37 +7,74 @@ param(
     # After a failed provision, do not retry (and block startup) for this long.
     [int]$RetryCooldownMinutes = 360,
     # Upper bound for each venv/pip step.
-    [int]$StepTimeoutSeconds = 180
+    [int]$StepTimeoutSeconds = 180,
+    # Installer preparation may wait for another provisioner outside the
+    # readiness budget. Starts pass 0 and fall back to the fixed palette.
+    [int]$LockWaitSeconds = 0
 )
 
-# Provisions the profile-local Python runtime that generates Material You
-# schemes with the real caelestia CLI package. Nothing is installed into the
-# repository or the user's ordinary Python installation/profiles. A failure is
-# reported as available=false so the shell still starts with its fixed palette.
+# Provisions a profile-local Python runtime that generates Material You schemes
+# with the real caelestia CLI package. Each dependency revision gets its own
+# immutable generation under scheme\runtimes\; runtime.json is published
+# atomically only after the generation verifies. Nothing is installed into the
+# repository or the user's ordinary Python installation/profiles.
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'Caelestia-InstallCommon.ps1')
+
 if (-not $CliRevision) {
-    $lockPath = Join-Path $PSScriptRoot '..\sources.lock.json'
-    if (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'install.json')) {
-        $lockPath = Join-Path $PSScriptRoot 'licenses\sources.lock.json'
-    }
-    $lock = Get-Content -LiteralPath $lockPath -Raw | ConvertFrom-Json
-    $CliRevision = [string]$lock.schemeCli.revision
+    $CliRevision = Get-CaelestiaSchemeRevision $PSScriptRoot
     if (-not $CliRevision) {
         throw 'sources.lock.json does not pin the scheme CLI revision'
     }
 }
 $ProfileRoot = [IO.Path]::GetFullPath($ProfileRoot)
-$runtimeRoot = Join-Path $ProfileRoot 'scheme'
-$venv = Join-Path $runtimeRoot 'venv'
-$python = Join-Path $venv 'Scripts\python.exe'
+$schemeRoot = Join-Path $ProfileRoot 'scheme'
+$runtimesRoot = Join-Path $schemeRoot 'runtimes'
+$statePath = Join-Path $schemeRoot 'provision-state.json'
+$historyLog = Join-Path $schemeRoot 'provision.log'
 $helperSource = Join-Path $PSScriptRoot 'scheme\win_scheme.py'
-$helper = Join-Path $runtimeRoot 'win_scheme.py'
 $shimSource = Join-Path $PSScriptRoot 'scheme\fcntl.py'
-$stamp = Join-Path $runtimeRoot 'runtime.json'
 $requirements = Join-Path $PSScriptRoot 'scheme\requirements.lock.txt'
-$provisionLog = Join-Path $runtimeRoot 'provision.log'
+$provisionLog = ''
+$staging = ''
 
-# Runs a command with a hard time limit; returns its exit code and output.
+# No machine path belongs in a log or warning: redaction is by pattern
+# (Protect-CaelestiaText), so custom install, Python and temp paths are covered.
+function Protect-Text([string]$Text) { return Protect-CaelestiaText $Text }
+
+function Write-History([string]$Message) {
+    try {
+        New-Item -ItemType Directory -Force -Path $schemeRoot | Out-Null
+        Add-Content -LiteralPath $historyLog -Value ("{0} {1}" -f (Get-Date).ToString('o'), (Protect-Text $Message)) -Encoding UTF8
+    } catch { }
+}
+
+function Write-JsonAtomic([string]$Path, $Value) {
+    $directory = [IO.Path]::GetDirectoryName($Path)
+    New-Item -ItemType Directory -Force -Path $directory | Out-Null
+    $temporary = $Path + '.tmp-' + [guid]::NewGuid().ToString('N')
+    try {
+        [IO.File]::WriteAllText($temporary, ($Value | ConvertTo-Json -Depth 8), [Text.UTF8Encoding]::new($false))
+        for ($attempt = 0; ; $attempt++) {
+            try {
+                if ([IO.File]::Exists($Path)) {
+                    [IO.File]::Replace($temporary, $Path, [System.Management.Automation.Language.NullString]::Value)
+                } else {
+                    [IO.File]::Move($temporary, $Path)
+                }
+                break
+            } catch [IO.IOException] {
+                if ($attempt -ge 4) { throw }
+                Start-Sleep -Milliseconds (25 -shl $attempt)
+            }
+        }
+    } finally {
+        if ([IO.File]::Exists($temporary)) { [IO.File]::Delete($temporary) }
+    }
+}
+
+# Runs a command with a hard time limit. Its output is redacted before it is
+# written to the generation log.
 function Invoke-Bounded([string]$File, [string[]]$Arguments, [string]$Step) {
     $info = New-Object Diagnostics.ProcessStartInfo
     $info.FileName = $File
@@ -51,73 +88,119 @@ function Invoke-Bounded([string]$File, [string[]]$Arguments, [string]$Step) {
     $errTask = $process.StandardError.ReadToEndAsync()
     if (-not $process.WaitForExit($StepTimeoutSeconds * 1000)) {
         try { $process.Kill() } catch { }
+        $script:failure = [ordered]@{ step = $Step; exitCode = 'timeout' }
         throw "$Step timed out after $StepTimeoutSeconds s (offline or slow network?)"
     }
     $text = ($outTask.GetAwaiter().GetResult() + "`n" + $errTask.GetAwaiter().GetResult()).Trim()
-    if ($text) { Add-Content -LiteralPath $provisionLog -Value "[$Step] $text" }
+    $clean = Protect-Text $text
+    if ($clean) { Add-Content -LiteralPath $provisionLog -Value "[$Step] $clean" }
     if ($process.ExitCode -ne 0) {
-        $tail = ($text -split "`n" | Where-Object { $_.Trim() } | Select-Object -Last 3) -join ' | '
+        $tail = ($clean -split "`n" | Where-Object { $_.Trim() } | Select-Object -Last 3) -join ' | '
+        $script:failure = [ordered]@{ step = $Step; exitCode = [string]$process.ExitCode }
         throw "$Step failed (exit $($process.ExitCode)): $tail"
     }
 }
 
-function Write-Result([bool]$Available, [string]$Message) {
+# Generation identity covers every input that goes into the generation (the
+# CLI revision, requirements, helper and fcntl shim), not just the revision: a
+# change to any of them must never mutate a generation a running shell may use.
+$identity = Get-CaelestiaSchemeIdentity $PSScriptRoot $CliRevision
+if (-not $identity) { throw 'the scheme runtime inputs are missing from this payload' }
+$generationId = $identity.Id
+
+function Write-Result([bool]$Available, [string]$Message, [string]$Generation = '', [bool]$InProgress = $false) {
+    $python = ''
+    $helper = ''
+    if ($Available -and $Generation) {
+        $root = Join-Path $runtimesRoot $Generation
+        $python = Join-Path $root 'venv\Scripts\python.exe'
+        $helper = Join-Path $root 'win_scheme.py'
+    }
     [ordered]@{
         available = $Available
-        python = $(if (Test-Path -LiteralPath $python) { $python } else { '' })
-        helper = $(if (Test-Path -LiteralPath $helper) { $helper } else { '' })
         revision = $CliRevision
+        generation = $Generation
+        python = $python
+        helper = $helper
         message = $Message
+        inProgress = $InProgress
     } | ConvertTo-Json -Compress
 }
 
-function Test-Runtime {
-    if (-not (Test-Path -LiteralPath $python) -or -not (Test-Path -LiteralPath $helper)) {
-        return $false
-    }
+# A generation is reusable only when it was built from exactly the inputs
+# computed now and its interpreter still runs.
+function Test-RuntimeAt([string]$Root) {
     try {
-        & $python -c "import materialyoucolor, PIL, caelestia" 2>$null
-        return $LASTEXITCODE -eq 0
+        $record = Get-Content -LiteralPath (Join-Path $Root 'generation.json') -Raw | ConvertFrom-Json
+        if ([string]$record.revision -ne $CliRevision -or [string]$record.identity -ne $identity.Id) { return $false }
+        return (Test-CaelestiaSchemeHealth $Root)
     } catch {
         return $false
     }
 }
 
-New-Item -ItemType Directory -Force -Path $runtimeRoot | Out-Null
-if (-not $Force -and (Test-Path -LiteralPath $stamp)) {
-    try {
-        $record = Get-Content -LiteralPath $stamp -Raw | ConvertFrom-Json
-        if ($record.available -eq $true -and $record.revision -eq $CliRevision -and (Test-Runtime)) {
-            Copy-Item -LiteralPath $helperSource -Destination $helper -Force
-            $shimDir = (& $python -c "import site; print(site.getsitepackages()[0])" 2>$null | Select-Object -First 1)
-            if ($shimDir) {
-                Copy-Item -LiteralPath $shimSource -Destination (Join-Path $shimDir 'fcntl.py') -Force
-            }
-            Write-Result $true 'cached'
+$schemeLock = Enter-CaelestiaSchemeLock $ProfileRoot $LockWaitSeconds
+if (-not $schemeLock) {
+    Write-Result $false 'another scheme provisioning run is in progress' '' $true
+    return
+}
+try {
+    New-Item -ItemType Directory -Force -Path $schemeRoot | Out-Null
+
+    # The system Python a bridge may need without a scheme runtime (Wallpaper
+    # Engine discovery) is resolved here, with a time limit, and recorded in
+    # runtime.json. Activation only reads it and never starts Python itself.
+    if (-not (Get-CaelestiaSchemeInterpreter $ProfileRoot)) {
+        $systemPython = Resolve-CaelestiaSystemPython
+        if ($systemPython) { Set-CaelestiaSchemeInterpreter $ProfileRoot $systemPython }
+    }
+
+    # Reuse the newest verified generation built from exactly these inputs (the
+    # published one, or a sibling from an earlier repair) instead of building
+    # another. Nothing in it is touched, so a running shell keeps stable bytes;
+    # a candidate that fails its check is revoked from runtime.json.
+    if (-not $Force) {
+        $existing = Get-CaelestiaVerifiedSchemeGeneration $ProfileRoot $CliRevision $identity.Id
+        if ($existing) {
+            $null = Publish-CaelestiaSchemeRuntime $ProfileRoot $CliRevision $existing.Directory.FullName
+            Write-Result $true 'cached' $existing.Name
             return
         }
-        # A recent failure for this revision is not retried synchronously on
-        # every start (for example while offline); -Force overrides.
-        if ($record.available -eq $false -and $record.revision -eq $CliRevision -and $record.attemptedAt) {
-            $age = (Get-Date) - [DateTime]::Parse([string]$record.attemptedAt)
-            if ($age.TotalMinutes -ge 0 -and $age.TotalMinutes -lt $RetryCooldownMinutes) {
-                Write-Result $false "retry suppressed for $([int]($RetryCooldownMinutes - $age.TotalMinutes)) more minutes after: $($record.message)"
-                return
-            }
-        }
-    } catch {
-        # A corrupt marker falls through to a fresh provision.
     }
-}
 
-Write-Host "Provisioning profile-local scheme runtime under $runtimeRoot"
-try {
-    if (-not (Test-Path -LiteralPath $python)) {
+    # A recent failure for this input set is not retried on every start (for
+    # example while offline); -Force overrides.
+    if (-not $Force -and (Test-Path -LiteralPath $statePath)) {
+        try {
+            $state = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
+            if ($state.available -eq $false -and [string]$state.key -eq $generationId -and $state.attemptedAt) {
+                $age = (Get-Date) - [DateTime]::Parse([string]$state.attemptedAt)
+                if ($age.TotalMinutes -ge 0 -and $age.TotalMinutes -lt $RetryCooldownMinutes) {
+                    Write-Result $false "retry suppressed for $([int]($RetryCooldownMinutes - $age.TotalMinutes)) more minutes after: $($state.message)"
+                    return
+                }
+            }
+        } catch { }
+    }
+
+    $publishedId = $generationId
+    if ($Force -or (Test-Path -LiteralPath (Join-Path $runtimesRoot $publishedId))) {
+        # Never mutate a published generation, even a broken one that may be
+        # mapped into a live process. Build a sibling instead.
+        $publishedId = $generationId + '-' + [guid]::NewGuid().ToString('N').Substring(0, 8)
+    }
+
+    New-Item -ItemType Directory -Force -Path $runtimesRoot | Out-Null
+    $staging = Join-Path $runtimesRoot ('.staging-' + [guid]::NewGuid().ToString('N'))
+    $provisionLog = Join-Path $staging 'provision.log'
+    New-Item -ItemType Directory -Force -Path $staging | Out-Null
+    try {
+        $venv = Join-Path $staging 'venv'
+        $python = Join-Path $venv 'Scripts\python.exe'
         $launcher = Get-Command py -ErrorAction SilentlyContinue
         if (-not $launcher) {
             throw 'the Python launcher (py) is not on PATH'
         }
-        New-Item -ItemType Directory -Force -Path $runtimeRoot | Out-Null
         # Select a CPython minor version covered by scheme\requirements.lock.txt (3.11-3.14).
         $pySelector = '-3'
         foreach ($ver in @('-3.14', '-3.13', '-3.12', '-3.11')) {
@@ -127,60 +210,96 @@ try {
             } catch { }
         }
         Invoke-Bounded $launcher.Source @($pySelector, '-m', 'venv', $venv) 'creating the virtual environment'
-        if (-not (Test-Path -LiteralPath $python)) {
+        if (-not (Test-Path -LiteralPath $python -PathType Leaf)) {
             throw 'could not create the profile-local virtual environment'
         }
-    }
 
-    # Keep pip's download cache inside the isolated profile too.
-    $env:PIP_CACHE_DIR = Join-Path $ProfileRoot 'cache\pip'
+        # Keep pip's download cache inside the isolated profile too.
+        $env:PIP_CACHE_DIR = Join-Path $ProfileRoot 'cache\pip'
+        New-Item -ItemType Directory -Force -Path $env:PIP_CACHE_DIR | Out-Null
 
-    # Binary wheels only, each verified against the SHA-256 digests locked in
-    # scheme\requirements.lock.txt. The CLI declares Python >= 3.13; only its
-    # packaging metadata needs that. The scheme/material modules run on 3.12.
-    Invoke-Bounded $python @('-m', 'pip', 'install', '--disable-pip-version-check', '--quiet', '--timeout', '30', '--retries', '1', '--no-deps', '--only-binary=:all:', '--require-hashes', '-r', $requirements) 'installing materialyoucolor/pillow'
-    # The commit id in the URL content-addresses the CLI source (git verifies it).
-    Invoke-Bounded $python @('-m', 'pip', 'install', '--disable-pip-version-check', '--quiet', '--timeout', '30', '--retries', '1', '--no-deps', '--ignore-requires-python', "git+https://github.com/caelestia-dots/cli@$CliRevision") "installing the caelestia CLI at $CliRevision"
+        # Binary wheels only, each verified against the SHA-256 digests locked in
+        # scheme\requirements.lock.txt. The CLI declares Python >= 3.13; only its
+        # packaging metadata needs that. The scheme/material modules run on 3.12.
+        Invoke-Bounded $python @('-m', 'pip', 'install', '--disable-pip-version-check', '--quiet', '--timeout', '30', '--retries', '1', '--no-deps', '--only-binary=:all:', '--require-hashes', '-r', $requirements) 'installing materialyoucolor/pillow'
+        # The commit id in the URL content-addresses the CLI source (git verifies it).
+        Invoke-Bounded $python @('-m', 'pip', 'install', '--disable-pip-version-check', '--quiet', '--timeout', '30', '--retries', '1', '--no-deps', '--ignore-requires-python', "git+https://github.com/caelestia-dots/cli@$CliRevision") "installing the caelestia CLI at $CliRevision"
 
-    Copy-Item -LiteralPath $helperSource -Destination $helper -Force
-    $shimDir = (& $python -c "import site; print(site.getsitepackages()[0])" 2>$null | Select-Object -First 1)
-    if ($shimDir) {
-        Copy-Item -LiteralPath $shimSource -Destination (Join-Path $shimDir 'fcntl.py') -Force
-    }
+        Copy-Item -LiteralPath $helperSource -Destination (Join-Path $staging 'win_scheme.py') -Force
+        $shimDir = (& $python -c "import site; print(site.getsitepackages()[0])" 2>$null | Select-Object -First 1)
+        if ($shimDir) {
+            New-Item -ItemType Directory -Force -Path $shimDir | Out-Null
+            Copy-Item -LiteralPath $shimSource -Destination (Join-Path $shimDir 'fcntl.py') -Force
+        }
 
-    # The bridge never applies upstream themes, but keep a profile-local CLI
-    # config that disables every Linux theme writer in case the CLI is run by
-    # hand from this environment.
-    $cliConfigDir = Join-Path $ProfileRoot 'config\caelestia'
-    New-Item -ItemType Directory -Force -Path $cliConfigDir | Out-Null
-    $cliConfig = Join-Path $cliConfigDir 'cli.json'
-    if (-not (Test-Path -LiteralPath $cliConfig)) {
-        @'
+        # The bridge never applies upstream themes, but keep a profile-local CLI
+        # config that disables every Linux theme writer in case the CLI is run by
+        # hand from this environment.
+        $cliConfigDir = Join-Path $ProfileRoot 'config\caelestia'
+        New-Item -ItemType Directory -Force -Path $cliConfigDir | Out-Null
+        $cliConfig = Join-Path $cliConfigDir 'cli.json'
+        if (-not (Test-Path -LiteralPath $cliConfig)) {
+            @'
 {"theme":{"enableTerm":false,"enableHypr":false,"enableDiscord":false,"enableSpicetify":false,"enablePandora":false,"enableFuzzel":false,"enableBtop":false,"enableNvtop":false,"enableHtop":false,"enableGtk":false,"enableQt":false,"enableWarp":false,"enableChromium":false,"enableZed":false,"enableCava":false}}
 '@ | Set-Content -LiteralPath $cliConfig -Encoding UTF8
-    }
+        }
 
-    if (-not (Test-Runtime)) {
-        throw 'the installed runtime cannot import materialyoucolor/PIL/caelestia'
-    }
+        [ordered]@{
+            revision = $CliRevision
+            generation = $publishedId
+            created = (Get-Date).ToString('o')
+            identity = $identity.Id
+            requirementsSha256 = $identity.RequirementsSha256
+            helperSha256 = $identity.HelperSha256
+            shimSha256 = $identity.ShimSha256
+        } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $staging 'generation.json') -Encoding UTF8
 
-    [ordered]@{
-        available = $true
-        revision = $CliRevision
-        python = $python
-        helper = $helper
-        provisionedAt = (Get-Date).ToString('o')
-    } | ConvertTo-Json | Set-Content -LiteralPath $stamp -Encoding UTF8
-    Write-Result $true 'provisioned'
-} catch {
-    $message = $_.Exception.Message
-    Write-Warning "Scheme runtime unavailable: $message"
-    try { Add-Content -LiteralPath $provisionLog -Value "$((Get-Date).ToString('o')) FAILED: $message" } catch { }
-    [ordered]@{
-        available = $false
-        revision = $CliRevision
-        message = $message
-        attemptedAt = (Get-Date).ToString('o')
-    } | ConvertTo-Json | Set-Content -LiteralPath $stamp -Encoding UTF8
-    Write-Result $false $message
+        if (-not (Test-RuntimeAt $staging)) {
+            throw 'the installed runtime cannot import materialyoucolor/PIL/caelestia'
+        }
+
+        $target = Join-Path $runtimesRoot $publishedId
+        if (Test-Path -LiteralPath $target) {
+            throw 'another process published this scheme runtime generation'
+        }
+        [IO.Directory]::Move($staging, $target)
+        $staging = ''
+
+        if (-not (Publish-CaelestiaSchemeRuntime $ProfileRoot $CliRevision $target)) {
+            throw 'could not record the verification of the new runtime'
+        }
+        Remove-Item -LiteralPath $statePath -Force -ErrorAction SilentlyContinue
+        Write-History "READY revision $CliRevision generation $publishedId"
+        Write-Result $true 'provisioned' $publishedId
+    } catch {
+        $message = Protect-Text $_.Exception.Message
+        # The step and exit code are fields of their own, so redacting a path in
+        # the tool output can never drop them.
+        $failedStep = if ($script:failure) { [string]$script:failure.step } else { '' }
+        $failedExit = if ($script:failure) { [string]$script:failure.exitCode } else { '' }
+        Write-History "FAILED step=$failedStep exit=$failedExit : $message"
+        Write-Warning "Scheme runtime unavailable: $message"
+        Write-JsonAtomic $statePath ([ordered]@{
+            available = $false
+            revision = $CliRevision
+            key = $generationId
+            generation = $publishedId
+            step = $failedStep
+            exitCode = $failedExit
+            message = $message
+            attemptedAt = (Get-Date).ToString('o')
+        })
+        if ($staging -and (Test-Path -LiteralPath $staging)) {
+            try {
+                $safe = Resolve-CaelestiaDirectory $staging
+                if ((Split-Path -Parent $safe) -eq $runtimesRoot.TrimEnd('\') -and (Split-Path -Leaf $safe) -like '.staging-*') {
+                    Assert-CaelestiaNoReparsePoints $safe
+                    Remove-Item -LiteralPath $safe -Recurse -Force
+                }
+            } catch { }
+        }
+        Write-Result $false $message
+    }
+} finally {
+    Exit-CaelestiaSchemeLock $schemeLock
 }

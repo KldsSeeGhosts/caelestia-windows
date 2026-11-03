@@ -30,6 +30,10 @@ import traceback
 import types
 from pathlib import Path
 
+# The installed generation is immutable while a shell is using it. Do not let
+# Python add __pycache__ files to the published runtime.
+sys.dont_write_bytecode = True
+
 # The package __init__ imports the Linux-only theme writer, which imports fcntl.
 # Register a tiny in-process stand-in before any caelestia import so this bridge
 # works even when the venv shim has not been installed yet.

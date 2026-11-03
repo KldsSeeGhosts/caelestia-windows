@@ -319,14 +319,15 @@ watched and reload the binds without restarting the shell.
 ## Dynamic colours and the profile-local scheme runtime
 
 `Start-ShellPrototype.ps1 -Combined` calls `Install-SchemeRuntime.ps1`, which
-provisions `scheme/venv` under the combined profile (never the repository or the
-user's ordinary Python packages) with `pillow==13.0.0`,
-`materialyoucolor==3.0.4` and the upstream `caelestia` CLI pinned at
-`5e804b10`. The installer also places a Windows `fcntl` shim in the venv and
-copies `win_scheme.py` into the profile. Use `-SkipSchemeRuntime` to skip
-provisioning and the generator entirely. A failed provision is cached in
-`scheme/runtime.json`; delete that file or run `Install-SchemeRuntime.ps1
--ProfileRoot <profile> -Force` to retry.
+provisions an immutable generation under `scheme/runtimes/` in the combined
+profile (never the repository or the user's ordinary Python packages) with
+`pillow==13.0.0`, `materialyoucolor==3.0.4` and the upstream `caelestia` CLI
+pinned at `5e804b10`. It publishes `scheme/runtime.json` atomically only after
+the generation verifies, and a profile-scoped lock serialises provisioning. Use
+`-SkipSchemeRuntime` to skip provisioning and the generator entirely. A failed
+provision is recorded in `scheme/provision-state.json` and
+`scheme/provision.log`; rerun `Install-SchemeRuntime.ps1 -ProfileRoot <profile>
+-Force` to retry.
 
 `win_scheme.py` imports the CLI's scheme/material modules but deliberately skips
 its theme writer (Linux-only `fcntl`, Hyprland sockets, dconf, `/dev/pts` and
