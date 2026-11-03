@@ -404,8 +404,8 @@ QtObject {
             test.feedbackEvents = test.feedbackEvents.concat([{screen: screenName, value: value}]);
         }
     }
-    readonly property QtObject reusedScreen: QtObject { property string name: "MAG321UX OLED" }
-    readonly property QtObject unchangedScreen: QtObject { property string name: "MAG321UX OLED" }
+    readonly property QtObject reusedScreen: QtObject { property string name: "DISPLAY-A" }
+    readonly property QtObject unchangedScreen: QtObject { property string name: "DISPLAY-A" }
 
     readonly property EmptyBackend emptyBackend: EmptyBackend {}
     readonly property SilentBackend silentBackend: SilentBackend {}
@@ -556,20 +556,20 @@ QtObject {
         identityCase.screens = [reusedScreen, unchangedScreen];
         identityCase.enabled = true;
         identityCase.backend = identityBackend;
-        check(identityCase.queryMonitor("MAG321UX OLED"), "initial reused-name query");
+        check(identityCase.queryMonitor("DISPLAY-A"), "initial reused-name query");
         identityBackend.deliverQuery();
-        const unchangedRecord = identityCase.stateFor("MAG321UX OLED");
-        reusedScreen.name = "DELL S2725QS";
+        const unchangedRecord = identityCase.stateFor("DISPLAY-A");
+        reusedScreen.name = "DISPLAY-B";
         identityBackend.displayConfigurationChanged();
-        check(identityCase.stateFor("DELL S2725QS") !== null,
-            "identity-only hotplug creates the corrected Dell brightness record");
-        check(identityCase.stateFor("MAG321UX OLED") === unchangedRecord,
-            "identity-only hotplug keeps the MSI brightness record");
-        check(identityBackend.pendingQueries === 2, "both corrected monitor names are re-queried");
+        check(identityCase.stateFor("DISPLAY-B") !== null,
+            "identity-only hotplug creates the renamed display brightness record");
+        check(identityCase.stateFor("DISPLAY-A") === unchangedRecord,
+            "identity-only hotplug keeps the unchanged display brightness record");
+        check(identityBackend.pendingQueries === 2, "both display names are re-queried");
         identityBackend.deliverQuery();
         identityBackend.deliverQuery();
-        check(identityCase.stateFor("DELL S2725QS").brightnessKnown,
-            "the corrected Dell record accepts its own correlated query result");
+        check(identityCase.stateFor("DISPLAY-B").brightnessKnown,
+            "the renamed display record accepts its own correlated query result");
 
         // A native HDR route reports normalized SDR white and confirms its
         // rounded read-back; a topology notification switches the same screen.
