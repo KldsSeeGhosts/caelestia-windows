@@ -152,6 +152,36 @@ function Get-FirstSkipReason([string]$Text) {
     return $null
 }
 
+# Map each missing target to the compiler or linker error that stopped it.
+function Get-BuildFailureOutput([string]$LogPath, [string[]]$Targets) {
+    $output = @{}
+    if (-not (Test-Path -LiteralPath $LogPath -PathType Leaf)) { return $output }
+    $current = $null
+    $collected = @{}
+    foreach ($line in Get-Content -LiteralPath $LogPath) {
+        if ($line -match '^FAILED:\s+\[code=\d+\]\s+(\S+)') {
+            $artifact = $Matches[1]
+            $current = $null
+            foreach ($target in $Targets) {
+                if ($artifact -match [regex]::Escape($target)) { $current = $target; break }
+            }
+            continue
+        }
+        if ($line -match '^\[\d+/\d+\]') { $current = $null; continue }
+        if (-not $current) { continue }
+        if ($line -match 'error LNK\d+|fatal error LNK\d+|error C\d+|fatal error C\d+|: error:') {
+            if (-not $collected.ContainsKey($current)) {
+                $collected[$current] = New-Object 'System.Collections.Generic.List[string]'
+            }
+            if (-not $collected[$current].Contains($line.Trim())) {
+                $collected[$current].Add($line.Trim())
+            }
+        }
+    }
+    foreach ($target in $collected.Keys) { $output[$target] = ($collected[$target] -join "`n") }
+    return $output
+}
+
 function Invoke-DirectFixture([string]$Executable, [string]$Name) {
     $log = Join-Path $runRoot "$Name.qt.txt"
     $info = [Diagnostics.ProcessStartInfo]::new($Executable)
@@ -302,6 +332,7 @@ foreach ($target in $declaredTargets) {
         target = $target; executable = $executable; registered = [bool]$registeredEntry
     }
 }
+$buildErrors = Get-BuildFailureOutput $buildLog $declaredTargets
 
 $registeredExes = @{}
 foreach ($entry in $registered) {
@@ -363,8 +394,13 @@ foreach ($entry in $registered) {
     $skipReason = $null
     $failure = $null
     $skippedCases = $null
+    $buildFailure = $null
     if ($buildFailures.ContainsKey($entry.name)) {
-        $failure = "Fixture $($buildFailures[$entry.name].target) did not compile or link. See $buildLog."
+        $failed = $buildFailures[$entry.name]
+        $errorText = $buildErrors[$failed.target]
+        $failure = if ($errorText) { "Fixture $($failed.target) did not compile or link.`n$errorText" }
+            else { "Fixture $($failed.target) did not compile or link. See $buildLog." }
+        $buildFailure = [ordered]@{ target = $failed.target; output = $errorText; log = $buildLog }
     } elseif ($skipped.ContainsKey($entry.name)) {
         $result = 'skipped'
         $skipReason = $skipped[$entry.name]
@@ -407,6 +443,7 @@ foreach ($entry in $registered) {
         dependsOn = @($traits.dependsOn)
         command = $command
         failure = $failure
+        buildFailure = $buildFailure
     })
 }
 
@@ -456,6 +493,7 @@ try {
             dependsOn = @($traits.dependsOn)
             command = $exe.FullName
             failure = $failure
+            buildFailure = $null
         })
     }
 } finally {
@@ -466,6 +504,9 @@ try {
 foreach ($name in ($buildFailures.Keys | Sort-Object)) {
     $failed = $buildFailures[$name]
     if ($failed.registered) { continue }
+    $errorText = $buildErrors[$failed.target]
+    $failure = if ($errorText) { "Fixture $($failed.target) did not compile or link.`n$errorText" }
+        else { "Fixture $($failed.target) did not compile or link. See $buildLog." }
     $results.Add([ordered]@{
         name = $name
         result = 'failed'
@@ -475,7 +516,8 @@ foreach ($name in ($buildFailures.Keys | Sort-Object)) {
         ctestRegistered = $false
         dependsOn = @((Get-TestTraits $name).dependsOn)
         command = $failed.executable
-        failure = "Fixture $($failed.target) did not compile or link. See $buildLog."
+        failure = $failure
+        buildFailure = [ordered]@{ target = $failed.target; output = $errorText; log = $buildLog }
     })
 }
 
