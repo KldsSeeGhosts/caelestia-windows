@@ -75,6 +75,32 @@ if ($wallpapers -match 'paletteReady|paletteImage') {
     throw 'Wallpapers kept the time-based startup gate.'
 }
 
+# Generation is the dominant stage after #271: one warm helper must answer every
+# change, keeping Python startup and the upstream per-image cache off the path.
+$generator = Get-Content -LiteralPath (Join-Path $repoRoot 'windows\shell\adapters\services\SchemeGenerator.qml') -Raw
+$schemeHelper = Get-Content -LiteralPath (Join-Path $repoRoot 'windows\scripts\scheme\win_scheme.py') -Raw
+if (-not $generator.Contains('command: [root.python, root.helper, "serve"]') -or
+    -not $generator.Contains('stdinEnabled: true') -or
+    -not $generator.Contains('SplitParser') -or
+    -not $generator.Contains('worker.write(activeRequest + "\n")')) {
+    throw 'SchemeGenerator does not keep one warm helper for all requests.'
+}
+if ($generator -match 'root\.python, root\.helper, \.\.\.job\.args') {
+    throw 'SchemeGenerator still starts a helper per wallpaper change.'
+}
+if ($generator -notmatch 'helperTimeout' -or $generator -notmatch 'worker\.signal\(9\)') {
+    throw 'SchemeGenerator lost the hung-helper timeout.'
+}
+if ($generator -match 'interval:\s*\d') {
+    throw 'SchemeGenerator added a fixed delay to the palette path.'
+}
+if ($schemeHelper -notmatch '(?m)^def serve\(\)' -or $schemeHelper -notmatch '_emit\(result\)') {
+    throw 'win_scheme.py does not provide the warm serve protocol.'
+}
+if ($schemeHelper -notmatch 'wallpaper_thumbnail_path' -or $schemeHelper -notmatch 'thumbnail\(\(128, 128\)') {
+    throw 'win_scheme.py no longer quantises the 128px wallpaper thumbnail.'
+}
+
 # Map the adapter's singletons onto fixture mocks.
 $currentImage = $currentImage.Replace('WallpaperEngine', 'root.engine')
 $apply = $apply.Replace('WallpaperEngine', 'root.engine')

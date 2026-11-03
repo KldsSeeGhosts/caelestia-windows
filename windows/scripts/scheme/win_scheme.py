@@ -66,22 +66,25 @@ os.environ["XDG_CACHE_HOME"] = str(_profile_root / "cache")
 os.environ["XDG_CONFIG_HOME"] = str(_profile_root / "config")
 os.environ["XDG_DATA_HOME"] = str(_profile_root / "data")
 
-from PIL import Image  # noqa: E402
+# A warm worker's stdout is a request/response channel. Anything the libraries
+# print while importing must not be mistaken for a response line.
+with contextlib.redirect_stdout(sys.stderr):
+    from PIL import Image  # noqa: E402
 
-from caelestia.utils.paths import (  # noqa: E402
-    scheme_path,
-    wallpaper_path_path,
-    wallpaper_thumbnail_path,
-    wallpapers_cache_dir,
-)
-from caelestia.utils.scheme import (  # noqa: E402
-    Scheme,
-    get_scheme,
-    get_scheme_flavours,
-    get_scheme_modes,
-    get_scheme_names,
-    scheme_variants,
-)
+    from caelestia.utils.paths import (  # noqa: E402
+        scheme_path,
+        wallpaper_path_path,
+        wallpaper_thumbnail_path,
+        wallpapers_cache_dir,
+    )
+    from caelestia.utils.scheme import (  # noqa: E402
+        Scheme,
+        get_scheme,
+        get_scheme_flavours,
+        get_scheme_modes,
+        get_scheme_names,
+        scheme_variants,
+    )
 
 
 def _hash(path: Path) -> str:
@@ -269,7 +272,7 @@ def list_schemes() -> dict:
     }
 
 
-def main(argv: list[str]) -> int:
+def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="win_scheme")
     commands = parser.add_subparsers(dest="command", required=True)
 
@@ -299,44 +302,94 @@ def main(argv: list[str]) -> int:
 
     commands.add_parser("current")
 
-    args = parser.parse_args(argv)
+    return parser
+
+
+def _dispatch(args: argparse.Namespace) -> dict:
+    if args.command == "list":
+        return list_schemes()
+    if args.command == "apply-wallpaper":
+        return _describe(apply_wallpaper(
+            Path(args.image), args.flavour, args.mode, args.variant, args.smart == "1",
+        ))
+    if args.command == "set":
+        return _describe(set_properties(
+            args.name, args.flavour, args.mode, args.variant,
+            Path(args.image) if args.image else None,
+        ))
+    if args.command == "set-mode":
+        return _describe(set_properties(
+            None, None, args.mode, None, Path(args.image) if args.image else None,
+        ))
+    if args.command == "set-variant":
+        return _describe(set_properties(
+            None, None, None, args.variant, Path(args.image) if args.image else None,
+        ))
+    current = get_scheme()
+    return {
+        "ok": True,
+        "name": current.name,
+        "flavour": current.flavour,
+        "mode": current.mode,
+        "variant": current.variant,
+        "path": str(scheme_path),
+    }
+
+
+def _emit(result: dict) -> None:
+    """Write exactly one response line. Library chatter goes to stderr."""
+    sys.stdout.write(json.dumps(result, ensure_ascii=True) + "\n")
+    sys.stdout.flush()
+
+
+def _run(argv: list[str]) -> dict:
+    args = _parser().parse_args(argv)
+    with contextlib.redirect_stdout(sys.stderr):
+        return _dispatch(args)
+
+
+def serve() -> int:
+    """Keep the imports and the upstream per-image cache warm between changes.
+
+    The shell starts this once and writes one JSON request per line. Spawning
+    an interpreter and importing Pillow/caelestia for every wallpaper switch is
+    the dominant generation cost on Windows; the command implementations are
+    the same as the one-shot CLI, so colours are unchanged.
+    """
+    for raw in sys.stdin.buffer:
+        line = raw.strip()
+        if not line:
+            continue
+        try:
+            request = json.loads(line)
+            argv = request.get("args") if isinstance(request, dict) else None
+            if (not isinstance(argv, list) or not argv
+                    or not all(isinstance(arg, str) for arg in argv)
+                    or argv[0] == "serve"):
+                raise ValueError("invalid scheme request")
+            result = _run(argv)
+        except SystemExit:
+            # argparse reports usage on stderr and exits; keep serving.
+            result = {"ok": False, "error": "invalid scheme request"}
+        except Exception as exc:  # a failed request must not stop the worker
+            traceback.print_exc(file=sys.stderr)
+            result = {"ok": False, "error": str(exc)}
+        _emit(result)
+    return 0
+
+
+def main(argv: list[str]) -> int:
+    if argv == ["serve"]:
+        return serve()
     try:
-        with contextlib.redirect_stdout(sys.stderr):
-            if args.command == "list":
-                result = list_schemes()
-            elif args.command == "apply-wallpaper":
-                result = _describe(apply_wallpaper(
-                    Path(args.image), args.flavour, args.mode, args.variant, args.smart == "1",
-                ))
-            elif args.command == "set":
-                result = _describe(set_properties(
-                    args.name, args.flavour, args.mode, args.variant,
-                    Path(args.image) if args.image else None,
-                ))
-            elif args.command == "set-mode":
-                result = _describe(set_properties(
-                    None, None, args.mode, None, Path(args.image) if args.image else None,
-                ))
-            elif args.command == "set-variant":
-                result = _describe(set_properties(
-                    None, None, None, args.variant, Path(args.image) if args.image else None,
-                ))
-            else:
-                current = get_scheme()
-                result = {
-                    "ok": True,
-                    "name": current.name,
-                    "flavour": current.flavour,
-                    "mode": current.mode,
-                    "variant": current.variant,
-                    "path": str(scheme_path),
-                }
-        print(json.dumps(result))
-        return 0
+        result = _run(argv)
+        code = 0
     except Exception as exc:  # report a parseable failure, never a bare traceback on stdout
         traceback.print_exc(file=sys.stderr)
-        print(json.dumps({"ok": False, "error": str(exc)}))
-        return 1
+        result = {"ok": False, "error": str(exc)}
+        code = 1
+    _emit(result)
+    return code
 
 
 if __name__ == "__main__":

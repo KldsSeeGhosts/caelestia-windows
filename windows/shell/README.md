@@ -188,9 +188,12 @@ runs. Use
 `-SkipSchemeRuntime` on the installer or launcher to skip preparation. If
 preparation failed, Caelestia starts on the fixed palette and
 `logs/scheme-runtime.log` reports it; rerun `Install-SchemeRuntime.ps1` from the
-selected version directory to retry. Wallpaper Engine discovery and preview
-colour matching share the combined services; its options are watched under
-`windows.wallpaperEngine` in `config/windows.json`.
+selected version directory to retry. The shell keeps one helper process warm and
+sends each palette request over stdin, so switching wallpaper does not pay Python
+startup and the CLI imports again; the upstream per-image cache stays warm too.
+Wallpaper Engine discovery and preview colour matching share the combined
+services; its options are watched under `windows.wallpaperEngine` in
+`config/windows.json`.
 
 State, cache, data, runtime and logs remain in that profile. Normal and smoke
 runs capture `logs/shell.stdout.log` and `logs/shell.stderr.log`; the watchdog
