@@ -3,6 +3,7 @@ pragma Singleton
 import QtQuick
 import QtQuick.Dialogs as NativeDialogs
 import Quickshell
+import Quickshell.Io
 import Quickshell.Windows as Native
 import Caelestia
 import Caelestia.Config
@@ -50,8 +51,97 @@ Singleton {
         return raw.map(normalize).filter(entry => entry !== null);
     }
     property bool previewColourLock: false
+    // Single owner of wallpaper-derived colours: Wallpaper Engine quitting or
+    // relaunching, a Windows wallpaper change and the picker all move
+    // currentImage. The bridge records the image each scheme was generated from
+    // beside scheme.json, so comparing against it survives restarts and covers
+    // every generation path (picker, mode and variant). The scheme name comes
+    // from scheme.json too: referencing Colours here would close a singleton
+    // cycle, because Colours uses Wallpapers.currentImage.
+    readonly property string schemeStatePath: `${Paths.state}/scheme.json`
+    readonly property string schemeSourcePath: `${Paths.state}/wallpaper/path.txt`
+    property string schemeName: ""
+    property string schemeSource: ""
+    property bool schemeNameLoaded: false
+    property bool schemeSourceLoaded: false
+    readonly property bool schemeStateReady: schemeNameLoaded && schemeSourceLoaded
 
     Component.onCompleted: reload()
+    onCurrentImageChanged: applyPalette(false)
+    // Both files have been read (or found missing) once: the startup check.
+    onSchemeStateReadyChanged: applyPalette(false)
+
+    function applyPalette(force): void {
+        if (!SchemeGenerator.available || schemeName !== "dynamic" || currentImage === "")
+            return;
+        // Wallpaper Engine discovery can briefly report the Windows wallpaper
+        // at startup; wait for it and the persisted state before comparing.
+        if (!schemeStateReady || !WallpaperEngine.snapshotReady)
+            return;
+        if (!force && Paths.samePath(currentImage, schemeSource))
+            return;
+        SchemeGenerator.applyWallpaper(currentImage, GlobalConfig.services.smartScheme);
+    }
+
+    // Loading scheme state never regenerates: only a currentImage change, the
+    // smart-scheme toggle or an explicit user action does, so a scheme write
+    // can not trigger another one.
+    function setSchemeName(json: string): void {
+        try {
+            schemeName = String(JSON.parse(json).name ?? "");
+        } catch (error) {
+            schemeName = "";
+        }
+        schemeNameLoaded = true;
+    }
+    function setSchemeSource(content: string): void {
+        schemeSource = content.trim();
+        schemeSourceLoaded = true;
+    }
+    // A FileView cannot watch a file whose directory does not exist yet, which
+    // is the case on a fresh profile. The generator creates both files, so
+    // reload them whenever it reports a finished run instead.
+    function reloadSchemeState(): void {
+        nameFile.reload();
+        sourceFile.reload();
+    }
+
+    FileView {
+        id: nameFile
+
+        path: root.schemeStatePath
+        watchChanges: true
+        printErrors: false
+        onLoaded: root.setSchemeName(text())
+        onFileChanged: reload()
+        onLoadFailed: root.setSchemeName("")
+    }
+
+    FileView {
+        id: sourceFile
+
+        path: root.schemeSourcePath
+        watchChanges: true
+        printErrors: false
+        onLoaded: root.setSchemeSource(text())
+        onFileChanged: reload()
+        onLoadFailed: root.setSchemeSource("")
+    }
+
+    Connections {
+        target: SchemeGenerator
+        function onSchemeChanged(): void { root.reloadSchemeState(); }
+        function onSchemeListChanged(): void { root.reloadSchemeState(); }
+    }
+
+    Connections {
+        target: WallpaperEngine
+        function onSnapshotReadyChanged(): void { root.applyPalette(false); }
+    }
+    Connections {
+        target: GlobalConfig.services
+        function onSmartSchemeChanged(): void { root.applyPalette(true); }
+    }
 
     // Paths.wallsdir can change once after startup, when the background probe
     // finds the wallpapers in the legacy folder; scan again for the new folder.
@@ -105,13 +195,13 @@ Singleton {
         if (ok) {
             fileCurrent = local;
             stopPreview();
-            if (SchemeGenerator.available) {
-                // The picker always produces the wallpaper-derived dynamic
-                // scheme; the bridge writes scheme.json and Colours reloads it.
-                SchemeGenerator.applyWallpaper(local, GlobalConfig.services.smartScheme);
+            // The fileCurrent change above regenerates a dynamic palette.
+            if (!SchemeGenerator.available) {
+                Toaster.toast("Wallpaper", "Desktop wallpaper changed. Dynamic colours are unavailable.", "wallpaper");
+            } else if (schemeName === "dynamic") {
                 Toaster.toast("Wallpaper", "Desktop wallpaper changed. Generating colours.", "palette");
             } else {
-                Toaster.toast("Wallpaper", "Desktop wallpaper changed. Dynamic colours are unavailable.", "wallpaper");
+                Toaster.toast("Wallpaper", "Desktop wallpaper changed.", "wallpaper");
             }
         } else {
             Toaster.toast("Wallpaper", "Windows could not apply the wallpaper.", "wallpaper");
