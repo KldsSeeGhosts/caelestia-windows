@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import Quickshell.Windows
+import Caelestia
 import Caelestia.I18n
 
 // Windows adapter for modules/bar/popouts/kblayout/KbLayoutModel.qml. It keeps
@@ -40,12 +41,22 @@ Item {
     }
 
     // "requested" only means the backend posted the switch; the active entry
-    // stays unchanged until its notification arrives. "denied" is reported
-    // for UIPI/PostMessage failure without changing the selection.
+    // stays unchanged until its notification arrives. Any other result leaves
+    // the selection alone and raises a warning toast, as the upstream model
+    // does for its XKB limit, so a click that changes nothing is explained.
     function switchTo(idx: int): string {
-        if (!keyboard)
-            return "no-target";
-        return keyboard.activateLayoutAt(idx);
+        const result = keyboard ? keyboard.activateLayoutAt(idx) : "no-target";
+        if (result !== "requested")
+            Toaster.toast(Tr.tr("Layout not switched"), _failureMessage(result), "keyboard", Toast.Warning);
+        return result;
+    }
+
+    function _failureMessage(result: string): string {
+        if (result === "denied")
+            return Tr.tr("The focused app blocks layout changes from the shell");
+        if (result === "unsupported")
+            return Tr.tr("Use Win+Space to switch to this input method");
+        return Tr.tr("No app window is focused");
     }
 
     function _label(layout): string {
