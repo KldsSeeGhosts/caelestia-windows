@@ -7,7 +7,7 @@ import QtQuick
 // pinned backend's `Quickshell.Hyprland` data in a real run.
 //
 // The backend contract (a `Quickshell.Hyprland`-shaped object or a test fake):
-//   initialized        bool, true once construction has populated the models
+//   initialized        bool, true once the adapter is constructed, even if empty
 //   monitors           object with a `values` array of monitor-shaped objects
 //   workspaces         object with a `values` array of workspace-shaped objects
 //   toplevels          object with a `values` array of toplevel-shaped objects
@@ -18,6 +18,7 @@ import QtQuick
 //   dispatch(request)  sends one validated request to the backend
 //   desktopControlSupported (optional) bool; absent means workspace control is
 //                      unavailable.
+//   desktopControl     (optional) object with capability and lastCommand maps.
 //
 // Per-monitor workspace ownership is NOT claimed. The pinned backend binds every
 // monitor's `activeWorkspace` and every workspace's `monitor` to the single
@@ -68,14 +69,37 @@ QtObject {
     readonly property bool usingLua: false
     readonly property bool globalFocusPerMonitor: true
 
-    // Workspace control is a backend capability, not an adapter choice: the
-    // backend creates or switches desktops through a build-checked native COM
-    // provider when dispatch is opted in. The property is feature-detected with
-    // `typeof` for compatibility with older backend pins. When it is absent or
-    // false, `workspace`/`movetoworkspace` never reach the backend.
-    readonly property bool desktopControlSupported: root.nativeInitialized
-        && typeof root.backend.desktopControlSupported === "boolean"
-        && root.backend.desktopControlSupported === true
+    readonly property var desktopControlCapability: {
+        const unsupported = { switch: false, create: false, move: false, remove: false, pin: false };
+        if (!root.enabled || !root.dispatchEnabled)
+            return { availability: "disabled", reason: "dispatch-disabled", provider: "none", operations: unsupported };
+        if (!root.nativeInitialized)
+            return { availability: "unavailable", reason: "backend-unavailable", provider: "none", operations: unsupported };
+        const capability = root.backend.desktopControl?.capability;
+        if (capability && ["available", "unavailable", "disabled", "denied"].includes(capability.availability)
+                && typeof capability.reason === "string"
+                && (capability.availability !== "available" || capability.reason === "")
+                && ["documented-api", "build-gated-private-com"].includes(capability.provider)
+                && capability.operations)
+            return capability;
+        if (root.backend.desktopControl)
+            return { availability: "unavailable", reason: "invalid-contract", provider: "unknown", operations: unsupported };
+        const legacy = root.backend.desktopControlSupported === true;
+        return {
+            availability: legacy ? "available" : "unavailable",
+            reason: legacy ? "legacy-unverified" : "legacy-capability-unknown",
+            provider: "unknown",
+            operations: { switch: legacy, create: legacy, move: legacy, remove: false, pin: false }
+        };
+    }
+    readonly property bool desktopControlSupported:
+        root.desktopControlCapability.availability === "available"
+        && root.desktopControlCapability.operations.switch === true
+        && root.desktopControlCapability.operations.create === true
+    property var _desktopRefusal: null
+    readonly property var lastDesktopCommand: root._desktopRefusal
+        ?? (root.nativeInitialized ? root.backend.desktopControl?.lastCommand : null)
+        ?? { outcome: "unknown", reason: "legacy-result-unavailable" }
 
     readonly property QtObject _emptyModel: QtObject {
         readonly property var values: []
@@ -132,8 +156,6 @@ QtObject {
         }
     }
 
-    // Dispatch bookkeeping. A request is not a result: `dispatch` is void in
-    // the pinned backend and the adapter can only report what it forwarded.
     property int dispatchSequence: 0
     property int commandsSent: 0
     property int refusals: 0
@@ -164,6 +186,7 @@ QtObject {
         root.lastDispatchKind = "";
         root.lastRefusal = null;
         root.lastConsumed = null;
+        root._desktopRefusal = null;
     }
 
     // The pinned backend's toplevel address is a lowercase hex HWND without the
@@ -177,6 +200,7 @@ QtObject {
     }
 
     function _refuse(request, reason, text): void {
+        root._desktopRefusal = { outcome: "denied", reason: reason };
         root.dispatchSequence++;
         root.refusals++;
         root.lastRefusal = {
@@ -194,6 +218,7 @@ QtObject {
         root.lastDispatchSource = source;
         root.lastDispatch = translated;
         root.lastDispatchKind = kind;
+        root._desktopRefusal = null;
         root.backend.dispatch(translated);
     }
 
@@ -201,9 +226,13 @@ QtObject {
     // The backend has no synthetic-shortcut fallback. Without a compatible
     // provider the adapter refuses before backend.dispatch().
     function _sendWorkspace(source, translated, kind): void {
-        if (!root.desktopControlSupported) {
+        const capability = root.desktopControlCapability;
+        const operation = kind === "movetoworkspace" ? "move" : "switch";
+        if (capability.availability !== "available" || capability.operations[operation] !== true) {
             root._refuse(source, "desktop-control-unavailable",
                 "Native Windows desktop control is unavailable on this build or dispatch is disabled.");
+            root._desktopRefusal = { operation: operation, outcome: "denied",
+                reason: capability.reason || "operation-unsupported" };
             return;
         }
         root._send(source, translated, kind);

@@ -1,13 +1,18 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][string]$QtPrefix,
-    [string]$BuildRoot
+    [string]$BuildRoot,
+    [string]$RunRoot,
+    [switch]$Offscreen,
+    [string]$M1CachePath
 )
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
 if (-not $BuildRoot) { $BuildRoot = Join-Path $repoRoot 'windows\.local\build' }
 $BuildRoot = [IO.Path]::GetFullPath($BuildRoot)
+if (-not $RunRoot) { $RunRoot = Join-Path $BuildRoot 'run' }
+$RunRoot = [IO.Path]::GetFullPath($RunRoot)
 $output = Join-Path $BuildRoot ('network-validation-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
 New-Item -ItemType Directory -Force -Path $output | Out-Null
 $records = New-Object Collections.Generic.List[object]
@@ -80,12 +85,12 @@ try {
     # Native screen selection is explicit. The parent runs this harness on the
     # desktop; the smoke never sends a radio/connect/disconnect/forget request,
     # never requests a scan and never enables input.
-    $screenCount = $beforeDesktop.monitors.Count
+    $screenCount = if ($Offscreen) { 1 } else { $beforeDesktop.monitors.Count }
     Assert ($screenCount -gt 0) 'No measured monitor available.'
     for ($screen = 0; $screen -lt $screenCount; $screen++) {
         foreach ($mode in @('Disabled', 'ReadOnly')) {
             $result = & "$PSScriptRoot\Start-ShellPrototype.ps1" -QtPrefix $QtPrefix -BuildRoot $BuildRoot `
-                -Network -NetworkMode $mode -Smoke -ScaleFactor native -ScreenIndex $screen | ConvertFrom-Json
+                -RunRoot $RunRoot -Offscreen:$Offscreen -Network -NetworkMode $mode -Smoke -ScaleFactor native -ScreenIndex $screen | ConvertFrom-Json
             Assert $result.passed "Network UI failed on screen $screen in $mode mode."
             $records.Add([ordered]@{ kind = 'network'; result = $result })
             Assert ($result.networkSnapshots.Count -eq 2) 'Network smoke did not record initial and final state.'
@@ -128,8 +133,8 @@ try {
             Assert ((Network-Stable $initial) -eq (Network-Stable $final)) 'Network policy or observation changed during the read-only smoke.'
         }
     }
-    $regression = & "$PSScriptRoot\Start-ShellPrototype.ps1" -QtPrefix $QtPrefix -BuildRoot $BuildRoot `
-        -Smoke -ScaleFactor native -ScreenIndex 0 | ConvertFrom-Json
+    $regression = & "$PSScriptRoot\Caelestia-M1Regression.ps1" -QtPrefix $QtPrefix -BuildRoot $BuildRoot `
+        -RunRoot $RunRoot -Offscreen:$Offscreen -CachePath $M1CachePath
     Assert $regression.passed 'Original M1 bar/session smoke regression failed.'
     $records.Add([ordered]@{ kind = 'm1-regression'; result = $regression })
 } catch {
