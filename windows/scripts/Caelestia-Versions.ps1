@@ -337,9 +337,10 @@ function New-CaelestiaShortcut([string]$Path, [string]$PowerShellPath, [string]$
 # The Start-menu shortcut and the optional HKCU Run entry are part of the
 # activation transaction: a failure here must not leave a selector claiming a
 # replacement the user was told failed, or a half-written integration behind.
-# Restore both files/values, then select the previous version again (and restart
-# when the install did). A first install has no previous payload, so only the
-# integration is removed and the error is rethrown; the version stays installed.
+# Snapshot both before writing, undo only what this transaction changed, then
+# select the previous version again (and restart when the install did). A first
+# install has no previous payload, so only the integration is removed and the
+# error is rethrown; the version stays installed.
 function Complete-CaelestiaInstallIntegration {
     param(
         [string]$Prefix,
@@ -361,17 +362,35 @@ function Complete-CaelestiaInstallIntegration {
     $backup = $null
     $runExisted = $false
     $runValue = ''
+    $runWriteAttempted = $false
+    $shortcutExisted = $false
+    $shortcutWriteAttempted = $false
     try {
-        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Shortcut) | Out-Null
-        if ([IO.File]::Exists($Shortcut)) {
-            $backup = $Shortcut + '.integration-' + [guid]::NewGuid().ToString('N')
-            try { [IO.File]::Copy($Shortcut, $backup) } catch { $backup = $null }
+        # Snapshot the Run value before any work that can fail. Otherwise a
+        # failure during directory or shortcut setup would leave $runExisted
+        # false and cleanup would remove an entry this transaction never wrote.
+        if ($Autostart) {
+            $existing = Get-ItemProperty -LiteralPath $run -Name $RunName -ErrorAction SilentlyContinue
+            if ($null -ne $existing) { $runExisted = $true; $runValue = [string]$existing.$RunName }
         }
+        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Shortcut) | Out-Null
+        $shortcutExisted = [IO.File]::Exists($Shortcut)
+        if ($shortcutExisted) {
+            $backupPath = $Shortcut + '.integration-' + [guid]::NewGuid().ToString('N')
+            try { [IO.File]::Copy($Shortcut, $backupPath) }
+            catch {
+                # Without a snapshot a later failure cannot tell the original
+                # from a half-written replacement, so abort before touching it.
+                try { if ([IO.File]::Exists($backupPath)) { [IO.File]::Delete($backupPath) } } catch { }
+                throw "Could not snapshot the existing shortcut; integration was aborted: $($_.Exception.Message)"
+            }
+            $backup = $backupPath
+        }
+        $shortcutWriteAttempted = $true
         New-CaelestiaShortcut $Shortcut $powershell $arguments $Prefix ($RuntimePrefix.TrimEnd('\') + '\qs.exe,0')
         if ($Autostart) {
             New-Item -Path $run -Force | Out-Null
-            $existing = Get-ItemProperty -LiteralPath $run -Name $RunName -ErrorAction SilentlyContinue
-            if ($null -ne $existing) { $runExisted = $true; $runValue = [string]$existing.$RunName }
+            $runWriteAttempted = $true
             New-ItemProperty -Path $run -Name $RunName -PropertyType String -Value ('"' + $powershell + '" ' + $arguments) -Force | Out-Null
         }
         # A backup that cannot be deleted is not an integration failure: never
@@ -383,14 +402,14 @@ function Complete-CaelestiaInstallIntegration {
             if ($backup -and [IO.File]::Exists($backup)) {
                 [IO.File]::Copy($backup, $Shortcut, $true)
                 [IO.File]::Delete($backup)
-            } elseif ([IO.File]::Exists($Shortcut)) {
-                # Save can damage a shortcut before it throws; without a backup
-                # a partial file is worse than none.
+            } elseif ($shortcutWriteAttempted -and -not $shortcutExisted -and [IO.File]::Exists($Shortcut)) {
+                # Only a shortcut this transaction created is removed; a
+                # pre-existing one is restored from its snapshot or left alone.
                 [IO.File]::Delete($Shortcut)
             }
         } catch { }
         try {
-            if ($Autostart) {
+            if ($runWriteAttempted) {
                 if ($runExisted) { New-ItemProperty -Path $run -Name $RunName -PropertyType String -Value $runValue -Force | Out-Null }
                 else { Remove-ItemProperty -LiteralPath $run -Name $RunName -ErrorAction SilentlyContinue }
             }

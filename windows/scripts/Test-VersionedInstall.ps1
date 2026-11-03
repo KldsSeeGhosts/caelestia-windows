@@ -542,6 +542,80 @@ try {
     }
     Write-Output 'PASS integration: a failed shortcut rolls back the activation or cleans up a first install.'
 
+    # Regression: the Run value is snapshotted before any work that can fail.
+    # A shortcut failure must not remove a pre-existing autostart entry that
+    # this transaction never wrote.
+    $autoPrefix = Join-Path $root 'auto-ui'
+    $null = Install-CaelestiaVersion $autoPrefix (New-Payload $autoPrefix 'auto-a')
+    $autoA = (Read-CaelestiaInstall $autoPrefix).current
+    $null = Install-CaelestiaVersion $autoPrefix (New-Payload $autoPrefix 'auto-b')
+    $autoB = (Read-CaelestiaInstall $autoPrefix).current
+    $autoShortcut = Join-Path $root 'auto-shortcut\Caelestia.lnk'
+    [IO.Directory]::CreateDirectory((Split-Path -Parent $autoShortcut)) | Out-Null
+    'previous shortcut' | Set-Content -LiteralPath $autoShortcut -Encoding UTF8
+    $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+    $autoRunName = 'CaelestiaTestAuto-' + [guid]::NewGuid().ToString('N')
+    $autoRunValue = '"C:\existing\CaelestiaWindows.exe"'
+    New-Item -Path $runKey -Force | Out-Null
+    New-ItemProperty -Path $runKey -Name $autoRunName -PropertyType String -Value $autoRunValue -Force | Out-Null
+    try {
+        ${function:New-CaelestiaShortcut} = {
+            param([string]$Path, [string]$PowerShellPath, [string]$Arguments, [string]$WorkingDirectory, [string]$Icon)
+            [IO.File]::WriteAllText($Path, 'half-written')
+            throw 'Injected shortcut failure.'
+        }
+        $failed = $false
+        try {
+            Complete-CaelestiaInstallIntegration $autoPrefix (Join-Path $autoPrefix "versions\$autoB") -Previous $autoA -Autostart `
+                -Shortcut $autoShortcut -RunName $autoRunName
+        } catch { $failed = $_.Exception.Message -match 'Injected shortcut failure' }
+        Assert $failed 'An -Autostart integration failure was hidden.'
+        $runNow = Get-ItemProperty -LiteralPath $runKey -Name $autoRunName -ErrorAction SilentlyContinue
+        Assert ($null -ne $runNow -and [string]$runNow.$autoRunName -eq $autoRunValue) 'A failed -Autostart integration removed a pre-existing Run entry it never wrote.'
+        Assert ((Read-CaelestiaInstall $autoPrefix).current -eq $autoA) 'An -Autostart integration failure did not select the previous version again.'
+        Assert ((Get-Content -LiteralPath $autoShortcut -Raw).Trim() -eq 'previous shortcut') 'An -Autostart integration failure did not restore the previous shortcut.'
+    } finally {
+        Remove-ItemProperty -LiteralPath $runKey -Name $autoRunName -ErrorAction SilentlyContinue
+        ${function:New-CaelestiaShortcut} = $originalShortcut
+    }
+    Write-Output 'PASS integration autostart: a shortcut failure leaves a pre-existing Run entry untouched.'
+
+    # Regression: an existing shortcut that cannot be snapshotted aborts
+    # integration before any write. The armed shortcut writer must not run, so
+    # the original file survives instead of being deleted as a partial file.
+    $snapshotPrefix = Join-Path $root 'snapshot-ui'
+    $null = Install-CaelestiaVersion $snapshotPrefix (New-Payload $snapshotPrefix 'snapshot-a')
+    $snapshotA = (Read-CaelestiaInstall $snapshotPrefix).current
+    $null = Install-CaelestiaVersion $snapshotPrefix (New-Payload $snapshotPrefix 'snapshot-b')
+    $snapshotB = (Read-CaelestiaInstall $snapshotPrefix).current
+    $snapshotShortcut = Join-Path $root 'snapshot-shortcut\Caelestia.lnk'
+    [IO.Directory]::CreateDirectory((Split-Path -Parent $snapshotShortcut)) | Out-Null
+    'original shortcut' | Set-Content -LiteralPath $snapshotShortcut -Encoding UTF8
+    $script:shortcutWriterCalled = $false
+    $snapshotLock = [IO.File]::Open($snapshotShortcut, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::None)
+    try {
+        ${function:New-CaelestiaShortcut} = {
+            param([string]$Path, [string]$PowerShellPath, [string]$Arguments, [string]$WorkingDirectory, [string]$Icon)
+            $script:shortcutWriterCalled = $true
+            throw 'Injected shortcut failure.'
+        }
+        $failed = $false
+        try {
+            Complete-CaelestiaInstallIntegration $snapshotPrefix (Join-Path $snapshotPrefix "versions\$snapshotB") -Previous $snapshotA `
+                -Shortcut $snapshotShortcut -RunName 'CaelestiaTest'
+        } catch { $failed = $_.Exception.Message -match 'Could not snapshot' }
+        Assert $failed 'A shortcut backup failure did not abort integration.'
+        Assert (-not $script:shortcutWriterCalled) 'Integration wrote a shortcut after failing to snapshot the existing one.'
+        Assert (Test-Path -LiteralPath $snapshotShortcut) 'A shortcut backup failure deleted the original shortcut.'
+        Assert ((Read-CaelestiaInstall $snapshotPrefix).current -eq $snapshotA) 'A shortcut backup failure did not select the previous version again.'
+        Assert (@(Get-ChildItem -LiteralPath (Split-Path -Parent $snapshotShortcut) -Filter '*.integration-*').Count -eq 0) 'A shortcut backup failure left a partial backup behind.'
+    } finally {
+        $snapshotLock.Dispose()
+        ${function:New-CaelestiaShortcut} = $originalShortcut
+    }
+    Assert ((Get-Content -LiteralPath $snapshotShortcut -Raw).Trim() -eq 'original shortcut') 'A shortcut backup failure changed the original shortcut.'
+    Write-Output 'PASS integration snapshot: an unreadable existing shortcut aborts before it can be replaced or deleted.'
+
     foreach ($injectFailure in @($false, $true)) {
         $legacy = Join-Path $root ('legacy-' + $injectFailure)
         $legacyPayload = New-Payload $legacy 'legacy-original'
