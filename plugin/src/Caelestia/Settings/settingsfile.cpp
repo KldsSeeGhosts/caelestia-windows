@@ -183,8 +183,11 @@ SettingsFile::LoadResult SettingsFile::load(bool reportErrors) {
     m_lastData = json;
     emit changed();
 
-    qCDebug(lcSettingsFile) << "Read JSON from" << logId(m_path);
-    qCDebug(lcSettingsFile) << " " << json;
+    // Only the size: the settings can hold identifiers (monitor names in
+    // per-screen overrides, device ids), so their content stays out of the log.
+    qCDebug(lcSettingsFile) << "Read JSON from" << logId(m_path) << "with"
+                            << (json.isObject() ? json.toObject().size() : json.toArray().size())
+                            << "top-level entries";
 
     return LoadResult::Changed;
 }
