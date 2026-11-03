@@ -6,13 +6,14 @@ from the Windows Quickshell fork used by ii-windows. Hyprland remains a Linux
 Wayland compositor; Windows continues to own application composition through DWM.
 
 Caelestia exports its resolved appearance to the profile's
-`state\caelestia\theme-tokens.json`. To use it in Glazier, set `theme_file`
-in `%APPDATA%\Glazier\config.toml` to the absolute path of that file and
-choose Glazier's Reload settings. The default profile is
-`%LOCALAPPDATA%\caelestia-windows`; use the actual profile path if customized.
-The file is updated when the scheme or appearance changes, and Glazier reads
-it at the next capture. It contains versioned semantic colours, the UI font
-and optional private font path, and rounding tokens.
+`state\caelestia\theme-tokens.json`. The shell starts its bundled Glazier with
+`--theme-file` pointing at that file, so screenshots and recordings follow the
+current scheme without editing `%APPDATA%\Glazier\config.toml`. The default
+profile is `%LOCALAPPDATA%\caelestia-windows`; use the actual profile path if
+customized. The file is updated when the scheme or appearance changes, and
+Glazier reads it at the next capture. It contains versioned semantic colours,
+the UI font and optional private font path, and rounding tokens. A standalone
+Glazier can still opt in with `theme_file` in its own `config.toml`.
 
 ## Credits and attribution
 

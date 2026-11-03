@@ -116,7 +116,19 @@ $m3shapesMatches = $m3shapesRevision -eq $lock.m3shapes.revision
 if (-not $m3shapesMatches) {
     $blockers.Add('M3Shapes is absent or does not match sources.lock.json; initialize the pinned submodule.')
 }
-$sourceMatches = $backendMatches -and $m3shapesMatches
+
+$glazierPath = Join-Path $repoRoot $lock.glazier.path
+$glazierRevision = $null
+if ($git -and (Test-Path -LiteralPath (Join-Path $glazierPath '.git'))) {
+    $glazierRevision = & $git.Source -C $glazierPath rev-parse HEAD
+    if ($LASTEXITCODE -ne 0) { throw 'Could not read the initialized Glazier revision.' }
+    $glazierRevision = $glazierRevision.Trim()
+}
+$glazierMatches = $glazierRevision -eq $lock.glazier.revision
+if (-not $glazierMatches) {
+    $blockers.Add('Glazier is absent or does not match sources.lock.json; initialize the pinned submodule.')
+}
+$sourceMatches = $backendMatches -and $m3shapesMatches -and $glazierMatches
 
 $report = [pscustomobject][ordered]@{
     schemaVersion = 1
@@ -127,6 +139,8 @@ $report = [pscustomobject][ordered]@{
         actualBackendRevision = $backendRevision
         expectedM3ShapesRevision = $lock.m3shapes.revision
         actualM3ShapesRevision = $m3shapesRevision
+        expectedGlazierRevision = $lock.glazier.revision
+        actualGlazierRevision = $glazierRevision
         matches = $sourceMatches
     }
     tools = @($tools.ToArray())

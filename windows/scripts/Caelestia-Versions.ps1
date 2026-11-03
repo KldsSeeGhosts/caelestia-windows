@@ -163,6 +163,7 @@ function Install-CaelestiaVersion([string]$Prefix, [string]$Payload, [switch]$Re
         if (@(Get-CaelestiaProcesses $Prefix).Count -or @(Get-CaelestiaSupervisors $newRecord.profile).Count) {
             throw 'The installation is still running; the new version was retained but not activated.'
         }
+        Stop-CaelestiaHosts $Prefix
         Copy-CaelestiaRootEntries $Prefix $runtime
         Write-CaelestiaJsonAtomic (Join-Path $Prefix 'install.json') (New-CaelestiaRootRecord $Prefix $newRecord $previous)
         # Point runtime.json at the generation verified above before the
@@ -187,6 +188,7 @@ function Install-CaelestiaVersion([string]$Prefix, [string]$Payload, [switch]$Re
                 if (@(Get-CaelestiaProcesses $Prefix).Count -or @(Get-CaelestiaSupervisors $newRecord.profile).Count) {
                     throw "Activation failed and replacement is still running; versions retained at $Prefix\versions."
                 }
+                Stop-CaelestiaHosts $Prefix
             }
             $priorPath = Get-CaelestiaVersionPrefix $Prefix $previous
             $priorRecord = Read-CaelestiaInstall $priorPath
@@ -231,6 +233,7 @@ function Switch-CaelestiaVersion([string]$Prefix, [string]$Id, [switch]$Restart)
         if (@(Get-CaelestiaProcesses $Prefix).Count -or @(Get-CaelestiaSupervisors $old.profile).Count) {
             throw 'Quit this installation before switching versions, or request a restart.'
         }
+        Stop-CaelestiaHosts $Prefix
         Write-CaelestiaJsonAtomic (Join-Path $Prefix 'install.json') (New-CaelestiaRootRecord $Prefix $record $old.current)
         # The generation verified above is repointed before the readiness
         # clock; a missing one leaves the fixed palette.
@@ -244,6 +247,7 @@ function Switch-CaelestiaVersion([string]$Prefix, [string]$Id, [switch]$Restart)
             if (@(Get-CaelestiaProcesses $Prefix).Count -or @(Get-CaelestiaSupervisors $old.profile).Count) {
                 throw 'Version switch failed and the replacement has not exited; selector was not changed again.'
             }
+            Stop-CaelestiaHosts $Prefix
             Write-CaelestiaJsonAtomic (Join-Path $Prefix 'install.json') $old
             $null = Set-CaelestiaSchemeRuntimeForRevision $old.profile $previousRevision $previousRuntime -Verified $restoreScheme -NoProbe
             if ($Restart) { Start-CaelestiaDetached $Prefix -LegacyReady -PreparedSchemeRuntime }
@@ -267,6 +271,9 @@ function Remove-CaelestiaRetiredVersions([string]$Prefix) {
             # Ownership, exact child path and link refusal are checked before
             # every recursive removal. Unknown directories are never adopted.
             $retired = Get-CaelestiaVersionPrefix $Prefix $directory.Name
+            # A host from this retired payload holds its image; stop only this
+            # version, never the shell's current host.
+            Stop-CaelestiaHosts $Prefix $retired
             Assert-CaelestiaNoReparsePoints $retired
             Remove-Item -LiteralPath $retired -Recurse -Force
         } catch {

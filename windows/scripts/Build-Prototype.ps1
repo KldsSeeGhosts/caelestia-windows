@@ -8,7 +8,9 @@ param(
     [ValidateRange(1, 64)][int]$Jobs = 4,
     # Private harnesses only. Public exports omit the test sources, so test
     # executables are off by default.
-    [switch]$Tests
+    [switch]$Tests,
+    # Offscreen fixtures only. Production payloads always bundle Glazier.
+    [switch]$SkipGlazier
 )
 
 $ErrorActionPreference = 'Stop'
@@ -59,6 +61,28 @@ if (& git -C $m3shapesPath status --porcelain) {
     throw 'The pinned M3Shapes dependency has local changes. Patch and pin it upstream before building.'
 }
 
+# Glazier is built from the pinned submodule, not downloaded as a release. The
+# release payload is a single static-ish Rust executable next to qs.exe, so an
+# update or rollback carries its matching shell and tool together.
+$glazierPath = Join-Path $repoRoot $lock.glazier.path
+$glazierRevision = ''
+$glazierSha256 = ''
+if (-not $SkipGlazier) {
+    if (-not (Test-Path -LiteralPath (Join-Path $glazierPath 'Cargo.toml'))) {
+        throw 'The pinned Glazier dependency is absent; initialize windows/deps/glazier.'
+    }
+    $glazierRevision = (& git -C $glazierPath rev-parse HEAD).Trim()
+    if ($glazierRevision -ne $lock.glazier.revision) {
+        throw "Glazier is at $glazierRevision but sources.lock.json pins $($lock.glazier.revision)."
+    }
+    if (& git -C $glazierPath status --porcelain) {
+        throw 'The pinned Glazier dependency has local changes. Patch and pin it upstream before building.'
+    }
+    if (-not (Get-Command cargo -CommandType Application -ErrorAction SilentlyContinue)) {
+        throw 'Rust Cargo is required to bundle Glazier. Install the Rust toolchain, or pass -SkipGlazier for offscreen tests only.'
+    }
+}
+
 function Invoke-BuildCommand([string]$Name, [string[]]$CommandArguments) {
     Write-Host "== $Name =="
     $CommandArguments | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $logRoot "$Name-command.json") -Encoding UTF8
@@ -85,6 +109,32 @@ Invoke-BuildCommand 'configure-m3shapes' (@('-S', $m3shapesPath, '-B', "$BuildRo
     @('-DINSTALL_QMLDIR=qml', "-DCMAKE_INSTALL_PREFIX=$installRoot", '-DM3SHAPES_BUILD_EXAMPLES=OFF'))
 Invoke-BuildCommand 'build-m3shapes' @('--build', "$BuildRoot\m3shapes", '--parallel', "$Jobs")
 Invoke-BuildCommand 'install-m3shapes' @('--install', "$BuildRoot\m3shapes")
+if ($SkipGlazier) {
+    # Never leave a previous run's tool in a payload that claims to omit it.
+    Remove-Item -LiteralPath (Join-Path $installRoot 'glazier.exe') -Force -ErrorAction SilentlyContinue
+    Write-Warning 'Skipping the bundled Glazier build (-SkipGlazier); the staged payload is not installable.'
+} else {
+    Write-Host '== build-glazier =='
+    New-Item -ItemType Directory -Force -Path $installRoot | Out-Null
+    # Keep Cargo's whole target tree inside the disposable build root, never in
+    # the submodule or the user's profile. --locked refuses an unpinned update.
+    $cargoArguments = @('build', '--release', '--locked', '--manifest-path', (Join-Path $glazierPath 'Cargo.toml'),
+        '--target-dir', (Join-Path $BuildRoot 'glazier-target'))
+    $cargoArguments | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $logRoot 'build-glazier-command.json') -Encoding UTF8
+    # Cargo writes progress to stderr; the native exit code is the failure criterion.
+    $ErrorActionPreference = 'Continue'
+    & cargo @cargoArguments 2>&1 | ForEach-Object { "$_" } |
+        Tee-Object -FilePath (Join-Path $logRoot 'build-glazier.log')
+    $cargoExit = $LASTEXITCODE
+    $ErrorActionPreference = 'Stop'
+    if ($cargoExit -ne 0) { throw "build-glazier failed. See $logRoot\build-glazier.log." }
+    $glazierExe = Join-Path $BuildRoot 'glazier-target\release\glazier.exe'
+    if (-not (Test-Path -LiteralPath $glazierExe -PathType Leaf)) {
+        throw "Glazier built without producing $glazierExe."
+    }
+    Copy-Item -LiteralPath $glazierExe -Destination (Join-Path $installRoot 'glazier.exe') -Force
+    $glazierSha256 = (Get-FileHash -LiteralPath (Join-Path $installRoot 'glazier.exe') -Algorithm SHA256).Hash.ToLowerInvariant()
+}
 # Resolve the version and revision up front so configure works without a reachable git tag or git metadata (#114).
 $ErrorActionPreference = 'Continue'
 $sourceVersion = & git -C $repoRoot describe --tags --abbrev=0 2>$null
@@ -114,6 +164,9 @@ Invoke-BuildCommand 'install-plugins' @('--install', "$BuildRoot\caelestia")
     sourceDirty = [bool]$rawDirty
     backendRevision = (& git -C "$repoRoot\windows\deps\quickshell" rev-parse HEAD).Trim()
     m3shapesRevision = $m3shapesRevision
+    glazierRevision = $glazierRevision
+    glazierSha256 = $glazierSha256
+    glazierBundled = -not $SkipGlazier
     windowsSdkVersion = $env:WindowsSDKVersion
     msvcToolsVersion = $env:VCToolsVersion
     qtVersion = (& "$QtPrefix\bin\qtpaths.exe" --qt-version).Trim()
@@ -124,4 +177,4 @@ Invoke-BuildCommand 'install-plugins' @('--install', "$BuildRoot\caelestia")
     windows = [Environment]::OSVersion.VersionString
     builtAtUtc = [DateTime]::UtcNow.ToString('o')
 } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $logRoot 'build.json') -Encoding UTF8
-Write-Host "Built backend and portable plugins. Evidence: $logRoot"
+Write-Host "Built backend, portable plugins and bundled Glazier. Evidence: $logRoot"
