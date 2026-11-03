@@ -91,6 +91,19 @@ def project(path: Path) -> dict:
     }
 
 
+def selected_monitors(selected: dict) -> dict:
+    """Resolve every selected project. A broken entry keeps its monitor key
+    with empty fields, like a full catalogue scan, so the shell can fall back
+    instead of silently keeping the previous wallpaper's palette."""
+    monitors = {}
+    for monitor, value in selected.items():
+        try:
+            monitors[str(monitor)] = project(Path(value["file"]))
+        except (OSError, ValueError, KeyError, TypeError):
+            monitors[str(monitor)] = {"path": "", "preview": "", "title": "", "engine": True}
+    return monitors
+
+
 def snapshot(status_only: bool = False) -> dict:
     active = running()
     try:
@@ -133,18 +146,16 @@ def catalog_snapshot(active: bool, status_only: bool) -> dict:
         if isinstance(value, dict)
     }
     executable = (directory / "wallpaper64.exe").as_posix()
+    # The selection watcher only needs the active projects. Resolving them in
+    # status mode keeps a wallpaper change off the full-workshop-scan path;
+    # the catalogue still refreshes on its own schedule.
     if status_only:
         return {
             "ok": True, "detected": True, "running": active,
             "configPath": config_path.as_posix(), "executable": executable,
-            "active": active_files,
+            "active": active_files, "monitors": selected_monitors(selected),
         }
-    monitors = {}
-    for monitor, value in selected.items():
-        try:
-            monitors[monitor] = project(Path(value["file"]))
-        except (OSError, ValueError, KeyError):
-            monitors[monitor] = {"path": "", "preview": "", "title": "", "engine": True}
+    monitors = selected_monitors(selected)
     items = []
     for library in libs:
         workshop = library / "steamapps/workshop/content/431960"

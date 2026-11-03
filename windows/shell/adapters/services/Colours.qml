@@ -60,6 +60,9 @@ Singleton {
     }
 
     function load(data: string, isPreview: bool): void {
+        const started = Date.now();
+        if (!isPreview)
+            console.debug("CAELESTIA_PALETTE_TIMING stage=scheme_load_begin ts=" + started);
         let parsed;
         try {
             parsed = JSON.parse(data);
@@ -90,6 +93,8 @@ Singleton {
             }
         }
         console.log(`CAELESTIA_SCHEME_LOADED name=${root.scheme || "fixed"} flavour=${root.flavour || "-"} mode=${root.currentLight ? "light" : "dark"} applied=${applied} primary=${root.palette.m3primary}`);
+        if (!isPreview)
+            console.debug("CAELESTIA_PALETTE_TIMING stage=colours_applied ts=" + Date.now() + " elapsed_ms=" + (Date.now() - started) + " applied=" + applied);
     }
 
     function setMode(mode: string): void {

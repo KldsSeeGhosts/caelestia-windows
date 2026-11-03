@@ -80,6 +80,7 @@ Singleton {
             return;
         if (!force && Paths.samePath(currentImage, schemeSource))
             return;
+        console.debug("CAELESTIA_PALETTE_TIMING stage=palette_request ts=" + Date.now() + (force ? " force=1" : ""));
         SchemeGenerator.applyWallpaper(currentImage, GlobalConfig.services.smartScheme);
     }
 

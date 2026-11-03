@@ -28,6 +28,7 @@ Singleton {
     property string status: available ? "idle" : "unavailable"
     property string lastError: ""
     property string operation: ""
+    property double operationStartedAt: 0
     property var pending: []
     readonly property int helperTimeout: 30000
 
@@ -93,6 +94,8 @@ Singleton {
             return;
         const job = pending.shift();
         operation = job.kind;
+        operationStartedAt = Date.now();
+        console.debug("CAELESTIA_PALETTE_TIMING stage=generate_start ts=" + operationStartedAt + " kind=" + job.kind);
         status = "working";
         proc.command = [root.python, root.helper, ...job.args];
         proc.running = true;
@@ -109,6 +112,7 @@ Singleton {
 
     function finish(code: int, text: string): void {
         const kind = operation;
+        const elapsed = operationStartedAt > 0 ? Date.now() - operationStartedAt : 0;
         operation = "";
         let data = null;
         if (text.trim().length > 0) {
@@ -128,12 +132,14 @@ Singleton {
             updateCurrent(data.current ?? null);
             status = "ready";
             lastError = "";
+            console.debug("CAELESTIA_PALETTE_TIMING stage=generate_done ts=" + Date.now() + " elapsed_ms=" + elapsed + " kind=" + kind);
             schemeListChanged();
         } else {
             updateCurrent(data);
             status = "ready";
             lastError = "";
             console.log(`CAELESTIA_SCHEME_APPLIED name=${currentName} flavour=${currentFlavour} mode=${currentMode} variant=${currentVariant} primary=${data.colours?.primary ?? data.colours?.m3primary ?? ""}`);
+            console.debug("CAELESTIA_PALETTE_TIMING stage=generate_done ts=" + Date.now() + " elapsed_ms=" + elapsed + " kind=" + kind);
             schemeChanged();
         }
         Qt.callLater(root.pump);
