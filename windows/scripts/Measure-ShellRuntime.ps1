@@ -306,12 +306,16 @@ $info.EnvironmentVariables['PATH'] = "$QtPrefix\bin;$qmlRoot\Caelestia\lib;$qmlR
 $info.EnvironmentVariables['QML_IMPORT_PATH'] = "$stage\imports;$qmlRoot;$QtPrefix\qml"
 $info.EnvironmentVariables['QML2_IMPORT_PATH'] = "$stage\imports;$qmlRoot;$QtPrefix\qml"
 $info.EnvironmentVariables['QML_DISK_CACHE_PATH'] = "$profile\cache"
+$info.EnvironmentVariables['QS_RUNTIME_DIR'] = "$profile\runtime\quickshell"
 foreach ($dir in @('CONFIG', 'STATE', 'RUNTIME')) { $info.EnvironmentVariables["CAELESTIA_${dir}_DIR"] = "$profile\$($dir.ToLowerInvariant())" }
 $info.EnvironmentVariables['CAELESTIA_PROFILE_ROOT'] = $profile
 foreach ($dir in @('CONFIG', 'STATE', 'DATA', 'CACHE')) { $info.EnvironmentVariables["XDG_${dir}_HOME"] = "$profile\$($dir.ToLowerInvariant())" }
-foreach ($service in @('AUDIO', 'BATTERY', 'BLUETOOTH', 'BRIGHTNESS', 'MEDIA', 'NETWORK', 'APPS', 'SESSION', 'NOTIFICATIONS')) {
+foreach ($service in @('AUDIO', 'BATTERY', 'BLUETOOTH', 'BRIGHTNESS', 'MEDIA', 'NETWORK', 'APPS', 'HYPR', 'TRAY', 'SESSION', 'NOTIFICATIONS')) {
     $info.EnvironmentVariables["CAELESTIA_WINDOWS_$service"] = '1'
 }
+$info.EnvironmentVariables['CAELESTIA_WINDOWS_POWER_PROFILES'] = '1'
+$info.EnvironmentVariables['CAELESTIA_SHELL_SESSION'] = '1'
+$info.EnvironmentVariables['CAELESTIA_SHELL_SESSION_MODE'] = 'Observe'
 $info.EnvironmentVariables['CAELESTIA_WINDOWS_TILING'] = 'off'
 $info.EnvironmentVariables['CAELESTIA_WINDOWS_KEYBINDS'] = "$profile\config\keybinds.json"
 $info.EnvironmentVariables['CAELESTIA_RUNTIME_PROBE'] = '1'
@@ -387,6 +391,7 @@ function Invoke-BenchIpc([string]$Method, [string[]]$Values = @(), [string]$Targ
     $clientInfo.RedirectStandardOutput = $true
     $clientInfo.RedirectStandardError = $true
     $clientInfo.EnvironmentVariables['PATH'] = $info.EnvironmentVariables['PATH']
+    $clientInfo.EnvironmentVariables['QS_RUNTIME_DIR'] = $info.EnvironmentVariables['QS_RUNTIME_DIR']
     $client = [Diagnostics.Process]::Start($clientInfo)
     try {
         $outTask = $client.StandardOutput.ReadToEndAsync()
@@ -484,6 +489,12 @@ try {
         $actions.Clear()
     }
     Sample-Idle 'warmup' $WarmupSeconds
+    $warmedState = Invoke-BenchIpc state @() prototype | ConvertFrom-Json
+    $metadata.workloadDimensions = [ordered]@{
+        applications=$warmedState.services.apps.count
+        monitors=$warmedState.services.hypr.monitors
+        workspaces=$warmedState.services.hypr.workspaces
+    }
     Wait-Frame idle
     switch ($Metric) {
         'Idle' {
