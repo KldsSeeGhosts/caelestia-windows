@@ -179,7 +179,9 @@ foreach ($mode in $resolution) {
     $text = Invoke-Fixture $case 'glazier-smoke.qml' @{ GLAZIER_EXPECTED_PATH = $expected }
     $lines = Get-Lines $case.StubOutput
     if ($expected) {
-        if ($lines.Count -ne 2 -or -not (Same-Path $lines[0] $expected) -or $lines[1] -ne '--capture') {
+        # exe, --no-hotkeys, --theme-file, <tokens>, --capture: a command can cold-start the host.
+        if ($lines.Count -ne 5 -or -not (Same-Path $lines[0] $expected) -or $lines[1] -ne '--no-hotkeys' -or
+                $lines[2] -ne '--theme-file' -or $lines[4] -ne '--capture') {
             throw "$($mode.name) launched the wrong command."
         }
     } elseif ($lines.Count -ne 0) {
@@ -208,7 +210,8 @@ foreach ($route in @('launcher', 'shortcut', 'record', 'recordAction', 'ipc', 't
         if ($lines.Count -ne 0) { throw 'The dismissal timeout captured anyway.' }
     } else {
         $expected = if ($route -in @('record', 'recordAction')) { '--record' } else { '--capture' }
-        if ($lines.Count -ne 3 -or -not (Same-Path $lines[0] $case.Bundled) -or $lines[1] -ne $expected -or $lines[2] -ne 'hidden') {
+        if ($lines.Count -ne 6 -or -not (Same-Path $lines[0] $case.Bundled) -or $lines[1] -ne '--no-hotkeys' -or
+                $lines[2] -ne '--theme-file' -or $lines[4] -ne $expected -or $lines[5] -ne 'hidden') {
             throw "$route launched the wrong command or before the surfaces reported hidden."
         }
     }

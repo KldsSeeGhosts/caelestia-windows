@@ -160,6 +160,8 @@ Singleton {
         hiddenTimer.stop();
         unwatchSurfaces();
         // #81: execDetached redirects stdio to the null device and disowns handles.
+        // If no host is running this command becomes the host, so the shell owns it.
+        ownedHost = true;
         Quickshell.execDetached([path].concat(args));
     }
     function reportNotReady(): void {
@@ -197,11 +199,17 @@ Singleton {
         hiddenTimer.restart();
         return true;
     }
+    // Every invocation that can cold-start a host carries the shell-owned
+    // options, so a host started by a command (e.g. after the user quit Glazier
+    // from its tray) never re-registers its own hotkeys or drops the theme.
+    function hostOptions(): var {
+        return ["--no-hotkeys", "--theme-file", themeFile];
+    }
     function capture(): bool {
-        return begin("Screenshot", ["--capture"], "screenshot_region");
+        return begin("Screenshot", hostOptions().concat(["--capture"]), "screenshot_region");
     }
     function record(): bool {
-        return begin("Record screen", ["--record"], "screen_record");
+        return begin("Record screen", hostOptions().concat(["--record"]), "screen_record");
     }
     function samePath(a, b): bool {
         return typeof a === "string" && typeof b === "string" && a.length > 0 && b.length > 0
@@ -209,7 +217,7 @@ Singleton {
     }
     function launchHost(): void {
         ownedHost = true;
-        Quickshell.execDetached([executable, "--no-hotkeys", "--theme-file", themeFile]);
+        Quickshell.execDetached([executable].concat(hostOptions()));
     }
     // Only a host this payload launched (or adopted after checking its image)
     // may be stopped. A standalone install is never modified or unregistered.

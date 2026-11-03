@@ -73,7 +73,7 @@ function Stop-CaelestiaHosts([string]$Prefix, [string]$VersionRoot = '', [int]$T
     }
     foreach ($hostProcess in $hosts) {
         if (-not $hostProcess.WaitForExit($TimeoutSeconds * 1000)) {
-            throw "Glazier is still running from $Prefix. Quit it and retry."
+            throw "Glazier is still running from the Caelestia install. Quit it and retry."
         }
     }
 }

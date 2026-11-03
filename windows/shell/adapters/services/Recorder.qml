@@ -216,7 +216,9 @@ Singleton {
             region = region || arg.indexOf("r") !== -1;
             sound = sound || arg.indexOf("s") !== -1;
         }
-        const args = [executable, "--record", "--system-sound", sound ? "on" : "off", "--mic", "off"];
+        // Shell-owned host options on every command that can cold-start the host.
+        const args = [executable].concat(Glazier.hostOptions(), ["--record", "--system-sound", sound ? "on" : "off", "--mic", "off"]);
+        Glazier.ownedHost = true;
         if (!region)
             args.push("--fullscreen");
         lastError = "";
