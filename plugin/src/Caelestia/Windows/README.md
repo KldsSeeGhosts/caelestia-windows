@@ -71,29 +71,27 @@ fake system and never touch the real setting.
 
 ## Display power
 
-`WindowsDisplayPower` is a singleton for the explicit panel-off action:
+`WindowsDisplayPower` is a singleton for the explicit panel-off action. `off()`
+sends one `WM_SYSCOMMAND` / `SC_MONITORPOWER = 2` request immediately and returns
+true when it was delivered. The request is sent with `SendMessage` to a hidden
+top-level window owned by the shell process, whose window procedure forwards to
+`DefWindowProc`; it is never broadcast. It changes no display path, topology,
+resolution, scale or setting. A true result does not prove the panels went dark.
+Normal input wakes them, but keep-awake, remote input or background activity can
+also wake them.
 
-```qml
-IpcHandler {
-    target: "displays"
-    function off(): bool { return WindowsDisplayPower.off(); }
-}
-```
-
-`off()` queues one `WM_SYSCOMMAND` / `SC_MONITORPOWER = 2` request after 500 ms
-and returns true when it was queued. The request is sent with `SendMessage` to a
-hidden top-level window owned by the shell process, whose window procedure
-forwards to `DefWindowProc`; it is never broadcast. It changes no display path,
-topology, resolution, scale or setting. A true result does not prove the panels
-went dark. Normal input wakes them, but keep-awake, remote input or background
-activity can also wake them.
+Timing is not the plugin's job. The shell's `displays` handler calls the
+backend's `Hotkeys.beginChordReleaseWait()` first: a keybind request is queued
+until the keyboard hook has seen the triggering chord's key-up events, other
+input cancels it, and a direct IPC call (no dispatched keybind) returns false so
+`off()` runs at once.
 
 `windows/scripts/Test-DisplayPower.ps1` runs the fakes-only native test. It
-injects a recording sender to prove one send after the delay, and uses a
-recording window procedure to inspect the exact `WM_SYSCOMMAND` /
-`SC_MONITORPOWER = 2` message without changing real display power. Testing with
-a real desktop, including whether Windows retains monitor detection and window
-placement, is a separate live QA step.
+injects a recording sender to prove the send happens immediately and exactly
+once, and uses a recording window procedure to inspect the exact `WM_SYSCOMMAND`
+/ `SC_MONITORPOWER = 2` message without changing real display power. Testing
+with a real desktop, including whether Windows retains monitor detection and
+window placement, is a separate live QA step.
 
 The module also provides the nonvisual `WindowsFontFallback` singleton.
 Windows staging adapts only the original workspace label font binding to

@@ -2,7 +2,6 @@
 // swallowed by the recording window procedure, so no test changes real display
 // power state.
 
-#include <qelapsedtimer.h>
 #include <qsignalspy.h>
 #include <qt_windows.h>
 
@@ -54,8 +53,9 @@ private slots:
     void initTestCase();
     void ownerWindowIsOwnedByThisProcess();
     void senderSendsOneExactMonitorPowerCommand();
-    void actionSendsExactlyOnceAfterTheDelay();
-    void repeatedRequestsShareOneSend();
+    void actionSendsImmediatelyWithoutScheduling();
+    void everyRequestSendsOnce();
+    void senderFailureIsReported();
     void invalidWindowsAreRefused();
     void cleanupTestCase();
 };
@@ -94,96 +94,76 @@ void DisplayPowerTest::senderSendsOneExactMonitorPowerCommand() {
     QVERIFY(DestroyWindow(window));
 }
 
-void DisplayPowerTest::actionSendsExactlyOnceAfterTheDelay() {
+void DisplayPowerTest::actionSendsImmediatelyWithoutScheduling() {
     const HWND owner = displayPowerWindow();
     QVERIFY(owner);
 
     int calls = 0;
     HWND received = nullptr;
-    QElapsedTimer elapsed;
-    elapsed.start();
-    DisplayPowerAction action(
-        owner,
-        [&calls, &received](HWND window) {
-            ++calls;
-            received = window;
-            return true;
-        },
-        500);
-    QSignalSpy spy(&action, &DisplayPowerAction::delivered);
+    DisplayPowerAction action(owner, [&calls, &received](HWND window) {
+        ++calls;
+        received = window;
+        return true;
+    });
 
-    QVERIFY(action.request());
-    QVERIFY(action.pending());
-    QCOMPARE(calls, 0);
-
-    QTest::qWait(50);
-    QCOMPARE(calls, 0);
-
-    QTRY_COMPARE_WITH_TIMEOUT(calls, 1, 2000);
-    QVERIFY(elapsed.elapsed() >= action.delayMs());
+    // No timer, event loop or delay: the send has already happened on return.
+    QVERIFY(action.send());
+    QCOMPARE(calls, 1);
     QCOMPARE(received, owner);
-    QVERIFY(!action.pending());
-    QCOMPARE(spy.count(), 1);
-    QCOMPARE(spy.at(0).at(0).toBool(), true);
 
     DWORD process = 0;
     QVERIFY(GetWindowThreadProcessId(received, &process) > 0);
     QCOMPARE(process, GetCurrentProcessId());
-
-    // No repeat and no extra send from the same request.
-    QTest::qWait(150);
-    QCOMPARE(calls, 1);
 }
 
-void DisplayPowerTest::repeatedRequestsShareOneSend() {
+void DisplayPowerTest::everyRequestSendsOnce() {
     RecordedCommand unused;
     const HWND owner = createRecordingWindow(unused);
     QVERIFY(owner);
 
     int calls = 0;
-    DisplayPowerAction action(
-        owner,
-        [&calls](HWND) {
-            ++calls;
-            return true;
-        },
-        120);
+    DisplayPowerAction action(owner, [&calls](HWND) {
+        ++calls;
+        return true;
+    });
 
-    QVERIFY(action.request());
-    QVERIFY(!action.request());
-    QCOMPARE(calls, 0);
-    QTRY_COMPARE_WITH_TIMEOUT(calls, 1, 2000);
-    QTest::qWait(100);
+    QVERIFY(action.send());
     QCOMPARE(calls, 1);
-
-    // A completed request may be started again.
-    QVERIFY(action.request());
-    QTRY_COMPARE_WITH_TIMEOUT(calls, 2, 2000);
+    QVERIFY(action.send());
+    QCOMPARE(calls, 2);
 
     QVERIFY(DestroyWindow(owner));
 }
 
+void DisplayPowerTest::senderFailureIsReported() {
+    const HWND owner = displayPowerWindow();
+    QVERIFY(owner);
+
+    int calls = 0;
+    DisplayPowerAction action(owner, [&calls](HWND) {
+        ++calls;
+        return false;
+    });
+
+    QVERIFY(!action.send());
+    QCOMPARE(calls, 1);
+}
+
 void DisplayPowerTest::invalidWindowsAreRefused() {
     int calls = 0;
-    DisplayPowerAction missing(
-        nullptr,
+    DisplayPowerAction missing(nullptr, [&calls](HWND) {
+        ++calls;
+        return true;
+    });
+    QVERIFY(!missing.send());
+
+    DisplayPowerAction stale(reinterpret_cast<HWND>(static_cast<quintptr>(0x1234)),
         [&calls](HWND) {
             ++calls;
             return true;
-        },
-        20);
-    QVERIFY(!missing.request());
+        });
+    QVERIFY(!stale.send());
 
-    DisplayPowerAction stale(
-        reinterpret_cast<HWND>(static_cast<quintptr>(0x1234)),
-        [&calls](HWND) {
-            ++calls;
-            return true;
-        },
-        20);
-    QVERIFY(!stale.request());
-
-    QTest::qWait(80);
     QCOMPARE(calls, 0);
     QVERIFY(!sendMonitorPowerOff(nullptr));
 }

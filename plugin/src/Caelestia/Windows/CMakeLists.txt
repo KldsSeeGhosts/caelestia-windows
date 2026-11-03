@@ -76,9 +76,9 @@ if(CAELESTIA_WINDOWS_TESTS AND Qt6Test_FOUND)
     )
     target_link_libraries(clipboard-qml-tests PRIVATE Qt::Core Qt::Qml Qt::Test)
 
-    # The panel-off action's delay and message shape are checked with an
-    # injected sender and a recording window procedure; nothing changes real
-    # display power. windows/scripts/Test-DisplayPower.ps1 runs it.
+    # The panel-off action's immediate single send and message shape are checked
+    # with an injected sender and a recording window procedure; nothing changes
+    # real display power. windows/scripts/Test-DisplayPower.ps1 runs it.
     add_executable(displaypower-tests
         DisplayPower/test/displaypower_test.cpp
         DisplayPower/displaypower.cpp

@@ -349,13 +349,15 @@ Calls a QML `IpcHandler` target and function inside the running shell:
 ```
 
 The installed shell (not the combined dev prototype) also exposes the explicit
-panel-off action `displays off`. It asks
-the shell's own window to process Windows display power (`WM_SYSCOMMAND` /
-`SC_MONITORPOWER = 2`) after a 500 ms delay, so the triggering key release does
-not immediately wake the panels again. It changes no topology, resolution,
-scale or window position and writes no setting. Normal input wakes the panels;
-keep-awake, remote input or background activity can wake them. No default key
-is shipped; add this bind to opt in:
+panel-off action `displays off`. It asks the shell's own window to process
+Windows display power (`WM_SYSCOMMAND` / `SC_MONITORPOWER = 2`). A keybind call
+waits until the keyboard hook has seen every key of the triggering chord come
+up, so holding the chord cannot switch the panels off under your fingers; any
+other key or mouse button pressed first cancels the request. A direct
+`ipc call` has no chord and sends at once. The action changes no topology,
+resolution, scale or window position and writes no setting. Normal input wakes
+the panels; keep-awake, remote input or background activity can wake them. No
+default key is shipped; add this bind to opt in:
 
 ```json
 {

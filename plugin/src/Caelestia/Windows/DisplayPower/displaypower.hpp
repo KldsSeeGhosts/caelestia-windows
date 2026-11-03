@@ -3,7 +3,6 @@
 #include <qobject.h>
 #include <qqmlintegration.h>
 #include <qt_windows.h>
-#include <qtimer.h>
 
 #include <functional>
 #include <utility>
@@ -21,37 +20,24 @@ namespace caelestia::shell::windows {
 // invalid windows are refused.
 [[nodiscard]] bool sendMonitorPowerOff(HWND window);
 
-// One delayed display-power request. The sender is injected so tests can
-// verify the exact single-message scheduling without changing real power
-// state. The delay lets the triggering key release be processed first, so it
-// cannot wake the panels immediately after they switch off.
-class DisplayPowerAction : public QObject {
-    Q_OBJECT
-
+// One panel-off send. The sender is injected so tests can verify the exact
+// single-message behavior without changing real power state. Waiting for the
+// triggering chord is a separate input concern: the shell asks the keyboard
+// hook for its release and calls this only when the request may be sent.
+class DisplayPowerAction {
 public:
     using Sender = std::function<bool(HWND)>;
 
-    explicit DisplayPowerAction(
-        HWND window, Sender sender = sendMonitorPowerOff, int delayMs = 500, QObject* parent = nullptr);
+    explicit DisplayPowerAction(HWND window, Sender sender = sendMonitorPowerOff);
 
     [[nodiscard]] HWND window() const { return m_window; }
 
-    [[nodiscard]] int delayMs() const { return m_delayMs; }
-
-    [[nodiscard]] bool pending() const { return m_timer.isActive(); }
-
-    // Queues exactly one send after the delay. Returns false when a request is
-    // already pending or the target window is gone.
-    bool request();
-
-signals:
-    void delivered(bool accepted);
+    // Sends exactly one command. Returns false when the target window is gone.
+    bool send();
 
 private:
     HWND m_window;
     Sender m_sender;
-    int m_delayMs;
-    QTimer m_timer;
 };
 
 // Explicit, opt-in shell action: IPC target `displays`, function `off`.
@@ -63,8 +49,8 @@ class WindowsDisplayPower : public QObject {
 public:
     explicit WindowsDisplayPower(QObject* parent = nullptr);
 
-    // Queues one panel-off request. Returns false when one is already pending
-    // or no shell window is available.
+    // Sends one panel-off request now. The caller has already established
+    // that the triggering chord is released, or that this is a direct request.
     Q_INVOKABLE bool off();
 
 signals:
