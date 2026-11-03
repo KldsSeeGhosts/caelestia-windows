@@ -15,6 +15,13 @@ Column {
 
     required property ScreenState screenState
 
+    readonly property bool liveSession: Quickshell.env("CAELESTIA_SHELL_LIVE") === "1"
+    readonly property bool confirming: liveSession && SessionManager.confirmationPending
+
+    // The button whose exec() opened the confirmation. Cancel and confirm both
+    // return keyboard focus there, so it never lands nowhere.
+    property Item confirmOrigin
+
     padding: Tokens.padding.large
     rightPadding: CUtils.clamp(padding - Config.border.thickness, 0, padding)
     spacing: Tokens.spacing.large
@@ -24,6 +31,7 @@ Column {
 
         icon: Config.session.icons.logout
         command: Config.session.commands.logout
+        accessibleName: "Log out"
 
         KeyNavigation.down: shutdown
 
@@ -44,6 +52,7 @@ Column {
 
         icon: Config.session.icons.shutdown
         command: Config.session.commands.shutdown
+        accessibleName: "Shut down"
 
         KeyNavigation.up: logout
         KeyNavigation.down: hibernate
@@ -70,6 +79,7 @@ Column {
 
         icon: Config.session.icons.hibernate
         command: Config.session.commands.hibernate
+        accessibleName: "Hibernate"
 
         KeyNavigation.up: shutdown
         KeyNavigation.down: reboot
@@ -80,6 +90,7 @@ Column {
 
         icon: Config.session.icons.reboot
         command: Config.session.commands.reboot
+        accessibleName: "Reboot"
 
         KeyNavigation.up: hibernate
     }
@@ -87,21 +98,56 @@ Column {
     // Production has no preview control window. Keep explicit confirmation
     // inside the original session drawer; closing it cancels the pending action.
     Column {
-        visible: Quickshell.env("CAELESTIA_SHELL_LIVE") === "1" && SessionManager.confirmationPending
+        visible: root.confirming
         spacing: Tokens.spacing.small
+
+        onVisibleChanged: {
+            if (visible) {
+                cancel.forceActiveFocus();
+                return;
+            }
+            const origin = root.confirmOrigin ?? logout;
+            root.confirmOrigin = null;
+            if (root.screenState?.session)
+                origin.forceActiveFocus();
+        }
 
         StyledText { text: "Confirm Windows " + SessionManager.pendingAction + "?" }
         Row {
             spacing: Tokens.spacing.small
-            TextButton { text: "Cancel"; onClicked: SessionManager.cancelConfirmation() }
-            TextButton { text: "Confirm"; onClicked: SessionManager.confirm() }
+
+            ConfirmButton {
+                id: cancel
+
+                text: "Cancel"
+                accessibleName: "Cancel"
+
+                KeyNavigation.left: confirm
+                KeyNavigation.right: confirm
+                KeyNavigation.up: confirm
+                KeyNavigation.down: confirm
+                onClicked: SessionManager.cancelConfirmation()
+            }
+
+            ConfirmButton {
+                id: confirm
+
+                text: "Confirm"
+                accessibleName: "Confirm " + SessionManager.pendingAction
+
+                KeyNavigation.left: cancel
+                KeyNavigation.right: cancel
+                KeyNavigation.up: cancel
+                KeyNavigation.down: cancel
+                onClicked: SessionManager.confirm()
+            }
         }
     }
 
     Connections {
         target: root.screenState
         function onSessionChanged(): void {
-            if (!root.screenState.session && Quickshell.env("CAELESTIA_SHELL_LIVE") === "1")
+            if (!root.screenState.session && root.liveSession)
                 SessionManager.cancelConfirmation();
         }
     }
@@ -110,6 +156,16 @@ Column {
         id: button
 
         required property list<string> command
+        property string accessibleName
+
+        // A pointer press on a focused button hides the keyboard indicator until
+        // focus moves again; clicks never move focus themselves.
+        property bool pointerUsed
+
+        readonly property bool focusVisible: activeFocus && !pointerUsed
+
+        onActiveFocusChanged: pointerUsed = false
+        onPressedChanged: if (pressed) pointerUsed = true
 
         // Windows adaptation: the native Linux SessionManager has neither hook,
         // so upstream behavior (enabled buttons and detached fallback when exec
@@ -123,8 +179,11 @@ Column {
         function exec(): void {
             if (button.disabled)
                 return;
-            if (SessionManager.exec(command))
+            if (SessionManager.exec(command)) {
+                if (SessionManager.confirmationPending)
+                    root.confirmOrigin = button;
                 return;
+            }
             if (SessionManager.allowDetachedFallback === false)
                 return;
             Quickshell.execDetached(command);
@@ -140,6 +199,15 @@ Column {
         radius: pressed ? Tokens.rounding.medium : activeFocus ? Tokens.rounding.extraLarge : Tokens.rounding.largeIncreased
         font: Tokens.font.icon.builders.large.scale(1.3).build()
         onClicked: exec()
+
+        Accessible.role: Accessible.Button
+        Accessible.name: button.accessibleName
+        Accessible.onPressAction: button.exec()
+
+        FocusRing {
+            showing: button.focusVisible
+            radius: button.radius
+        }
 
         Keys.onEnterPressed: exec()
         Keys.onReturnPressed: exec()
@@ -165,6 +233,39 @@ Column {
                     event.accepted = true;
                 }
             }
+        }
+    }
+
+    component ConfirmButton: TextButton {
+        id: button
+
+        property string accessibleName
+        property bool pointerUsed
+
+        readonly property bool focusVisible: activeFocus && !pointerUsed
+
+        onActiveFocusChanged: pointerUsed = false
+        onPressedChanged: if (pressed) pointerUsed = true
+
+        Accessible.role: Accessible.Button
+        Accessible.name: button.accessibleName
+        Accessible.onPressAction: button.clicked()
+
+        FocusRing {
+            showing: button.focusVisible
+            radius: button.radius
+        }
+
+        Keys.onPressed: event => {
+            if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
+                event.accepted = true;
+                if (!event.isAutoRepeat)
+                    button.clicked();
+            }
+        }
+        Keys.onEscapePressed: event => {
+            event.accepted = true;
+            SessionManager.cancelConfirmation();
         }
     }
 }
