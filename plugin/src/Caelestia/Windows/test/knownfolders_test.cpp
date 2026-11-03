@@ -1,6 +1,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <cstdio>
 #include <memory>
 #include <mutex>
 
@@ -10,6 +11,7 @@
 #include <qfile.h>
 #include <qfileinfo.h>
 #include <qhash.h>
+#include <qprocess.h>
 #include <qsignalspy.h>
 #include <qstring.h>
 #include <qtemporarydir.h>
@@ -34,6 +36,7 @@ struct Gate {
     std::condition_variable changed;
     bool entered = false;
     bool released = false;
+    bool left = false;
 
     // Called by the probe: announces itself, then waits for release().
     bool block() {
@@ -41,12 +44,19 @@ struct Gate {
         entered = true;
         changed.notify_all();
         changed.wait(lock, [&] { return released; });
+        left = true;
+        changed.notify_all();
         return true;
     }
 
     bool waitEntered() {
         std::unique_lock lock(mutex);
         return changed.wait_for(lock, std::chrono::seconds(10), [&] { return entered; });
+    }
+
+    bool waitLeft() {
+        std::unique_lock lock(mutex);
+        return changed.wait_for(lock, std::chrono::seconds(10), [&] { return left; });
     }
 
     void release() {
@@ -75,6 +85,42 @@ QString apiPath(REFKNOWNFOLDERID id) {
         return {};
     }
     return QDir::fromNativeSeparators(QString::fromWCharArray(buffer.value));
+}
+
+// QTest owns the application in the test process, so the deletion scenario runs
+// in a child process with its own main(). Every round blocks a probe, deletes
+// the application under it, and only then lets the worker finish.
+constexpr int teardownRounds = 500;
+
+int runTeardownRegression(int argc, char* argv[]) {
+    for (int round = 0; round < teardownRounds; ++round) {
+        auto app = std::make_unique<QCoreApplication>(argc, argv);
+        auto gate = std::make_shared<Gate>();
+        auto folders = std::make_unique<caelestia::shell::windows::KnownFolders>();
+        folders->setImageProbe([gate](const QString&) { return gate->block(); });
+        folders->probeImages(u"//offline/teardown/%1"_s.arg(round));
+        if (!gate->waitEntered()) {
+            std::fprintf(stderr, "round %d: the probe did not start\n", round);
+            return 1;
+        }
+
+        app.reset();
+        if (QCoreApplication::instance() != nullptr) {
+            std::fprintf(stderr, "round %d: the application was not deleted\n", round);
+            return 1;
+        }
+
+        gate->release();
+        if (!gate->waitLeft()) {
+            std::fprintf(stderr, "round %d: the probe did not finish\n", round);
+            return 1;
+        }
+        // The worker posts its answer with no application left, then the owner
+        // is destroyed under a post that may still be in flight.
+        QThread::msleep(5);
+        folders.reset();
+    }
+    return 0;
 }
 
 } // namespace
@@ -405,6 +451,44 @@ private slots:
         QCOMPARE(calls->load(), 2);
     }
 
+    void bareShareRootVariantsShareOneProbe() {
+        const auto gate = std::make_shared<Gate>();
+        const auto calls = std::make_shared<std::atomic<int>>(0);
+
+        caelestia::shell::windows::KnownFolders folders;
+        folders.setImageProbe([gate, calls](const QString&) {
+            ++*calls;
+            return gate->block();
+        });
+        QSignalSpy spy(&folders, &caelestia::shell::windows::KnownFolders::imagesProbed);
+
+        // The same bare share root written with and without its separator is
+        // one folder and must join one probe.
+        folders.probeImages(u"//offline/share"_s);
+        QVERIFY(gate->waitEntered());
+        folders.probeImages(u"//offline/share/"_s);
+
+        QTest::qWait(100);
+        QCOMPARE(calls->load(), 1);
+
+        gate->release();
+        QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 2, 10000);
+        QCOMPARE(calls->load(), 1);
+    }
+
+    void deletingApplicationWhileProbeIsBlockedIsSafe() {
+        QProcess helper;
+        helper.setProgram(QCoreApplication::applicationFilePath());
+        helper.setArguments({ QStringLiteral("--knownfolders-teardown-regression") });
+        helper.setProcessChannelMode(QProcess::MergedChannels);
+        helper.start();
+        QVERIFY2(helper.waitForStarted(10000), qPrintable(helper.errorString()));
+        QVERIFY2(helper.waitForFinished(120000), qPrintable(helper.errorString()));
+        const auto output = QString::fromLocal8Bit(helper.readAll()).trimmed();
+        QVERIFY2(helper.exitStatus() == QProcess::NormalExit && helper.exitCode() == 0,
+            qPrintable(QStringLiteral("the teardown helper failed (%1): %2").arg(helper.exitCode()).arg(output)));
+    }
+
     void explicitOverrideWins() {
         QTemporaryDir dir;
         QVERIFY(dir.isValid());
@@ -423,6 +507,14 @@ private slots:
     }
 };
 
-QTEST_GUILESS_MAIN(KnownFoldersTest)
+int main(int argc, char* argv[]) {
+    if (argc > 1 && qstrcmp(argv[1], "--knownfolders-teardown-regression") == 0)
+        return runTeardownRegression(argc, argv);
+
+    QCoreApplication app(argc, argv);
+    QTEST_SET_MAIN_SOURCE_PATH
+    KnownFoldersTest test;
+    return QTest::qExec(&test, argc, argv);
+}
 
 #include "knownfolders_test.moc"
