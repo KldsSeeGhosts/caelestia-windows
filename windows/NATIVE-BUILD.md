@@ -291,7 +291,7 @@ checkout's `windows/.local/build` unless a launcher `-RunRoot` overrides it.
 | `Test-NetworkPrototype.ps1` | Network disabled/read-only, no scan/command dispatch, M1 |
 | `Test-BluetoothPrototype.ps1` | Bluetooth disabled/read-only, radio/device guards, M1 |
 | `Test-BrightnessPrototype.ps1` | Brightness disabled/read-only, gamma untouched, M1 |
-| `Test-AppsPrototype.ps1` | Apps disabled/read-only, launch guards, frequency store, M1 |
+| `Test-AppsPrototype.ps1` | Apps disabled/read-only, launch guards, frequency store, M1; native desktop run, not offscreen |
 | `Test-TrayPrototype.ps1` | Tray disabled/read-only, fixture preview, hook off, M1 |
 | `Test-SessionPrototype.ps1` | Session disabled/observe, action gating, M1 |
 | `Test-NotificationsPrototype.ps1` | Notifications disabled/local, privacy guards, M1 |
@@ -299,8 +299,8 @@ checkout's `windows/.local/build` unless a launcher `-RunRoot` overrides it.
 | `Test-TilingPrototype.ps1` | Tiling disabled only, no wrapper construction, M1 |
 | `Test-CombinedPrototype.ps1` | Every service, popouts, panels, captures, M1 |
 
-Run the whole matrix with one M1 cache so the regression executes once for the
-invocation instead of once per harness:
+Run the offscreen matrix with one M1 cache per invocation so the regression
+executes once for the invocation instead of once per harness:
 
 ```powershell
 $repo = (Resolve-Path .).Path
@@ -310,13 +310,16 @@ $buildRoot = 'C:\b-cull'
 # SchemeRuntime virtual environment still hit Windows path limits (#318).
 $runRoot = 'C:\b-cull\run'
 New-Item -ItemType Directory -Force -Path $runRoot | Out-Null
-$m1Cache = Join-Path $runRoot 'm1-result.json'
+# One cache path per invocation, shared by the hosts in this loop. The cache
+# records its inputs and M1 reruns on a mismatch, but a unique path also keeps
+# separate runs separate.
+$m1Cache = Join-Path $runRoot ('m1-result-' + [guid]::NewGuid().ToString('N') + '.json')
 Push-Location $runRoot
 try {
     foreach ($harness in @(
         'Test-AudioPrototype.ps1', 'Test-BatteryPrototype.ps1', 'Test-MediaPrototype.ps1',
         'Test-NetworkPrototype.ps1', 'Test-BluetoothPrototype.ps1', 'Test-BrightnessPrototype.ps1',
-        'Test-AppsPrototype.ps1', 'Test-TrayPrototype.ps1', 'Test-SessionPrototype.ps1',
+        'Test-TrayPrototype.ps1', 'Test-SessionPrototype.ps1',
         'Test-NotificationsPrototype.ps1', 'Test-HyprPrototype.ps1', 'Test-TilingPrototype.ps1',
         'Test-CombinedPrototype.ps1'
     )) {
@@ -333,13 +336,28 @@ try {
 for its own invocation; with one shared path the first harness runs it and the
 rest reuse the cached result (`m1Cached=true`). `Test-BatteryPrototype.ps1`
 forwards its cache to the nested audio harness, so that suite also runs M1 once.
-If one harness throws, the loop stops; run the remaining names individually.
+The cache records the build root, the Qt prefix, the build's `sourceRevision`
+and `backendRevision`, and the staged M1 payload identity. `Caelestia-M1Regression.ps1`
+reruns M1 instead of reusing when any of those differ, when the build or Qt
+prerequisites are missing, or when the file cannot be read. If one harness
+throws, the loop stops; run the remaining names individually.
 
-The matrix command runs every host with `-Offscreen`, so no window appears and
+The matrix loop runs its 12 hosts with `-Offscreen`, so no window appears and
 `grabToImage` completes without DWM or vsync. Offscreen exposes one virtual
 screen, which is why the loop runs one screen per host. The per-service adapter
 fixtures force the offscreen Qt platform themselves, so
 `Test-<Service>Service.ps1` runs without any window.
+
+`Test-AppsPrototype.ps1` is not in the offscreen loop. The pinned backend skips
+`WindowsDesktopEntryBackend::install()` on the offscreen QPA, so a ReadOnly run
+sees an empty catalog and the frequency checks have no application id to work
+with. Run Apps as a separate native desktop run on the QA owner's desktop, which
+keeps the frequency assertions:
+
+```powershell
+& "$repo\windows\scripts\Test-AppsPrototype.ps1" -QtPrefix $qtPrefix `
+    -BuildRoot $buildRoot -RunRoot $runRoot
+```
 
 `Test-NotificationsPrototype.ps1` marks its local-owner delivery scenarios
 SKIPPED when another shell owns Windows notifications, as described in the
