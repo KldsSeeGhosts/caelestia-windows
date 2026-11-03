@@ -66,6 +66,7 @@ QtObject {
     // WALLPAPER_VISIBLE_OWN
     // WALLPAPER_USABLE_FILE
     // WALLPAPER_NOTE_GOOD
+    // WALLPAPER_ADOPT_PICKED
     // WALLPAPER_ADOPT_HANDBACK
     // WALLPAPER_FILE_CHANGED
     // WALLPAPER_EXTERNAL_CHANGED
@@ -159,22 +160,44 @@ QtObject {
             check(root.currentImage === "C:/walls/own.jpg" && root.current === "C:/walls/own.jpg",
                 "the handed-back desktop did not keep the verified source");
 
-            // 6. A usable wallpaper set while handed back still applies, and
-            // the engine preview cannot come back through currentImage.
-            root.existingFiles = [root.fallback, "C:/walls/own.jpg", "C:/walls/new.jpg"];
-            root.nativeHost.currentPath = "C:/walls/new.jpg";
+            // 6. After the handback, a native notification naming an existing
+            // system-black image is still engine-era bookkeeping, not a
+            // Caelestia pick. File existence is neither proof of a chosen
+            // source nor a decoded image: adopting it would replace the
+            // verified source and, with the external claim released, become
+            // the next handback target.
+            root.existingFiles = [root.fallback, "C:/walls/own.jpg", "C:/walls/system-black.jpg"];
+            root.nativeHost.currentPath = "C:/walls/system-black.jpg";
             root.desktopLayer.wallpaperChanged();
-            check(root.fileCurrent === "C:/walls/new.jpg",
-                "a usable system wallpaper was not applied while handed back");
-            check(root.currentImage === "C:/walls/new.jpg" && root.current === "C:/walls/new.jpg",
-                "the handed-back desktop did not show the usable wallpaper");
-            check(root.lastGoodFile === "C:/walls/new.jpg",
-                "the usable handed-back wallpaper was not remembered");
+            check(root.fileCurrent === "C:/walls/own.jpg",
+                "an existing engine-era system wallpaper replaced the verified source");
+            check(root.currentImage === "C:/walls/own.jpg" && root.current === "C:/walls/own.jpg",
+                "the handed-back desktop showed the engine-era system wallpaper");
+            check(root.lastGoodFile === "C:/walls/own.jpg",
+                "an engine-era system wallpaper became the next handback target");
+
+            // 7. An explicit pick is a Caelestia choice even while handed back,
+            // and an intentionally black image is valid: no filename decides.
+            // The engine-era notification cannot undo that pick.
+            root.existingFiles = [root.fallback, "C:/walls/own.jpg", "C:/walls/system-black.jpg",
+                "C:/walls/intentional-black.jpg"];
+            root.adoptPickedFile("C:/walls/intentional-black.jpg");
+            check(root.fileCurrent === "C:/walls/intentional-black.jpg",
+                "an explicit black wallpaper pick was not applied");
+            check(root.lastGoodFile === "C:/walls/intentional-black.jpg",
+                "an explicit black wallpaper pick was not remembered");
+            check(root.currentImage === "C:/walls/intentional-black.jpg" && root.current === "C:/walls/intentional-black.jpg",
+                "the handed-back desktop did not show the explicit pick");
+            root.nativeHost.currentPath = "C:/walls/system-black.jpg";
+            root.desktopLayer.wallpaperChanged();
+            check(root.fileCurrent === "C:/walls/intentional-black.jpg" &&
+                root.lastGoodFile === "C:/walls/intentional-black.jpg",
+                "an engine-era notification replaced the explicit pick");
             root.engine.current = ({ path: "C:/we/project.json", preview: "C:/we/preview-2.jpg" });
-            check(root.currentImage === "C:/walls/new.jpg",
+            check(root.currentImage === "C:/walls/intentional-black.jpg",
                 "the engine preview returned to the handed-back desktop");
 
-            // 7. A second handback whose last good file no longer exists uses
+            // 8. A second handback whose last good file no longer exists uses
             // the bundled asset, never the missing path.
             root.engine.desktopHandedBack = false;
             check(root.externalWallpaperActive, "the reopened wallpaper reclaims the desktop");
@@ -186,7 +209,7 @@ QtObject {
             check(root.fileCurrent === root.fallback,
                 "the deleted last good file stayed as the visible source");
 
-            // 8. On the own desktop a missing or empty update is never adopted
+            // 9. On the own desktop a missing or empty update is never adopted
             // as the good file either; the verified fallback stays visible.
             root.engine.running = false;
             root.existingFiles = [root.fallback];

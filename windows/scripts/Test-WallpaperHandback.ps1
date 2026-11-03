@@ -5,8 +5,9 @@ param([Parameter(Mandatory)][string]$QtPrefix)
 # Wallpaper Engine handback. Wallpaper Engine leaves IDesktopWallpaper empty,
 # missing or on a system-black image, and the background Image then paints
 # nothing while the window stays black. The fixture splices the real source
-# selection, last-good bookkeeping, handback adoption, file verification and
-# wallpaperChanged guard from Wallpapers.qml, so adapter drift fails here.
+# selection, last-good bookkeeping, handback adoption, explicit-pick adoption,
+# file verification and wallpaperChanged guard from Wallpapers.qml, so adapter
+# drift fails here.
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
 $runner = Join-Path $QtPrefix 'bin\qml.exe'
@@ -29,7 +30,9 @@ $current = Get-UniqueMatch $wallpapers '(?m)^    readonly property string curren
 $visible = Get-UniqueMatch $wallpapers '(?ms)^    function visibleOwnSource\(\): string \{.*?^    \}'
 $usable = Get-UniqueMatch $wallpapers '(?ms)^    function usableFile\(path\): bool \{.*?^    \}'
 $note = Get-UniqueMatch $wallpapers '(?ms)^    function noteGoodFile\(path\): void \{.*?^    \}'
+$adoptPicked = Get-UniqueMatch $wallpapers '(?ms)^    function adoptPickedFile\(path\): void \{.*?^    \}'
 $adopt = Get-UniqueMatch $wallpapers '(?ms)^    function adoptHandbackSource\(\): void \{.*?^    \}'
+$setWallpaper = Get-UniqueMatch $wallpapers '(?ms)^    function setWallpaper\(path\): bool \{.*?^    \}'
 $fileChanged = Get-UniqueMatch $wallpapers '(?ms)^    onFileCurrentChanged: \{.*?^    \}'
 $externalChanged = Get-UniqueMatch $wallpapers '(?ms)^    onExternalWallpaperActiveChanged: \{.*?^    \}'
 $handbackAdopt = Get-UniqueMatch $wallpapers '(?ms)^        function onDesktopHandedBackChanged\(\): void \{.*?^        \}'
@@ -61,12 +64,27 @@ if ($adopt -notmatch 'lastGoodFile' -or $adopt -notmatch 'fallback' -or
     $adopt -notmatch 'fileCurrent = source') {
     throw 'adoptHandbackSource does not replace the desktop source with the verified image.'
 }
+# An explicit pick is the only accepted source while handed back, and it must
+# stay independent of the filename: a deliberately black image is a Caelestia
+# pick, not a system path to filter.
+if ($adoptPicked -notmatch 'noteGoodFile\(local\)' -or $adoptPicked -notmatch 'fileCurrent = local' -or
+    $adoptPicked -match '(?i)black|system|endsWith|includes\(|split\(') {
+    throw 'adoptPickedFile no longer accepts every explicit pick by path.'
+}
+if ($setWallpaper -notmatch 'adoptPickedFile\(local\)') {
+    throw 'setWallpaper no longer adopts an explicit pick while handed back.'
+}
 if ($handbackAdopt -notmatch 'desktopHandedBack' -or $handbackAdopt -notmatch 'stopPreview' -or
     $handbackAdopt -notmatch 'adoptHandbackSource') {
     throw 'The handback connection does not drop the preview and adopt the verified source.'
 }
-if ($wallpaperChanged -notmatch 'desktopHandedBack' -or $wallpaperChanged -notmatch 'usableFile\(next\)') {
-    throw 'wallpaperChanged still adopts an unusable path while handed back.'
+# While handed back, the engine-era notification is ignored outright, even for
+# an existing file: the gate must run before currentWallpaper() is read.
+$gateIndex = $wallpaperChanged.IndexOf('if (WallpaperEngine.desktopHandedBack)')
+$readIndex = $wallpaperChanged.IndexOf('currentWallpaper()')
+if ($gateIndex -lt 0 -or $readIndex -lt 0 -or $gateIndex -gt $readIndex -or
+    $wallpaperChanged -notmatch '(?s)if \(WallpaperEngine\.desktopHandedBack\)\s*\r?\n\s*return;') {
+    throw 'wallpaperChanged still adopts a native path while handed back.'
 }
 
 # Map the production singletons onto the fixture mocks.
@@ -85,6 +103,7 @@ $fixture = $fixture.Replace('    // WALLPAPER_CURRENT_IMAGE', (Convert-Block $cu
 $fixture = $fixture.Replace('    // WALLPAPER_VISIBLE_OWN', (Convert-Block $visible).TrimEnd())
 $fixture = $fixture.Replace('    // WALLPAPER_USABLE_FILE', (Convert-Block $usable).TrimEnd())
 $fixture = $fixture.Replace('    // WALLPAPER_NOTE_GOOD', (Convert-Block $note).TrimEnd())
+$fixture = $fixture.Replace('    // WALLPAPER_ADOPT_PICKED', (Convert-Block $adoptPicked).TrimEnd())
 $fixture = $fixture.Replace('    // WALLPAPER_ADOPT_HANDBACK', (Convert-Block $adopt).TrimEnd())
 $fixture = $fixture.Replace('    // WALLPAPER_FILE_CHANGED', (Convert-Block $fileChanged).TrimEnd())
 $fixture = $fixture.Replace('    // WALLPAPER_EXTERNAL_CHANGED', (Convert-Block $externalChanged).TrimEnd())
@@ -116,12 +135,12 @@ try {
     Write-Output $output
 
     # The assertion count is part of the marker: dropping a scenario must fail.
-    $marker = [regex]::Match($output, 'CAELESTIA_WALLPAPER_HANDBACK_PASS 32\b')
+    $marker = [regex]::Match($output, 'CAELESTIA_WALLPAPER_HANDBACK_PASS 36\b')
     if ($process.ExitCode -ne 0 -or -not $marker.Success -or
         $output -match 'CAELESTIA_WALLPAPER_HANDBACK_FAIL|TypeError|ReferenceError|binding loop') {
         throw 'Wallpaper handback fixture failed.'
     }
-    Write-Output 'PASS wallpaper handback: a missing or empty native wallpaper path cannot replace the last good local file, a deleted one falls back to the bundled asset, and a usable change still applies.'
+    Write-Output 'PASS wallpaper handback: while handed back an empty, missing or existing engine-era native path cannot replace the verified source, an explicit pick (including black) still applies, a deleted last good file falls back to the bundled asset, and a usable change still applies on the own desktop.'
 } finally {
     $safeStage = [IO.Path]::GetFullPath($stage).TrimEnd('\')
     if ((Split-Path -Parent $safeStage) -ne [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\') -or

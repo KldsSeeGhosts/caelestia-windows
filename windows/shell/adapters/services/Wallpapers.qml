@@ -123,6 +123,15 @@ Singleton {
         if (lastGoodFile !== value)
             lastGoodFile = value;
     }
+    // An explicit pick is a Caelestia choice even while an engine owns the
+    // desktop: it becomes the file a handback returns to, and an intentionally
+    // black image is as valid as any other. This is the only source adoption
+    // allowed while the desktop is handed back (#214).
+    function adoptPickedFile(path): void {
+        const local = String(path).replace(/^file:\/\/\//, "");
+        fileCurrent = local;
+        root.noteGoodFile(local);
+    }
     // A genuine handback must show a loadable Caelestia image, never the WE
     // preview and never the path the engine left behind. Reuse the last file
     // the own desktop showed, or the bundled asset on a fresh profile.
@@ -312,10 +321,7 @@ Singleton {
         const ok = Native.Wallpaper.setWallpaper(local, false);
         if (ok) {
             root.markOpened(local);
-            fileCurrent = local;
-            // An explicit pick is a Caelestia image even while an engine owns
-            // the desktop: it becomes the file a handback returns to (#214).
-            root.noteGoodFile(local);
+            root.adoptPickedFile(local);
             stopPreview();
             // The fileCurrent change above regenerates a dynamic palette.
             if (!SchemeGenerator.available) {
@@ -339,14 +345,17 @@ Singleton {
     Connections {
         target: Native.DesktopLayer
         function onWallpaperChanged(): void {
-            const next = Native.Wallpaper.currentWallpaper().replace(/\\/g, "/");
-            // #214: Wallpaper Engine's handback rewrites the system wallpaper
-            // setting, often to an empty path or one that no longer exists.
-            // Adopting it here makes the Image paint nothing, so keep the
-            // verified source while the engine is handed back. A usable new
-            // wallpaper is still applied.
-            if (WallpaperEngine.desktopHandedBack && !root.usableFile(next))
+            // #214: after the handback the shell owns the visible wallpaper
+            // again, so a native change is the engine's own bookkeeping (or an
+            // event independent of the handback), never proof that Caelestia
+            // chose or could decode this file. Adopting an existing system
+            // path would replace the verified source and, because the external
+            // claim is released, promote it to lastGoodFile, so every later
+            // handback would return to it. Explicit picks apply through
+            // adoptPickedFile and are kept, including intentional black ones.
+            if (WallpaperEngine.desktopHandedBack)
                 return;
+            const next = Native.Wallpaper.currentWallpaper().replace(/\\/g, "/");
             root.fileCurrent = next || root.fallback;
         }
     }
