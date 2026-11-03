@@ -95,7 +95,7 @@ QtObject {
             && service.titles.length === 0 && service.ids.length === 0,
             "disabled observes nothing");
         check(service.lastError === "", "disabled has no error");
-        check(service.interceptionEnabled === false, "interception is never enabled by this slice");
+        check(service.interceptionEnabled === false, "interception needs backend availability");
         check(service.menuMode === "native" && service.menuCoordinatesSupported === false
             && service.scrollSupported === false && service.scrollResult === "unsupported",
             "native-only menu and unsupported scroll policy");
@@ -158,7 +158,7 @@ QtObject {
         expectStatus("not-observable", "no items without interception is not an observation");
         check(!service.ready && service.reason.indexOf("interception is disabled") >= 0,
             "not-observable is not ready and names the disabled interception");
-        service.interceptionEnabled = true;
+        fixture.hookCapability = {availability: "available", reason: ""};
         expectStatus("empty", "healthy observation with no items");
         check(service.ready && service.count === 0 && service.lastError === "",
             "empty is ready without an error");
@@ -168,7 +168,6 @@ QtObject {
         check(service.activationRefusal(spotify).indexOf("no longer observed") >= 0,
             "an absent item is stale even while observation is ready");
         service.activationEnabled = false;
-        service.interceptionEnabled = false;
 
         // --- Ready with observed items ---------------------------------------
         setItems([spotify, discord]);
@@ -186,10 +185,20 @@ QtObject {
             check(service.lastError.indexOf(reason) >= 0, "hook failure reason is published");
             service.activationEnabled = true;
             check(!service.activate(spotify), "unavailable hook refuses activation");
+            check(service.lastActivationReason.indexOf(reason) >= 0, "refusal names the hook failure");
             check(spotify.activateCalls === 0, "unavailable hook sends no activation");
             service.activationEnabled = false;
         }
+        fixture.hookCapability = {availability: "disabled", reason: "hook-disabled"};
+        expectStatus("not-observable", "disabled hook with seeded items");
+        fixture.hookCapability = {availability: "unavailable", reason: "hook-starting"};
+        expectStatus("initializing", "pending hook start with seeded items");
+        service.backend = {items: model};
+        expectStatus("unavailable", "legacy backend cannot prove hook health");
+        check(service.lastError.indexOf("hook-capability-unknown") >= 0, "missing capability is named");
+        service.backend = fixture;
         fixture.hookCapability = {availability: "available", reason: ""};
+        expectStatus("ready", "running hook restores readiness");
 
         // --- hasMenu=true with menu=null --------------------------------------
         check(spotify.hasMenu && service.hasMenu(spotify), "native hasMenu is reported");
@@ -291,7 +300,6 @@ QtObject {
         // --- Stale item removal ----------------------------------------------
         // Removal is only an observation while interception enumerates items;
         // without it an emptied list is not-observable rather than stale.
-        service.interceptionEnabled = true;
         setItems([spotify, discord]);
         check(service.isListed(spotify), "item is observed before removal");
         setItems([]);
@@ -300,7 +308,6 @@ QtObject {
         check(!service.openMenu(spotify, null, 5, 5), "a menu request for a removed item is refused");
         check(!service.activate(spotify), "an activation for a removed item is refused");
         check(service.staleRequests === staleRemovalBefore + 2, "removed-item requests count as stale");
-        service.interceptionEnabled = false;
         check(service.lastMenuResult === "refused"
             && service.lastMenuReason.indexOf("no longer observed") >= 0,
             "stale menu refusal is explicit");
