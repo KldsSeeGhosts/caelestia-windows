@@ -278,9 +278,6 @@ void WindowsFocusGuardTest::preActivationEventBecomesRestoreTarget() {
 }
 
 void WindowsFocusGuardTest::closeAfterOutsideSelectionDoesNotRestore() {
-    // The user picks B while the panel is open, then the panel closes. The
-    // guard must leave B in front, not bring back the application it saved at
-    // activation.
     mock::foreground = m_appB;
     mock::foregroundRequests.clear();
 
@@ -298,9 +295,6 @@ void WindowsFocusGuardTest::closeAfterOutsideSelectionDoesNotRestore() {
 void WindowsFocusGuardTest::queuedPreActivationEventWhileNotForegroundDoesNotDismiss() {
     QSignalSpy dismiss(m_guard, &WindowsFocusGuard::dismissRequested);
 
-    // B's event was queued before the activation boundary and arrives while
-    // the panel is not foreground, so the panel-foreground early return does
-    // not apply. It is still not a choice made after the panel opened.
     mock::foreground = m_appB;
     m_source->deliver(m_appB, mock::tick, 9);
 
