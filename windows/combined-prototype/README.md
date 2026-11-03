@@ -337,6 +337,13 @@ because Windows symlinks need extra privileges. All state, cache and config
 writes are forced below `combined-prototype-profile`; the bridge refuses to run
 without `CAELESTIA_PROFILE_ROOT`.
 
+One `win_scheme.py serve` helper answers every palette request over stdin/stdout
+for the life of the shell. Python startup, the Pillow/CLI imports and the
+upstream per-image cache are therefore paid once instead of on every wallpaper
+change. Quantisation still reads the same 128px `thumbnail.jpg` upstream
+caelestia scores, never the full preview. The next request restarts a helper
+that exited, and a request that hangs is killed after the 30 s timeout.
+
 If provisioning or generation fails, `schemeRuntime` is false in the run result
 and the shell keeps its fixed Caelestia palette. Switching variant or mode while
 a static scheme is selected switches to the wallpaper-derived dynamic palette
