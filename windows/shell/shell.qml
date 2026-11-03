@@ -127,9 +127,16 @@ ShellRoot {
     // IPC selects this installation; tiling retains its separate opt-in.
     IpcHandler {
         target: "shell"
-        function quit(): void { Qt.quit(); }
+        function quit(): void {
+            // The bundled tray host belongs to this shell process.
+            Glazier.stopHost(false);
+            Qt.quit();
+        }
         function restart(): string {
             const previous = root.generation;
+            // Stop and wait so the reloaded graph starts its own host from the
+            // selected payload instead of adopting a host being torn down.
+            Glazier.stopHost(true);
             // Soft reload transfers the existing native windows to the new
             // graph. A hard reload unnecessarily destroys/recreates them.
             Quickshell.reload(false);

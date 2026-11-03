@@ -1,16 +1,36 @@
 # Glazier recorder adapter
 
-Requires Glazier with control protocol v1. The adapter replaces the limited
-ffmpeg/gdigrab recorder rather than falling back: a fallback would silently lose
-region, audio, pause and single-monitor semantics. Missing/incompatible Glazier
-is named in the original Record card and its start menu is disabled.
+Glazier ships with Caelestia. The adapter uses the bundled executable, resolving
+it first from the running payload (`<payload>\glazier.exe`, the sibling of
+`qs.exe`) and only then from an explicit absolute path in the profile's
+`config\glazier.json`. `CAELESTIA_GLAZIER_EXE` is an explicit test and
+development override. There is no `%LOCALAPPDATA%\Programs\Glazier` or PATH
+fallback, and the tool is never downloaded during install or update.
 
-The executable is resolved from `%LOCALAPPDATA%\Programs\Glazier\glazier.exe`,
-then PATH. `CAELESTIA_GLAZIER_EXE` is an explicit override, including for tests.
-Install a compatible version before enabling this integration. A stopped v1 host
-reports "Glazier stopped" until Start launches it; this does not disable cold
-start. A missing Glazier is re-checked every 30 s by a native path lookup, with
-no helper process.
+The adapter replaces the limited ffmpeg/gdigrab recorder rather than falling
+back: a fallback would silently lose region, audio, pause and single-monitor
+semantics. A missing or incompatible bundled Glazier is named in the original
+Record card and its start menu is disabled. A stopped v1 host reports "Glazier
+stopped" until Start launches it; this does not disable cold start. A missing
+Glazier is re-checked every 30 s by a native path lookup, with no helper process.
+
+The shell starts Glazier in its tray with `--no-hotkeys --theme-file
+<profile>\state\caelestia\theme-tokens.json`; the pinned revision supports both
+options. The shell owns `PrintScreen` / `Win+Shift+S` for screenshots and
+`Win+Shift+R` for recording (see `windows/docs/KEYBINDS.md`).
+
+At startup the shell identifies the running host by the image path of its
+`GlazierHost` window. A host from this payload is adopted. A standalone host, or
+one left by an older payload, is asked to exit through its own `WM_CLOSE` and is
+then replaced by the bundled executable; its install and HKCU Run entry are not
+touched. Shell quit/restart stops the owned host, and the installer stops any
+`glazier.exe` under `<prefix>\versions\` before a payload swap, retirement or
+uninstall, so an old payload cannot stay locked.
+
+Screenshot dismissal collapses the Windows click-toggle tray as well as the
+panels (`autoCollapse` is false there) and waits for the tray's height animation
+to finish before launching the capture. As with the panels, a timeout reports
+"not ready" and never captures over visible shell UI.
 
 The upstream Recorder contract remains `running`, `paused`, `elapsed`, `refCount`,
 `start(extraArgs)`, `stop()`, `togglePause()`. Upstream modes map as follows:
@@ -71,18 +91,20 @@ Player/folder actions use Windows default applications, and delete converts
 native paths to local-file URLs rather than treating drive letters as schemes.
 `[!.]*.mp4` includes custom finalized names but excludes unpublished dot files.
 The portable build now includes the existing FileSystemModel without Linux appdb.
-No Glazier theme or screenshot launch-action changes are included.
+The shell's Glazier adapter owns launch, hotkeys and screenshot dismissal.
 
 ## Verification
 
 ```powershell
 windows/scripts/Build-Prototype.ps1 -BuildRoot C:\b-grec <toolchain arguments>
 windows/scripts/Test-GlazierRecorder.ps1 -BuildRoot C:\b-grec -QtPrefix <Qt prefix>
+windows/scripts/Test-Glazier.ps1 -BuildRoot C:\b-grec -QtPrefix <Qt prefix>
 ```
 
-The fixture compiles an isolated stub executable and stages the actual adapter,
-Record card and recordings list under a temporary directory. Qt runs offscreen.
-It checks start, pause, resume, finalizing/finished, sound/region flags, unpublished
+The recorder fixture compiles an isolated stub executable and stages the actual
+adapter, Record card and recordings list under a temporary directory. Qt runs
+offscreen. It checks bundled resolution without an override, start, pause,
+resume, finalizing/finished, sound/region flags, unpublished
 file exclusion, file-URL conversion/deletion, error/missing/incompatible
 states, cancellation, host loss, live-off/smoke gates, and a
 tray-initiated recording reflected in the original card. It preserves the staged
@@ -93,6 +115,14 @@ list's Delete state is checked for owned, unreported and cap-evicted files and
 when ownership changes. Separate cold-start-error and real 15 s timeout scenarios
 check that subsequent valid idle responses retain the failure. It does not run the
 installed Glazier, capture a screen, use a microphone, or operate the desktop.
+
+`Test-Glazier.ps1` stages a disposable payload (`<root>\payload\stage` with
+`glazier.exe` beside it) and checks bundled-first resolution, the explicit
+config fallback, removal of the old installed default, the exact
+`--no-hotkeys --theme-file` launch contract, one owner per hotkey chord, and
+dismissal that waits for the real panel `visibleChanged` signal. The timeout
+route asserts that no capture launches and that the user sees "Glazier is not
+ready".
 
 For portable logic-only regression checks, run
 `node windows/tests/GlazierRecorderLogic.test.js` from a disposable working

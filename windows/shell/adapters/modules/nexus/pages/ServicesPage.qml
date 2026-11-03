@@ -75,6 +75,28 @@ PageBase {
             onClicked: root.nState.openSubPage(1)
         }
 
+        // Glazier ships with the shell. These rows state the chords the shell
+        // owns; there is no separate-install setting.
+        SectionHeader {
+            text: Tr.tr("Glazier")
+        }
+
+        InfoRow {
+            first: true
+            icon: "screenshot_region"
+            label: Tr.tr("Screenshot")
+            subtext: Tr.tr("PrintScreen or Win+Shift+S")
+            value: Glazier.available ? Tr.trCtx("Ready", "Glazier state") : Tr.trCtx("Unavailable", "Glazier state")
+        }
+
+        InfoRow {
+            last: true
+            icon: "screen_record"
+            label: Tr.tr("Recording")
+            subtext: Tr.tr("Win+Shift+R")
+            value: Recorder.available ? Tr.trCtx("Ready", "Glazier state") : Tr.trCtx("Unavailable", "Glazier state")
+        }
+
         // Polling
         SectionHeader {
             text: Tr.tr("Polling")

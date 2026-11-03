@@ -17,6 +17,12 @@
     "path": "windows/deps/m3shapes",
     "role": "Material 3 Expressive shape QML plugin. Upstream Caelestia split it into this external project (caelestia-dots/shell 24aa15ee) and pins the same revision in flake.nix/flake.lock. The Windows portable plugin build compiles and installs the M3Shapes QML module."
   },
+  "glazier": {
+    "repository": "https://github.com/KldsSeeGhosts/glazier.git",
+    "revision": "d4383db3a35d802d64b379b30ea18ee8e5f8524c",
+    "path": "windows/deps/glazier",
+    "role": "Bundled Glazier screenshot and recording tool. Build-Prototype.ps1 compiles this pinned source with Cargo and stages glazier.exe beside qs.exe in the versioned payload, so update and rollback carry it. The pinned revision accepts the shell's --no-hotkeys and --theme-file launch options and keeps the selection toolbar on screen. It is not a separately installed companion."
+  },
   "schemeCli": {
     "repository": "https://github.com/caelestia-dots/cli.git",
     "revision": "5e804b10c146c9f3278b2da37c8e4b5d8e9708d9",

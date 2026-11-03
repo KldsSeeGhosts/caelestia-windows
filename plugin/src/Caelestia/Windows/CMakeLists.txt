@@ -6,6 +6,7 @@ qml_module(caelestia-windows
         windowsfontfallback.hpp
         windowsfontfallback.cpp
         windowsfiles.hpp
+        windowsprocess.hpp
         knownfolders.hpp
         Clipboard/clipboardcache.hpp
         Clipboard/clipboardlogic.hpp

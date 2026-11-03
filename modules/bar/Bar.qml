@@ -19,6 +19,26 @@ ColumnLayout {
     required property bool fullscreen
     readonly property int vPadding: Tokens.padding.large
 
+    // Windows: expose the tray's expanded/collapsed state so a screenshot can
+    // wait for the collapsing height animation. The Linux tray has no
+    // collapseSettled property and defaults to settled.
+    readonly property bool trayExpanded: {
+        for (let i = 0; i < repeater.count; i++) {
+            const tray = (repeater.itemAt(i) as EntryWrapper)?.item as Tray;
+            if (tray?.expanded)
+                return true;
+        }
+        return false;
+    }
+    readonly property bool traySettled: {
+        for (let i = 0; i < repeater.count; i++) {
+            const tray = (repeater.itemAt(i) as EntryWrapper)?.item as Tray;
+            if (tray && !(tray.collapseSettled ?? true))
+                return false;
+        }
+        return true;
+    }
+
     function closeTray(): void {
         if (!Config.bar.tray.compact)
             return;
@@ -27,6 +47,16 @@ ColumnLayout {
             const tray = (repeater.itemAt(i) as EntryWrapper)?.item as Tray;
             // Windows click-toggle trays stay open until explicitly toggled.
             if (tray && tray.autoCollapse)
+                tray.expanded = false;
+        }
+    }
+
+    // Windows: the screenshot path collapses every tray, including the
+    // click-toggle one that closeTray deliberately leaves open.
+    function collapseTray(): void {
+        for (let i = 0; i < repeater.count; i++) {
+            const tray = (repeater.itemAt(i) as EntryWrapper)?.item as Tray;
+            if (tray)
                 tray.expanded = false;
         }
     }

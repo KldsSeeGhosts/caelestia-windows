@@ -16,6 +16,10 @@ TrayContent {
     sourceItems: WindowsTray.list
     autoCollapse: false
     implicitHeight: items.count > 0 ? nonAnimHeight : 0
+    // The screenshot gate waits for the height Behavior to reach the collapsed
+    // target, not just for `expanded` to flip.
+    readonly property real collapsedHeight: items.count > 0 ? nonAnimHeight : 0
+    readonly property bool collapseSettled: !expanded && Math.abs(implicitHeight - collapsedHeight) < 0.5
     // Whole rows only: a half-cut icon at the bottom reads as a rendering bug.
     maximumListHeight: (Tokens.font.body.small.pointSize * 2 + Tokens.spacing.small) * 5 - Tokens.spacing.small
     itemInteractionsEnabled: WindowsTray.activationEnabled && (expanded || !Config.bar.tray.compact)
