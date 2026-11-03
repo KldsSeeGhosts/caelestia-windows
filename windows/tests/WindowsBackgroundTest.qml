@@ -168,6 +168,25 @@ Item {
             check(hostEnabled, "accepted embed restores the underlay");
             check(screens.length === 2, "accepted embed mounts every screen");
 
+            // A refusal after that acknowledgement is not a handback. The
+            // refused panel stays top level, so the adapter must withdraw the
+            // claim and unmount instead of keeping a full-screen background
+            // over applications.
+            wallpaperEngine.scans = 0;
+            nativeLayer.embedRefused = true;
+            check(!underlayActive, "a refusal after the acknowledgement drops the underlay");
+            check(embedRefused, "the adapter sees the refused embed");
+            check(externalActive, "the engine process still runs during the refusal");
+            check(!desktopClaimed, "the refused embed withdraws the desktop claim");
+            check(!hostEnabled, "the refused embed fails closed");
+            check(screens.length === 0, "the refused embed unmounts every screen");
+            check(wallpaperEngine.scans === 1, "the refused embed re-scans the owner");
+            check(checkReady(screen), "the refused embed reports a released desktop");
+            nativeLayer.embedRefused = false;
+            check(underlayActive, "an accepted re-embed restores the underlay");
+            check(desktopClaimed, "an accepted re-embed restores the claim");
+            check(hostEnabled && screens.length === 2, "an accepted re-embed remounts every screen");
+
             // A non-empty above-icons embed also denies the acknowledgement
             // and unmounts rather than covering the external wallpaper.
             nativeLayer.aboveIcons = ["caelestia-background"];

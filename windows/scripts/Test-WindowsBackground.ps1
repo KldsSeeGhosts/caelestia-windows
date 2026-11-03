@@ -27,11 +27,14 @@ $ready = Get-UniqueMatch $background '(?ms)^    function checkReady\(screen: She
 # embeds this window, including the first scan before any underlay exists and
 # the icon embedding when an external owner starts or stops. The external
 # owner handler is a block: it also releases the desktop claim when the
-# process is gone, so the next process starts fail-closed.
+# process is gone, so the next process starts fail-closed. The refusal handler
+# withdraws the claim when a panel could not be embedded, which is not a
+# handback.
 $handlers = foreach ($trigger in @('onBackgroundRequestedChanged', 'onDesktopIconsChanged')) {
     Get-UniqueMatch $background "(?m)^    $([regex]::Escape($trigger)): reconcileDesktop\(\)\r?$"
 }
 $externalHandler = Get-UniqueMatch $background '(?ms)^    onExternalActiveChanged: \{.*?^    \}'
+$refusalHandler = Get-UniqueMatch $background '(?ms)^    onEmbedRefusedChanged: \{.*?^    \}'
 $null = Get-UniqueMatch $background '(?ms)^    Component\.onCompleted: \{.*?^    \}'
 
 # Map production singletons onto fixture properties. `enabled` is renamed to
@@ -51,6 +54,7 @@ $icons = $icons.Replace('Quickshell.env', 'root.environment.env')
 $reconcile = $reconcile.Replace('Native.DesktopLayer', 'root.nativeLayer')
 $reconcile = $reconcile.Replace('Wallpapers.externalWallpaperActive', 'root.wallpapers.externalWallpaperActive')
 $externalHandler = $externalHandler.Replace('Wallpapers.externalWallpaperActive', 'root.wallpapers.externalWallpaperActive')
+$refusalHandler = $refusalHandler.Replace('Native.DesktopLayer', 'root.nativeLayer')
 $underlay = $underlay.Replace('WallpaperEngine', 'root.wallpaperEngine')
 $underlay = $underlay.Replace('Native.DesktopLayer', 'root.nativeLayer')
 $ready = $ready.Replace('screen: ShellScreen', 'screen')
@@ -63,7 +67,7 @@ $ready = $ready.Replace('Wallpapers.current', 'root.wallpapers.current')
 
 $fixture = $fixture.Replace('    // WINDOWS_BACKGROUND_PROPERTIES', (($properties.TrimEnd(), $icons.TrimEnd()) -join "`n"))
 $fixture = $fixture.Replace('    // WINDOWS_BACKGROUND_SCREENS', $screens.TrimEnd())
-$fixture = $fixture.Replace('    // RECONCILE_DESKTOP', (($reconcile.TrimEnd(), ($handlers -join "`n"), $externalHandler.TrimEnd()) -join "`n"))
+$fixture = $fixture.Replace('    // RECONCILE_DESKTOP', (($reconcile.TrimEnd(), ($handlers -join "`n"), $externalHandler.TrimEnd(), $refusalHandler.TrimEnd()) -join "`n"))
 $fixture = $fixture.Replace('    // UNDERLAY_HANDLER', $underlay.TrimEnd())
 $fixture = $fixture.Replace('    // CHECK_READY', $ready.TrimEnd())
 
@@ -129,12 +133,12 @@ try {
 
     # The assertion count is part of the marker: a scenario silently dropped
     # from the fixture must fail the run, not just shrink the number.
-    $marker = [regex]::Match($output, 'CAELESTIA_BACKGROUND_UNDERLAY_PASS 80\b')
+    $marker = [regex]::Match($output, 'CAELESTIA_BACKGROUND_UNDERLAY_PASS 91\b')
     if ($exitCode -ne 0 -or -not $marker.Success -or
         $output -match 'CAELESTIA_BACKGROUND_UNDERLAY_FAIL|TypeError|ReferenceError|binding loop') {
         throw 'Windows background fixture failed.'
     }
-    Write-Output 'PASS background underlay: 80 assertions across the acknowledged and legacy backends.'
+    Write-Output 'PASS background underlay: 91 assertions across the acknowledged, refused and legacy backends.'
 } finally {
     $safeStage = [IO.Path]::GetFullPath($stage).TrimEnd('\')
     if ((Split-Path -Parent $safeStage) -ne [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\') -or

@@ -49,9 +49,10 @@ ShellRoot {
     // WindowsBackground keeps the desktop claimed once the backend has
     // acknowledged the underlay. The fixture starts in that state and the
     // claim survives the handback while the engine process keeps running.
+    // A refused embed is not a handback and still fails closed.
     property bool desktopClaimed: true
-    readonly property bool yielded: externalActive && !desktopLayer.underlayActive
-        && !desktopClaimed
+    readonly property bool yielded: desktopLayer.embedRefused
+        || (externalActive && !desktopLayer.underlayActive && !desktopClaimed)
     // WindowsBackground.enabled, kept in step with the adapter by review.
     readonly property bool hostEnabled: backgroundRequested && !yielded
 

@@ -21,6 +21,12 @@ Background {
     readonly property bool backgroundRequested: Quickshell.env("CAELESTIA_WINDOWS_BACKGROUND") === "1"
     readonly property bool underlaySupported: "underlayActive" in Native.DesktopLayer
     readonly property bool underlayActive: underlaySupported && Native.DesktopLayer.underlayActive
+    // A refused SetParent withdraws the underlay acknowledgement while the
+    // host stays active and the refused panel stays top level. That is not a
+    // handback: mounting there would leave a full-screen window over the
+    // applications, so it must fail closed.
+    readonly property bool embedRefused: "embedRefused" in Native.DesktopLayer
+        && Native.DesktopLayer.embedRefused
     readonly property bool externalActive: Wallpapers.externalWallpaperActive
     // A detected wallpaper process is an ownership claim, not proof of
     // ownership. The backend's underlay acknowledgement proves the claim by
@@ -30,9 +36,10 @@ Background {
     // would keep yielding a desktop nobody owns (#214). Once the desktop has
     // been acknowledged, keep the Caelestia background mounted when that
     // window leaves. A later process start has no claim and is fail-closed
-    // until the underlay proves it.
+    // until the underlay proves it. An embedding failure is never a handback.
     property bool desktopClaimed: false
-    readonly property bool yielded: externalActive && !underlayActive && !desktopClaimed
+    readonly property bool yielded: embedRefused
+        || (externalActive && !underlayActive && !desktopClaimed)
     readonly property bool enabled: backgroundRequested && !yielded
     readonly property bool smoke: Quickshell.env("CAELESTIA_SHELL_SMOKE") === "1"
     readonly property int screenIndex: Number(Quickshell.env("CAELESTIA_SHELL_SCREEN") || "0")
@@ -76,9 +83,9 @@ Background {
             // desktop when the window leaves while the process keeps running
             // (#214).
             desktopClaimed = true;
-        } else if (Native.DesktopLayer.aboveIcons.length > 0) {
-            // An above-icons embed is ours, not the engine handing the
-            // desktop back, so it must still fail closed.
+        } else if (embedRefused || Native.DesktopLayer.aboveIcons.length > 0) {
+            // A refused embed or an above-icons embed is ours, not the engine
+            // handing the desktop back, so it must fail closed.
             desktopClaimed = false;
         }
         // The external wallpaper window left the host, so the backend has
@@ -86,6 +93,15 @@ Background {
         // idle poll, so a process that really stopped is noticed promptly.
         if (!underlayActive && externalActive)
             WallpaperEngine.refresh(false);
+    }
+    onEmbedRefusedChanged: {
+        // A refusal can arrive while the acknowledgement is already
+        // withdrawn (a recreated panel after a handback). Never keep a stale
+        // claim through it; only a fresh acknowledgement restores the claim.
+        if (embedRefused)
+            desktopClaimed = false;
+        else if (underlayActive)
+            desktopClaimed = true;
     }
     Component.onCompleted: {
         // A QML reload keeps the native host and its acknowledgement; start
@@ -100,7 +116,7 @@ Background {
             // is no backend acknowledgement of external output on this screen.
             const released = screens.length === 0 && (!Native.DesktopLayer.active || underlaySupported);
             console.log("CAELESTIA_BACKGROUND_STATE", JSON.stringify({
-                active: Native.DesktopLayer.active, ready: released,
+                active: Native.DesktopLayer.active, ready: released, refused: embedRefused,
                 owner: WallpaperEngine.running ? "wallpaper-engine-process" : "undiscovered",
                 externalOutputReady: null, clock: false
             }));

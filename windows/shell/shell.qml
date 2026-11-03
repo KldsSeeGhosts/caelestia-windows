@@ -356,8 +356,7 @@ ShellRoot {
                     && state.scheme.schemes > 0 && state.scheme.variants > 0))
                 && Quickshell.env("QS_WINDOWS_TRAY_HOOK") === "0"
                 && state.keyboard.layout !== "??" && state.keyboard.layout.length > 0
-                && state.backgroundWindows.length === (root.externalWallpaperActive
-                    && !desktopBackground.underlayActive ? 0 : state.screens)
+                && state.backgroundWindows.length === (desktopBackground.yielded ? 0 : state.screens)
                 && state.backgroundWindows.every(w => {
                     const screen = Quickshell.screens.find(s => s.name === w.modelScreen);
                     return screen && w.screen === w.modelScreen
