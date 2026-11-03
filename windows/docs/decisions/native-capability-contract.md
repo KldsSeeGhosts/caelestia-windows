@@ -32,7 +32,8 @@ Only observed state proves completion. A deadline reports failure, not success.
 Switch and creation results carry request IDs because they can finish later.
 An immediate refusal has no ID. The result signal preserves transitions even
 when the next request replaces `lastCommand`. Other operations retain their
-existing APIs and do not claim an observed result until migrated.
+existing APIs. Moves report refusal or `unknown/completion-unobserved` until
+their completion observation is migrated.
 
 ## Desktop-control adoption
 

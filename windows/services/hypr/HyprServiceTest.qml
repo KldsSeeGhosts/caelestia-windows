@@ -578,7 +578,7 @@ QtObject {
         expectSend("killwindow address:0x1", "closewindow address:0x1", "closewindow",
             "killwindow is unaffected by the workspace gate");
 
-        // Absent property (the current backend pin): typeof must treat it as
+        // An absent property on an older backend must be treated as
         // unavailable instead of throwing or falling through to a send.
         service.backend = legacyFixture;
         check(service.nativeInitialized === true, "legacy backend is initialized");

@@ -7,7 +7,7 @@ import QtQuick
 // pinned backend's `Quickshell.Hyprland` data in a real run.
 //
 // The backend contract (a `Quickshell.Hyprland`-shaped object or a test fake):
-//   initialized        bool, true once construction has populated the models
+//   initialized        bool, true once the adapter is constructed, even if empty
 //   monitors           object with a `values` array of monitor-shaped objects
 //   workspaces         object with a `values` array of workspace-shaped objects
 //   toplevels          object with a `values` array of toplevel-shaped objects
@@ -18,6 +18,7 @@ import QtQuick
 //   dispatch(request)  sends one validated request to the backend
 //   desktopControlSupported (optional) bool; absent means workspace control is
 //                      unavailable.
+//   desktopControl     (optional) object with capability and lastCommand maps.
 //
 // Per-monitor workspace ownership is NOT claimed. The pinned backend binds every
 // monitor's `activeWorkspace` and every workspace's `monitor` to the single
@@ -68,11 +69,8 @@ QtObject {
     readonly property bool usingLua: false
     readonly property bool globalFocusPerMonitor: true
 
-    // Workspace control is a backend capability, not an adapter choice: the
-    // backend creates or switches desktops through a build-checked native COM
-    // provider when dispatch is opted in. The property is feature-detected with
-    // `typeof` for compatibility with older backend pins. When it is absent or
-    // false, `workspace`/`movetoworkspace` never reach the backend.
+    // Prefer the native contract. Boolean-only backends retain their dispatch
+    // compatibility but cannot claim an operation result.
     readonly property var desktopControlCapability: {
         const unsupported = { switch: false, create: false, move: false, remove: false, pin: false };
         if (!root.enabled || !root.dispatchEnabled)
@@ -160,8 +158,8 @@ QtObject {
         }
     }
 
-    // Dispatch bookkeeping. A request is not a result: `dispatch` is void in
-    // the pinned backend and the adapter can only report what it forwarded.
+    // Forwarding counters are not command results. Native outcomes are exposed
+    // separately through lastDesktopCommand.
     property int dispatchSequence: 0
     property int commandsSent: 0
     property int refusals: 0
