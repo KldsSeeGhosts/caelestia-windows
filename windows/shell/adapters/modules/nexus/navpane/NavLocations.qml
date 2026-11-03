@@ -103,7 +103,10 @@ VerticalFadeFlickable {
                 }
 
                 // Windows (#210): nav entries take Tab focus like Nexus rows.
-                // Enter/Space play the press ripple and open the page.
+                // Enter/Space play the press ripple and open the page. The
+                // indicator marks keyboard focus only, as on RowButton.
+                property bool pointerUsed
+                readonly property bool focusVisible: activeFocus && !pointerUsed
                 activeFocusOnTab: true
                 Keys.onPressed: event => {
                     if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
@@ -118,6 +121,7 @@ VerticalFadeFlickable {
                 Accessible.name: modelData.label
                 Accessible.onPressAction: activate()
                 onActiveFocusChanged: {
+                    pointerUsed = false;
                     if (!activeFocus)
                         return;
                     // Keep the focused entry inside the scrolled list.
@@ -139,13 +143,16 @@ VerticalFadeFlickable {
                     topRightRadius: parent.topRightRadius
                     bottomLeftRadius: parent.bottomLeftRadius
                     bottomRightRadius: parent.bottomRightRadius
-                    stateOpacity: item.activeFocus ? 0.1 : containsMouse ? 0.08 : 0
+                    stateOpacity: item.focusVisible ? 0.1 : containsMouse ? 0.08 : 0
 
+                    onPressed: focusRing.pointerPressed()
                     onClicked: item.activate()
                 }
 
                 FocusRing {
-                    showing: item.activeFocus
+                    id: focusRing
+
+                    showing: item.focusVisible
                     topLeftRadius: item.topLeftRadius
                     topRightRadius: item.topRightRadius
                     bottomLeftRadius: item.bottomLeftRadius

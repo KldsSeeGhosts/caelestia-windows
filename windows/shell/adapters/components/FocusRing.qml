@@ -7,13 +7,24 @@ import qs.services
 // is M3's focus ring: a 3px secondary outline following the target's corners,
 // drawn on top of the state layer. Set `offset` to draw it outside the target
 // (M3's 2px gap); rows keep it inside, where neighbours and the page's clip
-// cannot cut it. Bind `showing` to keyboard focus only (Control.visualFocus,
-// or activeFocus on an item a pointer never focuses).
+// cannot cut it. Bind `showing` to keyboard focus only: Control.visualFocus,
+// or, on an item a click never focuses, activeFocus until a press sets its
+// `pointerUsed` flag through pointerPressed() (the item clears the flag when
+// its focus changes).
 StyledRect {
     property bool showing
     property real offset
 
     readonly property bool isFocusRing: true
+
+    // A press on a row or nav entry leaves keyboard focus where it was (rows
+    // never take focus on a click), so hide that item's indicator, as a
+    // control's visualFocus clears when a click moves focus to it.
+    function pointerPressed(): void {
+        const item = Window.activeFocusItem;
+        if (item?.pointerUsed !== undefined)
+            item.pointerUsed = true;
+    }
 
     anchors.fill: parent
     anchors.margins: -offset

@@ -8,7 +8,9 @@
 //      exactly one activation per Return, keypad Enter and Space, pointer
 //      activation, and disabled, faded and hidden rows leaving the tab chain;
 //      ToggleRow: the row's FocusRing on keyboard focus only, Return toggling;
-//   2. the nav list: Return on a focused entry opens its page;
+//      a click after keyboard focus, on the same or another row, clearing it;
+//   2. the nav list: Return on a focused entry opens its page, and a click
+//      after keyboard focus leaves no ring on either entry;
 //   3. every Nexus page and every sub-page: Tab walks a closed cycle that never
 //      stalls or lands on a hidden or disabled item, shows a FocusRing on every
 //      stop except text fields (they show a caret and outline), reaches every
@@ -270,6 +272,28 @@ ShellRoot {
         root.check(f.clicks === 14, "pointer activation changed");
         root.check(!f.first.activeFocus, "pointer click took keyboard focus");
 
+        // Keyboard focus, then a click: on the same row, then on another row.
+        // The row keeps focus (a click never moves it), but the indicator,
+        // which marks keyboard focus, goes, and the press still ripples.
+        f.first.forceActiveFocus(Qt.TabFocusReason);
+        root.check(root.ringOf(f.first) !== null, "Tab focus showed no ring before the click");
+        layer.endRadiusAtPress = 0;
+        root.input.mouseClick(f.first);
+        root.check(f.clicks === 15, "click on the keyboard-focused row did not activate it");
+        root.check(layer.endRadiusAtPress > 0, "click on a row played no press ripple");
+        root.check(root.ringOf(f.first) === null, "ring stayed after a click on the keyboard-focused row");
+        root.settle(() => Math.abs(layer.stateOpacity - (layer.containsMouse ? 0.08 : 0)) < 0.001);
+        root.check(Math.abs(layer.stateOpacity - (layer.containsMouse ? 0.08 : 0)) < 0.001,
+            `focus layer stayed after a click (${layer.stateOpacity})`);
+        f.first.forceActiveFocus(Qt.TabFocusReason);
+        root.input.mouseClick(f.last);
+        root.check(f.clicks === 25, "click on another row did not activate it");
+        root.check(root.ringOf(f.first) === null, "ring stayed on the keyboard-focused row after a click on another");
+        root.check(root.ringOf(f.last) === null, "a click showed the ring on the clicked row");
+        root.input.keyClick(Qt.Key_Tab);
+        root.input.keyClick(Qt.Key_Tab, Qt.ShiftModifier);
+        root.check(f.first.activeFocus && root.ringOf(f.first) !== null, "Tab after a click did not show the ring again");
+
         // ToggleRow: the row's ring shows for keyboard focus, not a click.
         f.toggle.forceActiveFocus(Qt.TabFocusReason);
         root.check(root.ringOf(f.toggle) !== null, "focused ToggleRow shows no focus ring");
@@ -297,6 +321,22 @@ ShellRoot {
         root.check(root.ringOf(entry) !== null, "focused nav entry shows no focus ring");
         root.input.keyClick(Qt.Key_Return);
         root.check(root.nexusItem.nState.currentPageIdx === target, "Return on a nav entry did not open its page");
+
+        // Keyboard focus, then a click on the same entry and on another one:
+        // no ring may stay beside the selected-page pill.
+        const otherIdx = target === 0 ? 1 : 0;
+        const other = entries.find(e => e.modelData?.pageIndex === otherIdx);
+        root.check(!!other, `nav entry for page ${otherIdx} not found`);
+        other.forceActiveFocus(Qt.TabFocusReason);
+        root.check(root.ringOf(other) !== null, "Tab focus showed no ring on a nav entry");
+        root.input.mouseClick(other);
+        root.check(root.nexusItem.nState.currentPageIdx === otherIdx, "click on the keyboard-focused nav entry did not open its page");
+        root.check(root.ringOf(other) === null, "ring stayed after a click on the keyboard-focused nav entry");
+        other.forceActiveFocus(Qt.TabFocusReason);
+        root.input.mouseClick(entry);
+        root.check(root.nexusItem.nState.currentPageIdx === target, "click on another nav entry did not open its page");
+        root.check(root.ringOf(other) === null, "ring stayed on the old nav entry after a click on another");
+        root.check(root.ringOf(entry) === null, "a click showed the ring on the clicked nav entry");
     }
 
     function findByObjectName(item, name): var {
