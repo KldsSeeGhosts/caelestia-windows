@@ -28,10 +28,17 @@ Item {
     readonly property string customPicture: "file:///" + stateFolder + "/profile-picture"
     readonly property bool hasPicture: custom.ready || pfp.ready
     property bool customExists: false
+    property int customPictureRequest: 0
 
     function reloadCustomPicture(): void {
-        // Only point the image at the file once it exists, so a first run does not log a missing file.
-        customExists = Native.FsUtils.listDir(stateFolder).includes("profile-picture");
+        // The listing runs off the GUI thread, so point the image at the file
+        // only after the result says it exists.
+        customPictureRequest = Native.FsUtils.listDirAsync(stateFolder);
+    }
+    function applyCustomPicture(request, path, entries): void {
+        if (request !== customPictureRequest || !Paths.samePath(path, stateFolder))
+            return;
+        customExists = entries.some(entry => entry.name === "profile-picture");
         custom.source = "";
         if (customExists)
             custom.source = customPicture;
@@ -45,6 +52,13 @@ Item {
         // Wrapper.qml copies the file, then emits this if the dashboard is still open.
         function onSelected(): void {
             root.reloadCustomPicture();
+        }
+    }
+
+    Connections {
+        target: Native.FsUtils
+        function onListDirFinished(request, path, entries): void {
+            root.applyCustomPicture(request, path, entries);
         }
     }
 

@@ -147,7 +147,7 @@ PageBase {
                     // Empty placeholders for sizing
                     opacity: modelData ? 1 : 0
                     enabled: modelData
-                    thumbnailActive: root.visible && !!modelData
+                    thumbnailActive: root.visible && !!modelData && modelData.onDisk !== false
                         && localGrid.y + y + height > root.flickable.contentY - height
                         && localGrid.y + y < root.flickable.contentY + root.flickable.height + height
 
