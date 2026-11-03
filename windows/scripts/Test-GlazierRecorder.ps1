@@ -25,6 +25,14 @@ New-Item -ItemType Directory -Path (Join-Path $stageRoot 'profile\config'), (Joi
 # A temp MP4 must not appear in the original recordings list.
 [IO.File]::WriteAllText((Join-Path $stageRoot 'output\.glazier-unpublished.mp4'), 'fixture')
 $ownershipFile = Join-Path $stageRoot 'profile\state\caelestia\recordings.json'
+# Inert binds take the three Glazier chords so offscreen runs never register a
+# physical hotkey through the legacy-profile merge.
+$smokeKeybinds = Join-Path $stageRoot 'smoke-keybinds.json'
+[IO.File]::WriteAllText($smokeKeybinds,
+    '{"binds":[{"keys":"PrintScreen","action":"native","name":"smoke-printscreen"},' +
+    '{"keys":"Win+Shift+S","action":"native","name":"smoke-win-shift-s"},' +
+    '{"keys":"Win+Shift+R","action":"native","name":"smoke-win-shift-r"}]}',
+    (New-Object Text.UTF8Encoding($false)))
 foreach ($scenario in @('normal', 'bundled', 'cold-start', 'start-timeout', 'store-missing', 'store-corrupt',
     'store-write', 'store-restart', 'missing', 'bundled-missing', 'disabled', 'smoke', 'layout')) {
     $missing = $scenario -in @('missing', 'bundled-missing')
@@ -67,6 +75,7 @@ foreach ($scenario in @('normal', 'bundled', 'cold-start', 'start-timeout', 'sto
     $info.EnvironmentVariables['QT_FORCE_STDERR_LOGGING'] = '1'
     $info.EnvironmentVariables['QML_IMPORT_PATH'] = "$stage\imports;$BuildRoot\install\qml;$QtPrefix\qml"
     $info.EnvironmentVariables['CAELESTIA_CONFIG_DIR'] = Join-Path $stageRoot 'profile\config'
+    $info.EnvironmentVariables['CAELESTIA_WINDOWS_KEYBINDS'] = $smokeKeybinds
     $info.EnvironmentVariables['CAELESTIA_COMBINED_LIVE'] = $(if ($scenario -eq 'disabled') { '0' } else { '1' })
     $info.EnvironmentVariables['CAELESTIA_SHELL_SMOKE'] = $(if ($scenario -eq 'smoke') { '1' } else { '0' })
     $info.EnvironmentVariables['CAELESTIA_GLAZIER_EXE'] = $(if ($bundled) { '' } elseif ($missing -or $layout) { Join-Path $stageRoot 'missing.exe' } else { $stub })

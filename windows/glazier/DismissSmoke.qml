@@ -26,8 +26,7 @@ ShellRoot {
         {bar: true, osd: true, session: true, launcher: true, dashboard: true, quota: true, utilities: true, sidebar: true},
         {bar: true, osd: true, session: true, launcher: true, dashboard: true, quota: true, utilities: true, sidebar: true}
     ]
-    property var bars: [{closed: false, closeTray: function() { this.closed = true; }},
-                        {closed: false, closeTray: function() { this.closed = true; }}]
+    property var bars: [barA, barB]
     property var screens: ({screens: [0, 1]})
     property var provider: ({
         forScreen: function(screen) { return root.states[screen]; },
@@ -40,6 +39,26 @@ ShellRoot {
 
     component Surface: QtObject {
         property bool visible: true
+    }
+    component Bar: QtObject {
+        id: bar
+        property bool closed: false
+        property bool trayExpanded: true
+        property bool traySettled: false
+        // autoCollapse false: the normal tray close leaves it expanded.
+        function closeTray(): void { closed = true; }
+        function collapseTray(): void {
+            if (!trayExpanded)
+                return;
+            trayExpanded = false;
+            // The timeout scenario never finishes the height animation.
+            if (root.route !== "timeout")
+                settleTimer.start();
+        }
+        property Timer settleTimer: Timer {
+            interval: 300
+            onTriggered: bar.traySettled = true
+        }
     }
     component Panel: QtObject {
         property Surface osd: Surface {}
@@ -58,10 +77,16 @@ ShellRoot {
 
     Panel { id: panelA }
     Panel { id: panelB }
+    Bar { id: barA }
+    Bar { id: barB }
 
     function fail(message): void {
         console.error("GLAZIER_TEST_FAIL " + message);
         Qt.exit(1);
+    }
+    function panelsHidden(): bool {
+        return panels.every(panel => ["osd", "session", "launcher", "dashboard", "quota", "utilities", "sidebar", "popoutsWrapper"]
+            .every(name => !panel[name].visible));
     }
     function allDismissed(): bool {
         // The bar stays as it was; hiding it would reflow tiled windows.
@@ -106,10 +131,22 @@ ShellRoot {
     }
     Timer {
         id: earlyCheck
-        interval: Math.max(1, root.hiddenTimeout - 100)
+        interval: Math.max(1, root.hiddenTimeout - 400)
         onTriggered: {
+            if (!root.panelsHidden()) {
+                root.fail("panels still visible at the early check");
+                return;
+            }
+            if (root.bars.some(b => b.trayExpanded)) {
+                root.fail("the expanded tray was not collapsed");
+                return;
+            }
+            if (root.bars.some(b => b.traySettled)) {
+                root.fail("the tray animation settled before the early check");
+                return;
+            }
             if (!Glazier.pendingPath) {
-                root.fail("dismissal launched before the surfaces reported hidden");
+                root.fail("dismissal launched before the tray animation finished");
                 return;
             }
             root.earlyChecked = true;
@@ -177,8 +214,7 @@ ShellRoot {
             }
             if (!root.hiding && root.allDismissed()) {
                 root.hiding = true;
-                if (root.route !== "timeout")
-                    hideTimer.start();
+                hideTimer.start();
             }
             if (root.route === "timeout") {
                 if (root.hiding && root.earlyChecked && root.timeoutChecked) {

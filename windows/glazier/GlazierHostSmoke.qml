@@ -12,6 +12,10 @@ ShellRoot {
     property string output: Quickshell.env("GLAZIER_HOST_OUTPUT") || ""
     property string probeOutput: Quickshell.env("GLAZIER_PROBE_OUTPUT") || ""
     property bool requested: false
+    property bool adopted: false
+    property bool stopped: false
+    property bool adopt: Quickshell.env("GLAZIER_EXPECT_ADOPT") === "1"
+    property bool stopAfterAdopt: Quickshell.env("GLAZIER_STOP_AFTER_ADOPT") === "1"
 
     // The staged fixture points at its disposable payload explicitly; the
     // installed shell derives the same parent from Quickshell.shellDir.
@@ -71,6 +75,46 @@ ShellRoot {
                 root.fail("theme file " + Glazier.themeFile);
                 return;
             }
+            if (root.adopt) {
+                if (WindowsFiles.isFile(root.output)) {
+                    root.fail("an already-owned host was started twice");
+                    return;
+                }
+                if (root.ticks > 40) {
+                    if (!root.adopted) {
+                        if (Glazier.ownedHost !== true) {
+                            root.fail("a host from this payload was not adopted image="
+                                + WindowsProcess.windowImagePath("GlazierHost")
+                                + " executable=" + Glazier.executable + " owned=" + Glazier.ownedHost);
+                            return;
+                        }
+                        if (!root.samePath(WindowsProcess.windowImagePath("GlazierHost"), Glazier.executable)) {
+                            root.fail("the adopted host is not the bundled executable");
+                            return;
+                        }
+                        root.adopted = true;
+                    }
+                    if (root.stopAfterAdopt && !root.stopped) {
+                        root.stopped = true;
+                        if (!Glazier.stopHost(true)) {
+                            root.fail("the owned host did not exit");
+                            return;
+                        }
+                        return;
+                    }
+                    // The shell's quit handler calls this before Qt.quit.
+                    if (!root.stopped) {
+                        root.stopped = true;
+                        Glazier.stopHost(false);
+                        return;
+                    }
+                    if (WindowsProcess.windowProcessId("GlazierHost") === 0) {
+                        console.log("GLAZIER_HOST_PASS");
+                        Qt.quit();
+                    }
+                }
+                return;
+            }
             if (WindowsFiles.isFile(root.output)) {
                 // Reload once; a repeated reload would cancel the pending load.
                 if (!root.requested) {
@@ -87,5 +131,9 @@ ShellRoot {
                 Qt.quit();
             }
         }
+    }
+    function samePath(a, b): bool {
+        return typeof a === "string" && typeof b === "string" && a.length > 0 && b.length > 0
+            && a.replace(/\\/g, "/").toLowerCase() === b.replace(/\\/g, "/").toLowerCase();
     }
 }

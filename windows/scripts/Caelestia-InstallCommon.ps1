@@ -47,6 +47,37 @@ function Get-CaelestiaProcesses([string]$Prefix) {
     })
 }
 
+# Glazier hosts shipped inside version payloads. Both the image path and the
+# version root prove ownership, so a standalone or other-prefix Glazier is
+# never touched.
+function Get-CaelestiaHostProcesses([string]$Prefix, [string]$VersionRoot = '') {
+    $root = $(if ($VersionRoot) { $VersionRoot } else { Join-Path $Prefix 'versions' })
+    $versions = $root.TrimEnd('\') + '\'
+    return @(Get-Process -Name glazier -ErrorAction SilentlyContinue | Where-Object {
+        try {
+            $_.Path -and $_.Path.StartsWith($versions, [StringComparison]::OrdinalIgnoreCase)
+        } catch {
+            $false
+        }
+    })
+}
+
+# Ask each payload host to exit through its own tray window (taskkill without
+# /F posts WM_CLOSE, it does not kill), then wait before a payload swap,
+# cleanup or uninstall. A VersionRoot limits the stop to one payload.
+function Stop-CaelestiaHosts([string]$Prefix, [string]$VersionRoot = '', [int]$TimeoutSeconds = 10) {
+    $hosts = @(Get-CaelestiaHostProcesses $Prefix $VersionRoot)
+    if ($hosts.Count -eq 0) { return }
+    foreach ($hostProcess in $hosts) {
+        & taskkill.exe /PID $hostProcess.Id 2>&1 | Out-Null
+    }
+    foreach ($hostProcess in $hosts) {
+        if (-not $hostProcess.WaitForExit($TimeoutSeconds * 1000)) {
+            throw "Glazier is still running from $Prefix. Quit it and retry."
+        }
+    }
+}
+
 # Live desktop supervisors recorded under the profile. A supervisor in
 # starting or restart-backoff has no qs.exe, but still owns the prefix files.
 function Get-CaelestiaSupervisors([string]$ProfileRoot) {
@@ -1025,6 +1056,7 @@ function Restore-CaelestiaUpdate([string]$Prefix, [string]$ProfileRoot, [string]
         if ((Get-CaelestiaProcesses $Prefix) -or @(Get-CaelestiaSupervisors $ProfileRoot).Count) {
             throw 'Replacement is still running; rollback files were retained.'
         }
+        Stop-CaelestiaHosts $Prefix
         Assert-CaelestiaNoReparsePoints $Prefix
         Assert-CaelestiaNoReparsePoints $Backup
         & robocopy.exe $Backup $Prefix /MIR /XJ /R:2 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null

@@ -13,18 +13,21 @@
       "keys": "PrintScreen",
       "action": "global",
       "name": "caelestia:screenshot",
+      "since": "2.6.0",
       "description": "Screenshot with Glazier"
     },
     {
       "keys": "Win+Shift+S",
       "action": "global",
-      "name": "caelestia:screenshot",
+      "name": "caelestia:screenshotFreeze",
+      "since": "2.6.0",
       "description": "Screenshot with Glazier"
     },
     {
       "keys": "Win+Shift+R",
       "action": "global",
       "name": "caelestia:record",
+      "since": "2.6.0",
       "description": "Record the screen with Glazier"
     },
     {

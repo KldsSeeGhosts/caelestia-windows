@@ -45,7 +45,9 @@ Singleton {
     property string pendingLabel: "Screenshot"
     property var watchedSurfaces: []
     property bool hostStarted: false
+    property bool ownedHost: false
     property string statusOutput: ""
+    readonly property string hostWindowClass: "GlazierHost"
 
     readonly property var panelNames: ["osd", "session", "launcher", "dashboard", "quota", "utilities", "sidebar"]
 
@@ -83,42 +85,60 @@ Singleton {
             const components = stateProvider.componentsFor(screen);
             components?.panels?.popouts?.close();
             components?.bar?.closeTray();
+            // The Windows tray uses click-toggle (autoCollapse false), so the
+            // normal close path leaves it expanded while the screen freezes.
+            components?.bar?.collapseTray();
         }
     }
     function surfacesHidden(): bool {
         for (const screen of screenProvider.screens) {
-            const panels = stateProvider.componentsFor(screen)?.panels;
-            if (!panels)
-                continue;
-            for (const name of [...panelNames, "popoutsWrapper"])
-                if (panels[name]?.visible)
-                    return false;
+            const components = stateProvider.componentsFor(screen);
+            const panels = components?.panels;
+            if (panels) {
+                for (const name of [...panelNames, "popoutsWrapper"])
+                    if (panels[name]?.visible)
+                        return false;
+            }
+            // The tray's expanded height animates; wait for both the logical
+            // collapse and the end of the animation.
+            const bar = components?.bar;
+            if (bar && (bar.trayExpanded || !bar.traySettled))
+                return false;
         }
         return true;
     }
+    function watchSignal(item, name): void {
+        if (!item)
+            return;
+        const signal = item[name];
+        if (!signal || typeof signal.connect !== "function")
+            return;
+        for (const entry of watchedSurfaces)
+            if (entry.item === item && entry.name === name)
+                return;
+        watchedSurfaces.push({ item: item, name: name, signal: signal });
+        signal.connect(surfaceChanged);
+    }
     function watchSurface(item): void {
-        if (!item || watchedSurfaces.indexOf(item) !== -1)
-            return;
-        const changed = item.visibleChanged;
-        if (!changed || typeof changed.connect !== "function")
-            return;
-        watchedSurfaces.push(item);
-        changed.connect(surfaceChanged);
+        watchSignal(item, "visibleChanged");
     }
     function watchSurfaces(): void {
         for (const screen of screenProvider.screens) {
-            const panels = stateProvider.componentsFor(screen)?.panels;
-            if (!panels)
-                continue;
-            for (const name of panelNames)
-                watchSurface(panels[name]);
-            watchSurface(panels.popoutsWrapper);
+            const components = stateProvider.componentsFor(screen);
+            const panels = components?.panels;
+            if (panels) {
+                for (const name of panelNames)
+                    watchSurface(panels[name]);
+                watchSurface(panels.popoutsWrapper);
+            }
+            watchSignal(components?.bar, "trayExpandedChanged");
+            watchSignal(components?.bar, "traySettledChanged");
         }
     }
     function unwatchSurfaces(): void {
-        for (const item of watchedSurfaces) {
+        for (const entry of watchedSurfaces) {
             try {
-                item.visibleChanged.disconnect(surfaceChanged);
+                entry.signal.disconnect(surfaceChanged);
             } catch (_) {}
         }
         watchedSurfaces = [];
@@ -183,6 +203,25 @@ Singleton {
     function record(): bool {
         return begin("Record screen", ["--record"], "screen_record");
     }
+    function samePath(a, b): bool {
+        return typeof a === "string" && typeof b === "string" && a.length > 0 && b.length > 0
+            && a.replace(/\\/g, "/").toLowerCase() === b.replace(/\\/g, "/").toLowerCase();
+    }
+    function launchHost(): void {
+        ownedHost = true;
+        Quickshell.execDetached([executable, "--no-hotkeys", "--theme-file", themeFile]);
+    }
+    // Only a host this payload launched (or adopted after checking its image)
+    // may be stopped. A standalone install is never modified or unregistered.
+    function stopHost(wait): bool {
+        if (!ownedHost)
+            return true;
+        ownedHost = false;
+        if (!samePath(WindowsProcess.windowImagePath(hostWindowClass), executable))
+            return true;
+        return wait ? WindowsProcess.closeWindowAndWait(hostWindowClass, 2000)
+                    : WindowsProcess.closeWindow(hostWindowClass);
+    }
 
     // The tray host starts once with the shell. The shell owns the hotkeys
     // (--no-hotkeys) and Glazier follows the profile's theme tokens
@@ -219,8 +258,10 @@ Singleton {
         interval: root.hiddenTimeout
         onTriggered: root.reportNotReady()
     }
-    // Never start a second host: the isolated instance would only post its
-    // "already running" notification over the live one.
+    // Take ownership of the running host only when its image is the bundled
+    // executable of this payload. A standalone Glazier (or a host from an old
+    // payload) is asked to exit through its own WM_CLOSE, then replaced; its
+    // install and HKCU Run entry are untouched.
     Process {
         id: statusProbe
         command: [root.executable, "--status"]
@@ -230,9 +271,29 @@ Singleton {
             try {
                 running = JSON.parse(root.statusOutput.trim()).ok === true;
             } catch (_) {}
-            if (running)
+            if (!running)
+                running = WindowsProcess.windowProcessId(root.hostWindowClass) !== 0;
+            if (!running) {
+                root.launchHost();
                 return;
-            Quickshell.execDetached([root.executable, "--no-hotkeys", "--theme-file", root.themeFile]);
+            }
+            const image = WindowsProcess.windowImagePath(root.hostWindowClass);
+            if (!image) {
+                // A protocol host without its expected window cannot be
+                // identified safely; never start a second one.
+                console.warn("CAELESTIA_GLAZIER_HOST could not identify the running host; not starting a second one");
+                return;
+            }
+            if (root.samePath(image, root.executable)) {
+                root.ownedHost = true;
+                return;
+            }
+            // One notice, no paths: this is a lifecycle repair, not an error.
+            console.log("CAELESTIA_GLAZIER_HOST replacing a host that was not started from this payload");
+            if (WindowsProcess.closeWindowAndWait(root.hostWindowClass, 2000))
+                root.launchHost();
+            else
+                console.warn("CAELESTIA_GLAZIER_HOST the previous host did not exit; not starting a second one");
         }
     }
     IpcHandler {

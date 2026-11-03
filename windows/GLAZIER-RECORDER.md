@@ -19,6 +19,19 @@ The shell starts Glazier in its tray with `--no-hotkeys --theme-file
 options. The shell owns `PrintScreen` / `Win+Shift+S` for screenshots and
 `Win+Shift+R` for recording (see `windows/docs/KEYBINDS.md`).
 
+At startup the shell identifies the running host by the image path of its
+`GlazierHost` window. A host from this payload is adopted. A standalone host, or
+one left by an older payload, is asked to exit through its own `WM_CLOSE` and is
+then replaced by the bundled executable; its install and HKCU Run entry are not
+touched. Shell quit/restart stops the owned host, and the installer stops any
+`glazier.exe` under `<prefix>\versions\` before a payload swap, retirement or
+uninstall, so an old payload cannot stay locked.
+
+Screenshot dismissal collapses the Windows click-toggle tray as well as the
+panels (`autoCollapse` is false there) and waits for the tray's height animation
+to finish before launching the capture. As with the panels, a timeout reports
+"not ready" and never captures over visible shell UI.
+
 The upstream Recorder contract remains `running`, `paused`, `elapsed`, `refCount`,
 `start(extraArgs)`, `stop()`, `togglePause()`. Upstream modes map as follows:
 

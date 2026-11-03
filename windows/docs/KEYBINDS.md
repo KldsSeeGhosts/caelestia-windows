@@ -91,6 +91,7 @@ Available Caelestia global shortcut names:
 | --- | --- | --- |
 | `caelestia:nexus` | Open the Nexus settings window | `daemons/Shortcuts.qml` |
 | `caelestia:screenshot` | Glazier screenshot picker and editor | `daemons/Shortcuts.qml` |
+| `caelestia:screenshotFreeze` | Glazier screenshot (frozen picker variant) | `daemons/Shortcuts.qml` |
 | `caelestia:record` | Start or stop a Glazier recording | `daemons/Shortcuts.qml` |
 | `caelestia:launcher` | Toggle launcher (fires on release unless interrupted) | `daemons/Shortcuts.qml` |
 | `caelestia:launcherInterrupt` | Interrupt lone-Super launcher tap | `daemons/Shortcuts.qml` |
@@ -124,13 +125,17 @@ The shell binds the same chords Glazier used:
 
 | Action | Default keys | Shortcut |
 | --- | --- | --- |
-| Screenshot | `PrintScreen` and `Win+Shift+S` | `caelestia:screenshot` |
+| Screenshot | `PrintScreen` and `Win+Shift+S` | `caelestia:screenshot`, `caelestia:screenshotFreeze` |
 | Start or stop recording | `Win+Shift+R` | `caelestia:record` |
 
 These binds deliberately do not set `"register": true`: the shell's keyboard
 hook owns them and Glazier's own hotkeys are disabled. To use a different
 chord, replace the `PrintScreen` / `Win+Shift+S` / `Win+Shift+R` entries in your
-`keybinds.json`; do not add the same chord twice.
+`keybinds.json`; do not add the same chord twice. The three entries carry
+`since`, so a legacy profile that replaces the defaults without
+`"extends": "defaults"` receives them unless that chord or the
+`caelestia:screenshot`, `caelestia:screenshotFreeze` or `caelestia:record`
+name is already used.
 
 The launcher also offers **Screenshot** and **Record screen**. IPC callers can
 use `screenshot capture` or the upstream `picker open`, `openFreeze`,
@@ -219,7 +224,7 @@ A hook-backed Win chord also swallows the Windows key release and replays a mask
 | Action | Default keys | Target |
 | --- | --- | --- |
 | Toggle the launcher (lone Super tap) | `Super` (tap on release) | `caelestia:launcher` |
-| Screenshot with Glazier | `PrintScreen`, `Win+Shift+S` | `caelestia:screenshot` |
+| Screenshot with Glazier | `PrintScreen`, `Win+Shift+S` | `caelestia:screenshot`, `caelestia:screenshotFreeze` |
 | Start or stop a Glazier recording | `Win+Shift+R` | `caelestia:record` |
 | Toggle the launcher, dashboard, OSD and utilities together | `Super+K` | `caelestia:showall` |
 | Toggle the dashboard | `Super+Shift+D` | `caelestia:dashboard` |

@@ -24,8 +24,17 @@ Item {
     readonly property bool shouldBeVisible: !fullscreen && !disabled && (Config.bar.persistent || screenState.bar || isHovered)
     property bool isHovered
 
+    // Windows: the screenshot gate reads the live tray expansion and the end of
+    // its height animation through the loaded bar.
+    readonly property bool trayExpanded: (content.item as Bar)?.trayExpanded ?? false
+    readonly property bool traySettled: (content.item as Bar)?.traySettled ?? true
+
     function closeTray(): void {
         (content.item as Bar)?.closeTray();
+    }
+
+    function collapseTray(): void {
+        (content.item as Bar)?.collapseTray();
     }
 
     function checkPopout(y: real): void {

@@ -119,10 +119,14 @@ try {
         Copy-Item -LiteralPath $stagedGlazier -Destination (Join-Path $run 'glazier.exe')
     }
 
-    # Seed only the profile files these services read. An empty keybind list
-    # means the backend registers no global hotkey; false banner replacement
-    # keeps the notification helper out of the run.
-    '{"binds":[]}' | Set-Content -LiteralPath (Join-Path $profile 'runtime\smoke-keybinds.json') -Encoding UTF8
+    # Seed only the profile files these services read. Inert binds take the
+    # three Glazier chords so the legacy-profile merge adds nothing and the
+    # backend registers no global hotkey; false banner replacement keeps the
+    # notification helper out of the run.
+    $smokeBinds = '{"binds":[{"keys":"PrintScreen","action":"native","name":"smoke-printscreen"},' +
+        '{"keys":"Win+Shift+S","action":"native","name":"smoke-win-shift-s"},' +
+        '{"keys":"Win+Shift+R","action":"native","name":"smoke-win-shift-r"}]}'
+    $smokeBinds | Set-Content -LiteralPath (Join-Path $profile 'runtime\smoke-keybinds.json') -Encoding UTF8
     '{"windows":{"notifications":{"replaceSystemBanners":false}}}' |
         Set-Content -LiteralPath (Join-Path $profile 'config\windows.json') -Encoding UTF8
     '{"enabled":false}' | Set-Content -LiteralPath (Join-Path $profile 'config\quota.json') -Encoding UTF8
