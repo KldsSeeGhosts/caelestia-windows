@@ -229,7 +229,7 @@ void SettingsFile::writeNow() {
     const auto dir = QFileInfo(m_path).absolutePath();
 
     if (!QDir().mkpath(dir)) {
-        qCWarning(lcSettingsFile) << "Failed to create dir" << dir;
+        qCWarning(lcSettingsFile) << "Failed to create dir" << logId(dir);
         emit writeFailed(mark(u"Failed to create parent directory"_s));
         scheduleSaveRetry();
         return;

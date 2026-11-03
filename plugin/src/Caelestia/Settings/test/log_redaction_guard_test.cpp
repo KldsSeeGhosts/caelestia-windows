@@ -94,7 +94,7 @@ QRegularExpressionMatch rawScreenValue(const QString& code) {
 // A settings file's path contains the per-monitor directory, which is named
 // after the monitor, so the path is as sensitive as the name.
 QRegularExpressionMatch rawLayerPath(const QString& code) {
-    static const auto pattern = QRegularExpression(QStringLiteral(R"(\bm_path\b)"));
+    static const auto pattern = QRegularExpression(QStringLiteral(R"(\b(?:m_path|dir)\b)"));
     return pattern.match(code);
 }
 
@@ -128,6 +128,7 @@ private slots:
     void layerPathsAreRaw() {
         QVERIFY(rawLayerPath(QStringLiteral("qCWarning(lc, , qUtf8Printable(m_path));")).hasMatch());
         QVERIFY(rawLayerPath(QStringLiteral("qCDebug(lc) << m_path;")).hasMatch());
+        QVERIFY(rawLayerPath(QStringLiteral("qCWarning(lc) << \"Failed to create dir\" << dir;")).hasMatch());
         // Wrapped in logId() it is stripped before matching.
         QVERIFY(!rawLayerPath(stripSafeCalls(QStringLiteral("qCDebug(lc) << logId(m_path);"))).hasMatch());
     }
