@@ -6,19 +6,20 @@ import QtQuick
 // Windows states, and gates every mutating request behind the separate controls
 // opt-in. Backends may be injected in tests.
 //
-// The pinned backend (14010429) has no initialization/error state for Network.
-// Construction starts connectivity and WLAN observation after the first frame,
-// and a successful WLAN open performs one available-network query even while
-// the list is hidden. The backend supplies no "ready", "last error" or radio
-// write result, so this adapter distinguishes what it observes from what it can
-// only request:
-//   - initialized is a bounded adapter flag (see NativeNetworkBackend.qml), not
-//     a native capability;
-//   - a missing adapter and a WLAN service failure both surface as
-//     wifiAdapterPresent=false (network_wifi.cpp:169-173);
+// The backend reports when WLAN initialization settled and why it failed: a
+// failed open, interface enumeration or notification subscription is published
+// as an error, while a successful open with an empty interface list is "no
+// adapter" (native backend; the facade keeps a bounded fallback for older
+// pins). Construction starts connectivity and WLAN observation after the first
+// frame, and a successful WLAN open performs one available-network query even
+// while the list is hidden. This adapter distinguishes what it observes from
+// what it can only request:
+//   - initialized is the native WLAN initialization result;
+//   - nativeError carries a refused subscription or failed open, so it is never
+//     presented as a ready or no-adapter state;
 //   - connect has a real result signal (wifiConnectResult), while radio,
-//     disconnect, forget and scan have none (network_wifi.cpp:232-258,
-//     451-460, 260-271). Requests without a result are never reported applied.
+//     disconnect, forget and scan have none. Requests without a result are
+//     never reported applied.
 //
 // There is deliberately no password argument or credential store here. A
 // secured network without a saved Windows profile is not connected by this
@@ -27,7 +28,7 @@ QtObject {
     id: root
 
     // The injected backend is the NativeNetworkBackend facade (or a test fake)
-    // exposing initialized, wifiAdapterPresent, wifiRadioOn, wifiScanning,
+    // exposing initialized, nativeError, wifiAdapterPresent, wifiRadioOn, wifiScanning,
     // wifiConnecting, wifiConnectingSsid, activeSsid, activeBssid,
     // activeSignalQuality, activeSecurity, wifiStatus, hasInternet,
     // needsLocationPermission, ethernetConnected, networks (.values),
@@ -48,12 +49,20 @@ QtObject {
     readonly property bool nativeInitialized: enabled && !backendError && backend !== null
         && backend.initialized === true
 
-    readonly property bool adapterPresent: nativeInitialized && backend.wifiAdapterPresent === true
+    // A failed initialization leaves the adapter unusable even when the driver
+    // still reports one, so capability flags require a reported error to be
+    // absent as well.
+    readonly property string nativeError: {
+        const error = root.backend?.nativeError;
+        return typeof error === "string" ? error : "";
+    }
+    readonly property bool adapterPresent: nativeInitialized && nativeError === ""
+        && backend.wifiAdapterPresent === true
     readonly property bool radioOn: adapterPresent && backend.wifiRadioOn === true
     readonly property bool locationDenied: nativeInitialized && backend.needsLocationPermission === true
 
     // A denied current-connection query returns before writing state
-    // (network_wifi.cpp:369-372), so a previous SSID can survive. While
+    // (NetworkWifiBackend::refreshCurrentConnection), so a previous SSID can survive. While
     // location is denied the adapter reports no current connection rather than
     // repeating an unverifiable value.
     readonly property string activeSsid: {
@@ -100,14 +109,17 @@ QtObject {
         return typeof ssid === "string" ? ssid : "";
     }
 
-    // Eight explicit states. "initializing" is the bounded wait for the first
-    // observation; "unavailable" is a component load failure. The remaining
-    // order is adapter, location, radio, connection, so a denied list is never
-    // presented as a connected or disconnected observation.
+    // Eight explicit states. "initializing" waits for the backend's
+    // initialization result; "unavailable" is a component load failure or a
+    // native WLAN initialization error. The remaining order is adapter,
+    // location, radio, connection, so a denied list is never presented as a
+    // connected or disconnected observation.
     readonly property string status: {
         if (!enabled)
             return "disabled";
         if (backendError)
+            return "unavailable";
+        if (nativeError !== "")
             return "unavailable";
         if (!nativeInitialized)
             return "initializing";
@@ -136,11 +148,11 @@ QtObject {
         case "disabled":
             return "Windows network is disabled.";
         case "unavailable":
-            return root.backendError;
+            return root.backendError || root.nativeError;
         case "initializing":
             return "Waiting for the Windows network backend to report adapter and radio state.";
         case "no-adapter":
-            return "No Wi-Fi adapter was reported. Wired status is still observed; the WLAN service may also be unavailable.";
+            return "No Wi-Fi interface was reported by Windows. Wired status is still observed.";
         case "location-denied":
             return "Windows location permission is required to list Wi-Fi networks. The network list stays hidden.";
         case "radio-off":
@@ -256,6 +268,8 @@ QtObject {
             return action + " is unavailable because Windows network is disabled.";
         if (root.backendError)
             return action + " is unavailable: " + root.backendError;
+        if (root.nativeError !== "")
+            return action + " is unavailable: " + root.nativeError;
         if (root.backend === null || root.backend.initialized !== true)
             return action + " is unavailable while the Windows network backend initializes.";
         switch (root.status) {
@@ -302,7 +316,7 @@ QtObject {
     }
 
     // A radio write failure only logs and may open Windows Settings
-    // (network_wifi.cpp:250-255). No native result exists, so the request is
+    // (NetworkWifiBackend::setRadioEnabled). No native result exists, so the request is
     // reported as unverified.
     function requestRadio(on): void {
         const action = on === true ? "Turning Wi-Fi on" : "Turning Wi-Fi off";
@@ -358,7 +372,7 @@ QtObject {
         }
 
         // Record the pending request first: native profile/connect failures
-        // emit wifiConnectResult synchronously (network_wifi.cpp:423-447), and
+        // emit wifiConnectResult synchronously (NetworkWifiBackend::connectToNetwork), and
         // that verified failure must not be overwritten afterwards.
         root.pendingSsid = ssid;
         root.commandsSent++;
@@ -366,7 +380,7 @@ QtObject {
         root.backend.connectToNetwork(ssid, "");
     }
 
-    // Disconnect has no native result (network_wifi.cpp:451-454).
+    // Disconnect has no native result (NetworkWifiBackend::disconnectActive).
     function requestDisconnect(): void {
         if (!root.controlsEnabled) {
             root._refuse("Disconnecting");
@@ -388,7 +402,7 @@ QtObject {
     }
 
     // Forget deletes the profile named by the SSID when no profile name is
-    // known (network_wifi.cpp:456-460). Only a visible AP with a saved profile
+    // known (NetworkWifiBackend::forgetNetwork). Only a visible AP with a saved profile
     // may reach it.
     function requestForget(ssid): void {
         const action = "Forgetting a network";

@@ -9,6 +9,7 @@ import Caelestia
 import Caelestia.Config
 import Caelestia.Services
 import Caelestia.Windows
+import Quickshell.Windows as Native
 import qs.components
 import qs.services
 import qs.modules.drawers
@@ -141,6 +142,7 @@ ShellRoot {
     WindowsFocusGuard {
         id: focusGuard
         target: win.contentItem
+        foregroundSource: Native.Foreground
         active: !root.smoke && (win.screenState?.session ?? false)
         onOutcome: status => console.log("CAELESTIA_SHELL_FOCUS", status)
         onDismissRequested: win.screenState.session = false

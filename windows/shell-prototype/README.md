@@ -137,14 +137,15 @@ Live global reconfiguration across other shells is not certified.
 
 ## Focus and platform boundaries
 
-WindowsFocusGuard samples external foreground identity, requests activation
-once per opening, and queues one guarded restoration 75 ms after close.
-It skips restoration when another application has become foreground or the
-saved window identity is invalid. While active, it reconciles an external
-foreground change after 550 ms to cover the backend's startup grace.
-It uses ordinary Windows foreground permissions, with no input-queue attach,
-hooks of its own, synthetic input or denial retry loop. Its status is logged
-as `CAELESTIA_SHELL_FOCUS`.
+WindowsFocusGuard takes foreground changes from the backend's event-driven
+observer, requests activation once per opening, and queues one guarded
+restoration for the next event-loop turn after close. It skips restoration
+when another application has become foreground or the saved window identity is
+invalid. A foreground change after activation dismisses the preview unless its
+event predates the activation; the guard holds no polling timer. It uses
+ordinary Windows foreground permissions, with no input-queue attach, hooks of
+its own, synthetic input or denial retry loop. Its status is logged as
+`CAELESTIA_SHELL_FOCUS`.
 
 Small upstream edits use direct `exclusionMode`, finite/null-monitor drag
 padding, and `interactionEnabled` defaulting to true for no-input smoke.

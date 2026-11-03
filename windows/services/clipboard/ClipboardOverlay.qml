@@ -18,6 +18,7 @@ import QtQuick.Effects
 import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
+import Quickshell.Windows as Native
 import Caelestia
 import Caelestia.Config
 import Caelestia.Windows
@@ -320,6 +321,7 @@ Scope {
         // The native paste also re-checks focus before injecting Ctrl+V.
         WindowsFocusGuard {
             target: window.contentItem
+            foregroundSource: Native.Foreground
             active: root.opened
             onDismissRequested: root.close()
         }
