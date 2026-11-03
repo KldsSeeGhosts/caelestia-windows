@@ -22,6 +22,7 @@ StyledSwitch {
     implicitWidth: implicitContentWidth + implicitIndicatorWidth + horizontalPadding * 2
     implicitHeight: Math.max(implicitContentHeight, implicitIndicatorHeight) + verticalPadding * 2
     cLayer: 2
+    indicatorFocusRing: false // Windows port (#210)
 
     indicator.anchors.verticalCenter: verticalCenter
     indicator.anchors.right: right
@@ -37,6 +38,15 @@ StyledSwitch {
 
             disabled: root.disabled
             manualPressOverride: root.pressed
+            stateOpacity: root.visualFocus ? 0.1 : containsMouse ? 0.08 : 0 // Windows port (#210)
+        }
+
+        FocusRing { // Windows port (#210): the whole row shows focus
+            showing: root.visualFocus
+            topLeftRadius: bg.topLeftRadius
+            topRightRadius: bg.topRightRadius
+            bottomLeftRadius: bg.bottomLeftRadius
+            bottomRightRadius: bg.bottomRightRadius
         }
     }
 

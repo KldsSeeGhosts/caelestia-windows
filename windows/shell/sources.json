@@ -282,6 +282,7 @@
   "windows/services/wallpaperengine/WallpaperEngine.qml": "services/WallpaperEngine.qml",
   "windows/shell/adapters/imports/Caelestia/Services/SessionManager.qml": "imports/Caelestia/Services/SessionManager.qml",
   "windows/shell/adapters/components/filedialog/FileDialog.qml": "components/filedialog/FileDialog.qml",
+  "windows/shell/adapters/components/FocusRing.qml": "components/FocusRing.qml",
   "windows/shell/adapters/daemons/IdleInhibit.qml": "daemons/IdleInhibit.qml",
   "windows/shell/adapters/daemons/Shortcuts.qml": "daemons/Shortcuts.qml",
   "windows/shell/adapters/imports/Caelestia/Multimedia/qmldir": "imports/Caelestia/Multimedia/qmldir",
