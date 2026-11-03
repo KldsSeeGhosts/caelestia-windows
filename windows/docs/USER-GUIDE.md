@@ -695,7 +695,7 @@ On Linux, StatusNotifierItem (`SNI`) apps send icon pixmaps and semantic `dbusme
 ### 5. Other service differences
 
 - **Keep-awake and screen recorder (`utilities`):**
-  - Keep-awake holds `SetThreadExecutionState(ES_CONTINUOUS | ES_DISPLAY_REQUIRED | ES_SYSTEM_REQUIRED)` in a helper process that exits automatically when toggled off or when Caelestia closes, replacing Wayland's `IdleInhibitor`.
+  - Keep-awake holds a native `PowerCreateRequest` for display and system availability, replacing Wayland's `IdleInhibitor`. The request is owned by the shell process: toggling it off clears it, and Windows drops it when Caelestia closes.
   - The screen recorder card runs `ffmpeg -f gdigrab` (when `ffmpeg.exe` is on `PATH`) and saves fullscreen recordings to `%USERPROFILE%\Videos\Caelestia\recording_<timestamp>.mp4`. Region capture, audio capture, and pause are not supported on Windows.
 - **Audio volume cap:** Windows Core Audio scalar volume ranges from `0%` to `100%` (`0.0`–`1.0`). Setting `services.maxVolume` above `1.0` in `shell.json` will not over-amplify past 100% as PipeWire does on Linux.
 - **Brightness routes:** Uses WMI/ACPI (laptop panels), `\\.\LCD`, or DDC/CI (external monitors). If a monitor does not support DDC/CI or WMI, the brightness slider disables itself cleanly rather than silently applying a software gamma tint (software gamma dimming is off unless explicitly opted into via `CAELESTIA_WINDOWS_BRIGHTNESS_SOFTWARE=1`).

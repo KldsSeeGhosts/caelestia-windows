@@ -11,7 +11,7 @@ import qs.services
 // Original upstream idle-inhibitor card. Windows keeps the layout, the
 // RuntimeState contract and the "active since" chip; only the switch gate and
 // the explanatory line are localized. The actual inhibition is held by
-// daemons/IdleInhibit.qml, because Windows has no IdleInhibitor protocol.
+// daemons/IdleInhibit.qml through the backend's native IdleInhibitor.
 StyledRect {
     id: root
 
