@@ -7,7 +7,7 @@ param(
     [string]$BuildRoot,
     [ValidateRange(1, 64)][int]$Jobs = 4,
     # Private harnesses only. Public exports omit the test sources, so test
-    # executables are off by default.
+    # executables, including the backend's native fixtures, are off by default.
     [switch]$Tests,
     # Offscreen fixtures only. Production payloads always bundle Glazier.
     [switch]$SkipGlazier
@@ -134,6 +134,17 @@ if ($SkipGlazier) {
     }
     Copy-Item -LiteralPath $glazierExe -Destination (Join-Path $installRoot 'glazier.exe') -Force
     $glazierSha256 = (Get-FileHash -LiteralPath (Join-Path $installRoot 'glazier.exe') -Algorithm SHA256).Hash.ToLowerInvariant()
+}
+# The backend's Windows regression fixtures are a separate CMake project under
+# src/windows/test that no parent CMakeLists adds. The main backend's
+# BUILD_TESTING option only enables the upstream core/io/window suites and
+# defines QS_TEST in the production targets, so build the fork's suite directly
+# for Test-BackendNative.ps1. Build with keep-going so one broken target does
+# not hide the others. The runner reports each missing executable.
+if ($Tests) {
+    Invoke-BuildCommand 'configure-backend-tests' (@('-S', "$repoRoot\windows\deps\quickshell\src\windows\test",
+        '-B', "$BuildRoot\quickshell-tests") + $common)
+    Invoke-BuildCommand 'build-backend-tests' @('--build', "$BuildRoot\quickshell-tests", '--parallel', "$Jobs", '--', '-k', '0')
 }
 # Resolve the version and revision up front so configure works without a reachable git tag or git metadata (#114).
 $ErrorActionPreference = 'Continue'
