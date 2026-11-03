@@ -19,6 +19,25 @@ $qmlRoot = Join-Path $BuildRoot 'install\qml'
 if (-not (Test-Path -LiteralPath $qs -PathType Leaf)) { throw "Missing Quickshell runtime: $qs" }
 if (-not (Test-Path -LiteralPath $qmlRoot -PathType Container)) { throw "Missing installed QML modules: $qmlRoot" }
 
+function Get-UniqueMatch([string]$Text, [string]$Pattern) {
+    $matches = [regex]::Matches($Text, $Pattern)
+    if ($matches.Count -ne 1) { throw "Expected one production block matching: $Pattern" }
+    return $matches[0].Value
+}
+
+# Splice the real ownership guard, not a copy. The fixture's fake desktop layer
+# drives the backend signals; the block decides whether the process still owns
+# the desktop, so a handback that keeps the external claim fails here (#214).
+$engine = Get-Content -LiteralPath (Join-Path $repoRoot 'windows\services\wallpaperengine\WallpaperEngine.qml') -Raw
+$ownership = Get-UniqueMatch $engine '(?ms)^    // WINDOWS_DESKTOP_OWNERSHIP_BEGIN.*?^    // WINDOWS_DESKTOP_OWNERSHIP_END'
+$ownership = $ownership -replace '(?m)^    // WINDOWS_DESKTOP_OWNERSHIP_(?:BEGIN|END)\r?\n?', ''
+$ownership = $ownership.Replace('Native.DesktopLayer', 'root.desktopLayer')
+$ownership = ($ownership -split "\r?\n" | ForEach-Object {
+    if ($_ -eq '') { $_ } else { '    ' + $_ }
+}) -join "`n"
+$fixture = Get-Content -LiteralPath (Join-Path $repoRoot 'windows\tests\WindowsBackgroundHandbackTest.qml') -Raw
+$fixture = $fixture.Replace('        // WINDOWS_BACKGROUND_OWNERSHIP', $ownership.TrimEnd())
+
 $run = if ($RunRoot) {
     Join-Path ([IO.Path]::GetFullPath($RunRoot)) (Get-Date -Format 'yyyyMMdd-HHmmss-fff')
 } else {
@@ -32,8 +51,7 @@ foreach ($directory in @('config', 'state', 'runtime', 'cache', 'data')) {
 }
 try {
     & "$PSScriptRoot\Stage-ShellPrototype.ps1" -Destination $stage -ProfileRoot $profile -Prototype shell-live | Out-Null
-    Copy-Item -LiteralPath (Join-Path $repoRoot 'windows\tests\WindowsBackgroundHandbackTest.qml') `
-        -Destination (Join-Path $stage 'background-handback.qml')
+    [IO.File]::WriteAllText((Join-Path $stage 'background-handback.qml'), $fixture, (New-Object Text.UTF8Encoding($false)))
     # The fixture only exercises the clock blur path; keep the isolated profile
     # minimal and leave every native Windows facade off.
     '{"background":{"desktopClock":{"enabled":true,"background":{"enabled":true,"blur":true}}}}' |
@@ -75,11 +93,11 @@ try {
     $sceneDiagnostics = @($output -split "\r?\n" |
         Where-Object { $_ -match 'WARN scene:' -and $_ -notmatch $offscreenOnly })
     $bad = $output -match 'CAELESTIA_BACKGROUND_HANDBACK_FAIL|Cannot use same item on different windows|TypeError|ReferenceError|binding loop'
-    $marker = [regex]::Match($output, 'CAELESTIA_BACKGROUND_HANDBACK_PASS 7\b')
+    $marker = [regex]::Match($output, 'CAELESTIA_BACKGROUND_HANDBACK_PASS 16\b')
     if ($process.ExitCode -ne 0 -or -not $marker.Success -or $bad -or $sceneDiagnostics.Count -gt 0) {
         throw "Windows background handback fixture failed: $run"
     }
-    Write-Output 'PASS background handback: wallpaper and clock follow the recreated window without reusing an item across windows.'
+    Write-Output 'PASS background handback: the external claim is released while the process runs, the wallpaper and clock follow the recreated window, and a refusal still fails closed.'
 } finally {
     if (-not $Keep -and -not $RunRoot) {
         $safeRun = [IO.Path]::GetFullPath($run).TrimEnd('\')

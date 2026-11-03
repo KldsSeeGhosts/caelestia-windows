@@ -3,6 +3,7 @@ import QtQuick.Layouts
 import Quickshell
 import Caelestia.Config
 import Caelestia.I18n
+import Caelestia.Services
 import Caelestia.State
 import qs.components
 import qs.components.controls
@@ -11,13 +12,28 @@ import qs.services
 // Original upstream idle-inhibitor card. Windows keeps the layout, the
 // RuntimeState contract and the "active since" chip; only the switch gate and
 // the explanatory line are localized. The actual inhibition is held by
-// daemons/IdleInhibit.qml, because Windows has no IdleInhibitor protocol.
+// daemons/IdleInhibit.qml through the backend's native IdleInhibitor.
 StyledRect {
     id: root
 
     readonly property bool permitted: Quickshell.env("CAELESTIA_COMBINED_LIVE") === "1"
         && Quickshell.env("CAELESTIA_SHELL_SMOKE") !== "1"
-    readonly property real nonAnimHeight: layout.implicitHeight + (RuntimeState.inhibitIdle ? activeChip.implicitHeight + activeChip.anchors.topMargin : 0) + Tokens.padding.extraLargeIncreased
+    // held stays true for any outstanding request, including a display-only
+    // leftover after a failed system acquire or a failed clear. That keeps the
+    // display on but does not prevent system sleep, and the backend reports
+    // the failure in error. Only a held request with an empty error is the
+    // full DisplayRequired and SystemRequired acquire.
+    readonly property bool preventingSleep: IdleHold.held && IdleHold.error === ""
+    function inhibitStatus(permitted, smoke, held, error, requested): string {
+        if (!permitted)
+            return smoke ? Tr.trCtx("Suppressed during smoke", "idle inhibitor") : Tr.trCtx("Live controls are off", "idle inhibitor");
+        if (held && error === "")
+            return Tr.trCtx("Preventing sleep mode", "idle inhibitor");
+        if (held || requested)
+            return Tr.trCtx("Could not prevent sleep", "idle inhibitor");
+        return Tr.trCtx("Normal power management", "idle inhibitor");
+    }
+    readonly property real nonAnimHeight: layout.implicitHeight + (root.preventingSleep ? activeChip.implicitHeight + activeChip.anchors.topMargin : 0) + Tokens.padding.extraLargeIncreased
 
     implicitHeight: nonAnimHeight
 
@@ -39,14 +55,14 @@ StyledRect {
             implicitHeight: icon.implicitHeight + Tokens.padding.large
 
             radius: Tokens.rounding.full
-            color: RuntimeState.inhibitIdle ? Colours.palette.m3secondary : Colours.palette.m3secondaryContainer
+            color: root.preventingSleep ? Colours.palette.m3secondary : Colours.palette.m3secondaryContainer
 
             MaterialIcon {
                 id: icon
 
                 anchors.centerIn: parent
                 text: "coffee"
-                color: RuntimeState.inhibitIdle ? Colours.palette.m3onSecondary : Colours.palette.m3onSecondaryContainer
+                color: root.preventingSleep ? Colours.palette.m3onSecondary : Colours.palette.m3onSecondaryContainer
                 fontStyle: Tokens.font.icon.large
             }
         }
@@ -64,13 +80,7 @@ StyledRect {
 
             StyledText {
                 Layout.fillWidth: true
-                text: {
-                    if (!root.permitted)
-                        return Quickshell.env("CAELESTIA_SHELL_SMOKE") === "1" ? Tr.trCtx("Suppressed during smoke", "idle inhibitor") : Tr.trCtx("Live controls are off", "idle inhibitor");
-                    if (RuntimeState.inhibitIdle)
-                        return Tr.trCtx("Preventing sleep mode", "idle inhibitor");
-                    return Tr.trCtx("Normal power management", "idle inhibitor");
-                }
+                text: root.inhibitStatus(root.permitted, Quickshell.env("CAELESTIA_SHELL_SMOKE") === "1", IdleHold.held, IdleHold.error, RuntimeState.inhibitIdle)
                 color: Colours.palette.m3onSurfaceVariant
                 font: Tokens.font.body.small
                 elide: Text.ElideRight
@@ -91,11 +101,11 @@ StyledRect {
         anchors.bottom: parent.bottom
         anchors.left: parent.left
         anchors.topMargin: Tokens.spacing.large
-        anchors.bottomMargin: RuntimeState.inhibitIdle ? Tokens.padding.large : -implicitHeight
+        anchors.bottomMargin: root.preventingSleep ? Tokens.padding.large : -implicitHeight
         anchors.leftMargin: Tokens.padding.large
 
-        opacity: RuntimeState.inhibitIdle ? 1 : 0
-        scale: RuntimeState.inhibitIdle ? 1 : 0.5
+        opacity: root.preventingSleep ? 1 : 0
+        scale: root.preventingSleep ? 1 : 0.5
 
         Component.onCompleted: active = Qt.binding(() => opacity > 0)
 

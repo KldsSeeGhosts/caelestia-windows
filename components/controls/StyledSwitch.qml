@@ -157,6 +157,26 @@ Switch {
                 }
             }
         }
+
+        FocusRing { // Windows port (#210)
+            showing: root.visualFocus && root.indicatorFocusRing
+            offset: 2
+            radius: Tokens.rounding.full
+        }
+    }
+
+    // Windows port (#210): Enter toggles like Space, matching Nexus rows. A
+    // row that owns its focus ring (ToggleRow) turns the indicator's off.
+    property bool indicatorFocusRing: true
+
+    Keys.onPressed: event => {
+        if (event.key !== Qt.Key_Return && event.key !== Qt.Key_Enter)
+            return;
+        event.accepted = true;
+        if (!event.isAutoRepeat) {
+            root.toggle();
+            root.toggled();
+        }
     }
 
     MouseArea {

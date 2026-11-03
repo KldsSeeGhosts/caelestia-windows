@@ -43,6 +43,15 @@ class GlazierStub
                         { "output_directory", Path.Combine(Root, "output") }, { "events", new object[0] },
                         { "event_sequence", 0 }, { "last_record_args", new string[0] }
                     };
+                // Host options (--no-hotkeys, --theme-file <path>) may surround a command.
+                var rest = new List<string>();
+                for (int i = 0; i < args.Length; i++)
+                {
+                    if (args[i] == "--no-hotkeys") continue;
+                    if (args[i] == "--theme-file") { i++; continue; }
+                    rest.Add(args[i]);
+                }
+                args = rest.ToArray();
                 string command = args.Length > 0 ? args[0] : "";
                 string scenario = Environment.GetEnvironmentVariable("GLAZIER_TEST_SCENARIO");
                 if (scenario == "cold-start" && !State.ContainsKey("last_attempt"))

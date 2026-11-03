@@ -136,6 +136,39 @@ The script:
 6. Records command arguments, logs, source revisions (including M3Shapes), and
    tool versions under `logs/`. No packages are published.
 
+## Smoke
+
+The public smoke command is:
+
+```powershell
+$devRoot = Join-Path $env:LOCALAPPDATA 'caelestia-dev'
+powershell -NoProfile -File windows/scripts/Test-Smoke.ps1 `
+    -BuildRoot C:\b-smoke `
+    -QtPrefix "$devRoot\Qt\6.11.2\msvc2022_64"
+```
+
+It stages the production map in `windows/shell/sources.json` exactly as the
+installer does (`Stage-ShellPrototype.ps1 -Prototype shell-live`), starts the
+built `quickshell/qs.exe` against an isolated temporary profile, and waits for
+every drawer's first frame. The process uses `QT_QPA_PLATFORM=offscreen` and
+the Qt Quick software backend. Tray hook, blur, tiling, background/desktop
+embedding, notification mirroring, hotkeys, Wallpaper Engine and every service
+control are off; an empty keybind list and `CAELESTIA_SHELL_SMOKE_CI` let the
+shell exit itself. The script also checks the build's backend and M3Shapes
+revisions against `windows/sources.lock.json`. A QML error, missing import or
+plugin DLL, missing pass marker, or 90-second timeout fails the run.
+
+The exit code is 0 on pass and 1 on failure, with a one-line summary. The
+temporary stage, profile, stdout/stderr and Quickshell text log are removed on
+pass, and kept with matched diagnostics printed on failure. The smoke also
+fails if its captured output contains a MAC-like address or any
+`quickshell.windows.bluetooth` activity, and it redacts those patterns from
+failure output. `-TimeoutSeconds`, `-RunRoot` and `-Keep` help with debugging.
+`QS_RUNTIME_DIR` only selects where Quickshell writes its own run/log files; it
+is not a containment boundary and accepts relative, traversal and UNC paths.
+The command does not install anything, run the live shell, or read the live
+profile.
+
 ## Native bar/session prototype
 
 After rebuilding for the Windows focus helper:
@@ -164,6 +197,16 @@ powershell -NoProfile -File windows/scripts/Start-ShellPrototype.ps1 `
     -QtPrefix "$devRoot\Qt\6.11.2\msvc2022_64" -Smoke -ScaleFactor native -ScreenIndex 0
 ```
 
+Add `-Offscreen` to run the smoke on the Qt offscreen QPA with the software
+backend and the basic render loop. It opens no native window and captures
+complete without DWM or vsync. The smoke uses the session notification bus, so
+an installed shell running beside it owns that bus; the notification smoke then
+reports `contended` and marks its local-owner delivery scenarios SKIPPED while
+the backend unit tests cover the local and forwarding paths. The service test
+wrappers accept `-Offscreen` and `-RunRoot`; use a short run root (for example
+`C:\r-233`) because the SchemeRuntime virtual environment lives under it and
+native DLL loading still has Windows path limits.
+
 Add `-MonitorCycle` to a native smoke run with at least two monitors to
 open/capture/close, move the same ContentWindow to the next monitor, repeat,
 and return. Results include `actualScreens` metadata and a `captures` array.
@@ -176,10 +219,9 @@ pointer/focus at both DPIs; smoke alone does not establish those results.
 Smoke programmatically opens/closes the original content, checks geometry,
 fonts, DPI and unavailable session actions, saves a PNG and exits. Input and
 native focus activation are disabled during smoke. It has a 60-second outer
-limit and a 15-second QML watchdog and rejects runtime warnings/errors. Smoke
-disables vsync and places the window beyond the target monitor's bottom-right
-corner, so it does not cover the desktop yet still presents the frames an
-asynchronous screenshot needs.
+limit and a 15-second QML watchdog and rejects runtime warnings/errors. Use
+`-Offscreen` so the run opens no native window and does not depend on the
+desktop; without it smoke shows a native window on the target monitor.
 Numeric scale overrides are synthetic child-process DPI tests; native uses
 the selected display. Neither replaces real pointer/focus or same-process
 mixed-DPI monitor tests. See the
@@ -236,10 +278,10 @@ temporarily, not display/taskbar settings.
 ## Validation harness matrix
 
 The service and combined hosts are the end-to-end UI smoke matrix. Each runs its
-adapter fixture, every connected screen in the modes it supports, and the M1
-bar/session regression. Run them from a disposable working directory. Validation
-output goes under `-BuildRoot`; stages, profiles and logs stay in the checkout's
-`windows/.local/build` unless a launcher `-RunRoot` overrides it.
+adapter fixture, the screens it supports (one virtual screen offscreen), and the
+M1 bar/session regression. Run them from a disposable working directory.
+Validation output goes under `-BuildRoot`; stages, profiles and logs stay in the
+checkout's `windows/.local/build` unless a launcher `-RunRoot` overrides it.
 
 | Harness | Coverage |
 | --- | --- |
@@ -264,7 +306,9 @@ invocation instead of once per harness:
 $repo = (Resolve-Path .).Path
 $qtPrefix = "$env:LOCALAPPDATA\caelestia-dev\Qt\6.11.2\msvc2022_64"
 $buildRoot = 'C:\b-cull'
-$runRoot = Join-Path $env:TEMP ('caelestia-matrix-' + [guid]::NewGuid().ToString('N'))
+# Keep the run root short and outside %TEMP%. Native DLL loading and the
+# SchemeRuntime virtual environment still hit Windows path limits (#318).
+$runRoot = 'C:\b-cull\run'
 New-Item -ItemType Directory -Force -Path $runRoot | Out-Null
 $m1Cache = Join-Path $runRoot 'm1-result.json'
 Push-Location $runRoot
@@ -278,7 +322,7 @@ try {
     )) {
         Write-Host "== $harness =="
         & "$repo\windows\scripts\$harness" -QtPrefix $qtPrefix -BuildRoot $buildRoot `
-            -M1CachePath $m1Cache
+            -RunRoot $runRoot -Offscreen -M1CachePath $m1Cache
     }
 } finally {
     Pop-Location
@@ -291,18 +335,15 @@ rest reuse the cached result (`m1Cached=true`). `Test-BatteryPrototype.ps1`
 forwards its cache to the nested audio harness, so that suite also runs M1 once.
 If one harness throws, the loop stops; run the remaining names individually.
 
-These hosts need the native Windows panel backend. `QT_QPA_PLATFORM=offscreen`
-fails with `No PanelWindow backend loaded`, so smoke places the window beyond
-the target screen's bottom-right corner instead: all but one pixel is outside
-the monitor, and that pixel is at the screen's bottom-right edge. Smoke also sets
-`QSG_NO_VSYNC=1`, without which an occluded window stops producing the frames
-`grabToImage` waits for. The per-service adapter fixtures already force the
-offscreen Qt platform, so `Test-<Service>Service.ps1` can run without any window.
+The matrix command runs every host with `-Offscreen`, so no window appears and
+`grabToImage` completes without DWM or vsync. Offscreen exposes one virtual
+screen, which is why the loop runs one screen per host. The per-service adapter
+fixtures force the offscreen Qt platform themselves, so
+`Test-<Service>Service.ps1` runs without any window.
 
-`Test-NotificationsPrototype.ps1` local mode needs exclusive notification
-ownership. If another shell (including the installed live shell) owns Windows
-notifications, the local runs fail with "another notification owner may be
-active"; stop that shell first. Its disabled-mode runs still pass alongside it.
+`Test-NotificationsPrototype.ps1` marks its local-owner delivery scenarios
+SKIPPED when another shell owns Windows notifications, as described in the
+`-Offscreen` note above. The run still passes its disabled-mode scenarios.
 
 The install, rollback, uninstall, supervisor, backend lifetime/hotplug/hook,
 tiling/fullscreen and Glazier suites remain separate harnesses; this matrix

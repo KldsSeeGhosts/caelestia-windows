@@ -8,11 +8,37 @@ project "Caelestia Windows".
 ## Principles
 
 - Ship a complete, working product first; harden it later.
-- Write the smallest change that works. Reuse or delete code before adding
-  more, and keep hot paths lean.
-- Only data loss, crashes or hangs, security or privacy leaks, and anything
-  broken in normal use block a merge. Everything else becomes a follow-up
-  issue.
+- Build for every user's machine. This repository is the source of the public
+  release that everyone, the maintainer included, installs. Never key
+  behaviour on a particular window title, app, monitor model, device id,
+  username or path. Resolve those at runtime and fix the whole class of
+  problem. Integrations with a named app are opt-in features with a working
+  fallback.
+- Fix root causes with the proper mechanism. Port Hyprland and Caelestia
+  behaviour by reproducing what it does for the user, built on documented
+  Windows APIs, events and ownership rules. Fixed delays, polling in place of
+  an event, blind retries and special cases that hide a race are not fixes.
+  When nothing better exists yet, a workaround needs a comment explaining why,
+  a linked issue and a removal plan, and must be gone before a release.
+  The only exceptions are platform limitations the maintainer has accepted,
+  where Windows offers no documented event and the alternative costs users
+  more than it saves. They are listed here, each with a code comment linking
+  its closed issue:
+  - Keyboard layout changes inside the foreground window are observed by a
+    cheap 500 ms read-only poll
+    ([#262](https://github.com/KldsSeeGhosts/caelestia-windows/issues/262)).
+    The only event route is a signed global hook DLL injected into every app.
+  - Panels opened from input caught by the low-level keyboard hook, such as a
+    lone Super tap, may force foreground once with `AttachThreadInput` after a
+    refused `SetForegroundWindow`. Windows gives hook-delivered input no
+    foreground right, and lone-modifier taps cannot be registered hotkeys
+    ([#244](https://github.com/KldsSeeGhosts/caelestia-windows/issues/244)).
+    Hotkey, click and IPC activation never escalate.
+- Write the smallest correct change. Reuse or delete code before adding more,
+  and keep hot paths lean.
+- Only data loss, crashes or hangs, security or privacy leaks, anything
+  broken in normal use, and machine-specific workarounds block a merge.
+  Everything else becomes a follow-up issue.
 - Real use beats simulation. Prefer a short live check over more offscreen
   tests.
 - Stay faithful to upstream Caelestia: keep its original components and

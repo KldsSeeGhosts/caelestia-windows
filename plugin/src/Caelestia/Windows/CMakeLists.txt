@@ -6,6 +6,8 @@ qml_module(caelestia-windows
         windowsfontfallback.hpp
         windowsfontfallback.cpp
         windowsfiles.hpp
+        windowsprocess.hpp
+        knownfolders.hpp
         Clipboard/clipboardcache.hpp
         Clipboard/clipboardlogic.hpp
         Clipboard/clipboardstate.hpp
@@ -24,6 +26,7 @@ qml_module(caelestia-windows
         Qt::Quick
         user32
         ole32
+        shell32
         windowsapp
 )
 
@@ -73,9 +76,9 @@ if(CAELESTIA_WINDOWS_TESTS AND Qt6Test_FOUND)
     )
     target_link_libraries(clipboard-qml-tests PRIVATE Qt::Core Qt::Qml Qt::Test)
 
-    # The panel-off action's delay and message shape are checked with an
-    # injected sender and a recording window procedure; nothing changes real
-    # display power. windows/scripts/Test-DisplayPower.ps1 runs it.
+    # The panel-off action's immediate single send and message shape are checked
+    # with an injected sender and a recording window procedure; nothing changes
+    # real display power. windows/scripts/Test-DisplayPower.ps1 runs it.
     add_executable(displaypower-tests
         DisplayPower/test/displaypower_test.cpp
         DisplayPower/displaypower.cpp
@@ -99,6 +102,56 @@ if(CAELESTIA_WINDOWS_TESTS AND Qt6Test_FOUND)
         "${CMAKE_CURRENT_SOURCE_DIR}/Focus"
     )
     target_link_libraries(focus-follows-mouse-tests PRIVATE Qt::Core Qt::Test)
+
+    # Known Folder resolution is checked against SHGetKnownFolderPath itself,
+    # and an explicit configured path must beat the system default.
+    add_executable(knownfolders-tests
+        test/knownfolders_test.cpp
+        knownfolders.hpp
+    )
+    target_include_directories(knownfolders-tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}"
+    )
+    target_link_libraries(knownfolders-tests PRIVATE Qt::Core Qt::Qml Qt::Test shell32 ole32)
+
+    # The focus guard's event policy runs the production source with a fake
+    # Win32 foreground model. No real window is activated, so this is safe
+    # offscreen and never changes the desktop.
+    add_executable(windowsfocusguard-tests
+        test/windowsfocusguard_test.cpp
+        windowsfocusguard.hpp
+    )
+    target_compile_definitions(windowsfocusguard-tests PRIVATE
+        NOMINMAX
+        WIN32_LEAN_AND_MEAN
+    )
+    target_include_directories(windowsfocusguard-tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}"
+    )
+    target_link_libraries(windowsfocusguard-tests PRIVATE
+        Qt::Core
+        Qt::Gui
+        Qt::Quick
+        Qt::Qml
+        Qt::Test
+        user32
+    )
+
+    # The loopback mix-format parser and downmix are pure, so their decisions
+    # run offscreen. Event-driven capture itself needs a live output device.
+    add_executable(wasapi-format-tests
+        Audio/test/wasapiformat_test.cpp
+        Audio/wasapiformat.cpp
+        Audio/wasapiformat.hpp
+    )
+    target_include_directories(wasapi-format-tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/Audio"
+    )
+    target_compile_definitions(wasapi-format-tests PRIVATE
+        NOMINMAX
+        WIN32_LEAN_AND_MEAN
+    )
+    target_link_libraries(wasapi-format-tests PRIVATE Qt::Core Qt::Test)
 endif()
 
 # WASAPI loopback analysis: CavaProvider/BeatTracker/ServiceRef for the

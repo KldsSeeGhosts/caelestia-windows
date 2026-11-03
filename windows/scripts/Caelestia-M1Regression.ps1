@@ -2,6 +2,8 @@
 param(
     [Parameter(Mandatory)][string]$QtPrefix,
     [string]$BuildRoot,
+    [string]$RunRoot,
+    [switch]$Offscreen,
     # One cache path per suite invocation. A top-level harness leaves it empty
     # and gets a fresh path; Battery passes its path to the nested Audio harness.
     [string]$CachePath
@@ -34,7 +36,7 @@ if (Test-Path -LiteralPath $CachePath -PathType Leaf) {
 # -NoThrow lets the result (including a failed or timed-out run) be cached so
 # the next harness in the same suite does not repeat the same broken smoke.
 $result = & "$PSScriptRoot\Start-ShellPrototype.ps1" -QtPrefix $QtPrefix -BuildRoot $BuildRoot `
-    -Smoke -ScaleFactor native -ScreenIndex 0 -NoThrow | ConvertFrom-Json
+    -RunRoot $RunRoot -Offscreen:$Offscreen -Smoke -ScaleFactor native -ScreenIndex 0 -NoThrow | ConvertFrom-Json
 $result | Add-Member -NotePropertyName m1Cached -NotePropertyValue $false -Force
 $result | Add-Member -NotePropertyName m1CachePath -NotePropertyValue $CachePath -Force
 $result | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $CachePath -Encoding UTF8

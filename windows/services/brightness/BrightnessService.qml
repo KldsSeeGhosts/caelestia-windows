@@ -26,10 +26,11 @@ import QtQuick
 //     is ignored so a result is never processed twice.
 //
 // Writes are never attempted without that contract, and no query result is
-// authorized unless the backend can match it to its request. The shared build
-// is at a pin with the strict members but without the id API: there a route
-// query only feeds read-only display state and an Interactive request stays
-// read-only, rather than reaching the legacy setBrightness() path, which
+// authorized unless the backend can match it to its request. The pinned backend
+// provides both the strict members and the id API. Against an older build
+// without the id API a route query only feeds read-only display state and an
+// Interactive request stays read-only, rather than reaching the legacy
+// setBrightness() path, which
 // silently retries \\.\LCD and falls back to software gamma and then reports
 // ok = true. With strict routes the backend never falls back and emits exactly
 // one brightnessWriteResult() per accepted write, so that signal is the only
@@ -40,7 +41,7 @@ import QtQuick
 // result that never comes and then re-reads the display.
 //
 // Route queries remain safe in both builds. query()/probe() share startProbe();
-// at the old pin that path drops software gamma dimming this process applied
+// on an older build that path drops software gamma dimming this process applied
 // earlier, so the adapter still never probes automatically and only re-queries
 // on an explicit user action after a gamma touch.
 QtObject {
@@ -508,7 +509,7 @@ QtObject {
     }
 
     // One automatic route discovery per process, and only while this process
-    // has applied no software dimming. At the old pin the query path drops
+    // has applied no software dimming. On an older build the query path drops
     // existing gamma dimming, so a later automatic query could silently undo a
     // write.
     function beginObservation(): bool {
@@ -968,6 +969,11 @@ QtObject {
             return;
         if (state.querying)
             return; // The query path emits routeChanged immediately before queried.
+        // A record that settled as failed has no route to change: its recovery
+        // query expired, so a late route must not restore the route that the
+        // next explicit refresh would use as its same-route feedback baseline.
+        if (state.state === "failed")
+            return;
         // A strict write never changes routes. Never clear writePending here: the
         // terminal brightnessWriteResult() is the only completion. An
         // uncorrelated route change during the write drops the queued target

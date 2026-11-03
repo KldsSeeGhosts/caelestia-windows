@@ -82,6 +82,21 @@ The installer copies font license and notice files from both `assets/` and
 Font notice provenance is documented in
 [`windows/licenses/README.md`](windows/licenses/README.md).
 
+## Screenshot and recording tool
+
+Glazier is the shell's bundled screenshot and recording tool. It is built from
+the pinned source in `windows/deps/glazier` and installed beside `qs.exe` in the
+versioned payload.
+
+| Component and source | Copyright holders | License | License text in repository | Installed notice |
+| --- | --- | --- | --- | --- |
+| [Glazier](https://github.com/KldsSeeGhosts/glazier) | Ermin Zeherovic (KldsSeeGhosts) and contributors; the annotation editor is ported from the Noctalia Screen Toolkit by ycf-anon and Tabler Icons by Tabler | MIT | `windows/deps/glazier/LICENSE` and `windows/deps/glazier/THIRD_PARTY_NOTICES.md` | `licenses/Glazier-LICENSE`, `licenses/Glazier-THIRD_PARTY_NOTICES.md` |
+
+The pinned Glazier revision includes its MIT licence and its upstream
+third-party notices. Glazier is still a private repository; publishing it is a
+public-release gate tracked in #97, and this bundling supersedes that issue's
+download-a-release install plan.
+
 ## Port authorship
 
 The Windows service adapters, shell entries, build and packaging tools,

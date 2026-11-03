@@ -104,7 +104,7 @@ Fitting failures and enable refusals use the shared original toast surface.
 
 `-Live` enables the existing audio, hardware brightness, media, Wi-Fi, Bluetooth,
 power-profile, app-launch, tray activation and session action gates. It also
-enables the tray hook, the keep-awake helper, the ffmpeg recorder and the
+enables the tray hook, the native keep-awake request, the ffmpeg recorder and the
 launcher's Lock action. Lock resolves through the original session adapter to
 the pinned backend's `Session.lock()`, which calls Windows `LockWorkStation`;
 there is no custom lock screen or credential UI. Notification mirroring, Windows
@@ -115,9 +115,10 @@ the control window. Commands remain confined to the session adapter allowlist.
 
 `-Combined -Smoke` and `-Combined -Live -Smoke` both suppress native writes,
 launches, session dispatch, tray interception and notification mirroring. The
-utilities cards load, but the keep-awake helper and ffmpeg recorder hold no
-process, which the smoke harness asserts. Smoke loads all dashboard tabs,
-utilities, history, the launcher, status popouts, notifications and a toast,
+utilities cards load, but the keep-awake request stays cleared and the ffmpeg
+recorder holds no process, which the smoke harness asserts. Smoke loads all
+dashboard tabs, utilities, history, the launcher, status popouts, notifications
+and a toast,
 and exits. The notification popup/history check injects an in-process fixture
 through the notification service. It never sends through the session bus,
 whose existing owner may be the user's running shell. This checks UI loading
@@ -294,11 +295,10 @@ watched and reload the binds without restarting the shell.
 - Original utilities wrapper with the keep-awake, screen-recorder and
   quick-toggle cards. Quick toggles are limited to Wi-Fi, Bluetooth and
   shell-local do-not-disturb; hardware controls follow their facade's
-  availability and write gate. Keep-awake holds
-  `SetThreadExecutionState(ES_CONTINUOUS | ES_DISPLAY_REQUIRED |
-  ES_SYSTEM_REQUIRED)` in a PowerShell child process that ends when the toggle
-  turns off or the shell exits. The recorder drives `ffmpeg` with `gdigrab`
-  when `ffmpeg` is on PATH and writes
+  availability and write gate. Keep-awake holds a native `PowerCreateRequest`
+  for display and system availability; toggling it off clears the request, and
+  it cannot outlive the shell process. The recorder drives `ffmpeg` with
+  `gdigrab` when `ffmpeg` is on PATH and writes
   `%USERPROFILE%\Videos\Caelestia\recording_<timestamp>.mp4`; stopping flushes
   the MP4 through ffmpeg's stdin. Without ffmpeg the card reports Unavailable
   with that reason. Both cards are visible in every combined run but act only
@@ -319,14 +319,15 @@ watched and reload the binds without restarting the shell.
 ## Dynamic colours and the profile-local scheme runtime
 
 `Start-ShellPrototype.ps1 -Combined` calls `Install-SchemeRuntime.ps1`, which
-provisions `scheme/venv` under the combined profile (never the repository or the
-user's ordinary Python packages) with `pillow==13.0.0`,
-`materialyoucolor==3.0.4` and the upstream `caelestia` CLI pinned at
-`5e804b10`. The installer also places a Windows `fcntl` shim in the venv and
-copies `win_scheme.py` into the profile. Use `-SkipSchemeRuntime` to skip
-provisioning and the generator entirely. A failed provision is cached in
-`scheme/runtime.json`; delete that file or run `Install-SchemeRuntime.ps1
--ProfileRoot <profile> -Force` to retry.
+provisions an immutable generation under `scheme/runtimes/` in the combined
+profile (never the repository or the user's ordinary Python packages) with
+`pillow==13.0.0`, `materialyoucolor==3.0.4` and the upstream `caelestia` CLI
+pinned at `5e804b10`. It publishes `scheme/runtime.json` atomically only after
+the generation verifies, and a profile-scoped lock serialises provisioning. Use
+`-SkipSchemeRuntime` to skip provisioning and the generator entirely. A failed
+provision is recorded in `scheme/provision-state.json` and
+`scheme/provision.log`; rerun `Install-SchemeRuntime.ps1 -ProfileRoot <profile>
+-Force` to retry.
 
 `win_scheme.py` imports the CLI's scheme/material modules but deliberately skips
 its theme writer (Linux-only `fcntl`, Hyprland sockets, dconf, `/dev/pts` and
@@ -335,6 +336,13 @@ wallpaper state is replaced with ordinary `path.txt`/`thumbnail.jpg` files
 because Windows symlinks need extra privileges. All state, cache and config
 writes are forced below `combined-prototype-profile`; the bridge refuses to run
 without `CAELESTIA_PROFILE_ROOT`.
+
+One `win_scheme.py serve` helper answers every palette request over stdin/stdout
+for the life of the shell. Python startup, the Pillow/CLI imports and the
+upstream per-image cache are therefore paid once instead of on every wallpaper
+change. Quantisation still reads the same 128px `thumbnail.jpg` upstream
+caelestia scores, never the full preview. The next request restarts a helper
+that exited, and a request that hangs is killed after the 30 s timeout.
 
 If provisioning or generation fails, `schemeRuntime` is false in the run result
 and the shell keeps its fixed Caelestia palette. Switching variant or mode while
@@ -361,8 +369,9 @@ The production entry uses the same services and provisions its scheme venv under
 - Clicking the profile picture opens a file picker. The chosen image is copied to
   `profile-picture` in the shell's state folder and shown in the dashboard ahead of
   the Windows account picture. The Windows account picture is never changed.
-- Idle inhibition is not the upstream Wayland `IdleInhibitor`; Windows holds the
-  execution state in a child process instead (see the utilities card above). The
+- Idle inhibition uses the backend's native `IdleInhibitor` with a
+  `PowerCreateRequest` handle owned by the shell, not upstream's Wayland
+  protocol (see the utilities card above). The
   recorder supports fullscreen `gdigrab` only: region capture, audio capture and
   pause have no implemented ffmpeg route, so the card does not offer them. Its
   recordings list and delete modal are omitted with the Linux `caelestia record`

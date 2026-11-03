@@ -6,3 +6,4 @@ singleton Gpu 1.0 Gpu.qml
 singleton Storage 1.0 Storage.qml
 ServiceRef 1.0 ServiceRef.qml
 singleton NetworkUsage 1.0 NetworkUsage.qml
+singleton IdleHold 1.0 IdleHold.qml

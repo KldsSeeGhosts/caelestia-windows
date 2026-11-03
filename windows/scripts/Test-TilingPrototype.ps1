@@ -2,6 +2,8 @@
 param(
     [Parameter(Mandatory)][string]$QtPrefix,
     [string]$BuildRoot,
+    [string]$RunRoot,
+    [switch]$Offscreen,
     # Optional shared M1 result cache; one path per suite invocation.
     [string]$M1CachePath
 )
@@ -10,6 +12,8 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
 if (-not $BuildRoot) { $BuildRoot = Join-Path $repoRoot 'windows\.local\build' }
 $BuildRoot = [IO.Path]::GetFullPath($BuildRoot)
+if (-not $RunRoot) { $RunRoot = Join-Path $BuildRoot 'run' }
+$RunRoot = [IO.Path]::GetFullPath($RunRoot)
 $output = Join-Path $BuildRoot ('tiling-validation-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
 New-Item -ItemType Directory -Force -Path $output | Out-Null
 $records = New-Object Collections.Generic.List[object]
@@ -68,11 +72,11 @@ try {
     # windows) and Interactive may enable the tiler; those modes are owned by
     # the orchestrator's live run on a prepared desktop and are deliberately
     # not reachable here.
-    $screenCount = $beforeDesktop.monitors.Count
+    $screenCount = if ($Offscreen) { 1 } else { $beforeDesktop.monitors.Count }
     Assert ($screenCount -gt 0) 'No measured monitor available.'
     for ($screen = 0; $screen -lt $screenCount; $screen++) {
         $result = & "$PSScriptRoot\Start-ShellPrototype.ps1" -QtPrefix $QtPrefix -BuildRoot $BuildRoot `
-            -Tiling -TilingMode Disabled -Smoke -ScaleFactor native -ScreenIndex $screen | ConvertFrom-Json
+            -RunRoot $RunRoot -Offscreen:$Offscreen -Tiling -TilingMode Disabled -Smoke -ScaleFactor native -ScreenIndex $screen | ConvertFrom-Json
         Assert $result.passed "Tiling prototype failed on screen $screen in Disabled mode."
         $records.Add([ordered]@{ kind = 'tiling-disabled'; result = $result })
         Assert ($result.tilingSnapshots.Count -eq 2) 'Tiling smoke did not record initial and final state.'
@@ -81,7 +85,7 @@ try {
         Assert-TilingLog $result "Tiling Disabled screen $screen"
     }
     $regression = & "$PSScriptRoot\Caelestia-M1Regression.ps1" -QtPrefix $QtPrefix -BuildRoot $BuildRoot `
-        -CachePath $M1CachePath
+        -RunRoot $RunRoot -Offscreen:$Offscreen -CachePath $M1CachePath
     Assert $regression.passed 'Original M1 bar/session smoke regression failed.'
     $records.Add([ordered]@{ kind = 'm1-regression'; result = $regression })
     $regressionLog = (Get-Content -LiteralPath $regression.stdout -Raw) + "`n" + (Get-Content -LiteralPath $regression.stderr -Raw)

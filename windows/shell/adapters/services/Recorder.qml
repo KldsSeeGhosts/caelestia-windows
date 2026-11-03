@@ -53,7 +53,7 @@ Singleton {
         if (!probed)
             return "Checking Glazier...";
         if (!available)
-            return "Unavailable: install Glazier with control protocol v1.";
+            return "Unavailable: Glazier is missing from this installation.";
         if (pendingStart)
             return "Starting Glazier...";
         return ({ idle: "Ready", selecting: "Select a region in Glazier", ready: "Ready in Glazier",
@@ -68,6 +68,13 @@ Singleton {
         connectionError = message;
     }
 
+    // Ownership is by normalised path string, not OS file identity (#109 item 4).
+    // A file swapped at the same path, a retargeted parent or junction, or a
+    // case-sensitive directory alias can therefore be taken for a recording
+    // Glazier reported. This stays deferred: it is unproven hardening for a
+    // single-user desktop, not a demonstrated bypass, and QML has no volume or
+    // file-ID API to compare, so a real fix needs a backend call. Do not paper
+    // over it with more string normalisation.
     function normalize(path): string {
         return path.replace(/\\/g, "/").toLowerCase();
     }
@@ -167,8 +174,10 @@ Singleton {
         if (running)
             lastError = "";
         // Baseline once on shell startup, not on every host change. After an
-        // offline observation, a new host's errors are fresh.
-        const replay = baselinePending;
+        // offline observation, a new host's errors are fresh. So are a host this
+        // shell cold-started itself: its journal began after the shell did, and
+        // only an adopted pre-existing host can hold an error from before.
+        const replay = baselinePending && !Glazier.launchedHost;
         baselinePending = false;
         if (hostId !== data.host_id) {
             hostId = data.host_id;
@@ -216,7 +225,10 @@ Singleton {
             region = region || arg.indexOf("r") !== -1;
             sound = sound || arg.indexOf("s") !== -1;
         }
-        const args = [executable, "--record", "--system-sound", sound ? "on" : "off", "--mic", "off"];
+        // Shell-owned host options on every command that can cold-start the host.
+        const args = [executable].concat(Glazier.hostOptions(), ["--record", "--system-sound", sound ? "on" : "off", "--mic", "off"]);
+        Glazier.ownedHost = true;
+        Glazier.launchedHost = true;
         if (!region)
             args.push("--fullscreen");
         lastError = "";
@@ -250,7 +262,9 @@ Singleton {
 
     // Resolve with native path checks instead of a PowerShell child: a missing
     // Glazier is re-probed every 30 s, and that periodic probe must not spawn a
-    // process (or a 30-80 MB interpreter) each time.
+    // process (or a 30-80 MB interpreter) each time. The adapter owns the
+    // bundled-first resolution; CAELESTIA_GLAZIER_EXE remains an explicit test
+    // and development override.
     function probe(): void {
         if (!permitted)
             return;
@@ -259,9 +273,8 @@ Singleton {
         if (override) {
             found = Native.FsUtils.classify(override) === "file" ? override : "";
         } else {
-            const installed = (Quickshell.env("LOCALAPPDATA") || "") + "/Programs/Glazier/glazier.exe";
-            found = Native.FsUtils.classify(installed) === "file" ? installed
-                : Native.FsUtils.findExecutable("glazier.exe");
+            Glazier.refresh();
+            found = Glazier.executable;
         }
         executable = found;
         available = found !== "";
@@ -270,7 +283,7 @@ Singleton {
             lastError = "";
             poll();
         } else {
-            lastError = "Glazier was not found. Install Glazier with control protocol v1.";
+            lastError = "Glazier is missing from this installation.";
         }
     }
 
@@ -331,7 +344,7 @@ Singleton {
                 // A healthy idle reply is not a successful Start. Keep this
                 // failure until a new attempt or a started event, like errors
                 // reported by Glazier itself.
-                root.lastError = "Glazier did not start recording. Check Glazier and its control protocol version.";
+                root.lastError = "Glazier did not start recording.";
             }
         }
     }

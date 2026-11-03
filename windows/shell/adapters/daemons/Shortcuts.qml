@@ -33,28 +33,42 @@ Scope {
 
     property bool launcherInterrupted
     readonly property alias screenshotShortcut: screenshotShortcut
+    readonly property alias recordShortcut: recordShortcut
 
     CustomShortcut {
         id: screenshotShortcut
         name: "screenshot"
-        description: "Open Glazier screenshot tool"
+        description: "Screenshot with Glazier"
         onPressed: Glazier.capture()
     }
     // Windows: the upstream picker variants all open Glazier's frozen editor.
     CustomShortcut {
         name: "screenshotFreeze"
-        description: "Open Glazier screenshot tool"
+        description: "Screenshot with Glazier"
         onPressed: Glazier.capture()
     }
     CustomShortcut {
         name: "screenshotClip"
-        description: "Open Glazier screenshot tool"
+        description: "Screenshot with Glazier"
         onPressed: Glazier.capture()
     }
     CustomShortcut {
         name: "screenshotFreezeClip"
-        description: "Open Glazier screenshot tool"
+        description: "Screenshot with Glazier"
         onPressed: Glazier.capture()
+    }
+    // Glazier's own recording hotkey toggles; the shell owns the chord and
+    // forwards the same explicit capture/record commands.
+    CustomShortcut {
+        id: recordShortcut
+        name: "record"
+        description: "Record the screen with Glazier"
+        onPressed: {
+            if (Recorder.running || Recorder.state === "selecting" || Recorder.state === "ready")
+                Recorder.stop();
+            else
+                Glazier.record();
+        }
     }
 
     function logState(name: string): void {

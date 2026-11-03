@@ -25,7 +25,15 @@ void BeatProcessor::process() {
         return;
     }
 
-    const auto count = AudioCollector::instance().readChunk(m_in);
+    // Loopback capture stops raising events while the endpoint is idle; give
+    // the detector silence instead of replaying the last window as a beat.
+    quint32 count;
+    if (AudioCollector::instance().captureIdle()) {
+        std::fill(m_in, m_in + ac::k_chunkSize, 0.0f);
+        count = ac::k_chunkSize;
+    } else {
+        count = AudioCollector::instance().readChunk(m_in);
+    }
 
     // The detector needs doubles; the collector window is 512 mono samples.
     thread_local std::vector<double> samples;

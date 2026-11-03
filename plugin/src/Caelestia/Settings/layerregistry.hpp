@@ -1,9 +1,13 @@
 #pragma once
 
+#include <qdir.h>
+#include <qfile.h>
+#include <qfileinfo.h>
 #include <qhash.h>
 #include <qobject.h>
 #include <qstringview.h>
 
+#include "legacyreservation.hpp"
 #include "node.hpp"
 
 namespace caelestia::shell::settings {
@@ -14,7 +18,17 @@ concept LayerType = std::derived_from<T, Node> && std::constructible_from<T, con
 
 template <LayerType T> class LayerRegistry {
 public:
-    explicit LayerRegistry(const QString& prefix, const QString& suffix, QObject* parent);
+    // area names the storage area ("config", "state/persistent", "state/runtime")
+    // so that layers sharing a file name keep separate legacy-copy bookkeeping.
+    // screenNamesPath empty resolves the profile's screen-names.json. Fixtures
+    // pass an explicit path so they never read or write the real profile.
+    explicit LayerRegistry(
+        const QString& prefix,
+        const QString& area,
+        const QString& suffix,
+        QObject* parent,
+        QString screenNamesPath = {}
+    );
 
     [[nodiscard]] QString pathFor(const QString& name) const;
     [[nodiscard]] QString nameFor(T* layer) const;
@@ -23,8 +37,11 @@ public:
 private:
     const QString m_prefix;
     const QString m_suffix;
+    const QString m_layerKey;
     QObject* const m_parent;
+    const QString m_screenNamesPath;
     QHash<QString, T*> m_layers;
+    inline static int s_legacyCopyFailures = 0;
 };
 
 namespace detail {
@@ -44,10 +61,18 @@ inline QString stripLeadingSlashes(QStringView str) {
 } // namespace detail
 
 template <LayerType T>
-LayerRegistry<T>::LayerRegistry(const QString& prefix, const QString& suffix, QObject* parent)
+LayerRegistry<T>::LayerRegistry(
+    const QString& prefix,
+    const QString& area,
+    const QString& suffix,
+    QObject* parent,
+    QString screenNamesPath
+)
     : m_prefix(detail::stripTrailingSlashes(prefix))
     , m_suffix(detail::stripLeadingSlashes(suffix))
-    , m_parent(parent) {}
+    , m_layerKey(legacyLayerKey(area, m_suffix))
+    , m_parent(parent)
+    , m_screenNamesPath(screenNamesPath.isEmpty() ? defaultScreenNamesPath() : screenNamesPath) {}
 
 template <LayerType T> QString LayerRegistry<T>::pathFor(const QString& name) const {
     return m_prefix + u'/' + name + u'/' + m_suffix;
@@ -67,7 +92,38 @@ template <LayerType T> T* LayerRegistry<T>::get(const QString& name, T* fallback
     if (created)
         *created = true;
 
-    auto* const layer = new T(pathFor(name), fallback, m_parent);
+    const auto path = pathFor(name);
+    QDir().mkpath(QFileInfo(path).absolutePath());
+#ifdef Q_OS_WIN
+    if (!QFileInfo::exists(path)) {
+        // Explicit metadata only: a genuine label ending in " (2)" carries no
+        // legacyLabel, so it can never pull another monitor's settings.
+        const auto legacy = legacyLayerCopyFor(m_screenNamesPath, name, m_layerKey);
+        if (!legacy.legacyLabel.isEmpty() && !legacy.copied) {
+            const auto legacyPath = pathFor(legacy.legacyLabel);
+            if (QFileInfo(legacyPath).isFile()) {
+                // Copy and completion record are one step. Counts only: names and
+                // paths of monitors stay out of the log.
+                switch (copyLegacyLayerOnce(m_screenNamesPath, name, m_layerKey, legacyPath, path)) {
+                case LegacyCopyResult::Recorded:
+                    break;
+                case LegacyCopyResult::CopyFailed:
+                    ++s_legacyCopyFailures;
+                    qCWarning(lcSettings)
+                        << "Legacy per-monitor layer copy failed; total failures:" << s_legacyCopyFailures;
+                    break;
+                case LegacyCopyResult::Unrecorded:
+                    ++s_legacyCopyFailures;
+                    qCWarning(lcSettings) << "Legacy per-monitor layer copy could not be recorded; total failures:"
+                                          << s_legacyCopyFailures;
+                    break;
+                }
+            }
+        }
+    }
+#endif
+
+    auto* const layer = new T(path, fallback, m_parent);
     m_layers.insert(name, layer);
     return layer;
 }

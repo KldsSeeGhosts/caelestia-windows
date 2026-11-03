@@ -2,6 +2,8 @@
 param(
     [Parameter(Mandatory)][string]$QtPrefix,
     [string]$BuildRoot,
+    [string]$RunRoot,
+    [switch]$Offscreen,
     # Optional shared M1 result cache; one path per suite invocation.
     [string]$M1CachePath
 )
@@ -10,6 +12,8 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
 if (-not $BuildRoot) { $BuildRoot = Join-Path $repoRoot 'windows\.local\build' }
 $BuildRoot = [IO.Path]::GetFullPath($BuildRoot)
+if (-not $RunRoot) { $RunRoot = Join-Path $BuildRoot 'run' }
+$RunRoot = [IO.Path]::GetFullPath($RunRoot)
 $output = Join-Path $BuildRoot ('brightness-validation-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
 New-Item -ItemType Directory -Force -Path $output | Out-Null
 $records = New-Object Collections.Generic.List[object]
@@ -156,14 +160,14 @@ try {
     $fixture = & "$PSScriptRoot\Test-BrightnessService.ps1" -QtPrefix $QtPrefix -BuildRoot $BuildRoot | ConvertFrom-Json
     Assert $fixture.passed 'Adapter fixtures failed.'
     $records.Add([ordered]@{ kind = 'fixture'; result = $fixture })
-    $screenCount = $beforeDesktop.monitors.Count
+    $screenCount = if ($Offscreen) { 1 } else { $beforeDesktop.monitors.Count }
     Assert ($screenCount -gt 0) 'No measured monitor available.'
     # Native screen selection is explicit. The parent runs this harness on the
     # desktop; the smoke itself never sends input and never writes brightness.
     for ($screen = 0; $screen -lt $screenCount; $screen++) {
         foreach ($mode in @('Disabled', 'ReadOnly')) {
             $result = & "$PSScriptRoot\Start-ShellPrototype.ps1" -QtPrefix $QtPrefix -BuildRoot $BuildRoot `
-                -Brightness -BrightnessMode $mode -Smoke -ScaleFactor native -ScreenIndex $screen | ConvertFrom-Json
+                -RunRoot $RunRoot -Offscreen:$Offscreen -Brightness -BrightnessMode $mode -Smoke -ScaleFactor native -ScreenIndex $screen | ConvertFrom-Json
             Assert $result.passed "Brightness UI failed on screen $screen in $mode mode."
             $records.Add([ordered]@{ kind = 'brightness'; result = $result })
             Assert ($result.brightnessSnapshots.Count -eq 2) 'Brightness smoke did not record initial and final state.'
@@ -197,7 +201,7 @@ try {
         }
     }
     $regression = & "$PSScriptRoot\Caelestia-M1Regression.ps1" -QtPrefix $QtPrefix -BuildRoot $BuildRoot `
-        -CachePath $M1CachePath
+        -RunRoot $RunRoot -Offscreen:$Offscreen -CachePath $M1CachePath
     Assert $regression.passed 'Original M1 bar/session smoke regression failed.'
     $records.Add([ordered]@{ kind = 'm1-regression'; result = $regression })
 } catch {

@@ -120,28 +120,6 @@ $hashes = foreach ($entry in $files.GetEnumerator()) {
             throw 'Expected one ShellRoot for the Windows font loader.'
         }
         $shell = $shell.Replace('ShellRoot {', "ShellRoot {`n    WindowsFonts { id: windowsFonts }")
-        if (-not $shellLive) {
-            # A smoke window must never cover the live desktop. Shift its outer
-            # margins to the target screen's bottom-right corner, leaving one
-            # pixel visible so DWM still presents frames. The window still needs
-            # the real Windows panel backend, so QT_QPA_PLATFORM=offscreen cannot
-            # load this host. Start-ShellPrototype sets the flag for -Smoke only.
-            foreach ($edge in @(@{ Property = 'left'; Size = 'width' }, @{ Property = 'top'; Size = 'height' })) {
-                $pattern = '(?m)^\s*margins\.' + $edge.Property + ':'
-                $margins = [regex]::Matches($shell, $pattern)
-                if ($margins.Count -ne 1) {
-                    throw "Expected one margins.$($edge.Property) for off-screen smoke placement, found $($margins.Count)."
-                }
-                $property = $edge.Property
-                $size = $edge.Size
-                $shell = [regex]::Replace($shell, '(?m)^(\s*)margins\.' + $property + ':\s*(.+)$', {
-                        param($match)
-                        $match.Groups[1].Value + "margins.$property`: (" + $match.Groups[2].Value.Trim() +
-                            ") + (Quickshell.env(""CAELESTIA_SHELL_OFFSCREEN"") === ""1"" && win.screen" +
-                            " ? win.screen.$size - 81 : 0)"
-                    })
-            }
-        }
         $header = @("DataDir $ProfileRoot\data", "StateDir $ProfileRoot\state", "CacheDir $ProfileRoot\cache") |
             ForEach-Object { "//@ pragma $_" }
         [IO.File]::WriteAllText($target, (($header -join "`n") + "`n" + $shell), (New-Object Text.UTF8Encoding($false)))
@@ -174,5 +152,19 @@ $hashes = foreach ($entry in $files.GetEnumerator()) {
     }
 }
 $hashes | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $Destination 'sources.json') -Encoding UTF8
+    if ($production) {
+        # A qmldir that names a file the map never copied is how a live install
+        # can start, then fail to load (IdleHold.qml after #253).
+        foreach ($qmldir in @(Get-ChildItem -LiteralPath $Destination -Recurse -Filter qmldir -File)) {
+            foreach ($line in @(Get-Content -LiteralPath $qmldir.FullName)) {
+                if ($line -notmatch '\.qml\s*$') { continue }
+                $name = ($line -split '\s+')[-1]
+                $qml = Join-Path $qmldir.DirectoryName $name
+                if (-not (Test-Path -LiteralPath $qml -PathType Leaf)) {
+                    throw "Staged $($qmldir.FullName.Substring($Destination.Length + 1)) lists $name, but that file is not in the payload."
+                }
+            }
+        }
+    }
 } finally { $sha256.Dispose() }
 Write-Output $Destination

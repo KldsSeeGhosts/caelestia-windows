@@ -256,6 +256,10 @@ Singleton {
         const monitor = Hypr.focusedMonitor;
         if (!monitor)
             return false;
+        // The backend's fullscreen-occluder verdict, shared with ContentWindow:
+        // a fullscreen window hidden from the task list is not a toplevel.
+        if (monitor.lastIpcObject?.fullscreenOccluder === true)
+            return true;
         const specialName = monitor.lastIpcObject?.specialWorkspace?.name;
         const workspace = specialName
             ? Hypr.workspaces.values.find(ws => ws.name === specialName)
@@ -403,7 +407,7 @@ Singleton {
             "-Command", "Worker"]
         stdinEnabled: true
         stdout: SplitParser { onRead: line => {} }
-        stderr: SplitParser { onRead: line => console.warn("Caelestia banner helper:", line) }
+        stderr: SplitParser { onRead: line => console.warn("Caelestia banner helper stderr bytes=" + line.length) }
         onStarted: {
             root.bannerStarting = false;
             root.bannerStarted = true;
@@ -446,7 +450,7 @@ Singleton {
         command: [Quickshell.env("SystemRoot") + "/System32/WindowsPowerShell/v1.0/powershell.exe",
             "-NoProfile", "-File", root.bannerHelper, "-StateDirectory", Quickshell.stateDir,
             "-Command", "Restore"]
-        stderr: SplitParser { onRead: line => console.warn("Caelestia banner recovery:", line) }
+        stderr: SplitParser { onRead: line => console.warn("Caelestia banner recovery stderr bytes=" + line.length) }
         onExited: code => {
             if (code === 0) {
                 root.bannerRecoveryComplete = true;
@@ -481,8 +485,7 @@ Singleton {
                 // of the user's history: the service's load-failure latch
                 // keeps it untouched for the rest of the session.
                 console.warn("Caelestia notification history could not be loaded ("
-                    + root.service.historyError + "); it will not be overwritten this session: "
-                    + root.service.historyPath);
+                    + root.service.historyError + "); it will not be overwritten this session");
             }
         }
         onLoadFailed: error => {

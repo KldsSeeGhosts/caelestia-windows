@@ -121,8 +121,8 @@ prevent late callbacks or publications.
 `SetHistoryItemAsContent` and requires the returned
 `SetHistoryItemAsContentStatus::Success`; `AccessDenied` or `ItemDeleted` is
 reported as a failure and never followed by an injection. The picker closes,
-then after 240 ms (the 100 ms close animation and the focus guard's 75 ms focus
-return) a synthetic Ctrl+V marked with the backend's `0x5153484B` injection
+then after 240 ms (the 100 ms close animation and the focus guard's restore) a
+synthetic Ctrl+V marked with the backend's `0x5153484B` injection
 marker (`KeyboardHook::INJECTION_MARKER` in `windows/deps/quickshell/src/
 windows/keyboard_hook.hpp`) is sent. The shell's low-level keyboard hook
 ignores events that carry the marker, so the paste cannot re-enter Caelestia's

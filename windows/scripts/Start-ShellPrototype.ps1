@@ -6,6 +6,10 @@ param(
     [string]$ProfileRoot,
     [string]$TilingConfigFile,
     [switch]$Smoke,
+    # Renders the smoke on the offscreen QPA with the software backend. This
+    # keeps test frames independent of desktop composition, a live shell, and
+    # monitor state, and never opens a native window.
+    [switch]$Offscreen,
     # Smoke callers that cache the result (Caelestia-M1Regression.ps1) need the
     # failed result instead of a terminating error.
     [switch]$NoThrow,
@@ -63,6 +67,11 @@ param(
 $ErrorActionPreference = 'Stop'
 if ($MonitorCycle -and (-not $Smoke -or $ScaleFactor -ne 'native')) {
     throw '-MonitorCycle requires -Smoke and native scaling.'
+}
+if ($Offscreen -and -not $Smoke) { throw '-Offscreen requires -Smoke.' }
+if ($Offscreen -and $MonitorCycle) { throw '-Offscreen cannot cycle native monitors.' }
+if ($Offscreen -and $ScreenIndex -ne 0) {
+    throw '-Offscreen exposes one virtual screen; use -ScreenIndex 0.'
 }
 # One row per bounded slice. Observe is the observation opt-in; Controls is the
 # separate write/action opt-in, set only for its control mode and never during
@@ -390,6 +399,17 @@ if ($Combined) {
         -CacheRoot (Join-Path $profileRoot 'cache')
 }
 $info.EnvironmentVariables['QS_WINDOWS_BLUR'] = '0'
+if ($Offscreen) {
+    $info.EnvironmentVariables['QT_QPA_PLATFORM'] = 'offscreen'
+    # The offscreen plugin has no native swapchain; the software backend
+    # presents in-process, so grabToImage completes without DWM or vsync.
+    $info.EnvironmentVariables['QT_QUICK_BACKEND'] = 'software'
+    $info.EnvironmentVariables['QSG_NO_VSYNC'] = '1'
+    # The software scene graph is not safe to tear down while its threaded
+    # render loop is rendering. The basic loop renders on the GUI thread, so a
+    # panel close or popout unload cannot race an in-flight render.
+    $info.EnvironmentVariables['QSG_RENDER_LOOP'] = 'basic'
+}
 $info.EnvironmentVariables['QT_LOGGING_RULES'] = 'quickshell.windows.tracker.debug=false;quickshell.windows.inputmask.debug=false'
 if ($TraceInput) {
     $info.EnvironmentVariables['QT_LOGGING_RULES'] = 'quickshell.windows.tracker.debug=false;quickshell.windows.inputmask.debug=true'
@@ -495,18 +515,10 @@ if ($ScaleFactor -ne 'native') {
 $info.EnvironmentVariables['CAELESTIA_SHELL_SCALE'] = $ScaleFactor
 $info.EnvironmentVariables['CAELESTIA_SHELL_SCREEN'] = [string]$ScreenIndex
 $info.EnvironmentVariables['CAELESTIA_SHELL_SMOKE'] = $(if ($Smoke) { '1' } else { '0' })
-# A live shell can leave the isolated smoke window occluded, and DWM then
-# throttles its frame callbacks. That stalls grabToImage and the session
-# animation until the watchdog fires (#233). Smoke renders without vsync so
-# the window keeps producing frames while another shell owns the desktop.
-if ($Smoke) { $info.EnvironmentVariables['QSG_NO_VSYNC'] = '1' }
 if ($Smoke) {
     $emptyKeys = Join-Path $profileRoot 'runtime\smoke-keybinds.json'
     '{"binds":[]}' | Set-Content -LiteralPath $emptyKeys -Encoding UTF8
     $info.EnvironmentVariables['CAELESTIA_WINDOWS_KEYBINDS'] = $emptyKeys
-    # Stage-ShellPrototype reads this to place the window beyond the target
-    # screen. Smoke never needs a visible window and must not cover the desktop.
-    $info.EnvironmentVariables['CAELESTIA_SHELL_OFFSCREEN'] = '1'
 }
 $info.EnvironmentVariables['CAELESTIA_RUNTIME_PROBE'] = $(if ($RuntimeProbe) { '1' } else { '0' })
 $info.EnvironmentVariables['CAELESTIA_SHELL_MONITOR_CYCLE'] = $(if ($MonitorCycle) { '1' } else { '0' })
@@ -580,13 +592,22 @@ foreach ($buttonMatch in [regex]::Matches($runOutput, 'CAELESTIA_SESSION_BUTTONS
         $sessionButtonRecords.Add($button)
     }
 }
-$runtimeDiagnostics = $runOutput -match '(?m)^(?:\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3})?\s*(WARN(?:ING)?|ERROR|FATAL|CRIT(?:ICAL)?)\b'
+$diagnosticOutput = $runOutput
+if ($Offscreen) {
+    # The offscreen QPA has no font directory of its own and cannot set a
+    # native window mask. Both warnings come from the platform plugin, not
+    # from the shell, and would otherwise reject every offscreen pass.
+    $offscreenOnly = 'QFontDatabase: Cannot find font directory|This plugin does not support setting window masks'
+    $diagnosticOutput = (@($runOutput -split "`n" | Where-Object { $_ -notmatch $offscreenOnly }) -join "`n")
+}
+$runtimeDiagnostics = $diagnosticOutput -match '(?m)^(?:\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3})?\s*(WARN(?:ING)?|ERROR|FATAL|CRIT(?:ICAL)?)\b'
 $passed = -not $timedOut -and -not $runtimeDiagnostics -and
     $exitCode -eq 0 -and $runOutput.Contains("${marker}_PASS") -and
     (Test-Path -LiteralPath $screenshot)
 Copy-Item -LiteralPath (Join-Path $stage 'sources.json') -Destination (Join-Path $logRoot "$runName.sources.json")
 $result = [ordered]@{
     passed = $(if ($Smoke) { $passed } else { $null }); smoke = $Smoke.IsPresent
+    offscreen = $Offscreen.IsPresent
     prototype = $kind; combined = $Combined.IsPresent; live = $Live.IsPresent
     background = $Background.IsPresent; desktopIcons = $DesktopIcons
     audioMode = $AudioMode; batteryMode = $BatteryMode; mediaMode = $MediaMode; brightnessMode = $BrightnessMode

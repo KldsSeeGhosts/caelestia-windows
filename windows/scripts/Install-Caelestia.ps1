@@ -12,7 +12,11 @@ param(
     [switch]$Restart,
     # Accept a QtPrefix that differs from build.json, or a populated profile
     # this installer did not create (never purged by Uninstall).
-    [switch]$Force
+    [switch]$Force,
+    # Skip preparing the optional profile-local Python scheme runtime during
+    # this install. An existing prepared runtime is still used; a later
+    # launcher start may provision one. Useful offline and in installer tests.
+    [switch]$SkipSchemeRuntime
 )
 
 . (Join-Path $PSScriptRoot 'Caelestia-InstallCommon.ps1')
@@ -84,8 +88,18 @@ foreach ($sourceRoot in @($BuildRoot, $QtPrefix, $VCRuntimeRoot, $repoRoot, $Pro
 }
 $qmlRoot = Join-Path $BuildRoot 'install\qml'
 $deploy = Join-Path $QtPrefix 'bin\windeployqt.exe'
-foreach ($file in @("$BuildRoot\quickshell\qs.exe", $deploy, "$qmlRoot\Caelestia\Windows\qmldir", "$qmlRoot\M3Shapes\qmldir")) {
+# Glazier is bundled beside qs.exe, never downloaded or resolved from a
+# machine-wide location. The whole versioned payload carries it.
+$glazierSource = Join-Path $BuildRoot 'install\glazier.exe'
+foreach ($file in @("$BuildRoot\quickshell\qs.exe", $glazierSource, $deploy, "$qmlRoot\Caelestia\Windows\qmldir", "$qmlRoot\M3Shapes\qmldir")) {
     if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw "Missing runtime prerequisite: $file" }
+}
+if ($buildInfo -and $buildInfo.glazierBundled -eq $false) {
+    throw 'This build skipped the bundled Glazier; rebuild without -SkipGlazier before installing.'
+}
+if ($buildInfo -and $buildInfo.glazierSha256 -and
+    (Get-FileHash -LiteralPath $glazierSource -Algorithm SHA256).Hash.ToLowerInvariant() -ne [string]$buildInfo.glazierSha256) {
+    throw 'The staged glazier.exe does not match build.json; rebuild the payload.'
 }
 # Serialize preparation as well as activation. Otherwise two simultaneous
 # updates can both pass the staging scan and overwrite the same rollback tree.
@@ -110,20 +124,7 @@ if (Test-Path -LiteralPath $backup) {
     if (-not (Test-Path -LiteralPath $Prefix)) { [IO.Directory]::Move($backup, $Prefix) }
     else { Assert-CaelestiaNoReparsePoints $backup; Remove-Item -LiteralPath $backup -Recurse -Force }
 }
-if (Test-Path -LiteralPath $prefixParent) {
-    foreach ($leftover in Get-ChildItem -LiteralPath $prefixParent -Directory -Force -Filter "$prefixLeaf.staging-*") {
-        $leftoverPath = Resolve-CaelestiaDirectory $leftover.FullName
-        $leftoverPid = ($leftover.Name -replace '^.*\.staging-', '') -as [int]
-        if ($leftoverPid -and (Get-Process -Id $leftoverPid -ErrorAction SilentlyContinue)) { throw "Another installation is in progress: $leftoverPath" }
-        $stagingMarker = Join-Path $leftoverPath '.caelestia-staging.json'
-        $hasOwnership = (Test-Path -LiteralPath $stagingMarker -PathType Leaf) -or (Test-Path -LiteralPath (Join-Path $leftoverPath 'install.json') -PathType Leaf) -or (Test-Path -LiteralPath (Join-Path $leftoverPath 'qs.exe') -PathType Leaf)
-        if (-not $hasOwnership) {
-            throw "Refusing to remove unowned staging directory: $leftoverPath"
-        }
-        Assert-CaelestiaNoReparsePoints $leftoverPath
-        Remove-Item -LiteralPath $leftoverPath -Recurse -Force
-    }
-}
+Remove-CaelestiaStagingDirectories $Prefix
 $old = $null
 if ((Test-Path -LiteralPath $Prefix) -and (Get-ChildItem -LiteralPath $Prefix -Force | Select-Object -First 1)) {
     if (Test-Path -LiteralPath (Join-Path $Prefix 'install.json')) {
@@ -175,6 +176,7 @@ New-Item -ItemType Directory -Path $payload | Out-Null
 try {
     [ordered]@{ product = 'caelestia-windows'; prefix = $Prefix; pid = $PID } | ConvertTo-Json | Set-Content -LiteralPath "$payload\.caelestia-staging.json" -Encoding UTF8
     Copy-Item -LiteralPath "$BuildRoot\quickshell\qs.exe" -Destination $payload
+    Copy-Item -LiteralPath $glazierSource -Destination $payload
     New-Item -ItemType Directory -Path "$payload\qml", "$payload\defaults" | Out-Null
     Copy-Item -LiteralPath "$qmlRoot\Caelestia" -Destination "$payload\qml" -Recurse
     Copy-Item -LiteralPath "$qmlRoot\M3Shapes" -Destination "$payload\qml" -Recurse
@@ -208,6 +210,12 @@ try {
     Copy-Item -LiteralPath "$repoRoot\windows\deps\quickshell\LICENSE-GPL" -Destination "$payload\licenses\GPL-3.0.txt"
     Copy-Item -LiteralPath "$repoRoot\windows\deps\quickshell\LICENSE" -Destination "$payload\licenses\LGPL-3.0.txt"
     Copy-Item -LiteralPath "$repoRoot\windows\deps\quickshell\src\windows\third_party\material_color\LICENSE" -Destination "$payload\licenses\MaterialColor-LICENSE"
+    # Glazier's MIT licence and its own upstream third-party notices travel
+    # with the bundled executable.
+    Copy-Item -LiteralPath "$repoRoot\windows\deps\glazier\LICENSE" -Destination "$payload\licenses\Glazier-LICENSE"
+    if (Test-Path -LiteralPath "$repoRoot\windows\deps\glazier\THIRD_PARTY_NOTICES.md" -PathType Leaf) {
+        Copy-Item -LiteralPath "$repoRoot\windows\deps\glazier\THIRD_PARTY_NOTICES.md" -Destination "$payload\licenses\Glazier-THIRD_PARTY_NOTICES.md"
+    }
     Copy-Item -LiteralPath "$repoRoot\windows\sources.lock.json" -Destination "$payload\licenses"
     # Keep component-relative paths and copyright/NOTICE files, including new
     # fonts and backend dependencies added after this packaging script.
@@ -256,39 +264,43 @@ try {
     $ErrorActionPreference = 'Stop'
     if ($deployExit -ne 0) { throw "windeployqt failed with exit code $deployExit" }
     @('[Paths]', 'Prefix=.', 'Plugins=plugins', 'QmlImports=qml') | Set-Content -LiteralPath "$payload\qt.conf" -Encoding ASCII
-    $integration = Get-CaelestiaIntegration $Prefix
     # install.json is written last: a staging directory without it is not an install.
     [ordered]@{
         product = 'caelestia-windows'; version = 1; prefix = $Prefix; profile = $ProfileRoot
         installId = $installId
         sourceRevision = (& git -C $repoRoot rev-parse HEAD).Trim()
         backendRevision = $(if ($buildInfo) { $buildInfo.backendRevision } else { '' })
+        glazierRevision = $(if ($buildInfo) { [string]$buildInfo.glazierRevision } else { '' })
         executableSha256 = (Get-FileHash -LiteralPath "$payload\qs.exe").Hash
+        glazierSha256 = (Get-FileHash -LiteralPath "$payload\glazier.exe").Hash
     } | ConvertTo-Json | Set-Content -LiteralPath "$payload\install.json" -Encoding UTF8
     Remove-Item -LiteralPath "$payload\.caelestia-staging.json" -Force -ErrorAction SilentlyContinue
 
     Write-CaelestiaProfileOwner $ProfileRoot $Prefix $installId $profileExclusive
     Write-Output ('Payload assembled in {0:N2}s.' -f $preparation.Elapsed.TotalSeconds)
-    $runtimePrefix = Install-CaelestiaVersion $Prefix $payload -Restart:$Restart
-    $launcher = Join-Path $Prefix 'Start-Caelestia.ps1'
-    $powershell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
-    $arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $launcher + '"'
-    $shortcutDir = Split-Path -Parent $integration.Shortcut
-    New-Item -ItemType Directory -Force -Path $shortcutDir | Out-Null
-    $wsh = New-Object -ComObject WScript.Shell
-    $shortcut = $wsh.CreateShortcut($integration.Shortcut)
-    $shortcut.TargetPath = $powershell
-    $shortcut.Arguments = $arguments
-    $shortcut.WorkingDirectory = $Prefix
-    $shortcut.IconLocation = "$runtimePrefix\qs.exe,0"
-    $shortcut.Description = 'Caelestia for Windows'
-    $shortcut.Save()
-    if ($Autostart) {
-        $run = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
-        New-Item -Path $run -Force | Out-Null
-        New-ItemProperty -Path $run -Name $integration.RunName -PropertyType String -Value ('"' + $powershell + '" ' + $arguments) -Force | Out-Null
+    # Prepare the optional scheme runtime here, while the previous shell still
+    # serves the desktop. Activation then only starts the shell; a cold venv or
+    # slow network cannot consume its readiness budget or cause a rollback.
+    # This phase never fails the install: the shell keeps its fixed palette.
+    if (-not $SkipSchemeRuntime) {
+        $scheme = Install-CaelestiaSchemeRuntime $payload $ProfileRoot
+        if ($scheme.available) {
+            Write-Output ('Scheme runtime prepared in {0:N2}s.' -f $scheme.seconds)
+        } else {
+            Write-Warning 'Scheme runtime was not prepared; Caelestia will start with its fixed palette. The install continues; see scheme\provision.log and provision-state.json, then retry with Install-SchemeRuntime.ps1.'
+        }
     }
+    $runtimePrefix = Install-CaelestiaVersion $Prefix $payload -Restart:$Restart
+    # Pruning is deferred while any shell or supervisor can still be using a
+    # generation; the next install without a live shell removes the rest.
+    Remove-CaelestiaSchemeGenerations $Prefix $ProfileRoot
+    # Integration belongs to the activation transaction: if it cannot be
+    # written, the activation is rolled back instead of leaving a selector that
+    # claims a replacement the caller was told failed.
+    $installed = Read-CaelestiaInstall $Prefix
+    Complete-CaelestiaInstallIntegration $Prefix $runtimePrefix -Previous ([string]$installed.previous) -Restart:$Restart -Autostart:$Autostart
     Remove-CaelestiaRetiredVersions $Prefix
+    $launcher = Join-Path $Prefix 'Start-Caelestia.ps1'
     Write-Output "Installed Caelestia: $Prefix"
     Write-Output "Run: powershell -NoProfile -File `"$launcher`""
     Write-Output "Profile (seeded on first launch): $ProfileRoot"

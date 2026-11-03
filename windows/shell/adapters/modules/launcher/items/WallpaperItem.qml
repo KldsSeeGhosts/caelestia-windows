@@ -70,7 +70,10 @@ Item {
             anchors.fill: parent
             // Paths.absolutePath percent-encodes each segment, so '#' and '%'
             // in a wallpaper name cannot truncate or corrupt the file URL.
-            source: root.modelData.engine && !root.modelData.preview ? ""
+            // A cloud placeholder is listed, but decoding it would fetch its
+            // content; leave the generic tile until the user opens it.
+            source: root.modelData.onDisk === false ? ""
+                : root.modelData.engine && !root.modelData.preview ? ""
                 : Paths.absolutePath(root.modelData.preview || root.modelData.path)
             asynchronous: true
             sourceSize: {

@@ -2,6 +2,8 @@
 param(
     [Parameter(Mandatory)][string]$QtPrefix,
     [string]$BuildRoot,
+    [string]$RunRoot,
+    [switch]$Offscreen,
     # Optional shared M1 result cache; one path per suite invocation.
     [string]$M1CachePath
 )
@@ -10,6 +12,8 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
 if (-not $BuildRoot) { $BuildRoot = Join-Path $repoRoot 'windows\.local\build' }
 $BuildRoot = [IO.Path]::GetFullPath($BuildRoot)
+if (-not $RunRoot) { $RunRoot = Join-Path $BuildRoot 'run' }
+$RunRoot = [IO.Path]::GetFullPath($RunRoot)
 $output = Join-Path $BuildRoot ('tray-validation-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
 New-Item -ItemType Directory -Force -Path $output | Out-Null
 $records = New-Object Collections.Generic.List[object]
@@ -35,7 +39,7 @@ function Desktop-Identity($State) {
 }
 
 function Other-Shells($State) {
-    @($State.relevantProcesses | Where-Object { $_.name -ne 'explorer' } |
+    @($State.relevantProcesses | Where-Object { $_.name -notin @('explorer', 'qs', 'quickshell') } |
         ForEach-Object { "$($_.name):$($_.pid)" })
 }
 
@@ -87,11 +91,12 @@ try {
     Assert $fixture.passed 'Tray fixture failed.'
     $records.Add([ordered]@{ kind = 'fixture'; result = $fixture })
 
-    $screenCount = @($beforeDesktop.monitors).Count
+    $screenCount = if ($Offscreen) { 1 } else { @($beforeDesktop.monitors).Count }
     Assert ($screenCount -gt 0) 'No measured monitor available.'
     for ($screen = 0; $screen -lt $screenCount; $screen++) {
         foreach ($mode in @('Disabled', 'ReadOnly')) {
             $result = & "$PSScriptRoot\Start-ShellPrototype.ps1" -QtPrefix $QtPrefix -BuildRoot $BuildRoot `
+                -RunRoot $RunRoot -Offscreen:$Offscreen `
                 -Tray -TrayMode $mode -Smoke -ScaleFactor native -ScreenIndex $screen | ConvertFrom-Json
             Assert $result.passed "Tray UI failed on screen $screen in $mode mode."
             $records.Add([ordered]@{ kind = 'tray'; mode = $mode; screen = $screen; result = $result })
@@ -158,6 +163,7 @@ try {
 
     # Fixture preview: original components against plain objects, no native tray.
     $fixtureRun = & "$PSScriptRoot\Start-ShellPrototype.ps1" -QtPrefix $QtPrefix -BuildRoot $BuildRoot `
+        -RunRoot $RunRoot -Offscreen:$Offscreen `
         -Tray -TrayMode Disabled -TrayFixture -Smoke -ScaleFactor native -ScreenIndex 0 | ConvertFrom-Json
     Assert $fixtureRun.passed 'Tray fixture preview failed.'
     $records.Add([ordered]@{ kind = 'tray-fixture'; result = $fixtureRun })
@@ -181,7 +187,7 @@ try {
     Assert-MenuUnavailable $fixtureFinal 'tray fixture preview'
 
     $regression = & "$PSScriptRoot\Caelestia-M1Regression.ps1" -QtPrefix $QtPrefix -BuildRoot $BuildRoot `
-        -CachePath $M1CachePath
+        -RunRoot $RunRoot -Offscreen:$Offscreen -CachePath $M1CachePath
     Assert $regression.passed 'Original M1 bar/session smoke regression failed.'
     $records.Add([ordered]@{ kind = 'm1-regression'; result = $regression })
 

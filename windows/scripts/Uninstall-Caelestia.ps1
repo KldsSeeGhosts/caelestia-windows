@@ -36,6 +36,7 @@ if (Test-Path -LiteralPath $launcher) {
 foreach ($process in $processes) {
     if (-not $process.WaitForExit(60000)) { throw 'Shell did not quit. Stop this installation before uninstalling.' }
 }
+Stop-CaelestiaHosts $Prefix
 if (@(Get-CaelestiaSupervisors $profile).Count -or @(Get-CaelestiaProcesses $Prefix).Count) {
     throw 'Caelestia is still running. Stop this installation before uninstalling.'
 }
