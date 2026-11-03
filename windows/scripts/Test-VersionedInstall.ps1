@@ -592,7 +592,9 @@ try {
     [IO.Directory]::CreateDirectory((Split-Path -Parent $snapshotShortcut)) | Out-Null
     'original shortcut' | Set-Content -LiteralPath $snapshotShortcut -Encoding UTF8
     $script:shortcutWriterCalled = $false
-    $snapshotLock = [IO.File]::Open($snapshotShortcut, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::None)
+    # Deny read sharing so the snapshot copy fails, but allow deletion: the
+    # old cleanup path would remove this original as if it were a partial file.
+    $snapshotLock = [IO.File]::Open($snapshotShortcut, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Delete)
     try {
         ${function:New-CaelestiaShortcut} = {
             param([string]$Path, [string]$PowerShellPath, [string]$Arguments, [string]$WorkingDirectory, [string]$Icon)
