@@ -26,6 +26,19 @@ $handler = Get-UniqueMatch $wallpapers '(?m)^    onCurrentImageChanged: applyPal
 $smart = Get-UniqueMatch $wallpapers '(?m)^        function onSmartSchemeChanged\(\): void \{ root\.applyPalette\(true\); \}\r?$'
 $snapshot = Get-UniqueMatch $wallpapers '(?m)^        function onSnapshotReadyChanged\(\): void \{ root\.applyPalette\(false\); \}\r?$'
 $setWallpaper = Get-UniqueMatch $wallpapers '(?ms)^    function setWallpaper\(path\): bool \{.*?^    \}'
+$ready = Get-UniqueMatch $wallpapers '(?m)^    readonly property bool schemeStateReady:.*\r?$'
+$readyHandler = Get-UniqueMatch $wallpapers '(?m)^    onSchemeStateReadyChanged: applyPalette\(false\)\r?$'
+$setName = Get-UniqueMatch $wallpapers '(?ms)^    function setSchemeName\(json: string\): void \{.*?^    \}\r?$'
+$setSource = Get-UniqueMatch $wallpapers '(?ms)^    function setSchemeSource\(content: string\): void \{.*?^    \}\r?$'
+$reload = Get-UniqueMatch $wallpapers '(?ms)^    function reloadSchemeState\(\): void \{.*?^    \}\r?$'
+$schemeChanged = Get-UniqueMatch $wallpapers '(?m)^        function onSchemeChanged\(\): void \{ root\.reloadSchemeState\(\); \}\r?$'
+$listChanged = Get-UniqueMatch $wallpapers '(?m)^        function onSchemeListChanged\(\): void \{ root\.reloadSchemeState\(\); \}\r?$'
+
+# Loading state must never regenerate: a scheme write that reloaded into a
+# generation would loop whenever the reload and the image disagree.
+if ($setName -match 'applyPalette' -or $setSource -match 'applyPalette' -or $reload -match 'applyPalette') {
+    throw 'Loading scheme state regenerates colours.'
+}
 
 # One owner: the engine may not regenerate colours, the picker may not bypass
 # the currentImage change, and the dedupe must use the persisted bridge source.
@@ -57,6 +70,13 @@ $apply = $apply.Replace('Paths.samePath', 'root.samePath')
 $apply = $apply.Replace('SchemeGenerator', 'root.schemeGenerator')
 $apply = $apply.Replace('GlobalConfig.services.smartScheme', 'root.services.smartScheme')
 
+$fixture = $fixture.Replace('    // WALLPAPER_READY_HANDLER', $readyHandler.TrimEnd())
+$fixture = $fixture.Replace('    // WALLPAPER_READY', $ready.TrimEnd())
+$fixture = $fixture.Replace('    // WALLPAPER_SET_NAME', $setName.TrimEnd())
+$fixture = $fixture.Replace('    // WALLPAPER_SET_SOURCE', $setSource.TrimEnd())
+$fixture = $fixture.Replace('    // WALLPAPER_RELOAD', $reload.TrimEnd().Replace('nameFile.reload', 'root.nameFile.reload').Replace('sourceFile.reload', 'root.sourceFile.reload'))
+$fixture = $fixture.Replace('        // WALLPAPER_GENERATOR_SCHEME_CHANGED', $schemeChanged.TrimEnd())
+$fixture = $fixture.Replace('        // WALLPAPER_GENERATOR_LIST_CHANGED', $listChanged.TrimEnd())
 $fixture = $fixture.Replace('    // WALLPAPER_CURRENT_IMAGE', $currentImage.TrimEnd())
 $fixture = $fixture.Replace('    // WALLPAPER_APPLY', $apply.TrimEnd())
 $fixture = $fixture.Replace('    // WALLPAPER_HANDLER', $handler.TrimEnd())
@@ -88,12 +108,12 @@ try {
     Write-Output $output
 
     # The assertion count is part of the marker: dropping a scenario must fail.
-    $marker = [regex]::Match($output, 'CAELESTIA_WALLPAPER_COLOURS_PASS 17\b')
+    $marker = [regex]::Match($output, 'CAELESTIA_WALLPAPER_COLOURS_PASS 27\b')
     if ($process.ExitCode -ne 0 -or -not $marker.Success -or
         $output -match 'CAELESTIA_WALLPAPER_COLOURS_FAIL|TypeError|ReferenceError|binding loop') {
         throw 'Wallpaper colours fixture failed.'
     }
-    Write-Output 'PASS wallpaper colours: persisted source, async WE snapshot, smart toggle, fixed/dynamic switch and dedupe.'
+    Write-Output 'PASS wallpaper colours: persisted source, fresh profile without loops, async WE snapshot, smart toggle, fixed/dynamic switch and dedupe.'
 } finally {
     $safeStage = [IO.Path]::GetFullPath($stage).TrimEnd('\')
     if ((Split-Path -Parent $safeStage) -ne [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\') -or

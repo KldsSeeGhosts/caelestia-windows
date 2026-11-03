@@ -1,18 +1,26 @@
 import QtQuick
 
 // Offscreen regression for #267. Test-WallpaperColours.ps1 splices the real
-// currentImage binding, applyPalette() and its handlers out of Wallpapers.qml
-// into this fixture, so drift in the adapter fails the run instead of passing
-// against a copy. The mock generator records its source path like the bridge's
-// state/caelestia/wallpaper/path.txt does.
+// currentImage binding, applyPalette(), the scheme state loaders and their
+// handlers out of Wallpapers.qml into this fixture, so drift in the adapter
+// fails the run instead of passing against a copy. The mock generator writes
+// the scheme name and its source image into `files` like the bridge writes
+// scheme.json and state/caelestia/wallpaper/path.txt, then reports
+// schemeChanged. No file watch is modelled: a fresh profile has none, so the
+// state is only ever read at startup and after that signal.
 QtObject {
     id: root
 
     property string fileCurrent: "C:/walls/windows-default.jpg"
+    property string schemeName: ""
     property string schemeSource: ""
+    property bool schemeNameLoaded: false
     property bool schemeSourceLoaded: false
     property int assertions: 0
     property var calls: []
+    property int runs: 0
+    // Empty until the generator writes it, like a fresh profile.
+    property var files: ({})
 
     property QtObject engine: QtObject {
         property bool enabled: true
@@ -22,15 +30,29 @@ QtObject {
     }
     property QtObject schemeGenerator: QtObject {
         property bool available: true
+        signal schemeChanged()
+        signal schemeListChanged()
+
+        function write(name: string, image: string): void {
+            root.runs++;
+            root.files = {
+                scheme: JSON.stringify({ name: name }),
+                source: image
+            };
+            schemeChanged();
+        }
         function applyWallpaper(path, smart): void {
             root.calls.push({
                 path: path,
                 smart: smart
             });
-            root.schemeSource = path;
+            write("dynamic", path);
+        }
+        // The launcher's scheme row: also writes the source image.
+        function setScheme(name: string, image: string): void {
+            write(name, image);
         }
     }
-    property string schemeName: "dynamic"
     property QtObject services: QtObject {
         property bool smartScheme: true
     }
@@ -38,6 +60,23 @@ QtObject {
     // WALLPAPER_CURRENT_IMAGE
     // WALLPAPER_APPLY
     // WALLPAPER_HANDLER
+    // WALLPAPER_READY
+    // WALLPAPER_READY_HANDLER
+    // WALLPAPER_SET_NAME
+    // WALLPAPER_SET_SOURCE
+    // WALLPAPER_RELOAD
+
+    // Stand-ins for the two FileViews: a missing file reads like loadFailed.
+    property QtObject nameFile: QtObject {
+        function reload(): void {
+            root.setSchemeName(root.files.scheme ?? "");
+        }
+    }
+    property QtObject sourceFile: QtObject {
+        function reload(): void {
+            root.setSchemeSource(root.files.source ?? "");
+        }
+    }
 
     property Connections smartConnection: Connections {
         target: root.services
@@ -47,15 +86,14 @@ QtObject {
         target: root.engine
         // WALLPAPER_SNAPSHOT_SETTLED
     }
+    property Connections generatorConnection: Connections {
+        target: root.schemeGenerator
+        // WALLPAPER_GENERATOR_SCHEME_CHANGED
+        // WALLPAPER_GENERATOR_LIST_CHANGED
+    }
 
     function samePath(a, b): bool {
         return String(a ?? "").replace(/\\/g, "/").toLowerCase() === String(b ?? "").replace(/\\/g, "/").toLowerCase();
-    }
-
-    // Simulates the scheme picker/variant/mode path, which regenerates through
-    // the bridge and updates path.txt without passing through applyPalette().
-    function recordOtherGeneration(path): void {
-        root.schemeSource = path;
     }
 
     function check(value, description): void {
@@ -71,13 +109,15 @@ QtObject {
     function run(): void {
         try {
             // 1. Startup with Wallpaper Engine already running. The persisted
-            // scheme came from the preview, the source file and WE discovery
-            // both land late, and neither may regenerate.
-            check(root.calls.length === 0, "startup regenerated before the source was known");
-            root.schemeSource = "C:/we/preview.jpg";
-            root.schemeSourceLoaded = true;
-            root.applyPalette(false);
-            check(root.calls.length === 0, "loading the persisted source regenerated");
+            // scheme came from the preview, the state files and WE discovery all
+            // land late, and none may regenerate.
+            check(root.schemeStateReady === false, "state ready before it was read");
+            root.files = {
+                scheme: JSON.stringify({ name: "dynamic" }),
+                source: "C:/we/preview.jpg"
+            };
+            root.reloadSchemeState();
+            check(root.calls.length === 0, "loading the persisted state regenerated");
             root.engine.current = { path: "C:/we/project.json", preview: "C:/we/preview.jpg" };
             root.engine.running = true;
             root.engine.snapshotReady = true;
@@ -87,6 +127,7 @@ QtObject {
             root.engine.running = false;
             check(root.calls.length === 1, "Wallpaper Engine quitting did not regenerate");
             check(root.lastCall().path === "C:/walls/windows-default.jpg", "the Windows wallpaper was not applied");
+            check(root.runs === 1, "one image change ran the generator more than once");
 
             // 3. Windows Settings changes the wallpaper while WE is stopped.
             root.fileCurrent = "C:/walls/new-windows.jpg";
@@ -110,15 +151,15 @@ QtObject {
             check(root.lastCall().smart === false, "the current smart-scheme setting was not passed");
 
             // 7. A fixed scheme is never overwritten.
-            root.schemeName = "catppuccin";
+            root.schemeGenerator.setScheme("catppuccin", root.currentImage);
+            check(root.schemeName === "catppuccin", "the fixed scheme was not picked up");
             root.engine.running = false;
             check(root.calls.length === 4, "a fixed scheme was overwritten");
 
             // 8. Fixed -> dynamic -> an earlier image. The picker's dynamic
             // generation records the image it used, so the earlier preview is
             // no longer considered already applied.
-            root.recordOtherGeneration(root.currentImage);
-            root.schemeName = "dynamic";
+            root.schemeGenerator.setScheme("dynamic", root.currentImage);
             root.engine.current = { path: "C:/we/project.json", preview: "C:/we/preview.jpg" };
             root.engine.running = true;
             check(root.calls.length === 5, "returning to an earlier image did not regenerate");
@@ -128,6 +169,36 @@ QtObject {
             root.schemeGenerator.available = false;
             root.engine.running = false;
             check(root.calls.length === 5, "colours were generated without a generator");
+
+            // 10. Fresh profile, as a new process: neither scheme.json nor
+            // path.txt exists, so their directories do not either and nothing
+            // can be watched. The startup read finds nothing and settles the
+            // state without regenerating (the default scheme is not dynamic).
+            root.schemeGenerator.available = true;
+            root.engine.running = false;
+            root.files = {};
+            root.schemeName = "";
+            root.schemeSource = "";
+            root.schemeNameLoaded = false;
+            root.schemeSourceLoaded = false;
+            const before = root.runs;
+            root.reloadSchemeState();
+            check(root.schemeStateReady === true, "a missing profile left the state unsettled");
+            check(root.schemeName === "" && root.schemeSource === "", "a missing profile reported state");
+            check(root.runs === before, "the startup read regenerated");
+
+            // The first dynamic selection creates the files. Only the
+            // generator's report can pick them up: the source is recorded and
+            // the write must not loop.
+            root.schemeGenerator.setScheme("dynamic", root.currentImage);
+            check(root.schemeName === "dynamic", "the first dynamic scheme was not picked up");
+            check(root.schemeSource === "C:/walls/new-windows.jpg", "the first generation did not record its source");
+            check(root.runs === before + 1, "the first dynamic generation looped: " + (root.runs - before));
+
+            // A later wallpaper change regenerates exactly once.
+            root.fileCurrent = "C:/walls/second.jpg";
+            check(root.runs === before + 2, "the wallpaper change after a fresh profile did not regenerate once: " + (root.runs - before));
+            check(root.schemeSource === "C:/walls/second.jpg", "the regeneration did not record its source");
 
             console.log("CAELESTIA_WALLPAPER_COLOURS_PASS " + root.assertions);
             Qt.quit();

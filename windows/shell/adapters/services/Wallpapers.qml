@@ -62,50 +62,76 @@ Singleton {
     readonly property string schemeSourcePath: `${Paths.state}/wallpaper/path.txt`
     property string schemeName: ""
     property string schemeSource: ""
+    property bool schemeNameLoaded: false
     property bool schemeSourceLoaded: false
+    readonly property bool schemeStateReady: schemeNameLoaded && schemeSourceLoaded
 
     Component.onCompleted: reload()
     onCurrentImageChanged: applyPalette(false)
+    // Both files have been read (or found missing) once: the startup check.
+    onSchemeStateReadyChanged: applyPalette(false)
 
     function applyPalette(force): void {
         if (!SchemeGenerator.available || schemeName !== "dynamic" || currentImage === "")
             return;
         // Wallpaper Engine discovery can briefly report the Windows wallpaper
-        // at startup; wait for it and the persisted source before comparing.
-        if (!schemeSourceLoaded || !WallpaperEngine.snapshotReady)
+        // at startup; wait for it and the persisted state before comparing.
+        if (!schemeStateReady || !WallpaperEngine.snapshotReady)
             return;
         if (!force && Paths.samePath(currentImage, schemeSource))
             return;
         SchemeGenerator.applyWallpaper(currentImage, GlobalConfig.services.smartScheme);
     }
 
-    FileView {
-        path: root.schemeStatePath
-        watchChanges: true
-        printErrors: false
-        onLoaded: {
-            try {
-                root.schemeName = String(JSON.parse(text()).name ?? "");
-            } catch (error) {
-                root.schemeName = "";
-            }
-            root.applyPalette(false);
+    // Loading scheme state never regenerates: only a currentImage change, the
+    // smart-scheme toggle or an explicit user action does, so a scheme write
+    // can not trigger another one.
+    function setSchemeName(json: string): void {
+        try {
+            schemeName = String(JSON.parse(json).name ?? "");
+        } catch (error) {
+            schemeName = "";
         }
-        onFileChanged: reload()
-        onLoadFailed: root.schemeName = ""
+        schemeNameLoaded = true;
+    }
+    function setSchemeSource(content: string): void {
+        schemeSource = content.trim();
+        schemeSourceLoaded = true;
+    }
+    // A FileView cannot watch a file whose directory does not exist yet, which
+    // is the case on a fresh profile. The generator creates both files, so
+    // reload them whenever it reports a finished run instead.
+    function reloadSchemeState(): void {
+        nameFile.reload();
+        sourceFile.reload();
     }
 
     FileView {
+        id: nameFile
+
+        path: root.schemeStatePath
+        watchChanges: true
+        printErrors: false
+        onLoaded: root.setSchemeName(text())
+        onFileChanged: reload()
+        onLoadFailed: root.setSchemeName("")
+    }
+
+    FileView {
+        id: sourceFile
+
         path: root.schemeSourcePath
         watchChanges: true
         printErrors: false
-        onLoaded: {
-            root.schemeSource = text().trim();
-            root.schemeSourceLoaded = true;
-            root.applyPalette(false);
-        }
+        onLoaded: root.setSchemeSource(text())
         onFileChanged: reload()
-        onLoadFailed: root.schemeSourceLoaded = true
+        onLoadFailed: root.setSchemeSource("")
+    }
+
+    Connections {
+        target: SchemeGenerator
+        function onSchemeChanged(): void { root.reloadSchemeState(); }
+        function onSchemeListChanged(): void { root.reloadSchemeState(); }
     }
 
     Connections {
