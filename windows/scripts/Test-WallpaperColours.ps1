@@ -3,8 +3,9 @@ param([Parameter(Mandatory)][string]$QtPrefix)
 
 # Offscreen regression for #267: Wallpapers.qml is the single owner of dynamic
 # palette regeneration. The fixture splices the real currentImage binding,
-# applyPalette() and its handler, so a second generation path or a stale
-# handler fails instead of passing on a copy.
+# applyPalette() and its image/smart-scheme/discovery handlers, so a second
+# generation path, the old startup gate or a stale handler fails instead of
+# passing on a copy. The mock generator records its source like path.txt does.
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
 $runner = Join-Path $QtPrefix 'bin\qml.exe'
@@ -20,13 +21,14 @@ function Get-UniqueMatch([string]$Text, [string]$Pattern) {
 }
 
 $currentImage = Get-UniqueMatch $wallpapers '(?ms)^    readonly property string currentImage:.*?: fileCurrent\r?$'
-$palette = Get-UniqueMatch $wallpapers '(?ms)^    property bool paletteReady: false.*?^    property string paletteImage: ""\r?$'
-$apply = Get-UniqueMatch $wallpapers '(?ms)^    function applyPalette\(\): void \{.*?^    \}\r?$'
-$handler = Get-UniqueMatch $wallpapers '(?m)^    onCurrentImageChanged: applyPalette\(\)\r?$'
+$apply = Get-UniqueMatch $wallpapers '(?ms)^    function applyPalette\(force\): void \{.*?^    \}\r?$'
+$handler = Get-UniqueMatch $wallpapers '(?m)^    onCurrentImageChanged: applyPalette\(false\)\r?$'
+$smart = Get-UniqueMatch $wallpapers '(?m)^        function onSmartSchemeChanged\(\): void \{ root\.applyPalette\(true\); \}\r?$'
+$snapshot = Get-UniqueMatch $wallpapers '(?m)^        function onSnapshotReadyChanged\(\): void \{ root\.applyPalette\(false\); \}\r?$'
 $setWallpaper = Get-UniqueMatch $wallpapers '(?ms)^    function setWallpaper\(path\): bool \{.*?^    \}'
 
-# One owner: the engine may not regenerate colours and the picker may not
-# bypass the currentImage change.
+# One owner: the engine may not regenerate colours, the picker may not bypass
+# the currentImage change, and the dedupe must use the persisted bridge source.
 if ($engine -match 'matchColours|lastPaletteKey|SchemeGenerator') {
     throw 'WallpaperEngine still contains a palette generation path.'
 }
@@ -36,17 +38,30 @@ if (([regex]::Matches($wallpapers, 'SchemeGenerator\.applyWallpaper\(')).Count -
 if ($setWallpaper -match 'SchemeGenerator\.applyWallpaper') {
     throw 'setWallpaper still regenerates colours directly.'
 }
+if (-not $wallpapers.Contains('schemeStatePath') -or -not $wallpapers.Contains('scheme.json') -or
+    -not $wallpapers.Contains('schemeSourcePath') -or -not $wallpapers.Contains('wallpaper/path.txt') -or
+    -not $wallpapers.Contains('schemeSourceLoaded') -or -not $wallpapers.Contains('watchChanges: true')) {
+    throw 'Wallpapers does not compare against the persisted scheme state.'
+}
+if ($wallpapers -cmatch 'Colours\.') {
+    throw 'Wallpapers references Colours, which closes a singleton cycle.'
+}
+if ($wallpapers -match 'paletteReady|paletteImage') {
+    throw 'Wallpapers kept the time-based startup gate.'
+}
 
 # Map the adapter's singletons onto fixture mocks.
 $currentImage = $currentImage.Replace('WallpaperEngine', 'root.engine')
+$apply = $apply.Replace('WallpaperEngine', 'root.engine')
+$apply = $apply.Replace('Paths.samePath', 'root.samePath')
 $apply = $apply.Replace('SchemeGenerator', 'root.schemeGenerator')
-$apply = $apply.Replace('Colours.scheme', 'root.colours.scheme')
 $apply = $apply.Replace('GlobalConfig.services.smartScheme', 'root.services.smartScheme')
 
 $fixture = $fixture.Replace('    // WALLPAPER_CURRENT_IMAGE', $currentImage.TrimEnd())
-$fixture = $fixture.Replace('    // WALLPAPER_PALETTE', $palette.TrimEnd())
 $fixture = $fixture.Replace('    // WALLPAPER_APPLY', $apply.TrimEnd())
 $fixture = $fixture.Replace('    // WALLPAPER_HANDLER', $handler.TrimEnd())
+$fixture = $fixture.Replace('        // WALLPAPER_SMART_CHANGED', $smart.TrimEnd())
+$fixture = $fixture.Replace('        // WALLPAPER_SNAPSHOT_SETTLED', $snapshot.TrimEnd())
 
 $stage = Join-Path ([IO.Path]::GetTempPath()) ('caelestia-wallpaper-colours-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $stage | Out-Null
@@ -78,7 +93,7 @@ try {
         $output -match 'CAELESTIA_WALLPAPER_COLOURS_FAIL|TypeError|ReferenceError|binding loop') {
         throw 'Wallpaper colours fixture failed.'
     }
-    Write-Output 'PASS wallpaper colours: quit, relaunch, Windows change, fixed scheme and dedupe.'
+    Write-Output 'PASS wallpaper colours: persisted source, async WE snapshot, smart toggle, fixed/dynamic switch and dedupe.'
 } finally {
     $safeStage = [IO.Path]::GetFullPath($stage).TrimEnd('\')
     if ((Split-Path -Parent $safeStage) -ne [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\') -or
