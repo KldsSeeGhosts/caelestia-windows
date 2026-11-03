@@ -20,6 +20,7 @@ function Get-UniqueMatch([string]$Text, [string]$Pattern) {
 }
 
 $wallpapers = Get-Content -LiteralPath (Join-Path $repoRoot 'windows\shell\adapters\services\Wallpapers.qml') -Raw
+$engine = Get-Content -LiteralPath (Join-Path $repoRoot 'windows\services\wallpaperengine\WallpaperEngine.qml') -Raw
 $fixture = Get-Content -LiteralPath (Join-Path $repoRoot 'windows\tests\WallpaperHandbackTest.qml') -Raw
 
 $fallback = Get-UniqueMatch $wallpapers '(?m)^    readonly property string fallback: [^\r\n]+'
@@ -37,6 +38,9 @@ $fileChanged = Get-UniqueMatch $wallpapers '(?ms)^    onFileCurrentChanged: \{.*
 $externalChanged = Get-UniqueMatch $wallpapers '(?ms)^    onExternalWallpaperActiveChanged: \{.*?^    \}'
 $handbackAdopt = Get-UniqueMatch $wallpapers '(?ms)^        function onDesktopHandedBackChanged\(\): void \{.*?^        \}'
 $wallpaperChanged = Get-UniqueMatch $wallpapers '(?ms)^        function onWallpaperChanged\(\): void \{.*?^        \}'
+# The ownership latch is production state: splice onRunningChanged so the
+# process-stop boundary fails here if a stop starts clearing the handback.
+$runningChanged = Get-UniqueMatch $engine '(?ms)^    onRunningChanged: \{.*?^    \}'
 
 # The bundled asset is the required fallback when no verified local file
 # survives, and the source selection must never hand the system SPI path to the
@@ -86,6 +90,16 @@ if ($gateIndex -lt 0 -or $readIndex -lt 0 -or $gateIndex -gt $readIndex -or
     $wallpaperChanged -notmatch '(?s)if \(WallpaperEngine\.desktopHandedBack\)\s*\r?\n\s*return;') {
     throw 'wallpaperChanged still adopts a native path while handed back.'
 }
+# Process-stop discovery must not clear the handback latch: only a new engine
+# process resets it. The native notifier has no ordering contract with process
+# discovery, so a stop that reopens adoption loses the verified source.
+$runningGuard = $runningChanged.IndexOf('if (running)')
+$latchClear = $runningChanged.IndexOf('desktopHandedBack = false')
+$elseBranch = $runningChanged.IndexOf('} else')
+if ($runningGuard -lt 0 -or $latchClear -lt 0 -or $runningGuard -gt $latchClear -or
+    ($elseBranch -ge 0 -and $elseBranch -lt $latchClear)) {
+    throw 'onRunningChanged does not clear the handback latch only for a new engine process.'
+}
 
 # Map the production singletons onto the fixture mocks.
 function Convert-Block([string]$Block) {
@@ -95,6 +109,11 @@ function Convert-Block([string]$Block) {
     $result = $result.Replace('Paths.samePath', 'root.samePath')
     return $result
 }
+
+# The engine handler is indented one level into the fixture's engine object.
+$runningChanged = ($runningChanged -split "\r?\n" | ForEach-Object {
+    if ($_ -eq '') { $_ } else { '    ' + $_ }
+}) -join "`n"
 
 $fixture = $fixture.Replace('    // WALLPAPER_LAST_GOOD', (Convert-Block $lastGood).TrimEnd())
 $fixture = $fixture.Replace('    // WALLPAPER_HANDBACK_WALLPAPER', (Convert-Block $handback).TrimEnd())
@@ -109,6 +128,7 @@ $fixture = $fixture.Replace('    // WALLPAPER_FILE_CHANGED', (Convert-Block $fil
 $fixture = $fixture.Replace('    // WALLPAPER_EXTERNAL_CHANGED', (Convert-Block $externalChanged).TrimEnd())
 $fixture = $fixture.Replace('        // WALLPAPER_HANDBACK_ADOPT', (Convert-Block $handbackAdopt).TrimEnd())
 $fixture = $fixture.Replace('        // WALLPAPER_CHANGED', (Convert-Block $wallpaperChanged).TrimEnd())
+$fixture = $fixture.Replace('        // WALLPAPER_ENGINE_RUNNING_CHANGED', $runningChanged.TrimEnd())
 
 $stage = Join-Path ([IO.Path]::GetTempPath()) ('caelestia-wallpaper-handback-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $stage | Out-Null
@@ -135,12 +155,12 @@ try {
     Write-Output $output
 
     # The assertion count is part of the marker: dropping a scenario must fail.
-    $marker = [regex]::Match($output, 'CAELESTIA_WALLPAPER_HANDBACK_PASS 36\b')
+    $marker = [regex]::Match($output, 'CAELESTIA_WALLPAPER_HANDBACK_PASS 46\b')
     if ($process.ExitCode -ne 0 -or -not $marker.Success -or
         $output -match 'CAELESTIA_WALLPAPER_HANDBACK_FAIL|TypeError|ReferenceError|binding loop') {
         throw 'Wallpaper handback fixture failed.'
     }
-    Write-Output 'PASS wallpaper handback: while handed back an empty, missing or existing engine-era native path cannot replace the verified source, an explicit pick (including black) still applies, a deleted last good file falls back to the bundled asset, and a usable change still applies on the own desktop.'
+    Write-Output 'PASS wallpaper handback: while handed back an empty, missing or existing engine-era native path cannot replace the verified source, process-stop discovery preserves it while a new process fails closed, an explicit pick (including black) still applies, a deleted last good file falls back to the bundled asset, and a usable change still applies on the own desktop.'
 } finally {
     $safeStage = [IO.Path]::GetFullPath($stage).TrimEnd('\')
     if ((Split-Path -Parent $safeStage) -ne [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\') -or

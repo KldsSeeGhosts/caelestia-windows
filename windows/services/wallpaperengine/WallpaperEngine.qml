@@ -44,10 +44,14 @@ Singleton {
     property bool desktopHandedBack: false
     readonly property bool ownsDesktop: !snapshotReady || (running && !desktopHandedBack)
     onRunningChanged: {
-        // A new engine process has no claim yet. Fail closed until the
-        // backend finds its wallpaper window in the desktop host.
+        // A stop is still engine-era discovery: keep the handback latch so a
+        // native wallpaper notification cannot replace the verified source
+        // after the claim is gone. A process start clears the latch and has no
+        // claim yet: fail closed until the backend finds its wallpaper window
+        // in the desktop host (#214).
         desktopClaimed = running && underlayActive;
-        desktopHandedBack = false;
+        if (running)
+            desktopHandedBack = false;
     }
     onUnderlayActiveChanged: {
         if (underlayActive) {

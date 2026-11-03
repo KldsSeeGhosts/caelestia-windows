@@ -26,11 +26,11 @@ QtObject {
         property bool running: true
         property bool snapshotReady: true
         property bool desktopHandedBack: false
+        property bool desktopClaimed: false
+        property bool underlayActive: false
         property bool ownsDesktop: !snapshotReady || (running && !desktopHandedBack)
         property var current: ({ path: "C:/we/project.json", preview: "C:/we/preview.jpg" })
-        // WallpaperEngine.onRunningChanged clears the handback latch whenever
-        // the process start/stop state changes.
-        onRunningChanged: desktopHandedBack = false
+        // WALLPAPER_ENGINE_RUNNING_CHANGED
     }
     // The production external claim is exactly this binding.
     property bool externalWallpaperActive: root.engine.ownsDesktop
@@ -175,6 +175,40 @@ QtObject {
                 "the handed-back desktop showed the engine-era system wallpaper");
             check(root.lastGoodFile === "C:/walls/own.jpg",
                 "an engine-era system wallpaper became the next handback target");
+
+            // 6b. Process-stop discovery is still engine-era bookkeeping. The
+            // handback latch must survive running=false: if it clears, the next
+            // native notification reopens adoption after the external claim is
+            // gone and replaces both the visible source and the next handback
+            // target with the system file the engine left behind.
+            root.engine.running = false;
+            check(!root.engine.ownsDesktop, "the stopped engine still owns the desktop");
+            root.nativeHost.currentPath = "C:/walls/system-black.jpg";
+            root.desktopLayer.wallpaperChanged();
+            check(root.fileCurrent === "C:/walls/own.jpg",
+                "a native system file replaced the verified source after the engine stopped");
+            check(root.lastGoodFile === "C:/walls/own.jpg",
+                "process-stop discovery replaced the next handback target");
+            check(root.currentImage === "C:/walls/own.jpg" && root.current === "C:/walls/own.jpg",
+                "the stopped engine showed the engine-era system wallpaper");
+            check(root.engine.desktopHandedBack, "process-stop discovery cleared the handback latch");
+
+            // 6c. A new engine process is a new ownership claim. The old
+            // handback must not keep it out of the fail-closed startup: it owns
+            // the desktop until the backend acknowledges its wallpaper window.
+            root.engine.running = true;
+            check(!root.engine.desktopHandedBack, "a new engine process kept the old handback latch");
+            check(root.externalWallpaperActive, "a new engine process does not fail closed");
+            check(root.currentImage === "C:/we/preview.jpg",
+                "a new engine process showed the shell's own wallpaper before acknowledgement");
+            check(root.lastGoodFile === "C:/walls/own.jpg",
+                "a new engine process replaced the verified source before acknowledgement");
+
+            // Restore the handed-back running state the explicit-pick scenario
+            // starts from.
+            root.engine.desktopHandedBack = true;
+            check(root.currentImage === "C:/walls/own.jpg",
+                "the handback after the restart did not restore the verified source");
 
             // 7. An explicit pick is a Caelestia choice even while handed back,
             // and an intentionally black image is valid: no filename decides.
