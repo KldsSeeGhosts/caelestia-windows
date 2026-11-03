@@ -846,20 +846,24 @@ function Remove-CaelestiaSchemeTrash([string]$RuntimesRoot, [string[]]$Keep = @(
 # as ordinary trash. Only hash-derived generation and trash leaf names are
 # stored, so the journal never contains a profile or user path.
 function Read-CaelestiaSchemeRestoreJournal([string]$SchemeRoot) {
+    $path = Join-Path $SchemeRoot $script:CaelestiaSchemeRestoreJournalName
+    # Missing is an empty journal. Unreadable or invalid is not: the caller
+    # must not treat it as "nothing to restore" and delete the trash.
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+        return [pscustomobject]@{ Entries = @(); Readable = $true }
+    }
     try {
-        $path = Join-Path $SchemeRoot $script:CaelestiaSchemeRestoreJournalName
-        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return @() }
         $entries = @()
-        foreach ($entry in @(Get-Content -LiteralPath $path -Raw | ConvertFrom-Json)) {
+        foreach ($entry in @(Get-Content -LiteralPath $path -Raw -ErrorAction Stop | ConvertFrom-Json)) {
             $generation = [string]$entry.generation
             $trash = [string]$entry.trash
             if (-not (Test-CaelestiaSchemeGeneration $generation)) { continue }
             if ($trash -notmatch ('^' + [regex]::Escape($generation) + '\.[a-f0-9]{8}$')) { continue }
             $entries += [pscustomobject]@{ Generation = $generation; Trash = $trash }
         }
-        return $entries
+        return [pscustomobject]@{ Entries = $entries; Readable = $true }
     } catch {
-        return @()
+        return [pscustomobject]@{ Entries = @(); Readable = $false }
     }
 }
 
@@ -884,10 +888,14 @@ function Write-CaelestiaSchemeRestoreJournal([string]$SchemeRoot, $Entries) {
 # One restore attempt per prune. A held file makes the rename fail again; the
 # entry stays in the journal for the following prune, never in a retry loop.
 function Restore-CaelestiaSchemeTrashJournal([string]$SchemeRoot, [string]$RuntimesRoot) {
+    $read = Read-CaelestiaSchemeRestoreJournal $SchemeRoot
+    if (-not $read.Readable) {
+        return [pscustomobject]@{ Restored = @(); Pending = @(); Saved = $false; Readable = $false }
+    }
     $pending = @()
     $restored = @()
     $trashRoot = Join-Path $RuntimesRoot '.trash'
-    foreach ($entry in @(Read-CaelestiaSchemeRestoreJournal $SchemeRoot)) {
+    foreach ($entry in @($read.Entries)) {
         $source = Join-Path $trashRoot $entry.Trash
         $target = Join-Path $RuntimesRoot $entry.Generation
         if (-not (Test-Path -LiteralPath $source -PathType Container)) { continue }
@@ -903,7 +911,7 @@ function Restore-CaelestiaSchemeTrashJournal([string]$SchemeRoot, [string]$Runti
         }
     }
     $saved = Write-CaelestiaSchemeRestoreJournal $SchemeRoot $pending
-    return [pscustomobject]@{ Restored = @($restored); Pending = @($pending); Saved = $saved }
+    return [pscustomobject]@{ Restored = @($restored); Pending = @($pending); Saved = $saved; Readable = $true }
 }
 
 # Remove scheme generations no installed version can reference. Only run with
@@ -923,6 +931,14 @@ function Remove-CaelestiaSchemeGenerations([string]$Prefix, [string]$ProfileRoot
             $runtimesRoot = [IO.Path]::GetFullPath((Join-Path $schemeRoot 'runtimes')).TrimEnd('\')
             if (-not (Test-Path -LiteralPath $runtimesRoot -PathType Container)) { return }
             $recovery = Restore-CaelestiaSchemeTrashJournal $schemeRoot $runtimesRoot
+            if (-not $recovery.Readable) {
+                # The journal may still list a generation sitting in .trash.
+                # Deleting or retiring trash without that list can destroy the
+                # only copy of a path we had promised to put back.
+                Write-CaelestiaSchemeRuntimeLog -ProfileRoot $ProfileRoot -Event 'scheme-prune' `
+                    -Fields ([ordered]@{ recovery = 'unread' })
+                return
+            }
             $restored = @($recovery.Restored)
             $journal = @($recovery.Pending)
             $journalSaved = [bool]$recovery.Saved

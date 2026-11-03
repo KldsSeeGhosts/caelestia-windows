@@ -1013,6 +1013,30 @@ public static extern bool FreeLibrary(System.IntPtr module);
     Remove-CaelestiaSchemeGenerations $prunePrefix $pruneProfile
     Assert (-not (Test-Path -LiteralPath $strandGeneration)) 'The restored generation was not retired by a later prune.'
 
+    # A journal that cannot be read is not an empty journal. Prune must leave
+    # the trash generation alone, then restore it on a later run once the
+    # file can be read again.
+    $lockedGeneration = 'f5' * 20
+    $lockedLeaf = $lockedGeneration + '.a1b2c3d4'
+    $lockedTrash = Join-Path $pruneRuntimes ('.trash\' + $lockedLeaf)
+    New-Item -ItemType Directory -Force -Path $lockedTrash | Out-Null
+    'awaiting-restore' | Set-Content -LiteralPath (Join-Path $lockedTrash 'marker.txt') -Encoding UTF8
+    $lockedJournal = Join-Path $pruneSchemeRoot 'prune-restore.json'
+    @{ generation = $lockedGeneration; trash = $lockedLeaf } | ConvertTo-Json | Set-Content -LiteralPath $lockedJournal -Encoding UTF8
+    $lockedBefore = Get-Content -LiteralPath $lockedJournal -Raw
+    $lockedStream = [IO.File]::Open($lockedJournal, 'Open', 'Read', 'None')
+    try {
+        Remove-CaelestiaSchemeGenerations $prunePrefix $pruneProfile
+        Assert (Test-Path -LiteralPath (Join-Path $lockedTrash 'marker.txt')) 'Prune deleted a generation whose restore journal could not be read.'
+        Assert (-not (Test-Path -LiteralPath (Join-Path $pruneRuntimes $lockedGeneration))) 'Prune restored a generation while its journal was still unreadable.'
+    } finally { $lockedStream.Dispose() }
+    Assert ((Get-Content -LiteralPath $lockedJournal -Raw) -eq $lockedBefore) 'An unreadable restore journal was rewritten.'
+    Remove-CaelestiaSchemeGenerations $prunePrefix $pruneProfile
+    $lockedRestored = Join-Path (Join-Path $pruneRuntimes $lockedGeneration) 'marker.txt'
+    Assert ((Get-Content -LiteralPath $lockedRestored -Raw).Trim() -eq 'awaiting-restore') 'The locked journal did not restore the generation on the next prune.'
+    Assert (-not (Test-Path -LiteralPath $lockedTrash)) 'The restored generation stayed in .trash.'
+    Assert (-not (Test-Path -LiteralPath $lockedJournal)) 'The restore journal was not cleared after the locked generation was restored.'
+
     # Interrupted staging directories (no lock holder owns them) are pruned, and
     # a partially deleted trash entry is finished by the next prune.
     $staleStaging = Join-Path $pruneRuntimes ('.staging-' + [guid]::NewGuid().ToString('N'))
