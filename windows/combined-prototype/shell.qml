@@ -334,6 +334,7 @@ ShellRoot {
     WindowsFocusGuard {
         id: focusGuard
         target: win.contentItem
+        foregroundSource: Native.Foreground
         active: !root.smoke && !root.runtimeProbe && ((win.screenState?.session ?? false) || (win.screenState?.launcher ?? false))
         onOutcome: status => console.log("CAELESTIA_SHELL_FOCUS", status)
         onDismissRequested: {
