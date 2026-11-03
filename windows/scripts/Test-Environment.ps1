@@ -154,7 +154,7 @@ $report = [pscustomobject][ordered]@{
     notes = @(
         'This report does not validate a Caelestia build, Qt module coverage, SDK compatibility, or runtime behavior.',
         'No software was installed and no desktop, configuration, authentication, or environment settings were changed.',
-        'The portable plugin build and component probe do not validate the full bar/drawer or Windows service adaptation.'
+        'The portable plugin build does not validate the full bar/drawer or Windows service adaptation.'
     )
 }
 if ($Json) {

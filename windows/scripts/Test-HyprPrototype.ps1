@@ -1,13 +1,18 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][string]$QtPrefix,
-    [string]$BuildRoot
+    [string]$BuildRoot,
+    [string]$RunRoot,
+    [switch]$Offscreen,
+    [string]$M1CachePath
 )
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
 if (-not $BuildRoot) { $BuildRoot = Join-Path $repoRoot 'windows\.local\build' }
 $BuildRoot = [IO.Path]::GetFullPath($BuildRoot)
+if (-not $RunRoot) { $RunRoot = Join-Path $BuildRoot 'run' }
+$RunRoot = [IO.Path]::GetFullPath($RunRoot)
 $output = Join-Path $BuildRoot ('hypr-validation-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
 New-Item -ItemType Directory -Force -Path $output | Out-Null
 $records = New-Object Collections.Generic.List[object]
@@ -69,11 +74,11 @@ try {
     # construct the backend's WindowTracker/VirtualDesktops/TilingManager and
     # may dispatch desktop/window commands; those modes are owned by the
     # orchestrator's live run and are deliberately not reachable here.
-    $screenCount = $beforeDesktop.monitors.Count
+    $screenCount = if ($Offscreen) { 1 } else { $beforeDesktop.monitors.Count }
     Assert ($screenCount -gt 0) 'No measured monitor available.'
     for ($screen = 0; $screen -lt $screenCount; $screen++) {
         $result = & "$PSScriptRoot\Start-ShellPrototype.ps1" -QtPrefix $QtPrefix -BuildRoot $BuildRoot `
-            -Hypr -HyprMode Disabled -Smoke -ScaleFactor native -ScreenIndex $screen | ConvertFrom-Json
+            -RunRoot $RunRoot -Offscreen:$Offscreen -Hypr -HyprMode Disabled -Smoke -ScaleFactor native -ScreenIndex $screen | ConvertFrom-Json
         Assert $result.passed "Hypr prototype failed on screen $screen in Disabled mode."
         $records.Add([ordered]@{ kind = 'hypr-disabled'; result = $result })
         Assert ($result.hyprSnapshots.Count -eq 2) 'Hypr smoke did not record initial and final state.'
@@ -81,8 +86,8 @@ try {
         Assert-DisabledHypr $result.hyprSnapshots[1].state 'Final disabled smoke'
         Assert-HyprLog $result "Hypr Disabled screen $screen"
     }
-    $regression = & "$PSScriptRoot\Start-ShellPrototype.ps1" -QtPrefix $QtPrefix -BuildRoot $BuildRoot `
-        -Smoke -ScaleFactor native -ScreenIndex 0 | ConvertFrom-Json
+    $regression = & "$PSScriptRoot\Caelestia-M1Regression.ps1" -QtPrefix $QtPrefix -BuildRoot $BuildRoot `
+        -RunRoot $RunRoot -Offscreen:$Offscreen -CachePath $M1CachePath
     Assert $regression.passed 'Original M1 bar/session smoke regression failed.'
     $records.Add([ordered]@{ kind = 'm1-regression'; result = $regression })
     $regressionLog = (Get-Content -LiteralPath $regression.stdout -Raw) + "`n" + (Get-Content -LiteralPath $regression.stderr -Raw)

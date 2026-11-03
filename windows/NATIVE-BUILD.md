@@ -2,9 +2,10 @@
 
 The first verified build uses Windows 11, Qt 6.11.2 `msvc2022_64`, clang-cl
 20.1.8, Visual Studio Build Tools 2022, Windows SDK 10.0.26100.0, CMake 4.4.4,
-Ninja 1.13.2, and CLI11 2.5.0. The main entry point is now the
+Ninja 1.13.2, and CLI11 2.5.0. The main entry point is the
 [bounded native bar/session prototype](shell-prototype/README.md); the earlier
-component probe is retained. A build or smoke pass does not complete M1.
+standalone component probe has been retired. A build or smoke pass does not
+complete M1.
 The separate [final acceptance record](validation/2026-10-25-m1-acceptance/README.md)
 now completes the bounded M1 gate with native input and lifecycle evidence.
 
@@ -217,8 +218,10 @@ pointer/focus at both DPIs; smoke alone does not establish those results.
 
 Smoke programmatically opens/closes the original content, checks geometry,
 fonts, DPI and unavailable session actions, saves a PNG and exits. Input and
-native focus activation are disabled during smoke. It has a 45-second outer
-limit and a 15-second QML watchdog and rejects runtime warnings/errors.
+native focus activation are disabled during smoke. It has a 60-second outer
+limit and a 15-second QML watchdog and rejects runtime warnings/errors. Use
+`-Offscreen` so the run opens no native window and does not depend on the
+desktop; without it smoke shows a native window on the target monitor.
 Numeric scale overrides are synthetic child-process DPI tests; native uses
 the selected display. Neither replaces real pointer/focus or same-process
 mixed-DPI monitor tests. See the
@@ -272,54 +275,90 @@ rectangles, scale, taskbar flags, foreground PID/HWND and relevant process names
 negative origins. It changes only its measurement thread's DPI context
 temporarily, not display/taskbar settings.
 
-## Retained component probe
+## Validation harness matrix
 
-Launch an ordinary application window:
+The service and combined hosts are the end-to-end UI smoke matrix. Each runs its
+adapter fixture, the screens it supports (one virtual screen offscreen), and the
+M1 bar/session regression. Run them from a disposable working directory.
+Validation output goes under `-BuildRoot`; stages, profiles and logs stay in the
+checkout's `windows/.local/build` unless a launcher `-RunRoot` overrides it.
+
+| Harness | Coverage |
+| --- | --- |
+| `Test-AudioPrototype.ps1` | Audio disabled/read-only on every screen, endpoint stability, M1 |
+| `Test-BatteryPrototype.ps1` | Battery disabled/read-only/profiles, nested audio regression, M1 |
+| `Test-MediaPrototype.ps1` | Media disabled/read-only, guarded transport controls, M1 |
+| `Test-NetworkPrototype.ps1` | Network disabled/read-only, no scan/command dispatch, M1 |
+| `Test-BluetoothPrototype.ps1` | Bluetooth disabled/read-only, radio/device guards, M1 |
+| `Test-BrightnessPrototype.ps1` | Brightness disabled/read-only, gamma untouched, M1 |
+| `Test-AppsPrototype.ps1` | Apps disabled/read-only, launch guards, frequency store, M1; native desktop run, not offscreen |
+| `Test-TrayPrototype.ps1` | Tray disabled/read-only, fixture preview, hook off, M1 |
+| `Test-SessionPrototype.ps1` | Session disabled/observe, action gating, M1 |
+| `Test-NotificationsPrototype.ps1` | Notifications disabled/local, privacy guards, M1 |
+| `Test-HyprPrototype.ps1` | Hypr disabled only, no backend construction, M1 |
+| `Test-TilingPrototype.ps1` | Tiling disabled only, no wrapper construction, M1 |
+| `Test-CombinedPrototype.ps1` | Every service, popouts, panels, captures, M1 |
+
+Run the offscreen matrix with one M1 cache per invocation so the regression
+executes once for the invocation instead of once per harness:
 
 ```powershell
-powershell -NoProfile -File windows/scripts/Start-Prototype.ps1 `
-    -QtPrefix "$devRoot\Qt\6.11.2\msvc2022_64"
-```
-
-Click the original bar clock to open/close the motion specimen. Escape closes
-it. Close the window to stop the process. An existing tiler may resize the
-window; its 740 by 460 component specimen stays centered inside it.
-
-For bounded automated rendering checks:
-
-```powershell
-foreach ($scale in @('1', '1.5', '1.75')) {
-    powershell -NoProfile -File windows/scripts/Start-Prototype.ps1 `
-        -QtPrefix "$devRoot\Qt\6.11.2\msvc2022_64" -Smoke -ScaleFactor $scale
-    if ($LASTEXITCODE -ne 0) { throw "Rendering check failed at $scale." }
+$repo = (Resolve-Path .).Path
+$qtPrefix = "$env:LOCALAPPDATA\caelestia-dev\Qt\6.11.2\msvc2022_64"
+$buildRoot = 'C:\b-cull'
+# Short run root outside %TEMP% (Windows path limits, #318).
+$runRoot = 'C:\b-cull\run'
+New-Item -ItemType Directory -Force -Path $runRoot | Out-Null
+$m1Cache = Join-Path $runRoot ('m1-result-' + [guid]::NewGuid().ToString('N') + '.json')
+Push-Location $runRoot
+try {
+    foreach ($harness in @(
+        'Test-AudioPrototype.ps1', 'Test-BatteryPrototype.ps1', 'Test-MediaPrototype.ps1',
+        'Test-NetworkPrototype.ps1', 'Test-BluetoothPrototype.ps1', 'Test-BrightnessPrototype.ps1',
+        'Test-TrayPrototype.ps1', 'Test-SessionPrototype.ps1',
+        'Test-NotificationsPrototype.ps1', 'Test-HyprPrototype.ps1', 'Test-TilingPrototype.ps1',
+        'Test-CombinedPrototype.ps1'
+    )) {
+        Write-Host "== $harness =="
+        & "$repo\windows\scripts\$harness" -QtPrefix $qtPrefix -BuildRoot $buildRoot `
+            -RunRoot $runRoot -Offscreen -M1CachePath $m1Cache
+    }
+} finally {
+    Pop-Location
 }
 ```
 
-These scale overrides affect only the child process. They disable Qt's native
-scale factor, set the testing font DPI to 96, and apply the requested testing
-factor, then assert the observed device pixel ratio. They do not change Windows display settings. This is
-synthetic DPI coverage, not a mixed-monitor or native DPI transition test.
-See [Qt's DPI testing reference](https://doc.qt.io/qt-6/highdpi.html#testing).
+`-M1CachePath` is optional. Without it each harness still runs M1 exactly once
+for its own invocation; with one shared path the first harness runs it and the
+rest reuse the cached result (`m1Cached=true`). `Test-BatteryPrototype.ps1`
+forwards its cache to the nested audio harness, so that suite also runs M1 once.
+The cache records the build root, the Qt prefix, the build's `sourceRevision`
+and `backendRevision`, and the staged M1 payload identity. `Caelestia-M1Regression.ps1`
+reruns M1 instead of reusing when any of those differ, when the build or Qt
+prerequisites are missing, or when the file cannot be read. If one harness
+throws, the loop stops; run the remaining names individually.
 
-Each check allows 45 seconds for process startup and completion, with a separate
-10-second in-app watchdog after QML loads. The initial run after a plugin
-rebuild took about 19 seconds to produce its screenshot; warm runs took about
-four seconds. Logs include timestamps and results include elapsed time.
+The matrix loop runs its 12 hosts with `-Offscreen`, so no window appears and
+`grabToImage` completes without DWM or vsync. Offscreen exposes one virtual
+screen, which is why the loop runs one screen per host. The per-service adapter
+fixtures force the offscreen Qt platform themselves, so
+`Test-<Service>Service.ps1` runs without any window.
 
-Each check opens and closes the motion specimen, saves a PNG, and exits. It
-fails on an incorrect DPI, dimensions, capture failure, timeout, or warning/error
-in the runtime log. JSON results, source hashes, stdout, stderr, and screenshots
-are saved under `logs/`. A result does not prove real pointer input, panel
-keyboard focus, dismissal, or focus return.
+`Test-AppsPrototype.ps1` is not in the offscreen loop. The pinned backend skips
+`WindowsDesktopEntryBackend::install()` on the offscreen QPA, so a ReadOnly run
+sees an empty catalog and the frequency checks have no application id to work
+with. Run Apps as a separate native desktop run on the QA owner's desktop, which
+keeps the frequency assertions:
 
-The older probe stages an audited QML subset under `probe/` and creates configuration,
-state, runtime, data, and cache directories under `probe-profile/`. An existing
-probe configuration is preserved. Its palette is fixed and its clock icon is
-disabled. The native prototype separately loads pinned
-[Rubik/Material Symbols assets and licenses](assets/README.md); neither
-prototype validates the dynamic theme service.
+```powershell
+& "$repo\windows\scripts\Test-AppsPrototype.ps1" -QtPrefix $qtPrefix `
+    -BuildRoot $buildRoot -RunRoot $runRoot
+```
 
-Quickshell records its own process bookkeeping under its Windows application
-directory. The separate probe configuration path keeps its identity distinct.
-The scripts do not change the current shell, taskbar configuration, tiler
-configuration, autostart, credentials, or ordinary Caelestia configuration.
+`Test-NotificationsPrototype.ps1` marks its local-owner delivery scenarios
+SKIPPED when another shell owns Windows notifications, as described in the
+`-Offscreen` note above. The run still passes its disabled-mode scenarios.
+
+The install, rollback, uninstall, supervisor, backend lifetime/hotplug/hook,
+tiling/fullscreen and Glazier suites remain separate harnesses; this matrix
+covers the service UI hosts that share the M1 regression.

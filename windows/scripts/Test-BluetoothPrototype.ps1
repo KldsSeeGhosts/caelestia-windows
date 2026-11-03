@@ -1,13 +1,18 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][string]$QtPrefix,
-    [string]$BuildRoot
+    [string]$BuildRoot,
+    [string]$RunRoot,
+    [switch]$Offscreen,
+    [string]$M1CachePath
 )
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
 if (-not $BuildRoot) { $BuildRoot = Join-Path $repoRoot 'windows\.local\build' }
 $BuildRoot = [IO.Path]::GetFullPath($BuildRoot)
+if (-not $RunRoot) { $RunRoot = Join-Path $BuildRoot 'run' }
+$RunRoot = [IO.Path]::GetFullPath($RunRoot)
 $output = Join-Path $BuildRoot ('bluetooth-validation-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
 New-Item -ItemType Directory -Force -Path $output | Out-Null
 $records = New-Object Collections.Generic.List[object]
@@ -26,7 +31,7 @@ function Desktop-Identity($State) {
         monitors = $State.monitors
         taskbar = $State.taskbar
         explorerRunning = $State.explorerRunning
-        processes = $State.relevantProcesses
+        processes = @($State.relevantProcesses | Where-Object { $_.name -notin @('qs', 'quickshell') })
     } | ConvertTo-Json -Depth 10 -Compress
 }
 function Bluetooth-Stable($State) {
@@ -83,12 +88,12 @@ try {
     $records.Add([ordered]@{ kind = 'fixture'; result = $fixture })
     # Native screen selection is explicit. The parent runs this harness on the
     # desktop; the smoke itself never sends a Bluetooth request or enables input.
-    $screenCount = $beforeDesktop.monitors.Count
+    $screenCount = if ($Offscreen) { 1 } else { $beforeDesktop.monitors.Count }
     Assert ($screenCount -gt 0) 'No measured monitor available.'
     for ($screen = 0; $screen -lt $screenCount; $screen++) {
         foreach ($mode in @('Disabled', 'ReadOnly')) {
             $result = & "$PSScriptRoot\Start-ShellPrototype.ps1" -QtPrefix $QtPrefix -BuildRoot $BuildRoot `
-                -Bluetooth -BluetoothMode $mode -Smoke -ScaleFactor native -ScreenIndex $screen | ConvertFrom-Json
+                -RunRoot $RunRoot -Offscreen:$Offscreen -Bluetooth -BluetoothMode $mode -Smoke -ScaleFactor native -ScreenIndex $screen | ConvertFrom-Json
             Assert $result.passed "Bluetooth UI failed on screen $screen in $mode mode."
             $records.Add([ordered]@{ kind = 'bluetooth'; result = $result })
             Assert ($result.bluetoothSnapshots.Count -eq 2) 'Bluetooth smoke did not record initial and final state.'
@@ -131,8 +136,8 @@ try {
                 'Bluetooth policy or adapter identity changed during the read-only smoke.'
         }
     }
-    $regression = & "$PSScriptRoot\Start-ShellPrototype.ps1" -QtPrefix $QtPrefix -BuildRoot $BuildRoot `
-        -Smoke -ScaleFactor native -ScreenIndex 0 | ConvertFrom-Json
+    $regression = & "$PSScriptRoot\Caelestia-M1Regression.ps1" -QtPrefix $QtPrefix -BuildRoot $BuildRoot `
+        -RunRoot $RunRoot -Offscreen:$Offscreen -CachePath $M1CachePath
     Assert $regression.passed 'Original M1 bar/session smoke regression failed.'
     $records.Add([ordered]@{ kind = 'm1-regression'; result = $regression })
 } catch {

@@ -5,7 +5,8 @@ param(
     [string]$RunRoot,
     # Run every UI smoke on the offscreen QPA. This is the normal test mode:
     # no window is shown and frame presentation never depends on DWM.
-    [switch]$Offscreen
+    [switch]$Offscreen,
+    [string]$M1CachePath
 )
 
 $ErrorActionPreference = 'Stop'
@@ -82,9 +83,8 @@ try {
             Assert (($initialEndpoints | ConvertTo-Json -Depth 10 -Compress) -eq ($finalEndpoints | ConvertTo-Json -Depth 10 -Compress)) 'Observed audio changed during read-only smoke.'
         }
     }
-    $regression = & "$PSScriptRoot\Start-ShellPrototype.ps1" -QtPrefix $QtPrefix -BuildRoot $BuildRoot `
-        -RunRoot $RunRoot -Offscreen:$Offscreen `
-        -Smoke -ScaleFactor native -ScreenIndex 0 | ConvertFrom-Json
+    $regression = & "$PSScriptRoot\Caelestia-M1Regression.ps1" -QtPrefix $QtPrefix -BuildRoot $BuildRoot `
+        -RunRoot $RunRoot -Offscreen:$Offscreen -CachePath $M1CachePath
     Assert $regression.passed 'Original M1 bar/session smoke regression failed.'
     $records.Add([ordered]@{ kind = 'm1-regression'; result = $regression })
 } catch {
