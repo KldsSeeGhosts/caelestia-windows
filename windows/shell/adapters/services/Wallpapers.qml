@@ -205,7 +205,23 @@ Singleton {
     }
     function query(search): var { return list.filter(w => w.relativePath.toLowerCase().includes(search.toLowerCase())); }
     // Preview affects only the shell's wallpaper surface, never Windows state.
-    function preview(path): void { previewPath = path; showPreview = true; }
+    // A listed cloud placeholder is not local: previewing its path hydrates it.
+    function preview(path): void {
+        const listed = list.find(entry => entry && Paths.samePath(entry.path, String(path ?? "")));
+        if (listed && listed.onDisk === false) {
+            stopPreview();
+            return;
+        }
+        previewPath = path;
+        showPreview = true;
+    }
+    function previewEntry(entry): void {
+        if (!entry || entry.onDisk === false) {
+            stopPreview();
+            return;
+        }
+        preview(entry.path);
+    }
     function stopPreview(): void { showPreview = false; }
     function setWallpaper(path): bool {
         if (!controlsEnabled) {
