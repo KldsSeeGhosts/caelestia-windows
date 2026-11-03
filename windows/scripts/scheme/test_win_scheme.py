@@ -178,6 +178,48 @@ class UnicodePathTests(unittest.TestCase):
     def test_accented_latin_wallpaper_path(self) -> None:
         self._round_trip("Profil café", "Café façade", "Crème brûlée.jpg")
 
+    def test_legacy_cp1252_path_file_survives_mode_change(self) -> None:
+        # An older helper applied this wallpaper under cp1252, so path.txt holds
+        # the accented source path in that code page. The thumbnail and scheme
+        # from a current apply stand in for that parent run; only the path file
+        # is rewound to the bytes the old writer produced.
+        folder = self.directory / "wallpapers"
+        folder.mkdir()
+        image = _image(folder, "Café.jpg", (1440, 1000))
+        profile = self.directory / "profile"
+        env = {
+            **os.environ,
+            "CAELESTIA_PROFILE_ROOT": str(profile),
+            "PYTHONUTF8": "0",
+            "PYTHONIOENCODING": "cp1252",
+        }
+        applied = subprocess.run(
+            [sys.executable, str(HELPER), "apply-wallpaper", "--image", str(image), "--smart", "0"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            env=env,
+            cwd=self.directory,
+            check=False,
+        )
+        self.assertEqual(applied.returncode, 0, applied.stderr[-4000:])
+        source = profile / "state" / "caelestia" / "wallpaper" / "path.txt"
+        resolved = str(image.resolve())
+        source.write_bytes(resolved.encode("cp1252"))
+        changed = subprocess.run(
+            [sys.executable, str(HELPER), "set-mode", "--mode", "light"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            env=env,
+            cwd=self.directory,
+            check=False,
+        )
+        self.assertEqual(changed.returncode, 0, changed.stderr[-4000:])
+        result = json.loads(changed.stdout)
+        self.assertTrue(result["ok"], changed.stdout)
+        self.assertEqual(source.read_text(encoding="utf-8"), resolved)
+
 
 def _stop(worker: subprocess.Popen) -> None:
     if worker.poll() is None:

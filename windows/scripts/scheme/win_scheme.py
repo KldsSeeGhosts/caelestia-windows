@@ -208,11 +208,37 @@ def _describe(scheme: Scheme) -> dict:
     }
 
 
-def _current_wallpaper() -> Path | None:
+def _read_persisted_path(path: Path) -> str | None:
+    """Read a wallpaper path saved by this helper or by an older cp1252 one.
+
+    New files are UTF-8. A profile written before that change stored accented
+    paths in the Windows ANSI code page, and those bytes are not valid UTF-8.
+    A successful legacy read is rewritten as UTF-8 so the next launch does not
+    depend on the old encoding. Losing the file here would drop a real selection.
+    """
     try:
-        value = wallpaper_path_path.read_text(encoding="utf-8").strip()
+        data = path.read_bytes()
     except OSError:
         return None
+    if data.startswith(b"\xef\xbb\xbf"):
+        data = data[3:]
+    try:
+        value = data.decode("utf-8")
+        legacy = False
+    except UnicodeDecodeError:
+        value = data.decode("cp1252")
+        legacy = True
+    value = value.strip()
+    if legacy and value:
+        try:
+            path.write_text(value, encoding="utf-8")
+        except OSError:
+            pass
+    return value or None
+
+
+def _current_wallpaper() -> Path | None:
+    value = _read_persisted_path(wallpaper_path_path)
     if not value:
         return None
     path = Path(value)
