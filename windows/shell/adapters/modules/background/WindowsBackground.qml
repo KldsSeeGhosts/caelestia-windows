@@ -27,6 +27,13 @@ Background {
     readonly property bool embedRefused: "embedRefused" in Native.DesktopLayer
         && Native.DesktopLayer.embedRefused
     readonly property bool externalActive: Wallpapers.externalWallpaperActive
+    // A handed-back engine can show another wallpaper without restarting
+    // wallpaper64.exe. While the process still runs the host must stay in the
+    // underlay position, even with Replace icons: the backend only
+    // acknowledges an underlay when aboveIcons is empty, so an above-icons
+    // embed would hide the returning wallpaper's claim and the handback latch
+    // could never clear (#214). Replace resumes once the process stops.
+    readonly property bool engineRunning: WallpaperEngine.running
     // Keep the host mounted across the handback: the backend withdraws the
     // acknowledgement before WallpaperEngine releases the claim, and a
     // transient yield there would recreate every background window. An
@@ -54,8 +61,12 @@ Background {
         if (backgroundRequested && (underlaySupported || !Wallpapers.externalWallpaperActive)) {
             // aboveIcons embeds into the icon host, which would cover the
             // WorkerW underlay and Wallpaper Engine. Never embed while an
-            // external wallpaper is active.
-            Native.DesktopLayer.aboveIcons = desktopIcons === "Replace" && !externalActive ? ["caelestia-background"] : [];
+            // external wallpaper is active, and stay in the underlay position
+            // while the engine process can still show another wallpaper: the
+            // backend cannot acknowledge that return through a non-empty
+            // aboveIcons, so the shell would never reclaim the desktop (#214).
+            Native.DesktopLayer.aboveIcons = desktopIcons === "Replace" && !externalActive && !engineRunning
+                ? ["caelestia-background"] : [];
             Native.DesktopLayer.enabled = true;
         } else {
             Native.DesktopLayer.enabled = false;
@@ -64,6 +75,7 @@ Background {
     onBackgroundRequestedChanged: reconcileDesktop()
     onExternalActiveChanged: reconcileDesktop()
     onDesktopIconsChanged: reconcileDesktop()
+    onEngineRunningChanged: reconcileDesktop()
     onUnderlayActiveChanged: {
         // The external wallpaper window left the host, so the backend has
         // dropped its acknowledgement. Re-scan now instead of waiting for the

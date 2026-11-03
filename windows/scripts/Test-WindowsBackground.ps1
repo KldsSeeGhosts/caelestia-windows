@@ -35,8 +35,9 @@ $ownership = ($ownership -split "\r?\n" | ForEach-Object {
 
 # Host discovery must re-run for every input that decides whether the backend
 # embeds this window, including the first scan before any underlay exists, the
-# icon embedding when an external owner starts or stops, and the handback.
-$handlers = foreach ($trigger in @('onBackgroundRequestedChanged', 'onExternalActiveChanged', 'onDesktopIconsChanged')) {
+# icon embedding when an external owner starts or stops, the handback, and the
+# handed-back process quitting so Replace can embed above the icons again.
+$handlers = foreach ($trigger in @('onBackgroundRequestedChanged', 'onExternalActiveChanged', 'onDesktopIconsChanged', 'onEngineRunningChanged')) {
     Get-UniqueMatch $background "(?m)^    $([regex]::Escape($trigger)): reconcileDesktop\(\)\r?$"
 }
 $null = Get-UniqueMatch $background '(?ms)^    Component\.onCompleted: reconcileDesktop\(\)\r?$'
@@ -137,12 +138,12 @@ try {
 
     # The assertion count is part of the marker: a scenario silently dropped
     # from the fixture must fail the run, not just shrink the number.
-    $marker = [regex]::Match($output, 'CAELESTIA_BACKGROUND_UNDERLAY_PASS 92\b')
+    $marker = [regex]::Match($output, 'CAELESTIA_BACKGROUND_UNDERLAY_PASS 107\b')
     if ($exitCode -ne 0 -or -not $marker.Success -or
         $output -match 'CAELESTIA_BACKGROUND_UNDERLAY_FAIL|TypeError|ReferenceError|binding loop') {
         throw 'Windows background fixture failed.'
     }
-    Write-Output 'PASS background underlay: 92 assertions across the acknowledged, refused, handback and legacy backends.'
+    Write-Output 'PASS background underlay: 107 assertions across the acknowledged, refused, handback, same-process Replace return and legacy backends.'
 } finally {
     $safeStage = [IO.Path]::GetFullPath($stage).TrimEnd('\')
     if ((Split-Path -Parent $safeStage) -ne [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\') -or

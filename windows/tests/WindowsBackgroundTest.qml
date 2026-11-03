@@ -319,6 +319,46 @@ Item {
             check(checkReady(screen), "underlay readiness does not depend on process discovery");
             wallpaperEngine.running = true;
 
+            // A same-process wallpaper return in Replace mode (#214 P2).
+            // Configure Replace while the underlay is acknowledged, close the
+            // wallpaper without stopping wallpaper64.exe, then reopen it. The
+            // handback must leave the background in the underlay position: the
+            // backend's underlayActive getter requires an empty aboveIcons, so
+            // a replace embed would prevent the returning wallpaper from ever
+            // being acknowledged and the handback latch could never clear.
+            environmentValues = ({ CAELESTIA_WINDOWS_BACKGROUND: "1", CAELESTIA_WINDOWS_DESKTOP_ICONS: "Replace" });
+            check(desktopIcons === "Replace", "replace icons configured before the same-process return");
+            check(underlayActive && externalActive, "replace keeps the acknowledged underlay");
+            check(nativeLayer.aboveIcons.length === 0, "replace does not embed above an acknowledged wallpaper");
+
+            nativeLayer.coveredByForeign = false;
+            check(!underlayActive && !externalActive, "the replace handback releases the external claim");
+            check(wallpaperEngine.desktopHandedBack, "the replace handback keeps the latch while the process runs");
+            check(nativeLayer.aboveIcons.length === 0, "the replace handback does not cover the returning engine");
+            check(hostEnabled && screens.length === 2, "the replace handback mounts the own desktop");
+            check(wallpapers.current === wallpapers.fileCurrent, "the replace handback shows the own wallpaper");
+
+            nativeLayer.coveredByForeign = true;
+            check(underlayActive, "a wallpaper reopened by the same process is acknowledged");
+            check(externalActive && !wallpaperEngine.desktopHandedBack, "the reopened wallpaper reclaims the desktop");
+            check(wallpapers.current === "file:///we-preview.png", "the reclaim shows the engine wallpaper again");
+            check(hostEnabled && screens.length === 2, "the reclaim keeps the host and screens");
+            check(nativeLayer.aboveIcons.length === 0, "the reclaim keeps the underlay position");
+
+            // Replace returns to the own desktop once the process is gone, so
+            // the guard must not permanently withdraw the icons embed.
+            wallpaperEngine.running = false;
+            check(nativeLayer.aboveIcons.length === 1 && nativeLayer.aboveIcons[0] === "caelestia-background",
+                "replace embeds above the icons once the process stops");
+
+            // Restore the acknowledged, running state the default handback
+            // case below starts from.
+            restoreEnvironment();
+            nativeLayer.coveredByForeign = true;
+            wallpaperEngine.running = true;
+            check(underlayActive && externalActive && !wallpaperEngine.desktopHandedBack,
+                "the behind-icons underlay is restored for the default handback");
+
             // The external wallpaper window can leave the host while the
             // process scan still sees wallpaper64.exe. That is a genuine
             // handback: the backend drops the acknowledgement, the ownership
