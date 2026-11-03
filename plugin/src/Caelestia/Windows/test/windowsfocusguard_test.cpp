@@ -169,6 +169,14 @@ private slots:
     // still the restore target.
     void preActivationEventBecomesRestoreTarget();
 
+    // Closing after the user picked another application must leave that
+    // application in front instead of restoring the saved one.
+    void closeAfterOutsideSelectionDoesNotRestore();
+
+    // A pre-activation event delivered while the panel is not foreground must
+    // not dismiss; the early panel-foreground return does not apply there.
+    void queuedPreActivationEventWhileNotForegroundDoesNotDismiss();
+
 private:
     HWND m_appA = nullptr;
     HWND m_appB = nullptr;
@@ -267,6 +275,36 @@ void WindowsFocusGuardTest::preActivationEventBecomesRestoreTarget() {
     QCOMPARE(mock::foregroundRequests.constLast(), m_appB);
     QVERIFY(!outcome.isEmpty());
     QCOMPARE(outcome.constLast().constFirst().toString(), QStringLiteral("restore-succeeded"));
+}
+
+void WindowsFocusGuardTest::closeAfterOutsideSelectionDoesNotRestore() {
+    // The user picks B while the panel is open, then the panel closes. The
+    // guard must leave B in front, not bring back the application it saved at
+    // activation.
+    mock::foreground = m_appB;
+    mock::foregroundRequests.clear();
+
+    QSignalSpy outcome(m_guard, &WindowsFocusGuard::outcome);
+    m_guard->setActive(false);
+    QCoreApplication::processEvents();
+
+    QCOMPARE(mock::foreground, m_appB);
+    QVERIFY(mock::foregroundRequests.isEmpty());
+    QVERIFY(!outcome.isEmpty());
+    QCOMPARE(outcome.constLast().constFirst().toString(),
+        QStringLiteral("restore-skipped-foreground-changed"));
+}
+
+void WindowsFocusGuardTest::queuedPreActivationEventWhileNotForegroundDoesNotDismiss() {
+    QSignalSpy dismiss(m_guard, &WindowsFocusGuard::dismissRequested);
+
+    // B's event was queued before the activation boundary and arrives while
+    // the panel is not foreground, so the panel-foreground early return does
+    // not apply. It is still not a choice made after the panel opened.
+    mock::foreground = m_appB;
+    m_source->deliver(m_appB, mock::tick, 9);
+
+    QCOMPARE(dismiss.count(), 0);
 }
 
 QTEST_MAIN(WindowsFocusGuardTest)
