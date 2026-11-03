@@ -1,12 +1,14 @@
 import QtQuick
 import Quickshell
 import Quickshell.Windows
+import Caelestia
 import Caelestia.I18n
 import "modules/bar/popouts/kblayout"
 
 // Offscreen fixture for the Windows KbLayoutModel adapter. The fake backend
 // exercises the model surface (five layouts, active entry, list/current
-// notifications and the switch request) without reading or changing the live
+// notifications, the switch request and the failure toast) without reading or
+// changing the live
 // desktop. The final check reads the real native singleton's read-only layout
 // list so the backend binding is compiled and populated at runtime.
 ShellRoot {
@@ -93,7 +95,9 @@ ShellRoot {
             root.equals(model.activeIndex, 1, "active index follows the backend");
             root.equals(model.activeLabel, root.labelOf(fakeKeyboard.layouts[1]), "active label is the short layout name");
 
+            const toastsBefore = Toaster.toasts.length;
             root.equals(model.switchTo(4), "requested", "the switch result is forwarded");
+            root.equals(Toaster.toasts.length, toastsBefore, "a requested switch raises no toast");
             root.equals(root.switches.length, 1, "one switch request");
             root.equals(root.switches[0], 4, "the request carries the selected original index");
             root.equals(model.activeIndex, 1, "a switch request does not change the selection optimistically");
@@ -101,6 +105,22 @@ ShellRoot {
             fakeKeyboard.switchResult = "denied";
             root.equals(model.switchTo(2), "denied", "a denied result is forwarded");
             root.equals(root.switches.length, 2, "the denied request is still attempted");
+            root.equals(Toaster.toasts.length, toastsBefore + 1, "a denied switch raises one toast");
+            // Toaster keeps the newest toast first.
+            const denied = Toaster.toasts[0];
+            root.equals(denied.type, Toast.Warning, "the failure toast is a warning");
+            root.equals(denied.icon, "keyboard", "the failure toast uses the keyboard icon");
+            root.check(denied.message.length > 0, "the denied toast explains the failure");
+
+            for (const result of ["no-target", "unsupported"]) {
+                fakeKeyboard.switchResult = result;
+                root.equals(model.switchTo(0), result, result + " is forwarded");
+                const toast = Toaster.toasts[0];
+                root.check(toast.message.length > 0 && toast.message !== denied.message,
+                    result + " has its own message");
+            }
+            root.equals(Toaster.toasts.length, toastsBefore + 3, "each failure raises one toast");
+            root.equals(model.activeIndex, 1, "a failed switch keeps the selection");
             fakeKeyboard.switchResult = "requested";
 
             fakeKeyboard.setCurrent(4);
