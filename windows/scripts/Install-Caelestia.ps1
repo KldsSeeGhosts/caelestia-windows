@@ -223,8 +223,9 @@ try {
     Copy-Item -LiteralPath "$repoRoot\windows\deps\quickshell\LICENSE-GPL" -Destination "$payload\licenses\GPL-3.0.txt"
     Copy-Item -LiteralPath "$repoRoot\windows\deps\quickshell\LICENSE" -Destination "$payload\licenses\LGPL-3.0.txt"
     Copy-Item -LiteralPath "$repoRoot\windows\deps\quickshell\src\windows\third_party\material_color\LICENSE" -Destination "$payload\licenses\MaterialColor-LICENSE"
-    # The Glazier pin has no LICENSE file yet (release gate); keep its own
-    # third-party notices with the payload meanwhile.
+    # Glazier's MIT licence and its own upstream third-party notices travel
+    # with the bundled executable.
+    Copy-Item -LiteralPath "$repoRoot\windows\deps\glazier\LICENSE" -Destination "$payload\licenses\Glazier-LICENSE"
     if (Test-Path -LiteralPath "$repoRoot\windows\deps\glazier\THIRD_PARTY_NOTICES.md" -PathType Leaf) {
         Copy-Item -LiteralPath "$repoRoot\windows\deps\glazier\THIRD_PARTY_NOTICES.md" -Destination "$payload\licenses\Glazier-THIRD_PARTY_NOTICES.md"
     }
