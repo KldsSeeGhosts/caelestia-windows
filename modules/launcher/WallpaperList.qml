@@ -56,9 +56,13 @@ PathView {
     Component.onCompleted: currentIndex = Wallpapers.list.findIndex(w => w.path === Wallpapers.actualCurrent)
     Component.onDestruction: Wallpapers.stopPreview()
 
+    // Windows port (#261): focusing a cloud placeholder must not preview it.
+    // The tile already stays blank; this keeps the desktop renderer off that
+    // path too, and drops whatever preview was showing before.
     onCurrentItemChanged: {
-        if (currentItem)
-            Wallpapers.preview((currentItem as WallpaperItem).modelData.path);
+        const item = currentItem as WallpaperItem;
+        if (item)
+            Wallpapers.previewEntry(item.modelData);
     }
 
     implicitWidth: Math.min(numItems, count) * itemWidth

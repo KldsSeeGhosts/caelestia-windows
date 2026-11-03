@@ -49,6 +49,8 @@ PageBase {
                 // Empty placeholders for sizing
                 opacity: modelData ? 1 : 0
                 enabled: modelData
+                // A cloud placeholder has no local content to decode yet.
+                thumbnailActive: !!modelData && modelData.onDisk !== false
 
                 // Wallpaper Engine entries use `path` (project.json) only for
                 // selection; the tile must show `preview`, matching the launcher

@@ -27,6 +27,7 @@ Singleton {
     readonly property string current: showPreview && !externalWallpaperActive ? previewPath : currentImage
     readonly property bool externalWallpaperActive: WallpaperEngine.ownsDesktop
     property var files: []
+    property int listRequest: 0
     // Nexus's Wallpaper & style pages (modules/nexus/pages/wallandstyle) group
     // entries by `parentDir` and label them by `name`, and the launcher carousel
     // uses `path`/`relativePath`. The native file scan and Wallpaper Engine
@@ -41,7 +42,10 @@ Singleton {
         return Object.assign({}, entry, {
             name: String(entry.name ?? relative),
             relativePath: String(entry.relativePath ?? relative),
-            parentDir: String(entry.parentDir ?? Paths.wallsdir)
+            parentDir: String(entry.parentDir ?? Paths.wallsdir),
+            // A cloud placeholder is listed but its content is not local. The
+            // pickers keep it visible and skip its thumbnail until it is opened.
+            onDisk: entry.onDisk !== false
         });
     }
     readonly property var list: {
@@ -153,14 +157,37 @@ Singleton {
         }
     }
 
+    Connections {
+        target: Native.FsUtils
+        function onListDirFinished(request, path, entries): void {
+            root.applyListing(request, path, entries);
+        }
+    }
+
     function reload(): void {
-        const dir = Paths.wallsdir;
-        files = Native.FsUtils.listDir(dir).filter(n => /\.(png|jpe?g|bmp|webp)$/i.test(n)).map(n => ({
-                    path: Paths.joinPath(dir, n),
-                    relativePath: n,
-                    name: n,
-                    parentDir: dir
+        listRequest = Native.FsUtils.listDirAsync(Paths.wallsdir);
+    }
+    function applyListing(request, dir, entries): void {
+        // A slow share may answer after wallsdir has already moved on.
+        if (request !== listRequest)
+            return;
+        files = entries.filter(entry => /\.(png|jpe?g|bmp|webp)$/i.test(entry.name)).map(entry => ({
+                    path: Paths.joinPath(dir, entry.name),
+                    relativePath: entry.name,
+                    name: entry.name,
+                    parentDir: dir,
+                    onDisk: entry.onDisk !== false
                 }));
+    }
+    // Decoding a placeholder would fetch its content, so the pickers only do
+    // that once the user has opened it.
+    function markOpened(path): void {
+        const index = files.findIndex(entry => Paths.samePath(entry.path, path));
+        if (index < 0 || files[index].onDisk !== false)
+            return;
+        const next = files.slice();
+        next[index] = Object.assign({}, next[index], { onDisk: true });
+        files = next;
     }
     function getCategoryFor(w): string {
         const parent = String(w?.parentDir ?? "");
@@ -178,7 +205,23 @@ Singleton {
     }
     function query(search): var { return list.filter(w => w.relativePath.toLowerCase().includes(search.toLowerCase())); }
     // Preview affects only the shell's wallpaper surface, never Windows state.
-    function preview(path): void { previewPath = path; showPreview = true; }
+    // A listed cloud placeholder is not local: previewing its path hydrates it.
+    function preview(path): void {
+        const listed = list.find(entry => entry && Paths.samePath(entry.path, String(path ?? "")));
+        if (listed && listed.onDisk === false) {
+            stopPreview();
+            return;
+        }
+        previewPath = path;
+        showPreview = true;
+    }
+    function previewEntry(entry): void {
+        if (!entry || entry.onDisk === false) {
+            stopPreview();
+            return;
+        }
+        preview(entry.path);
+    }
     function stopPreview(): void { showPreview = false; }
     function setWallpaper(path): bool {
         if (!controlsEnabled) {
@@ -194,6 +237,7 @@ Singleton {
         const local = String(path).replace(/^file:\/\/\//, "");
         const ok = Native.Wallpaper.setWallpaper(local, false);
         if (ok) {
+            root.markOpened(local);
             fileCurrent = local;
             stopPreview();
             // The fileCurrent change above regenerates a dynamic palette.
