@@ -152,5 +152,19 @@ $hashes = foreach ($entry in $files.GetEnumerator()) {
     }
 }
 $hashes | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $Destination 'sources.json') -Encoding UTF8
+    if ($production) {
+        # A qmldir that names a file the map never copied is how a live install
+        # can start, then fail to load (IdleHold.qml after #253).
+        foreach ($qmldir in @(Get-ChildItem -LiteralPath $Destination -Recurse -Filter qmldir -File)) {
+            foreach ($line in @(Get-Content -LiteralPath $qmldir.FullName)) {
+                if ($line -notmatch '\.qml\s*$') { continue }
+                $name = ($line -split '\s+')[-1]
+                $qml = Join-Path $qmldir.DirectoryName $name
+                if (-not (Test-Path -LiteralPath $qml -PathType Leaf)) {
+                    throw "Staged $($qmldir.FullName.Substring($Destination.Length + 1)) lists $name, but that file is not in the payload."
+                }
+            }
+        }
+    }
 } finally { $sha256.Dispose() }
 Write-Output $Destination

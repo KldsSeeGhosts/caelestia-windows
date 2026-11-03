@@ -70,6 +70,12 @@ try {
     if (@($manifest.PSObject.Properties.Name) -match 'KeepAwake') {
         throw 'The production staging map still references KeepAwake.ps1.'
     }
+    if (-not $manifest.'windows/shell/adapters/imports/Caelestia/Services/IdleHold.qml') {
+        throw 'The production staging map does not include IdleHold.qml.'
+    }
+    if (-not (Test-Path -LiteralPath (Join-Path $stage 'imports\Caelestia\Services\IdleHold.qml') -PathType Leaf)) {
+        throw 'The production stage did not copy IdleHold.qml.'
+    }
 
     # Path pragmas isolate Quickshell storage only. Qt bootstrap and every
     # native gate are supplied through ProcessStartInfo before Process.Start.

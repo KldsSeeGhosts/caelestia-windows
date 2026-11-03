@@ -288,6 +288,7 @@
   "windows/shell/adapters/imports/Caelestia/Multimedia/Visual.qml": "imports/Caelestia/Multimedia/Visual.qml",
   "windows/shell/adapters/imports/Caelestia/Services/Cpu.qml": "imports/Caelestia/Services/Cpu.qml",
   "windows/shell/adapters/imports/Caelestia/Services/Gpu.qml": "imports/Caelestia/Services/Gpu.qml",
+  "windows/shell/adapters/imports/Caelestia/Services/IdleHold.qml": "imports/Caelestia/Services/IdleHold.qml",
   "windows/shell/adapters/imports/Caelestia/Services/Memory.qml": "imports/Caelestia/Services/Memory.qml",
   "windows/shell/adapters/imports/Caelestia/Services/NetworkUsage.qml": "imports/Caelestia/Services/NetworkUsage.qml",
   "windows/shell/adapters/imports/Caelestia/Services/qmldir": "imports/Caelestia/Services/qmldir",
