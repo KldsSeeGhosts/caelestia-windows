@@ -125,7 +125,9 @@ if ($Command -eq 'Start' -and -not $SkipSchemeRuntime) {
         if ($null -eq $schemeRuntime) {
             # The installer reports the failure while the previous version is
             # still live. Keep the new shell running on its fixed palette.
-            Write-CaelestiaSchemeRuntimeLog $profile 'Scheme runtime was not prepared; starting with the fixed palette. Install or the next normal start can retry it.'
+            Write-CaelestiaSchemeRuntimeLog -ProfileRoot $profile -Event 'scheme-runtime' `
+                -Fields ([ordered]@{ state = 'unprepared'; action = 'fixed-palette' }) `
+                -Message 'install or the next normal start can retry preparation'
         }
     } else {
         # A valid published generation needs no provisioning. Otherwise try to
@@ -142,10 +144,13 @@ if ($Command -eq 'Start' -and -not $SkipSchemeRuntime) {
                     (-not $schemeRevision -or [string]$schemeResult.revision -eq $schemeRevision)) {
                     $schemeRuntime = $schemeResult
                 } elseif ($schemeResult -and $schemeResult.inProgress -eq $true) {
-                    Write-CaelestiaSchemeRuntimeLog $profile 'Another scheme provisioning run is in progress; starting with the fixed palette.'
+                    Write-CaelestiaSchemeRuntimeLog -ProfileRoot $profile -Event 'scheme-runtime' `
+                        -Fields ([ordered]@{ state = 'provisioning'; action = 'fixed-palette' }) `
+                        -Message 'another provisioning run is in progress; retry on the next normal start'
                 }
             } catch {
-                Write-CaelestiaSchemeRuntimeLog $profile 'Scheme runtime preparation could not run; starting with the fixed palette.'
+                Write-CaelestiaSchemeRuntimeLog -ProfileRoot $profile -Event 'scheme-runtime' `
+                    -Fields ([ordered]@{ state = 'prepare-error'; action = 'fixed-palette' }) -Message $_.Exception.Message
             }
         }
     }

@@ -168,7 +168,7 @@ function Install-CaelestiaVersion([string]$Prefix, [string]$Payload, [switch]$Re
         Write-CaelestiaJsonAtomic (Join-Path $Prefix 'install.json') (New-CaelestiaRootRecord $Prefix $newRecord $previous)
         # Point runtime.json at the generation verified above before the
         # readiness clock starts. If none was found, activation starts fixed.
-        $null = Set-CaelestiaSchemeRuntimeForRevision $newRecord.profile (Get-CaelestiaSchemeRevision $runtime) $runtime -Verified $verifiedScheme -NoProbe
+        $null = Set-CaelestiaSchemeRuntimeForRevision $newRecord.profile (Get-CaelestiaSchemeRevision $runtime) $runtime -Verified $verifiedScheme
         $activated = $true
         if ($Restart) {
             Start-CaelestiaDetached $Prefix -TaskName $launchTask -PreparedSchemeRuntime
@@ -197,7 +197,7 @@ function Install-CaelestiaVersion([string]$Prefix, [string]$Payload, [switch]$Re
             Copy-CaelestiaRootEntries $Prefix $runtime
             $earlier = if ($old.version -eq 2) { [string]$old.previous } else { '' }
             Write-CaelestiaJsonAtomic (Join-Path $Prefix 'install.json') (New-CaelestiaRootRecord $Prefix $priorRecord $earlier)
-            $null = Set-CaelestiaSchemeRuntimeForRevision $newRecord.profile (Get-CaelestiaSchemeRevision $priorPath) $priorPath -Verified $restoreScheme -NoProbe
+            $null = Set-CaelestiaSchemeRuntimeForRevision $newRecord.profile (Get-CaelestiaSchemeRevision $priorPath) $priorPath -Verified $restoreScheme
             if ($Restart) { Start-CaelestiaDetached $Prefix -LegacyReady -PreparedSchemeRuntime }
             Write-Warning 'Activation failed; the previous version was selected again.'
         }
@@ -237,7 +237,7 @@ function Switch-CaelestiaVersion([string]$Prefix, [string]$Id, [switch]$Restart)
         Write-CaelestiaJsonAtomic (Join-Path $Prefix 'install.json') (New-CaelestiaRootRecord $Prefix $record $old.current)
         # The generation verified above is repointed before the readiness
         # clock; a missing one leaves the fixed palette.
-        $null = Set-CaelestiaSchemeRuntimeForRevision $old.profile $targetRevision $runtime -Verified $verifiedScheme -NoProbe
+        $null = Set-CaelestiaSchemeRuntimeForRevision $old.profile $targetRevision $runtime -Verified $verifiedScheme
         $activated = $true
         if ($Restart) { Start-CaelestiaDetached $Prefix -LegacyReady -TaskName $launchTask -PreparedSchemeRuntime }
     } catch {
@@ -249,10 +249,10 @@ function Switch-CaelestiaVersion([string]$Prefix, [string]$Id, [switch]$Restart)
             }
             Stop-CaelestiaHosts $Prefix
             Write-CaelestiaJsonAtomic (Join-Path $Prefix 'install.json') $old
-            $null = Set-CaelestiaSchemeRuntimeForRevision $old.profile $previousRevision $previousRuntime -Verified $restoreScheme -NoProbe
+            $null = Set-CaelestiaSchemeRuntimeForRevision $old.profile $previousRevision $previousRuntime -Verified $restoreScheme
             if ($Restart) { Start-CaelestiaDetached $Prefix -LegacyReady -PreparedSchemeRuntime }
         } elseif ($Restart -and -not @(Get-CaelestiaProcesses $Prefix).Count -and -not @(Get-CaelestiaSupervisors $old.profile).Count) {
-            $null = Set-CaelestiaSchemeRuntimeForRevision $old.profile $previousRevision $previousRuntime -Verified $restoreScheme -NoProbe
+            $null = Set-CaelestiaSchemeRuntimeForRevision $old.profile $previousRevision $previousRuntime -Verified $restoreScheme
             Start-CaelestiaDetached $Prefix -LegacyReady -PreparedSchemeRuntime
         }
         throw $failure

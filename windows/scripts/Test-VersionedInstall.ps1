@@ -213,6 +213,13 @@ function New-TestGeneration([string]$Runtimes, [string]$Name, [string]$Revision,
 function Read-Pointer([string]$ProfileRoot) {
     return (Get-Content -LiteralPath (Join-Path $ProfileRoot 'scheme\runtime.json') -Raw | ConvertFrom-Json)
 }
+# Production activation selects before the stop and publishes that decision
+# with the setter afterwards. Tests that need a fresh probe follow the same
+# two-step path; the setter itself can no longer start a process.
+function Update-SchemeRuntimeForRevision([string]$ProfileRoot, [string]$Revision, [string]$RuntimePrefix = '', [int]$BudgetSeconds = $script:CaelestiaSchemeProbeBudgetSeconds, [int]$CandidateSeconds = $script:CaelestiaSchemeProbeSliceSeconds) {
+    $decision = Select-CaelestiaSchemeGeneration $ProfileRoot $Revision $RuntimePrefix $BudgetSeconds $CandidateSeconds
+    return Set-CaelestiaSchemeRuntimeForRevision $ProfileRoot $Revision $RuntimePrefix -Verified $decision
+}
 # Names and sizes only, so a file held open exclusively can still be compared.
 function Get-DirectoryListing([string]$Directory) {
     return ((Get-ChildItem -LiteralPath $Directory -Recurse -File | Sort-Object FullName | ForEach-Object {
@@ -419,7 +426,7 @@ try {
         $applied = Get-Content -LiteralPath (Join-Path $bRuntime 'shell-scheme.txt') -Raw
         Assert (-not $applied.Trim()) 'A cold profile passed scheme runtime paths to the shell.'
         $log = Get-Content -LiteralPath (Join-Path $schemeProfile 'logs\scheme-runtime.log') -Raw
-        Assert ($log -match 'fixed palette') 'The fixed-palette fallback was not reported.'
+        Assert ($log -match 'event=scheme-runtime' -and $log -match 'action=fixed-palette') 'The fixed-palette fallback was not reported.'
         $exposed = $log -match [regex]::Escape($schemeProfile)
         if ($env:USERNAME) { $exposed = $exposed -or ($log -match [regex]::Escape($env:USERNAME)) }
         Assert (-not $exposed) 'The activation log exposed a user path.'
@@ -722,7 +729,7 @@ public static class SchemeLockHolderFixture {
         # Recovery: once the lock is free, the next repoint finds the generation.
         [IO.File]::WriteAllText((Join-Path $holderDirectory 'stop.txt'), '')
         Assert ($holder.WaitForExit(10000)) 'The scheme lock holder did not exit.'
-        $later = Set-CaelestiaSchemeRuntimeForRevision $lcProfile 'test' $lcRuntime
+        $later = Update-SchemeRuntimeForRevision $lcProfile 'test' $lcRuntime
         Assert ($later -and $later.generation -eq ('5' * 40)) 'The generation was not usable after the lock was released.'
         Write-Output 'PASS lock contention: an update under a busy scheme lock probes nothing, starts on the fixed palette and recovers on the next repoint.'
     } finally {
@@ -799,7 +806,7 @@ public static class SchemeLockHolderFixture {
     Remove-CaelestiaSchemeGenerations $prunePrefix $pruneProfile
     Assert ((Test-Path -LiteralPath (Join-Path $pruneRuntimes $gA)) -and (Test-Path -LiteralPath (Join-Path $pruneRuntimes $gB))) 'Pruning removed a current or previous generation.'
     Assert (-not (Test-Path -LiteralPath (Join-Path $pruneRuntimes $gC))) 'Pruning kept an unreferenced generation.'
-    $repoint = Set-CaelestiaSchemeRuntimeForRevision $pruneProfile 'rev-a' $versionA
+    $repoint = Update-SchemeRuntimeForRevision $pruneProfile 'rev-a' $versionA
     $repointRecord = Get-Content -LiteralPath (Join-Path $pruneSchemeRoot 'runtime.json') -Raw | ConvertFrom-Json
     Assert ($repoint -and $repoint.generation -eq $gA -and $repointRecord.generation -eq $gA) 'Activation did not repoint runtime.json to the retained revision.'
     Assert ($repointRecord.python -match "\\$gA\\") 'Repointed runtime does not use its generation paths.'
@@ -932,9 +939,43 @@ public static extern bool FreeLibrary(System.IntPtr module);
     Remove-CaelestiaSchemeGenerations $prunePrefix $pruneProfile
     Assert (-not (Test-Path -LiteralPath $raceGeneration)) 'A generation was not removed once its image was unmapped.'
 
+    # A read-only image is not in use. The write probe must clear that attribute
+    # only for its open and put it back; before, these generations were never
+    # pruned because the write open was denied by the attribute.
+    $readOnlyGeneration = New-TestGeneration $pruneRuntimes ('d4' * 20) 'rev-z' ('d4' * 32)
+    $readOnlyDirectory = Join-Path $readOnlyGeneration 'lib'
+    New-Item -ItemType Directory -Force -Path $readOnlyDirectory | Out-Null
+    $readOnlyImage = Join-Path $readOnlyDirectory 'version.dll'
+    Copy-Item -LiteralPath (Join-Path $env:SystemRoot 'System32\version.dll') -Destination $readOnlyImage
+    (Get-Item -LiteralPath $readOnlyImage).IsReadOnly = $true
+    Remove-CaelestiaSchemeGenerations $prunePrefix $pruneProfile
+    Assert (-not (Test-Path -LiteralPath $readOnlyGeneration)) 'A generation whose images are read-only was never pruned.'
+
+    # A mapped read-only image is in use. The probe restores the attribute it
+    # had to clear, so a kept generation is not silently changed.
+    $readOnlyMapped = New-TestGeneration $pruneRuntimes ('e4' * 20) 'rev-z' ('e4' * 32)
+    $readOnlyMappedDirectory = Join-Path $readOnlyMapped 'lib'
+    New-Item -ItemType Directory -Force -Path $readOnlyMappedDirectory | Out-Null
+    $readOnlyMappedImage = Join-Path $readOnlyMappedDirectory 'version.dll'
+    Copy-Item -LiteralPath (Join-Path $env:SystemRoot 'System32\version.dll') -Destination $readOnlyMappedImage
+    (Get-Item -LiteralPath $readOnlyMappedImage).IsReadOnly = $true
+    $readOnlyMappedBefore = Get-DirectoryListing $readOnlyMapped
+    $readOnlyModule = [TRace.K]::LoadLibraryW($readOnlyMappedImage)
+    try {
+        Remove-CaelestiaSchemeGenerations $prunePrefix $pruneProfile
+        Assert ((Test-Path -LiteralPath $readOnlyMapped) -and (Get-DirectoryListing $readOnlyMapped) -eq $readOnlyMappedBefore) 'Pruning damaged a generation with a mapped read-only image.'
+        Assert ((Get-Item -LiteralPath $readOnlyMappedImage).IsReadOnly) 'The image probe left a kept read-only image writable.'
+        Assert (@(Get-ChildItem -LiteralPath (Join-Path $pruneRuntimes '.trash') -Force -ErrorAction SilentlyContinue).Count -eq 0) 'A mapped read-only image was moved to .trash.'
+    } finally {
+        if ($readOnlyModule -ne [IntPtr]::Zero) { $null = [TRace.K]::FreeLibrary($readOnlyModule) }
+    }
+    Remove-CaelestiaSchemeGenerations $prunePrefix $pruneProfile
+    Assert (-not (Test-Path -LiteralPath $readOnlyMapped)) 'A generation was not removed once its read-only image was unmapped.'
+
     # If the move back fails (here an open file inside blocks the rename) the
-    # generation stays whole in .trash, a path-free line is logged, and the next
-    # prune removes it.
+    # generation stays whole in .trash and a path-free structured line is
+    # logged. The restore is journaled, so the next prune puts the generation
+    # back once before deleting; after that it can be retired normally.
     $strandGeneration = New-TestGeneration $pruneRuntimes ('c3' * 20) 'rev-z' ('c3' * 32)
     New-Item -ItemType Directory -Force -Path (Join-Path $strandGeneration 'lib') | Out-Null
     Copy-Item -LiteralPath (Join-Path $env:SystemRoot 'System32\version.dll') -Destination (Join-Path $strandGeneration 'lib\version.dll')
@@ -953,15 +994,48 @@ public static extern bool FreeLibrary(System.IntPtr module);
         $stranded = @(Get-ChildItem -LiteralPath (Join-Path $pruneRuntimes '.trash') -Directory -Force -ErrorAction SilentlyContinue)
         Assert ($stranded.Count -eq 1 -and (Get-DirectoryListing $stranded[0].FullName) -eq $strandBefore) 'A generation that could not be moved back was damaged or lost.'
         Assert (-not (Test-Path -LiteralPath $strandGeneration)) 'The stranded generation is still at its original path.'
+        $journalPath = Join-Path $pruneProfile 'scheme\prune-restore.json'
+        Assert (Test-Path -LiteralPath $journalPath) 'A failed move-back was not journaled for recovery.'
         $strandLog = Get-Content -LiteralPath (Join-Path $pruneProfile 'logs\scheme-runtime.log') -Raw
-        Assert ($strandLog -match 'could not move 1 generation\(s\) back' -and $strandLog -notmatch [regex]::Escape($root)) 'The failed move-back was not logged without paths.'
+        Assert ($strandLog -match 'event=scheme-prune' -and $strandLog -match 'stranded=1' -and $strandLog -match 'recovery=journal' -and
+            $strandLog -notmatch [regex]::Escape($root)) 'The failed move-back was not logged as structured, path-free diagnostics.'
     } finally {
         ${function:Invoke-CaelestiaSchemePruneHook} = $originalHook
         if ($strand.Stream) { $strand.Stream.Dispose() }
         if ($strand.Module -ne [IntPtr]::Zero) { $null = [TRace.K]::FreeLibrary($strand.Module) }
     }
     Remove-CaelestiaSchemeGenerations $prunePrefix $pruneProfile
-    Assert (-not (Test-Path -LiteralPath (Join-Path $pruneRuntimes '.trash'))) 'The next prune did not clean up the stranded generation.'
+    Assert ((Test-Path -LiteralPath $strandGeneration) -and (Get-DirectoryListing $strandGeneration) -eq $strandBefore) 'The journal did not restore the generation that could not be moved back.'
+    Assert (-not (Test-Path -LiteralPath (Join-Path $pruneRuntimes '.trash'))) 'The restored generation stayed in .trash.'
+    Assert (-not (Test-Path -LiteralPath (Join-Path $pruneProfile 'scheme\prune-restore.json'))) 'The restore journal was not cleared after recovery.'
+    # Recovery leaves the generation alone for that prune; the next one can
+    # retire it now that nothing holds it.
+    Remove-CaelestiaSchemeGenerations $prunePrefix $pruneProfile
+    Assert (-not (Test-Path -LiteralPath $strandGeneration)) 'The restored generation was not retired by a later prune.'
+
+    # A journal that cannot be read is not an empty journal. Prune must leave
+    # the trash generation alone, then restore it on a later run once the
+    # file can be read again.
+    $lockedGeneration = 'f5' * 20
+    $lockedLeaf = $lockedGeneration + '.a1b2c3d4'
+    $lockedTrash = Join-Path $pruneRuntimes ('.trash\' + $lockedLeaf)
+    New-Item -ItemType Directory -Force -Path $lockedTrash | Out-Null
+    'awaiting-restore' | Set-Content -LiteralPath (Join-Path $lockedTrash 'marker.txt') -Encoding UTF8
+    $lockedJournal = Join-Path $pruneSchemeRoot 'prune-restore.json'
+    @{ generation = $lockedGeneration; trash = $lockedLeaf } | ConvertTo-Json | Set-Content -LiteralPath $lockedJournal -Encoding UTF8
+    $lockedBefore = Get-Content -LiteralPath $lockedJournal -Raw
+    $lockedStream = [IO.File]::Open($lockedJournal, 'Open', 'Read', 'None')
+    try {
+        Remove-CaelestiaSchemeGenerations $prunePrefix $pruneProfile
+        Assert (Test-Path -LiteralPath (Join-Path $lockedTrash 'marker.txt')) 'Prune deleted a generation whose restore journal could not be read.'
+        Assert (-not (Test-Path -LiteralPath (Join-Path $pruneRuntimes $lockedGeneration))) 'Prune restored a generation while its journal was still unreadable.'
+    } finally { $lockedStream.Dispose() }
+    Assert ((Get-Content -LiteralPath $lockedJournal -Raw) -eq $lockedBefore) 'An unreadable restore journal was rewritten.'
+    Remove-CaelestiaSchemeGenerations $prunePrefix $pruneProfile
+    $lockedRestored = Join-Path (Join-Path $pruneRuntimes $lockedGeneration) 'marker.txt'
+    Assert ((Get-Content -LiteralPath $lockedRestored -Raw).Trim() -eq 'awaiting-restore') 'The locked journal did not restore the generation on the next prune.'
+    Assert (-not (Test-Path -LiteralPath $lockedTrash)) 'The restored generation stayed in .trash.'
+    Assert (-not (Test-Path -LiteralPath $lockedJournal)) 'The restore journal was not cleared after the locked generation was restored.'
 
     # Interrupted staging directories (no lock holder owns them) are pruned, and
     # a partially deleted trash entry is finished by the next prune.
@@ -983,6 +1057,14 @@ public static extern bool FreeLibrary(System.IntPtr module);
     Assert (-not (Test-Path -LiteralPath $leftover)) 'The next prune did not finish a partial delete.'
     Assert ((Test-Path -LiteralPath (Join-Path $pruneRuntimes $gA)) -and (Test-Path -LiteralPath (Join-Path $pruneRuntimes $gB))) 'Cleanup removed a retained generation.'
     Write-Output 'PASS prune: rename-first ownership keeps busy generations whole, staging and partial deletes are cleaned.'
+
+    # Structured fields come before any free text: redacting an unquoted path
+    # consumes the rest of the line, so step/exit/count diagnostics must survive.
+    Write-CaelestiaSchemeRuntimeLog -ProfileRoot $pruneProfile -Event 'scheme-test' `
+        -Fields ([ordered]@{ step = 'probe'; exit = 3 }) -Message ('failed at ' + (Join-Path $root 'user secret.txt') + ' after the path')
+    $structuredLog = Get-Content -LiteralPath (Join-Path $pruneProfile 'logs\scheme-runtime.log') -Raw
+    Assert ($structuredLog -match 'event=scheme-test exit=3 step=probe' -and
+        $structuredLog -notmatch [regex]::Escape($root)) 'Structured diagnostics were swallowed by path redaction.'
 
     # Health is verified, not assumed: a lost base interpreter, a failing or a
     # hung venv python is unhealthy, and selection only ever considers verified
@@ -1008,16 +1090,16 @@ public static extern bool FreeLibrary(System.IntPtr module);
     Assert ($null -eq (Get-CaelestiaPreparedSchemeRuntime $hprofile 'rev-h' $hp -Verify)) 'A runtime with a lost base interpreter was accepted by a start.'
     # Names sort the broken (newest) generation first: the old first-by-name
     # choice would have picked it.
-    $chosen = Set-CaelestiaSchemeRuntimeForRevision $hprofile 'rev-h' $hp
+    $chosen = Update-SchemeRuntimeForRevision $hprofile 'rev-h' $hp
     Assert ($chosen -and $chosen.generation -eq ('9' * 40) -and (Read-Pointer $hprofile).generation -eq ('9' * 40)) 'Repoint chose an unverified generation.'
     $null = New-TestGeneration $hRuntimes ('5' * 40) 'rev-h' $hid $now.AddMinutes(-10)
-    $chosen = Set-CaelestiaSchemeRuntimeForRevision $hprofile 'rev-h' $hp
+    $chosen = Update-SchemeRuntimeForRevision $hprofile 'rev-h' $hp
     Assert ($chosen -and $chosen.generation -eq ('5' * 40)) 'Repoint did not prefer the newest verified generation.'
-    $chosen = Set-CaelestiaSchemeRuntimeForRevision $hprofile 'rev-h' $hp
+    $chosen = Update-SchemeRuntimeForRevision $hprofile 'rev-h' $hp
     Assert ((Read-Pointer $hprofile).generation -eq ('5' * 40)) 'A second activation undid the repaired generation.'
     Remove-Item -LiteralPath (Join-Path (Join-Path $hRuntimes ('5' * 40)) 'base\python.exe') -Force
     Remove-Item -LiteralPath (Join-Path (Join-Path $hRuntimes ('9' * 40)) 'base\python.exe') -Force
-    Assert ($null -eq (Set-CaelestiaSchemeRuntimeForRevision $hprofile 'rev-h' $hp)) 'Repoint returned an unverified generation.'
+    Assert ($null -eq (Update-SchemeRuntimeForRevision $hprofile 'rev-h' $hp)) 'Repoint returned an unverified generation.'
     # A failed check revokes the published generation: it must not stay
     # activatable just because its files exist.
     $revoked = Read-Pointer $hprofile
@@ -1041,18 +1123,18 @@ public static extern bool FreeLibrary(System.IntPtr module);
     $env:CAELESTIA_TEST_CHECK_EXIT = '3'
     try {
         Assert (-not (Test-CaelestiaSchemeHealth $vGeneration)) 'A venv python that fails its import was reported healthy.'
-        Assert ($null -eq (Set-CaelestiaSchemeRuntimeForRevision $vprofile 'rev-h' $hp)) 'Repoint returned a generation whose python fails.'
+        Assert ($null -eq (Update-SchemeRuntimeForRevision $vprofile 'rev-h' $hp)) 'Repoint returned a generation whose python fails.'
         Assert ((Read-Pointer $vprofile).available -eq $false) 'A failed repoint left the rejected generation published.'
         Assert ($null -eq (Get-CaelestiaPreparedSchemeRuntime $vprofile 'rev-h' $hp)) 'Activation reused a generation that failed its check.'
     } finally { $env:CAELESTIA_TEST_CHECK_EXIT = $null }
-    $null = Set-CaelestiaSchemeRuntimeForRevision $vprofile 'rev-h' $hp
+    $null = Update-SchemeRuntimeForRevision $vprofile 'rev-h' $hp
     Assert ($null -ne (Get-CaelestiaPreparedSchemeRuntime $vprofile 'rev-h' $hp)) 'A healthy generation was not republished.'
     $env:CAELESTIA_TEST_CHECK_EXIT = '3'
     try {
         Assert ($null -eq (Get-CaelestiaPreparedSchemeRuntime $vprofile 'rev-h' $hp -Verify)) 'A start accepted a runtime whose python fails.'
         Assert ((Read-Pointer $vprofile).available -eq $false) 'A failed start check left the rejected generation published.'
     } finally { $env:CAELESTIA_TEST_CHECK_EXIT = $null }
-    $null = Set-CaelestiaSchemeRuntimeForRevision $vprofile 'rev-h' $hp
+    $null = Update-SchemeRuntimeForRevision $vprofile 'rev-h' $hp
     # The receipt covers the base interpreter and pyvenv.cfg. Changing either
     # invalidates it without a process: here pyvenv.cfg points at another
     # interpreter that exists but was never verified.
@@ -1068,7 +1150,7 @@ public static extern bool FreeLibrary(System.IntPtr module);
     $baseDirectory = Join-Path $vGeneration 'base'
     [IO.File]::WriteAllText((Join-Path $baseDirectory 'python312.dll'), 'runtime dll v1')
     [IO.File]::WriteAllText((Join-Path $baseDirectory 'python3.dll'), 'stable abi dll')
-    $null = Set-CaelestiaSchemeRuntimeForRevision $vprofile 'rev-h' $hp
+    $null = Update-SchemeRuntimeForRevision $vprofile 'rev-h' $hp
     Assert ($null -ne (Get-CaelestiaPreparedSchemeRuntime $vprofile 'rev-h' $hp)) 'A receipt that covers runtime DLLs was rejected.'
     Assert ((Read-Pointer $vprofile).verification.runtimeDlls -match 'python312\.dll' -and (Read-Pointer $vprofile).verification.runtimeDlls -match 'python3\.dll') 'The receipt does not record the runtime DLLs.'
     $runtimeDll = Join-Path $baseDirectory 'python312.dll'
@@ -1099,24 +1181,24 @@ public static extern bool FreeLibrary(System.IntPtr module);
     Assert (-not (Test-Path -LiteralPath $lateLog)) 'A changed receipt triggered another probe.'
     Assert ((Read-Pointer $vprofile).available -eq $false) 'A changed receipt left the record published.'
     (Get-Item -LiteralPath $runtimeDll).LastWriteTimeUtc = $runtimeDllTime
-    $null = Set-CaelestiaSchemeRuntimeForRevision $vprofile 'rev-h' $hp
+    $null = Update-SchemeRuntimeForRevision $vprofile 'rev-h' $hp
     Assert ($null -ne (Get-CaelestiaPreparedSchemeRuntime $vprofile 'rev-h' $hp)) 'Republishing after a restored receipt failed.'
-    # -NoProbe (every call made after the shell has stopped): the published
-    # record is kept only while its receipt matches, and nothing is started.
+    # The post-stop setter keeps the published record only while its receipt
+    # matches, and never starts a process.
     $noProbeLog = Join-Path $root 'noprobe.log'
     $env:CAELESTIA_TEST_PROVISION_LOG = $noProbeLog
     try {
-        $kept = Set-CaelestiaSchemeRuntimeForRevision $vprofile 'rev-h' $hp -NoProbe
-        Assert ($kept -and $kept.generation -eq ('7' * 40)) 'A matching receipt was not kept in no-probe mode.'
+        $kept = Set-CaelestiaSchemeRuntimeForRevision $vprofile 'rev-h' $hp
+        Assert ($kept -and $kept.generation -eq ('7' * 40)) 'A matching receipt was not kept by the post-stop setter.'
         (Get-Item -LiteralPath $runtimeDll).LastWriteTimeUtc = $runtimeDllTime.AddMinutes(-4)
-        $dropped = Set-CaelestiaSchemeRuntimeForRevision $vprofile 'rev-h' $hp -NoProbe
-        Assert ($null -eq $dropped -and (Read-Pointer $vprofile).available -eq $false) 'A changed receipt was kept in no-probe mode.'
-        Assert (-not (Test-Path -LiteralPath $noProbeLog)) 'No-probe mode started a process.'
+        $dropped = Set-CaelestiaSchemeRuntimeForRevision $vprofile 'rev-h' $hp
+        Assert ($null -eq $dropped -and (Read-Pointer $vprofile).available -eq $false) 'A changed receipt was kept by the post-stop setter.'
+        Assert (-not (Test-Path -LiteralPath $noProbeLog)) 'The post-stop setter started a process.'
     } finally {
         $env:CAELESTIA_TEST_PROVISION_LOG = $null
         (Get-Item -LiteralPath $runtimeDll).LastWriteTimeUtc = $runtimeDllTime
     }
-    $null = Set-CaelestiaSchemeRuntimeForRevision $vprofile 'rev-h' $hp
+    $null = Update-SchemeRuntimeForRevision $vprofile 'rev-h' $hp
     Assert ($null -ne (Get-CaelestiaPreparedSchemeRuntime $vprofile 'rev-h' $hp)) 'Republishing after the no-probe check failed.'
     $baseExe = Join-Path $vGeneration 'base\python.exe'
     $baseTime = (Get-Item -LiteralPath $baseExe).LastWriteTimeUtc
@@ -1140,7 +1222,7 @@ public static extern bool FreeLibrary(System.IntPtr module);
     }
     $null = New-TestGeneration $bRuntimes ('8' * 40) 'rev-h' $hid $now.AddMinutes(-30)
     $budgetClock = [Diagnostics.Stopwatch]::StartNew()
-    $none = Set-CaelestiaSchemeRuntimeForRevision $bprofile 'rev-h' $hp -BudgetSeconds 6 -CandidateSeconds 2
+    $none = Update-SchemeRuntimeForRevision $bprofile 'rev-h' $hp -BudgetSeconds 6 -CandidateSeconds 2
     $budgetElapsed = $budgetClock.Elapsed.TotalSeconds
     Assert ($null -eq $none) 'Repoint returned a generation although the probe budget ran out on hung candidates.'
     Assert ($budgetElapsed -lt 12) "Three hung candidates cost $([Math]::Round($budgetElapsed, 1)) s; the budget was not enforced."
@@ -1148,7 +1230,7 @@ public static extern bool FreeLibrary(System.IntPtr module);
     # Only the newest hangs now: the next candidate must still be tried.
     'hang' | Set-Content -LiteralPath (Join-Path (Join-Path (Join-Path $bRuntimes ('4' * 40)) 'venv\Scripts') 'hang.txt')
     $budgetClock.Restart()
-    $fallback = Set-CaelestiaSchemeRuntimeForRevision $bprofile 'rev-h' $hp -BudgetSeconds 6 -CandidateSeconds 2
+    $fallback = Update-SchemeRuntimeForRevision $bprofile 'rev-h' $hp -BudgetSeconds 6 -CandidateSeconds 2
     Assert ($fallback -and $fallback.generation -eq ('5' * 40)) 'A hung newest generation starved a healthy fallback.'
     Assert ($budgetClock.Elapsed.TotalSeconds -lt 10) 'The hung newest generation cost more than its slice.'
 
@@ -1185,8 +1267,8 @@ public static extern bool FreeLibrary(System.IntPtr module);
     $idAfter = Get-CaelestiaSchemeIdentity $hp2 'rev-h'
     Assert ($idBefore.Id -ne $idAfter.Id -and $idBefore.ShimSha256 -ne $idAfter.ShimSha256 -and $idBefore.HelperSha256 -eq $idAfter.HelperSha256) 'The fcntl shim is not part of the generation identity.'
     Assert ($null -eq (Get-CaelestiaPreparedSchemeRuntime $vprofile 'rev-h' $hp2)) 'Activation accepted a generation built with a different shim.'
-    Assert ($null -eq (Set-CaelestiaSchemeRuntimeForRevision $vprofile 'rev-h' $hp2)) 'Repoint accepted a generation built with a different shim.'
-    Assert ($null -ne (Set-CaelestiaSchemeRuntimeForRevision $vprofile 'rev-h' $hp)) 'Repoint rejected a generation built with the current inputs.'
+    Assert ($null -eq (Update-SchemeRuntimeForRevision $vprofile 'rev-h' $hp2)) 'Repoint accepted a generation built with a different shim.'
+    Assert ($null -ne (Update-SchemeRuntimeForRevision $vprofile 'rev-h' $hp)) 'Repoint rejected a generation built with the current inputs.'
     Write-Output 'PASS identity: shim and helper changes invalidate prepared and repointed generations.'
 
     # Diagnostics are redacted by pattern, so custom install, Python and temp
@@ -1424,7 +1506,7 @@ public static extern bool FreeLibrary(System.IntPtr module);
         Assert ($run4.Result.available -eq $true -and $run4.Result.generation -ne $run3.Result.generation) 'A lost base interpreter was not repaired with a new generation.'
         $heldPointer = Read-Pointer $ipProfile
         Assert ($heldPointer.generation -eq $run4.Result.generation) 'The repaired generation was not published.'
-        $kept = Set-CaelestiaSchemeRuntimeForRevision $ipProfile 'rev-x' $ip
+        $kept = Update-SchemeRuntimeForRevision $ipProfile 'rev-x' $ip
         Assert ($kept.generation -eq $run4.Result.generation -and (Read-Pointer $ipProfile).generation -eq $run4.Result.generation) 'Activation swapped the repaired generation back to the broken one.'
         Write-Output 'PASS identity: a shim change builds a new generation; a lost base interpreter is repaired and stays repaired.'
 

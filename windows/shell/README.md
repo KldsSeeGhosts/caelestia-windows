@@ -183,8 +183,12 @@ kept while any of its `.exe`/`.dll`/`.pyd` images refuses write access (the OS
 does so for a mapped image, even for processes whose modules cannot be read).
 A directory cannot be renamed while any file inside is open, so the image check
 is repeated at the new location and a generation that gained a mapped image in
-between is moved straight back; deletion then holds the images open while it
-runs. Use
+between is moved straight back. A move-back that cannot complete is recorded in
+`scheme/prune-restore.json` and each later prune makes one restore attempt
+before any deletion, so its path is not lost to a blind retry (or to the delete
+that would otherwise follow). Read-only image files are not treated as in use:
+the write check clears that attribute only for its probe and restores it.
+Deletion then holds the images open while it runs. Use
 `-SkipSchemeRuntime` on the installer or launcher to skip preparation. If
 preparation failed, Caelestia starts on the fixed palette and
 `logs/scheme-runtime.log` reports it; rerun `Install-SchemeRuntime.ps1` from the
