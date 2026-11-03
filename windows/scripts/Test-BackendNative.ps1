@@ -3,67 +3,41 @@
 Runs the pinned Windows backend's native regression fixtures and writes a JSON manifest.
 
 .DESCRIPTION
-The backend's Windows fixtures are a separate CMake project under
-windows/deps/quickshell/src/windows/test. Build them first:
+Runs every fixture built by `Build-Prototype.ps1 -Tests` in <BuildRoot>\quickshell-tests.
+Fixtures registered with CTest run through CTest, the rest run directly. Fixtures
+that need a desktop run on a hidden desktop created for each one, and are skipped
+when the session has no interactive desktop. A fixture without a trait entry in
+$fixtureTraits fails as unclassified and is not run.
 
-    windows\scripts\Build-Prototype.ps1 -Tests -BuildRoot C:\b-backend-tests ...
+A fixture that did not build in this run fails and is not run, even when an older
+executable exists. Any failed or unfinished test build fails the gate, and a build
+failure that cannot be traced to a fixture fails every fixture. A desktop fixture
+that cannot be stopped, or whose desktop cannot be closed, fails the gate.
 
-This script runs the fixtures that register with CTest from
-<BuildRoot>\quickshell-tests, then runs any declared fixture that the backend
-does not register, so no compiled regression is left silently unexecuted.
+The backend gitlink, the checked-out backend and windows/sources.lock.json must agree,
+and the backend must have no local changes.
 
-The test build writes <BuildRoot>\logs\backend-tests-build.json. This script
-consumes that record, so a target that failed to compile or link this run is a
-failure even when an executable from an older build still exists. A missing or
-stale record is an error, never a pass.
+Output: <BuildRoot>\backend-native-tests\manifest.json. The previous manifest is
+removed before anything runs and the new one is written on every exit path. It
+records the shell and backend revisions, the Qt and clang toolchain, the build
+record, gate failures, and each fixture's result, duration and skip reason.
+totals.casesSkipped sums the skipped cases of the fixtures whose Qt Test output had
+a Totals line, fixturesWithCaseTotals counts those fixtures and
+fixturesWithoutCaseTotals counts the rest.
 
-Every fixture needs a trait in $fixtureTraits. A fixture without one fails the
-manifest with "unclassified fixture: add a trait" and is not run. Desktop
-fixtures create a fresh, non-visible desktop with CreateDesktop and start the
-child process on it through STARTUPINFO.lpDesktop, so their windows never
-appear on the interactive desktop. They are skipped when the session has no
-interactive desktop. -IncludeDesktop opts into running them on the current
-desktop instead.
-
-The manifest records the shell HEAD, the backend gitlink, the checked-out
-backend revision and windows/sources.lock.json, the Qt and clang toolchain from
-the test build's CMake cache, and each fixture's result, duration, skip reason
-and case-level skipped totals. Fixture totals and case-level skipped totals are
-separate because a passing fixture can still skip cases. Case totals come from
-fixtures this script runs directly, and the manifest records how many fixtures
-were measured.
-
-Every run removes the previous manifest and writes a fresh one with a run ID
-and timestamp before any fixture starts. It rewrites the manifest on every exit
-path, including errors, so a stale pass can never survive.
-
-The script exits non-zero when the shell's backend gitlink, the checked-out
-backend and sources.lock.json disagree, when the backend has local changes, or
-when any fixture fails to build or fails.
+Exit code: 0 when the manifest reports passed, otherwise nonzero.
 
 .PARAMETER BuildRoot
-The build root passed to Build-Prototype.ps1. Defaults to
-windows\.local\build, matching Build-Prototype.ps1. The test build must be at
-<BuildRoot>\quickshell-tests.
+The build root passed to Build-Prototype.ps1. Defaults to windows\.local\build.
 
 .PARAMETER TestTimeoutSeconds
-Per-test timeout for CTest and for each directly run fixture. Defaults to 120.
+Per-fixture timeout for CTest and for each directly run fixture. Defaults to 120.
 
 .PARAMETER IncludeDesktop
-Runs desktop fixtures on the current interactive desktop instead of an isolated
-one. Off by default because their windows and hooks then reach the user's
-desktop.
+Runs desktop fixtures on the current interactive desktop instead of a hidden one.
 
 .EXAMPLE
 windows\scripts\Test-BackendNative.ps1 -BuildRoot C:\b-backend-tests
-
-Runs every fixture the build produced, isolates desktop fixtures, and writes
-<BuildRoot>\backend-native-tests\manifest.json.
-
-.EXAMPLE
-windows\scripts\Test-BackendNative.ps1 -BuildRoot C:\b-backend-tests -TestTimeoutSeconds 300
-
-Gives the slower fixtures five minutes each.
 #>
 [CmdletBinding()]
 param(
@@ -88,63 +62,60 @@ $buildLog = Join-Path $BuildRoot 'logs\build-backend-tests.log'
 $buildRecordPath = Join-Path $BuildRoot 'logs\backend-tests-build.json'
 $startedWall = [DateTime]::UtcNow
 
-# One table classifies every fixture. `desktop` means the fixture creates real
-# windows, installs desktop-scoped hooks or reads interactive shell state, so it
-# runs on an isolated desktop. `qpa` is the platform plugin the fixture needs
-# when it is run directly instead of through CTest.
 $fixtureTraits = [ordered]@{
-    screen_identity             = @{ desktop = $false }
-    hyprland_monitor            = @{ desktop = $false }
-    panel_animation             = @{ desktop = $false }
-    screenshot_jobs             = @{ desktop = $false }
-    fs_utils                    = @{ desktop = $false }
-    redaction                   = @{ desktop = $false }
-    log_scrub                   = @{ desktop = $false }
-    log_redaction_guard         = @{ desktop = $false }
-    tiling_layout               = @{ desktop = $false }
-    dispatcher                  = @{ desktop = $false }
-    tiling_observability        = @{ desktop = $false }
-    tiling_manager              = @{ desktop = $false }
-    tiling_reload               = @{ desktop = $false }
-    pw_audio_control            = @{ desktop = $false }
-    upower_status               = @{ desktop = $false }
-    bt_pairing_policy           = @{ desktop = $false }
-    virtual_desktops            = @{ desktop = $false }
-    hotkeys_routing             = @{ desktop = $false }
-    keyboard_hook               = @{ desktop = $false }
-    mpris_status                = @{ desktop = $false }
-    mpris_art_cache             = @{ desktop = $false }
-    transition_trace            = @{ desktop = $false }
-    foreground_observer         = @{ desktop = $false }
-    activation_policy           = @{ desktop = $false }
-    fullscreen_app_state        = @{ desktop = $false }
-    panel_topmost               = @{ desktop = $false }
-    power_profiles              = @{ desktop = $false }
-    brightness_route            = @{ desktop = $false }
-    display_identity            = @{ desktop = $false }
-    native_desktop_recovery     = @{ desktop = $false }
-    pw_session_worker           = @{ desktop = $false }
-    idle_request                = @{ desktop = $false }
-    input_settle                = @{ desktop = $false }
-    super_drag_wait             = @{ desktop = $false }
-    network_wifi_route          = @{ desktop = $false }
-    panel_hidden_reembed        = @{ desktop = $true; qpa = 'windows'; reason = 'creates and shows native panel windows' }
-    system_surface              = @{ desktop = $true; qpa = 'offscreen'; reason = 'creates visible native windows at 0,0' }
-    desktop_zorder              = @{ desktop = $true; qpa = 'offscreen'; reason = 'creates visible native windows and installs host-scoped WinEvent hooks' }
-    mpris_app_identity          = @{ desktop = $true; qpa = 'offscreen'; reason = 'reads real shell app entries' }
-    notification_mirror_consent = @{ desktop = $true; qpa = 'offscreen'; reason = 'creates a real message-only window' }
-    keyboard_layout             = @{ desktop = $true; qpa = 'offscreen'; reason = 'creates a real hidden window' }
-    native_lifetime             = @{ desktop = $true; qpa = 'offscreen'; reason = 'creates real message-only windows' }
+    screen_identity             = @{ needsDesktop = $false }
+    hyprland_monitor            = @{ needsDesktop = $false }
+    panel_animation             = @{ needsDesktop = $false }
+    screenshot_jobs             = @{ needsDesktop = $false }
+    fs_utils                    = @{ needsDesktop = $false }
+    redaction                   = @{ needsDesktop = $false }
+    log_scrub                   = @{ needsDesktop = $false }
+    log_redaction_guard         = @{ needsDesktop = $false }
+    tiling_layout               = @{ needsDesktop = $false }
+    dispatcher                  = @{ needsDesktop = $false }
+    tiling_observability        = @{ needsDesktop = $false }
+    tiling_manager              = @{ needsDesktop = $false }
+    tiling_reload               = @{ needsDesktop = $false }
+    pw_audio_control            = @{ needsDesktop = $false }
+    upower_status               = @{ needsDesktop = $false }
+    bt_pairing_policy           = @{ needsDesktop = $false }
+    virtual_desktops            = @{ needsDesktop = $false }
+    hotkeys_routing             = @{ needsDesktop = $false }
+    keyboard_hook               = @{ needsDesktop = $false }
+    mpris_status                = @{ needsDesktop = $false }
+    mpris_art_cache             = @{ needsDesktop = $false }
+    transition_trace            = @{ needsDesktop = $false }
+    foreground_observer         = @{ needsDesktop = $false }
+    activation_policy           = @{ needsDesktop = $false }
+    fullscreen_app_state        = @{ needsDesktop = $false }
+    panel_topmost               = @{ needsDesktop = $false }
+    power_profiles              = @{ needsDesktop = $false }
+    brightness_route            = @{ needsDesktop = $false }
+    display_identity            = @{ needsDesktop = $false }
+    native_desktop_recovery     = @{ needsDesktop = $false }
+    pw_session_worker           = @{ needsDesktop = $false }
+    idle_request                = @{ needsDesktop = $false }
+    input_settle                = @{ needsDesktop = $false }
+    super_drag_wait             = @{ needsDesktop = $false }
+    network_wifi_route          = @{ needsDesktop = $false }
+    panel_hidden_reembed        = @{ needsDesktop = $true; qtPlatform = 'windows'; reason = 'creates and shows native panel windows' }
+    system_surface              = @{ needsDesktop = $true; qtPlatform = 'offscreen'; reason = 'creates visible native windows at 0,0' }
+    desktop_zorder              = @{ needsDesktop = $true; qtPlatform = 'offscreen'; reason = 'creates visible native windows and installs host-scoped WinEvent hooks' }
+    mpris_app_identity          = @{ needsDesktop = $true; qtPlatform = 'offscreen'; reason = 'reads real shell app entries' }
+    notification_mirror_consent = @{ needsDesktop = $true; qtPlatform = 'offscreen'; reason = 'creates a real message-only window' }
+    keyboard_layout             = @{ needsDesktop = $true; qtPlatform = 'offscreen'; reason = 'creates a real hidden window' }
+    native_lifetime             = @{ needsDesktop = $true; qtPlatform = 'offscreen'; reason = 'creates real message-only windows' }
 }
 
 New-Item -ItemType Directory -Force -Path $runRoot, (Split-Path -Parent $ManifestPath) | Out-Null
 $manifest = [ordered]@{
-    schemaVersion = 2
+    schemaVersion = 3
     runId = [guid]::NewGuid().ToString('N')
     generatedAtUtc = [DateTime]::UtcNow.ToString('o')
     completed = $false
     passed = $false
     error = 'the run did not finish'
+    gateFailures = @()
     shell = $null
     backend = $null
     toolchain = $null
@@ -170,7 +141,7 @@ $manifest = [ordered]@{
         ctestRegistered = 0; ctestUnregistered = 0
         desktopIsolated = 0
         casesSkipped = 0; fixturesWithCaseTotals = 0; fixturesWithoutCaseTotals = 0
-        caseTotalsNote = 'Qt Test case totals come from fixtures run directly; CTest does not capture their output on Windows.'
+        caseTotalsNote = 'casesSkipped sums the skipped cases of fixtures whose Qt Test output had a Totals line. fixturesWithCaseTotals counts those fixtures and fixturesWithoutCaseTotals the rest.'
         wallSeconds = 0
     }
     tests = @()
@@ -180,8 +151,6 @@ function Write-Manifest {
     Write-CaelestiaJsonAtomic $ManifestPath $manifest
 }
 
-# Replace, never leave, the previous result. A run that dies from here on
-# leaves a fresh incomplete manifest instead of an old pass.
 Remove-Item -LiteralPath $ManifestPath -Force -ErrorAction SilentlyContinue
 Write-Manifest
 
@@ -192,8 +161,6 @@ function Get-CacheValue([string]$Name) {
     return ($line -split '=', 2)[1]
 }
 
-# A reconfigure can store a bare compiler name instead of its resolved path,
-# so accept either and fall back to the build record for the version.
 function Resolve-Executable([string]$Value) {
     if (-not $Value) { return $null }
     if (Test-Path -LiteralPath $Value -PathType Leaf) { return (Resolve-Path -LiteralPath $Value).Path }
@@ -205,10 +172,10 @@ function Resolve-Executable([string]$Value) {
 function Get-TestTraits([string]$Name) {
     if (-not $fixtureTraits.Contains($Name)) { return $null }
     $trait = $fixtureTraits[$Name]
-    if ($trait.desktop) {
-        return @{ dependsOn = @('desktop'); qpa = $trait.qpa; reason = $trait.reason }
+    if ($trait.needsDesktop) {
+        return @{ dependsOn = @('desktop'); qtPlatform = $trait.qtPlatform; reason = $trait.reason }
     }
-    return @{ dependsOn = @(); qpa = 'offscreen'; reason = $null }
+    return @{ dependsOn = @(); qtPlatform = 'offscreen'; reason = $null }
 }
 
 function Get-Totals([string]$Text) {
@@ -230,28 +197,26 @@ function Get-FirstSkipReason([string]$Text) {
 }
 
 function Test-TargetArtifact([string]$Artifact, [string]$Target) {
-    if ([IO.Path]::GetFileNameWithoutExtension($Artifact) -ieq $Target) { return $true }
-    return $Artifact -match ("CMakeFiles[\\/]" + [regex]::Escape($Target) + "\.dir[\\/]")
+    return $Artifact -match ('(?<![A-Za-z0-9_])' + [regex]::Escape($Target) + '(?:_autogen(?:_timestamp_deps)?)?(?![A-Za-z0-9_])')
 }
 
-# Map each failed target to the compiler or linker error that stopped it.
 function Get-BuildFailureOutput([string]$LogPath, [string[]]$Targets) {
     $output = @{}
     if (-not (Test-Path -LiteralPath $LogPath -PathType Leaf)) { return $output }
     $current = $null
     $collected = @{}
     foreach ($line in Get-Content -LiteralPath $LogPath) {
-        if ($line -match '^FAILED:\s+\[code=\d+\]\s+(\S+)') {
+        if ($line -match '^FAILED:\s+\[code=\d+\]\s+(.+)$') {
             $artifact = $Matches[1]
             $current = $null
             foreach ($target in $Targets) {
-                if ($artifact -match [regex]::Escape($target)) { $current = $target; break }
+                if (Test-TargetArtifact $artifact $target) { $current = $target; break }
             }
             continue
         }
         if ($line -match '^\[\d+/\d+\]') { $current = $null; continue }
         if (-not $current) { continue }
-        if ($line -match 'error LNK\d+|fatal error LNK\d+|error C\d+|fatal error C\d+|: error:') {
+        if ($line -match 'error LNK\d+|fatal error LNK\d+|error C\d+|fatal error C\d+|: error:|AutoMoc|AUTOMOC|moc: ') {
             if (-not $collected.ContainsKey($current)) {
                 $collected[$current] = New-Object 'System.Collections.Generic.List[string]'
             }
@@ -264,9 +229,7 @@ function Get-BuildFailureOutput([string]$LogPath, [string[]]$Targets) {
     return $output
 }
 
-# A desktop fixture gets its own invisible desktop. The child process starts on
-# it through STARTUPINFO.lpDesktop, and the desktop is closed when the child
-# exits. SwitchDesktop is never called, so the user's desktop is unchanged.
+# .NET Process cannot set STARTUPINFO.lpDesktop, hence the P/Invoke launcher.
 if (-not ('CaelestiaIsolatedDesktop' -as [type])) {
     Add-Type -TypeDefinition @'
 using System;
@@ -306,6 +269,9 @@ public static class CaelestiaIsolatedDesktop {
     [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     static extern IntPtr CreateDesktopW(string lpszDesktop, string lpszDevice, IntPtr pDevmode, int dwFlags, int dwDesiredAccess, IntPtr lpsa);
 
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    static extern IntPtr OpenDesktopW(string lpszDesktop, int dwFlags, bool fInherit, int dwDesiredAccess);
+
     [DllImport("user32.dll", SetLastError = true)]
     public static extern bool CloseDesktop(IntPtr hDesktop);
 
@@ -324,12 +290,17 @@ public static class CaelestiaIsolatedDesktop {
     [DllImport("kernel32.dll", SetLastError = true)]
     public static extern bool CloseHandle(IntPtr hObject);
 
-    // PowerShell can marshal a zero handle back from a direct call to this
-    // function, so keep the call and the error read in C#.
     public static IntPtr CreateDesktopForTest(string name, out int error) {
         var handle = CreateDesktopW(name, null, IntPtr.Zero, 0, 0x000F01FF, IntPtr.Zero);
         error = Marshal.GetLastWin32Error();
         return handle;
+    }
+
+    public static bool DesktopExists(string name) {
+        var handle = OpenDesktopW(name, 0, false, 0x0001);
+        if (handle == IntPtr.Zero) return false;
+        CloseDesktop(handle);
+        return true;
     }
 }
 '@
@@ -338,16 +309,21 @@ public static class CaelestiaIsolatedDesktop {
 function Invoke-IsolatedFixture([string]$Executable, [string]$Name, [string]$Log) {
     $started = [DateTime]::UtcNow
     $desktopName = 'caelestia-' + $manifest.runId.Substring(0, 8) + '-' + $Name
+    $result = [pscustomobject]@{
+        Started = $false; IsolationFailed = $false; ExitCode = $null; TimedOut = $false
+        Duration = 0.0; Log = $Log; Desktop = $desktopName; Error = $null; CleanupError = $null
+    }
     [int]$createError = 0
     $desktop = [CaelestiaIsolatedDesktop]::CreateDesktopForTest($desktopName, [ref]$createError)
     if ($desktop -eq [IntPtr]::Zero) {
-        return [pscustomobject]@{
-            Started = $false; IsolationFailed = $true; ExitCode = $null; TimedOut = $false
-            Duration = [Math]::Round(([DateTime]::UtcNow - $started).TotalSeconds, 3)
-            Log = $Log; Desktop = $null; Error = "CreateDesktop failed with Win32 error $createError"
-        }
+        $result.IsolationFailed = $true
+        $result.Desktop = $null
+        $result.Error = "CreateDesktop failed with Win32 error $createError"
+        return $result
     }
     $process = [IntPtr]::Zero
+    $processId = 0
+    $cleanup = New-Object 'System.Collections.Generic.List[string]'
     try {
         $info = [CaelestiaIsolatedDesktop+STARTUPINFO]::new()
         $info.cb = [Runtime.InteropServices.Marshal]::SizeOf($info)
@@ -356,38 +332,72 @@ function Invoke-IsolatedFixture([string]$Executable, [string]$Name, [string]$Log
         $commandLine = '"' + $Executable + '" -o "' + $Log + '",txt'
         $created = [CaelestiaIsolatedDesktop]::CreateProcessW($Executable, $commandLine,
             [IntPtr]::Zero, [IntPtr]::Zero, $false, 0, [IntPtr]::Zero, $runRoot, [ref]$info, [ref]$processInfo)
-        if (-not $created) {
-            $errorCode = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
-            return [pscustomobject]@{
-                Started = $false; IsolationFailed = $false; ExitCode = $null; TimedOut = $false
-                Duration = [Math]::Round(([DateTime]::UtcNow - $started).TotalSeconds, 3)
-                Log = $Log; Desktop = $desktopName; Error = "CreateProcess failed with Win32 error $errorCode"
-            }
+        if ($created) {
+            $result.Started = $true
+            $process = $processInfo.hProcess
+            $processId = $processInfo.dwProcessId
+            [CaelestiaIsolatedDesktop]::CloseHandle($processInfo.hThread) | Out-Null
+            $result.TimedOut = [CaelestiaIsolatedDesktop]::WaitForSingleObject($process, $TestTimeoutSeconds * 1000) -eq 0x102
+        } else {
+            $result.Error = "CreateProcess failed with Win32 error $([Runtime.InteropServices.Marshal]::GetLastWin32Error())"
         }
-        $process = $processInfo.hProcess
-        [CaelestiaIsolatedDesktop]::CloseHandle($processInfo.hThread) | Out-Null
-        $timedOut = [CaelestiaIsolatedDesktop]::WaitForSingleObject($process, $TestTimeoutSeconds * 1000) -eq 0x102
-        if ($timedOut) {
-            & taskkill.exe /PID $processInfo.dwProcessId /T /F 2>&1 | Out-Null
-            if ([CaelestiaIsolatedDesktop]::WaitForSingleObject($process, 5000) -eq 0x102) {
-                [CaelestiaIsolatedDesktop]::TerminateProcess($process, 1) | Out-Null
-                [CaelestiaIsolatedDesktop]::WaitForSingleObject($process, 5000) | Out-Null
-            }
-        }
-        $exitCode = 0
-        if (-not [CaelestiaIsolatedDesktop]::GetExitCodeProcess($process, [ref]$exitCode)) { $exitCode = -1 }
-        return [pscustomobject]@{
-            Started = $true; IsolationFailed = $false; ExitCode = $exitCode; TimedOut = $timedOut
-            Duration = [Math]::Round(([DateTime]::UtcNow - $started).TotalSeconds, 3)
-            Log = $Log; Desktop = $desktopName; Error = $null
-        }
+    } catch {
+        $result.Error = "Isolated launcher error: $_"
     } finally {
-        if ($process -ne [IntPtr]::Zero) { [CaelestiaIsolatedDesktop]::CloseHandle($process) | Out-Null }
-        [CaelestiaIsolatedDesktop]::CloseDesktop($desktop) | Out-Null
+        if ($process -ne [IntPtr]::Zero) {
+            if ([CaelestiaIsolatedDesktop]::WaitForSingleObject($process, 0) -eq 0x102) {
+                $ErrorActionPreference = 'Continue'
+                try { & taskkill.exe /PID $processId /T /F 2>&1 | Out-Null } catch { }
+                if ([CaelestiaIsolatedDesktop]::WaitForSingleObject($process, 5000) -eq 0x102) {
+                    [CaelestiaIsolatedDesktop]::TerminateProcess($process, 1) | Out-Null
+                    [CaelestiaIsolatedDesktop]::WaitForSingleObject($process, 5000) | Out-Null
+                }
+            }
+            if ([CaelestiaIsolatedDesktop]::WaitForSingleObject($process, 0) -eq 0x102) {
+                $cleanup.Add("process $processId is still running after taskkill and TerminateProcess")
+            } else {
+                $exitCode = 0
+                if (-not [CaelestiaIsolatedDesktop]::GetExitCodeProcess($process, [ref]$exitCode)) { $exitCode = -1 }
+                $result.ExitCode = $exitCode
+            }
+            [CaelestiaIsolatedDesktop]::CloseHandle($process) | Out-Null
+        }
+        if (-not [CaelestiaIsolatedDesktop]::CloseDesktop($desktop)) {
+            $cleanup.Add("CloseDesktop failed for '$desktopName'")
+        }
+        if ([CaelestiaIsolatedDesktop]::DesktopExists($desktopName)) {
+            $cleanup.Add("desktop '$desktopName' still exists after it was closed")
+        }
+    }
+    $result.Duration = [Math]::Round(([DateTime]::UtcNow - $started).TotalSeconds, 3)
+    if ($cleanup.Count -gt 0) { $result.CleanupError = ($cleanup -join '; ') }
+    return $result
+}
+
+function New-FixturePlan([string]$Name, [string]$Target, [string]$Executable, [bool]$Registered) {
+    return [pscustomobject]@{
+        name = $Name
+        target = $Target
+        executable = $Executable
+        registered = $Registered
+        dependsOn = @()
+        qtPlatform = 'offscreen'
+        mode = 'ctest'
+        result = $null
+        duration = 0.0
+        skipReason = $null
+        failure = $null
+        buildFailure = $null
+        cleanupFailure = $null
+        skippedCases = $null
+        runBy = 'none'
+        isolation = $null
+        log = $null
     }
 }
 
 $plans = New-Object 'System.Collections.Generic.List[object]'
+$gateFailures = New-Object 'System.Collections.Generic.List[string]'
 $ctestExit = $null
 $revisionMatches = $false
 $backendDirty = $true
@@ -397,12 +407,14 @@ function Get-TargetBuildFailure([string]$Target) {
     if (-not $buildRecord.configureSucceeded) { return 'The test build did not configure this run.' }
     if ($recordTargets -notcontains $Target) { return "The test build record does not include $Target." }
     if (@($failedArtifacts | Where-Object { Test-TargetArtifact $_ $Target }).Count -gt 0) {
-        return "Fixture $Target did not compile or link."
+        return "Fixture $Target did not compile, generate or link."
+    }
+    if ($unattributedBuildFailure) {
+        return "The test build failed outside any fixture target, so $Target.exe may be stale."
     }
     if (-not (Test-Path -LiteralPath (Join-Path $testBuild "$Target.exe") -PathType Leaf)) {
         return "The test build produced no $Target.exe."
     }
-    if ($unknownBuildFailure) { return 'The test build did not complete and recorded no failed target.' }
     return $null
 }
 
@@ -425,8 +437,6 @@ try {
     if (-not (Test-Path -LiteralPath $ctestCommand -PathType Leaf)) {
         throw "ctest.exe is missing beside $cmakeCommand."
     }
-    # The fixtures need the Qt runtime. CTest ships beside the cmake that
-    # configured the test build.
     $env:PATH = "$qtPrefix\bin;$cmakeBin;$env:PATH"
 
     $buildRecord = $null
@@ -467,9 +477,6 @@ try {
     }
     $interactiveDesktop = $manifest.environment.interactiveDesktop
 
-    # CTest is the registration of record. Parse its listing to pair each test
-    # name with its executable, then run every declared fixture the backend did
-    # not register directly.
     $listLog = Join-Path $runRoot 'ctest-list.log'
     $ErrorActionPreference = 'Continue'
     & $ctestCommand --test-dir $testBuild -N -V *>&1 | ForEach-Object { "$_" } | Set-Content -LiteralPath $listLog -Encoding UTF8
@@ -500,8 +507,6 @@ try {
     }
     if ($registered.Count -eq 0) { throw "CTest registered no tests in $testBuild. See $listLog." }
 
-    # The test build record is the only evidence that a target was built by the
-    # current build. An old executable next to a failed target is not a pass.
     $testCmake = Join-Path $backend 'src\windows\test\CMakeLists.txt'
     $declaredTargets = @([regex]::Matches((Get-Content -LiteralPath $testCmake -Raw), 'qs_add_test_executable\((\w+)') |
         ForEach-Object { $_.Groups[1].Value })
@@ -523,12 +528,18 @@ try {
     }
     $recordTargets = @($buildRecord.targets | Where-Object { $_ })
     $failedArtifacts = @($buildRecord.failedArtifacts | Where-Object { $_ })
-    $unknownBuildFailure = (-not $buildRecord.buildSucceeded) -and ($failedArtifacts.Count -eq 0)
+    $buildFailed = (-not $buildRecord.configureSucceeded) -or (-not $buildRecord.buildSucceeded)
+    $unattributedArtifacts = @($failedArtifacts | Where-Object {
+        $artifact = $_
+        -not (@($declaredTargets | Where-Object { Test-TargetArtifact $artifact $_ }).Count)
+    })
+    $unattributedBuildFailure = $buildFailed -and ($failedArtifacts.Count -eq 0 -or $unattributedArtifacts.Count -gt 0)
+    if ($buildFailed) {
+        $detail = if ($failedArtifacts.Count -gt 0) { 'failed artifacts: ' + ($failedArtifacts -join '; ') } else { 'no failed artifact was recorded' }
+        $gateFailures.Add("The backend test build did not succeed ($detail). See $buildLog.")
+    }
     $buildErrors = Get-BuildFailureOutput $buildLog $declaredTargets
 
-    # Build one plan per declared target. A plan owns the fixture's
-    # classification, build result and run mode, so the manifest cannot report a
-    # different story.
     $registeredByTarget = @{}
     foreach ($entry in $registered) {
         $target = if ($entry.executable) { [IO.Path]::GetFileNameWithoutExtension($entry.executable) } else { $entry.name + '_test' }
@@ -538,27 +549,10 @@ try {
         $name = $target -replace '_test$', ''
         $entry = $registeredByTarget[$target]
         $traits = Get-TestTraits $name
-        $plan = [pscustomobject]@{
-            name = $name
-            target = $target
-            executable = Join-Path $testBuild "$target.exe"
-            registered = [bool]$entry
-            dependsOn = @()
-            qpa = 'offscreen'
-            mode = 'ctest'
-            result = $null
-            duration = 0.0
-            skipReason = $null
-            failure = $null
-            buildFailure = $null
-            skippedCases = $null
-            runBy = 'none'
-            isolation = $null
-            log = $null
-        }
+        $plan = New-FixturePlan $name $target (Join-Path $testBuild "$target.exe") ([bool]$entry)
         if ($traits) {
             $plan.dependsOn = @($traits.dependsOn)
-            $plan.qpa = $traits.qpa
+            $plan.qtPlatform = $traits.qtPlatform
         }
         $buildFailure = Get-TargetBuildFailure $target
         if (-not $traits) {
@@ -589,12 +583,11 @@ try {
     foreach ($entry in $registered) {
         $target = if ($entry.executable) { [IO.Path]::GetFileNameWithoutExtension($entry.executable) } else { $entry.name + '_test' }
         if ($declaredTargets -contains $target) { continue }
-        $plans.Add([pscustomobject]@{
-            name = $entry.name; target = $target; executable = $entry.executable; registered = $true
-            dependsOn = @(); qpa = 'offscreen'; mode = 'fail'; result = 'failed'; duration = 0.0
-            skipReason = $null; buildFailure = $null; skippedCases = $null; runBy = 'none'; isolation = $null; log = $null
-            failure = "unclassified fixture: CTest registered '$($entry.name)' with no declared target"
-        })
+        $plan = New-FixturePlan $entry.name $target $entry.executable $true
+        $plan.mode = 'fail'
+        $plan.result = 'failed'
+        $plan.failure = "unclassified fixture: CTest registered '$($entry.name)' with no declared target"
+        $plans.Add($plan)
     }
 
     $excluded = @($plans | Where-Object { $_.registered -and $_.mode -ne 'ctest' } | ForEach-Object { $_.name })
@@ -609,9 +602,6 @@ try {
             $ctestArguments += @('--exclude-regex', $pattern)
         }
         $manifest.commands.ctest = 'ctest ' + ($ctestArguments -join ' ')
-        # Run from the disposable run directory. CTest still executes each
-        # fixture in its own build directory, never the repository or a home
-        # directory.
         Push-Location -LiteralPath $runRoot
         try {
             $ErrorActionPreference = 'Continue'
@@ -664,19 +654,18 @@ try {
         }
     }
 
-    # Direct fixtures write their Qt Test log through -o. The bounded helper
-    # starts the headless ones with a hard time limit. The isolated path needs
-    # its own launcher only because .NET cannot set STARTUPINFO.lpDesktop.
     foreach ($plan in $plans) {
         if ($plan.mode -notin @('direct', 'isolated')) { continue }
         $plan.log = Join-Path $runRoot "$($plan.name).qt.txt"
-        $previousQpa = $env:QT_QPA_PLATFORM
-        $env:QT_QPA_PLATFORM = $plan.qpa
+        $previousQtPlatform = $env:QT_QPA_PLATFORM
+        $env:QT_QPA_PLATFORM = $plan.qtPlatform
         $run = $null
+        $directFailure = $null
         $timedOut = $false
         try {
             if ($plan.mode -eq 'isolated') {
                 $run = Invoke-IsolatedFixture $plan.executable $plan.name $plan.log
+                $plan.cleanupFailure = $run.CleanupError
                 if (-not $run.Started) {
                     if ($run.IsolationFailed) {
                         $plan.mode = 'skip'
@@ -695,8 +684,40 @@ try {
                 $plan.runBy = 'isolated-desktop'
             } else {
                 $started = [DateTime]::UtcNow
-                $run = Invoke-CaelestiaBounded -File $plan.executable -Arguments ('-o "' + $plan.log + '",txt') `
-                    -TimeoutSeconds $TestTimeoutSeconds -WorkingDirectory $runRoot
+                $startInfo = New-Object Diagnostics.ProcessStartInfo
+                $startInfo.FileName = $plan.executable
+                $startInfo.Arguments = '-o "' + $plan.log + '",txt'
+                $startInfo.WorkingDirectory = $runRoot
+                $startInfo.UseShellExecute = $false
+                $startInfo.CreateNoWindow = $true
+                $startInfo.RedirectStandardOutput = $true
+                $startInfo.RedirectStandardError = $true
+                $child = $null
+                try {
+                    $child = [Diagnostics.Process]::Start($startInfo)
+                } catch {
+                    $directFailure = "Could not start: $($_.Exception.Message)"
+                }
+                if ($child) {
+                    try {
+                        $null = $child.StandardOutput.ReadToEndAsync()
+                        $null = $child.StandardError.ReadToEndAsync()
+                        if ($child.WaitForExit($TestTimeoutSeconds * 1000)) {
+                            $child.WaitForExit()
+                            $run = [pscustomobject]@{ ExitCode = $child.ExitCode }
+                        } else {
+                            $directFailure = "Timed out after $TestTimeoutSeconds seconds"
+                            $savedPreference = $ErrorActionPreference
+                            $ErrorActionPreference = 'Continue'
+                            try { & taskkill.exe /PID $child.Id /T /F 2>&1 | Out-Null } catch { }
+                            $ErrorActionPreference = $savedPreference
+                            try { $child.Kill() } catch { }
+                            if (-not $child.WaitForExit(5000)) { $directFailure += "; process $($child.Id) is still running" }
+                        }
+                    } finally {
+                        $child.Dispose()
+                    }
+                }
                 $plan.duration = ([DateTime]::UtcNow - $started).TotalSeconds
                 $manifest.commands.direct += "$($plan.executable) -o $($plan.log),txt"
                 $plan.runBy = 'direct'
@@ -708,12 +729,12 @@ try {
             $plan.failure = "Fixture runner error: $_"
             continue
         } finally {
-            if ($null -eq $previousQpa) { Remove-Item Env:\QT_QPA_PLATFORM -ErrorAction SilentlyContinue }
-            else { $env:QT_QPA_PLATFORM = $previousQpa }
+            if ($null -eq $previousQtPlatform) { Remove-Item Env:\QT_QPA_PLATFORM -ErrorAction SilentlyContinue }
+            else { $env:QT_QPA_PLATFORM = $previousQtPlatform }
         }
         if ($null -eq $run) {
             $plan.result = 'failed'
-            $plan.failure = "Did not start or exceeded $TestTimeoutSeconds seconds. See $($plan.log)."
+            $plan.failure = "$directFailure. See $($plan.log)."
             $plan.mode = 'done'
             continue
         }
@@ -749,6 +770,14 @@ try {
 }
 $manifest.error = $runError
 
+foreach ($plan in $plans) {
+    if (-not $plan.cleanupFailure) { continue }
+    $plan.result = 'failed'
+    $plan.failure = (@($plan.failure, "Cleanup failed: $($plan.cleanupFailure)") | Where-Object { $_ }) -join ' '
+    $gateFailures.Add("Fixture '$($plan.name)' cleanup failed: $($plan.cleanupFailure)")
+}
+$manifest.gateFailures = @($gateFailures)
+
 $manifest.tests = @($plans | ForEach-Object {
     [ordered]@{
         name = $_.name
@@ -766,6 +795,7 @@ $manifest.tests = @($plans | ForEach-Object {
                 if ($manifest.error) { "did not run: $($manifest.error)" } else { 'the run ended before this fixture ran' }
             } else { $null })
         buildFailure = $_.buildFailure
+        cleanupFailure = $_.cleanupFailure
     }
 })
 $manifest.totals.fixtures = $manifest.tests.Count
@@ -778,15 +808,12 @@ $manifest.totals.desktopIsolated = @($manifest.tests | Where-Object { $_.isolati
 $measured = @($manifest.tests | Where-Object { $null -ne $_.skippedCases })
 $manifest.totals.fixturesWithCaseTotals = $measured.Count
 $manifest.totals.fixturesWithoutCaseTotals = $manifest.totals.fixtures - $measured.Count
-# CTest cannot capture these fixtures' Qt Test output on Windows, so case
-# totals come only from fixtures this script runs directly. Recording how many
-# fixtures were measured stops a partial count from reading as a full total.
 $manifest.totals.casesSkipped = (@($measured | ForEach-Object { [int]$_.skippedCases } | Measure-Object -Sum).Sum)
 if ($null -eq $manifest.totals.casesSkipped) { $manifest.totals.casesSkipped = 0 }
 $manifest.totals.wallSeconds = [Math]::Round(([DateTime]::UtcNow - $startedWall).TotalSeconds, 3)
 
 $manifest.completed = $true
-$manifest.passed = (-not $manifest.error) -and ($manifest.totals.failed -eq 0) -and
+$manifest.passed = (-not $manifest.error) -and ($manifest.gateFailures.Count -eq 0) -and ($manifest.totals.failed -eq 0) -and
     (($null -eq $ctestExit) -or ($ctestExit -eq 0)) -and $revisionMatches -and (-not $backendDirty)
 Write-Manifest
 
@@ -799,6 +826,7 @@ if (-not $manifest.passed) {
     foreach ($test in $manifest.tests) {
         if ($test.result -eq 'failed') { Write-Output "FAIL $($test.name): $($test.failure)" }
     }
+    foreach ($gateFailure in $manifest.gateFailures) { Write-Output "GATE $gateFailure" }
     if ($manifest.error) { Write-Output "ERROR $($manifest.error)" }
     throw "Backend native tests failed: $summary"
 }

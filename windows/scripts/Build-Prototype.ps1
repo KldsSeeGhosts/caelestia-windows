@@ -7,7 +7,7 @@ param(
     [string]$BuildRoot,
     [ValidateRange(1, 64)][int]$Jobs = 4,
     # Private harnesses only. Public exports omit the test sources, so test
-    # executables, including the backend's native fixtures, are off by default.
+    # executables are off by default.
     [switch]$Tests,
     # Offscreen fixtures only. Production payloads always bundle Glazier.
     [switch]$SkipGlazier
@@ -135,27 +135,20 @@ if ($SkipGlazier) {
     Copy-Item -LiteralPath $glazierExe -Destination (Join-Path $installRoot 'glazier.exe') -Force
     $glazierSha256 = (Get-FileHash -LiteralPath (Join-Path $installRoot 'glazier.exe') -Algorithm SHA256).Hash.ToLowerInvariant()
 }
-# The backend's Windows regression fixtures are a separate CMake project under
-# src/windows/test that no parent CMakeLists adds. The main backend's
-# BUILD_TESTING option only enables the upstream core/io/window suites and
-# defines QS_TEST in the production targets, so build the fork's suite directly
-# for Test-BackendNative.ps1. Build with keep-going so one broken target does
-# not hide the others. The runner reports each missing executable.
+# No parent CMakeLists adds src/windows/test, so configure it directly
 if ($Tests) {
     $testCmake = Join-Path $repoRoot 'windows\deps\quickshell\src\windows\test\CMakeLists.txt'
     $testTargets = @([regex]::Matches((Get-Content -LiteralPath $testCmake -Raw), 'qs_add_test_executable\((\w+)') |
         ForEach-Object { $_.Groups[1].Value })
     if ($testTargets.Count -eq 0) { throw "No test targets were declared in $testCmake." }
     $testBuildStarted = [DateTime]::UtcNow
-    # Test-BackendNative reads this record, not the presence of an executable.
-    # A target that failed this run stays failed even when an older executable
-    # is still on disk. The record is written on every path, including a failed
-    # build or configure, so the runner never mistakes a stale build for this one.
+    $keepGoing = @('-k', '0')
     $testBuildRecord = [ordered]@{
         schemaVersion = 1
         startedAtUtc = $testBuildStarted.ToString('o')
         generatedAtUtc = $null
         backendRevision = (& git -C "$repoRoot\windows\deps\quickshell" rev-parse HEAD).Trim()
+        compiler = (& "$LlvmBin\clang-cl.exe" --version | Select-Object -First 1)
         targets = $testTargets
         configureSucceeded = $false
         buildSucceeded = $false
@@ -167,7 +160,7 @@ if ($Tests) {
         Invoke-BuildCommand 'configure-backend-tests' (@('-S', "$repoRoot\windows\deps\quickshell\src\windows\test",
             '-B', "$BuildRoot\quickshell-tests") + $common)
         $testBuildRecord.configureSucceeded = $true
-        Invoke-BuildCommand 'build-backend-tests' @('--build', "$BuildRoot\quickshell-tests", '--parallel', "$Jobs", '--', '-k', '0')
+        Invoke-BuildCommand 'build-backend-tests' (@('--build', "$BuildRoot\quickshell-tests", '--parallel', "$Jobs", '--') + $keepGoing)
         $testBuildRecord.buildSucceeded = $true
     } catch {
         $testBuildLog = $testBuildRecord.log
