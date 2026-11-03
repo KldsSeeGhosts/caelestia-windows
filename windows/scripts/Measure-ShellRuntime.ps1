@@ -20,6 +20,7 @@ param(
     [Parameter(Mandatory)][string]$QtPrefix,
     [Parameter(Mandatory)][string]$BuildRoot,
     [Parameter(Mandatory)][string]$RunRoot,
+    [string]$SourceRoot,
     [ValidateSet('Idle', 'Resources', 'Panel', 'Reload')][string]$Metric = 'Idle',
     [ValidateSet('NonVisible', 'Offscreen', 'Live')][string]$Mode = 'NonVisible',
     [ValidateRange(1, 3600)][int]$WarmupSeconds = 120,
@@ -34,8 +35,13 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $BuildRoot = (Resolve-Path -LiteralPath $BuildRoot).Path
+if (-not $SourceRoot) {
+    $sourceLine = Get-Content "$BuildRoot\caelestia\CMakeCache.txt" | Where-Object { $_ -like 'CMAKE_HOME_DIRECTORY:INTERNAL=*' }
+    if (-not $sourceLine) { throw 'Cannot locate the shell checkout. Pass -SourceRoot or use a Build-Prototype build root.' }
+    $SourceRoot = $sourceLine.Substring('CMAKE_HOME_DIRECTORY:INTERNAL='.Length)
+}
+$SourceRoot = (Resolve-Path -LiteralPath $SourceRoot).Path
 $QtPrefix = (Resolve-Path -LiteralPath $QtPrefix).Path
 $RunRoot = [IO.Path]::GetFullPath($RunRoot)
 if ($Mode -eq 'Live' -and -not $LiveDesktop) { throw 'Live trials require -LiveDesktop.' }
@@ -124,7 +130,7 @@ if ($Mode -eq 'NonVisible' -and -not $WorkerDesktop) {
     if (Test-Path -LiteralPath $RunRoot) { throw 'RunRoot must be new.' }
     $desktop = 'CaelestiaBench-' + [guid]::NewGuid().ToString('N')
     $command = '"' + (Join-Path $PSHOME 'powershell.exe') + '" -NoProfile -File "' + $PSCommandPath + '"'
-    foreach ($key in @('QtPrefix', 'BuildRoot', 'RunRoot', 'Metric', 'Mode', 'WarmupSeconds',
+    foreach ($key in @('QtPrefix', 'BuildRoot', 'RunRoot', 'SourceRoot', 'Metric', 'Mode', 'WarmupSeconds',
             'IdleSeconds', 'Cycles', 'CycleIntervalSeconds', 'RecoverySeconds', 'ScreenIndex', 'Plant')) {
         $value = [string](Get-Variable -Name $key -ValueOnly)
         if ($value.Contains('"')) { throw "Quotes are not supported in $key." }
@@ -141,16 +147,16 @@ if ($Mode -eq 'NonVisible' -and [ShellBenchNative]::DesktopName() -ne $WorkerDes
 if (Test-Path -LiteralPath $RunRoot) { throw 'RunRoot must be new.' }
 New-Item -ItemType Directory -Path $RunRoot | Out-Null
 $profile = Join-Path $RunRoot 'profile'
-$stage = & "$PSScriptRoot\Stage-ShellPrototype.ps1" -Destination "$RunRoot\stage" -ProfileRoot $profile -Prototype combined
+$stage = & "$SourceRoot\windows\scripts\Stage-ShellPrototype.ps1" -Destination "$RunRoot\stage" -ProfileRoot $profile -Prototype combined
 foreach ($dir in @('config', 'state', 'runtime', 'cache', 'data')) {
     New-Item -ItemType Directory -Force -Path "$profile\$dir" | Out-Null
 }
-$config = Get-Content "$repoRoot\windows\shell\shell.json" -Raw | ConvertFrom-Json
+$config = Get-Content "$SourceRoot\windows\shell\shell.json" -Raw | ConvertFrom-Json
 $config.background.enabled = $false
 $config.windows.clipboard.enabled = $false
 $config.session.commands = @{}
 $config | ConvertTo-Json -Depth 32 | Set-Content "$profile\config\shell.json" -Encoding UTF8
-Copy-Item -LiteralPath "$repoRoot\windows\shell\windows.json" -Destination "$profile\config\windows.json"
+Copy-Item -LiteralPath "$SourceRoot\windows\shell\windows.json" -Destination "$profile\config\windows.json"
 '{"binds":[]}' | Set-Content "$profile\config\keybinds.json" -Encoding UTF8
 
 # This overlay lives only in the trial stage. The source and backend stay unchanged.
@@ -161,6 +167,7 @@ $probe = @'
     property int benchReadyFrames: 0
     property int benchFrames: 0
     property real benchFrameMs: 0
+    property int benchBusyTicks: 0
     property var benchRetained: []
     ElapsedTimer { id: benchClock }
     ElapsedTimer { id: benchBusyClock }
@@ -169,6 +176,7 @@ $probe = @'
         repeat: true
         running: __CPU__
         onTriggered: {
+            root.benchBusyTicks++;
             benchBusyClock.restart();
             while (benchBusyClock.elapsedMs() < 8) {}
         }
@@ -208,7 +216,6 @@ $probe = @'
             return;
         if (!benchReady()) {
             benchReadyFrames = 0;
-            win.contentItem.Window.window.update();
             return;
         }
         if (++benchReadyFrames < 2) {
@@ -236,7 +243,8 @@ $probe = @'
                 pending: root.benchPending, frameMs: root.benchFrameMs * 1000,
                 ready: root.benchFrames > 0 && win.backingWindowVisible,
                 dpr: win.devicePixelRatio, width: win.width, height: win.height,
-                nexusWindows: Nexus.WindowFactory.windowCount
+                nexusWindows: Nexus.WindowFactory.windowCount,
+                busyTicks: root.benchBusyTicks, retainedAllocations: root.benchRetained.length
             });
         }
         function request(id: string, panel: string): bool {
@@ -333,19 +341,40 @@ $metadata = [ordered]@{
     schemaVersion=2; metric=$Metric; mode=$Mode; plant=$Plant
     machine=$env:COMPUTERNAME; logicalProcessors=[Environment]::ProcessorCount
     os=[Environment]::OSVersion.VersionString
+    windowsBuild=Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' |
+        Select-Object CurrentBuildNumber, UBR, DisplayVersion
     uptimeSeconds=([DateTime]::Now - (Get-CimInstance Win32_OperatingSystem).LastBootUpTime).TotalSeconds
-    shellRevision=(& git -C $repoRoot rev-parse HEAD).Trim()
-    sourceStatus=@(& git -C $repoRoot status --short)
-    backendPin=(& git -C $repoRoot rev-parse HEAD:windows/deps/quickshell).Trim()
+    shellRevision=(& git -C $SourceRoot rev-parse HEAD).Trim()
+    sourceStatus=@(& git -C $SourceRoot status --short)
+    backendPin=(& git -C $SourceRoot rev-parse HEAD:windows/deps/quickshell).Trim()
+    protocolSha256=(Get-FileHash $PSCommandPath).Hash
+    buildRecordSha256=(Get-FileHash "$BuildRoot\logs\build.json").Hash
     build=Get-Content "$BuildRoot\logs\build.json" -Raw | ConvertFrom-Json
     executableSha256=(Get-FileHash $exe).Hash
     qtVersion=(Get-Item "$QtPrefix\bin\Qt6Core.dll").VersionInfo.FileVersion
+    qtCoreSha256=(Get-FileHash "$QtPrefix\bin\Qt6Core.dll").Hash
     payloadSha256=(Get-FileHash "$stage\sources.json").Hash
     probeSha256=(Get-FileHash $shellPath).Hash
     startedUtc=[DateTime]::UtcNow.ToString('o')
     workload=[ordered]@{ warmupSeconds=$WarmupSeconds; idleSeconds=$IdleSeconds; cycles=$Cycles; cycleIntervalSeconds=$CycleIntervalSeconds; recoverySeconds=$RecoverySeconds; screenIndex=$ScreenIndex }
     environment=[ordered]@{}; desktop=[ShellBenchNative]::DesktopName()
 }
+$metadata.nativeModules = @(
+    Get-ChildItem "$qmlRoot\Caelestia","$qmlRoot\M3Shapes" -Recurse -File -Filter '*.dll' |
+        Sort-Object FullName | ForEach-Object {
+            [ordered]@{ path=$_.FullName.Substring($qmlRoot.Length + 1); sha256=(Get-FileHash $_.FullName).Hash }
+        }
+)
+$metadata.shellManifestSha256 = $metadata.payloadSha256
+$metadata.configSha256 = (Get-FileHash "$profile\config\shell.json").Hash
+$identity = @($metadata.shellManifestSha256, $metadata.executableSha256, $metadata.probeSha256,
+    $metadata.qtCoreSha256, $metadata.configSha256, $metadata.nativeModules)
+$sha = [Security.Cryptography.SHA256]::Create()
+try {
+    $metadata.payloadSha256 = [BitConverter]::ToString(
+        $sha.ComputeHash([Text.Encoding]::UTF8.GetBytes(($identity | ConvertTo-Json -Depth 8 -Compress)))
+    ).Replace('-', '')
+} finally { $sha.Dispose() }
 foreach ($variable in $info.EnvironmentVariables.Keys | Where-Object { $_ -match '^(CAELESTIA_|QS_|QSG_|QT_|QML_|XDG_)' }) {
     $metadata.environment[$variable] = $info.EnvironmentVariables[$variable]
 }
@@ -412,10 +441,11 @@ function Wait-Frame([string]$Panel) {
     })
 }
 function Sample-Idle([string]$Phase, [int]$Seconds) {
-    $timer = [Diagnostics.Stopwatch]::StartNew()
     Read-Sample $Phase 0
-    while ($timer.Elapsed.TotalSeconds -lt $Seconds) {
-        Start-Sleep -Milliseconds ([int][Math]::Min(1000, 1000 * ($Seconds - $timer.Elapsed.TotalSeconds)))
+    $start = $script:lastTime
+    while ($script:lastTime - $start -lt $Seconds) {
+        $remaining = $Seconds - ($clock.Elapsed.TotalSeconds - $start)
+        if ($remaining -gt 0) { Start-Sleep -Milliseconds ([int][Math]::Min(1000, 1000 * $remaining)) }
         Read-Sample $Phase 0
     }
 }
@@ -434,6 +464,16 @@ try {
     } until ($state.ready)
     $metadata.processId = $process.Id
     $metadata.screen = $state
+    $prototypeState = Invoke-BenchIpc state @() prototype | ConvertFrom-Json
+    $metadata.controlGates = [ordered]@{}
+    foreach ($service in $prototypeState.services.PSObject.Properties) {
+        foreach ($gate in $service.Value.PSObject.Properties |
+                Where-Object Name -in @('controls', 'launch', 'dispatch', 'activation', 'mirror', 'actions',
+                    'profileWrites', 'keepAwakePermitted', 'keepAwakeHeld', 'recorderPermitted', 'recorderRunning', 'backendEnabled')) {
+            $metadata.controlGates["$($service.Name).$($gate.Name)"] = $gate.Value
+            if ($gate.Value -eq $true) { throw "Unexpected enabled control gate $($service.Name).$($gate.Name)." }
+        }
+    }
     if ($Metric -eq 'Resources') {
         foreach ($panel in @('dashboard', 'launcher', 'utilities', 'sidebar', 'nexus')) {
             Wait-Frame $panel
@@ -447,6 +487,7 @@ try {
     Wait-Frame idle
     switch ($Metric) {
         'Idle' {
+            $metadata.idleStateBefore = Invoke-BenchIpc state | ConvertFrom-Json
             Sample-Idle 'idle' $IdleSeconds
             $work.idleIntervals = @($samples | Where-Object phase -eq 'idle').Count - 1
         }
@@ -484,6 +525,10 @@ try {
         }
     }
     $metadata.finalState = Invoke-BenchIpc state | ConvertFrom-Json
+    if ((Get-FileHash $exe).Hash -ne $metadata.executableSha256 -or
+        (Get-FileHash "$BuildRoot\logs\build.json").Hash -ne $metadata.buildRecordSha256) {
+        throw 'Build changed during the trial.'
+    }
     Read-Sample 'finished' $work.cyclesCompleted
 } catch {
     $errors.Add($_.Exception.Message)

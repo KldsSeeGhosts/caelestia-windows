@@ -23,6 +23,8 @@ param(
     [Parameter(Mandatory)][string]$QtPrefix,
     [Parameter(Mandatory)][string]$BuildRoot,
     [string]$BuildRootB,
+    [string]$SourceRoot,
+    [string]$SourceRootB,
     [Parameter(Mandatory)][string]$RunRoot,
     [ValidateSet('Idle', 'Resources', 'Panel', 'Reload')][string[]]$Metric = @('Idle', 'Resources', 'Panel', 'Reload'),
     [ValidateSet('NonVisible', 'Offscreen', 'Live')][string]$Mode = 'NonVisible',
@@ -65,6 +67,8 @@ for ($index = 1; $index -le $Runs; $index++) {
                 '-IdleSeconds', $IdleSeconds, '-Cycles', $Cycles, '-RecoverySeconds', $RecoverySeconds,
                 '-CycleIntervalSeconds', $CycleIntervalSeconds,
                 '-ScreenIndex', $ScreenIndex, '-Plant', $plant)
+            $source = if ($side -eq 'B') { $SourceRootB } else { $SourceRoot }
+            if ($source) { $arguments += @('-SourceRoot', $source) }
             if ($LiveDesktop) { $arguments += '-LiveDesktop' }
             Write-Host "$category $side trial $index/$Runs ($Mode, plant $plant)"
             & (Join-Path $PSHOME 'powershell.exe') @arguments *> "$RunRoot\$category-$side-$index.worker.log"

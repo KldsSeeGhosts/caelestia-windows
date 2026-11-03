@@ -90,6 +90,7 @@ def summarize_trial(path):
     if not rows or not metadata.get("screen", {}).get("ready"):
         errors.append("No confirmed render loop or process counters.")
     metrics = {}
+    counters = {}
     category = metadata["metric"]
     if category == "Idle":
         idle = [r for r in rows if r["phase"] == "idle"]
@@ -103,6 +104,7 @@ def summarize_trial(path):
                 errors.append("CPU time exceeds available processor time.")
             metrics["idleCpuCorePercent"] = core
             metrics["idleCpuMachinePercent"] = core / metadata["logicalProcessors"]
+            counters["idle"] = {"elapsedSeconds": elapsed, "cpuSeconds": cpu, "intervals": len(idle) - 1}
     elif category == "Resources":
         initial = [r for r in rows if r["phase"] == "initial-idle"]
         final = [r for r in rows if r["phase"] == "final-idle"]
@@ -120,6 +122,11 @@ def summarize_trial(path):
                 metrics[label + "SlopePerMinute"] = slope(cycles, key, divisor)
                 per_cycle = [dict(row, elapsedSeconds=row["cycle"] * 60) for row in cycles]
                 metrics[label + "SlopePerCycle"] = slope(per_cycle, key, divisor)
+                counters[label] = {
+                    "initialIdleMedian": start, "finalIdleMedian": end,
+                    "peak": max(r[key] / divisor for r in rows),
+                    "recoverySlopePerMinute": slope(final, key, divisor) if len(final) >= 2 else None,
+                }
     elif category == "Panel":
         shown = [a for a in actions if a["panel"] != "idle"]
         if len(shown) != metadata["workload"]["cycles"] or work["panelsShown"] != len(shown):
@@ -127,6 +134,9 @@ def summarize_trial(path):
         elif shown:
             metrics["panelRequestToFrameObservedMs"] = statistics.median(a["requestToFrameObservedMs"] for a in shown)
             metrics["panelShellRequestToFrameMs"] = statistics.median(a["shellRequestToFrameMs"] for a in shown)
+            counters["panelTransportOverheadMs"] = distribution([
+                a["requestToFrameObservedMs"] - a["shellRequestToFrameMs"] for a in shown
+            ])
     elif category == "Reload":
         if work["reloadsCompleted"] != 1 or not metadata.get("finalState", {}).get("ready"):
             errors.append("Reload did not render a new generation.")
@@ -137,7 +147,7 @@ def summarize_trial(path):
     if any(not math.isfinite(v) for v in metrics.values()):
         errors.append("Non-finite metric.")
     return {
-        "path": str(path), "metadata": metadata, "metrics": metrics,
+        "path": str(path), "metadata": metadata, "metrics": metrics, "counters": counters,
         "errorCount": len(errors), "errors": errors, "work": work,
         "transitionTraceDropped": dropped,
         "warnings": warning_lines,
@@ -154,6 +164,9 @@ def trial_contract(trial):
         "metric": meta["metric"], "mode": meta["mode"], "workload": meta["workload"],
         "dpr": meta.get("screen", {}).get("dpr"),
         "width": meta.get("screen", {}).get("width"), "height": meta.get("screen", {}).get("height"),
+        "windowsBuild": meta.get("windowsBuild"), "protocolSha256": meta.get("protocolSha256"),
+        "controlGates": meta.get("controlGates"),
+        "qtCoreSha256": meta.get("qtCoreSha256"), "configSha256": meta.get("configSha256"),
     }
 
 
@@ -198,7 +211,11 @@ def aggregate(manifest_path):
 
 def compare_groups(baseline, candidate, baseline_side="A", candidate_side="A"):
     comparison = {}
-    categories = {key.split("/", 1)[1] for key in candidate if key.startswith(candidate_side + "/")}
+    categories = {
+        key.split("/", 1)[1]
+        for source, side in ((baseline, baseline_side), (candidate, candidate_side))
+        for key in source if key.startswith(side + "/")
+    }
     for category in sorted(categories):
         a = baseline.get(baseline_side + "/" + category)
         b = candidate.get(candidate_side + "/" + category)
