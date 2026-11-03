@@ -77,24 +77,45 @@ ColumnLayout {
 
         // Windows port (#210): Tab moves focus but the flickable does not
         // follow it. Scroll a keyboard-focused control in this page into view.
+        // The animation writes revealTo, and only that write may set contentY.
+        // A pointer scroll or any other contentY change cancels it. Focus that
+        // leaves this page, including the flickable's own tap focus, cancels
+        // it too and does not start another.
+        property bool revealWrite: false
+        property real revealTo: 0
+
+        onRevealToChanged: {
+            revealWrite = true;
+            contentY = revealTo;
+            revealWrite = false;
+        }
+        onContentYChanged: {
+            if (!revealWrite && revealAnim.running)
+                revealAnim.stop();
+        }
+        onDraggingChanged: if (dragging) revealAnim.stop()
+        onMovingChanged: if (moving) revealAnim.stop()
+
         Anim {
             id: revealAnim
 
             target: flickable
-            property: "contentY"
+            property: "revealTo"
         }
 
         Connections {
             function onActiveFocusItemChanged(): void {
                 if (!root) // the window can move focus while this page tears down
                     return;
+                revealAnim.stop();
                 const item = root.Window.activeFocusItem;
+                if (!item)
+                    return;
                 let p = item;
                 while (p && p !== flickable.contentItem)
                     p = p.parent;
                 if (!p)
                     return;
-                revealAnim.stop(); // a reveal for the previous focus must not overshoot this one
                 const y = item.mapToItem(flickable.contentItem, 0, 0).y;
                 const pad = root.Tokens.padding.large;
                 const min = -flickable.topMargin;
@@ -106,6 +127,8 @@ ColumnLayout {
                     to = y + item.height + pad - flickable.height;
                 to = Math.max(min, Math.min(max, to));
                 if (to !== flickable.contentY) {
+                    revealTo = flickable.contentY;
+                    revealAnim.from = flickable.contentY;
                     revealAnim.to = to;
                     revealAnim.restart();
                 }

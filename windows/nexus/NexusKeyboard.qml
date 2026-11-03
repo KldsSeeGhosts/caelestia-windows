@@ -9,7 +9,8 @@
 //      disabled, faded and hidden rows leaving the tab chain;
 //   2. every Nexus page and every sub-page: Tab walks a closed cycle that never
 //      stalls or lands on a hidden or disabled item, reaches every visible,
-//      enabled row, and scrolls the focused row into view.
+//      enabled row, and scrolls the focused row into view. A reveal stops when
+//      focus leaves the page and when a pointer scroll takes contentY.
 //
 // It types into the offscreen window only. It never activates a real page row
 // (several open ms-settings: links), takes no screenshots and does not touch
@@ -240,6 +241,55 @@ ShellRoot {
         root.check(!f.first.activeFocus, "pointer click took keyboard focus");
     }
 
+    property real heldY: 0
+    property var heldFlick: null
+
+    function pageFlick(): var {
+        const page = root.topOf(root.pagesItem.currentItem);
+        return page?.flickable ?? null;
+    }
+
+    function offscreenRow(flick): var {
+        const page = root.topOf(root.pagesItem.currentItem);
+        const rows = [];
+        root.collectRows(page, rows);
+        return rows.find(row => root.shown(row) && !row.disabled && row.opacity > 0
+            && row.mapToItem(flick.contentItem, 0, 0).y > flick.height) ?? null;
+    }
+
+    // Tab toward an offscreen row, then leave the page before the reveal finishes.
+    function startCancelledReveal(): void {
+        const flick = root.pageFlick();
+        const row = root.offscreenRow(flick);
+        root.check(!!row, "no offscreen row to reveal");
+        flick.contentY = 0;
+        row.forceActiveFocus(Qt.TabFocusReason);
+        root.win.contentItem.forceActiveFocus();
+        root.heldFlick = flick;
+        root.heldY = flick.contentY;
+    }
+
+    function checkCancelledReveal(): void {
+        root.check(Math.abs(root.heldFlick.contentY - root.heldY) < 1,
+            `reveal kept scrolling after focus left (${Math.round(root.heldFlick.contentY)} from ${Math.round(root.heldY)})`);
+    }
+
+    // A pointer contentY change during a reveal owns the scroll from then on.
+    function startPointerTakeover(): void {
+        const flick = root.heldFlick;
+        const row = root.offscreenRow(flick);
+        root.check(!!row, "no offscreen row for pointer takeover");
+        flick.contentY = 0;
+        row.forceActiveFocus(Qt.TabFocusReason);
+        flick.contentY = 20;
+        root.heldY = flick.contentY;
+    }
+
+    function checkPointerTakeover(): void {
+        root.check(Math.abs(root.heldFlick.contentY - root.heldY) < 1,
+            `reveal overwrote pointer scroll (${Math.round(root.heldFlick.contentY)} from ${Math.round(root.heldY)})`);
+    }
+
     // Each entry: [label, action, ready?]. ready is polled until true.
     function buildQueue(): void {
         const q = [];
@@ -249,6 +299,10 @@ ShellRoot {
             root.fixture.destroy();
             root.fixture = null;
         }, null]);
+        q.push(["reveal cancelled", () => root.startCancelledReveal(), () => root.waits >= 4]);
+        q.push(["reveal cancelled check", () => root.checkCancelledReveal(), null]);
+        q.push(["reveal pointer", () => root.startPointerTakeover(), () => root.waits >= 4]);
+        q.push(["reveal pointer check", () => root.checkPointerTakeover(), null]);
         for (let i = 0; i < PageRegistry.pages.length; i++) {
             const index = i;
             const name = PageRegistry.pages[i]?.label ?? `page ${i}`;
