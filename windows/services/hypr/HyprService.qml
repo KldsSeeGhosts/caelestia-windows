@@ -69,8 +69,6 @@ QtObject {
     readonly property bool usingLua: false
     readonly property bool globalFocusPerMonitor: true
 
-    // Prefer the native contract. Boolean-only backends retain their dispatch
-    // compatibility but cannot claim an operation result.
     readonly property var desktopControlCapability: {
         const unsupported = { switch: false, create: false, move: false, remove: false, pin: false };
         if (!root.enabled || !root.dispatchEnabled)
@@ -158,8 +156,6 @@ QtObject {
         }
     }
 
-    // Forwarding counters are not command results. Native outcomes are exposed
-    // separately through lastDesktopCommand.
     property int dispatchSequence: 0
     property int commandsSent: 0
     property int refusals: 0

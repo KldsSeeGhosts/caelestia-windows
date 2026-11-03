@@ -14,10 +14,7 @@ import Caelestia.Config
 // dispatch at construction, but this is a process-wide side effect and must
 // only happen behind the explicit observation opt-in.
 //
-// `initialized` describes adapter construction, not native capabilities or
-// model population. Desktop control reports its own availability and results. Bindings
-// pass the backend's ObjectModel objects through unchanged: their identity is
-// stable and consumers read `.values`, which keeps the original QML reactive.
+// The pinned Quickshell.Hyprland object has no init flag or error signal, so initialized is an adapter flag.
 QtObject {
     id: root
 

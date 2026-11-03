@@ -78,8 +78,6 @@ QtObject {
         }
     }
 
-    // Older backends have no desktopControlSupported property. This fake
-    // deliberately omits it so the fixture proves the typeof feature-detect.
     component LegacyBackend: QtObject {
         property bool initialized: true
         property int dispatchCalls: 0
@@ -578,11 +576,10 @@ QtObject {
         expectSend("killwindow address:0x1", "closewindow address:0x1", "closewindow",
             "killwindow is unaffected by the workspace gate");
 
-        // An absent property on an older backend must be treated as
-        // unavailable instead of throwing or falling through to a send.
         service.backend = legacyFixture;
         check(service.nativeInitialized === true, "legacy backend is initialized");
-        check(service.desktopControlSupported === false, "absent capability is reported false");
+        check(service.desktopControlSupported === false,
+            "legacy backend without capability property fails closed");
         resetDispatch();
         expectDesktopControlRefusal("workspace 2", "workspace gated on absent capability");
         expectDesktopControlRefusal("movetoworkspace 3,address:0x1",
