@@ -45,6 +45,7 @@ QtObject {
 
     component FakeBackend: QtObject {
         property var items: null
+        property var hookCapability: ({availability: "disabled", reason: "hook-disabled"})
     }
 
     readonly property TrayService service: TrayService {}
@@ -177,6 +178,18 @@ QtObject {
         check(service.titles[0] === "Spotify" && service.titles[1] === "Discord", "titles project in order");
         check(service.ids[0] === "spotify" && service.ids[1] === "discord", "ids project in order");
         check(service.reason.indexOf("2 item") >= 0, "ready reason carries the count");
+
+        for (const reason of ["elevated", "window-creation-failed"]) {
+            fixture.hookCapability = {availability: "unavailable", reason: reason};
+            expectStatus("unavailable", "failed hook with seeded items");
+            check(!service.ready && service.count === 2, "seeded items do not imply hook health");
+            check(service.lastError.indexOf(reason) >= 0, "hook failure reason is published");
+            service.activationEnabled = true;
+            check(!service.activate(spotify), "unavailable hook refuses activation");
+            check(spotify.activateCalls === 0, "unavailable hook sends no activation");
+            service.activationEnabled = false;
+        }
+        fixture.hookCapability = {availability: "available", reason: ""};
 
         // --- hasMenu=true with menu=null --------------------------------------
         check(spotify.hasMenu && service.hasMenu(spotify), "native hasMenu is reported");
