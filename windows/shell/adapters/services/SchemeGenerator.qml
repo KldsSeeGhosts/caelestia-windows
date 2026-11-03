@@ -249,6 +249,12 @@ Singleton {
         id: worker
 
         command: [root.python, root.helper, "serve"]
+        // Windows defaults Python to cp1252. CJK and other non-ASCII paths in
+        // the profile or wallpaper must survive every helper process.
+        environment: ({
+            "PYTHONUTF8": "1",
+            "PYTHONIOENCODING": "utf-8"
+        })
         stdinEnabled: true
         stdout: SplitParser {
             onRead: data => root.finish(data)

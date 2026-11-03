@@ -119,6 +119,66 @@ class ThumbnailTests(unittest.TestCase):
         self.assertEqual(first, second)
 
 
+class UnicodePathTests(unittest.TestCase):
+    """Non-ASCII paths must survive argv, the persisted path file and output."""
+
+    def setUp(self) -> None:
+        self.directory = Path(tempfile.mkdtemp(prefix="caelestia-scheme-unicode-"))
+        self.addCleanup(shutil.rmtree, self.directory, True)
+
+    def _round_trip(self, profile_name: str, folder_name: str, image_name: str) -> None:
+        folder = self.directory / folder_name
+        folder.mkdir()
+        image = _image(folder, image_name, (1440, 1000))
+        profile = self.directory / profile_name
+        env = {
+            **os.environ,
+            "CAELESTIA_PROFILE_ROOT": str(profile),
+            # Reproduce the Windows cp1252 default this fix is for, even when
+            # the test runner itself inherited UTF-8 mode.
+            "PYTHONUTF8": "0",
+            "PYTHONIOENCODING": "cp1252",
+        }
+
+        first = subprocess.run(
+            [sys.executable, str(HELPER), "apply-wallpaper", "--image", str(image), "--smart", "0"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            env=env,
+            cwd=self.directory,
+            check=False,
+        )
+        self.assertEqual(first.returncode, 0, first.stderr[-4000:])
+        applied = json.loads(first.stdout)
+        self.assertTrue(applied["ok"], first.stdout)
+        self.assertTrue(applied["colours"]["primary"])
+        source = profile / "state" / "caelestia" / "wallpaper" / "path.txt"
+        self.assertEqual(source.read_text(encoding="utf-8"), str(image.resolve()))
+
+        # A mode change need not pass the image again: the persisted path must
+        # read back to the same file, not fall back to "no wallpaper is set".
+        second = subprocess.run(
+            [sys.executable, str(HELPER), "set-mode", "--mode", "dark"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            env=env,
+            cwd=self.directory,
+            check=False,
+        )
+        self.assertEqual(second.returncode, 0, second.stderr[-4000:])
+        result = json.loads(second.stdout)
+        self.assertTrue(result["ok"], second.stdout)
+        self.assertEqual(result["path"], str(profile / "state" / "caelestia" / "scheme.json"))
+
+    def test_cjk_wallpaper_path(self) -> None:
+        self._round_trip("プロファイル", "壁紙テスト", "背景画像.jpg")
+
+    def test_accented_latin_wallpaper_path(self) -> None:
+        self._round_trip("Profil café", "Café façade", "Crème brûlée.jpg")
+
+
 def _stop(worker: subprocess.Popen) -> None:
     if worker.poll() is None:
         worker.kill()
@@ -134,7 +194,7 @@ class WarmWorkerTests(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.directory, True)
         self.profile = self.directory / "profile"
 
-    def _start(self) -> subprocess.Popen:
+    def _start(self, **environment: str) -> subprocess.Popen:
         worker = subprocess.Popen(
             [sys.executable, str(HELPER), "serve"],
             stdin=subprocess.PIPE,
@@ -142,7 +202,7 @@ class WarmWorkerTests(unittest.TestCase):
             stderr=subprocess.DEVNULL,
             text=True,
             encoding="utf-8",
-            env={**os.environ, "CAELESTIA_PROFILE_ROOT": str(self.profile)},
+            env={**os.environ, "CAELESTIA_PROFILE_ROOT": str(self.profile), **environment},
         )
         self.addCleanup(_stop, worker)
         return worker
@@ -167,6 +227,22 @@ class WarmWorkerTests(unittest.TestCase):
         image = _image(self.directory, "after-error.jpg", (1440, 1000))
         recovered = self._request(worker, ["apply-wallpaper", "--image", str(image), "--smart", "1"])
         self.assertTrue(recovered["ok"])
+        self._close(worker)
+
+    def test_worker_accepts_non_ascii_paths(self):
+        worker = self._start(PYTHONUTF8="0", PYTHONIOENCODING="cp1252")
+        for folder_name, image_name in (
+            ("壁紙テスト", "背景画像.jpg"),
+            ("Café façade", "Crème brûlée.jpg"),
+        ):
+            folder = self.directory / folder_name
+            folder.mkdir()
+            image = _image(folder, image_name, (1440, 1000))
+            result = self._request(worker, ["apply-wallpaper", "--image", str(image), "--smart", "0"])
+            self.assertTrue(result["ok"], result)
+            self.assertTrue(result["colours"]["primary"])
+            source = self.profile / "state" / "caelestia" / "wallpaper" / "path.txt"
+            self.assertEqual(source.read_text(encoding="utf-8"), str(image.resolve()))
         self._close(worker)
 
     def test_worker_matches_one_shot_colours_and_keeps_the_cache(self):

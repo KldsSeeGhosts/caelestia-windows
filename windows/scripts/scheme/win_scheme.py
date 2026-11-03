@@ -34,6 +34,14 @@ from pathlib import Path
 # Python add __pycache__ files to the published runtime.
 sys.dont_write_bytecode = True
 
+# The launcher sets PYTHONUTF8=1, but keep the bridge encoding-independent when
+# it is started directly under the Windows cp1252 default too. stdout is ASCII
+# JSON; stderr carries tracebacks, which can include non-ASCII paths.
+for _stream in (sys.stdin, sys.stdout, sys.stderr):
+    _reconfigure = getattr(_stream, "reconfigure", None)
+    if _reconfigure is not None:
+        _reconfigure(encoding="utf-8", errors="backslashreplace")
+
 # The package __init__ imports the Linux-only theme writer, which imports fcntl.
 # Register a tiny in-process stand-in before any caelestia import so this bridge
 # works even when the venv shim has not been installed yet.
@@ -85,6 +93,31 @@ with contextlib.redirect_stdout(sys.stderr):
         get_scheme_names,
         scheme_variants,
     )
+    import caelestia.utils.material.score as _score_module  # noqa: E402
+    from materialyoucolor.quantize import QuantizeCelebi  # noqa: E402
+
+
+_upstream_score = _score_module.score
+
+
+def _score(image: str):
+    """Quantise an image path without assuming the path is ANSI-only.
+
+    materialyoucolor's C++ decoder passes the path to stb_image, whose Windows
+    build uses narrow file APIs, so a CJK profile or wallpaper path returns no
+    pixels and scoring divides by zero. Decode those paths with Pillow and feed
+    the same pixels to the same Celebi quantizer. Remove this fallback once the
+    dependency opens paths with wide-character APIs (issue #275).
+    """
+    if image.isascii():
+        return _upstream_score(image)
+    with Image.open(image) as img, img.convert("RGB") as rgb:
+        get_pixels = getattr(rgb, "get_flattened_data", None) or rgb.getdata
+        pixels = list(get_pixels())
+    return _score_module.Score.score(QuantizeCelebi(pixels, 128))
+
+
+_score_module.score = _score
 
 
 def _hash(path: Path) -> str:
@@ -122,7 +155,7 @@ def _seed_wallpaper(image: Path) -> None:
         wallpaper_thumbnail_path.unlink()
     shutil.copyfile(thumb, wallpaper_thumbnail_path)
     wallpaper_path_path.parent.mkdir(parents=True, exist_ok=True)
-    wallpaper_path_path.write_text(str(image))
+    wallpaper_path_path.write_text(str(image), encoding="utf-8")
 
 
 def _smart_options(image: Path) -> dict[str, str]:
@@ -177,7 +210,7 @@ def _describe(scheme: Scheme) -> dict:
 
 def _current_wallpaper() -> Path | None:
     try:
-        value = wallpaper_path_path.read_text().strip()
+        value = wallpaper_path_path.read_text(encoding="utf-8").strip()
     except OSError:
         return None
     if not value:
