@@ -6,6 +6,7 @@
   "components/controls/CircularProgress.qml": "components/controls/CircularProgress.qml",
   "components/controls/IconTextButton.qml": "components/controls/IconTextButton.qml",
   "components/controls/StyledSwitch.qml": "components/controls/StyledSwitch.qml",
+  "windows/shell/adapters/components/FocusRing.qml": "components/FocusRing.qml",
   "components/controls/TextButton.qml": "components/controls/TextButton.qml",
   "utils/Icons.qml": "utils/Icons.qml",
   "windows/services/bluetooth/Bluetooth.qml": "services/Bluetooth.qml",
