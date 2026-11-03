@@ -147,29 +147,35 @@ Item {
             check(!hostEnabled, "legacy backend yields to an external owner");
             check(screens.length === 0, "legacy yield unmounts the screens");
 
-            // A supporting backend acknowledges the foreign wallpaper window
-            // in the host and keeps the windows mounted over the external owner.
+            // A supporting backend starts fail-closed too: a detected process
+            // is only an ownership claim until the backend finds its window.
             nativeLayer = root.underlaySupportedHost;
+            check(underlaySupported && !underlayActive, "supporting backend starts without an acknowledgement");
+            check(externalActive, "startup detects the engine process");
+            check(!hostEnabled, "startup yields to the unacknowledged process");
+            check(screens.length === 0, "startup yield mounts no background screens");
+
+            // A refused SetParent leaves the window top level. The backend
+            // must deny the acknowledgement before the shell stops yielding,
+            // even with a foreign wallpaper window in the host.
+            nativeLayer.embedRefused = true;
             nativeLayer.coveredByForeign = true;
+            check(!underlayActive, "refused embed denies the underlay");
+            check(!hostEnabled, "refused embed yields");
+            check(screens.length === 0, "refused embed fails closed");
+            nativeLayer.embedRefused = false;
             check(underlaySupported && underlayActive, "supporting backend acknowledges the foreign owner");
-            check(hostEnabled, "acknowledged underlay hosts over the external owner");
-            check(screens.length === 2, "acknowledged underlay mounts every screen");
+            check(hostEnabled, "accepted embed restores the underlay");
+            check(screens.length === 2, "accepted embed mounts every screen");
+
+            // A non-empty above-icons embed also denies the acknowledgement
+            // and unmounts rather than covering the external wallpaper.
             nativeLayer.aboveIcons = ["caelestia-background"];
             check(!underlayActive, "an above-icons embed is not an underlay");
             check(!hostEnabled, "supporting backend yields without the underlay");
             check(screens.length === 0, "unacknowledged underlay fails closed");
             nativeLayer.aboveIcons = [];
             check(underlayActive && hostEnabled && screens.length === 2, "clearing the embed restores the underlay");
-
-            // A refused SetParent leaves the window top level. The backend must
-            // deny the acknowledgement so the adapter unmounts instead of
-            // covering the external wallpaper.
-            nativeLayer.embedRefused = true;
-            check(!underlayActive, "refused embed denies the underlay");
-            check(!hostEnabled, "refused embed yields");
-            check(screens.length === 0, "refused embed fails closed");
-            nativeLayer.embedRefused = false;
-            check(underlayActive && hostEnabled && screens.length === 2, "accepted embed restores the underlay");
 
             // Host discovery must be reconciled from the request, not just from
             // the window lifetime, so the first scan can find WorkerW.
@@ -272,17 +278,33 @@ Item {
             check(checkReady(screen), "underlay readiness does not depend on process discovery");
             wallpaperEngine.running = true;
 
-            // The external wallpaper window can leave the host before the
-            // process scan clears the owner. The backend drops the
-            // acknowledgement, the adapter yields, and it asks for an
-            // immediate re-scan instead of waiting for the idle poll.
+            // The external wallpaper window can leave the host while the
+            // process scan still sees wallpaper64.exe. The backend drops the
+            // acknowledgement; that is the #220 handback, so the process no
+            // longer owns the desktop and the adapter restores its own
+            // background instead of yielding an unowned desktop (#214).
             wallpaperEngine.scans = 0;
             nativeLayer.coveredByForeign = false;
             check(!underlayActive, "the backend drops the underlay acknowledgement at handback");
-            check(externalActive, "the process guard may still see the external owner");
+            check(externalActive, "the engine process keeps running after the handback");
             check(wallpaperEngine.scans === 1, "the handback requests an immediate owner re-scan");
-            check(!hostEnabled, "an unacknowledged underlay yields during the handback");
-            check(screens.length === 0, "the handback yield unmounts the screens");
+            check(hostEnabled, "the handback restores the background host");
+            check(screens.length === 2, "the handback remounts every background screen");
+            check(instances.length === 1 && instances[0] === backgroundWindow,
+                "the handback has its own background instances");
+            check(checkReady(screen), "the handback background presents over the desktop host");
+            console.log("CAELESTIA_BACKGROUND_HANDBACK_STATE", JSON.stringify({
+                external: externalActive, underlay: underlayActive,
+                host: hostEnabled, screens: screens.length, instances: instances.length
+            }));
+
+            // A new engine process starts fail-closed again: its wallpaper
+            // must be discovered as the underlay before the shell yields.
+            wallpapers.externalWallpaperActive = false;
+            check(hostEnabled && screens.length === 2, "the stopped process keeps the handback background mounted");
+            wallpapers.externalWallpaperActive = true;
+            check(externalActive && !underlayActive, "a new process starts unacknowledged");
+            check(!hostEnabled && screens.length === 0, "a new process fails closed before discovery");
 
             // With the owner confirmed gone, the same backend state mounts the
             // background in the visible, non-underlay position.
