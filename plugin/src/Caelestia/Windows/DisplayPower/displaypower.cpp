@@ -9,7 +9,6 @@ Q_LOGGING_CATEGORY(logDisplayPower, "caelestia.windows.displaypower")
 namespace {
 
 constexpr wchar_t WINDOW_CLASS[] = L"CaelestiaDisplayPowerWindow";
-constexpr int DEFAULT_DELAY_MS = 500;
 
 LRESULT CALLBACK displayPowerWindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
     return DefWindowProcW(window, message, wParam, lParam);
@@ -62,38 +61,27 @@ bool sendMonitorPowerOff(HWND window) {
     return true;
 }
 
-DisplayPowerAction::DisplayPowerAction(HWND window, Sender sender, int delayMs, QObject* parent)
-    : QObject(parent)
-    , m_window(window)
-    , m_sender(std::move(sender))
-    , m_delayMs(delayMs) {
-    m_timer.setSingleShot(true);
-    // Coarse timers may fire up to 5% early; the delay is a minimum.
-    m_timer.setTimerType(Qt::PreciseTimer);
-    connect(&m_timer, &QTimer::timeout, this, [this]() {
-        const bool accepted = m_sender ? m_sender(m_window) : false;
-        emit delivered(accepted);
-    });
+DisplayPowerAction::DisplayPowerAction(HWND window, Sender sender)
+    : m_window(window)
+    , m_sender(std::move(sender)) {
 }
 
-bool DisplayPowerAction::request() {
-    if (m_timer.isActive())
-        return false;
+bool DisplayPowerAction::send() {
     if (!m_window || !IsWindow(m_window))
         return false;
 
-    m_timer.start(m_delayMs);
-    return true;
+    return m_sender ? m_sender(m_window) : false;
 }
 
 WindowsDisplayPower::WindowsDisplayPower(QObject* parent)
     : QObject(parent)
-    , m_action(displayPowerWindow(), sendMonitorPowerOff, DEFAULT_DELAY_MS) {
-    connect(&m_action, &DisplayPowerAction::delivered, this, &WindowsDisplayPower::delivered);
+    , m_action(displayPowerWindow()) {
 }
 
 bool WindowsDisplayPower::off() {
-    return m_action.request();
+    const bool accepted = m_action.send();
+    emit delivered(accepted);
+    return accepted;
 }
 
 } // namespace caelestia::shell::windows

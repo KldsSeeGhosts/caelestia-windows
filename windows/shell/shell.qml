@@ -29,6 +29,9 @@ ShellRoot {
 
     // Changes on a successful QML reload, not on a watchdog/process restart alone.
     readonly property string generation: Date.now().toString(36) + Math.random().toString(36).slice(2)
+    // A keybind's panel-off request waiting for the keyboard hook to see the
+    // chord released. Kept off the IpcHandler so it exposes no IPC property.
+    property bool displayOffPending: false
     readonly property bool externalWallpaperActive: WallpaperEngine.ownsDesktop
     readonly property bool smoke: Quickshell.env("CAELESTIA_SHELL_SMOKE") === "1"
     // Offscreen public smoke: skip the native monitor/panel schedule below and
@@ -164,11 +167,34 @@ ShellRoot {
 
     // Explicit panel-off through Windows display power. This is not
     // Displays::setEnabled: it changes no display path, topology or setting.
-    // The native action waits 500 ms so this key's release is processed before
-    // the panels switch off and cannot wake them again.
+    // A keybind chord is still held when this runs, so the keyboard hook waits
+    // for its keys to come up before the panels switch off. Other input first
+    // cancels it, and a direct IPC request with no dispatched keybind sends at
+    // once.
     IpcHandler {
         target: "displays"
-        function off(): bool { return WindowsDisplayPower.off(); }
+
+        function off(): bool {
+            // A direct IPC call has no dispatched keybind, so the backend
+            // returns false for it even while a keybind wait is pending; it
+            // also cancels that wait, and the send below happens at once.
+            if (Native.Hotkeys.beginChordReleaseWait()) {
+                root.displayOffPending = true;
+                return true;
+            }
+            return WindowsDisplayPower.off();
+        }
+    }
+
+    Connections {
+        target: Native.Hotkeys
+        function onChordReleaseSettled() {
+            if (!root.displayOffPending)
+                return;
+            root.displayOffPending = false;
+            WindowsDisplayPower.off();
+        }
+        function onChordReleaseCancelled() { root.displayOffPending = false; }
     }
 
     function snapshot(): var {
