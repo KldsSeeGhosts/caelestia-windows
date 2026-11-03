@@ -39,7 +39,7 @@ Column {
 
         Connections {
             function onLauncherChanged(): void {
-                if (!root.screenState.launcher)
+                if (!root.screenState.launcher && !root.confirming)
                     logout.forceActiveFocus();
             }
 
@@ -100,6 +100,10 @@ Column {
     Column {
         visible: root.confirming
         spacing: Tokens.spacing.small
+
+        // A confirmation armed before the drawer opened is already visible on
+        // creation, so onVisibleChanged never runs for it.
+        Component.onCompleted: if (visible) cancel.forceActiveFocus()
 
         onVisibleChanged: {
             if (visible) {
