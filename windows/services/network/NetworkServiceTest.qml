@@ -29,6 +29,7 @@ QtObject {
 
     component FakeBackend: QtObject {
         property bool initialized: false
+        property string nativeError: ""
         property bool wifiAdapterPresent: false
         property bool wifiRadioOn: false
         property bool wifiScanning: false
@@ -268,7 +269,7 @@ QtObject {
         fixture.wifiAdapterPresent = false;
         fixture.wifiRadioOn = false;
         expectStatus("no-adapter", "initialized without an adapter");
-        check(service.reason.indexOf("No Wi-Fi adapter") >= 0, "no-adapter reason");
+        check(service.reason.indexOf("No Wi-Fi interface") >= 0, "no-adapter reason");
         check(service.listHidden && service.networkCount === 0, "no-adapter hides the list");
         check(service.activeSsid === "", "no-adapter has no active SSID");
         service.controlsEnabled = true;
@@ -277,6 +278,26 @@ QtObject {
         expectResult("refused", false, true, false, "no-adapter radio refusal");
         check(fixture.radioWrites === 0, "no-adapter radio reached the backend");
         service.controlsEnabled = false;
+
+        // --- Initialization/subscription error --------------------------------
+        // A refused subscription is an error even when the driver still lists
+        // an adapter; it must never look like a ready or no-adapter state.
+        fixture.wifiAdapterPresent = true;
+        fixture.nativeError = "Windows refused WLAN notifications (error 5).";
+        expectStatus("unavailable", "native initialization error is unavailable");
+        check(service.reason === fixture.nativeError, "native error is reported verbatim");
+        check(service.listHidden && service.networkCount === 0, "native error hides the list");
+        check(!service.adapterPresent && !service.radioOn,
+            "native error clears adapter and radio capabilities");
+        resetCommandCounters();
+        service.controlsEnabled = true;
+        service.requestRadio(true);
+        expectResult("refused", false, true, false, "native error radio refusal");
+        check(fixture.radioWrites === 0, "native error radio reached the backend");
+        service.controlsEnabled = false;
+        fixture.nativeError = "";
+        fixture.wifiAdapterPresent = false;
+        expectStatus("no-adapter", "clearing the native error restores no-adapter");
 
         // --- Radio off ---------------------------------------------------------
         fixture.wifiAdapterPresent = true;
@@ -651,6 +672,10 @@ QtObject {
         expectStatus("initializing", "backend without a lifecycle flag");
         service.backend = {initialized: 1};
         expectStatus("initializing", "non-boolean lifecycle flag is not trusted");
+        service.backend = {initialized: true, wifiAdapterPresent: false, wifiRadioOn: false};
+        expectStatus("no-adapter", "backend without a native error reports no adapter");
+        service.backend = {initialized: true, wifiAdapterPresent: false, nativeError: 42};
+        expectStatus("no-adapter", "non-string native error is ignored");
         service.backend = {initialized: true, wifiAdapterPresent: true, wifiRadioOn: true,
             wifiStatus: "disconnected", networks: {values: null}};
         expectStatus("disconnected", "ready backend without a model");
