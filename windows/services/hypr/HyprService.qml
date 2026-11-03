@@ -73,9 +73,37 @@ QtObject {
     // provider when dispatch is opted in. The property is feature-detected with
     // `typeof` for compatibility with older backend pins. When it is absent or
     // false, `workspace`/`movetoworkspace` never reach the backend.
-    readonly property bool desktopControlSupported: root.nativeInitialized
-        && typeof root.backend.desktopControlSupported === "boolean"
-        && root.backend.desktopControlSupported === true
+    readonly property var desktopControlCapability: {
+        const unsupported = { switch: false, create: false, move: false, remove: false, pin: false };
+        if (!root.enabled || !root.dispatchEnabled)
+            return { availability: "disabled", reason: "dispatch-disabled", provider: "none", operations: unsupported };
+        if (!root.nativeInitialized)
+            return { availability: "unavailable", reason: "backend-unavailable", provider: "none", operations: unsupported };
+        const capability = root.backend.desktopControl?.capability;
+        if (capability && ["available", "unavailable", "disabled", "denied"].includes(capability.availability)
+                && typeof capability.reason === "string"
+                && (capability.availability !== "available" || capability.reason === "")
+                && ["documented-api", "build-gated-private-com"].includes(capability.provider)
+                && capability.operations)
+            return capability;
+        if (root.backend.desktopControl)
+            return { availability: "unavailable", reason: "invalid-contract", provider: "unknown", operations: unsupported };
+        const legacy = root.backend.desktopControlSupported === true;
+        return {
+            availability: legacy ? "available" : "unavailable",
+            reason: legacy ? "legacy-unverified" : "legacy-capability-unknown",
+            provider: "unknown",
+            operations: { switch: legacy, create: legacy, move: legacy, remove: false, pin: false }
+        };
+    }
+    readonly property bool desktopControlSupported:
+        root.desktopControlCapability.availability === "available"
+        && root.desktopControlCapability.operations.switch === true
+        && root.desktopControlCapability.operations.create === true
+    property var _desktopRefusal: null
+    readonly property var lastDesktopCommand: root._desktopRefusal
+        ?? (root.nativeInitialized ? root.backend.desktopControl?.lastCommand : null)
+        ?? { outcome: "unknown", reason: "legacy-result-unavailable" }
 
     readonly property QtObject _emptyModel: QtObject {
         readonly property var values: []
@@ -164,6 +192,7 @@ QtObject {
         root.lastDispatchKind = "";
         root.lastRefusal = null;
         root.lastConsumed = null;
+        root._desktopRefusal = null;
     }
 
     // The pinned backend's toplevel address is a lowercase hex HWND without the
@@ -177,6 +206,7 @@ QtObject {
     }
 
     function _refuse(request, reason, text): void {
+        root._desktopRefusal = { outcome: "denied", reason: reason };
         root.dispatchSequence++;
         root.refusals++;
         root.lastRefusal = {
@@ -194,6 +224,7 @@ QtObject {
         root.lastDispatchSource = source;
         root.lastDispatch = translated;
         root.lastDispatchKind = kind;
+        root._desktopRefusal = null;
         root.backend.dispatch(translated);
     }
 
@@ -201,9 +232,13 @@ QtObject {
     // The backend has no synthetic-shortcut fallback. Without a compatible
     // provider the adapter refuses before backend.dispatch().
     function _sendWorkspace(source, translated, kind): void {
-        if (!root.desktopControlSupported) {
+        const capability = root.desktopControlCapability;
+        const operation = kind === "movetoworkspace" ? "move" : "switch";
+        if (capability.availability !== "available" || capability.operations[operation] !== true) {
             root._refuse(source, "desktop-control-unavailable",
                 "Native Windows desktop control is unavailable on this build or dispatch is disabled.");
+            root._desktopRefusal = { operation: operation, outcome: "denied",
+                reason: capability.reason || "operation-unsupported" };
             return;
         }
         root._send(source, translated, kind);

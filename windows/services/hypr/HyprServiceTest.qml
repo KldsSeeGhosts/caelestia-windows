@@ -66,6 +66,7 @@ QtObject {
         // Default true so the pre-existing allowlist assertions keep passing.
         // Gate cases flip it at runtime; the legacy fake below omits it.
         property bool desktopControlSupported: true
+        property var desktopControl: null
         property bool foregroundValidated: false
 
         function monitorFor(screen): var {
@@ -77,7 +78,7 @@ QtObject {
         }
     }
 
-    // The current backend pin has no desktopControlSupported property. This fake
+    // Older backends have no desktopControlSupported property. This fake
     // deliberately omits it so the fixture proves the typeof feature-detect.
     component LegacyBackend: QtObject {
         property bool initialized: true
@@ -93,6 +94,10 @@ QtObject {
     readonly property HyprService service: HyprService {}
     readonly property FakeBackend fixture: FakeBackend {}
     readonly property LegacyBackend legacyFixture: LegacyBackend {}
+    readonly property QtObject nativeControl: QtObject {
+        property var capability: ({})
+        property var lastCommand: ({ outcome: "none" })
+    }
 
     readonly property FakeModel monitorModel: FakeModel {}
     readonly property FakeModel workspaceModel: FakeModel {}
@@ -267,6 +272,89 @@ QtObject {
             message + ": text " + service.lastRefusalText);
         check(service.dispatchSequence === beforeSequence + 1, message + ": sequence");
         check(backend.dispatchCalls === beforeCalls, message + ": refusal reached the backend");
+    }
+
+    function nativeContractStates(): void {
+        service.enabled = true;
+        service.dispatchEnabled = true;
+        service.backend = fixture;
+        fixture.desktopControl = nativeControl;
+        const operations = { switch: true, create: true, move: true, remove: false, pin: false };
+        const rows = [
+            ["unknown-build", "unavailable", "unsupported-build"],
+            ["disconnected", "unavailable", "provider-disconnected"],
+            ["permission-denied", "denied", "permission-denied"],
+            ["available", "available", ""]
+        ];
+        for (const row of rows) {
+            nativeControl.capability = {
+                availability: row[1], reason: row[2], provider: "build-gated-private-com",
+                operations: row[1] === "available" ? operations
+                    : { switch: false, create: false, move: false, remove: false, pin: false }
+            };
+            check(service.desktopControlCapability.availability === row[1], row[0] + " availability");
+            check(service.desktopControlCapability.reason === row[2], row[0] + " reason");
+            check(service.desktopControlCapability.provider === "build-gated-private-com", row[0] + " provider");
+            check(service.desktopControlSupported === (row[1] === "available"), row[0] + " support");
+            if (row[1] !== "available") {
+                const before = fixture.dispatchCalls;
+                service.dispatch("workspace 2");
+                check(fixture.dispatchCalls === before, row[0] + " refuses dispatch");
+                check(service.lastDesktopCommand.outcome === "denied", row[0] + " command denied");
+                check(service.lastDesktopCommand.reason === row[2], row[0] + " command reason");
+                check(service.lastDesktopCommand.requestId === undefined, row[0] + " synchronous refusal has no id");
+            }
+            console.log("DESKTOP_STATE " + row[0] + " " + JSON.stringify(service.desktopControlCapability));
+        }
+        service.dispatchEnabled = false;
+        check(service.desktopControlCapability.availability === "disabled", "dispatch disabled availability");
+        check(service.desktopControlCapability.reason === "dispatch-disabled", "dispatch disabled reason");
+        service.dispatch("workspace 2");
+        check(service.lastDesktopCommand.reason === "dispatch-disabled", "dispatch disabled refusal");
+        console.log("DESKTOP_STATE dispatch-disabled " + JSON.stringify(service.desktopControlCapability));
+        service.dispatchEnabled = true;
+        service.dispatch("workspace 2");
+        for (const outcome of ["accepted", "observed", "denied", "superseded", "timed-out"]) {
+            nativeControl.lastCommand = {
+                operation: "switch", outcome: outcome,
+                reason: outcome === "denied" ? "command-rejected" : "",
+                requestId: "42"
+            };
+            check(service.lastDesktopCommand.outcome === outcome, outcome + " is preserved");
+            check(service.lastDesktopCommand.requestId === "42", outcome + " identity is preserved");
+            console.log("DESKTOP_COMMAND " + JSON.stringify(service.lastDesktopCommand));
+        }
+        nativeControl.lastCommand = { operation: "switch", outcome: "denied", reason: "command-rejected" };
+        check(service.lastDesktopCommand.requestId === undefined, "immediate rejection has no request id");
+        check(service.lastDesktopCommand.outcome !== "observed", "rejection cannot render as success");
+        monitorModel.values = [];
+        workspaceModel.values = [];
+        toplevelModel.values = [];
+        check(service.status === "ready", "healthy empty model is ready");
+        check(service.desktopControlCapability.availability === "available", "healthy empty model keeps capability");
+        console.log("DESKTOP_STATE healthy-empty ready " + JSON.stringify(service.desktopControlCapability));
+        nativeControl.capability = {
+            availability: "available", reason: "", provider: "build-gated-private-com",
+            operations: { switch: true, create: false, move: false, remove: false, pin: false }
+        };
+        const before = fixture.dispatchCalls;
+        service.dispatch("movetoworkspace 1");
+        check(fixture.dispatchCalls === before, "unsupported individual operation is refused");
+        check(service.lastDesktopCommand.reason === "operation-unsupported", "individual operation reason");
+        nativeControl.capability = { availability: "available", reason: "contradictory", operations: operations };
+        check(service.desktopControlCapability.reason === "invalid-contract", "malformed current backend fails closed");
+        check(service.desktopControlSupported === false, "malformed current backend cannot use legacy boolean");
+        fixture.desktopControl = null;
+        fixture.desktopControlSupported = true;
+        service.dispatch("workspace 1");
+        check(service.lastDesktopCommand.outcome === "unknown", "legacy void dispatch never claims acceptance");
+        check(service.lastDesktopCommand.reason === "legacy-result-unavailable", "legacy result reason");
+        console.log("DESKTOP_STATE legacy-boolean " + JSON.stringify(service.desktopControlCapability));
+        service.backend = legacyFixture;
+        check(service.desktopControlCapability.reason === "legacy-capability-unknown", "missing property reason");
+        console.log("DESKTOP_STATE missing-contract " + JSON.stringify(service.desktopControlCapability));
+        service.backend = null;
+        check(service.desktopControlCapability.reason === "backend-unavailable", "missing backend reason");
     }
 
     function run(): void {
@@ -703,6 +791,8 @@ QtObject {
         check(service.activeToplevel === toplevel1, "validated Windows foreground is independent of workspace membership");
         fixture.activeToplevel = null;
         check(service.activeToplevel === null, "validated desktop remains empty");
+
+        nativeContractStates();
 
         console.log("CAELESTIA_HYPR_FIXTURE_PASS " + JSON.stringify({
             assertions: assertions

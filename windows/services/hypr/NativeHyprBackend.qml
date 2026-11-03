@@ -14,8 +14,8 @@ import Caelestia.Config
 // dispatch at construction, but this is a process-wide side effect and must
 // only happen behind the explicit observation opt-in.
 //
-// The pinned object has no initialization flag or error signal, so `initialized`
-// is an adapter flag set once construction has populated the models. Bindings
+// `initialized` describes adapter construction, not native capabilities or
+// model population. Desktop control reports its own availability and results. Bindings
 // pass the backend's ObjectModel objects through unchanged: their identity is
 // stable and consumers read `.values`, which keeps the original QML reactive.
 QtObject {
@@ -60,6 +60,8 @@ QtObject {
     readonly property bool desktopControlSupported:
         typeof Hyprland.desktopControlSupported === "boolean"
             ? Hyprland.desktopControlSupported : false
+    readonly property var desktopControl:
+        typeof Hyprland.desktopControl === "object" ? Hyprland.desktopControl : null
 
     function monitorFor(screen): var {
         return Hyprland.monitorFor(screen);
