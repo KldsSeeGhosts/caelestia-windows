@@ -31,6 +31,9 @@ ShellRoot {
     readonly property string generation: Date.now().toString(36) + Math.random().toString(36).slice(2)
     readonly property bool externalWallpaperActive: WallpaperEngine.ownsDesktop
     readonly property bool smoke: Quickshell.env("CAELESTIA_SHELL_SMOKE") === "1"
+    // Offscreen public smoke: skip the native monitor/panel schedule below and
+    // exit after the drawers present their first frame.
+    readonly property bool smokeCi: Quickshell.env("CAELESTIA_SHELL_SMOKE_CI") === "1"
     // Isolated install validation may reserve only the secondary monitor.
     // Normal starts always retain the complete per-monitor shell.
     readonly property int smokeScreenIndex: Number(Quickshell.env("CAELESTIA_SHELL_SCREEN") || "-1")
@@ -104,12 +107,36 @@ ShellRoot {
         value: ShellState.anySidebarOpen()
     }
 
+    // The native classifier recognises Windows' own shell UI by class and
+    // host process. Taskbar eligibility (tool, no-activate and owned windows)
+    // is a separate question: such a window is not a shell surface, and a
+    // fullscreen one still counts as fullscreen. This list adds a positive
+    // shell identity for third-party shell windows the classifier cannot tell
+    // apart; it never changes the taskbar or fullscreen rules, is empty by
+    // default and reloads live. Selectors use the tiling dialect: exe:,
+    // class:, title:, or an unprefixed exe/class pattern (`screen:` is
+    // rejected, and so is a title pattern that matches an empty title).
+    Binding {
+        target: Native.ShellSurfaces
+        property: "extra"
+        // The backend validates element types and rejects `screen:` rules;
+        // never coerce unknown config entries into selector text here.
+        value: GlobalConfig.windows?.shellSurfaces?.extra ?? []
+    }
+
     // IPC selects this installation; tiling retains its separate opt-in.
     IpcHandler {
         target: "shell"
-        function quit(): void { Qt.quit(); }
+        function quit(): void {
+            // The bundled tray host belongs to this shell process.
+            Glazier.stopHost(false);
+            Qt.quit();
+        }
         function restart(): string {
             const previous = root.generation;
+            // Stop and wait so the reloaded graph starts its own host from the
+            // selected payload instead of adopting a host being torn down.
+            Glazier.stopHost(true);
             // Soft reload transfers the existing native windows to the new
             // graph. A hard reload unnecessarily destroys/recreates them.
             Quickshell.reload(false);
@@ -229,6 +256,22 @@ ShellRoot {
         };
     }
 
+    // Diagnostics only: the public snapshot keeps the current project path and
+    // the screen names (friendly monitor names or device paths) for IPC and
+    // property consumers, but neither may reach the log. Screens are logged by
+    // index and count.
+    function loggingSnapshot(): var {
+        const state = root.snapshot();
+        state.wallpaperEngine = Object.assign({}, state.wallpaperEngine, {
+            current: state.wallpaperEngine.current ? "set" : ""
+        });
+        state.windows = state.windows.map((w, i) => Object.assign({}, w, { screen: i }));
+        state.backgroundScreens = state.backgroundScreens.length;
+        state.backgroundWindows = state.backgroundWindows.map((w, i) =>
+            Object.assign({}, w, { screen: i, modelScreen: i }));
+        return state;
+    }
+
     Component.onCompleted: {
         ShellState.shellRoot = root;
         Hypr.logStartupStatus();
@@ -260,14 +303,38 @@ ShellRoot {
 
     // Quick install smoke: load the session and dashboard on every monitor,
     // suppress input/native writes, verify monitor-sized windows, then await IPC quit.
+    // CAELESTIA_SHELL_SMOKE_CI instead skips the native-only panel schedule and
+    // exits by itself once every drawer has presented its first frame.
     Timer {
         id: smokeCheck
         property int step: 0
-        interval: 3000
+        interval: root.smokeCi ? 1000 : 3000
         repeat: true
         running: root.smoke
         onTriggered: {
             step++;
+            if (root.smokeCi) {
+                const state = root.snapshot();
+                const ready = state.lifecycle.ready
+                    && Object.values(state.controls).every(value => value === false)
+                    && !state.statisticsActive && !state.networkStatisticsActive;
+                if (!ready) {
+                    if (step < 60)
+                        return;
+                    console.error("CAELESTIA_SHELL_SMOKE_FAIL not ready");
+                    stop();
+                    Qt.exit(1);
+                    return;
+                }
+                // Give late bindings a moment after the first presented frame.
+                if (step < 3)
+                    return;
+                console.log("CAELESTIA_SHELL_LIVE_STATE", JSON.stringify(root.loggingSnapshot()));
+                console.log("CAELESTIA_SHELL_SMOKE_PASS");
+                stop();
+                Qt.exit(0);
+                return;
+            }
             for (const screen of root.shellScreens) {
                 const state = ShellState.forScreen(screen);
                 if (state) {
@@ -278,7 +345,7 @@ ShellRoot {
             if (step < 5)
                 return;
             const state = root.snapshot();
-            console.log("CAELESTIA_SHELL_LIVE_STATE", JSON.stringify(state));
+            console.log("CAELESTIA_SHELL_LIVE_STATE", JSON.stringify(root.loggingSnapshot()));
             const valid = state.screens > 0 && state.windows.length === state.screens
                 && state.windows.every(w => w.width === w.screenWidth
                     && w.height === w.screenHeight && w.barWidth > 0)
@@ -289,8 +356,7 @@ ShellRoot {
                     && state.scheme.schemes > 0 && state.scheme.variants > 0))
                 && Quickshell.env("QS_WINDOWS_TRAY_HOOK") === "0"
                 && state.keyboard.layout !== "??" && state.keyboard.layout.length > 0
-                && state.backgroundWindows.length === (root.externalWallpaperActive
-                    && !desktopBackground.underlayActive ? 0 : state.screens)
+                && state.backgroundWindows.length === (desktopBackground.yielded ? 0 : state.screens)
                 && state.backgroundWindows.every(w => {
                     const screen = Quickshell.screens.find(s => s.name === w.modelScreen);
                     return screen && w.screen === w.modelScreen

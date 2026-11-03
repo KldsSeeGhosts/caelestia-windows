@@ -30,6 +30,18 @@ import traceback
 import types
 from pathlib import Path
 
+# The installed generation is immutable while a shell is using it. Do not let
+# Python add __pycache__ files to the published runtime.
+sys.dont_write_bytecode = True
+
+# The launcher sets PYTHONUTF8=1, but keep the bridge encoding-independent when
+# it is started directly under the Windows cp1252 default too. stdout is ASCII
+# JSON; stderr carries tracebacks, which can include non-ASCII paths.
+for _stream in (sys.stdin, sys.stdout, sys.stderr):
+    _reconfigure = getattr(_stream, "reconfigure", None)
+    if _reconfigure is not None:
+        _reconfigure(encoding="utf-8", errors="backslashreplace")
+
 # The package __init__ imports the Linux-only theme writer, which imports fcntl.
 # Register a tiny in-process stand-in before any caelestia import so this bridge
 # works even when the venv shim has not been installed yet.
@@ -62,22 +74,50 @@ os.environ["XDG_CACHE_HOME"] = str(_profile_root / "cache")
 os.environ["XDG_CONFIG_HOME"] = str(_profile_root / "config")
 os.environ["XDG_DATA_HOME"] = str(_profile_root / "data")
 
-from PIL import Image  # noqa: E402
+# A warm worker's stdout is a request/response channel. Anything the libraries
+# print while importing must not be mistaken for a response line.
+with contextlib.redirect_stdout(sys.stderr):
+    from PIL import Image  # noqa: E402
 
-from caelestia.utils.paths import (  # noqa: E402
-    scheme_path,
-    wallpaper_path_path,
-    wallpaper_thumbnail_path,
-    wallpapers_cache_dir,
-)
-from caelestia.utils.scheme import (  # noqa: E402
-    Scheme,
-    get_scheme,
-    get_scheme_flavours,
-    get_scheme_modes,
-    get_scheme_names,
-    scheme_variants,
-)
+    from caelestia.utils.paths import (  # noqa: E402
+        scheme_path,
+        wallpaper_path_path,
+        wallpaper_thumbnail_path,
+        wallpapers_cache_dir,
+    )
+    from caelestia.utils.scheme import (  # noqa: E402
+        Scheme,
+        get_scheme,
+        get_scheme_flavours,
+        get_scheme_modes,
+        get_scheme_names,
+        scheme_variants,
+    )
+    import caelestia.utils.material.score as _score_module  # noqa: E402
+    from materialyoucolor.quantize import QuantizeCelebi  # noqa: E402
+
+
+_upstream_score = _score_module.score
+
+
+def _score(image: str):
+    """Quantise an image path without assuming the path is ANSI-only.
+
+    materialyoucolor's C++ decoder passes the path to stb_image, whose Windows
+    build uses narrow file APIs, so a CJK profile or wallpaper path returns no
+    pixels and scoring divides by zero. Decode those paths with Pillow and feed
+    the same pixels to the same Celebi quantizer. Remove this fallback once the
+    dependency opens paths with wide-character APIs (issue #275).
+    """
+    if image.isascii():
+        return _upstream_score(image)
+    with Image.open(image) as img, img.convert("RGB") as rgb:
+        get_pixels = getattr(rgb, "get_flattened_data", None) or rgb.getdata
+        pixels = list(get_pixels())
+    return _score_module.Score.score(QuantizeCelebi(pixels, 128))
+
+
+_score_module.score = _score
 
 
 def _hash(path: Path) -> str:
@@ -115,7 +155,7 @@ def _seed_wallpaper(image: Path) -> None:
         wallpaper_thumbnail_path.unlink()
     shutil.copyfile(thumb, wallpaper_thumbnail_path)
     wallpaper_path_path.parent.mkdir(parents=True, exist_ok=True)
-    wallpaper_path_path.write_text(str(image))
+    wallpaper_path_path.write_text(str(image), encoding="utf-8")
 
 
 def _smart_options(image: Path) -> dict[str, str]:
@@ -168,11 +208,37 @@ def _describe(scheme: Scheme) -> dict:
     }
 
 
-def _current_wallpaper() -> Path | None:
+def _read_persisted_path(path: Path) -> str | None:
+    """Read a wallpaper path saved by this helper or by an older cp1252 one.
+
+    New files are UTF-8. A profile written before that change stored accented
+    paths in the Windows ANSI code page, and those bytes are not valid UTF-8.
+    A successful legacy read is rewritten as UTF-8 so the next launch does not
+    depend on the old encoding. Losing the file here would drop a real selection.
+    """
     try:
-        value = wallpaper_path_path.read_text().strip()
+        data = path.read_bytes()
     except OSError:
         return None
+    if data.startswith(b"\xef\xbb\xbf"):
+        data = data[3:]
+    try:
+        value = data.decode("utf-8")
+        legacy = False
+    except UnicodeDecodeError:
+        value = data.decode("cp1252")
+        legacy = True
+    value = value.strip()
+    if legacy and value:
+        try:
+            path.write_text(value, encoding="utf-8")
+        except OSError:
+            pass
+    return value or None
+
+
+def _current_wallpaper() -> Path | None:
+    value = _read_persisted_path(wallpaper_path_path)
     if not value:
         return None
     path = Path(value)
@@ -265,7 +331,7 @@ def list_schemes() -> dict:
     }
 
 
-def main(argv: list[str]) -> int:
+def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="win_scheme")
     commands = parser.add_subparsers(dest="command", required=True)
 
@@ -295,44 +361,94 @@ def main(argv: list[str]) -> int:
 
     commands.add_parser("current")
 
-    args = parser.parse_args(argv)
+    return parser
+
+
+def _dispatch(args: argparse.Namespace) -> dict:
+    if args.command == "list":
+        return list_schemes()
+    if args.command == "apply-wallpaper":
+        return _describe(apply_wallpaper(
+            Path(args.image), args.flavour, args.mode, args.variant, args.smart == "1",
+        ))
+    if args.command == "set":
+        return _describe(set_properties(
+            args.name, args.flavour, args.mode, args.variant,
+            Path(args.image) if args.image else None,
+        ))
+    if args.command == "set-mode":
+        return _describe(set_properties(
+            None, None, args.mode, None, Path(args.image) if args.image else None,
+        ))
+    if args.command == "set-variant":
+        return _describe(set_properties(
+            None, None, None, args.variant, Path(args.image) if args.image else None,
+        ))
+    current = get_scheme()
+    return {
+        "ok": True,
+        "name": current.name,
+        "flavour": current.flavour,
+        "mode": current.mode,
+        "variant": current.variant,
+        "path": str(scheme_path),
+    }
+
+
+def _emit(result: dict) -> None:
+    """Write exactly one response line. Library chatter goes to stderr."""
+    sys.stdout.write(json.dumps(result, ensure_ascii=True) + "\n")
+    sys.stdout.flush()
+
+
+def _run(argv: list[str]) -> dict:
+    args = _parser().parse_args(argv)
+    with contextlib.redirect_stdout(sys.stderr):
+        return _dispatch(args)
+
+
+def serve() -> int:
+    """Keep the imports and the upstream per-image cache warm between changes.
+
+    The shell starts this once and writes one JSON request per line. Spawning
+    an interpreter and importing Pillow/caelestia for every wallpaper switch is
+    the dominant generation cost on Windows; the command implementations are
+    the same as the one-shot CLI, so colours are unchanged.
+    """
+    for raw in sys.stdin.buffer:
+        line = raw.strip()
+        if not line:
+            continue
+        try:
+            request = json.loads(line)
+            argv = request.get("args") if isinstance(request, dict) else None
+            if (not isinstance(argv, list) or not argv
+                    or not all(isinstance(arg, str) for arg in argv)
+                    or argv[0] == "serve"):
+                raise ValueError("invalid scheme request")
+            result = _run(argv)
+        except SystemExit:
+            # argparse reports usage on stderr and exits; keep serving.
+            result = {"ok": False, "error": "invalid scheme request"}
+        except Exception as exc:  # a failed request must not stop the worker
+            traceback.print_exc(file=sys.stderr)
+            result = {"ok": False, "error": str(exc)}
+        _emit(result)
+    return 0
+
+
+def main(argv: list[str]) -> int:
+    if argv == ["serve"]:
+        return serve()
     try:
-        with contextlib.redirect_stdout(sys.stderr):
-            if args.command == "list":
-                result = list_schemes()
-            elif args.command == "apply-wallpaper":
-                result = _describe(apply_wallpaper(
-                    Path(args.image), args.flavour, args.mode, args.variant, args.smart == "1",
-                ))
-            elif args.command == "set":
-                result = _describe(set_properties(
-                    args.name, args.flavour, args.mode, args.variant,
-                    Path(args.image) if args.image else None,
-                ))
-            elif args.command == "set-mode":
-                result = _describe(set_properties(
-                    None, None, args.mode, None, Path(args.image) if args.image else None,
-                ))
-            elif args.command == "set-variant":
-                result = _describe(set_properties(
-                    None, None, None, args.variant, Path(args.image) if args.image else None,
-                ))
-            else:
-                current = get_scheme()
-                result = {
-                    "ok": True,
-                    "name": current.name,
-                    "flavour": current.flavour,
-                    "mode": current.mode,
-                    "variant": current.variant,
-                    "path": str(scheme_path),
-                }
-        print(json.dumps(result))
-        return 0
+        result = _run(argv)
+        code = 0
     except Exception as exc:  # report a parseable failure, never a bare traceback on stdout
         traceback.print_exc(file=sys.stderr)
-        print(json.dumps({"ok": False, "error": str(exc)}))
-        return 1
+        result = {"ok": False, "error": str(exc)}
+        code = 1
+    _emit(result)
+    return code
 
 
 if __name__ == "__main__":

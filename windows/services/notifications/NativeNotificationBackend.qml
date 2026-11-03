@@ -1,40 +1,42 @@
 import QtQuick
 import Quickshell.Services.Notifications
 
-// Loaded by URL only after Notifs.enabled. Constructing NotificationServer
-// claims the per-session notification bus mutex or starts the backend's own
-// bounded five-second claim retry (server.cpp claimSession), and connects the
-// local delivery signal. Construction sends no system access request.
+// Loaded by URL only after Notifs.enabled. Constructing the native
+// notification server claims the per-session notification bus mutex on a
+// dedicated thread or waits there for the current owner to release or abandon
+// it (server.cpp claimSession), and connects the local delivery signal.
+// Construction sends no system access request.
 //
 // mirrorSystemNotifications is set to false at construction, before the
 // post-reload hook applies it. At the pinned backend the default is true
 // (qml.hpp line 112); leaving it there would construct the system mirror,
 // request notification-listener access and start reading real toasts. Mirroring
 // is enabled only by the service's setMirroring() after a non-prompting query
-// or the explicit consent button produces an Allowed status.
+// or the explicit consent button produces an Allowed status. setAccessObservation()
+// is separate: it keeps the backend's non-prompting consent observer alive
+// while the feature is opted in, in every access state, without reading toasts.
 //
 // requestAccess() is the single consent path. It is invoked only from
 // NotificationsService.requestAccess(), which the original notification-center
 // button calls while the state is Unspecified; nothing in this wrapper calls it.
-// The pinned backend itself only raises an OS prompt when Windows reports
-// Unspecified, and GetAccessStatus is read from inside its worker.
+// The pinned backend raises the OS prompt asynchronously on the UI thread when
+// Windows reports Unspecified, and its worker only reads the result.
 //
 // The pinned backend exposes a non-prompting refreshAccessStatus() query, a
 // process-lifetime accessRequested latch and an activateMirrored() path that
 // does not dismiss the real toast. Uses remain feature-detected for older
 // backends; absent activation is refused rather than dismissing the toast.
 //
-// The pinned backend does not publish whether the claim succeeded, is retrying,
-// or was forwarded (server.cpp lines 55-91 only log and retry internally), so
-// ownership stays "unknown". The service keeps the explicit "contended" state
-// for a backend revision that exposes it.
+// Session-bus ownership is real mutex ownership, not the existence of a named
+// object: the backend's lock thread waits without polling and publishes "owner"
+// once it holds the mutex and "contended" while another shell does.
 QtObject {
     id: root
 
     readonly property bool ready: started
     property bool started: false
 
-    readonly property string ownership: "unknown"
+    readonly property string ownership: server.ownership
 
     signal notificationReceived(var notification)
 
@@ -84,6 +86,25 @@ QtObject {
     // reads the access status and never prompts for Allowed/Denied/Unavailable.
     function setMirroring(enabled): void {
         server.mirrorSystemNotifications = enabled === true;
+    }
+
+    // Non-prompting consent observation, independent of active mirroring.
+    // Older backends lack it; the service then keeps the bounded denied poll.
+    // Observation lives as long as the process, so it is owned by generation:
+    // the service claims a token and every write carries it, and the backend
+    // refuses a write from a superseded token (a late teardown must not switch
+    // off a replacement's observation). Token 0 is never valid.
+    function claimAccessObservation(): int {
+        if (typeof server.claimSystemAccessObservation !== "function")
+            return 0;
+        return server.claimSystemAccessObservation();
+    }
+
+    function setAccessObservation(enabled, token): void {
+        if (typeof server.setSystemAccessObservation !== "function"
+                || typeof server.claimSystemAccessObservation !== "function")
+            return;
+        server.setSystemAccessObservation(enabled === true, token ?? 0);
     }
 
     // Activates a mirrored record's source app without dismissing the real

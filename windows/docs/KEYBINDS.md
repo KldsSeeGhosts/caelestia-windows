@@ -4,13 +4,13 @@ Back to the [Caelestia for Windows user guide](USER-GUIDE.md).
 
 On Linux, Caelestia relies on Hyprland (`hyprland.conf` or `keybinds.lua`) to capture global shortcuts and run window/workspace dispatchers. On Windows, the Quickshell backend provides a built-in `HotkeyManager` (`Quickshell.Windows.Hotkeys`) that registers chords without the Windows key through `RegisterHotKey` and runs every chord with the Windows key, and every lone-modifier tap or hold, through a low-level keyboard hook (`WH_KEYBOARD_LL`). A `Win+<Key>` bind can opt in to `RegisterHotKey` with `"register": true`; see [Routing](#routing-registerhotkey-or-the-keyboard-hook).
 
-Defaults are staged at `shell/defaults/windows/keybinds.json`. Production seeds `config/keybinds.json` under the recorded profile on first launch only.
+Defaults are staged from `defaults/windows/keybinds.json`. Production seeds `config/keybinds.json` under the recorded profile on first launch only.
 
 ---
 
 ## Where `keybinds.json` lives
 
-1. **Built-in defaults:** Shipped in the shell directory at `defaults/windows/keybinds.json`.
+1. **Built-in defaults:** Shipped in the repository at `defaults/windows/keybinds.json`.
 2. **User overrides:** `CAELESTIA_WINDOWS_KEYBINDS` selects an explicit file first. Otherwise `"configFile":"keybinds.json"` resolves under `CAELESTIA_CONFIG_DIR` when that file exists, so production uses `%LOCALAPPDATA%\caelestia-windows\config\keybinds.json`. The legacy fallback `"userFile":"caelestia/windows/keybinds.json"` resolves under Qt GenericDataLocation.
 
 `HotkeyManager` watches your `keybinds.json` file and reloads bindings automatically within 200 ms whenever you save changes. It also re-evaluates punctuation keys automatically when your active Windows keyboard layout changes.
@@ -90,7 +90,9 @@ Available Caelestia global shortcut names:
 | Shortcut `name` | Description | Source component |
 | --- | --- | --- |
 | `caelestia:nexus` | Open the Nexus settings window | `daemons/Shortcuts.qml` |
-| `caelestia:screenshot` | Open Glazier's screenshot picker and editor | `daemons/Shortcuts.qml` |
+| `caelestia:screenshot` | Glazier screenshot picker and editor | `daemons/Shortcuts.qml` |
+| `caelestia:screenshotFreeze` | Glazier screenshot (frozen picker variant) | `daemons/Shortcuts.qml` |
+| `caelestia:record` | Start or stop a Glazier recording | `daemons/Shortcuts.qml` |
 | `caelestia:launcher` | Toggle launcher (fires on release unless interrupted) | `daemons/Shortcuts.qml` |
 | `caelestia:launcherInterrupt` | Interrupt lone-Super launcher tap | `daemons/Shortcuts.qml` |
 | `caelestia:dashboard` | Toggle top dashboard drawer | `daemons/Shortcuts.qml` |
@@ -110,34 +112,50 @@ Available Caelestia global shortcut names:
 
 All handlers in the table are staged in production, plus `caelestia:volumeUp`, `caelestia:volumeDown`, and `caelestia:volumeMute` from the audio adapter. Service actions retain their control gates. Production targets the focused monitor; bounded previews target their selected screen.
 
-### Glazier screenshots
+### Glazier screenshots and recording
 
-Install Glazier at `%LOCALAPPDATA%\Programs\Glazier\glazier.exe`, or create
-`%LOCALAPPDATA%\caelestia-windows\config\glazier.json` with an absolute path:
+Glazier ships with Caelestia as the shell's screenshot and recording tool. The
+installer places `glazier.exe` beside `qs.exe` in the versioned payload, so an
+update or rollback keeps the matching shell and tool together. The shell starts
+Glazier in its tray with the profile's
+`state\caelestia\theme-tokens.json`, and passes `--no-hotkeys` so exactly one
+owner handles each chord.
+
+The shell binds the same chords Glazier used:
+
+| Action | Default keys | Shortcut |
+| --- | --- | --- |
+| Screenshot | `PrintScreen` and `Win+Shift+S` | `caelestia:screenshot`, `caelestia:screenshotFreeze` |
+| Start or stop recording | `Win+Shift+R` | `caelestia:record` |
+
+These binds deliberately do not set `"register": true`: the shell's keyboard
+hook owns them and Glazier's own hotkeys are disabled. To use a different
+chord, replace the `PrintScreen` / `Win+Shift+S` / `Win+Shift+R` entries in your
+`keybinds.json`; do not add the same chord twice. The three entries carry
+`since`, so a legacy profile that replaces the defaults without
+`"extends": "defaults"` receives them unless that chord or the
+`caelestia:screenshot`, `caelestia:screenshotFreeze` or `caelestia:record`
+name is already used.
+
+The launcher also offers **Screenshot** and **Record screen**. IPC callers can
+use `screenshot capture` or the upstream `picker open`, `openFreeze`,
+`openClip`, and `openFreezeClip` functions. All open Glazier's frozen picker and
+editor; Glazier determines how the resulting image is saved or copied.
+
+A development or recovery build can be pointed at another Glazier with an
+absolute path in `%LOCALAPPDATA%\caelestia-windows\config\glazier.json`:
 
 ```json
 {"executable": "D:\\Apps\\Glazier\\glazier.exe"}
 ```
 
-If that file does not exist, Caelestia falls back to the default install path.
-The launcher also offers Screenshot. No screenshot key is bound by default. To
-add one, add this example to the `binds` array of your user `keybinds.json`:
+The bundled executable is preferred when present; there is no separate
+`%LOCALAPPDATA%\Programs\Glazier` install location. If the bundled executable is
+missing, Screenshot and Record screen report that Glazier is unavailable and
+nothing else changes.
 
-```json
-{"keys": "Ctrl+Alt+S", "action": "global", "name": "caelestia:screenshot", "description": "Screenshot"}
-```
-
-IPC callers can use `screenshot capture` or the upstream `picker open`,
-`openFreeze`, `openClip`, and `openFreezeClip` functions. All open Glazier's
-frozen picker and editor; Glazier determines how the resulting image is saved
-or copied.
-
-Choose a chord that does not conflict with other applications. Glazier itself
-defaults to PrintScreen and Win+Shift+S for screenshots and Win+Shift+R for
-recording. To reuse one of its screenshot chords in Caelestia, remove that chord
-from `hotkeys` in `%APPDATA%\Glazier\config.toml` first; avoid its
-`recording_hotkey` too. Glazier recording is controlled through its own tray
-or shortcut, not through a command-line recording action.
+Standalone Glazier still reads `%APPDATA%\Glazier\config.toml`. The shell's
+launch options do not modify that file.
 
 `caelestia:nexus` opens the upstream Nexus settings window as a detached top-level window (`modules/nexus/WindowFactory.qml`). **No default key is shipped for it**; add a `global` bind with `"name": "caelestia:nexus"` to use it. If the chord includes the Windows key, add `"register": true` so the window comes to the front instead of opening behind the focused application:
 
@@ -170,11 +188,16 @@ The picker also has an IPC target, so it can be opened without a key bind:
 
 ```powershell
 $prefix = "$env:LOCALAPPDATA\Programs\caelestia-windows"
-& "$prefix\qs.exe" -p "$prefix\shell" ipc call clipboard toggle
-& "$prefix\qs.exe" -p "$prefix\shell" ipc call clipboard open
-& "$prefix\qs.exe" -p "$prefix\shell" ipc call clipboard close
-& "$prefix\qs.exe" -p "$prefix\shell" ipc call clipboard state
+# The shell runs from the selected version, not the prefix root.
+$runtime = Join-Path $prefix ("versions\" + (Get-Content "$prefix\install.json" -Raw | ConvertFrom-Json).current)
+& "$runtime\qs.exe" -p "$runtime\shell" ipc call clipboard toggle
+& "$runtime\qs.exe" -p "$runtime\shell" ipc call clipboard open
+& "$runtime\qs.exe" -p "$runtime\shell" ipc call clipboard close
+& "$runtime\qs.exe" -p "$runtime\shell" ipc call clipboard state
 ```
+
+Calling the prefix root's `qs.exe -p "$prefix\shell"` instead reports "No running
+instances", because the running shell's path is the version directory.
 
 ## Routing: RegisterHotKey or the keyboard hook
 
@@ -201,6 +224,8 @@ A hook-backed Win chord also swallows the Windows key release and replays a mask
 | Action | Default keys | Target |
 | --- | --- | --- |
 | Toggle the launcher (lone Super tap) | `Super` (tap on release) | `caelestia:launcher` |
+| Screenshot with Glazier | `PrintScreen`, `Win+Shift+S` | `caelestia:screenshot`, `caelestia:screenshotFreeze` |
+| Start or stop a Glazier recording | `Win+Shift+R` | `caelestia:record` |
 | Toggle the launcher, dashboard, OSD and utilities together | `Super+K` | `caelestia:showall` |
 | Toggle the dashboard | `Super+Shift+D` | `caelestia:dashboard` |
 | Toggle the notification sidebar | `Super+N` | `caelestia:sidebar` |
@@ -346,12 +371,14 @@ The action is also callable without a key:
 
 ```powershell
 $prefix = "$env:LOCALAPPDATA\Programs\caelestia-windows"
-& "$prefix\qs.exe" -p "$prefix\shell" ipc call displays off
+$runtime = Join-Path $prefix ("versions\" + (Get-Content "$prefix\install.json" -Raw | ConvertFrom-Json).current)
+& "$runtime\qs.exe" -p "$runtime\shell" ipc call displays off
 ```
 
-Only fakes have exercised this path. Whether Windows retains the monitor
-topology and window placement is a live QA check, not a guarantee; physically
-switching a monitor off may still remove it.
+Live-checked on two monitors (#11): the panels go dark, and the monitor
+topology, scale and window placement are kept. Prefer it over a monitor's power
+button: on DisplayPort the button is a hot-unplug, so Windows removes the
+monitor and rearranges the desktop (see #215).
 
 ### 4. `"exec"` — launch an external command
 

@@ -2,28 +2,88 @@
 param(
     [Parameter(Mandatory)][string]$Destination,
     [Parameter(Mandatory)][string]$ProfileRoot,
-    # 'shell' is the M1 bar/session host. Every other value names one bounded
+    # 'shell-live' stages the production tree from the one production map at
+    # windows/shell/sources.json. 'combined' stages that same map plus the
+    # private combined test host's overlay. Every other value names one bounded
     # slice under windows/<name>-prototype with its own shell.qml and
-    # sources.json manifest. One slice per stage. 'combined' unions the M1
-    # manifest with every service slice manifest plus the combined adapters,
-    # which are split per feature under combined-prototype/sources.d.
+    # sources.json manifest, and is a test host, not production.
     [ValidateSet('shell', 'audio', 'battery', 'media', 'brightness', 'network', 'bluetooth', 'apps', 'tray', 'notifications', 'hypr', 'tiling', 'combined', 'shell-live')]
     [string]$Prototype = 'shell'
 )
 
 $ErrorActionPreference = 'Stop'
-. (Join-Path $PSScriptRoot 'CombinedSources.ps1')
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
 $Destination = [IO.Path]::GetFullPath($Destination)
 $ProfileRoot = [IO.Path]::GetFullPath($ProfileRoot)
-# Production uses exactly the combined graph, with a separate lifecycle entry.
 $shellLive = $Prototype -eq 'shell-live'
-if ($shellLive) { $Prototype = 'combined' }
+$production = $shellLive -or $Prototype -eq 'combined'
 New-Item -ItemType Directory -Force -Path $Destination | Out-Null
-$files = [ordered]@{
-    'windows/shell-prototype/shell.qml' = 'shell.qml'
-    'windows/assets/README.md' = 'assets/README.md'
-    'windows/shell-prototype/WindowsFonts.qml' = 'WindowsFonts.qml'
+$files = [ordered]@{}
+if ($production) {
+    # The installer and the private shell test host stage the same production
+    # map, so production never depends on a prototype or fixture folder. The
+    # release excludes those folders; nothing here may point into one.
+    $manifest = Get-Content -LiteralPath (Join-Path $repoRoot 'windows\shell\sources.json') -Raw | ConvertFrom-Json
+    $stagedTargets = @{}
+    foreach ($entry in $manifest.PSObject.Properties) {
+        if ($entry.Name -match '^windows/[^/]+-prototype/') {
+            throw "Production staging must not reference a prototype folder: $($entry.Name)"
+        }
+        # One target, one source. A duplicate would silently let the last entry
+        # win, which is how a test or fixture file could reach production.
+        if ($stagedTargets.ContainsKey($entry.Value)) {
+            throw "Duplicate production staging target '$($entry.Value)' in $($stagedTargets[$entry.Value]) and $($entry.Name)."
+        }
+        $stagedTargets[$entry.Value] = $entry.Name
+        $files[$entry.Name] = $entry.Value
+    }
+    if (-not $shellLive) {
+        # Only the combined test host adds its instrumented entry point and the
+        # smoke notification. An overlay entry replaces the production entry
+        # already staged to the same target.
+        $overlay = Get-Content -LiteralPath (Join-Path $repoRoot 'windows\combined-prototype\test-sources.json') -Raw | ConvertFrom-Json
+        foreach ($entry in $overlay.PSObject.Properties) {
+            foreach ($existing in @($files.Keys)) {
+                if ($files[$existing] -eq $entry.Value) { $files.Remove($existing) }
+            }
+            $files[$entry.Name] = $entry.Value
+        }
+    }
+} else {
+    # Bounded slice hosts stage the M1 contract manifest plus one slice manifest.
+    $files['windows/shell-prototype/shell.qml'] = 'shell.qml'
+    $files['windows/assets/README.md'] = 'assets/README.md'
+    $files['windows/shell/WindowsFonts.qml'] = 'WindowsFonts.qml'
+    if ($Prototype -ne 'shell') {
+        $files.Remove('windows/shell-prototype/shell.qml')
+        $files.Add("windows/$Prototype-prototype/shell.qml", 'shell.qml')
+    }
+    $manifest = Get-Content -LiteralPath (Join-Path $repoRoot 'windows\shell-prototype\sources.json') -Raw | ConvertFrom-Json
+    foreach ($entry in $manifest.PSObject.Properties) { $files[$entry.Name] = $entry.Value }
+    if ($Prototype -eq 'tray') {
+        # The base manifest stages an unavailable Tray adapter. This slice stages
+        # the original component plus its item/menu dependencies instead.
+        $files.Remove('windows/shell-prototype/adapters/modules/bar/components/Tray.qml')
+    }
+    if ($Prototype -eq 'hypr') {
+        # The base manifest stages contract-only Hypr, Workspaces and ActiveWindow
+        # adapters. This slice stages the real facade and the original components
+        # (plus their dependencies) instead.
+        $files.Remove('windows/shell-prototype/adapters/services/Hypr.qml')
+        $files.Remove('windows/shell-prototype/adapters/modules/bar/components/workspaces/Workspaces.qml')
+        $files.Remove('windows/shell-prototype/adapters/modules/bar/components/ActiveWindow.qml')
+    }
+    if ($Prototype -eq 'tiling') {
+        # The base manifest stages the contract-only Hypr adapter. This slice
+        # stages the real Hypr facade (failure records resolve window names when
+        # Hypr observation is separately opted in) plus the tiling service and
+        # the original toast surface with its Notifs adapter.
+        $files.Remove('windows/shell-prototype/adapters/services/Hypr.qml')
+    }
+    if ($Prototype -ne 'shell') {
+        $sliceManifest = Get-Content -LiteralPath (Join-Path $repoRoot "windows\$Prototype-prototype\sources.json") -Raw | ConvertFrom-Json
+        foreach ($entry in $sliceManifest.PSObject.Properties) { $files.Add($entry.Name, $entry.Value) }
+    }
 }
 $sourceLock = Get-Content -LiteralPath (Join-Path $repoRoot 'windows/sources.lock.json') -Raw | ConvertFrom-Json
 foreach ($font in $sourceLock.fonts) {
@@ -35,95 +95,6 @@ foreach ($font in $sourceLock.fonts) {
         $destRel = if ($fontFile.path.StartsWith('windows/')) { $fontFile.path.Substring('windows/'.Length) } else { $fontFile.path }
         $files[$fontFile.path] = $destRel
     }
-}
-if ($Prototype -ne 'shell') {
-    $files.Remove('windows/shell-prototype/shell.qml')
-    $files.Add("windows/$Prototype-prototype/shell.qml", 'shell.qml')
-}
-$manifest = Get-Content -LiteralPath (Join-Path $repoRoot 'windows\shell-prototype\sources.json') -Raw | ConvertFrom-Json
-foreach ($entry in $manifest.PSObject.Properties) { $files[$entry.Name] = $entry.Value }
-if ($Prototype -eq 'tray') {
-    # The base manifest stages an unavailable Tray adapter. This slice stages
-    # the original component plus its item/menu dependencies instead.
-    $files.Remove('windows/shell-prototype/adapters/modules/bar/components/Tray.qml')
-}
-# The combined prototype replaces the base manifest's unavailable adapters for
-# every target that now has the original component or a combined adapter.
-if ($Prototype -eq 'combined') {
-    foreach ($baseAdapter in @(
-        'windows/shell-prototype/adapters/modules/bar/components/OsIcon.qml',
-        'windows/shell-prototype/adapters/modules/bar/components/Tray.qml',
-        'windows/shell-prototype/adapters/modules/bar/components/StatusIcons.qml',
-        'windows/shell-prototype/adapters/modules/bar/components/workspaces/Workspaces.qml',
-        'windows/shell-prototype/adapters/modules/bar/components/ActiveWindow.qml',
-        'windows/shell-prototype/adapters/modules/bar/popouts/Wrapper.qml',
-        'windows/shell-prototype/adapters/modules/bar/popouts/ClipWrapper.qml',
-        'windows/shell-prototype/adapters/modules/drawers/Panels.qml',
-        'windows/shell-prototype/adapters/services/Colours.qml',
-        'windows/shell-prototype/adapters/services/Hypr.qml',
-        'windows/shell-prototype/adapters/utils/Paths.qml',
-        'windows/shell-prototype/adapters/Caelestia/Services/qmldir',
-        'services/Time.qml',
-        'modules/session/Content.qml'
-    )) { $files.Remove($baseAdapter) }
-}
-if ($Prototype -eq 'hypr') {
-    # The base manifest stages contract-only Hypr, Workspaces and ActiveWindow
-    # adapters. This slice stages the real facade and the original components
-    # (plus their dependencies) instead.
-    $files.Remove('windows/shell-prototype/adapters/services/Hypr.qml')
-    $files.Remove('windows/shell-prototype/adapters/modules/bar/components/workspaces/Workspaces.qml')
-    $files.Remove('windows/shell-prototype/adapters/modules/bar/components/ActiveWindow.qml')
-}
-if ($Prototype -eq 'tiling') {
-    # The base manifest stages the contract-only Hypr adapter. This slice
-    # stages the real Hypr facade (failure records resolve window names when
-    # Hypr observation is separately opted in) plus the tiling service and
-    # the original toast surface with its Notifs adapter.
-    $files.Remove('windows/shell-prototype/adapters/services/Hypr.qml')
-}
-if ($Prototype -ne 'shell') {
-    if ($Prototype -eq 'combined') {
-        # Fragments are merged in sorted filename order and reject an ambiguous
-        # map, so parallel features can add their own file without conflicts.
-        $sliceManifest = Get-CombinedSourcesManifest (Join-Path $repoRoot 'windows\combined-prototype')
-    } else {
-        $sliceManifest = Get-Content -LiteralPath (Join-Path $repoRoot "windows\$Prototype-prototype\sources.json") -Raw | ConvertFrom-Json
-    }
-    foreach ($entry in $sliceManifest.PSObject.Properties) { $files.Add($entry.Name, $entry.Value) }
-}
-# The combined prototype unions every service slice onto the base manifest.
-# Slice entries whose staged target is provided by the combined adapters are
-# skipped; the tray slice's original ColouredIcon over the notifications
-# slice's lightness-only adapter is the one deliberate overwrite, so the
-# notifications adapter is skipped explicitly to keep a single source of truth.
-if ($Prototype -eq 'combined') {
-    $combinedSkips = @{
-        'audio' = @('modules/bar/popouts/AudioPopout.qml')
-        'battery' = @('modules/bar/components/status/BatteryStatus.qml', 'modules/bar/popouts/Battery.qml', 'windows/services/battery/Battery.qml')
-        'bluetooth' = @('modules/bar/popouts/Bluetooth.qml', 'windows/services/bluetooth/Bluetooth.qml')
-        'brightness' = @('modules/osd/Content.qml')
-        'network' = @('modules/bar/popouts/Network.qml')
-        'notifications' = @('windows/notifications-prototype/adapters/components/effects/ColouredIcon.qml', 'windows/notifications-prototype/adapters/modules/utilities/Wrapper.qml')
-        'apps' = @('windows/apps-prototype/adapters/modules/launcher/items/ActionItem.qml', 'windows/apps-prototype/adapters/modules/launcher/items/CalcItem.qml', 'windows/apps-prototype/adapters/modules/launcher/items/SchemeItem.qml', 'windows/apps-prototype/adapters/modules/launcher/items/VariantItem.qml', 'windows/apps-prototype/adapters/modules/launcher/services/Actions.qml', 'windows/apps-prototype/adapters/modules/launcher/services/Schemes.qml', 'windows/apps-prototype/adapters/modules/launcher/services/M3Variants.qml')
-        'tray' = @('modules/bar/components/Tray.qml', 'windows/services/tray/Tray.qml')
-    }
-    foreach ($slice in @('audio', 'battery', 'bluetooth', 'brightness', 'media', 'network', 'notifications', 'tray', 'apps')) {
-        $sliceManifest = Get-Content -LiteralPath (Join-Path $repoRoot "windows\$slice-prototype\sources.json") -Raw | ConvertFrom-Json
-        foreach ($entry in $sliceManifest.PSObject.Properties) {
-            if ($combinedSkips[$slice] -contains $entry.Name) { continue }
-            # Several slices stage the identical upstream file (PopoutState,
-            # Icons, shared controls). The first staging of a source wins; the
-            # recorded hashes prove the bytes are the same upstream file.
-            if (-not $files.Contains($entry.Name)) { $files.Add($entry.Name, $entry.Value) }
-        }
-    }
-}
-if ($shellLive) {
-    $files.Remove('windows/combined-prototype/shell.qml')
-    $files.Add('windows/shell/shell.qml', 'shell.qml')
-    $files.Remove('services/Screens.qml')
-    $files.Add('windows/shell/Screens.qml', 'services/Screens.qml')
 }
 $sha256 = [Security.Cryptography.SHA256]::Create()
 try {
@@ -181,5 +152,19 @@ $hashes = foreach ($entry in $files.GetEnumerator()) {
     }
 }
 $hashes | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $Destination 'sources.json') -Encoding UTF8
+    if ($production) {
+        # A qmldir that names a file the map never copied is how a live install
+        # can start, then fail to load (IdleHold.qml after #253).
+        foreach ($qmldir in @(Get-ChildItem -LiteralPath $Destination -Recurse -Filter qmldir -File)) {
+            foreach ($line in @(Get-Content -LiteralPath $qmldir.FullName)) {
+                if ($line -notmatch '\.qml\s*$') { continue }
+                $name = ($line -split '\s+')[-1]
+                $qml = Join-Path $qmldir.DirectoryName $name
+                if (-not (Test-Path -LiteralPath $qml -PathType Leaf)) {
+                    throw "Staged $($qmldir.FullName.Substring($Destination.Length + 1)) lists $name, but that file is not in the payload."
+                }
+            }
+        }
+    }
 } finally { $sha256.Dispose() }
 Write-Output $Destination

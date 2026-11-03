@@ -90,7 +90,10 @@ powershell -NoProfile -File windows/scripts/Build-Prototype.ps1 `
 ```
 
 `-BuildRoot` selects another output directory and `-Jobs` changes parallelism
-(default 4). The default directory is `windows/.local/build`.
+(default 4). The default directory is `windows/.local/build`. `-Tests` also
+builds the native test executables used by
+`windows/scripts/Test-ClipboardHistory.ps1`, `Test-DisplayPower.ps1` and
+`Test-FocusFollowsMouse.ps1`; production builds omit them.
 
 The build also produces `quickshell/brightness-probe.exe`. It uses the native
 brightness controller without starting the shell. Set Qt's bin directory in
@@ -131,6 +134,39 @@ The script:
    WindowsFocusGuard for the native prototype.
 6. Records command arguments, logs, source revisions (including M3Shapes), and
    tool versions under `logs/`. No packages are published.
+
+## Smoke
+
+The public smoke command is:
+
+```powershell
+$devRoot = Join-Path $env:LOCALAPPDATA 'caelestia-dev'
+powershell -NoProfile -File windows/scripts/Test-Smoke.ps1 `
+    -BuildRoot C:\b-smoke `
+    -QtPrefix "$devRoot\Qt\6.11.2\msvc2022_64"
+```
+
+It stages the production map in `windows/shell/sources.json` exactly as the
+installer does (`Stage-ShellPrototype.ps1 -Prototype shell-live`), starts the
+built `quickshell/qs.exe` against an isolated temporary profile, and waits for
+every drawer's first frame. The process uses `QT_QPA_PLATFORM=offscreen` and
+the Qt Quick software backend. Tray hook, blur, tiling, background/desktop
+embedding, notification mirroring, hotkeys, Wallpaper Engine and every service
+control are off; an empty keybind list and `CAELESTIA_SHELL_SMOKE_CI` let the
+shell exit itself. The script also checks the build's backend and M3Shapes
+revisions against `windows/sources.lock.json`. A QML error, missing import or
+plugin DLL, missing pass marker, or 90-second timeout fails the run.
+
+The exit code is 0 on pass and 1 on failure, with a one-line summary. The
+temporary stage, profile, stdout/stderr and Quickshell text log are removed on
+pass, and kept with matched diagnostics printed on failure. The smoke also
+fails if its captured output contains a MAC-like address or any
+`quickshell.windows.bluetooth` activity, and it redacts those patterns from
+failure output. `-TimeoutSeconds`, `-RunRoot` and `-Keep` help with debugging.
+`QS_RUNTIME_DIR` only selects where Quickshell writes its own run/log files; it
+is not a containment boundary and accepts relative, traversal and UNC paths.
+The command does not install anything, run the live shell, or read the live
+profile.
 
 ## Native bar/session prototype
 

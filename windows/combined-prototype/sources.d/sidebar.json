@@ -1,5 +1,0 @@
-{
-  "modules/sidebar/Content.qml": "modules/sidebar/SidebarContent.qml",
-  "windows/combined-prototype/adapters/modules/sidebar/Content.qml": "modules/sidebar/Content.qml",
-  "modules/sidebar/Wrapper.qml": "modules/sidebar/Wrapper.qml"
-}

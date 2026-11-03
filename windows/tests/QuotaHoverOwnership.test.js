@@ -11,7 +11,7 @@ const repo = path.resolve(__dirname, "../..");
 const read = file => fs.readFileSync(path.join(repo, file), "utf8").replace(/\r\n/g, "\n");
 
 const interactions = read("modules/drawers/Interactions.qml");
-const panelsAdapter = read("windows/combined-prototype/adapters/modules/drawers/Panels.qml");
+const panelsAdapter = read("windows/shell/adapters/modules/drawers/Panels.qml");
 
 function between(text, start, end) {
     const from = text.indexOf(start);

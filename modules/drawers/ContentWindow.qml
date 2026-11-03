@@ -21,12 +21,18 @@ StyledWindow {
     // Automated rendering can exercise the original graph without taking input.
     property bool interactionEnabled: true
 
-    readonly property ScreenState screenState: ShellState.forScreen(screen)
+    // Windows: on hot-unplug a screen's state leaves the ShellState lookup
+    // before this window is deleted, so keep a fallback for teardown (#215).
+    readonly property ScreenState teardownState: ScreenState {
+        modelData: root.screen
+    }
+    readonly property ScreenState screenState: ShellState.forScreen(screen) ?? teardownState
 
     readonly property HyprlandMonitor monitor: Hypr.monitorFor(screen)
     readonly property bool hasSpecialWorkspace: (monitor?.lastIpcObject.specialWorkspace?.name.length ?? 0) > 0
     // Windows workspaces span monitors; Hyprland workspaces already belong to one.
-    readonly property bool hasFullscreenOnNormalWs: monitor?.activeWorkspace?.toplevels.values.some(t => t.monitor === root.monitor && t.lastIpcObject.fullscreen > 1) ?? false
+    // Windows: the backend's fullscreen-occluder verdict (the one AppBar uses) also counts, because a fullscreen window hidden from the task list is not a toplevel.
+    readonly property bool hasFullscreenOnNormalWs: (monitor?.lastIpcObject.fullscreenOccluder ?? false) || (monitor?.activeWorkspace?.toplevels.values.some(t => t.monitor === root.monitor && t.lastIpcObject.fullscreen > 1) ?? false)
     readonly property bool hasFullscreen: {
         if (hasSpecialWorkspace) {
             const specialName = monitor?.lastIpcObject.specialWorkspace?.name;

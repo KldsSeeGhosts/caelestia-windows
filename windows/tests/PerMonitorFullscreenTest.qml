@@ -88,6 +88,22 @@ Item {
             check(!hasFullscreen && !toastFullscreen, "missing special workspace");
             hypr.focusedMonitor = null;
             check(!toastFullscreen, "missing focused monitor");
+
+            // A fullscreen window hidden from the task list (a tool window such
+            // as mpv without a taskbar button) is not a toplevel, but the
+            // backend's AppBar verdict still reports the screen as covered.
+            window.lastIpcObject = {fullscreen: 0};
+            monitorB.lastIpcObject = {specialWorkspace: {name: ""}};
+            monitor = monitorB;
+            hypr.focusedMonitor = monitorB;
+            check(!hasFullscreen && !toastFullscreen, "no occluder, no toplevel fullscreen");
+            monitorB.lastIpcObject = {specialWorkspace: {name: ""}, fullscreenOccluder: true};
+            check(hasFullscreen && hasFullscreenOnNormalWs && toastFullscreen, "occluder alone is fullscreen on B");
+            monitor = monitorA;
+            check(!hasFullscreen, "B's occluder does not hide A");
+            monitorB.lastIpcObject = {specialWorkspace: {name: ""}, fullscreenOccluder: false};
+            monitor = monitorB;
+            check(!hasFullscreen && !toastFullscreen, "occluder gone");
             console.log("CAELESTIA_PER_MONITOR_FULLSCREEN_PASS " + assertions);
             Qt.quit();
         } catch (error) {

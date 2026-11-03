@@ -6,6 +6,8 @@ qml_module(caelestia-windows
         windowsfontfallback.hpp
         windowsfontfallback.cpp
         windowsfiles.hpp
+        windowsprocess.hpp
+        knownfolders.hpp
         Clipboard/clipboardcache.hpp
         Clipboard/clipboardlogic.hpp
         Clipboard/clipboardstate.hpp
@@ -24,6 +26,7 @@ qml_module(caelestia-windows
         Qt::Quick
         user32
         ole32
+        shell32
         windowsapp
 )
 
@@ -43,11 +46,18 @@ target_include_directories(caelestia-windows PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/Focus"
 )
 
+# Public exports omit the test sources, so the native fixtures are built only
+# on explicit request: windows/scripts/Build-Prototype.ps1 -Tests.
+option(CAELESTIA_WINDOWS_TESTS "Build Caelestia Windows plugin tests" OFF)
+
 # The clipboard's WinRT-free decisions are checked by a small Qt Test
 # executable. windows/scripts/Test-ClipboardHistory.ps1 runs it alongside the
 # QML smoke.
 find_package(Qt6 QUIET COMPONENTS Test)
-if(Qt6Test_FOUND)
+if(CAELESTIA_WINDOWS_TESTS AND NOT Qt6Test_FOUND)
+    message(WARNING "CAELESTIA_WINDOWS_TESTS is ON but Qt Test was not found; the plugin tests are skipped.")
+endif()
+if(CAELESTIA_WINDOWS_TESTS AND Qt6Test_FOUND)
     add_executable(clipboard-logic-tests
         Clipboard/test/clipboardlogic_test.cpp
     )
@@ -92,6 +102,17 @@ if(Qt6Test_FOUND)
         "${CMAKE_CURRENT_SOURCE_DIR}/Focus"
     )
     target_link_libraries(focus-follows-mouse-tests PRIVATE Qt::Core Qt::Test)
+
+    # Known Folder resolution is checked against SHGetKnownFolderPath itself,
+    # and an explicit configured path must beat the system default.
+    add_executable(knownfolders-tests
+        test/knownfolders_test.cpp
+        knownfolders.hpp
+    )
+    target_include_directories(knownfolders-tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}"
+    )
+    target_link_libraries(knownfolders-tests PRIVATE Qt::Core Qt::Qml Qt::Test shell32 ole32)
 endif()
 
 # WASAPI loopback analysis: CavaProvider/BeatTracker/ServiceRef for the

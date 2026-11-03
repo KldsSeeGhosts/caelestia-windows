@@ -3,9 +3,7 @@
 M3-2 stages 4/5 groundwork: constructing the backend's `Tiling` controller
 behind bounded opt-ins, applying its options without enabling it, and
 explaining fitting failures on Caelestia's original toast surface. The M3-1
-audit's one-active-tiler and construction-side-effect rules apply; see
-`windows/audits/M3-BACKEND-API.md` ("Tiling options and lifecycle", "Startup
-effects and safety").
+audit's one-active-tiler and construction-side-effect rules apply.
 
 | file | role |
 | --- | --- |
@@ -60,7 +58,8 @@ The Windows-only `windows` map holds service extensions; the facade validates
   semicolon-separated strings. Case-insensitive whole-value wildcard matching
   (`*`, `?`, character classes), not regular expressions. `exe:` matches
   executable filename/basename, `class:` matches Win32 class, `title:` matches
-  title. Unprefixed rules retain the shared app ID/exe/class match.
+  title. Unprefixed rules retain the shared app ID/exe/class match. A selector
+  that does not compile is ignored and logged by index, never by pattern text.
 - `float` is an exclusion alias: matching windows stay unmanaged. Exclude,
   float and disabled-monitor rules win over every inclusion.
 - `monitors` maps Qt screen-name wildcard patterns to booleans. All monitors
@@ -99,7 +98,11 @@ corresponding profile values. With no override, profile settings apply.
   matches app id, executable name/basename and window class). An empty list
   means "all eligible windows" on the backend, which is exactly why
   interactive refuses to enable without one: enabling would immediately lay
-  out every eligible window on the desktop.
+  out every eligible window on the desktop. An allowlist whose entries all fail
+  the backend's validation (for example an unterminated `[`) is not "empty": it
+  matches nothing, and interactive refuses it using the backend's validated
+  `includedRuleCount`, not the raw list length. A `title:` selector that would
+  match an empty title is rejected the same way.
 - `CAELESTIA_WINDOWS_TILING_EXCLUDED`, same dialect, always applied.
   Exclusions win over inclusions; the host process is never managed by the
   backend itself.

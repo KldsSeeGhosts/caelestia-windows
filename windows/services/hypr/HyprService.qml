@@ -185,7 +185,7 @@ QtObject {
             text: text,
             sequence: root.dispatchSequence
         };
-        console.warn("Caelestia: " + text);
+        console.warn("Caelestia: refused a Hypr dispatch request (" + reason + ")");
     }
 
     function _send(source, translated, kind): void {

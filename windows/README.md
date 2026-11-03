@@ -6,13 +6,14 @@ from the Windows Quickshell fork used by ii-windows. Hyprland remains a Linux
 Wayland compositor; Windows continues to own application composition through DWM.
 
 Caelestia exports its resolved appearance to the profile's
-`state\caelestia\theme-tokens.json`. To use it in Glazier, set `theme_file`
-in `%APPDATA%\Glazier\config.toml` to the absolute path of that file and
-choose Glazier's Reload settings. The default profile is
-`%LOCALAPPDATA%\caelestia-windows`; use the actual profile path if customized.
-The file is updated when the scheme or appearance changes, and Glazier reads
-it at the next capture. It contains versioned semantic colours, the UI font
-and optional private font path, and rounding tokens.
+`state\caelestia\theme-tokens.json`. The shell starts its bundled Glazier with
+`--theme-file` pointing at that file, so screenshots and recordings follow the
+current scheme without editing `%APPDATA%\Glazier\config.toml`. The default
+profile is `%LOCALAPPDATA%\caelestia-windows`; use the actual profile path if
+customized. The file is updated when the scheme or appearance changes, and
+Glazier reads it at the next capture. It contains versioned semantic colours,
+the UI font and optional private font path, and rounding tokens. A standalone
+Glazier can still opt in with `theme_file` in its own `config.toml`.
 
 ## Credits and attribution
 
@@ -101,10 +102,11 @@ for commands and the limits of its quick installation smoke.
   evidence, limits and rejected preliminary KSG Shell notification failure.
 - The earlier ordinary-window [component probe](prototype/README.md) remains
   available, with [archived synthetic 100%, 150%, and 175% results](validation/2026-10-25-component-probe/README.md).
-- M2 has started with an [opt-in audio prototype](audio-prototype/README.md).
+- M2 began with an [opt-in audio prototype](audio-prototype/README.md).
   It preserves the original audio controls and core public service API.
   Disabled/read-only modes, hardware/failure fixtures and native observation
-  are separate from live write/recovery validation. Other services remain off.
+  are separate from live write/recovery validation. Other services were still
+  off at that point.
   The [first M2 acceptance archive](validation/2026-10-25-m2-audio/README.md)
   records clean-source two-monitor results and unchanged audio/desktop state.
 - A second M2 slice adds a strictly read-only
@@ -164,9 +166,8 @@ for commands and the limits of its quick installation smoke.
   `killwindow` translation is a graceful `WM_CLOSE`. No `Tiling`, `WindowManager`
   or `Taskbar` object is constructed. The fixture covers default-off
   construction, mapping, the global-focus limitation, every allowlisted and
-  refused dispatch form and injection attempts. Only the native Disabled mode
-  is recorded; native Observe/Dispatch and the original components against a
-  live desktop remain untested.
+  refused dispatch form and injection attempts. Only the native Disabled mode is recorded here;
+  the adapter has since been integrated into the installed shell.
 - A default-off [tiling slice](tiling-prototype/README.md) grounds M3-2 stages
   4/5 and the M3-3 fitting-failure explanation.
   `CAELESTIA_WINDOWS_TILING=off|observe|interactive` gates everything: `off`
@@ -175,12 +176,13 @@ for commands and the limits of its quick installation smoke.
   may enable only with a non-empty allowlist (`CAELESTIA_WINDOWS_TILING_INCLUDED`)
   on a backend that supports one — smoke forces it down to observe. Fitting
   failures are explained through the original toast surface with per-reason
-  copy and both rate limits. The shared build pins a backend without the
-  allowlist/telemetry members, so every new member is feature-detected and
-  interactive truthfully refuses. The fixture covers both backend shapes
-  (139 assertions); [tiling evidence](validation/2026-10-25-m3-tiling-slice/README.md)
-  records the Disabled-only native runs and leaves all Observe/Interactive
-  native behavior to the orchestrator's live plan.
+  copy and both rate limits. The pinned backend includes the allowlist,
+  telemetry and typed selectors, so interactive can enable with a non-empty
+  allowlist; older builds are feature-detected and refuse. The fixture covers
+  both backend shapes (139 assertions);
+  [tiling evidence](validation/2026-10-25-m3-tiling-slice/README.md) records
+  the Disabled-only native runs. Tiling has since been integrated into the
+  installed shell.
 
 ## Checkout and inspect
 
@@ -251,9 +253,10 @@ ERM-492's original bar/session loading and evidence archive are complete.
 ERM-493/494 are complete with clean native input and final acceptance evidence.
 The backend fork fixes mask handoff without replacing the original interaction
 paths. M2's [service audit](audits/M2-SERVICES.md) sequences ERM-495 through
-ERM-508. Audio integration and truthful backend control errors are the first
-slice; remaining services, actual hardware-denial/recovery, dynamic themes,
-M3 and M4 remain unvalidated.
+ERM-508. Audio integration and truthful backend control errors were the first
+slice; remaining service acceptance, actual hardware-denial/recovery and
+dynamic themes remain open. M3 and M4 work has since been integrated into
+the installed shell; the roadmap lists open acceptance items.
 
 ## Toolchain direction
 
@@ -267,8 +270,8 @@ Qt. That remains a reference route, not a build verified by this project. Run
 its Linux steps inside Ubuntu-24.04 under WSL2 if investigating it.
 
 Do not run the root Linux installation instructions or an upstream installer
-as a Windows bootstrap step. The first packaging milestone comes after the
-isolated prototype passes.
+as a Windows bootstrap step. The versioned per-user installer now handles
+packaging; see [the shell entry](shell/README.md).
 
 ## Dependency maintenance
 

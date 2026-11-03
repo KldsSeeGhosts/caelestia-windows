@@ -1,4 +1,0 @@
-﻿{
-  "windows/services/focusfollowsmouse/FocusFollowsMouse.qml": "services/FocusFollowsMouse.qml",
-  "windows/services/focusfollowsmouse/NativeFocusFollowsMouse.qml": "services/NativeFocusFollowsMouse.qml"
-}

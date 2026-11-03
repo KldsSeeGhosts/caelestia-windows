@@ -71,7 +71,7 @@ ShellRoot {
         value: root
     }
 
-    // windows/combined-prototype/adapters/daemons/Shortcuts.qml keeps the
+    // windows/shell/adapters/daemons/Shortcuts.qml keeps the
     // original GlobalShortcut names over this host's ScreenState. The backend
     // supplies the Windows key combinations from defaults/windows/keybinds.json.
     Shortcuts {}
@@ -134,9 +134,9 @@ ShellRoot {
                 mode: root.sessionMode, enabled: SessionManager.enabled === true,
                 actions: SessionManager.actionsEnabled === true
             },
-            // Windows utilities: the keep-awake helper and the ffmpeg recorder
-            // are only ever active behind the Live gate, and neither may hold a
-            // process during smoke.
+            // Windows utilities: the native keep-awake request and the ffmpeg
+            // recorder are only ever active behind the Live gate, and smoke may
+            // hold neither.
             utilities: {
                 keepAwakePermitted: idleInhibitor.permitted,
                 inhibitIdle: RuntimeState.inhibitIdle,
@@ -323,9 +323,10 @@ ShellRoot {
         }
     }
 
-    // Original daemon position. The Windows adapter replaces the Wayland
-    // IdleInhibitor with a lifetime-scoped child process. It starts nothing
-    // until the keep-awake toggle is on, and never during smoke.
+    // Original daemon position. The Windows adapter uses the backend's native
+    // IdleInhibitor, whose PowerCreateRequest handle is owned by this shell.
+    // It requests nothing until the keep-awake toggle is on, and never during
+    // smoke.
     IdleInhibit {
         id: idleInhibitor
     }

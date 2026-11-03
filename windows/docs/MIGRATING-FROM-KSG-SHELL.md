@@ -1,11 +1,12 @@
-﻿# Migrating from KSG Shell
+# Migrating from KSG Shell
 
 The importer reads `%APPDATA%\com.ksg.shell\settings.json`. It never changes
 KSG Shell, Windows preferences, autostart, running processes or tiler state.
 The production Caelestia profile is
-`%LOCALAPPDATA%\caelestia-windows\config\shell.json`, supplied by the separate
-`t3/production-shell` work. This branch provides a file converter, not a
-validated desktop replacement or automatic production-profile integration.
+`%LOCALAPPDATA%\caelestia-windows\config\shell.json`. The shell installs as a
+Windows 11 desktop shell through the versioned `Install-Caelestia.ps1`, with
+rollback from Settings > Updates. This script
+remains a file converter, not an automatic production-profile integration.
 
 ## Preview and write
 

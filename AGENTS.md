@@ -8,17 +8,29 @@ project "Caelestia Windows".
 ## Principles
 
 - Ship a complete, working product first; harden it later.
-- Write the smallest change that works. Reuse or delete code before adding
-  more, and keep hot paths lean.
-- Only data loss, crashes or hangs, security or privacy leaks, and anything
-  broken in normal use block a merge. Everything else becomes a follow-up
-  issue.
+- Build for every user's machine. This repository is the source of the public
+  release that everyone, the maintainer included, installs. Never key
+  behaviour on a particular window title, app, monitor model, device id,
+  username or path. Resolve those at runtime and fix the whole class of
+  problem. Integrations with a named app are opt-in features with a working
+  fallback.
+- Fix root causes with the proper mechanism. Port Hyprland and Caelestia
+  behaviour by reproducing what it does for the user, built on documented
+  Windows APIs, events and ownership rules. Fixed delays, polling in place of
+  an event, blind retries and special cases that hide a race are not fixes.
+  When nothing better exists yet, a workaround needs a comment explaining why,
+  a linked issue and a removal plan, and must be gone before a release.
+- Write the smallest correct change. Reuse or delete code before adding more,
+  and keep hot paths lean.
+- Only data loss, crashes or hangs, security or privacy leaks, anything
+  broken in normal use, and machine-specific workarounds block a merge.
+  Everything else becomes a follow-up issue.
 - Real use beats simulation. Prefer a short live check over more offscreen
   tests.
 - Stay faithful to upstream Caelestia: keep its original components and
-  motion. Put Windows changes in adapters under
-  `windows/combined-prototype/adapters/`, and keep any edit to an upstream file
-  small and commented. Fix platform gaps once, in the backend.
+  motion. Put Windows changes in adapters under `windows/shell/adapters/`, and
+  keep any edit to an upstream file small and commented. Fix platform gaps once,
+  in the backend.
 - Report what was and was not verified.
 - A Claude model (Opus or Sonnet) has the final say on UI and design choices
   that need taste.
@@ -36,8 +48,10 @@ project "Caelestia Windows".
 - **Parallel threads:** each thread works on its own branch and never edits
   another thread's branch or worktree. Update from `origin/dev` before
   merging, and resolve conflicts by keeping both sides.
-- **Cleanup:** once your PR merges, delete your worktree and your local and
-  remote branches, in this repository and the backend fork.
+- **Cleanup:** once your PR merges, delete your worktree, your build root
+  (`C:\b-<topic>`) and your local and remote branches, in this repository and
+  the backend fork. Reviewers delete their temporary clones and build roots
+  too. Build roots are about 1 GB each and pile up fast.
 - **Keep out of commits:** logs, screenshots, run archives and credentials.
   Leave `windows/validation/` unchanged until the pre-publication cleanup.
 - **PR evidence:** show visible changes with screenshots. Commit them to the

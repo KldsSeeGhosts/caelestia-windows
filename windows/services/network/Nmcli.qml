@@ -130,12 +130,84 @@ NetworkService {
     }
 
     onNetworkSourcesChanged: root.syncNetworks()
-    Component.onCompleted: root.syncNetworks()
+    Component.onCompleted: {
+        root.syncNetworks();
+        root.syncEthernet();
+    }
 
     readonly property AccessPoint active: root.networks.find(point => point.active) ?? null
-    readonly property var ethernetDevices: root.ethernetSources.map(raw => root.ethernetDeviceComponent.createObject(null, {
-        raw: raw
-    }))
+
+    // The wired list uses the same keyed reuse as the Wi-Fi list: the old
+    // binding created a parentless EthernetDevice on every re-evaluation and
+    // never destroyed it. The synthesized wired record carries no interface
+    // name yet, so its type/state/connection identify it until the backend
+    // reports one.
+    property var _ethernetWrappers: ({})
+    property var _ethernetDevices: []
+
+    readonly property var ethernetDevices: root._ethernetDevices
+
+    function ethernetKey(raw): string {
+        const iface = typeof raw?.iface === "string" ? raw.iface.trim() : "";
+        if (iface.length > 0)
+            return iface;
+        const type = typeof raw?.type === "string" ? raw.type : "";
+        const state = typeof raw?.state === "string" ? raw.state : "";
+        const connection = typeof raw?.connection === "string" ? raw.connection : "";
+        return "device:" + type + "\u0000" + state + "\u0000" + connection;
+    }
+
+    function syncEthernet(): void {
+        const sources = root.ethernetSources;
+        const previous = root._ethernetWrappers;
+        const wrappers = ({});
+        const devices = [];
+        const stale = [];
+        // Two wired entries can share an interface name, and the synthesized
+        // record has no interface at all, so the fallback key can repeat too.
+        // Pair each key with its occurrence within this sync, or the second
+        // entry would alias the first one's wrapper and stay untracked. The
+        // pair is serialized as a tuple, so no interface name (even one that
+        // looks like a suffixed key) can collide with another entry.
+        const seen = new Map();
+        let changed = sources.length !== root._ethernetDevices.length;
+
+        for (let i = 0; i < sources.length; i++) {
+            const raw = sources[i];
+            const base = root.ethernetKey(raw);
+            const occurrence = seen.get(base) ?? 0;
+            seen.set(base, occurrence + 1);
+            // The ordinary single-entry case is occurrence 0 and still
+            // reuses its wrapper across syncs.
+            const key = JSON.stringify([base, occurrence]);
+            let device = previous[key];
+            if (!device) {
+                device = root.ethernetDeviceComponent.createObject(null, {
+                    raw: raw
+                });
+                changed = true;
+            } else if (device.raw !== raw) {
+                device.raw = raw;
+            }
+            wrappers[key] = device;
+            devices.push(device);
+            if (root._ethernetDevices[i] !== device)
+                changed = true;
+        }
+
+        for (const key in previous)
+            if (!wrappers[key])
+                stale.push(previous[key]);
+
+        root._ethernetWrappers = wrappers;
+        if (changed)
+            root._ethernetDevices = devices;
+        for (const device of stale)
+            device.destroy();
+    }
+
+    onEthernetSourcesChanged: root.syncEthernet()
+
     readonly property EthernetDevice activeEthernet: root.ethernetDevices.find(device => device.connected) ?? null
 
     // Upstream names consumed by the original popout and by its helpers.

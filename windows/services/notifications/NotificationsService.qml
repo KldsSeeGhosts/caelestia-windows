@@ -80,6 +80,23 @@ QtObject {
     property int mirrorWrites: 0
     property int mirrorDisables: 0
     property bool mirroringApplied: false
+    // Consent observation is independent of active mirroring: the observer
+    // stays applied in Denied/Unavailable so a re-grant is seen with the
+    // notification centre closed.
+    //
+    // Observation lives in the backend for the life of the process, not of this
+    // object, so this object cannot rely on its own flag to know the backend's
+    // state. It owns observation by generation: it claims a token from the
+    // backend, every write carries it, and the backend ignores a write from a
+    // superseded token. A replacement therefore always states its desired state
+    // explicitly on its first reconcile, and an outgoing object's late disable
+    // (teardown, reload) can no longer switch off its replacement's observation.
+    // observationApplied only caches what this token last wrote.
+    property int observationWrites: 0
+    property bool observationApplied: false
+    property int observationToken: 0
+    property var observationBackend: null
+    property bool observationSynced: false
     property int deniedPolls: 0
     property bool deniedPollExhausted: false
     property int mirroredCount: 0
@@ -167,6 +184,7 @@ QtObject {
             root.probeExistingAccess();
             return;
         }
+        root.disableObservation();
         root.disableMirroring();
         for (const record of root.list.slice()) {
             record.closed = true;
@@ -427,11 +445,11 @@ QtObject {
         root.settingsOpenRequests++;
     }
 
-    // Mirroring is reconciled in both directions. An applied mirror is
-    // withdrawn when access is lost, the mirror opt-in is removed, the backend
-    // becomes unavailable or the service is disabled — the disable write also
-    // stops the backend's own ten-second access polling. Re-granted access
-    // re-enables it with one fresh write, and no state writes repeatedly.
+    // Consent observation and active mirroring are reconciled separately. The
+    // observer runs while the user has the feature opted in and a usable owner
+    // backend exists, in every access state, so a re-grant is noticed with the
+    // notification centre closed. Active mirroring (and therefore banner
+    // suppression) follows the observed Allowed status.
     //
     // Property-change handlers can run before dependent bindings (mirrorStaged,
     // accessState) have re-evaluated, so the desired state is recomputed from
@@ -440,7 +458,23 @@ QtObject {
         const backend = root.backend;
         const staged = root.enabled && root.mirrorOptIn && root.backendError === ""
             && !!backend && backend?.ownership !== "contended";
-        const desired = staged && backend?.ready === true
+        const usable = staged && backend?.ready === true;
+
+        if (!usable) {
+            // A running service always states that it is not observing (its
+            // first reconcile includes this), so a replacement that is opted
+            // out switches off whatever its predecessor left behind.
+            if (root.enabled && backend)
+                root.syncObservation(false);
+            else
+                root.disableObservation();
+            root.disableMirroring();
+            return;
+        }
+
+        root.syncObservation(true);
+
+        const desired = usable
             && root.reportedAccess === 2
             && (root.useExistingAccess || root.consentRequested || backend?.accessRequested === true);
 
@@ -450,12 +484,57 @@ QtObject {
         }
         if (root.mirroringApplied)
             return;
-        if (!backend || typeof backend.setMirroring !== "function")
+        if (typeof backend.setMirroring !== "function")
             return;
 
         root.mirrorWrites++;
         root.mirroringApplied = true;
         backend.setMirroring(true);
+    }
+
+    // Writes the desired observation state under this object's generation. The
+    // first write to a backend claims a new generation and is always sent, even
+    // when the desired state is "off"; after that only changes are written.
+    function syncObservation(wanted): void {
+        const backend = root.backend;
+        if (!backend || typeof backend.claimAccessObservation !== "function"
+                || typeof backend.setAccessObservation !== "function")
+            return;
+
+        if (root.observationBackend !== backend) {
+            root.observationToken = backend.claimAccessObservation();
+            root.observationBackend = backend;
+            root.observationSynced = false;
+        }
+        if (root.observationSynced && root.observationApplied === wanted)
+            return;
+
+        root.observationSynced = true;
+        root.observationApplied = wanted;
+        if (wanted)
+            root.observationWrites++;
+        backend.setAccessObservation(wanted, root.observationToken);
+    }
+
+    // Stops observation only for a generation this object has actually claimed;
+    // an object that never wrote has nothing to stop.
+    function disableObservation(): void {
+        if (root.observationBackend !== null && root.observationBackend === root.backend)
+            root.syncObservation(false);
+    }
+
+    // Gives up this object's generation: used when the backend is replaced and
+    // when the object is destroyed. The backend refuses it if a newer holder has
+    // claimed since, so a late teardown cannot disable the new holder.
+    function releaseObservation(): void {
+        const held = root.observationBackend;
+        const token = root.observationToken;
+        root.observationBackend = null;
+        root.observationToken = 0;
+        root.observationSynced = false;
+        root.observationApplied = false;
+        if (held && token !== 0 && typeof held.setAccessObservation === "function")
+            held.setAccessObservation(false, token);
     }
 
     function disableMirroring(): void {
@@ -467,10 +546,30 @@ QtObject {
             root.backend.setMirroring(false);
     }
 
-    // The pinned backend performs the bounded five-second claim retry in C++
-    // (server.cpp claimSession), but exposes no claim/ownership property to
-    // QML. Values other than the known set are therefore "unknown" and never
-    // guessed into "owner" or "contended".
+    // Ownership is real mutex ownership. A contended shell stops observing and
+    // mirroring; becoming owner runs the same start pass as a fresh shell:
+    // probe existing consent, re-observe, and reconcile mirroring/suppression.
+    function handleOwnershipChange(): void {
+        // Read the backend value directly: this handler can run before the
+        // computed ownership/contended bindings have re-evaluated.
+        const value = root.backend?.ownership;
+        if (value === "contended") {
+            root.disableObservation();
+            root.disableMirroring();
+            root.refreshAccess();
+            return;
+        }
+        if (value !== "owner")
+            return;
+        root.accessProbeBackend = null;
+        root.probeExistingAccess();
+        root.refreshAccess();
+    }
+
+    // The backend publishes real session-bus ownership: "owner" once its lock
+    // thread holds the mutex and "contended" while another shell owns it
+    // (server.cpp claimSession). Values outside the known set are "unknown"
+    // and never guessed into "owner" or "contended".
     readonly property string ownership: {
         const value = backend?.ownership;
         return value === "owner" || value === "contended" || value === "forwarding"
@@ -537,7 +636,7 @@ QtObject {
     }
 
     readonly property string ownershipNote: ownershipKnown
-        ? "" : "The pinned backend does not publish session-bus ownership; its five-second claim retry stays inside the backend."
+        ? "" : "The Windows notification backend has not reported session-bus ownership yet."
 
     // ---- Records and the preserved Notifs contract ------------------------
 
@@ -574,13 +673,19 @@ QtObject {
             root.refreshAccess();
             root.probeExistingAccess();
         }
+
+        function onOwnershipChanged(): void {
+            root.handleOwnershipChange();
+        }
     }
 
     onBackendChanged: {
         root.accessProbeBackend = null;
+        root.releaseObservation();
         root.refreshAccess();
         root.probeExistingAccess();
     }
+    Component.onDestruction: root.releaseObservation()
     // Removing the mirror opt-in or a backend component failure must reconcile
     // mirroring immediately, not only on the next access signal.
     onMirrorOptInChanged: {
@@ -1733,6 +1838,6 @@ QtObject {
         // Restored history has no backend notification to invoke. Keep the
         // original object shape and consume the action without a process call.
         if (record && record.service)
-            console.log("Caelestia notifications: historical action consumed:", identifier);
+            console.log("Caelestia notifications: historical action consumed");
     }
 }
