@@ -146,7 +146,7 @@ try {
     Write-Output $output
 
     # The assertion count is part of the marker: dropping a scenario must fail.
-    $marker = [regex]::Match($output, 'CAELESTIA_WALLPAPER_COLOURS_PASS 30\b')
+    $marker = [regex]::Match($output, 'CAELESTIA_WALLPAPER_COLOURS_PASS 35\b')
     if ($process.ExitCode -ne 0 -or -not $marker.Success -or
         $output -match 'CAELESTIA_WALLPAPER_COLOURS_FAIL|TypeError|ReferenceError|binding loop') {
         throw 'Wallpaper colours fixture failed.'

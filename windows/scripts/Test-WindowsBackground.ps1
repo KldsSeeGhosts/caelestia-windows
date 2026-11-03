@@ -6,6 +6,7 @@ $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
 $runner = Join-Path $QtPrefix 'bin\qml.exe'
 if (-not (Test-Path -LiteralPath $runner -PathType Leaf)) { throw "Missing QML runner: $runner" }
 $background = Get-Content -LiteralPath (Join-Path $repoRoot 'windows\shell\adapters\modules\background\WindowsBackground.qml') -Raw
+$engine = Get-Content -LiteralPath (Join-Path $repoRoot 'windows\services\wallpaperengine\WallpaperEngine.qml') -Raw
 $fixture = Get-Content -LiteralPath (Join-Path $repoRoot 'windows\tests\WindowsBackgroundTest.qml') -Raw
 
 function Get-UniqueMatch([string]$Text, [string]$Pattern) {
@@ -22,26 +23,30 @@ $icons = Get-UniqueMatch $background '(?m)^    readonly property string desktopI
 $reconcile = Get-UniqueMatch $background '(?ms)^    function reconcileDesktop\(\): void \{.*?^    \}'
 $underlay = Get-UniqueMatch $background '(?ms)^    onUnderlayActiveChanged: \{.*?^    \}'
 $ready = Get-UniqueMatch $background '(?ms)^    function checkReady\(screen: ShellScreen\): bool \{.*?^    \}'
+# The ownership claim is production state, not a fixture copy. Splice the
+# WallpaperEngine block so a process-still-running handback fails here if the
+# claim is not released or a refused embed starts releasing it.
+$ownership = Get-UniqueMatch $engine '(?ms)^    // WINDOWS_DESKTOP_OWNERSHIP_BEGIN.*?^    // WINDOWS_DESKTOP_OWNERSHIP_END'
+$ownership = $ownership -replace '(?m)^    // WINDOWS_DESKTOP_OWNERSHIP_(?:BEGIN|END)\r?\n?', ''
+$ownership = $ownership.Replace('Native.DesktopLayer', 'root.nativeLayer')
+$ownership = ($ownership -split "\r?\n" | ForEach-Object {
+    if ($_ -eq '') { $_ } else { '    ' + $_ }
+}) -join "`n"
 
 # Host discovery must re-run for every input that decides whether the backend
-# embeds this window, including the first scan before any underlay exists and
-# the icon embedding when an external owner starts or stops. The external
-# owner handler is a block: it also releases the desktop claim when the
-# process is gone, so the next process starts fail-closed. The refusal handler
-# withdraws the claim when a panel could not be embedded, which is not a
-# handback.
-$handlers = foreach ($trigger in @('onBackgroundRequestedChanged', 'onDesktopIconsChanged')) {
+# embeds this window, including the first scan before any underlay exists, the
+# icon embedding when an external owner starts or stops, and the handback.
+$handlers = foreach ($trigger in @('onBackgroundRequestedChanged', 'onExternalActiveChanged', 'onDesktopIconsChanged')) {
     Get-UniqueMatch $background "(?m)^    $([regex]::Escape($trigger)): reconcileDesktop\(\)\r?$"
 }
-$externalHandler = Get-UniqueMatch $background '(?ms)^    onExternalActiveChanged: \{.*?^    \}'
-$refusalHandler = Get-UniqueMatch $background '(?ms)^    onEmbedRefusedChanged: \{.*?^    \}'
-$null = Get-UniqueMatch $background '(?ms)^    Component\.onCompleted: \{.*?^    \}'
+$null = Get-UniqueMatch $background '(?ms)^    Component\.onCompleted: reconcileDesktop\(\)\r?$'
 
 # Map production singletons onto fixture properties. `enabled` is renamed to
 # avoid overriding the Item property that reads it.
 $properties = $properties.Replace('Quickshell.env', 'root.environment.env')
 $properties = $properties.Replace('Native.DesktopLayer', 'root.nativeLayer')
 $properties = $properties.Replace('Wallpapers.externalWallpaperActive', 'root.wallpapers.externalWallpaperActive')
+$properties = $properties.Replace('WallpaperEngine', 'root.wallpaperEngine')
 $properties = $properties.Replace('readonly property bool enabled:', 'readonly property bool hostEnabled:')
 $screens = $screens.Replace('screens: enabled &&', 'screens: hostEnabled &&')
 # Item has no `screens`; declare the production binding on the fixture root.
@@ -53,8 +58,6 @@ $screens = $screens.Replace('Quickshell.screens', 'root.quickshellScreens')
 $icons = $icons.Replace('Quickshell.env', 'root.environment.env')
 $reconcile = $reconcile.Replace('Native.DesktopLayer', 'root.nativeLayer')
 $reconcile = $reconcile.Replace('Wallpapers.externalWallpaperActive', 'root.wallpapers.externalWallpaperActive')
-$externalHandler = $externalHandler.Replace('Wallpapers.externalWallpaperActive', 'root.wallpapers.externalWallpaperActive')
-$refusalHandler = $refusalHandler.Replace('Native.DesktopLayer', 'root.nativeLayer')
 $underlay = $underlay.Replace('WallpaperEngine', 'root.wallpaperEngine')
 $underlay = $underlay.Replace('Native.DesktopLayer', 'root.nativeLayer')
 $ready = $ready.Replace('screen: ShellScreen', 'screen')
@@ -67,7 +70,8 @@ $ready = $ready.Replace('Wallpapers.current', 'root.wallpapers.current')
 
 $fixture = $fixture.Replace('    // WINDOWS_BACKGROUND_PROPERTIES', (($properties.TrimEnd(), $icons.TrimEnd()) -join "`n"))
 $fixture = $fixture.Replace('    // WINDOWS_BACKGROUND_SCREENS', $screens.TrimEnd())
-$fixture = $fixture.Replace('    // RECONCILE_DESKTOP', (($reconcile.TrimEnd(), ($handlers -join "`n"), $externalHandler.TrimEnd(), $refusalHandler.TrimEnd()) -join "`n"))
+$fixture = $fixture.Replace('        // WINDOWS_BACKGROUND_OWNERSHIP', $ownership.TrimEnd())
+$fixture = $fixture.Replace('    // RECONCILE_DESKTOP', (($reconcile.TrimEnd(), ($handlers -join "`n")) -join "`n"))
 $fixture = $fixture.Replace('    // UNDERLAY_HANDLER', $underlay.TrimEnd())
 $fixture = $fixture.Replace('    // CHECK_READY', $ready.TrimEnd())
 
@@ -124,21 +128,21 @@ try {
     }
 
     # The handback state is explicit: the process is still alive, the backend
-    # has withdrawn the underlay, and the shell's own screens and instances are
-    # mounted again. This guards the #214 sequence even if assertion counts
-    # later shift.
+    # has withdrawn the underlay, the ownership guard has released the external
+    # claim, and the shell's own wallpaper and screens are mounted again. This
+    # guards the #214 sequence even if assertion counts later shift.
     $handback = [regex]::Match($output,
-        'CAELESTIA_BACKGROUND_HANDBACK_STATE \{"external":true,"underlay":false,"host":true,"screens":2,"instances":1\}')
+        'CAELESTIA_BACKGROUND_HANDBACK_STATE \{"external":false,"underlay":false,"host":true,"screens":2,"instances":1,"ownWallpaper":true\}')
     if (-not $handback.Success) { throw 'Missing the restored background handback state.' }
 
     # The assertion count is part of the marker: a scenario silently dropped
     # from the fixture must fail the run, not just shrink the number.
-    $marker = [regex]::Match($output, 'CAELESTIA_BACKGROUND_UNDERLAY_PASS 91\b')
+    $marker = [regex]::Match($output, 'CAELESTIA_BACKGROUND_UNDERLAY_PASS 92\b')
     if ($exitCode -ne 0 -or -not $marker.Success -or
         $output -match 'CAELESTIA_BACKGROUND_UNDERLAY_FAIL|TypeError|ReferenceError|binding loop') {
         throw 'Windows background fixture failed.'
     }
-    Write-Output 'PASS background underlay: 91 assertions across the acknowledged, refused and legacy backends.'
+    Write-Output 'PASS background underlay: 92 assertions across the acknowledged, refused, handback and legacy backends.'
 } finally {
     $safeStage = [IO.Path]::GetFullPath($stage).TrimEnd('\')
     if ((Split-Path -Parent $safeStage) -ne [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\') -or

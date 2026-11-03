@@ -3,6 +3,7 @@ pragma Singleton
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import Quickshell.Windows as Native
 import qs.services
 
 Singleton {
@@ -23,7 +24,65 @@ Singleton {
     // Yield before discovery when a helper is configured, and keep yielding
     // to a known running process even if integration is disabled. Startup
     // scan failure falls back to the shell; it cannot prove WE is absent.
-    readonly property bool ownsDesktop: !snapshotReady || running
+    //
+    // WINDOWS_DESKTOP_OWNERSHIP_BEGIN
+    // #214: a detected process is an ownership claim, not proof of ownership.
+    // The backend acknowledges the underlay only while a visible wallpaper
+    // window is inside the desktop host. Wallpaper Engine keeps running after
+    // its wallpaper is closed, though: the window leaves the host while
+    // wallpaper64.exe stays alive, and the process scan alone would keep
+    // claiming a desktop nobody owns. Once the backend has acknowledged the
+    // underlay, a genuine withdrawal (no refused embed, no above-icons embed,
+    // host still active) releases the claim so the shell's own wallpaper is
+    // visible again. A new process, a refused embed or a lost host stays
+    // fail-closed until a fresh acknowledgement.
+    readonly property bool underlaySupported: "underlayActive" in Native.DesktopLayer
+    readonly property bool underlayActive: underlaySupported && Native.DesktopLayer.underlayActive
+    readonly property bool embedRefusedSupported: "embedRefused" in Native.DesktopLayer
+    readonly property bool embedRefused: embedRefusedSupported && Native.DesktopLayer.embedRefused
+    property bool desktopClaimed: false
+    property bool desktopHandedBack: false
+    readonly property bool ownsDesktop: !snapshotReady || (running && !desktopHandedBack)
+    onRunningChanged: {
+        // A new engine process has no claim yet. Fail closed until the
+        // backend finds its wallpaper window in the desktop host.
+        desktopClaimed = running && underlayActive;
+        desktopHandedBack = false;
+    }
+    onUnderlayActiveChanged: {
+        if (underlayActive) {
+            desktopClaimed = true;
+            desktopHandedBack = false;
+        } else if (embedRefusedSupported && desktopClaimed && !embedRefused
+                   && Native.DesktopLayer.enabled && Native.DesktopLayer.active
+                   && Native.DesktopLayer.aboveIcons.length === 0) {
+            // The acknowledged wallpaper window left the host while the
+            // process keeps running: a genuine handback. A refusal or our own
+            // above-icons embed is not, and stays fail-closed. Release the
+            // claim before clearing the acknowledgement so the adapter never
+            // sees externalActive still true with underlayActive false.
+            desktopHandedBack = true;
+            desktopClaimed = false;
+        }
+    }
+    onEmbedRefusedChanged: {
+        // A refused SetParent leaves a panel top level. Never keep a stale
+        // claim through it; only a fresh acknowledgement restores the claim.
+        if (embedRefused) {
+            desktopClaimed = false;
+            desktopHandedBack = false;
+        } else if (underlayActive) {
+            desktopClaimed = true;
+            desktopHandedBack = false;
+        }
+    }
+    function seedDesktopClaim(): void {
+        // A QML reload keeps the native host and its acknowledgement; start
+        // claimed so a handback after the reload is not mistaken for startup.
+        desktopClaimed = underlayActive;
+        desktopHandedBack = false;
+    }
+    // WINDOWS_DESKTOP_OWNERSHIP_END
     property string status: python ? "discovering" : "unavailable"
     property string lastError: ""
     property string configPath: ""
@@ -189,7 +248,10 @@ Singleton {
         if (enabled)
             refresh(false);
     }
-    Component.onCompleted: refresh(false)
+    Component.onCompleted: {
+        seedDesktopClaim();
+        refresh(false);
+    }
 
     FileView {
         path: Quickshell.env("CAELESTIA_CONFIG_DIR") + "/windows.json"

@@ -28,8 +28,14 @@ QtObject {
         property bool enabled: true
         property bool running: false
         property bool snapshotReady: false
+        // The production ownership guard releases this on a handback while
+        // the process keeps running (#214).
+        property bool handedBack: false
+        property bool ownsDesktop: running && !handedBack
         property var current: null
     }
+    // The ownership claim, not the bare process, selects the visible image.
+    property bool externalWallpaperActive: root.engine.ownsDesktop
     property QtObject schemeGenerator: QtObject {
         property bool available: true
         signal schemeChanged()
@@ -212,6 +218,20 @@ QtObject {
             root.fileCurrent = "C:/walls/second.jpg";
             check(root.runs === before + 2, "the wallpaper change after a fresh profile did not regenerate once: " + (root.runs - before));
             check(root.schemeSource === "C:/walls/second.jpg", "the regeneration did not record its source");
+
+            // #214: a process-still-running handback releases the external
+            // claim. The visible desktop and its palette must switch to the
+            // shell's own wallpaper instead of the external preview.
+            root.engine.current = { path: "C:/we/project.json", preview: "C:/we/preview.jpg" };
+            root.engine.handedBack = false;
+            root.engine.running = true;
+            check(root.currentImage === "C:/we/preview.jpg", "the acknowledged underlay did not use the external preview");
+            check(root.lastCall().path === "C:/we/preview.jpg", "the acknowledged underlay did not regenerate from the preview");
+            const handbackCalls = root.calls.length;
+            root.engine.handedBack = true;
+            check(root.currentImage === root.fileCurrent, "the handback did not switch to the shell's own wallpaper");
+            check(root.calls.length === handbackCalls + 1, "the handback did not regenerate exactly once");
+            check(root.lastCall().path === root.fileCurrent, "the handback palette used the external preview");
 
             console.log("CAELESTIA_WALLPAPER_COLOURS_PASS " + root.assertions);
             Qt.quit();
