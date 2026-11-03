@@ -50,8 +50,26 @@ Singleton {
         return raw.map(normalize).filter(entry => entry !== null);
     }
     property bool previewColourLock: false
+    // Single owner of wallpaper-derived colours: Wallpaper Engine quitting or
+    // relaunching, a Windows wallpaper change and the picker all move
+    // currentImage. Fixed schemes are never overwritten; one image is applied
+    // once. The initial binding must not regenerate, because the persisted
+    // scheme already matches the image.
+    property bool paletteReady: false
+    property string paletteImage: ""
 
-    Component.onCompleted: reload()
+    Component.onCompleted: {
+        reload();
+        paletteReady = true;
+    }
+    onCurrentImageChanged: applyPalette()
+
+    function applyPalette(): void {
+        if (!paletteReady || !SchemeGenerator.available || Colours.scheme !== "dynamic" || currentImage === paletteImage)
+            return;
+        paletteImage = currentImage;
+        SchemeGenerator.applyWallpaper(currentImage, GlobalConfig.services.smartScheme);
+    }
 
     // Paths.wallsdir can change once after startup, when the background probe
     // finds the wallpapers in the legacy folder; scan again for the new folder.
@@ -105,10 +123,8 @@ Singleton {
         if (ok) {
             fileCurrent = local;
             stopPreview();
+            // The fileCurrent change above regenerates a dynamic palette.
             if (SchemeGenerator.available) {
-                // The picker always produces the wallpaper-derived dynamic
-                // scheme; the bridge writes scheme.json and Colours reloads it.
-                SchemeGenerator.applyWallpaper(local, GlobalConfig.services.smartScheme);
                 Toaster.toast("Wallpaper", "Desktop wallpaper changed. Generating colours.", "palette");
             } else {
                 Toaster.toast("Wallpaper", "Desktop wallpaper changed. Dynamic colours are unavailable.", "wallpaper");

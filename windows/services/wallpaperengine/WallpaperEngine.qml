@@ -3,7 +3,6 @@ pragma Singleton
 import QtQuick
 import Quickshell
 import Quickshell.Io
-import Caelestia.Config
 import qs.services
 
 Singleton {
@@ -34,11 +33,7 @@ Singleton {
     readonly property var current: monitors[monitor] ?? null
     readonly property string picker: !enabled ? "files" : ["engine", "files", "both"].includes(options.picker)
         ? options.picker : (running && detected && enabled ? "engine" : "files")
-    property string lastPaletteKey: ""
     property string actionProject: ""
-    // Wallpaper titles and file paths are user content (#116): anything
-    // identifying goes to the log only behind an explicit opt-in.
-    readonly property bool debugLogging: Quickshell.env("CAELESTIA_WE_DEBUG") === "1"
     // Full snapshots parse every workshop project.json, so idle polls run the
     // cheap status mode and escalate only when something changed (#125).
     property bool haveSnapshot: false
@@ -116,7 +111,6 @@ Singleton {
         snapshotReady = true;
         status = !enabled ? "disabled" : running && detected ? "ready" : "absent";
         lastError = "";
-        matchColours();
     }
 
     function applyDiscoveryFailure(data): void {
@@ -150,18 +144,6 @@ Singleton {
         lastError = "";
     }
 
-    function matchColours(): void {
-        if (!enabled || !detected || !running || !current?.preview || !SchemeGenerator.available)
-            return;
-        const key = current.path + "|" + current.preview + "|" + GlobalConfig.services.smartScheme;
-        if (key === lastPaletteKey)
-            return;
-        lastPaletteKey = key;
-        SchemeGenerator.applyWallpaper(current.preview, GlobalConfig.services.smartScheme);
-        if (debugLogging)
-            console.log("CAELESTIA_WE_CURRENT", JSON.stringify({monitor: monitor}));
-    }
-
     function open(path: string): bool {
         if (!controlsEnabled || action.running || !/^Monitor\d+$/.test(monitor) || !items.some(item => item.path === path))
             return false;
@@ -170,16 +152,12 @@ Singleton {
         return true; // Request accepted; config watcher confirms actual selection.
     }
 
-    onCurrentChanged: matchColours()
     onEnabledChanged: {
-        lastPaletteKey = "";
         // Disabling stops the idle timer; re-enabling must not wait for its
         // backed-off interval before the first scan.
         if (enabled)
             refresh(false);
-        matchColours();
     }
-    onRunningChanged: { lastPaletteKey = ""; matchColours(); }
     Component.onCompleted: refresh(false)
 
     FileView {
@@ -229,15 +207,6 @@ Singleton {
                 root.scanFailed("wallpaper engine scan timed out");
             }
         }
-    }
-    Connections {
-        target: SchemeGenerator
-        function onFailed(message: string): void { root.lastPaletteKey = ""; }
-        function onAvailableChanged(): void { root.matchColours(); }
-    }
-    Connections {
-        target: GlobalConfig.services
-        function onSmartSchemeChanged(): void { root.matchColours(); }
     }
     Process {
         id: scan
