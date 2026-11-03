@@ -13,7 +13,7 @@ QtObject {
     property QtObject unpluggedRecord: null
 
     // Strict-capable model of the backend the adapter is written against:
-    // the pinned strict-route members (525786f,
+    // the strict-route members (introduced at 525786f,
     // src/windows/system/brightness.cpp) plus the id-carrying query API
     // (queryRequest/queryFinished). Timing and argument order come from the
     // native source, so the adapter is exercised against realistic completion
@@ -29,8 +29,8 @@ QtObject {
     //     brightness), with isDdc true only for the ddc and software routes.
     //     The plain query() queues an id-less completion that emits
     //     routeChanged and queried only.
-    //   - queryIdsSupported false removes queryRequest, modeling the pinned
-    //     525786f backend, which carries the strict members but no ids.
+    //   - queryIdsSupported false removes queryRequest, modeling an older
+    //     backend (525786f), which carries the strict members but no ids.
     //   - A hardware write completes QUEUED: brightnessSetFinished(ok) and
     //     then exactly one brightnessWriteResult(value, ok, route, error),
     //     with the per-screen in-flight bookkeeping finalized before the
@@ -71,7 +71,7 @@ QtObject {
         property int strictRefusals: 0
         property int strictDisableAttempts: 0
         property bool sawStrictAtWrite: false
-        // The id-carrying query API. False models the pinned 525786f backend.
+        // The id-carrying query API. False models the older 525786f backend.
         property bool queryIdsSupported: true
         // Stored routes; a name absent from the map or mapped to "" is
         // unresolved, exactly like the native BrightnessRoute default.
@@ -378,7 +378,7 @@ QtObject {
     readonly property FakeBackend swapBackendA: FakeBackend {}
     readonly property FakeBackend swapBackendB: FakeBackend {}
     readonly property BrightnessService noId: BrightnessService {}
-    // The pinned 525786f shape: strict members present, query ids absent.
+    // The older 525786f shape: strict members present, query ids absent.
     readonly property FakeBackend noIdBackend: FakeBackend { queryIdsSupported: false }
     readonly property BrightnessService hdrCase: BrightnessService {}
     readonly property FakeBackend hdrBackend: FakeBackend {}
@@ -1427,7 +1427,7 @@ QtObject {
             "the swapped record holds B's level, never A's 0.2");
 
         // --- The no-id backend stays read-only --------------------------------
-        // The pinned 525786f shape: strict members present, query ids absent.
+        // The older 525786f shape: strict members present, query ids absent.
         // Queries still update read-only display state, but no result can
         // authorize a hardware write or interactive control.
         check(typeof noIdBackend.queryRequest === "undefined",

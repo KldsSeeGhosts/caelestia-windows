@@ -50,13 +50,11 @@ Backend paths in this section are relative to `windows/deps/quickshell`.
   capture does not rebind when the same QScreen's native monitor changes.
   Retained capture contexts need explicit invalidation/recreation on topology
   or target-path replacement, including same-model replacement.
-- `src/windows/system/gamma.hpp:63` and the adjacent factor/ramp maps still
-  key dimming factors, floors, saved originals and restoration obligations by
-  friendly name, without target-path invalidation. Same-model monitor
-  replacement can reuse that name and inherit stale factors or saved ramps.
-  Correct CreateDC source lookup does not fix that cache ownership issue;
-  the follow-up must bind these records to physical target identity and define
-  restoration behavior when the old target is gone.
+- `src/windows/system/gamma.hpp` factor/ramp maps were fixed by #241: dimming
+  factors, floors, saved originals and restoration obligations are keyed by the
+  opaque target identity, not by the label, and `CreateDC` resolves through the
+  live screen. A target that is gone is never handed to GDI; its ramp
+  restoration remains owed but cannot be written to a replacement monitor.
 
 A wrong per-monitor Config/Tokens tree can change drawer enablement, dimensions,
 border widths and hover thresholds. Independently, a stale native placement can
@@ -87,6 +85,141 @@ notification for geometry, logical-DPI and physical-DPI changes. The global
 screen list also invalidates on identity changes for imperative consumers.
 Non-Windows screen names still come from Qt. Qt's own model/serial properties
 are not rewritten by this fix.
+
+## Display identity and QML names (#241)
+
+The friendly monitor name is a label, not an identity. `DisplayIdentity` keeps
+these separate concepts:
+
+- `deviceName`: the current GDI source, e.g. `\\.\DISPLAY1`. Qt can reuse it
+  for another physical monitor, so it is only used to join a QScreen to the
+  current DisplayConfig/EnumDisplayDevices record.
+- `stableId`: an interface path when either API supplies one
+  (`DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_NAME` with
+  `DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME`, or EnumDisplayDevices with
+  `EDD_GET_DEVICE_INTERFACE_NAME`), written as `path:...`. This is the only
+  persistent identity. If neither API supplies a path, the id is explicitly
+  session-local: `session:<lifetime>:target:<LUID>:<target>` or
+  `session:<lifetime>:source:<GDI source>`. It is opaque, never shown in QML and
+  never logged raw; every log uses `logId()`.
+- `friendlyName` and `uniqueName`: the display label and the QML-facing name.
+
+### Persisted name reservations
+
+The profile state dir holds `screen-names.json`. It maps each **persistent**
+`stableId` to its assigned name plus optional legacy metadata. The key is the
+unsalted SHA-256 of the id (`sha256:<hex>`), so the file never holds an
+interface path; it is stable across runs, unlike the per-process `logId()`.
+Entries written with a raw `path:` key are rewritten as hashes on first read.
+Names are allocated once, on first discovery:
+
+- the plain label if no reservation already owns it case-insensitively;
+- otherwise the lowest free ` (2)`, ` (3)`... suffix.
+
+Existing assignments are never renumbered, disconnected monitors stay in the
+file for good, and the file is written atomically (`QSaveFile`, temp then
+replace). There is no size cap and nothing is evicted: an entry is about 100
+bytes, so even thousands of monitors stay small, and a name is therefore never
+handed to a different monitor, or the settings stored under it. Each entry
+records the date it was last seen, for diagnostics only. A user who already has
+monitor A alone keeps `X` and its settings when identical monitor B is
+connected; B gets `X (2)`. Removing B never renames A, and a restart reloads the
+same assignments. A genuine label that ends in `(2)` is just a label; it is
+reserved exactly like any other.
+
+If the file exists but cannot be read or parsed, it is left untouched: the
+registry runs on in-memory names for that session, never saves, and logs a fixed
+message without the path.
+
+Session-local ids never enter the reservation file and get a new lifetime token
+when the QScreen is replaced or its target changes behind the same GDI source.
+Their names are reserved in memory for as long as the session id survives, so
+unplugging one of two identical session-only monitors never renames the other;
+only a new session id is allocated a name, and it avoids every persistent name.
+
+A screen's identity is resolved once, when it is discovered, from DisplayConfig
+and EnumDisplayDevices together; the interface path of either source wins. There
+are no live identity upgrades. If a session-only screen later gains a path (for
+example in a remote session) the registry treats it as a removal followed by an
+addition: it emits `identityRetired` for the old id, and the screen then appears
+under its persistent id with a name allocated like any new monitor's. The same
+signal is emitted, before anything is torn down, when a screen leaves the
+topology, so every id is retired the same way.
+
+`identityRetired` is emitted while the id still resolves to the live screen.
+Gamma restores the saved original ramp at that point and then drops its state;
+brightness drops its route, values, queued write, busy state and settle timer.
+Each bumps a per-id lifetime counter, and any worker or native call that was
+started under the old lifetime is dropped when it completes: a write reports
+failure once, a probe reports the request as unavailable, a read-back publishes
+nothing, and a gamma call that spans a retire never records a snapshot or
+ownership (a write that was already running is put back). A monitor that comes
+back with the same persistent id therefore starts clean and is never left busy
+by work from before it left.
+
+`ShellScreen.name` is the unique name. It stays name-shaped for upstream QML
+that compares or displays `screen.name`, but native routing resolves it through
+the registry rather than comparing labels. `displayConfigurationChanged` and
+the global screen list still republish after identity changes.
+
+### Consumer list
+
+| Consumer | Key before | After |
+| --- | --- | --- |
+| `src/windows/system/brightness.cpp` route, last value, generation, in-flight, settle timers | friendly name | persistent `stableId`; everything is dropped when the id is retired (removal, or another identity) and in-flight completions of the old lifetime are discarded. Probes/drives still use the live QScreen's HMONITOR |
+| `src/windows/system/gamma.cpp` backlight/dim factors, floors, saved ramps, restoration set | friendly name | `stableId`; `CreateDC` resolves the live GDI source, never an opaque id. On retire the saved ramp is restored first, then the state is dropped; native calls that span a retire abort |
+| `src/windows/system/night_light.cpp` | friendly name pass-through | unique name resolved by gamma |
+| `src/windows/system/screenshot.cpp`, `screen_recorder.cpp`, `input.cpp`, `desktop_drop.cpp`, `tools/brightness_probe.cpp` | friendly label selection/publication | unique name, resolved through the registry; no label scan |
+| `src/windows/tiling.cpp` `screen:` selectors and `tiling_scope.cpp` | friendly name | unique name; layout ownership remains desktop GUID plus QScreen pointer |
+| `src/windows/hyprland/monitor.cpp` Hypr monitor emulation and `Hypr.monitorFor` | friendly name | unique name; pointer identity is still preferred |
+| `src/windows/panel_window.cpp`, `hyprland/connection.cpp` logs/notifications | friendly name | redacted `logId()` or a unique QML label only |
+| Plugin `Config`, `Tokens`, `PersistentState`, `RuntimeState` per-screen layers (`monitors/<name>/shell.json`, `shell-tokens.json`, `state.json`) | friendly name directory | unique name directory; explicit reservation metadata can copy a legacy plain-label layer once |
+| `services/Screens.qml`, `modules/background/Background.qml`, `WindowsBackground.qml` | `GlobalConfig.forScreen(screen.name)` | same call with the unique name |
+| `components/containers/StyledWindow.qml`, Nexus `WindowFactory.qml`, `LockSurface.qml` | `Config.screen: screen.name` | same, unique name selects its own layer |
+| `modules/bar/BarWrapper.qml` `bar.excludedScreens` | regex against the label | regex against the unique name; an unanchored legacy label regex still matches both `Label` and `Label (2)` |
+| `windows/shell/shell.json` `windows.tiling.monitors` and `include`/`exclude` `screen:` selectors | monitor label | unique name; see the exact-match rule below |
+| `windows/services/brightness/*`, OSD `brightnessFeedback`, IPC `shell.panel(screenName, ...)`, Hypr monitor names | friendly name | unique name; the backend resolves it to the target |
+| Wallpaper and background per-screen enablement/clock/wallpaper settings | `Config`/`Tokens` layer by name | unique name layer, with the legacy copy above |
+| `windows/shell/shell.qml` `State`/`backgroundScreens` diagnostics | label | unique name (label with a suffix only on collision) |
+
+### Tiling screen selectors are exact
+
+`ScopeRules::compile()` uses `NonPathWildcardConversion`, so the generated
+regular expression is anchored. `screen:Generic Monitor` matches **only** the
+plain name; it does not match `Generic Monitor (2)`. To target a suffixed
+monitor, write its exact unique name, e.g. `screen:Generic Monitor (2)`. To
+target both, use a wildcard, e.g. `screen:Generic Monitor*`. The same applies to
+`windows.tiling.monitors` keys, which are converted to `screen:<key>` patterns:
+a legacy `Generic Monitor` key excludes only the monitor that owns the plain
+name, not its suffixed sibling. Bar `excludedScreens` is a regex, so its
+patterns are unanchored unless the user adds `^`/`$`.
+
+### Legacy migration is metadata-driven
+
+When the backend allocates a generated suffix for the first time and
+`monitors/<plain label>/` already exists, the reservation records
+`legacyLabel: <plain label>`. There is no string inference: a genuine label such
+as `Other Monitor (2)` never triggers a copy.
+
+The plugin's `LayerRegistry` reads that reservation by name, copies the legacy
+file once, and records the completed layer in `legacyCopied` in the
+reservation. A layer is identified by its storage area and file, not the file
+name alone: `config/shell.json`, `config/shell-tokens.json`,
+`state/persistent/state.json` and `state/runtime/state.json`, so copying one
+never stops another from migrating. The old directory is never moved, rewritten
+or deleted. A deleted destination is not recopied, because completion is
+recorded independently of the destination.
+
+Copy and record are one step. The record is opened for writing before the copy
+and committed after it. If the commit fails, the copied file stays and the
+failure is remembered for the session, so the copy is not repeated; an unreadable
+record is never overwritten. Failures are logged as a count only. The logic is
+inert outside Windows and without reservation metadata.
+
+A legacy `monitors/<plain label>/` directory was shared by every monitor with
+that label; it cannot reveal which physical monitor owned the settings. The copy
+is a convenience so existing settings are not lost, not recovered ownership. Both
+screens may start with the same settings and then diverge.
 
 ## Validation and integration
 

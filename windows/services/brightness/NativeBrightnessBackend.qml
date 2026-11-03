@@ -7,25 +7,25 @@ import Quickshell.Windows
 // until query()/probe() is invoked. query() and probe() are deferred to the
 // backend's after-first-frame hook when called during startup.
 //
-// The shared build is at a pin with the strict-route members but without the
-// id-carrying query API. strictSupported is true there while queryIdsSupported
-// stays false: queryRequest remains undefined, which is what the adapter
-// feature-detects, so unmatched query results only ever feed read-only
-// display state and the controls gate stays closed. Once the gitlink moves,
-// the same wrapper forwards queryRequest()/queryFinished() unchanged.
+// The pinned backend provides the strict-route members and the id-carrying
+// query API, so strictSupported and queryIdsSupported are both true and this
+// wrapper forwards queryRequest()/queryFinished() unchanged. Both are still
+// feature-detected rather than assumed, so a backend without them (an older
+// build) leaves queryRequest undefined: unmatched query results then only feed
+// read-only display state and the controls gate stays closed.
 QtObject {
     id: root
 
     readonly property string backendId: "Quickshell.Windows.Brightness"
     readonly property bool strictSupported: typeof Brightness.strictRoutes === "boolean"
         && typeof Brightness.brightnessWriteResult === "function"
-    // Deliberately a `var`: undefined when the pinned native singleton lacks
-    // the strict API, which is exactly what the adapter feature-detects.
+    // Deliberately a `var`: undefined when the native singleton lacks the
+    // strict API, which is exactly what the adapter feature-detects.
     property var strictRoutes: strictSupported ? Brightness.strictRoutes : undefined
     // The native singleton is process-wide and survives a wrapper reload, so
-    // request ids it issues are process-unique and strictly increasing. At a
-    // pin without queryRequest this stays undefined and the adapter keeps the
-    // controls read-only rather than guessing which request a result answers.
+    // request ids it issues are process-unique and strictly increasing. Without
+    // queryRequest (an older build) this stays undefined and the adapter keeps
+    // the controls read-only rather than guessing which request a result answers.
     readonly property bool queryIdsSupported: typeof Brightness.queryRequest === "function"
     // Deliberately a `var` like strictRoutes: a callable when supported,
     // undefined otherwise, matching the adapter's feature detection.

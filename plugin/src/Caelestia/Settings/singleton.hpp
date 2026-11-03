@@ -29,7 +29,8 @@
 
 // Handler provides static loaded(Root*, screen), loadFailed(error, screen) and saveFailed(error, screen);
 // screen is empty for the global layer.
-#define SETTINGS_SINGLETON_IMPL(Type, Root, dir, monitorDir, file, Handler)                                            \
+// area names the storage area of the per-screen layers for legacy-copy bookkeeping, as in LayerRegistry.
+#define SETTINGS_SINGLETON_IMPL(Type, Root, dir, monitorDir, area, file, Handler)                                      \
     Type* Type::instance() {                                                                                           \
         static Type instance;                                                                                          \
         return &instance;                                                                                              \
@@ -50,7 +51,7 @@
                                                                                                                        \
     Type::Type(QObject* parent)                                                                                        \
         : Root(dir + u'/' + file, nullptr, parent)                                                                     \
-        , m_layers(monitorDir, file, this) {                                                                           \
+        , m_layers(monitorDir, area, file, this) {                                                                     \
         initLayer(this);                                                                                               \
     }                                                                                                                  \
                                                                                                                        \

@@ -85,9 +85,9 @@ TokensRoot::~TokensRoot() {
     flushPending();
 }
 
-SETTINGS_SINGLETON_IMPL(ConfigSingleton, ConfigRoot, configDir(), monitorConfigDir(), u"shell.json"_s,
+SETTINGS_SINGLETON_IMPL(ConfigSingleton, ConfigRoot, configDir(), monitorConfigDir(), u"config"_s, u"shell.json"_s,
     detail::Handler<detail::ConfigKind::Shell>)
-SETTINGS_SINGLETON_IMPL(TokensSingleton, TokensRoot, configDir(), monitorConfigDir(), u"shell-tokens.json"_s,
-    detail::Handler<detail::ConfigKind::Tokens>)
+SETTINGS_SINGLETON_IMPL(TokensSingleton, TokensRoot, configDir(), monitorConfigDir(), u"config"_s,
+    u"shell-tokens.json"_s, detail::Handler<detail::ConfigKind::Tokens>)
 
 } // namespace caelestia::shell::config
