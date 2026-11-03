@@ -174,8 +174,9 @@ ShellRoot {
         target: "displays"
 
         function off(): bool {
-            if (root.displayOffPending)
-                return false;
+            // A direct IPC call has no dispatched keybind, so the backend
+            // returns false for it even while a keybind wait is pending; it
+            // also cancels that wait, and the send below happens at once.
             if (Native.Hotkeys.beginChordReleaseWait()) {
                 root.displayOffPending = true;
                 return true;

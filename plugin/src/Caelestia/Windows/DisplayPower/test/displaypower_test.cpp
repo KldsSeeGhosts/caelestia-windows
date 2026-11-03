@@ -55,6 +55,7 @@ private slots:
     void senderSendsOneExactMonitorPowerCommand();
     void actionSendsImmediatelyWithoutScheduling();
     void everyRequestSendsOnce();
+    void directRequestSendsWhileAChordWaitIsPending();
     void senderFailureIsReported();
     void invalidWindowsAreRefused();
     void cleanupTestCase();
@@ -133,6 +134,26 @@ void DisplayPowerTest::everyRequestSendsOnce() {
     QCOMPARE(calls, 2);
 
     QVERIFY(DestroyWindow(owner));
+}
+
+void DisplayPowerTest::directRequestSendsWhileAChordWaitIsPending() {
+    // A keybind request may be waiting on its chord; the shell's direct IPC
+    // path must still reach the action and send at once.
+    const HWND owner = displayPowerWindow();
+    QVERIFY(owner);
+
+    bool chordWaitPending = true;
+    int calls = 0;
+    DisplayPowerAction action(owner, [&calls](HWND) {
+        ++calls;
+        return true;
+    });
+
+    QVERIFY(action.send());
+    QCOMPARE(calls, 1);
+    QCOMPARE(chordWaitPending, true);
+
+    chordWaitPending = false;
 }
 
 void DisplayPowerTest::senderFailureIsReported() {
