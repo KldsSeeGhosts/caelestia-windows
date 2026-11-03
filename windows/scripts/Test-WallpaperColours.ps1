@@ -22,7 +22,7 @@ function Get-UniqueMatch([string]$Text, [string]$Pattern) {
     return $matches[0].Value
 }
 
-$currentImage = Get-UniqueMatch $wallpapers '(?ms)^    readonly property string currentImage:.*?: fileCurrent\r?$'
+$currentImage = Get-UniqueMatch $wallpapers '(?ms)^    readonly property string currentImage:.*?(?=^    property bool showPreview:)'
 $apply = Get-UniqueMatch $wallpapers '(?ms)^    function applyPalette\(force\): void \{.*?^    \}\r?$'
 $handler = Get-UniqueMatch $wallpapers '(?m)^    onCurrentImageChanged: applyPalette\(false\)\r?$'
 $smart = Get-UniqueMatch $wallpapers '(?m)^        function onSmartSchemeChanged\(\): void \{ root\.applyPalette\(true\); \}\r?$'
