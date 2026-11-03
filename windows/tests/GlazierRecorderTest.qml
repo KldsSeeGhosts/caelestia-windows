@@ -577,6 +577,7 @@ ShellRoot {
                 // A capture forwarded to a host that is already up must not cancel
                 // the adopted-host baseline. Directly assigning launchedHost misses
                 // that distinction.
+                const realProbe = Glazier.hostProbe;
                 const adopted = { windowProcessId: function() { return 1; } };
                 const absent = { windowProcessId: function() { return 0; } };
                 Recorder.hostId = "";
@@ -606,7 +607,7 @@ ShellRoot {
                     "capture that creates the host marks that host fresh");
                 root.check(Recorder.applyResponse(reply("created-host", [err(1)])) && Recorder.lastError === "boom",
                     "first-response error from a host created by capture is visible");
-                Glazier.hostProbe = WindowsProcess;
+                Glazier.hostProbe = realProbe;
                 let q = [];
                 q = SchemeGenerator.coalescePending(q, "list", ["list"]);
                 q = SchemeGenerator.coalescePending(q, "set", ["set-mode", "--mode", "light"]);
