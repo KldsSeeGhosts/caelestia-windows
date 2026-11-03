@@ -1,13 +1,19 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][string]$QtPrefix,
-    [string]$BuildRoot
+    [string]$BuildRoot,
+    [string]$RunRoot,
+    # Run every UI smoke on the offscreen QPA. This is the normal test mode:
+    # no window is shown and frame presentation never depends on DWM.
+    [switch]$Offscreen
 )
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
 if (-not $BuildRoot) { $BuildRoot = Join-Path $repoRoot 'windows\.local\build' }
 $BuildRoot = [IO.Path]::GetFullPath($BuildRoot)
+if (-not $RunRoot) { $RunRoot = Join-Path $BuildRoot 'run' }
+$RunRoot = [IO.Path]::GetFullPath($RunRoot)
 $output = Join-Path $BuildRoot ('audio-validation-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
 New-Item -ItemType Directory -Force -Path $output | Out-Null
 $records = New-Object Collections.Generic.List[object]
@@ -35,7 +41,9 @@ function Desktop-Identity($State) {
         monitors = $State.monitors
         taskbar = $State.taskbar
         explorerRunning = $State.explorerRunning
-        processes = $State.relevantProcesses
+        # Our own bounded smoke has exited; other agents' transient qs
+        # processes are not persistent desktop state.
+        processes = @($State.relevantProcesses | Where-Object { $_.name -notin @('qs', 'quickshell') })
     } | ConvertTo-Json -Depth 10 -Compress
 }
 
@@ -48,11 +56,14 @@ try {
     $records.Add([ordered]@{ kind = 'fixture'; result = $fixture })
     # Native screen selection is explicit. Run every connected screen, with no
     # pointer/keyboard activation, audio writes, system settings or monitor moves.
-    $screenCount = $beforeDesktop.monitors.Count
+    # The offscreen QPA exposes one virtual screen. Otherwise cover every
+    # measured monitor, as before.
+    $screenCount = if ($Offscreen) { 1 } else { $beforeDesktop.monitors.Count }
     Assert ($screenCount -gt 0) 'No measured monitor available.'
     for ($screen = 0; $screen -lt $screenCount; $screen++) {
         foreach ($mode in @('Disabled', 'ReadOnly')) {
             $result = & "$PSScriptRoot\Start-ShellPrototype.ps1" -QtPrefix $QtPrefix -BuildRoot $BuildRoot `
+                -RunRoot $RunRoot -Offscreen:$Offscreen `
                 -Audio -AudioMode $mode -Smoke -ScaleFactor native -ScreenIndex $screen | ConvertFrom-Json
             Assert $result.passed "Audio UI failed on screen $screen in $mode mode."
             $records.Add([ordered]@{ kind = 'audio'; result = $result })
@@ -72,6 +83,7 @@ try {
         }
     }
     $regression = & "$PSScriptRoot\Start-ShellPrototype.ps1" -QtPrefix $QtPrefix -BuildRoot $BuildRoot `
+        -RunRoot $RunRoot -Offscreen:$Offscreen `
         -Smoke -ScaleFactor native -ScreenIndex 0 | ConvertFrom-Json
     Assert $regression.passed 'Original M1 bar/session smoke regression failed.'
     $records.Add([ordered]@{ kind = 'm1-regression'; result = $regression })

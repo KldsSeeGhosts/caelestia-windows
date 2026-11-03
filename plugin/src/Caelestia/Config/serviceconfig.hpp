@@ -35,7 +35,12 @@ class CAELESTIA_CONFIG_API ServiceConfig : public settings::ObjectNode {
     CONFIG_GLOBAL_ENUM_PROPERTY(ClockFormat, clockFormat, ClockFormat::Auto)
     CONFIG_GLOBAL_ENUM_PROPERTY(GpuType, gpuType, GpuType::Auto)
     CONFIG_GLOBAL_PROPERTY(int, visualiserBars, 60)
+#ifdef Q_OS_WIN
+    // Windows volume controls share this default; explicit profile values win.
+    CONFIG_GLOBAL_PROPERTY(qreal, audioIncrement, 0.05)
+#else
     CONFIG_GLOBAL_PROPERTY(qreal, audioIncrement, 0.1)
+#endif
     CONFIG_GLOBAL_PROPERTY(qreal, brightnessIncrement, 0.1)
     CONFIG_GLOBAL_PROPERTY(qreal, maxVolume, 1.0)
     CONFIG_GLOBAL_PROPERTY(bool, smartScheme, true)

@@ -8,7 +8,7 @@ const test = require("node:test");
 const vm = require("node:vm");
 
 const pages = ["NetworkPage.qml", "network/AllNetworksPage.qml"];
-const directory = path.resolve(__dirname, "../combined-prototype/adapters/modules/nexus/pages");
+const directory = path.resolve(__dirname, "../shell/adapters/modules/nexus/pages");
 
 for (const page of pages) {
     const source = fs.readFileSync(path.join(directory, page), "utf8").replace(/\r\n/g, "\n");

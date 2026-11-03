@@ -3,7 +3,7 @@ pragma Singleton
 import QtQuick
 import Quickshell
 import Quickshell.Io
-import Caelestia.Config
+import Quickshell.Windows as Native
 import qs.services
 
 Singleton {
@@ -24,7 +24,69 @@ Singleton {
     // Yield before discovery when a helper is configured, and keep yielding
     // to a known running process even if integration is disabled. Startup
     // scan failure falls back to the shell; it cannot prove WE is absent.
-    readonly property bool ownsDesktop: !snapshotReady || running
+    //
+    // WINDOWS_DESKTOP_OWNERSHIP_BEGIN
+    // #214: a detected process is an ownership claim, not proof of ownership.
+    // The backend acknowledges the underlay only while a visible wallpaper
+    // window is inside the desktop host. Wallpaper Engine keeps running after
+    // its wallpaper is closed, though: the window leaves the host while
+    // wallpaper64.exe stays alive, and the process scan alone would keep
+    // claiming a desktop nobody owns. Once the backend has acknowledged the
+    // underlay, a genuine withdrawal (no refused embed, no above-icons embed,
+    // host still active) releases the claim so the shell's own wallpaper is
+    // visible again. A new process, a refused embed or a lost host stays
+    // fail-closed until a fresh acknowledgement.
+    readonly property bool underlaySupported: "underlayActive" in Native.DesktopLayer
+    readonly property bool underlayActive: underlaySupported && Native.DesktopLayer.underlayActive
+    readonly property bool embedRefusedSupported: "embedRefused" in Native.DesktopLayer
+    readonly property bool embedRefused: embedRefusedSupported && Native.DesktopLayer.embedRefused
+    property bool desktopClaimed: false
+    property bool desktopHandedBack: false
+    readonly property bool ownsDesktop: !snapshotReady || (running && !desktopHandedBack)
+    onRunningChanged: {
+        // A stop is still engine-era discovery: keep the handback latch so a
+        // native wallpaper notification cannot replace the verified source
+        // after the claim is gone. A process start clears the latch and has no
+        // claim yet: fail closed until the backend finds its wallpaper window
+        // in the desktop host (#214).
+        desktopClaimed = running && underlayActive;
+        if (running)
+            desktopHandedBack = false;
+    }
+    onUnderlayActiveChanged: {
+        if (underlayActive) {
+            desktopClaimed = true;
+            desktopHandedBack = false;
+        } else if (embedRefusedSupported && desktopClaimed && !embedRefused
+                   && Native.DesktopLayer.enabled && Native.DesktopLayer.active
+                   && Native.DesktopLayer.aboveIcons.length === 0) {
+            // The acknowledged wallpaper window left the host while the
+            // process keeps running: a genuine handback. A refusal or our own
+            // above-icons embed is not, and stays fail-closed. Release the
+            // claim before clearing the acknowledgement so the adapter never
+            // sees externalActive still true with underlayActive false.
+            desktopHandedBack = true;
+            desktopClaimed = false;
+        }
+    }
+    onEmbedRefusedChanged: {
+        // A refused SetParent leaves a panel top level. Never keep a stale
+        // claim through it; only a fresh acknowledgement restores the claim.
+        if (embedRefused) {
+            desktopClaimed = false;
+            desktopHandedBack = false;
+        } else if (underlayActive) {
+            desktopClaimed = true;
+            desktopHandedBack = false;
+        }
+    }
+    function seedDesktopClaim(): void {
+        // A QML reload keeps the native host and its acknowledgement; start
+        // claimed so a handback after the reload is not mistaken for startup.
+        desktopClaimed = underlayActive;
+        desktopHandedBack = false;
+    }
+    // WINDOWS_DESKTOP_OWNERSHIP_END
     property string status: python ? "discovering" : "unavailable"
     property string lastError: ""
     property string configPath: ""
@@ -34,21 +96,23 @@ Singleton {
     readonly property var current: monitors[monitor] ?? null
     readonly property string picker: !enabled ? "files" : ["engine", "files", "both"].includes(options.picker)
         ? options.picker : (running && detected && enabled ? "engine" : "files")
-    property string lastPaletteKey: ""
     property string actionProject: ""
-    // Wallpaper titles and file paths are user content (#116): anything
-    // identifying goes to the log only behind an explicit opt-in.
-    readonly property bool debugLogging: Quickshell.env("CAELESTIA_WE_DEBUG") === "1"
     // Full snapshots parse every workshop project.json, so idle polls run the
     // cheap status mode and escalate only when something changed (#125).
     property bool haveSnapshot: false
     property bool fullScanNeeded: true
     property int statusTicks: 0
-    property string lastStatusActiveJson: ""
     property string itemsJson: ""
     property string monitorsJson: ""
     property bool scanPending: false
     property bool scanTimedOut: false
+    // The config watcher starts a status scan immediately; a scan that is
+    // already running gets one queued status pass instead of being dropped.
+    property bool activeScan: false
+    property bool activeScanPending: false
+    property bool configScanRequested: false
+    property bool configPrimed: false
+    property double scanStartedAt: 0
 
     function refresh(deep: bool): void {
         if (!python) {
@@ -70,6 +134,7 @@ Singleton {
         scan.statusOnly = statusOnly;
         scanTimedOut = false;
         scanPending = true;
+        scanStartedAt = Date.now();
         scanWatchdog.restart();
         scan.running = true;
         if (!scan.running && scanPending) {
@@ -78,6 +143,22 @@ Singleton {
             scanWatchdog.stop();
             scanFailed("wallpaper engine helper failed to start");
         }
+    }
+
+    // A selection change only moves the active projects; the workshop
+    // catalogue does not change. Status mode resolves those projects without
+    // the full catalogue walk, and the complete config read is itself the
+    // change event, so the palette path never waits for a fixed debounce.
+    function refreshActive(): void {
+        if (!python || !haveSnapshot)
+            return;
+        if (scan.running || scanPending) {
+            activeScanPending = true;
+            return;
+        }
+        activeScan = true;
+        console.debug("CAELESTIA_PALETTE_TIMING stage=active_scan_start ts=" + Date.now());
+        startScan(true);
     }
 
     function scanFailed(message: string): void {
@@ -109,14 +190,12 @@ Singleton {
             monitorsJson = nextMonitors;
             monitors = data.monitors;
         }
-        lastStatusActiveJson = JSON.stringify(data.active ?? {});
         haveSnapshot = true;
         fullScanNeeded = false;
         statusTicks = 0;
         snapshotReady = true;
         status = !enabled ? "disabled" : running && detected ? "ready" : "absent";
         lastError = "";
-        matchColours();
     }
 
     function applyDiscoveryFailure(data): void {
@@ -134,13 +213,22 @@ Singleton {
         running = data.running;
         if (data.configPath)
             configPath = data.configPath;
+        // Status mode carries the resolved selected projects, so a config
+        // change reaches currentImage without waiting for the catalogue scan.
+        if (data.monitors) {
+            const nextMonitors = JSON.stringify(data.monitors);
+            if (nextMonitors !== monitorsJson) {
+                monitorsJson = nextMonitors;
+                console.debug("CAELESTIA_PALETTE_TIMING stage=monitors_changed source=status ts=" + Date.now());
+                monitors = data.monitors;
+            }
+        }
         snapshotReady = true;
         statusTicks++;
-        const activeJson = JSON.stringify(data.active ?? {});
-        const changed = stateChanged || activeJson !== lastStatusActiveJson;
-        if (!haveSnapshot || fullScanNeeded || changed || statusTicks >= 20) {
-            // First settle, a changed selection/state, or the periodic catalogue
-            // refresh (workshop installs). Keep fullScanNeeded and lastStatusActiveJson
+        if (!haveSnapshot || fullScanNeeded || stateChanged || statusTicks >= 20) {
+            // First settle, a start/stop, or the periodic catalogue refresh
+            // (workshop installs). A selection-only change is already applied
+            // above and does not need the catalogue walk. Keep fullScanNeeded
             // unacknowledged until applySnapshot succeeds.
             fullScanNeeded = true;
             Qt.callLater(() => startScan(false));
@@ -148,18 +236,6 @@ Singleton {
         }
         status = !enabled ? "disabled" : running && detected ? "ready" : "absent";
         lastError = "";
-    }
-
-    function matchColours(): void {
-        if (!enabled || !detected || !running || !current?.preview || !SchemeGenerator.available)
-            return;
-        const key = current.path + "|" + current.preview + "|" + GlobalConfig.services.smartScheme;
-        if (key === lastPaletteKey)
-            return;
-        lastPaletteKey = key;
-        SchemeGenerator.applyWallpaper(current.preview, GlobalConfig.services.smartScheme);
-        if (debugLogging)
-            console.log("CAELESTIA_WE_CURRENT", JSON.stringify({monitor: monitor, title: current.title, project: current.path, preview: current.preview}));
     }
 
     function open(path: string): bool {
@@ -170,10 +246,16 @@ Singleton {
         return true; // Request accepted; config watcher confirms actual selection.
     }
 
-    onCurrentChanged: matchColours()
-    onEnabledChanged: { lastPaletteKey = ""; matchColours(); }
-    onRunningChanged: { lastPaletteKey = ""; matchColours(); }
-    Component.onCompleted: refresh(false)
+    onEnabledChanged: {
+        // Disabling stops the idle timer; re-enabling must not wait for its
+        // backed-off interval before the first scan.
+        if (enabled)
+            refresh(false);
+    }
+    Component.onCompleted: {
+        seedDesktopClaim();
+        refresh(false);
+    }
 
     FileView {
         path: Quickshell.env("CAELESTIA_CONFIG_DIR") + "/windows.json"
@@ -189,13 +271,51 @@ Singleton {
         path: root.configPath
         watchChanges: true
         printErrors: false
-        onFileChanged: { reload(); debounce.restart(); }
+        onFileChanged: {
+            root.configScanRequested = false;
+            reload();
+            debounce.restart();
+        }
+        onLoaded: {
+            // The first load follows configPath appearing after the startup
+            // snapshot; only later loads are changes.
+            if (!root.configPrimed) {
+                root.configPrimed = true;
+                return;
+            }
+            if (!root.haveSnapshot)
+                return;
+            // A complete load is the change event. A partially written config
+            // fails this parse and the next change brings another complete
+            // read; the debounce below only covers a missed notification.
+            let parsed = null;
+            try { parsed = JSON.parse(String(text()).replace(/^\uFEFF/, "")); }
+            catch (error) { parsed = null; }
+            if (!parsed || typeof parsed !== "object")
+                return;
+            root.configScanRequested = true;
+            console.debug("CAELESTIA_PALETTE_TIMING stage=config_loaded ts=" + Date.now());
+            root.refreshActive();
+        }
     }
-    Timer { id: debounce; interval: 300; onTriggered: root.refresh(true) }
+    // Fallback for a config change whose complete-read notification was
+    // missed. It is not on the palette path: onLoaded starts the status scan.
+    Timer { id: debounce; interval: 300; onTriggered: { if (!root.configScanRequested) root.refreshActive(); } }
     // Catches WE starting/stopping and selection changes the config watcher
     // misses, including atomic replacement of config.json. Idle ticks run the
     // cheap status mode (#125). Discovery never launches Wallpaper Engine.
-    Timer { interval: 15000; running: true; repeat: true; onTriggered: root.refresh(false) }
+    // Poll at 15 s only while WE is present and running; absent, stopped or
+    // failed scans back off to 60 s, still noticing a start within a minute.
+    // Disabled integration stops polling, except while a WE process is still
+    // known to run: ownership must still be handed back when it quits.
+    readonly property int pollInterval: detected && running && status !== "error" ? 15000 : 60000
+    Timer {
+        id: pollTimer
+        interval: root.pollInterval
+        running: (root.enabled || root.running) && root.python !== ""
+        repeat: true
+        onTriggered: root.refresh(false)
+    }
     // A hung or unspawnable scan must not claim the desktop forever (#125).
     Timer {
         id: scanWatchdog
@@ -211,15 +331,6 @@ Singleton {
                 root.scanFailed("wallpaper engine scan timed out");
             }
         }
-    }
-    Connections {
-        target: SchemeGenerator
-        function onFailed(message: string): void { root.lastPaletteKey = ""; }
-        function onAvailableChanged(): void { root.matchColours(); }
-    }
-    Connections {
-        target: GlobalConfig.services
-        function onSmartSchemeChanged(): void { root.matchColours(); }
     }
     Process {
         id: scan
@@ -242,20 +353,28 @@ Singleton {
             scanWatchdog.stop();
             const timedOut = root.scanTimedOut;
             root.scanTimedOut = false;
-            if (timedOut)
-                return;
-            try {
-                const data = JSON.parse(scanOutput.text);
-                if (code !== 0 || !data.ok)
-                    throw new Error(data.error || "discovery failed");
-                if (data.discoveryError)
-                    root.applyDiscoveryFailure(data);
-                else if (scan.statusOnly)
-                    root.applyStatus(data);
-                else
-                    root.applySnapshot(data);
-            } catch (error) {
-                root.scanFailed(timedOut ? "wallpaper engine scan timed out" : String(error));
+            if (root.activeScan) {
+                root.activeScan = false;
+                console.debug("CAELESTIA_PALETTE_TIMING stage=active_scan_done ts=" + Date.now() + " elapsed_ms=" + (Date.now() - root.scanStartedAt));
+            }
+            if (!timedOut) {
+                try {
+                    const data = JSON.parse(scanOutput.text);
+                    if (code !== 0 || !data.ok)
+                        throw new Error(data.error || "discovery failed");
+                    if (data.discoveryError)
+                        root.applyDiscoveryFailure(data);
+                    else if (scan.statusOnly)
+                        root.applyStatus(data);
+                    else
+                        root.applySnapshot(data);
+                } catch (error) {
+                    root.scanFailed(String(error));
+                }
+            }
+            if (root.activeScanPending) {
+                root.activeScanPending = false;
+                Qt.callLater(() => root.refreshActive());
             }
         }
     }

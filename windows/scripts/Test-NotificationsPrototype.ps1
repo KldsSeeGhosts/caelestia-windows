@@ -1,18 +1,23 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][string]$QtPrefix,
-    [string]$BuildRoot
+    [string]$BuildRoot,
+    [string]$RunRoot,
+    [switch]$Offscreen
 )
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
 if (-not $BuildRoot) { $BuildRoot = Join-Path $repoRoot 'windows\.local\build' }
 $BuildRoot = [IO.Path]::GetFullPath($BuildRoot)
+if (-not $RunRoot) { $RunRoot = Join-Path $BuildRoot 'run' }
+$RunRoot = [IO.Path]::GetFullPath($RunRoot)
 $output = Join-Path $BuildRoot ('notifications-validation-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
 New-Item -ItemType Directory -Force -Path $output | Out-Null
 $records = New-Object Collections.Generic.List[object]
 $failure = $null
-$profile = Join-Path $BuildRoot 'notifications-prototype-profile'
+$localOwnerSkipped = $false
+$profile = Join-Path $RunRoot 'notifications-prototype-profile'
 $historyPath = Join-Path $profile 'state\notifs.json'
 # These are test-owned paths. The ordinary user profile is never read or
 # written; the legacy path is measured only to prove it did not change.
@@ -80,7 +85,8 @@ function Assert-Common($State, [string]$Mode) {
         Assert ($State.listCount -eq 0 -and $State.popupCount -eq 0) 'Disabled mode observed notifications.'
     } else {
         Assert ($State.enabled -eq $true) 'Local mode did not enable notifications.'
-        Assert ($State.status -eq 'local') "Local mode did not settle: $($State.status) ($($State.reason))"
+        Assert ($State.status -in @('local', 'contended')) `
+            "Local mode did not settle: $($State.status) ($($State.reason))"
         Assert ($State.nativeRequested -eq $true) 'Local mode did not activate the native backend loader.'
         Assert ($State.backendLoaded -eq $true) 'Local mode did not construct NotificationServer.'
         Assert ($State.uiLoaded -eq $true) 'Local mode did not load the original notification UI.'
@@ -88,7 +94,24 @@ function Assert-Common($State, [string]$Mode) {
         Assert ($State.pathConfined -eq $true) 'Local mode did not report confined paths.'
         Assert ($State.historyInsideProfile -eq $true) 'History path is outside the isolated profile.'
         Assert ($State.systemNotificationAccess -eq 0) 'Local mode changed system notification access.'
-        Assert ($State.ownership -eq 'unknown') 'Unexpected native ownership was invented.'
+        if ($State.contended) {
+            # A live shell owns the session bus: the service refuses local
+            # delivery and reports contention. The backend unit tests cover
+            # the real local and forwarding paths.
+            Assert ($State.status -eq 'contended' -and $State.ownership -eq 'contended') `
+                "Contended mode reported status '$($State.status)' with ownership '$($State.ownership)'."
+            Assert ($State.postedId -eq 0 -and $State.postedPresent -eq $false) `
+                'Contended mode attempted a local notification send.'
+            Assert ($State.listCount -eq 0 -and $State.popupCount -eq 0) `
+                'Contended mode retained a local notification.'
+            Assert ($State.deliveryConfirmation -eq 'idle' -and $State.deliveryUnconfirmed -eq $false) `
+                'Contended mode attempted delivery instead of reporting contention.'
+        } else {
+            # The smoke bus starts unknown and settles on owner once the lock
+            # thread acquires it.
+            Assert ($State.ownership -in @('owner', 'unknown')) `
+                "Local mode reported notification ownership '$($State.ownership)'."
+        }
     }
 }
 function Read-History {
@@ -111,12 +134,13 @@ try {
     # run is a real arrival rather than a restored record.
     Remove-Item -LiteralPath $historyPath -Force -ErrorAction SilentlyContinue
 
-    $screenCount = $beforeDesktop.monitors.Count
+    $screenCount = if ($Offscreen) { 1 } else { $beforeDesktop.monitors.Count }
     Assert ($screenCount -gt 0) 'No measured monitor available.'
 
     # Disabled mode on every screen: no native server, no original UI.
     for ($screen = 0; $screen -lt $screenCount; $screen++) {
         $result = & "$PSScriptRoot\Start-ShellPrototype.ps1" -QtPrefix $QtPrefix -BuildRoot $BuildRoot `
+            -RunRoot $RunRoot -Offscreen:$Offscreen `
             -Notifications -NotificationsMode Disabled -Smoke -ScaleFactor native -ScreenIndex $screen | ConvertFrom-Json
         Assert $result.passed "Notifications disabled UI failed on screen $screen."
         $records.Add([ordered]@{ kind = 'disabled'; result = $result })
@@ -126,59 +150,86 @@ try {
         }
     }
 
-    # First local run: fresh profile, one persistent local notification.
+    # First local run: fresh profile, one persistent local notification. When
+    # an installed shell owns the session bus, the service reports contended
+    # and refuses local delivery; the QML smoke asserts that refusal and the
+    # local-owner scenarios below become SKIPPED.
     $runA = & "$PSScriptRoot\Start-ShellPrototype.ps1" -QtPrefix $QtPrefix -BuildRoot $BuildRoot `
+        -RunRoot $RunRoot -Offscreen:$Offscreen `
         -Notifications -NotificationsMode Local -Smoke -ScaleFactor native -ScreenIndex 0 | ConvertFrom-Json
     Assert $runA.passed 'Local notifications persist run failed.'
-    $records.Add([ordered]@{ kind = 'local-persist'; result = $runA })
     Assert ($runA.notificationsSnapshots.Count -eq 2) 'Local persist run did not record initial and final state.'
     $initialA = $runA.notificationsSnapshots[0].state
     $finalA = $runA.notificationsSnapshots[1].state
     Assert-Common $initialA 'Local'
     Assert-Common $finalA 'Local'
-    Assert ($initialA.runMode -eq 'persist' -and $initialA.restoredCount -eq 0 -and $initialA.listCount -eq 0) `
-        'Fresh local run did not start with an empty history.'
-    Assert ($finalA.runMode -eq 'persist' -and $finalA.postedPresent -eq $true -and $finalA.postedLocal -eq $true) `
-        'Local notification did not arrive through the shell server.'
-    Assert ($finalA.postedPopup -eq $true) 'Local notification did not appear in the original popup list.'
-    Assert ($finalA.postedActions -ge 1) 'Local notification action did not reach the original UI contract.'
-    Assert ($finalA.listCount -eq 1 -and $finalA.popupCount -eq 1) 'Persist run did not retain one popped-up notification.'
-    Assert ($finalA.historyContainsPosted -eq $true) 'Persist run did not keep the notification in history.'
-    Assert ($finalA.localDismissals -eq 0) 'Persist run dismissed the test notification.'
-    $historyA = @(Read-History)
-    Assert ($historyA.Count -eq 1) 'Persisted history did not contain exactly the test notification.'
-    Assert ($historyA[0].summary -eq 'Caelestia Windows local notification') 'Persisted history summary changed.'
-    Assert ($historyA[0].local -eq $true) 'Persisted history lost the local marker.'
-    Assert ([string]$historyA[0].recordId -ne '') 'Persisted history has no stable record id.'
-    Assert ([string]$historyA[0].notificationId -ne '') 'Persisted history has no notification id.'
+    $localOwnerSkipped = $initialA.contended -eq $true
+    if ($localOwnerSkipped) {
+        Assert ($finalA.contended -eq $true -and $finalA.status -eq 'contended') `
+            'Contended ownership changed during the persist run.'
+        Assert ((Get-Content -LiteralPath $runA.stdout -Raw) `
+                -match 'CAELESTIA_NOTIFICATIONS_SKIP local-owner owner held by live shell') `
+            'Contended smoke did not report the skipped local-owner scenarios.'
+        $records.Add([ordered]@{ kind = 'local-persist'; skipped = 'owner held by live shell'; result = $runA })
+        Write-Output 'SKIPPED local-owner notification scenarios: owner held by live shell.'
+    } else {
+        $records.Add([ordered]@{ kind = 'local-persist'; result = $runA })
+        Assert ($initialA.runMode -eq 'persist' -and $initialA.restoredCount -eq 0 -and $initialA.listCount -eq 0) `
+            'Fresh local run did not start with an empty history.'
+        Assert ($finalA.runMode -eq 'persist' -and $finalA.postedPresent -eq $true -and $finalA.postedLocal -eq $true) `
+            'Local notification did not arrive through the shell server.'
+        Assert ($finalA.postedPopup -eq $true) 'Local notification did not appear in the original popup list.'
+        Assert ($finalA.postedActions -ge 1) 'Local notification action did not reach the original UI contract.'
+        Assert ($finalA.listCount -eq 1 -and $finalA.popupCount -eq 1) 'Persist run did not retain one popped-up notification.'
+        Assert ($finalA.historyContainsPosted -eq $true) 'Persist run did not keep the notification in history.'
+        Assert ($finalA.localDismissals -eq 0) 'Persist run dismissed the test notification.'
+        $historyA = @(Read-History)
+        Assert ($historyA.Count -eq 1) 'Persisted history did not contain exactly the test notification.'
+        Assert ($historyA[0].summary -eq 'Caelestia Windows local notification') 'Persisted history summary changed.'
+        Assert ($historyA[0].local -eq $true) 'Persisted history lost the local marker.'
+        Assert ([string]$historyA[0].recordId -ne '') 'Persisted history has no stable record id.'
+        Assert ([string]$historyA[0].notificationId -ne '') 'Persisted history has no notification id.'
+    }
 
     # Second local run: restore in a new process, expire and dismiss one new
     # notification, then leave the restored entry intact.
-    $runB = & "$PSScriptRoot\Start-ShellPrototype.ps1" -QtPrefix $QtPrefix -BuildRoot $BuildRoot `
-        -Notifications -NotificationsMode Local -Smoke -ScaleFactor native -ScreenIndex 0 | ConvertFrom-Json
-    Assert $runB.passed 'Local notifications expire/dismiss run failed.'
-    $records.Add([ordered]@{ kind = 'local-expire-dismiss'; result = $runB })
-    $initialB = $runB.notificationsSnapshots[0].state
-    $finalB = $runB.notificationsSnapshots[1].state
-    Assert-Common $initialB 'Local'
-    Assert-Common $finalB 'Local'
-    Assert ($initialB.runMode -eq 'expire-dismiss' -and $initialB.restoredCount -eq 1 -and $initialB.listCount -eq 1) `
-        'Restart did not restore the persisted local notification.'
-    Assert ($initialB.restoredIds -contains '1') 'Restored notification id was not observed.'
-    Assert ($finalB.runMode -eq 'expire-dismiss') 'Restored run did not take the expiry/dismiss path.'
-    Assert ($finalB.postedPresent -eq $false) 'Expired/dismissed test notification remained in the list.'
-    Assert ($finalB.listCount -eq 1 -and $finalB.popupCount -eq 0) 'Expiry/dismiss did not return to the restored list.'
-    Assert ($finalB.historyContainsPosted -eq $false) 'Dismissed notification survived in the isolated history.'
-    Assert ($finalB.localDismissals -ge 1) 'Local dismissal did not reach the backend.'
-    Assert ($finalB.protectedDismissals -eq 0) 'A real Windows notification was dismissed.'
-    $historyB = @(Read-History)
-    Assert ($historyB.Count -eq 1) 'Dismissal did not leave exactly the restored notification.'
-    Assert ($historyB[0].recordId -ne $finalB.postedRecordId) 'Dismissed record still matches the persisted record id.'
+    if ($localOwnerSkipped) {
+        $records.Add([ordered]@{ kind = 'local-expire-dismiss'; skipped = 'owner held by live shell' })
+    } else {
+        $runB = & "$PSScriptRoot\Start-ShellPrototype.ps1" -QtPrefix $QtPrefix -BuildRoot $BuildRoot `
+            -RunRoot $RunRoot -Offscreen:$Offscreen `
+            -Notifications -NotificationsMode Local -Smoke -ScaleFactor native -ScreenIndex 0 | ConvertFrom-Json
+        Assert $runB.passed 'Local notifications expire/dismiss run failed.'
+        $records.Add([ordered]@{ kind = 'local-expire-dismiss'; result = $runB })
+        $initialB = $runB.notificationsSnapshots[0].state
+        $finalB = $runB.notificationsSnapshots[1].state
+        Assert-Common $initialB 'Local'
+        Assert-Common $finalB 'Local'
+        Assert ($initialB.runMode -eq 'expire-dismiss' -and $initialB.restoredCount -eq 1 -and $initialB.listCount -eq 1) `
+            'Restart did not restore the persisted local notification.'
+        Assert ($initialB.restoredIds -contains '1') 'Restored notification id was not observed.'
+        Assert ($finalB.runMode -eq 'expire-dismiss') 'Restored run did not take the expiry/dismiss path.'
+        Assert ($finalB.postedPresent -eq $false) 'Expired/dismissed test notification remained in the list.'
+        Assert ($finalB.listCount -eq 1 -and $finalB.popupCount -eq 0) 'Expiry/dismiss did not return to the restored list.'
+        Assert ($finalB.historyContainsPosted -eq $false) 'Dismissed notification survived in the isolated history.'
+        Assert ($finalB.localDismissals -ge 1) 'Local dismissal did not reach the backend.'
+        Assert ($finalB.protectedDismissals -eq 0) 'A real Windows notification was dismissed.'
+        $historyB = @(Read-History)
+        Assert ($historyB.Count -eq 1) 'Dismissal did not leave exactly the restored notification.'
+        Assert ($historyB[0].recordId -ne $finalB.postedRecordId) 'Dismissed record still matches the persisted record id.'
+    }
 
     # Local mode on the remaining screens proves the original UI renders the
     # restored list and the local path still works at each monitor origin.
     for ($screen = 1; $screen -lt $screenCount; $screen++) {
+        if ($localOwnerSkipped) {
+            $records.Add([ordered]@{
+                kind = 'local-extra-screen'; screen = $screen; skipped = 'owner held by live shell'
+            })
+            continue
+        }
         $result = & "$PSScriptRoot\Start-ShellPrototype.ps1" -QtPrefix $QtPrefix -BuildRoot $BuildRoot `
+            -RunRoot $RunRoot -Offscreen:$Offscreen `
             -Notifications -NotificationsMode Local -Smoke -ScaleFactor native -ScreenIndex $screen | ConvertFrom-Json
         Assert $result.passed "Notifications local UI failed on screen $screen."
         $records.Add([ordered]@{ kind = 'local-extra-screen'; result = $result })
@@ -192,6 +243,7 @@ try {
 
     # The ordinary M1 bar/session profile remains available and unchanged.
     $regression = & "$PSScriptRoot\Start-ShellPrototype.ps1" -QtPrefix $QtPrefix -BuildRoot $BuildRoot `
+        -RunRoot $RunRoot -Offscreen:$Offscreen `
         -Smoke -ScaleFactor native -ScreenIndex 0 | ConvertFrom-Json
     Assert $regression.passed 'Original M1 bar/session smoke regression failed.'
     $records.Add([ordered]@{ kind = 'm1-regression'; result = $regression })
@@ -220,6 +272,8 @@ $summary = [ordered]@{
     sourceRevision = (& git -C $repoRoot rev-parse HEAD).Trim()
     sourceDirty = [bool](& git -C $repoRoot status --porcelain)
     backendRevision = (& git -C "$repoRoot\windows\deps\quickshell" rev-parse HEAD).Trim()
+    localOwnerSkipped = [bool]$localOwnerSkipped
+    skipped = @(if ($localOwnerSkipped) { 'local-owner: owner held by live shell' })
     historyPath = $historyPath
     legacyHistory = $legacyHistory
     legacyHistoryBefore = $beforeLegacy
@@ -230,5 +284,8 @@ $summary = [ordered]@{
     output = $output; records = @($records.ToArray())
 }
 $summary | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath (Join-Path $output 'result.json') -Encoding UTF8
-[ordered]@{ passed = $summary.passed; failure = $failure; output = $output; runs = $records.Count } | ConvertTo-Json
+[ordered]@{
+    passed = $summary.passed; failure = $failure; output = $output; runs = $records.Count
+    skipped = $summary.skipped
+} | ConvertTo-Json
 if ($failure) { throw $failure }

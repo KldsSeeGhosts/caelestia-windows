@@ -7,7 +7,7 @@ const path = require("node:path");
 const vm = require("node:vm");
 
 const source = fs.readFileSync(path.join(__dirname,
-    "../combined-prototype/adapters/services/Recorder.qml"), "utf8");
+    "../shell/adapters/services/Recorder.qml"), "utf8");
 function capture(pattern) {
     const match = source.match(pattern);
     assert.ok(match, "adapter source block found");
@@ -34,7 +34,9 @@ function recorder() {
         lastError: "", connectionError: "", pendingStart: false, baselinePending: true,
         hostId: "", eventSequence: 0, connectionFailed: false, incompatible: false,
         startTimeout: { stop() {}, restart() {} },
-        Quickshell: { env() { return ""; }, execDetached() {} },
+        Quickshell: { env() { return ""; }, execDetached(spec) { context.launched = spec; } },
+        Glazier: { ownedHost: false,
+            hostOptions() { return ["--no-hotkeys", "--theme-file", "C:/synthetic/theme-tokens.json"]; } },
         store: { restored: false, saved: "", input: "", text() { return this.input; },
             setText(text) { this.saved = text; } },
     };
@@ -87,6 +89,9 @@ for (const observeOffline of [false, true]) {
     if (observeOffline) r.applyResponse(offline);
     else r.applyResponse(reply("existing-host", [error()]));
     check(r.start(), "cold Start accepted");
+    // A Start can cold-start the host, so it must carry the shell-owned host options.
+    check(r.launched.command.slice(1, 4).join(" ") === "--no-hotkeys --theme-file C:/synthetic/theme-tokens.json"
+        && r.launched.command.includes("--record") && r.Glazier.ownedHost, "cold Start uses shell-owned host options");
     check(r.applyResponse(reply("cold-host", [error()])) && r.lastError !== "",
         "cold Start first-response error visible");
     check(!r.pendingStart, "cold Start error completes pending attempt");

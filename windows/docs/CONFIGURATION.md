@@ -194,7 +194,7 @@ Controls the bottom application and action launcher drawer.
 **Windows differences:**
 
 - **App catalog:** Enumerates Windows `shell:AppsFolder` and Start menu shortcuts. Launch counts are stored in `%LOCALAPPDATA%\caelestia-windows\state\apps-frequencies.json`.
-- **Wallpapers:** `paths.wallpaperDir` defaults to `%USERPROFILE%\Pictures\Wallpapers` (can also be overridden via the `CAELESTIA_WALLPAPER_DIR` environment variable). Selecting a wallpaper in `> wallpaper` applies it to the Windows desktop via `Quickshell.Windows.Wallpaper`.
+- **Wallpapers:** `paths.wallpaperDir` defaults to the `Wallpapers` subfolder of the Windows Pictures known folder (for example `%USERPROFILE%\Pictures\Wallpapers`, or a Pictures folder redirected to OneDrive). An explicit `paths.wallpaperDir` or the `CAELESTIA_WALLPAPER_DIR` environment variable still wins. Known Folders are resolved once at startup, so a folder redirection changed while the shell is running takes effect after a restart. When Pictures is redirected, the shell checks the new `Wallpapers` folder and the old `<profile>\Pictures\Wallpapers` folder for images in the background, so an unavailable share or an unpopulated OneDrive folder cannot stall startup; the old folder is used only when the new one has no images. "No images" means no locally available images were found: a remote or cloud folder that is offline, or not yet downloaded, counts as empty, which does not confirm that the remote folder really is. Selecting a wallpaper in `> wallpaper` applies it to the Windows desktop via `Quickshell.Windows.Wallpaper`.
 - **Actions (`launcher.actions`):** Session actions in the launcher (`Shutdown`, `Reboot`, `Logout`, `Lock`, `Sleep`) route through the Windows session service allowlist; arbitrary Linux shell commands (`systemctl`, `loginctl`, `caelestia` CLI) are translated if they match the session allowlist or refused without running a detached process.
 
 ### `dashboard` and `services`
@@ -230,7 +230,7 @@ Controls the top dashboard drawer and platform service intervals/units.
         "clockFormat": "Auto",
         "gpuType": "Auto",
         "visualiserBars": 60,
-        "audioIncrement": 0.1,
+        "audioIncrement": 0.05,
         "brightnessIncrement": 0.1,
         "maxVolume": 1.0,
         "smartScheme": true,
@@ -246,6 +246,7 @@ Controls the top dashboard drawer and platform service intervals/units.
 
 - **Media (`Players`):** Backed by Windows GSMTC (`GlobalSystemMediaTransportControlsSessionManager`). Per-player volume, window raise/quit, and URI opening are not part of GSMTC.
 - **Audio (`maxVolume`):** Capped at `1.0` (100%) by Windows Core Audio.
+- **Volume step (`audioIncrement`):** Defaults to `0.05` (5%) for scrolling and shell-owned volume keys, including microphone and app-volume sliders. Set `services.audioIncrement` or use Settings > Services > Volume step to override it; existing explicit values are preserved.
 - **Audio visualizer:** `Caelestia.Windows.Audio` supplies WASAPI loopback analysis to the original `Audio.cava` and `Audio.beatTracker` contracts. Lyrics remain unavailable.
 - **Profile picture:** Clicking the avatar in the dashboard opens a file picker. The image is copied to `profile-picture` in the shell's state folder (not `~/.face`) and shown ahead of the Windows account picture, which is never changed.
 - **CPU temperature:** Windows exposes no unprivileged CPU die temperature. The dashboard reads it from [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor) when it is running elevated with its remote web server on `127.0.0.1:8085`, using the signed [PawnIO](https://pawnio.eu/) driver. Without it the card shows "Unavailable". Setup, once: `winget install namazso.PawnIO` and `winget install LibreHardwareMonitor.LibreHardwareMonitor`, enable Options > Remote Web Server, and start it at sign-in with a scheduled task that runs with highest privileges. LibreHardwareMonitor 0.9.6 ignores its `listenerIp` setting and listens on all interfaces, so add an inbound Windows Firewall block rule for TCP 8085. Loopback traffic is not filtered, so the shell still reads it. Nothing here is installed or configured by the shell.
@@ -294,7 +295,7 @@ Controls the top dashboard drawer and platform service intervals/units.
 - **Notification mirroring:** Local notifications are persisted to `state\notifs.json`. Mirrored Windows system toasts require one-time user consent in the notification center and are not written to disk (Windows owns their lifetime).
 - **Utilities cards and quick toggles:**
   - Quick toggles are limited to `wifi`, `bluetooth`, and `dnd` (Linux `vpn` and quick-toggle `recorder` are hidden).
-  - The **Keep-awake (Idle inhibit)** card holds `SetThreadExecutionState` in a helper child process while enabled.
+  - The **Keep-awake (Idle inhibit)** card holds a native `PowerCreateRequest` for display and system availability while enabled. The request is owned by the shell process, so it cannot outlive the shell.
   - The **Screen recorder** card uses `ffmpeg` (`gdigrab`) when `ffmpeg.exe` is on `PATH` and writes fullscreen recordings to `%USERPROFILE%\Videos\Caelestia\recording_<timestamp>.mp4`.
 
 ### `session`, `general`, and `lock`
@@ -393,7 +394,8 @@ gaps for a single tiled window, and `borderColours: true`. Example:
 Rules are wildcard arrays or semicolon-separated strings. `exe:`, `class:` and
 `title:` select individual window facts. `float` and disabled-monitor patterns
 are exclusions and win over inclusions. Interactive requires a non-empty include
-list; live changes stop the session before applying new rules/gaps.
+list; live changes stop the session before applying new rules/gaps. A malformed
+selector is ignored and logged by index, never by pattern text.
 `singleWindowGapsOut` replaces `gapsOut` when exactly one window is tiled on a
 monitor/workspace, excluding minimized and maximized windows. Maximized windows
 continue to fill the Windows work area. `borderColours` applies scheme primary
@@ -432,6 +434,35 @@ The underlying `Quickshell.Windows.Tiling` singleton exposes the following layou
 
 The table above lists native backend defaults, also used by the Windows facade.
 Layout selection remains a backend option outside this profile schema.
+
+### Shell-surface selectors
+
+The window tracker follows the taskbar's own style contract: `WS_EX_APPWINDOW`
+forces a task-list entry, while a tool window, a no-activate
+(`WS_EX_NOACTIVATE`) window or an owned popup has none. That is separate from
+positive shell identity, which is only a known shell class or host process,
+`CoreWindow` under a shell host, and the optional list below. A tool-window
+fullscreen video is therefore still an occlusion surface even though it is not
+in the task list.
+
+A third-party shell can create an activatable, taskbar-hidden popup that exposes
+none of those properties. Add typed selectors for those windows under
+`windows.shellSurfaces.extra` in `config/shell.json`; the list is empty by
+default and changes apply live:
+
+```json
+{"windows":{"shellSurfaces":{"extra":["exe:some-shell.exe","title:Task Switcher"]}}}
+```
+
+Selectors use the same wildcard dialect as tiling: `exe:` matches the executable
+file name or basename, `class:` the Win32 class, `title:` the title, and an
+unprefixed pattern the executable or class. Matching is case-insensitive and
+whole-value; arrays and semicolon-separated strings are accepted. Non-string
+elements are ignored and only counted in the log. `screen:` rules are rejected
+here because a shell surface is not monitor-scoped. A malformed selector is
+ignored and logged by index, never by pattern text. Marking a window here
+excludes it from the task model, the active-window fallback and tiling, and
+prevents it from seeding AppBar fullscreen.
 
 ---
 

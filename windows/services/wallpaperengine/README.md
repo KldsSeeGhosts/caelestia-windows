@@ -9,9 +9,14 @@ The active config is
 `<user>.general.wallpaperconfig.selectedwallpapers.MonitorN.file`. Saved/recent
 layouts are deliberately excluded. Each selected media/package path resolves to
 the adjacent `project.json`, whose title and preview feed the launcher and real
-Caelestia scheme generator. `FileView` watches `config.json`; a 15-second
-read-only status scan also catches atomic replacements and process changes,
-with a full catalogue refresh every 20 idle scans or when state changes.
+Caelestia scheme generator. `FileView` watches `config.json`; a complete read
+immediately resolves the selected projects in read-only status mode, so a
+wallpaper change does not wait for the workshop-wide catalogue walk. The same
+status scan also catches atomic replacements and process changes, with a full
+catalogue refresh every 20 idle scans or when state changes. The scan runs every 15 s only
+while WE is detected and running; it backs off to 60 s when WE is absent or
+stopped (a start is still noticed within a minute) or the last scan failed, and
+stops when no helper is configured, or when the integration is disabled and no process is known to be running (ownership is still handed back when it quits).
 Invalid/partially written configs retain the last good catalogue and report an
 error, but independently observed process start/stop still updates the ownership
 guard. If the process scan itself fails, the existing failure policy retains

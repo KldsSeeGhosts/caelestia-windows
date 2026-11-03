@@ -25,10 +25,26 @@ runtime pass. Run it again after changing dependency pins or setup instructions.
 
 ## Test
 
-Build first, then run the bounded smoke with your actual Qt prefix:
+Build first, then run the public smoke with your actual Qt prefix:
 
 ```powershell
 $qt = "$env:LOCALAPPDATA\caelestia-dev\Qt\6.11.2\msvc2022_64"
+powershell -NoProfile -File windows/scripts/Test-Smoke.ps1 `
+    -BuildRoot <build> -QtPrefix $qt
+```
+
+`Test-Smoke.ps1` is the single smoke command for public CI and contributors. It
+stages the production graph from `windows/shell/sources.json`, runs the built
+`qs.exe` on the offscreen QPA under a temporary profile, and waits for every
+drawer's first frame. It does not install, start the live shell or touch its
+profile, services, taskbar, registry or autostart. It exits 0 on pass and 1 on
+failure, prints a one-line summary, and keeps the run directory on failure.
+Allow up to 90 seconds for a cold start. See
+[windows/NATIVE-BUILD.md](windows/NATIVE-BUILD.md#smoke) for the build context.
+
+For deeper native checks, run the bounded smoke and the combined prototype:
+
+```powershell
 powershell -NoProfile -File windows/scripts/Start-ShellPrototype.ps1 `
     -QtPrefix $qt -Smoke -ScaleFactor native -ScreenIndex 0
 powershell -NoProfile -File windows/scripts/Test-CombinedPrototype.ps1 -QtPrefix $qt

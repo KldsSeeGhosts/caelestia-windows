@@ -12,6 +12,8 @@ qml_module(caelestia-windows-audio
         onsetdetector.cpp
         serviceref.hpp
         serviceref.cpp
+        wasapiformat.hpp
+        wasapiformat.cpp
         wasapiloopback.hpp
         wasapiloopback.cpp
         ../../Services/service.hpp

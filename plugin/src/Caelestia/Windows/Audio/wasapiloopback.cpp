@@ -2,31 +2,35 @@
 
 #include <qloggingcategory.h>
 
+#include <audioclient.h>
+#include <combaseapi.h>
+#include <mmdeviceapi.h>
+#include <mmreg.h>
+#include <windows.h>
+
 #include <algorithm>
 #include <atomic>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <stop_token>
 #include <vector>
 
 #include "audiocollector.hpp"
-
-#include <windows.h>
-#include <audioclient.h>
-#include <combaseapi.h>
-#include <mmdeviceapi.h>
-#include <mmreg.h>
+#include "wasapiformat.hpp"
 
 namespace {
 
 Q_LOGGING_CATEGORY(lcWasapi, "caelestia.audio.wasapi", QtInfoMsg)
 
 // Render-endpoint notifications arrive on a COM thread. The worker joins the
-// multi-threaded apartment, so the enumerator can call this object directly.
+// multi-threaded apartment, so the enumerator can call the object directly.
+// The packet event is passed to IAudioClient::SetEventHandle, so the worker
+// waits on one event set for every source that can change capture state.
 class DeviceChangeClient final : public IMMNotificationClient {
 public:
-    explicit DeviceChangeClient(HANDLE wakeEvent)
-        : m_wakeEvent(wakeEvent) {}
+    explicit DeviceChangeClient(HANDLE deviceEvent)
+        : m_deviceEvent(deviceEvent) {}
 
     HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** object) override {
         if (!object) {
@@ -43,9 +47,7 @@ public:
         return E_NOINTERFACE;
     }
 
-    ULONG STDMETHODCALLTYPE AddRef() override {
-        return ++m_refs;
-    }
+    ULONG STDMETHODCALLTYPE AddRef() override { return ++m_refs; }
 
     ULONG STDMETHODCALLTYPE Release() override {
         const ULONG remaining = --m_refs;
@@ -55,44 +57,48 @@ public:
         return remaining;
     }
 
-    HRESULT STDMETHODCALLTYPE OnDeviceStateChanged(LPCWSTR, DWORD) override {
-        return S_OK;
-    }
-
-    HRESULT STDMETHODCALLTYPE OnDeviceAdded(LPCWSTR) override {
-        return S_OK;
-    }
-
-    HRESULT STDMETHODCALLTYPE OnDeviceRemoved(LPCWSTR) override {
-        return S_OK;
-    }
-
-    HRESULT STDMETHODCALLTYPE OnDefaultDeviceChanged(EDataFlow flow, ERole role, LPCWSTR) override {
-        // Follow the default render endpoint in every role the shell may use.
-        if (flow == eRender && (role == eConsole || role == eMultimedia)) {
-            SetEvent(m_wakeEvent);
+    HRESULT STDMETHODCALLTYPE OnDeviceStateChanged(LPCWSTR, DWORD newState) override {
+        // State-change callbacks do not carry a data flow, so any render or
+        // capture endpoint transition may mean the default output moved.
+        if (newState == DEVICE_STATE_ACTIVE || newState == DEVICE_STATE_DISABLED ||
+            newState == DEVICE_STATE_NOTPRESENT || newState == DEVICE_STATE_UNPLUGGED) {
+            SetEvent(m_deviceEvent);
         }
         return S_OK;
     }
 
-    HRESULT STDMETHODCALLTYPE OnPropertyValueChanged(LPCWSTR, const PROPERTYKEY) override {
+    HRESULT STDMETHODCALLTYPE OnDeviceAdded(LPCWSTR) override {
+        SetEvent(m_deviceEvent);
         return S_OK;
     }
+
+    HRESULT STDMETHODCALLTYPE OnDeviceRemoved(LPCWSTR) override {
+        SetEvent(m_deviceEvent);
+        return S_OK;
+    }
+
+    HRESULT STDMETHODCALLTYPE OnDefaultDeviceChanged(EDataFlow flow, ERole, LPCWSTR) override {
+        if (flow == eRender) {
+            SetEvent(m_deviceEvent);
+        }
+        return S_OK;
+    }
+
+    HRESULT STDMETHODCALLTYPE OnPropertyValueChanged(LPCWSTR, const PROPERTYKEY) override { return S_OK; }
 
 private:
     ~DeviceChangeClient() = default;
 
     std::atomic<ULONG> m_refs{ 1 };
-    HANDLE m_wakeEvent;
+    HANDLE m_deviceEvent;
 };
 
 // Small COM holder; WRL is not part of every clang-cl MSVC-tools layout.
 template <typename T> class ComPtr {
 public:
     ComPtr() = default;
-    ~ComPtr() {
-        reset();
-    }
+
+    ~ComPtr() { reset(); }
 
     ComPtr(const ComPtr&) = delete;
     ComPtr& operator=(const ComPtr&) = delete;
@@ -102,17 +108,11 @@ public:
         return &m_ptr;
     }
 
-    [[nodiscard]] T* get() const {
-        return m_ptr;
-    }
+    [[nodiscard]] T* get() const { return m_ptr; }
 
-    T* operator->() const {
-        return m_ptr;
-    }
+    T* operator->() const { return m_ptr; }
 
-    explicit operator bool() const {
-        return m_ptr != nullptr;
-    }
+    explicit operator bool() const { return m_ptr != nullptr; }
 
     void reset() {
         if (m_ptr) {
@@ -125,18 +125,14 @@ private:
     T* m_ptr = nullptr;
 };
 
-constexpr GUID kSubtypeFloat = { 0x00000003, 0x0000, 0x0010, { 0x80, 0x00, 0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71 } };
-constexpr GUID kSubtypePcm = { 0x00000001, 0x0000, 0x0010, { 0x80, 0x00, 0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71 } };
-
 } // namespace
 
 namespace caelestia::shell::windows {
 
 namespace ac = ::caelestia::shell::services::ac;
+namespace wasapi = ::caelestia::shell::windows::audio;
 
 struct WasapiLoopbackWorker::Impl {
-    enum class Format { Float32, Pcm16, Pcm32, Unsupported };
-
     Impl(std::stop_token stopToken, caelestia::shell::services::AudioCollector* target)
         : token(std::move(stopToken))
         , collector(target) {}
@@ -144,14 +140,17 @@ struct WasapiLoopbackWorker::Impl {
     std::stop_token token;
     caelestia::shell::services::AudioCollector* collector = nullptr;
 
-    HANDLE wakeEvent = nullptr;
+    HANDLE stopEvent = nullptr;
+    HANDLE packetEvent = nullptr;
+    HANDLE deviceEvent = nullptr;
     ComPtr<IMMDeviceEnumerator> enumerator;
     ComPtr<IAudioClient> client;
     ComPtr<IAudioCaptureClient> capture;
     DeviceChangeClient* notifications = nullptr;
+    bool notificationsRegistered = false;
     WAVEFORMATEX* mixFormat = nullptr;
     int inputRate = 0;
-    Format format = Format::Unsupported;
+    wasapi::MixFormat format = wasapi::MixFormat::Unsupported;
     int channels = 0;
 
     std::vector<float> mono;
@@ -160,13 +159,13 @@ struct WasapiLoopbackWorker::Impl {
     float previousSample = 0.0f;
     bool haveSample = false;
 
-    UINT32 idlePolls = 0;
-    bool clearedForIdle = false;
-
     ~Impl() {
         releaseClient();
-        if (wakeEvent) {
-            CloseHandle(wakeEvent);
+        for (auto** event : { &stopEvent, &packetEvent, &deviceEvent }) {
+            if (*event) {
+                CloseHandle(*event);
+                *event = nullptr;
+            }
         }
     }
 
@@ -180,41 +179,14 @@ struct WasapiLoopbackWorker::Impl {
             CoTaskMemFree(mixFormat);
             mixFormat = nullptr;
         }
-    }
-
-    // Only widths convertFrames() reads exactly are accepted; anything else (8-bit,
-    // packed 24-bit, odd block sizes) is rejected so packets are never overread.
-    [[nodiscard]] Format formatFrom(const WAVEFORMATEX* waveFormat) const {
-        if (!waveFormat || waveFormat->nChannels == 0) {
-            return Format::Unsupported;
+        if (packetEvent) {
+            ResetEvent(packetEvent);
         }
-
-        const auto bits = waveFormat->wBitsPerSample;
-        if ((bits != 16 && bits != 32) || waveFormat->nBlockAlign != waveFormat->nChannels * (bits / 8)) {
-            return Format::Unsupported;
+        if (collector) {
+            // Drop the previous endpoint's window so a device switch cannot
+            // replay it before the new client publishes audio.
+            collector->clearBuffer();
         }
-
-        bool isFloat = false;
-        if (waveFormat->wFormatTag == WAVE_FORMAT_EXTENSIBLE) {
-            if (waveFormat->cbSize < sizeof(WAVEFORMATEXTENSIBLE) - sizeof(WAVEFORMATEX)) {
-                return Format::Unsupported;
-            }
-            const auto* extended = reinterpret_cast<const WAVEFORMATEXTENSIBLE*>(waveFormat);
-            if (IsEqualGUID(extended->SubFormat, kSubtypeFloat)) {
-                isFloat = true;
-            } else if (!IsEqualGUID(extended->SubFormat, kSubtypePcm)) {
-                return Format::Unsupported;
-            }
-        } else if (waveFormat->wFormatTag == WAVE_FORMAT_IEEE_FLOAT) {
-            isFloat = true;
-        } else if (waveFormat->wFormatTag != WAVE_FORMAT_PCM) {
-            return Format::Unsupported;
-        }
-
-        if (isFloat) {
-            return bits == 32 ? Format::Float32 : Format::Unsupported;
-        }
-        return bits == 16 ? Format::Pcm16 : Format::Pcm32;
     }
 
     HRESULT createClient() {
@@ -245,10 +217,21 @@ struct WasapiLoopbackWorker::Impl {
             return result;
         }
 
-        format = formatFrom(mixFormat);
+        format = wasapi::mixFormatFrom(mixFormat);
         channels = static_cast<int>(mixFormat->nChannels);
         inputRate = static_cast<int>(mixFormat->nSamplesPerSec);
-        if (format == Format::Unsupported || channels <= 0 || inputRate <= 0) {
+
+        // Publish the engine period so readers can tell a starved stream from
+        // an idle one without a capture timer of their own.
+        REFERENCE_TIME defaultPeriod = 0;
+        REFERENCE_TIME minPeriod = 0;
+        if (SUCCEEDED(client->GetDevicePeriod(&defaultPeriod, &minPeriod)) && defaultPeriod > 0) {
+            collector->setCapturePeriod(static_cast<quint32>((defaultPeriod + 9) / 10));
+        } else {
+            collector->setCapturePeriod(0);
+        }
+
+        if (format == wasapi::MixFormat::Unsupported || channels <= 0 || inputRate <= 0) {
             qCInfo(lcWasapi) << "unsupported loopback mix format"
                              << "tag" << (mixFormat ? mixFormat->wFormatTag : 0) << "bits"
                              << (mixFormat ? mixFormat->wBitsPerSample : 0);
@@ -256,22 +239,28 @@ struct WasapiLoopbackWorker::Impl {
             return AUDCLNT_E_UNSUPPORTED_FORMAT;
         }
 
-        // Shared mode requires the engine's own mix format. A zero duration
-        // lets the engine pick the period; loopback is polled below.
-        result = client->Initialize(
-            AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_LOOPBACK, 0, 0, mixFormat, nullptr);
+        // Shared mode requires the engine's own mix format. Event-driven
+        // buffering requires both durations to be zero, and the packet event
+        // must be registered before Start.
+        result = client->Initialize(AUDCLNT_SHAREMODE_SHARED, wasapi::kLoopbackFlags, 0, 0, mixFormat, nullptr);
         if (FAILED(result)) {
             releaseClient();
             return result;
         }
 
-        result =
-            client->GetService(__uuidof(IAudioCaptureClient), reinterpret_cast<void**>(capture.put()));
+        result = client->SetEventHandle(packetEvent);
         if (FAILED(result)) {
             releaseClient();
             return result;
         }
 
+        result = client->GetService(__uuidof(IAudioCaptureClient), reinterpret_cast<void**>(capture.put()));
+        if (FAILED(result)) {
+            releaseClient();
+            return result;
+        }
+
+        ResetEvent(packetEvent);
         result = client->Start();
         if (FAILED(result)) {
             releaseClient();
@@ -280,45 +269,13 @@ struct WasapiLoopbackWorker::Impl {
 
         resamplePhase = 1.0;
         haveSample = false;
-        idlePolls = 0;
-        clearedForIdle = false;
+        qCInfo(lcWasapi) << "loopback capture:" << channels << "channels at" << inputRate << "Hz";
         return S_OK;
     }
 
     void convertFrames(const BYTE* data, UINT32 frames) {
         mono.resize(frames);
-        const auto frameCount = static_cast<std::size_t>(frames);
-        const auto channelCount = static_cast<std::size_t>(channels);
-
-        if (format == Format::Float32) {
-            const auto* samples = reinterpret_cast<const float*>(data);
-            for (std::size_t frame = 0; frame < frameCount; ++frame) {
-                double sum = 0.0;
-                for (std::size_t channel = 0; channel < channelCount; ++channel) {
-                    sum += samples[frame * channelCount + channel];
-                }
-                mono[frame] = static_cast<float>(sum / static_cast<double>(channelCount));
-            }
-        } else if (format == Format::Pcm16) {
-            const auto* samples = reinterpret_cast<const qint16*>(data);
-            for (std::size_t frame = 0; frame < frameCount; ++frame) {
-                double sum = 0.0;
-                for (std::size_t channel = 0; channel < channelCount; ++channel) {
-                    sum += static_cast<double>(samples[frame * channelCount + channel]) / 32768.0;
-                }
-                mono[frame] = static_cast<float>(sum / static_cast<double>(channelCount));
-            }
-        } else {
-            const auto* samples = reinterpret_cast<const qint32*>(data);
-            for (std::size_t frame = 0; frame < frameCount; ++frame) {
-                double sum = 0.0;
-                for (std::size_t channel = 0; channel < channelCount; ++channel) {
-                    sum += static_cast<double>(samples[frame * channelCount + channel]) / 2147483648.0;
-                }
-                mono[frame] = static_cast<float>(sum / static_cast<double>(channelCount));
-            }
-        }
-
+        wasapi::downmixToMono(format, data, frames, static_cast<std::size_t>(channels), mono.data());
         resample();
     }
 
@@ -347,8 +304,7 @@ struct WasapiLoopbackWorker::Impl {
             }
 
             while (resamplePhase < 1.0) {
-                resampled.push_back(
-                    static_cast<float>(previousSample + (current - previousSample) * resamplePhase));
+                resampled.push_back(static_cast<float>(previousSample + (current - previousSample) * resamplePhase));
                 resamplePhase += ratio;
             }
             resamplePhase -= 1.0;
@@ -360,54 +316,72 @@ struct WasapiLoopbackWorker::Impl {
         }
     }
 
-    void pump() {
-        UINT32 padding = 0;
-        HRESULT result = client->GetCurrentPadding(&padding);
-        if (FAILED(result)) {
-            releaseClient();
-            return;
+    // Drain every packet the engine has queued. An event can cover more than
+    // one packet after a delay, and GetBuffer must be paired with ReleaseBuffer.
+    HRESULT pump() {
+        if (!capture) {
+            return E_UNEXPECTED;
         }
 
-        if (padding == 0) {
-            // The render engine produces nothing while the endpoint is idle;
-            // decay the bars instead of holding the last window forever.
-            if (++idlePolls >= 25 && !clearedForIdle) {
-                collector->clearBuffer();
-                clearedForIdle = true;
+        for (;;) {
+            UINT32 packet = 0;
+            HRESULT result = capture->GetNextPacketSize(&packet);
+            if (FAILED(result)) {
+                return result;
             }
-            return;
-        }
+            if (packet == 0) {
+                return S_OK;
+            }
 
-        idlePolls = 0;
-        clearedForIdle = false;
+            BYTE* data = nullptr;
+            UINT32 frames = 0;
+            DWORD flags = 0;
+            result = capture->GetBuffer(&data, &frames, &flags, nullptr, nullptr);
+            if (result == AUDCLNT_S_BUFFER_EMPTY) {
+                return S_OK;
+            }
+            if (FAILED(result)) {
+                return result;
+            }
 
-        BYTE* data = nullptr;
-        UINT32 frames = 0;
-        DWORD flags = 0;
-        result = capture->GetBuffer(&data, &frames, &flags, nullptr, nullptr);
-        if (FAILED(result)) {
-            releaseClient();
-            return;
-        }
+            if (frames > 0) {
+                if ((flags & AUDCLNT_BUFFERFLAGS_DATA_DISCONTINUITY) != 0) {
+                    // Drop the interpolator state across a gap.
+                    haveSample = false;
+                }
+                if ((flags & AUDCLNT_BUFFERFLAGS_SILENT) != 0 || data == nullptr) {
+                    pushSilence(frames);
+                } else {
+                    convertFrames(data, frames);
+                }
+            }
 
-        if (frames > 0) {
-            if ((flags & AUDCLNT_BUFFERFLAGS_SILENT) != 0 || data == nullptr) {
-                pushSilence(frames);
-            } else if ((flags & AUDCLNT_BUFFERFLAGS_DATA_DISCONTINUITY) != 0) {
-                // Drop the interpolator state across a gap.
-                haveSample = false;
-                convertFrames(data, frames);
-            } else {
-                convertFrames(data, frames);
+            result = capture->ReleaseBuffer(frames);
+            if (FAILED(result)) {
+                return result;
             }
         }
+    }
 
-        capture->ReleaseBuffer(frames);
+    // Wait for the next state change that can supply a default output. Returns
+    // true when the worker should stop: the stop token fired, the wait failed,
+    // or endpoint notifications are unavailable so no recovery can arrive.
+    bool waitForDeviceChange() {
+        if (!notificationsRegistered) {
+            return true;
+        }
+
+        const HANDLE handles[] = { stopEvent, deviceEvent };
+        const DWORD result = WaitForMultipleObjects(2, handles, FALSE, INFINITE);
+        if (result == WAIT_OBJECT_0 + 1) {
+            ResetEvent(deviceEvent);
+            return false;
+        }
+        return true;
     }
 };
 
-WasapiLoopbackWorker::WasapiLoopbackWorker(
-    std::stop_token token, caelestia::shell::services::AudioCollector* collector)
+WasapiLoopbackWorker::WasapiLoopbackWorker(std::stop_token token, caelestia::shell::services::AudioCollector* collector)
     : m_impl(std::make_unique<Impl>(std::move(token), collector)) {}
 
 WasapiLoopbackWorker::~WasapiLoopbackWorker() = default;
@@ -422,63 +396,96 @@ void WasapiLoopbackWorker::run() {
         return;
     }
 
-    self.wakeEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
-    if (!self.wakeEvent) {
-        qCInfo(lcWasapi) << "failed to create the endpoint-change event";
+    self.stopEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+    self.packetEvent = CreateEventW(nullptr, FALSE, FALSE, nullptr);
+    self.deviceEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+    if (!self.stopEvent || !self.packetEvent || !self.deviceEvent) {
+        qCInfo(lcWasapi) << "failed to create the loopback events";
         if (comInitialized) {
             CoUninitialize();
         }
         return;
     }
 
-    HRESULT result = CoCreateInstance(
-        __uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL, __uuidof(IMMDeviceEnumerator),
-        reinterpret_cast<void**>(self.enumerator.put()));
-    if (FAILED(result)) {
-        qCInfo(lcWasapi) << "audio endpoint enumerator unavailable";
-        if (comInitialized) {
-            CoUninitialize();
-        }
-        return;
-    }
+    {
+        // Requesting stop sets the same waitable event the worker already
+        // blocks on, so teardown never waits for a capture period or a retry.
+        std::stop_callback stopCallback(self.token, [&self] {
+            SetEvent(self.stopEvent);
+        });
 
-    self.notifications = new DeviceChangeClient(self.wakeEvent);
-    self.enumerator->RegisterEndpointNotificationCallback(self.notifications);
-
-    while (!self.token.stop_requested()) {
-        if (!self.client) {
-            result = self.createClient();
+        if (!wasapi::eventDrivenLoopbackSupported(wasapi::currentWindowsBuild())) {
+            qCInfo(lcWasapi) << "event-driven loopback requires Windows 10 1703 or newer";
+            WaitForSingleObject(self.stopEvent, INFINITE);
+        } else {
+            HRESULT result = CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL,
+                __uuidof(IMMDeviceEnumerator), reinterpret_cast<void**>(self.enumerator.put()));
             if (FAILED(result)) {
-                // No endpoint, unsupported format or a denied client: idle
-                // quietly and retry so a device plugged in later starts bars.
-                for (int i = 0; i < 50 && !self.token.stop_requested(); ++i) {
-                    if (WaitForSingleObject(self.wakeEvent, 20) == WAIT_OBJECT_0) {
-                        ResetEvent(self.wakeEvent);
+                qCInfo(lcWasapi) << "audio endpoint enumerator unavailable";
+                WaitForSingleObject(self.stopEvent, INFINITE);
+            } else {
+                self.notifications = new DeviceChangeClient(self.deviceEvent);
+                self.notificationsRegistered =
+                    SUCCEEDED(self.enumerator->RegisterEndpointNotificationCallback(self.notifications));
+                if (!self.notificationsRegistered) {
+                    qCInfo(lcWasapi) << "audio endpoint notifications unavailable";
+                }
+
+                for (;;) {
+                    if (!self.client) {
+                        result = self.createClient();
+                        if (FAILED(result)) {
+                            // No endpoint, unsupported format or a denied client:
+                            // wait for a device or default-device change instead of
+                            // waking on a timer to retry the same state.
+                            qCInfo(lcWasapi)
+                                << "loopback capture unavailable" << Qt::hex << static_cast<unsigned long>(result);
+                            if (self.waitForDeviceChange()) {
+                                break;
+                            }
+                            continue;
+                        }
+                    }
+
+                    const HANDLE handles[] = { self.stopEvent, self.deviceEvent, self.packetEvent };
+                    const DWORD wait = WaitForMultipleObjects(3, handles, FALSE, INFINITE);
+                    if (wait == WAIT_OBJECT_0) {
                         break;
                     }
+                    if (wait == WAIT_OBJECT_0 + 1) {
+                        ResetEvent(self.deviceEvent);
+                        self.releaseClient();
+                        continue;
+                    }
+                    if (wait == WAIT_OBJECT_0 + 2) {
+                        result = self.pump();
+                        if (FAILED(result)) {
+                            qCInfo(lcWasapi)
+                                << "loopback capture lost" << Qt::hex << static_cast<unsigned long>(result);
+                            self.releaseClient();
+                            if (self.waitForDeviceChange()) {
+                                break;
+                            }
+                        }
+                        continue;
+                    }
+
+                    qCInfo(lcWasapi) << "loopback wait failed" << GetLastError();
+                    break;
                 }
-                continue;
             }
         }
 
-        if (WaitForSingleObject(self.wakeEvent, 12) == WAIT_OBJECT_0) {
-            ResetEvent(self.wakeEvent);
-            self.releaseClient();
-            continue;
+        if (self.notifications) {
+            if (self.notificationsRegistered) {
+                self.enumerator->UnregisterEndpointNotificationCallback(self.notifications);
+            }
+            self.notifications->Release();
+            self.notifications = nullptr;
         }
-
-        if (self.token.stop_requested()) {
-            break;
-        }
-
-        self.pump();
+        self.releaseClient();
+        self.enumerator.reset();
     }
-
-    self.enumerator->UnregisterEndpointNotificationCallback(self.notifications);
-    self.notifications->Release();
-    self.notifications = nullptr;
-    self.releaseClient();
-    self.enumerator.reset();
 
     if (comInitialized) {
         CoUninitialize();

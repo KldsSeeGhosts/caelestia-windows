@@ -14,7 +14,7 @@ $run = [IO.Path]::GetFullPath($RunRoot)
 New-Item -ItemType Directory -Force -Path $run | Out-Null
 $test = Join-Path $BuildRoot 'caelestia\lib\displaypower-tests.exe'
 if (-not (Test-Path -LiteralPath $test -PathType Leaf)) {
-    throw "Missing display power test: $test (run windows/scripts/Build-Prototype.ps1 first)."
+    throw "Missing display power test: $test (run windows/scripts/Build-Prototype.ps1 -Tests first)."
 }
 $log = Join-Path $run 'displaypower-tests.txt'
 # The executable only needs Qt; it never imports the staged shell or a profile.

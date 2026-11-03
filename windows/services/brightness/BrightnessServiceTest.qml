@@ -13,7 +13,7 @@ QtObject {
     property QtObject unpluggedRecord: null
 
     // Strict-capable model of the backend the adapter is written against:
-    // the pinned strict-route members (525786f,
+    // the strict-route members (introduced at 525786f,
     // src/windows/system/brightness.cpp) plus the id-carrying query API
     // (queryRequest/queryFinished). Timing and argument order come from the
     // native source, so the adapter is exercised against realistic completion
@@ -29,8 +29,8 @@ QtObject {
     //     brightness), with isDdc true only for the ddc and software routes.
     //     The plain query() queues an id-less completion that emits
     //     routeChanged and queried only.
-    //   - queryIdsSupported false removes queryRequest, modeling the pinned
-    //     525786f backend, which carries the strict members but no ids.
+    //   - queryIdsSupported false removes queryRequest, modeling an older
+    //     backend (525786f), which carries the strict members but no ids.
     //   - A hardware write completes QUEUED: brightnessSetFinished(ok) and
     //     then exactly one brightnessWriteResult(value, ok, route, error),
     //     with the per-screen in-flight bookkeeping finalized before the
@@ -71,7 +71,7 @@ QtObject {
         property int strictRefusals: 0
         property int strictDisableAttempts: 0
         property bool sawStrictAtWrite: false
-        // The id-carrying query API. False models the pinned 525786f backend.
+        // The id-carrying query API. False models the older 525786f backend.
         property bool queryIdsSupported: true
         // Stored routes; a name absent from the map or mapped to "" is
         // unresolved, exactly like the native BrightnessRoute default.
@@ -378,7 +378,7 @@ QtObject {
     readonly property FakeBackend swapBackendA: FakeBackend {}
     readonly property FakeBackend swapBackendB: FakeBackend {}
     readonly property BrightnessService noId: BrightnessService {}
-    // The pinned 525786f shape: strict members present, query ids absent.
+    // The older 525786f shape: strict members present, query ids absent.
     readonly property FakeBackend noIdBackend: FakeBackend { queryIdsSupported: false }
     readonly property BrightnessService hdrCase: BrightnessService {}
     readonly property FakeBackend hdrBackend: FakeBackend {}
@@ -386,6 +386,17 @@ QtObject {
     readonly property FakeBackend identityBackend: FakeBackend {}
     readonly property BrightnessService feedbackCase: BrightnessService {}
     readonly property FakeBackend feedbackBackend: FakeBackend {}
+    // (a) A healthy but slow write: the shipped 15 s lost-result bound is used,
+    // so a 4.5 s DDC/CI write must stay pending. (b) A lost result recovers at
+    // a shortened bound, re-reads the display and then drains its queued
+    // target. The shortened interval keeps the fixture's real-time wait small.
+    readonly property BrightnessService slowWriteCase: BrightnessService {}
+    readonly property FakeBackend slowWriteBackend: FakeBackend {}
+    readonly property BrightnessService lostResultCase: BrightnessService { writeTimeoutMs: 300 }
+    readonly property FakeBackend lostResultBackend: FakeBackend {}
+    // (c) The recovery query's result is lost too: the same bound expires it.
+    readonly property BrightnessService lostQueryCase: BrightnessService { writeTimeoutMs: 100 }
+    readonly property FakeBackend lostQueryBackend: FakeBackend {}
     property var feedbackEvents: []
     property Connections feedbackLog: Connections {
         target: test.feedbackCase
@@ -393,8 +404,19 @@ QtObject {
             test.feedbackEvents = test.feedbackEvents.concat([{screen: screenName, value: value}]);
         }
     }
-    readonly property QtObject reusedScreen: QtObject { property string name: "MAG321UX OLED" }
-    readonly property QtObject unchangedScreen: QtObject { property string name: "MAG321UX OLED" }
+    // Covers #213: a late route change while a record is failed must not turn
+    // the next refresh into same-route OSD feedback.
+    property var lostQueryFeedbackEvents: []
+    property Connections lostQueryFeedbackLog: Connections {
+        target: test.lostQueryCase
+        function onBrightnessFeedback(screenName, value): void {
+            test.lostQueryFeedbackEvents = test.lostQueryFeedbackEvents.concat([
+                {screen: screenName, value: value}
+            ]);
+        }
+    }
+    readonly property QtObject reusedScreen: QtObject { property string name: "DISPLAY-A" }
+    readonly property QtObject unchangedScreen: QtObject { property string name: "DISPLAY-A" }
 
     readonly property EmptyBackend emptyBackend: EmptyBackend {}
     readonly property SilentBackend silentBackend: SilentBackend {}
@@ -545,20 +567,20 @@ QtObject {
         identityCase.screens = [reusedScreen, unchangedScreen];
         identityCase.enabled = true;
         identityCase.backend = identityBackend;
-        check(identityCase.queryMonitor("MAG321UX OLED"), "initial reused-name query");
+        check(identityCase.queryMonitor("DISPLAY-A"), "initial reused-name query");
         identityBackend.deliverQuery();
-        const unchangedRecord = identityCase.stateFor("MAG321UX OLED");
-        reusedScreen.name = "DELL S2725QS";
+        const unchangedRecord = identityCase.stateFor("DISPLAY-A");
+        reusedScreen.name = "DISPLAY-B";
         identityBackend.displayConfigurationChanged();
-        check(identityCase.stateFor("DELL S2725QS") !== null,
-            "identity-only hotplug creates the corrected Dell brightness record");
-        check(identityCase.stateFor("MAG321UX OLED") === unchangedRecord,
-            "identity-only hotplug keeps the MSI brightness record");
-        check(identityBackend.pendingQueries === 2, "both corrected monitor names are re-queried");
+        check(identityCase.stateFor("DISPLAY-B") !== null,
+            "identity-only hotplug creates the renamed display brightness record");
+        check(identityCase.stateFor("DISPLAY-A") === unchangedRecord,
+            "identity-only hotplug keeps the unchanged display brightness record");
+        check(identityBackend.pendingQueries === 2, "both display names are re-queried");
         identityBackend.deliverQuery();
         identityBackend.deliverQuery();
-        check(identityCase.stateFor("DELL S2725QS").brightnessKnown,
-            "the corrected Dell record accepts its own correlated query result");
+        check(identityCase.stateFor("DISPLAY-B").brightnessKnown,
+            "the renamed display record accepts its own correlated query result");
 
         // A native HDR route reports normalized SDR white and confirms its
         // rounded read-back; a topology notification switches the same screen.
@@ -1416,7 +1438,7 @@ QtObject {
             "the swapped record holds B's level, never A's 0.2");
 
         // --- The no-id backend stays read-only --------------------------------
-        // The pinned 525786f shape: strict members present, query ids absent.
+        // The older 525786f shape: strict members present, query ids absent.
         // Queries still update read-only display state, but no result can
         // authorize a hardware write or interactive control.
         check(typeof noIdBackend.queryRequest === "undefined",
@@ -1686,7 +1708,256 @@ QtObject {
             && noIdBackend.legacySetCalls === 0,
             "the adapter never used a legacy write path");
 
-        destructionCheck.start();
+        // (a) The reviewer's reproduction: a healthy DDC/CI write that takes
+        // 4.5 s on the backend's single worker. The old 4 s watchdog failed it
+        // mid-write, lost the queued target and rejected the next drag. The
+        // shipped bound is 15 s, so the write stays pending, confirms on its
+        // own result and then applies the queued target.
+        check(slowWriteCase.writeTimeoutMs === 15000 && slowWriteCase.effectiveWriteTimeoutMs === 15000,
+            "the shipped lost-result bound is 15 s");
+        slowWriteCase.screens = [{name: "SLOW1"}];
+        slowWriteCase.enabled = true;
+        slowWriteCase.controlsEnabled = true;
+        slowWriteCase.backend = slowWriteBackend;
+        check(slowWriteCase.queryMonitor("SLOW1"), "slow-write case route query");
+        slowWriteBackend.deliverQuery();
+        close(slowWriteCase.stateFor("SLOW1").brightness, 0.5, "slow-write case baseline level");
+        check(slowWriteCase.write("SLOW1", 0.8), "slow-write case write accepted");
+        check(slowWriteCase.write("SLOW1", 0.9), "slow-write case second drag coalesces");
+        check(slowWriteCase.stateFor("SLOW1").writeWatchdog.running,
+            "a pending write arms its lost-result watchdog");
+        slowWriteMidCheck.start();
+    }
+
+    // 4.4 s in: past the old 4 s guess, still a healthy write.
+    readonly property Timer slowWriteMidCheck: Timer {
+        interval: 4400
+        onTriggered: {
+            try {
+                const state = slowWriteCase.stateFor("SLOW1");
+                check(state.writePending, "a 4.4 s write is still pending, not failed");
+                check(slowWriteCase.lostWriteResults === 0,
+                    "a slow write is never treated as a lost result");
+                check(state.lastOutcome === "pending", "a slow write keeps its pending outcome");
+                check(state.hasQueuedWrite, "a slow write keeps its queued drag target");
+                close(state.brightness, 0.9, "the display keeps the queued drag target");
+                check(slowWriteBackend.queryCalls === 1,
+                    "a slow write triggers no recovery query");
+                slowWriteResult.start();
+            } catch (error) {
+                console.error("CAELESTIA_BRIGHTNESS_FIXTURE_FAIL " + error.message);
+                Qt.exit(1);
+            }
+        }
+    }
+
+    // 4.5 s in: the write completes successfully and drains the queue.
+    readonly property Timer slowWriteResult: Timer {
+        interval: 100
+        onTriggered: {
+            try {
+                slowWriteBackend.completeWrite();
+                const state = slowWriteCase.stateFor("SLOW1");
+                check(slowWriteCase.lostWriteResults === 0,
+                    "the 4.5 s write was never failed");
+                close(state.lastConfirmed, 0.8, "the slow write confirms its own level");
+                check(state.writePending, "the queued target is dispatched after the slow write");
+                check(state.lastOutcome === "pending", "the queued target is in flight");
+                check(slowWriteBackend.setCalls === 2, "the queued target reached the backend");
+                close(slowWriteBackend.lastSet.value, 0.9, "the queued target is the newest drag");
+                slowWriteBackend.completeWrite();
+                check(!state.writePending && state.lastOutcome === "hardware-requested",
+                    "the queued target settles normally");
+                close(state.brightness, 0.9, "the queued target is applied");
+                check(!state.writeWatchdog.running, "the watchdog stops on the terminal result");
+                check(slowWriteBackend.pendingWrites === 0, "nothing is left in flight");
+
+                // (b) A result that never arrives recovers at the hard bound.
+                // The fake keeps the write in flight, so a real result can still
+                // be delivered late and must be ignored.
+                lostResultCase.screens = [{name: "LOST1"}];
+                lostResultCase.enabled = true;
+                lostResultCase.controlsEnabled = true;
+                lostResultCase.backend = lostResultBackend;
+                check(lostResultCase.queryMonitor("LOST1"), "lost-result case route query");
+                lostResultBackend.deliverQuery();
+                close(lostResultCase.stateFor("LOST1").brightness, 0.5, "lost-result baseline level");
+                check(lostResultCase.write("LOST1", 0.8), "lost-result write accepted");
+                lostResultBackend.probeLevel = 0.8; // The slow write reaches the panel.
+                check(lostResultCase.write("LOST1", 0.9), "lost-result queued target");
+                check(lostResultCase.stateFor("LOST1").writePending, "the lost write is pending");
+                lostResultCheck.start();
+            } catch (error) {
+                console.error("CAELESTIA_BRIGHTNESS_FIXTURE_FAIL " + error.message);
+                Qt.exit(1);
+            }
+        }
+    }
+
+    // The first 300 ms bound has elapsed but the recovery query's own bound
+    // (another 300 ms) has not; the query is in flight and the queued target
+    // must still be there.
+    readonly property Timer lostResultCheck: Timer {
+        interval: 450
+        onTriggered: {
+            try {
+                const state = lostResultCase.stateFor("LOST1");
+                check(!state.writePending, "a lost result is recovered at the hard bound");
+                check(lostResultCase.lostWriteResults === 1, "the lost result is counted once");
+                check(state.lastOutcome === "failed", "a lost result records a failed outcome");
+                check(state.lastError.indexOf("No brightness write result arrived") === 0,
+                    "a lost result says no result came from the display");
+                check(state.hasQueuedWrite, "the recovery keeps the queued drag target");
+                close(state.brightness, 0.9,
+                    "the recovery does not snap back to the pre-write guess");
+                check(state.querying, "the recovery asks hardware for the true level");
+                check(lostResultBackend.queryCalls === 2, "the recovery query reached the backend");
+                check(state.writeWatchdog.running,
+                    "the recovery query stays bounded by the watchdog");
+                check(!lostResultCase.canWrite("LOST1"),
+                    "the recovery query gates a new write until it settles");
+                // The worker finishes the slow write first: its late result is
+                // ignored, and the query behind it reads the applied value.
+                lostResultBackend.completeWrite();
+                check(!lostResultCase.stateFor("LOST1").writePending,
+                    "a late result does not revive the recovered write");
+                check(lostResultCase.stateFor("LOST1").lastOutcome === "failed",
+                    "a late result does not overwrite the lost-result outcome");
+                check(lostResultCase.stateFor("LOST1").querying,
+                    "a late result does not settle the recovery query");
+                lostResultBackend.deliverQuery();
+                const recovered = lostResultCase.stateFor("LOST1");
+                check(!recovered.querying, "the recovery query settles the record");
+                close(recovered.lastConfirmed, 0.8, "the record adopts the queried hardware level");
+                check(recovered.writePending, "the queued target is dispatched after the query");
+                check(lostResultBackend.setCalls === 2, "the queued target reached the backend");
+                close(lostResultBackend.lastSet.value, 0.9, "the queued target is the newest drag");
+                lostResultBackend.completeWrite();
+                check(!recovered.writePending && recovered.lastOutcome === "hardware-requested",
+                    "the drained target settles normally");
+                close(recovered.brightness, 0.9, "the drained target applies");
+                check(lostResultBackend.pendingQueries === 0 && lostResultBackend.pendingWrites === 0,
+                    "the recovery leaves nothing outstanding");
+                check(!recovered.writeWatchdog.running,
+                    "a settled recovery stops the watchdog");
+
+                // (c) Lost write result, then a lost recovery query result.
+                lostQueryCase.screens = [{name: "LOST2"}];
+                lostQueryCase.enabled = true;
+                lostQueryCase.controlsEnabled = true;
+                lostQueryCase.backend = lostQueryBackend;
+                check(lostQueryCase.queryMonitor("LOST2"), "lost-query case route query");
+                lostQueryBackend.deliverQuery();
+                check(lostQueryCase.write("LOST2", 0.8), "lost-query write accepted");
+                check(lostQueryCase.write("LOST2", 0.9), "lost-query queued target");
+                lostQueryCheck.start();
+            } catch (error) {
+                console.error("CAELESTIA_BRIGHTNESS_FIXTURE_FAIL " + error.message);
+                Qt.exit(1);
+            }
+        }
+    }
+
+    // Both bounds (about 200 ms) have elapsed with neither the write result
+    // nor the recovery query result delivered.
+    readonly property Timer lostQueryCheck: Timer {
+        interval: 600
+        onTriggered: {
+            try {
+                const state = lostQueryCase.stateFor("LOST2");
+                check(lostQueryCase.lostWriteResults === 1 && lostQueryCase.lostQueryResults === 1,
+                    "each lost result is counted once");
+                check(!state.querying && !state.writePending,
+                    "a lost recovery query does not wedge the record");
+                check(!state.writeWatchdog.running, "nothing is left armed");
+                check(!state.hasQueuedWrite, "the retained drag target is settled");
+                check(state.lastOutcome === "failed", "the settled target reports the failed outcome");
+                check(state.lastError.length > 0, "the failure is explained");
+                check(lostQueryBackend.setCalls === 1,
+                    "the queued target is not dispatched into a dead worker");
+                check(lostQueryBackend.queryCalls === 2, "only the one recovery query was issued");
+                close(state.brightness, 0.5, "the unconfirmed level snaps back to the last confirmation");
+                // Late results for the expired requests are ignored.
+                lostQueryBackend.completeWrite();
+                lostQueryBackend.deliverQuery();
+                check(!state.querying && !state.writePending && state.lastOutcome === "failed",
+                    "late write and query results are ignored");
+                check(lostQueryBackend.setCalls === 1, "a late result dispatches nothing");
+                check(lostQueryCase.canWrite("LOST2"), "the record is writable again");
+                check(lostQueryCase.write("LOST2", 0.7), "a later user write is accepted");
+                check(lostQueryBackend.setCalls === 2, "the user write reached the backend");
+                lostQueryBackend.completeWrite();
+                check(state.lastOutcome === "hardware-requested", "the user write settles normally");
+                check(lostQueryCase.queryMonitor("LOST2"), "a route refresh is accepted");
+                lostQueryBackend.deliverQuery();
+                check(!state.querying && state.lastOutcome === "queried", "the refresh settles the record");
+                check(lostQueryBackend.pendingQueries === 0 && lostQueryBackend.pendingWrites === 0,
+                    "nothing is left outstanding");
+
+                // (d) Both results lost while the route is revoked: a route
+                // change during the write must not be undone by the recovery.
+                check(lostQueryCase.write("LOST2", 0.6), "revoked-route write accepted");
+                lostQueryBackend.routes = Object.assign({}, lostQueryBackend.routes, {LOST2: "ddc"});
+                lostQueryBackend.routeChanged("LOST2", "ddc");
+                revokedRouteCheck.start();
+            } catch (error) {
+                console.error("CAELESTIA_BRIGHTNESS_FIXTURE_FAIL " + error.message);
+                Qt.exit(1);
+            }
+        }
+    }
+
+    readonly property Timer revokedRouteCheck: Timer {
+        interval: 600
+        onTriggered: {
+            try {
+                const state = lostQueryCase.stateFor("LOST2");
+                check(lostQueryCase.lostWriteResults === 2 && lostQueryCase.lostQueryResults === 2,
+                    "the revoked-route results are counted as lost");
+                check(!state.querying && !state.writePending, "the revoked-route record is not wedged");
+                check(!lostQueryCase.canWrite("LOST2"),
+                    "a revoked route is not restored as writable");
+                check(!state.available && state.state === "failed" && state.route === "",
+                    "the revoked-route record stays read-only");
+                lostQueryBackend.completeWrite();
+                while (lostQueryBackend.pendingQueries > 0)
+                    lostQueryBackend.deliverQuery();
+                check(!lostQueryCase.canWrite("LOST2"), "late results do not restore the route");
+                // #213: the expired query's late route must stay out of the
+                // failed record. Otherwise the next refresh treats the changed
+                // software level as a same-route observation and opens the OSD.
+                const failedFeedback = lostQueryFeedbackEvents.length;
+                lostQueryBackend.probeRoute = "software";
+                lostQueryBackend.probeLevel = 0.2;
+                lostQueryBackend.routeChanged("LOST2", "software");
+                check(state.state === "failed" && state.route === "",
+                    "a late route change is ignored while the record is failed");
+                check(lostQueryFeedbackEvents.length === failedFeedback,
+                    "a late route change is not OSD feedback");
+                check(lostQueryCase.queryMonitor("LOST2"), "an explicit refresh is accepted");
+                lostQueryBackend.deliverQuery();
+                check(!state.querying && state.lastOutcome === "queried",
+                    "the explicit refresh re-validates the route");
+                check(state.state === "software-only" && state.route === "software",
+                    "the refresh adopts the late software route");
+                close(state.lastConfirmed, 0.2, "the refresh adopts the software level");
+                check(lostQueryFeedbackEvents.length === failedFeedback,
+                    "the refresh after a failed record is a silent baseline");
+                // Only the unsolicited route was ignored: a real same-route
+                // change observed after that baseline still opens the OSD.
+                lostQueryBackend.probeLevel = 0.3;
+                check(lostQueryCase.queryMonitor("LOST2"), "a later software refresh is accepted");
+                lostQueryBackend.deliverQuery();
+                check(lostQueryFeedbackEvents.length === failedFeedback + 1,
+                    "a same-route change after the baseline still opens the OSD");
+                close(lostQueryFeedbackEvents[failedFeedback].value, 0.3,
+                    "the same-route feedback carries the new software level");
+                destructionCheck.start();
+            } catch (error) {
+                console.error("CAELESTIA_BRIGHTNESS_FIXTURE_FAIL " + error.message);
+                Qt.exit(1);
+            }
+        }
     }
 
     readonly property Timer destructionCheck: Timer {

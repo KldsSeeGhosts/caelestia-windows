@@ -6,7 +6,7 @@ const vm = require("node:vm");
 
 const repo = path.resolve(__dirname, "../..");
 const read = file => fs.readFileSync(path.join(repo, file), "utf8");
-const adapterRoot = "windows/combined-prototype/adapters/";
+const adapterRoot = "windows/shell/adapters/";
 const content = read("modules/bar/popouts/AudioPopout.qml");
 const adapter = read(`${adapterRoot}modules/bar/popouts/AudioPopout.qml`);
 const wrapper = read(`${adapterRoot}modules/bar/popouts/Wrapper.qml`);
@@ -18,7 +18,7 @@ test("audio popout keeps the upstream settings action without an inline mixer", 
     assert.doesNotMatch(content, /property Component mixer|sourceComponent:\s*root\.mixer/);
     assert.doesNotMatch(adapter, /\bmixer\s*:|AudioMixer\s*\{/);
 
-    const sources = JSON.parse(read("windows/combined-prototype/sources.d/bar.json"));
+    const sources = JSON.parse(read("windows/shell/sources.json"));
     assert.equal(sources["modules/bar/popouts/AudioPopout.qml"], "modules/bar/popouts/AudioPopoutContent.qml");
     assert.equal(Object.keys(sources).some(key => key.endsWith("/AudioMixer.qml")), false);
     assert.equal(fs.existsSync(path.join(repo, adapterRoot, "modules/bar/popouts/AudioMixer.qml")), false);

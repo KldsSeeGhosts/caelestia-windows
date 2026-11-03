@@ -11,6 +11,9 @@ import QtQuick
 //   initialized          bool, true once construction has settled
 //   enabled              bool, current tiler state; never written directly
 //   supportsIncluded     bool, feature-detected `Tiling.included` allowlist
+//   includedRuleCount    int, allowlist entries that passed the backend's
+//                        validation (-1 when the backend cannot say); 0 with a
+//                        non-empty list refuses interactive enabling
 //   lastError            string, guarded read ("" when unsupported)
 //   managedCount         int, guarded read (0 when unsupported)
 //   failedCount          int, guarded read (0 when unsupported)
@@ -29,7 +32,8 @@ import QtQuick
 // requests the native wrapper (`nativeRequested` stays false and the facade
 // keeps its Loader inactive). `observe` constructs and applies options but
 // `enabled` stays false. `interactive` may request enabling ONLY when the
-// parsed inclusion list is non-empty AND the backend supports `included`;
+// parsed inclusion list is non-empty, the backend supports `included` and at
+// least one entry passed the backend's own validation;
 // otherwise the mode refuses with a clear status reason and never enables.
 // Smoke runs force interactive down to observe. Older backends are
 // feature-detected; missing inclusion or typed-selector support refuses
@@ -136,6 +140,8 @@ QtObject {
                 return "Interactive tiling requires an include list in windows.tiling or CAELESTIA_WINDOWS_TILING_INCLUDED.";
             if (root._policyRefusal === "included-unsupported")
                 return "The pinned Windows backend does not support an inclusion allowlist; interactive tiling stays off.";
+            if (root._policyRefusal === "included-invalid")
+                return "No entry in the tiling list is a valid selector; interactive tiling stays off.";
             if (root._policyRefusal === "scoped-rules-unsupported")
                 return "This Windows backend cannot enforce exe, class or monitor selectors; interactive tiling stays off.";
             return root._enableRefusalText(root._backendRefusal);
@@ -180,6 +186,11 @@ QtObject {
             return "included-empty";
         if (backend !== null && backend.supportsIncluded !== true)
             return "included-unsupported";
+        // The raw list length is not enough: the backend drops entries that do
+        // not compile, and a list left with none matches nothing. Trust the
+        // backend's validated count (-1 or absent means it cannot say).
+        if (backend !== null && backend.includedRuleCount === 0)
+            return "included-invalid";
         if (backend !== null && backend.supportsScopedRules !== true
                 && root._includedPatterns.concat(root._excludedPatterns)
                     .some(pattern => /^(exe|class|screen):/i.test(pattern)))
@@ -325,6 +336,8 @@ QtObject {
     function _policyRefusalText(refusal): string {
         if (refusal === "included-empty")
             return "Add apps to the tiling list to turn it on.";
+        if (refusal === "included-invalid")
+            return "None of the entries in the tiling list is valid.";
         if (refusal === "scoped-rules-unsupported")
             return "This version can't enforce the configured app or monitor rules.";
         return "This version can't limit tiling to chosen apps.";

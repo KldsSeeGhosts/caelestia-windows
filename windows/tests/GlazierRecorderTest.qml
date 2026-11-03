@@ -27,8 +27,8 @@ ShellRoot {
     // The real Recorder.status strings, rendered in the real card at 430 px.
     property var layoutStatuses: [
         { name: "unavailable", lastError: "", connectionError: "", available: false, state: "idle", lines: 2 },
-        { name: "not-found", lastError: "Glazier was not found. Install Glazier with control protocol v1.", connectionError: "", available: false, state: "idle", lines: 2 },
-        { name: "start-failure", lastError: "Glazier did not start recording. Check Glazier and its control protocol version.", connectionError: "", available: false, state: "idle", lines: 2 },
+        { name: "not-found", lastError: "Unavailable: Glazier is missing from this installation.", connectionError: "", available: false, state: "idle", lines: 2 },
+        { name: "start-failure", lastError: "Glazier did not start recording.", connectionError: "", available: false, state: "idle", lines: 1 },
         { name: "stopped", lastError: "", connectionError: "Glazier stopped", available: true, state: "idle", lines: 1 },
         { name: "ready", lastError: "", connectionError: "", available: true, state: "idle", lines: 1 },
         { name: "running", lastError: "", connectionError: "", available: true, state: "recording", lines: 1 }
@@ -335,6 +335,10 @@ ShellRoot {
                     return;
                 }
                 if (root.layoutIndex >= root.layoutStatuses.length) {
+                    // Let the card settle after the last status swap before
+                    // comparing the animated and non-animated heights.
+                    if (Math.abs(card.nonAnimHeight - card.height) >= 0.5 && root.ticks < 240)
+                        return;
                     root.check(Math.abs(card.nonAnimHeight - card.height) < 0.5,
                         "wrapped card height matches the drawer animation height");
                     root.check(root.layoutHeights[1] > root.layoutHeights[4] + 1,
@@ -359,14 +363,25 @@ ShellRoot {
                 Qt.quit();
                 return;
             }
+            if (root.scenario === "bundled") {
+                if (!Recorder.probed || !Recorder.canStart) return;
+                const expected = Quickshell.env("GLAZIER_BUNDLED_EXE").replace(/\\/g, "/").toLowerCase();
+                root.check(Recorder.available && Recorder.executable.replace(/\\/g, "/").toLowerCase() === expected,
+                    "bundled Glazier is resolved first");
+                root.check(Glazier.executable.replace(/\\/g, "/").toLowerCase() === expected,
+                    "the screenshot and recorder adapters resolve the same bundled tool");
+                console.log("GLAZIER_RECORDER_BUNDLED_PASS", root.assertions);
+                Qt.quit();
+                return;
+            }
             if (root.missing) {
                 if (!Recorder.probed)
                     return;
-                if (!root.containsText(card, "not found")) return;
+                if (!root.containsText(card, "missing")) return;
                 if (root.step === 0) {
                     root.check(!Recorder.available && !Recorder.canStart && !Recorder.running, "missing disables capture");
-                    root.check(Recorder.lastError.indexOf("not found") >= 0, "missing error");
-                    root.check(root.containsText(card, "not found"), "missing error displayed in original card");
+                    root.check(Recorder.lastError.indexOf("missing") >= 0, "missing error");
+                    root.check(root.containsText(card, "missing"), "missing error displayed in original card");
                     root.snapshot("missing", () => {
                         console.log("GLAZIER_RECORDER_MISSING_PASS", root.assertions);
                         Qt.quit();
@@ -508,6 +523,7 @@ ShellRoot {
                 Recorder.hostId = "";
                 Recorder.eventSequence = 0;
                 Recorder.baselinePending = true;
+                Glazier.launchedHost = false; // a shell restart adopting a host that predates it
                 root.check(Recorder.applyResponse(reply("replay-host", [err(1),
                     { sequence: 2, type: "finished", output_path: "C:\\x\\Old.mp4" }])) && Recorder.lastError === "",
                     "shell initial response is a baseline: old error not replayed");
@@ -547,6 +563,51 @@ ShellRoot {
                     "replacement host first-response error is visible without Start pending");
                 root.check(Recorder.applyResponse(reply("replacement-host", [{ sequence: 2, type: "started" }]))
                     && Recorder.lastError === "", "started event clears recording failure");
+                // A host this shell cold-started has no pre-restart journal, so
+                // an error in its very first response is genuine even though no
+                // offline response preceded it and no Start is pending.
+                Recorder.hostId = "";
+                Recorder.eventSequence = 0;
+                Recorder.baselinePending = true;
+                Recorder.lastError = "";
+                Glazier.launchedHost = true;
+                root.check(Recorder.applyResponse(reply("launched-host", [err(1)])) && Recorder.lastError === "boom",
+                    "first-response error from a shell-launched host is visible");
+                root.check(!Recorder.baselinePending, "first response still ends the baseline");
+                // A capture forwarded to a host that is already up must not cancel
+                // the adopted-host baseline. Directly assigning launchedHost misses
+                // that distinction.
+                const realProbe = Glazier.hostProbe;
+                const adopted = { windowProcessId: function() { return 1; } };
+                const absent = { windowProcessId: function() { return 0; } };
+                Recorder.hostId = "";
+                Recorder.eventSequence = 0;
+                Recorder.baselinePending = true;
+                Recorder.lastError = "";
+                Glazier.launchedHost = false;
+                Glazier.hostProbe = adopted;
+                Glazier.pendingPath = Recorder.executable;
+                Glazier.pendingArgs = ["--capture"];
+                Glazier.launchPending();
+                root.check(Glazier.pendingPath === "" && !Glazier.launchedHost,
+                    "forwarded capture does not mark an adopted host as shell-created");
+                root.check(Recorder.applyResponse(reply("adopted-host", [err(1),
+                    { sequence: 2, type: "finished", output_path: "C:\\x\\Old.mp4" }])) && Recorder.lastError === "",
+                    "adopted-host error stays baselined when capture was forwarded first");
+                Recorder.hostId = "";
+                Recorder.eventSequence = 0;
+                Recorder.baselinePending = true;
+                Recorder.lastError = "";
+                Glazier.launchedHost = false;
+                Glazier.hostProbe = absent;
+                Glazier.pendingPath = Recorder.executable;
+                Glazier.pendingArgs = ["--capture"];
+                Glazier.launchPending();
+                root.check(Glazier.launchedHost,
+                    "capture that creates the host marks that host fresh");
+                root.check(Recorder.applyResponse(reply("created-host", [err(1)])) && Recorder.lastError === "boom",
+                    "first-response error from a host created by capture is visible");
+                Glazier.hostProbe = realProbe;
                 let q = [];
                 q = SchemeGenerator.coalescePending(q, "list", ["list"]);
                 q = SchemeGenerator.coalescePending(q, "set", ["set-mode", "--mode", "light"]);

@@ -8,6 +8,9 @@ param(
     [string]$TilingIncluded = '',
     [string]$TilingExcluded = '',
     [switch]$SkipSchemeRuntime,
+    # Activation only consumes a runtime the installer prepared before the
+    # handoff; it must never run pip inside the readiness budget.
+    [switch]$PreparedSchemeRuntime,
     [switch]$Wait
 )
 
@@ -108,16 +111,58 @@ if ($Command -eq 'Start') {
     }
 }
 
+$schemeRevision = ''
+if ($Command -eq 'Start' -and -not $SkipSchemeRuntime) {
+    try { $schemeRevision = Get-CaelestiaSchemeRevision $Prefix } catch { $schemeRevision = '' }
+}
 $schemeRuntime = $null
 if ($Command -eq 'Start' -and -not $SkipSchemeRuntime) {
-    $schemeRuntime = & (Join-Path $PSScriptRoot 'Install-SchemeRuntime.ps1') -ProfileRoot $profile |
-        Select-Object -Last 1 | ConvertFrom-Json
+    if ($PreparedSchemeRuntime) {
+        # Activation consumes only a completed generation for this payload's
+        # pinned revision. Missing, failed or mismatched records keep the fixed
+        # palette instead of provisioning inside the readiness budget.
+        if ($schemeRevision) { $schemeRuntime = Get-CaelestiaPreparedSchemeRuntime $profile $schemeRevision $Prefix }
+        if ($null -eq $schemeRuntime) {
+            # The installer reports the failure while the previous version is
+            # still live. Keep the new shell running on its fixed palette.
+            Write-CaelestiaSchemeRuntimeLog -ProfileRoot $profile -Event 'scheme-runtime' `
+                -Fields ([ordered]@{ state = 'unprepared'; action = 'fixed-palette' }) `
+                -Message 'install or the next normal start can retry preparation'
+        }
+    } else {
+        # A valid published generation needs no provisioning. Otherwise try to
+        # repair without waiting; a busy lock keeps the fixed palette, and the
+        # shell stays on it until the next shell start (a start never waits for
+        # a provisioner that is already running). -Verify runs the venv's
+        # python, so a lost base interpreter is repaired here, not trusted.
+        if ($schemeRevision) { $schemeRuntime = Get-CaelestiaPreparedSchemeRuntime $profile $schemeRevision $Prefix -Verify }
+        if ($null -eq $schemeRuntime) {
+            try {
+                $schemeResult = & (Join-Path $PSScriptRoot 'Install-SchemeRuntime.ps1') -ProfileRoot $profile -LockWaitSeconds 0 |
+                    Select-Object -Last 1 | ConvertFrom-Json
+                if ($schemeResult -and $schemeResult.available -eq $true -and
+                    (-not $schemeRevision -or [string]$schemeResult.revision -eq $schemeRevision)) {
+                    $schemeRuntime = $schemeResult
+                } elseif ($schemeResult -and $schemeResult.inProgress -eq $true) {
+                    Write-CaelestiaSchemeRuntimeLog -ProfileRoot $profile -Event 'scheme-runtime' `
+                        -Fields ([ordered]@{ state = 'provisioning'; action = 'fixed-palette' }) `
+                        -Message 'another provisioning run is in progress; retry on the next normal start'
+                }
+            } catch {
+                Write-CaelestiaSchemeRuntimeLog -ProfileRoot $profile -Event 'scheme-runtime' `
+                    -Fields ([ordered]@{ state = 'prepare-error'; action = 'fixed-palette' }) -Message $_.Exception.Message
+            }
+        }
+    }
 }
 $schemeAvailable = $null -ne $schemeRuntime -and $schemeRuntime.available -eq $true
-$wePython = if ($schemeAvailable) { [string]$schemeRuntime.python } elseif ($Command -eq 'Start') {
-    $pythonLauncher = Get-Command py.exe -ErrorAction SilentlyContinue
-    if ($pythonLauncher) { & $pythonLauncher.Source -3 -c 'import sys; print(sys.executable)' }
-}
+# Starting the shell never launches Python or any discovery process. The
+# Wallpaper Engine bridge's interpreter was resolved while preparing and is
+# only read back from runtime.json; with nothing recorded the feature is
+# unavailable for this start. This holds for -SkipSchemeRuntime too.
+$wePython = if ($schemeAvailable) { [string]$schemeRuntime.python }
+    elseif ($Command -eq 'Start') { Get-CaelestiaSchemeInterpreter $profile }
+    else { '' }
 
 $info = New-Object Diagnostics.ProcessStartInfo
 $info.FileName = $exe
@@ -215,6 +260,7 @@ if ($Command -ne 'Start') {
     $info.RedirectStandardOutput = $true
     $info.RedirectStandardError = $true
     $output = ''
+    $errors = ''
     $ipcFailure = $null
     try {
         $process = [Diagnostics.Process]::Start($info)
@@ -222,9 +268,14 @@ if ($Command -ne 'Start') {
         $errTask = $process.StandardError.ReadToEndAsync()
         if (-not $process.WaitForExit(10000)) { $process.Kill(); throw 'Shell IPC timed out.' }
         $output = $outTask.GetAwaiter().GetResult()
+        # Consume diagnostics, but never echo shell state or user data on failure.
         $errors = $errTask.GetAwaiter().GetResult()
-        if ($process.ExitCode -ne 0) { throw "Shell IPC failed: $output $errors" }
+        if ($process.ExitCode -ne 0) { throw "Shell IPC $Command failed (exit $($process.ExitCode)). See the profile logs." }
     } catch {
+        # Partially captured IPC output can contain shell state or user data.
+        # Clear it before Quit recovery, which continues and later emits output.
+        $output = ''
+        $errors = ''
         # Quit must still reach a supervisor that is starting or in restart
         # backoff, when no shell exists to answer IPC.
         if ($Command -ne 'Quit') { throw }
@@ -273,9 +324,15 @@ if ($Command -ne 'Start') {
 }
 
 $info.Arguments = '--no-duplicate --no-color --log-times --path "' + (Join-Path $stage 'shell.qml') + '"'
-$stdoutPath = Join-Path $profile 'logs\shell.stdout.log'
-$stderrPath = Join-Path $profile 'logs\shell.stderr.log'
-foreach ($path in @($stdoutPath, $stderrPath)) { [IO.File]::WriteAllText($path, '') }
+# Rotate the live shell's logs so the previous session's crash output survives.
+# Smoke writes its own files, so it cannot rotate away the live session's logs.
+$logName = if ($Smoke) { 'shell.smoke' } else { 'shell' }
+$stdoutPath = Join-Path $profile "logs\$logName.stdout.log"
+$stderrPath = Join-Path $profile "logs\$logName.stderr.log"
+if (-not $Smoke) {
+    Move-CaelestiaLogToPrevious $stdoutPath
+    Move-CaelestiaLogToPrevious $stderrPath
+}
 $supervisorConfig = Join-Path $profile 'config\windows.json'
 $supervised = $null
 if ($Smoke) {

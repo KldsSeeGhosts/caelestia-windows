@@ -6,3 +6,7 @@
 	path = windows/deps/m3shapes
 	url = https://github.com/soramanew/m3shapes.git
 	shallow = true
+[submodule "windows-glazier"]
+	path = windows/deps/glazier
+	url = https://github.com/KldsSeeGhosts/glazier.git
+	shallow = true

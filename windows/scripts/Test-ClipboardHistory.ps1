@@ -25,13 +25,13 @@ $qmlRoot = Join-Path $BuildRoot 'install\qml'
 # event-driven refresh gate.
 $logicTest = Join-Path $BuildRoot 'caelestia\lib\clipboard-logic-tests.exe'
 if (-not (Test-Path -LiteralPath $logicTest -PathType Leaf)) {
-    throw "Missing clipboard logic test: $logicTest (run windows/scripts/Build-Prototype.ps1 first)."
+    throw "Missing clipboard logic test: $logicTest (run windows/scripts/Build-Prototype.ps1 -Tests first)."
 }
 # Sends a native QVariantList through QML property chains into the shipped
 # ClipboardHistory.js; the QML smoke below only feeds it JS arrays.
 $qmlTest = Join-Path $BuildRoot 'caelestia\lib\clipboard-qml-tests.exe'
 if (-not (Test-Path -LiteralPath $qmlTest -PathType Leaf)) {
-    throw "Missing clipboard QML boundary test: $qmlTest (run windows/scripts/Build-Prototype.ps1 first)."
+    throw "Missing clipboard QML boundary test: $qmlTest (run windows/scripts/Build-Prototype.ps1 -Tests first)."
 }
 $previousPath = $env:PATH
 $env:PATH = "$QtPrefix\bin;$qmlRoot\Caelestia\lib;$env:PATH"
