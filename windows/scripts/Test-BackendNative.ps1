@@ -9,16 +9,33 @@ windows/deps/quickshell/src/windows/test. Build them first:
     windows\scripts\Build-Prototype.ps1 -Tests -BuildRoot C:\b-backend-tests ...
 
 This script runs the fixtures that register with CTest from
-<BuildRoot>\quickshell-tests, then runs any built fixture that the backend does
-not register, so no compiled regression is left silently unexecuted. A fixture
-that did not compile or link is a failure in the manifest. It is never skipped.
+<BuildRoot>\quickshell-tests, then runs any declared fixture that the backend
+does not register, so no compiled regression is left silently unexecuted.
+
+The test build writes <BuildRoot>\logs\backend-tests-build.json. This script
+consumes that record, so a target that failed to compile or link this run is a
+failure even when an executable from an older build still exists. A missing or
+stale record is an error, never a pass.
+
+Every fixture needs a trait in $fixtureTraits. A fixture without one fails the
+manifest with "unclassified fixture: add a trait" and is not run. Desktop
+fixtures create a fresh, non-visible desktop with CreateDesktop and start the
+child process on it through STARTUPINFO.lpDesktop, so their windows never
+appear on the interactive desktop. They are skipped when the session has no
+interactive desktop. -IncludeDesktop opts into running them on the current
+desktop instead.
+
 The manifest records the shell HEAD, the backend gitlink, the checked-out
 backend revision and windows/sources.lock.json, the Qt and clang toolchain from
-the test build's CMake cache, and each test's result, duration and skip reason.
+the test build's CMake cache, and each fixture's result, duration, skip reason
+and case-level skipped totals. Fixture totals and case-level skipped totals are
+separate because a passing fixture can still skip cases. Case totals come from
+fixtures this script runs directly, and the manifest records how many fixtures
+were measured.
 
-Desktop-dependent fixtures are labelled under dependsOn and skipped only when
-the process has no interactive desktop session. A fixture that cannot start is
-a failure, not a skip.
+Every run removes the previous manifest and writes a fresh one with a run ID
+and timestamp before any fixture starts. It rewrites the manifest on every exit
+path, including errors, so a stale pass can never survive.
 
 The script exits non-zero when the shell's backend gitlink, the checked-out
 backend and sources.lock.json disagree, when the backend has local changes, or
@@ -32,10 +49,15 @@ windows\.local\build, matching Build-Prototype.ps1. The test build must be at
 .PARAMETER TestTimeoutSeconds
 Per-test timeout for CTest and for each directly run fixture. Defaults to 120.
 
+.PARAMETER IncludeDesktop
+Runs desktop fixtures on the current interactive desktop instead of an isolated
+one. Off by default because their windows and hooks then reach the user's
+desktop.
+
 .EXAMPLE
 windows\scripts\Test-BackendNative.ps1 -BuildRoot C:\b-backend-tests
 
-Runs every fixture the build produced and writes
+Runs every fixture the build produced, isolates desktop fixtures, and writes
 <BuildRoot>\backend-native-tests\manifest.json.
 
 .EXAMPLE
@@ -46,10 +68,14 @@ Gives the slower fixtures five minutes each.
 [CmdletBinding()]
 param(
     [string]$BuildRoot,
-    [ValidateRange(1, 3600)][int]$TestTimeoutSeconds = 120
+    [ValidateRange(1, 3600)][int]$TestTimeoutSeconds = 120,
+    [switch]$IncludeDesktop
 )
 
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'Caelestia-InstallCommon.ps1')
+. (Join-Path $PSScriptRoot 'Caelestia-Versions.ps1')
+
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
 if (-not $BuildRoot) { $BuildRoot = Join-Path $repoRoot 'windows\.local\build' }
 $BuildRoot = [IO.Path]::GetFullPath($BuildRoot)
@@ -59,13 +85,106 @@ $runRoot = Join-Path $BuildRoot ('backend-native-tests\' + [DateTime]::UtcNow.To
 $ManifestPath = [IO.Path]::GetFullPath((Join-Path $BuildRoot 'backend-native-tests\manifest.json'))
 $cachePath = Join-Path $testBuild 'CMakeCache.txt'
 $buildLog = Join-Path $BuildRoot 'logs\build-backend-tests.log'
+$buildRecordPath = Join-Path $BuildRoot 'logs\backend-tests-build.json'
+$startedWall = [DateTime]::UtcNow
 
-if (-not (Test-Path -LiteralPath $cachePath -PathType Leaf)) {
-    throw "The backend test build is missing: $testBuild. Run windows\scripts\Build-Prototype.ps1 -Tests -BuildRoot $BuildRoot first."
+# One table classifies every fixture. `desktop` means the fixture creates real
+# windows, installs desktop-scoped hooks or reads interactive shell state, so it
+# runs on an isolated desktop. `qpa` is the platform plugin the fixture needs
+# when it is run directly instead of through CTest.
+$fixtureTraits = [ordered]@{
+    screen_identity             = @{ desktop = $false }
+    hyprland_monitor            = @{ desktop = $false }
+    panel_animation             = @{ desktop = $false }
+    screenshot_jobs             = @{ desktop = $false }
+    fs_utils                    = @{ desktop = $false }
+    redaction                   = @{ desktop = $false }
+    log_scrub                   = @{ desktop = $false }
+    log_redaction_guard         = @{ desktop = $false }
+    tiling_layout               = @{ desktop = $false }
+    dispatcher                  = @{ desktop = $false }
+    tiling_observability        = @{ desktop = $false }
+    tiling_manager              = @{ desktop = $false }
+    tiling_reload               = @{ desktop = $false }
+    pw_audio_control            = @{ desktop = $false }
+    upower_status               = @{ desktop = $false }
+    bt_pairing_policy           = @{ desktop = $false }
+    virtual_desktops            = @{ desktop = $false }
+    hotkeys_routing             = @{ desktop = $false }
+    keyboard_hook               = @{ desktop = $false }
+    mpris_status                = @{ desktop = $false }
+    mpris_art_cache             = @{ desktop = $false }
+    transition_trace            = @{ desktop = $false }
+    foreground_observer         = @{ desktop = $false }
+    activation_policy           = @{ desktop = $false }
+    fullscreen_app_state        = @{ desktop = $false }
+    panel_topmost               = @{ desktop = $false }
+    power_profiles              = @{ desktop = $false }
+    brightness_route            = @{ desktop = $false }
+    display_identity            = @{ desktop = $false }
+    native_desktop_recovery     = @{ desktop = $false }
+    pw_session_worker           = @{ desktop = $false }
+    idle_request                = @{ desktop = $false }
+    input_settle                = @{ desktop = $false }
+    super_drag_wait             = @{ desktop = $false }
+    network_wifi_route          = @{ desktop = $false }
+    panel_hidden_reembed        = @{ desktop = $true; qpa = 'windows'; reason = 'creates and shows native panel windows' }
+    system_surface              = @{ desktop = $true; qpa = 'offscreen'; reason = 'creates visible native windows at 0,0' }
+    desktop_zorder              = @{ desktop = $true; qpa = 'offscreen'; reason = 'creates visible native windows and installs host-scoped WinEvent hooks' }
+    mpris_app_identity          = @{ desktop = $true; qpa = 'offscreen'; reason = 'reads real shell app entries' }
+    notification_mirror_consent = @{ desktop = $true; qpa = 'offscreen'; reason = 'creates a real message-only window' }
+    keyboard_layout             = @{ desktop = $true; qpa = 'offscreen'; reason = 'creates a real hidden window' }
+    native_lifetime             = @{ desktop = $true; qpa = 'offscreen'; reason = 'creates real message-only windows' }
 }
-New-Item -ItemType Directory -Force -Path $runRoot, (Split-Path -Parent $ManifestPath) | Out-Null
 
-$cache = Get-Content -LiteralPath $cachePath
+New-Item -ItemType Directory -Force -Path $runRoot, (Split-Path -Parent $ManifestPath) | Out-Null
+$manifest = [ordered]@{
+    schemaVersion = 2
+    runId = [guid]::NewGuid().ToString('N')
+    generatedAtUtc = [DateTime]::UtcNow.ToString('o')
+    completed = $false
+    passed = $false
+    error = 'the run did not finish'
+    shell = $null
+    backend = $null
+    toolchain = $null
+    buildRecord = $null
+    environment = [ordered]@{
+        interactiveDesktop = [Environment]::UserInteractive -and ((Get-Process -Id $PID).SessionId -ne 0)
+        includeDesktop = [bool]$IncludeDesktop
+        sessionId = (Get-Process -Id $PID).SessionId
+        testBuildDir = $testBuild
+        runDir = $runRoot
+        testTimeoutSeconds = $TestTimeoutSeconds
+        desktopIsolation = 'CreateDesktop plus STARTUPINFO.lpDesktop, never SwitchDesktop'
+    }
+    commands = [ordered]@{
+        ctest = $null
+        direct = @()
+        isolated = @()
+        buildLog = $buildLog
+        testBuildRecord = $buildRecordPath
+    }
+    totals = [ordered]@{
+        fixtures = 0; passed = 0; failed = 0; skipped = 0
+        ctestRegistered = 0; ctestUnregistered = 0
+        desktopIsolated = 0
+        casesSkipped = 0; fixturesWithCaseTotals = 0; fixturesWithoutCaseTotals = 0
+        caseTotalsNote = 'Qt Test case totals come from fixtures run directly; CTest does not capture their output on Windows.'
+        wallSeconds = 0
+    }
+    tests = @()
+}
+
+function Write-Manifest {
+    Write-CaelestiaJsonAtomic $ManifestPath $manifest
+}
+
+# Replace, never leave, the previous result. A run that dies from here on
+# leaves a fresh incomplete manifest instead of an old pass.
+Remove-Item -LiteralPath $ManifestPath -Force -ErrorAction SilentlyContinue
+Write-Manifest
+
 function Get-CacheValue([string]$Name) {
     $prefix = $Name + ':'
     $line = $cache | Where-Object { $_.StartsWith($prefix) } | Select-Object -First 1
@@ -83,55 +202,13 @@ function Resolve-Executable([string]$Value) {
     return $null
 }
 
-$qt6Dir = Get-CacheValue 'Qt6_DIR'
-$qtPrefix = if ($qt6Dir) { ($qt6Dir -replace '/', '\') -replace '\\lib\\cmake\\Qt6$', '' } else { $null }
-$qtPaths = if ($qtPrefix) { Resolve-Executable (Join-Path $qtPrefix 'bin\qtpaths.exe') } else { $null }
-$compilerCommand = Resolve-Executable (Get-CacheValue 'CMAKE_CXX_COMPILER')
-$cmakeCommand = Resolve-Executable (Get-CacheValue 'CMAKE_COMMAND')
-$ninjaCommand = Resolve-Executable (Get-CacheValue 'CMAKE_MAKE_PROGRAM')
-foreach ($required in @($qtPaths, $cmakeCommand, $ninjaCommand)) {
-    if (-not $required) { throw "The test build cache does not name a usable Qt, CMake or Ninja toolchain." }
-}
-
-$buildRecordPath = Join-Path $BuildRoot 'logs\build.json'
-$record = $null
-if (Test-Path -LiteralPath $buildRecordPath -PathType Leaf) {
-    $record = Get-Content -LiteralPath $buildRecordPath -Raw | ConvertFrom-Json
-}
-$qtVersion = (& $qtPaths --qt-version).Trim()
-$clangVersion = if ($compilerCommand) { (@(& $compilerCommand --version))[0] }
-    elseif ($record -and $record.compiler) { $record.compiler }
-    else { 'clang version not recorded' }
-$cmakeVersion = (@(& $cmakeCommand --version))[0]
-$ninjaVersion = (@(& $ninjaCommand --version))[0]
-
-$buildRecord = $null
-if ($record) {
-    $buildRecord = [ordered]@{
-        path = $buildRecordPath
-        builtAtUtc = $record.builtAtUtc
-        sourceRevision = $record.sourceRevision
-        backendRevision = $record.backendRevision
-    }
-}
-
-# Fixtures that need the live shell or a real interactive window station.
-# Everything else runs headless through the offscreen QPA, fakes and injected
-# seams. A fixture with no entry is treated as headless.
-$testTraits = @{
-    panel_hidden_reembed = @{
-        dependsOn = @('desktop')
-        unavailableReason = 'needs an interactive desktop for the Windows QPA panel HWND regression'
-    }
-    mpris_app_identity = @{
-        dependsOn = @('desktop')
-        unavailableReason = 'needs an interactive desktop to resolve real shell app entries'
-    }
-}
-
 function Get-TestTraits([string]$Name) {
-    if ($testTraits.ContainsKey($Name)) { return $testTraits[$Name] }
-    return @{ dependsOn = @(); unavailableReason = $null }
+    if (-not $fixtureTraits.Contains($Name)) { return $null }
+    $trait = $fixtureTraits[$Name]
+    if ($trait.desktop) {
+        return @{ dependsOn = @('desktop'); qpa = $trait.qpa; reason = $trait.reason }
+    }
+    return @{ dependsOn = @(); qpa = 'offscreen'; reason = $null }
 }
 
 function Get-Totals([string]$Text) {
@@ -152,7 +229,12 @@ function Get-FirstSkipReason([string]$Text) {
     return $null
 }
 
-# Map each missing target to the compiler or linker error that stopped it.
+function Test-TargetArtifact([string]$Artifact, [string]$Target) {
+    if ([IO.Path]::GetFileNameWithoutExtension($Artifact) -ieq $Target) { return $true }
+    return $Artifact -match ("CMakeFiles[\\/]" + [regex]::Escape($Target) + "\.dir[\\/]")
+}
+
+# Map each failed target to the compiler or linker error that stopped it.
 function Get-BuildFailureOutput([string]$LogPath, [string[]]$Targets) {
     $output = @{}
     if (-not (Test-Path -LiteralPath $LogPath -PathType Leaf)) { return $output }
@@ -182,363 +264,542 @@ function Get-BuildFailureOutput([string]$LogPath, [string[]]$Targets) {
     return $output
 }
 
-function Invoke-DirectFixture([string]$Executable, [string]$Name) {
-    $log = Join-Path $runRoot "$Name.qt.txt"
-    $info = [Diagnostics.ProcessStartInfo]::new($Executable)
-    $info.Arguments = '-o "' + $log + '",txt'
-    $info.UseShellExecute = $false
-    $info.CreateNoWindow = $true
-    $info.WorkingDirectory = $runRoot
+# A desktop fixture gets its own invisible desktop. The child process starts on
+# it through STARTUPINFO.lpDesktop, and the desktop is closed when the child
+# exits. SwitchDesktop is never called, so the user's desktop is unchanged.
+if (-not ('CaelestiaIsolatedDesktop' -as [type])) {
+    Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+
+public static class CaelestiaIsolatedDesktop {
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    public struct STARTUPINFO {
+        public int cb;
+        public string lpReserved;
+        public string lpDesktop;
+        public string lpTitle;
+        public int dwX;
+        public int dwY;
+        public int dwXSize;
+        public int dwYSize;
+        public int dwXCountChars;
+        public int dwYCountChars;
+        public int dwFillAttribute;
+        public int dwFlags;
+        public short wShowWindow;
+        public short cbReserved2;
+        public IntPtr lpReserved2;
+        public IntPtr hStdInput;
+        public IntPtr hStdOutput;
+        public IntPtr hStdError;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct PROCESS_INFORMATION {
+        public IntPtr hProcess;
+        public IntPtr hThread;
+        public int dwProcessId;
+        public int dwThreadId;
+    }
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    static extern IntPtr CreateDesktopW(string lpszDesktop, string lpszDevice, IntPtr pDevmode, int dwFlags, int dwDesiredAccess, IntPtr lpsa);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern bool CloseDesktop(IntPtr hDesktop);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern bool CreateProcessW(string lpApplicationName, string lpCommandLine, IntPtr lpProcessAttributes, IntPtr lpThreadAttributes, bool bInheritHandles, int dwCreationFlags, IntPtr lpEnvironment, string lpCurrentDirectory, ref STARTUPINFO lpStartupInfo, out PROCESS_INFORMATION lpProcessInformation);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern int WaitForSingleObject(IntPtr hHandle, int dwMilliseconds);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool GetExitCodeProcess(IntPtr hProcess, out int lpExitCode);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool TerminateProcess(IntPtr hProcess, int uExitCode);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool CloseHandle(IntPtr hObject);
+
+    // PowerShell can marshal a zero handle back from a direct call to this
+    // function, so keep the call and the error read in C#.
+    public static IntPtr CreateDesktopForTest(string name, out int error) {
+        var handle = CreateDesktopW(name, null, IntPtr.Zero, 0, 0x000F01FF, IntPtr.Zero);
+        error = Marshal.GetLastWin32Error();
+        return handle;
+    }
+}
+'@
+}
+
+function Invoke-IsolatedFixture([string]$Executable, [string]$Name, [string]$Log) {
     $started = [DateTime]::UtcNow
-    $process = [Diagnostics.Process]::Start($info)
-    $timedOut = -not $process.WaitForExit($TestTimeoutSeconds * 1000)
-    if ($timedOut) {
-        $process.Kill()
-        $process.WaitForExit()
-    }
-    $exitCode = $process.ExitCode
-    $process.Dispose()
-    $duration = ([DateTime]::UtcNow - $started).TotalSeconds
-    $text = ''
-    if (Test-Path -LiteralPath $log) { $text = [string](Get-Content -LiteralPath $log -Raw) }
-    return [pscustomobject]@{
-        ExitCode = $exitCode
-        TimedOut = $timedOut
-        Duration = $duration
-        Output = $text
-        Log = $log
-    }
-}
-
-$lock = Get-Content -LiteralPath (Join-Path $repoRoot 'windows\sources.lock.json') -Raw | ConvertFrom-Json
-$shellHead = (& git -C $repoRoot rev-parse HEAD).Trim()
-$shellDirty = [bool]@(& git -C $repoRoot status --porcelain)
-$gitlinkLine = & git -C $repoRoot ls-tree HEAD -- $lock.quickshell.path
-if ($LASTEXITCODE -ne 0 -or -not $gitlinkLine) { throw "Could not read the backend gitlink from $repoRoot." }
-$gitlink = ($gitlinkLine -split '\s+')[2]
-$backendHead = (& git -C $backend rev-parse HEAD).Trim()
-$backendDirty = [bool]@(& git -C $backend status --porcelain)
-$lockRevision = $lock.quickshell.revision
-$revisionMatches = ($gitlink -eq $backendHead) -and ($gitlink -eq $lockRevision)
-$sessionId = (Get-Process -Id $PID).SessionId
-$interactiveDesktop = [Environment]::UserInteractive -and $sessionId -ne 0
-
-$manifest = [ordered]@{
-    schemaVersion = 1
-    generatedAtUtc = [DateTime]::UtcNow.ToString('o')
-    passed = $false
-    error = $null
-    shell = [ordered]@{ head = $shellHead; dirty = $shellDirty }
-    backend = [ordered]@{
-        gitlink = $gitlink
-        checkedOut = $backendHead
-        sourcesLock = $lockRevision
-        matches = $revisionMatches
-        dirty = $backendDirty
-    }
-    toolchain = [ordered]@{
-        qt = $qtVersion
-        qtPrefix = $qtPrefix
-        clang = $clangVersion
-        cmake = $cmakeVersion
-        ninja = $ninjaVersion
-        windows = [Environment]::OSVersion.VersionString
-        source = $cachePath
-    }
-    buildRecord = $buildRecord
-    environment = [ordered]@{
-        interactiveDesktop = $interactiveDesktop
-        sessionId = $sessionId
-        testBuildDir = $testBuild
-        runDir = $runRoot
-        testTimeoutSeconds = $TestTimeoutSeconds
-    }
-    commands = [ordered]@{ ctest = $null; direct = @(); buildLog = $buildLog }
-    totals = [ordered]@{
-        fixtures = 0; passed = 0; failed = 0; skipped = 0
-        ctestRegistered = 0; ctestUnregistered = 0; wallSeconds = 0
-    }
-    tests = @()
-}
-
-function Write-Manifest {
-    $manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $ManifestPath -Encoding UTF8
-}
-
-if (-not $revisionMatches) {
-    $manifest.error = "Backend revision mismatch: gitlink $gitlink, checked-out $backendHead, sources.lock $lockRevision."
-} elseif ($backendDirty) {
-    $manifest.error = "The backend has local changes at $backend. The fixtures would not test the pinned revision."
-}
-if ($manifest.error) {
-    Write-Manifest
-    throw "$($manifest.error) Manifest: $ManifestPath"
-}
-
-# The tests need the Qt runtime. CTest ships beside the cmake that configured
-# the test build.
-$env:PATH = "$qtPrefix\bin;$(Split-Path -Parent $cmakeCommand);$env:PATH"
-$started = [DateTime]::UtcNow
-
-# CTest is the registration of record. Parse its listing to pair each test name
-# with its executable, then run every built fixture the backend did not
-# register directly.
-$listLog = Join-Path $runRoot 'ctest-list.log'
-$ErrorActionPreference = 'Continue'
-& ctest --test-dir $testBuild -N -V *>&1 | ForEach-Object { "$_" } | Set-Content -LiteralPath $listLog -Encoding UTF8
-$listExit = $LASTEXITCODE
-$ErrorActionPreference = 'Stop'
-if ($listExit -ne 0) { throw "ctest -N failed. See $listLog." }
-
-$commands = @{}
-$names = @{}
-foreach ($line in Get-Content -LiteralPath $listLog) {
-    if ($line -match '^\s*(\d+): Test command:\s*(.*)$') {
-        $commands[[int]$Matches[1]] = $Matches[2].Trim()
-        continue
-    }
-    if ($line -match '^\s*Test\s+#(\d+):\s+(.+)$') {
-        $names[[int]$Matches[1]] = $Matches[2].Trim()
-    }
-}
-$registered = New-Object 'System.Collections.Generic.List[object]'
-foreach ($id in ($names.Keys | Sort-Object)) {
-    $executable = $null
-    $command = $commands[$id]
-    if ($command) {
-        if ($command -match '^"([^"]+)"') { $executable = $Matches[1] }
-        else { $executable = ($command -split '\s+')[0] }
-    }
-    $registered.Add([pscustomobject]@{ name = $names[$id]; executable = $executable })
-}
-if ($registered.Count -eq 0) { throw "CTest registered no tests in $testBuild. See $listLog." }
-
-# Every qs_add_test_executable target must produce an executable. A missing one
-# is a build failure with the build log as its evidence, never a silent gap.
-$testCmake = Join-Path $backend 'src\windows\test\CMakeLists.txt'
-$declaredTargets = @([regex]::Matches((Get-Content -LiteralPath $testCmake -Raw), 'qs_add_test_executable\((\w+)') |
-    ForEach-Object { $_.Groups[1].Value })
-if ($declaredTargets.Count -eq 0) { throw "No test targets were declared in $testCmake." }
-$buildFailures = @{}
-foreach ($target in $declaredTargets) {
-    $executable = Join-Path $testBuild "$target.exe"
-    if (Test-Path -LiteralPath $executable -PathType Leaf) { continue }
-    $registeredEntry = $registered | Where-Object {
-        ($_.executable -and ([IO.Path]::GetFileName($_.executable) -ieq "$target.exe")) -or
-        ($_.name -eq ($target -replace '_test$', ''))
-    } | Select-Object -First 1
-    $name = if ($registeredEntry) { $registeredEntry.name } else { $target -replace '_test$', '' }
-    $buildFailures[$name] = [pscustomobject]@{
-        target = $target; executable = $executable; registered = [bool]$registeredEntry
-    }
-}
-$buildErrors = Get-BuildFailureOutput $buildLog $declaredTargets
-
-$registeredExes = @{}
-foreach ($entry in $registered) {
-    if (-not $entry.executable) { continue }
-    $registeredExes[([IO.Path]::GetFullPath($entry.executable)).ToLowerInvariant()] = $true
-}
-$built = @(Get-ChildItem -LiteralPath $testBuild -Filter '*_test.exe' -File -Recurse | Sort-Object Name)
-$unregistered = @($built | Where-Object {
-    -not $registeredExes.ContainsKey($_.FullName.ToLowerInvariant())
-})
-
-$skipped = @{}
-if (-not $interactiveDesktop) {
-    foreach ($entry in $registered) {
-        $traits = Get-TestTraits $entry.name
-        if ($traits.dependsOn -contains 'desktop') {
-            $skipped[$entry.name] = $traits.unavailableReason
+    $desktopName = 'caelestia-' + $manifest.runId.Substring(0, 8) + '-' + $Name
+    [int]$createError = 0
+    $desktop = [CaelestiaIsolatedDesktop]::CreateDesktopForTest($desktopName, [ref]$createError)
+    if ($desktop -eq [IntPtr]::Zero) {
+        return [pscustomobject]@{
+            Started = $false; IsolationFailed = $true; ExitCode = $null; TimedOut = $false
+            Duration = [Math]::Round(([DateTime]::UtcNow - $started).TotalSeconds, 3)
+            Log = $Log; Desktop = $null; Error = "CreateDesktop failed with Win32 error $createError"
         }
     }
-}
-
-$excluded = @{}
-foreach ($name in $buildFailures.Keys) { $excluded[$name] = $true }
-foreach ($name in $skipped.Keys) { $excluded[$name] = $true }
-
-$junitPath = Join-Path $runRoot 'ctest-junit.xml'
-$ctestLog = Join-Path $runRoot 'ctest.log'
-$ctestArguments = @('--test-dir', $testBuild, '--output-on-failure', '--timeout', "$TestTimeoutSeconds",
-    '--output-junit', $junitPath, '--no-tests=error')
-if ($excluded.Count -gt 0) {
-    $pattern = '^(' + (($excluded.Keys | ForEach-Object { [regex]::Escape($_) }) -join '|') + ')$'
-    $ctestArguments += @('--exclude-regex', $pattern)
-}
-$manifest.commands.ctest = 'ctest ' + ($ctestArguments -join ' ')
-# Run from the disposable run directory. CTest still executes each fixture in
-# its own build directory, never the repository or a home directory.
-Push-Location -LiteralPath $runRoot
-try {
-    $ErrorActionPreference = 'Continue'
-    & ctest @ctestArguments *>&1 | ForEach-Object { "$_" } | Tee-Object -FilePath $ctestLog
-    $ctestExit = $LASTEXITCODE
-    $ErrorActionPreference = 'Stop'
-} finally {
-    Pop-Location
-}
-if (-not (Test-Path -LiteralPath $junitPath -PathType Leaf)) {
-    throw "CTest produced no JUnit result at $junitPath. See $ctestLog."
-}
-
-[xml]$junit = Get-Content -LiteralPath $junitPath -Raw
-$cases = @{}
-foreach ($case in $junit.SelectNodes('//testcase')) { $cases[$case.GetAttribute('name')] = $case }
-
-$results = New-Object 'System.Collections.Generic.List[object]'
-foreach ($entry in $registered) {
-    $traits = Get-TestTraits $entry.name
-    $result = 'failed'
-    $duration = 0.0
-    $skipReason = $null
-    $failure = $null
-    $skippedCases = $null
-    $buildFailure = $null
-    if ($buildFailures.ContainsKey($entry.name)) {
-        $failed = $buildFailures[$entry.name]
-        $errorText = $buildErrors[$failed.target]
-        $failure = if ($errorText) { "Fixture $($failed.target) did not compile or link.`n$errorText" }
-            else { "Fixture $($failed.target) did not compile or link. See $buildLog." }
-        $buildFailure = [ordered]@{ target = $failed.target; output = $errorText; log = $buildLog }
-    } elseif ($skipped.ContainsKey($entry.name)) {
-        $result = 'skipped'
-        $skipReason = $skipped[$entry.name]
-    } elseif (-not $cases.ContainsKey($entry.name)) {
-        $failure = "CTest produced no result for this test. See $ctestLog."
-    } else {
-        $case = $cases[$entry.name]
-        $duration = [double]$case.GetAttribute('time')
-        $failureNode = $case.SelectSingleNode('failure')
-        $skippedNode = $case.SelectSingleNode('skipped')
-        $totals = $null
-        $systemOut = $case.SelectSingleNode('system-out')
-        if ($systemOut) { $totals = Get-Totals $systemOut.InnerText }
-        if ($failureNode) {
-            $result = 'failed'
-            $failure = $failureNode.InnerText.Trim()
-        } elseif ($skippedNode) {
-            $result = 'skipped'
-            $skipReason = $skippedNode.GetAttribute('message')
-            if (-not $skipReason) { $skipReason = 'CTest reported the test as skipped.' }
-        } elseif ($totals -and $totals.passed -eq 0 -and $totals.failed -eq 0 -and $totals.skipped -gt 0) {
-            $result = 'skipped'
-            $skipReason = Get-FirstSkipReason $systemOut.InnerText
-            if (-not $skipReason) { $skipReason = "Qt Test reported $($totals.skipped) skipped cases and no passes." }
-        } else {
-            $result = 'passed'
-            if ($totals) { $skippedCases = $totals.skipped }
-        }
-    }
-    $command = if ($entry.executable) { $entry.executable }
-        elseif ($buildFailures.ContainsKey($entry.name)) { $buildFailures[$entry.name].executable }
-        else { $null }
-    $results.Add([ordered]@{
-        name = $entry.name
-        result = $result
-        durationSeconds = [Math]::Round($duration, 3)
-        skipReason = $skipReason
-        skippedCases = $skippedCases
-        ctestRegistered = $true
-        dependsOn = @($traits.dependsOn)
-        command = $command
-        failure = $failure
-        buildFailure = $buildFailure
-    })
-}
-
-$directEnvironment = $env:QT_QPA_PLATFORM
-$env:QT_QPA_PLATFORM = 'offscreen'
-try {
-    foreach ($exe in $unregistered) {
-        $name = $exe.BaseName -replace '_test$', ''
-        $traits = Get-TestTraits $name
-        $result = 'failed'
-        $duration = 0.0
-        $skipReason = $null
-        $failure = $null
-        $skippedCases = $null
-        if (-not $interactiveDesktop -and ($traits.dependsOn -contains 'desktop')) {
-            $result = 'skipped'
-            $skipReason = $traits.unavailableReason
-        } else {
-            $run = Invoke-DirectFixture $exe.FullName $name
-            $duration = $run.Duration
-            $manifest.commands.direct += "$($exe.FullName) -o $($run.Log),txt"
-            $totals = Get-Totals $run.Output
-            if ($run.TimedOut) {
-                $failure = "Timed out after $TestTimeoutSeconds seconds. See $($run.Log)."
-            } elseif ($run.ExitCode -ne 0) {
-                $failure = "Exited with code $($run.ExitCode). See $($run.Log)."
-            } elseif (-not $totals) {
-                $failure = "Qt Test printed no Totals line. See $($run.Log)."
-            } elseif ($totals.failed -gt 0) {
-                $failure = "Qt Test reported $($totals.failed) failed cases. See $($run.Log)."
-            } elseif ($totals.passed -eq 0 -and $totals.skipped -gt 0) {
-                $result = 'skipped'
-                $skipReason = Get-FirstSkipReason $run.Output
-                if (-not $skipReason) { $skipReason = "Qt Test reported $($totals.skipped) skipped cases and no passes." }
-            } else {
-                $result = 'passed'
-                $skippedCases = $totals.skipped
+    $process = [IntPtr]::Zero
+    try {
+        $info = [CaelestiaIsolatedDesktop+STARTUPINFO]::new()
+        $info.cb = [Runtime.InteropServices.Marshal]::SizeOf($info)
+        $info.lpDesktop = $desktopName
+        $processInfo = [CaelestiaIsolatedDesktop+PROCESS_INFORMATION]::new()
+        $commandLine = '"' + $Executable + '" -o "' + $Log + '",txt'
+        $created = [CaelestiaIsolatedDesktop]::CreateProcessW($Executable, $commandLine,
+            [IntPtr]::Zero, [IntPtr]::Zero, $false, 0, [IntPtr]::Zero, $runRoot, [ref]$info, [ref]$processInfo)
+        if (-not $created) {
+            $errorCode = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
+            return [pscustomobject]@{
+                Started = $false; IsolationFailed = $false; ExitCode = $null; TimedOut = $false
+                Duration = [Math]::Round(([DateTime]::UtcNow - $started).TotalSeconds, 3)
+                Log = $Log; Desktop = $desktopName; Error = "CreateProcess failed with Win32 error $errorCode"
             }
         }
-        $results.Add([ordered]@{
+        $process = $processInfo.hProcess
+        [CaelestiaIsolatedDesktop]::CloseHandle($processInfo.hThread) | Out-Null
+        $timedOut = [CaelestiaIsolatedDesktop]::WaitForSingleObject($process, $TestTimeoutSeconds * 1000) -eq 0x102
+        if ($timedOut) {
+            & taskkill.exe /PID $processInfo.dwProcessId /T /F 2>&1 | Out-Null
+            if ([CaelestiaIsolatedDesktop]::WaitForSingleObject($process, 5000) -eq 0x102) {
+                [CaelestiaIsolatedDesktop]::TerminateProcess($process, 1) | Out-Null
+                [CaelestiaIsolatedDesktop]::WaitForSingleObject($process, 5000) | Out-Null
+            }
+        }
+        $exitCode = 0
+        if (-not [CaelestiaIsolatedDesktop]::GetExitCodeProcess($process, [ref]$exitCode)) { $exitCode = -1 }
+        return [pscustomobject]@{
+            Started = $true; IsolationFailed = $false; ExitCode = $exitCode; TimedOut = $timedOut
+            Duration = [Math]::Round(([DateTime]::UtcNow - $started).TotalSeconds, 3)
+            Log = $Log; Desktop = $desktopName; Error = $null
+        }
+    } finally {
+        if ($process -ne [IntPtr]::Zero) { [CaelestiaIsolatedDesktop]::CloseHandle($process) | Out-Null }
+        [CaelestiaIsolatedDesktop]::CloseDesktop($desktop) | Out-Null
+    }
+}
+
+$plans = New-Object 'System.Collections.Generic.List[object]'
+$ctestExit = $null
+$revisionMatches = $false
+$backendDirty = $true
+$runError = $null
+
+function Get-TargetBuildFailure([string]$Target) {
+    if (-not $buildRecord.configureSucceeded) { return 'The test build did not configure this run.' }
+    if ($recordTargets -notcontains $Target) { return "The test build record does not include $Target." }
+    if (@($failedArtifacts | Where-Object { Test-TargetArtifact $_ $Target }).Count -gt 0) {
+        return "Fixture $Target did not compile or link."
+    }
+    if (-not (Test-Path -LiteralPath (Join-Path $testBuild "$Target.exe") -PathType Leaf)) {
+        return "The test build produced no $Target.exe."
+    }
+    if ($unknownBuildFailure) { return 'The test build did not complete and recorded no failed target.' }
+    return $null
+}
+
+try {
+    if (-not (Test-Path -LiteralPath $cachePath -PathType Leaf)) {
+        throw "The backend test build is missing: $testBuild. Run windows\scripts\Build-Prototype.ps1 -Tests -BuildRoot $BuildRoot first."
+    }
+    $cache = Get-Content -LiteralPath $cachePath
+    $qt6Dir = Get-CacheValue 'Qt6_DIR'
+    $qtPrefix = if ($qt6Dir) { ($qt6Dir -replace '/', '\') -replace '\\lib\\cmake\\Qt6$', '' } else { $null }
+    $qtPaths = if ($qtPrefix) { Resolve-Executable (Join-Path $qtPrefix 'bin\qtpaths.exe') } else { $null }
+    $compilerCommand = Resolve-Executable (Get-CacheValue 'CMAKE_CXX_COMPILER')
+    $cmakeCommand = Resolve-Executable (Get-CacheValue 'CMAKE_COMMAND')
+    $ninjaCommand = Resolve-Executable (Get-CacheValue 'CMAKE_MAKE_PROGRAM')
+    foreach ($required in @($qtPaths, $cmakeCommand, $ninjaCommand)) {
+        if (-not $required) { throw "The test build cache does not name a usable Qt, CMake or Ninja toolchain." }
+    }
+    $cmakeBin = Split-Path -Parent $cmakeCommand
+    $ctestCommand = Join-Path $cmakeBin 'ctest.exe'
+    if (-not (Test-Path -LiteralPath $ctestCommand -PathType Leaf)) {
+        throw "ctest.exe is missing beside $cmakeCommand."
+    }
+    # The fixtures need the Qt runtime. CTest ships beside the cmake that
+    # configured the test build.
+    $env:PATH = "$qtPrefix\bin;$cmakeBin;$env:PATH"
+
+    $buildRecord = $null
+    if (Test-Path -LiteralPath $buildRecordPath -PathType Leaf) {
+        $buildRecord = Get-Content -LiteralPath $buildRecordPath -Raw | ConvertFrom-Json
+    }
+    $qtVersion = (& $qtPaths --qt-version).Trim()
+    $clangVersion = if ($compilerCommand) { (@(& $compilerCommand --version))[0] }
+        elseif ($buildRecord -and $buildRecord.compiler) { $buildRecord.compiler }
+        else { 'clang version not recorded' }
+    $cmakeVersion = (@(& $cmakeCommand --version))[0]
+    $ninjaVersion = (@(& $ninjaCommand --version))[0]
+
+    $shellHead = (& git -C $repoRoot rev-parse HEAD).Trim()
+    $shellDirty = [bool]@(& git -C $repoRoot status --porcelain)
+    $lock = Get-Content -LiteralPath (Join-Path $repoRoot 'windows\sources.lock.json') -Raw | ConvertFrom-Json
+    $gitlinkLine = & git -C $repoRoot ls-tree HEAD -- $lock.quickshell.path
+    if ($LASTEXITCODE -ne 0 -or -not $gitlinkLine) { throw "Could not read the backend gitlink from $repoRoot." }
+    $gitlink = ($gitlinkLine -split '\s+')[2]
+    $backendHead = (& git -C $backend rev-parse HEAD).Trim()
+    $backendDirty = [bool]@(& git -C $backend status --porcelain)
+    $lockRevision = $lock.quickshell.revision
+    $revisionMatches = ($gitlink -eq $backendHead) -and ($gitlink -eq $lockRevision)
+    $manifest.shell = [ordered]@{ head = $shellHead; dirty = $shellDirty }
+    $manifest.backend = [ordered]@{
+        gitlink = $gitlink; checkedOut = $backendHead; sourcesLock = $lockRevision
+        matches = $revisionMatches; dirty = $backendDirty
+    }
+    $manifest.toolchain = [ordered]@{
+        qt = $qtVersion; qtPrefix = $qtPrefix; clang = $clangVersion; cmake = $cmakeVersion
+        ninja = $ninjaVersion; windows = [Environment]::OSVersion.VersionString; source = $cachePath
+    }
+    if (-not $revisionMatches) {
+        throw "Backend revision mismatch: gitlink $gitlink, checked-out $backendHead, sources.lock $lockRevision."
+    }
+    if ($backendDirty) {
+        throw "The backend has local changes at $backend. The fixtures would not test the pinned revision."
+    }
+    $interactiveDesktop = $manifest.environment.interactiveDesktop
+
+    # CTest is the registration of record. Parse its listing to pair each test
+    # name with its executable, then run every declared fixture the backend did
+    # not register directly.
+    $listLog = Join-Path $runRoot 'ctest-list.log'
+    $ErrorActionPreference = 'Continue'
+    & $ctestCommand --test-dir $testBuild -N -V *>&1 | ForEach-Object { "$_" } | Set-Content -LiteralPath $listLog -Encoding UTF8
+    $listExit = $LASTEXITCODE
+    $ErrorActionPreference = 'Stop'
+    if ($listExit -ne 0) { throw "ctest -N failed. See $listLog." }
+
+    $commands = @{}
+    $names = @{}
+    foreach ($line in Get-Content -LiteralPath $listLog) {
+        if ($line -match '^\s*(\d+): Test command:\s*(.*)$') {
+            $commands[[int]$Matches[1]] = $Matches[2].Trim()
+            continue
+        }
+        if ($line -match '^\s*Test\s+#(\d+):\s+(.+)$') {
+            $names[[int]$Matches[1]] = $Matches[2].Trim()
+        }
+    }
+    $registered = New-Object 'System.Collections.Generic.List[object]'
+    foreach ($id in ($names.Keys | Sort-Object)) {
+        $executable = $null
+        $command = $commands[$id]
+        if ($command) {
+            if ($command -match '^"([^"]+)"') { $executable = $Matches[1] }
+            else { $executable = ($command -split '\s+')[0] }
+        }
+        $registered.Add([pscustomobject]@{ name = $names[$id]; executable = $executable })
+    }
+    if ($registered.Count -eq 0) { throw "CTest registered no tests in $testBuild. See $listLog." }
+
+    # The test build record is the only evidence that a target was built by the
+    # current build. An old executable next to a failed target is not a pass.
+    $testCmake = Join-Path $backend 'src\windows\test\CMakeLists.txt'
+    $declaredTargets = @([regex]::Matches((Get-Content -LiteralPath $testCmake -Raw), 'qs_add_test_executable\((\w+)') |
+        ForEach-Object { $_.Groups[1].Value })
+    if ($declaredTargets.Count -eq 0) { throw "No test targets were declared in $testCmake." }
+    if (-not $buildRecord) {
+        throw "The backend test build record is missing: $buildRecordPath. Run windows\scripts\Build-Prototype.ps1 -Tests -BuildRoot $BuildRoot."
+    }
+    $manifest.buildRecord = [ordered]@{
+        path = $buildRecordPath
+        generatedAtUtc = $buildRecord.generatedAtUtc
+        backendRevision = $buildRecord.backendRevision
+        configureSucceeded = [bool]$buildRecord.configureSucceeded
+        buildSucceeded = [bool]$buildRecord.buildSucceeded
+        failedArtifacts = @($buildRecord.failedArtifacts | Where-Object { $_ })
+        targets = @($buildRecord.targets | Where-Object { $_ })
+    }
+    if ($buildRecord.backendRevision -ne $backendHead) {
+        throw "The test build record is for backend $($buildRecord.backendRevision), not the checked-out $backendHead. Rerun windows\scripts\Build-Prototype.ps1 -Tests."
+    }
+    $recordTargets = @($buildRecord.targets | Where-Object { $_ })
+    $failedArtifacts = @($buildRecord.failedArtifacts | Where-Object { $_ })
+    $unknownBuildFailure = (-not $buildRecord.buildSucceeded) -and ($failedArtifacts.Count -eq 0)
+    $buildErrors = Get-BuildFailureOutput $buildLog $declaredTargets
+
+    # Build one plan per declared target. A plan owns the fixture's
+    # classification, build result and run mode, so the manifest cannot report a
+    # different story.
+    $registeredByTarget = @{}
+    foreach ($entry in $registered) {
+        $target = if ($entry.executable) { [IO.Path]::GetFileNameWithoutExtension($entry.executable) } else { $entry.name + '_test' }
+        if ($declaredTargets -contains $target) { $registeredByTarget[$target] = $entry }
+    }
+    foreach ($target in $declaredTargets) {
+        $name = $target -replace '_test$', ''
+        $entry = $registeredByTarget[$target]
+        $traits = Get-TestTraits $name
+        $plan = [pscustomobject]@{
             name = $name
-            result = $result
-            durationSeconds = [Math]::Round($duration, 3)
-            skipReason = $skipReason
-            skippedCases = $skippedCases
-            ctestRegistered = $false
-            dependsOn = @($traits.dependsOn)
-            command = $exe.FullName
-            failure = $failure
+            target = $target
+            executable = Join-Path $testBuild "$target.exe"
+            registered = [bool]$entry
+            dependsOn = @()
+            qpa = 'offscreen'
+            mode = 'ctest'
+            result = $null
+            duration = 0.0
+            skipReason = $null
+            failure = $null
             buildFailure = $null
+            skippedCases = $null
+            runBy = 'none'
+            isolation = $null
+            log = $null
+        }
+        if ($traits) {
+            $plan.dependsOn = @($traits.dependsOn)
+            $plan.qpa = $traits.qpa
+        }
+        $buildFailure = Get-TargetBuildFailure $target
+        if (-not $traits) {
+            $plan.mode = 'fail'
+            $plan.result = 'failed'
+            $plan.failure = "unclassified fixture: add a trait for '$name' in windows\scripts\Test-BackendNative.ps1"
+        } elseif ($buildFailure) {
+            $errorText = $buildErrors[$target]
+            $plan.mode = 'fail'
+            $plan.result = 'failed'
+            $plan.failure = if ($errorText) { "$buildFailure`n$errorText" } else { "$buildFailure See $buildLog." }
+            $plan.buildFailure = [ordered]@{ target = $target; output = $errorText; log = $buildLog }
+        } elseif ($plan.dependsOn -contains 'desktop') {
+            if (-not $interactiveDesktop) {
+                $plan.mode = 'skip'
+                $plan.result = 'skipped'
+                $plan.skipReason = "no interactive desktop session; $($traits.reason)"
+            } elseif ($IncludeDesktop) {
+                $plan.mode = 'direct'
+            } else {
+                $plan.mode = 'isolated'
+            }
+        } elseif (-not $plan.registered) {
+            $plan.mode = 'direct'
+        }
+        $plans.Add($plan)
+    }
+    foreach ($entry in $registered) {
+        $target = if ($entry.executable) { [IO.Path]::GetFileNameWithoutExtension($entry.executable) } else { $entry.name + '_test' }
+        if ($declaredTargets -contains $target) { continue }
+        $plans.Add([pscustomobject]@{
+            name = $entry.name; target = $target; executable = $entry.executable; registered = $true
+            dependsOn = @(); qpa = 'offscreen'; mode = 'fail'; result = 'failed'; duration = 0.0
+            skipReason = $null; buildFailure = $null; skippedCases = $null; runBy = 'none'; isolation = $null; log = $null
+            failure = "unclassified fixture: CTest registered '$($entry.name)' with no declared target"
         })
     }
-} finally {
-    if ($null -eq $directEnvironment) { Remove-Item Env:\QT_QPA_PLATFORM -ErrorAction SilentlyContinue }
-    else { $env:QT_QPA_PLATFORM = $directEnvironment }
-}
 
-foreach ($name in ($buildFailures.Keys | Sort-Object)) {
-    $failed = $buildFailures[$name]
-    if ($failed.registered) { continue }
-    $errorText = $buildErrors[$failed.target]
-    $failure = if ($errorText) { "Fixture $($failed.target) did not compile or link.`n$errorText" }
-        else { "Fixture $($failed.target) did not compile or link. See $buildLog." }
-    $results.Add([ordered]@{
-        name = $name
-        result = 'failed'
-        durationSeconds = 0
-        skipReason = $null
-        skippedCases = $null
-        ctestRegistered = $false
-        dependsOn = @((Get-TestTraits $name).dependsOn)
-        command = $failed.executable
-        failure = $failure
-        buildFailure = [ordered]@{ target = $failed.target; output = $errorText; log = $buildLog }
-    })
-}
+    $excluded = @($plans | Where-Object { $_.registered -and $_.mode -ne 'ctest' } | ForEach-Object { $_.name })
+    $ctestPlans = @($plans | Where-Object { $_.mode -eq 'ctest' })
+    if ($ctestPlans.Count -gt 0) {
+        $junitPath = Join-Path $runRoot 'ctest-junit.xml'
+        $ctestLog = Join-Path $runRoot 'ctest.log'
+        $ctestArguments = @('--test-dir', $testBuild, '--output-on-failure', '--timeout', "$TestTimeoutSeconds",
+            '--output-junit', $junitPath, '--no-tests=error')
+        if ($excluded.Count -gt 0) {
+            $pattern = '^(' + (($excluded | ForEach-Object { [regex]::Escape($_) }) -join '|') + ')$'
+            $ctestArguments += @('--exclude-regex', $pattern)
+        }
+        $manifest.commands.ctest = 'ctest ' + ($ctestArguments -join ' ')
+        # Run from the disposable run directory. CTest still executes each
+        # fixture in its own build directory, never the repository or a home
+        # directory.
+        Push-Location -LiteralPath $runRoot
+        try {
+            $ErrorActionPreference = 'Continue'
+            & $ctestCommand @ctestArguments *>&1 | ForEach-Object { "$_" } | Tee-Object -FilePath $ctestLog
+            $ctestExit = $LASTEXITCODE
+            $ErrorActionPreference = 'Stop'
+        } finally {
+            Pop-Location
+        }
+        if (-not (Test-Path -LiteralPath $junitPath -PathType Leaf)) {
+            throw "CTest produced no JUnit result at $junitPath. See $ctestLog."
+        }
+        [xml]$junit = Get-Content -LiteralPath $junitPath -Raw
+        $cases = @{}
+        foreach ($case in $junit.SelectNodes('//testcase')) { $cases[$case.GetAttribute('name')] = $case }
+        foreach ($plan in $ctestPlans) {
+            $case = $cases[$plan.name]
+            if (-not $case) {
+                $plan.mode = 'fail'
+                $plan.result = 'failed'
+                $plan.failure = "CTest produced no result for this test. See $ctestLog."
+                continue
+            }
+            $plan.duration = [double]$case.GetAttribute('time')
+            $totals = $null
+            $systemOut = $case.SelectSingleNode('system-out')
+            if ($systemOut) { $totals = Get-Totals $systemOut.InnerText }
+            $failureNode = $case.SelectSingleNode('failure')
+            $skippedNode = $case.SelectSingleNode('skipped')
+            if ($failureNode) {
+                $plan.result = 'failed'
+                $plan.failure = $failureNode.InnerText.Trim()
+                if ($totals) { $plan.skippedCases = $totals.skipped }
+            } elseif ($skippedNode) {
+                $plan.result = 'skipped'
+                $plan.skipReason = $skippedNode.GetAttribute('message')
+                if (-not $plan.skipReason) { $plan.skipReason = 'CTest reported the test as skipped.' }
+                if ($totals) { $plan.skippedCases = $totals.skipped }
+            } elseif ($totals -and $totals.passed -eq 0 -and $totals.failed -eq 0 -and $totals.skipped -gt 0) {
+                $plan.result = 'skipped'
+                $plan.skipReason = Get-FirstSkipReason $systemOut.InnerText
+                if (-not $plan.skipReason) { $plan.skipReason = "Qt Test reported $($totals.skipped) skipped cases and no passes." }
+                $plan.skippedCases = $totals.skipped
+            } else {
+                $plan.result = 'passed'
+                if ($totals) { $plan.skippedCases = $totals.skipped }
+            }
+            $plan.runBy = 'ctest'
+            $plan.mode = 'done'
+        }
+    }
 
-$manifest.tests = $results.ToArray()
-$manifest.totals.fixtures = $results.Count
-$manifest.totals.passed = @($results | Where-Object { $_.result -eq 'passed' }).Count
-$manifest.totals.failed = @($results | Where-Object { $_.result -eq 'failed' }).Count
-$manifest.totals.skipped = @($results | Where-Object { $_.result -eq 'skipped' }).Count
-$manifest.totals.ctestRegistered = $registered.Count
-$manifest.totals.ctestUnregistered = $unregistered.Count
-$manifest.totals.wallSeconds = [Math]::Round(([DateTime]::UtcNow - $started).TotalSeconds, 3)
-$manifest.passed = $manifest.totals.failed -eq 0 -and $ctestExit -eq 0
+    # Direct fixtures write their Qt Test log through -o. The bounded helper
+    # starts the headless ones with a hard time limit. The isolated path needs
+    # its own launcher only because .NET cannot set STARTUPINFO.lpDesktop.
+    foreach ($plan in $plans) {
+        if ($plan.mode -notin @('direct', 'isolated')) { continue }
+        $plan.log = Join-Path $runRoot "$($plan.name).qt.txt"
+        $previousQpa = $env:QT_QPA_PLATFORM
+        $env:QT_QPA_PLATFORM = $plan.qpa
+        $run = $null
+        $timedOut = $false
+        try {
+            if ($plan.mode -eq 'isolated') {
+                $run = Invoke-IsolatedFixture $plan.executable $plan.name $plan.log
+                if (-not $run.Started) {
+                    if ($run.IsolationFailed) {
+                        $plan.mode = 'skip'
+                        $plan.result = 'skipped'
+                        $plan.skipReason = "desktop fixture; run with -IncludeDesktop ($($run.Error))"
+                    } else {
+                        $plan.mode = 'fail'
+                        $plan.result = 'failed'
+                        $plan.failure = "Could not start on an isolated desktop. $($run.Error)."
+                    }
+                    $plan.runBy = 'none'
+                    continue
+                }
+                $manifest.commands.isolated += "'$($run.Desktop)' $($plan.executable) -o $($plan.log),txt"
+                $plan.isolation = 'isolated-desktop'
+                $plan.runBy = 'isolated-desktop'
+            } else {
+                $started = [DateTime]::UtcNow
+                $run = Invoke-CaelestiaBounded -File $plan.executable -Arguments ('-o "' + $plan.log + '",txt') `
+                    -TimeoutSeconds $TestTimeoutSeconds -WorkingDirectory $runRoot
+                $plan.duration = ([DateTime]::UtcNow - $started).TotalSeconds
+                $manifest.commands.direct += "$($plan.executable) -o $($plan.log),txt"
+                $plan.runBy = 'direct'
+                $plan.isolation = if ($plan.dependsOn -contains 'desktop') { 'interactive-desktop' } else { $null }
+            }
+        } catch {
+            $plan.mode = 'fail'
+            $plan.result = 'failed'
+            $plan.failure = "Fixture runner error: $_"
+            continue
+        } finally {
+            if ($null -eq $previousQpa) { Remove-Item Env:\QT_QPA_PLATFORM -ErrorAction SilentlyContinue }
+            else { $env:QT_QPA_PLATFORM = $previousQpa }
+        }
+        if ($null -eq $run) {
+            $plan.result = 'failed'
+            $plan.failure = "Did not start or exceeded $TestTimeoutSeconds seconds. See $($plan.log)."
+            $plan.mode = 'done'
+            continue
+        }
+        if ($plan.mode -eq 'isolated') { $plan.duration = $run.Duration; $timedOut = [bool]$run.TimedOut }
+        $text = ''
+        if (Test-Path -LiteralPath $plan.log -PathType Leaf) { $text = [string](Get-Content -LiteralPath $plan.log -Raw) }
+        $totals = Get-Totals $text
+        if ($timedOut) {
+            $plan.result = 'failed'
+            $plan.failure = "Timed out after $TestTimeoutSeconds seconds. See $($plan.log)."
+        } elseif ($run.ExitCode -ne 0) {
+            $plan.result = 'failed'
+            $plan.failure = "Exited with code $($run.ExitCode). See $($plan.log)."
+        } elseif (-not $totals) {
+            $plan.result = 'failed'
+            $plan.failure = "Qt Test printed no Totals line. See $($plan.log)."
+        } elseif ($totals.failed -gt 0) {
+            $plan.result = 'failed'
+            $plan.failure = "Qt Test reported $($totals.failed) failed cases. See $($plan.log)."
+        } elseif ($totals.passed -eq 0 -and $totals.skipped -gt 0) {
+            $plan.result = 'skipped'
+            $plan.skipReason = Get-FirstSkipReason $text
+            if (-not $plan.skipReason) { $plan.skipReason = "Qt Test reported $($totals.skipped) skipped cases and no passes." }
+            $plan.skippedCases = $totals.skipped
+        } else {
+            $plan.result = 'passed'
+            $plan.skippedCases = $totals.skipped
+        }
+        $plan.mode = 'done'
+    }
+} catch {
+    $runError = "$_"
+}
+$manifest.error = $runError
+
+$manifest.tests = @($plans | ForEach-Object {
+    [ordered]@{
+        name = $_.name
+        result = $(if ($_.result) { $_.result } else { 'failed' })
+        durationSeconds = [Math]::Round([double]$_.duration, 3)
+        skipReason = $_.skipReason
+        skippedCases = $_.skippedCases
+        ctestRegistered = [bool]$_.registered
+        dependsOn = @($_.dependsOn)
+        runBy = $_.runBy
+        isolation = $_.isolation
+        command = $_.executable
+        failure = $(if ($_.failure) { $_.failure }
+            elseif ($_.result -eq 'failed') {
+                if ($manifest.error) { "did not run: $($manifest.error)" } else { 'the run ended before this fixture ran' }
+            } else { $null })
+        buildFailure = $_.buildFailure
+    }
+})
+$manifest.totals.fixtures = $manifest.tests.Count
+$manifest.totals.passed = @($manifest.tests | Where-Object { $_.result -eq 'passed' }).Count
+$manifest.totals.failed = @($manifest.tests | Where-Object { $_.result -eq 'failed' }).Count
+$manifest.totals.skipped = @($manifest.tests | Where-Object { $_.result -eq 'skipped' }).Count
+$manifest.totals.ctestRegistered = @($manifest.tests | Where-Object { $_.ctestRegistered }).Count
+$manifest.totals.ctestUnregistered = @($manifest.tests | Where-Object { -not $_.ctestRegistered }).Count
+$manifest.totals.desktopIsolated = @($manifest.tests | Where-Object { $_.isolation -eq 'isolated-desktop' }).Count
+$measured = @($manifest.tests | Where-Object { $null -ne $_.skippedCases })
+$manifest.totals.fixturesWithCaseTotals = $measured.Count
+$manifest.totals.fixturesWithoutCaseTotals = $manifest.totals.fixtures - $measured.Count
+# CTest cannot capture these fixtures' Qt Test output on Windows, so case
+# totals come only from fixtures this script runs directly. Recording how many
+# fixtures were measured stops a partial count from reading as a full total.
+$manifest.totals.casesSkipped = (@($measured | ForEach-Object { [int]$_.skippedCases } | Measure-Object -Sum).Sum)
+if ($null -eq $manifest.totals.casesSkipped) { $manifest.totals.casesSkipped = 0 }
+$manifest.totals.wallSeconds = [Math]::Round(([DateTime]::UtcNow - $startedWall).TotalSeconds, 3)
+
+$manifest.completed = $true
+$manifest.passed = (-not $manifest.error) -and ($manifest.totals.failed -eq 0) -and
+    (($null -eq $ctestExit) -or ($ctestExit -eq 0)) -and $revisionMatches -and (-not $backendDirty)
 Write-Manifest
 
 $summary = "$($manifest.totals.passed) passed, $($manifest.totals.failed) failed, $($manifest.totals.skipped) skipped, " +
     "$($manifest.totals.fixtures) fixtures ($($manifest.totals.ctestRegistered) CTest, $($manifest.totals.ctestUnregistered) direct), " +
-    "$($manifest.totals.wallSeconds) s. Manifest: $ManifestPath"
+    "$($manifest.totals.casesSkipped) skipped cases measured in $($manifest.totals.fixturesWithCaseTotals) fixtures " +
+    "($($manifest.totals.fixturesWithoutCaseTotals) unmeasured), " +
+    "$($manifest.totals.desktopIsolated) isolated desktop runs. Manifest: $ManifestPath"
 if (-not $manifest.passed) {
-    foreach ($test in $results) {
+    foreach ($test in $manifest.tests) {
         if ($test.result -eq 'failed') { Write-Output "FAIL $($test.name): $($test.failure)" }
     }
+    if ($manifest.error) { Write-Output "ERROR $($manifest.error)" }
     throw "Backend native tests failed: $summary"
 }
 Write-Output "PASS backend native tests: $summary"

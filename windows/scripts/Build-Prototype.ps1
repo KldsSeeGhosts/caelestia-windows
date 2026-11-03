@@ -142,9 +142,47 @@ if ($SkipGlazier) {
 # for Test-BackendNative.ps1. Build with keep-going so one broken target does
 # not hide the others. The runner reports each missing executable.
 if ($Tests) {
-    Invoke-BuildCommand 'configure-backend-tests' (@('-S', "$repoRoot\windows\deps\quickshell\src\windows\test",
-        '-B', "$BuildRoot\quickshell-tests") + $common)
-    Invoke-BuildCommand 'build-backend-tests' @('--build', "$BuildRoot\quickshell-tests", '--parallel', "$Jobs", '--', '-k', '0')
+    $testCmake = Join-Path $repoRoot 'windows\deps\quickshell\src\windows\test\CMakeLists.txt'
+    $testTargets = @([regex]::Matches((Get-Content -LiteralPath $testCmake -Raw), 'qs_add_test_executable\((\w+)') |
+        ForEach-Object { $_.Groups[1].Value })
+    if ($testTargets.Count -eq 0) { throw "No test targets were declared in $testCmake." }
+    $testBuildStarted = [DateTime]::UtcNow
+    # Test-BackendNative reads this record, not the presence of an executable.
+    # A target that failed this run stays failed even when an older executable
+    # is still on disk. The record is written on every path, including a failed
+    # build or configure, so the runner never mistakes a stale build for this one.
+    $testBuildRecord = [ordered]@{
+        schemaVersion = 1
+        startedAtUtc = $testBuildStarted.ToString('o')
+        generatedAtUtc = $null
+        backendRevision = (& git -C "$repoRoot\windows\deps\quickshell" rev-parse HEAD).Trim()
+        targets = $testTargets
+        configureSucceeded = $false
+        buildSucceeded = $false
+        failedArtifacts = @()
+        configureLog = Join-Path $logRoot 'configure-backend-tests.log'
+        log = Join-Path $logRoot 'build-backend-tests.log'
+    }
+    try {
+        Invoke-BuildCommand 'configure-backend-tests' (@('-S', "$repoRoot\windows\deps\quickshell\src\windows\test",
+            '-B', "$BuildRoot\quickshell-tests") + $common)
+        $testBuildRecord.configureSucceeded = $true
+        Invoke-BuildCommand 'build-backend-tests' @('--build', "$BuildRoot\quickshell-tests", '--parallel', "$Jobs", '--', '-k', '0')
+        $testBuildRecord.buildSucceeded = $true
+    } catch {
+        $testBuildLog = $testBuildRecord.log
+        if ((Test-Path -LiteralPath $testBuildLog -PathType Leaf) -and
+            ((Get-Item -LiteralPath $testBuildLog).LastWriteTimeUtc -ge $testBuildStarted.AddSeconds(-1))) {
+            $testBuildRecord.failedArtifacts = @(Get-Content -LiteralPath $testBuildLog | ForEach-Object {
+                if ($_ -match '^FAILED:\s+\[code=\d+\]\s+(.+)$') { $Matches[1].Trim() }
+            })
+        }
+        throw
+    } finally {
+        $testBuildRecord.generatedAtUtc = [DateTime]::UtcNow.ToString('o')
+        $testBuildRecord | ConvertTo-Json -Depth 5 |
+            Set-Content -LiteralPath (Join-Path $logRoot 'backend-tests-build.json') -Encoding UTF8
+    }
 }
 # Resolve the version and revision up front so configure works without a reachable git tag or git metadata (#114).
 $ErrorActionPreference = 'Continue'
