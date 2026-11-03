@@ -16,6 +16,15 @@ Singleton {
     readonly property bool controlsEnabled: Quickshell.env("CAELESTIA_COMBINED_LIVE") === "1" && Quickshell.env("CAELESTIA_SHELL_SMOKE") !== "1"
     readonly property string fallback: Quickshell.shellPath("assets/wallpaper.webp")
     property string fileCurrent: Native.Wallpaper.currentWallpaper().replace(/\\/g, "/") || fallback
+    // #214: the last local wallpaper this desktop actually showed before an
+    // engine took it over. IDesktopWallpaper can report an empty, missing or
+    // system-black path at handback, and an Image with that source paints
+    // nothing, leaving the window black. Keep this verified file instead and
+    // fall back to the bundled asset when even it is gone. Starting at the
+    // fallback means a fresh profile with the engine already running hands
+    // back to a Caelestia image rather than an unusable system path.
+    property string lastGoodFile: fallback
+    readonly property string handbackWallpaper: usableFile(lastGoodFile) ? lastGoodFile : fallback
     readonly property string actualCurrent: WallpaperEngine.enabled && WallpaperEngine.running && WallpaperEngine.current?.path
         ? WallpaperEngine.current.path : fileCurrent
     // Image consumers (mode/variant generation and the desktop) need the
@@ -23,7 +32,10 @@ Singleton {
     // ownership claim, not the bare process, decides which image is visible:
     // after a genuine handback the engine still runs but the shell shows its
     // own wallpaper again, and the source change repaints the desktop (#214).
-    readonly property string currentImage: externalWallpaperActive && WallpaperEngine.current?.preview ? WallpaperEngine.current.preview : fileCurrent
+    readonly property string currentImage: externalWallpaperActive && !WallpaperEngine.desktopHandedBack
+        && WallpaperEngine.current?.preview
+        ? WallpaperEngine.current.preview
+        : visibleOwnSource()
     property bool showPreview: false
     property string previewPath
     readonly property string current: showPreview && !externalWallpaperActive ? previewPath : currentImage
@@ -72,10 +84,61 @@ Singleton {
     property bool schemeSourceLoaded: false
     readonly property bool schemeStateReady: schemeNameLoaded && schemeSourceLoaded
 
-    Component.onCompleted: reload()
+    Component.onCompleted: {
+        reload();
+        if (!externalWallpaperActive)
+            root.noteGoodFile(root.fileCurrent);
+    }
     onCurrentImageChanged: applyPalette(false)
     // Both files have been read (or found missing) once: the startup check.
     onSchemeStateReadyChanged: applyPalette(false)
+    // Only the own desktop contributes a known-good file. While an engine
+    // claims the desktop its preview is visible, and the system wallpaper it
+    // leaves behind is not a source this shell chose (#214).
+    onFileCurrentChanged: {
+        if (!externalWallpaperActive)
+            root.noteGoodFile(root.fileCurrent);
+    }
+    onExternalWallpaperActiveChanged: {
+        // A handback releases the claim and adopts its source in the
+        // WallpaperEngine connection below; noting fileCurrent first would
+        // remember the path the engine just left.
+        if (!externalWallpaperActive && !WallpaperEngine.desktopHandedBack)
+            root.noteGoodFile(root.fileCurrent);
+    }
+
+    // A wallpaper source is usable only when it names a local file that still
+    // exists. classify is a synchronous attribute read, and a missing or
+    // non-file source makes the desktop Image paint nothing (#214).
+    function usableFile(path): bool {
+        const value = String(path ?? "").replace(/^file:\/\/\//, "");
+        return value.length > 0 && Native.FsUtils.classify(value) === "file";
+    }
+    // Remember the local file the own desktop shows. The path the engine leaves
+    // in the Windows wallpaper setting is never adopted as this value (#214).
+    function noteGoodFile(path): void {
+        if (!usableFile(path))
+            return;
+        const value = String(path).replace(/^file:\/\/\//, "");
+        if (lastGoodFile !== value)
+            lastGoodFile = value;
+    }
+    // A genuine handback must show a loadable Caelestia image, never the WE
+    // preview and never the path the engine left behind. Reuse the last file
+    // the own desktop showed, or the bundled asset on a fresh profile.
+    function adoptHandbackSource(): void {
+        const source = usableFile(lastGoodFile) ? lastGoodFile : fallback;
+        // Resolve a vanished last file once, so the state matches the image
+        // that is actually visible and the next handback starts from a
+        // verified source.
+        if (lastGoodFile !== source)
+            lastGoodFile = source;
+        if (!Paths.samePath(fileCurrent, source))
+            fileCurrent = source;
+    }
+    function visibleOwnSource(): string {
+        return usableFile(fileCurrent) ? fileCurrent : handbackWallpaper;
+    }
 
     function applyPalette(force): void {
         if (!SchemeGenerator.available || schemeName !== "dynamic" || currentImage === "")
@@ -144,6 +207,15 @@ Singleton {
     Connections {
         target: WallpaperEngine
         function onSnapshotReadyChanged(): void { root.applyPalette(false); }
+        function onDesktopHandedBackChanged(): void {
+            if (!WallpaperEngine.desktopHandedBack)
+                return;
+            // Drop a launcher preview left open across the handback: it may be
+            // an engine preview, and the desktop must show the shell's own
+            // image instead of keeping it (#214).
+            root.stopPreview();
+            root.adoptHandbackSource();
+        }
     }
     Connections {
         target: GlobalConfig.services
@@ -241,6 +313,9 @@ Singleton {
         if (ok) {
             root.markOpened(local);
             fileCurrent = local;
+            // An explicit pick is a Caelestia image even while an engine owns
+            // the desktop: it becomes the file a handback returns to (#214).
+            root.noteGoodFile(local);
             stopPreview();
             // The fileCurrent change above regenerates a dynamic palette.
             if (!SchemeGenerator.available) {
@@ -264,7 +339,15 @@ Singleton {
     Connections {
         target: Native.DesktopLayer
         function onWallpaperChanged(): void {
-            root.fileCurrent = Native.Wallpaper.currentWallpaper().replace(/\\/g, "/") || root.fallback;
+            const next = Native.Wallpaper.currentWallpaper().replace(/\\/g, "/");
+            // #214: Wallpaper Engine's handback rewrites the system wallpaper
+            // setting, often to an empty path or one that no longer exists.
+            // Adopting it here makes the Image paint nothing, so keep the
+            // verified source while the engine is handed back. A usable new
+            // wallpaper is still applied.
+            if (WallpaperEngine.desktopHandedBack && !root.usableFile(next))
+                return;
+            root.fileCurrent = next || root.fallback;
         }
     }
     NativeDialogs.FileDialog {
