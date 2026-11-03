@@ -374,7 +374,6 @@
   "windows/shell/adapters/services/Wallpapers.qml": "services/Wallpapers.qml",
   "windows/shell/adapters/utils/Paths.qml": "utils/Paths.qml",
   "windows/shell/adapters/utils/SysInfo.qml": "utils/SysInfo.qml",
-  "windows/shell/helpers/KeepAwake.ps1": "helpers/KeepAwake.ps1",
   "windows/shell/Screens.qml": "services/Screens.qml",
   "windows/shell/shell.qml": "shell.qml",
   "windows/shell/WindowsFonts.qml": "WindowsFonts.qml"

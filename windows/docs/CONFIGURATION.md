@@ -295,7 +295,7 @@ Controls the top dashboard drawer and platform service intervals/units.
 - **Notification mirroring:** Local notifications are persisted to `state\notifs.json`. Mirrored Windows system toasts require one-time user consent in the notification center and are not written to disk (Windows owns their lifetime).
 - **Utilities cards and quick toggles:**
   - Quick toggles are limited to `wifi`, `bluetooth`, and `dnd` (Linux `vpn` and quick-toggle `recorder` are hidden).
-  - The **Keep-awake (Idle inhibit)** card holds `SetThreadExecutionState` in a helper child process while enabled.
+  - The **Keep-awake (Idle inhibit)** card holds a native `PowerCreateRequest` for display and system availability while enabled. The request is owned by the shell process, so it cannot outlive the shell.
   - The **Screen recorder** card uses `ffmpeg` (`gdigrab`) when `ffmpeg.exe` is on `PATH` and writes fullscreen recordings to `%USERPROFILE%\Videos\Caelestia\recording_<timestamp>.mp4`.
 
 ### `session`, `general`, and `lock`

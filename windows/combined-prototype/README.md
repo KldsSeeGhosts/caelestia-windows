@@ -104,7 +104,7 @@ Fitting failures and enable refusals use the shared original toast surface.
 
 `-Live` enables the existing audio, hardware brightness, media, Wi-Fi, Bluetooth,
 power-profile, app-launch, tray activation and session action gates. It also
-enables the tray hook, the keep-awake helper, the ffmpeg recorder and the
+enables the tray hook, the native keep-awake request, the ffmpeg recorder and the
 launcher's Lock action. Lock resolves through the original session adapter to
 the pinned backend's `Session.lock()`, which calls Windows `LockWorkStation`;
 there is no custom lock screen or credential UI. Notification mirroring, Windows
@@ -115,9 +115,10 @@ the control window. Commands remain confined to the session adapter allowlist.
 
 `-Combined -Smoke` and `-Combined -Live -Smoke` both suppress native writes,
 launches, session dispatch, tray interception and notification mirroring. The
-utilities cards load, but the keep-awake helper and ffmpeg recorder hold no
-process, which the smoke harness asserts. Smoke loads all dashboard tabs,
-utilities, history, the launcher, status popouts, notifications and a toast,
+utilities cards load, but the keep-awake request stays cleared and the ffmpeg
+recorder holds no process, which the smoke harness asserts. Smoke loads all
+dashboard tabs, utilities, history, the launcher, status popouts, notifications
+and a toast,
 and exits. The notification popup/history check injects an in-process fixture
 through the notification service. It never sends through the session bus,
 whose existing owner may be the user's running shell. This checks UI loading
@@ -294,11 +295,10 @@ watched and reload the binds without restarting the shell.
 - Original utilities wrapper with the keep-awake, screen-recorder and
   quick-toggle cards. Quick toggles are limited to Wi-Fi, Bluetooth and
   shell-local do-not-disturb; hardware controls follow their facade's
-  availability and write gate. Keep-awake holds
-  `SetThreadExecutionState(ES_CONTINUOUS | ES_DISPLAY_REQUIRED |
-  ES_SYSTEM_REQUIRED)` in a PowerShell child process that ends when the toggle
-  turns off or the shell exits. The recorder drives `ffmpeg` with `gdigrab`
-  when `ffmpeg` is on PATH and writes
+  availability and write gate. Keep-awake holds a native `PowerCreateRequest`
+  for display and system availability; toggling it off clears the request, and
+  it cannot outlive the shell process. The recorder drives `ffmpeg` with
+  `gdigrab` when `ffmpeg` is on PATH and writes
   `%USERPROFILE%\Videos\Caelestia\recording_<timestamp>.mp4`; stopping flushes
   the MP4 through ffmpeg's stdin. Without ffmpeg the card reports Unavailable
   with that reason. Both cards are visible in every combined run but act only
@@ -369,8 +369,9 @@ The production entry uses the same services and provisions its scheme venv under
 - Clicking the profile picture opens a file picker. The chosen image is copied to
   `profile-picture` in the shell's state folder and shown in the dashboard ahead of
   the Windows account picture. The Windows account picture is never changed.
-- Idle inhibition is not the upstream Wayland `IdleInhibitor`; Windows holds the
-  execution state in a child process instead (see the utilities card above). The
+- Idle inhibition uses the backend's native `IdleInhibitor` with a
+  `PowerCreateRequest` handle owned by the shell, not upstream's Wayland
+  protocol (see the utilities card above). The
   recorder supports fullscreen `gdigrab` only: region capture, audio capture and
   pause have no implemented ffmpeg route, so the card does not offer them. Its
   recordings list and delete modal are omitted with the Linux `caelestia record`
