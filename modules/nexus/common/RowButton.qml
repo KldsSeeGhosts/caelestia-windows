@@ -21,12 +21,37 @@ ConnectedRect {
 
     signal clicked(event: MouseEvent)
 
+    // Windows port (#210): keyboard focus and activation. Upstream rows only
+    // activate through the StateLayer's MouseArea. Focus shows as the state
+    // layer at M3's focus opacity, and Enter/Space play the press ripple. A
+    // row faded out (DialogRowButton while its dialog is open) or disabled
+    // leaves the tab chain.
+    function activate(): void {
+        if (root.disabled || root.opacity === 0)
+            return;
+        stateLayer.press(width / 2, height / 2);
+        root.clicked(null);
+    }
+
+    activeFocusOnTab: !disabled && opacity > 0
+    Keys.onPressed: event => {
+        if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
+            event.accepted = true;
+            if (!event.isAutoRepeat)
+                activate();
+        }
+    }
+    Accessible.role: Accessible.Button
+    Accessible.name: text
+    Accessible.onPressAction: activate()
+
     Layout.fillWidth: true
     implicitHeight: row.implicitHeight + Tokens.padding.medium * 2
 
     StateLayer {
         id: stateLayer
 
+        stateOpacity: root.activeFocus && !root.disabled ? 0.1 : containsMouse ? 0.08 : 0 // Windows port (#210)
         onClicked: e => root.clicked(e)
     }
 

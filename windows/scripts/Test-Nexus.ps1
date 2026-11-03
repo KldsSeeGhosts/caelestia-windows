@@ -10,7 +10,10 @@ param(
     # Observation only: construct the read-only Windows service facades so the
     # Nexus pages render their real (possibly empty) device and network lists.
     # Every control/write/launch/activation opt-in stays unset.
-    [switch]$Observe
+    [switch]$Observe,
+    # Smoke runs NexusSmoke.qml. Keyboard runs NexusKeyboard.qml: RowButton
+    # focus/activation and a Tab walk of every page and sub-page (#210).
+    [ValidateSet('Smoke', 'Keyboard')][string]$Suite = 'Smoke'
 )
 # Light Nexus staging gate: the production graph is staged, then
 # windows/nexus/NexusSmoke.qml is run inside it with an isolated profile. It
@@ -32,7 +35,8 @@ $stage = & "$PSScriptRoot\Stage-ShellPrototype.ps1" -Destination (Join-Path $run
 foreach ($directory in @('config', 'state', 'runtime', 'cache', 'data')) {
     New-Item -ItemType Directory -Force (Join-Path $profile $directory) | Out-Null
 }
-Copy-Item -LiteralPath "$repoRoot\windows\nexus\NexusSmoke.qml" -Destination "$stage\nexus-smoke.qml"
+$fixture = if ($Suite -eq 'Keyboard') { 'NexusKeyboard.qml' } else { 'NexusSmoke.qml' }
+Copy-Item -LiteralPath "$repoRoot\windows\nexus\$fixture" -Destination "$stage\nexus-smoke.qml"
 # A minimal profile: every omitted option keeps its built-in default, which is
 # what the smoke's restore step compares against. The seeded tiling keys prove
 # the page's whole-map windows write keeps unrelated entries.
@@ -77,7 +81,7 @@ if ($Observe) {
 $process = [Diagnostics.Process]::Start($info)
 $outTask = $process.StandardOutput.ReadToEndAsync()
 $errTask = $process.StandardError.ReadToEndAsync()
-$timedOut = -not $process.WaitForExit(60000)
+$timedOut = -not $process.WaitForExit($(if ($Suite -eq 'Keyboard') { 180000 } else { 60000 }))
 if ($timedOut) { $process.Kill(); $process.WaitForExit() }
 $stdout = $outTask.GetAwaiter().GetResult()
 $stderr = $errTask.GetAwaiter().GetResult()
@@ -98,13 +102,17 @@ function Get-Diagnostics([string]$Body) {
         Where-Object { $_ -notmatch $offscreenOnly })
 }
 $diagnostics = Get-Diagnostics $text
+$markers = if ($Suite -eq 'Keyboard') {
+    @('CAELESTIA_NEXUS_KEYBOARD_PASS')
+} else {
+    @('CAELESTIA_NEXUS_SMOKE_PASS', 'CAELESTIA_NEXUS_SMOKE_PAGES 12', 'CAELESTIA_NEXUS_SEARCH_PASS',
+        'CAELESTIA_SHORTCUT name=nexus')
+}
 $passed = -not $timedOut -and $process.ExitCode -eq 0 -and
-    $text.Contains('CAELESTIA_NEXUS_SMOKE_PASS') -and
-    $text.Contains('CAELESTIA_NEXUS_SMOKE_PAGES 12') -and
-    $text.Contains('CAELESTIA_NEXUS_SEARCH_PASS') -and
-    $text.Contains('CAELESTIA_SHORTCUT name=nexus') -and
+    @($markers | Where-Object { -not $text.Contains($_) }).Count -eq 0 -and
     $diagnostics.Count -eq 0
 $result = [ordered]@{
+    suite     = $Suite
     passed    = $passed
     timedOut  = $timedOut
     exitCode  = $process.ExitCode

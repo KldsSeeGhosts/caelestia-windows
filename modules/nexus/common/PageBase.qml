@@ -74,5 +74,44 @@ ColumnLayout {
         TapHandler {
             onTapped: flickable.focus = true
         }
+
+        // Windows port (#210): Tab moves focus but the flickable does not
+        // follow it. Scroll a keyboard-focused control in this page into view.
+        Anim {
+            id: revealAnim
+
+            target: flickable
+            property: "contentY"
+        }
+
+        Connections {
+            function onActiveFocusItemChanged(): void {
+                if (!root) // the window can move focus while this page tears down
+                    return;
+                const item = root.Window.activeFocusItem;
+                let p = item;
+                while (p && p !== flickable.contentItem)
+                    p = p.parent;
+                if (!p)
+                    return;
+                revealAnim.stop(); // a reveal for the previous focus must not overshoot this one
+                const y = item.mapToItem(flickable.contentItem, 0, 0).y;
+                const pad = root.Tokens.padding.large;
+                const min = -flickable.topMargin;
+                const max = Math.max(min, flickable.contentHeight + flickable.bottomMargin - flickable.height);
+                let to = flickable.contentY;
+                if (y - pad < to)
+                    to = y - pad;
+                else if (y + item.height + pad > to + flickable.height)
+                    to = y + item.height + pad - flickable.height;
+                to = Math.max(min, Math.min(max, to));
+                if (to !== flickable.contentY) {
+                    revealAnim.to = to;
+                    revealAnim.restart();
+                }
+            }
+
+            target: root.Window.window
+        }
     }
 }
