@@ -72,6 +72,9 @@ foreach ($scenario in @('normal', 'bundled', 'cold-start', 'start-timeout', 'sto
     $info.EnvironmentVariables['PATH'] = "$QtPrefix\bin;$BuildRoot\install\qml\Caelestia\lib;$BuildRoot\install\qml\M3Shapes;$env:PATH"
     $info.EnvironmentVariables['QT_QPA_PLATFORM'] = 'offscreen'
     $info.EnvironmentVariables['QT_QUICK_BACKEND'] = 'software'
+    # The layout scenario grabs and destroys its card. Keep the software scene
+    # graph on the GUI thread so teardown cannot race a threaded render.
+    $info.EnvironmentVariables['QSG_RENDER_LOOP'] = 'basic'
     $info.EnvironmentVariables['QT_FORCE_STDERR_LOGGING'] = '1'
     $info.EnvironmentVariables['QML_IMPORT_PATH'] = "$stage\imports;$BuildRoot\install\qml;$QtPrefix\qml"
     $info.EnvironmentVariables['CAELESTIA_CONFIG_DIR'] = Join-Path $stageRoot 'profile\config'
