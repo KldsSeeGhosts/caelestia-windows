@@ -34,7 +34,11 @@ TrayContent {
         return edge.mapToItem(null, edge.width, 0).x + Tokens.spacing.small;
     }
 
-    onItemMenuRequested: (item, x, y) => WindowsTray.openMenu(item, QsWindow.window, menuX(), y)
+    // The native menu opens with its top-left at the cursor, while the tray
+    // reports the icon's centre: lift the point by half an icon so the menu
+    // aligns with the icon row instead of hanging half an icon below it.
+    onItemMenuRequested: (item, x, y) => WindowsTray.openMenu(
+        item, QsWindow.window, menuX(), y - Tokens.font.body.small.pointSize)
 
     // Mouse wheels must scroll even when the pointer is over an icon's
     // MouseArea, and must not fall through to the bar's volume/brightness.
@@ -60,6 +64,9 @@ TrayContent {
         width: root.width
         height: root.expanded ? root.expandIcon.height : root.height
         enabled: Config.bar.tray.compact && root.items.count > 0
+        // Right-click expands too: collapsed icons cannot be reached, so the
+        // pill must not swallow the gesture.
+        acceptedButtons: Qt.LeftButton | Qt.RightButton
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
         onClicked: root.expanded = !root.expanded
