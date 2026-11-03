@@ -40,7 +40,7 @@ $shellPath = Join-Path $stage 'shell.qml'
 $pragmas = @([regex]::Matches([IO.File]::ReadAllText($shellPath),
     '(?m)^//@ pragma (?:DataDir|StateDir|CacheDir) [^\r\n]+') | ForEach-Object { $_.Value })
 if ($pragmas.Count -ne 3) { throw 'Expected all three staged profile-directory pragmas.' }
-$harness = [IO.File]::ReadAllText((Join-Path $repoRoot 'windows\tests\SessionConfirmKeyboard.qml'))
+$harness = [IO.File]::ReadAllText((Join-Path $repoRoot 'windows\tests\SessionConfirmKeyboardTest.qml'))
 [IO.File]::WriteAllText($shellPath, (($pragmas -join "`n") + "`n" + $harness), (New-Object Text.UTF8Encoding($false)))
 
 $qmlRoot = Join-Path $BuildRoot 'install\qml'

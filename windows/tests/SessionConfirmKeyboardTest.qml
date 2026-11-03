@@ -6,7 +6,9 @@
 // session method. The model is drawn offscreen and driven with real key events:
 // Shut down opens the confirmation, Cancel takes focus, arrows stay inside the
 // two buttons, Return/Enter/Space activate, Escape cancels, and every exit
-// returns focus to the SessionButton that started the confirmation.
+// returns focus to the SessionButton that started the confirmation. A launcher
+// opened over an open confirmation must hand focus back to Cancel when it
+// closes, not leave the confirmation unreachable.
 import QtQuick
 import QtTest
 import Quickshell
@@ -66,6 +68,12 @@ ShellRoot {
 
     readonly property Component inputComponent: Component {
         TestCase { when: false }
+    }
+
+    // Stands in for the launcher window taking active focus away from the
+    // drawer without closing the confirmation.
+    readonly property Component focusTaker: Component {
+        Item { focus: true }
     }
 
     Timer {
@@ -234,5 +242,27 @@ ShellRoot {
         root.input.keyClick(Qt.Key_Escape);
         root.equal(SessionManager.cancelCount, cancelBefore + 1, "Escape after arrow navigation did not cancel");
         root.check(shutdown.activeFocus, "arrow navigation lost the origin focus");
+
+        // The launcher opens over the drawer without closing an open
+        // confirmation and takes active focus. Closing it must hand focus back
+        // to Cancel, so the confirmation stays keyboard-reachable.
+        root.input.keyClick(Qt.Key_Return);
+        root.check(cancel.activeFocus, "Cancel is not focused before the launcher opens");
+        screenState.launcher = true;
+        const launcherFocus = root.focusTaker.createObject(win.contentItem);
+        launcherFocus.forceActiveFocus();
+        root.input.wait(10);
+        root.check(launcherFocus.activeFocus, "the launcher stand-in did not take focus");
+        root.check(!cancel.activeFocus, "Cancel kept focus while the launcher was open");
+        screenState.launcher = false;
+        root.input.wait(10);
+        root.check(cancel.activeFocus, "closing the launcher did not restore focus to Cancel");
+        launcherFocus.destroy();
+
+        cancelBefore = SessionManager.cancelCount;
+        root.input.keyClick(Qt.Key_Return);
+        root.equal(SessionManager.cancelCount, cancelBefore + 1, "Return did not cancel after the launcher closed");
+        root.check(!SessionManager.confirmationPending, "Return left the confirmation pending after the launcher closed");
+        root.check(shutdown.activeFocus, "the launcher check lost the origin focus");
     }
 }

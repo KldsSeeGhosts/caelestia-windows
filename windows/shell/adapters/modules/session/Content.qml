@@ -39,8 +39,8 @@ Column {
 
         Connections {
             function onLauncherChanged(): void {
-                if (!root.screenState.launcher && !root.confirming)
-                    logout.forceActiveFocus();
+                if (!root.screenState.launcher)
+                    (root.confirming ? cancel : logout).forceActiveFocus();
             }
 
             target: root.screenState
