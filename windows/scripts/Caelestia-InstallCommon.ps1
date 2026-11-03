@@ -172,9 +172,13 @@ function Get-CaelestiaSchemeRevision([string]$RuntimePrefix) {
 }
 
 # Total time one generation search may spend probing candidates, and the slice
-# one candidate gets. Tests shrink these; nothing else should.
+# one candidate gets. Tests shrink these; nothing else should. Activation can
+# run two searches before it stops the old shell: the target's generation and,
+# when there is a previous version, the restore generation. Each search has its
+# own budget, so the combined pre-quit work can take up to about 30 s.
 $script:CaelestiaSchemeProbeBudgetSeconds = 15
 $script:CaelestiaSchemeProbeSliceSeconds = 8
+$script:CaelestiaSchemeRestoreJournalName = 'prune-restore.json'
 
 # Generation directories are hash-derived names only. runtime.json is local
 # data, so never feed an arbitrary path into a process start.
@@ -617,13 +621,29 @@ function Publish-CaelestiaSchemeRuntime([string]$ProfileRoot, [string]$Revision,
     return [pscustomobject]$record
 }
 
+# Record the final "no usable generation" outcome for a revision. An existing
+# unavailable record is kept as it is: it may already carry the rejected
+# generation and the reason, which is better diagnostics than replacing it.
+# This starts no process.
+function Set-CaelestiaSchemeUnavailableRecord([string]$ProfileRoot, [string]$Revision) {
+    $current = Read-CaelestiaSchemeRuntimeRecord $ProfileRoot
+    if ($current -and $current.available -eq $false -and [string]$current.revision -eq $Revision) { return }
+    Write-CaelestiaSchemeRecord $ProfileRoot ([ordered]@{
+        available = $false
+        revision = $Revision
+        message = 'no verified scheme runtime for this version; using the fixed palette'
+        decidedAt = (Get-Date).ToString('o')
+    })
+}
+
 # Point runtime.json at an existing generation for the requested revision
-# without provisioning. Activation calls this before the readiness clock; a
-# busy lock or a missing generation returns null and the shell starts fixed.
-# Only a verified generation is ever chosen, the newest one for the payload's
-# identity, so a repoint can never move from a working generation to a broken
-# one, and an older sibling cannot undo a repair.
-function Set-CaelestiaSchemeRuntimeForRevision([string]$ProfileRoot, [string]$Revision, [string]$RuntimePrefix = '', $Verified = $null, [switch]$NoProbe, [int]$BudgetSeconds = $script:CaelestiaSchemeProbeBudgetSeconds, [int]$CandidateSeconds = $script:CaelestiaSchemeProbeSliceSeconds) {
+# without provisioning and without starting a process. Every caller runs after
+# the shell has been stopped, so this setter is deliberately incapable of
+# probing: a decision made earlier while the old shell still served the desktop
+# is passed in -Verified. Without one, the published record is kept only if its
+# receipt still matches (file metadata alone); otherwise the shell starts on its
+# fixed palette. Selection before the stop is Select-CaelestiaSchemeGeneration.
+function Set-CaelestiaSchemeRuntimeForRevision([string]$ProfileRoot, [string]$Revision, [string]$RuntimePrefix = '', $Verified = $null) {
     try {
         if (-not $Revision) { return $null }
         $expectedIdentity = ''
@@ -646,33 +666,13 @@ function Set-CaelestiaSchemeRuntimeForRevision([string]$ProfileRoot, [string]$Re
                     (Test-CaelestiaSchemeReceipt $Verified.Root $Verified.Receipt)) {
                     return Publish-CaelestiaSchemeRuntime $ProfileRoot $Revision $Verified.Root
                 }
-                Write-CaelestiaSchemeRecord $ProfileRoot ([ordered]@{
-                    available = $false
-                    revision = $Revision
-                    message = 'no verified scheme runtime for this version; using the fixed palette'
-                    decidedAt = (Get-Date).ToString('o')
-                })
+                Set-CaelestiaSchemeUnavailableRecord $ProfileRoot $Revision
                 return $null
             }
-            # -NoProbe is for every caller that runs after the shell has been
-            # stopped: it must never start a process. Without a decision made
-            # earlier, the published record is kept only if its receipt still
-            # matches (file metadata alone); otherwise the shell starts on its
-            # fixed palette.
-            if ($NoProbe) {
-                $accepted = Get-CaelestiaPreparedSchemeRuntime $ProfileRoot $Revision $RuntimePrefix
-                if ($accepted) { return $accepted }
-                Write-CaelestiaSchemeRecord $ProfileRoot ([ordered]@{
-                    available = $false
-                    revision = $Revision
-                    message = 'no verified scheme runtime for this version; using the fixed palette'
-                    decidedAt = (Get-Date).ToString('o')
-                })
-                return $null
-            }
-            $candidate = Get-CaelestiaVerifiedSchemeGeneration $ProfileRoot $Revision $expectedIdentity $BudgetSeconds $CandidateSeconds
-            if (-not $candidate) { return $null }
-            return Publish-CaelestiaSchemeRuntime $ProfileRoot $Revision $candidate.Directory.FullName
+            $accepted = Get-CaelestiaPreparedSchemeRuntime $ProfileRoot $Revision $RuntimePrefix
+            if ($accepted) { return $accepted }
+            Set-CaelestiaSchemeUnavailableRecord $ProfileRoot $Revision
+            return $null
         } finally {
             Exit-CaelestiaSchemeLock $lock
         }
@@ -744,8 +744,11 @@ function Get-CaelestiaProcessImagePaths($Process) {
 # Open every executable image under a directory for write, sharing only read
 # and delete. The OS refuses write access to a mapped image, so success proves
 # no process maps one; while the handles stay open no new mapping or launch of
-# those files can succeed either. Returns the open streams (the caller disposes
-# them), or $null when any image is in use or unreadable (all closed again).
+# those files can succeed either. The read-only attribute also denies that
+# write open, but it does not mean the image is in use, so it is cleared only
+# for the attempt and put straight back. Returns the open streams (the caller
+# disposes them), or $null when any image is in use or unreadable (all closed
+# again).
 function Open-CaelestiaSchemeImageHandles([string]$Directory) {
     $streams = [Collections.Generic.List[IO.FileStream]]::new()
     try {
@@ -753,7 +756,18 @@ function Open-CaelestiaSchemeImageHandles([string]$Directory) {
         # exception keeps a directory handle open and would block the rename.
         foreach ($file in [IO.Directory]::GetFiles($Directory, '*', [IO.SearchOption]::AllDirectories)) {
             if ($file -notmatch '\.(exe|dll|pyd|sys|node)$') { continue }
-            $streams.Add([IO.File]::Open($file, [IO.FileMode]::Open, [IO.FileAccess]::Write, [IO.FileShare]::Read -bor [IO.FileShare]::Delete))
+            $attributes = [IO.File]::GetAttributes($file)
+            $readOnly = ($attributes -band [IO.FileAttributes]::ReadOnly) -ne 0
+            if ($readOnly) {
+                [IO.File]::SetAttributes($file, [IO.FileAttributes]([int]$attributes -band (-bnot [int][IO.FileAttributes]::ReadOnly)))
+            }
+            try {
+                $streams.Add([IO.File]::Open($file, [IO.FileMode]::Open, [IO.FileAccess]::Write, [IO.FileShare]::Read -bor [IO.FileShare]::Delete))
+            } finally {
+                if ($readOnly) {
+                    [IO.File]::SetAttributes($file, [IO.FileAttributes]([int][IO.File]::GetAttributes($file) -bor [int][IO.FileAttributes]::ReadOnly))
+                }
+            }
         }
         return , $streams
     } catch {
@@ -799,10 +813,13 @@ function Move-CaelestiaSchemeToTrash([string]$Directory, [string]$RuntimesRoot) 
 # Everything in .trash was already renamed away from any reference. A mapped
 # image or a partial delete (a scanner holding a file, say) simply stays for the
 # next prune; an entry is deleted only while none of its images is in use.
-function Remove-CaelestiaSchemeTrash([string]$RuntimesRoot) {
+# Entries named in -Keep are in the restore journal: they must not be deleted
+# before the next prune gets its one restore attempt.
+function Remove-CaelestiaSchemeTrash([string]$RuntimesRoot, [string[]]$Keep = @()) {
     $trash = Join-Path $RuntimesRoot '.trash'
     if (-not (Test-Path -LiteralPath $trash -PathType Container)) { return }
     foreach ($entry in @(Get-ChildItem -LiteralPath $trash -Directory -Force -ErrorAction SilentlyContinue)) {
+        if ($Keep -contains $entry.Name) { continue }
         try {
             Assert-CaelestiaNoReparsePoints $entry.FullName
             # Hold the images open while deleting, so nothing can start using
@@ -818,6 +835,75 @@ function Remove-CaelestiaSchemeTrash([string]$RuntimesRoot) {
         } catch { }
     }
     try { [IO.Directory]::Delete($trash, $false) } catch { }
+}
+
+# A generation moved into .trash after the image check is normally renamed back
+# when the check fails again at the new location. That move-back can fail while
+# an outside process still holds a file inside, and a retry loop could only spin
+# until that process lets go. This small journal persists the restore intent
+# across prune runs: the next prune restores it once, before any deletion, so a
+# generation that was really in use gets its path back instead of being deleted
+# as ordinary trash. Only hash-derived generation and trash leaf names are
+# stored, so the journal never contains a profile or user path.
+function Read-CaelestiaSchemeRestoreJournal([string]$SchemeRoot) {
+    try {
+        $path = Join-Path $SchemeRoot $script:CaelestiaSchemeRestoreJournalName
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return @() }
+        $entries = @()
+        foreach ($entry in @(Get-Content -LiteralPath $path -Raw | ConvertFrom-Json)) {
+            $generation = [string]$entry.generation
+            $trash = [string]$entry.trash
+            if (-not (Test-CaelestiaSchemeGeneration $generation)) { continue }
+            if ($trash -notmatch ('^' + [regex]::Escape($generation) + '\.[a-f0-9]{8}$')) { continue }
+            $entries += [pscustomobject]@{ Generation = $generation; Trash = $trash }
+        }
+        return $entries
+    } catch {
+        return @()
+    }
+}
+
+function Write-CaelestiaSchemeRestoreJournal([string]$SchemeRoot, $Entries) {
+    try {
+        $path = Join-Path $SchemeRoot $script:CaelestiaSchemeRestoreJournalName
+        $records = @($Entries | Where-Object { $_ } | ForEach-Object {
+            [ordered]@{ generation = [string]$_.Generation; trash = [string]$_.Trash }
+        })
+        if (-not $records.Count) {
+            if (Test-Path -LiteralPath $path -PathType Leaf) { Remove-Item -LiteralPath $path -Force }
+            return $true
+        }
+        New-Item -ItemType Directory -Force -Path $SchemeRoot | Out-Null
+        Write-CaelestiaJsonAtomic $path $records
+        return $true
+    } catch {
+        return $false
+    }
+}
+
+# One restore attempt per prune. A held file makes the rename fail again; the
+# entry stays in the journal for the following prune, never in a retry loop.
+function Restore-CaelestiaSchemeTrashJournal([string]$SchemeRoot, [string]$RuntimesRoot) {
+    $pending = @()
+    $restored = @()
+    $trashRoot = Join-Path $RuntimesRoot '.trash'
+    foreach ($entry in @(Read-CaelestiaSchemeRestoreJournal $SchemeRoot)) {
+        $source = Join-Path $trashRoot $entry.Trash
+        $target = Join-Path $RuntimesRoot $entry.Generation
+        if (-not (Test-Path -LiteralPath $source -PathType Container)) { continue }
+        # A destination that exists means it was already restored (or is
+        # occupied): the path is not missing, so the trash entry can be retired
+        # normally instead of being moved over it.
+        if (Test-Path -LiteralPath $target) { continue }
+        try {
+            [IO.Directory]::Move($source, $target)
+            $restored += $entry.Generation
+        } catch {
+            $pending += $entry
+        }
+    }
+    $saved = Write-CaelestiaSchemeRestoreJournal $SchemeRoot $pending
+    return [pscustomobject]@{ Restored = @($restored); Pending = @($pending); Saved = $saved }
 }
 
 # Remove scheme generations no installed version can reference. Only run with
@@ -836,6 +922,10 @@ function Remove-CaelestiaSchemeGenerations([string]$Prefix, [string]$ProfileRoot
             $schemeRoot = Join-Path $ProfileRoot 'scheme'
             $runtimesRoot = [IO.Path]::GetFullPath((Join-Path $schemeRoot 'runtimes')).TrimEnd('\')
             if (-not (Test-Path -LiteralPath $runtimesRoot -PathType Container)) { return }
+            $recovery = Restore-CaelestiaSchemeTrashJournal $schemeRoot $runtimesRoot
+            $restored = @($recovery.Restored)
+            $journal = @($recovery.Pending)
+            $journalSaved = [bool]$recovery.Saved
             # Processes whose images cannot be read (protected or elevated ones
             # are common) cannot be ruled out here, which is why the image probe
             # above is the authority; only a count is logged.
@@ -878,6 +968,10 @@ function Remove-CaelestiaSchemeGenerations([string]$Prefix, [string]$ProfileRoot
             foreach ($directory in @(Get-ChildItem -LiteralPath $runtimesRoot -Directory -Force -ErrorAction SilentlyContinue)) {
                 $name = $directory.Name
                 if ($name -eq '.trash') { continue }
+                # A generation restored by the journal this run is left alone
+                # until the next prune, so recovery cannot immediately retire
+                # the path it just made available again.
+                if ($restored -contains $name) { continue }
                 # Every builder holds this lock, so a staging directory seen
                 # here belongs to an interrupted run.
                 if ($name -like '.staging-*') { $null = Move-CaelestiaSchemeToTrash $directory.FullName $runtimesRoot; continue }
@@ -902,18 +996,29 @@ function Remove-CaelestiaSchemeGenerations([string]$Prefix, [string]$ProfileRoot
                     try {
                         [IO.Directory]::Move($moved, $directory.FullName)
                     } catch {
-                        # Retired generation only: it stays whole in .trash and
-                        # the next prune retries; nothing is lost.
+                        # The held file blocks the move back. Record the intent
+                        # now; the next prune restores it once, before deleting.
                         $stranded++
+                        $journal += [pscustomobject]@{ Generation = $name; Trash = (Split-Path -Leaf $moved) }
                     }
                 }
             }
-            Remove-CaelestiaSchemeTrash $runtimesRoot
+            if ($stranded) { $journalSaved = Write-CaelestiaSchemeRestoreJournal $schemeRoot $journal }
+            # Never delete a trash entry whose restore is still pending.
+            Remove-CaelestiaSchemeTrash $runtimesRoot -Keep @($journal | ForEach-Object { $_.Trash })
+            if ($restored.Count) {
+                Write-CaelestiaSchemeRuntimeLog -ProfileRoot $ProfileRoot -Event 'scheme-prune' -Fields ([ordered]@{ restored = $restored.Count })
+            }
             if ($stranded) {
-                Write-CaelestiaSchemeRuntimeLog $ProfileRoot "Scheme prune could not move $stranded generation(s) back after a late image mapping; they stay in .trash until the next prune."
+                Write-CaelestiaSchemeRuntimeLog -ProfileRoot $ProfileRoot -Event 'scheme-prune' `
+                    -Fields ([ordered]@{ stranded = $stranded; restorePending = $journal.Count; recovery = $(if ($journalSaved) { 'journal' } else { 'unavailable' }) })
+            } elseif ($journal.Count) {
+                Write-CaelestiaSchemeRuntimeLog -ProfileRoot $ProfileRoot -Event 'scheme-prune' `
+                    -Fields ([ordered]@{ restorePending = $journal.Count; recovery = $(if ($journalSaved) { 'journal' } else { 'unavailable' }) })
             }
             if ($kept -or $unreadable) {
-                Write-CaelestiaSchemeRuntimeLog $ProfileRoot "Scheme prune kept $kept generation(s) that may be in use; $unreadable process(es) could not be inspected."
+                Write-CaelestiaSchemeRuntimeLog -ProfileRoot $ProfileRoot -Event 'scheme-prune' `
+                    -Fields ([ordered]@{ kept = $kept; unreadable = $unreadable })
             }
         } finally {
             Exit-CaelestiaSchemeLock $lock
@@ -924,13 +1029,27 @@ function Remove-CaelestiaSchemeGenerations([string]$Prefix, [string]$ProfileRoot
 }
 
 # Keep activation diagnostics out of the shell's own stdout/stderr logs. Never
-# include the profile or another user path in this file.
-function Write-CaelestiaSchemeRuntimeLog([string]$ProfileRoot, [string]$Message) {
+# include the profile or another user path in this file. Structured key=value
+# fields come first: redacting an unquoted path in free text consumes the rest
+# of the line, so a count, step or exit code must never follow one. Field values
+# are single tokens (counts, flags, step names), never paths or file contents;
+# free text is redacted and must never carry user file contents.
+function Write-CaelestiaSchemeRuntimeLog([string]$ProfileRoot, [string]$Event, $Fields = @{}, [string]$Message = '') {
     try {
+        $parts = [Collections.Generic.List[string]]::new()
+        $parts.Add('event=' + $Event)
+        if ($Fields) {
+            foreach ($key in @($Fields.Keys | Sort-Object)) {
+                $value = ([string]$Fields[$key]) -replace '\s+', '_'
+                $parts.Add(('{0}={1}' -f $key, $value))
+            }
+        }
+        $line = $parts -join ' '
+        if ($Message) { $line += ' : ' + (Protect-CaelestiaText $Message) }
         $logs = Join-Path $ProfileRoot 'logs'
         New-Item -ItemType Directory -Force -Path $logs | Out-Null
         Add-Content -LiteralPath (Join-Path $logs 'scheme-runtime.log') `
-            -Value ("{0} {1}" -f (Get-Date).ToString('o'), $Message) -Encoding UTF8
+            -Value ("{0} {1}" -f (Get-Date).ToString('o'), $line) -Encoding UTF8
     } catch { }
 }
 
@@ -1071,7 +1190,7 @@ function Restore-CaelestiaUpdate([string]$Prefix, [string]$ProfileRoot, [string]
     if ($launcherText -match '\[switch\]\$PreparedSchemeRuntime\b') {
         $restoreRuntime = Resolve-CaelestiaRuntimePrefix $Prefix
         # The shell is stopped here: receipt-only, never a probe.
-        $null = Set-CaelestiaSchemeRuntimeForRevision $ProfileRoot (Get-CaelestiaSchemeRevision $restoreRuntime) $restoreRuntime -NoProbe
+        $null = Set-CaelestiaSchemeRuntimeForRevision $ProfileRoot (Get-CaelestiaSchemeRevision $restoreRuntime) $restoreRuntime
         Start-CaelestiaDetached $Prefix -LegacyReady -PreparedSchemeRuntime
     } elseif ($launcherText -match '\[switch\]\$SkipSchemeRuntime\b') {
         Start-CaelestiaDetached $Prefix -LegacyReady -DisableSchemeProvisioning

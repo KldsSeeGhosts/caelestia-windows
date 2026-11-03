@@ -208,16 +208,21 @@ readiness budget. A rollback target keeps its own launcher's start behaviour:
 only launchers from this change onwards guarantee that no Python runs during
 activation, and an older retained launcher (for example one that still
 discovers a Wallpaper Engine interpreter at start) behaves as it always did.
-Update and rollback check the target's scheme generation, within a 15 s budget
-that tries the newest generation first and falls back to older healthy ones,
-before the running shell is stopped. That check is final: if nothing could be
-verified in time, the shell is stopped once and starts on the fixed palette, and
-nothing is probed again after it has stopped. The same holds for recovery: the
-previous version's generation is decided before the shell is stopped too, so a
-failed activation that falls back to it relaunches without probing, and with
-nothing verified (or a busy scheme lock) it starts on the fixed palette. If a prune cannot restore a
-retired generation after a late mapping, it stays in `scheme/runtimes/.trash`
-and the next prune cleans it up; `logs/scheme-runtime.log` records the count. Wallpaper Engine is detected automatically, supplies the
+Update and rollback select the target's scheme generation before the running
+shell is stopped. That search has a 15 s budget that tries the newest generation
+first and falls back to older healthy ones. When there is a previous version to
+fall back to, its restore generation is selected as well with its own 15 s
+budget, so the combined pre-quit work can take up to about 30 s (the second
+search is skipped when both versions use the same inputs). That check is final:
+if nothing could be verified in time, the shell is stopped once and starts on
+the fixed palette, and nothing is probed again after it has stopped. The same
+holds for recovery: the previous version's generation is decided before the
+shell is stopped too, so a failed activation that falls back to it relaunches
+without probing, and with nothing verified (or a busy scheme lock) it starts on
+the fixed palette. If a prune cannot restore a retired generation after a late
+mapping, it records the restore in `scheme/prune-restore.json`; each later prune
+makes one restore attempt before any deletion, and `logs/scheme-runtime.log`
+records the count. Wallpaper Engine is detected automatically, supplies the
 launcher picker and palette preview, and retains ownership of the desktop
 background. The desktop clock defaults off.
 
