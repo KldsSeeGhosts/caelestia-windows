@@ -251,11 +251,12 @@ bool AudioCollector::captureIdle() const {
     // covers packet coalescing and consumer timer jitter without hiding a
     // stopped stream for the old 300 ms polling window.
     const auto period = m_capturePeriodUs.load(std::memory_order_acquire);
-    const auto threshold = static_cast<qint64>(period == 0 ? 100000 : std::max<quint32>(period * 4, 20000));
+    const std::chrono::nanoseconds threshold =
+        std::chrono::microseconds(period == 0 ? 100000 : std::max<quint32>(period * 4, 20000));
     const auto now =
         std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch())
             .count();
-    return now - last > threshold;
+    return now - last > threshold.count();
 }
 
 #endif
