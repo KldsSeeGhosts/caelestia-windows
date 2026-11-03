@@ -73,26 +73,40 @@ function Get-CacheValue([string]$Name) {
     return ($line -split '=', 2)[1]
 }
 
-$qt6Dir = Get-CacheValue 'Qt6_DIR'
-$compilerPath = Get-CacheValue 'CMAKE_CXX_COMPILER'
-$cmakePath = Get-CacheValue 'CMAKE_COMMAND'
-$ninjaPath = Get-CacheValue 'CMAKE_MAKE_PROGRAM'
-$qtPrefix = if ($qt6Dir) { ($qt6Dir -replace '/', '\') -replace '\\lib\\cmake\\Qt6$', '' } else { $null }
-$qtPaths = if ($qtPrefix) { Join-Path $qtPrefix 'bin\qtpaths.exe' } else { $null }
-foreach ($required in @($qtPaths, $compilerPath, $cmakePath, $ninjaPath)) {
-    if (-not $required -or -not (Test-Path -LiteralPath $required -PathType Leaf)) {
-        throw "The test build cache does not name a usable toolchain: $required"
-    }
+# A reconfigure can store a bare compiler name instead of its resolved path,
+# so accept either and fall back to the build record for the version.
+function Resolve-Executable([string]$Value) {
+    if (-not $Value) { return $null }
+    if (Test-Path -LiteralPath $Value -PathType Leaf) { return (Resolve-Path -LiteralPath $Value).Path }
+    $command = Get-Command $Value -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($command) { return $command.Source }
+    return $null
 }
-$qtVersion = (& $qtPaths --qt-version).Trim()
-$clangVersion = (@(& $compilerPath --version))[0]
-$cmakeVersion = (@(& $cmakePath --version))[0]
-$ninjaVersion = (@(& $ninjaPath --version))[0]
+
+$qt6Dir = Get-CacheValue 'Qt6_DIR'
+$qtPrefix = if ($qt6Dir) { ($qt6Dir -replace '/', '\') -replace '\\lib\\cmake\\Qt6$', '' } else { $null }
+$qtPaths = if ($qtPrefix) { Resolve-Executable (Join-Path $qtPrefix 'bin\qtpaths.exe') } else { $null }
+$compilerCommand = Resolve-Executable (Get-CacheValue 'CMAKE_CXX_COMPILER')
+$cmakeCommand = Resolve-Executable (Get-CacheValue 'CMAKE_COMMAND')
+$ninjaCommand = Resolve-Executable (Get-CacheValue 'CMAKE_MAKE_PROGRAM')
+foreach ($required in @($qtPaths, $cmakeCommand, $ninjaCommand)) {
+    if (-not $required) { throw "The test build cache does not name a usable Qt, CMake or Ninja toolchain." }
+}
 
 $buildRecordPath = Join-Path $BuildRoot 'logs\build.json'
-$buildRecord = $null
+$record = $null
 if (Test-Path -LiteralPath $buildRecordPath -PathType Leaf) {
     $record = Get-Content -LiteralPath $buildRecordPath -Raw | ConvertFrom-Json
+}
+$qtVersion = (& $qtPaths --qt-version).Trim()
+$clangVersion = if ($compilerCommand) { (@(& $compilerCommand --version))[0] }
+    elseif ($record -and $record.compiler) { $record.compiler }
+    else { 'clang version not recorded' }
+$cmakeVersion = (@(& $cmakeCommand --version))[0]
+$ninjaVersion = (@(& $ninjaCommand --version))[0]
+
+$buildRecord = $null
+if ($record) {
     $buildRecord = [ordered]@{
         path = $buildRecordPath
         builtAtUtc = $record.builtAtUtc
@@ -233,7 +247,7 @@ if ($manifest.error) {
 
 # The tests need the Qt runtime. CTest ships beside the cmake that configured
 # the test build.
-$env:PATH = "$qtPrefix\bin;$(Split-Path -Parent $cmakePath);$env:PATH"
+$env:PATH = "$qtPrefix\bin;$(Split-Path -Parent $cmakeCommand);$env:PATH"
 $started = [DateTime]::UtcNow
 
 # CTest is the registration of record. Parse its listing to pair each test name
