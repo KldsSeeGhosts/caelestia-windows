@@ -46,6 +46,10 @@ Singleton {
     property var watchedSurfaces: []
     property bool hostStarted: false
     property bool ownedHost: false
+    // True once this shell session cold-started a host itself. Its journal began
+    // after the shell did, so Recorder treats that host's first response as fresh
+    // events instead of a pre-restart baseline. An adopted host never sets it.
+    property bool launchedHost: false
     property string statusOutput: ""
     readonly property string hostWindowClass: "GlazierHost"
 
@@ -162,6 +166,7 @@ Singleton {
         // #81: execDetached redirects stdio to the null device and disowns handles.
         // If no host is running this command becomes the host, so the shell owns it.
         ownedHost = true;
+        launchedHost = true;
         Quickshell.execDetached([path].concat(args));
     }
     function reportNotReady(): void {
@@ -217,6 +222,7 @@ Singleton {
     }
     function launchHost(): void {
         ownedHost = true;
+        launchedHost = true;
         Quickshell.execDetached([executable].concat(hostOptions()));
     }
     // Only a host this payload launched (or adopted after checking its image)

@@ -68,6 +68,13 @@ Singleton {
         connectionError = message;
     }
 
+    // Ownership is by normalised path string, not OS file identity (#109 item 4).
+    // A file swapped at the same path, a retargeted parent or junction, or a
+    // case-sensitive directory alias can therefore be taken for a recording
+    // Glazier reported. This stays deferred: it is unproven hardening for a
+    // single-user desktop, not a demonstrated bypass, and QML has no volume or
+    // file-ID API to compare, so a real fix needs a backend call. Do not paper
+    // over it with more string normalisation.
     function normalize(path): string {
         return path.replace(/\\/g, "/").toLowerCase();
     }
@@ -167,8 +174,10 @@ Singleton {
         if (running)
             lastError = "";
         // Baseline once on shell startup, not on every host change. After an
-        // offline observation, a new host's errors are fresh.
-        const replay = baselinePending;
+        // offline observation, a new host's errors are fresh. So are a host this
+        // shell cold-started itself: its journal began after the shell did, and
+        // only an adopted pre-existing host can hold an error from before.
+        const replay = baselinePending && !Glazier.launchedHost;
         baselinePending = false;
         if (hostId !== data.host_id) {
             hostId = data.host_id;
@@ -219,6 +228,7 @@ Singleton {
         // Shell-owned host options on every command that can cold-start the host.
         const args = [executable].concat(Glazier.hostOptions(), ["--record", "--system-sound", sound ? "on" : "off", "--mic", "off"]);
         Glazier.ownedHost = true;
+        Glazier.launchedHost = true;
         if (!region)
             args.push("--fullscreen");
         lastError = "";

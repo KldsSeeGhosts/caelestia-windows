@@ -523,6 +523,7 @@ ShellRoot {
                 Recorder.hostId = "";
                 Recorder.eventSequence = 0;
                 Recorder.baselinePending = true;
+                Glazier.launchedHost = false; // a shell restart adopting a host that predates it
                 root.check(Recorder.applyResponse(reply("replay-host", [err(1),
                     { sequence: 2, type: "finished", output_path: "C:\\x\\Old.mp4" }])) && Recorder.lastError === "",
                     "shell initial response is a baseline: old error not replayed");
@@ -562,6 +563,17 @@ ShellRoot {
                     "replacement host first-response error is visible without Start pending");
                 root.check(Recorder.applyResponse(reply("replacement-host", [{ sequence: 2, type: "started" }]))
                     && Recorder.lastError === "", "started event clears recording failure");
+                // A host this shell cold-started has no pre-restart journal, so
+                // an error in its very first response is genuine even though no
+                // offline response preceded it and no Start is pending.
+                Recorder.hostId = "";
+                Recorder.eventSequence = 0;
+                Recorder.baselinePending = true;
+                Recorder.lastError = "";
+                Glazier.launchedHost = true;
+                root.check(Recorder.applyResponse(reply("launched-host", [err(1)])) && Recorder.lastError === "boom",
+                    "first-response error from a shell-launched host is visible");
+                root.check(!Recorder.baselinePending, "first response still ends the baseline");
                 let q = [];
                 q = SchemeGenerator.coalescePending(q, "list", ["list"]);
                 q = SchemeGenerator.coalescePending(q, "set", ["set-mode", "--mode", "light"]);

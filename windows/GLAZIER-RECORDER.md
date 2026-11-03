@@ -60,7 +60,9 @@ replayed (no stale error), though its finished files are noted. Start waits for
 that initial observation, or a compatible stopped-host response, because v1
 events have no timestamp to distinguish an older failure from a new attempt.
 Once observed, a stopped or replaced host's first-response errors are fresh,
-even without a pending Start. Recording errors and the 15 s Start timeout
+even without a pending Start. So are the first-response errors of a host this
+shell session cold-started itself (`Glazier.launchedHost`); only an adopted,
+pre-existing host is baselined. Recording errors and the 15 s Start timeout
 survive valid idle polls and connection recovery; a new Start, `started` event
 or confirmed recording clears them. Transient connection errors clear on a
 valid host response.
