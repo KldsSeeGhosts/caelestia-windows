@@ -36,6 +36,15 @@ handler even though tiling stays disabled. These are process-wide side effects
 and the reason the import is isolated behind the opt-in. No `Tiling`,
 `WindowManager` or `Taskbar` object is constructed by this adapter.
 
+The active application comes from `Quickshell.Windows.Foreground`, the
+backend's one event-driven observer over `WindowTracker`'s existing
+`EVENT_SYSTEM_FOREGROUND` and `EVENT_OBJECT_NAMECHANGE` hook. It keeps the last
+application while Windows shell overlays or the shell's own panels own focus,
+and updates on title changes. There is no resident helper process and no QML
+poll of the foreground. A window that the taskbar/tiling rules do not track
+still contributes its observed address, title and app id; the adapter does not
+invent a `wayland` handle for it.
+
 ## Global focus per monitor (explicit limitation)
 
 The pinned backend binds every monitor's `activeWorkspace` and every workspace's
