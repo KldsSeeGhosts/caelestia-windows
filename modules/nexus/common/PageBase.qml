@@ -74,5 +74,68 @@ ColumnLayout {
         TapHandler {
             onTapped: flickable.focus = true
         }
+
+        // Windows port (#210): Tab moves focus but the flickable does not
+        // follow it. Scroll a keyboard-focused control in this page into view.
+        // The animation writes revealTo, and only that write may set contentY.
+        // A pointer scroll writes some other contentY and cancels it. Focus
+        // that leaves this page, including the flickable's own tap focus,
+        // cancels it too and does not start another.
+        property bool revealWrite: false
+        property real revealTo: 0
+
+        onRevealToChanged: {
+            revealWrite = true;
+            contentY = revealTo;
+            revealWrite = false;
+        }
+        // The flickable echoes contentY while applying the reveal's write.
+        // That echo stays within a pixel of revealTo and must not cancel it.
+        onContentYChanged: {
+            if (revealWrite || !revealAnim.running || Math.abs(contentY - revealTo) < 1)
+                return;
+            revealAnim.stop();
+        }
+
+        Anim {
+            id: revealAnim
+
+            target: flickable
+            property: "revealTo"
+        }
+
+        Connections {
+            function onActiveFocusItemChanged(): void {
+                if (!root) // the window can move focus while this page tears down
+                    return;
+                revealAnim.stop();
+                const item = root.Window.activeFocusItem;
+                if (!item)
+                    return;
+                let p = item;
+                while (p && p !== flickable.contentItem)
+                    p = p.parent;
+                if (!p)
+                    return;
+                const y = item.mapToItem(flickable.contentItem, 0, 0).y;
+                const pad = root.Tokens.padding.large;
+                const min = -flickable.topMargin;
+                const max = Math.max(min, flickable.contentHeight + flickable.bottomMargin - flickable.height);
+                let to = flickable.contentY;
+                if (y - pad < to)
+                    to = y - pad;
+                else if (y + item.height + pad > to + flickable.height)
+                    to = y + item.height + pad - flickable.height;
+                to = Math.max(min, Math.min(max, to));
+                if (to !== flickable.contentY) {
+                    flickable.revealTo = flickable.contentY;
+                    revealAnim.from = flickable.contentY;
+                    revealAnim.to = to;
+                    revealAnim.restart();
+                }
+            }
+
+            target: root.Window.window
+        }
     }
 }
