@@ -1,6 +1,7 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import QtQuick.Window
 import Quickshell
 import Quickshell.Wayland
 import Caelestia.Config
@@ -48,7 +49,15 @@ Variants {
                 asynchronous: true
 
                 anchors.fill: parent
-                active: Config.background.wallpaperEnabled
+                // #214: the per-screen background window can be recreated
+                // under this tree (desktop handback or a monitor scale
+                // change). Keep the wallpaper owned by one window: unloading
+                // it while the tree has no window destroys its captures
+                // before the move, and the recreated window builds its own.
+                // Otherwise an effect outside the moved subtree can keep the
+                // wallpaper on the old window and Qt warns, then crashes in
+                // QQuickWindowPrivate::dirtyItem.
+                active: Config.background.wallpaperEnabled && Window.window !== null
 
                 sourceComponent: Wallpaper {}
             }
@@ -64,7 +73,10 @@ Variants {
             id: clockLoader
 
             asynchronous: true
-            active: Config.background.desktopClock.enabled
+            // #214: same window ownership as the wallpaper. The clock's blur
+            // capture references the wallpaper item, so neither tree may be
+            // carried across a window recreation.
+            active: Config.background.desktopClock.enabled && Window.window !== null
 
             anchors.margins: Tokens.padding.extraLargeIncreased
             anchors.leftMargin: Tokens.padding.extraLargeIncreased + Tokens.sizes.bar.innerWidth + Math.max(Tokens.padding.small, Config.border.thickness)
