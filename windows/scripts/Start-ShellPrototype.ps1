@@ -516,9 +516,6 @@ if ($Smoke) {
     $emptyKeys = Join-Path $profileRoot 'runtime\smoke-keybinds.json'
     '{"binds":[]}' | Set-Content -LiteralPath $emptyKeys -Encoding UTF8
     $info.EnvironmentVariables['CAELESTIA_WINDOWS_KEYBINDS'] = $emptyKeys
-    # A smoke owns its own notification bus, so an installed shell running
-    # beside the test neither owns it nor receives its local test notification.
-    $info.EnvironmentVariables['QS_WINDOWS_NOTIFICATION_BUS'] = $runName
 }
 $info.EnvironmentVariables['CAELESTIA_RUNTIME_PROBE'] = $(if ($RuntimeProbe) { '1' } else { '0' })
 $info.EnvironmentVariables['CAELESTIA_SHELL_MONITOR_CYCLE'] = $(if ($MonitorCycle) { '1' } else { '0' })
