@@ -78,9 +78,9 @@ ColumnLayout {
         // Windows port (#210): Tab moves focus but the flickable does not
         // follow it. Scroll a keyboard-focused control in this page into view.
         // The animation writes revealTo, and only that write may set contentY.
-        // A pointer scroll or any other contentY change cancels it. Focus that
-        // leaves this page, including the flickable's own tap focus, cancels
-        // it too and does not start another.
+        // A pointer scroll writes some other contentY and cancels it. Focus
+        // that leaves this page, including the flickable's own tap focus,
+        // cancels it too and does not start another.
         property bool revealWrite: false
         property real revealTo: 0
 
@@ -89,12 +89,13 @@ ColumnLayout {
             contentY = revealTo;
             revealWrite = false;
         }
+        // The flickable echoes contentY while applying the reveal's write.
+        // That echo stays within a pixel of revealTo and must not cancel it.
         onContentYChanged: {
-            if (!revealWrite && revealAnim.running)
-                revealAnim.stop();
+            if (revealWrite || !revealAnim.running || Math.abs(contentY - revealTo) < 1)
+                return;
+            revealAnim.stop();
         }
-        onDraggingChanged: if (dragging) revealAnim.stop()
-        onMovingChanged: if (moving) revealAnim.stop()
 
         Anim {
             id: revealAnim
@@ -127,7 +128,7 @@ ColumnLayout {
                     to = y + item.height + pad - flickable.height;
                 to = Math.max(min, Math.min(max, to));
                 if (to !== flickable.contentY) {
-                    revealTo = flickable.contentY;
+                    flickable.revealTo = flickable.contentY;
                     revealAnim.from = flickable.contentY;
                     revealAnim.to = to;
                     revealAnim.restart();

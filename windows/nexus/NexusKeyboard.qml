@@ -170,7 +170,7 @@ ShellRoot {
             return;
         const pos = row.mapToItem(flick, 0, 0);
         root.check(pos.y >= -1 && pos.y + row.height <= flick.height + 1,
-            `${label}: focused ${root.describe(row)} is outside the viewport (y ${Math.round(pos.y)}, view ${Math.round(flick.height)}, contentY ${Math.round(flick.contentY)})`);
+            `${label}: focused ${root.describe(row)} is outside the viewport (y ${Math.round(pos.y)}, row ${Math.round(row.height)}, view ${Math.round(flick.height)}, contentY ${Math.round(flick.contentY)}, contentH ${Math.round(flick.contentHeight)})`);
     }
 
     readonly property Component inputComponent: Component {
@@ -243,25 +243,45 @@ ShellRoot {
 
     property real heldY: 0
     property var heldFlick: null
+    property var revealFixture: null
 
-    function pageFlick(): var {
-        const page = root.topOf(root.pagesItem.currentItem);
-        return page?.flickable ?? null;
+    readonly property Component revealFixtureComponent: Component {
+        PageBase {
+            title: "Reveal"
+            width: 360
+            height: 220
+            z: 100
+
+            property alias far: far
+
+            Item {
+                width: 360
+                implicitHeight: 1100
+
+                RowButton { y: 0; text: "Near" }
+                RowButton { id: far; y: 1000; text: "Far" }
+            }
+        }
     }
 
-    function offscreenRow(flick): var {
-        const page = root.topOf(root.pagesItem.currentItem);
-        const rows = [];
-        root.collectRows(page, rows);
-        return rows.find(row => root.shown(row) && !row.disabled && row.opacity > 0
-            && row.mapToItem(flick.contentItem, 0, 0).y > flick.height) ?? null;
+    function prepareReveal(): void {
+        root.revealFixture = root.revealFixtureComponent.createObject(root.win.contentItem, {
+            nState: root.nexusItem.nState
+        });
+    }
+
+    function revealLaidOut(): bool {
+        const page = root.revealFixture;
+        const flick = page?.flickable ?? null;
+        const row = page?.far ?? null;
+        const y = flick?.contentItem && row ? row.mapToItem(flick.contentItem, 0, 0).y : -1;
+        return !!flick && !!flick.contentItem && flick.height > 40 && !!row && row.height > 0 && y > flick.height;
     }
 
     // Tab toward an offscreen row, then leave the page before the reveal finishes.
     function startCancelledReveal(): void {
-        const flick = root.pageFlick();
-        const row = root.offscreenRow(flick);
-        root.check(!!row, "no offscreen row to reveal");
+        const flick = root.revealFixture.flickable;
+        const row = root.revealFixture.far;
         flick.contentY = 0;
         row.forceActiveFocus(Qt.TabFocusReason);
         root.win.contentItem.forceActiveFocus();
@@ -277,8 +297,7 @@ ShellRoot {
     // A pointer contentY change during a reveal owns the scroll from then on.
     function startPointerTakeover(): void {
         const flick = root.heldFlick;
-        const row = root.offscreenRow(flick);
-        root.check(!!row, "no offscreen row for pointer takeover");
+        const row = root.revealFixture.far;
         flick.contentY = 0;
         row.forceActiveFocus(Qt.TabFocusReason);
         flick.contentY = 20;
@@ -288,6 +307,8 @@ ShellRoot {
     function checkPointerTakeover(): void {
         root.check(Math.abs(root.heldFlick.contentY - root.heldY) < 1,
             `reveal overwrote pointer scroll (${Math.round(root.heldFlick.contentY)} from ${Math.round(root.heldY)})`);
+        root.revealFixture.destroy();
+        root.revealFixture = null;
     }
 
     // Each entry: [label, action, ready?]. ready is polled until true.
@@ -299,6 +320,7 @@ ShellRoot {
             root.fixture.destroy();
             root.fixture = null;
         }, null]);
+        q.push(["reveal fixture", () => root.prepareReveal(), () => root.revealLaidOut()]);
         q.push(["reveal cancelled", () => root.startCancelledReveal(), () => root.waits >= 4]);
         q.push(["reveal cancelled check", () => root.checkCancelledReveal(), null]);
         q.push(["reveal pointer", () => root.startPointerTakeover(), () => root.waits >= 4]);
@@ -349,7 +371,13 @@ ShellRoot {
     property int step: 0
     property var current: null
 
+    property bool advancing: false
+
     function advance(): void {
+        // TestCase.wait runs a nested loop, so the driver can tick mid-step.
+        if (root.advancing)
+            return;
+        root.advancing = true;
         try {
             if (root.step === 0) {
                 root.win = WindowFactory.create();
@@ -408,6 +436,8 @@ ShellRoot {
             driver.stop();
             console.error("CAELESTIA_NEXUS_KEYBOARD_FAIL " + error.message);
             Qt.exit(1);
+        } finally {
+            root.advancing = false;
         }
     }
 }
