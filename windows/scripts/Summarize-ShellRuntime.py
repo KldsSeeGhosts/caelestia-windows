@@ -167,6 +167,7 @@ def trial_contract(trial):
         "windowsBuild": meta.get("windowsBuild"), "protocolSha256": meta.get("protocolSha256"),
         "controlGates": meta.get("controlGates"),
         "qtCoreSha256": meta.get("qtCoreSha256"), "configSha256": meta.get("configSha256"),
+        "workloadDimensions": meta.get("workloadDimensions"),
     }
 
 
