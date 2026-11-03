@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
+import Caelestia.Services
 import Caelestia.State
 
 // Windows adaptation of the upstream idle-inhibit daemon.
@@ -21,9 +22,9 @@ Scope {
     readonly property bool permitted: Quickshell.env("CAELESTIA_COMBINED_LIVE") === "1"
         && Quickshell.env("CAELESTIA_SHELL_SMOKE") !== "1"
     readonly property bool active: root.permitted && RuntimeState.inhibitIdle
-    // The native request is the one the shell holds; no child process or
-    // fallback state can disagree with it.
-    readonly property bool inhibiting: inhibitor.enabled
+    // held is the request the backend confirmed. enabled is only what was asked.
+    readonly property bool inhibiting: inhibitor.held
+    readonly property string inhibitError: inhibitor.error
 
     Connections {
         function onInhibitIdleChanged(): void {
@@ -38,6 +39,18 @@ Scope {
         id: inhibitor
 
         enabled: root.active
+    }
+
+    Binding {
+        target: IdleHold
+        property: "held"
+        value: inhibitor.held
+    }
+
+    Binding {
+        target: IdleHold
+        property: "error"
+        value: inhibitor.error
     }
 
     IpcHandler {

@@ -3,6 +3,7 @@ import QtQuick.Layouts
 import Quickshell
 import Caelestia.Config
 import Caelestia.I18n
+import Caelestia.Services
 import Caelestia.State
 import qs.components
 import qs.components.controls
@@ -17,7 +18,7 @@ StyledRect {
 
     readonly property bool permitted: Quickshell.env("CAELESTIA_COMBINED_LIVE") === "1"
         && Quickshell.env("CAELESTIA_SHELL_SMOKE") !== "1"
-    readonly property real nonAnimHeight: layout.implicitHeight + (RuntimeState.inhibitIdle ? activeChip.implicitHeight + activeChip.anchors.topMargin : 0) + Tokens.padding.extraLargeIncreased
+    readonly property real nonAnimHeight: layout.implicitHeight + (IdleHold.held ? activeChip.implicitHeight + activeChip.anchors.topMargin : 0) + Tokens.padding.extraLargeIncreased
 
     implicitHeight: nonAnimHeight
 
@@ -39,14 +40,14 @@ StyledRect {
             implicitHeight: icon.implicitHeight + Tokens.padding.large
 
             radius: Tokens.rounding.full
-            color: RuntimeState.inhibitIdle ? Colours.palette.m3secondary : Colours.palette.m3secondaryContainer
+            color: IdleHold.held ? Colours.palette.m3secondary : Colours.palette.m3secondaryContainer
 
             MaterialIcon {
                 id: icon
 
                 anchors.centerIn: parent
                 text: "coffee"
-                color: RuntimeState.inhibitIdle ? Colours.palette.m3onSecondary : Colours.palette.m3onSecondaryContainer
+                color: IdleHold.held ? Colours.palette.m3onSecondary : Colours.palette.m3onSecondaryContainer
                 fontStyle: Tokens.font.icon.large
             }
         }
@@ -67,8 +68,10 @@ StyledRect {
                 text: {
                     if (!root.permitted)
                         return Quickshell.env("CAELESTIA_SHELL_SMOKE") === "1" ? Tr.trCtx("Suppressed during smoke", "idle inhibitor") : Tr.trCtx("Live controls are off", "idle inhibitor");
-                    if (RuntimeState.inhibitIdle)
+                    if (IdleHold.held)
                         return Tr.trCtx("Preventing sleep mode", "idle inhibitor");
+                    if (RuntimeState.inhibitIdle)
+                        return Tr.trCtx("Could not prevent sleep", "idle inhibitor");
                     return Tr.trCtx("Normal power management", "idle inhibitor");
                 }
                 color: Colours.palette.m3onSurfaceVariant
@@ -91,11 +94,11 @@ StyledRect {
         anchors.bottom: parent.bottom
         anchors.left: parent.left
         anchors.topMargin: Tokens.spacing.large
-        anchors.bottomMargin: RuntimeState.inhibitIdle ? Tokens.padding.large : -implicitHeight
+        anchors.bottomMargin: IdleHold.held ? Tokens.padding.large : -implicitHeight
         anchors.leftMargin: Tokens.padding.large
 
-        opacity: RuntimeState.inhibitIdle ? 1 : 0
-        scale: RuntimeState.inhibitIdle ? 1 : 0.5
+        opacity: IdleHold.held ? 1 : 0
+        scale: IdleHold.held ? 1 : 0.5
 
         Component.onCompleted: active = Qt.binding(() => opacity > 0)
 

@@ -38,17 +38,19 @@ ShellRoot {
 
             RuntimeState.inhibitIdle = true;
             root.check(daemon.active, "active after enabling");
-            root.check(daemon.inhibiting, "native request held after enabling");
+            root.check(daemon.inhibiting, "confirmed request held after enabling");
+            root.check(daemon.inhibitError === "", "acquire reported no error");
             root.check(RuntimeState.inhibitingIdleSince > 0, "activation timestamp recorded");
 
             RuntimeState.inhibitIdle = false;
-            root.check(!daemon.inhibiting, "native request cleared after disabling");
+            root.check(!daemon.inhibiting, "confirmed request cleared after disabling");
+            root.check(daemon.inhibitError === "", "release reported no error");
 
             // A one-shot implementation or a stale handle would fail this.
             RuntimeState.inhibitIdle = true;
-            root.check(daemon.inhibiting, "native request held again");
+            root.check(daemon.inhibiting, "confirmed request held again");
             RuntimeState.inhibitIdle = false;
-            root.check(!daemon.inhibiting, "native request cleared again");
+            root.check(!daemon.inhibiting, "confirmed request cleared again");
 
             if (root.failures === 0)
                 console.log("CAELESTIA_IDLEINHIBIT_PASS " + root.assertions);
