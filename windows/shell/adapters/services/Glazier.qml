@@ -46,6 +46,13 @@ Singleton {
     property var watchedSurfaces: []
     property bool hostStarted: false
     property bool ownedHost: false
+    // True only after this shell session's process creates the host. Its journal
+    // began after the shell did, so Recorder treats that host's first response as
+    // fresh events instead of a pre-restart baseline. Forwarding a command to a
+    // host that is already running does not create one, and an adopted host never
+    // sets this. Tests replace hostProbe; production uses the real process query.
+    property bool launchedHost: false
+    property var hostProbe: WindowsProcess
     property string statusOutput: ""
     readonly property string hostWindowClass: "GlazierHost"
 
@@ -160,8 +167,13 @@ Singleton {
         hiddenTimer.stop();
         unwatchSurfaces();
         // #81: execDetached redirects stdio to the null device and disowns handles.
-        // If no host is running this command becomes the host, so the shell owns it.
+        // Glazier's single-instance entry point forwards this command when a host
+        // is already running, so that does not start a journal. Freshness follows
+        // only the process that creates the host.
+        const creatingHost = !hostIsRunning();
         ownedHost = true;
+        if (creatingHost)
+            launchedHost = true;
         Quickshell.execDetached([path].concat(args));
     }
     function reportNotReady(): void {
@@ -211,12 +223,16 @@ Singleton {
     function record(): bool {
         return begin("Record screen", hostOptions().concat(["--record"]), "screen_record");
     }
+    function hostIsRunning(): bool {
+        return hostProbe.windowProcessId(hostWindowClass) !== 0;
+    }
     function samePath(a, b): bool {
         return typeof a === "string" && typeof b === "string" && a.length > 0 && b.length > 0
             && a.replace(/\\/g, "/").toLowerCase() === b.replace(/\\/g, "/").toLowerCase();
     }
     function launchHost(): void {
         ownedHost = true;
+        launchedHost = true;
         Quickshell.execDetached([executable].concat(hostOptions()));
     }
     // Only a host this payload launched (or adopted after checking its image)

@@ -523,6 +523,7 @@ ShellRoot {
                 Recorder.hostId = "";
                 Recorder.eventSequence = 0;
                 Recorder.baselinePending = true;
+                Glazier.launchedHost = false; // a shell restart adopting a host that predates it
                 root.check(Recorder.applyResponse(reply("replay-host", [err(1),
                     { sequence: 2, type: "finished", output_path: "C:\\x\\Old.mp4" }])) && Recorder.lastError === "",
                     "shell initial response is a baseline: old error not replayed");
@@ -562,6 +563,51 @@ ShellRoot {
                     "replacement host first-response error is visible without Start pending");
                 root.check(Recorder.applyResponse(reply("replacement-host", [{ sequence: 2, type: "started" }]))
                     && Recorder.lastError === "", "started event clears recording failure");
+                // A host this shell cold-started has no pre-restart journal, so
+                // an error in its very first response is genuine even though no
+                // offline response preceded it and no Start is pending.
+                Recorder.hostId = "";
+                Recorder.eventSequence = 0;
+                Recorder.baselinePending = true;
+                Recorder.lastError = "";
+                Glazier.launchedHost = true;
+                root.check(Recorder.applyResponse(reply("launched-host", [err(1)])) && Recorder.lastError === "boom",
+                    "first-response error from a shell-launched host is visible");
+                root.check(!Recorder.baselinePending, "first response still ends the baseline");
+                // A capture forwarded to a host that is already up must not cancel
+                // the adopted-host baseline. Directly assigning launchedHost misses
+                // that distinction.
+                const realProbe = Glazier.hostProbe;
+                const adopted = { windowProcessId: function() { return 1; } };
+                const absent = { windowProcessId: function() { return 0; } };
+                Recorder.hostId = "";
+                Recorder.eventSequence = 0;
+                Recorder.baselinePending = true;
+                Recorder.lastError = "";
+                Glazier.launchedHost = false;
+                Glazier.hostProbe = adopted;
+                Glazier.pendingPath = Recorder.executable;
+                Glazier.pendingArgs = ["--capture"];
+                Glazier.launchPending();
+                root.check(Glazier.pendingPath === "" && !Glazier.launchedHost,
+                    "forwarded capture does not mark an adopted host as shell-created");
+                root.check(Recorder.applyResponse(reply("adopted-host", [err(1),
+                    { sequence: 2, type: "finished", output_path: "C:\\x\\Old.mp4" }])) && Recorder.lastError === "",
+                    "adopted-host error stays baselined when capture was forwarded first");
+                Recorder.hostId = "";
+                Recorder.eventSequence = 0;
+                Recorder.baselinePending = true;
+                Recorder.lastError = "";
+                Glazier.launchedHost = false;
+                Glazier.hostProbe = absent;
+                Glazier.pendingPath = Recorder.executable;
+                Glazier.pendingArgs = ["--capture"];
+                Glazier.launchPending();
+                root.check(Glazier.launchedHost,
+                    "capture that creates the host marks that host fresh");
+                root.check(Recorder.applyResponse(reply("created-host", [err(1)])) && Recorder.lastError === "boom",
+                    "first-response error from a host created by capture is visible");
+                Glazier.hostProbe = realProbe;
                 let q = [];
                 q = SchemeGenerator.coalescePending(q, "list", ["list"]);
                 q = SchemeGenerator.coalescePending(q, "set", ["set-mode", "--mode", "light"]);
