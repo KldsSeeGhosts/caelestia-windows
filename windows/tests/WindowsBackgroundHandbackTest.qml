@@ -10,9 +10,10 @@
 // in QQuickWindowPrivate::dirtyItem.
 //
 // The fake host mirrors WindowsBackground's underlay state machine. At
-// handback the external owner stops and the backend drops the underlay
-// acknowledgement, but the host stays enabled, so the failure here is the
-// reparent, not a screens flip.
+// handback the backend drops the underlay acknowledgement, but wallpaper64.exe
+// keeps running with its wallpaper closed (#214). The acknowledged desktop
+// claim keeps the host enabled, so the failure here is the reparent, not a
+// screens flip.
 import QtQuick
 import QtQuick.Window
 import Quickshell
@@ -45,9 +46,15 @@ ShellRoot {
     readonly property bool backgroundRequested: true
     readonly property bool underlaySupported: true
     readonly property bool externalActive: wallpapers.externalWallpaperActive
+    // WindowsBackground keeps the desktop claimed once the backend has
+    // acknowledged the underlay. The fixture starts in that state and the
+    // claim survives the handback while the engine process keeps running.
+    // A refused embed is not a handback and still fails closed.
+    property bool desktopClaimed: true
+    readonly property bool yielded: desktopLayer.embedRefused
+        || (externalActive && !desktopLayer.underlayActive && !desktopClaimed)
     // WindowsBackground.enabled, kept in step with the adapter by review.
-    readonly property bool hostEnabled: backgroundRequested
-        && (desktopLayer.underlayActive || !externalActive)
+    readonly property bool hostEnabled: backgroundRequested && !yielded
 
     property Item desktopClock: null
     property int assertions: 0
@@ -129,17 +136,20 @@ ShellRoot {
             stop();
             try {
                 check(root.desktopLayer.underlayActive, "the backend acknowledges the external wallpaper window");
-                check(root.hostEnabled, "the background host stays enabled while the external owner stops");
+                check(root.hostEnabled, "the underlay keeps the background host mounted");
                 check(root.desktopClock.blurEnabled, "the desktop clock blur is active for this fixture");
                 check(wn(behindClock) === "A", "the desktop clock starts on the first window");
 
-                // Wallpaper Engine quits; the backend drops the underlay
-                // acknowledgement and recreates the QQuickWindow for the
-                // moved item tree in the visible, own-desktop position.
-                root.wallpapers.externalWallpaperActive = false;
+                // Wallpaper Engine's control command closes the wallpaper but
+                // leaves wallpaper64.exe running. The backend drops the
+                // underlay acknowledgement; the adapter keeps the
+                // acknowledged desktop and its own background mounted, and
+                // recreates the QQuickWindow for the moved item tree.
                 root.desktopLayer.coveredByForeign = false;
                 check(!root.desktopLayer.underlayActive, "the handback drops the underlay acknowledgement");
+                check(root.wallpapers.externalWallpaperActive, "the engine process still runs after the handback");
                 check(root.hostEnabled, "the handback keeps the background host mounted");
+                check(root.desktopClock !== null, "the handback keeps its own background instance");
                 contentA.parent = null;
                 contentA.parent = winB.contentItem;
 
