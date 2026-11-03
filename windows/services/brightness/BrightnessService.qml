@@ -969,6 +969,11 @@ QtObject {
             return;
         if (state.querying)
             return; // The query path emits routeChanged immediately before queried.
+        // A record that settled as failed has no route to change: its recovery
+        // query expired, so a late route must not restore the route that the
+        // next explicit refresh would use as its same-route feedback baseline.
+        if (state.state === "failed")
+            return;
         // A strict write never changes routes. Never clear writePending here: the
         // terminal brightnessWriteResult() is the only completion. An
         // uncorrelated route change during the write drops the queued target

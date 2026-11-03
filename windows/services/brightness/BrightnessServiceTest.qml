@@ -404,6 +404,17 @@ QtObject {
             test.feedbackEvents = test.feedbackEvents.concat([{screen: screenName, value: value}]);
         }
     }
+    // Covers #213: a late route change while a record is failed must not turn
+    // the next refresh into same-route OSD feedback.
+    property var lostQueryFeedbackEvents: []
+    property Connections lostQueryFeedbackLog: Connections {
+        target: test.lostQueryCase
+        function onBrightnessFeedback(screenName, value): void {
+            test.lostQueryFeedbackEvents = test.lostQueryFeedbackEvents.concat([
+                {screen: screenName, value: value}
+            ]);
+        }
+    }
     readonly property QtObject reusedScreen: QtObject { property string name: "DISPLAY-A" }
     readonly property QtObject unchangedScreen: QtObject { property string name: "DISPLAY-A" }
 
@@ -1906,16 +1917,41 @@ QtObject {
                 check(!state.querying && !state.writePending, "the revoked-route record is not wedged");
                 check(!lostQueryCase.canWrite("LOST2"),
                     "a revoked route is not restored as writable");
-                check(!state.available && state.state === "failed",
+                check(!state.available && state.state === "failed" && state.route === "",
                     "the revoked-route record stays read-only");
                 lostQueryBackend.completeWrite();
                 while (lostQueryBackend.pendingQueries > 0)
                     lostQueryBackend.deliverQuery();
                 check(!lostQueryCase.canWrite("LOST2"), "late results do not restore the route");
+                // #213: the expired query's late route must stay out of the
+                // failed record. Otherwise the next refresh treats the changed
+                // software level as a same-route observation and opens the OSD.
+                const failedFeedback = lostQueryFeedbackEvents.length;
+                lostQueryBackend.probeRoute = "software";
+                lostQueryBackend.probeLevel = 0.2;
+                lostQueryBackend.routeChanged("LOST2", "software");
+                check(state.state === "failed" && state.route === "",
+                    "a late route change is ignored while the record is failed");
+                check(lostQueryFeedbackEvents.length === failedFeedback,
+                    "a late route change is not OSD feedback");
                 check(lostQueryCase.queryMonitor("LOST2"), "an explicit refresh is accepted");
                 lostQueryBackend.deliverQuery();
                 check(!state.querying && state.lastOutcome === "queried",
                     "the explicit refresh re-validates the route");
+                check(state.state === "software-only" && state.route === "software",
+                    "the refresh adopts the late software route");
+                close(state.lastConfirmed, 0.2, "the refresh adopts the software level");
+                check(lostQueryFeedbackEvents.length === failedFeedback,
+                    "the refresh after a failed record is a silent baseline");
+                // Only the unsolicited route was ignored: a real same-route
+                // change observed after that baseline still opens the OSD.
+                lostQueryBackend.probeLevel = 0.3;
+                check(lostQueryCase.queryMonitor("LOST2"), "a later software refresh is accepted");
+                lostQueryBackend.deliverQuery();
+                check(lostQueryFeedbackEvents.length === failedFeedback + 1,
+                    "a same-route change after the baseline still opens the OSD");
+                close(lostQueryFeedbackEvents[failedFeedback].value, 0.3,
+                    "the same-route feedback carries the new software level");
                 destructionCheck.start();
             } catch (error) {
                 console.error("CAELESTIA_BRIGHTNESS_FIXTURE_FAIL " + error.message);
