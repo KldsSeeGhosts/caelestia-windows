@@ -3,23 +3,26 @@ import Quickshell.Windows
 
 // Loaded by URL only after Nmcli.enabled. Referencing the Windows Network
 // singleton constructs the backend: its constructor starts connectivity and
-// WLAN observation, and a successful WLAN open performs one nearby-network
-// query even while the list is hidden (network.cpp:15-25,
-// network_wifi.cpp:168-194). Construction sends no write command.
+// WLAN observation, which opens WLAN on a worker and publishes the outcome.
+// Construction sends no write command.
 //
-// The pinned backend has no initialization flag and no error string. This
-// wrapper supplies a bounded adapter flag instead of inventing a native one:
-// initialized becomes true on the first WLAN observation, or once a one-shot
-// four-second settle window expires without one. The expiry reports absence,
-// not a proven "no adapter": a WLAN service failure also leaves
-// wifiAdapterPresent=false and only logs at debug level
-// (network_wifi.cpp:169-173). A refused radio write also only warns and may
-// open Windows Settings (network_wifi.cpp:250-255).
+// The backend publishes wifiInitialized when the open, explicit interface
+// selection and notification subscription have finished, and wifiBackendError
+// when they failed. A failed open or a refused subscription is therefore an
+// error, not "no adapter". Older pinned backends expose neither property: for
+// those the bounded observation fallback below still settles the wrapper.
 QtObject {
     id: root
 
-    // Adapter lifecycle heuristic; see the comment above. Not a native flag.
-    property bool initialized: false
+    // The native flag is absent on older pins; the fallback preserves their
+    // behaviour until the backend pin moves.
+    readonly property bool nativeStatusAvailable: typeof Network.wifiInitialized === "boolean"
+    readonly property string nativeError: typeof Network.wifiBackendError === "string"
+        ? Network.wifiBackendError : ""
+    property bool legacySettled: false
+    readonly property bool initialized: root.nativeStatusAvailable
+        ? Network.wifiInitialized === true
+        : (root.legacySettled || root.observed)
 
     readonly property bool wifiAdapterPresent: Network.wifiAdapterPresent
     readonly property bool wifiRadioOn: Network.wifiRadioOn
@@ -71,20 +74,23 @@ QtObject {
     }
 
     onObservedChanged: {
-        if (root.observed)
-            root.initialized = true;
+        if (!root.nativeStatusAvailable && root.observed)
+            root.legacySettled = true;
     }
 
     Component.onCompleted: {
-        if (root.observed)
-            root.initialized = true;
+        if (!root.nativeStatusAvailable && root.observed)
+            root.legacySettled = true;
     }
 
+    // Compatibility fallback only: a pinned backend without the native flag
+    // never reports initialization, so keep its old bounded settle window. The
+    // fixed delay is not part of the native path.
     readonly property Timer settleTimer: Timer {
         interval: 4000
         repeat: false
-        running: !root.initialized
-        onTriggered: root.initialized = true
+        running: !root.nativeStatusAvailable && !root.legacySettled
+        onTriggered: root.legacySettled = true
     }
 
     readonly property Connections nativeConnectResult: Connections {
