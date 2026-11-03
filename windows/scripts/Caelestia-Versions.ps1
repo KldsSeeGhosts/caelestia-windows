@@ -111,6 +111,37 @@ function Copy-CaelestiaRootEntries([string]$Prefix, [string]$Runtime) {
     }
 }
 
+# A retained payload a later start can actually use: its record belongs to this
+# installation and its executable is the one that record describes. Reads files
+# only; it starts and probes nothing.
+function Test-CaelestiaVersionPayload([string]$Prefix, [string]$Id) {
+    try {
+        $runtime = Get-CaelestiaVersionPrefix $Prefix $Id
+        $record = Read-CaelestiaInstall $runtime
+        $executable = Join-Path $runtime 'qs.exe'
+        if (-not (Test-Path -LiteralPath $executable -PathType Leaf)) { return $false }
+        if ($record.executableSha256 -and
+            (Get-FileHash -LiteralPath $executable -Algorithm SHA256).Hash -ne [string]$record.executableSha256) { return $false }
+        return $true
+    } catch {
+        return $false
+    }
+}
+
+# Newest retained payload that still exists, for a later start when the
+# configured fallback is unusable. Excluded ids are skipped: the version whose
+# activation just failed is not a fallback. Selection starts nothing, because
+# whether a payload runs is only known from its next start.
+function Select-CaelestiaExistingVersion([string]$Prefix, [string[]]$Exclude = @()) {
+    $versions = Join-Path $Prefix 'versions'
+    if (-not (Test-Path -LiteralPath $versions -PathType Container)) { return '' }
+    foreach ($directory in @(Get-ChildItem -LiteralPath $versions -Directory -Force -ErrorAction SilentlyContinue | Sort-Object Name -Descending)) {
+        if ($Exclude -contains $directory.Name) { continue }
+        if (Test-CaelestiaVersionPayload $Prefix $directory.Name) { return $directory.Name }
+    }
+    return ''
+}
+
 function Install-CaelestiaVersion([string]$Prefix, [string]$Payload, [switch]$Restart) {
     $old = if (Test-Path -LiteralPath (Join-Path $Prefix 'install.json')) { Read-CaelestiaInstall $Prefix } else { $null }
     if ($old -and $old.installRoot -and $old.installRoot -ne $Prefix) {
@@ -184,22 +215,51 @@ function Install-CaelestiaVersion([string]$Prefix, [string]$Payload, [switch]$Re
                 throw $failure
             }
             if ($activated) {
-                & (Join-Path $Prefix 'Start-Caelestia.ps1') -Prefix $Prefix -Command Quit | Out-Null
+                # A broken replacement record must not keep recovery from
+                # quitting. The process check below, not Quit's exit path,
+                # decides whether anything is still running.
+                try { & (Join-Path $Prefix 'Start-Caelestia.ps1') -Prefix $Prefix -Command Quit | Out-Null } catch { }
                 if (@(Get-CaelestiaProcesses $Prefix).Count -or @(Get-CaelestiaSupervisors $newRecord.profile).Count) {
                     throw "Activation failed and replacement is still running; versions retained at $Prefix\versions."
                 }
                 Stop-CaelestiaHosts $Prefix
             }
-            $priorPath = Get-CaelestiaVersionPrefix $Prefix $previous
-            $priorRecord = Read-CaelestiaInstall $priorPath
-            # Root launch entries are the new backward-compatible router even
-            # when rolling back to a legacy payload without its own router.
-            Copy-CaelestiaRootEntries $Prefix $runtime
-            $earlier = if ($old.version -eq 2) { [string]$old.previous } else { '' }
-            Write-CaelestiaJsonAtomic (Join-Path $Prefix 'install.json') (New-CaelestiaRootRecord $Prefix $priorRecord $earlier)
-            $null = Set-CaelestiaSchemeRuntimeForRevision $newRecord.profile (Get-CaelestiaSchemeRevision $priorPath) $priorPath -Verified $restoreScheme
-            if ($Restart) { Start-CaelestiaDetached $Prefix -LegacyReady -PreparedSchemeRuntime }
-            Write-Warning 'Activation failed; the previous version was selected again.'
+            $priorPath = $null
+            $priorRecord = $null
+            try {
+                $priorPath = Get-CaelestiaVersionPrefix $Prefix $previous
+                $priorRecord = Read-CaelestiaInstall $priorPath
+            } catch { }
+            if ($priorPath -and $priorRecord) {
+                # Root launch entries are the new backward-compatible router even
+                # when rolling back to a legacy payload without its own router.
+                Copy-CaelestiaRootEntries $Prefix $runtime
+                $earlier = if ($old.version -eq 2) { [string]$old.previous } else { '' }
+                Write-CaelestiaJsonAtomic (Join-Path $Prefix 'install.json') (New-CaelestiaRootRecord $Prefix $priorRecord $earlier)
+                $null = Set-CaelestiaSchemeRuntimeForRevision $newRecord.profile (Get-CaelestiaSchemeRevision $priorPath) $priorPath -Verified $restoreScheme
+                if ($Restart) { Start-CaelestiaDetached $Prefix -LegacyReady -PreparedSchemeRuntime }
+                Write-Warning 'Activation failed; the previous version was selected again.'
+            } else {
+                # The retained fallback is gone or unreadable. Reselect a payload
+                # that still exists so a later start does not follow a dangling
+                # selector, but launch nothing: the replacement just failed and
+                # the fallback is not trustworthy either.
+                $salvage = ''
+                try { $salvage = Select-CaelestiaExistingVersion $Prefix ([string[]]@(Split-Path -Leaf $runtime)) } catch { }
+                if (-not $salvage) {
+                    Write-Warning 'Activation failed and no retained version is usable; run the installer again.'
+                } else {
+                    try {
+                        $salvagePath = Get-CaelestiaVersionPrefix $Prefix $salvage
+                        $salvageRecord = Read-CaelestiaInstall $salvagePath
+                        Write-CaelestiaJsonAtomic (Join-Path $Prefix 'install.json') (New-CaelestiaRootRecord $Prefix $salvageRecord '')
+                        $null = Set-CaelestiaSchemeRuntimeForRevision $newRecord.profile (Get-CaelestiaSchemeRevision $salvagePath) $salvagePath
+                        Write-Warning "Activation failed and the previous version is unusable; version $salvage is selected for the next start."
+                    } catch {
+                        Write-Warning 'Activation failed and the selector could not be repointed; run the installer again.'
+                    }
+                }
+            }
         }
         throw $failure
     } finally {
@@ -258,6 +318,111 @@ function Switch-CaelestiaVersion([string]$Prefix, [string]$Id, [switch]$Restart)
         throw $failure
     } finally {
         if ($launchTask) { Unregister-ScheduledTask -TaskName $launchTask -Confirm:$false -ErrorAction SilentlyContinue }
+    }
+}
+
+# Test seam: writes the Start-menu shortcut. A throw reports an integration
+# failure; the caller restores whatever the shortcut held before.
+function New-CaelestiaShortcut([string]$Path, [string]$PowerShellPath, [string]$Arguments, [string]$WorkingDirectory, [string]$Icon) {
+    $wsh = New-Object -ComObject WScript.Shell
+    $shortcut = $wsh.CreateShortcut($Path)
+    $shortcut.TargetPath = $PowerShellPath
+    $shortcut.Arguments = $Arguments
+    $shortcut.WorkingDirectory = $WorkingDirectory
+    $shortcut.IconLocation = $Icon
+    $shortcut.Description = 'Caelestia for Windows'
+    $shortcut.Save()
+}
+
+# The Start-menu shortcut and the optional HKCU Run entry are part of the
+# activation transaction: a failure here must not leave a selector claiming a
+# replacement the user was told failed, or a half-written integration behind.
+# Snapshot both before writing, undo only what this transaction changed, then
+# select the previous version again (and restart when the install did). A first
+# install has no previous payload, so only the integration is removed and the
+# error is rethrown; the version stays installed.
+function Complete-CaelestiaInstallIntegration {
+    param(
+        [string]$Prefix,
+        [string]$RuntimePrefix,
+        [string]$Previous = '',
+        [switch]$Restart,
+        [switch]$Autostart,
+        [string]$Shortcut = '',
+        [string]$RunName = ''
+    )
+    if (-not $Shortcut -or -not $RunName) {
+        $integration = Get-CaelestiaIntegration $Prefix
+        if (-not $Shortcut) { $Shortcut = $integration.Shortcut }
+        if (-not $RunName) { $RunName = $integration.RunName }
+    }
+    $powershell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+    $arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + (Join-Path $Prefix 'Start-Caelestia.ps1') + '"'
+    $run = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+    $backup = $null
+    $runExisted = $false
+    $runValue = ''
+    $runWriteAttempted = $false
+    $shortcutExisted = $false
+    $shortcutWriteAttempted = $false
+    try {
+        # Snapshot the Run value before any work that can fail. Otherwise a
+        # failure during directory or shortcut setup would leave $runExisted
+        # false and cleanup would remove an entry this transaction never wrote.
+        if ($Autostart) {
+            $existing = Get-ItemProperty -LiteralPath $run -Name $RunName -ErrorAction SilentlyContinue
+            if ($null -ne $existing) { $runExisted = $true; $runValue = [string]$existing.$RunName }
+        }
+        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Shortcut) | Out-Null
+        $shortcutExisted = [IO.File]::Exists($Shortcut)
+        if ($shortcutExisted) {
+            $backupPath = $Shortcut + '.integration-' + [guid]::NewGuid().ToString('N')
+            try { [IO.File]::Copy($Shortcut, $backupPath) }
+            catch {
+                # Without a snapshot a later failure cannot tell the original
+                # from a half-written replacement, so abort before touching it.
+                try { if ([IO.File]::Exists($backupPath)) { [IO.File]::Delete($backupPath) } } catch { }
+                throw "Could not snapshot the existing shortcut; integration was aborted: $($_.Exception.Message)"
+            }
+            $backup = $backupPath
+        }
+        $shortcutWriteAttempted = $true
+        New-CaelestiaShortcut $Shortcut $powershell $arguments $Prefix ($RuntimePrefix.TrimEnd('\') + '\qs.exe,0')
+        if ($Autostart) {
+            New-Item -Path $run -Force | Out-Null
+            $runWriteAttempted = $true
+            New-ItemProperty -Path $run -Name $RunName -PropertyType String -Value ('"' + $powershell + '" ' + $arguments) -Force | Out-Null
+        }
+        # A backup that cannot be deleted is not an integration failure: never
+        # roll back a completed install over a cleanup problem.
+        if ($backup) { try { [IO.File]::Delete($backup) } catch { } }
+    } catch {
+        $failure = $_
+        try {
+            if ($backup -and [IO.File]::Exists($backup)) {
+                [IO.File]::Copy($backup, $Shortcut, $true)
+                [IO.File]::Delete($backup)
+            } elseif ($shortcutWriteAttempted -and -not $shortcutExisted -and [IO.File]::Exists($Shortcut)) {
+                # Only a shortcut this transaction created is removed; a
+                # pre-existing one is restored from its snapshot or left alone.
+                [IO.File]::Delete($Shortcut)
+            }
+        } catch { }
+        try {
+            if ($runWriteAttempted) {
+                if ($runExisted) { New-ItemProperty -Path $run -Name $RunName -PropertyType String -Value $runValue -Force | Out-Null }
+                else { Remove-ItemProperty -LiteralPath $run -Name $RunName -ErrorAction SilentlyContinue }
+            }
+        } catch { }
+        if ($Previous) {
+            try {
+                Switch-CaelestiaVersion $Prefix $Previous -Restart:$Restart
+                Write-Warning 'Installation integration failed; the previous version was selected again.'
+            } catch {
+                throw "Installation integration failed: $($failure.Exception.Message). Rollback to $Previous failed: $($_.Exception.Message)"
+            }
+        }
+        throw $failure
     }
 }
 
