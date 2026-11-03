@@ -25,7 +25,16 @@ function Start-CaelestiaDetached {
         Add-Content -LiteralPath $env:CAELESTIA_TEST_PROVISION_LOG -Value ('{0},0,launch' -f [DateTime]::UtcNow.Ticks)
     }
     if (-not $PreparedSchemeRuntime) { throw 'Activation did not request the prepared scheme runtime.' }
-    if ($script:failStart) { $script:failStart = $false; throw 'Injected startup failure.' }
+    if ($script:failStart) {
+        $script:failStart = $false
+        # Optionally break the fallback payload at the moment its activation is
+        # needed, so the catch must reselect instead of launching it.
+        if ($script:breakFallbackPayload) {
+            'broken payload' | Set-Content -LiteralPath (Join-Path $script:breakFallbackPayload 'install.json') -Encoding UTF8
+            $script:breakFallbackPayload = $null
+        }
+        throw 'Injected startup failure.'
+    }
     if (-not $script:runLauncher) { return }
     # Reproduce the scheduled-task handoff: the launcher runs asynchronously,
     # and the installer only waits 20 s for the shell to become ready. A cold
@@ -353,6 +362,62 @@ try {
     $failed = $false
     try { Switch-CaelestiaVersion $prefix $recordB.current -Restart } catch { $failed = $_ -match 'Injected startup failure' }
     Assert ($failed -and (Read-CaelestiaInstall $prefix).current -eq $recordA.current) 'Failed rollback did not restore selector.'
+
+    # A queued rollback whose task dies must not leave Settings > Updates in a
+    # permanent working phase. The deadline watchdog records the failure the
+    # page observes, and only for its own operation.
+    $operationFile = Join-Path $root 'profile\state\update-operation.json'
+    [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($operationFile)) | Out-Null
+    $watchId = [guid]::NewGuid().ToString('N')
+    @{ schema = 1; operationId = $watchId; phase = 'working' } |
+        ConvertTo-Json | Set-Content -LiteralPath $operationFile -Encoding UTF8
+    & (Join-Path $PSScriptRoot 'Manage-Caelestia.ps1') -Prefix $prefix -Command Watch -OperationId $watchId
+    $expired = Get-Content -LiteralPath $operationFile -Raw | ConvertFrom-Json
+    Assert ($expired.phase -eq 'failed' -and $expired.operationId -eq $watchId) 'A working rollback with a dead task never failed.'
+    @{ schema = 1; operationId = $watchId; phase = 'complete' } |
+        ConvertTo-Json | Set-Content -LiteralPath $operationFile -Encoding UTF8
+    & (Join-Path $PSScriptRoot 'Manage-Caelestia.ps1') -Prefix $prefix -Command Watch -OperationId $watchId
+    Assert ((Get-Content -LiteralPath $operationFile -Raw | ConvertFrom-Json).phase -eq 'complete') 'The deadline watchdog changed a completed rollback.'
+    $otherId = [guid]::NewGuid().ToString('N')
+    @{ schema = 1; operationId = $otherId; phase = 'working' } |
+        ConvertTo-Json | Set-Content -LiteralPath $operationFile -Encoding UTF8
+    & (Join-Path $PSScriptRoot 'Manage-Caelestia.ps1') -Prefix $prefix -Command Watch -OperationId $watchId
+    Assert ((Get-Content -LiteralPath $operationFile -Raw | ConvertFrom-Json).phase -eq 'working') 'A deadline watchdog expired another operation.'
+    # The queued path schedules the bound itself: the worker task and a separate
+    # watchdog one deadline later, so a task that dies after 'queued' is ended.
+    $global:queuedTasks = [Collections.ArrayList]::new()
+    $queued = & {
+        function New-ScheduledTaskAction {
+            param($Execute, $WorkingDirectory, $Argument)
+            [pscustomobject]@{ Execute = $Execute; WorkingDirectory = $WorkingDirectory; Argument = $Argument }
+        }
+        function New-ScheduledTaskPrincipal { param($UserId, $LogonType, $RunLevel) return $null }
+        function New-ScheduledTaskSettingsSet {
+            param([switch]$AllowStartIfOnBatteries, [switch]$DontStopIfGoingOnBatteries, [switch]$StartWhenAvailable, $ExecutionTimeLimit)
+            [pscustomobject]@{ ExecutionTimeLimit = $ExecutionTimeLimit }
+        }
+        function New-ScheduledTaskTrigger { param([switch]$Once, $At) [pscustomobject]@{ At = $At } }
+        function Register-ScheduledTask {
+            param($TaskName, $Action, $Trigger, $Principal, $Settings, $ErrorAction)
+            $null = $global:queuedTasks.Add([pscustomobject]@{ Name = $TaskName; Action = $Action; Trigger = $Trigger; Settings = $Settings })
+        }
+        function Start-ScheduledTask { param($TaskName, $ErrorAction) }
+        function Unregister-ScheduledTask { param($TaskName, [switch]$Confirm, $ErrorAction) }
+        & (Join-Path $PSScriptRoot 'Manage-Caelestia.ps1') -Prefix $prefix -Command Rollback -ExpectedCurrent $recordA.current -PhaseTimeoutSeconds 5
+    }
+    $queuedId = ($queued | ConvertFrom-Json).operationId
+    Assert ($queuedId -match '^[a-f0-9]{32}$') 'A queued rollback did not report its operation.'
+    $watchTaskItem = @($global:queuedTasks | Where-Object { $_.Name -eq "Caelestia-MaintenanceWatch-$queuedId" })
+    $workerTaskItem = @($global:queuedTasks | Where-Object { $_.Name -eq "Caelestia-Maintenance-$queuedId" })
+    Remove-Variable -Scope Global -Name queuedTasks -ErrorAction SilentlyContinue
+    Assert ($watchTaskItem.Count -eq 1 -and $workerTaskItem.Count -eq 1) 'A queued rollback did not schedule its worker and deadline watchdog.'
+    Assert ($watchTaskItem[0].Action.Argument -match '-Command Watch' -and $watchTaskItem[0].Action.Argument -match $queuedId) 'The deadline watchdog does not expire its own operation.'
+    $delay = ($watchTaskItem[0].Trigger.At - [DateTime]::Now).TotalSeconds
+    Assert ($delay -gt 2 -and $delay -lt 8) "The deadline watchdog was scheduled $([Math]::Round($delay, 1)) s out instead of the bound."
+    Assert ($workerTaskItem[0].Settings.ExecutionTimeLimit.TotalSeconds -eq 65) 'The worker task has no bounded execution time.'
+    Assert ((Get-Content -LiteralPath $operationFile -Raw | ConvertFrom-Json).phase -eq 'queued') 'A queued rollback did not record its phase.'
+    Write-Output 'PASS operation watchdog: a dead rollback task is bounded, its queued path schedules the deadline, and terminal or foreign phases are left alone.'
+
     foreach ($id in @('..\escape', '..', 'C:\escape', 'a/b')) {
         $failed = $false
         try { Get-CaelestiaVersionPrefix $prefix $id } catch { $failed = $true }
@@ -387,6 +452,95 @@ try {
         [IO.Directory]::Delete($junction, $false)
     }
     Write-Output 'PASS versioned: immutable payloads, running-version routing, rollback/roll-forward, activation failure and traversal refusal.'
+
+    # A crash can leave a staging directory beside the prefix. The marker is
+    # written first, so the crash window only leaves an empty directory; both
+    # are safe to remove, while a populated unowned directory is never touched
+    # and a live owner blocks the next install.
+    $stageParent = Join-Path $root 'stage-parent'
+    $stagePrefix = Join-Path $stageParent 'app'
+    [IO.Directory]::CreateDirectory($stagePrefix) | Out-Null
+    $deadPid = 999999
+    while (Get-Process -Id $deadPid -ErrorAction SilentlyContinue) { $deadPid-- }
+    $emptyStage = "$stagePrefix.staging-$deadPid"
+    [IO.Directory]::CreateDirectory($emptyStage) | Out-Null
+    Remove-CaelestiaStagingDirectories $stagePrefix
+    Assert (-not (Test-Path -LiteralPath $emptyStage)) 'An empty staging directory from a crash was not removed.'
+    $markedStage = "$stagePrefix.staging-$deadPid"
+    [IO.Directory]::CreateDirectory($markedStage) | Out-Null
+    '{}' | Set-Content -LiteralPath (Join-Path $markedStage '.caelestia-staging.json') -Encoding UTF8
+    Remove-CaelestiaStagingDirectories $stagePrefix
+    Assert (-not (Test-Path -LiteralPath $markedStage)) 'An owned staging directory was not removed.'
+    $unownedStage = "$stagePrefix.staging-$deadPid"
+    [IO.Directory]::CreateDirectory($unownedStage) | Out-Null
+    'user data' | Set-Content -LiteralPath (Join-Path $unownedStage 'notes.txt') -Encoding UTF8
+    $refused = $false
+    try { Remove-CaelestiaStagingDirectories $stagePrefix } catch { $refused = $_.Exception.Message -match 'unowned staging' }
+    Assert ($refused -and (Test-Path -LiteralPath (Join-Path $unownedStage 'notes.txt'))) 'An unowned populated staging directory was removed.'
+    Remove-Item -LiteralPath $unownedStage -Recurse -Force
+    # A PID that is our own is stale (PIDs are unique), not a live other install.
+    $ownStage = "$stagePrefix.staging-$PID"
+    [IO.Directory]::CreateDirectory($ownStage) | Out-Null
+    '{}' | Set-Content -LiteralPath (Join-Path $ownStage '.caelestia-staging.json') -Encoding UTF8
+    Remove-CaelestiaStagingDirectories $stagePrefix
+    Assert (-not (Test-Path -LiteralPath $ownStage)) 'A stale staging directory with a reused PID of this process was not removed.'
+    $sleeper = Start-Process -FilePath (Get-WindowsPowerShellPath) -ArgumentList '-NoProfile', '-Command', 'Start-Sleep -Seconds 60' `
+        -WindowStyle Hidden -PassThru
+    try {
+        $liveStage = "$stagePrefix.staging-$($sleeper.Id)"
+        [IO.Directory]::CreateDirectory($liveStage) | Out-Null
+        '{}' | Set-Content -LiteralPath (Join-Path $liveStage '.caelestia-staging.json') -Encoding UTF8
+        $refused = $false
+        try { Remove-CaelestiaStagingDirectories $stagePrefix } catch { $refused = $_.Exception.Message -match 'in progress' }
+        Assert ($refused -and (Test-Path -LiteralPath $liveStage)) 'A live staging owner was removed or ignored.'
+    } finally {
+        if (-not $sleeper.HasExited) { $sleeper.Kill() }
+        $sleeper.WaitForExit()
+    }
+    Write-Output 'PASS staging: crash leftovers are removed, a live owner blocks, and a populated unowned directory is kept.'
+
+    # Integration is part of the activation transaction. A shortcut or Run
+    # entry that cannot be written restores the previous integration, selects
+    # the previous version again, and leaves no half-written shortcut behind.
+    $uiPrefix = Join-Path $root 'ui'
+    $null = Install-CaelestiaVersion $uiPrefix (New-Payload $uiPrefix 'ui-a')
+    $uiA = (Read-CaelestiaInstall $uiPrefix).current
+    $null = Install-CaelestiaVersion $uiPrefix (New-Payload $uiPrefix 'ui-b')
+    $uiB = (Read-CaelestiaInstall $uiPrefix).current
+    $uiShortcut = Join-Path $root 'ui-shortcut\Caelestia.lnk'
+    [IO.Directory]::CreateDirectory((Split-Path -Parent $uiShortcut)) | Out-Null
+    'previous shortcut' | Set-Content -LiteralPath $uiShortcut -Encoding UTF8
+    $originalShortcut = ${function:New-CaelestiaShortcut}
+    try {
+        ${function:New-CaelestiaShortcut} = {
+            param([string]$Path, [string]$PowerShellPath, [string]$Arguments, [string]$WorkingDirectory, [string]$Icon)
+            [IO.File]::WriteAllText($Path, 'half-written')
+            throw 'Injected shortcut failure.'
+        }
+        $failed = $false
+        try { Complete-CaelestiaInstallIntegration $uiPrefix (Join-Path $uiPrefix "versions\$uiB") -Previous $uiA -Shortcut $uiShortcut -RunName 'CaelestiaTest' }
+        catch { $failed = $_ -match 'Injected shortcut failure' }
+        Assert $failed 'An integration failure was hidden.'
+        Assert ((Get-Content -LiteralPath $uiShortcut -Raw).Trim() -eq 'previous shortcut') 'A failed integration did not restore the previous shortcut.'
+        Assert (@(Get-ChildItem -LiteralPath (Split-Path -Parent $uiShortcut) -Filter '*.integration-*').Count -eq 0) 'A failed integration left its shortcut backup behind.'
+        Assert ((Read-CaelestiaInstall $uiPrefix).current -eq $uiA) 'An integration failure did not select the previous version again.'
+        # A first install has no previous payload: the partial integration is
+        # removed and the installed version stays selected.
+        $freshPrefix = Join-Path $root 'fresh-ui'
+        $null = Install-CaelestiaVersion $freshPrefix (New-Payload $freshPrefix 'fresh')
+        $freshId = (Read-CaelestiaInstall $freshPrefix).current
+        $freshShortcut = Join-Path $root 'fresh-shortcut\Caelestia.lnk'
+        [IO.Directory]::CreateDirectory((Split-Path -Parent $freshShortcut)) | Out-Null
+        $failed = $false
+        try { Complete-CaelestiaInstallIntegration $freshPrefix (Join-Path $freshPrefix "versions\$freshId") -Shortcut $freshShortcut -RunName 'CaelestiaTest' }
+        catch { $failed = $_ -match 'Injected shortcut failure' }
+        Assert $failed 'A first-install integration failure was hidden.'
+        Assert (-not (Test-Path -LiteralPath $freshShortcut)) 'A failed first-install integration left a partial shortcut behind.'
+        Assert ((Read-CaelestiaInstall $freshPrefix).current -eq $freshId) 'A failed first-install integration changed the selector.'
+    } finally {
+        ${function:New-CaelestiaShortcut} = $originalShortcut
+    }
+    Write-Output 'PASS integration: a failed shortcut rolls back the activation or cleans up a first install.'
 
     foreach ($injectFailure in @($false, $true)) {
         $legacy = Join-Path $root ('legacy-' + $injectFailure)
@@ -676,6 +830,35 @@ param([string]$Prefix, [string]$Command = 'Start', [switch]$SkipSchemeRuntime)
     Invoke-RecoveryScenario 'rollback'
     Invoke-RecoveryScenario 'selector'
     Write-Output 'PASS recovery: failed update activation, failed rollback activation and a selector-write failure restore the previous version without probing after the stop.'
+
+    # The retained fallback can itself be gone. The activation catch must not
+    # leave the selector claiming the failed replacement, must not launch a
+    # payload it cannot trust, and must reselect a retained payload that exists
+    # so a later start can use it.
+    $svPrefix = Join-Path $root 'sv'
+    $null = Install-CaelestiaVersion $svPrefix (New-Payload $svPrefix 'sv-a')
+    $svA = (Read-CaelestiaInstall $svPrefix).current
+    $null = Install-CaelestiaVersion $svPrefix (New-Payload $svPrefix 'sv-b')
+    $svB = (Read-CaelestiaInstall $svPrefix).current
+    # The fallback payload is lost exactly when the failed activation needs it,
+    # as an interrupted prune could leave it.
+    $script:breakFallbackPayload = Join-Path $svPrefix "versions\$svB"
+    $script:started = 0
+    $script:failStart = $true
+    $failed = $false
+    try { $null = Install-CaelestiaVersion $svPrefix (New-Payload $svPrefix 'sv-c') -Restart }
+    catch { $failed = $_ -match 'Injected startup failure' }
+    finally {
+        $script:failStart = $false
+        $script:breakFallbackPayload = $null
+    }
+    Assert $failed 'The missing-fallback scenario did not fail as injected.'
+    Assert ($script:started -eq 1) 'Activation with no usable fallback launched a payload a later start could not trust.'
+    $reselect = Read-CaelestiaInstall $svPrefix
+    Assert ($reselect.current -eq $svA) 'Activation did not reselect a retained payload that exists.'
+    Assert (-not $reselect.previous) 'A missing previous payload stayed in the selector.'
+    Assert ((Resolve-CaelestiaRuntimePrefix $svPrefix) -eq (Join-Path $svPrefix "versions\$svA")) 'A later start would not select the existing payload.'
+    Write-Output 'PASS reselect: a missing fallback payload is replaced by an existing one without launching.'
 
     # Update while another process holds the scheme lock: nothing can be probed
     # or published, the shell still restarts (on the fixed palette) without

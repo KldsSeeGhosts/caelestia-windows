@@ -1172,6 +1172,47 @@ function Start-CaelestiaDetached([string]$Prefix, [switch]$LegacyReady, [string]
     }
 }
 
+# Remove staging directories an interrupted earlier run left beside the prefix.
+# A directory is owned when it carries this product's staging marker, install
+# record or executable, or when it is still empty: the marker is the first file
+# written, so a crash in that window can only leave an empty directory. Anything
+# else is never deleted. A live PID means another installation is still working.
+function Remove-CaelestiaStagingDirectories([string]$Prefix) {
+    $parent = Split-Path -Parent $Prefix
+    $leaf = Split-Path -Leaf $Prefix
+    if (-not $parent -or -not (Test-Path -LiteralPath $parent -PathType Container)) { return }
+    foreach ($leftover in @(Get-ChildItem -LiteralPath $parent -Directory -Force -Filter "$leaf.staging-*")) {
+        $leftoverPath = Resolve-CaelestiaDirectory $leftover.FullName
+        $leftoverPid = ($leftover.Name -replace '^.*\.staging-', '') -as [int]
+        # A leftover with our own PID cannot be a live other installation: PIDs
+        # are unique, so it is stale from an earlier process that reused ours.
+        if ($leftoverPid -and $leftoverPid -ne $PID -and (Get-Process -Id $leftoverPid -ErrorAction SilentlyContinue)) {
+            throw "Another installation is in progress: $leftoverPath"
+        }
+        if ($null -ne (Get-ChildItem -LiteralPath $leftoverPath -Force | Select-Object -First 1)) {
+            $owned = (Test-Path -LiteralPath (Join-Path $leftoverPath '.caelestia-staging.json') -PathType Leaf) -or
+                (Test-Path -LiteralPath (Join-Path $leftoverPath 'install.json') -PathType Leaf) -or
+                (Test-Path -LiteralPath (Join-Path $leftoverPath 'qs.exe') -PathType Leaf)
+            if (-not $owned) { throw "Refusing to remove unowned staging directory: $leftoverPath" }
+        }
+        Assert-CaelestiaNoReparsePoints $leftoverPath
+        Remove-Item -LiteralPath $leftoverPath -Recurse -Force
+    }
+}
+
+# Copy one tree over another for recovery. Only the root selector is excluded:
+# Restore-CaelestiaUpdate writes it atomically before the copy, so an aborted
+# mirror cannot leave it claiming the replacement and the copy cannot leave it
+# half-written. Nested version payloads keep their own install.json. Returns
+# robocopy's exit code; a test seam because a file locked between the process
+# re-check and the copy is a race.
+function Invoke-CaelestiaMirror([string]$Source, [string]$Destination) {
+    # Only the root selector is excluded; version payloads inside the tree keep
+    # their own install.json.
+    & robocopy.exe $Source $Destination /MIR /XJ /R:2 /W:1 /NFL /NDL /NJH /NJS /NP /XF (Join-Path $Source 'install.json') | Out-Null
+    return $LASTEXITCODE
+}
+
 function Restore-CaelestiaUpdate([string]$Prefix, [string]$ProfileRoot, [string]$Backup, [bool]$ReplacementActive) {
     # Recovery must also work after a failed/partial mirror, where the new
     # launch script may not exist. Use the untouched backup's launcher to quit.
@@ -1194,9 +1235,14 @@ function Restore-CaelestiaUpdate([string]$Prefix, [string]$ProfileRoot, [string]
         Stop-CaelestiaHosts $Prefix
         Assert-CaelestiaNoReparsePoints $Prefix
         Assert-CaelestiaNoReparsePoints $Backup
-        & robocopy.exe $Backup $Prefix /MIR /XJ /R:2 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null
-        if ($LASTEXITCODE -ge 8) { throw "Rollback failed (robocopy exit $LASTEXITCODE)." }
+        # Once the rollback has begun, the selector must name its target, never
+        # the replacement. Point it at the backup atomically before the copy and
+        # keep the mirror away from it, so a file locked between the process
+        # re-check and the copy aborts with install.json already on the target.
+        Write-CaelestiaJsonAtomic (Join-Path $Prefix 'install.json') $record
+        $copyExit = Invoke-CaelestiaMirror $Backup $Prefix
         $global:LASTEXITCODE = 0
+        if ($copyExit -ge 8) { throw "Rollback failed (robocopy exit $copyExit); the rollback selector was written and the backup retained." }
     }
     # This recovery path can start a pre-versioning launcher. Never let its
     # provisioner run inside the readiness clock; consume a prepared generation

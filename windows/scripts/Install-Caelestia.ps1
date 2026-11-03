@@ -124,20 +124,7 @@ if (Test-Path -LiteralPath $backup) {
     if (-not (Test-Path -LiteralPath $Prefix)) { [IO.Directory]::Move($backup, $Prefix) }
     else { Assert-CaelestiaNoReparsePoints $backup; Remove-Item -LiteralPath $backup -Recurse -Force }
 }
-if (Test-Path -LiteralPath $prefixParent) {
-    foreach ($leftover in Get-ChildItem -LiteralPath $prefixParent -Directory -Force -Filter "$prefixLeaf.staging-*") {
-        $leftoverPath = Resolve-CaelestiaDirectory $leftover.FullName
-        $leftoverPid = ($leftover.Name -replace '^.*\.staging-', '') -as [int]
-        if ($leftoverPid -and (Get-Process -Id $leftoverPid -ErrorAction SilentlyContinue)) { throw "Another installation is in progress: $leftoverPath" }
-        $stagingMarker = Join-Path $leftoverPath '.caelestia-staging.json'
-        $hasOwnership = (Test-Path -LiteralPath $stagingMarker -PathType Leaf) -or (Test-Path -LiteralPath (Join-Path $leftoverPath 'install.json') -PathType Leaf) -or (Test-Path -LiteralPath (Join-Path $leftoverPath 'qs.exe') -PathType Leaf)
-        if (-not $hasOwnership) {
-            throw "Refusing to remove unowned staging directory: $leftoverPath"
-        }
-        Assert-CaelestiaNoReparsePoints $leftoverPath
-        Remove-Item -LiteralPath $leftoverPath -Recurse -Force
-    }
-}
+Remove-CaelestiaStagingDirectories $Prefix
 $old = $null
 if ((Test-Path -LiteralPath $Prefix) -and (Get-ChildItem -LiteralPath $Prefix -Force | Select-Object -First 1)) {
     if (Test-Path -LiteralPath (Join-Path $Prefix 'install.json')) {
@@ -277,7 +264,6 @@ try {
     $ErrorActionPreference = 'Stop'
     if ($deployExit -ne 0) { throw "windeployqt failed with exit code $deployExit" }
     @('[Paths]', 'Prefix=.', 'Plugins=plugins', 'QmlImports=qml') | Set-Content -LiteralPath "$payload\qt.conf" -Encoding ASCII
-    $integration = Get-CaelestiaIntegration $Prefix
     # install.json is written last: a staging directory without it is not an install.
     [ordered]@{
         product = 'caelestia-windows'; version = 1; prefix = $Prefix; profile = $ProfileRoot
@@ -308,25 +294,13 @@ try {
     # Pruning is deferred while any shell or supervisor can still be using a
     # generation; the next install without a live shell removes the rest.
     Remove-CaelestiaSchemeGenerations $Prefix $ProfileRoot
-    $launcher = Join-Path $Prefix 'Start-Caelestia.ps1'
-    $powershell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
-    $arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $launcher + '"'
-    $shortcutDir = Split-Path -Parent $integration.Shortcut
-    New-Item -ItemType Directory -Force -Path $shortcutDir | Out-Null
-    $wsh = New-Object -ComObject WScript.Shell
-    $shortcut = $wsh.CreateShortcut($integration.Shortcut)
-    $shortcut.TargetPath = $powershell
-    $shortcut.Arguments = $arguments
-    $shortcut.WorkingDirectory = $Prefix
-    $shortcut.IconLocation = "$runtimePrefix\qs.exe,0"
-    $shortcut.Description = 'Caelestia for Windows'
-    $shortcut.Save()
-    if ($Autostart) {
-        $run = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
-        New-Item -Path $run -Force | Out-Null
-        New-ItemProperty -Path $run -Name $integration.RunName -PropertyType String -Value ('"' + $powershell + '" ' + $arguments) -Force | Out-Null
-    }
+    # Integration belongs to the activation transaction: if it cannot be
+    # written, the activation is rolled back instead of leaving a selector that
+    # claims a replacement the caller was told failed.
+    $installed = Read-CaelestiaInstall $Prefix
+    Complete-CaelestiaInstallIntegration $Prefix $runtimePrefix -Previous ([string]$installed.previous) -Restart:$Restart -Autostart:$Autostart
     Remove-CaelestiaRetiredVersions $Prefix
+    $launcher = Join-Path $Prefix 'Start-Caelestia.ps1'
     Write-Output "Installed Caelestia: $Prefix"
     Write-Output "Run: powershell -NoProfile -File `"$launcher`""
     Write-Output "Profile (seeded on first launch): $ProfileRoot"
