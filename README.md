@@ -34,7 +34,7 @@ The shell installs a left vertical bar, launcher, dashboard, notifications, OSDs
 
 ## Updating
 
-There is no remote update feed yet. Install a newer build with the same installer; it keeps the previous payload so you can return to it later. Settings > Updates can roll back to the retained version, and updating a stopped installation preserves your configuration, state, and user data. See the [release checklist](windows/docs/RELEASE-CHECKLIST.md) and [user guide](windows/docs/USER-GUIDE.md#install-uninstall-and-autostart).
+There is no remote update feed yet. Install a newer build with the same installer. While the shell is running, add `-Restart`: the installer prepares the new version, swaps it in, restarts the shell and rolls back if it fails to start. Without `-Restart`, quit the shell first. The installer keeps the previous payload so you can return to it later. Settings > Updates can roll back to the retained version, and updating a stopped installation preserves your configuration, state, and user data. See the [release checklist](windows/docs/RELEASE-CHECKLIST.md) and [user guide](windows/docs/USER-GUIDE.md#install-uninstall-and-autostart).
 
 ## Configuration
 

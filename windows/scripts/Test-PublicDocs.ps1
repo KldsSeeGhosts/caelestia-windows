@@ -51,7 +51,8 @@ $privateHosts = @(
     'notion.so',
     'slack.com',
     'teams.microsoft.com',
-    'sharepoint.com'
+    'sharepoint.com',
+    'ts.net'
 )
 
 # The word "agent" alone is legitimate (cpa-agents.json); assignments are not.
@@ -196,9 +197,24 @@ foreach ($file in $docs) {
             }
             continue
         }
-        if ($inFence) { continue }
-
         $targets = New-Object 'System.Collections.Generic.List[string]'
+
+        # Code blocks are not links, but a private host in an example still leaks.
+        if ($inFence) {
+            foreach ($match in [regex]::Matches($line, '(?i)https?://[^\s<>"''`)]+')) {
+                $problem = Test-PublicUrl -Value $match.Value
+                # Examples may hold placeholder URLs; only private hosts fail here.
+                if ($problem -like 'link to private host*') {
+                    $findings.Add([pscustomobject]@{
+                        File = $relative
+                        Line = $lineNumber
+                        Kind = 'link'
+                        Message = "$problem ($($match.Value))"
+                    })
+                }
+            }
+            continue
+        }
 
         # Inline links and images: [text](target) and ![alt](target).
         foreach ($match in [regex]::Matches($line, '!?\[[^\]]*\]\(\s*(<[^>]+>|[^)\s]+)(?:\s+["''][^"'']*["''])?\s*\)')) {
