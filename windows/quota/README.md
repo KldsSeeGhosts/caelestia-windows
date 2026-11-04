@@ -89,7 +89,8 @@ Hub mode runs when:
   With CPA Manager this adds history, Top Models and Limit Resets to the
   summary's rows; the helper starts once the summary has accepted the key. A
   plain http `baseUrl` on the local network or Tailscale, which the summary
-  read refuses, is read through the hub only with this switch on.
+  read refuses, is read through the hub only with this switch on; switching it
+  off stops the helper.
 
 The reads are done by `providers/quota_providers.py`, a standard-library
 Python helper started as `py -3 -I quota_providers.py serve`. It runs only
@@ -118,7 +119,9 @@ Rules, after OpenUsage:
   network (`10/8`, `172.16/12`, `192.168/16`) or Tailscale (`100.64.0.0/10`,
   `fd7a:115c:a1e0::/48`). Names such as `.local` or `.ts.net` are not trusted
   on their own, and link-local and other unique-local addresses are refused.
-  The helper connects to the address it checked, so a second DNS answer cannot
+  The helper and Keepalive connect only to the addresses they checked, in the
+  order they resolved, trying the next when a connection fails (so `localhost`
+  works whether `::1` or `127.0.0.1` answers first). A second DNS answer cannot
   redirect the key. No redirect or proxy is followed.
 - A login with no email or name is shown as "Codex account 1" and so on,
   numbered by its id inside the helper; the id itself never leaves it.
@@ -340,6 +343,14 @@ isolated profiles:
    be gone. The management key and a token the stub's login list carries are
    sentinels: neither may appear in stdout, stderr (which carry the drawer's
    whole model), or the cache.
+8. **hub-http** - Detailed usage on, with a plain http hub that is not this
+   PC's loopback name (the stub on `127.0.0.2` stands in for the local
+   network). Switching Detailed usage off stops the helper within a second,
+   and Refresh now does not start it again.
+9. **refused**, **refused-restart** and **refused-keepalive** - the hub
+   refuses the key, to the summary or to the real Keepalive script's first
+   `api-call`. Nothing more goes out with that key, from Refresh now,
+   Keepalive, analytics, the panel off and on, or a new shell with the cache.
 
 The helper's own tests run with the standard library, against the same stub:
 

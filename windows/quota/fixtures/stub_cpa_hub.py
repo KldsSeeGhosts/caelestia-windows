@@ -13,7 +13,7 @@ provider, and holds no real credentials or account data. It serves:
 
 Usage:
     py -I stub_cpa_hub.py --port-file <path> [--admin-key K] [--scenario stock|manager]
-                          [--refuse none|401|ban]
+                          [--refuse none|401|api-401|ban] [--host 127.0.0.1|127.0.0.2]
 """
 from __future__ import annotations
 
@@ -236,7 +236,9 @@ def make_handler(admin_key: str, scenario: str, refuse: str, stats: Stats, delay
 
         def _gate(self, name: str) -> bool:
             stats.count(name)
-            if refuse == "401" or self.headers.get("Authorization") != "Bearer " + admin_key:
+            # api-401: the listing is accepted, then the first api-call is refused.
+            if (refuse == "401" or (refuse == "api-401" and name == "api-call")
+                    or self.headers.get("Authorization") != "Bearer " + admin_key):
                 self._send(401, {"error": "invalid management key"})
                 return False
             if refuse == "ban":
@@ -305,10 +307,12 @@ def main() -> int:
     parser.add_argument("--port-file", required=True)
     parser.add_argument("--admin-key", default=DEFAULT_KEY)
     parser.add_argument("--scenario", choices=("stock", "manager"), default="stock")
-    parser.add_argument("--refuse", choices=("none", "401", "ban"), default="none")
+    parser.add_argument("--refuse", choices=("none", "401", "api-401", "ban"), default="none")
+    # Another loopback address (127.0.0.2) stands in for a hub on the local network.
+    parser.add_argument("--host", choices=("127.0.0.1", "127.0.0.2"), default="127.0.0.1")
     args, _ = parser.parse_known_args()
     stats = Stats()
-    server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(args.admin_key, args.scenario, args.refuse, stats, 0.02))
+    server = ThreadingHTTPServer((args.host, 0), make_handler(args.admin_key, args.scenario, args.refuse, stats, 0.02))
     server.daemon_threads = True
     with open(args.port_file, "w", encoding="utf-8") as handle:
         handle.write(str(server.server_address[1]))

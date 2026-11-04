@@ -251,17 +251,17 @@ class Refusals(unittest.TestCase):
         calls = []
 
         def http(method, url, headers, data, timeout, **kw):
-            calls.append(kw.get("address"))
+            calls.append(kw.get("addresses"))
             return core.Response(200, {}, '{"files":[]}')
 
         answers = [["192.168.1.5"], ["8.8.8.8"]]
         with resolving(lambda host: answers.pop(0) if answers else ["8.8.8.8"]):
             svc, out = service("http://hub.lan:8317", http=http)
             svc.run_pass()
-            self.assertEqual(calls, ["192.168.1.5"])
+            self.assertEqual(calls, [["192.168.1.5"]])
             # The name now answers a public address: nothing is sent.
             svc.run_pass(force=True)
-        self.assertEqual(calls, ["192.168.1.5"])
+        self.assertEqual(calls, [["192.168.1.5"]])
         self.assertEqual(out[-1]["hub"]["state"], "insecure")
 
     def test_pinned_transport_connects_to_the_given_address(self):
@@ -270,8 +270,32 @@ class Refusals(unittest.TestCase):
             port = base.rsplit(":", 1)[1]
             # The name does not resolve anywhere; only the pinned address is used.
             response = core.http_request("GET", "http://pinned.invalid:%s/v0/management/auth-files" % port,
-                                         {"Authorization": "Bearer " + KEY}, None, 5, address="127.0.0.1")
+                                         {"Authorization": "Bearer " + KEY}, None, 5, addresses=["127.0.0.1"])
             self.assertEqual(response.status, 200)
+        finally:
+            server.shutdown()
+            server.server_close()
+
+    def test_an_ipv4_hub_behind_a_name_answering_ipv6_first(self):
+        # Windows' localhost answers ::1, then 127.0.0.1; the stub listens on IPv4 only.
+        server, stats, base = stub_cpa_hub.start(KEY, "stock")
+        tried = []
+        connect = socket.create_connection
+
+        def recording(address, *args, **kwargs):
+            tried.append(address[0])
+            return connect(address, *args, **kwargs)
+
+        try:
+            port = base.rsplit(":", 1)[1]
+            with resolving({"dual.test": ["::1", "127.0.0.1"]}), \
+                    mock.patch.object(socket, "create_connection", recording):
+                logins = hubmod.Hub("http://dual.test:%s" % port, KEY).logins()
+            self.assertEqual(len(logins), 4)
+            self.assertEqual(stats.snapshot()["calls"].get("auth-files"), 1)
+            # Only the checked answers are ever tried, the first one first.
+            self.assertEqual(set(tried), {"::1", "127.0.0.1"})
+            self.assertEqual(tried[0], "::1")
         finally:
             server.shutdown()
             server.server_close()

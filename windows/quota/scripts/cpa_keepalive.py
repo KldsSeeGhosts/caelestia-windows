@@ -30,6 +30,12 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+# Management calls share the quota helper's transport and refusal gate: no
+# proxy or redirect, plain http only to checked addresses, and nothing more
+# with a key the hub refused. -I leaves this directory off sys.path.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "providers"))
+import hub  # noqa: E402
+
 # Management live quota (for Antigravity quota summary) — still needed as fallback
 ANTIGRAVITY_SUMMARY_URLS = [
     "https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary",
@@ -73,23 +79,13 @@ def _first(obj: dict[str, Any], *keys: str) -> Any:
     return None
 
 
-def request_json(base: str, key: str, path: str, method: str = "GET", body: Any = None) -> Any:
-    url = base.rstrip("/") + path
-    data = None if body is None else json.dumps(body, separators=(",", ":")).encode()
-    req = urllib.request.Request(url, data=data, method=method, headers={
-        "Authorization": "Bearer " + key,
-        "Accept": "application/json",
-        "Content-Type": "application/json",
-    })
-    with urllib.request.urlopen(req, timeout=20) as resp:
-        return json.loads(resp.read().decode("utf-8", "replace"))
-
-
-def api_call(base: str, key: str, auth_index: str, method: str, url: str, headers: dict[str, str], data: str | None = None) -> tuple[int, dict[str, Any]]:
+def api_call(client: hub.Hub, auth_index: str, method: str, url: str, headers: dict[str, str], data: str | None = None) -> tuple[int, dict[str, Any]]:
     payload: dict[str, Any] = {"auth_index": auth_index, "method": method, "url": url, "header": headers}
     if data is not None:
         payload["data"] = data
-    resp = request_json(base, key, "/v0/management/api-call", "POST", payload)
+    resp = client.management("POST", "api-call", payload, 30).json()
+    if not isinstance(resp, dict):
+        return 0, {}
     status = int(resp.get("status_code") or resp.get("statusCode") or 0)
     body = resp.get("body")
     if isinstance(body, str):
@@ -270,10 +266,24 @@ def main() -> int:
     if inference_key:
         _SECRETS.extend(part for part in [inference_key, *inference_key.splitlines()] if len(part) >= 6)
 
+    client = hub.Hub(base, key)
+
+    def refused() -> bool:
+        # The hub rejected or banned the key: hand the drawer the same salted
+        # record the quota helper writes, so it closes its gate too, and stop.
+        if not client.refusal:
+            return False
+        _emit({"type": "refused", "refusal": client.refused}, separators=(",", ":"))
+        _emit({"ok": False, "error": "CLIProxyAPI refused the management key"}, separators=(",", ":"))
+        sys.stdout.flush()
+        return True
+
     try:
-        inv = request_json(base, key, "/v0/management/auth-files")
+        inv = client.management("GET", "auth-files", None, 20).json()
     except Exception as exc:
-        _emit({"ok": False, "error": f"auth-files failed: {type(exc).__name__}"})
+        if refused():
+            return 0
+        _emit({"ok": False, "error": "auth-files failed: " + (exc.code if isinstance(exc, hub.HubRefused) else type(exc).__name__)})
         return 0
 
     files = inv.get("files") if isinstance(inv, dict) else inv
@@ -295,6 +305,8 @@ def main() -> int:
     ok_count = 0
     total = len(targets)
     for idx, item in enumerate(targets):
+        if refused():
+            return 0
         prov = _text(_first(item, "provider", "auth_provider", "authProvider")).lower()
         label = _text(_first(item, "account", "account_name", "accountName", "email", "file_name", "name"))
         auth_index = _text(_first(item, "auth_index", "authIndex"))
@@ -314,7 +326,7 @@ def main() -> int:
                     acct = codex_account_id(item)
                     headers = {"Authorization": "Bearer $TOKEN$", "Content-Type": "application/json", "Chatgpt-Account-Id": acct} if acct else {"Authorization": "Bearer $TOKEN$", "Content-Type": "application/json"}
                     try:
-                        status, body = api_call(base, key, auth_index, "GET", CODEX_USAGE_URL, headers)
+                        status, body = api_call(client, auth_index, "GET", CODEX_USAGE_URL, headers)
                         ok = 200 <= status < 300 and isinstance(body, dict) and bool(body)
                         if not ok:
                             err = _text(body.get("error") if isinstance(body, dict) else "")[:120] or err
@@ -338,7 +350,7 @@ def main() -> int:
                     last_err = err
                     for url in ANTIGRAVITY_SUMMARY_URLS:
                         try:
-                            status, body = api_call(base, key, auth_index, "POST", url, headers, "{}")
+                            status, body = api_call(client, auth_index, "POST", url, headers, "{}")
                         except Exception as exc:
                             last_err = str(exc)[:120]
                             continue
@@ -351,7 +363,7 @@ def main() -> int:
                     if not success and proj:
                         for url in ANTIGRAVITY_MODEL_URLS:
                             try:
-                                status, body = api_call(base, key, auth_index, "POST", url, headers, json.dumps({"project": proj}, separators=(",", ":")))
+                                status, body = api_call(client, auth_index, "POST", url, headers, json.dumps({"project": proj}, separators=(",", ":")))
                             except Exception as exc:
                                 last_err = str(exc)[:120]
                                 continue
@@ -386,7 +398,7 @@ def main() -> int:
                         "thinking": {"type": "enabled", "budget_tokens": 1024}
                     }
                     try:
-                        status, rbody = api_call(base, key, auth_index, "POST", url, headers, json.dumps(body))
+                        status, rbody = api_call(client, auth_index, "POST", url, headers, json.dumps(body))
                         ok = 200 <= status < 300
                         if not ok and isinstance(rbody, dict):
                             err = _text(rbody.get("error") or rbody.get("msg"))[:120] or err
@@ -405,6 +417,8 @@ def main() -> int:
         _emit(prog, separators=(",", ":"))
         sys.stdout.flush()
 
+    if refused():
+        return 0
     summary = {"ok": ok_count > 0 or not targets, "pinged": len(targets), "succeeded": ok_count, "results": results}
     _emit(summary, separators=(",", ":"))
     sys.stdout.flush()

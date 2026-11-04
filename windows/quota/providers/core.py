@@ -102,35 +102,47 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
-_OPENER = urllib.request.build_opener(_NoRedirect)
+# No proxy, ever: an environment proxy would receive the key on plain http.
+_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect)
 
 
 class _PinnedHandler(urllib.request.HTTPHandler):
-    """Plain http to one already-validated address; the URL's name is only the Host header."""
+    """Plain http to already-validated addresses; the URL's name is only the Host header."""
 
-    def __init__(self, address: str) -> None:
+    def __init__(self, addresses: list[str]) -> None:
         super().__init__()
-        self.address = address
+        self.addresses = list(addresses)
 
     def http_open(self, req):
-        address = self.address
+        addresses = self.addresses
 
         class Connection(http.client.HTTPConnection):
             def connect(self):
-                self.sock = socket.create_connection((address, self.port), self.timeout)
+                # Like socket.create_connection over a name's answers, but only
+                # over these: the next one is tried when a connection fails, so
+                # localhost works whether ::1 or 127.0.0.1 answers first. The
+                # request is sent once, on the first connection that opens.
+                failure: OSError = OSError("no address")
+                for address in addresses:
+                    try:
+                        self.sock = socket.create_connection((address, self.port), self.timeout)
+                        return
+                    except OSError as error:
+                        failure = error
+                raise failure
 
         return self.do_open(Connection, req)
 
 
 def http_request(method: str, url: str, headers: dict[str, str] | None = None,
-                 body: bytes | None = None, timeout: float = 15, address: str | None = None) -> Response:
-    """One HTTP request with a timeout and no redirects. Raises OSError on transport failure.
+                 body: bytes | None = None, timeout: float = 15, addresses: list[str] | None = None) -> Response:
+    """One HTTP request with a timeout, no redirects and no proxy. Raises OSError on transport failure.
 
-    With `address`, a plain http request connects to that address and never
-    resolves the name again, and no proxy is used."""
+    With `addresses`, a plain http request connects only to those addresses, in
+    order, and never resolves the name again."""
     request = urllib.request.Request(url, data=body, method=method, headers=dict(headers or {}))
-    opener = _OPENER if address is None else urllib.request.build_opener(
-        urllib.request.ProxyHandler({}), _NoRedirect, _PinnedHandler(address))
+    opener = _OPENER if addresses is None else urllib.request.build_opener(
+        urllib.request.ProxyHandler({}), _NoRedirect, _PinnedHandler(addresses))
     try:
         with opener.open(request, timeout=timeout) as reply:
             return Response(reply.status, dict(reply.headers.items()), reply.read())

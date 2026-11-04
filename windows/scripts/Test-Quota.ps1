@@ -3,8 +3,8 @@ param(
     [Parameter(Mandatory)][string]$QtPrefix,
     [Parameter(Mandatory)][string]$BuildRoot,
     [string]$RunRoot,
-    [ValidateSet('configured', 'states', 'offline', 'unconfigured', 'disabled', 'keepalive', 'hub', 'refused', 'refused-restart')]
-    [string[]]$Modes = @('configured', 'states', 'offline', 'unconfigured', 'disabled', 'keepalive', 'hub', 'refused', 'refused-restart'),
+    [ValidateSet('configured', 'states', 'offline', 'unconfigured', 'disabled', 'keepalive', 'hub', 'hub-http', 'refused', 'refused-restart', 'refused-keepalive')]
+    [string[]]$Modes = @('configured', 'states', 'offline', 'unconfigured', 'disabled', 'keepalive', 'hub', 'hub-http', 'refused', 'refused-restart', 'refused-keepalive'),
     # Drawer sizes as "<width>x<height>". configured runs every size, states
     # runs the sizes at least 400 high, offline, unconfigured and disabled use the first.
     [ValidatePattern('^\d+x\d+$')]
@@ -56,6 +56,15 @@ param(
 #                 never starts and the footer says to update cpa-agents.json. The
 #                 cache keeps a fingerprint of the refusal, never the key;
 #   refused-restart  a new shell with that cache and the same key sends nothing.
+#   hub-http      "Detailed usage via CLIProxyAPI" on, with a plain-http hub that
+#                 is not this PC's loopback name (the stub on 127.0.0.2 stands in
+#                 for the local network): the helper reads it. Switching Detailed
+#                 usage off stops the helper within a second, and Refresh now does
+#                 not start it again;
+#   refused-keepalive  a CPA Manager summary accepts the key, then the hub
+#                 refuses the real Keepalive script's first api-call. The drawer
+#                 adopts Keepalive's refusal: nothing more goes out, by Refresh
+#                 now, Keepalive, analytics or the panel off and on.
 ## It never contacts a real CPA or upstream provider, uses no credentials, takes
 # no pointer input and never touches the live desktop.
 $ErrorActionPreference = 'Stop'
@@ -162,7 +171,7 @@ function Invoke-QuotaSmoke([string]$Mode, [string]$Geometry) {
     # Keep the bar wrapper's Loader inactive; the quota drawer is the subject.
     # The disabled mode also switches the Nexus "Agent usage panel" setting off.
     $shellJson = if ($Mode -eq 'disabled') { '{"bar":{"persistent":false},"windows":{"quota":{"enabled":false}}}' }
-        elseif ($Mode -like 'refused*') { '{"bar":{"persistent":false},"windows":{"quota":{"cpaHub":true}}}' }
+        elseif ($Mode -in @('refused', 'refused-restart', 'hub-http')) { '{"bar":{"persistent":false},"windows":{"quota":{"cpaHub":true}}}' }
         else { '{"bar":{"persistent":false}}' }
     Write-Utf8NoBom "$profile\config\shell.json" $shellJson
     # The replacement entry keeps all three directory pragmas, pointed at this
@@ -185,8 +194,13 @@ function Invoke-QuotaSmoke([string]$Mode, [string]$Geometry) {
         } elseif ($Mode -eq 'hub') {
             $stub = Start-Stub $modeRoot 'stock' $hubStubScript "--admin-key $hubKey"
             $baseUrl = $stub.BaseUrl
+        } elseif ($Mode -eq 'hub-http') {
+            $stub = Start-Stub $modeRoot 'stock' $hubStubScript "--admin-key $hubKey --host 127.0.0.2"
+            $stub.BaseUrl = "http://127.0.0.2:$($stub.Port)"
+            $baseUrl = $stub.BaseUrl
         } elseif ($Mode -like 'refused*') {
-            $stub = Start-Stub $modeRoot 'manager' $hubStubScript "--admin-key $hubKey --refuse 401"
+            $refuse = if ($Mode -eq 'refused-keepalive') { 'api-401' } else { '401' }
+            $stub = Start-Stub $modeRoot 'manager' $hubStubScript "--admin-key $hubKey --refuse $refuse"
             $baseUrl = $stub.BaseUrl
             if ($Mode -eq 'refused-restart') {
                 if (-not $script:refusedCache -or -not (Test-Path -LiteralPath $script:refusedCache)) { throw 'refused-restart needs the refused run''s cache.' }
@@ -205,7 +219,7 @@ function Invoke-QuotaSmoke([string]$Mode, [string]$Geometry) {
         }
         if ($Mode -ne 'unconfigured') {
             Write-Utf8NoBom "$profile\config\quota.json" ('{{"enabled":true,"refreshIntervalMs":600000,"geometry":{{"width":{0},"height":{1}}}}}' -f $width, $height)
-            $configJson = [ordered]@{ baseUrl = $baseUrl; adminKey = $(if ($Mode -eq 'hub' -or $Mode -like 'refused*') { $hubKey } else { 'smoke-placeholder' }) } | ConvertTo-Json
+            $configJson = [ordered]@{ baseUrl = $baseUrl; adminKey = $(if ($Mode -like 'hub*' -or $Mode -like 'refused*') { $hubKey } else { 'smoke-placeholder' }) } | ConvertTo-Json
             Write-Utf8NoBom "$profile\config\cpa-agents.json" $configJson
         }
 
@@ -244,6 +258,8 @@ function Invoke-QuotaSmoke([string]$Mode, [string]$Geometry) {
         foreach ($variable in @($info.EnvironmentVariables.Keys | Where-Object { $_ -like 'CAELESTIA_*' -or $_ -like 'QS_WINDOWS_*' })) {
             $info.EnvironmentVariables.Remove($variable)
         }
+        # The real Keepalive (refused-keepalive) must find no inference key to send.
+        $info.EnvironmentVariables.Remove('CPA_API_KEY')
         $system32 = Join-Path $env:SystemRoot 'System32'
         $info.EnvironmentVariables['PATH'] = "$QtPrefix\bin;$qmlRoot\Caelestia\lib;$qmlRoot\M3Shapes;$system32;$env:SystemRoot"
         $info.EnvironmentVariables['QT_PLUGIN_PATH'] = "$QtPrefix\plugins"
@@ -265,7 +281,7 @@ function Invoke-QuotaSmoke([string]$Mode, [string]$Geometry) {
         $info.EnvironmentVariables['XDG_STATE_HOME'] = "$profile\state"
         $info.EnvironmentVariables['XDG_CACHE_HOME'] = "$profile\cache"
         $info.EnvironmentVariables['XDG_DATA_HOME'] = "$profile\data"
-        if ($Mode -eq 'keepalive' -or $Mode -eq 'hub' -or $Mode -like 'refused*') { $info.EnvironmentVariables['CAELESTIA_QUOTA_PYTHON'] = $python }
+        if ($Mode -eq 'keepalive' -or $Mode -like 'hub*' -or $Mode -like 'refused*') { $info.EnvironmentVariables['CAELESTIA_QUOTA_PYTHON'] = $python }
         $tokensScreenshot = Join-Path $modeRoot 'quota-tokens.png'
         $resetsScreenshot = Join-Path $modeRoot 'quota-resets.png'
         $info.EnvironmentVariables['CAELESTIA_QUOTA_TOKENS_SCREENSHOT'] = ([Uri]$tokensScreenshot).AbsoluteUri
@@ -314,7 +330,7 @@ function Invoke-QuotaSmoke([string]$Mode, [string]$Geometry) {
         # carry the drawer's whole model, see CAELESTIA_QUOTA_SMOKE_HUB_STATE) or the cache.
         $sentinelLeaks = @(@($hubKey, $hubToken, $hubLoginId) | Where-Object { "$text`n$cacheText".Contains($_) })
         $hubStats = $null
-        if (($Mode -eq 'hub' -or $Mode -like 'refused*') -and $stub) {
+        if (($Mode -like 'hub*' -or $Mode -like 'refused*') -and $stub) {
             try { $hubStats = Invoke-RestMethod -Uri "$($stub.BaseUrl)/__stats" -TimeoutSec 5 } catch { $hubStats = $null }
         }
 
@@ -377,13 +393,23 @@ function Invoke-QuotaSmoke([string]$Mode, [string]$Geometry) {
                 $cacheProviders -eq 3 -and $cacheText.Contains('"history"') -and $cacheText.Contains('"resetCredits":{"count":2') -and
                 $hubStats -and $hubStats.calls.'api-call' -gt 0 -and $hubStats.maxInFlight -eq 1 -and $hubStats.badTokenHeaders -eq 0 -and
                 -not $cacheLeaks -and $sentinelLeaks.Count -eq 0
+        } elseif ($Mode -eq 'hub-http') {
+            $passed = $passed -and
+                $text -match 'CAELESTIA_QUOTA_SMOKE_HUB_HTTP_OFF .*"helper":"gone","wanted":false,"restarted":false' -and
+                $hubStats -and $hubStats.calls.'api-call' -gt 0 -and -not $hubStats.calls.summary -and
+                -not $cacheLeaks -and $sentinelLeaks.Count -eq 0
         } elseif ($Mode -like 'refused*') {
             if ($Mode -eq 'refused' -and (Test-Path -LiteralPath $cachePath)) { $script:refusedCache = $cachePath }
-            # refused: the one request that found out; refused-restart: none at all.
-            $passed = $passed -and
+            # refused: the one request that found out; refused-restart: none at all;
+            # refused-keepalive: one summary and Keepalive's listing and refused api-call.
+            $requestsOk = if ($Mode -eq 'refused-keepalive') {
+                $hubStats -and $hubStats.calls.summary -eq 1 -and $hubStats.calls.'auth-files' -eq 1 -and $hubStats.calls.'api-call' -eq 1
+            } else {
+                $hubStats -and $hubStats.total -eq $(if ($Mode -eq 'refused') { 1 } else { 0 })
+            }
+            $passed = $passed -and $requestsOk -and
                 $text -match 'CAELESTIA_QUOTA_SMOKE_REFUSED .*"refused":true' -and
                 $text -match 'CAELESTIA_QUOTA_SMOKE_REFUSED .*"footer":true' -and
-                $hubStats -and $hubStats.total -eq $(if ($Mode -eq 'refused') { 1 } else { 0 }) -and
                 $cacheText -match '"refusal":\{"salt":"[0-9a-f]+","fingerprint":"[0-9a-f]{16}","code":"key_rejected"' -and
                 (Test-Path -LiteralPath $screenshot) -and (Get-Item -LiteralPath $screenshot).Length -gt 0 -and
                 -not $cacheLeaks -and $sentinelLeaks.Count -eq 0

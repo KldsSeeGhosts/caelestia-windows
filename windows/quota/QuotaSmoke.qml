@@ -560,6 +560,57 @@ ShellRoot {
                 quotaWidth: quota.width, quotaEnabled: panels.quotaEnabled
             }));
 
+            if (root.mode === "refused-keepalive") {
+                // A CPA Manager summary accepts the key, then the hub refuses
+                // Keepalive's first api-call. The real Keepalive script runs.
+                if (driver.phase === 0) {
+                    if (!Quota.summaryAnswered || Quota.loading) {
+                        if (driver.retries++ < 100)
+                            return;
+                        root.fail("refused-keepalive: the summary did not load: status=" + Quota.status);
+                        return;
+                    }
+                    Quota.triggerKeepalive();
+                    driver.phase = 1;
+                    driver.retries = 0;
+                    return;
+                }
+                if (!Quota.keyRefused || Quota.keepaliveRunning) {
+                    if (driver.retries++ < 150)
+                        return;
+                    root.fail("Keepalive's refusal did not close the gate: refused=" + Quota.keyRefused
+                        + " running=" + Quota.keepaliveRunning + " error=" + Quota.keepaliveError);
+                    return;
+                }
+                driver.step = 20;
+                driver.phase = 0;
+                driver.retries = 0;
+                return;
+            }
+
+            if (root.mode === "hub-http") {
+                // "Detailed usage" on, with a plain-http hub that is not this PC's
+                // loopback name: the helper is the only source.
+                if (Quota.providers.length !== 3 || Quota.hubState !== "ok") {
+                    if (driver.retries++ < 150)
+                        return;
+                    root.fail("hub-http accounts did not load: providers=" + Quota.providers.length + " hub=" + Quota.hubState
+                        + " status=" + Quota.status + " error=" + Quota.error);
+                    return;
+                }
+                driver.hubPid = Number(Quota.hubProcessId) || 0;
+                if (driver.hubPid <= 0) {
+                    root.fail("hub-http helper has no process id");
+                    return;
+                }
+                // Detailed usage off, the panel still on.
+                GlobalConfig.windows = { quota: { enabled: true, cpaHub: false } };
+                driver.step = 30;
+                driver.phase = 0;
+                driver.retries = 0;
+                return;
+            }
+
             if (root.mode === "refused" || root.mode === "refused-restart") {
                 // The hub answers 401 to every key (refused), or the cache already
                 // holds this key's refusal (refused-restart). The harness counts
@@ -1232,6 +1283,44 @@ ShellRoot {
                 // Back on: the cached reading is there at once, with nothing reopened.
                 if (!Quota.enabled || Quota.providers.length !== 5 || quota.visible) {
                     root.fail("re-enabling lost the cache or reopened the drawer: providers=" + Quota.providers.length);
+                    return;
+                }
+                driver.stop();
+                console.log("CAELESTIA_QUOTA_SMOKE_PASS", root.mode);
+                Qt.quit();
+            }
+            return;
+        }
+
+        // Detailed usage switched off over a plain-http hub: the helper is gone
+        // within a second, and Refresh now does not start it again.
+        if (driver.step === 30) {
+            if (driver.phase === 0) {
+                if (driver.retries++ < 5)
+                    return;
+                pidCheck.exec([Quickshell.env("CAELESTIA_QUOTA_PYTHON"), "-I", "-c", root.pidCheckScript, String(driver.hubPid)]);
+                driver.phase = 1;
+                return;
+            }
+            if (driver.phase === 1) {
+                if (pidCheck.running || pidCheck.result === "")
+                    return;
+                Quota.refresh(true);
+                driver.phase = 2;
+                driver.retries = 0;
+                return;
+            }
+            if (driver.phase === 2) {
+                if (driver.retries++ < 5)
+                    return;
+                const restarted = (Number(Quota.hubProcessId) || 0) > 0;
+                console.log("CAELESTIA_QUOTA_SMOKE_HUB_HTTP_OFF", JSON.stringify({
+                    pid: driver.hubPid, helper: pidCheck.result, wanted: Quota.hubWanted, restarted: restarted,
+                    cpaHub: QuotaConfig.cpaHub, status: Quota.status
+                }));
+                if (pidCheck.result !== "gone" || Quota.hubWanted || restarted) {
+                    root.fail("Detailed usage off left hub mode on: helper=" + pidCheck.result
+                        + " wanted=" + Quota.hubWanted + " restarted=" + restarted);
                     return;
                 }
                 driver.stop();

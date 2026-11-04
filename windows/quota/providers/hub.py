@@ -87,10 +87,11 @@ PLAIN_HTTP_NETWORKS = tuple(ipaddress.ip_network(n) for n in (
     "100.64.0.0/10", "fd7a:115c:a1e0::/48"))
 
 
-def key_address(url: str) -> str | None:
+def key_addresses(url: str) -> list | None:
     """Where the key may be sent for url: None for https (TLS checks the name),
-    else the one resolved address to connect to. Plain http needs every address
-    the host resolves to inside PLAIN_HTTP_NETWORKS; names are never trusted."""
+    else the resolved addresses to connect to, in the resolver's order. Plain
+    http needs every address the host resolves to inside PLAIN_HTTP_NETWORKS;
+    names are never trusted."""
     parts = urllib.parse.urlsplit(url)
     if parts.scheme == "https" and parts.hostname:
         return None
@@ -103,12 +104,12 @@ def key_address(url: str) -> str | None:
         raise HubRefused("unreachable") from None
     if not addresses or not all(any(a in n for n in PLAIN_HTTP_NETWORKS) for a in addresses):
         raise HubRefused("insecure")
-    return str(addresses[0])
+    return list(dict.fromkeys(str(a) for a in addresses))
 
 
 def allows_key(url: str) -> bool:
     try:
-        key_address(url)
+        key_addresses(url)
         return True
     except HubRefused:
         return False
@@ -206,15 +207,15 @@ class Hub:
             key = self.key
             if refusal_matches(self.refused, key):
                 raise HubRefused(self.refused["code"])
-            # Resolved and checked on every call, then connected to that very
-            # address, so a second DNS answer cannot redirect the key.
-            address = key_address(self.base_url)
+            # Resolved and checked on every call, then connected only to those
+            # addresses, so a second DNS answer cannot redirect the key.
+            addresses = key_addresses(self.base_url)
             headers = {"Authorization": "Bearer " + key, "Accept": "application/json"}
             data = None
             if payload is not None:
                 headers["Content-Type"] = "application/json"
                 data = json.dumps(payload).encode("utf-8")
-            pin = {} if address is None else {"address": address}
+            pin = {} if addresses is None else {"addresses": addresses}
             try:
                 response = self.http(method, self.base_url + "/v0/management/" + path, headers, data, timeout, **pin)
             except OSError:

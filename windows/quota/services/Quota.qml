@@ -107,13 +107,19 @@ Singleton {
     // { salt, fingerprint, code, until } of the last refused key (QuotaHub.js).
     property var keyRefusal: null
     readonly property bool keyRefused: Hub.refusalMatches(root.keyRefusal, root.adminKey)
+    // "Detailed usage via CLIProxyAPI" on, with a plain-http hub off this PC (the
+    // local network or Tailscale). The summary read is loopback-only, so the hub
+    // is the only source. Unlike summaryMissing, this ends with the setting.
+    readonly property bool hubHttpOptIn: QuotaConfig.cpaHub && /^http:\/\//i.test(root.baseUrl) && !root.loopbackHttp(root.baseUrl)
+    // No summary to read: the hub helper is the only source.
+    readonly property bool hubOnly: root.summaryMissing || root.hubHttpOptIn
     readonly property bool hubWanted: root.enabled && root.endpointLoaded && root.baseUrl !== "" && root.adminKey !== ""
         && root.cacheReady && !root.keyRefused
-        && (root.summaryMissing || (QuotaConfig.cpaHub && root.summaryAnswered))
+        && (root.hubOnly || (QuotaConfig.cpaHub && root.summaryAnswered))
     readonly property string hubScript: Quickshell.shellPath("providers/quota_providers.py")
     // Read by the offscreen smoke to prove the helper is gone once switched off.
     readonly property var hubProcessId: hubProcess.processId
-    readonly property double nextUpdateAt: root.summaryMissing ? root.hubNextDueAt
+    readonly property double nextUpdateAt: root.hubOnly ? root.hubNextDueAt
         : root.lastUpdatedAt > 0 ? root.lastUpdatedAt + root.effectiveRefreshMs : 0
 
     readonly property int providerIndex: {
@@ -305,7 +311,10 @@ Singleton {
                     return;
                 try {
                     const msg = JSON.parse(line);
-                    if (msg && msg.type === "progress" && typeof msg.done === "number") {
+                    if (msg && msg.type === "refused") {
+                        // The hub refused the key Keepalive read from cpa-agents.json.
+                        root.adoptRefusal(msg.refusal);
+                    } else if (msg && msg.type === "progress" && typeof msg.done === "number") {
                         root.keepaliveDone = Math.max(0, Math.min(msg.total || root.keepaliveTotal, msg.done));
                         if (msg.total)
                             root.keepaliveTotal = msg.total;
@@ -544,7 +553,7 @@ Singleton {
             return;
         // Stock CLIProxyAPI has no summary to poll; only Refresh now or a new
         // endpoint asks again.
-        if (!force && root.summaryMissing)
+        if (!force && root.hubOnly)
             return;
         // Automatic refreshes never outpace the manager's own TTL.
         if (!force && root.lastRequestAt > 0 && root.ttlMs > 0
@@ -556,12 +565,11 @@ Singleton {
             return;
         }
         // The admin key travels as a Bearer header: plain HTTP only to loopback.
-        if (!/^https:\/\//i.test(root.baseUrl)
-                && !/^http:\/\/(127\.0\.0\.1|localhost|\[::1\])(:\d+)?(\/|$)/i.test(root.baseUrl)) {
+        if (!/^https:\/\//i.test(root.baseUrl) && !root.loopbackHttp(root.baseUrl)) {
             // With "Detailed usage via CLIProxyAPI" on, the hub helper may use
             // plain http on the local network or Tailscale; it resolves the host
             // and checks every address itself. The summary read stays loopback-only.
-            if (QuotaConfig.cpaHub && /^http:\/\//i.test(root.baseUrl)) {
+            if (root.hubHttpOptIn) {
                 root.useHubOnly();
                 return;
             }
@@ -617,6 +625,7 @@ Singleton {
                 if (request.status === 404) {
                     // Stock CLIProxyAPI: no summary, so the hub helper reads it all.
                     root.finishRequest();
+                    root.summaryMissing = true;
                     root.useHubOnly();
                     return;
                 }
@@ -762,6 +771,24 @@ Singleton {
                     request.abort();
             } catch (e) {}
         }
+    }
+
+    function loopbackHttp(url: string): bool {
+        return /^http:\/\/(127\.0\.0\.1|localhost|\[::1\])(:\d+)?(\/|$)/i.test(url);
+    }
+
+    // The hub helper or Keepalive was refused: adopt its record when it is for
+    // this key, which closes the gate (hubWanted then stops the helper).
+    function adoptRefusal(record: var): bool {
+        if (!Hub.refusalMatches(record, root.adminKey))
+            return false;
+        if (!root.keyRefused) {
+            root.keyRefusal = record;
+            root.writeCache();
+        }
+        root.abortRequests();
+        root.showRefusal();
+        return true;
     }
 
     // The hub refused this key: close the gate (which also stops the helper
@@ -1060,7 +1087,6 @@ Singleton {
 
     // No summary (stock CPA, or an opted-in LAN/Tailscale http hub): the hub is the only source.
     function useHubOnly(): void {
-        root.summaryMissing = true;
         root.summaryRecords = [];
         root.summaryIdentities = [];
         root.applyHubStatus();
@@ -1068,7 +1094,7 @@ Singleton {
     }
 
     function applyHubStatus(): void {
-        if (!root.summaryMissing)
+        if (!root.hubOnly)
             return;
         const bad = root.hubState !== "" && root.hubState !== "ok";
         root.error = bad && root.hubRecords.length === 0 ? root.friendlyError(root.hubState) : "";
@@ -1122,17 +1148,8 @@ Singleton {
     }
 
     function applyHubSnapshot(message: var): void {
-        const refusal = message.state && message.state.refusal;
-        if (Hub.refusalMatches(refusal, root.adminKey)) {
-            // The helper was refused: adopt its record; hubWanted then stops it.
-            if (!root.keyRefused) {
-                root.keyRefusal = refusal;
-                root.writeCache();
-            }
-            root.abortRequests();
-            root.showRefusal();
+        if (root.adoptRefusal(message.state && message.state.refusal))
             return;
-        }
         root.hubState = String(message.hub && message.hub.state || "");
         root.hubRecords = (Array.isArray(message.accounts) ? message.accounts : [])
             .filter(a => a && typeof a === "object" && a.provider)
@@ -1179,7 +1196,7 @@ Singleton {
         onRunningChanged: {
             if (hubProcess.running) {
                 root.sendHubConfig();
-                if (!root.summaryMissing)
+                if (!root.hubOnly)
                     root.hubCommand({ type: "summary", accounts: root.summaryIdentities });
             }
         }
@@ -1256,6 +1273,9 @@ Singleton {
     }
 
     onConfiguredChanged: root.maybeRefresh()
+    // Detailed usage switched: a plain-http hub off this PC starts or stops being a source.
+    readonly property bool cpaHub: QuotaConfig.cpaHub
+    onCpaHubChanged: root.maybeRefresh()
     onEnabledChanged: {
         if (root.enabled)
             root.maybeRefresh();
