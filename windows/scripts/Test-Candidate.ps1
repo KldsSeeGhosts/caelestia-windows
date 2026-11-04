@@ -9,7 +9,7 @@ Orchestrates existing checks only:
     Build-Prototype.ps1 -Tests
     Test-BackendNative.ps1
     Test-Smoke.ps1
-    every windows\scripts\Test-*Service.ps1 offscreen fixture
+    every windows\scripts\Test-*Service.ps1 and Test-Accessibility*.ps1 offscreen fixture
     Measure-ShellBenchmark.ps1 -CompareBaseline, only with -PerformanceBaseline
 
 The build root is built once; -SkipBuild reuses it for a cached run. A failed
@@ -505,7 +505,8 @@ try {
         Write-Manifest
     }
 
-    $runners = @(Get-ChildItem -LiteralPath $PSScriptRoot -Filter 'Test-*Service.ps1' -File | Sort-Object Name)
+    $runners = @(@('Test-*Service.ps1', 'Test-Accessibility*.ps1') |
+        ForEach-Object { Get-ChildItem -LiteralPath $PSScriptRoot -Filter $_ -File } | Sort-Object Name)
     foreach ($runner in $runners) {
         $name = $runner.BaseName
         $runnerArguments = @('-QtPrefix', $QtPrefix, '-BuildRoot', $BuildRoot)
