@@ -585,6 +585,28 @@ namespace Caelestia.Takeover {
         [DllImport("user32.dll")] static extern bool RedrawWindow(IntPtr window, IntPtr update, IntPtr region, uint flags);
         [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr SendMessageTimeout(IntPtr window, uint message,
             UIntPtr wParam, string lParam, uint flags, uint timeout, out UIntPtr result);
+        [StructLayout(LayoutKind.Sequential)]
+        struct PlacementPoint { public int X, Y; }
+        [StructLayout(LayoutKind.Sequential)]
+        struct WindowPlacement {
+            public int Length, Flags, ShowCmd;
+            public PlacementPoint Minimum, Maximum;
+            public Rect Normal;
+        }
+        [DllImport("user32.dll")] static extern bool GetWindowPlacement(IntPtr window, ref WindowPlacement placement);
+        [DllImport("user32.dll")] static extern bool SetWindowPlacement(IntPtr window, ref WindowPlacement placement);
+        [DllImport("user32.dll")] static extern bool IsIconic(IntPtr window);
+        [DllImport("user32.dll")] static extern bool IsZoomed(IntPtr window);
+        [DllImport("user32.dll")] static extern IntPtr MonitorFromRect(ref Rect rect, uint flags);
+        [DllImport("user32.dll")] static extern IntPtr GetWindowLongPtr(IntPtr window, int index);
+        [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr window, IntPtr after,
+            int x, int y, int width, int height, uint flags);
+        [DllImport("user32.dll", SetLastError = true)] static extern IntPtr GetProp(IntPtr window, IntPtr name);
+        [DllImport("user32.dll", SetLastError = true)] static extern IntPtr RemoveProp(IntPtr window, IntPtr name);
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] static extern ushort GlobalFindAtom(string name);
+        const string ParkedProperty = "QuickshellTilingParked";
+        const uint MonitorDefaultToNull = 0, MonitorDefaultToNearest = 2;
+        const uint SwpNoZOrder = 0x0004, SwpNoActivate = 0x0010, SwpNoOwnerZOrder = 0x0200, SwpAsyncWindowPos = 0x4000;
 
         const string ExplorerAdvanced = @"Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced";
         static int? ReadMultiMonitorTaskbar() {
@@ -1068,6 +1090,86 @@ namespace Caelestia.Takeover {
                     throw new InvalidOperationException("Taskbar region restoration failed: " + String.Join("; ", regionErrors.ToArray()));
             } finally { if (previous != IntPtr.Zero) SetThreadDpiAwarenessContext(previous); }
         }
+        // A tiler parks a window off screen and tags it with the rectangle to
+        // restore, packed as x | y << 16 | width << 32 | height << 48. The
+        // shell rescues them from its own next start; when it crashed and the
+        // supervisor stops restarting it, this process is the only one left to
+        // do it. Mirrors TilingManager::rescueParked.
+        public static int RescueParkedWindows() {
+            var atom = GlobalFindAtom(ParkedProperty);
+            if (atom == 0) return 0;
+            var tag = new IntPtr(atom);
+            var windows = new List<IntPtr>();
+            EnumWindows(delegate(IntPtr window, IntPtr data) { windows.Add(window); return true; }, IntPtr.Zero);
+            var rescued = 0;
+            // The tiler works in physical pixels, so the packed rectangle is physical.
+            var previous = SetThreadDpiAwarenessContext(new IntPtr(-4));
+            try {
+                foreach (var window in windows) {
+                    var packed = GetProp(window, tag);
+                    if (packed == IntPtr.Zero) continue;
+                    // The tag is consumed whether or not the window needs a move.
+                    RemoveProp(window, tag);
+                    var restore = OnScreen(UnpackRect(unchecked((ulong)packed.ToInt64())));
+                    if (IsIconic(window) || IsZoomed(window)) {
+                        var placement = new WindowPlacement { Length = Marshal.SizeOf(typeof(WindowPlacement)) };
+                        if (!GetWindowPlacement(window, ref placement)) continue;
+                        // A visible restore point needs no move.
+                        var normal = placement.Normal;
+                        var offset = PlacementOffset(window, MonitorFromWindow(window, MonitorDefaultToNearest));
+                        normal.Left += offset.X; normal.Top += offset.Y;
+                        normal.Right += offset.X; normal.Bottom += offset.Y;
+                        if (MonitorFromRect(ref normal, MonitorDefaultToNull) != IntPtr.Zero) continue;
+                        placement.Normal = ScreenToPlacement(window, restore);
+                        SetWindowPlacement(window, ref placement);
+                        rescued++;
+                        continue;
+                    }
+                    if (MonitorFromWindow(window, MonitorDefaultToNull) != IntPtr.Zero) continue;
+                    SetWindowPos(window, IntPtr.Zero, restore.Left, restore.Top,
+                        restore.Right - restore.Left, restore.Bottom - restore.Top,
+                        SwpNoZOrder | SwpNoOwnerZOrder | SwpNoActivate | SwpAsyncWindowPos);
+                    rescued++;
+                }
+            } finally { if (previous != IntPtr.Zero) SetThreadDpiAwarenessContext(previous); }
+            return rescued;
+        }
+        // WINDOWPLACEMENT is in workspace coordinates for ordinary top-level
+        // windows, but not for tool windows.
+        static PlacementPoint PlacementOffset(IntPtr window, IntPtr monitor) {
+            if ((GetWindowLongPtr(window, -20 /* GWL_EXSTYLE */).ToInt64() & 0x80 /* WS_EX_TOOLWINDOW */) != 0)
+                return new PlacementPoint();
+            var info = new MonitorInfo { Size = Marshal.SizeOf(typeof(MonitorInfo)) };
+            if (monitor == IntPtr.Zero || !GetMonitorInfo(monitor, ref info)) return new PlacementPoint();
+            return new PlacementPoint { X = info.Work.Left - info.Monitor.Left, Y = info.Work.Top - info.Monitor.Top };
+        }
+        static Rect ScreenToPlacement(IntPtr window, Rect rect) {
+            var offset = PlacementOffset(window, MonitorFromRect(ref rect, MonitorDefaultToNearest));
+            return new Rect { Left = rect.Left - offset.X, Top = rect.Top - offset.Y,
+                Right = rect.Right - offset.X, Bottom = rect.Bottom - offset.Y };
+        }
+        static Rect UnpackRect(ulong packed) {
+            var left = unchecked((short)(packed & 0xFFFF));
+            var top = unchecked((short)((packed >> 16) & 0xFFFF));
+            return new Rect { Left = left, Top = top,
+                Right = left + (int)((packed >> 32) & 0xFFFF), Bottom = top + (int)((packed >> 48) & 0xFFFF) };
+        }
+        static Rect OnScreen(Rect rect) {
+            if (MonitorFromRect(ref rect, MonitorDefaultToNull) != IntPtr.Zero) return rect;
+            var info = new MonitorInfo { Size = Marshal.SizeOf(typeof(MonitorInfo)) };
+            if (!GetMonitorInfo(MonitorFromRect(ref rect, MonitorDefaultToNearest), ref info)) return rect;
+            var width = info.Work.Right - info.Work.Left;
+            var height = info.Work.Bottom - info.Work.Top;
+            if (width <= 0 || height <= 0) return rect;
+            var w = Math.Min(rect.Right - rect.Left, width);
+            var h = Math.Min(rect.Bottom - rect.Top, height);
+            var left = Bound(rect.Left, info.Work.Left, info.Work.Left + width - w);
+            var top = Bound(rect.Top, info.Work.Top, info.Work.Top + height - h);
+            return new Rect { Left = left, Top = top, Right = left + w, Bottom = top + h };
+        }
+        static int Bound(int value, int minimum, int maximum) {
+            return value < minimum ? minimum : (value > maximum ? maximum : value);
+        }
     }
 
     public sealed class Supervisor : NativeWindow, IDisposable {
@@ -1543,8 +1645,12 @@ namespace Caelestia.Takeover {
             } finally {
                 try { RestoreBanners(); }
                 finally {
-                    try { if (!isolatedTest) Native.RestoreOwned(saved, ownedPid, launch.RestoreWorkAreas, hide || adoptedUncleanBaseline); }
-                    finally {
+                    try {
+                        try { if (!isolatedTest) Native.RestoreOwned(saved, ownedPid, launch.RestoreWorkAreas, hide || adoptedUncleanBaseline); }
+                        // No shell is left to run TilingManager::rescueParked, so
+                        // the windows it parked must come back from here.
+                        finally { Native.RescueParkedWindows(); }
+                    } finally {
                         Native.RecordAction = null;
                         recovery.Dispose();
                         DestroyHandle();
