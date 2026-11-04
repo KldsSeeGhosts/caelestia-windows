@@ -98,6 +98,7 @@ $fixtureTraits = [ordered]@{
     input_settle                = @{ needsDesktop = $false }
     super_drag_wait             = @{ needsDesktop = $false }
     network_wifi_route          = @{ needsDesktop = $false }
+    capture_format              = @{ needsDesktop = $false }
     panel_hidden_reembed        = @{ needsDesktop = $true; qtPlatform = 'windows'; reason = 'creates and shows native panel windows' }
     system_surface              = @{ needsDesktop = $true; qtPlatform = 'offscreen'; reason = 'creates visible native windows at 0,0' }
     desktop_zorder              = @{ needsDesktop = $true; qtPlatform = 'offscreen'; reason = 'creates visible native windows and installs host-scoped WinEvent hooks' }
@@ -106,6 +107,7 @@ $fixtureTraits = [ordered]@{
     keyboard_layout             = @{ needsDesktop = $true; qtPlatform = 'offscreen'; reason = 'creates a real hidden window' }
     native_lifetime             = @{ needsDesktop = $true; qtPlatform = 'offscreen'; reason = 'creates real message-only windows' }
     tray_hook                   = @{ needsDesktop = $true; qtPlatform = 'offscreen'; reason = 'creates a real hidden window' }
+    video_node                  = @{ needsDesktop = $true; qtPlatform = 'offscreen'; reason = 'creates a never-shown D3D11 Quick window' }
 }
 
 New-Item -ItemType Directory -Force -Path $runRoot, (Split-Path -Parent $ManifestPath) | Out-Null
