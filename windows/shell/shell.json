@@ -59,7 +59,6 @@
       "shown": 5,
       "showUnoccupied": true,
       "perMonitor": true,
-      "displayType": "Text",
       "showWindows": true
     },
     "activeWindow": {
@@ -99,7 +98,7 @@
     ],
     "tray": {
       "compact": true,
-      "background": true,
+      "background": false,
       "recolour": false
     }
   },
