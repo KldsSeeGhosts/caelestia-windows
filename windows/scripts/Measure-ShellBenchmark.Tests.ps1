@@ -125,7 +125,7 @@ assert result["groups"]["A/Panel"]["metrics"]["panelDashboardRequestToFrameObser
 assert result["groups"]["A/Panel"]["work"]["panelsShown"] == 10
 assert result["comparison"]["panelRequestToFrameObservedMs"]["verdict"] == "same"
 
-for change in ("missing", "exit", "count", "diagnostic", "workload", "order"):
+for change in ("missing", "exit", "count", "diagnostic", "workload", "order", "display"):
     broken = copy.deepcopy(manifest)
     run = Path(broken["runs"][0]["path"])
     original = {name: (run / name).read_text() for name in ("metadata.json", "completion.json", "stdout.log")}
@@ -145,6 +145,8 @@ for change in ("missing", "exit", "count", "diagnostic", "workload", "order"):
         (run / "metadata.json").write_text(json.dumps(meta))
     elif change == "order":
         broken["runs"].sort(key=lambda value: value["side"])
+    elif change == "display":
+        broken["runs"][0]["displayChanged"] = True
     result = summarize(broken)
     assert result["comparison"] and all(
         value["verdict"] == "inconclusive" for value in result["comparison"].values()
@@ -298,4 +300,8 @@ $verdict = if (Test-Path -LiteralPath "$run\verdict.json") { Get-Content -Litera
 if ($code -ne 3 -or $verdict.overall -ne 'inconclusive' -or $verdict.groups.'A/Reload'.trials -ne 0) {
     throw "Failed trials gave exit $code and verdict '$($verdict.overall)' instead of exit 3 and inconclusive."
 }
-Write-Output 'Failed-trial verdict passed.'
+# The runner held, and released, a system and display power request, and recorded the topology.
+if (-not ($verdict.powerRequest.held -and $verdict.powerRequest.system -and $verdict.powerRequest.display) -or -not $verdict.displays) {
+    throw 'The verdict does not record a held power request and the display topology.'
+}
+Write-Output 'Failed-trial verdict and power request passed.'

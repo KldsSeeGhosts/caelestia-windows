@@ -194,6 +194,8 @@ def aggregate(manifest_path):
         group = groups.setdefault(key, {"trials": [], "errors": []})
         if run["exitCode"]:
             group["errors"].append(f'{run["path"]}: worker exited with {run["exitCode"]}')
+        if run.get("displayChanged"):
+            group["errors"].append(f'{run["path"]}: the display topology changed during the trial')
         try:
             group["trials"].append(summarize_trial(Path(run["path"])))
         except (OSError, ValueError, KeyError, ZeroDivisionError) as error:
@@ -321,6 +323,9 @@ def build_verdict(result, baseline_name=None):
     return {
         "schemaVersion": VERDICT_SCHEMA, "overall": overall, "exitCode": EXIT_CODES[overall],
         "analysisSha256": result["analysisSha256"],
+        "displays": result["manifest"].get("displays"),
+        "powerRequest": result["manifest"].get("powerRequest"),
+        "displayChangedTrials": sum(1 for run in result["manifest"]["runs"] if run.get("displayChanged")),
         "groups": {
             key: {"valid": g["valid"], "trials": len(g["trials"]), "errorCount": g["errorCount"],
                   **provenance(g)}

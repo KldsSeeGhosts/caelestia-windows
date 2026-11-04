@@ -35,6 +35,18 @@ It is raw evidence and may contain paths from logs.
 Keep the run directory for the raw samples, actions, startup phases, and traces.
 `verdict.json` is the shareable, agent-facing result described below.
 
+The runner can run unattended. For the whole run it holds a
+`PowerCreateRequest` power request that keeps the system awake and, outside
+`Offscreen`, keeps the displays on. It releases the request when the run ends.
+`verdict.json` records the request under `powerRequest`.
+The request cannot turn on a monitor that is already off or in standby.
+`NonVisible` still needs presented frames, so it cannot measure while the
+monitors are off. Its trials then fail with `No presented frame` and the
+verdict is `inconclusive`.
+The runner records the active display topology at the start, then again before
+and after each trial. A change makes that trial invalid and its group
+`inconclusive`. `displayChangedTrials` in `verdict.json` counts those trials.
+
 ## Choose a workload
 
 The default idle workload warms for 120 seconds, then observes 300 seconds
