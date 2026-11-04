@@ -58,6 +58,10 @@ requests an FP16 pool (no `R16G16B16A16` in `src/windows`).
   producer and the Qt consumer creates its scene-graph texture with
   `frame->format`. The producer, the shared texture and the consumer cannot
   drift apart.
+- The Qt consumer imports the texture through the RHI with the layout that
+  matches `frame->format` (`capture_texture.cpp`), shared with the video
+  wallpaper. `QSGD3D11Texture::fromNative` is not used: in Qt 6.11.2 it wraps a
+  BGRA8 texture as RGBA8, D3D11 rejects the SRV and the preview stays empty.
 - `grabMonitor` reads back with the chosen `QImage` layout.
 - Device loss: `GetDeviceRemovedReason()` is checked in the frame callback and
   at start. A lost device stops the session with `stopped(true)` and a warning.
@@ -78,7 +82,9 @@ desktop observed):
 - policy and fallback descriptor consistency, negotiation order, and the
   no-format outcome;
 - WGC accepts the policy format and the fallback (pool create/close);
-- source guard: a capture route that spells its own 8-bit layout fails the test.
+- a shared texture in each policy format is imported through the same Qt RHI
+  path the consumer uses, and the reported RHI format must match. A BGRA8
+  texture wrapped as RGBA8 fails this test with `E_INVALIDARG`.
 
 Not covered: repeated live capture sessions' handle and GPU object counts.
 There is no existing capture fixture, and a probe shows D3D11 retains one
