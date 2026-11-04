@@ -591,6 +591,21 @@ ShellRoot {
                 return;
             }
 
+            if (root.mode === "keepalive") {
+                // Keepalive is running when the panel is switched off.
+                if (Quota.providers.length !== 5 || Quota.loading) {
+                    if (driver.retries++ < 60)
+                        return;
+                    root.fail("keepalive run: summary did not load: status=" + Quota.status);
+                    return;
+                }
+                Quota.triggerKeepalive();
+                driver.step = 9;
+                driver.phase = 0;
+                driver.retries = 0;
+                return;
+            }
+
             if (root.mode === "states") {
                 if (Quota.providers.length !== 7) {
                     if (driver.retries++ < 60)
@@ -873,6 +888,52 @@ ShellRoot {
                 driver.groupIndex++;
                 driver.retries = 0;
             });
+            return;
+        }
+
+        // Keepalive: the fake helper (see Test-Quota.ps1) reports one progress
+        // line, then would write a marker file a few seconds later. Switching the
+        // panel off must stop the helper itself, not just the bookkeeping; the
+        // harness checks the process and the marker after this run exits.
+        if (driver.step === 9) {
+            if (driver.phase === 0) {
+                if (!Quota.keepaliveRunning || Quota.keepaliveDone < 1) {
+                    if (driver.retries++ < 60)
+                        return;
+                    root.fail("keepalive helper did not report progress: running=" + Quota.keepaliveRunning
+                        + " done=" + Quota.keepaliveDone + " error=" + Quota.keepaliveError);
+                    return;
+                }
+                root.setPanel(false);
+                driver.phase = 1;
+                driver.retries = 0;
+                return;
+            }
+            if (driver.phase === 1) {
+                if (Quota.keepaliveRunning || Quota.enabled) {
+                    if (driver.retries++ < 15)
+                        return;
+                    root.fail("switching off left Keepalive running: running=" + Quota.keepaliveRunning
+                        + " enabled=" + Quota.enabled);
+                    return;
+                }
+                driver.phase = 2;
+                driver.retries = 0;
+                return;
+            }
+            if (driver.phase === 2) {
+                // Stay alive past the helper's delay (3 s): quitting would end
+                // it anyway, which would hide a helper that kept running. The
+                // harness then checks that its marker file was never written.
+                if (driver.retries++ < 22)
+                    return;
+                console.log("CAELESTIA_QUOTA_SMOKE_KEEPALIVE", JSON.stringify({
+                    running: Quota.keepaliveRunning, enabled: Quota.enabled
+                }));
+                driver.stop();
+                console.log("CAELESTIA_QUOTA_SMOKE_PASS", root.mode);
+                Qt.quit();
+            }
             return;
         }
 

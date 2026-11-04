@@ -272,7 +272,7 @@ Singleton {
         }
 
         onRunningChanged: {
-            if (!keepaliveProcess.running && root.keepaliveRunning) {
+            if (!keepaliveProcess.running && root.keepaliveRunning && QuotaConfig.enabled) {
                 // Defer so onExited wins for a process that did run; a failed
                 // spawn never emits it.
                 keepaliveStartCheck.start();
@@ -284,8 +284,10 @@ Singleton {
             if (root.keepaliveDone < root.keepaliveTotal)
                 root.keepaliveDone = root.keepaliveTotal;
             root.keepaliveRunning = false;
-            // Refresh so the panel reflects the newly-active window.
-            root.refresh(true);
+            // Refresh so the panel reflects the newly-active window, unless the
+            // panel was switched off while the helper ran.
+            if (QuotaConfig.enabled)
+                root.refresh(true);
         }
     }
 
@@ -624,6 +626,12 @@ Singleton {
     // outlives the setting. The cached summary stays for when it is switched on.
     function suspend(): void {
         watchdog.stop();
+        // The off switch also ends Keepalive: it sends inference requests.
+        keepaliveStartCheck.stop();
+        // signal(9) kills; `running = false` only terminates, which does not stop the Python helper on Windows.
+        if (keepaliveProcess.running)
+            keepaliveProcess.signal(9);
+        root.keepaliveRunning = false;
         const aborting = root.spendRequests.concat([root.activeRequest]);
         root.spendRequests = [];
         root.activeRequest = null;

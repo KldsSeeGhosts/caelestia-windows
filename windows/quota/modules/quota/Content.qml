@@ -411,9 +411,9 @@ Item {
         Rectangle {
             anchors.fill: parent
             gradient: Gradient {
-                GradientStop { position: 0; color: Qt.alpha(Colours.tPalette.m3surface, 0) }
-                GradientStop { position: 0.45; color: Qt.alpha(Colours.tPalette.m3surface, 0.94) }
-                GradientStop { position: 1; color: Colours.tPalette.m3surface }
+                GradientStop { position: 0; color: Qt.alpha(Colours.palette.m3surface, 0) }
+                GradientStop { position: 0.25; color: Qt.alpha(Colours.palette.m3surface, 1) }
+                GradientStop { position: 1; color: Qt.alpha(Colours.palette.m3surface, 1) }
             }
         }
         Label {

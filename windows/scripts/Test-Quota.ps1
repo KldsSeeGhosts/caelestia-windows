@@ -3,8 +3,8 @@ param(
     [Parameter(Mandatory)][string]$QtPrefix,
     [Parameter(Mandatory)][string]$BuildRoot,
     [string]$RunRoot,
-    [ValidateSet('configured', 'states', 'offline', 'unconfigured', 'disabled')]
-    [string[]]$Modes = @('configured', 'states', 'offline', 'unconfigured', 'disabled'),
+    [ValidateSet('configured', 'states', 'offline', 'unconfigured', 'disabled', 'keepalive')]
+    [string[]]$Modes = @('configured', 'states', 'offline', 'unconfigured', 'disabled', 'keepalive'),
     # Drawer sizes as "<width>x<height>". configured runs every size, states
     # runs the sizes at least 400 high, offline, unconfigured and disabled use the first.
     [ValidatePattern('^\d+x\d+$')]
@@ -37,7 +37,11 @@ param(
 #                 (windows.quota.enabled in shell.json): the drawer never opens,
 #                 its input region is empty and the service makes no request.
 #                 Switching it on, off and on again at runtime opens, closes and
-#                 quiets the drawer live and keeps the cache.
+#                 quiets the drawer live and keeps the cache;
+#   keepalive     a fake Keepalive helper (a real Python process, swapped in for
+#                 the staged script) reports progress, then would write a marker
+#                 file after a delay. The panel is switched off meanwhile: the
+#                 helper process must be gone and the marker never written.
 ## It never contacts a real CPA or upstream provider, uses no credentials, takes
 # no pointer input and never touches the live desktop.
 $ErrorActionPreference = 'Stop'
@@ -151,7 +155,7 @@ function Invoke-QuotaSmoke([string]$Mode, [string]$Geometry) {
     $savedCache = $false
     $cachePath = Join-Path $profile 'cache\quota-summary.json'
     try {
-        if ($Mode -eq 'configured' -or $Mode -eq 'states' -or $Mode -eq 'disabled') {
+        if ($Mode -eq 'configured' -or $Mode -eq 'states' -or $Mode -eq 'disabled' -or $Mode -eq 'keepalive') {
             $stub = Start-Stub $modeRoot $(if ($Mode -eq 'states') { 'states' } else { 'default' })
             $baseUrl = $stub.BaseUrl
         } elseif ($Mode -eq 'offline') {
@@ -170,6 +174,23 @@ function Invoke-QuotaSmoke([string]$Mode, [string]$Geometry) {
             Write-Utf8NoBom "$profile\config\cpa-agents.json" $configJson
         }
 
+        $fakeDir = Join-Path $modeRoot 'fake-helper'
+        if ($Mode -eq 'keepalive') {
+            New-Item -ItemType Directory -Force $fakeDir | Out-Null
+            $fakeScript = Join-Path $stage 'scripts\cpa_keepalive.py'
+            if (-not (Test-Path -LiteralPath $fakeScript)) { throw "Staged keepalive helper not found: $fakeScript" }
+            # Stand-in for the helper: one progress line, then a marker file after
+            # three seconds. It sends no request and reads no credentials.
+            $fakeBody = @(
+                'import json, os, time',
+                ('d = r"{0}"' -f $fakeDir),
+                'open(os.path.join(d, "pid.txt"), "w").write(str(os.getpid()))',
+                'print(json.dumps({"type": "progress", "done": 1, "total": 7}), flush=True)',
+                'time.sleep(3)',
+                'open(os.path.join(d, "late.txt"), "w").write("late")'
+            ) -join "`n"
+            Write-Utf8NoBom $fakeScript $fakeBody
+        }
         $screenshot = Join-Path $modeRoot 'quota.png'
         $lightScreenshot = Join-Path $modeRoot 'quota-light.png'
         $priorityScreenshot = Join-Path $modeRoot 'quota-priority.png'
@@ -209,6 +230,7 @@ function Invoke-QuotaSmoke([string]$Mode, [string]$Geometry) {
         $info.EnvironmentVariables['XDG_STATE_HOME'] = "$profile\state"
         $info.EnvironmentVariables['XDG_CACHE_HOME'] = "$profile\cache"
         $info.EnvironmentVariables['XDG_DATA_HOME'] = "$profile\data"
+        if ($Mode -eq 'keepalive') { $info.EnvironmentVariables['CAELESTIA_QUOTA_PYTHON'] = $python }
         $info.EnvironmentVariables['CAELESTIA_QUOTA_SMOKE_MODE'] = $Mode
         $info.EnvironmentVariables['CAELESTIA_QUOTA_SMOKE_GEOMETRY'] = $Geometry
         $info.EnvironmentVariables['CAELESTIA_QUOTA_PRIORITY_SCREENSHOT'] = ([Uri]$priorityScreenshot).AbsoluteUri
@@ -250,6 +272,20 @@ function Invoke-QuotaSmoke([string]$Mode, [string]$Geometry) {
         }
         $cacheLeaks = $cacheText -match 'adminKey|baseUrl|smoke-placeholder|@'
 
+        $helperGone = $true
+        if ($Mode -eq 'keepalive') {
+            # The smoke stayed alive past the helper's delay, so a helper that kept
+            # running after the panel went off has written its marker by now.
+            $helperPid = 0
+            $pidFile = Join-Path $fakeDir 'pid.txt'
+            if (Test-Path -LiteralPath $pidFile) { $helperPid = [int](Get-Content -LiteralPath $pidFile -Raw).Trim() }
+            if ($helperPid -gt 0) {
+                $helper = Get-Process -Id $helperPid -ErrorAction SilentlyContinue
+                if ($helper) { $helper.Kill(); $helper.WaitForExit() }
+            }
+            $helperGone = $helperPid -gt 0 -and -not (Test-Path -LiteralPath (Join-Path $fakeDir 'late.txt'))
+        }
+
         if ($Mode -eq 'configured') {
             if (Test-Path -LiteralPath $cachePath) { $script:configuredCache = $cachePath }
             $passed = $passed -and
@@ -284,6 +320,9 @@ function Invoke-QuotaSmoke([string]$Mode, [string]$Geometry) {
                 $text -match 'CAELESTIA_QUOTA_SMOKE_DISABLED .*"enabled":false' -and
                 $text -match 'CAELESTIA_QUOTA_SMOKE_DISABLED .*"regionWidth":0' -and
                 $text -match 'CAELESTIA_QUOTA_SMOKE_DISABLED .*"requests":0'
+        } elseif ($Mode -eq 'keepalive') {
+            $passed = $passed -and $helperGone -and
+                $text -match 'CAELESTIA_QUOTA_SMOKE_KEEPALIVE .*"running":false'
         } elseif ($Mode -eq 'unconfigured') {
             $passed = $passed -and
                 $text -match 'CAELESTIA_QUOTA_SMOKE_UNCONFIGURED .*"configured":false' -and

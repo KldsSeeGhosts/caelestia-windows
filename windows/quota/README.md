@@ -119,7 +119,8 @@ the 384x520 default, the 280 dp minimum width and a short 280x300 drawer, with
 the column alignment (one x for every bar, `%` and reset), the Priority order
 and the 10% error colour asserted; a `states` scenario (long account name, 0%
 left, stale, reconnect, disabled and unreported accounts, `API`/`Auto` and
-monthly-only providers); the offline, unconfigured and `disabled` profiles.
+monthly-only providers); the offline, unconfigured and `disabled` profiles;
+and a `keepalive` run that switches the panel off while a fake helper runs.
 `windows/scripts/Test-QuotaProviderKeyboard.ps1` drives the real drawer by
 keyboard and pointer. Native DPI, pointer and touch checks are separate.
 
@@ -156,7 +157,8 @@ There is no bar entry and no default keybind, matching the Linux overlay.
   `http://127.0.0.1:8317/v1/chat/completions` only when `baseUrl` is loopback).
   It sends real keepalive traffic only when pressed and needs Python plus
   `CPA_API_KEY` (or the `environment.d/cpa.conf` fallback); quota display
-  itself no longer needs either.
+  itself no longer needs either. Switching the panel off ends a running keepalive
+  helper too.
 - **Empty states.** No CPA config shows "Not configured. Add cpa-agents.json to
   the shell config folder." in the muted colour; an unreachable endpoint shows
   one saved-data line; a valid summary with no accounts shows the original
@@ -205,6 +207,9 @@ isolated profiles:
    never opens, the input region is empty and no request is made. Switching the
    setting on, off and on again at runtime opens, closes and quiets the drawer
    and keeps the cache.
+6. **keepalive** - a fake helper process stands in for `cpa_keepalive.py` and
+   would write a marker file three seconds later. The panel is switched off
+   while it runs: the helper must be gone and the marker never written.
 
 It writes `result.json`, per-mode logs, screenshots and the two profile caches
 under a disposable `%TEMP%\caelestia-quota-smoke\<run>` directory. Logs,
@@ -222,9 +227,8 @@ screenshots and caches are intentionally not committed.
   needs CPA inference reachability plus `CPA_API_KEY`.
 - The light screenshot uses a fixed Material 3 baseline palette fixture, not a
   generated wallpaper scheme.
-- Provider logos are shown as shipped (the light or dark variant for the scheme)
-  at reduced opacity. A flat `m3onSurfaceVariant` tint is a follow-up: GPU
-  effects render nothing in the offscreen harness, so it could not be verified
-  there.
+- Provider logos are tinted flat `m3onSurfaceVariant` through the icon colour of
+  a decorative Qt Controls button (no GPU effect, so the offscreen screenshots
+  show the real tint). Native DPI rendering still needs a live check.
 - The provider icon marks are copied from the custom overlay. They are
   third-party brand marks; verify redistribution terms before publishing.
