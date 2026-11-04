@@ -42,18 +42,11 @@ failure, prints a one-line summary, and keeps the run directory on failure.
 Allow up to 90 seconds for a cold start. See
 [windows/NATIVE-BUILD.md](windows/NATIVE-BUILD.md#smoke) for the build context.
 
-For deeper native checks, run the bounded smoke and the combined prototype:
-
-```powershell
-powershell -NoProfile -File windows/scripts/Start-ShellPrototype.ps1 `
-    -QtPrefix $qt -Smoke -ScaleFactor native -ScreenIndex 0
-powershell -NoProfile -File windows/scripts/Test-CombinedPrototype.ps1 -QtPrefix $qt
-```
-
-Add `-BuildRoot <path>` to use a separate build. Run the relevant
-`windows/scripts/Test-<Service>Service.ps1` fixture and
-`Test-<Service>Prototype.ps1` harness for service changes; inspect their
-parameters before running them. For packaging changes, run:
+Run the relevant `windows/scripts/Test-<Service>Service.ps1` offscreen fixture
+for service changes, using `-QtPrefix $qt -BuildRoot <path>` from a disposable
+temporary working directory. Use
+[the live checklist](windows/docs/LIVE-CHECKLIST.md) for installed-shell checks
+with exclusive desktop ownership. For packaging changes, run:
 
 ```powershell
 powershell -NoProfile -File windows/scripts/Test-InstallLicenses.ps1 `

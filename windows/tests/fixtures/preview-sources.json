@@ -1,0 +1,5 @@
+{
+  "windows/tests/fixtures/PreviewShell.qml": "shell.qml",
+  "windows/tests/fixtures/SmokeNotification.qml": "components/SmokeNotification.qml",
+  "windows/tests/fixtures/tray-icon.png": "fixtures/tray-icon.png"
+}

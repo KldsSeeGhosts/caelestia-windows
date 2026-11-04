@@ -107,8 +107,6 @@ The drawer is wired into the shared drawer graph:
   paths, hover area, input region and blob deformation.
 - `windows/shell/adapters/modules/drawers/Panels.qml` imports
   `qs.modules.quota`, exposes `quota`, and anchors `Quota.Wrapper` top-right.
-- `windows/shell-prototype/adapters/modules/drawers/Panels.qml` keeps an inert
-  `quota` slot so the non-combined prototypes still stage the shared files.
 
 There is no bar entry and no default keybind, matching the Linux overlay.
 

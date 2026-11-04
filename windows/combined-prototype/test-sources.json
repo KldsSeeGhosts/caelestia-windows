@@ -1,5 +1,0 @@
-{
-  "windows/combined-prototype/shell.qml": "shell.qml",
-  "windows/combined-prototype/components/SmokeNotification.qml": "components/SmokeNotification.qml",
-  "windows/tray-prototype/fixtures/tray-icon.png": "fixtures/tray-icon.png"
-}

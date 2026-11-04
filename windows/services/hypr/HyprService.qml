@@ -25,7 +25,7 @@ import QtQuick
 // global focused workspace/monitor (monitor.cpp:22-24, workspace.cpp:23), so
 // `workspaceForMonitor()` deliberately returns the global focused workspace for
 // every monitor. That limitation is documented in
-// windows/hypr-prototype/README.md and exercised by the fixture.
+// windows/services/hypr/README.md and exercised by the fixture.
 //
 // Dispatch policy. Observation (enabled) and dispatch (dispatchEnabled) are
 // separate opt-ins and BOTH are required before anything reaches the backend.

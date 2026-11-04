@@ -15,7 +15,7 @@ QtObject {
     readonly property url configFile: "file:///" + (Quickshell.env("CAELESTIA_CONFIG_DIR") || "").replace(/\\/g, "/") + "/shell.json"
 
     // Profile-local state. The staged shell.qml pins Quickshell.stateDir to
-    // <build>/combined-prototype-profile/state, and the scheme bridge writes
+    // <profile>/state, and the scheme bridge writes
     // <profile>/state/caelestia/scheme.json (the upstream CLI's own layout).
     readonly property string state: (Quickshell.stateDir + "/caelestia").replace(/\\/g, "/")
 

@@ -21,7 +21,7 @@ $config | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath "$profile\config\s
 $pragmas = @([regex]::Matches([IO.File]::ReadAllText("$stage\shell.qml"),
     '(?m)^//@ pragma (?:DataDir|StateDir|CacheDir) [^\r\n]+') | ForEach-Object { $_.Value })
 if ($pragmas.Count -ne 3) { throw 'Expected three isolated profile-directory pragmas.' }
-$fixture = [IO.File]::ReadAllText("$repoRoot\windows\tray-prototype\CompactTrayTest.qml")
+$fixture = [IO.File]::ReadAllText("$repoRoot\windows\tests\fixtures\CompactTrayTest.qml")
 [IO.File]::WriteAllText("$stage\shell.qml", (($pragmas -join "`n") + "`n" + $fixture), (New-Object Text.UTF8Encoding($false)))
 $qmlRoot = Join-Path $BuildRoot 'install\qml'
 $info = New-Object Diagnostics.ProcessStartInfo

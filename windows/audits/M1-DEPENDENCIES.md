@@ -14,7 +14,7 @@ The parent selected a **bounded native window**, superseding the initial
 ordinary-window recommendation below. The implementation loads the original
 ContentWindow, StyledWindow, Regions, Interactions, Bar/BarWrapper, Clock/Power,
 and session Content/Wrapper, with explicit unavailable panel/service adapters.
-`windows/shell-prototype/shell.qml` constrains the native window to at most
+The now-retired bounded entry point constrained the native window to at most
 900x620 logical pixels with an 80-pixel inset through margins. It does not
 instantiate Drawers or Exclusions, or enable taskbar/tiling controllers.
 Backend-owned desktop support and startup cleanup are separate from a desktop
@@ -26,11 +26,9 @@ did not run or independently reproduce those tests. Pointer-driven hover,
 focus/dismissal, native monitor/DPI transitions, transparency and lifecycle
 acceptance remain separate M1 gates.
 
-For the M1 slice the staging source of truth is
-[`windows/shell-prototype/sources.json`](../shell-prototype/sources.json):
-42 explicit mappings, plus the entry point and five font/license/provenance
-files added by
-[`Stage-ShellPrototype.ps1`](../scripts/Stage-ShellPrototype.ps1).
+The retired M1 slice used 42 explicit staging mappings, plus its entry point
+and five font/license/provenance files. Those test-only files were removed
+after service fixtures and installed-shell checks superseded the hosts.
 Production stages the separate map in
 [`windows/shell/sources.json`](../shell/sources.json).
 Relative to the initial set below it adds original:

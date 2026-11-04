@@ -1,11 +1,10 @@
-# Native Windows build and prototypes
+# Native Windows build and validation
 
 The first verified build uses Windows 11, Qt 6.11.2 `msvc2022_64`, clang-cl
 20.1.8, Visual Studio Build Tools 2022, Windows SDK 10.0.26100.0, CMake 4.4.4,
-Ninja 1.13.2, and CLI11 2.5.0. The main entry point is the
-[bounded native bar/session prototype](shell-prototype/README.md); the earlier
-standalone component probe has been retired. A build or smoke pass does not
-complete M1.
+Ninja 1.13.2, and CLI11 2.5.0. The production entry point is
+`windows/shell/shell.qml`; the bounded service hosts have been retired.
+A build or smoke pass does not establish live desktop acceptance.
 The separate [final acceptance record](validation/2026-10-25-m1-acceptance/README.md)
 now completes the bounded M1 gate with native input and lifecycle evidence.
 
@@ -169,196 +168,38 @@ is not a containment boundary and accepts relative, traversal and UNC paths.
 The command does not install anything, run the live shell, or read the live
 profile.
 
-## Native bar/session prototype
+## Service fixtures and live checks
 
-After rebuilding for the Windows focus helper:
-
-```powershell
-powershell -NoProfile -File windows/scripts/Start-ShellPrototype.ps1 `
-    -QtPrefix "$devRoot\Qt\6.11.2\msvc2022_64" -Wait -ScaleFactor native -ScreenIndex 0
-```
-
-This stages original ContentWindow/StyledWindow/Regions/Interactions, the bar
-and session content, and explicit unavailable adapters in a fresh
-`shell-runs/shell-<timestamp>/` directory. It opens one native panel window
-inset 80 logical pixels, bounded to 900x620. Hover the left edge to show the bar;
-Power opens the session drawer and Escape closes it. Session actions remain
-unavailable. Do not use the root Linux `shell.qml`.
-
-`-Wait` captures stdout/stderr until the process exits and then writes the
-result JSON and source manifest under `logs/`; it is not a test pass.
-Without `-Wait` or `-Smoke`, the launcher returns the child PID immediately.
-Stop only that prototype PID when finished. `-BuildRoot` selects another output
-directory. `-ScreenIndex` accepts 0-15 and fails if that screen does not exist.
-`-ScaleFactor` accepts `native`, `1`, `1.5`, or `1.75`.
-
-```powershell
-powershell -NoProfile -File windows/scripts/Start-ShellPrototype.ps1 `
-    -QtPrefix "$devRoot\Qt\6.11.2\msvc2022_64" -Smoke -ScaleFactor native -ScreenIndex 0
-```
-
-Add `-Offscreen` to run the smoke on the Qt offscreen QPA with the software
-backend and the basic render loop. It opens no native window and captures
-complete without DWM or vsync. The smoke uses the session notification bus, so
-an installed shell running beside it owns that bus; the notification smoke then
-reports `contended` and marks its local-owner delivery scenarios SKIPPED while
-the backend unit tests cover the local and forwarding paths. The service test
-wrappers accept `-Offscreen` and `-RunRoot`; use a short run root (for example
-`C:\r-233`) because the SchemeRuntime virtual environment lives under it and
-native DLL loading still has Windows path limits.
-
-Add `-MonitorCycle` to a native smoke run with at least two monitors to
-open/capture/close, move the same ContentWindow to the next monitor, repeat,
-and return. Results include `actualScreens` metadata and a `captures` array.
-A rendered placement is not a pass if runtime warnings occur; see the
-validation record for exact results. The corrected native cycle passed on
-150% primary -> 175% negative-origin secondary -> primary with 900x620 geometry
-and no QML diagnostics. The separate native input matrix now also validates
-pointer/focus at both DPIs; smoke alone does not establish those results.
-
-Smoke programmatically opens/closes the original content, checks geometry,
-fonts, DPI and unavailable session actions, saves a PNG and exits. Input and
-native focus activation are disabled during smoke. It has a 60-second outer
-limit and a 15-second QML watchdog and rejects runtime warnings/errors. Use
-`-Offscreen` so the run opens no native window and does not depend on the
-desktop; without it smoke shows a native window on the target monitor.
-Numeric scale overrides are synthetic child-process DPI tests; native uses
-the selected display. Neither replaces real pointer/focus or same-process
-mixed-DPI monitor tests. See the
-[final acceptance record](validation/2026-10-25-m1-acceptance/README.md)
-for the completed matrix, exact revisions and input limitations.
-
-The launcher rewrites only its dedicated `shell-prototype-profile/config/shell.json`
-to the audited Clock/Power/session slice. It isolates configuration, state,
-runtime, data and cache; do not use this profile for personal customization.
-It disables Windows blur for the child. The entry point skips
-Drawers/Exclusions and Taskbar/Tiling controllers, while the backend still
-initializes native support for its own window and shared stale-AppBar cleanup.
-Quickshell also retains its own Windows instance bookkeeping.
-No zero-global-bookkeeping guarantee is implied.
-The tested palette is opaque. Disabled backend blur alone is not evidence of
-system transparency being off; the separate opt-in input test verifies the
-actual Windows preference and advanced-effects state.
-
-For manual input evidence, launch the dedicated fixture in its own STA process:
-
-```powershell
-powershell -NoProfile -STA -File windows/scripts/Start-InputTarget.ps1
-```
-
-The WinForms fixture records JSONL mouse, activation, and keyboard events.
-`-LogPath`, `-ClientWidth` and `-ClientHeight` select its output and client size.
-It owns only that window/log and does not launch another application.
-Capture read-only desktop state before/after a test:
-
-```powershell
-powershell -NoProfile -File windows/scripts/Get-DesktopState.ps1
-```
-
-For the separate M2 audio host, use `Start-ShellPrototype.ps1 -Audio
--AudioMode ReadOnly -Wait` with the same Qt prefix. Audio defaults disabled;
-`Interactive` opts into explicit volume/routing writes and every smoke run
-remains read-only. `Test-AudioPrototype.ps1 -QtPrefix <path>` runs the
-read-only two-monitor/service gate. See the
-[audio prototype instructions](audio-prototype/README.md) for exact commands,
-failure semantics and limitations.
-
-For the opt-in automated native input matrix, see
-[the prototype instructions](shell-prototype/README.md). It uses `SendInput`
-through real Windows routing, a dedicated fixture, exact-instance IPC, and
-native 150%/175% monitor transfer. `-TestTransparencyOff` temporarily changes
-and restores the current user's transparency preference. Keep pointer/keyboard
-input idle during that test. It never enables tiling or taskbar control.
-
-Optional `-OutputPath` saves the report. It queries physical monitor/work
-rectangles, scale, taskbar flags, foreground PID/HWND and relevant process names/PIDs, preserving
-negative origins. It changes only its measurement thread's DPI context
-temporarily, not display/taskbar settings.
-
-## Validation harness matrix
-
-The service and combined hosts are the end-to-end UI smoke matrix. Each runs its
-adapter fixture, the screens it supports (one virtual screen offscreen), and the
-M1 bar/session regression. Run them from a disposable working directory.
-Validation output goes under `-BuildRoot`; stages, profiles and logs stay in the
-checkout's `windows/.local/build` unless a launcher `-RunRoot` overrides it.
-
-| Harness | Coverage |
-| --- | --- |
-| `Test-AudioPrototype.ps1` | Audio disabled/read-only on every screen, endpoint stability, M1 |
-| `Test-BatteryPrototype.ps1` | Battery disabled/read-only/profiles, nested audio regression, M1 |
-| `Test-MediaPrototype.ps1` | Media disabled/read-only, guarded transport controls, M1 |
-| `Test-NetworkPrototype.ps1` | Network disabled/read-only, no scan/command dispatch, M1 |
-| `Test-BluetoothPrototype.ps1` | Bluetooth disabled/read-only, radio/device guards, M1 |
-| `Test-BrightnessPrototype.ps1` | Brightness disabled/read-only, gamma untouched, M1 |
-| `Test-AppsPrototype.ps1` | Apps disabled/read-only, launch guards, frequency store, M1; native desktop run, not offscreen |
-| `Test-TrayPrototype.ps1` | Tray disabled/read-only, fixture preview, hook off, M1 |
-| `Test-SessionPrototype.ps1` | Session disabled/observe, action gating, M1 |
-| `Test-NotificationsPrototype.ps1` | Notifications disabled/local, privacy guards, M1 |
-| `Test-HyprPrototype.ps1` | Hypr disabled only, no backend construction, M1 |
-| `Test-TilingPrototype.ps1` | Tiling disabled only, no wrapper construction, M1 |
-| `Test-CombinedPrototype.ps1` | Every service, popouts, panels, captures, M1 |
-
-Run the offscreen matrix with one M1 cache per invocation so the regression
-executes once for the invocation instead of once per harness:
+The pure service fixtures force Qt's offscreen platform themselves and use
+fake backends. Run them from a disposable working directory after building:
 
 ```powershell
 $repo = (Resolve-Path .).Path
 $qtPrefix = "$env:LOCALAPPDATA\caelestia-dev\Qt\6.11.2\msvc2022_64"
-$buildRoot = 'C:\b-cull'
-# Short run root outside %TEMP% (Windows path limits, #318).
-$runRoot = 'C:\b-cull\run'
-New-Item -ItemType Directory -Force -Path $runRoot | Out-Null
-$m1Cache = Join-Path $runRoot ('m1-result-' + [guid]::NewGuid().ToString('N') + '.json')
-Push-Location $runRoot
+$run = Join-Path $env:TEMP ('caelestia-services-' + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $run | Out-Null
+Push-Location $run
 try {
-    foreach ($harness in @(
-        'Test-AudioPrototype.ps1', 'Test-BatteryPrototype.ps1', 'Test-MediaPrototype.ps1',
-        'Test-NetworkPrototype.ps1', 'Test-BluetoothPrototype.ps1', 'Test-BrightnessPrototype.ps1',
-        'Test-TrayPrototype.ps1', 'Test-SessionPrototype.ps1',
-        'Test-NotificationsPrototype.ps1', 'Test-HyprPrototype.ps1', 'Test-TilingPrototype.ps1',
-        'Test-CombinedPrototype.ps1'
-    )) {
-        Write-Host "== $harness =="
-        & "$repo\windows\scripts\$harness" -QtPrefix $qtPrefix -BuildRoot $buildRoot `
-            -RunRoot $runRoot -Offscreen -M1CachePath $m1Cache
+    Get-ChildItem "$repo\windows\scripts\Test-*Service.ps1" | ForEach-Object {
+        & $_.FullName -QtPrefix $qtPrefix -BuildRoot C:\b-smoke
     }
 } finally {
     Pop-Location
 }
 ```
 
-`-M1CachePath` is optional. Without it each harness still runs M1 exactly once
-for its own invocation; with one shared path the first harness runs it and the
-rest reuse the cached result (`m1Cached=true`). `Test-BatteryPrototype.ps1`
-forwards its cache to the nested audio harness, so that suite also runs M1 once.
-The cache records the build root, the Qt prefix, the build's `sourceRevision`
-and `backendRevision`, and the staged M1 payload identity. `Caelestia-M1Regression.ps1`
-reruns M1 instead of reusing when any of those differ, when the build or Qt
-prerequisites are missing, or when the file cannot be read. If one harness
-throws, the loop stops; run the remaining names individually.
+Adapter fixtures, plugin tests, JS-module tests, `Test-BackendNative.ps1` and
+the versioned installation tests remain separate. Run only suites appropriate
+to the change; native integration checks may open windows or change desktop
+state and require exclusive QA ownership.
 
-The matrix loop runs its 12 hosts with `-Offscreen`, so no window appears and
-`grabToImage` completes without DWM or vsync. Offscreen exposes one virtual
-screen, which is why the loop runs one screen per host. The per-service adapter
-fixtures force the offscreen Qt platform themselves, so
-`Test-<Service>Service.ps1` runs without any window.
+Use [LIVE-CHECKLIST.md](docs/LIVE-CHECKLIST.md) for installed-shell acceptance.
+Builds and offscreen fixtures cannot establish real input, device control or
+mixed-DPI behavior. Historical evidence stays under `windows/validation/`.
 
-`Test-AppsPrototype.ps1` is not in the offscreen loop. The pinned backend skips
-`WindowsDesktopEntryBackend::install()` on the offscreen QPA, so a ReadOnly run
-sees an empty catalog and the frequency checks have no application id to work
-with. Run Apps as a separate native desktop run on the QA owner's desktop, which
-keeps the frequency assertions:
-
-```powershell
-& "$repo\windows\scripts\Test-AppsPrototype.ps1" -QtPrefix $qtPrefix `
-    -BuildRoot $buildRoot -RunRoot $runRoot
-```
-
-`Test-NotificationsPrototype.ps1` marks its local-owner delivery scenarios
-SKIPPED when another shell owns Windows notifications, as described in the
-`-Offscreen` note above. The run still passes its disabled-mode scenarios.
-
-The install, rollback, uninstall, supervisor, backend lifetime/hotplug/hook,
-tiling/fullscreen and Glazier suites remain separate harnesses; this matrix
-covers the service UI hosts that share the M1 regression.
+`Build-Prototype.ps1` and `Start-ShellPrototype.ps1` retain their existing names.
+The latter still supports the `-Combined` developer preview described in the
+[user guide](docs/USER-GUIDE.md#running-from-a-developer-build-combined-preview).
+Its entry point and support assets live under `windows/tests/fixtures/` because
+the launcher, runtime benchmarks and native integration checks still use them.
+They are never included in the installed shell's production staging map.
