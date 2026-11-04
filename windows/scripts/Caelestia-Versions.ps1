@@ -389,7 +389,9 @@ function Complete-CaelestiaInstallIntegration {
         $shortcutWriteAttempted = $true
         New-CaelestiaShortcut $Shortcut $powershell $arguments $Prefix ($RuntimePrefix.TrimEnd('\') + '\qs.exe,0')
         if ($Autostart) {
-            New-Item -Path $run -Force | Out-Null
+            # Never New-Item -Force an existing registry key: it recreates the
+            # key empty and deletes every other application's startup entry.
+            if (-not (Test-Path -LiteralPath $run)) { New-Item -Path $run | Out-Null }
             $runWriteAttempted = $true
             New-ItemProperty -Path $run -Name $RunName -PropertyType String -Value ('"' + $powershell + '" ' + $arguments) -Force | Out-Null
         }
