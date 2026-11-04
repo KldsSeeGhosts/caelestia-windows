@@ -19,13 +19,14 @@ Singleton {
     property bool detected: false
     property bool running: false
     property bool snapshotReady: !Boolean(python)
+    // Keep the native dependency injectable for offscreen ownership fixtures.
+    property var desktopLayer: Native.DesktopLayer
     // This is an ownership guard, NOT rendered-output readiness. The bridge
     // has no first-frame or per-screen presentation acknowledgement (#146).
     // Yield before discovery when a helper is configured, and keep yielding
     // to a known running process even if integration is disabled. Startup
     // scan failure falls back to the shell; it cannot prove WE is absent.
     //
-    // WINDOWS_DESKTOP_OWNERSHIP_BEGIN
     // #214: a detected process is an ownership claim, not proof of ownership.
     // The backend acknowledges the underlay only while a visible wallpaper
     // window is inside the desktop host. Wallpaper Engine keeps running after
@@ -36,10 +37,10 @@ Singleton {
     // host still active) releases the claim so the shell's own wallpaper is
     // visible again. A new process, a refused embed or a lost host stays
     // fail-closed until a fresh acknowledgement.
-    readonly property bool underlaySupported: "underlayActive" in Native.DesktopLayer
-    readonly property bool underlayActive: underlaySupported && Native.DesktopLayer.underlayActive
-    readonly property bool embedRefusedSupported: "embedRefused" in Native.DesktopLayer
-    readonly property bool embedRefused: embedRefusedSupported && Native.DesktopLayer.embedRefused
+    readonly property bool underlaySupported: "underlayActive" in root.desktopLayer
+    readonly property bool underlayActive: underlaySupported && root.desktopLayer.underlayActive
+    readonly property bool embedRefusedSupported: "embedRefused" in root.desktopLayer
+    readonly property bool embedRefused: embedRefusedSupported && root.desktopLayer.embedRefused
     property bool desktopClaimed: false
     property bool desktopHandedBack: false
     readonly property bool ownsDesktop: !snapshotReady || (running && !desktopHandedBack)
@@ -58,8 +59,8 @@ Singleton {
             desktopClaimed = true;
             desktopHandedBack = false;
         } else if (embedRefusedSupported && desktopClaimed && !embedRefused
-                   && Native.DesktopLayer.enabled && Native.DesktopLayer.active
-                   && Native.DesktopLayer.aboveIcons.length === 0) {
+                   && root.desktopLayer.enabled && root.desktopLayer.active
+                   && root.desktopLayer.aboveIcons.length === 0) {
             // The acknowledged wallpaper window left the host while the
             // process keeps running: a genuine handback. A refusal or our own
             // above-icons embed is not, and stays fail-closed. Release the
@@ -86,7 +87,6 @@ Singleton {
         desktopClaimed = underlayActive;
         desktopHandedBack = false;
     }
-    // WINDOWS_DESKTOP_OWNERSHIP_END
     property string status: python ? "discovering" : "unavailable"
     property string lastError: ""
     property string configPath: ""

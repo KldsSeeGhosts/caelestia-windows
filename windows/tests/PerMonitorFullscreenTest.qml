@@ -1,11 +1,21 @@
 import QtQuick
+import Quickshell
+import qs.services
+import qs.modules.drawers
 
-Item {
+ShellRoot {
     id: root
 
     property var monitor: null
-    // The runner inserts the real ContentWindow bindings here.
-    // CONTENT_BINDINGS
+    // Run the complete production window, including the bar's visibility
+    // consumer, with an injected Hypr backend and every native opt-in off.
+    property ContentWindow content: ContentWindow {
+        screen: Quickshell.screens[0]
+        visible: false
+        interactionEnabled: false
+    }
+    readonly property bool hasFullscreen: content.hasFullscreen
+    readonly property bool hasFullscreenOnNormalWs: content.hasFullscreenOnNormalWs
 
     property QtObject monitorA: QtObject {
         property var activeWorkspace: normal
@@ -35,14 +45,19 @@ Item {
         property var lastIpcObject: ({fullscreen: 2})
     }
     property QtObject hypr: QtObject {
+        property bool initialized: true
+        property bool capsLock: false
+        property bool numLock: false
+        property string kbLayout: "us"
+        property string kbLayoutFull: "English (US)"
+        property var monitors: ({values: [monitorA, monitorB]})
+        property var toplevels: ({values: [window, specialWindow]})
+        property var focusedWorkspace: normal
         property var focusedMonitor: monitorA
         property var workspaces: ({values: [special]})
+        function monitorFor(screen): var { return root.monitor; }
     }
-    property QtObject toast: QtObject {
-        // The runner inserts the real Windows Notifs function here.
-        // TOAST_FUNCTION
-    }
-    property bool toastFullscreen: toast.hasFullscreen()
+    property bool toastFullscreen: Notifs.hasFullscreen()
     property int assertions: 0
 
     function check(value, description): void {
@@ -51,8 +66,12 @@ Item {
             throw new Error(description);
     }
 
-    Component.onCompleted: {
+    Component.onCompleted: Qt.callLater(run)
+    function run(): void {
         try {
+            Hypr._nativeLoader.active = false;
+            Hypr.backend = hypr;
+            Hypr.enabled = true;
             check(!hasFullscreen && !hasFullscreenOnNormalWs, "missing monitor");
             monitor = monitorA;
             check(hasFullscreen && hasFullscreenOnNormalWs && toastFullscreen, "fullscreen on A");
@@ -78,6 +97,9 @@ Item {
             check(!hasFullscreen, "move restores A");
             window.lastIpcObject = {fullscreen: 1};
             check(!toastFullscreen, "maximized is not fullscreen");
+            monitor = monitorB;
+            check(!hasFullscreen && !hasFullscreenOnNormalWs && content.bar.shouldBeVisible,
+                "maximized window on the bar's own monitor does not hide the bar");
             window.lastIpcObject = {fullscreen: 2};
             monitorB.lastIpcObject = {specialWorkspace: {name: "special:test"}};
             monitor = monitorB;
@@ -104,6 +126,10 @@ Item {
             monitorB.lastIpcObject = {specialWorkspace: {name: ""}, fullscreenOccluder: false};
             monitor = monitorB;
             check(!hasFullscreen && !toastFullscreen, "occluder gone");
+            // Drop the singleton's reference before the fixture-owned backend
+            // is destroyed during engine teardown.
+            Hypr.enabled = false;
+            Hypr.backend = null;
             console.log("CAELESTIA_PER_MONITOR_FULLSCREEN_PASS " + assertions);
             Qt.quit();
         } catch (error) {

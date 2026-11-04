@@ -1,61 +1,40 @@
 import QtQuick
+import Quickshell.Windows as Native
+import qs.services
 
-// Offscreen regression for #261. Test-WallpaperPreview.ps1 splices the real
-// preview functions and the desktop `current` binding out of Wallpapers.qml.
-// Focusing a cloud placeholder must stop the previous preview and must not
-// hand that path to the desktop renderer. Opening it (onDisk becomes true)
-// may preview. An explicit setWallpaper stays outside this path.
 QtObject {
-    id: root
-
     property int assertions: 0
-    property string currentImage: "C:/walls/current.jpg"
-    property bool externalWallpaperActive: false
-    property bool showPreview: false
-    property string previewPath: ""
-    property var list: [
-        { path: "C:/walls/local.jpg", onDisk: true },
-        { path: "C:/walls/cloud.jpg", onDisk: false }
-    ]
-
-    function samePath(a, b): bool {
-        return String(a ?? "").replace(/\\/g, "/").toLowerCase() === String(b ?? "").replace(/\\/g, "/").toLowerCase();
-    }
-    function check(condition, message): void {
-        if (!condition)
-            throw new Error(message);
+    function check(value, message): void {
         assertions++;
+        if (!value) throw new Error(message);
     }
-
-    // WALLPAPER_CURRENT
-    // WALLPAPER_PREVIEW
-    // WALLPAPER_PREVIEW_ENTRY
-    // WALLPAPER_STOP
-
+    Component.onCompleted: Qt.callLater(run)
     function run(): void {
         try {
-            previewEntry(list[0]);
-            check(showPreview && current === "C:/walls/local.jpg", "focusing a local wallpaper did not preview it");
-
-            previewEntry(list[1]);
-            check(showPreview === false, "focusing a placeholder left the preview running");
-            check(current === currentImage, "focusing a placeholder changed the desktop wallpaper");
-            check(previewPath !== "C:/walls/cloud.jpg", "a placeholder path was stored for the desktop renderer");
-
-            preview("C:/walls/cloud.jpg");
-            check(showPreview === false && current !== "C:/walls/cloud.jpg", "preview() hydrated an unopened placeholder");
-
-            list[1].onDisk = true;
-            previewEntry(list[1]);
-            check(showPreview && current === "C:/walls/cloud.jpg", "an opened placeholder could not preview");
-
+            WallpaperEngine.options = {enabled: false};
+            Wallpapers.files = [
+                {path: "C:/walls/local.jpg", onDisk: true},
+                {path: "C:/walls/cloud.jpg", onDisk: false}
+            ];
+            Wallpapers.previewEntry(Wallpapers.list[0]);
+            check(Wallpapers.showPreview && Wallpapers.current === "C:/walls/local.jpg", "local preview");
+            Wallpapers.previewEntry(Wallpapers.list[1]);
+            check(!Wallpapers.showPreview, "placeholder stops previous preview");
+            check(Wallpapers.current === Wallpapers.currentImage, "placeholder leaves desktop unchanged");
+            check(Wallpapers.previewPath !== "C:/walls/cloud.jpg", "placeholder not stored");
+            Wallpapers.preview("C:/walls/cloud.jpg");
+            check(!Wallpapers.showPreview && Wallpapers.current !== "C:/walls/cloud.jpg", "direct preview cannot hydrate");
+            Native.FsUtils.existingFiles.push("C:/walls/cloud.jpg");
+            check(Wallpapers.setWallpaper("C:/walls/cloud.jpg"), "explicit open accepted");
+            check(Native.Wallpaper.calls.length === 1 && Native.Wallpaper.calls[0] === "C:/walls/cloud.jpg", "native apply recorded");
+            check(Wallpapers.list[1].onDisk, "successful open marks placeholder local");
+            Wallpapers.previewEntry(Wallpapers.list[1]);
+            check(Wallpapers.showPreview && Wallpapers.current === "C:/walls/cloud.jpg", "opened placeholder previews");
             console.log("CAELESTIA_WALLPAPER_PREVIEW_PASS " + assertions);
             Qt.quit();
         } catch (error) {
-            console.log("CAELESTIA_WALLPAPER_PREVIEW_FAIL " + error);
+            console.error("CAELESTIA_WALLPAPER_PREVIEW_FAIL " + error);
             Qt.exit(1);
         }
     }
-
-    Component.onCompleted: run()
 }

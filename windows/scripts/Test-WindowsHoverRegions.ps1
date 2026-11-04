@@ -42,7 +42,8 @@ $timedOut = -not $process.WaitForExit(20000)
 if ($timedOut) { $process.Kill(); $process.WaitForExit() }
 $output = $stdout.GetAwaiter().GetResult() + $stderr.GetAwaiter().GetResult()
 Write-Output $output
-if ($timedOut -or $process.ExitCode -ne 0 -or $output -notmatch 'CAELESTIA_WINDOWS_HOVER_REGIONS_PASS 13' -or
+$marker = [regex]::Match($output, 'CAELESTIA_WINDOWS_HOVER_REGIONS_PASS (\d+)\b')
+if ($timedOut -or $process.ExitCode -ne 0 -or -not $marker.Success -or [int]$marker.Groups[1].Value -lt 13 -or
     $output -match 'CAELESTIA_WINDOWS_HOVER_REGIONS_FAIL|TypeError|ReferenceError|binding loop') {
     throw 'Hover region fixture failed.'
 }

@@ -1,80 +1,70 @@
 import QtQuick
-import QtQuick.Controls
 import QtTest
+import Quickshell
+import Caelestia
+import Caelestia.Config
+import qs.services
+import qs.modules.quota as QuotaPanel
 
-Item {
+// Drive the entire real quota Content, not a cropped provider delegate.
+ShellRoot {
     id: root
-    width: 400
-    height: 100
-
-    function providerIconSource(provider) { return ""; }
-    QtObject {
-        id: logic
-        function groupWorstRemain(group) { return null; }
-    }
-    QtObject {
-        id: quota
-        property var providerGroups: [
-            { provider: "codex", label: "Codex" },
-            { provider: "claude", label: "Claude" }
-        ]
-        property var activeGroup: providerGroups[0]
-        property int selections: 0
-        function selectGroup(provider) {
-            activeGroup = providerGroups.find(group => group.provider === provider);
-            selections++;
+    property int assertions: 0
+    property var input: null
+    property Component inputComponent: Component { TestCase { when: false } }
+    FloatingWindow {
+        id: win
+        visible: true
+        implicitWidth: 420
+        implicitHeight: 720
+        contentItem.Config.screen: Quickshell.screens[0]?.name ?? ""
+        QuotaPanel.Content {
+            id: content
+            width: 400
+            height: 700
         }
     }
-    Row {
-        id: strip
-        property real segment: 100
-        height: 54
-        Repeater {
-            id: tabs
-            model: quota.providerGroups
-            // PROVIDER_DELEGATE
-        }
+    function check(value, message): void {
+        assertions++;
+        if (!value) throw new Error(message);
     }
-    TestCase {
-        name: "QuotaProviderKeyboard"
-        when: windowShown
-
-        function init() {
-            quota.activeGroup = quota.providerGroups[0];
-            quota.selections = 0;
-            tabs.itemAt(1).enabled = true;
-            tabs.itemAt(0).forceActiveFocus(Qt.TabFocusReason);
-            tryVerify(() => tabs.itemAt(0).activeFocus);
-        }
-        function test_select_data() {
-            return [
-                { tag: "Return", key: Qt.Key_Return },
-                { tag: "keypad Enter", key: Qt.Key_Enter },
-                { tag: "Space", key: Qt.Key_Space }
-            ];
-        }
-        function test_select(data) {
-            keyClick(Qt.Key_Tab);
-            verify(tabs.itemAt(1).activeFocus, "Tab focuses Claude");
-            compare(quota.activeGroup.provider, "codex", "focus alone does not select");
-            keyClick(data.key);
-            compare(quota.activeGroup.provider, "claude");
-            compare(quota.selections, 1, "exactly one activation per key click");
-            verify(tabs.itemAt(1).activeFocus, "activation retains focus");
-            keyClick(Qt.Key_Tab, Qt.ShiftModifier);
-            verify(tabs.itemAt(0).activeFocus, "Shift+Tab moves back");
-            compare(quota.activeGroup.provider, "claude", "navigation does not select");
-        }
-        function test_pointer() {
-            mouseClick(tabs.itemAt(1), 50, 20);
-            compare(quota.activeGroup.provider, "claude");
-            compare(quota.selections, 1);
-        }
-        function test_disabled() {
-            tabs.itemAt(1).enabled = false;
-            tabs.itemAt(1).click();
-            compare(quota.activeGroup.provider, "codex");
-            compare(quota.selections, 0, "click respects disabled controls");
+    Component.onCompleted: Qt.callLater(run)
+    function run(): void {
+        try {
+            input = inputComponent.createObject(win.contentItem);
+            const tabs = CUtils.findChildren(content, "quotaProviderTab");
+            check(tabs.length === 2, "real content exposes two provider buttons");
+            for (const key of [Qt.Key_Return, Qt.Key_Enter, Qt.Key_Space]) {
+                Quota.activeGroup = Quota.providerGroups[0];
+                Quota.selections = 0;
+                tabs[0].forceActiveFocus(Qt.TabFocusReason);
+                check(tabs[0].activeFocus, "first tab takes focus");
+                input.keyClick(Qt.Key_Tab);
+                check(tabs[1].activeFocus, "Tab focuses second provider");
+                check(Quota.activeGroup.provider === "codex", "focus alone does not select");
+                input.keyClick(key);
+                check(Quota.activeGroup.provider === "claude", "activation selects provider");
+                check(Quota.selections === 1, "one activation per key");
+                check(tabs[1].activeFocus, "activation retains focus");
+                input.keyClick(Qt.Key_Tab, Qt.ShiftModifier);
+                check(tabs[0].activeFocus, "Shift+Tab returns to first provider");
+                check(Quota.activeGroup.provider === "claude", "navigation preserves selection");
+            }
+            Quota.activeGroup = Quota.providerGroups[0];
+            Quota.selections = 0;
+            input.mouseClick(tabs[1], tabs[1].width / 2, tabs[1].height / 2);
+            check(Quota.activeGroup.provider === "claude", "pointer selects provider");
+            check(Quota.selections === 1, "one pointer activation");
+            Quota.activeGroup = Quota.providerGroups[0];
+            Quota.selections = 0;
+            tabs[1].enabled = false;
+            tabs[1].click();
+            check(Quota.activeGroup.provider === "codex" && Quota.selections === 0, "disabled provider does not activate");
+            console.log("CAELESTIA_QUOTA_PROVIDER_KEYBOARD_PASS " + assertions);
+            Qt.quit();
+        } catch (error) {
+            console.error("CAELESTIA_QUOTA_PROVIDER_KEYBOARD_FAIL " + error);
+            Qt.exit(1);
         }
     }
 }

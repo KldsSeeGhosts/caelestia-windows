@@ -370,7 +370,7 @@ QtObject {
         fixture.wifiConnectingSsid = "SavedNet";
         expectStatus("connecting", "connecting state");
         check(service.connecting && service.connectingSsid === "SavedNet", "connecting SSID");
-        check(service.reason.length > 0, "connecting reason names the SSID");
+        check(service.reason.length > 0, "connecting state provides a reason");
         service.controlsEnabled = true;
         resetCommandCounters();
         service.requestConnect(openNetwork);
