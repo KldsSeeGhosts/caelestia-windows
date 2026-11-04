@@ -1,6 +1,6 @@
 # Capture color policy on mixed HDR and SDR displays
 
-Status: accepted for the current release candidate. Tracked in Linear ERM-614.
+Status: accepted for the current release candidate.
 The route map, the implemented format policy and the manual check are in
 [CAPTURE-COLOR.md](../CAPTURE-COLOR.md).
 

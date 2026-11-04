@@ -1,6 +1,6 @@
 # Windows session service
 
-ERM-507's bounded M2 session slice replaces the M1 always-unavailable
+The bounded Windows session service replaces the M1 always-unavailable
 `Caelestia.Services.SessionManager` adapter with a default-off service that
 projects `Quickshell.Windows.Session` capabilities and, only after a second
 opt-in, dispatches an explicit allowlist. The original session drawer, launcher

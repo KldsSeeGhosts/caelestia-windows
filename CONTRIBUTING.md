@@ -1,11 +1,10 @@
 # Contributing to Caelestia for Windows
 
-AI-assisted and hand-written contributions are both welcome. Contributors
-are responsible for understanding, reviewing and testing what they submit.
-The Windows port itself was built with substantial AI assistance: Claude
-orchestrated work implemented in part by GPT, GLM, DeepSeek and Gemini agents,
-under the maintainer's direction and review. Describe material AI assistance
-in your contribution and verify generated code, dependencies and attribution.
+AI-assisted and hand-written contributions are both welcome. Contributors are
+responsible for understanding, reviewing and testing what they submit. Parts of
+the Windows port were written with AI assistance under the maintainer's
+direction and review. Describe material AI assistance in your contribution and
+verify generated code, dependencies, attribution and documentation.
 
 ## Build
 
@@ -57,12 +56,22 @@ This installs and updates an isolated temporary prefix, verifies notice bytes,
 and uninstalls it without launching the shell or enabling autostart.
 
 Record exact commands, source/runtime revisions, results and limitations.
-Logs normally live under `windows/.local/build/logs/` or the harness-specific
-validation directory. Attach logs and screenshots to the pull request instead
-of committing them, and leave existing `windows/validation/` archives intact.
-Smoke is not proof of live input, device control, mixed-DPI motion or a complete
-release. Desktop takeover, autostart and tiling require explicit opt-in; use
-isolated profiles and one active tiler, preserving other application sessions.
+Logs normally live under `windows/.local/build/logs/` or a disposable test
+directory. Attach logs and screenshots to the pull request instead of committing
+them, and leave existing `windows/validation/` archives intact. Smoke is not
+proof of live input, device control, mixed-DPI motion or a complete release.
+Desktop takeover, autostart and tiling require explicit opt-in; use isolated
+profiles and one active tiler, preserving other application sessions.
+
+For documentation changes, run the privacy gate before opening the pull
+request:
+
+```powershell
+powershell -NoProfile -File windows/scripts/Test-PublicDocs.ps1
+```
+
+It fails on private tracker references, personal paths, agent assignments and
+links that do not resolve inside the repository or to a public URL.
 
 ## Branches, commits and the two repositories
 
@@ -75,6 +84,10 @@ Do not force-push `main` or publish packages as part of routine development.
 The upstream Linux workflows were removed; add Windows CI rather than
 restoring them.
 
+At release time the two repositories become public in place, after one history
+squash. There is no separate export step, so keep private data, credentials and
+internal-only references out of commits from the start.
+
 - [caelestia-windows](https://github.com/KldsSeeGhosts/caelestia-windows)
   contains the preserved upstream UI, Windows adapters, plugins, tooling and
   docs. `upstream` refers to Caelestia; `origin` refers to the port.
@@ -83,7 +96,7 @@ restoring them.
   that revision available in the backend fork before advancing this repo.
   Update `windows/deps/quickshell`'s gitlink and
   `windows/sources.lock.json`'s `quickshell.revision` together in one port
-  commit. Preserve the fork's upstream history and license notices.
+  commit. Preserve the fork's upstream attribution and license notices.
 
 The M3Shapes gitlink and its manifest entry must likewise agree. Do not
 silently edit dependency checkouts or advance pins to uncommitted code.
@@ -100,7 +113,7 @@ shell or tiler was running. Describe enabled takeover and service controls.
 
 Installed logs are under `%LOCALAPPDATA%\caelestia-windows\logs\` by default;
 supervisor logs are under the profile's `runtime\supervisor-<id>\`.
-Source-run logs are under `windows\.local\build\logs\` and harness output
-directories. Custom profiles use their own paths. Redact credentials,
-personal notification content and other private data before attaching logs.
-Read [the user guide](windows/docs/USER-GUIDE.md) for recovery instructions.
+Source-run logs are under `windows\.local\build\logs\`. Custom profiles use
+their own paths. Redact credentials, personal notification content and other
+private data before attaching logs. Read
+[the user guide](windows/docs/USER-GUIDE.md) for recovery instructions.

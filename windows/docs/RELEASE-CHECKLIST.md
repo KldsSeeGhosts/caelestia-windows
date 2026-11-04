@@ -7,17 +7,38 @@ describing a build or prototype smoke as a validated shell release.
 
 ## Source and public availability
 
-- [ ] The maintainer explicitly decides to make both
+Do not change repository visibility as part of this checklist. Only the
+maintainer makes that decision and performs it.
+
+This release goes public in place. Both repositories become public after one
+history squash; there is no export, mirror or separate public repository step.
+
+- [ ] The maintainer approves making
   [caelestia-windows](https://github.com/KldsSeeGhosts/caelestia-windows) and
   [caelestia-quickshell-windows](https://github.com/KldsSeeGhosts/caelestia-quickshell-windows)
-  public. Verify source access without repository credentials before public
-  binary distribution. Only the maintainer performs the visibility change.
-- [ ] Review source and packaged contents for credentials and personal data.
+  public in place, after one history squash. Confirm the squash strategy and
+  the exact date before changing visibility.
+- [ ] Before the squash, review the full commit history for credentials,
+  personal data, private tracker references, private links and internal-only
+  notes. Check the backend fork too. Rewrite or remove what cannot be published;
+  do not rely on the squash to hide it, because the content still needs to be
+  absent from the public tree.
+- [ ] Run `powershell -NoProfile -File windows/scripts/Test-PublicDocs.ps1` and
+  keep its output with the release record. It fails on private tracker
+  references, personal paths, agent assignments and links that do not resolve
+  inside the repository or to a public URL.
 - [ ] Confirm the release commit, backend gitlink and
   `windows/sources.lock.json` agree. Backend changes must be committed and
   available in the backend fork. Confirm the M3Shapes pin too.
-- [ ] Confirm notices, upstream history, source URLs and attribution reflect
-  the exact payload, including the AI-assistance disclosure.
+- [ ] Confirm notices, upstream attribution, source URLs and license texts
+  reflect the exact payload, including the AI-assistance disclosure. The
+  attribution identity at `THIRD-PARTY-NOTICES.md:50` still needs the
+  maintainer's confirmation and is tracked as an open release decision.
+- [ ] Squash the history once as approved, then verify the squashed tree still
+  matches the tested source and that the backend gitlink resolves. Do not rewrite
+  published tags or history afterwards.
+- [ ] After the maintainer changes visibility, verify source access without
+  repository credentials before public binary distribution.
 
 ## Build and compatibility
 
@@ -68,7 +89,7 @@ Smart App Control blocks unsigned native binaries that lack cloud reputation,
 and it ignores self-signed and locally trusted roots (#27). Users who keep it
 on can run the release only if it is signed by a publicly trusted CA.
 
-- [ ] Once the public repositories exist, apply to SignPath Foundation's free
+- [ ] Once both repositories are public, apply to SignPath Foundation's free
   open-source code signing. Paid alternatives (Azure Artifact Signing, an OV
   certificate) need a separate maintainer decision.
 - [ ] Add a Windows CI job that builds from the tagged sources and signs every

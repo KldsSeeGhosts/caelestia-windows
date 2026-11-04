@@ -151,7 +151,7 @@ powershell -NoProfile -File windows/scripts/Start-ShellPrototype.ps1 `
 
 ### Directory layout
 
-All user files live under `%LOCALAPPDATA%\caelestia-windows` (`C:\Users\<You>\AppData\Local\caelestia-windows`):
+All user files live under `%LOCALAPPDATA%\caelestia-windows`:
 
 ```text
 %LOCALAPPDATA%\caelestia-windows\

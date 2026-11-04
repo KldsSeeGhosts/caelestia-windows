@@ -1,6 +1,6 @@
-# Capture color policy: HDR and SDR
+﻿# Capture color policy: HDR and SDR
 
-Status: accepted for the current release candidate. Linear ERM-614. The reasoning
+Status: accepted for the current release candidate. The reasoning
 behind the choice is in [decisions/capture-color-policy.md](decisions/capture-color-policy.md);
 this page is the route map, the code policy and the manual check.
 
@@ -107,3 +107,4 @@ mode and SDR white level with the result.
 3. Move that window from the SDR display to the HDR display while the preview is
    live. Correct: the preview keeps updating and its colors stay correct after
    the move.
+
