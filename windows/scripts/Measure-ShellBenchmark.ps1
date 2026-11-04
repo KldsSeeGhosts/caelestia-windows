@@ -94,7 +94,12 @@ for ($index = 1; $index -le $Runs; $index++) {
             if ($source) { $arguments += @('-SourceRoot', $source) }
             if ($LiveDesktop) { $arguments += '-LiveDesktop' }
             Write-Host "$category $side trial $index/$Runs ($Mode, plant $plant)"
+            # A failed trial is recorded and makes its group inconclusive. Under
+            # Stop, Windows PowerShell turns the worker's stderr into a terminating
+            # error and the run would end without a verdict.
+            $ErrorActionPreference = 'Continue'
             & $windowsPowerShell @arguments *> "$RunRoot\$category-$side-$index.worker.log"
+            $ErrorActionPreference = 'Stop'
             $manifest.runs += [ordered]@{ side=$side; metric=$category; index=$index; path=$path; exitCode=$LASTEXITCODE }
             $manifest | ConvertTo-Json -Depth 8 | Set-Content "$RunRoot\manifest.json" -Encoding UTF8
         }

@@ -284,3 +284,18 @@ foreach ($script in @('Measure-ShellRuntime.ps1', 'Measure-ShellBenchmark.ps1'))
     } finally { $child.Dispose() }
 }
 Write-Output 'Live launch refusal and exclusive baseline publication passed.'
+
+# Failed trials end in an inconclusive verdict, not an aborted run. A missing
+# build root makes every worker fail before it starts a shell.
+$run = Join-Path $TestRoot 'failed-workers'
+$ErrorActionPreference = 'Continue'
+& $hostPath -NoProfile -File "$PSScriptRoot\Measure-ShellBenchmark.ps1" -QtPrefix $PSScriptRoot `
+    -BuildRoot (Join-Path $TestRoot 'missing-build') -SourceRoot "$PSScriptRoot\..\.." `
+    -RunRoot $run -Metric Reload *> (Join-Path $TestRoot 'failed-workers.log')
+$code = $LASTEXITCODE
+$ErrorActionPreference = 'Stop'
+$verdict = if (Test-Path -LiteralPath "$run\verdict.json") { Get-Content -LiteralPath "$run\verdict.json" -Raw | ConvertFrom-Json }
+if ($code -ne 3 -or $verdict.overall -ne 'inconclusive' -or $verdict.groups.'A/Reload'.trials -ne 0) {
+    throw "Failed trials gave exit $code and verdict '$($verdict.overall)' instead of exit 3 and inconclusive."
+}
+Write-Output 'Failed-trial verdict passed.'
