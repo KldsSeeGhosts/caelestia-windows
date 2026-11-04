@@ -1,23 +1,23 @@
 import QtQuick
+import Quickshell
+import Caelestia.Services
+import qs.modules.utilities.cards as Cards
 
-// Offscreen regression for the keep-awake card. Test-IdleInhibitStatus.ps1
-// splices inhibitStatus() out of the utilities card. A display-only leftover
-// is still held, but it must not be described as preventing sleep.
-QtObject {
+// The complete production card consumes a fake request holder. No native
+// inhibition is created and no live profile is read.
+ShellRoot {
     id: root
 
     property int assertions: 0
 
-    function trCtx(text, context): string {
-        return text;
+    property Cards.IdleInhibit card: Cards.IdleInhibit {
+        visible: false
     }
     function check(condition, message): void {
         if (!condition)
             throw new Error(message);
         assertions++;
     }
-
-    // IDLE_STATUS
 
     function run(): void {
         try {
@@ -28,6 +28,14 @@ QtObject {
             check(inhibitStatus(true, false, false, "PowerCreateRequest failed", true) === "Could not prevent sleep", "a failed acquire with nothing held was reported as normal");
             check(inhibitStatus(false, true, false, "", false) === "Suppressed during smoke", "smoke status changed");
             check(inhibitStatus(false, false, false, "", false) === "Live controls are off", "the live-off status changed");
+            IdleHold.held = true;
+            IdleHold.error = "";
+            check(card.preventingSleep, "clean hold enables the active treatment");
+            IdleHold.error = "PowerSetRequest failed";
+            check(!card.preventingSleep, "display-only hold does not enable active treatment");
+            IdleHold.held = false;
+            IdleHold.error = "";
+            check(!card.preventingSleep, "release clears active treatment");
             console.log("CAELESTIA_IDLE_STATUS_PASS " + assertions);
             Qt.quit();
         } catch (error) {
@@ -36,5 +44,8 @@ QtObject {
         }
     }
 
-    Component.onCompleted: run()
+    function inhibitStatus(permitted, smoke, held, error, requested): string {
+        return card.inhibitStatus(permitted, smoke, held, error, requested);
+    }
+    Component.onCompleted: Qt.callLater(run)
 }

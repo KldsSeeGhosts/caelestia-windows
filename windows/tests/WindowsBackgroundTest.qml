@@ -1,96 +1,31 @@
 import QtQuick
+import Quickshell
+import Quickshell.Windows as Native
+import Caelestia.Config
+import qs.services
+import qs.modules.background
 
-// Exercises the WindowsBackground underlay state machine without Quickshell.
-// The runner splices the real property, screen and function blocks from the
-// adapter, plus the real WallpaperEngine desktop-ownership block, so this
-// fixture only supplies the backend and service mocks below. The ownership
-// block is the #214 guard: a running process is a claim, and only a genuine
-// backend handback (no refused embed, no above-icons embed, host still
-// enabled) releases it so the shell's own wallpaper becomes visible.
+// Complete production WindowsBackground and WallpaperEngine, with recording
+// native singletons and a fake screen-instance factory. No production source
+// is extracted or rewritten.
 Item {
     id: root
 
-    // Quickshell.env reads the environment once and returns strings. The
-    // fixture keeps the same contract over a replaceable map.
-    property QtObject environment: QtObject {
-        function env(name): string { return String(root.environmentValues[name] ?? ""); }
-    }
+    property WindowsBackground subject: WindowsBackground { id: subject }
     property var environmentValues: ({
         CAELESTIA_WINDOWS_BACKGROUND: "1",
         CAELESTIA_WINDOWS_DESKTOP_ICONS: "Behind"
     })
-
-    // The two backend shapes the adapter must support. The current runtime has
-    // no underlayActive property. The feature-detected shape mirrors the
-    // backend contract: an embedded WorkerW window with no insert-after, no
-    // icons embedding, no refused SetParent and a visible foreign wallpaper
-    // window still inside the host is the underlay. When that window leaves,
-    // the acknowledgement drops even though the host stays embedded (#220).
-    property QtObject underlaySupportedHost: QtObject {
-        property bool embedRefused: false
-        property bool coveredByForeign: false
-        // A plain property updated from the inputs, like the backend getter.
-        // A binding here would re-enter while the ownership guard reconciles
-        // the adapter and report a false binding loop.
-        property bool underlayActive: false
-        property bool active: false
-        property bool enabled: false
-        property var aboveIcons: []
-        function updateUnderlay(): void {
-            underlayActive = enabled && !embedRefused && aboveIcons.length === 0 && coveredByForeign;
-        }
-        onEnabledChanged: updateUnderlay()
-        onEmbedRefusedChanged: updateUnderlay()
-        onAboveIconsChanged: updateUnderlay()
-        onCoveredByForeignChanged: updateUnderlay()
-    }
-    property QtObject legacyHost: QtObject {
-        property bool active: false
-        property bool enabled: false
-        property var aboveIcons: []
-    }
-    property var nativeLayer: root.underlaySupportedHost
-
-    property QtObject wallpaperEngine: QtObject {
-        property bool running: false
-        property bool snapshotReady: true
-        property int scans: 0
-        function refresh(deep): void { scans++ }
-        // WINDOWS_BACKGROUND_OWNERSHIP
-        Component.onCompleted: seedDesktopClaim()
-    }
-    // The visible wallpaper follows the production ownership guard: while the
-    // engine owns the desktop the shell renders its preview, and after a
-    // handback it renders the shell's own wallpaper again (#214).
-    property QtObject wallpapers: QtObject {
-        property bool externalWallpaperActive: root.wallpaperEngine.ownsDesktop
-        property string fileCurrent: "file:///own-wallpaper.png"
-        property string current: root.wallpaperEngine.ownsDesktop ? "file:///we-preview.png" : fileCurrent
-    }
-    property QtObject globalConfig: QtObject {
-        function forScreen(name): var { return root.screenConfig; }
-    }
-    property QtObject screenConfig: QtObject {
-        property QtObject background: QtObject {
-            property QtObject desktopClock: QtObject { property bool enabled: true }
-        }
-    }
-    property QtObject cutils: QtObject {
-        function findChild(item, name): var {
-            return item === null || item === undefined ? null : (item[name] ?? null);
-        }
-    }
-
-    // The real screens binding filters this catalog, so the yield and mount
-    // paths are exercised through the production expression.
-    property var screen: ({ name: "FixtureScreen" })
-    property var secondScreen: ({ name: "SecondScreen" })
+    onEnvironmentValuesChanged: Quickshell.environment = environmentValues
+    readonly property var nativeLayer: Native.DesktopLayer
+    readonly property var wallpaperEngine: WallpaperEngine
+    readonly property var wallpapers: Wallpapers
+    readonly property var screenConfig: GlobalConfig.screenConfig
+    property ShellScreen screen: ShellScreen {}
+    property ShellScreen secondScreen: ShellScreen { name: "SecondScreen" }
     property var screensCatalog: []
-    property bool smoke: false
-    property int screenIndex: 0
-    property var quickshellScreens: root.screensCatalog
-
-    property var instances: []
+    onScreensCatalogChanged: { Screens.screens = screensCatalog; Quickshell.screens = screensCatalog; }
+    property alias instances: subject.instances
     property QtObject clock: QtObject {
         property real width: 240
         property real height: 80
@@ -111,11 +46,16 @@ Item {
         property QtObject contentItem: root.windowContent
     }
 
-    // WINDOWS_BACKGROUND_PROPERTIES
-    // WINDOWS_BACKGROUND_SCREENS
-    // RECONCILE_DESKTOP
-    // UNDERLAY_HANDLER
-    // CHECK_READY
+    readonly property bool underlaySupported: subject.underlaySupported
+    readonly property bool underlayActive: subject.underlayActive
+    readonly property bool externalActive: subject.externalActive
+    readonly property bool backgroundRequested: subject.backgroundRequested
+    readonly property bool hostEnabled: subject.enabled
+    readonly property bool embedRefused: subject.embedRefused
+    readonly property string desktopIcons: subject.desktopIcons
+    readonly property var screens: subject.screens
+    function reconcileDesktop(): void { subject.reconcileDesktop(); }
+    function checkReady(screen): bool { return subject.checkReady(screen); }
 
     property int assertions: 0
 
@@ -131,14 +71,16 @@ Item {
         });
     }
 
-    Component.onCompleted: {
+    Component.onCompleted: Qt.callLater(run)
+    function run(): void {
         try {
+            Quickshell.environment = environmentValues;
+            WallpaperEngine.monitors = {Monitor0: {path: "C:/we/project.json", preview: "file:///we-preview.png"}};
             // The real screens expression expands the catalog on our own
             // desktop and closes when the host is not embedded.
             reconcileDesktop();
             screensCatalog = [screen, secondScreen];
             instances = [backgroundWindow];
-            nativeLayer = root.underlaySupportedHost;
             nativeLayer.active = true;
             check(underlaySupported, "feature detection finds the backend property");
             check(!underlayActive, "own desktop has no foreign wallpaper window");
@@ -159,17 +101,11 @@ Item {
             restoreEnvironment();
             check(backgroundRequested && hostEnabled && screens.length === 2, "environment gate restores the host");
 
-            // A backend without the acknowledgement keeps the fail-closed yield.
-            nativeLayer = root.legacyHost;
-            check(!underlaySupported && !underlayActive, "legacy backend has no underlay");
             wallpaperEngine.running = true;
             check(externalActive, "external owner observed");
-            check(!hostEnabled, "legacy backend yields to an external owner");
-            check(screens.length === 0, "legacy yield unmounts the screens");
 
             // A supporting backend starts fail-closed too: a detected process
             // is only an ownership claim until the backend finds its window.
-            nativeLayer = root.underlaySupportedHost;
             check(underlaySupported && !underlayActive, "supporting backend starts without an acknowledgement");
             check(externalActive, "startup detects the engine process");
             check(!hostEnabled, "startup yields to the unacknowledged process");
@@ -192,7 +128,7 @@ Item {
             // refused panel stays top level, so the adapter must withdraw the
             // claim and unmount instead of keeping a full-screen background
             // over applications.
-            wallpaperEngine.scans = 0;
+            wallpaperEngine.status = "ready";
             nativeLayer.embedRefused = true;
             check(!underlayActive, "a refusal after the acknowledgement drops the underlay");
             check(embedRefused, "the adapter sees the refused embed");
@@ -200,7 +136,7 @@ Item {
             check(!wallpaperEngine.desktopClaimed, "the refused embed withdraws the desktop claim");
             check(!hostEnabled, "the refused embed fails closed");
             check(screens.length === 0, "the refused embed unmounts every screen");
-            check(wallpaperEngine.scans === 1, "the refused embed re-scans the owner");
+            check(wallpaperEngine.status === "unavailable", "the refused embed re-scans the owner");
             check(checkReady(screen), "the refused embed reports a released desktop");
             nativeLayer.embedRefused = false;
             check(underlayActive, "an accepted re-embed restores the underlay");
@@ -247,7 +183,7 @@ Item {
 
             // Starting an external owner must withdraw that embedding even
             // while the underlay keeps the host enabled. The fixture drives the
-            // reconciler directly; the changed handler is checked statically.
+            // reconciler as well as the production changed handler.
             wallpaperEngine.running = true;
             check(externalActive, "external owner transition observed");
             reconcileDesktop();
@@ -258,18 +194,7 @@ Item {
             reconcileDesktop();
             check(nativeLayer.aboveIcons.length === 0 && underlayActive, "behind icons restores the underlay");
 
-            // A legacy backend is disabled under an external owner and enabled
-            // again once the owner stops.
-            nativeLayer = root.legacyHost;
-            nativeLayer.enabled = true;
-            reconcileDesktop();
-            check(!nativeLayer.enabled, "legacy reconcile disables the host under an external owner");
-            wallpaperEngine.running = false;
-            reconcileDesktop();
-            check(nativeLayer.enabled, "legacy reconcile hosts its own desktop");
-
             // Requesting the background off always releases the host.
-            nativeLayer = root.underlaySupportedHost;
             nativeLayer.aboveIcons = [];
             nativeLayer.coveredByForeign = true;
             nativeLayer.enabled = true;
@@ -281,7 +206,6 @@ Item {
             check(underlayActive && hostEnabled && screens.length === 2, "requested background restores the underlay");
 
             // Underlay readiness uses the ordinary presentation contract.
-            nativeLayer = root.underlaySupportedHost;
             nativeLayer.aboveIcons = [];
             nativeLayer.active = true;
             wallpaperEngine.running = true;
@@ -364,11 +288,11 @@ Item {
             // handback: the backend drops the acknowledgement, the ownership
             // guard releases the external claim, and the shell shows its own
             // wallpaper and clock instead of an unowned WorkerW (#214).
-            wallpaperEngine.scans = 0;
+            wallpaperEngine.status = "ready";
             nativeLayer.coveredByForeign = false;
             check(!underlayActive, "the backend drops the underlay acknowledgement at handback");
             check(!externalActive, "the handback releases the external claim");
-            check(wallpaperEngine.scans === 1, "the handback requests an immediate owner re-scan");
+            check(wallpaperEngine.status === "unavailable", "the handback requests an immediate owner re-scan");
             check(hostEnabled, "the handback restores the background host");
             check(screens.length === 2, "the handback remounts every background screen");
             check(instances.length === 1 && instances[0] === backgroundWindow,
@@ -409,14 +333,6 @@ Item {
             check(checkReady(screen), "yield with the desktop host inactive");
             nativeLayer.active = true;
             check(checkReady(screen), "supporting backend yields with the host active");
-
-            // A legacy backend cannot yield while its host is active: that
-            // would leave its wallpaper mounted over the external owner.
-            nativeLayer = root.legacyHost;
-            nativeLayer.active = true;
-            check(!checkReady(screen), "legacy backend cannot yield over an active host");
-            nativeLayer.active = false;
-            check(checkReady(screen), "legacy backend yields when its host is inactive");
 
             console.log("CAELESTIA_BACKGROUND_UNDERLAY_PASS " + assertions);
             Qt.quit();

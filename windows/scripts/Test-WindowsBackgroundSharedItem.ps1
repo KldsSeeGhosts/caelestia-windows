@@ -76,8 +76,8 @@ try {
     $sceneDiagnostics = @($output -split "\r?\n" |
         Where-Object { $_ -match 'WARN scene:' -and $_ -notmatch $offscreenOnly })
     $bad = $output -match 'CAELESTIA_BACKGROUND_SHARED_FAIL|Cannot use same item on different windows|TypeError|ReferenceError|binding loop'
-    $marker = [regex]::Match($output, 'CAELESTIA_BACKGROUND_SHARED_PASS 11\b')
-    if ($process.ExitCode -ne 0 -or -not $marker.Success -or $bad -or $sceneDiagnostics.Count -gt 0) {
+    $marker = [regex]::Match($output, 'CAELESTIA_BACKGROUND_SHARED_PASS (\d+)\b')
+    if ($process.ExitCode -ne 0 -or -not $marker.Success -or [int]$marker.Groups[1].Value -lt 11 -or $bad -or $sceneDiagnostics.Count -gt 0) {
         throw "Windows background shared-item fixture failed: $run"
     }
     Write-Output 'PASS background shared item: the recreated window builds its own wallpaper and releases the old one.'

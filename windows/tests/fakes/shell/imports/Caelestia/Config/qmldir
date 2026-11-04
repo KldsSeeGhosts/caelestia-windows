@@ -1,0 +1,2 @@
+module Caelestia.Config
+singleton GlobalConfig 1.0 GlobalConfig.qml

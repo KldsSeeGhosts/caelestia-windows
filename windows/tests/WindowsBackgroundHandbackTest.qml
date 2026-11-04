@@ -27,12 +27,6 @@ ShellRoot {
 
     settings.watchFiles: false
 
-    // Mirrors the WindowsDesktopLayer shape consumed by WindowsBackground.
-    // underlayActive also needs the external wallpaper window inside the host;
-    // when it leaves, the backend drops the acknowledgement but keeps the
-    // host enabled (#220). A plain property updated from the inputs models the
-    // backend getter and avoids a false binding loop when the ownership guard
-    // reconciles the adapter from underlayActiveChanged.
     property QtObject desktopLayer: QtObject {
         property bool active: true
         property bool coveredByForeign: true
@@ -49,14 +43,7 @@ ShellRoot {
         onCoveredByForeignChanged: updateUnderlay()
         Component.onCompleted: updateUnderlay()
     }
-    property QtObject wallpaperEngine: QtObject {
-        property bool running: true
-        property bool snapshotReady: true
-        property int scans: 0
-        function refresh(deep): void { scans++ }
-        // WINDOWS_BACKGROUND_OWNERSHIP
-        Component.onCompleted: seedDesktopClaim()
-    }
+    readonly property var wallpaperEngine: WallpaperEngine
     property QtObject wallpapers: QtObject {
         property bool externalWallpaperActive: root.wallpaperEngine.ownsDesktop
         property string fileCurrent: "file:///own-wallpaper.png"
@@ -65,19 +52,22 @@ ShellRoot {
     readonly property bool backgroundRequested: true
     readonly property bool underlaySupported: "underlayActive" in desktopLayer
     readonly property bool externalActive: wallpapers.externalWallpaperActive
-    // WindowsBackground.yielded, kept in step with the adapter by review.
-    // The ownership claim itself is the spliced WallpaperEngine block. The
+    // The screen-host fake consumes the real WallpaperEngine claim. The
     // claim keeps the host mounted while the backend withdraws the
     // acknowledgement and the guard releases it, so no window is recreated
     // twice on a handback.
     readonly property bool yielded: desktopLayer.embedRefused
         || (externalActive && !desktopLayer.underlayActive
             && (!wallpaperEngine.desktopClaimed || desktopLayer.aboveIcons.length > 0))
-    // WindowsBackground.enabled, kept in step with the adapter by review.
     readonly property bool hostEnabled: backgroundRequested && !yielded
 
     property Item desktopClock: null
     property int assertions: 0
+    Component.onCompleted: Qt.callLater(() => {
+        wallpaperEngine.desktopLayer = desktopLayer;
+        wallpaperEngine.running = true;
+        wallpaperEngine.seedDesktopClaim();
+    })
 
     FontLoader { source: Quickshell.shellPath("assets/google-sans-flex/GoogleSansFlex-VariableFont_GRAD,ROND,opsz,slnt,wdth,wght.ttf") }
     FontLoader { source: Quickshell.shellPath("assets/material-symbols-rounded/MaterialSymbolsRounded.ttf") }
@@ -202,6 +192,8 @@ ShellRoot {
         onTriggered: {
             try {
                 check(wn(behindClock) === "B", "the wallpaper stays on the recreated window after a render turn");
+                wallpaperEngine.running = false;
+                wallpaperEngine.desktopLayer = Native.DesktopLayer;
                 console.log("CAELESTIA_BACKGROUND_HANDBACK_PASS " + assertions);
                 Qt.quit();
             } catch (error) {

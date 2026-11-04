@@ -1,17 +1,17 @@
 import QtQuick
 import Quickshell
+import Quickshell.Wayland
 import Caelestia.Config
 import qs.components
 import qs.services
+import qs.modules.drawers
 
-// Regression fixture for #215. The runner splices the production
-// ContentWindow screen-state binding, its teardown-sensitive expressions and
-// the drawer wrappers' `shouldBeActive` lines into the per-screen window
-// below. Removing the screen from the model tears the window down exactly
+// Regression fixture for #215. The complete production ContentWindow and its
+// drawer wrappers run here. Removing the screen from the model tears it down
 // like a display hot-unplug: the model drops the window's ScreenState before
 // the deferred window deletion runs, so its bindings still evaluate.
 // Any null read is a TypeError and fails the run before the fix.
-Item {
+ShellRoot {
     id: root
 
     property int assertions: 0
@@ -28,26 +28,14 @@ Item {
 
         model: Screens.screens
 
-        Item {
+        ContentWindow {
             id: win
 
             required property ShellScreen modelData
 
-            readonly property ShellScreen screen: modelData
-            // The production expressions reference these. The fixture only
-            // needs the shapes; no drawer is opened.
-            readonly property bool interactionEnabled: true
-            readonly property QtObject panels: QtObject {
-                property QtObject popouts: QtObject {
-                    property string detachedMode: ""
-                }
-            }
-
-            // CONTENT_WINDOW_STATE
-
-            // CONTENT_WINDOW_EXPRESSIONS
-
-            // WRAPPER_BINDINGS
+            screen: modelData
+            visible: false
+            interactionEnabled: false
 
             Component.onCompleted: root.windowCreated = true
         }
@@ -72,7 +60,8 @@ Item {
                 // state, so a window stuck on its fallback fails here.
                 liveState.sidebar = true;
                 check(screenWindow.screenState.sidebar === true, "opening the sidebar did not reach the window");
-                check(screenWindow.sidebarActive === Config.sidebar.enabled, "the sidebar wrapper ignored the open panel");
+                check(screenWindow.interactionWrapper.panels.sidebar.shouldBeActive === Config.sidebar.enabled,
+                    "the real sidebar wrapper ignored the open panel");
 
                 // Hot-unplug. Variants erases the window from its model
                 // immediately, but its deletion is deferred, so the teardown
@@ -80,15 +69,18 @@ Item {
                 Screens.screens = [];
 
                 check(screenWindow.screenState !== null, "the screen state went null during teardown");
-                check(screenWindow.sidebarActive === false, "the sidebar wrapper did not evaluate");
-                check(screenWindow.utilitiesActive === false, "the utilities wrapper did not evaluate");
-                check(screenWindow.dashboardActive === false, "the dashboard wrapper did not evaluate");
-                check(screenWindow.launcherActive === false, "the launcher wrapper did not evaluate");
-                check(screenWindow.sessionActive === false, "the session wrapper did not evaluate");
-                check(screenWindow.osdActive === false, "the osd wrapper did not evaluate");
-                check(screenWindow.quotaActive === false, "the quota wrapper did not evaluate");
-                check(screenWindow.keyboardFocusWanted === false, "the drawer keyboard focus did not evaluate");
-                check(screenWindow.scrimOpacity === 0, "the drawer scrim did not evaluate");
+                const panels = screenWindow.interactionWrapper.panels;
+                check(panels.sidebar.shouldBeActive === false, "the sidebar wrapper did not evaluate");
+                check(panels.utilities.shouldBeActive === false, "the utilities wrapper did not evaluate");
+                check(panels.dashboard.shouldBeActive === false, "the dashboard wrapper did not evaluate");
+                check(panels.launcher.shouldBeActive === false, "the launcher wrapper did not evaluate");
+                check(panels.session.shouldBeActive === false, "the session wrapper did not evaluate");
+                check(panels.osd.shouldBeActive === false, "the osd wrapper did not evaluate");
+                check(panels.quota.shouldBeActive === false, "the quota wrapper did not evaluate");
+                check(screenWindow.WlrLayershell.keyboardFocus === WlrKeyboardFocus.None,
+                    "the real drawer keyboard focus did not evaluate");
+                const scrim = screenWindow.contentItem.children.find(child => child instanceof StyledRect);
+                check(scrim && scrim.opacity === 0, "the real drawer scrim did not evaluate");
                 check(screenWindow.screenState === screenWindow.teardownState, "teardown must use the window's fallback state");
 
                 // Reconnect: the screen comes back and gets a new window.

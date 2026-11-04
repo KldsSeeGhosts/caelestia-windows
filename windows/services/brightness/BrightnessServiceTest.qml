@@ -664,7 +664,7 @@ QtObject {
         // --- Enabled but no backend or a failed component ---------------------
         service.enabled = true;
         check(service.status === "loading", "enabled without a backend is loading");
-        check(service.reason.length > 0, "loading reason names the wait");
+        check(service.reason.length > 0, "loading state provides a reason");
         check(service.canQuery() === false, "loading cannot query");
         check(service.queryMonitor("DISPLAY1") === false && service.queryRequests === 0,
             "loading query stays inert");
@@ -739,7 +739,7 @@ QtObject {
         expectCapability("DISPLAY2", "failed", "denied DDC route");
         check(service.stateFor("DISPLAY2").route === "ddc"
             && service.stateFor("DISPLAY2").lastError.length > 0,
-            "failed route names DDC/CI");
+            "failed route provides a reason");
         check(!service.stateFor("DISPLAY2").brightnessKnown, "failed read is not a brightness");
         check(!service.canWrite("DISPLAY2"), "failed route is not writable");
         expectRefused("DISPLAY2", 0.5, "write to a failed route");

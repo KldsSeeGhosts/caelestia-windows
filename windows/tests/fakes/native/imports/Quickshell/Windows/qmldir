@@ -1,0 +1,4 @@
+module Quickshell.Windows
+singleton FsUtils 1.0 FsUtils.qml
+singleton Wallpaper 1.0 Wallpaper.qml
+singleton DesktopLayer 1.0 DesktopLayer.qml
