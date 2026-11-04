@@ -271,7 +271,7 @@ try {
 
     # Exercise stable fullscreen reservations using the actual exclusions.
     # A real fullscreen target would also change the installed live shell.
-    Copy-Item -LiteralPath "$repoRoot\windows\combined-prototype\FrameExclusionsTest.qml" -Destination "$runtimePrefix\shell\frame-test.qml" -Force
+    Copy-Item -LiteralPath "$repoRoot\windows\tests\fixtures\FrameExclusionsTest.qml" -Destination "$runtimePrefix\shell\frame-test.qml" -Force
     $info = New-Object Diagnostics.ProcessStartInfo
     $info.FileName = "$runtimePrefix\qs.exe"
     $info.Arguments = '--no-color --path "' + "$runtimePrefix\shell\frame-test.qml" + '"'

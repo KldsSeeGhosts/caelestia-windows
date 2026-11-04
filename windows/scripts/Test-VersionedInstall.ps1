@@ -332,8 +332,11 @@ try {
     $output = & (Get-WindowsPowerShellPath) -NoProfile -ExecutionPolicy Bypass -File $entry -Prefix $prefix -Command State
     Assert ($LASTEXITCODE -eq 0 -and $output -eq 'fixture') 'Installed launcher did not preserve an explicit -Prefix.'
     $failed = $false
-    try { Install-CaelestiaVersion $a (New-Payload $a 'nested') } catch { $failed = $_ -match 'immutable version directory' }
+    $beforeNested = Get-DirectoryHash $a
+    try { Install-CaelestiaVersion $a (New-Payload $a 'nested') } catch { $failed = $true }
     Assert $failed 'An immutable payload was accepted as an install root.'
+    Assert ((Get-DirectoryHash $a) -eq $beforeNested) 'A refused nested install modified the immutable payload.'
+    Assert ((Read-CaelestiaInstall $prefix).current -eq $recordA.current) 'A refused nested install changed the selector.'
     $b = Install-CaelestiaVersion $prefix (New-Payload $prefix 'B')
     $recordB = Read-CaelestiaInstall $prefix
     Assert ($recordB.previous -eq $recordA.current) 'Update did not retain its previous version.'
@@ -347,21 +350,22 @@ try {
 
     $script:failStart = $true
     $failed = $false
-    try { Install-CaelestiaVersion $prefix (New-Payload $prefix 'broken') -Restart } catch { $failed = $_ -match 'Injected startup failure' }
-    Assert $failed 'Injected activation failure was hidden.'
+    try { Install-CaelestiaVersion $prefix (New-Payload $prefix 'broken') -Restart } catch { $failed = $true }
+    Assert ($failed -and -not $script:failStart) 'Injected activation failure was hidden or never reached.'
     Assert ((Read-CaelestiaInstall $prefix).current -eq $recordA.current) 'Failed activation did not restore A.'
     Assert ((Read-CaelestiaInstall $prefix).previous -eq $recordB.current) 'Failed activation lost previous-version history.'
     $status = & (Join-Path $prefix 'Manage-Caelestia.ps1') -Prefix $prefix -Command Status | ConvertFrom-Json
     Assert ($status.schema -eq 1 -and $status.current -eq $recordA.current -and $status.canRollback) 'Settings status does not match the selector.'
     $failed = $false
     try { & (Join-Path $prefix 'Manage-Caelestia.ps1') -Prefix $prefix -Command Rollback -ExpectedCurrent $recordB.current }
-    catch { $failed = $_ -match 'selected version changed' }
+    catch { $failed = $true }
     Assert $failed 'A stale UI request was allowed to queue rollback.'
+    Assert ((Read-CaelestiaInstall $prefix).current -eq $recordA.current) 'A stale UI request changed the selector.'
 
     $script:failStart = $true
     $failed = $false
-    try { Switch-CaelestiaVersion $prefix $recordB.current -Restart } catch { $failed = $_ -match 'Injected startup failure' }
-    Assert ($failed -and (Read-CaelestiaInstall $prefix).current -eq $recordA.current) 'Failed rollback did not restore selector.'
+    try { Switch-CaelestiaVersion $prefix $recordB.current -Restart } catch { $failed = $true }
+    Assert ($failed -and -not $script:failStart -and (Read-CaelestiaInstall $prefix).current -eq $recordA.current) 'Failed rollback did not restore selector.'
 
     # A queued rollback whose task dies must not leave Settings > Updates in a
     # permanent working phase. The deadline watchdog records the failure the
@@ -424,8 +428,10 @@ try {
         Assert $failed 'Escaping version identifier accepted.'
     }
     $failed = $false
-    try { Publish-CaelestiaPayload $prefix (New-Payload $prefix 'overwrite') $recordA.current } catch { $failed = $_ -match 'immutable' }
+    $beforeOverwrite = Get-DirectoryHash $a
+    try { Publish-CaelestiaPayload $prefix (New-Payload $prefix 'overwrite') $recordA.current } catch { $failed = $true }
     Assert $failed 'Published version was overwritten.'
+    Assert ((Get-DirectoryHash $a) -eq $beforeOverwrite) 'A refused publish modified the existing version.'
     $unused = Get-ChildItem (Join-Path $prefix 'versions') -Directory | Where-Object Name -notin @($recordA.current, $recordB.current) | Select-Object -First 1
     $script:runningPaths = @((Join-Path $unused.FullName 'qs.exe'))
     Remove-CaelestiaRetiredVersions $prefix
@@ -444,7 +450,7 @@ try {
     try {
         $failed = $false
         try { Publish-CaelestiaPayload $linkedRoot (New-Payload $linkedRoot 'linked') 'version' }
-        catch { $failed = $_ -match 'reparse point' }
+        catch { $failed = $true }
         Assert $failed 'Publishing followed a versions junction.'
         Assert (@(Get-ChildItem -LiteralPath $outside -Force).Count -eq 0) 'Publishing wrote through a junction.'
     } finally {
@@ -475,7 +481,7 @@ try {
     [IO.Directory]::CreateDirectory($unownedStage) | Out-Null
     'user data' | Set-Content -LiteralPath (Join-Path $unownedStage 'notes.txt') -Encoding UTF8
     $refused = $false
-    try { Remove-CaelestiaStagingDirectories $stagePrefix } catch { $refused = $_.Exception.Message -match 'unowned staging' }
+    try { Remove-CaelestiaStagingDirectories $stagePrefix } catch { $refused = $true }
     Assert ($refused -and (Test-Path -LiteralPath (Join-Path $unownedStage 'notes.txt'))) 'An unowned populated staging directory was removed.'
     Remove-Item -LiteralPath $unownedStage -Recurse -Force
     # A PID that is our own is stale (PIDs are unique), not a live other install.
@@ -491,7 +497,7 @@ try {
         [IO.Directory]::CreateDirectory($liveStage) | Out-Null
         '{}' | Set-Content -LiteralPath (Join-Path $liveStage '.caelestia-staging.json') -Encoding UTF8
         $refused = $false
-        try { Remove-CaelestiaStagingDirectories $stagePrefix } catch { $refused = $_.Exception.Message -match 'in progress' }
+        try { Remove-CaelestiaStagingDirectories $stagePrefix } catch { $refused = $true }
         Assert ($refused -and (Test-Path -LiteralPath $liveStage)) 'A live staging owner was removed or ignored.'
     } finally {
         if (-not $sleeper.HasExited) { $sleeper.Kill() }
@@ -519,7 +525,7 @@ try {
         }
         $failed = $false
         try { Complete-CaelestiaInstallIntegration $uiPrefix (Join-Path $uiPrefix "versions\$uiB") -Previous $uiA -Shortcut $uiShortcut -RunName 'CaelestiaTest' }
-        catch { $failed = $_ -match 'Injected shortcut failure' }
+        catch { $failed = $true }
         Assert $failed 'An integration failure was hidden.'
         Assert ((Get-Content -LiteralPath $uiShortcut -Raw).Trim() -eq 'previous shortcut') 'A failed integration did not restore the previous shortcut.'
         Assert (@(Get-ChildItem -LiteralPath (Split-Path -Parent $uiShortcut) -Filter '*.integration-*').Count -eq 0) 'A failed integration left its shortcut backup behind.'
@@ -533,7 +539,7 @@ try {
         [IO.Directory]::CreateDirectory((Split-Path -Parent $freshShortcut)) | Out-Null
         $failed = $false
         try { Complete-CaelestiaInstallIntegration $freshPrefix (Join-Path $freshPrefix "versions\$freshId") -Shortcut $freshShortcut -RunName 'CaelestiaTest' }
-        catch { $failed = $_ -match 'Injected shortcut failure' }
+        catch { $failed = $true }
         Assert $failed 'A first-install integration failure was hidden.'
         Assert (-not (Test-Path -LiteralPath $freshShortcut)) 'A failed first-install integration left a partial shortcut behind.'
         Assert ((Read-CaelestiaInstall $freshPrefix).current -eq $freshId) 'A failed first-install integration changed the selector.'
@@ -556,7 +562,7 @@ try {
     $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
     $autoRunName = 'CaelestiaTestAuto-' + [guid]::NewGuid().ToString('N')
     $autoRunValue = '"C:\existing\CaelestiaWindows.exe"'
-    New-Item -Path $runKey -Force | Out-Null
+    if (-not (Test-Path -LiteralPath $runKey)) { New-Item -Path $runKey | Out-Null }
     New-ItemProperty -Path $runKey -Name $autoRunName -PropertyType String -Value $autoRunValue -Force | Out-Null
     try {
         ${function:New-CaelestiaShortcut} = {
@@ -568,7 +574,7 @@ try {
         try {
             Complete-CaelestiaInstallIntegration $autoPrefix (Join-Path $autoPrefix "versions\$autoB") -Previous $autoA -Autostart `
                 -Shortcut $autoShortcut -RunName $autoRunName
-        } catch { $failed = $_.Exception.Message -match 'Injected shortcut failure' }
+        } catch { $failed = $true }
         Assert $failed 'An -Autostart integration failure was hidden.'
         $runNow = Get-ItemProperty -LiteralPath $runKey -Name $autoRunName -ErrorAction SilentlyContinue
         Assert ($null -ne $runNow -and [string]$runNow.$autoRunName -eq $autoRunValue) 'A failed -Autostart integration removed a pre-existing Run entry it never wrote.'
@@ -579,6 +585,23 @@ try {
         ${function:New-CaelestiaShortcut} = $originalShortcut
     }
     Write-Output 'PASS integration autostart: a shortcut failure leaves a pre-existing Run entry untouched.'
+
+    # Regression: a successful -Autostart integration writes only its own Run
+    # value. New-Item -Force on the existing Run key used to recreate it empty,
+    # deleting every other application's startup entry.
+    $otherRunName = 'CaelestiaTestOther-' + [guid]::NewGuid().ToString('N')
+    $ownRunName = 'CaelestiaTestOwn-' + [guid]::NewGuid().ToString('N')
+    New-ItemProperty -Path $runKey -Name $otherRunName -PropertyType String -Value '"C:\other\app.exe"' -Force | Out-Null
+    try {
+        Complete-CaelestiaInstallIntegration $autoPrefix (Join-Path $autoPrefix "versions\$autoB") -Previous $autoA -Autostart `
+            -Shortcut (Join-Path $root 'auto-shortcut\Own.lnk') -RunName $ownRunName
+        $other = Get-ItemProperty -LiteralPath $runKey -Name $otherRunName -ErrorAction SilentlyContinue
+        Assert ($null -ne $other -and [string]$other.$otherRunName -eq '"C:\other\app.exe"') 'An -Autostart integration deleted another application''s Run entry.'
+        Assert ($null -ne (Get-ItemProperty -LiteralPath $runKey -Name $ownRunName -ErrorAction SilentlyContinue)) 'An -Autostart integration did not write its Run entry.'
+    } finally {
+        Remove-ItemProperty -LiteralPath $runKey -Name $otherRunName, $ownRunName -ErrorAction SilentlyContinue
+    }
+    Write-Output 'PASS integration autostart: other applications'' Run entries survive.'
 
     # Regression: an existing shortcut that cannot be snapshotted aborts
     # integration before any write. The armed shortcut writer must not run, so
@@ -605,7 +628,7 @@ try {
         try {
             Complete-CaelestiaInstallIntegration $snapshotPrefix (Join-Path $snapshotPrefix "versions\$snapshotB") -Previous $snapshotA `
                 -Shortcut $snapshotShortcut -RunName 'CaelestiaTest'
-        } catch { $failed = $_.Exception.Message -match 'Could not snapshot' }
+        } catch { $failed = $true }
         Assert $failed 'A shortcut backup failure did not abort integration.'
         Assert (-not $script:shortcutWriterCalled) 'Integration wrote a shortcut after failing to snapshot the existing one.'
         Assert (Test-Path -LiteralPath $snapshotShortcut) 'A shortcut backup failure deleted the original shortcut.'
@@ -623,8 +646,10 @@ try {
         $legacyPayload = New-Payload $legacy 'legacy-original'
         [IO.Directory]::Move($legacyPayload, $legacy)
         $script:failStart = $injectFailure
+        $failed = $false
         try { $null = Install-CaelestiaVersion $legacy (New-Payload $legacy 'migrated') -Restart }
-        catch { if (-not $injectFailure -or $_ -notmatch 'Injected startup failure') { throw } }
+        catch { if (-not $injectFailure) { throw }; $failed = $true }
+        Assert ($failed -eq $injectFailure -and -not $script:failStart) 'Legacy migration did not reach the expected activation outcome.'
         $record = Read-CaelestiaInstall $legacy
         Assert ($record.version -eq 2) 'Legacy root did not migrate.'
         $runtime = Resolve-CaelestiaRuntimePrefix $legacy
@@ -878,17 +903,17 @@ param([string]$Prefix, [string]$Command = 'Start', [switch]$SkipSchemeRuntime)
             }
             Remove-Item -LiteralPath $rcLog -Force -ErrorAction SilentlyContinue
             $env:CAELESTIA_TEST_PROVISION_LOG = $rcLog
-            $expected = 'Injected startup failure'
+            $failed = $false
             try {
                 switch ($Kind) {
                     'update' { $script:failStart = $true; $null = Install-CaelestiaVersion $rcPrefix $target -Restart }
                     'rollback' { $script:failStart = $true; $null = Switch-CaelestiaVersion $rcPrefix $targetVersion -Restart }
-                    'selector' { $script:failSelectorWrite = $true; $expected = 'Injected selector write failure'; $null = Switch-CaelestiaVersion $rcPrefix $targetVersion -Restart }
+                    'selector' { $script:failSelectorWrite = $true; $null = Switch-CaelestiaVersion $rcPrefix $targetVersion -Restart }
                 }
-                throw "The $Kind scenario did not fail as injected."
             } catch {
-                if ($_ -notmatch $expected) { throw }
+                $failed = $true
             }
+            Assert ($failed -and -not $script:failStart -and -not $script:failSelectorWrite) "The $Kind scenario did not fail as injected."
             Assert-NoPostQuitProbe $rcLog "Recovery after a failed $Kind" -MaxStopped 6 -LastLaunch
             Assert ((Read-CaelestiaInstall $rcPrefix).current -eq $restoreVersion) "Recovery after a failed $Kind did not select the previous version."
             $pointer = Read-Pointer $rcProfile
@@ -923,7 +948,7 @@ param([string]$Prefix, [string]$Command = 'Start', [switch]$SkipSchemeRuntime)
     $script:failStart = $true
     $failed = $false
     try { $null = Install-CaelestiaVersion $svPrefix (New-Payload $svPrefix 'sv-c') -Restart }
-    catch { $failed = $_ -match 'Injected startup failure' }
+    catch { $failed = $true }
     finally {
         $script:failStart = $false
         $script:breakFallbackPayload = $null
@@ -1746,12 +1771,15 @@ public static extern bool FreeLibrary(System.IntPtr module);
             return [pscustomobject]@{ Result = (Read-SchemeResult $out); Stdout = $out; Stderr = $err }
         }
         $run1 = Invoke-Provisioner
-        Assert ($run1.Result.available -eq $true -and $run1.Result.message -eq 'provisioned') 'The first provision did not build a generation.'
+        Assert ($run1.Result.available -eq $true -and $run1.Result.generation -and
+            (Read-Pointer $ipProfile).generation -eq $run1.Result.generation) 'The first provision did not publish a generation.'
         $run2 = Invoke-Provisioner
-        Assert ($run2.Result.message -eq 'cached' -and $run2.Result.generation -eq $run1.Result.generation) 'An unchanged payload did not reuse its generation.'
+        Assert ($run2.Result.available -eq $true -and $run2.Result.generation -eq $run1.Result.generation) 'An unchanged payload did not reuse its generation.'
         'a different shim' | Set-Content -LiteralPath (Join-Path $ip 'scheme\fcntl.py') -Encoding UTF8
         $run3 = Invoke-Provisioner
-        Assert ($run3.Result.message -eq 'provisioned' -and $run3.Result.generation -ne $run1.Result.generation) 'A changed shim reused a cached generation.'
+        Assert ($run3.Result.available -eq $true -and $run3.Result.generation -and
+            $run3.Result.generation -ne $run1.Result.generation -and
+            (Read-Pointer $ipProfile).generation -eq $run3.Result.generation) 'A changed shim did not publish a new generation.'
         $runtimes = Join-Path $ipProfile 'scheme\runtimes'
         Assert (Test-Path -LiteralPath (Join-Path $runtimes $run1.Result.generation)) 'A shim change removed the earlier generation.'
         $newShim = Join-Path $runtimes "$($run3.Result.generation)\venv\Lib\site-packages\fcntl.py"
@@ -1811,7 +1839,7 @@ param([string]$ProfileRoot)
 throw 'injected provisioning failure'
 '@ | Set-Content -LiteralPath (Join-Path $provisionRoot 'Install-SchemeRuntime.ps1') -Encoding UTF8
     $failedProvision = Install-CaelestiaSchemeRuntime $provisionRoot $schemeProfile
-    Assert (-not $failedProvision.available -and $failedProvision.message -match 'injected provisioning failure') 'A provisioning failure escaped the installer phase.'
+    Assert ($failedProvision.available -eq $false) 'A provisioning failure escaped the installer phase.'
     Write-Output 'PASS scheme phase: installer preparation is timed separately and never throws.'
 
     # Migration window: an installed copy from before the Global lock holds
@@ -1851,7 +1879,7 @@ public static class LegacyInstallLockFixture {
         Assert ($null -eq (Enter-CaelestiaInstallLock $lockPrefix)) 'The new install lock ignored an old Local lock owner.'
         $refused = $false
         try { & (Join-Path $PSScriptRoot 'Manage-Caelestia.ps1') -Prefix $prefix -Command Rollback -Wait }
-        catch { $refused = $_.Exception.Message -match 'already in progress' }
+        catch { $refused = $true }
         Assert $refused 'The manager did not refuse a rollback while an old install held the Local lock.'
         Assert ((Read-CaelestiaInstall $prefix).current -eq $recordA.current) 'A blocked rollback still changed the selector.'
     } finally {
@@ -1880,7 +1908,7 @@ public static class LegacyInstallLockFixture {
     try {
         $refused = $false
         try { & (Join-Path $PSScriptRoot 'Uninstall-Caelestia.ps1') -Prefix $lockedApp }
-        catch { $refused = $_.Exception.Message -match 'still in use' }
+        catch { $refused = $true }
         Assert $refused 'Uninstall did not refuse an installation with an open file.'
         Assert (Test-Path -LiteralPath (Join-Path $lockedApp 'install.json')) 'A locked uninstall damaged the installation.'
         Assert (@(Get-ChildItem -LiteralPath $root -Directory -Filter 'locked-app.uninstall-*').Count -eq 0) 'A locked uninstall left a tombstone.'

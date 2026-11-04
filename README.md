@@ -8,7 +8,6 @@ The upstream QtQuick/QML interface, Material 3 Expressive shapes (`M3Shapes`), s
 - [Windows overview and architecture](windows/README.md)
 - [Native Windows build instructions](windows/NATIVE-BUILD.md)
 - [Milestones and acceptance criteria](windows/ROADMAP.md)
-- [Compatibility prototype](windows/prototype/README.md)
 - [Source revisions](windows/sources.lock.json)
 - [Windows credits and attribution](windows/README.md#credits-and-attribution)
 - [Third-party notices](THIRD-PARTY-NOTICES.md)

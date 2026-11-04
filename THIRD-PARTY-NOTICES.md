@@ -74,12 +74,12 @@ Fonts are loaded into the shell process, not installed system-wide.
 | [Google Sans Flex](https://github.com/googlefonts/googlesans-flex) | The Google Sans Flex Project Authors | SIL OFL 1.1 | `assets/google-sans-flex/LICENSE` | `licenses/fonts/google-sans-flex/LICENSE` |
 | [Rubik](https://github.com/googlefonts/rubik) | Copyright 2015 The Rubik Project Authors; Hubert and Fischer, Meir Sadan, Cyreal and contributors | SIL OFL 1.1 | `windows/assets/rubik/OFL.txt` | `licenses/fonts/rubik/OFL.txt` |
 | [Material Symbols Rounded](https://github.com/google/material-design-icons) | Google LLC | Apache-2.0 | `windows/assets/material-symbols-rounded/LICENSE` | `licenses/fonts/material-symbols-rounded/LICENSE` |
-| [Cascadia Code](https://github.com/microsoft/cascadia-code), patched as [CaskaydiaCove Nerd Font](https://github.com/ryanoasis/nerd-fonts) | Copyright (c) 2019 - Present, Microsoft Corporation; Nerd Fonts contributors | SIL OFL 1.1 | `windows/licenses/fonts/caskaydia-cove/LICENSE`; font integration also supplies `windows/assets/caskaydia-cove/LICENSE` | `licenses/fonts/caskaydia-cove/LICENSE` |
-| [Nerd Fonts Symbols](https://github.com/ryanoasis/nerd-fonts) | Copyright (c) 2014 Ryan L McIntyre and contributors | MIT | `windows/licenses/fonts/nerd-font-symbols/LICENSE`; font integration also supplies `windows/assets/nerd-font-symbols/LICENSE` | `licenses/fonts/nerd-font-symbols/LICENSE` |
+| [Cascadia Code](https://github.com/microsoft/cascadia-code), patched as [CaskaydiaCove Nerd Font](https://github.com/ryanoasis/nerd-fonts) | Copyright (c) 2019 - Present, Microsoft Corporation; Nerd Fonts contributors | SIL OFL 1.1 | `windows/assets/caskaydia-cove/LICENSE` | `licenses/fonts/caskaydia-cove/LICENSE` |
+| [Nerd Fonts Symbols](https://github.com/ryanoasis/nerd-fonts) | Copyright (c) 2014 Ryan L McIntyre and contributors | MIT | `windows/assets/nerd-font-symbols/LICENSE` | `licenses/fonts/nerd-font-symbols/LICENSE` |
 
 The installer copies font license and notice files from both `assets/` and
 `windows/assets/`, including new fonts introduced by integration updates.
-Supplemental font texts and their provenance are in
+Font notice provenance is documented in
 [`windows/licenses/README.md`](windows/licenses/README.md).
 
 ## Screenshot and recording tool

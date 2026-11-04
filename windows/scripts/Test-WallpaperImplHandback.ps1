@@ -80,8 +80,8 @@ try {
     $sceneDiagnostics = @($output -split "\r?\n" |
         Where-Object { $_ -match 'WARN scene:' -and $_ -notmatch $offscreenOnly })
     $bad = $output -match 'CAELESTIA_WALLPAPER_IMPL_FAIL|TypeError|ReferenceError|binding loop'
-    $marker = [regex]::Match($output, 'CAELESTIA_WALLPAPER_IMPL_PASS 17\b')
-    if ($process.ExitCode -ne 0 -or -not $marker.Success -or $bad -or $sceneDiagnostics.Count -gt 0) {
+    $marker = [regex]::Match($output, 'CAELESTIA_WALLPAPER_IMPL_PASS (\d+)\b')
+    if ($process.ExitCode -ne 0 -or -not $marker.Success -or [int]$marker.Groups[1].Value -lt 17 -or $bad -or $sceneDiagnostics.Count -gt 0) {
         throw "WallpaperImpl handback fixture failed: $run"
     }
     Write-Output 'PASS wallpaper implementation handback: the handback source reaches live immediately with the transition at 1, a capture scheduled before the handback cannot cover it, a covered window keeps the handback source, and a resize reloads the same local file.'

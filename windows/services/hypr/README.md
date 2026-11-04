@@ -130,5 +130,5 @@ work without upstream type changes.
 imports, staging hash mismatches and QML diagnostics. The fixture's fake backend
 covers default-off construction, observation mapping, the global-focus model,
 every allowlisted form and translation, every refused/malformed/injected form,
-special-workspace no-ops and dispatch gating. `Test-HyprPrototype.ps1` adds the
-native Disabled smoke and the M1 regression.
+special-workspace no-ops and dispatch gating. Use the
+[live checklist](../../docs/LIVE-CHECKLIST.md) for installed-shell behavior.

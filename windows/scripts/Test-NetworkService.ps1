@@ -5,82 +5,11 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
-if (-not $BuildRoot) { $BuildRoot = Join-Path $repoRoot 'windows\.local\build' }
-$BuildRoot = [IO.Path]::GetFullPath($BuildRoot)
-$exe = Join-Path $QtPrefix 'bin\qml.exe'
-if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw "Missing Qt QML runner: $exe" }
-$runName = 'network-fixture-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff')
-$stage = Join-Path $BuildRoot "network-tests\$runName"
-$logRoot = Join-Path $BuildRoot 'logs'
-New-Item -ItemType Directory -Force -Path $stage, $logRoot | Out-Null
-# Copy only the state object and its fixture. No native backend, singleton,
-# environment or shell service is present in this stage, and qml.exe does not
-# load Quickshell.
-$sources = foreach ($name in @('NetworkService.qml', 'NetworkServiceTest.qml')) {
-    $source = Join-Path $repoRoot "windows\services\network\$name"
-    $target = Join-Path $stage $name
-    Copy-Item -LiteralPath $source -Destination $target
-    [ordered]@{
-        source = "windows/services/network/$name"
-        sourceSha256 = (Get-FileHash -LiteralPath $source).Hash
-        stagedSha256 = (Get-FileHash -LiteralPath $target).Hash
-    }
-}
-# The state object must stay importable without Quickshell or a native Network
-# singleton. The fixture is the only other staged file and never constructs
-# Nmcli.qml, NativeNetworkBackend.qml or the original popout.
-$serviceSource = Join-Path $repoRoot 'windows\services\network\NetworkService.qml'
-$nativeImports = @(Select-String -LiteralPath $serviceSource -Pattern '^\s*import\s+Quickshell')
-$hashMismatch = @($sources | Where-Object { $_.sourceSha256 -ne $_.stagedSha256 })
-$info = New-Object Diagnostics.ProcessStartInfo
-$info.FileName = $exe
-$info.Arguments = '"' + (Join-Path $stage 'NetworkServiceTest.qml') + '"'
-$info.WorkingDirectory = $stage
-$info.UseShellExecute = $false
-$info.CreateNoWindow = $true
-$info.RedirectStandardOutput = $true
-$info.RedirectStandardError = $true
-$info.EnvironmentVariables['QT_QPA_PLATFORM'] = 'offscreen'
-$info.EnvironmentVariables['QT_FORCE_STDERR_LOGGING'] = '1'
-$info.EnvironmentVariables['QML_DISK_CACHE_PATH'] = Join-Path $stage 'cache'
-$process = [Diagnostics.Process]::Start($info)
-$outTask = $process.StandardOutput.ReadToEndAsync()
-$errTask = $process.StandardError.ReadToEndAsync()
-$timedOut = -not $process.WaitForExit(15000)
-if ($timedOut) {
-    $process.Kill()
-    $process.WaitForExit()
-}
-$stdout = $outTask.GetAwaiter().GetResult()
-$stderr = $errTask.GetAwaiter().GetResult()
-$stdoutPath = Join-Path $logRoot "$runName.stdout.log"
-$stderrPath = Join-Path $logRoot "$runName.stderr.log"
-$stdout | Set-Content -LiteralPath $stdoutPath -Encoding UTF8
-$stderr | Set-Content -LiteralPath $stderrPath -Encoding UTF8
-$combined = "$stdout`n$stderr"
-$match = [regex]::Match($combined, 'CAELESTIA_NETWORK_FIXTURE_PASS (\{[^\r\n]+\})')
-$fixture = $(if ($match.Success) { $match.Groups[1].Value | ConvertFrom-Json } else { $null })
-$diagnostics = @([regex]::Matches(
-    $combined,
-    '(?im)^.*(?:CAELESTIA_NETWORK_FIXTURE_FAIL|ReferenceError|TypeError|SyntaxError|binding loop|Unable to assign|Cannot assign|is not a type|Cannot read property|is not defined).*$'
-))
-$passed = -not $timedOut -and $process.ExitCode -eq 0 -and $match.Success -and
-    $null -ne $fixture -and [int]$fixture.assertions -ge 150 -and
-    $hashMismatch.Count -eq 0 -and $nativeImports.Count -eq 0 -and $diagnostics.Count -eq 0
-$result = [ordered]@{
-    passed = $passed; timedOut = $timedOut; exitCode = $process.ExitCode
-    fixture = $fixture
-    nativeImports = $nativeImports.Count
-    hashMismatch = @($hashMismatch)
-    diagnostics = @($diagnostics | ForEach-Object { $_.Value })
-    sourceRevision = (& git -C $repoRoot rev-parse HEAD).Trim()
-    sourceDirty = [bool](& git -C $repoRoot status --porcelain)
-    qtVersion = (& "$QtPrefix\bin\qtpaths.exe" --qt-version).Trim()
-    runnerSha256 = (Get-FileHash -LiteralPath $exe).Hash
-    command = $exe; arguments = $info.Arguments; sources = @($sources)
-    stage = $stage; stdout = $stdoutPath; stderr = $stderrPath
-}
-$result | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $logRoot "$runName.json") -Encoding UTF8
+. "$PSScriptRoot\Caelestia-QmlFixture.ps1"
+$result = Invoke-QmlFixture -QtPrefix $QtPrefix -BuildRoot $BuildRoot -Name network `
+    -Sources @('windows/services/network/NetworkService.qml',
+        'windows/services/network/NetworkServiceTest.qml') `
+    -FixtureFile 'windows/services/network/NetworkServiceTest.qml' -Marker CAELESTIA_NETWORK_FIXTURE -MinimumAssertions 150
+$result | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath ($result.stdout -replace '\.stdout\.log$', '.json') -Encoding UTF8
 $result | ConvertTo-Json -Depth 8
-if (-not $passed) { throw "Network fixture failed. See $stdoutPath and $stderrPath." }
+if (-not $result.passed) { throw "Service fixture failed. See $($result.stdout) and $($result.stderr)." }

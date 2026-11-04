@@ -28,7 +28,8 @@ StyledWindow {
     }
     readonly property ScreenState screenState: ShellState.forScreen(screen) ?? teardownState
 
-    readonly property HyprlandMonitor monitor: Hypr.monitorFor(screen)
+    // Windows: the facade also accepts an injected monitor-shaped backend.
+    readonly property var monitor: Hypr.monitorFor(screen)
     readonly property bool hasSpecialWorkspace: (monitor?.lastIpcObject.specialWorkspace?.name.length ?? 0) > 0
     // Windows workspaces span monitors; Hyprland workspaces already belong to one.
     // Windows: the backend's fullscreen-occluder verdict (the one AppBar uses) also counts, because a fullscreen window hidden from the task list is not a toplevel.

@@ -432,8 +432,7 @@ root to deduplicate against Linear, each enabled and validated independently:
    backend-loss denial. [Evidence](../validation/2026-10-25-m2-power-profiles/README.md).
    The pinned backend's hard-coded performance availability, log-only failures,
    missing read-success/write-result signals and notification-only refresh are
-   recorded with a fork fix outline in the
-   [battery README](../battery-prototype/README.md#pinned-backend-gaps).
+   recorded in the [battery validation archive](../validation/2026-10-25-m2-battery-review/README.md).
    Battery-present aggregate AC observation, native denied writes and a native
    PowerSaver observation remain untested.
 4. **Windows Network adapter and original network UI:** define explicit
@@ -541,8 +540,8 @@ root to deduplicate against Linear, each enabled and validated independently:
    route; a route change or gamma fallback during a write is latched as a
    failure and no further write is sent until a user route refresh. Software
    gamma additionally requires `CAELESTIA_WINDOWS_BRIGHTNESS_SOFTWARE=1` on top
-   of the write opt-in. The bounded [OSD host](../brightness-prototype/README.md)
-   stages original `modules/osd/Content.qml` and `FilledSlider`; its
+   of the write opt-in. The retired bounded OSD host
+   staged original `modules/osd/Content.qml` and `FilledSlider`; its
    `audioControlsEnabled`/`brightnessControlsEnabled` hooks default to upstream
    Linux behavior. `query()` and `probe()` share `startProbe()` and drop
    software dimming this process applied earlier
@@ -600,7 +599,7 @@ root to deduplicate against Linear, each enabled and validated independently:
    [TrayService](../services/tray/TrayService.qml) over an injected
    [native facade](../services/tray/NativeTrayBackend.qml), a default-off
    `Tray.qml`, a 115-assertion fixture, and a bounded
-   [host](../tray-prototype/README.md) staging the original
+   host (since retired) staging the original
    `Tray.qml`/`TrayItem.qml`/`TrayMenu.qml` with upstream-preserving hooks.
    The launcher forces `QS_WINDOWS_TRAY_HOOK=0`; construction still starts the
    native host's 10 s prune timer. Read-only smoke recorded 0 items on both

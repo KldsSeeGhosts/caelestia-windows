@@ -28,6 +28,12 @@ project "Caelestia Windows".
     cheap 500 ms read-only poll
     ([#262](https://github.com/KldsSeeGhosts/caelestia-windows/issues/262)).
     The only event route is a signed global hook DLL injected into every app.
+  - Panels opened from input caught by the low-level keyboard hook, such as a
+    lone Super tap, may force foreground once with `AttachThreadInput` after a
+    refused `SetForegroundWindow`. Windows gives hook-delivered input no
+    foreground right, and lone-modifier taps cannot be registered hotkeys
+    ([#244](https://github.com/KldsSeeGhosts/caelestia-windows/issues/244)).
+    Hotkey, click and IPC activation never escalate.
 - Write the smallest correct change. Reuse or delete code before adding more,
   and keep hot paths lean.
 - Only data loss, crashes or hangs, security or privacy leaks, anything

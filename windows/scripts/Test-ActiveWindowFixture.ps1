@@ -15,8 +15,8 @@ foreach ($directory in @('config', 'state', 'runtime', 'cache', 'data')) {
     New-Item -ItemType Directory -Force -Path (Join-Path $profile $directory) | Out-Null
 }
 # Replace only the isolated stage's Hypr facade with an inert test singleton.
-Copy-Item -LiteralPath "$repoRoot\windows\combined-prototype\ActiveWindowFixtureHypr.qml" -Destination "$stage\services\Hypr.qml" -Force
-Copy-Item -LiteralPath "$repoRoot\windows\combined-prototype\ActiveWindowFixture.qml" -Destination "$stage\active-window-fixture.qml"
+Copy-Item -LiteralPath "$repoRoot\windows\tests\fixtures\ActiveWindowFixtureHypr.qml" -Destination "$stage\services\Hypr.qml" -Force
+Copy-Item -LiteralPath "$repoRoot\windows\tests\fixtures\ActiveWindowFixture.qml" -Destination "$stage\active-window-fixture.qml"
 $qmlRoot = Join-Path $BuildRoot 'install\qml'
 $info = New-Object Diagnostics.ProcessStartInfo
 $info.FileName = Join-Path $BuildRoot 'quickshell\qs.exe'

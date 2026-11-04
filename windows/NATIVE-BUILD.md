@@ -1,10 +1,10 @@
-# Native Windows build and prototypes
+# Native Windows build and validation
 
 The first verified build uses Windows 11, Qt 6.11.2 `msvc2022_64`, clang-cl
 20.1.8, Visual Studio Build Tools 2022, Windows SDK 10.0.26100.0, CMake 4.4.4,
-Ninja 1.13.2, and CLI11 2.5.0. The main entry point is now the
-[bounded native bar/session prototype](shell-prototype/README.md); the earlier
-component probe is retained. A build or smoke pass does not complete M1.
+Ninja 1.13.2, and CLI11 2.5.0. The production entry point is
+`windows/shell/shell.qml`; the bounded service hosts have been retired.
+A build or smoke pass does not establish live desktop acceptance.
 The separate [final acceptance record](validation/2026-10-25-m1-acceptance/README.md)
 now completes the bounded M1 gate with native input and lifecycle evidence.
 
@@ -168,158 +168,38 @@ is not a containment boundary and accepts relative, traversal and UNC paths.
 The command does not install anything, run the live shell, or read the live
 profile.
 
-## Native bar/session prototype
+## Service fixtures and live checks
 
-After rebuilding for the Windows focus helper:
-
-```powershell
-powershell -NoProfile -File windows/scripts/Start-ShellPrototype.ps1 `
-    -QtPrefix "$devRoot\Qt\6.11.2\msvc2022_64" -Wait -ScaleFactor native -ScreenIndex 0
-```
-
-This stages original ContentWindow/StyledWindow/Regions/Interactions, the bar
-and session content, and explicit unavailable adapters in a fresh
-`shell-runs/shell-<timestamp>/` directory. It opens one native panel window
-inset 80 logical pixels, bounded to 900x620. Hover the left edge to show the bar;
-Power opens the session drawer and Escape closes it. Session actions remain
-unavailable. Do not use the root Linux `shell.qml`.
-
-`-Wait` captures stdout/stderr until the process exits and then writes the
-result JSON and source manifest under `logs/`; it is not a test pass.
-Without `-Wait` or `-Smoke`, the launcher returns the child PID immediately.
-Stop only that prototype PID when finished. `-BuildRoot` selects another output
-directory. `-ScreenIndex` accepts 0-15 and fails if that screen does not exist.
-`-ScaleFactor` accepts `native`, `1`, `1.5`, or `1.75`.
+The pure service fixtures force Qt's offscreen platform themselves and use
+fake backends. Run them from a disposable working directory after building:
 
 ```powershell
-powershell -NoProfile -File windows/scripts/Start-ShellPrototype.ps1 `
-    -QtPrefix "$devRoot\Qt\6.11.2\msvc2022_64" -Smoke -ScaleFactor native -ScreenIndex 0
-```
-
-Add `-Offscreen` to run the smoke on the Qt offscreen QPA with the software
-backend and the basic render loop. It opens no native window and captures
-complete without DWM or vsync. The smoke uses the session notification bus, so
-an installed shell running beside it owns that bus; the notification smoke then
-reports `contended` and marks its local-owner delivery scenarios SKIPPED while
-the backend unit tests cover the local and forwarding paths. The service test
-wrappers accept `-Offscreen` and `-RunRoot`; use a short run root (for example
-`C:\r-233`) because the SchemeRuntime virtual environment lives under it and
-native DLL loading still has Windows path limits.
-
-Add `-MonitorCycle` to a native smoke run with at least two monitors to
-open/capture/close, move the same ContentWindow to the next monitor, repeat,
-and return. Results include `actualScreens` metadata and a `captures` array.
-A rendered placement is not a pass if runtime warnings occur; see the
-validation record for exact results. The corrected native cycle passed on
-150% primary -> 175% negative-origin secondary -> primary with 900x620 geometry
-and no QML diagnostics. The separate native input matrix now also validates
-pointer/focus at both DPIs; smoke alone does not establish those results.
-
-Smoke programmatically opens/closes the original content, checks geometry,
-fonts, DPI and unavailable session actions, saves a PNG and exits. Input and
-native focus activation are disabled during smoke. It has a 45-second outer
-limit and a 15-second QML watchdog and rejects runtime warnings/errors.
-Numeric scale overrides are synthetic child-process DPI tests; native uses
-the selected display. Neither replaces real pointer/focus or same-process
-mixed-DPI monitor tests. See the
-[final acceptance record](validation/2026-10-25-m1-acceptance/README.md)
-for the completed matrix, exact revisions and input limitations.
-
-The launcher rewrites only its dedicated `shell-prototype-profile/config/shell.json`
-to the audited Clock/Power/session slice. It isolates configuration, state,
-runtime, data and cache; do not use this profile for personal customization.
-It disables Windows blur for the child. The entry point skips
-Drawers/Exclusions and Taskbar/Tiling controllers, while the backend still
-initializes native support for its own window and shared stale-AppBar cleanup.
-Quickshell also retains its own Windows instance bookkeeping.
-No zero-global-bookkeeping guarantee is implied.
-The tested palette is opaque. Disabled backend blur alone is not evidence of
-system transparency being off; the separate opt-in input test verifies the
-actual Windows preference and advanced-effects state.
-
-For manual input evidence, launch the dedicated fixture in its own STA process:
-
-```powershell
-powershell -NoProfile -STA -File windows/scripts/Start-InputTarget.ps1
-```
-
-The WinForms fixture records JSONL mouse, activation, and keyboard events.
-`-LogPath`, `-ClientWidth` and `-ClientHeight` select its output and client size.
-It owns only that window/log and does not launch another application.
-Capture read-only desktop state before/after a test:
-
-```powershell
-powershell -NoProfile -File windows/scripts/Get-DesktopState.ps1
-```
-
-For the separate M2 audio host, use `Start-ShellPrototype.ps1 -Audio
--AudioMode ReadOnly -Wait` with the same Qt prefix. Audio defaults disabled;
-`Interactive` opts into explicit volume/routing writes and every smoke run
-remains read-only. `Test-AudioPrototype.ps1 -QtPrefix <path>` runs the
-read-only two-monitor/service gate. See the
-[audio prototype instructions](audio-prototype/README.md) for exact commands,
-failure semantics and limitations.
-
-For the opt-in automated native input matrix, see
-[the prototype instructions](shell-prototype/README.md). It uses `SendInput`
-through real Windows routing, a dedicated fixture, exact-instance IPC, and
-native 150%/175% monitor transfer. `-TestTransparencyOff` temporarily changes
-and restores the current user's transparency preference. Keep pointer/keyboard
-input idle during that test. It never enables tiling or taskbar control.
-
-Optional `-OutputPath` saves the report. It queries physical monitor/work
-rectangles, scale, taskbar flags, foreground PID/HWND and relevant process names/PIDs, preserving
-negative origins. It changes only its measurement thread's DPI context
-temporarily, not display/taskbar settings.
-
-## Retained component probe
-
-Launch an ordinary application window:
-
-```powershell
-powershell -NoProfile -File windows/scripts/Start-Prototype.ps1 `
-    -QtPrefix "$devRoot\Qt\6.11.2\msvc2022_64"
-```
-
-Click the original bar clock to open/close the motion specimen. Escape closes
-it. Close the window to stop the process. An existing tiler may resize the
-window; its 740 by 460 component specimen stays centered inside it.
-
-For bounded automated rendering checks:
-
-```powershell
-foreach ($scale in @('1', '1.5', '1.75')) {
-    powershell -NoProfile -File windows/scripts/Start-Prototype.ps1 `
-        -QtPrefix "$devRoot\Qt\6.11.2\msvc2022_64" -Smoke -ScaleFactor $scale
-    if ($LASTEXITCODE -ne 0) { throw "Rendering check failed at $scale." }
+$repo = (Resolve-Path .).Path
+$qtPrefix = "$env:LOCALAPPDATA\caelestia-dev\Qt\6.11.2\msvc2022_64"
+$run = Join-Path $env:TEMP ('caelestia-services-' + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $run | Out-Null
+Push-Location $run
+try {
+    Get-ChildItem "$repo\windows\scripts\Test-*Service.ps1" | ForEach-Object {
+        & $_.FullName -QtPrefix $qtPrefix -BuildRoot C:\b-smoke
+    }
+} finally {
+    Pop-Location
 }
 ```
 
-These scale overrides affect only the child process. They disable Qt's native
-scale factor, set the testing font DPI to 96, and apply the requested testing
-factor, then assert the observed device pixel ratio. They do not change Windows display settings. This is
-synthetic DPI coverage, not a mixed-monitor or native DPI transition test.
-See [Qt's DPI testing reference](https://doc.qt.io/qt-6/highdpi.html#testing).
+Adapter fixtures, plugin tests, JS-module tests, `Test-BackendNative.ps1` and
+the versioned installation tests remain separate. Run only suites appropriate
+to the change; native integration checks may open windows or change desktop
+state and require exclusive QA ownership.
 
-Each check allows 45 seconds for process startup and completion, with a separate
-10-second in-app watchdog after QML loads. The initial run after a plugin
-rebuild took about 19 seconds to produce its screenshot; warm runs took about
-four seconds. Logs include timestamps and results include elapsed time.
+Use [LIVE-CHECKLIST.md](docs/LIVE-CHECKLIST.md) for installed-shell acceptance.
+Builds and offscreen fixtures cannot establish real input, device control or
+mixed-DPI behavior. Historical evidence stays under `windows/validation/`.
 
-Each check opens and closes the motion specimen, saves a PNG, and exits. It
-fails on an incorrect DPI, dimensions, capture failure, timeout, or warning/error
-in the runtime log. JSON results, source hashes, stdout, stderr, and screenshots
-are saved under `logs/`. A result does not prove real pointer input, panel
-keyboard focus, dismissal, or focus return.
-
-The older probe stages an audited QML subset under `probe/` and creates configuration,
-state, runtime, data, and cache directories under `probe-profile/`. An existing
-probe configuration is preserved. Its palette is fixed and its clock icon is
-disabled. The native prototype separately loads pinned
-[Rubik/Material Symbols assets and licenses](assets/README.md); neither
-prototype validates the dynamic theme service.
-
-Quickshell records its own process bookkeeping under its Windows application
-directory. The separate probe configuration path keeps its identity distinct.
-The scripts do not change the current shell, taskbar configuration, tiler
-configuration, autostart, credentials, or ordinary Caelestia configuration.
+`Build-Prototype.ps1` and `Start-ShellPrototype.ps1` retain their existing names.
+The latter still supports the `-Combined` developer preview described in the
+[user guide](docs/USER-GUIDE.md#running-from-a-developer-build-combined-preview).
+Its entry point and support assets live under `windows/tests/fixtures/` because
+the launcher, runtime benchmarks and native integration checks still use them.
+They are never included in the installed shell's production staging map.

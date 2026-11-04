@@ -1,2 +1,0 @@
-module Caelestia.Services
-singleton SessionManager 1.0 SessionManager.qml

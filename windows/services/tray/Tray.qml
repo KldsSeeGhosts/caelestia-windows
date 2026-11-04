@@ -16,7 +16,6 @@ TrayService {
 
     enabled: Quickshell.env("CAELESTIA_WINDOWS_TRAY") === "1"
     activationEnabled: enabled && Quickshell.env("CAELESTIA_WINDOWS_TRAY_ACTIVATION") === "1"
-    interceptionEnabled: enabled && Quickshell.env("QS_WINDOWS_TRAY_HOOK") === "1"
     backend: nativeLoader.item ?? null
     backendError: nativeLoader.status === Loader.Error ? "The Windows tray backend component failed to load." : ""
 

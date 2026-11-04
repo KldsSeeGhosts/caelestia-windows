@@ -565,7 +565,9 @@ is not verified.
 `ipc call displays off` (or your own `ipc` keybind, see
 [KEYBINDS.md](KEYBINDS.md#3-ipc--call-a-caelestia-ipchandler)) asks the shell's
 own window to switch the physical panels off with Windows display power
-(`WM_SYSCOMMAND` / `SC_MONITORPOWER = 2`) after a 500 ms delay. It is not a
+(`WM_SYSCOMMAND` / `SC_MONITORPOWER = 2`). On a keybind, the keyboard hook waits
+for every key of the triggering chord to be released; other input first cancels
+it. A direct IPC call has no chord and sends at once. It is not a
 display-topology disable: it changes no resolution, scale, desktop coordinate or
 window position and stores no setting. Normal input wakes the panels, but
 keep-awake, remote input or background activity can also wake them. This path

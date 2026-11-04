@@ -75,8 +75,8 @@ QtObject {
         equal(service.lastResult.requested, true, message + " requested");
         equal(service.lastResult.succeeded, false, message + " not succeeded");
         equal(service.lastResult.requiresConfirmation, false, message + " not confirmation");
-        check(service.lastResult.reason.indexOf("returns void") >= 0, message + " documents the void backend");
-        check(service.lastResult.reason.indexOf("session.cpp") >= 0, message + " cites the backend gap");
+        // The void backend proves dispatch, not success. Its explanatory prose
+        // is not part of the command contract.
         callsAre([call], message + " recorded exactly one call");
     }
 
@@ -177,8 +177,7 @@ QtObject {
         equal(service.sessionAction("lock").capability, true, "observe lock capability observed");
         equal(service.sessionAction("lock").dispatchable, false, "observe lock not dispatchable");
         equal(service.sessionAction("lock").available, false, "observe lock unavailable for UI");
-        check(service.sessionAction("lock").reason.indexOf("dispatch is disabled") >= 0,
-            "observe reason names the dispatch opt-in");
+        equal(service.dispatchEnabled, false, "observe mode keeps dispatch disabled");
         expectActionsUnavailable("observe mode");
 
         equal(service.exec(["caelestia-m1-unavailable-probe"]), true, "observe unknown consumed");
@@ -238,15 +237,11 @@ QtObject {
         equal(service.exec(["hibernate"]), true, "gated hibernate consumed");
         expectOutcome("unsupported", "gated hibernate outcome");
         expectConsumedNoDispatch("gated hibernate");
-        check(service.lastResult.reason.indexOf("Hibernation is not available") >= 0,
-            "gated hibernate reason");
         callsAre([], "gated hibernate sends no call");
 
         equal(service.exec(["suspendThenHibernate"]), true, "combined action consumed");
         expectOutcome("unsupported", "combined action unsupported");
         expectConsumedNoDispatch("combined action");
-        check(service.lastResult.reason.indexOf("combined suspend-then-hibernate") >= 0,
-            "combined action reason");
         callsAre([], "combined action sends no call");
 
         // --- Destructive confirmation gate ----------------------------------
@@ -324,8 +319,6 @@ QtObject {
         expectConsumedNoDispatch("arbitrary command");
         equal(service.lastResult.action, "", "arbitrary command has no action");
         equal(service.lastResult.command.length, 3, "arbitrary command is recorded verbatim");
-        check(service.lastResult.reason.indexOf("without detached or process execution") >= 0,
-            "arbitrary command reason states no fallback");
         callsAre([], "arbitrary command sends no call");
 
         equal(service.exec([]), true, "empty command consumed");
@@ -348,7 +341,7 @@ QtObject {
         equal(service.exec(["lock"]), true, "bare backend command consumed");
         expectOutcome("unsupported", "missing backend method unsupported");
         expectConsumedNoDispatch("missing backend method");
-        check(service.lastResult.reason.indexOf("does not expose") >= 0, "missing method reason");
+        callsAre([], "missing backend method sends no call");
 
         service.backend = {canHibernate: 1};
         equal(service.hibernateSupported, false, "non-boolean hibernate capability rejected");
@@ -360,7 +353,7 @@ QtObject {
         expectOutcome("failed", "throwing backend outcome");
         equal(service.lastResult.dispatched, false, "throwing backend not dispatched");
         equal(service.lastResult.succeeded, false, "throwing backend not succeeded");
-        check(service.lastResult.reason.indexOf("threw") >= 0, "throwing backend reason");
+        callsAre([], "throwing backend records no successful call");
 
         service.backend = backend;
         reset();

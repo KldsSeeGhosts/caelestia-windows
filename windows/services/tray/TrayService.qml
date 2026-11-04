@@ -5,10 +5,8 @@ import QtQuick
 // facade (services/Tray.qml) injects the native item model only after the
 // CAELESTIA_WINDOWS_TRAY opt-in, and fixtures inject plain objects.
 //
-// Pinned backend contract (windows/deps/quickshell 14010429,
-// src/windows/services/systray):
-// - SystemTray exposes items only (qml.hpp lines 16-18). There is no readiness,
-//   snapshot-complete, Explorer-generation or error property.
+// Native backend contract (src/windows/services/systray):
+// - SystemTray exposes items and hookCapability with availability and reason.
 // - SystemTrayItem.hasMenu is always true while menu is always null
 //   (item.hpp lines 102-104), so the original TrayMenu has no semantic handle.
 // - display() opens the owner's native context menu but ignores the parent
@@ -19,13 +17,11 @@ import QtQuick
 //   212-230). They are permitted only under the separate activation opt-in.
 // SystemTray construction starts native tray hosting: TrayHost::instance()
 // starts its prune timer and, after the first frame, starts Explorer
-// interception and snapshots unless QS_WINDOWS_TRAY_HOOK=0
-// (host.cpp lines 139-201). The launcher sets that variable for this slice.
+// interception and snapshots unless QS_WINDOWS_TRAY_HOOK=0.
 QtObject {
     id: root
 
-    // Injected native facade (or test fake): an object exposing `items`, a
-    // model with a `values` array of SystemTrayItem-shaped objects.
+    // Injected facade exposes hookCapability and an items model with values.
     property var backend: null
     property bool enabled: false
 
@@ -34,14 +30,9 @@ QtObject {
     property bool activationEnabled: false
     property string backendError: ""
 
-    // This slice never enables interception. The native hook creates its own
-    // Shell_TrayWnd/TrayNotifyWnd windows, forwards tray messages and can
-    // broadcast TaskbarCreated (hook.cpp lines 211-350). Enabling it needs a
-    // separate tray-ownership review; tray runs always pass
-    // QS_WINDOWS_TRAY_HOOK=0. With interception off the backend never
-    // schedules enumeration (host.cpp:172-201), so an empty list is not an
-    // observation. Only a host that enables interception may set this true.
-    property bool interceptionEnabled: false
+    readonly property var hookCapability: backend?.hookCapability
+        ?? ({availability: "unavailable", reason: "hook-capability-unknown"})
+    readonly property bool interceptionEnabled: hookCapability.availability === "available"
 
     // Native context menus only. The original semantic TrayMenu cannot render
     // while menu is null; openMenu() routes to display() instead.
@@ -68,9 +59,7 @@ QtObject {
     readonly property var titles: list.map(item => root.itemTitle(item))
     readonly property var ids: list.map(item => root.itemId(item))
 
-    // Six states. "empty" is an observation with no current items and only
-    // exists while interception runs. With interception off the backend never
-    // enumerates, so no items is "not-observable", not a healthy empty tray.
+    // Seeded items can survive a failed hook start. Model size is not health.
     readonly property string status: {
         if (!root.enabled)
             return "disabled";
@@ -80,9 +69,15 @@ QtObject {
             return "initializing";
         if (!root.backend.items || !root.backend.items.values)
             return "unavailable";
+        if (root.hookCapability.availability === "disabled")
+            return "not-observable";
+        if (root.hookCapability.reason === "hook-starting")
+            return "initializing";
+        if (!root.interceptionEnabled)
+            return "unavailable";
         if (root.count > 0)
             return "ready";
-        return root.interceptionEnabled ? "empty" : "not-observable";
+        return "empty";
     }
     readonly property bool ready: status === "empty" || status === "ready"
 
@@ -93,6 +88,8 @@ QtObject {
             return root.backendError;
         if (root.backend && (!root.backend.items || !root.backend.items.values))
             return "The Windows tray backend did not expose an item model.";
+        if (root.backend && root.status === "unavailable")
+            return "Tray hook unavailable: " + (root.hookCapability.reason || "hook-capability-unknown");
         return "";
     }
 
@@ -270,6 +267,8 @@ QtObject {
             return "Windows tray observation is disabled.";
         if (root.backendError !== "")
             return "The Windows tray backend is unavailable: " + root.backendError;
+        if (root.status === "unavailable")
+            return root.reason;
         if (!root.ready)
             return "The Windows tray backend has not settled.";
         if (!root.activationEnabled)

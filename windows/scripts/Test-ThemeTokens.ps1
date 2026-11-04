@@ -16,7 +16,7 @@ foreach ($directory in @('config', 'state', 'runtime', 'cache', 'data')) {
 $pragmas = @([regex]::Matches([IO.File]::ReadAllText("$stage\shell.qml"),
     '(?m)^//@ pragma (?:DataDir|StateDir|CacheDir) [^\r\n]+') | ForEach-Object { $_.Value })
 if ($pragmas.Count -ne 3) { throw 'Expected three isolated profile-directory pragmas.' }
-$fixture = [IO.File]::ReadAllText("$repoRoot\windows\combined-prototype\ThemeTokensFixture.qml")
+$fixture = [IO.File]::ReadAllText("$repoRoot\windows\tests\fixtures\ThemeTokensFixture.qml")
 [IO.File]::WriteAllText("$stage\theme-fixture.qml", (($pragmas -join "`n") + "`n" + $fixture), (New-Object Text.UTF8Encoding($false)))
 $qmlRoot = Join-Path $BuildRoot 'install\qml'
 $info = New-Object Diagnostics.ProcessStartInfo

@@ -1,7 +1,0 @@
-{
-  "modules/dashboard/media/Details.qml": "modules/dashboard/media/Details.qml",
-  "components/controls/StyledSlider.qml": "components/controls/StyledSlider.qml",
-  "windows/services/media/Players.qml": "services/Players.qml",
-  "windows/services/media/PlayersService.qml": "services/PlayersService.qml",
-  "windows/services/media/NativeMediaBackend.qml": "services/NativeMediaBackend.qml"
-}

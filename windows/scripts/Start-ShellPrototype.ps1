@@ -10,6 +10,7 @@ param(
     # keeps test frames independent of desktop composition, a live shell, and
     # monitor state, and never opens a native window.
     [switch]$Offscreen,
+    [switch]$NoThrow,
     [switch]$Wait,
     [switch]$MonitorCycle,
     [switch]$TraceInput,
@@ -62,6 +63,11 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+# The bounded slice hosts have been retired. Keep the developer preview used
+# by source runs and the native integration checks; service fixtures are separate.
+if (-not $Combined) {
+    throw 'Only -Combined is supported. Use Test-Smoke.ps1 for offscreen production smoke or Test-*Service.ps1 for service fixtures.'
+}
 if ($MonitorCycle -and (-not $Smoke -or $ScaleFactor -ne 'native')) {
     throw '-MonitorCycle requires -Smoke and native scaling.'
 }
@@ -138,7 +144,7 @@ $kind = $(if ($selected.Count -eq 1) { $selected[0] } elseif ($Combined) { 'comb
 $stagePrototype = $(if ($kind -ne 'shell' -and $slices[$kind].Stage) { $slices[$kind].Stage } else { $kind })
 $marker = $(if ($kind -ne 'shell' -and $slices[$kind].Marker) { $slices[$kind].Marker } else { 'CAELESTIA_' + $kind.ToUpperInvariant() })
 $runName = $kind + '-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff')
-if (-not $ProfileRoot) { $ProfileRoot = Join-Path $RunRoot "$kind-prototype-profile" }
+if (-not $ProfileRoot) { $ProfileRoot = Join-Path $RunRoot "$kind-preview-profile" }
 $profileRoot = [IO.Path]::GetFullPath($ProfileRoot)
 # A fresh stage avoids stale QML types from a previous implementation.
 $stage = & (Join-Path $PSScriptRoot 'Stage-ShellPrototype.ps1') `
@@ -661,6 +667,6 @@ $result['sessionButtons'] = @($sessionButtonRecords.ToArray())
 $result = $result | ConvertTo-Json -Depth 12
 $result | Set-Content -LiteralPath (Join-Path $logRoot "$runName.json") -Encoding UTF8
 Write-Output $result
-if (($Smoke -and -not $passed) -or $exitCode -ne 0) {
+if (-not $NoThrow -and (($Smoke -and -not $passed) -or $exitCode -ne 0)) {
     throw "$kind prototype failed. See $stdoutPath and $stderrPath."
 }
