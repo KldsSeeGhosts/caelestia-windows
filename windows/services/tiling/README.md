@@ -151,12 +151,17 @@ or `Toast.Error`, icon `view_quilt`, copy through `Tr.tr`):
 
 | reason | title | message |
 | --- | --- | --- |
-| any | `Couldn't tile <App>` (app class, else title, else `a window`) | per reason below |
-| `min-size` | | `It needs more space than its tile; it was left floating.` |
-| `off-target` | | `It kept moving away from its tile; it was left floating.` |
-| `correction-limit` | | `It didn't fit its tile exactly, so it may leave a gap.` |
-| `unresponsive` | | `It didn't accept the move, so it was left floating.` |
-| unknown | | `It could not be placed in its tile.` |
+`<App>` is the app class, else the title, else `a window`. Since backend #101
+a min-size conflict stays tiled at its larger size and a slow app keeps its
+tile; only off-target and refused placements float.
+
+| reason | title | message |
+| --- | --- | --- |
+| `min-size` | `<App> doesn't fit its tile` | `It can't shrink enough, so it overlaps its neighbour until there's room.` |
+| `unresponsive` | `<App> is slow to respond` | `It keeps its tile and moves there when it catches up.` |
+| `off-target` | `Couldn't tile <App>` | `It kept moving away from its tile; it was left floating.` |
+| `correction-limit` | `Couldn't tile <App>` | `It didn't fit its tile exactly, so it may leave a gap.` |
+| unknown | `Couldn't tile <App>` | `It could not be placed in its tile.` |
 
 Rate limits: at most one toast per window address per reason per enabled
 session, and at most three toasts per ten seconds. The third toast of a

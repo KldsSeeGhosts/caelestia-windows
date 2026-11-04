@@ -539,20 +539,33 @@ QtObject {
             return;
         root._notifiedKeys.add(key);
         const name = appClass !== "" ? appClass : (title !== "" ? title : "a window");
-        root._emitFailureToast(root.tr("Couldn't tile") + " " + name,
+        root._emitFailureToast(root._failureTitle(why, name),
             root.tr(root._failureText(why)));
+    }
+
+    // Since backend #101 a min-size conflict stays tiled at its larger size and
+    // a slow app keeps its tile, so only off-target and refused placements float.
+    function _failureTitle(reason, name): string {
+        switch (reason) {
+        case "min-size":
+            return root.tr("%1 doesn't fit its tile").replace("%1", name);
+        case "unresponsive":
+            return root.tr("%1 is slow to respond").replace("%1", name);
+        default:
+            return root.tr("Couldn't tile %1").replace("%1", name);
+        }
     }
 
     function _failureText(reason): string {
         switch (reason) {
         case "min-size":
-            return "It needs more space than its tile; it was left floating.";
+            return "It can't shrink enough, so it overlaps its neighbour until there's room.";
         case "off-target":
             return "It kept moving away from its tile; it was left floating.";
         case "correction-limit":
             return "It didn't fit its tile exactly, so it may leave a gap.";
         case "unresponsive":
-            return "It didn't accept the move, so it was left floating.";
+            return "It keeps its tile and moves there when it catches up.";
         default:
             return "It could not be placed in its tile.";
         }
