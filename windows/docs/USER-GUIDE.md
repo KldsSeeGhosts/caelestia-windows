@@ -577,7 +577,23 @@ With `cpa-agents.json` present the drawer enables automatically. Set
 `"enabled": false` to keep the config but hide the drawer, or provide
 `quota.json` without `cpa-agents.json` to show the "not configured" empty state.
 
-No Python is needed to display quota. The drawer reads the summary with QML's
+#### Detailed usage via CLIProxyAPI
+
+Stock CLIProxyAPI has no quota summary. When the summary answers 404, or when
+**Detailed usage via CLIProxyAPI** is on in **Nexus > Services**
+(`windows.quota.cpaHub`, off by default), the drawer reads each Codex, Claude
+and Antigravity login on the hub through its management `api-call`, with the
+same `cpa-agents.json`. That adds token history by day with Top Models, and
+Limit Resets with their expiry times. It needs Python, runs a small helper only
+while the panel is on, reads each account at most every 5 minutes, and never
+claims a reset. The hub's management key goes over plain http only when the
+host's addresses are all on this PC, the local network or Tailscale, and only
+with the switch on. If the hub rejects the key, the drawer stops asking, even
+after a restart, until you update `adminKey` in `cpa-agents.json`. Hub mode calls the vendors' internal usage
+endpoints and sends their own clients' headers, which their terms may not
+allow; see [the port notes](../quota/README.md#hub-mode-cliproxyapi).
+
+Summary mode needs no Python. The drawer reads the summary with QML's
 `XMLHttpRequest`, maps providers to sections, accounts to blocks and quota
 windows to rows, and reads each provider's spend from the usage analytics. Refreshes
 follow `refreshIntervalMs` but never run faster than the manager's `ttlMs`;

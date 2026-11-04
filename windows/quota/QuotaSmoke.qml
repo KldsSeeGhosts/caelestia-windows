@@ -21,6 +21,10 @@
 //     with a valid CPA config. The drawer never opens, its input region is
 //     empty and the service makes no request. Switching it on and off again at
 //     runtime opens, closes and quiets the drawer live, and the cache survives.
+//   * hub: a stock CLIProxyAPI stub answers the summary with 404, so the
+//     provider helper reads the hub's logins. All Usage, the token popover and
+//     Limit Resets are checked and captured; switched off, the helper is gone
+//     within a second.
 //
 // No external network, credentials, pointer input or live desktop is used.
 import QtQuick
@@ -483,8 +487,29 @@ ShellRoot {
         driver.retries = 0;
     }
 
+    // A provider section's Today, Yesterday and Last 30 Days rows.
+    function usageRows(section): var {
+        return root.named(section, "quotaValueRow").filter(r => /^(Today|Yesterday|Last 30 Days)$/.test(r.label));
+    }
+
+    // Prints "alive" while the process id still runs, else "gone".
+    readonly property string pidCheckScript: "import ctypes, sys\n"
+        + "k = ctypes.windll.kernel32\n"
+        + "h = k.OpenProcess(0x1000, 0, int(sys.argv[1]))\n"
+        + "code = ctypes.c_ulong(0)\n"
+        + "alive = bool(h) and k.GetExitCodeProcess(h, ctypes.byref(code)) and code.value == 259\n"
+        + "print('alive' if alive else 'gone')\n"
+
+    Process {
+        id: pidCheck
+        property string result: ""
+        stdout: SplitParser {
+            onRead: data => pidCheck.result = String(data).trim()
+        }
+    }
+
     function setPanel(on: bool): void {
-        GlobalConfig.windows = { quota: { enabled: on } };
+        GlobalConfig.windows = { quota: { enabled: on, cpaHub: QuotaConfig.cpaHub } };
     }
 
     Timer {
@@ -497,6 +522,7 @@ ShellRoot {
         property int phase: 0
         property bool busy: false
         property double requestStamp: 0
+        property int hubPid: 0
 
         interval: 200
         repeat: true
@@ -533,6 +559,104 @@ ShellRoot {
                 width: root.quotaRegion().width, height: root.quotaRegion().height,
                 quotaWidth: quota.width, quotaEnabled: panels.quotaEnabled
             }));
+
+            if (root.mode === "refused-keepalive") {
+                // A CPA Manager summary accepts the key, then the hub refuses
+                // Keepalive's first api-call. The real Keepalive script runs.
+                if (driver.phase === 0) {
+                    if (!Quota.summaryAnswered || Quota.loading) {
+                        if (driver.retries++ < 100)
+                            return;
+                        root.fail("refused-keepalive: the summary did not load: status=" + Quota.status);
+                        return;
+                    }
+                    Quota.triggerKeepalive();
+                    driver.phase = 1;
+                    driver.retries = 0;
+                    return;
+                }
+                if (!Quota.keyRefused || Quota.keepaliveRunning) {
+                    if (driver.retries++ < 150)
+                        return;
+                    root.fail("Keepalive's refusal did not close the gate: refused=" + Quota.keyRefused
+                        + " running=" + Quota.keepaliveRunning + " error=" + Quota.keepaliveError);
+                    return;
+                }
+                driver.step = 20;
+                driver.phase = 0;
+                driver.retries = 0;
+                return;
+            }
+
+            if (root.mode === "hub-http") {
+                // "Detailed usage" on, with a plain-http hub that is not this PC's
+                // loopback name: the helper is the only source.
+                if (Quota.providers.length !== 3 || Quota.hubState !== "ok") {
+                    if (driver.retries++ < 150)
+                        return;
+                    root.fail("hub-http accounts did not load: providers=" + Quota.providers.length + " hub=" + Quota.hubState
+                        + " status=" + Quota.status + " error=" + Quota.error);
+                    return;
+                }
+                driver.hubPid = Number(Quota.hubProcessId) || 0;
+                if (driver.hubPid <= 0) {
+                    root.fail("hub-http helper has no process id");
+                    return;
+                }
+                // Detailed usage off, the panel still on.
+                GlobalConfig.windows = { quota: { enabled: true, cpaHub: false } };
+                driver.step = 30;
+                driver.phase = 0;
+                driver.retries = 0;
+                return;
+            }
+
+            if (root.mode === "refused" || root.mode === "refused-restart") {
+                // The hub answers 401 to every key (refused), or the cache already
+                // holds this key's refusal (refused-restart). The harness counts
+                // what reached the hub.
+                if (!Quota.keyRefused || Quota.status !== "error") {
+                    if (driver.retries++ < 100)
+                        return;
+                    root.fail("the refused key was not remembered: refused=" + Quota.keyRefused
+                        + " status=" + Quota.status + " error=" + Quota.error);
+                    return;
+                }
+                driver.step = 20;
+                driver.phase = 0;
+                driver.retries = 0;
+                return;
+            }
+
+            if (root.mode === "hub") {
+                // Stock CLIProxyAPI: the summary answers 404, so the hub helper
+                // reads every login. Its first pass brings Codex history and resets.
+                const codex = Quota.providers.find(a => a.provider === "codex");
+                if (Quota.providers.length !== 3 || Quota.hubState !== "ok" || !codex || !codex.history || !codex.resetCredits) {
+                    if (driver.retries++ < 150)
+                        return;
+                    root.fail("hub accounts did not load: providers=" + Quota.providers.length + " hub=" + Quota.hubState
+                        + " missing=" + Quota.summaryMissing + " status=" + Quota.status + " error=" + Quota.error);
+                    return;
+                }
+                if (!Quota.summaryMissing || Quota.hasError || Quota.status !== "ok") {
+                    root.fail("hub fallback state: missing=" + Quota.summaryMissing + " status=" + Quota.status + " error=" + Quota.error);
+                    return;
+                }
+                console.log("CAELESTIA_QUOTA_SMOKE_HUB", JSON.stringify({
+                    status: Quota.status, accounts: Quota.providers.length, hub: Quota.hubState,
+                    providers: Quota.providers.map(a => a.provider).join(","),
+                    labels: Quota.providers.map(a => a.accountLabel).join(","),
+                    nextDueInS: Math.round((Quota.hubNextDueAt - Date.now()) / 1000)
+                }));
+                // The drawer's whole model, for the harness's leak check.
+                console.log("CAELESTIA_QUOTA_SMOKE_HUB_STATE", JSON.stringify({ providers: Quota.providers, saved: Quota.hubSaved }));
+                root.screenState.quota = true;
+                driver.step = 10;
+                driver.phase = 0;
+                driver.retries = 0;
+                return;
+            }
 
             if (root.mode === "disabled") {
                 // A valid CPA config, with the setting off in shell.json.
@@ -955,6 +1079,121 @@ ShellRoot {
             return;
         }
 
+        // Hub: All Usage with hub data, the Today token popover (mix and Top
+        // Models), the Limit Resets popover, then the panel off: the helper
+        // process has to be gone within a second.
+        if (driver.step === 10) {
+            const popover = root.findNamed(quota, "quotaPopover");
+            const body = root.findNamed(quota, "quotaBody");
+            const sections = body ? root.named(body.contentItem, "quotaSection") : [];
+            const codexSection = sections.find(s => s.modelData.provider === "codex");
+            if (driver.phase === 0) {
+                if (!quota.visible || quota.offsetScale > 0.01 || !codexSection) {
+                    if (driver.retries++ < 40)
+                        return;
+                    root.fail("hub drawer did not open: sections=" + sections.length);
+                    return;
+                }
+                const rows = root.usageRows(codexSection);
+                const resets = root.findNamed(codexSection, "quotaLimitResets");
+                if (sections.length !== 3 || rows.length !== 3 || !rows.every(r => /tokens$/.test(r.value))
+                        || !resets || !resets.visible || resets.value !== "2 available") {
+                    if (driver.layoutRetries++ < 20)
+                        return;
+                    root.fail("hub All Usage: sections=" + sections.length + " rows=" + rows.map(r => r.label + "=" + r.value).join(";")
+                        + " resets=" + (resets ? resets.visible + ":" + resets.value : "none"));
+                    return;
+                }
+                driver.layoutRetries = 0;
+                driver.phase = 1;
+                root.captureTo(root.screenshotPath, () => {});
+                return;
+            }
+            if (driver.phase === 1) {
+                const today = root.usageRows(codexSection)[0];
+                today.detailClicked(today.figure);
+                driver.phase = 2;
+                driver.retries = 0;
+                return;
+            }
+            if (driver.phase === 2) {
+                const detail = popover ? popover.detailItem : null;
+                const models = detail ? root.findNamed(detail, "quotaTopModels") : null;
+                const mix = detail ? root.findNamed(detail, "quotaTokenMix") : null;
+                const parts = detail ? root.named(detail, "quotaTokenPart") : [];
+                if (!popover.open || !detail || detail.objectName !== "quotaBreakdown" || !models || !models.visible
+                        || detail.models.length !== 3 || !mix || !mix.visible || parts.length !== 3) {
+                    if (driver.retries++ < 20)
+                        return;
+                    root.fail("token popover: open=" + (popover && popover.open) + " models=" + (detail ? detail.models.length : -1)
+                        + " parts=" + parts.length);
+                    return;
+                }
+                console.log("CAELESTIA_QUOTA_SMOKE_HUB_TOKENS", JSON.stringify({
+                    figures: detail.figures, models: detail.models.map(m => m.name + " " + m.value), parts: parts.length
+                }));
+                driver.phase = 3;
+                root.captureTo(Quickshell.env("CAELESTIA_QUOTA_TOKENS_SCREENSHOT"), () => {});
+                return;
+            }
+            if (driver.phase === 3) {
+                popover.dismiss();
+                const resets = root.findNamed(codexSection, "quotaLimitResets");
+                resets.detailClicked(resets.figure);
+                driver.phase = 4;
+                driver.retries = 0;
+                return;
+            }
+            if (driver.phase === 4) {
+                const detail = popover ? popover.detailItem : null;
+                const entries = detail ? root.named(detail, "quotaResetEntry") : [];
+                if (!popover.open || !detail || detail.objectName !== "quotaResets" || entries.length !== 2) {
+                    if (driver.retries++ < 20)
+                        return;
+                    root.fail("resets popover: open=" + (popover && popover.open) + " entries=" + entries.length);
+                    return;
+                }
+                driver.phase = 5;
+                root.captureTo(Quickshell.env("CAELESTIA_QUOTA_RESETS_SCREENSHOT"), () => {});
+                return;
+            }
+            if (driver.phase === 5) {
+                popover.dismiss();
+                driver.hubPid = Number(Quota.hubProcessId) || 0;
+                if (driver.hubPid <= 0) {
+                    root.fail("hub helper has no process id");
+                    return;
+                }
+                root.setPanel(false);
+                driver.phase = 6;
+                driver.retries = 0;
+                return;
+            }
+            if (driver.phase === 6) {
+                // One second after switching off (five 200 ms ticks), ask Windows.
+                if (driver.retries++ < 5)
+                    return;
+                pidCheck.exec([Quickshell.env("CAELESTIA_QUOTA_PYTHON"), "-I", "-c", root.pidCheckScript, String(driver.hubPid)]);
+                driver.phase = 7;
+                return;
+            }
+            if (driver.phase === 7) {
+                if (pidCheck.running || pidCheck.result === "")
+                    return;
+                console.log("CAELESTIA_QUOTA_SMOKE_HUB_OFF", JSON.stringify({
+                    pid: driver.hubPid, helper: pidCheck.result, enabled: Quota.enabled, wanted: Quota.hubWanted
+                }));
+                if (pidCheck.result !== "gone" || Quota.enabled || Quota.hubWanted) {
+                    root.fail("hub helper outlived the panel: " + pidCheck.result);
+                    return;
+                }
+                driver.stop();
+                console.log("CAELESTIA_QUOTA_SMOKE_PASS", root.mode);
+                Qt.quit();
+            }
+            return;
+        }
+
         // Disabled: the setting is off, so nothing runs; then on, off and on at runtime.
         if (driver.step === 8) {
             if (driver.phase === 0) {
@@ -1049,6 +1288,99 @@ ShellRoot {
                 driver.stop();
                 console.log("CAELESTIA_QUOTA_SMOKE_PASS", root.mode);
                 Qt.quit();
+            }
+            return;
+        }
+
+        // Detailed usage switched off over a plain-http hub: the helper is gone
+        // within a second, and Refresh now does not start it again.
+        if (driver.step === 30) {
+            if (driver.phase === 0) {
+                if (driver.retries++ < 5)
+                    return;
+                pidCheck.exec([Quickshell.env("CAELESTIA_QUOTA_PYTHON"), "-I", "-c", root.pidCheckScript, String(driver.hubPid)]);
+                driver.phase = 1;
+                return;
+            }
+            if (driver.phase === 1) {
+                if (pidCheck.running || pidCheck.result === "")
+                    return;
+                Quota.refresh(true);
+                driver.phase = 2;
+                driver.retries = 0;
+                return;
+            }
+            if (driver.phase === 2) {
+                if (driver.retries++ < 5)
+                    return;
+                const restarted = (Number(Quota.hubProcessId) || 0) > 0;
+                console.log("CAELESTIA_QUOTA_SMOKE_HUB_HTTP_OFF", JSON.stringify({
+                    pid: driver.hubPid, helper: pidCheck.result, wanted: Quota.hubWanted, restarted: restarted,
+                    cpaHub: QuotaConfig.cpaHub, status: Quota.status
+                }));
+                if (pidCheck.result !== "gone" || Quota.hubWanted || restarted) {
+                    root.fail("Detailed usage off left hub mode on: helper=" + pidCheck.result
+                        + " wanted=" + Quota.hubWanted + " restarted=" + restarted);
+                    return;
+                }
+                driver.stop();
+                console.log("CAELESTIA_QUOTA_SMOKE_PASS", root.mode);
+                Qt.quit();
+            }
+            return;
+        }
+
+        // Refused key: every way to ask again (Refresh now, Keepalive, the panel
+        // off and on) must send nothing; the footer says what to change.
+        if (driver.step === 20) {
+            if (driver.phase === 0) {
+                Quota.refresh(true);
+                Quota.refresh(true);
+                Quota.triggerKeepalive();
+                root.setPanel(false);
+                driver.phase = 1;
+                return;
+            }
+            if (driver.phase === 1) {
+                if (driver.retries++ < 5)
+                    return;
+                root.setPanel(true);
+                driver.phase = 2;
+                driver.retries = 0;
+                return;
+            }
+            if (driver.phase === 2) {
+                // Two seconds for the endpoint to be read again and anything to go out.
+                if (driver.retries++ < 10)
+                    return;
+                Quota.refresh(true);
+                root.screenState.quota = true;
+                driver.phase = 3;
+                driver.retries = 0;
+                return;
+            }
+            if (driver.phase === 3) {
+                if (!quota.visible || quota.offsetScale > 0.01) {
+                    if (driver.retries++ < 40)
+                        return;
+                    root.fail("the refused-key drawer did not open");
+                    return;
+                }
+                const footer = root.hasText(quota, /Update cpa-agents\.json/);
+                console.log("CAELESTIA_QUOTA_SMOKE_REFUSED", JSON.stringify({
+                    refused: Quota.keyRefused, status: Quota.status, error: Quota.error,
+                    footer: footer, hubWanted: Quota.hubWanted, keepalive: Quota.keepaliveRunning
+                }));
+                if (!Quota.keyRefused || !footer || Quota.hubWanted || Quota.keepaliveRunning) {
+                    root.fail("refused key state: footer=" + footer + " hubWanted=" + Quota.hubWanted);
+                    return;
+                }
+                driver.phase = 4;
+                root.captureTo(Quickshell.env("CAELESTIA_SHELL_SCREENSHOT"), () => {
+                    driver.stop();
+                    console.log("CAELESTIA_QUOTA_SMOKE_PASS", root.mode);
+                    Qt.quit();
+                });
             }
             return;
         }

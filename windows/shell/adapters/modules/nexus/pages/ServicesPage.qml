@@ -40,12 +40,15 @@ PageBase {
     title: Tr.tr("Services")
 
     readonly property bool agentUsageOn: GlobalConfig.windows?.quota?.enabled ?? true
+    readonly property bool cpaHubOn: GlobalConfig.windows?.quota?.cpaHub ?? false
 
     // GlobalConfig.windows is one QVariantMap, not a sub-object: copy it and
     // write it back whole, as the window management page does.
-    function setAgentUsage(on: bool): void {
+    function setQuota(key: string, on: bool): void {
         const windows = JSON.parse(JSON.stringify(GlobalConfig.windows ?? {}));
-        windows.quota = Object.assign(windows.quota ?? {}, { enabled: on });
+        const quota = Object.assign({}, windows.quota ?? {});
+        quota[key] = on;
+        windows.quota = quota;
         GlobalConfig.windows = windows;
     }
 
@@ -116,11 +119,23 @@ PageBase {
         ToggleRow {
             objectName: "agentUsageToggle"
             first: true
-            last: true
             text: Tr.tr("Agent usage panel")
             subtext: Tr.tr("Top-right drawer with AI quota. Also needs a CPA config")
             checked: root.agentUsageOn
-            onToggled: root.setAgentUsage(checked)
+            onToggled: root.setQuota("enabled", checked)
+        }
+
+        // windows.quota.cpaHub: read each CLIProxyAPI login through the hub for
+        // token history, Top Models and Limit Resets. Stock CLIProxyAPI, which
+        // has no quota summary, always uses this path.
+        ToggleRow {
+            objectName: "cpaHubToggle"
+            last: true
+            enabled: root.agentUsageOn
+            text: Tr.tr("Detailed usage via CLIProxyAPI")
+            subtext: Tr.tr("Adds token history, top models and limit resets. Needs Python")
+            checked: root.cpaHubOn
+            onToggled: root.setQuota("cpaHub", checked)
         }
 
         // Polling

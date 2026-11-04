@@ -29,11 +29,13 @@ Singleton {
     // can name another file for an isolated run.
     readonly property string cpaConfigPath: Quickshell.env("CAELESTIA_CPA_CONFIG") || (root.configDir + "/cpa-agents.json")
 
-    // Python is still required for the optional keepalive helper behind the
-    // bolt button. The quota summary itself is read over HTTP by QML and needs
-    // no interpreter.
+    // Python runs the optional keepalive helper and, in hub mode, the provider
+    // helper (providers/quota_providers.py). The CPA Manager summary itself is
+    // read over HTTP by QML and needs no interpreter.
     readonly property string schemePython: Quickshell.env("CAELESTIA_SCHEME_PYTHON")
     readonly property string python: Quickshell.env("CAELESTIA_QUOTA_PYTHON") || root.schemePython || "py"
+    // The launcher needs -3 to pick Python 3; an explicit interpreter path does not.
+    readonly property var pythonCommand: root.python === "py" ? ["py", "-3"] : [root.python]
 
     // Quickshell resolves cacheDir from the staged shell's CacheDir pragma in
     // the combined prototype. Production falls back to the per-user Caelestia
@@ -58,6 +60,10 @@ Singleton {
     // absent; off turns the whole panel off, live.
     readonly property var windowsQuota: JSON.parse(JSON.stringify(GlobalConfig.windows?.quota ?? ({})))
     readonly property bool panelOn: root.windowsQuota.enabled === undefined ? true : root.windowsQuota.enabled === true
+    // Nexus > Services > "Detailed usage via CLIProxyAPI" (windows.quota.cpaHub,
+    // off when absent): read token history, Top Models and Limit Resets through
+    // the hub's own logins even when CPA Manager's summary answers.
+    readonly property bool cpaHub: root.windowsQuota.cpaHub === true
     // Auto-enable when a CPA config exists; quota.json can override either way.
     readonly property bool enabled: root.panelOn && (root.settingPresent ? root.settingEnabled : root.configured)
 

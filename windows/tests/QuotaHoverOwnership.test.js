@@ -294,7 +294,9 @@ test("with the setting off no request, timer or watchdog stays alive", () => {
     assert.match(quotaService, /readonly property bool enabled: QuotaConfig\.enabled/);
     assert.match(quotaService, /Timer \{\n        id: autoRefreshTimer[\s\S]*?running: root\.configured && root\.enabled/);
     assert.match(quotaService, /Timer \{\n        id: clockTimer[\s\S]*?running: root\.enabled && root\.clockHolders > 0/);
-    assert.match(quotaService, /if \(!root\.enabled \|\| root\.inFlight\)\n\s+return;/);
+    assert.match(quotaService, /if \(!root\.enabled\)\n\s+return;/);
+    // The hub helper only runs while the panel is on.
+    assert.match(quotaService, /readonly property bool hubWanted: root\.enabled && /);
     assert.match(quotaService, /function triggerKeepalive\(\): void \{\n\s+if \(!QuotaConfig\.enabled/);
     // ...the key is not read while it is off...
     assert.match(quotaService, /path: root\.enabled \? QuotaConfig\.cpaConfigPath : ""/);
@@ -305,18 +307,33 @@ test("with the setting off no request, timer or watchdog stays alive", () => {
     assert.match(suspend, /root\.spendRequests\.concat\(\[root\.activeRequest\]\)/);
     assert.match(suspend, /request\.abort\(\)/);
     assert.match(suspend, /root\.inFlight = false;\n\s+root\.loading = false;/);
+    assert.match(suspend, /root\.stopHub\(\);/);
+    const stopHub = between(quotaService, "    function stopHub(): void {", "    function mapHubAccount(");
+    assert.match(stopHub, /if \(hubProcess\.running\)\n\s+hubProcess\.signal\(9\);/);
 });
 
 test("Nexus writes windows.quota.enabled without disturbing the rest of windows", () => {
     assert.match(servicesPage, /text: Tr\.tr\("Agent usage panel"\)/);
     assert.match(servicesPage, /checked: root\.agentUsageOn/);
     assert.match(servicesPage, /readonly property bool agentUsageOn: GlobalConfig\.windows\?\.quota\?\.enabled \?\? true/);
-    const body = servicesPage.match(/function setAgentUsage\(on: bool\): void \{\n([\s\S]*?)\n    \}\n/)[1];
-    const context = vm.createContext({ on: false, GlobalConfig: { windows: { tiling: { enabled: true, mode: "observe" }, quota: { other: 1 } } } });
+    assert.match(servicesPage, /onToggled: root\.setQuota\("enabled", checked\)/);
+    const body = servicesPage.match(/function setQuota\(key: string, on: bool\): void \{\n([\s\S]*?)\n    \}\n/)[1];
+    const context = vm.createContext({ key: "enabled", on: false, GlobalConfig: { windows: { tiling: { enabled: true, mode: "observe" }, quota: { other: 1 } } } });
     vm.runInContext(body, context);
     const written = JSON.parse(JSON.stringify(context.GlobalConfig.windows));
     assert.deepEqual(written, { tiling: { enabled: true, mode: "observe" }, quota: { other: 1, enabled: false } });
-    const fresh = vm.createContext({ on: true, GlobalConfig: { windows: undefined } });
+    const fresh = vm.createContext({ key: "enabled", on: true, GlobalConfig: { windows: undefined } });
     vm.runInContext(body, fresh);
     assert.deepEqual(JSON.parse(JSON.stringify(fresh.GlobalConfig.windows)), { quota: { enabled: true } });
+});
+
+test("Nexus writes windows.quota.cpaHub next to the panel switch, off when absent", () => {
+    assert.match(servicesPage, /text: Tr\.tr\("Detailed usage via CLIProxyAPI"\)/);
+    assert.match(servicesPage, /readonly property bool cpaHubOn: GlobalConfig\.windows\?\.quota\?\.cpaHub \?\? false/);
+    assert.match(servicesPage, /onToggled: root\.setQuota\("cpaHub", checked\)/);
+    const body = servicesPage.match(/function setQuota\(key: string, on: bool\): void \{\n([\s\S]*?)\n    \}\n/)[1];
+    const context = vm.createContext({ key: "cpaHub", on: true, GlobalConfig: { windows: { quota: { enabled: false } } } });
+    vm.runInContext(body, context);
+    assert.deepEqual(JSON.parse(JSON.stringify(context.GlobalConfig.windows)), { quota: { enabled: false, cpaHub: true } });
+    assert.match(quotaConfig, /readonly property bool cpaHub: root\.windowsQuota\.cpaHub === true/);
 });
