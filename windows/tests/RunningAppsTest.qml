@@ -6,15 +6,16 @@ import qs.components.controls
 import qs.services as Services
 import qs.modules.bar as Bar
 import qs.modules.bar.popouts as BarPopouts
-import qs.modules.bar.components.workspaces as BarWorkspaces
 
 ShellRoot {
     id: root
     property int assertions: 0
     property int phase: 0
     property var fixtures: []
+    property var manyFixtures: []
     property var barPill
     property var barWorkspaces
+    property var barPopouts
     property int hyprRefusals: 0
     property int dispatcherWheels: 0
     property var deferredFixture
@@ -33,15 +34,14 @@ ShellRoot {
     property var interactionFirst
     property var interactionSecond
     property var interactionThird
-    property var hoverOther
-    property var hoverThird
-    property var hoverFourth
+    property var singleFixture
     property real hoverAt: 0
+    property real waitUntil: 0
     readonly property var screen: Quickshell.screens.length ? Quickshell.screens[0] : null
     readonly property var screenState: screen ? Services.ShellState.forScreen(screen) : null
 
-    // The shell loads this font. Without it the ActiveWindow entry falls back
-    // to literal icon names and widens the bar's layout past its 60px width.
+    // The shell loads this font. Without it the bar entries fall back to
+    // literal icon names and widen the bar's layout past its 60px width.
     FontLoader {
         id: materialSymbols
         source: Quickshell.shellPath("assets/material-symbols-rounded/MaterialSymbolsRounded.ttf")
@@ -63,6 +63,10 @@ ShellRoot {
             property var workspace: ({ id: 1 })
             property QtObject wayland: QtObject {
                 property bool minimized: false
+                onMinimizedChanged: {
+                    if (minimized)
+                        target.counts.minimizes++;
+                }
                 function completeActivation(): void {
                     target.activated = true;
                     minimized = false;
@@ -91,41 +95,38 @@ ShellRoot {
         }
     }
 
-    FloatingWindow {
-        visible: true
-        implicitWidth: 360
-        implicitHeight: 480
-        BarWorkspaces.RunningApps {
-            id: pill
-            rowSize: 32
-            maximumHeight: 136
-        }
-    }
-
     TestEvent { id: input }
+    property var keyInput: null
+    Component { id: keyInputComponent; TestCase { when: false } }
 
     // Match ContentWindow: the bar is a child of the window-sized Interactions
-    // mouse area, which only sees wheel input that the bar does not consume.
-    // Panels is omitted because this fixture only exercises the wheel path.
+    // mouse area. Its hover edge opens the shared popout exactly as the
+    // production host does, and it only sees wheel input the bar does not
+    // consume.
     FloatingWindow {
         id: barHost
         visible: true
         implicitWidth: 480
-        implicitHeight: 600
-
-        BarPopouts.Wrapper {
-            id: barPopouts
-            screen: root.screen
-            offsetScale: 0
-        }
+        implicitHeight: 1000
 
         CustomMouseArea {
             id: barInteractions
             anchors.fill: parent
+            hoverEnabled: true
             function onWheel(event: WheelEvent): void {
                 root.dispatcherWheels++;
                 if (event.x < bar.implicitWidth)
                     bar.handleWheel(event.y, event.angleDelta);
+            }
+            // HoverHandler delivers a point for every pointer move; the shared
+            // popout follows the bar's hover edge exactly as Interactions does.
+            HoverHandler {
+                id: barHover
+                onPointChanged: {
+                    if (barHover.point.position.x < bar.implicitWidth) {
+                            bar.checkPopout(barHover.point.position.y);
+                    }
+                }
             }
 
             Bar.BarWrapper {
@@ -134,9 +135,22 @@ ShellRoot {
                 anchors.bottom: parent.bottom
                 screen: root.screen
                 screenState: root.screenState
-                popouts: barPopouts
+                popouts: popouts
                 fullscreen: false
             }
+        }
+
+        // The production ClipWrapper places the shared popout beside the bar
+        // and above it, following its centre.
+        BarPopouts.Wrapper {
+            id: popouts
+            width: implicitWidth
+            height: implicitHeight
+            x: bar.contentWidth + 8
+            y: Math.max(0, Math.min(barHost.height - height, popouts.currentCenter - height / 2))
+            z: 1
+            screen: root.screen
+            offsetScale: 0
         }
     }
 
@@ -147,7 +161,7 @@ ShellRoot {
     }
 
     function newCounts(): var {
-        return { activations: 0, closes: 0, unsafeCloses: 0 };
+        return { activations: 0, closes: 0, unsafeCloses: 0, minimizes: 0 };
     }
 
     function makeFixture(address: string, appId: string): var {
@@ -159,20 +173,13 @@ ShellRoot {
     }
 
     function refreshBar(): void {
-        barPill = CUtils.findChild(bar, "runningAppsPill");
+        barPill = CUtils.findChild(bar, "taskbarActiveWindow");
         barWorkspaces = CUtils.findChild(bar, "taskbarWorkspaces");
-    }
-
-    function chooser(): var {
-        return Array.from(pill.data).find(child => child.objectName === "runningAppsChooser") ?? null;
-    }
-
-    function chooserList(popup): var {
-        return popup ? CUtils.findChild(popup.contentItem, "runningAppsWindowList") : null;
+        barPopouts = popouts;
     }
 
     function appRow(key: string): var {
-        const apps = listFor(pill);
+        const apps = listFor(barPill);
         if (!apps)
             return null;
         for (let i = 0; i < apps.count; i++) {
@@ -183,40 +190,39 @@ ShellRoot {
         return null;
     }
 
-    function focusAt(popup): string {
-        const list = root.chooserList(popup);
-        if (!list)
-            return "";
-        for (let i = 0; i < list.count; i++) {
-            const row = list.itemAtIndex(i);
-            if (!row)
-                continue;
-            for (const name of ["runningAppActivate", "runningAppMinimizeButton", "runningAppCloseButton"]) {
-                if (root.rowButton(row, name)?.activeFocus)
-                    return "row" + i + ":" + name;
-            }
-        }
-        return list.activeFocus ? "list" : "";
+    // The focusable child of a strip row. Focus lands here, not on the
+    // delegate Item, so this is what Tab moves between.
+    function appButton(index: int): var {
+        const apps = root.listFor(root.barPill);
+        const row = apps ? apps.itemAtIndex(index) : null;
+        return row ? Array.from(row.children).find(child => child.activeFocusOnTab === true) ?? null : null;
     }
 
-    function rowButton(row, name: string): var {
-        return row ? CUtils.findChild(row, name) : null;
+    function popoutList(): var {
+        const content = popouts.current;
+        return content ? CUtils.findChild(content, "activeWindowWindowList") : null;
+    }
+
+    function popoutRow(index: int): var {
+        const list = root.popoutList();
+        return list ? list.itemAtIndex(index) : null;
     }
 
     function sendPillWheel(): bool {
-        return input.mouseWheel(pill, pill.width / 2, pill.height / 2,
-            Qt.NoButton, Qt.NoModifier, 0, -120, 0);
-    }
-
-    function sendBarPillWheel(): bool {
         return input.mouseWheel(barPill, barPill.width / 2, barPill.height / 2,
             Qt.NoButton, Qt.NoModifier, 0, -120, 0);
     }
 
     function sendWorkspaceWheel(): bool {
-        // The top of the original workspace content, above the running-app pill.
+        // The top of the original workspace content, above the running-app strip.
         return input.mouseWheel(barWorkspaces, 10, 10,
             Qt.NoButton, Qt.NoModifier, 0, -120, 0);
+    }
+
+    function clickApp(key: string, button): bool {
+        const row = root.appRow(key);
+        return row !== null && input.mouseClick(row, row.width / 2, row.height / 2,
+            button, Qt.NoModifier, 0);
     }
 
     Timer {
@@ -224,6 +230,8 @@ ShellRoot {
         repeat: true
         running: true
         onTriggered: {
+            if (root.waitUntil > Date.now())
+                return;
             try {
                 if (root.phase === 0) {
                     if (materialSymbols.status !== FontLoader.Ready)
@@ -231,12 +239,16 @@ ShellRoot {
                     for (let i = 0; i < 9; i++)
                         root.fixtures.push(root.makeFixture(String(i + 1),
                             i < 2 ? "fixture-app" : "fixture-" + i));
+                    for (let i = 0; i < 30; i++)
+                        root.manyFixtures.push(root.makeFixture(String(100 + i), "many-app-" + i));
                     Services.RunningApps.source = root.fixtures;
                     Services.RunningApps.actionsEnabled = false;
                     root.screenState.bar = true;
+                    // Key events go to the window's active focus item; a
+                    // TestCase inside the window is the supported sender.
+                    root.keyInput = keyInputComponent.createObject(barHost.contentItem);
                 } else if (root.phase === 1) {
                     check(Services.RunningApps.groupIds.length === 8, "per-app grouping");
-                    check(pill.implicitHeight > 0 && pill.implicitHeight <= 136, "overflow stays bounded");
                     root.fixtures[0].wayland.minimized = true;
                     root.fixtures[1].wayland.minimized = true;
                     check(Services.RunningApps.groups["fixture-app"].allMinimized, "reactive minimized state");
@@ -257,16 +269,7 @@ ShellRoot {
                     check(!root.fixtures[0].wayland.minimized, "activation restores fixture");
                     check(root.fixtures[2].counts.activations === 0, "closed/hidden target not dispatched");
                     Services.RunningApps.request("1", "close");
-                    pill.selectApp("fixture-app", pill);
                 } else if (root.phase === 4) {
-                    // CUtils searches visual items only; PopupWindow is a
-                    // non-visual child with its own separate content tree.
-                    const popup = Array.from(pill.data).find(child => child.objectName === "runningAppsChooser");
-                    check(popup?.visible, "multi-window chooser opens");
-                    check(CUtils.findChild(popup.contentItem, "runningAppsWindowList")?.count === 2,
-                        "chooser instantiates both window rows");
-                    popup.visible = false;
-                    check(!popup.visible, "chooser can dismiss");
                     check(root.fixtures[0].counts.closes === 1, "graceful close request");
                     check(root.fixtures[0].counts.unsafeCloses === 0, "direct close was safe");
                     check(Services.RunningApps.windows["1"] !== undefined, "no optimistic close removal");
@@ -282,36 +285,62 @@ ShellRoot {
                 } else if (root.phase === 5) {
                     root.refreshBar();
                     if (!root.barPill || root.barPill.implicitHeight <= 0
-                            || bar.width < bar.contentWidth - 0.5)
+                            || bar.width < bar.contentWidth - 0.5) {
+                        console.log("WAIT5 pill=" + (root.barPill !== null) + " w=" + bar.width + " cw=" + bar.contentWidth + " ids=" + bar.children.map(c => c.entryId).join(",") + " names=" + CUtils.findChildrenMatching(bar, ".*").map(c => c.objectName).filter(n => n).join(","));
                         return;
+                    }
                     check(root.barPill !== null && root.barPill.implicitHeight > 0,
-                        "bar mounts the bounded running-app pill");
-                    check(root.barWorkspaces !== null, "bar mounts its workspaces entry");
+                        "bar mounts the running-app strip");
+                    // The capsule grows with its rows; wait for the height
+                    // animation to settle on whole rows.
+                    const rows = (root.barPill.implicitHeight - root.barPill.padding * 2) / root.barPill.rowSize;
+                    if (rows < 1 || Math.abs(rows - Math.round(rows)) > 0.01)
+                        return;
+                    check(root.barWorkspaces !== null, "bar still mounts its workspaces entry");
                     check(bar.width >= bar.contentWidth - 0.5, "bar reaches its production width");
                     const pillX = root.barPill.mapToItem(bar, 0, 0).x;
                     check(pillX >= 0 && pillX + root.barPill.width <= bar.width,
-                        "pill layout is inside the production-width bar");
-                    root.hyprRefusals = Services.Hypr.refusals;
-                    root.dispatcherWheels = 0;
-                    check(root.sendPillWheel(), "offscreen wheel delivered to the pill");
+                        "strip layout is inside the production-width bar");
+                    check(root.barPill.rowSize === 32, "rows are 32px");
+                    check(Math.abs(root.barPill.implicitHeight
+                        - (Math.round(rows) * 32 + root.barPill.padding * 2)) < 0.51,
+                        "strip height is whole 32px rows plus its capsule padding");
+                    // More applications than the bar can show, for overflow.
+                    Services.RunningApps.source = root.manyFixtures;
                 } else if (root.phase === 6) {
-                    const apps = root.listFor(pill);
-                    check(apps?.contentY > 0, "wheel scrolls an overflowing pill");
-                    if (apps)
-                        apps.contentY = 0;
-                    root.refreshBar();
+                    check(Services.RunningApps.groupIds.length === 30, "overflow model projected");
+                    const apps = root.listFor(root.barPill);
+                    check(apps && apps.contentHeight > apps.height, "overflowing strip scrolls");
+                    // Tab focus must scroll the focused row into view. Focus
+                    // lands on the row's StateLayer, so a handler on the
+                    // delegate Item never fires.
+                    const first = root.appButton(0);
+                    check(first !== null, "the first strip row is focusable");
+                    first.forceActiveFocus();
+                    let tabs = 0;
+                    while (!(root.appButton(20)?.activeFocus ?? false) && tabs < 30) {
+                        root.keyInput.keyClick(Qt.Key_Tab, Qt.NoModifier, 0);
+                        tabs++;
+                    }
+                    check(root.appButton(20)?.activeFocus ?? false, "Tab reaches row 20");
+                    check(apps.contentY > 0, "Tab scrolls the focused row into view");
+                    const row20 = apps.itemAtIndex(20);
+                    check(row20 !== null && row20.y >= apps.contentY
+                        && row20.y + row20.height <= apps.contentY + apps.height,
+                        "the focused row lies inside the viewport");
+                    apps.contentY = 0;
                     root.hyprRefusals = Services.Hypr.refusals;
                     root.dispatcherWheels = 0;
-                    check(root.sendBarPillWheel(), "bar-mounted pill wheel delivered");
+                    check(root.sendPillWheel(), "offscreen wheel delivered to the strip");
                 } else if (root.phase === 7) {
-                    const barApps = root.listFor(root.barPill);
+                    const apps = root.listFor(root.barPill);
+                    check(apps?.contentY > 0, "wheel scrolls an overflowing strip");
                     check(root.dispatcherWheels === 0,
-                        "overflow wheel is consumed by the pill's Flickable");
-                    check(barApps?.contentY > 0, "production overflow wheel scrolls natively");
+                        "overflow wheel is consumed by the strip's Flickable");
                     check(Services.Hypr.refusals === root.hyprRefusals,
                         "overflow wheel does not reach the workspace shortcut");
-                    if (barApps)
-                        barApps.contentY = 0;
+                    if (apps)
+                        apps.contentY = 0;
                     root.hyprRefusals = Services.Hypr.refusals;
                     root.dispatcherWheels = 0;
                     check(root.sendWorkspaceWheel(), "workspace wheel delivered");
@@ -326,13 +355,13 @@ ShellRoot {
                     Services.RunningApps.source = root.fixtures.slice(0, 2);
                 } else if (root.phase === 9) {
                     root.refreshBar();
-                    const barApps = root.listFor(root.barPill);
+                    const apps = root.listFor(root.barPill);
                     check(Services.RunningApps.groupIds.length === 1, "short list projected");
-                    check(barApps && barApps.contentHeight <= barApps.height,
+                    check(apps && apps.contentHeight <= apps.height,
                         "short list does not overflow");
                     root.hyprRefusals = Services.Hypr.refusals;
                     root.dispatcherWheels = 0;
-                    check(root.sendBarPillWheel(), "short-list wheel delivered");
+                    check(root.sendPillWheel(), "short-list wheel delivered");
                 } else if (root.phase === 10) {
                     check(root.dispatcherWheels === 0,
                         "short list consumes wheel before the window-level mouse area");
@@ -384,9 +413,9 @@ ShellRoot {
                         && root.timeoutFixture.counts.closes === 0
                         && root.timeoutFixture.counts.unsafeCloses === 0,
                         "minimized target sends no close");
-                    interval = 2200;
+                    root.waitUntil = Date.now() + 2200;
                 } else if (root.phase === 16) {
-                    interval = 80;
+                    root.waitUntil = 0;
                     check(Services.RunningApps.pendingCloses.length === 0,
                         "unconfirmed close times out");
                     check(root.timeoutFixture.counts.closes === 0
@@ -484,9 +513,9 @@ ShellRoot {
                     check(Services.RunningApps.pendingCloses.length === 1,
                         "destroyed-target close is pending");
                     root.destroyedFixture.wayland.destroy();
-                    interval = 250;
+                    root.waitUntil = Date.now() + 250;
                 } else if (root.phase === 27) {
-                    interval = 80;
+                    root.waitUntil = 0;
                     check(Services.RunningApps.pendingCloses.length === 0,
                         "destroyed target cancels pending close");
                     check(root.destroyedFixture.counts.closes === 0
@@ -518,7 +547,7 @@ ShellRoot {
                         && root.multiSecond.counts.closes === 0,
                         "queued closes wait for observed activation");
                     root.multiFirst.wayland.completeActivation();
-                    interval = 250;
+                    root.waitUntil = Date.now() + 250;
                 } else if (root.phase === 30) {
                     check(root.multiFirst.counts.closes === 1,
                         "first queued close dispatches after activation");
@@ -529,7 +558,7 @@ ShellRoot {
                     check(root.multiSecond.counts.closes === 0,
                         "second close still waits for its own activation");
                     root.multiSecond.wayland.completeActivation();
-                    interval = 250;
+                    root.waitUntil = Date.now() + 250;
                 } else if (root.phase === 31) {
                     check(root.multiSecond.counts.closes === 1,
                         "second queued close dispatches after activation");
@@ -559,9 +588,9 @@ ShellRoot {
                         "later close requests do not compete for foreground");
                     check(Services.RunningApps.pendingCloses.length === 3,
                         "three close requests are queued");
-                    interval = 2200;
+                    root.waitUntil = Date.now() + 2200;
                 } else if (root.phase === 34) {
-                    interval = 80;
+                    root.waitUntil = 0;
                     check(root.queueFirst.counts.closes === 0
                         && root.queueFirst.counts.unsafeCloses === 0,
                         "timed-out head sends no close");
@@ -588,7 +617,7 @@ ShellRoot {
                         && root.queueReplacement.counts.closes === 0,
                         "replacement target inherits no close");
                     root.queueSecond.wayland.completeActivation();
-                    interval = 250;
+                    root.waitUntil = Date.now() + 250;
                 } else if (root.phase === 36) {
                     check(root.queueSecond.counts.closes === 1,
                         "promoted close dispatches after activation");
@@ -610,7 +639,7 @@ ShellRoot {
                     check(Services.RunningApps.pendingCloses.length === 1,
                         "retry fixture close is pending");
                     root.retryFixture.wayland.completeActivation();
-                    interval = 250;
+                    root.waitUntil = Date.now() + 250;
                 } else if (root.phase === 39) {
                     check(root.retryFixture.counts.closes === 1,
                         "first close dispatches once");
@@ -621,9 +650,9 @@ ShellRoot {
                         "cancelled prompt leaves the window open");
                     // A duplicate inside the coalescing window is ignored.
                     Services.RunningApps.request("30", "close");
-                    interval = 1100;
+                    root.waitUntil = Date.now() + 1100;
                 } else if (root.phase === 40) {
-                    interval = 80;
+                    root.waitUntil = 0;
                     check(root.retryFixture.counts.closes === 1,
                         "duplicate close inside the coalescing window is ignored");
                     check(root.retryFixture.counts.activations === 1,
@@ -641,7 +670,7 @@ ShellRoot {
                         || Services.RunningApps.pendingCloses.length === 1,
                         "deliberate retry posts one more close");
                     root.retryFixture.wayland.completeActivation();
-                    interval = 250;
+                    root.waitUntil = Date.now() + 250;
                 } else if (root.phase === 42) {
                     check(root.retryFixture.counts.closes === 2,
                         "deliberate retry posts exactly one more close");
@@ -657,195 +686,156 @@ ShellRoot {
                         "interaction fixtures project one app");
                     check(Services.RunningApps.groups["fixture-interaction"]?.windowIds.length === 3,
                         "interaction app has three windows");
+                    // A retained facade value (the bar was just clicked) is not
+                    // the native foreground.
+                    root.interactionSecond.activated = true;
+                    Services.RunningApps.foregroundAddress = "";
+                    check(Services.RunningApps.groups["fixture-interaction"].active === true,
+                        "the facade still reports the app active");
+                    check(Services.RunningApps.focusedGroupId === "",
+                        "a retained facade value is not native foreground");
+                    root.singleFixture = root.makeFixture("50", "fixture-single");
+                    Services.RunningApps.source =
+                        [root.interactionFirst, root.interactionSecond, root.interactionThird,
+                            root.singleFixture];
+                    Services.RunningApps.actionsEnabled = true;
                 } else if (root.phase === 44) {
-                    const row = root.appRow("fixture-interaction");
-                    check(row !== null, "interaction app row is visible");
-                    check(input.mouseClick(row, row.width / 2, row.height / 2,
-                        Qt.LeftButton, Qt.NoModifier, 0), "interaction click delivered");
+                    check(root.appRow("fixture-single") !== null, "single-window app row is visible");
+                    check(root.clickApp("fixture-single", Qt.LeftButton),
+                        "focus click delivered to the strip");
                 } else if (root.phase === 45) {
-                    const popup = root.chooser();
-                    check(popup?.visible === true, "interaction chooser opened");
-                    check(root.chooserList(popup)?.count === 3, "interaction rows projected");
-                    check(root.focusAt(popup) === "list", "chooser starts with list keyboard focus");
-                    check(input.keyClick(Qt.Key_Escape, Qt.NoModifier, 0), "Escape event delivered");
-                    check(!popup.visible, "Escape dismisses the chooser");
+                    check(root.singleFixture.counts.activations === 1,
+                        "clicking an unfocused app focuses its window");
+                    check(root.singleFixture.counts.minimizes === 0,
+                        "clicking an unfocused app does not minimize it");
+                    Services.RunningApps.foregroundAddress = "50";
+                    check(Services.RunningApps.focusedGroupId === "fixture-single",
+                        "the native foreground decides the focused app");
                 } else if (root.phase === 46) {
-                    const row = root.appRow("fixture-interaction");
-                    check(input.mouseClick(row, row.width / 2, row.height / 2,
-                        Qt.LeftButton, Qt.NoModifier, 0), "second chooser click delivered");
+                    check(root.clickApp("fixture-single", Qt.LeftButton),
+                        "minimize click delivered to the strip");
                 } else if (root.phase === 47) {
-                    const popup = root.chooser();
-                    check(popup?.visible === true, "chooser reopens after Escape");
-                    check(root.focusAt(popup) === "list", "reopened chooser takes list focus");
-                    input.keyClick(Qt.Key_Tab, Qt.NoModifier, 0);
-                    check(root.focusAt(popup) === "row0:runningAppActivate",
-                        "Tab reaches the first row's activate action");
-                    input.keyClick(Qt.Key_Tab, Qt.NoModifier, 0);
-                    check(root.focusAt(popup) === "row0:runningAppMinimizeButton",
-                        "Tab reaches the first row's minimize action");
-                    input.keyClick(Qt.Key_Tab, Qt.NoModifier, 0);
-                    check(root.focusAt(popup) === "row0:runningAppCloseButton",
-                        "Tab reaches the first row's close action");
-                    input.keyClick(Qt.Key_Tab, Qt.NoModifier, 0);
-                    check(root.focusAt(popup) === "row1:runningAppActivate",
-                        "Tab crosses to the next window row");
-                    check(input.keyClick(Qt.Key_Escape, Qt.NoModifier, 0),
-                        "Escape event delivered from a row action");
-                    check(!popup.visible, "Escape from a row action dismisses the chooser");
+                    check(root.singleFixture.wayland.minimized === true,
+                        "clicking a focused single-window app minimizes it");
+                    check(root.singleFixture.counts.minimizes === 1,
+                        "minimize is dispatched exactly once");
+                    check(root.singleFixture.counts.activations === 1,
+                        "minimize does not reactivate the window");
+                    // A focused multi-window app cycles in stable order.
+                    root.interactionFirst.activated = true;
+                    root.interactionSecond.activated = false;
+                    root.interactionThird.activated = false;
+                    Services.RunningApps.foregroundAddress = "40";
+                    check(root.clickApp("fixture-interaction", Qt.LeftButton),
+                        "cycle click delivered to the strip");
                 } else if (root.phase === 48) {
-                    const row = root.appRow("fixture-interaction");
-                    check(input.mouseClick(row, row.width / 2, row.height / 2,
-                        Qt.LeftButton, Qt.NoModifier, 0), "selection chooser click delivered");
-                    const popup = root.chooser();
-                    check(popup?.visible === true, "selection chooser opens");
-                    check(root.chooserList(popup)?.currentIndex === 0,
-                        "chooser opens on the first window");
-                } else if (root.phase === 49) {
-                    const popup = root.chooser();
-                    input.keyClick(Qt.Key_Down, Qt.NoModifier, 0);
-                    check(root.chooserList(popup)?.currentIndex === 1,
-                        "Down selects the second window");
-                    check(input.keyClick(Qt.Key_Return, Qt.NoModifier, 0),
-                        "Return event delivered to the chooser");
-                    check(!popup.visible, "chooser dismisses before activation");
-                } else if (root.phase === 50) {
                     check(root.interactionSecond.counts.activations === 1,
-                        "Return activates the selected second window");
-                    check(root.interactionFirst.counts.activations === 0
-                        && root.interactionThird.counts.activations === 0,
-                        "Return does not activate another window");
-                    const row = root.appRow("fixture-interaction");
-                    check(input.mouseClick(row, row.width / 2, row.height / 2,
-                        Qt.LeftButton, Qt.NoModifier, 0), "reopen after selection click delivered");
+                        "a focused multi-window app cycles to its next window");
+                    Services.RunningApps.foregroundAddress = "41";
+                    check(root.clickApp("fixture-interaction", Qt.LeftButton),
+                        "second cycle click delivered to the strip");
+                } else if (root.phase === 49) {
+                    check(root.interactionThird.counts.activations === 1,
+                        "the next cycle click advances again");
+                    check(root.interactionFirst.counts.activations === 0,
+                        "cycling never skips or reuses a window");
+                    Services.RunningApps.foregroundAddress = "42";
+                    check(root.clickApp("fixture-interaction", Qt.LeftButton),
+                        "wrap cycle click delivered to the strip");
+                } else if (root.phase === 50) {
+                    check(root.interactionFirst.counts.activations === 1,
+                        "cycling wraps to the first window in stable order");
+                    check(root.interactionSecond.counts.activations === 1
+                        && root.interactionThird.counts.activations === 1,
+                        "one cycle activates each window once");
+                    Services.RunningApps.foregroundAddress = "40";
+                    check(root.appRow("fixture-interaction") !== null, "interaction row visible before hover");
+                    check(input.mouseMove(barInteractions, 5, 950, Qt.NoButton, Qt.NoModifier, 0),
+                        "pointer moved away from the strip");
                 } else if (root.phase === 51) {
-                    const popup = root.chooser();
-                    check(popup?.visible === true, "chooser reopens after a selection");
-                    check(root.chooserList(popup)?.currentIndex === 0,
-                        "reopened chooser resets to the first window");
-                    input.keyClick(Qt.Key_Down, Qt.NoModifier, 0);
-                    input.keyClick(Qt.Key_Down, Qt.NoModifier, 0);
-                    check(root.chooserList(popup)?.currentIndex === 2,
-                        "keyboard selection reaches the third window");
-                    // A window closes while the chooser is open. Return lands
-                    // before the deferred list layout clamps currentIndex, so
-                    // activation must clamp the row itself.
-                    Services.RunningApps.source = [root.interactionFirst, root.interactionSecond];
-                    check(input.keyClick(Qt.Key_Return, Qt.NoModifier, 0),
-                        "Return after list shrink delivered");
-                    check(!popup.visible, "chooser dismisses on activation after list shrink");
-                } else if (root.phase === 52) {
-                    check(root.interactionSecond.counts.activations === 2,
-                        "activation after list shrink selects the remaining row");
-                    check(root.interactionFirst.counts.activations === 0
-                        && root.interactionThird.counts.activations === 0,
-                        "list-shrink activation sends no stale target");
                     const row = root.appRow("fixture-interaction");
-                    check(input.mouseClick(row, row.width / 2, row.height / 2,
-                        Qt.LeftButton, Qt.NoModifier, 0), "outside-click chooser click delivered");
-                } else if (root.phase === 53) {
-                    const popup = root.chooser();
-                    check(popup?.visible === true, "outside-click chooser opens");
-                    check(root.chooserList(popup)?.count === 2, "shrunk rows are projected");
-                    check(input.mouseClick(pill, 5, 470, Qt.LeftButton, Qt.NoModifier, 0),
-                        "outside click delivered to the parent window");
-                    check(!popup.visible, "outside click dismisses the chooser");
-                    check(root.interactionSecond.counts.activations === 2,
-                        "outside click activates nothing");
-                } else if (root.phase === 54) {
-                    // Pointing at an icon reveals the chooser; pointing at the next
-                    // icon moves it there; leaving the pill closes it.
-                    root.hoverOther = root.makeFixture("91", "fixture-hover-other");
-                    root.hoverThird = root.makeFixture("92", "fixture-hover-third");
-                    root.hoverFourth = root.makeFixture("93", "fixture-hover-fourth");
-                    Services.RunningApps.source = [root.interactionFirst, root.interactionSecond,
-                        root.hoverOther, root.hoverThird, root.hoverFourth];
-                } else if (root.phase === 55) {
-                    const row = root.appRow("fixture-interaction");
-                    check(row && root.appRow("fixture-hover-other"), "hover fixtures are listed");
-                    // Start from a pointer that is not over any icon.
-                    check(input.mouseMove(pill, 5, 470, Qt.NoButton, Qt.NoModifier, 0), "hover reset delivered");
-                    root.hoverAt = Date.now();
-                } else if (root.phase === 56) {
-                    if (Date.now() - root.hoverAt < 500)
-                        return;
-                    const row = root.appRow("fixture-interaction");
-                    check(input.mouseMove(row, row.width / 2, row.height / 2, Qt.NoButton, Qt.NoModifier, 0), "hover enter delivered");
-                    root.hoverAt = Date.now();
-                } else if (root.phase === 57) {
-                    if (Date.now() - root.hoverAt < 700)
-                        return;
-                    const popup = root.chooser();
-                    check(popup?.visible === true, "pointing at an icon reveals the chooser");
-                    check(popup.hoverOpened, "a pointer-revealed chooser is not pinned");
-                    check(popup.anchor.item === root.appRow("fixture-interaction"),
-                        "the chooser sits on the pointed icon");
-                    const other = root.appRow("fixture-hover-other");
-                    check(input.mouseMove(other, other.width / 2, other.height / 2, Qt.NoButton, Qt.NoModifier, 0), "hover move delivered");
-                    root.hoverAt = Date.now();
-                } else if (root.phase === 58) {
-                    if (Date.now() - root.hoverAt < 700)
-                        return;
-                    const popup = root.chooser();
-                    check(popup?.visible === true, "the chooser survives moving to the next icon");
-                    check(popup.anchor.item === root.appRow("fixture-hover-other"),
-                        "the chooser follows the pointer to the next icon");
-                    check(pill.selectedApp === "fixture-hover-other", "the next icon's windows are listed");
-                    const back = root.appRow("fixture-interaction");
-                    check(input.mouseMove(back, back.width / 2, back.height / 2, Qt.NoButton, Qt.NoModifier, 0), "hover back delivered");
-                    root.hoverAt = Date.now();
-                } else if (root.phase === 59) {
-                    if (Date.now() - root.hoverAt < 700)
-                        return;
-                    const popup = root.chooser();
-                    check(popup?.visible === true && popup.anchor.item === root.appRow("fixture-interaction"),
-                        "the chooser moves back up as well");
-                    const other = root.appRow("fixture-hover-other");
-                    check(input.mouseMove(other, other.width / 2, other.height / 2,
-                        Qt.NoButton, Qt.NoModifier, 0), "rapid sweep starts");
-                } else if (root.phase === 60 || root.phase === 61) {
-                    const key = root.phase === 60 ? "fixture-hover-third" : "fixture-hover-fourth";
-                    const row = root.appRow(key);
-                    check(row && input.mouseMove(row, row.width / 2, row.height / 2,
-                        Qt.NoButton, Qt.NoModifier, 0), "rapid sweep crosses " + key);
-                } else if (root.phase === 62) {
-                    const row = root.appRow("fixture-interaction");
+                    check(row !== null, "interaction row visible for hover");
                     check(input.mouseMove(row, row.width / 2, row.height / 2,
-                        Qt.NoButton, Qt.NoModifier, 0), "rapid sweep returns without leaving the pill");
-                    root.hoverAt = Date.now();
-                } else if (root.phase === 63) {
-                    if (Date.now() - root.hoverAt < 400)
+                        Qt.NoButton, Qt.NoModifier, 0), "hover move delivered to the strip");
+                } else if (root.phase === 52) {
+                    check(Services.RunningApps.previewGroupId === "fixture-interaction",
+                        "hovering a row previews that application");
+                    check(Services.RunningApps.previewWindowId === "40",
+                        "the preview starts on the app's last active window");
+                    check(popouts.currentName === "activewindow" && popouts.hasCurrent,
+                        "hovering the strip opens the shared active-window popout");
+                    const rows = root.popoutList();
+                    if (rows === null)
                         return;
-                    const popup = root.chooser();
-                    check(popup?.visible === true && popup.anchor.item === root.appRow("fixture-interaction"),
-                        "rapid sweep settles on the final icon without a leave/re-enter");
-                    const other = root.appRow("fixture-hover-other");
-                    check(input.mouseMove(other, other.width / 2, other.height / 2,
-                        Qt.NoButton, Qt.NoModifier, 0), "next icon owns a pending hover switch");
-                    // Native popup leave can arrive after the next icon's enter.
-                    // Deliver that ordering deterministically as well as sweeping
-                    // with real input, which offscreen Qt cannot reproduce fully.
-                    const popupHover = Array.from(popup.contentItem.data).find(child => child.hovered !== undefined);
-                    check(popupHover && !popupHover.hovered, "pointer is on the icon, not the popup");
-                    popupHover.hoveredChanged();
-                    root.hoverAt = Date.now();
-                } else if (root.phase === 64) {
-                    if (Date.now() - root.hoverAt < 400)
-                        return;
-                    const popup = root.chooser();
-                    check(popup?.visible === true && popup.anchor.item === root.appRow("fixture-hover-other"),
-                        "late popup leave cannot close the newly hovered icon's chooser");
-                    check(input.mouseMove(pill, 5, 470, Qt.NoButton, Qt.NoModifier, 0), "hover leave delivered");
-                    root.hoverAt = Date.now();
-                } else if (root.phase === 65) {
-                    if (Date.now() - root.hoverAt < 700)
-                        return;
-                    check(root.chooser()?.visible === false, "leaving the pill closes the revealed chooser");
+                    check(rows.count === 3, "the popout lists every window of the app");
+                    check(Math.abs(popouts.currentCenter
+                        - (barPill.mapToItem(bar, 0, 0).y + barPill.hoverCenter)) < 1.5,
+                        "the popout is anchored at the hovered row's centre");
+                    check(popouts.current !== null, "the popout content loaded");
+                } else if (root.phase === 53) {
+                    const second = root.popoutRow(1);
+                    check(second !== null, "the second popout row is instantiated");
+                    check(input.mouseMove(second, second.width / 2, second.height / 2,
+                        Qt.NoButton, Qt.NoModifier, 0), "hover move delivered to a popout row");
+                } else if (root.phase === 54) {
+                    check(Services.RunningApps.previewWindowId === "41",
+                        "hovering a popout row swaps the preview");
+                    const first = root.popoutRow(0);
+                    check(first !== null, "the first popout row is instantiated");
+                    check(input.mouseClick(first, first.width / 2, first.height / 2,
+                        Qt.LeftButton, Qt.NoModifier, 0), "popout row click delivered");
+                } else if (root.phase === 55) {
+                    check(root.interactionFirst.counts.activations === 2,
+                        "clicking a popout row activates that window");
+                    check(!popouts.hasCurrent, "activating a window closes the popout");
+                    const row = root.appRow("fixture-single");
+                    check(row !== null && input.mouseClick(row, row.width / 2, row.height / 2,
+                        Qt.RightButton, Qt.NoModifier, 0), "right click delivered to the strip");
+                } else if (root.phase === 56) {
+                    check(barPill.pinned === true, "right click pins the popout");
+                    check(popouts.currentName === "activewindow" && popouts.hasCurrent,
+                        "right click opens the popout without a hover");
+                    check(Services.RunningApps.previewGroupId === "fixture-single",
+                        "the pinned popout previews the clicked application");
+                    check(root.popoutList()?.count === 1, "the pinned popout lists its only window");
+                } else if (root.phase === 57) {
+                    root.keyInput.keyClick(Qt.Key_Escape, Qt.NoModifier, 0);
+                } else if (root.phase === 58) {
+                    check(!popouts.hasCurrent, "Escape closes the pinned popout");
+                    check(barPill.pinned === false, "closing the popout releases the pin");
+                    const row = root.appRow("fixture-single");
+                    check(row !== null && input.mouseClick(row, row.width / 2, row.height / 2,
+                        Qt.RightButton, Qt.NoModifier, 0), "right click reopens the pinned popout");
+                } else if (root.phase === 59) {
+                    check(barPill.pinned === true && popouts.hasCurrent,
+                        "the popout is pinned again");
+                    check(root.popoutList()?.activeFocus === true,
+                        "a pinned popout moves keyboard focus into its window list");
+                    const row = root.popoutRow(0);
+                    const close = row ? CUtils.findChild(row, "activeWindowWindowClose") : null;
+                    check(close !== null, "the popout row has a close button");
+                    check(input.mouseClick(close, close.width / 2, close.height / 2,
+                        Qt.LeftButton, Qt.NoModifier, 0), "close click delivered to the popout");
+                } else if (root.phase === 60) {
+                    check(root.singleFixture.counts.unsafeCloses === 0,
+                        "the guarded close never closes a hidden window");
+                    check(root.singleFixture.counts.activations === 2,
+                        "the guarded close restores and activates first");
+                    // The single window was minimized by the click test; its
+                    // restore is observed before the close is dispatched.
+                    root.singleFixture.wayland.completeActivation();
+                    root.waitUntil = Date.now() + 250;
+                } else if (root.phase === 61) {
+                    root.waitUntil = 0;
+                    check(root.singleFixture.counts.closes === 1,
+                        "the popout close uses the guarded close path");
                     Services.RunningApps.source = [];
-                } else if (root.phase === 66) {
+                } else if (root.phase === 62) {
                     check(Services.RunningApps.groupIds.length === 0, "empty model");
-                    interval = 700;
+                    root.waitUntil = Date.now() + 700;
                 } else {
-                    check(pill.implicitHeight === 0, "empty pill disappears after its close animation");
+                    check(barPill.implicitHeight === 0, "the strip disappears when no app is running");
+                    check(barPill.visible === false, "the empty strip is hidden");
                     console.log("CAELESTIA_RUNNING_APPS_PASS " + root.assertions);
                     Qt.quit();
                 }

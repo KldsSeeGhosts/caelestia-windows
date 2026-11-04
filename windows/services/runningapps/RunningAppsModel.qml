@@ -8,10 +8,28 @@ QtObject {
 
     property var source: []
     property bool actionsEnabled: false
+    // Raw native foreground HWND, lowercase hex without a prefix, from the
+    // backend's WinEvent stream. Empty while a shell surface or another
+    // non-application window owns the foreground. The facade's `activated`
+    // value is retained while the bar itself has focus, so it must never decide
+    // whether an application is focused.
+    property string foregroundAddress: ""
+    readonly property var foregroundWindow: foregroundAddress ? (windows[foregroundAddress] ?? null) : null
+    readonly property string focusedGroupId: foregroundWindow ? foregroundWindow.appId.toLowerCase() : ""
+    // Hover preview shared by the running-app strip and the bar popout. The
+    // popout keeps one row per window of this application.
+    property string previewGroupId: ""
+    property string previewWindowId: ""
+    readonly property var previewGroup: previewGroupId ? (groups[previewGroupId] ?? null) : null
     property var groupIds: []
     property var windowIds: []
     property var groups: ({})
     property var windows: ({})
+    // Last window the native foreground reported for each application, keyed
+    // by group id. Unlike the facade's `active` bit, this survives the user
+    // switching to another application. Entries are dropped when the window
+    // closes; the visible window order is never changed.
+    property var lastActive: ({})
     // Insertion history survives temporary app cloaks. groupIds/windowIds are
     // the visible projection; these sequences restore an uncloaked slot.
     property var groupOrder: []
@@ -58,9 +76,31 @@ QtObject {
     readonly property var observations: Logic.observe(source)
 
     onObservationsChanged: refresh()
+    onForegroundAddressChanged: recordForeground()
     onActionsEnabledChanged: {
         if (!actionsEnabled)
             pendingCloses = [];
+    }
+
+    // The native foreground is the only source for "last used": the facade's
+    // `active` bit moves away with the current activation.
+    function recordForeground(): void {
+        // Resolve the handle directly: the foregroundWindow binding may still
+        // hold the previous address while this change signal is being handled.
+        const address = foregroundAddress;
+        const window = address ? windows[address] : null;
+        if (!window)
+            return;
+        const key = window.appId.toLowerCase();
+        if (lastActive[key] === address)
+            return;
+        const next = Object.assign({}, lastActive);
+        next[key] = address;
+        lastActive = next;
+    }
+
+    function lastActiveWindow(id: string): string {
+        return Logic.lastActiveWindow(groups[id] ?? null, windows, lastActive);
     }
 
     function resolveTarget(id: string, native): var {
@@ -113,10 +153,19 @@ QtObject {
             groupIds = next.groupIds;
         if (windowIds.join("\n") !== next.windowIds.join("\n"))
             windowIds = next.windowIds;
+        const retained = Logic.retainLastActive(next.groups, lastActive);
+        if (Object.keys(retained).length !== Object.keys(lastActive).length)
+            lastActive = retained;
+        // A window can gain the foreground before the projection observes it.
+        recordForeground();
         if (pendingCloses.length)
             pendingCloses = pendingCloses.filter(tracksTarget);
         if (recentCloses.length)
             pruneRecentCloses(nowMs(0));
+        if (previewGroupId && !next.groups[previewGroupId]) {
+            previewGroupId = "";
+            previewWindowId = "";
+        }
         if (pendingCloses.length)
             Qt.callLater(() => root.flushCloses(0));
     }
@@ -241,5 +290,17 @@ QtObject {
         pendingCloses = pendingCloses.concat({ id, native, deadline: 0 });
         promoteClose(nowMs(0));
         Qt.callLater(() => root.flushCloses(0));
+    }
+
+    // Windows 11 taskbar click, decided from the native foreground window and
+    // the app's remembered last-active window.
+    function clickAction(id: string): var {
+        return Logic.clickAction(groups[id] ?? null, windows, foregroundAddress, lastActive);
+    }
+
+    function click(id: string): void {
+        const result = clickAction(id);
+        if (result.action !== "none")
+            request(result.id, result.action);
     }
 }

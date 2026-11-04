@@ -94,6 +94,11 @@ $info.EnvironmentVariables['QT_PLUGIN_PATH'] = "$QtPrefix\plugins"
 $info.EnvironmentVariables['QS_WINDOWS_TRAY_HOOK'] = '0'
 $info.EnvironmentVariables['QS_WINDOWS_BLUR'] = '0'
 $info.EnvironmentVariables['QSG_RHI_BACKEND'] = 'd3d11'
+# The default D3D11 scene graph is the backend under test; the software graph
+# hides ClipRect's shader-masked content. The offscreen platform has no native
+# swapchain, so use the single-threaded loop for deterministic teardown.
+$info.EnvironmentVariables['QSG_NO_VSYNC'] = '1'
+$info.EnvironmentVariables['QSG_RENDER_LOOP'] = 'basic'
 $staleGates = @($info.EnvironmentVariables.Keys | Where-Object {
     $_ -like 'CAELESTIA_WINDOWS_*' -or $_ -in @('CAELESTIA_COMBINED_LIVE', 'CAELESTIA_WINDOWS_TILING')
 })

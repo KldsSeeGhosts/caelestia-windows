@@ -754,11 +754,18 @@ ShellRoot {
                 }
                 const workspaces = CUtils.findChild(win.contentItem, "taskbarWorkspaces");
                 const activeWindow = CUtils.findChild(win.contentItem, "taskbarActiveWindow");
+                // Windows: the active-window entry is the running-app strip,
+                // which is deliberately hidden while no application runs.
+                const runningApps = RunningApps.groupIds.length;
                 if (workspaces.implicitWidth <= 0 || workspaces.implicitHeight <= 0
-                        || activeWindow.implicitWidth <= 0 || activeWindow.implicitHeight <= 0) {
+                        || activeWindow.implicitWidth <= 0
+                        || (runningApps > 0 && activeWindow.implicitHeight <= 0)) {
                     root.fail("workspaces or active window entry did not lay out");
                     return;
                 }
+                console.log("CAELESTIA_COMBINED_RUNNING_APPS", JSON.stringify({
+                    groups: runningApps, height: activeWindow.implicitHeight
+                }));
                 const liveStates = root.serviceStates();
                 if (liveStates.hypr.monitors < 1 || liveStates.hypr.activeWsId < 1) {
                     root.fail("Hypr observation did not settle behind the bar entries");
