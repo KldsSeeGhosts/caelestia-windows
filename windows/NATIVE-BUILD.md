@@ -203,8 +203,8 @@ hardware, input or a visible window are listed under `notRun` and are not
 executed.
 
 On this PC (Windows 11, Qt 6.11.2, clang-cl 20.1.8, 4 jobs), a cold run took
-10 min 35 s (635 s) and cached `-SkipBuild` runs took 2 min 24 s to 3 min 1 s
-(144–181 s). The cold run included a clean build root. Build roots are
+10 min 35 s (635 s) and cached `-SkipBuild` runs took 2 min 19 s to 3 min 1 s
+(139–181 s). The cold run included a clean build root. Build roots are
 disposable: remove one when the candidate work is finished.
 
 ## Service fixtures and live checks
