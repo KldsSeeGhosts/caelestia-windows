@@ -201,9 +201,10 @@ layout trees and publishes it on the `Tiling` facade (`dragActive`,
 `dragMode`, `dragScreen`, `dragLanding`, `dragDisplaced`; logical rectangles
 local to that screen). `NativeTilingBackend.qml` and `TilingService.qml`
 forward it, feature-detected, and `modules/tiling/DragPreview.qml` draws it:
-a primary-tinted plate where the window lands and, when exactly one other
-window moves, an outline where that one goes. A drop that changes nothing
-draws nothing. The preview needs window contents shown while dragging (the
+a primary-tinted plate where the window lands and, in dwindle when exactly
+one other window moves, an outline where that one goes. A drop that changes
+nothing draws nothing. The plan follows layout changes during the drag; if the
+target closes or minimizes, the drop goes home until the cursor moves on. The preview needs window contents shown while dragging (the
 Windows default); with outline dragging the drop still works, without a
 preview.
 
