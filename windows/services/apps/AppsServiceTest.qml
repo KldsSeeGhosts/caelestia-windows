@@ -1,12 +1,16 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import Quickshell
 import "AppStoragePath.js" as StoragePath
 
 // Standalone fixture for the Windows app catalog/search state object.
-// Imports no Quickshell, native DesktopEntries or Caelestia.Models. The runner
-// stages this file, AppsService.qml, AppFrequencyStore.qml, AppStoragePath.js
-// and the upstream fzf/fuzzysort libraries, then runs Qt qml.exe offscreen.
+// Quickshell.DesktopEntries is the small fake module under
+// windows/tests/fakes/apps, so the production NativeAppCatalog wrapper runs
+// against it too. Imports no Caelestia.Models. The runner stages this file,
+// AppsService.qml, NativeAppCatalog.qml, AppFrequencyStore.qml,
+// AppStoragePath.js and the upstream fzf/fuzzysort libraries, then runs Qt
+// qml.exe offscreen.
 // Intended runner: windows/scripts/Test-AppsService.ps1 -QtPrefix <Qt prefix>
 QtObject {
     id: test
@@ -110,6 +114,19 @@ QtObject {
     // the fixture storage above.
     readonly property Component storeComponent: Component {
         AppFrequencyStore {}
+    }
+
+    // The production native wrapper, instantiated on demand against the fake
+    // Quickshell.DesktopEntries singleton. A QML reload builds a replacement
+    // catalog while the backend model still holds the previous scan's apps.
+    readonly property Component nativeCatalogComponent: Component {
+        NativeAppCatalog {}
+    }
+    readonly property Component nativeServiceComponent: Component {
+        AppsService {
+            enabled: true
+            catalog: NativeAppCatalog {}
+        }
     }
 
     // The property name `id` is reserved by the QML object syntax, so entries
@@ -550,12 +567,48 @@ QtObject {
             "disable clears error strings");
         check(service.canLaunch(firefox) === false, "disable clears launch capability");
 
+        // --- Native catalog over and across scans ----------------------------
+        checkNativeCatalogSnapshot();
+
         // Final native/no-op invariant across the whole fixture.
         check(catalog.executions === 2, "only the two permitted launches reached the catalog");
         check(firefox.executions === 2, "only explicit launches reached DesktopEntry.execute");
 
         console.log("CAELESTIA_APPS_FIXTURE_PASS " + JSON.stringify({assertions: assertions}));
         Qt.quit();
+    }
+
+    // DesktopEntryManager and its model outlive a QML engine, so a replacement
+    // generation constructs NativeAppCatalog while the model already holds the
+    // previous scan's applications: no applicationsChanged will arrive until
+    // the next scan. The adapter must see that snapshot immediately.
+    function checkNativeCatalogSnapshot(): void {
+        DesktopEntries.completeScan([firefox, files, calculator, settings, terminal]);
+
+        const readyService = nativeServiceComponent.createObject(test);
+        check(readyService !== null, "the native catalog service constructs");
+        check(readyService.ready === true && readyService.status === "ready",
+            "an existing snapshot is ready without another scan: " + readyService.status
+            + " (" + readyService.reason + ")");
+        check(readyService.count === 5, "an existing snapshot exposes every application");
+        check(readyService.search("fire").length === 1 && readyService.search("fire")[0] === firefox,
+            "search reads the existing snapshot");
+        const lateCatalog = nativeCatalogComponent.createObject(test);
+        check(lateCatalog !== null && lateCatalog.scanCompleted === true,
+            "a catalog built over an existing snapshot records the completed scan");
+
+        // The same wrapper, created before any scan, still completes from the
+        // backend signal: empty first, then populated.
+        DesktopEntries.completeScan([]);
+        const waitingService = nativeServiceComponent.createObject(test);
+        check(waitingService.status === "scanning" && waitingService.count === 0,
+            "a catalog built before the first scan is scanning");
+        DesktopEntries.completeScan([firefox, files]);
+        check(waitingService.ready === true && waitingService.count === 2,
+            "applicationsChanged populates an empty catalog: " + waitingService.status);
+        DesktopEntries.completeScan([]);
+        check(waitingService.status === "empty" && waitingService.count === 0,
+            "a completed empty scan is empty, not scanning: " + waitingService.status);
     }
 
     // Fresh launch counters without disturbing the catalog used above.
