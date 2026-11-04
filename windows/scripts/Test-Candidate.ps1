@@ -62,7 +62,9 @@ param(
     [Parameter(Mandatory)][string]$BuildRoot,
     [string]$OutFile,
     [ValidateRange(1, 64)][int]$Jobs = 4,
-    [switch]$SkipBuild
+    [switch]$SkipBuild,
+    # Check an existing manifest for private paths and user names, then exit.
+    [string]$VerifyManifest
 )
 
 $ErrorActionPreference = 'Stop'
@@ -80,6 +82,90 @@ $OutFile = [IO.Path]::GetFullPath($OutFile)
 $logRoot = Join-Path $BuildRoot ('logs\candidate-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
 $powershell = Join-Path $PSHOME 'powershell.exe'
 $scratch = Join-Path ([IO.Path]::GetTempPath()) ('caelestia-candidate-' + [guid]::NewGuid().ToString('N'))
+
+# The manifest is a candidate record, not a machine dump. Serialise it with
+# repository roots and personal paths replaced by stable placeholders, and
+# verify the result never carries a home path or the account name.
+$userName = [string]$env:USERNAME
+$userNamePattern = if ($userName) { '(?<![A-Za-z0-9._-])' + [regex]::Escape($userName) + '(?![A-Za-z0-9._-])' } else { $null }
+$toolchainRoot = Join-Path $env:LOCALAPPDATA 'caelestia-dev'
+$pathReplacements = @(
+    @{ from = $toolchainRoot; to = '<toolchain>' },
+    @{ from = $repoRoot; to = '<repo>' },
+    @{ from = $BuildRoot; to = '<buildRoot>' },
+    @{ from = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\'); to = '<temp>' },
+    @{ from = $env:USERPROFILE; to = '%USERPROFILE%' },
+    @{ from = $HOME; to = '%USERPROFILE%' },
+    @{ from = $env:LOCALAPPDATA; to = '%LOCALAPPDATA%' },
+    @{ from = $env:APPDATA; to = '%APPDATA%' },
+    @{ from = $env:TEMP; to = '<temp>' }
+) | Where-Object { $_.from } | Sort-Object { $_.from.Length } -Descending
+
+function Protect-ManifestString([string]$Text) {
+    if (-not $Text) { return $Text }
+    foreach ($replacement in $pathReplacements) {
+        if ($Text.IndexOf($replacement.from, [StringComparison]::OrdinalIgnoreCase) -ge 0) {
+            $Text = [regex]::Replace($Text, [regex]::Escape($replacement.from), $replacement.to, 'IgnoreCase')
+        }
+    }
+    if ($userNamePattern) { $Text = [regex]::Replace($Text, $userNamePattern, '%USERNAME%', 'IgnoreCase') }
+    return $Text
+}
+
+function ConvertTo-SafeManifestValue($Value) {
+    if ($null -eq $Value) { return $null }
+    if ($Value -is [string]) { return Protect-ManifestString $Value }
+    if ($Value -is [System.Management.Automation.PSCustomObject]) {
+        $copy = [ordered]@{}
+        foreach ($property in $Value.PSObject.Properties) {
+            $copy[$property.Name] = ConvertTo-SafeManifestValue $property.Value
+        }
+        return $copy
+    }
+    if ($Value -is [System.Collections.IDictionary]) {
+        $copy = [ordered]@{}
+        foreach ($key in @($Value.Keys)) { $copy[$key] = ConvertTo-SafeManifestValue $Value[$key] }
+        return $copy
+    }
+    if ($Value -is [System.Collections.IEnumerable]) {
+        return @($Value | ForEach-Object { ConvertTo-SafeManifestValue $_ })
+    }
+    return $Value
+}
+
+function Get-ManifestPrivacyReport([string]$Path) {
+    $report = [pscustomobject]@{ exists = $false; homeHits = 0; userHits = 0; total = 0 }
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $report }
+    $json = Get-Content -LiteralPath $Path -Raw
+    # JSON doubles path separators; count against the unescaped text too.
+    $plain = $json -replace '\\\\', '\'
+    if ($env:USERPROFILE) {
+        $report.homeHits = [regex]::Matches($plain, [regex]::Escape($env:USERPROFILE), 'IgnoreCase').Count
+    }
+    if ($userNamePattern) {
+        $report.userHits = [regex]::Matches($json, $userNamePattern, 'IgnoreCase').Count
+    }
+    $report.total = $report.homeHits + $report.userHits
+    $report.exists = $true
+    return $report
+}
+
+if ($VerifyManifest) {
+    $verifyPath = [IO.Path]::GetFullPath($VerifyManifest)
+    $privacy = Get-ManifestPrivacyReport $verifyPath
+    $shownPath = Protect-ManifestString $verifyPath
+    if (-not $privacy.exists) {
+        Write-Output "PRIVACY FAIL: no manifest at $shownPath"
+        exit 1
+    }
+    if ($privacy.total -gt 0) {
+        Write-Output "PRIVACY FAIL: $($privacy.homeHits) home-path occurrences, $($privacy.userHits) user-name occurrences in $shownPath"
+        exit 1
+    }
+    Write-Output "PRIVACY PASS: no home-path or user-name occurrences in $shownPath"
+    exit 0
+}
+
 New-Item -ItemType Directory -Force -Path $scratch, $logRoot, (Split-Path -Parent $OutFile) | Out-Null
 
 # Live-desktop, hardware, input and visible-window suites are intentionally not
@@ -91,8 +177,7 @@ $notRun = @(
     [ordered]@{ name = 'windows/scripts/Test-InstalledFrame.ps1'; reason = 'live/hardware: not claimed by this gate' },
     [ordered]@{ name = 'windows/scripts/Test-InstalledTray.ps1'; reason = 'live/hardware: not claimed by this gate' },
     [ordered]@{ name = 'windows/scripts/Test-InvisibleTaskbarProbe.ps1'; reason = 'live/hardware: not claimed by this gate' },
-    [ordered]@{ name = 'windows/scripts/Test-NexusAudioStress.ps1'; reason = 'live/hardware: not claimed by this gate' },
-    [ordered]@{ name = 'windows/scripts/Test-RunningApps.ps1'; reason = 'live/hardware: not claimed by this gate' }
+    [ordered]@{ name = 'windows/scripts/Test-NexusAudioStress.ps1'; reason = 'live/hardware: not claimed by this gate' }
 )
 
 $manifest = [ordered]@{
@@ -126,7 +211,7 @@ $manifest = [ordered]@{
 }
 
 function Write-Manifest {
-    Write-CaelestiaJsonAtomic $OutFile $manifest
+    Write-CaelestiaJsonAtomic $OutFile (ConvertTo-SafeManifestValue $manifest)
 }
 
 function Format-Argument([string]$Value) {
@@ -137,11 +222,59 @@ function Format-Argument([string]$Value) {
 function ConvertFrom-JsonOutput([string]$Text) {
     if (-not $Text) { return $null }
     $trimmed = $Text.Trim()
-    $start = $trimmed.IndexOf('{')
-    $end = $trimmed.LastIndexOf('}')
-    if ($start -lt 0 -or $end -le $start) { return $null }
-    try { return ($trimmed.Substring($start, $end - $start + 1) | ConvertFrom-Json) }
+    # Runners may print fixture output before their result object. The result is
+    # the last pretty-printed block that starts on its own line.
+    $lines = @($trimmed -split "`r?`n")
+    $start = -1
+    for ($i = $lines.Count - 1; $i -ge 0; $i--) {
+        if ($lines[$i].Trim() -eq '{') { $start = $i; break }
+    }
+    if ($start -ge 0) {
+        try { return (($lines[$start..($lines.Count - 1)] -join "`n") | ConvertFrom-Json) } catch { }
+    }
+    $first = $trimmed.IndexOf('{')
+    $last = $trimmed.LastIndexOf('}')
+    if ($first -lt 0 -or $last -le $first) { return $null }
+    try { return ($trimmed.Substring($first, $last - $first + 1) | ConvertFrom-Json) }
     catch { return $null }
+}
+
+# Runners name their fixtures differently (fixture, battery, profiles or a
+# top-level assertions field). Sum every reported fixture-assertion field, but
+# ignore the aggregate top-level `fixture` alias when named fixture fields
+# exist. Battery keeps each fixture's assertions under its own fixture object.
+function Add-AssertionFields($Value, [bool]$SkipFixture, [ref]$Sum, [ref]$Found) {
+    if ($null -eq $Value -or $Value -is [string]) { return }
+    if ($Value -is [System.Collections.IEnumerable] -and -not ($Value -is [System.Collections.IDictionary])) {
+        foreach ($item in $Value) { Add-AssertionFields $item $false $Sum $Found }
+        return
+    }
+    if ($Value -is [System.Management.Automation.PSCustomObject] -or $Value -is [System.Collections.IDictionary]) {
+        foreach ($property in $Value.PSObject.Properties) {
+            if ($SkipFixture -and $property.Name -eq 'fixture') { continue }
+            if ($property.Name -eq 'assertions') {
+                $number = 0
+                if ([int]::TryParse("$($property.Value)", [ref]$number)) {
+                    $Sum.Value += $number
+                    $Found.Value = $true
+                }
+                continue
+            }
+            Add-AssertionFields $property.Value $false $Sum $Found
+        }
+    }
+}
+
+function Get-ReportedAssertions($Parsed) {
+    if (-not $Parsed) { return $null }
+    $sum = 0
+    $found = $false
+    Add-AssertionFields $Parsed $true ([ref]$sum) ([ref]$found)
+    if (-not $found -and $null -ne $Parsed.fixture) {
+        Add-AssertionFields $Parsed.fixture $false ([ref]$sum) ([ref]$found)
+    }
+    if ($found) { return $sum }
+    return $null
 }
 
 function Read-BuildRecord {
@@ -429,12 +562,7 @@ try {
         $step = $run.Step
         $parsed = ConvertFrom-JsonOutput $run.Stdout
         if ($parsed) {
-            $assertions = $null
-            if ($null -ne $parsed.fixture) {
-                if ($null -ne $parsed.fixture.assertions) { $assertions = [int]$parsed.fixture.assertions }
-                elseif ($parsed.fixture -is [int] -or $parsed.fixture -is [long]) { $assertions = [int]$parsed.fixture }
-            }
-            $step.assertions = $assertions
+            $step.assertions = Get-ReportedAssertions $parsed
             $step.counts = [ordered]@{
                 passed = $(if (($step.exitCode -eq 0) -and ($parsed.passed -ne $false)) { 1 } else { 0 })
                 failed = $(if (($step.exitCode -ne 0) -or ($parsed.passed -eq $false)) { 1 } else { 0 })
@@ -457,6 +585,43 @@ try {
         $manifest.steps += $step
         Write-Manifest
     }
+
+    # Test-RunningApps is offscreen with fakes; the other adapter/live checks
+    # stay in notRun.
+    $adapterScript = Join-Path $PSScriptRoot 'Test-RunningApps.ps1'
+    $adapterArguments = @('-QtPrefix', $QtPrefix, '-BuildRoot', $BuildRoot)
+    $adapterCommand = 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File ' + (Format-Argument $adapterScript) +
+        ' ' + ((@($adapterArguments | ForEach-Object { Format-Argument $_ })) -join ' ')
+    if ($reason) {
+        Add-SkippedStep 'Test-RunningApps' 'fixture' $adapterCommand $reason
+    } else {
+        $run = Invoke-ScriptStep 'Test-RunningApps' 'fixture' $adapterScript $adapterArguments 'Test-RunningApps'
+        $step = $run.Step
+        $parsed = ConvertFrom-JsonOutput $run.Stdout
+        $step.assertions = Get-ReportedAssertions $parsed
+        $step.counts = [ordered]@{
+            passed = $(if (($step.exitCode -eq 0) -and -not ($parsed -and ($parsed.passed -eq $false))) { 1 } else { 0 })
+            failed = $(if (($step.exitCode -ne 0) -or ($parsed -and ($parsed.passed -eq $false))) { 1 } else { 0 })
+            skipped = 0
+        }
+        if ($parsed) {
+            $step.details = [ordered]@{
+                sourceMatchesBuild = $parsed.sourceMatchesBuild
+                platform = $parsed.platform
+                timedOut = $parsed.timedOut
+                fixture = $parsed.fixture
+            }
+        }
+        $step.status = if (($step.exitCode -eq 0) -and -not ($parsed -and ($parsed.passed -eq $false))) { 'passed' } else { 'failed' }
+        $manifest.steps += $step
+        Write-Manifest
+        $evidence = [string]$parsed.evidenceDirectory
+        if ($step.status -eq 'passed' -and $evidence -and
+            ([IO.Path]::GetFullPath($evidence)).StartsWith([IO.Path]::GetFullPath([IO.Path]::GetTempPath()), [StringComparison]::OrdinalIgnoreCase) -and
+            (Split-Path -Leaf $evidence) -like 'caelestia-running-apps-*') {
+            Remove-Item -LiteralPath $evidence -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
 } catch {
     $manifest.errors += "The gate stopped unexpectedly: $_"
 } finally {
@@ -473,6 +638,14 @@ try {
     $manifest.result = if (($manifest.totals.failed -eq 0) -and ($manifest.errors.Count -eq 0) -and $provenanceOk) { 'passed' } else { 'failed' }
     $manifest.exitCode = if ($manifest.result -eq 'passed') { 0 } else { 1 }
     Write-Manifest
+    $privacy = Get-ManifestPrivacyReport $OutFile
+    if ($privacy.total -gt 0) {
+        $manifest.errors += 'The manifest contains private path or user-name data.'
+        $manifest.result = 'failed'
+        $manifest.exitCode = 1
+        Write-Manifest
+        Write-Output "PRIVACY FAIL: $($privacy.homeHits) home-path and $($privacy.userHits) user-name occurrences remain in the manifest."
+    }
     Remove-Item -LiteralPath $scratch -Recurse -Force -ErrorAction SilentlyContinue
 }
 

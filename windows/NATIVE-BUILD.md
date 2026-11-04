@@ -188,20 +188,24 @@ powershell -NoProfile -File windows/scripts/Test-Candidate.ps1 `
 ```
 
 Steps are the environment check, a `-Tests` build, the backend native fixtures,
-the public smoke, and every `Test-*Service.ps1` offscreen fixture. `-SkipBuild`
-reuses an existing build root for a cached run. The manifest records the shell
-commit, the backend gitlink and checkout against `windows/sources.lock.json`,
-toolchain versions, and each step's command, exit code, duration, pass/fail/skip
-counts where the step reports them, skip reasons and log paths. A failed step
+the public smoke, every `Test-*Service.ps1` offscreen fixture and the offscreen
+`Test-RunningApps` fixture. `-SkipBuild` reuses an existing build root for a
+cached run. The manifest records the shell commit, the backend gitlink and
+checkout against `windows/sources.lock.json`, toolchain versions, and each step's
+command, exit code, duration, pass/fail/skip counts where the step reports them,
+skip reasons and log paths. Absolute paths are serialised with `<repo>`,
+`<toolchain>`, `<buildRoot>`, `<temp>` and `%USERPROFILE%`-style placeholders, so
+a manifest carries no home path or account name. `-VerifyManifest <path>` checks
+an existing manifest and returns exit code 1 if it still does. A failed step
 fails the whole run and returns exit code 1; a step skipped after a failed
 prerequisite is never counted as a pass. Suites that need a live desktop, real
 hardware, input or a visible window are listed under `notRun` and are not
 executed.
 
 On this PC (Windows 11, Qt 6.11.2, clang-cl 20.1.8, 4 jobs), a cold run took
-10 min 35 s (635 s) and the cached `-SkipBuild` run took 2 min 0 s (120 s). The
-cold run included a clean build root. Build roots are disposable: remove one
-when the candidate work is finished.
+10 min 35 s (635 s) and cached `-SkipBuild` runs took 2 min 24 s to 3 min 1 s
+(144–181 s). The cold run included a clean build root. Build roots are
+disposable: remove one when the candidate work is finished.
 
 ## Service fixtures and live checks
 
