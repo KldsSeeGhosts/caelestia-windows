@@ -223,6 +223,10 @@ function Invoke-QuotaSmoke([string]$Mode, [string]$Geometry) {
             Write-Utf8NoBom "$profile\config\cpa-agents.json" $configJson
         }
 
+        if ($Mode -eq 'refused-keepalive') {
+            # The keepalive mode swaps a fake into the shared stage; this mode needs the real script.
+            Copy-Item -LiteralPath "$repoRoot\windows\quota\scripts\cpa_keepalive.py" -Destination (Join-Path $stage 'scripts\cpa_keepalive.py') -Force
+        }
         $fakeDir = Join-Path $modeRoot 'fake-helper'
         if ($Mode -eq 'keepalive') {
             New-Item -ItemType Directory -Force $fakeDir | Out-Null
