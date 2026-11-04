@@ -685,9 +685,11 @@ On Hyprland, each monitor has independent workspaces and named `special:` scratc
 
 A Wayland compositor can tell a client what size to render at and clip its surface. On Windows, applications manage their own Win32 `WM_GETMINMAXINFO` constraints, DWM invisible shadow borders, and modal resize loops:
 
-- If a window's minimum size is larger than its assigned tile (`min-size`), if it repeatedly fights repositioning (`off-target`), or if it does not respond to move requests (`unresponsive`), Caelestia **floats the window automatically** instead of overlapping neighbors or entering an infinite resize loop.
+- If a window's minimum size is larger than its assigned tile (`min-size`), it **stays tiled** at its larger size, like Hyprland: it is anchored at its tile, kept inside the screen's work area, and overlaps its neighbour until the tile has room again (for example when a neighbour closes). A window too large for the whole work area starts at the work area's leading edge and overflows past the far edge.
+- If a window is slow to accept a move (`unresponsive`), it keeps its tile and moves there when it catches up.
+- If a window keeps moving away from its tile (`off-target`), Caelestia floats it. It gets one fresh attempt when you move it to another monitor or desktop, or when a neighbour closes. Choosing to tile it yourself (`togglefloating`/`settiled`) always wins.
 - If a window settles slightly off its target frame after the correction limit (`correction-limit`), Caelestia leaves it in place with a small gap rather than jittering.
-- Whenever a window cannot be tiled cleanly, Caelestia displays a rate-limited toast (`Couldn't tile <App>`) explaining the exact reason.
+- Whenever a window cannot be tiled cleanly, Caelestia displays a rate-limited toast explaining the reason.
 - **DPI-unaware windows:** The integrated backend includes the DPI-unaware placement fix; mixed-DPI live tiling acceptance remains separate from loading smoke.
 - **Administrator (elevated) windows:** Because Caelestia runs as a standard user without admin rights, Windows User Interface Privilege Isolation (UIPI) prevents Caelestia from moving or closing elevated windows (such as an Administrator PowerShell or Registry Editor). Elevated windows remain unmanaged/floating.
 
