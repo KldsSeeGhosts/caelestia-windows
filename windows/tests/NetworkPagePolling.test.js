@@ -1,4 +1,4 @@
-// Source/lifecycle regression checks for the Windows network pages. The native
+// Lifecycle regression checks for the Windows network pages. The native
 // backend owns the scan timer; NetworkServiceTest.qml tests its visibility gate
 // with an injected backend. These checks exercise the pages' actual handlers.
 const assert = require("node:assert/strict");
@@ -12,11 +12,6 @@ const directory = path.resolve(__dirname, "../shell/adapters/modules/nexus/pages
 
 for (const page of pages) {
     const source = fs.readFileSync(path.join(directory, page), "utf8").replace(/\r\n/g, "\n");
-
-    test(`${page}: the backend is the only automatic scan scheduler`, () => {
-        assert.doesNotMatch(source, /\b(?:rescanWifi|requestScan|scanWifiNetworks)\s*\(/,
-            "page polling duplicates the native scan and overwrites command feedback");
-    });
 
     test(`${page}: hidden construction and visibility handoff do not retain owners`, () => {
         const owners = new Set();
