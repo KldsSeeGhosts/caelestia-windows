@@ -84,6 +84,12 @@ Item {
     implicitWidth: nonAnimWidth
     implicitHeight: nonAnimHeight
 
+    // Upstream's wrapper takes focus while a popout is open, so Escape reaches
+    // it. Windows has no credential-collecting network popout, so the upstream
+    // password-dialog forwarding has no target and Escape just closes.
+    focus: hasCurrent
+    Keys.onEscapePressed: root.close()
+
     PopoutState {
         id: popoutState
 

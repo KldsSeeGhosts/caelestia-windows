@@ -68,10 +68,11 @@ StyledRect {
             + (group.minimized ? ", " + group.minimized + " minimized" : "");
     }
 
-    // The app's last-active window, restoring it if it is minimized.
+    // The app's last-active window, restoring it if it is minimized. The
+    // service remembers the native foreground per app, because the facade's
+    // `active` bit follows only the current activation.
     function lastActive(group): string {
-        return group?.windowIds.find(id => Services.RunningApps.windows[id]?.active)
-            ?? group?.windowIds[0] ?? "";
+        return group ? Services.RunningApps.lastActiveWindow(group.id) : "";
     }
 
     // Hovering a row previews that application in the shared popout. The
@@ -83,6 +84,16 @@ StyledRect {
         Services.RunningApps.previewWindowId = lastActive(groups[key]);
         hoverCenter = item.mapToItem(root, 0, root.rowSize / 2).y;
         interactionStarted();
+    }
+
+    // A pinned popout is keyboard-driven: move focus into its window list so
+    // Escape and the arrow keys work immediately, without a click.
+    function focusPinnedPopout(): void {
+        if (!pinned)
+            return;
+        const current = bar?.popouts?.current ?? null;
+        if (current && typeof current.focusWindowList === "function")
+            current.focusWindowList();
     }
 
     // Right-click pins the same popout for keyboard and touch: it opens without
@@ -101,6 +112,7 @@ StyledRect {
         popouts.currentName = "activewindow";
         popouts.currentCenter = mapToItem(bar, 0, hoverCenter).y;
         popouts.hasCurrent = true;
+        focusPinnedPopout();
         interactionStarted();
     }
 
@@ -186,12 +198,6 @@ StyledRect {
                 color: Services.Colours.palette.m3onSurfaceVariant
             }
 
-            // Tab focus scrolls the focused row into the viewport.
-            onActiveFocusChanged: {
-                if (activeFocus)
-                    apps.positionViewAtIndex(index, ListView.Contain);
-            }
-
             StateLayer {
                 id: appButton
                 disabled: !Services.RunningApps.actionsEnabled
@@ -205,6 +211,12 @@ StyledRect {
                         root.activate(app.modelData);
                 }
                 activeFocusOnTab: true
+                // Focus lands on this child, not the delegate Item, so Tab
+                // must scroll the row from here.
+                onActiveFocusChanged: {
+                    if (activeFocus)
+                        apps.positionViewAtIndex(app.index, ListView.Contain);
+                }
                 Keys.onReturnPressed: root.activate(app.modelData)
                 Keys.onSpacePressed: root.activate(app.modelData)
                 Accessible.role: Accessible.Button
@@ -238,6 +250,12 @@ StyledRect {
         function onCurrentNameChanged(): void {
             if (target.currentName !== "activewindow")
                 root.pinned = false;
+        }
+
+        // The pinned popout content loads after the open request; take focus
+        // when it appears.
+        function onCurrentChanged(): void {
+            root.focusPinnedPopout();
         }
     }
 

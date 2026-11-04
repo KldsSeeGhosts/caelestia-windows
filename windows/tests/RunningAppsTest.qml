@@ -96,6 +96,8 @@ ShellRoot {
     }
 
     TestEvent { id: input }
+    property var keyInput: null
+    Component { id: keyInputComponent; TestCase { when: false } }
 
     // Match ContentWindow: the bar is a child of the window-sized Interactions
     // mouse area. Its hover edge opens the shared popout exactly as the
@@ -188,6 +190,14 @@ ShellRoot {
         return null;
     }
 
+    // The focusable child of a strip row. Focus lands here, not on the
+    // delegate Item, so this is what Tab moves between.
+    function appButton(index: int): var {
+        const apps = root.listFor(root.barPill);
+        const row = apps ? apps.itemAtIndex(index) : null;
+        return row ? Array.from(row.children).find(child => child.activeFocusOnTab === true) ?? null : null;
+    }
+
     function popoutList(): var {
         const content = popouts.current;
         return content ? CUtils.findChild(content, "activeWindowWindowList") : null;
@@ -234,6 +244,9 @@ ShellRoot {
                     Services.RunningApps.source = root.fixtures;
                     Services.RunningApps.actionsEnabled = false;
                     root.screenState.bar = true;
+                    // Key events go to the window's active focus item; a
+                    // TestCase inside the window is the supported sender.
+                    root.keyInput = keyInputComponent.createObject(barHost.contentItem);
                 } else if (root.phase === 1) {
                     check(Services.RunningApps.groupIds.length === 8, "per-app grouping");
                     root.fixtures[0].wayland.minimized = true;
@@ -298,6 +311,24 @@ ShellRoot {
                     check(Services.RunningApps.groupIds.length === 30, "overflow model projected");
                     const apps = root.listFor(root.barPill);
                     check(apps && apps.contentHeight > apps.height, "overflowing strip scrolls");
+                    // Tab focus must scroll the focused row into view. Focus
+                    // lands on the row's StateLayer, so a handler on the
+                    // delegate Item never fires.
+                    const first = root.appButton(0);
+                    check(first !== null, "the first strip row is focusable");
+                    first.forceActiveFocus();
+                    let tabs = 0;
+                    while (!(root.appButton(20)?.activeFocus ?? false) && tabs < 30) {
+                        root.keyInput.keyClick(Qt.Key_Tab, Qt.NoModifier, 0);
+                        tabs++;
+                    }
+                    check(root.appButton(20)?.activeFocus ?? false, "Tab reaches row 20");
+                    check(apps.contentY > 0, "Tab scrolls the focused row into view");
+                    const row20 = apps.itemAtIndex(20);
+                    check(row20 !== null && row20.y >= apps.contentY
+                        && row20.y + row20.height <= apps.contentY + apps.height,
+                        "the focused row lies inside the viewport");
+                    apps.contentY = 0;
                     root.hyprRefusals = Services.Hypr.refusals;
                     root.dispatcherWheels = 0;
                     check(root.sendPillWheel(), "offscreen wheel delivered to the strip");
@@ -768,12 +799,24 @@ ShellRoot {
                         "the pinned popout previews the clicked application");
                     check(root.popoutList()?.count === 1, "the pinned popout lists its only window");
                 } else if (root.phase === 57) {
+                    root.keyInput.keyClick(Qt.Key_Escape, Qt.NoModifier, 0);
+                } else if (root.phase === 58) {
+                    check(!popouts.hasCurrent, "Escape closes the pinned popout");
+                    check(barPill.pinned === false, "closing the popout releases the pin");
+                    const row = root.appRow("fixture-single");
+                    check(row !== null && input.mouseClick(row, row.width / 2, row.height / 2,
+                        Qt.RightButton, Qt.NoModifier, 0), "right click reopens the pinned popout");
+                } else if (root.phase === 59) {
+                    check(barPill.pinned === true && popouts.hasCurrent,
+                        "the popout is pinned again");
+                    check(root.popoutList()?.activeFocus === true,
+                        "a pinned popout moves keyboard focus into its window list");
                     const row = root.popoutRow(0);
                     const close = row ? CUtils.findChild(row, "activeWindowWindowClose") : null;
                     check(close !== null, "the popout row has a close button");
                     check(input.mouseClick(close, close.width / 2, close.height / 2,
                         Qt.LeftButton, Qt.NoModifier, 0), "close click delivered to the popout");
-                } else if (root.phase === 58) {
+                } else if (root.phase === 60) {
                     check(root.singleFixture.counts.unsafeCloses === 0,
                         "the guarded close never closes a hidden window");
                     check(root.singleFixture.counts.activations === 2,
@@ -782,12 +825,12 @@ ShellRoot {
                     // restore is observed before the close is dispatched.
                     root.singleFixture.wayland.completeActivation();
                     root.waitUntil = Date.now() + 250;
-                } else if (root.phase === 59) {
+                } else if (root.phase === 61) {
                     root.waitUntil = 0;
                     check(root.singleFixture.counts.closes === 1,
                         "the popout close uses the guarded close path");
                     Services.RunningApps.source = [];
-                } else if (root.phase === 60) {
+                } else if (root.phase === 62) {
                     check(Services.RunningApps.groupIds.length === 0, "empty model");
                     root.waitUntil = Date.now() + 700;
                 } else {

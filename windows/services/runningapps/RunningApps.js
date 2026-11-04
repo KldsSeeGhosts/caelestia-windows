@@ -62,6 +62,31 @@ function project(windows, previousGroups, previousWindows) {
     return { byId, groups, windowIds, groupIds, windowOrder, groupOrder };
 }
 
+// The window the user last had focused in this application. The facade's
+// `active` bit only follows the current activation, so it cannot answer this
+// after the user switches to another app. The model records the native
+// foreground handle per group and drops it when that window closes.
+function lastActiveWindow(group, windows, lastActive) {
+    if (!group || !Array.isArray(group.windowIds) || group.windowIds.length === 0)
+        return "";
+    const remembered = lastActive ? lastActive[group.id] : "";
+    if (remembered && group.windowIds.includes(remembered) && windows[remembered])
+        return remembered;
+    return group.windowIds.find(id => windows[id] && windows[id].active) || group.windowIds[0];
+}
+
+// Drop remembered windows that closed or left their group. Keyed by group id;
+// never reorders the window list.
+function retainLastActive(groups, lastActive) {
+    const retained = Object.create(null);
+    for (const key of Object.keys(lastActive || {})) {
+        const id = lastActive[key];
+        if (groups[key] && groups[key].windowIds.includes(id))
+            retained[key] = id;
+    }
+    return retained;
+}
+
 // Windows 11 taskbar click on one application.
 // - A not-focused app (or one with minimized windows only) focuses its
 //   last-active window, restoring it if it is minimized.
@@ -70,17 +95,15 @@ function project(windows, previousGroups, previousWindows) {
 //   order never follows focus, so repeated clicks walk the whole list.
 // `foregroundId` is the native foreground window, not a facade value retained
 // while the shell itself has focus.
-function clickAction(group, windows, foregroundId) {
+function clickAction(group, windows, foregroundId, lastActive) {
     if (!group || !Array.isArray(group.windowIds) || group.windowIds.length === 0)
         return { action: "none", id: "" };
     const ids = group.windowIds;
     const at = ids.indexOf(foregroundId);
     const focused = at >= 0 && !!windows[foregroundId]
         && windows[foregroundId].appId.toLowerCase() === group.id;
-    if (!focused) {
-        const last = ids.find(id => windows[id] && windows[id].active) || ids[0];
-        return { action: "activate", id: last };
-    }
+    if (!focused)
+        return { action: "activate", id: lastActiveWindow(group, windows, lastActive) };
     if (ids.length === 1)
         return { action: "minimize", id: ids[0] };
     return { action: "activate", id: ids[(at + 1) % ids.length] };

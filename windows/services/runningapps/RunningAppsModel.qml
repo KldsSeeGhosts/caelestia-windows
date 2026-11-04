@@ -25,6 +25,11 @@ QtObject {
     property var windowIds: []
     property var groups: ({})
     property var windows: ({})
+    // Last window the native foreground reported for each application, keyed
+    // by group id. Unlike the facade's `active` bit, this survives the user
+    // switching to another application. Entries are dropped when the window
+    // closes; the visible window order is never changed.
+    property var lastActive: ({})
     // Insertion history survives temporary app cloaks. groupIds/windowIds are
     // the visible projection; these sequences restore an uncloaked slot.
     property var groupOrder: []
@@ -71,9 +76,31 @@ QtObject {
     readonly property var observations: Logic.observe(source)
 
     onObservationsChanged: refresh()
+    onForegroundAddressChanged: recordForeground()
     onActionsEnabledChanged: {
         if (!actionsEnabled)
             pendingCloses = [];
+    }
+
+    // The native foreground is the only source for "last used": the facade's
+    // `active` bit moves away with the current activation.
+    function recordForeground(): void {
+        // Resolve the handle directly: the foregroundWindow binding may still
+        // hold the previous address while this change signal is being handled.
+        const address = foregroundAddress;
+        const window = address ? windows[address] : null;
+        if (!window)
+            return;
+        const key = window.appId.toLowerCase();
+        if (lastActive[key] === address)
+            return;
+        const next = Object.assign({}, lastActive);
+        next[key] = address;
+        lastActive = next;
+    }
+
+    function lastActiveWindow(id: string): string {
+        return Logic.lastActiveWindow(groups[id] ?? null, windows, lastActive);
     }
 
     function resolveTarget(id: string, native): var {
@@ -126,6 +153,11 @@ QtObject {
             groupIds = next.groupIds;
         if (windowIds.join("\n") !== next.windowIds.join("\n"))
             windowIds = next.windowIds;
+        const retained = Logic.retainLastActive(next.groups, lastActive);
+        if (Object.keys(retained).length !== Object.keys(lastActive).length)
+            lastActive = retained;
+        // A window can gain the foreground before the projection observes it.
+        recordForeground();
         if (pendingCloses.length)
             pendingCloses = pendingCloses.filter(tracksTarget);
         if (recentCloses.length)
@@ -260,9 +292,10 @@ QtObject {
         Qt.callLater(() => root.flushCloses(0));
     }
 
-    // Windows 11 taskbar click, decided from the native foreground window.
+    // Windows 11 taskbar click, decided from the native foreground window and
+    // the app's remembered last-active window.
     function clickAction(id: string): var {
-        return Logic.clickAction(groups[id] ?? null, windows, foregroundAddress);
+        return Logic.clickAction(groups[id] ?? null, windows, foregroundAddress, lastActive);
     }
 
     function click(id: string): void {

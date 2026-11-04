@@ -22,7 +22,10 @@ in the existing tray. The strip disappears when no application is running.
   multi-window application cycles to its next window in stable order. Focus
   comes from the native foreground window (the backend's WinEvent foreground
   stream), never from the facade's `activated` value, which is retained while
-  the shell itself holds the foreground. No process is terminated.
+  the shell itself holds the foreground. The service remembers the native
+  foreground window per application, so switching to another app does not
+  reset the target to the first-created window; the entry is dropped when that
+  window closes. The window list is never reordered. No process is terminated.
 - Hovering a row opens the original active-window popout on that row's centre.
   The popout shows one row per window of that application, with the title and a
   close (✕) button; clicking a row activates that window, hovering a row swaps
@@ -32,9 +35,10 @@ in the existing tray. The strip disappears when no application is running.
   (or "No preview") instead, and is never restored just to preview it.
 - Escape and outside dismissal follow the existing popout wrapper. Right-click
   opens the same popout without waiting for a hover and stops following the
-  pointer until it closes, for keyboard and touch users. Middle-click does
-  nothing; launching a new instance is a follow-up because the service cannot
-  launch applications yet.
+  pointer until it closes, for keyboard and touch users. A pinned popout takes
+  keyboard focus in its window list, so Escape and the arrow keys work at once.
+  Middle-click does nothing; launching a new instance is a follow-up because
+  the service cannot launch applications yet.
 - Close first requests restore/activation and waits for the backend to observe
   the target as both active and not minimized, then posts one native close
   request. Close requests are serialized: only the head may change foreground,

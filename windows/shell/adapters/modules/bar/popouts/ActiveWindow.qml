@@ -24,7 +24,12 @@ Item {
     readonly property var selectedId: {
         const ids = root.group?.windowIds ?? [];
         const requested = Services.RunningApps.previewWindowId;
-        return ids.includes(requested) ? requested : (ids[0] ?? "");
+        if (ids.includes(requested))
+            return requested;
+        // Default to the application's remembered last-active window, not its
+        // first-created window.
+        const last = root.group ? Services.RunningApps.lastActiveWindow(root.group.id) : "";
+        return ids.includes(last) ? last : (ids[0] ?? "");
     }
     readonly property var selectedWindow: root.group ? (root.windows[root.selectedId] ?? null) : null
     // Only the facade's own tracked toplevel can be captured. The service's
@@ -225,6 +230,13 @@ Item {
                 }
             }
         }
+    }
+
+    // A pinned popout is opened for keyboard and touch. Taking focus here makes
+    // Escape (handled by the wrapper) and the arrow keys work at once.
+    function focusWindowList(): void {
+        if (root.group)
+            list.forceActiveFocus();
     }
 
     function activate(id: string): void {

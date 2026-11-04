@@ -221,3 +221,33 @@ test("a click decides from the native foreground window, never the retained faca
 
     assert.equal(context.clickAction(null, state.byId, "1").action, "none");
 });
+
+test("an unfocused app focuses its last-active window, not its first-created one", () => {
+    // The user focused window 41, then switched to another application.
+    // The facade's `active` bit has moved to that other app, so only the
+    // remembered native foreground handle can still name 41.
+    const state = context.project([
+        window("40", "Editor"),
+        window("41", "Editor"),
+        window("50", "Browser", { active: true })
+    ], [], []);
+    const lastActive = { editor: "41" };
+
+    assert.deepEqual(
+        { ...context.clickAction(state.groups.editor, state.byId, "50", lastActive) },
+        { action: "activate", id: "41" },
+        "clicking the original app selects window 41");
+    assert.equal(
+        context.clickAction(state.groups.editor, state.byId, "50", {}).id,
+        "40",
+        "without the remembered id the first-created window would be picked");
+
+    // Closing the remembered window drops it and falls back.
+    const afterClose = context.project([window("40", "Editor")], state.groupOrder, state.windowOrder);
+    const retained = context.retainLastActive(afterClose.groups, lastActive);
+    assert.equal(retained.editor, undefined, "a closed last-active window is dropped");
+    assert.deepEqual(
+        { ...context.clickAction(afterClose.groups.editor, afterClose.byId, "50", retained) },
+        { action: "activate", id: "40" },
+        "a closed last-active window falls back to the remaining window");
+});
