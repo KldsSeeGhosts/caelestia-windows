@@ -1,10 +1,12 @@
 # Capture color policy on mixed HDR and SDR displays
 
 Status: accepted for the current release candidate. Tracked in Linear ERM-614.
+The route map, the implemented format policy and the manual check are in
+[CAPTURE-COLOR.md](../CAPTURE-COLOR.md).
 
 Every shipped capture output is 8-bit SDR sRGB. This is a deliberate policy, not an oversight. This page records what each shipped consumer does, what Windows does with it on an HDR display, and what would make us revisit the policy.
 
-Source revisions: shell `dev` 161f1f51, backend `windows/deps/quickshell` 7a523b23, Glazier `windows/deps/glazier` d4383db3.
+Source revisions: shell `dev` 4c634f5e, backend `windows/deps/quickshell` 858874f, Glazier `windows/deps/glazier` d4383db3.
 
 ## Shipped consumers
 
