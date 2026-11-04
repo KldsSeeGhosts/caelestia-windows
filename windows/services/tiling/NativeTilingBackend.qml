@@ -45,6 +45,15 @@ QtObject {
     readonly property int failedCount: root.supportsTelemetry
         && typeof Tiling.failedCount === "number" ? Tiling.failedCount : 0
 
+    // The drop a dragged tiled window would make now, for DragPreview.qml.
+    // Rectangles are logical and local to the screen named by dragScreen.
+    readonly property bool supportsDragPreview: typeof Tiling.dragActive === "boolean"
+    readonly property bool dragActive: root.supportsDragPreview && Tiling.dragActive
+    readonly property string dragMode: root.supportsDragPreview ? Tiling.dragMode : ""
+    readonly property string dragScreen: root.supportsDragPreview ? Tiling.dragScreen : ""
+    readonly property rect dragLanding: root.supportsDragPreview ? Tiling.dragLanding : Qt.rect(0, 0, 0, 0)
+    readonly property rect dragDisplaced: root.supportsDragPreview ? Tiling.dragDisplaced : Qt.rect(0, 0, 0, 0)
+
     signal enableRefused(string reason)
     signal windowTilingFailed(string address, string reason)
 

@@ -76,6 +76,7 @@ $fixtureTraits = [ordered]@{
     dispatcher                  = @{ needsDesktop = $false }
     tiling_observability        = @{ needsDesktop = $false }
     tiling_manager              = @{ needsDesktop = $false }
+    tiling_drag                 = @{ needsDesktop = $false }
     tiling_reload               = @{ needsDesktop = $false }
     pw_audio_control            = @{ needsDesktop = $false }
     upower_status               = @{ needsDesktop = $false }

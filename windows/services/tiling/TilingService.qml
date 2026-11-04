@@ -17,6 +17,9 @@ import QtQuick
 //   lastError            string, guarded read ("" when unsupported)
 //   managedCount         int, guarded read (0 when unsupported)
 //   failedCount          int, guarded read (0 when unsupported)
+//   dragActive, dragMode, dragScreen, dragLanding, dragDisplaced
+//                        optional drop plan of a dragged tiled window, for the
+//                        drop preview; inactive and empty when unsupported
 //   applyOptions(excluded, included, gapsIn, gapsOut, singleWindowGapsOut, borderColours)
 //                        applies pattern lists and integer DIP gaps
 //   setExcluded(list), setIncluded(list), setGapsIn(int), setGapsOut(int),
@@ -107,6 +110,18 @@ QtObject {
         && typeof root.backend.failedCount === "number" ? root.backend.failedCount : 0
     readonly property string lastError: root.backend !== null
         && typeof root.backend.lastError === "string" ? root.backend.lastError : ""
+
+    // Drop plan of a dragged tiled window (DragPreview.qml). Rectangles are
+    // logical and local to the screen named by dragScreen.
+    readonly property bool dragActive: root.backend !== null && root.backend.dragActive === true
+    readonly property string dragMode: root.dragActive
+        && typeof root.backend.dragMode === "string" ? root.backend.dragMode : ""
+    readonly property string dragScreen: root.dragActive
+        && typeof root.backend.dragScreen === "string" ? root.backend.dragScreen : ""
+    readonly property rect dragLanding: root.dragActive && root.backend.dragLanding !== undefined
+        ? root.backend.dragLanding : Qt.rect(0, 0, 0, 0)
+    readonly property rect dragDisplaced: root.dragActive && root.backend.dragDisplaced !== undefined
+        ? root.backend.dragDisplaced : Qt.rect(0, 0, 0, 0)
 
     // Option field a live reconfigure could not apply because the attached
     // backend has no incremental setter for it ("" when the last apply

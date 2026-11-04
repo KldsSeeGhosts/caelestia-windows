@@ -361,6 +361,7 @@
   "windows/shell/adapters/modules/osd/Wrapper.qml": "modules/osd/Wrapper.qml",
   "windows/shell/adapters/modules/session/Content.qml": "modules/session/Content.qml",
   "windows/shell/adapters/modules/sidebar/Content.qml": "modules/sidebar/Content.qml",
+  "windows/shell/adapters/modules/tiling/DragPreview.qml": "modules/tiling/DragPreview.qml",
   "windows/shell/adapters/modules/utilities/cards/IdleInhibit.qml": "modules/utilities/cards/IdleInhibit.qml",
   "windows/shell/adapters/modules/utilities/cards/Toggles.qml": "modules/utilities/cards/Toggles.qml",
   "windows/shell/adapters/modules/utilities/Content.qml": "modules/utilities/Content.qml",

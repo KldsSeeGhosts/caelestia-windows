@@ -176,6 +176,37 @@ The allowlist is parsed like the backend does: a `title:` rule with nothing
 after the prefix is dropped, so it cannot turn into an empty, unrestricted
 backend allowlist.
 
+## Dragging tiled windows
+
+What a release does depends on how the window was dragged and where the
+cursor is:
+
+| gesture | over another tile | elsewhere |
+| --- | --- | --- |
+| title bar | the two windows swap | own slot, a gap or the bar: back home; another monitor's empty area: moves there |
+| Super+drag | centre: swap; edge band: insert on that side | same as the title bar |
+
+An edge band is 20% of the tile on that axis, at most 120 DIPs. The master
+and scrolling layouts always swap, because they have no sides to insert on.
+A zone or target holds until the cursor is 8 DIPs past it, so a boundary
+does not flicker. Esc returns the window home. Resizing a tile by its border
+moves its split edges as before, even when Snap changes the frame during a
+title-bar move.
+
+The keyboard equivalents are `swapwindow` (or `movewindow` inside a layout)
+for a swap and `movewindow` into another layout for an insert.
+
+While a tiled window moves, the backend plans the drop on copies of the
+layout trees and publishes it on the `Tiling` facade (`dragActive`,
+`dragMode`, `dragScreen`, `dragLanding`, `dragDisplaced`; logical rectangles
+local to that screen). `NativeTilingBackend.qml` and `TilingService.qml`
+forward it, feature-detected, and `modules/tiling/DragPreview.qml` draws it:
+a primary-tinted plate where the window lands and, when exactly one other
+window moves, an outline where that one goes. A drop that changes nothing
+draws nothing. The preview needs window contents shown while dragging (the
+Windows default); with outline dragging the drop still works, without a
+preview.
+
 ## Testing
 
 `TilingServiceTest.qml` is an offscreen fixture with fake backends in both
@@ -188,6 +219,11 @@ identical-config change takes only the incremental setters and never a
 stop/disable. It imports no
 Quickshell or Caelestia module. Run it through
 `windows/scripts/Test-TilingService.ps1`.
+
+`Test-DragPreview.ps1 -QtPrefix <Qt> -BuildRoot <build>` runs the drop preview
+offscreen against a fake backend. The backend's `tiling_drag_test` covers the
+drop rules and checks that each previewed rectangle is the one the release
+places.
 
 `Test-TilingConfig.ps1 -QtPrefix <Qt> -BuildRoot <build>` is a short native
 Observe/off smoke. It checks profile-only mode, gap/rule loading, watched

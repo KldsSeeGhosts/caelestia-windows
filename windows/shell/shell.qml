@@ -21,6 +21,7 @@ import qs.modules.drawers
 import qs.modules.clipboard
 import qs.modules.launcher.services
 import qs.modules.nexus as Nexus
+import qs.modules.tiling
 
 // Original upstream drawer geometry and motion, with the combined Windows
 // facades, per-monitor AppBar reservation and opt-in Windows controllers.
@@ -61,6 +62,10 @@ ShellRoot {
     ClipboardOverlay {
         interactionEnabled: !root.smoke
     }
+
+    // Where a dragged tiled window will land. Makes no window until the first
+    // drag on a screen, and nothing at all while tiling is off.
+    DragPreview {}
 
     Variants {
         id: drawers
