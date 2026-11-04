@@ -29,7 +29,10 @@ import Quickshell.Services.Notifications
 //
 // Session-bus ownership is real mutex ownership, not the existence of a named
 // object: the backend's lock thread waits without polling and publishes "owner"
-// once it holds the mutex and "contended" while another shell does.
+// once it holds the mutex, "contended" while another shell does, and "error"
+// when a Win32 call could not create the lock at all. "error" is this shell's
+// failure, never another owner, and the service refuses delivery and mirroring
+// on it rather than forwarding.
 QtObject {
     id: root
 
