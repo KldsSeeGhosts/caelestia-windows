@@ -98,26 +98,13 @@ styling. `confirm()` exists for an agreed original confirmation flow and is
 fixture-tested with a fake backend; nothing in the Windows host calls it
 automatically. This is the "do not bypass the original UI" boundary.
 
-## Host and validation
+## Validation
 
-The M1 bar/session host is extended additively:
-
-```powershell
-$qtPrefix = "$env:LOCALAPPDATA\caelestia-dev\Qt\6.11.2\msvc2022_64"
-powershell -NoProfile -File windows/scripts/Start-ShellPrototype.ps1 `
-    -QtPrefix $qtPrefix -Session -SessionMode Observe -Smoke -Wait
-```
-
-`-SessionMode Disabled` is the default and loads no native backend.
-`-SessionMode Observe` enables capability observation; actions are always off in
-smoke. The host records `CAELESTIA_SESSION_INITIAL`/`FINAL` snapshots and checks
-the allowlist, consume-without-dispatch behavior, fallback blocking, hibernate
-capability and disabled UI styling.
+The bounded session host has been retired. Use the pure service fixture and
+the [installed-shell live checklist](../../docs/LIVE-CHECKLIST.md).
 
 ```powershell
 powershell -NoProfile -File windows/scripts/Test-SessionService.ps1 `
-    -QtPrefix $qtPrefix
-powershell -NoProfile -File windows/scripts/Test-SessionPrototype.ps1 `
     -QtPrefix $qtPrefix
 ```
 

@@ -20,9 +20,9 @@ installer stages, as source to staged path. `Stage-ShellPrototype.ps1 -Prototype
 shell-live` reads it; the combined test host stages the same map and adds only
 its test overlay. The production adapters it names live next to it under
 [`adapters/`](adapters/), and `WindowsFonts.qml` stays here too. Staging keeps
-the font-loader and workspace-font transforms in the script. A source under a
-`windows/*-prototype/` folder fails staging, so the released tree cannot
-depend on a prototype or fixture folder.
+the font-loader and workspace-font transforms in the script. A source under
+`windows/tests/` fails production staging, so the released tree cannot depend
+on the private fixtures or developer preview.
 
 ## Install and run
 

@@ -68,7 +68,7 @@ Use an explicit isolated entry point with unsupported services disabled through
 platform boundaries. Preserve upstream components rather than replacing them
 with lookalike rectangles.
 
-The [native bar/session prototype](shell-prototype/README.md) loads
+The retired native bar/session host loaded
 original ContentWindow/StyledWindow, Regions/Interactions, Bar/Clock/Power and
 Session.Wrapper/Content. Fixed palette and explicit unavailable adapters keep
 unsupported services out; process-local fonts preserve original icons.
@@ -122,8 +122,8 @@ access without retry loops or privilege changes.
 Gate: enable services individually, with explicit unavailable states and no
 unexpected startup side effects.
 
-Early slices: [original audio controls and Core Audio adapter](audio-prototype/README.md),
-followed by the [read-only battery status slice](battery-prototype/README.md).
+Early slices: [original audio controls and Core Audio adapter](services/audio/),
+followed by the [read-only battery status adapter](services/battery/).
 Native observation, injected failure handling and real writes/recovery are
 distinct validation claims. The [source audit](audits/M2-SERVICES.md) records
 all service gaps, Linux process/path boundaries and staged acceptance work.
@@ -178,12 +178,12 @@ Gate: no overlapping tiled windows, accidental size floating, lost focus, or
 unbounded correction loop during the recorded scenarios. When fitting is
 impossible, the UI must explain the outcome.
 
-M3-2 stages 0-3 have a default-off [Hypr adapter and prototype](hypr-prototype/README.md):
+M3-2 stages 0-3 have a default-off [Hypr adapter](services/hypr/README.md):
 observation maps the backend's monitors/workspaces/toplevels/focused data,
 dispatch is a separate allowlist opt-in, special-workspace UI is inactive and
 per-monitor ownership is explicitly not claimed. Only the native Disabled mode
 is recorded; the adapter has since been integrated into the installed shell. Stages 4/5 have bounded
-[groundwork](tiling-prototype/README.md): a pure tiling service with an
+[groundwork](services/tiling/): a pure tiling service with an
 off/observe/interactive opt-in, an allowlist-gated interactive mode, a
 feature-detected wrapper for the backend `Tiling` controller, and the
 fitting-failure explanation decided on the original toast surface. The

@@ -91,7 +91,7 @@ for commands and the limits of its quick installation smoke.
 - The pinned backend, eight portable Caelestia modules, the M3Shapes module, and
   Windows-only `Caelestia.Windows` focus helper build with Qt 6.11.2 and
   clang-cl 20.1.8. See [native build instructions](NATIVE-BUILD.md).
-- The [bar/session prototype](shell-prototype/README.md) loads the original
+- The retired bar/session host loaded the original
   `ContentWindow`, `StyledWindow`, `Regions`, `Interactions`, bar Clock/Power,
   and session content/wrapper in a bounded native window. Original blob
   surfaces, motion, and icons render through isolated adapters.
@@ -103,7 +103,7 @@ for commands and the limits of its quick installation smoke.
 - The earlier ordinary-window component probe has been retired. Its
   [archived synthetic 100%, 150%, and 175% results](validation/2026-10-25-component-probe/README.md)
   remain as historical evidence.
-- M2 began with an [opt-in audio prototype](audio-prototype/README.md).
+- M2 began with an opt-in [audio adapter](services/audio/).
   It preserves the original audio controls and core public service API.
   Disabled/read-only modes, hardware/failure fixtures and native observation
   are separate from live write/recovery validation. Other services were still
@@ -111,7 +111,7 @@ for commands and the limits of its quick installation smoke.
   The [first M2 acceptance archive](validation/2026-10-25-m2-audio/README.md)
   records clean-source two-monitor results and unchanged audio/desktop state.
 - A second M2 slice adds a strictly read-only
-  [battery status prototype](battery-prototype/README.md). It preserves the
+  [battery status adapter](services/battery/). It preserves the
   original battery status icon and popout content, projects the native UPower
   display device through a QtObject adapter with no mutating methods, and
   keeps PowerProfiles and IdlePower writes out of the process. A system
@@ -124,13 +124,13 @@ for commands and the limits of its quick installation smoke.
   hardware and the remaining profile/write gates keep ERM-499 open.
 - The inherited upstream Linux GitHub workflows were removed; they did not
   validate this port. Windows CI is planned before publication.
-- An opt-in [media prototype](media-prototype/README.md) loads the original
+- The [media adapter](services/media/) supports the original
   dashboard player details. Native lifecycle status distinguishes unavailable
   observations from a healthy empty session list, and artwork caching honors
   the isolated profile. Clean native 150%/175% runs observed no open sessions;
   [media evidence](validation/2026-10-25-m2-media/README.md) separates those
   results from fixture-only real-player behavior. ERM-498 remains open.
-- A default-off [app catalog prototype](apps-prototype/README.md) loads the
+- The [app catalog adapter](services/apps/) supports the
   original launcher app list and search bar over the Windows AppsFolder
   enumeration. Explicit disabled/scanning/empty/failed/ready states, the
   original fzf/smart-case search prefixes and profile-local JSON launch
@@ -150,7 +150,7 @@ for commands and the limits of its quick installation smoke.
   Disabled/Observe runs never invoke a session action.
   [Session evidence](validation/2026-10-25-m2-session/README.md) records the
   fixtures, both native modes and shared regressions.
-- A bounded, default-off [tray prototype](tray-prototype/README.md) stages the
+- The [tray adapter](services/tray/) supports the
   original bar tray icons, `ColouredIcon` tinting and menu component. Read-only
   observation keeps `QS_WINDOWS_TRAY_HOOK=0`, so the backend cannot enumerate
   items and native smoke reports the tray as not observable; semantic menus are native-only and activation is a separate
@@ -158,7 +158,7 @@ for commands and the limits of its quick installation smoke.
   adapter assertions, Disabled/ReadOnly runs at 150%/175%, a three-icon fixture
   preview, and unchanged Explorer/taskbar state. Live items, activation and
   interception ownership remain unvalidated.
-- A default-off [Hyprland adapter prototype](hypr-prototype/README.md) covers
+- The [Hyprland adapter](services/hypr/README.md) covers
   M3-2 stages 0-3 for the bar workspace and active-window components.
   `CAELESTIA_WINDOWS_HYPR=1` observes the pinned backend's Hyprland data;
   `CAELESTIA_WINDOWS_HYPR_DISPATCH=1` separately permits an allowlist of
@@ -169,7 +169,7 @@ for commands and the limits of its quick installation smoke.
   construction, mapping, the global-focus limitation, every allowlisted and
   refused dispatch form and injection attempts. Only the native Disabled mode is recorded here;
   the adapter has since been integrated into the installed shell.
-- A default-off [tiling slice](tiling-prototype/README.md) grounds M3-2 stages
+- The [tiling service](services/tiling/) grounds M3-2 stages
   4/5 and the M3-3 fitting-failure explanation.
   `CAELESTIA_WINDOWS_TILING=off|observe|interactive` gates everything: `off`
   never imports the backend `Tiling` singleton, `observe` constructs and
@@ -184,6 +184,11 @@ for commands and the limits of its quick installation smoke.
   [tiling evidence](validation/2026-10-25-m3-tiling-slice/README.md) records
   the Disabled-only native runs. Tiling has since been integrated into the
   installed shell.
+
+The bounded service hosts and their smoke matrix have been retired. Use the
+offscreen service fixtures and [installed-shell live checklist](docs/LIVE-CHECKLIST.md).
+Historical validation archives describe their recorded revisions, not current
+release acceptance.
 
 ## Checkout and inspect
 

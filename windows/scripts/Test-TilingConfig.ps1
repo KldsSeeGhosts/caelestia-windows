@@ -10,7 +10,7 @@ $BuildRoot = [IO.Path]::GetFullPath($BuildRoot)
 if (-not $RunRoot) { $RunRoot = Join-Path $repoRoot 'windows\.local\tiling-config-smoke' }
 $run = Join-Path ([IO.Path]::GetFullPath($RunRoot)) (Get-Date -Format 'yyyyMMdd-HHmmss-fff')
 $profile = Join-Path $run 'profile'
-$stage = & "$PSScriptRoot\Stage-ShellPrototype.ps1" -Destination (Join-Path $run 'stage') -ProfileRoot $profile -Prototype tiling
+$stage = & "$PSScriptRoot\Stage-ShellPrototype.ps1" -Destination (Join-Path $run 'stage') -ProfileRoot $profile -Prototype shell-live
 foreach ($directory in @('config', 'state', 'runtime', 'cache', 'data')) {
     New-Item -ItemType Directory -Force (Join-Path $profile $directory) | Out-Null
 }

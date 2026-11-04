@@ -14,19 +14,19 @@ if ($lock.schemaVersion -ne 1) {
     throw 'Unsupported Windows source manifest schema.'
 }
 # One production staging map, shared by the installer and the private shell test
-# host. Every entry must name a production file: the release drops the prototype
-# and fixture folders, so a production reference to one is a build blocker.
+# host. Every entry must name a production file: fixture folders are private,
+# so a production reference to one is a build blocker.
 $stagingManifestPath = Join-Path $repoRoot 'windows\shell\sources.json'
 $stagingManifest = Get-Content -LiteralPath $stagingManifestPath -Raw | ConvertFrom-Json
 $stagingEntries = @($stagingManifest.PSObject.Properties)
-$stagingPrototypeEntries = @($stagingEntries | Where-Object { $_.Name -match '^windows/[^/]+-prototype/' })
+$stagingFixtureEntries = @($stagingEntries | Where-Object { $_.Name -match '^windows/tests/' })
 $stagingDuplicateTargets = @($stagingEntries | Group-Object Value | Where-Object Count -gt 1)
 $stagingMissingSources = @($stagingEntries | Where-Object { -not (Test-Path -LiteralPath (Join-Path $repoRoot $_.Name) -PathType Leaf) })
 
 $blockers = New-Object 'System.Collections.Generic.List[string]'
 $tools = New-Object 'System.Collections.Generic.List[object]'
-if ($stagingPrototypeEntries.Count -ne 0) {
-    $blockers.Add("The production staging map references prototype folders: $($stagingPrototypeEntries[0].Name)")
+if ($stagingFixtureEntries.Count -ne 0) {
+    $blockers.Add("The production staging map references private fixtures: $($stagingFixtureEntries[0].Name)")
 }
 if ($stagingDuplicateTargets.Count -ne 0) {
     $blockers.Add("The production staging map stages '$($stagingDuplicateTargets[0].Group[0].Value)' from more than one source.")
@@ -147,7 +147,7 @@ $report = [pscustomobject][ordered]@{
     stagingManifest = [pscustomobject][ordered]@{
         path = 'windows/shell/sources.json'
         entries = $stagingEntries.Count
-        prototypeReferences = @($stagingPrototypeEntries | ForEach-Object { $_.Name })
+        fixtureReferences = @($stagingFixtureEntries | ForEach-Object { $_.Name })
     }
     nativeToolchainReady = $blockers.Count -eq 0
     blockers = @($blockers.ToArray())
