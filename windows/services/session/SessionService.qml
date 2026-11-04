@@ -39,13 +39,10 @@ QtObject {
     // status exists in that state.
     property string backendError: ""
 
-    // Destructive actions need the original UI's confirmation flow. The
-    // upstream session panel at this revision has no confirmation step, so this
-    // slice exposes request/confirm for a future/original flow but never
-    // auto-confirms. A request for one of these actions stops at
-    // "confirmation-required" and does not call the backend.
-    property string pendingAction: ""
-    property var pendingCommand: []
+    // Destructive actions dispatch directly, as in upstream Caelestia: its
+    // session panel calls exec() straight through with no confirmation step.
+    // The allowlist and both opt-ins are the only gates; nothing is held back
+    // for a second step.
 
     // The most recent consumed request. It is always consumed=true because the
     // upstream caller must not fall back to detached execution. `succeeded` is
@@ -61,8 +58,6 @@ QtObject {
     readonly property bool hibernateSupported: available && backend !== null && backend.canHibernate === true
     // Compatibility spelling for hosts that read the native property name.
     readonly property bool canHibernate: hibernateSupported
-
-    readonly property bool confirmationPending: pendingAction !== ""
 
     readonly property string status: {
         if (!enabled)
@@ -81,12 +76,12 @@ QtObject {
             return "Waiting for the Windows session backend.";
         if (!actionsEnabled)
             return "Windows session capabilities are observable; action dispatch is disabled.";
-        return "Windows session action dispatch is enabled for allowlisted actions. Destructive actions still require confirmation and native calls have no observable result.";
+        return "Windows session action dispatch is enabled for allowlisted actions. Destructive actions dispatch directly, as in upstream Caelestia, and native calls have no observable result.";
     }
 
     // Explicit allowlist. `method` is the exact native facade function; an
     // empty method is an intentional unsupported contract entry. Destructive
-    // entries are refused without confirmation.
+    // entries dispatch directly, as in upstream Caelestia.
     readonly property var actionDefinitions: ({
         lock: { method: "lock", destructive: false, supported: true },
         logout: { method: "logout", destructive: true, supported: true },
@@ -106,20 +101,6 @@ QtObject {
     readonly property var actionNames: [
         "lock", "logout", "shutdown", "reboot", "suspend", "hibernate", "firmware"
     ]
-
-    onEnabledChanged: {
-        if (!enabled) {
-            pendingAction = "";
-            pendingCommand = [];
-        }
-    }
-
-    onActionsEnabledChanged: {
-        if (!actionsEnabled) {
-            pendingAction = "";
-            pendingCommand = [];
-        }
-    }
 
     // Copy a QML list<string>/JS array into plain tokens. A string, null,
     // missing array shape or a non-string element is an unsupported command, not
@@ -203,8 +184,7 @@ QtObject {
         const capability = supported && available
             && (action !== "hibernate" || hibernateSupported);
         const dispatchable = capability && dispatchEnabled;
-        const requiresConfirmation = definition.destructive === true;
-        const uiAvailable = dispatchable && !requiresConfirmation;
+        const uiAvailable = dispatchable;
 
         let infoReason = "";
         if (!enabled)
@@ -219,16 +199,15 @@ QtObject {
             infoReason = "Hibernation is not available on this system.";
         else if (!actionsEnabled)
             infoReason = "Windows session action dispatch is disabled.";
-        else if (requiresConfirmation)
-            infoReason = "This destructive action requires the original confirmation flow, which is not wired in this host.";
         else
             infoReason = "Dispatch is permitted; the native method returns void, so this is a request, not a result.";
 
         return {
             action: action,
             supported: supported,
-            destructive: requiresConfirmation,
-            requiresConfirmation: requiresConfirmation,
+            // Information only: destructive actions dispatch directly, as in
+            // upstream Caelestia.
+            destructive: definition.destructive === true,
             capability: capability,
             dispatchable: dispatchable,
             canRequest: dispatchable,
@@ -249,7 +228,6 @@ QtObject {
             action: "",
             supported: false,
             destructive: false,
-            requiresConfirmation: false,
             capability: false,
             dispatchable: false,
             canRequest: false,
@@ -267,14 +245,13 @@ QtObject {
             dispatched: dispatched === true,
             requested: outcome === "requested",
             succeeded: false,
-            requiresConfirmation: outcome === "confirmation-required",
             reason: resultReason
         };
         lastResult = result;
         return result;
     }
 
-    function evaluate(command, confirmed): var {
+    function evaluate(command): var {
         const tokens = commandTokens(command);
         const action = resolveCommand(tokens);
         const definition = action ? actionDefinitions[action] : null;
@@ -299,60 +276,21 @@ QtObject {
             return recordResult(tokens, action, "actions-disabled", false,
                 "Windows session action dispatch is disabled; observation still reports capabilities only.");
 
-        if (definition.destructive === true && !confirmed) {
-            pendingAction = action;
-            pendingCommand = tokens;
-            return recordResult(tokens, action, "confirmation-required", false,
-                "Destructive actions require the original confirmation flow; no action was sent.");
-        }
-
+        // Destructive actions dispatch directly, as in upstream Caelestia.
         return dispatch(action, tokens);
     }
 
     // Upstream contract. Always true: every command is consumed so the original
     // UI cannot reach Quickshell.execDetached().
     function exec(command): bool {
-        evaluate(command, false);
+        evaluate(command);
         return true;
     }
 
     // Non-executing request used by tests and future callers that inspect the
-    // outcome. Returns the result object but still never bypasses confirmation.
+    // outcome. Returns the same result object exec() records.
     function request(command): var {
-        return evaluate(command, false);
-    }
-
-    // Dispatch a destructive action only after a caller explicitly confirms the
-    // pending request. Nothing in the Windows host calls this automatically.
-    function confirm(): bool {
-        if (pendingAction === "")
-            return false;
-
-        const action = pendingAction;
-        const command = pendingCommand.slice();
-        pendingAction = "";
-        pendingCommand = [];
-
-        if (!dispatchEnabled || !available) {
-            recordResult(command, action, enabled ? "actions-disabled" : "disabled", false,
-                "The session action could not be confirmed because dispatch is no longer enabled.");
-            return false;
-        }
-        if (action === "hibernate" && !hibernateSupported) {
-            recordResult(command, action, "unsupported", false,
-                "Hibernation is not available on this system; the confirmed request was not sent.");
-            return false;
-        }
-
-        return dispatch(action, command).dispatched === true;
-    }
-
-    function cancelConfirmation(): bool {
-        if (pendingAction === "")
-            return false;
-        pendingAction = "";
-        pendingCommand = [];
-        return true;
+        return evaluate(command);
     }
 
     function dispatch(action, command): var {

@@ -5,14 +5,16 @@ param(
     [string]$RunRoot
 )
 
-# Offscreen session-drawer keyboard gate. The production graph is
-# staged, then the test SessionManager replaces the real singleton so confirm()
-# can be observed without any native session call. The harness drives the real
-# Content.qml with key events and prints PASS only after every check.
+# Offscreen session-drawer accessibility gate. The production graph is
+# staged, then the test SessionManager replaces the real singleton so a
+# dispatched action is observable without any native session call. The harness
+# drives the real Content.qml with key events: activation dispatches once with no
+# confirmation step, and Tab/Shift+Tab wrap inside the drawer so focus and Escape
+# never leave it. It prints PASS only after every check.
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
 $BuildRoot = [IO.Path]::GetFullPath($BuildRoot)
-if (-not $RunRoot) { $RunRoot = Join-Path $BuildRoot 'session-keyboard' }
+if (-not $RunRoot) { $RunRoot = Join-Path $BuildRoot 'session-a11y' }
 $run = Join-Path ([IO.Path]::GetFullPath($RunRoot)) (Get-Date -Format 'yyyyMMdd-HHmmss-fff')
 $profile = Join-Path $run 'profile'
 $stage = & "$PSScriptRoot\Stage-ShellPrototype.ps1" -Destination (Join-Path $run 'stage') -ProfileRoot $profile -Prototype shell-live
@@ -20,7 +22,9 @@ foreach ($directory in @('config', 'state', 'runtime', 'cache', 'data')) {
     New-Item -ItemType Directory -Force (Join-Path $profile $directory) | Out-Null
 }
 # Keep the animated session GIF out of the run; only the buttons are under test.
-'{"paths":{"sessionGif":""}}' | Set-Content -LiteralPath "$profile\config\shell.json" -Encoding UTF8
+# Vim keybinds start off so the plain KeyNavigation wrap is exercised first; the
+# harness turns them on for its own vim row.
+'{"session":{"vimKeybinds":false},"paths":{"sessionGif":""}}' | Set-Content -LiteralPath "$profile\config\shell.json" -Encoding UTF8
 
 # Replace the staged singleton before any QML loads. The marker proves the
 # production adapter cannot dispatch a session action in this run.
@@ -40,7 +44,7 @@ $shellPath = Join-Path $stage 'shell.qml'
 $pragmas = @([regex]::Matches([IO.File]::ReadAllText($shellPath),
     '(?m)^//@ pragma (?:DataDir|StateDir|CacheDir) [^\r\n]+') | ForEach-Object { $_.Value })
 if ($pragmas.Count -ne 3) { throw 'Expected all three staged profile-directory pragmas.' }
-$harness = [IO.File]::ReadAllText((Join-Path $repoRoot 'windows\tests\SessionConfirmKeyboardTest.qml'))
+$harness = [IO.File]::ReadAllText((Join-Path $repoRoot 'windows\tests\AccessibilitySessionTest.qml'))
 [IO.File]::WriteAllText($shellPath, (($pragmas -join "`n") + "`n" + $harness), (New-Object Text.UTF8Encoding($false)))
 
 $qmlRoot = Join-Path $BuildRoot 'install\qml'
@@ -102,14 +106,20 @@ $failures = @([regex]::Matches(
 ) | ForEach-Object { $_.Value })
 $checksMatch = [regex]::Match($text, 'CAELESTIA_SESSION_KEYBOARD_CHECKS (\d+)')
 $checks = if ($checksMatch.Success) { [int]$checksMatch.Groups[1].Value } else { 0 }
+# Four audit rows: immediate dispatch, the Tab/Shift+Tab wrap, Escape after the
+# wrap, and the same wrap under vim keybinds, plus the accessible name/role and
+# focus-ring rows every button must keep.
+$minimumAssertions = 50
 $passed = -not $timedOut -and $process.ExitCode -eq 0 -and
-    $text.Contains('CAELESTIA_SESSION_KEYBOARD_PASS') -and $checks -ge 25 -and
+    $text.Contains('CAELESTIA_SESSION_KEYBOARD_PASS') -and $checks -ge $minimumAssertions -and
     $diagnostics.Count -eq 0 -and $failures.Count -eq 0
 $result = [ordered]@{
     passed = $passed
     timedOut = $timedOut
     exitCode = $process.ExitCode
     checks = $checks
+    assertions = $checks
+    minimumAssertions = $minimumAssertions
     diagnostics = $diagnostics
     failures = $failures
     sourceRevision = (& git -C $repoRoot rev-parse HEAD).Trim()
@@ -127,4 +137,4 @@ $result = [ordered]@{
 }
 $result | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath "$run\result.json" -Encoding UTF8
 $result | ConvertTo-Json -Depth 6
-if (-not $passed) { throw "Session confirmation keyboard test failed: $run" }
+if (-not $passed) { throw "Session accessibility keyboard test failed: $run" }

@@ -462,17 +462,6 @@ ShellRoot {
                     onActivated: Wallpapers.choose()
                 }
 
-                Column {
-                    visible: SessionManager.confirmationPending
-                    spacing: 8
-                    StyledText { text: "Confirm Windows " + SessionManager.pendingAction + "?" }
-                    Row {
-                        spacing: 8
-                        PreviewButton { text: "Confirm"; primary: true; onActivated: SessionManager.confirm() }
-                        PreviewButton { text: "Cancel"; onActivated: SessionManager.cancelConfirmation() }
-                    }
-                }
-
                 Row {
                     spacing: 8
                     visible: Quickshell.screens.length > 1

@@ -99,7 +99,6 @@ ShellRoot {
                 onDismissRequested: {
                     content.screenState.session = false;
                     content.screenState.launcher = false;
-                    SessionManager.cancelConfirmation();
                 }
             }
         }

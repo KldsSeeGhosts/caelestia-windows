@@ -62,8 +62,8 @@ Mark missing hardware or unavailable integrations as not tested, not passed.
 
 ## Session
 
-- Open the power/session panel and navigate with keyboard: focus is visible and Escape closes it.
-- Choose a destructive action, then cancel its confirmation: no session action occurs and the panel remains usable.
+- Open the power/session panel and navigate with keyboard: focus is visible, Tab and Shift+Tab stay inside the four buttons, and Escape closes it.
+- A destructive action (sign out, shut down, reboot, hibernate) runs on the first activation, as on upstream Caelestia: no confirmation appears.
 - If separately authorized, choose Lock: Windows' own lock screen appears; unlock returns to the shell.
 
 ## Workspaces and active window
