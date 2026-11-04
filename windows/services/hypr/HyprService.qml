@@ -96,6 +96,65 @@ QtObject {
         root.desktopControlCapability.availability === "available"
         && root.desktopControlCapability.operations.switch === true
         && root.desktopControlCapability.operations.create === true
+
+    // The bar's workspace widget dims to the theme's existing inactive opacity
+    // and stops accepting input while this is false. It recovers on the next
+    // capability change without a reload.
+    readonly property bool workspaceControlAvailable:
+        root.desktopControlCapability.availability === "available"
+        && root.desktopControlCapability.operations.switch === true
+
+    // One short sentence for the widget's tooltip, derived from the published
+    // capability reason. The widget supplies the existing tooltip styling.
+    readonly property string workspaceControlNotice: {
+        if (root.workspaceControlAvailable)
+            return "";
+        const reason = root.desktopControlCapability.reason || "operation-unsupported";
+        switch (reason) {
+        case "unsupported-build":
+            return "Workspace switching is unavailable on this Windows build.";
+        case "permission-denied":
+            return "Workspace switching is unavailable because Windows denied access.";
+        case "provider-disconnected":
+            return "Workspace switching is paused while Explorer restarts.";
+        case "provider-unavailable":
+            return "Workspace switching is unavailable because the Windows desktop provider could not start.";
+        case "dispatch-disabled":
+            return "Workspace switching is disabled in this shell configuration.";
+        case "backend-unavailable":
+            return "Workspace switching is unavailable while the Windows desktop service starts.";
+        case "invalid-contract":
+            return "Workspace switching is unavailable because the desktop service reported an invalid capability.";
+        case "legacy-capability-unknown":
+            return "Workspace switching is unavailable because Windows desktop control is not configured.";
+        case "operation-unsupported":
+            return "Workspace switching is not supported by the Windows desktop provider.";
+        default:
+            return "Workspace switching is unavailable.";
+        }
+    }
+
+    // Diagnostics read this instead of the raw capability: the own-window move
+    // is IVirtualDesktopManager::MoveWindowToDesktop, a documented API, while
+    // switch/create still share the build-gated private COM provider. Keeping
+    // the provider per operation avoids labelling the whole provider private.
+    readonly property var desktopControlDiagnostics: {
+        const capability = root.desktopControlCapability;
+        const provider = capability.provider ?? "unknown";
+        return {
+            availability: capability.availability,
+            reason: capability.reason,
+            provider: provider,
+            operations: capability.operations,
+            operationProviders: {
+                switch: provider,
+                create: provider,
+                move: "documented-api",
+                remove: provider,
+                pin: provider
+            }
+        };
+    }
     property var _desktopRefusal: null
     readonly property var lastDesktopCommand: root._desktopRefusal
         ?? (root.nativeInitialized ? root.backend.desktopControl?.lastCommand : null)
