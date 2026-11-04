@@ -205,6 +205,9 @@ same. A skipped, failed, or missing metric is never a pass.
   "overall": "same",
   "exitCode": 0,
   "analysisSha256": "...",
+  "displays": "\\\\.\\DISPLAY1 0,0 2560x1440 primary",
+  "powerRequest": { "held": true, "system": true, "display": true },
+  "displayChangedTrials": 0,
   "groups": {
     "A/Panel": { "valid": true, "trials": 5, "errorCount": 0, "shellRevision": "...",
                  "backendPin": "...", "buildSourceRevision": "...", "payloadSha256": "...", "plant": "None" }
