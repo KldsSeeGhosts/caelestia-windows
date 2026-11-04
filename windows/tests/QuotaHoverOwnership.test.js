@@ -218,3 +218,105 @@ test("per-screen State exposes only the requested panel flags", () => {
         dashboard: false, quota: false, sidebar: true, session: true,
     });
 });
+
+// -- The "Agent usage panel" setting (Nexus > Services, windows.quota.enabled) --
+const quotaConfig = read("windows/quota/services/QuotaConfig.qml");
+const quotaService = read("windows/quota/services/Quota.qml");
+const regions = read("modules/drawers/Regions.qml");
+const servicesPage = read("windows/shell/adapters/modules/nexus/pages/ServicesPage.qml");
+
+const expr = (text, pattern) => text.match(pattern)[1].replace(/\broot\./g, "");
+const windowsQuotaExpr = expr(quotaConfig, /readonly property var windowsQuota: (.+)\n/);
+const panelOnExpr = expr(quotaConfig, /readonly property bool panelOn: (.+)\n/);
+const enabledExpr = expr(quotaConfig, /readonly property bool enabled: (.+)\n/);
+
+// QuotaConfig.enabled as shipped, for a given shell.json "windows" map and the
+// two older inputs (a CPA config on disk, quota.json "enabled").
+function configEnabled(windows, { configured = true, settingPresent = false, settingEnabled = false } = {}) {
+    const context = vm.createContext({ GlobalConfig: { windows }, configured, settingPresent, settingEnabled });
+    context.windowsQuota = vm.runInContext(windowsQuotaExpr, context);
+    context.panelOn = vm.runInContext(panelOnExpr, context);
+    return vm.runInContext(enabledExpr, context);
+}
+
+test("the setting is on unless windows.quota.enabled is switched off", () => {
+    assert.equal(configEnabled(undefined), true, "absent: on, as before");
+    assert.equal(configEnabled({}), true);
+    assert.equal(configEnabled({ quota: {} }), true);
+    assert.equal(configEnabled({ quota: { enabled: true } }), true);
+    assert.equal(configEnabled({ quota: { enabled: false } }), false);
+    assert.equal(configEnabled({ tiling: { enabled: true }, quota: { enabled: false } }), false, "other windows keys do not matter");
+});
+
+test("the setting never enables the panel by itself", () => {
+    assert.equal(configEnabled({ quota: { enabled: true } }, { configured: false }), false, "still needs cpa-agents.json");
+    assert.equal(configEnabled(undefined, { configured: false, settingPresent: true, settingEnabled: true }), true, "quota.json can still opt in");
+    assert.equal(configEnabled(undefined, { configured: true, settingPresent: true, settingEnabled: false }), false, "quota.json can still opt out");
+    assert.equal(configEnabled({ quota: { enabled: false } }, { configured: true, settingPresent: true, settingEnabled: true }), false, "off wins");
+});
+
+test("with the setting off the hover path never asks for the drawer", () => {
+    assert.match(panelsAdapter, /readonly property bool quotaEnabled: QuotaConfig\.enabled\n/);
+    const off = rig({ quotaEnabled: configEnabled({ quota: { enabled: false } }) });
+    for (const [x, y] of [inQuota, inDashboard, elsewhere]) {
+        off.move(x, y);
+        assert.equal(off.screenState.quota, false, `no quota at ${x},${y}`);
+    }
+    off.move(...inDashboard);
+    assert.equal(off.screenState.dashboard, true, "the dashboard hover is untouched");
+    const on = rig({ quotaEnabled: configEnabled(undefined) });
+    on.move(...inQuota);
+    assert.equal(on.screenState.quota, true, "on: unchanged");
+});
+
+test("switching it off closes an open drawer and switching it on does not reopen it", () => {
+    const handler = panelsAdapter.match(/onQuotaEnabledChanged: \{\n([\s\S]*?)\n    \}\n/)[1];
+    const run = quotaEnabled => {
+        const context = vm.createContext({ quotaEnabled, screenState: { quota: true } });
+        vm.runInContext(handler, context);
+        return context.screenState.quota;
+    };
+    assert.equal(run(false), false, "off closes it");
+    assert.equal(run(true), true, "on leaves it as it is");
+    assert.doesNotMatch(handler, /quota = true/);
+});
+
+test("with the setting off the drawer has no input region and no blob to deform", () => {
+    const region = between(regions, "    R {\n        panel: root.panels.quota", "    R {\n        panel: root.panels.dashboard");
+    assert.match(region, /width: root\.panels\.quotaEnabled \? panel\.width : 0/);
+    assert.match(region, /height: root\.panels\.quotaEnabled \? .+ : 0/);
+    // The drawer never opens, so its offset stays at 1 and the blob never moves.
+    assert.match(read("windows/quota/modules/quota/Wrapper.qml"), /shouldBeActive: screenState\.quota && QuotaConfig\.enabled/);
+});
+
+test("with the setting off no request, timer or watchdog stays alive", () => {
+    // Every way to start one checks the same flag...
+    assert.match(quotaService, /readonly property bool enabled: QuotaConfig\.enabled/);
+    assert.match(quotaService, /Timer \{\n        id: autoRefreshTimer[\s\S]*?running: root\.configured && root\.enabled/);
+    assert.match(quotaService, /Timer \{\n        id: clockTimer[\s\S]*?running: root\.enabled && root\.clockHolders > 0/);
+    assert.match(quotaService, /if \(!root\.enabled \|\| root\.inFlight\)\n\s+return;/);
+    assert.match(quotaService, /function triggerKeepalive\(\): void \{\n\s+if \(!QuotaConfig\.enabled/);
+    // ...the key is not read while it is off...
+    assert.match(quotaService, /path: root\.enabled \? QuotaConfig\.cpaConfigPath : ""/);
+    // ...and switching off stops what is already running.
+    assert.match(quotaService, /onEnabledChanged: \{\n\s+if \(root\.enabled\)\n\s+root\.maybeRefresh\(\);\n\s+else\n\s+root\.suspend\(\);/);
+    const suspend = between(quotaService, "    function suspend(): void {", "    function finishRequest()");
+    assert.match(suspend, /watchdog\.stop\(\)/);
+    assert.match(suspend, /root\.spendRequests\.concat\(\[root\.activeRequest\]\)/);
+    assert.match(suspend, /request\.abort\(\)/);
+    assert.match(suspend, /root\.inFlight = false;\n\s+root\.loading = false;/);
+});
+
+test("Nexus writes windows.quota.enabled without disturbing the rest of windows", () => {
+    assert.match(servicesPage, /text: Tr\.tr\("Agent usage panel"\)/);
+    assert.match(servicesPage, /checked: root\.agentUsageOn/);
+    assert.match(servicesPage, /readonly property bool agentUsageOn: GlobalConfig\.windows\?\.quota\?\.enabled \?\? true/);
+    const body = servicesPage.match(/function setAgentUsage\(on: bool\): void \{\n([\s\S]*?)\n    \}\n/)[1];
+    const context = vm.createContext({ on: false, GlobalConfig: { windows: { tiling: { enabled: true, mode: "observe" }, quota: { other: 1 } } } });
+    vm.runInContext(body, context);
+    const written = JSON.parse(JSON.stringify(context.GlobalConfig.windows));
+    assert.deepEqual(written, { tiling: { enabled: true, mode: "observe" }, quota: { other: 1, enabled: false } });
+    const fresh = vm.createContext({ on: true, GlobalConfig: { windows: undefined } });
+    vm.runInContext(body, fresh);
+    assert.deepEqual(JSON.parse(JSON.stringify(fresh.GlobalConfig.windows)), { quota: { enabled: true } });
+});

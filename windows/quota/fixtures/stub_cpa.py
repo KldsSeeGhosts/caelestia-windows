@@ -144,7 +144,7 @@ SUMMARY = {
                     "error": None,
                     "windows": [
                         window("five-hour", "5-hour", 22, RESET_5H),
-                        window("weekly", "Weekly", 61, RESET_WEEK),
+                        window("weekly", "Weekly", 93, RESET_WEEK),  # 7% left: the error colour
                     ],
                 },
             ],

@@ -3,10 +3,10 @@ param(
     [Parameter(Mandatory)][string]$QtPrefix,
     [Parameter(Mandatory)][string]$BuildRoot,
     [string]$RunRoot,
-    [ValidateSet('configured', 'states', 'offline', 'unconfigured')]
-    [string[]]$Modes = @('configured', 'states', 'offline', 'unconfigured'),
+    [ValidateSet('configured', 'states', 'offline', 'unconfigured', 'disabled')]
+    [string[]]$Modes = @('configured', 'states', 'offline', 'unconfigured', 'disabled'),
     # Drawer sizes as "<width>x<height>". configured runs every size, states
-    # runs the sizes at least 400 high, offline and unconfigured use the first.
+    # runs the sizes at least 400 high, offline, unconfigured and disabled use the first.
     [ValidatePattern('^\d+x\d+$')]
     [string[]]$Geometries = @('384x520', '280x520', '280x300'),
     # Optional guard: refuse to run unless qs.exe has this SHA-256.
@@ -16,25 +16,29 @@ param(
 # windows/quota/QuotaSmoke.qml in isolated profiles:
 #
 #   configured    a synthetic local CPA Manager stub serves the pre-aggregated
-#                 quota summary; the drawer opens on Codex, then Claude, with the
-#                 provider strip above the limits, the first account's windows
-#                 visible without scrolling, a model-scoped window and a spend row
-#                 that starts collapsed and opens into the Today / Yesterday /
-#                 30 Days breakdown without refreshing. Dark, light and
-#                 spend-open screenshots are saved. It runs at the 384x520
-#                 default, the 280 minimum width and a short 280x300 drawer;
-#   states        a second synthetic scenario: a very long account name, 0% left,
-#                 stale, reconnect, disabled and unreported accounts, Cursor
-#                 API/Auto windows and a monthly-only provider. Each provider is
-#                 checked for reported windows only (no invented 5-hour or weekly
-#                 limit) and for overflow, and screenshotted;
+#                 quota summary; the drawer opens on All Usage with a Priority |
+#                 All Usage switch, one section per provider on a shared column
+#                 grid (bars, % and resets line up), per-provider spend rows and
+#                 a floating footer; it then switches to Priority (least left
+#                 first), opens the footer menu and saves dark, light, Priority
+#                 and menu screenshots. It runs at the 384x520 default, the 280
+#                 minimum width and a short 280x300 drawer;
+#   states        a second synthetic scenario: a very long account name, 0% left
+#                 (error colour), stale, reconnect, disabled and unreported
+#                 accounts, Cursor API/Auto windows and a monthly-only provider.
+#                 Each section is checked for reported windows only (no invented
+#                 5-hour or weekly limit) and for overflow, and screenshotted;
 #   offline       the CPA endpoint refuses connections; with the configured
 #                 run's cached summary the saved reading stays visible behind
 #                 one friendly error, and the run must settle without hanging;
 #   unconfigured  no cpa-agents.json exists; no request is made and the drawer
-#                 stays disabled.
-#
-# It never contacts a real CPA or upstream provider, uses no credentials, takes
+#                 stays disabled;
+#   disabled      a valid CPA config with "Agent usage panel" off
+#                 (windows.quota.enabled in shell.json): the drawer never opens,
+#                 its input region is empty and the service makes no request.
+#                 Switching it on, off and on again at runtime opens, closes and
+#                 quiets the drawer live and keeps the cache.
+## It never contacts a real CPA or upstream provider, uses no credentials, takes
 # no pointer input and never touches the live desktop.
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
@@ -130,7 +134,9 @@ function Invoke-QuotaSmoke([string]$Mode, [string]$Geometry) {
     }
     $width, $height = $Geometry -split 'x'
     # Keep the bar wrapper's Loader inactive; the quota drawer is the subject.
-    Write-Utf8NoBom "$profile\config\shell.json" '{"bar":{"persistent":false}}'
+    # The disabled mode also switches the Nexus "Agent usage panel" setting off.
+    $shellJson = if ($Mode -eq 'disabled') { '{"bar":{"persistent":false},"windows":{"quota":{"enabled":false}}}' } else { '{"bar":{"persistent":false}}' }
+    Write-Utf8NoBom "$profile\config\shell.json" $shellJson
     # The replacement entry keeps all three directory pragmas, pointed at this
     # run's own profile, so Quickshell's data, state and cache dirs stay inside it.
     $header = @("DataDir $profile\data", "StateDir $profile\state", "CacheDir $profile\cache") |
@@ -145,7 +151,7 @@ function Invoke-QuotaSmoke([string]$Mode, [string]$Geometry) {
     $savedCache = $false
     $cachePath = Join-Path $profile 'cache\quota-summary.json'
     try {
-        if ($Mode -eq 'configured' -or $Mode -eq 'states') {
+        if ($Mode -eq 'configured' -or $Mode -eq 'states' -or $Mode -eq 'disabled') {
             $stub = Start-Stub $modeRoot $(if ($Mode -eq 'states') { 'states' } else { 'default' })
             $baseUrl = $stub.BaseUrl
         } elseif ($Mode -eq 'offline') {
@@ -166,7 +172,8 @@ function Invoke-QuotaSmoke([string]$Mode, [string]$Geometry) {
 
         $screenshot = Join-Path $modeRoot 'quota.png'
         $lightScreenshot = Join-Path $modeRoot 'quota-light.png'
-        $spendScreenshot = Join-Path $modeRoot 'quota-spend.png'
+        $priorityScreenshot = Join-Path $modeRoot 'quota-priority.png'
+        $menuScreenshot = Join-Path $modeRoot 'quota-menu.png'
         $info = New-Object Diagnostics.ProcessStartInfo
         $info.FileName = $exe
         $info.Arguments = '--no-color --log-times --path "' + $entry + '"'
@@ -204,7 +211,8 @@ function Invoke-QuotaSmoke([string]$Mode, [string]$Geometry) {
         $info.EnvironmentVariables['XDG_DATA_HOME'] = "$profile\data"
         $info.EnvironmentVariables['CAELESTIA_QUOTA_SMOKE_MODE'] = $Mode
         $info.EnvironmentVariables['CAELESTIA_QUOTA_SMOKE_GEOMETRY'] = $Geometry
-        $info.EnvironmentVariables['CAELESTIA_QUOTA_SPEND_SCREENSHOT'] = ([Uri]$spendScreenshot).AbsoluteUri
+        $info.EnvironmentVariables['CAELESTIA_QUOTA_PRIORITY_SCREENSHOT'] = ([Uri]$priorityScreenshot).AbsoluteUri
+        $info.EnvironmentVariables['CAELESTIA_QUOTA_MENU_SCREENSHOT'] = ([Uri]$menuScreenshot).AbsoluteUri
         $info.EnvironmentVariables['CAELESTIA_QUOTA_SMOKE_SAVED'] = $(if ($savedCache) { '1' } else { '0' })
         $info.EnvironmentVariables['CAELESTIA_QUOTA_LIGHT_SCHEME'] = "$stage\quota-light-scheme.json"
         $info.EnvironmentVariables['CAELESTIA_SHELL_SMOKE'] = '1'
@@ -250,14 +258,12 @@ function Invoke-QuotaSmoke([string]$Mode, [string]$Geometry) {
                 $text -match 'CAELESTIA_QUOTA_SMOKE_SUMMARY .*"groups":3' -and
                 $text -match '"claudeLimits":3' -and $text -match '"scoped":1' -and
                 $text -match '"todayCostUsd":3.71' -and
-                $text -match 'CAELESTIA_QUOTA_SMOKE_SWITCH .*"sectionsAndSpend":true' -and
-                ([regex]::Matches($text, 'CAELESTIA_QUOTA_SMOKE_HIERARCHY ')).Count -eq 2 -and
-                $text -match 'CAELESTIA_QUOTA_SMOKE_SPEND .*"open":true' -and
-                $text -match 'CAELESTIA_QUOTA_SMOKE_SPEND .*"collapsedAfterReset":true' -and
+                $text -match 'CAELESTIA_QUOTA_SMOKE_OPEN .*"mode":"configured"' -and
+                $text -match 'CAELESTIA_QUOTA_SMOKE_PRIORITY .*"rows":5' -and
                 (Test-Path -LiteralPath $screenshot) -and (Get-Item -LiteralPath $screenshot).Length -gt 0 -and
-                (Test-Path -LiteralPath $spendScreenshot) -and (Get-Item -LiteralPath $spendScreenshot).Length -gt 0 -and
-                (Test-Path -LiteralPath $lightScreenshot) -and (Get-Item -LiteralPath $lightScreenshot).Length -gt 0 -and
-                $cacheProviders -eq 5 -and -not $cacheLeaks
+                (Test-Path -LiteralPath $priorityScreenshot) -and (Get-Item -LiteralPath $priorityScreenshot).Length -gt 0 -and
+                (Test-Path -LiteralPath $menuScreenshot) -and (Get-Item -LiteralPath $menuScreenshot).Length -gt 0 -and
+                (Test-Path -LiteralPath $lightScreenshot) -and (Get-Item -LiteralPath $lightScreenshot).Length -gt 0 -and                $cacheProviders -eq 5 -and -not $cacheLeaks
         } elseif ($Mode -eq 'states') {
             $stateShots = @('codex', 'claude', 'cursor', 'zai') | ForEach-Object { Join-Path $modeRoot "quota-$_.png" }
             $passed = $passed -and
@@ -273,6 +279,11 @@ function Invoke-QuotaSmoke([string]$Mode, [string]$Geometry) {
                 $text -match ('CAELESTIA_QUOTA_SMOKE_OPEN .*' + $meterPattern) -and
                 (Test-Path -LiteralPath $screenshot) -and (Get-Item -LiteralPath $screenshot).Length -gt 0 -and
                 $cacheProviders -eq $(if ($savedCache) { 5 } else { 0 }) -and -not $cacheLeaks
+        } elseif ($Mode -eq 'disabled') {
+            $passed = $passed -and
+                $text -match 'CAELESTIA_QUOTA_SMOKE_DISABLED .*"enabled":false' -and
+                $text -match 'CAELESTIA_QUOTA_SMOKE_DISABLED .*"regionWidth":0' -and
+                $text -match 'CAELESTIA_QUOTA_SMOKE_DISABLED .*"requests":0'
         } elseif ($Mode -eq 'unconfigured') {
             $passed = $passed -and
                 $text -match 'CAELESTIA_QUOTA_SMOKE_UNCONFIGURED .*"configured":false' -and
@@ -294,7 +305,8 @@ function Invoke-QuotaSmoke([string]$Mode, [string]$Geometry) {
             savedCache = $savedCache
             screenshot = $screenshot
             lightScreenshot = $lightScreenshot
-            spendScreenshot = $spendScreenshot
+            priorityScreenshot = $priorityScreenshot
+            menuScreenshot = $menuScreenshot
             stdout = $stdoutPath
             stderr = $stderrPath
             baseUrl = $baseUrl

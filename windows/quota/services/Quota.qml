@@ -59,9 +59,14 @@ Singleton {
     property bool inFlight: false
     property bool requestTimedOut: false
     property var activeRequest: null
+    // The best-effort spend reads in flight, so switching the panel off can abort them.
+    property var spendRequests: []
 
     property var providers: []
     property string selectedProviderId: ""
+    // "priority" | "all". Kept here, not in the drawer, so the choice outlasts
+    // the drawer closing; nothing is saved to disk.
+    property string usageView: "all"
     property var todayCostUsd: null
     // { today | yesterday | month: { total, rows: [{ provider, cost }] } }
     property var spend: ({})
@@ -290,7 +295,8 @@ Singleton {
     FileView {
         id: endpointFile
 
-        path: QuotaConfig.cpaConfigPath
+        // Off means the key is not even read into memory; on reads it again.
+        path: root.enabled ? QuotaConfig.cpaConfigPath : ""
         printErrors: false
         watchChanges: true
 
@@ -565,7 +571,14 @@ Singleton {
         } catch (e) {
             return;
         }
+        root.spendRequests.push(request);
+        const settle = function () {
+            const at = root.spendRequests.indexOf(request);
+            if (at >= 0)
+                root.spendRequests.splice(at, 1);
+        };
         request.onload = function () {
+            settle();
             if (request.status < 200 || request.status >= 300)
                 return;
             let body = null;
@@ -595,8 +608,8 @@ Singleton {
         // Best effort, like the summary above: a transport failure or timeout
         // keeps the last good figures, sets no drawer error and logs nothing
         // (no body or key is read here).
-        request.onerror = function () {};
-        request.ontimeout = function () {};
+        request.onerror = settle;
+        request.ontimeout = settle;
         try {
             request.open("POST", root.baseUrl + root.analyticsUrlSuffix);
             request.setRequestHeader("Authorization", "Bearer " + root.adminKey);
@@ -605,6 +618,23 @@ Singleton {
             request.timeout = root.requestTimeoutMs;
             request.send(JSON.stringify({ from_ms: fromMs, to_ms: toMs, include: { channel_share: true } }));
         } catch (e) {}
+    }
+
+    // Switched off from Nexus: abort anything in flight so no request or watchdog
+    // outlives the setting. The cached summary stays for when it is switched on.
+    function suspend(): void {
+        watchdog.stop();
+        const aborting = root.spendRequests.concat([root.activeRequest]);
+        root.spendRequests = [];
+        root.activeRequest = null;
+        root.inFlight = false;
+        root.loading = false;
+        for (const request of aborting) {
+            try {
+                if (request)
+                    request.abort();
+            } catch (e) {}
+        }
     }
 
     function finishRequest(): void {
@@ -938,7 +968,12 @@ Singleton {
     }
 
     onConfiguredChanged: root.maybeRefresh()
-    onEnabledChanged: root.maybeRefresh()
+    onEnabledChanged: {
+        if (root.enabled)
+            root.maybeRefresh();
+        else
+            root.suspend();
+    }
 
     Component.onCompleted: {
         if (!root.configured) {
