@@ -76,16 +76,14 @@ StyledRect {
                         }
                     }
                 }
+                // Windows removes the larger volume glyph so every icon shares one size and pitch.
                 DelegateChoice {
                     roleValue: "audio"
                     delegate: EntryWrapper {
-                        margin: Tokens.spacing.extraSmall / 2
-
                         MaterialIcon {
                             animate: true
                             text: Icons.getVolumeIcon(Audio.volume, Audio.muted)
                             color: root.colour
-                            fontStyle: Tokens.font.icon.medium
                             fill: 1
                         }
                     }
@@ -93,14 +91,12 @@ StyledRect {
                 DelegateChoice {
                     roleValue: "microphone"
                     delegate: EntryWrapper {
-                        margin: Tokens.spacing.extraSmall / 2
                         name: "audio" // Mic opens audio popout
 
                         MaterialIcon {
                             animate: true
                             text: Icons.getMicVolumeIcon(Audio.sourceVolume, Audio.sourceMuted)
                             color: root.colour
-                            fontStyle: Tokens.font.icon.medium
                             fill: 1
                         }
                     }

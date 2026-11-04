@@ -196,7 +196,7 @@ $configText = @'
 if ($Tray) {
     $configObject = $configText | ConvertFrom-Json
     $configObject.bar | Add-Member -NotePropertyName tray `
-        -NotePropertyValue ([pscustomobject]@{ recolour = $true }) -Force
+        -NotePropertyValue ([pscustomobject]@{ compact = $true; background = $false; recolour = $true }) -Force
     $configText = $configObject | ConvertTo-Json -Depth 10
 }
 # Session runs bind the original buttons to the adapter's allowlisted command
@@ -241,7 +241,7 @@ if ($Combined) {
     "clock": {"showIcon":true,"showDate":true,"showSeconds":true},
     "scrollActions": {"workspaces":false,"volume":false,"brightness":false},
     "popouts": {"activeWindow":false,"tray":false,"statusIcons":true},
-    "workspaces": {"shown":5,"showUnoccupied":true,"perMonitor":true,"displayType":"Text","showWindows":true},
+    "workspaces": {"shown":5,"showUnoccupied":true,"perMonitor":true,"showWindows":true},
     "activeWindow": {"showOnHover":false,"compact":false,"inverted":false},
     "statusIcons": [
       {"id":"lockStatus","enabled":false},
@@ -252,7 +252,7 @@ if ($Combined) {
       {"id":"bluetooth","enabled":true},
       {"id":"battery","enabled":true}
     ],
-    "tray": {"recolour": true}
+    "tray": {"compact":true,"background":false,"recolour": true}
   },
   "session": {
     "enabled": true,
@@ -269,7 +269,7 @@ if ($Combined) {
 '@
 }
 # Hypr runs stage the original bar workspace and active-window components. The
-# original Text display type keeps workspace labels legible.
+# upstream Shapes default keeps the workspace indicators consistent.
 # Per-monitor workspace ownership stays unclaimed, so
 # perMonitor keeps the upstream default while showUnoccupied keeps the five
 # configured slots visible on both monitors.
@@ -279,7 +279,6 @@ if ($Hypr) {
         shown = 5
         showUnoccupied = $true
         perMonitor = $true
-        displayType = 'Text'
         showWindows = $true
     }) -Force
     $configObject.bar | Add-Member -NotePropertyName activeWindow -NotePropertyValue ([pscustomobject]@{
