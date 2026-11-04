@@ -42,8 +42,14 @@ function Invoke-QmlFixture {
     try {
     if ($ShellFixture) {
         & "$PSScriptRoot\Stage-ShellPrototype.ps1" -Destination $stage -ProfileRoot (Join-Path $run 'profile') -Prototype shell-live | Out-Null
+    }
+    if ($FakeDirectories.Count -gt 0) {
+        # Shell fakes overlay the staged prototype at its root. A pure-service
+        # fixture has no staged graph, so its fakes are QML modules and are
+        # staged beside the run directory instead.
+        $fakeRoot = if ($ShellFixture) { $stage } else { $run }
         foreach ($directory in $FakeDirectories) {
-            Copy-Item -Path (Join-Path $repoRoot "$directory\*") -Destination $stage -Recurse -Force
+            Copy-Item -Path (Join-Path $repoRoot "$directory\*") -Destination $fakeRoot -Recurse -Force
         }
     }
     $profile = Join-Path $run 'profile'
@@ -96,6 +102,9 @@ function Invoke-QmlFixture {
     if ($ShellFixture) {
         $info.EnvironmentVariables['QML_IMPORT_PATH'] = "$run\imports;$stage\imports;$BuildRoot\install\qml;$QtPrefix\qml"
         $info.EnvironmentVariables['QML2_IMPORT_PATH'] = $info.EnvironmentVariables['QML_IMPORT_PATH']
+    } elseif ($FakeDirectories.Count -gt 0) {
+        $info.EnvironmentVariables['QML_IMPORT_PATH'] = "$run\imports"
+        $info.EnvironmentVariables['QML2_IMPORT_PATH'] = "$run\imports"
     }
     if ($Render) {
         $info.EnvironmentVariables.Remove('QT_QUICK_BACKEND')
