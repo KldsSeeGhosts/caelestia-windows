@@ -18,6 +18,15 @@ Item {
     anchors.left: parent?.left
     anchors.right: parent?.right
 
+    // Windows port (ERM-615): the painted name/comment are not exposed to a
+    // screen reader, so give every result one named list row.
+    Accessible.role: Accessible.ListItem
+    Accessible.name: {
+        const name = root.modelData?.name ?? "";
+        const detail = root.modelData?.comment || root.modelData?.genericName || "";
+        return detail ? name + ", " + detail : name;
+    }
+
     StateLayer {
         radius: Tokens.rounding.large
         onClicked: {

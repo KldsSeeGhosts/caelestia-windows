@@ -15,6 +15,14 @@ Item {
     anchors.left: parent?.left
     anchors.right: parent?.right
 
+    // Windows port (ERM-615): expose the variant row to screen readers.
+    Accessible.role: Accessible.ListItem
+    Accessible.name: {
+        const name = root.modelData?.name ?? "";
+        const description = root.modelData?.description ?? "";
+        return description ? name + ", " + description : name;
+    }
+
     StateLayer {
         radius: Tokens.rounding.large
         onClicked: root.modelData?.onClicked(root.list)

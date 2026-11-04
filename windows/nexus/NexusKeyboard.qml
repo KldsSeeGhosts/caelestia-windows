@@ -350,6 +350,17 @@ ShellRoot {
         return null;
     }
 
+    function byAccessibleName(item, name): var {
+        for (const child of item?.children ?? []) {
+            if (child?.Accessible?.name === name)
+                return child;
+            const found = root.byAccessibleName(child, name);
+            if (found)
+                return found;
+        }
+        return null;
+    }
+
     function collectFocusable(item, out): void {
         for (const child of item?.children ?? []) {
             if (child?.activeFocusOnTab)
@@ -527,11 +538,8 @@ ShellRoot {
                     return; // one settle tick after ready
                 }
                 if (root.queue.length === 0) {
-                    root.input.destroy();
-                    root.input = null;
-                    WindowFactory.closeAll();
                     root.step = 3;
-                    driver.interval = 1200;
+                    driver.interval = 150;
                     return;
                 }
                 const next = root.queue.shift();
@@ -545,11 +553,34 @@ ShellRoot {
                     root.current = next;
                 return;
             }
-            root.check(WindowFactory.windowCount === 0, "Nexus windows are still open before PASS");
-            driver.stop();
-            console.log(`CAELESTIA_NEXUS_KEYBOARD_PAGES ${root.pagesWalked} rows=${root.rowsReached}`);
-            console.log("CAELESTIA_NEXUS_KEYBOARD_PASS");
-            Qt.quit();
+            if (root.step === 3) {
+                // The detached window is its own chrome, so its close control
+                // must carry a name and Escape must dismiss it (ERM-615).
+                const closeButton = root.byAccessibleName(root.win.contentItem, "Close Nexus");
+                root.check(closeButton, "Nexus close control is missing or unnamed");
+                root.check(closeButton.Accessible.role === Accessible.Button, "Nexus close control role");
+                closeButton.forceActiveFocus(Qt.TabFocusReason);
+                root.check(closeButton.activeFocus, "Nexus close control did not take focus");
+                root.input.keyClick(Qt.Key_Escape);
+                root.waits = 0;
+                root.step = 4;
+                return;
+            }
+            if (root.step === 4) {
+                if (WindowFactory.windowCount !== 0) {
+                    root.check(root.waits++ < 30, "Escape did not close the Nexus window");
+                    return;
+                }
+                root.input = null; // destroyed with the window
+                root.win = null;
+                root.check(WindowFactory.windowCount === 0, "Nexus windows are still open before PASS");
+                driver.stop();
+                console.log(`CAELESTIA_NEXUS_KEYBOARD_PAGES ${root.pagesWalked} rows=${root.rowsReached}`);
+                console.log("CAELESTIA_NEXUS_KEYBOARD_PASS");
+                Qt.quit();
+                return;
+            }
+            root.check(false, "unknown Nexus keyboard step");
         } catch (error) {
             driver.stop();
             console.error("CAELESTIA_NEXUS_KEYBOARD_FAIL " + error.message);

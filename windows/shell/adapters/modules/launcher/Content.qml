@@ -50,6 +50,11 @@ Item {
 
         objectName: "launcherSearch"
 
+        // Windows port (ERM-615): the field has no visible label, so screen
+        // readers otherwise announce an unnamed edit field.
+        Accessible.role: Accessible.EditableText
+        Accessible.name: "Search applications and actions"
+
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.bottom: parent.bottom
