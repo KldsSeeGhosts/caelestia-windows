@@ -86,8 +86,41 @@ $scratch = Join-Path ([IO.Path]::GetTempPath()) ('caelestia-candidate-' + [guid]
 # The manifest is a candidate record, not a machine dump. Serialise it with
 # repository roots and personal paths replaced by stable placeholders, and
 # verify the result never carries a home path or the account name.
-$userName = [string]$env:USERNAME
-$userNamePattern = if ($userName) { '(?<![A-Za-z0-9._-])' + [regex]::Escape($userName) + '(?![A-Za-z0-9._-])' } else { $null }
+
+# A path can be spelled long or 8.3-short, with either separator.
+function Get-ShortPath([string]$Path) {
+    try {
+        if ($Path -and (Test-Path -LiteralPath $Path -PathType Container)) {
+            return (New-Object -ComObject Scripting.FileSystemObject).GetFolder($Path).ShortPath
+        }
+    } catch {}
+    return $null
+}
+function Get-PathSpellings([string]$Path) {
+    $spellings = foreach ($form in @($Path, (Get-ShortPath $Path))) {
+        if ($form) { $form.TrimEnd('\'); $form.TrimEnd('\').Replace('\', '/') }
+    }
+    return @($spellings | Select-Object -Unique)
+}
+
+# The account name and the profile folder name can differ, and the folder can
+# also appear in its 8.3 form, so each one is redacted as a name.
+$homeSpellings = @(Get-PathSpellings $env:USERPROFILE)
+$nameTokens = @(
+    [string]$env:USERNAME
+    if ($env:USERPROFILE) { Split-Path -Leaf $env:USERPROFILE }
+    $shortHome = Get-ShortPath $env:USERPROFILE
+    if ($shortHome) { Split-Path -Leaf $shortHome }
+) | Where-Object { $_ } | Select-Object -Unique
+$userNamePattern = if ($nameTokens) {
+    '(?<![A-Za-z0-9._~-])(?:' + (($nameTokens | ForEach-Object { [regex]::Escape($_) }) -join '|') + ')(?![A-Za-z0-9._~-])'
+} else { $null }
+# Any folder directly under the profiles root (C:\Users) is someone's home,
+# whatever its spelling: renamed, 8.3-short, either separator or doubled.
+$profilePattern = if ($env:USERPROFILE) {
+    $profilesRoot = Split-Path -Parent $env:USERPROFILE
+    '(?i)' + ((($profilesRoot -split '[\\/]+') | ForEach-Object { [regex]::Escape($_) }) -join '[\\/]+') + '[\\/]+[^\\/"''\s<>|]+'
+} else { $null }
 $toolchainRoot = Join-Path $env:LOCALAPPDATA 'caelestia-dev'
 $pathReplacements = @(
     @{ from = $toolchainRoot; to = '<toolchain>' },
@@ -99,15 +132,20 @@ $pathReplacements = @(
     @{ from = $env:LOCALAPPDATA; to = '%LOCALAPPDATA%' },
     @{ from = $env:APPDATA; to = '%APPDATA%' },
     @{ from = $env:TEMP; to = '<temp>' }
-) | Where-Object { $_.from } | Sort-Object { $_.from.Length } -Descending
+) | Where-Object { $_.from } | ForEach-Object {
+    $to = $_.to
+    foreach ($spelling in Get-PathSpellings $_.from) { @{ from = $spelling; to = $to } }
+} | Sort-Object { $_.from.Length } -Descending
 
 function Protect-ManifestString([string]$Text) {
     if (-not $Text) { return $Text }
     foreach ($replacement in $pathReplacements) {
         if ($Text.IndexOf($replacement.from, [StringComparison]::OrdinalIgnoreCase) -ge 0) {
-            $Text = [regex]::Replace($Text, [regex]::Escape($replacement.from), $replacement.to, 'IgnoreCase')
+            # Only whole path segments: C:\Users\Ann must not eat C:\Users\ANNE~1.
+            $Text = [regex]::Replace($Text, [regex]::Escape($replacement.from) + '(?![^\\/"''\s;,])', $replacement.to.Replace('$', '$$'), 'IgnoreCase')
         }
     }
+    if ($profilePattern) { $Text = [regex]::Replace($Text, $profilePattern, '%USERPROFILE%') }
     if ($userNamePattern) { $Text = [regex]::Replace($Text, $userNamePattern, '%USERNAME%', 'IgnoreCase') }
     return $Text
 }
@@ -137,13 +175,15 @@ function Get-ManifestPrivacyReport([string]$Path) {
     $report = [pscustomobject]@{ exists = $false; homeHits = 0; userHits = 0; total = 0 }
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $report }
     $json = Get-Content -LiteralPath $Path -Raw
-    # JSON doubles path separators; count against the unescaped text too.
-    $plain = $json -replace '\\\\', '\'
-    if ($env:USERPROFILE) {
-        $report.homeHits = [regex]::Matches($plain, [regex]::Escape($env:USERPROFILE), 'IgnoreCase').Count
+    # JSON escapes backslashes and may escape forward slashes; check the
+    # unescaped text against every spelling of the home path.
+    $plain = ($json -replace '\\\\', '\') -replace '\\/', '/'
+    foreach ($spelling in $homeSpellings) {
+        $report.homeHits += [regex]::Matches($plain, [regex]::Escape($spelling), 'IgnoreCase').Count
     }
+    if ($profilePattern) { $report.homeHits += [regex]::Matches($plain, $profilePattern).Count }
     if ($userNamePattern) {
-        $report.userHits = [regex]::Matches($json, $userNamePattern, 'IgnoreCase').Count
+        $report.userHits = [regex]::Matches($plain, $userNamePattern, 'IgnoreCase').Count
     }
     $report.total = $report.homeHits + $report.userHits
     $report.exists = $true
