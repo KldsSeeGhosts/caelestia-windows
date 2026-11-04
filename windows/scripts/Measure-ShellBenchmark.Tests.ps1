@@ -139,3 +139,32 @@ foreach ($script in @('Measure-ShellRuntime.ps1', 'Measure-ShellBenchmark.ps1'))
     if ($parseErrors) { throw ($parseErrors -join ' ') }
 }
 Write-Output 'PowerShell parse checks passed.'
+$baseline = Join-Path $TestRoot 'publication.json'
+[IO.File]::Copy("$TestRoot\A-0\metadata.json", $baseline, $false)
+$baselineHash = (Get-FileHash $baseline).Hash
+$refused = $false
+try { [IO.File]::Copy("$TestRoot\B-0\completion.json", $baseline, $false) } catch [IO.IOException] { $refused = $true }
+if (-not $refused -or (Get-FileHash $baseline).Hash -ne $baselineHash) { throw 'Exclusive baseline publication failed.' }
+$hostPath = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+foreach ($script in @('Measure-ShellRuntime.ps1', 'Measure-ShellBenchmark.ps1')) {
+    $run = Join-Path $TestRoot "$script-Live-must-not-exist"
+    $info = [Diagnostics.ProcessStartInfo]::new()
+    $info.FileName = $hostPath
+    $info.WorkingDirectory = $TestRoot
+    $info.Arguments = '-NoProfile -File "' + "$PSScriptRoot\$script" +
+        '" -QtPrefix "' + $PSScriptRoot + '" -BuildRoot "' + $PSScriptRoot +
+        '" -SourceRoot "' + "$PSScriptRoot\..\.." + '" -RunRoot "' + $run + '" -Mode Live'
+    $info.UseShellExecute = $false
+    $info.CreateNoWindow = $true
+    $info.RedirectStandardError = $true
+    $child = [Diagnostics.Process]::Start($info)
+    try {
+        $stderr = $child.StandardError.ReadToEndAsync()
+        if (-not $child.WaitForExit(10000)) { $child.Kill(); throw 'Live refusal timed out.' }
+        if ($child.ExitCode -eq 0 -or (Test-Path -LiteralPath $run) -or
+            $stderr.GetAwaiter().GetResult() -notlike '*Live trials require -LiveDesktop*') {
+            throw "Live startup was not refused: $script"
+        }
+    } finally { $child.Dispose() }
+}
+Write-Output 'Live launch refusal and exclusive baseline publication passed.'

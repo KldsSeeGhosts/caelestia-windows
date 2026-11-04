@@ -74,16 +74,21 @@ powershell -NoProfile -File windows/scripts/Measure-ShellBenchmark.ps1 `
     -QtPrefix $qt -BuildRoot C:\b-bench -BuildRootB C:\b-bench-b `
     -RunRoot C:\b-bench\runs\calibration -Metric Resources -Mode NonVisible `
     -WarmupSeconds 5 -IdleSeconds 10 -Cycles 10 -CycleIntervalSeconds 0 `
-    -RecoverySeconds 5
+    -RecoverySeconds 30
 ```
+
+Keep the normal recovery period for resource net-growth calibration.
+Short recovery windows can include transient UI allocations after close frames.
 
 ## Validate isolation and sensitivity
 
 Run each category on `NonVisible` and `Offscreen` before choosing its mode.
 `NonVisible` creates a separate desktop and starts its worker there through
 `STARTUPINFO.lpDesktop`. It never switches the user's desktop.
+Native startup performs the normal stale AppBar registration cleanup and preserves live registrations.
 `Offscreen` uses Qt's software scene graph at the virtual screen's scale.
 Its results do not establish native D3D11, DWM, native-object, or live idle parity.
+Check `workloadDimensions` for missing provider data as well as rendered frames.
 The native mode records a refused foreground activation as an isolation warning.
 It still requires the Nexus window to render before counting that action.
 

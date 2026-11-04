@@ -86,7 +86,7 @@ $result = Get-Content "$RunRoot\benchmark.json" -Raw | ConvertFrom-Json
 if ($SaveBaseline) {
     if (@($result.groups.PSObject.Properties | Where-Object { -not $_.Value.valid }).Count) { throw 'Incomplete results cannot become a baseline.' }
     New-Item -ItemType Directory -Force -Path $BaselineRoot | Out-Null
-    Copy-Item -LiteralPath "$RunRoot\benchmark.json" -Destination "$BaselineRoot\$SaveBaseline.json"
+    [IO.File]::Copy("$RunRoot\benchmark.json", "$BaselineRoot\$SaveBaseline.json", $false)
 }
 Write-Output "$RunRoot\benchmark.json"
 if ($result.errorCount -or @($result.groups.PSObject.Properties | Where-Object { -not $_.Value.valid }).Count) {
