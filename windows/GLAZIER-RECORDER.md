@@ -138,7 +138,7 @@ software/offscreen renderer; waiting for the modal to settle avoided it. No
 speculative production workaround is included. Check native delete/modal
 teardown and rapid restart with the default D3D renderer before acceptance.
 
-Still needed, by the dedicated desktop QA agent with explicit live-test authority:
+Still needed, with explicit live-test authority:
 install a compatible Glazier; verify cold/warm detached launch, fullscreen on
 each monitor, region selection/cancel, silent/system-sound modes, pause/resume,
 stop and playable finalized MP4, list/open/reveal/delete, tray/hotkey reflection,

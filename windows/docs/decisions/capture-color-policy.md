@@ -1,6 +1,6 @@
 # Capture color policy on mixed HDR and SDR displays
 
-Status: accepted for the current release candidate. Tracked in Linear ERM-614.
+Status: accepted for the current release candidate.
 
 Every shipped capture output is 8-bit SDR sRGB. This is a deliberate policy, not an oversight. This page records what each shipped consumer does, what Windows does with it on an HDR display, and what would make us revisit the policy.
 

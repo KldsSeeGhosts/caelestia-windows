@@ -2,28 +2,83 @@
 
 Windows 11 port of [Caelestia Shell](https://github.com/caelestia-dots/shell), running natively on top of the Windows Quickshell backend (originally developed for [ii-windows](https://github.com/nunreasonable/ii-windows)).
 
-The upstream QtQuick/QML interface, Material 3 Expressive shapes (`M3Shapes`), shaders, and commit history are retained. Windows-specific services, packaging, and documentation live in [`windows/`](windows/); the pinned Quickshell backend and `M3Shapes` module are Git submodules recorded in [`windows/sources.lock.json`](windows/sources.lock.json).
+The upstream QtQuick/QML interface, Material 3 Expressive shapes (`M3Shapes`), shaders, and upstream attribution are retained. Windows-specific services, packaging, and documentation live in [`windows/`](windows/README.md); the pinned Quickshell backend and `M3Shapes` module are Git submodules recorded in [`windows/sources.lock.json`](windows/sources.lock.json).
 
-- [Windows user guide (install, configuration, keybinds)](windows/docs/USER-GUIDE.md)
+## Install
+
+Caelestia for Windows requires Windows 11 64-bit, a Direct3D 11-capable GPU, and a standard user account. It installs per user under `%LOCALAPPDATA%` and does not require administrator rights.
+
+1. Use a release build when one is available, or [build from source](windows/NATIVE-BUILD.md).
+2. From the repository or release folder, install the per-user runtime:
+
+   ```powershell
+   powershell -NoProfile -ExecutionPolicy Bypass -File .\windows\scripts\Install-Caelestia.ps1
+   ```
+
+3. Start it from the Start menu or with:
+
+   ```powershell
+   & "$env:LOCALAPPDATA\Programs\caelestia-windows\Start-Caelestia.ps1"
+   ```
+
+Autostart is off by default. Add `-Autostart` to the installer to enable it. See [the user guide](windows/docs/USER-GUIDE.md#install-uninstall-and-autostart) for requirements, uninstall, `-Purge`, and migrating from `ksg-shell`.
+
+## Usage
+
+The shell installs a left vertical bar, launcher, dashboard, notifications, OSDs, workspaces on Windows virtual desktops, and opt-in window tiling. Desktop takeover, autostart, taskbar changes, and tiling are opt-in. Start the installed launcher; use `-Command Restart`, `-Command Settings`, and `-Command Quit` for the installed instance.
+
+- [User guide](windows/docs/USER-GUIDE.md): first run, what each surface does, and troubleshooting.
+- [Keybinds](windows/docs/KEYBINDS.md): default shortcuts and `keybinds.json`.
+- [Configuration](windows/docs/CONFIGURATION.md): `shell.json`, per-monitor overrides, and tiling.
+- [Windows shell entry](windows/shell/README.md): production entry and install/run commands.
+
+## Updating
+
+There is no remote update feed yet. Install a newer build with the same installer. While the shell is running, add `-Restart`: the installer prepares the new version, swaps it in, restarts the shell and rolls back if it fails to start. Without `-Restart`, quit the shell first. The installer keeps the previous payload so you can return to it later. Settings > Updates can roll back to the retained version, and updating a stopped installation preserves your configuration, state, and user data. See the [release checklist](windows/docs/RELEASE-CHECKLIST.md) and [user guide](windows/docs/USER-GUIDE.md#install-uninstall-and-autostart).
+
+## Configuration
+
+Configuration lives under `%LOCALAPPDATA%\caelestia-windows\config\`:
+
+- `shell.json` for shell, bar, launcher, dashboard, and service settings.
+- `keybinds.json` for shortcuts.
+- `windows.json` for Windows-specific behavior.
+- `monitors\<name>\` for per-monitor overrides.
+
+Use [Nexus](windows/docs/USER-GUIDE.md#nexus-settings-windows) for live settings, or edit the JSON files directly. Only add options you want to change; omitted values use built-in defaults.
+
+## FAQ
+
+**Is this Linux Caelestia?** No. It is a Windows 11 port that keeps Caelestia's original QML interface and motion. The preserved upstream README below describes Linux and Hyprland only.
+
+**Do I need Hyprland, a Linux desktop, or WSL?** No. The shell runs natively on Windows and uses DWM for application composition.
+
+**Do I need administrator rights?** No. The install, update, rollback, and uninstall are per user.
+
+**Does it replace Explorer, the taskbar, or my tiler automatically?** No. Desktop takeover and tiling are opt-in, and only one tiling manager may be active. See [troubleshooting](windows/docs/USER-GUIDE.md#troubleshooting).
+
+**Does it support Windows 10?** No. Windows 11 64-bit is required.
+
+**Where are the logs?** See [where logs live](windows/docs/USER-GUIDE.md#where-logs-live). Redact personal data before sharing logs.
+
+## Credits
+
+The interface is [Caelestia Shell](https://github.com/caelestia-dots/shell) by soramanew and contributors (GPL-3.0). The Windows platform layer comes from the Windows Quickshell work built for [ii-windows](https://github.com/nunreasonable/ii-windows) (LGPL-3.0), with this port's backend fork. Shapes come from [m3shapes](https://github.com/soramanew/m3shapes).
+
+Full copyright holders, licenses, and bundled notices are in [Windows credits and attribution](windows/README.md#credits-and-attribution) and [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md). Parts of the Windows port were written with AI assistance under the maintainer's direction and review; contributors remain responsible for the code and documentation they submit.
+
+## Documentation
+
 - [Windows overview and architecture](windows/README.md)
 - [Native Windows build instructions](windows/NATIVE-BUILD.md)
 - [Milestones and acceptance criteria](windows/ROADMAP.md)
 - [Source revisions](windows/sources.lock.json)
-- [Windows credits and attribution](windows/README.md#credits-and-attribution)
-- [Third-party notices](THIRD-PARTY-NOTICES.md)
 - [Contributing](CONTRIBUTING.md)
 - [Release checklist](windows/docs/RELEASE-CHECKLIST.md)
 
-After cloning, initialize the backend and inspect the local prerequisites:
+## Upstream Linux documentation
 
-```powershell
-git submodule update --init --recursive
-powershell -NoProfile -File windows/scripts/Test-Environment.ps1
-```
-
-This check does not install software, start a shell, alter authentication, or change the desktop. The Linux installation instructions below are preserved upstream documentation. Follow the Windows notes for this port.
-
-## Upstream documentation
+> The following is upstream Caelestia's README, preserved for Linux and Hyprland users. It does not describe this Windows port. The Windows sections above take precedence.
 
 <h1 align=center>caelestia-shell</h1>
 
