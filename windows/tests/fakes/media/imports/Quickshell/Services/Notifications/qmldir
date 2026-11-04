@@ -1,0 +1,2 @@
+module Quickshell.Services.Notifications
+singleton NotificationUrgency 1.0 NotificationUrgency.qml

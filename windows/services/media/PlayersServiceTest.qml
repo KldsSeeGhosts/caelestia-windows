@@ -1,11 +1,14 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import qs.utils
 
-// Standalone lifecycle fixture. Imports no Quickshell/native Mpris/configuration
-// module, reads no environment or hardware, and never constructs Players.qml.
+// Standalone lifecycle fixture. Imports no native Mpris or configuration
+// module (the icon rows use the fixture's fake Quickshell), reads no
+// environment or hardware, and never constructs Players.qml.
 // Intended runner: powershell -NoProfile -File windows/scripts/Test-MediaService.ps1 -QtPrefix <Windows Qt prefix>
-// The runner uses Qt qml.exe offscreen with only this file and PlayersService.qml.
+// The runner uses Qt qml.exe offscreen with this file, PlayersService.qml,
+// utils/Icons.qml and the module fakes under windows/tests/fakes/media.
 QtObject {
     id: test
 
@@ -450,6 +453,19 @@ QtObject {
             && !service.canStop(spotify), "disable clears control");
         service.controlsEnabled = true;
         check(!service.canControl(spotify), "controls opt-in cannot outlive observation");
+
+        // --- App icon resolution ---------------------------------------------
+        // The Windows icon provider returns a successful checkerboard for any
+        // unknown key, so only an executable path may fall through to the
+        // provider; a plain miss must still use the caller's fallback (#314).
+        check(Icons.getAppIcon("fixture.known_app", "image-missing")
+            === "image://icon/fixture-known-icon?fallback=image-missing",
+            "a desktop entry keeps its icon");
+        check(Icons.getAppIcon("C:/Program Files/Fixture/bin/fixture.exe", "image-missing")
+            .includes("C:/Program Files/Fixture/bin/fixture.exe"),
+            "an executable path reaches the icon provider");
+        check(Icons.getAppIcon("no-such-app-xyz", "image-missing") === "image://icon/image-missing",
+            "an unknown name keeps the fallback");
 
         console.log("CAELESTIA_MEDIA_FIXTURE_PASS " + JSON.stringify({assertions: assertions}));
         Qt.quit();

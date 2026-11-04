@@ -145,8 +145,21 @@ Singleton {
         return "";
     }
 
+    // Windows drive or UNC path to an executable. No filesystem probe: the
+    // icon provider reads the file, and a stale path must keep the fallback.
+    function looksLikeExecutablePath(name: string): bool {
+        return /^(?:[a-zA-Z]:[\\/]|\\\\[^\\])[^"<>|]*\.exe$/i.test(name);
+    }
+
     function getAppIcon(name: string, fallback: string): string {
-        const icon = DesktopEntries.heuristicLookup(name)?.icon;
+        // Windows: media players resolve their desktopEntry to a lowercased
+        // AUMID or an executable path. On a heuristicLookup miss, keep only an
+        // executable path: the Windows icon provider returns a successful
+        // checkerboard image for any unknown key, so a plain name must still
+        // reach the caller's fallback (e.g. ActiveWindow's "image-missing")
+        // (#314).
+        const icon = DesktopEntries.heuristicLookup(name)?.icon
+            || (looksLikeExecutablePath(name) ? name : undefined);
         if (fallback !== "undefined")
             return Quickshell.iconPath(icon, fallback);
         return Quickshell.iconPath(icon);
