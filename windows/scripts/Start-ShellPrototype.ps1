@@ -201,8 +201,9 @@ if ($Tray) {
 }
 # Session runs bind the original buttons to the adapter's allowlisted command
 # names. The M1 default keeps empty commands. Dispatch still needs
-# CAELESTIA_WINDOWS_SESSION_ACTIONS, and destructive actions still stop at the
-# confirmation gate.
+# CAELESTIA_WINDOWS_SESSION_ACTIONS (-SessionActions). Since #363 there is no
+# confirmation step, as in upstream: with -SessionActions, activating a button
+# really logs out, shuts down, reboots or hibernates this PC.
 if ($Session) {
     $configText = $configText.Replace(
         '"commands": {"logout":[],"shutdown":[],"hibernate":[],"reboot":[]}',

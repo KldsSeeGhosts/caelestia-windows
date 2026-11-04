@@ -71,8 +71,10 @@ The Windows-only `windows` map holds service extensions; the facade validates
   `singleWindowGapsOut`, `borderColours`, `included`, `excluded`), so explicit
   floats, split ratios and the window tree survive. An identical config is a
   no-op. Only a real switch to Observe/disabled, a config that can no longer
-  sustain the session (for example an allowlist that validates to nothing), or
-  a backend without the needed setter stops the tiler. Enables still go through
+  sustain the session (for example an allowlist that validates to nothing)
+  stops the tiler. A backend without the needed setter aborts that update
+  before any write, reports `lastIncrementalError`, and keeps the session
+  running. Enables still go through
   the existing native mutex gate. A held mutex produces the existing
   `Another tiling manager is already running.` toast. Invalid JSON uses
   Caelestia's ordinary config error handling. Interactive requires a non-empty
