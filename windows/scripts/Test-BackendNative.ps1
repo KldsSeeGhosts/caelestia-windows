@@ -7,7 +7,8 @@ Runs every fixture built by `Build-Prototype.ps1 -Tests` in <BuildRoot>\quickshe
 Fixtures registered with CTest run through CTest, the rest run directly. Fixtures
 that need a desktop run on a hidden desktop created for each one, and are skipped
 when the session has no interactive desktop. A fixture without a trait entry in
-$fixtureTraits fails as unclassified and is not run.
+$fixtureTraits fails as unclassified and is not run. A trait with helper = $true
+marks an executable that a fixture launches; it is never run as a test.
 
 A fixture that did not build in this run fails and is not run, even when an older
 executable exists. Any failed or unfinished test build fails the gate, and a build
@@ -99,6 +100,9 @@ $fixtureTraits = [ordered]@{
     super_drag_wait             = @{ needsDesktop = $false }
     network_wifi_route          = @{ needsDesktop = $false }
     capture_format              = @{ needsDesktop = $false }
+    capture_device              = @{ needsDesktop = $false }
+    # Not a test: tray_host_test starts it as the icon owner that exits without NIM_DELETE.
+    tray_owner_helper           = @{ helper = $true }
     panel_hidden_reembed        = @{ needsDesktop = $true; qtPlatform = 'windows'; reason = 'creates and shows native panel windows' }
     system_surface              = @{ needsDesktop = $true; qtPlatform = 'offscreen'; reason = 'creates visible native windows at 0,0' }
     desktop_zorder              = @{ needsDesktop = $true; qtPlatform = 'offscreen'; reason = 'creates visible native windows and installs host-scoped WinEvent hooks' }
@@ -107,6 +111,7 @@ $fixtureTraits = [ordered]@{
     keyboard_layout             = @{ needsDesktop = $true; qtPlatform = 'offscreen'; reason = 'creates a real hidden window' }
     native_lifetime             = @{ needsDesktop = $true; qtPlatform = 'offscreen'; reason = 'creates real message-only windows' }
     tray_hook                   = @{ needsDesktop = $true; qtPlatform = 'offscreen'; reason = 'creates a real hidden window' }
+    tray_host                   = @{ needsDesktop = $true; qtPlatform = 'offscreen'; reason = 'starts a helper process that owns a real window' }
     video_node                  = @{ needsDesktop = $true; qtPlatform = 'offscreen'; reason = 'creates a never-shown D3D11 Quick window' }
 }
 
@@ -175,6 +180,7 @@ function Resolve-Executable([string]$Value) {
 function Get-TestTraits([string]$Name) {
     if (-not $fixtureTraits.Contains($Name)) { return $null }
     $trait = $fixtureTraits[$Name]
+    if ($trait.helper) { return @{ helper = $true } }
     if ($trait.needsDesktop) {
         return @{ dependsOn = @('desktop'); qtPlatform = $trait.qtPlatform; reason = $trait.reason }
     }
@@ -552,6 +558,8 @@ try {
         $name = $target -replace '_test$', ''
         $entry = $registeredByTarget[$target]
         $traits = Get-TestTraits $name
+        # A helper executable is launched by its fixture; it is never run as a test.
+        if ($traits -and $traits.helper) { continue }
         $plan = New-FixturePlan $name $target (Join-Path $testBuild "$target.exe") ([bool]$entry)
         if ($traits) {
             $plan.dependsOn = @($traits.dependsOn)
