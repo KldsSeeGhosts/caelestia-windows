@@ -1,12 +1,10 @@
 # Native Windows build and validation
 
-The first verified build uses Windows 11, Qt 6.11.2 `msvc2022_64`, clang-cl
-20.1.8, Visual Studio Build Tools 2022, Windows SDK 10.0.26100.0, CMake 4.4.4,
+The supported build uses Windows 11, Qt 6.11.2 `msvc2022_64`, clang-cl 20.1.8,
+Visual Studio Build Tools 2022, Windows SDK 10.0.26100.0, CMake 4.4.4,
 Ninja 1.13.2, and CLI11 2.5.0. The production entry point is
-`windows/shell/shell.qml`; the bounded service hosts have been retired.
-A build or smoke pass does not establish live desktop acceptance.
-The separate [final acceptance record](validation/2026-10-25-m1-acceptance/README.md)
-now completes the bounded M1 gate with native input and lifecycle evidence.
+`windows/shell/shell.qml`. A build or smoke pass does not establish live
+desktop acceptance; use [LIVE-CHECKLIST.md](docs/LIVE-CHECKLIST.md) for that.
 
 ## Developer dependencies
 
@@ -17,7 +15,7 @@ is changed by the build script.
 
 The following setup commands download development tools into a separate
 per-user directory. Run them in native Windows PowerShell. Python 3.12, Git,
-`curl.exe`, and `tar.exe` were available on the initial workstation.
+`curl.exe`, and `tar.exe` must be available.
 
 ```powershell
 $devRoot = Join-Path $env:LOCALAPPDATA 'caelestia-dev'
@@ -191,11 +189,12 @@ try {
 Adapter fixtures, plugin tests, JS-module tests, `Test-BackendNative.ps1` and
 the versioned installation tests remain separate. Run only suites appropriate
 to the change; native integration checks may open windows or change desktop
-state and require exclusive QA ownership.
+state and require exclusive desktop ownership.
 
 Use [LIVE-CHECKLIST.md](docs/LIVE-CHECKLIST.md) for installed-shell acceptance.
 Builds and offscreen fixtures cannot establish real input, device control or
-mixed-DPI behavior. Historical evidence stays under `windows/validation/`.
+mixed-DPI behavior. Records under `windows/validation/` describe their own
+source revisions.
 
 `Build-Prototype.ps1` and `Start-ShellPrototype.ps1` retain their existing names.
 The latter still supports the `-Combined` developer preview described in the

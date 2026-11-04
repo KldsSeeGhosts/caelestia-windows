@@ -1,4 +1,4 @@
-// Session confirmation keyboard check (ERM-615).
+// Session confirmation keyboard check.
 //
 // Runs the production session adapter in the staged shell with the test-only
 // SessionManager that Test-SessionConfirmKeyboard.ps1 stages over the real

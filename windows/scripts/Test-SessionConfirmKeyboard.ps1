@@ -5,7 +5,7 @@ param(
     [string]$RunRoot
 )
 
-# Offscreen session-drawer keyboard gate (ERM-615). The production graph is
+# Offscreen session-drawer keyboard gate. The production graph is
 # staged, then the test SessionManager replaces the real singleton so confirm()
 # can be observed without any native session call. The harness drives the real
 # Content.qml with key events and prints PASS only after every check.
