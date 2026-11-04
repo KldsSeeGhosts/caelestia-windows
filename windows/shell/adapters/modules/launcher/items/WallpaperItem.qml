@@ -25,6 +25,10 @@ Item {
     implicitWidth: image.width + Tokens.padding.medium * 2
     implicitHeight: image.height + label.height + Tokens.spacing.extraSmall + Tokens.padding.large + Tokens.padding.medium
 
+    // Windows port (ERM-615): the tile's path label is painted, not exposed.
+    Accessible.role: Accessible.ListItem
+    Accessible.name: root.modelData?.relativePath ?? ""
+
     StateLayer {
         id: stateLayer
 

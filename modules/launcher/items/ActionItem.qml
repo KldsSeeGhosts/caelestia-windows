@@ -14,6 +14,14 @@ Item {
     anchors.left: parent?.left
     anchors.right: parent?.right
 
+    // Windows port (ERM-615): expose the action row to screen readers.
+    Accessible.role: Accessible.ListItem
+    Accessible.name: {
+        const name = root.modelData?.name ?? "";
+        const desc = root.modelData?.desc ?? "";
+        return desc ? name + ", " + desc : name;
+    }
+
     StateLayer {
         radius: Tokens.rounding.large
         onClicked: root.modelData?.onClicked(root.list)

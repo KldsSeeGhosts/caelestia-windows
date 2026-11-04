@@ -28,6 +28,13 @@ StyledRect {
     implicitHeight: inner.implicitHeight
 
     x: implicitWidth
+    // Windows port (ERM-615): the copy control and its keyboard binding share
+    // one path, and the accessible name reflects the copied state.
+    function copyBody(): void {
+        Quickshell.clipboardText = root.modelData.body;
+        copyTimer.restart();
+    }
+
     Component.onCompleted: {
         x = 0;
         modelData.lock(this);
@@ -357,6 +364,26 @@ StyledRect {
                 implicitWidth: expandIcon.implicitHeight
                 implicitHeight: expandIcon.implicitHeight
 
+                // Windows port (ERM-615): upstream only expands the card from a
+                // pointer. The control joins the tab chain, names itself from
+                // the current state and activates on Return, Enter or Space.
+                activeFocusOnTab: true
+                Accessible.role: Accessible.Button
+                Accessible.name: root.expanded ? "Collapse notification" : "Expand notification"
+                Accessible.onPressAction: root.expanded = !root.expanded
+                Keys.onPressed: event => {
+                    if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
+                        event.accepted = true;
+                        if (!event.isAutoRepeat)
+                            root.expanded = !root.expanded;
+                    }
+                }
+
+                FocusRing {
+                    showing: expandBtn.activeFocus
+                    radius: Tokens.rounding.full
+                }
+
                 StateLayer {
                     radius: Tokens.rounding.full
                     color: root.modelData.urgency === NotificationUrgency.Critical ? Colours.palette.m3onSecondaryContainer : Colours.palette.m3onSurface
@@ -465,6 +492,8 @@ StyledRect {
                 }
 
                 IconButton {
+                    id: closeButton
+
                     isRound: true
                     shapeMorph: true
                     fillWidth: root.modelData.actions.length === 0
@@ -473,12 +502,32 @@ StyledRect {
                     icon: "close"
                     padding: Tokens.padding.extraSmall
                     onClicked: root.modelData.close()
+
+                    // Windows port (ERM-615): the close action is reachable and
+                    // named for keyboard and assistive-technology users.
+                    activeFocusOnTab: true
+                    Accessible.role: Accessible.Button
+                    Accessible.name: "Dismiss notification"
+                    Accessible.onPressAction: root.modelData.close()
+                    Keys.onPressed: event => {
+                        if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
+                            event.accepted = true;
+                            if (!event.isAutoRepeat)
+                                root.modelData.close();
+                        }
+                    }
+                    FocusRing {
+                        showing: closeButton.activeFocus
+                        radius: Tokens.rounding.full
+                    }
                 }
 
                 Repeater {
                     model: root.modelData.actions
 
                     TextButton {
+                        id: actionButton
+
                         required property var modelData
 
                         isRound: true
@@ -493,6 +542,25 @@ StyledRect {
                         disabled: modelData.disabled === true
                         onClicked: modelData.invoke()
 
+                        // Windows port (ERM-615): the action label was only
+                        // painted. It becomes a named, focusable button with a
+                        // keyboard path that invokes exactly once per press.
+                        activeFocusOnTab: !disabled
+                        Accessible.role: Accessible.Button
+                        Accessible.name: modelData.text
+                        Accessible.onPressAction: modelData.invoke()
+                        Keys.onPressed: event => {
+                            if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
+                                event.accepted = true;
+                                if (!event.isAutoRepeat)
+                                    modelData.invoke();
+                            }
+                        }
+                        FocusRing {
+                            showing: actionButton.activeFocus
+                            radius: Tokens.rounding.full
+                        }
+
                         label.horizontalAlignment: Text.AlignHCenter
                         label.anchors.left: left
                         label.anchors.right: right
@@ -504,6 +572,8 @@ StyledRect {
                 }
 
                 IconButton {
+                    id: copyButton
+
                     isRound: true
                     shapeMorph: true
                     fillWidth: root.modelData.actions.length === 0
@@ -511,11 +581,26 @@ StyledRect {
                     inactiveOnColour: root.modelData.urgency === NotificationUrgency.Critical ? Colours.palette.m3onSecondary : Colours.palette.m3onSurfaceVariant
                     icon: copyTimer.running ? "inventory" : "content_copy"
                     padding: Tokens.padding.extraSmall
-                    onClicked: {
-                        Quickshell.clipboardText = root.modelData.body;
-                        copyTimer.restart();
-                    }
+                    onClicked: root.copyBody()
                     label.animate: true
+
+                    // Windows port (ERM-615): copy is a named, focusable
+                    // control whose name reports the copied state.
+                    activeFocusOnTab: true
+                    Accessible.role: Accessible.Button
+                    Accessible.name: copyTimer.running ? "Notification text copied" : "Copy notification text"
+                    Accessible.onPressAction: root.copyBody()
+                    Keys.onPressed: event => {
+                        if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
+                            event.accepted = true;
+                            if (!event.isAutoRepeat)
+                                root.copyBody();
+                        }
+                    }
+                    FocusRing {
+                        showing: copyButton.activeFocus
+                        radius: Tokens.rounding.full
+                    }
 
                     Timer {
                         id: copyTimer
