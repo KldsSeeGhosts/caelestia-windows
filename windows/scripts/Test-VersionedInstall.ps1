@@ -562,7 +562,7 @@ try {
     $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
     $autoRunName = 'CaelestiaTestAuto-' + [guid]::NewGuid().ToString('N')
     $autoRunValue = '"C:\existing\CaelestiaWindows.exe"'
-    New-Item -Path $runKey -Force | Out-Null
+    if (-not (Test-Path -LiteralPath $runKey)) { New-Item -Path $runKey | Out-Null }
     New-ItemProperty -Path $runKey -Name $autoRunName -PropertyType String -Value $autoRunValue -Force | Out-Null
     try {
         ${function:New-CaelestiaShortcut} = {
@@ -585,6 +585,23 @@ try {
         ${function:New-CaelestiaShortcut} = $originalShortcut
     }
     Write-Output 'PASS integration autostart: a shortcut failure leaves a pre-existing Run entry untouched.'
+
+    # Regression: a successful -Autostart integration writes only its own Run
+    # value. New-Item -Force on the existing Run key used to recreate it empty,
+    # deleting every other application's startup entry.
+    $otherRunName = 'CaelestiaTestOther-' + [guid]::NewGuid().ToString('N')
+    $ownRunName = 'CaelestiaTestOwn-' + [guid]::NewGuid().ToString('N')
+    New-ItemProperty -Path $runKey -Name $otherRunName -PropertyType String -Value '"C:\other\app.exe"' -Force | Out-Null
+    try {
+        Complete-CaelestiaInstallIntegration $autoPrefix (Join-Path $autoPrefix "versions\$autoB") -Previous $autoA -Autostart `
+            -Shortcut (Join-Path $root 'auto-shortcut\Own.lnk') -RunName $ownRunName
+        $other = Get-ItemProperty -LiteralPath $runKey -Name $otherRunName -ErrorAction SilentlyContinue
+        Assert ($null -ne $other -and [string]$other.$otherRunName -eq '"C:\other\app.exe"') 'An -Autostart integration deleted another application''s Run entry.'
+        Assert ($null -ne (Get-ItemProperty -LiteralPath $runKey -Name $ownRunName -ErrorAction SilentlyContinue)) 'An -Autostart integration did not write its Run entry.'
+    } finally {
+        Remove-ItemProperty -LiteralPath $runKey -Name $otherRunName, $ownRunName -ErrorAction SilentlyContinue
+    }
+    Write-Output 'PASS integration autostart: other applications'' Run entries survive.'
 
     # Regression: an existing shortcut that cannot be snapshotted aborts
     # integration before any write. The armed shortcut writer must not run, so
