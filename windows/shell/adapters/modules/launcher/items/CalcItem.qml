@@ -30,6 +30,11 @@ Item {
     anchors.left: parent?.left
     anchors.right: parent?.right
 
+    // Windows port (ERM-615): expose the current result text instead of only
+    // painting it. "Calculating..." is the real current state, not placeholder.
+    Accessible.role: Accessible.ListItem
+    Accessible.name: result.text
+
     StateLayer {
         radius: Tokens.rounding.large
         onClicked: root.onClicked()

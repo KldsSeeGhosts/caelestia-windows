@@ -105,6 +105,7 @@ $fixtureTraits = [ordered]@{
     notification_mirror_consent = @{ needsDesktop = $true; qtPlatform = 'offscreen'; reason = 'creates a real message-only window' }
     keyboard_layout             = @{ needsDesktop = $true; qtPlatform = 'offscreen'; reason = 'creates a real hidden window' }
     native_lifetime             = @{ needsDesktop = $true; qtPlatform = 'offscreen'; reason = 'creates real message-only windows' }
+    tray_hook                   = @{ needsDesktop = $true; qtPlatform = 'offscreen'; reason = 'creates a real hidden window' }
 }
 
 New-Item -ItemType Directory -Force -Path $runRoot, (Split-Path -Parent $ManifestPath) | Out-Null

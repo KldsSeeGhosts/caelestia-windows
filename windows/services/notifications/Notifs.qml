@@ -182,34 +182,19 @@ Singleton {
     readonly property bool ownershipKnown: service.ownershipKnown
     readonly property string ownershipNote: service.ownershipNote
     readonly property bool contended: service.contended
+    readonly property bool ownershipFailed: service.ownershipFailed
     readonly property bool deliveryUnconfirmed: service.deliveryUnconfirmed
     readonly property string deliveryConfirmation: service.deliveryConfirmation
 
     // ---- Mirroring control surface consumed by the notification center -----
-    readonly property bool mirrorControlEnabled: service.mirrorStaged
+    // Visibility is separate from staging: an error still shows its status
+    // row even though mirroring cannot be enabled from it.
+    readonly property bool mirrorControlVisible: service.mirrorControlVisible
+    readonly property bool mirrorControlEnabled: mirrorControlVisible
     readonly property bool mirrorStaged: service.mirrorStaged
     readonly property string mirrorAccessState: service.accessState
     readonly property string mirrorStatus: service.mirrorStatus
-    readonly property string mirrorStatusText: {
-        switch (service.mirrorStatus) {
-        case "consent-required":
-            return "Windows notifications can be mirrored here after you allow access. They are requested only when you choose it.";
-        case "pending":
-            return "Waiting for Windows to answer the access request.";
-        case "allowed":
-            return "Windows notifications are mirrored here.";
-        case "denied":
-            return "Windows notification access is denied.";
-        case "unavailable":
-            return "Windows notification-listener access is unavailable on this system.";
-        case "timed-out":
-            return "Windows did not answer the access request. Use Windows settings; it is not asked again.";
-        case "blocked":
-            return "Another notification owner is active; mirroring stays off.";
-        default:
-            return "Windows notification access has not been reported yet.";
-        }
-    }
+    readonly property string mirrorStatusText: service.mirrorStatusText
     readonly property bool canRequestMirrorAccess: service.canRequestAccess
     readonly property bool mirrorConsentRequested: service.consentRequested
     readonly property bool mirrorConsentPending: service.consentPending

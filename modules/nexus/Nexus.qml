@@ -20,6 +20,13 @@ Item {
 
     signal close
 
+    // Windows port (ERM-615): Escape dismisses both the inline overlay and the
+    // detached window through the same close path as the pointer control.
+    Keys.onEscapePressed: event => {
+        event.accepted = true;
+        root.close();
+    }
+
     implicitWidth: Math.round(implicitHeight * Tokens.sizes.nexus.ratio)
     implicitHeight: Math.round(nState.screen.height * Tokens.sizes.nexus.heightMult)
 
@@ -78,6 +85,25 @@ Item {
             if (!nState.isWindow)
                 WindowFactory.create();
             root.close();
+        }
+
+        // Windows port (ERM-615): the window's only close control had no name
+        // and no keyboard path. Escape dismisses the surface; this control is
+        // also named and activatable for keyboard and assistive technology.
+        activeFocusOnTab: true
+        Accessible.role: Accessible.Button
+        Accessible.name: nState.isWindow ? "Close Nexus" : "Open Nexus in a window"
+        Accessible.onPressAction: windowBtn.clicked()
+        Keys.onPressed: event => {
+            if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
+                event.accepted = true;
+                if (!event.isAutoRepeat)
+                    windowBtn.clicked();
+            }
+        }
+        FocusRing {
+            showing: windowBtn.activeFocus
+            radius: windowBtn.radius
         }
 
         label.scale: pressed ? 0.8 : 1

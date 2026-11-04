@@ -15,6 +15,10 @@ Item {
     anchors.left: parent?.left
     anchors.right: parent?.right
 
+    // Windows port (ERM-615): expose the scheme row to screen readers.
+    Accessible.role: Accessible.ListItem
+    Accessible.name: [root.modelData?.name ?? "", root.modelData?.flavour ?? ""].filter(part => part.length > 0).join(" ")
+
     StateLayer {
         radius: Tokens.rounding.large
         onClicked: root.modelData?.onClicked(root.list)
