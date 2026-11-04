@@ -10,6 +10,7 @@ Orchestrates existing checks only:
     Test-BackendNative.ps1
     Test-Smoke.ps1
     every windows\scripts\Test-*Service.ps1 offscreen fixture
+    Measure-ShellBenchmark.ps1 -CompareBaseline, only with -PerformanceBaseline
 
 The build root is built once; -SkipBuild reuses it for a cached run. A failed
 step makes the overall result fail and the exit code nonzero. A step that needs
@@ -50,8 +51,20 @@ Reuse the existing build root instead of rebuilding.
 .EXAMPLE
 windows\scripts\Test-Candidate.ps1 -QtPrefix $qt -LlvmBin $llvm -Cli11Include $cli11 -ToolsBin $tools -BuildRoot C:\b-cand
 
+.PARAMETER PerformanceBaseline
+Also compare this build with a saved Measure-ShellBenchmark.ps1 baseline, using
+the baseline's metrics, mode and workload. The step fails unless the verdict is
+same or improved. It runs about an hour for Idle, Panel and Reload, so the
+default run leaves it out.
+
+.PARAMETER BaselineRoot
+Baseline store for -PerformanceBaseline. Defaults to the benchmark default.
+
 .EXAMPLE
 windows\scripts\Test-Candidate.ps1 -QtPrefix $qt -LlvmBin $llvm -Cli11Include $cli11 -ToolsBin $tools -BuildRoot C:\b-cand -SkipBuild
+
+.EXAMPLE
+windows\scripts\Test-Candidate.ps1 -QtPrefix $qt -LlvmBin $llvm -Cli11Include $cli11 -ToolsBin $tools -BuildRoot C:\b-cand -SkipBuild -PerformanceBaseline main-44691989
 #>
 [CmdletBinding()]
 param(
@@ -63,6 +76,8 @@ param(
     [string]$OutFile,
     [ValidateRange(1, 64)][int]$Jobs = 4,
     [switch]$SkipBuild,
+    [ValidatePattern('^[a-zA-Z0-9_-]+$')][string]$PerformanceBaseline,
+    [string]$BaselineRoot = (Join-Path $env:LOCALAPPDATA 'caelestia-windows-bench\baselines'),
     # Check an existing manifest for private paths and user names, then exit.
     [string]$VerifyManifest
 )
@@ -83,112 +98,14 @@ $logRoot = Join-Path $BuildRoot ('logs\candidate-' + (Get-Date -Format 'yyyyMMdd
 $powershell = Join-Path $PSHOME 'powershell.exe'
 $scratch = Join-Path ([IO.Path]::GetTempPath()) ('caelestia-candidate-' + [guid]::NewGuid().ToString('N'))
 
-# The manifest is a candidate record, not a machine dump. Serialise it with
-# repository roots and personal paths replaced by stable placeholders, and
-# verify the result never carries a home path or the account name.
-
-# A path can be spelled long or 8.3-short, with either separator.
-function Get-ShortPath([string]$Path) {
-    try {
-        if ($Path -and (Test-Path -LiteralPath $Path -PathType Container)) {
-            return (New-Object -ComObject Scripting.FileSystemObject).GetFolder($Path).ShortPath
-        }
-    } catch {}
-    return $null
-}
-function Get-PathSpellings([string]$Path) {
-    $spellings = foreach ($form in @($Path, (Get-ShortPath $Path))) {
-        if ($form) { $form.TrimEnd('\'); $form.TrimEnd('\').Replace('\', '/') }
-    }
-    return @($spellings | Select-Object -Unique)
-}
-
-# The account name and the profile folder name can differ, and the folder can
-# also appear in its 8.3 form, so each one is redacted as a name.
-$homeSpellings = @(Get-PathSpellings $env:USERPROFILE)
-$nameTokens = @(
-    [string]$env:USERNAME
-    if ($env:USERPROFILE) { Split-Path -Leaf $env:USERPROFILE }
-    $shortHome = Get-ShortPath $env:USERPROFILE
-    if ($shortHome) { Split-Path -Leaf $shortHome }
-) | Where-Object { $_ } | Select-Object -Unique
-$userNamePattern = if ($nameTokens) {
-    '(?<![A-Za-z0-9._~-])(?:' + (($nameTokens | ForEach-Object { [regex]::Escape($_) }) -join '|') + ')(?![A-Za-z0-9._~-])'
-} else { $null }
-# Any folder directly under the profiles root (C:\Users) is someone's home,
-# whatever its spelling: renamed, 8.3-short, either separator or doubled.
-$profilePattern = if ($env:USERPROFILE) {
-    $profilesRoot = Split-Path -Parent $env:USERPROFILE
-    '(?i)' + ((($profilesRoot -split '[\\/]+') | ForEach-Object { [regex]::Escape($_) }) -join '[\\/]+') + '[\\/]+[^\\/"''\s<>|]+'
-} else { $null }
-$toolchainRoot = Join-Path $env:LOCALAPPDATA 'caelestia-dev'
-$pathReplacements = @(
-    @{ from = $toolchainRoot; to = '<toolchain>' },
+# The manifest is a candidate record, not a machine dump. Caelestia-Privacy.ps1
+# redacts repository roots and personal paths and verifies the result.
+. (Join-Path $PSScriptRoot 'Caelestia-Privacy.ps1')
+Initialize-CaelestiaPrivacy @(
+    @{ from = (Join-Path $env:LOCALAPPDATA 'caelestia-dev'); to = '<toolchain>' },
     @{ from = $repoRoot; to = '<repo>' },
-    @{ from = $BuildRoot; to = '<buildRoot>' },
-    @{ from = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\'); to = '<temp>' },
-    @{ from = $env:USERPROFILE; to = '%USERPROFILE%' },
-    @{ from = $HOME; to = '%USERPROFILE%' },
-    @{ from = $env:LOCALAPPDATA; to = '%LOCALAPPDATA%' },
-    @{ from = $env:APPDATA; to = '%APPDATA%' },
-    @{ from = $env:TEMP; to = '<temp>' }
-) | Where-Object { $_.from } | ForEach-Object {
-    $to = $_.to
-    foreach ($spelling in Get-PathSpellings $_.from) { @{ from = $spelling; to = $to } }
-} | Sort-Object { $_.from.Length } -Descending
-
-function Protect-ManifestString([string]$Text) {
-    if (-not $Text) { return $Text }
-    foreach ($replacement in $pathReplacements) {
-        if ($Text.IndexOf($replacement.from, [StringComparison]::OrdinalIgnoreCase) -ge 0) {
-            # Only whole path segments: C:\Users\Ann must not eat C:\Users\ANNE~1.
-            $Text = [regex]::Replace($Text, [regex]::Escape($replacement.from) + '(?![^\\/"''\s;,])', $replacement.to.Replace('$', '$$'), 'IgnoreCase')
-        }
-    }
-    if ($profilePattern) { $Text = [regex]::Replace($Text, $profilePattern, '%USERPROFILE%') }
-    if ($userNamePattern) { $Text = [regex]::Replace($Text, $userNamePattern, '%USERNAME%', 'IgnoreCase') }
-    return $Text
-}
-
-function ConvertTo-SafeManifestValue($Value) {
-    if ($null -eq $Value) { return $null }
-    if ($Value -is [string]) { return Protect-ManifestString $Value }
-    if ($Value -is [System.Management.Automation.PSCustomObject]) {
-        $copy = [ordered]@{}
-        foreach ($property in $Value.PSObject.Properties) {
-            $copy[$property.Name] = ConvertTo-SafeManifestValue $property.Value
-        }
-        return $copy
-    }
-    if ($Value -is [System.Collections.IDictionary]) {
-        $copy = [ordered]@{}
-        foreach ($key in @($Value.Keys)) { $copy[$key] = ConvertTo-SafeManifestValue $Value[$key] }
-        return $copy
-    }
-    if ($Value -is [System.Collections.IEnumerable]) {
-        return @($Value | ForEach-Object { ConvertTo-SafeManifestValue $_ })
-    }
-    return $Value
-}
-
-function Get-ManifestPrivacyReport([string]$Path) {
-    $report = [pscustomobject]@{ exists = $false; homeHits = 0; userHits = 0; total = 0 }
-    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $report }
-    $json = Get-Content -LiteralPath $Path -Raw
-    # JSON escapes backslashes and may escape forward slashes; check the
-    # unescaped text against every spelling of the home path.
-    $plain = ($json -replace '\\\\', '\') -replace '\\/', '/'
-    foreach ($spelling in $homeSpellings) {
-        $report.homeHits += [regex]::Matches($plain, [regex]::Escape($spelling), 'IgnoreCase').Count
-    }
-    if ($profilePattern) { $report.homeHits += [regex]::Matches($plain, $profilePattern).Count }
-    if ($userNamePattern) {
-        $report.userHits = [regex]::Matches($plain, $userNamePattern, 'IgnoreCase').Count
-    }
-    $report.total = $report.homeHits + $report.userHits
-    $report.exists = $true
-    return $report
-}
+    @{ from = $BuildRoot; to = '<buildRoot>' }
+)
 
 if ($VerifyManifest) {
     $verifyPath = [IO.Path]::GetFullPath($VerifyManifest)
@@ -229,7 +146,7 @@ $manifest = [ordered]@{
     result = 'failed'
     exitCode = 1
     buildRoot = $BuildRoot
-    options = [ordered]@{ skipBuild = [bool]$SkipBuild; jobs = $Jobs }
+    options = [ordered]@{ skipBuild = [bool]$SkipBuild; jobs = $Jobs; performanceBaseline = $PerformanceBaseline }
     shell = [ordered]@{ head = $null; dirty = $null }
     backend = [ordered]@{
         path = 'windows/deps/quickshell'
@@ -660,6 +577,43 @@ try {
             ([IO.Path]::GetFullPath($evidence)).StartsWith([IO.Path]::GetFullPath([IO.Path]::GetTempPath()), [StringComparison]::OrdinalIgnoreCase) -and
             (Split-Path -Leaf $evidence) -like 'caelestia-running-apps-*') {
             Remove-Item -LiteralPath $evidence -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    if ($PerformanceBaseline) {
+        $benchScript = Join-Path $PSScriptRoot 'Measure-ShellBenchmark.ps1'
+        $benchRun = Join-Path $logRoot 'performance'
+        $benchArguments = @('-QtPrefix', $QtPrefix, '-BuildRoot', $BuildRoot, '-SourceRoot', $repoRoot,
+            '-RunRoot', $benchRun, '-BaselineRoot', $BaselineRoot, '-CompareBaseline', $PerformanceBaseline)
+        $benchCommand = 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File ' + (Format-Argument $benchScript) +
+            ' ' + ((@($benchArguments | ForEach-Object { Format-Argument $_ })) -join ' ')
+        if ($reason) {
+            Add-SkippedStep 'performance' 'performance' $benchCommand $reason
+        } else {
+            $run = Invoke-ScriptStep 'performance' 'performance' $benchScript $benchArguments 'performance'
+            $step = $run.Step
+            $verdictPath = Join-Path $benchRun 'verdict.json'
+            $verdict = $null
+            if (Test-Path -LiteralPath $verdictPath -PathType Leaf) {
+                try { $verdict = Get-Content -LiteralPath $verdictPath -Raw | ConvertFrom-Json } catch { }
+            }
+            # Exit 0 means same or improved; 2 regressed, 3 inconclusive, 4 contract mismatch.
+            $step.status = if (($step.exitCode -eq 0) -and $verdict -and ($verdict.overall -in @('same', 'improved'))) { 'passed' } else { 'failed' }
+            if ($verdict) {
+                $metrics = @($verdict.comparisons | ForEach-Object { $_.metrics.PSObject.Properties } |
+                    Where-Object { $_.Value.gating } | ForEach-Object { [pscustomobject]@{ name = $_.Name; verdict = $_.Value.verdict } })
+                $step.details = [ordered]@{
+                    baseline = $PerformanceBaseline
+                    verdict = $verdictPath
+                    overall = $verdict.overall
+                    metrics = [ordered]@{}
+                }
+                foreach ($kind in @('improved', 'same', 'regressed', 'inconclusive')) {
+                    $step.details.metrics[$kind] = @($metrics | Where-Object verdict -eq $kind | ForEach-Object name)
+                }
+            }
+            $manifest.steps += $step
+            Write-Manifest
         }
     }
 } catch {

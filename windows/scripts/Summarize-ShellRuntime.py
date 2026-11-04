@@ -223,45 +223,136 @@ def aggregate(manifest_path):
             for name in trials[0]["metrics"]
         } if valid else {}
     return {
-        "schemaVersion": 2, "analysisSha256": analysis_sha256,
+        "schemaVersion": 3, "analysisSha256": analysis_sha256,
         "manifest": manifest, "groups": groups,
         "errorCount": sum(g["errorCount"] for g in groups.values()),
         "comparison": compare_groups(groups, groups, "A", "B") if manifest["twoBuilds"] else {},
     }
 
 
-def compare_groups(baseline, candidate, baseline_side="A", candidate_side="A"):
+# Verdict contract. See windows/docs/BENCHMARKS.md. Every current metric is a
+# cost, so a higher median is a regression.
+VERDICT_SCHEMA = 1
+EXIT_CODES = {"measured": 0, "same": 0, "improved": 0, "regressed": 2, "inconclusive": 3, "mismatch": 4}
+# Worst first. A run with several comparisons reports the worst overall verdict.
+SEVERITY = ["mismatch", "regressed", "inconclusive", "improved", "same", "measured"]
+# Metrics that are reported but never decide the overall verdict. Empty: every
+# measured metric resolved a stable verdict in the A/A and plant runs.
+ADVISORY = frozenset()
+
+
+def compare_groups(baseline, candidate, baseline_side="A", candidate_side="A", categories=None):
+    """Compare medians per metric. A metric is the same while the median delta
+    stays within the larger run-to-run range (max - min) of the two sides."""
     comparison = {}
-    categories = {
-        key.split("/", 1)[1]
-        for source, side in ((baseline, baseline_side), (candidate, candidate_side))
-        for key in source if key.startswith(side + "/")
-    }
+    if categories is None:
+        categories = {
+            key.split("/", 1)[1]
+            for source, side in ((baseline, baseline_side), (candidate, candidate_side))
+            for key in source if key.startswith(side + "/")
+        }
     for category in sorted(categories):
         a = baseline.get(baseline_side + "/" + category)
         b = candidate.get(candidate_side + "/" + category)
-        if not a or not b or not a["valid"] or not b["valid"] or a["contract"] != b["contract"]:
-            names = {
-                name for group in (a, b) if group
-                for name in group["metrics"]
-            }
-            names.update(
-                name for group in (a, b) if group
-                for trial in group.get("trials", []) for name in trial["metrics"]
-            )
-            for name in sorted(names or {category}):
-                comparison[name] = {"verdict": "inconclusive", "reason": "Missing, failed, fewer than five, or incompatible trials."}
-            continue
-        for name, after in b["metrics"].items():
-            before = a["metrics"].get(name)
-            if not before:
-                comparison[name] = {"verdict": "inconclusive", "reason": "Missing baseline metric."}
-                continue
-            delta = after["median"] - before["median"]
-            noise = max(before["spread"], after["spread"])
-            verdict = "no measurable difference" if abs(delta) <= noise else "slower" if delta > 0 else "faster"
-            comparison[name] = {"verdict": verdict, "delta": delta, "noiseFloor": noise, "baseline": before, "candidate": after}
+        mismatch = []
+        if not a or not b:
+            reason = "No %s trials for %s." % ("baseline" if not a else "candidate", category)
+        elif not a["valid"] or not b["valid"]:
+            reason = "The %s trials failed, were incomplete, or numbered fewer than five." % (
+                "baseline" if not a["valid"] else "candidate")
+        elif a["contract"] != b["contract"]:
+            mismatch = sorted(k for k in set(a["contract"]) | set(b["contract"])
+                              if a["contract"].get(k) != b["contract"].get(k))
+            reason = "Contract mismatch: " + ", ".join(mismatch) + "."
+        else:
+            reason = None
+        names = {
+            name for group in (a, b) if group
+            for name in list(group["metrics"]) + [n for t in group.get("trials", []) for n in t["metrics"]]
+        }
+        for name in sorted(names or {category}):
+            entry = {"group": category, "gating": name not in ADVISORY}
+            before = a["metrics"].get(name) if a else None
+            after = b["metrics"].get(name) if b else None
+            if reason or not before or not after:
+                entry.update(verdict="inconclusive", contractMismatch=mismatch,
+                             reason=reason or "Metric missing from the %s." % ("baseline" if not before else "candidate"))
+            else:
+                delta = after["median"] - before["median"]
+                noise = max(before["spread"], after["spread"])
+                entry.update(
+                    verdict="same" if abs(delta) <= noise else "regressed" if delta > 0 else "improved",
+                    baselineMedian=before["median"], candidateMedian=after["median"], delta=delta,
+                    deltaPercent=100 * delta / before["median"] if before["median"] else None,
+                    noiseFloor=noise, baseline=before, candidate=after,
+                )
+            comparison[name] = entry
     return comparison
+
+
+def overall_verdict(comparison):
+    gating = [entry for entry in comparison.values() if entry["gating"]]
+    if not gating:
+        return "inconclusive"
+    if any(entry.get("contractMismatch") for entry in gating):
+        return "mismatch"
+    for verdict in ("regressed", "inconclusive", "improved"):
+        if any(entry["verdict"] == verdict for entry in gating):
+            return verdict
+    return "same"
+
+
+def build_verdict(result, baseline_name=None):
+    """The agent-facing result: no paths, no logs, one overall verdict and exit code."""
+    comparisons = []
+    if result["manifest"]["twoBuilds"]:
+        comparisons.append(("A", "B", result["comparison"]))
+    if "baselineComparison" in result:
+        comparisons.append(("baseline:" + baseline_name, "A", result["baselineComparison"]))
+    documents = [
+        {"baseline": base, "candidate": cand, "overall": overall_verdict(comparison), "metrics": comparison}
+        for base, cand, comparison in comparisons
+    ]
+    groups = result["groups"]
+    if documents:
+        overall = min((d["overall"] for d in documents), key=SEVERITY.index)
+    else:
+        overall = "measured" if groups and all(g["valid"] for g in groups.values()) else "inconclusive"
+    return {
+        "schemaVersion": VERDICT_SCHEMA, "overall": overall, "exitCode": EXIT_CODES[overall],
+        "analysisSha256": result["analysisSha256"],
+        "groups": {
+            key: {"valid": g["valid"], "trials": len(g["trials"]), "errorCount": g["errorCount"],
+                  **provenance(g)}
+            for key, g in groups.items()
+        },
+        "comparisons": documents,
+    }
+
+
+def provenance(group):
+    meta = group["trials"][0]["metadata"] if group["trials"] else {}
+    return {
+        "shellRevision": meta.get("shellRevision"), "backendPin": meta.get("backendPin"),
+        "buildSourceRevision": (meta.get("build") or {}).get("sourceRevision"),
+        "payloadSha256": meta.get("payloadSha256"), "plant": meta.get("plant"),
+    }
+
+
+def baseline_projection(result, side):
+    """One side of a run as a shareable baseline: contracts, distributions and
+    per-trial values only. Comparisons read a baseline as side A."""
+    groups = {}
+    for key, group in result["groups"].items():
+        group_side, category = key.split("/", 1)
+        if group_side == side:
+            groups["A/" + category] = {
+                "valid": group["valid"], "errorCount": group["errorCount"], "contract": group["contract"],
+                "metrics": group["metrics"], "work": group["work"],
+                "trials": [{"metrics": t["metrics"]} for t in group["trials"]],
+                **provenance(group),
+            }
+    return {"schemaVersion": 3, "side": side, "analysisSha256": result["analysisSha256"], "groups": groups}
 
 
 def summarize(path):
@@ -322,13 +413,26 @@ if __name__ == "__main__":
     parser.add_argument("--output", type=Path)
     parser.add_argument("--manifest", action="store_true", help="Aggregate alternating trials from one runner manifest")
     parser.add_argument("--compare", type=Path, help="Compare with a stored benchmark JSON")
+    parser.add_argument("--verdict", type=Path, help="Write verdict.json and exit with its exit code")
+    parser.add_argument("--baselines", type=Path, help="Write baseline-<side>.json projections into this directory")
     args = parser.parse_args()
+    verdict = None
     if args.manifest:
         if len(args.runs) != 1:
             parser.error("--manifest requires one manifest")
         result = aggregate(args.runs[0])
         if args.compare:
-            result["baselineComparison"] = compare_groups(read_json(args.compare)["groups"], result["groups"])
+            # Only categories measured now; a baseline may hold more.
+            measured = {key.split("/", 1)[1] for key in result["groups"] if key.startswith("A/")}
+            result["baselineComparison"] = compare_groups(
+                read_json(args.compare)["groups"], result["groups"], categories=measured)
+        if args.baselines:
+            for side in sorted({key.split("/", 1)[0] for key in result["groups"]}):
+                (args.baselines / f"baseline-{side}.json").write_text(
+                    json.dumps(baseline_projection(result, side), indent=2) + "\n", encoding="utf-8")
+        if args.verdict:
+            verdict = build_verdict(result, args.compare.stem if args.compare else None)
+            args.verdict.write_text(json.dumps(verdict, indent=2) + "\n", encoding="utf-8")
     else:
         result = {
             path.name: summarize_trial(path) if read_json(path / "metadata.json").get("schemaVersion") == 2 else summarize(path)
@@ -339,3 +443,5 @@ if __name__ == "__main__":
         args.output.write_text(output, encoding="utf-8")
     else:
         print(output, end="")
+    if verdict:
+        raise SystemExit(verdict["exitCode"])
