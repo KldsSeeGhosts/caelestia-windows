@@ -6,7 +6,10 @@
 // every missing name, role and keyboard binding rather than stopping at the
 // first. The card is also collapsed and expanded again: a collapsed card hides
 // its action row with opacity only, so the hidden controls must leave the tab
-// chain and must not keep active focus.
+// chain and must not keep active focus. The collapse-focus guard may only move
+// focus when it was inside the collapsing card's action row, so the negative
+// rows collapse from another surface, from another card, from an inactive
+// window and from a pointer click without row focus.
 import QtQuick
 import QtTest
 import Quickshell
@@ -78,6 +81,22 @@ ShellRoot {
         ]
     }
 
+    NotifData {
+        id: otherRecord
+
+        service: fakeService
+        appName: "Other fixture app"
+        summary: "Other fixture summary"
+        body: "Other fixture body"
+        urgency: 1
+        historicalActions: [
+            {
+                identifier: "other",
+                text: "Other"
+            }
+        ]
+    }
+
     FloatingWindow {
         id: win
 
@@ -87,12 +106,56 @@ ShellRoot {
         color: Colours.palette.m3background
         contentItem.Config.screen: Quickshell.screens[0]?.name ?? ""
 
-        Notification {
-            id: view
+        Column {
+            spacing: Tokens.spacing.medium
 
-            modelData: record
-            expanded: true
-            implicitWidth: 420
+            Notification {
+                id: view
+
+                modelData: record
+                expanded: true
+                implicitWidth: 420
+            }
+
+            Notification {
+                id: otherView
+
+                modelData: otherRecord
+                expanded: true
+                implicitWidth: 420
+            }
+        }
+
+        // Stand-in for a second surface in the same window: focus here is
+        // outside every card's action row.
+        Item {
+            id: otherSurface
+
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            width: 40
+            height: 40
+
+            activeFocusOnTab: true
+            Accessible.role: Accessible.Pane
+            Accessible.name: "Another surface"
+        }
+    }
+
+    // A second surface that can take the application focus, making the
+    // notification window inactive while its card still holds focus.
+    FloatingWindow {
+        id: backgroundWindow
+
+        visible: false
+        implicitWidth: 200
+        implicitHeight: 100
+        color: Colours.palette.m3background
+        contentItem.Config.screen: Quickshell.screens[0]?.name ?? ""
+
+        Item {
+            anchors.fill: parent
+            activeFocusOnTab: true
         }
     }
 
@@ -128,6 +191,20 @@ ShellRoot {
         return null;
     }
 
+    // Resolve one card's controls, so a row never reads the other card's
+    // same-named button.
+    function cardControls(card, actionText): var {
+        const buttons = [];
+        root.collectButtons(card, buttons);
+        const expandIcon = root.byIconText(card, "expand_more");
+        return {
+            close: buttons.find(button => button.icon === "close") ?? null,
+            copy: buttons.find(button => button.icon === "content_copy") ?? null,
+            action: buttons.find(button => button.text === actionText) ?? null,
+            expand: expandIcon?.parent ?? null
+        };
+    }
+
     // The Quickshell window wrapper does not expose the QQuickWindow's focus.
     function focusItem(): var {
         return win.contentItem.Window.activeFocusItem;
@@ -161,6 +238,18 @@ ShellRoot {
             throw new Error(message);
     }
 
+    // Pump the event loop until a state settles, so window activation is not
+    // timed by a fixed delay.
+    function waitUntil(condition, timeout): bool {
+        const deadline = Date.now() + timeout;
+        while (Date.now() < deadline) {
+            if (condition())
+                return true;
+            root.input.wait(20);
+        }
+        return condition();
+    }
+
     function advance(): void {
         if (root.busy)
             return;
@@ -189,18 +278,19 @@ ShellRoot {
     }
 
     function run(): void {
-        const buttons = [];
-        root.collectButtons(win.contentItem, buttons);
-        const close = buttons.find(button => button.icon === "close") ?? null;
-        const copy = buttons.find(button => button.icon === "content_copy") ?? null;
-        const action = buttons.find(button => button.text === "Open") ?? null;
-        const expandIcon = root.byIconText(win.contentItem, "expand_more");
-        const expand = expandIcon?.parent ?? null;
+        const main = root.cardControls(view, "Open");
+        const other = root.cardControls(otherView, "Other");
+        const close = main.close;
+        const copy = main.copy;
+        const action = main.action;
+        const expand = main.expand;
 
         root.check(close, "notification close button is missing");
         root.check(copy, "notification copy button is missing");
         root.check(action, "notification action button is missing");
         root.check(expand, "notification expand control is missing");
+        root.check(other.action, "the second notification action button is missing");
+        root.check(other.expand, "the second notification expand control is missing");
 
         root.row("notification action joins the tab chain", () => {
             root.check(action.activeFocusOnTab, "the action button is not in the tab chain");
@@ -258,6 +348,81 @@ ShellRoot {
             root.check(root.shown(focused), "the collapse left focus on an invisible item");
             root.check(focused === expand || focused === view,
                 `focus moved to ${focused?.Accessible?.name ?? "an unexpected item"}`);
+        });
+
+        // Negative guard cases. None of these collapses happen under focus
+        // inside this card's action row, so none may move focus.
+        root.row("collapsing a card keeps focus on another surface", () => {
+            view.expanded = true;
+            root.input.wait(80);
+            otherSurface.forceActiveFocus(Qt.TabFocusReason);
+            root.check(otherSurface.activeFocus, "the other surface did not take focus");
+            view.expanded = false;
+            root.input.wait(80);
+            root.check(!view.expanded, "the card did not collapse");
+            root.check(otherSurface.activeFocus, "the collapse stole focus from another surface");
+            root.check(!expand.activeFocus && !action.activeFocus,
+                "the collapse moved focus into the card");
+            root.check(root.focusItem() === otherSurface,
+                `focus moved to ${root.focusItem()?.Accessible?.name ?? "an unexpected item"}`);
+        });
+
+        root.row("collapsing another card keeps focus in the focused row", () => {
+            view.expanded = true;
+            otherView.expanded = true;
+            root.input.wait(80);
+            action.forceActiveFocus(Qt.TabFocusReason);
+            root.check(action.activeFocus, "the action did not take focus");
+            otherView.expanded = false;
+            root.input.wait(80);
+            root.check(!otherView.expanded, "the other card did not collapse");
+            root.check(!other.action.activeFocusOnTab, "the collapsed card kept its actions in the tab chain");
+            root.check(action.activeFocus, "collapsing another card moved focus off the action");
+            root.check(root.focusItem() === action,
+                `focus moved to ${root.focusItem()?.Accessible?.name ?? "an unexpected item"}`);
+        });
+
+        root.row("a pointer collapse without row focus leaves focus alone", () => {
+            view.expanded = true;
+            root.input.wait(80);
+            otherSurface.forceActiveFocus(Qt.TabFocusReason);
+            root.check(otherSurface.activeFocus, "the other surface did not take focus");
+            // TestCase.mouseClick records its own failure and returns nothing,
+            // so the collapsed state below proves the click was delivered.
+            root.input.mouseClick(expand, expand.width / 2, expand.height / 2);
+            root.input.wait(80);
+            root.check(!view.expanded, "the pointer click did not collapse the card");
+            root.check(otherSurface.activeFocus, "the pointer collapse stole focus from another surface");
+            root.check(!expand.focus && !expand.activeFocus,
+                "the pointer collapse moved focus to the expand control");
+            root.check(root.focusItem() === otherSurface,
+                `focus moved to ${root.focusItem()?.Accessible?.name ?? "an unexpected item"}`);
+        });
+
+        // Last, because taking the application focus away and restoring it is
+        // the only negative case that touches window activation.
+        root.row("collapsing in an inactive window leaves the focus chain alone", () => {
+            view.expanded = true;
+            root.input.wait(80);
+            action.forceActiveFocus(Qt.TabFocusReason);
+            root.check(action.activeFocus, "the action did not take focus");
+            backgroundWindow.visible = true;
+            backgroundWindow.requestActivate();
+            root.check(root.waitUntil(() => !win.contentItem.Window.active, 2000),
+                "the notification window is still active");
+            root.check(action.focus, "the inactive window lost the action focus chain");
+            view.expanded = false;
+            root.input.wait(80);
+            root.check(!view.expanded, "the card did not collapse");
+            root.check(!expand.focus && !expand.activeFocus,
+                "the background collapse moved the focus chain to the expand control");
+            root.check(action.focus, "the background collapse moved the focus chain off the action");
+            backgroundWindow.visible = false;
+            win.visible = false;
+            win.visible = true;
+            win.requestActivate();
+            root.check(root.waitUntil(() => root.focusItem() === action, 2000),
+                `returning to the window focused ${root.focusItem()?.Accessible?.name ?? "an unexpected item"}`);
         });
 
         root.row("expanding restores action traversal", () => {

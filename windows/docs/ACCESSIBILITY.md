@@ -34,7 +34,7 @@ gates cover the launcher and notification actions.
 | Gate | Rows/checks | Result |
 | --- | --- | --- |
 | `windows/scripts/Test-AccessibilityLauncher.ps1` | 8 audit rows: focus on open, named search, action provider, row role/name, every instantiated row named, Up/Down, Return activation, Escape close | Pass after the launcher fix; all name/role rows failed before it |
-| `windows/scripts/Test-AccessibilityNotifications.ps1` | 10 audit rows: action/close/copy/expand in tab chain, names and roles, Return invokes, Space dismisses, collapsed actions leave traversal, collapse moves focus, expanding restores traversal | Pass; the 7 name/tab rows failed before the first fix, and the 3 collapsed rows failed before the collapsed-state fix |
+| `windows/scripts/Test-AccessibilityNotifications.ps1` | 14 audit rows: action/close/copy/expand in tab chain, names and roles, Return invokes, Space dismisses, collapsed actions leave traversal, collapse moves focus from a focused action row, expanding restores traversal, and negative collapses (another surface, another card, an inactive window, a pointer click without row focus) leave focus alone | Pass; the 7 name/tab rows failed before the first fix, the 3 collapsed rows failed before the collapsed-state fix, and the 4 negative rows fail when every collapse grabs focus |
 | `windows/scripts/Test-SessionConfirmKeyboard.ps1` | 66 checks | Pass unchanged |
 | `windows/scripts/Test-QuotaProviderKeyboard.ps1` | 28 assertions | Pass unchanged |
 | `windows/scripts/Test-Nexus.ps1 -Suite Keyboard` | 36 pages/sub-pages, 27 reachable rows, plus close name and Escape | Pass after the Nexus fix; close name failed before it |
@@ -47,7 +47,8 @@ gates cover the launcher and notification actions.
 2. Notification popup expand/action/close/copy controls joined the tab chain
    with `Button` roles, state-aware names, existing `FocusRing` treatment and
    Return/Enter/Space activation. A collapsed card takes those controls out of
-   traversal and hands focus back to the visible expand control.
+   traversal and hands focus back to the visible expand control only when the
+   collapse took focus from that card's own action row.
 3. Nexus names its only close control and Escape now dismisses the inline
    overlay and the detached window through the same close signal.
 
