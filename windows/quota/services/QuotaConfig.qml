@@ -3,6 +3,7 @@ pragma Singleton
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import Caelestia.Config
 
 // Windows profile configuration for the ported CPA quota drawer.
 //
@@ -52,8 +53,13 @@ Singleton {
     // Set by the FileView below. Quota parses the contents in memory.
     property bool cpaConfigPresent: false
     readonly property bool configured: root.cpaConfigPresent
+    // Nexus > Services > "Agent usage panel" writes windows.quota.enabled in
+    // shell.json, the free-form Windows map next to windows.clipboard. On when
+    // absent; off turns the whole panel off, live.
+    readonly property var windowsQuota: JSON.parse(JSON.stringify(GlobalConfig.windows?.quota ?? ({})))
+    readonly property bool panelOn: root.windowsQuota.enabled === undefined ? true : root.windowsQuota.enabled === true
     // Auto-enable when a CPA config exists; quota.json can override either way.
-    readonly property bool enabled: root.settingPresent ? root.settingEnabled : root.configured
+    readonly property bool enabled: root.panelOn && (root.settingPresent ? root.settingEnabled : root.configured)
 
     FileView {
         id: quotaFile

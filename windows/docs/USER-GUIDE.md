@@ -494,11 +494,41 @@ what still needs live verification.
 
 ### CPA quota drawer (Windows)
 
-The top-right quota/agents drawer from the custom Linux overlay is ported with
-the original components, layout and motion. Hover the **top-right strip** to
-open it; it closes when the pointer leaves, when a fullscreen application
-appears, or when the shell loses its focus grab. Like the Linux source there is
-no bar entry and no default keybind.
+The top-right quota/agents drawer from the custom Linux overlay is ported and
+redesigned after OpenUsage. Hover the **top-right strip** to open it; it closes
+when the pointer leaves, when a fullscreen application appears, or when the
+shell loses its focus grab. Like the Linux source there is no bar entry and no
+default keybind.
+
+The drawer has two views, chosen with the switch at the top (the choice lasts
+until the shell restarts; it starts on **All Usage**):
+
+- **All Usage** lists every provider in one scroll. Each provider has a bold
+  title and a card. Each account shows its label and plan, then one row per
+  quota window: the window name, a bar of what is **left**, the percentage and
+  the time until it resets (`4h 10m`, `6d 23h`). A bar turns red at 10% left
+  or less. The card ends with that provider's spend for Today, Yesterday and
+  the Last 30 Days (API-equivalent cost from CPA Manager's usage analytics). A
+  stale, reconnect or disabled account says so in one line above its rows.
+- **Priority** is one card with each account's most constrained window, least
+  left first, across all providers: what runs out first.
+
+The footer shows when the next update is due. Its round `...` button opens a
+menu with **Refresh now** and **Keepalive**. From the keyboard, Tab moves
+through the two views, the scrolling content (arrows, Page Up/Down, Home and End
+scroll it) and the `...` button; in the menu use Up and Down, Return or Enter,
+and Escape.
+
+#### Turning the drawer off
+
+Not everyone uses AI services. In **Nexus > Services**, the **Agent usage panel**
+switch (stored as `windows.quota.enabled` in `shell.json`) is on by default.
+Switch it off and the drawer never opens, the top-right strip no longer reacts
+to the pointer, and the shell makes no CPA request and runs no timer for it; an
+open drawer closes at once. It applies immediately, with no restart. Switch it
+on again and the last reading is there straight away. The switch only narrows
+what the config below allows: it never turns the drawer on without a
+`cpa-agents.json`.
 
 The drawer is **opt-in**: nothing requests anything unless a CPA management
 config exists. It reads CPA Manager's own pre-aggregated quota summary from:
@@ -539,8 +569,8 @@ With `cpa-agents.json` present the drawer enables automatically. Set
 `quota.json` without `cpa-agents.json` to show the "not configured" empty state.
 
 No Python is needed to display quota. The drawer reads the summary with QML's
-`XMLHttpRequest`, maps providers to chips, accounts to rows and quota windows
-to meters, and shows `todayCostUsd` in the "Usage today" disclosure. Refreshes
+`XMLHttpRequest`, maps providers to sections, accounts to blocks and quota
+windows to rows, and reads each provider's spend from the usage analytics. Refreshes
 follow `refreshIntervalMs` but never run faster than the manager's `ttlMs`;
 only one request is in flight and it aborts after 15 seconds. The last good
 summary is cached at `cache\quota-summary.json` in the profile (display names,
@@ -551,7 +581,7 @@ If a refresh fails, the last good summary stays on screen behind the single
 "Quota refresh failed. Showing saved data." line. Per-account token ledgers,
 the per-model token table, balance, cooldown timestamps and the old saved
 records under `state\omarchy\agents\usage` are not part of CPA Manager's
-summary and are no longer shown. The bolt button still runs the upstream
+summary and are no longer shown. The **Keepalive** menu entry still runs the upstream
 optional keepalive helper; that is an explicit request that sends real
 keepalive traffic to CPA, needs Python and the CPA inference key
 (`CPA_API_KEY` in the environment, or the Linux `environment.d/cpa.conf`

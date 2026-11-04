@@ -53,6 +53,12 @@ Item {
         if (quotaHoverBlocked)
             screenState.quota = false;
     }
+    // Switching the panel off from Nexus closes an open drawer; switching it
+    // back on does not reopen it.
+    onQuotaEnabledChanged: {
+        if (!quotaEnabled)
+            screenState.quota = false;
+    }
 
     anchors.fill: parent
     anchors.margins: borderThickness

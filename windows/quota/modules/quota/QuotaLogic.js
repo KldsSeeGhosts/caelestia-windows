@@ -1,5 +1,8 @@
 .pragma library
 
+// A window with this share or less left reads as nearly spent.
+var LOW_LEFT = 0.10;
+
 function title(limit) {
     return String(limit.title || limit.label || "Quota");
 }
@@ -11,46 +14,15 @@ function remaining(limit) {
     return Number.isFinite(used) ? Math.max(0, Math.min(1, 1 - used)) : null;
 }
 
+function isLow(left) {
+    return left !== null && left !== undefined && left <= LOW_LEFT;
+}
+
 function windowHours(label) {
     const match = String(label).match(/(\d+(?:\.\d+)?)\s*-?\s*hour/i);
     if (match)
         return Number(match[1]);
     return /daily|\bday\b/i.test(label) ? 24 : 0;
-}
-
-function windowKey(limit) {
-    const label = title(limit);
-    if (label.includes("·"))
-        return label;
-    const hours = windowHours(label);
-    if (hours)
-        return hours + "h";
-    if (/week/i.test(label))
-        return "wk";
-    if (/month/i.test(label))
-        return "mo";
-    if (/^api$/i.test(label))
-        return "API";
-    if (/^auto$/i.test(label))
-        return "Auto";
-    return label.split("·").pop().trim();
-}
-
-function pace(limit, now) {
-    const left = timeRemaining(limit, now);
-    const remain = remaining(limit);
-    const elapsed = 1 - left;
-    if (left < 0 || remain === null || elapsed < 0.1 || 1 - remain < 0.02)
-        return null;
-    const used = 1 - remain;
-    const projected = 1 - used / elapsed;
-    if (projected >= -1e-9)
-        return {left: Math.max(0, Math.round(projected * 100))};
-    const span = windowHours(title(limit)) * 3600000 || 604800000;
-    const minutes = Math.max(1, Math.round(elapsed * span * remain / used / 60000));
-    const hours = Math.floor(minutes / 60);
-    return {duration: hours >= 24 ? Math.floor(hours / 24) + "d " + hours % 24 + "h"
-        : hours ? hours + "h" : minutes + "m"};
 }
 
 function primaryWindows(account) {
@@ -83,57 +55,81 @@ function orderedWindows(limits) {
     return limits.slice().sort((a, b) => rank(a) - rank(b));
 }
 
-function summaryLimits(providerId, limits) {
-    if (String(providerId).toLowerCase() === "cursor") {
-        const api = limits.filter(l => /^api$/i.test(title(l)));
-        if (api.length)
-            return api;
-    }
-    return limits;
+// Every window of an account in drawer order: main windows, then scoped ones.
+function accountWindows(account) {
+    return orderedWindows(primaryWindows(account)).concat(orderedWindows(scopedWindows(account)));
 }
 
-function accountRemaining(account) {
-    const values = summaryLimits(account.provider, primaryWindows(account)).map(remaining).filter(v => v !== null);
-    return values.length ? Math.min.apply(null, values) : null;
-}
-
-function groupWorstRemain(group) {
-    const values = (group.accounts || []).map(a => accountRemaining(Object.assign({}, a, {provider: group.provider}))).filter(v => v !== null);
-    return values.length ? Math.min.apply(null, values) : null;
-}
-
-// One line per real window category, not a synthetic combined budget.
-// Pool ledgers are copied between records; their limits stay per-account.
-function providerSummary(group) {
-    const buckets = {};
-    for (const account of group.accounts || []) {
-        for (const limit of primaryWindows(account)) {
-            const value = remaining(limit);
-            if (value === null)
-                continue;
-            const key = windowKey(limit);
-            if (!buckets[key] || value < buckets[key].remaining)
-                buckets[key] = {label: key, remaining: value, title: title(limit)};
+// The Priority view: each account's single most constrained window, least left
+// first. Accounts with no reading are left out; their notice lives in All Usage.
+// The sort is stable, so equal readings keep the provider order they came in.
+function priorityRows(accounts) {
+    const rows = [];
+    for (const account of accounts || []) {
+        let worst = null;
+        for (const limit of account.limits || []) {
+            const left = remaining(limit);
+            if (left !== null && (worst === null || left < worst.remaining))
+                worst = {account: account, limit: limit, remaining: left};
         }
+        if (worst)
+            rows.push(worst);
     }
-    const all = Object.keys(buckets).map(k => buckets[k]);
-    if (String(group.provider).toLowerCase() === "cursor") {
-        const preferred = ["API", "Auto"].filter(k => buckets[k]).map(k => buckets[k]);
-        return preferred.length ? preferred : all.slice(0, 2);
+    return rows.map((row, order) => ({row: row, order: order}))
+        .sort((a, b) => a.row.remaining - b.row.remaining || a.order - b.order)
+        .map(entry => entry.row);
+}
+
+// Analytics name the upstream; a provider section may use the vendor name.
+function spendKey(provider) {
+    const id = String(provider || "").toLowerCase();
+    return id === "openai" ? "codex" : id === "anthropic" ? "claude" : id;
+}
+
+// Cost of one provider in one analytics range, or null while the range is not loaded.
+function spendFor(spend, range, provider) {
+    const bucket = spend ? spend[range] : null;
+    if (!bucket)
+        return null;
+    const key = spendKey(provider);
+    const row = (bucket.rows || []).find(r => spendKey(r.provider) === key);
+    return row ? Number(row.cost) : 0;
+}
+
+function resetMinutes(resetAt, now) {
+    const reset = Date.parse(resetAt || "");
+    if (!Number.isFinite(reset))
+        return null;
+    return reset <= now ? 0 : Math.max(1, Math.floor((reset - now) / 60000));
+}
+
+// "6d 23h", "4h 10m", "12m"; "" when CPA gave no reset, "now" once it has passed.
+function resetShort(resetAt, now) {
+    const mins = resetMinutes(resetAt, now);
+    if (mins === null)
+        return "";
+    if (mins === 0)
+        return "now";
+    const hours = Math.floor(mins / 60);
+    if (hours >= 24)
+        return Math.floor(hours / 24) + "d " + hours % 24 + "h";
+    return hours ? hours + "h " + mins % 60 + "m" : mins + "m";
+}
+
+// The same countdown for a screen reader: "4 hours 53 minutes".
+function resetSpoken(resetAt, now) {
+    const mins = resetMinutes(resetAt, now);
+    if (mins === null)
+        return "";
+    if (mins === 0)
+        return "now";
+    const hours = Math.floor(mins / 60);
+    function unit(n, word) {
+        return n + " " + word + (n === 1 ? "" : "s");
     }
-    all.sort((a, b) => {
-        function rank(row) {
-            if (/^\d+(?:\.\d+)?h$/.test(row.label))
-                return Number(row.label.slice(0, -1));
-            return row.label === "wk" ? 1000 : row.label === "mo" ? 2000 : 3000;
-        }
-        return rank(a) - rank(b);
-    });
-    // If there are multiple short windows, show the shortest plus weekly.
-    const weekly = all.find(r => r.label === "wk");
-    if (weekly && all.length && all[0] !== weekly)
-        return [all[0], weekly];
-    return all.slice(0, 2);
+    if (hours >= 24)
+        return [unit(Math.floor(hours / 24), "day")].concat(hours % 24 ? [unit(hours % 24, "hour")] : []).join(" ");
+    return (hours ? [unit(hours, "hour")] : []).concat(mins % 60 || !hours ? [unit(mins % 60, "minute")] : []).join(" ");
 }
 
 function accountState(account, now, staleAfter, refreshFailed) {
@@ -151,21 +147,4 @@ function accountState(account, now, staleAfter, refreshFailed) {
     if (Number.isFinite(stamp) && now - stamp > staleAfter)
         return "stale";
     return "ok";
-}
-
-function timeRemaining(limit, now) {
-    const label = title(limit);
-    const span = windowHours(label) * 3600000 || (/week/i.test(label) ? 604800000 : 0);
-    const reset = Date.parse(limit.resetsAt || "");
-    // Calendar months are not all 30 days. Do not invent a pace tick for them.
-    if (!span || !Number.isFinite(reset))
-        return -1;
-    return Math.max(0, Math.min(1, (reset - now) / span));
-}
-
-function models(account) {
-    return Object.keys(account.modelUsage || {}).map(name => {
-        const bucket = account.modelUsage[name] || {};
-        return {name: name, tokens: Number(bucket.totalTokens || bucket.tokens || 0)};
-    }).filter(r => Number.isFinite(r.tokens) && r.tokens > 0).sort((a, b) => b.tokens - a.tokens);
 }

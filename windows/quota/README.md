@@ -46,8 +46,8 @@ The response is mapped onto the original drawer model:
 | `providers[].accounts[]` | one block of meters per account inside the provider card |
 | `accounts[].windows[]` | quota meters (`usedPercent`, `resetAt` countdown) |
 | window id with a model scope (`seven-day-opus`, …) | extra meters after the account's main windows |
-| `todayCostUsd` | the spend card's Today total until analytics answer |
-| analytics `channel_share[].cost` | the compact spend disclosure's per-provider breakdown |
+| `todayCostUsd` | kept in the service and its cache; the drawer shows each provider's own spend instead |
+| analytics `channel_share[].cost` | the provider card's Today / Yesterday / Last 30 Days value rows |
 | `providers[].status/error`, `accounts[].status/error` | saved, disabled, reconnect and error notices |
 
 `remainingPercent` is used only when `usedPercent` is absent. Windows whose
@@ -67,44 +67,69 @@ drawer shows the previous reading instantly on start.
 
 | Source here | Staged as |
 | --- | --- |
-| `modules/quota/{Wrapper,Content,QuotaMeter,QuotaSpend,QuotaToolTip}.qml` | `modules/quota/` |
+| `modules/quota/{Wrapper,Content,QuotaBar,QuotaLogo,QuotaMenu,QuotaMeter,QuotaPriorityRow,QuotaSegments,QuotaToolTip,QuotaValueRow}.qml` | `modules/quota/` |
 | `modules/quota/QuotaLogic.js` | `modules/quota/QuotaLogic.js` |
 | `services/Quota.qml` | `services/Quota.qml` |
 | `services/QuotaConfig.qml` | `services/QuotaConfig.qml` |
 | `scripts/cpa_keepalive.py` | `scripts/cpa_keepalive.py` |
 | `assets/provider-icons/*` | `assets/provider-icons/*` |
 
-The Windows drawer keeps [OpenUsage](https://github.com/robinebers/openusage)'s
-meters and provider strip but puts the provider limits first. Top to bottom:
+The Windows drawer follows [OpenUsage](https://github.com/robinebers/openusage)'s
+panel in Caelestia's Material 3 tokens, so it takes the wallpaper scheme in dark
+and light. Top to bottom:
 
-1. the provider strip, one logo per provider with its lowest window's `% left`;
-2. the chosen provider's header and one card with each account's windows, in the
-   order CPA reported them (shortest first, then weekly). A meter reads window
-   name and actual `% left` above the bar, the reset below it, and the projected
-   pace small and muted beside the reset. Accounts are separated by a hairline;
-   a stale, reconnect, disabled or unreported account keeps its notice and shows
-   no projected pace. Windows are never invented: a provider that reports only
-   `API`/`Auto` or a monthly window shows exactly those;
-3. a collapsed spend row (range and total). Opening it shows the Today / Yesterday
-   / 30 Days tabs and a per-provider breakdown, labelled API-equivalent cost. It
-   starts collapsed on Today every time the drawer opens; nothing is persisted, and
-   opening it never refreshes;
-4. the footer with the update status, refresh and keepalive (icon only below
-   320 dp wide).
+1. a **Priority | All Usage** switch: a full-width pill track with a raised pill
+   that slides under the chosen segment. The choice lasts while the shell runs
+   and starts on **All Usage**;
+   - **All Usage** is one scroll of provider sections, in the original
+     codex-first order, with no provider strip;
+   - **Priority** is one card listing each account's single most constrained
+     window (least `% left` first, across all providers), with the provider logo
+     and account label. It answers "what runs out first". Accounts with no
+     reading are left out; their notice is in All Usage;
+2. a section per provider: a large bold title with the provider logo on the
+   right, then a card (`m3surfaceContainer`, a hairline `m3outlineVariant`
+   border). Each account has a muted label with its plan as a small chip on the
+   right, then one **grid row per window**: label, a thick rounded bar showing
+   `% left`, the `%` and the reset countdown (`4h 10m`, `6d 23h`). The bar column
+   is 40% of the card (30% at the 280 dp minimum, where the label elides), and
+   every row in the drawer shares the same columns. A bar turns to the error
+   colour at 10% left or less; nothing else is colour coded. Accounts are
+   separated by space, not rules. A stale, reconnect, disabled or unreported
+   account keeps its notice as one muted (or error) row above its meters.
+   Windows are never invented: a provider that reports only `API`/`Auto` or a
+   monthly window shows exactly those. The card ends with that provider's
+   Today / Yesterday / Last 30 Days spend from the analytics (API-equivalent
+   cost, a range appears once it has loaded), as label and value rows;
+3. a footer pinned to the bottom that the content fades under: "Next update in
+   Xm" (or the updating or error status) on the left and a round `...` button on
+   the right. The button opens a small menu with **Refresh now** and
+   **Keepalive**.
 
+Tab reaches the two segments, the scrolling content (Up, Down, Page Up, Page
+Down, Home and End scroll it) and the `...` button. In the menu Up and Down move,
+Return, Enter and Space act, Escape closes it and returns to the button, and Tab
+leaves it. Every meter keeps an accessible name such as "Claude, Weekly, 64
+percent left, resets in 4 hours 53 minutes". Tooltips stay only where they add
+information: a truncated label, the exact reset time, and what the spend is.
 The tooltip and data semantics are adapted from the overlay.
 
 `windows/scripts/Test-Quota.ps1` checks this offscreen: the configured stub at
-the 384x520 default, the 280 dp minimum width and a short 280x300 drawer; a
-`states` scenario (long account name, 0% left, stale, reconnect, disabled and
-unreported accounts, `API`/`Auto` and monthly-only providers); the offline and
-unconfigured profiles. Native DPI, pointer and touch checks are separate.
+the 384x520 default, the 280 dp minimum width and a short 280x300 drawer, with
+the column alignment (one x for every bar, `%` and reset), the Priority order
+and the 10% error colour asserted; a `states` scenario (long account name, 0%
+left, stale, reconnect, disabled and unreported accounts, `API`/`Auto` and
+monthly-only providers); the offline, unconfigured and `disabled` profiles;
+and a `keepalive` run that switches the panel off while a fake helper runs.
+`windows/scripts/Test-QuotaProviderKeyboard.ps1` drives the real drawer by
+keyboard and pointer. Native DPI, pointer and touch checks are separate.
 
 The drawer is wired into the shared drawer graph:
 
 - `components/ScreenState.qml` gains `quota`.
 - `modules/drawers/{ContentWindow,Interactions,Regions}.qml` add the close
-  paths, hover area, input region and blob deformation.
+  paths, hover area, input region and blob deformation. `Interactions.qml` and
+  `Regions.qml` skip the drawer while `panels.quotaEnabled` is false.
 - `windows/shell/adapters/modules/drawers/Panels.qml` imports
   `qs.modules.quota`, exposes `quota`, and anchors `Quota.Wrapper` top-right.
 
@@ -119,13 +144,21 @@ There is no bar entry and no default keybind, matching the Linux overlay.
 - **Opt-in.** A local `FileView` existence check of `cpa-agents.json` decides
   whether the drawer is enabled. Missing config means no request, no error and
   a disabled drawer.
-- **Keepalive.** The bolt button calls `cpa_keepalive.py`, which resolves the
+- **Agent usage panel setting.** Nexus > Services has an **Agent usage panel**
+  switch, stored as `windows.quota.enabled` in `shell.json` (on when absent).
+  Off, the drawer never opens, its hover and input region are gone, so nothing
+  deforms, and the service reads no key, makes no request and runs no timer; an
+  open drawer closes and a request in flight is aborted. It applies live. On
+  again, the last cached reading is there at once. It only ever narrows what
+  `cpa-agents.json` and `quota.json` allow; it never enables the panel alone.
+- **Keepalive.** The footer menu's **Keepalive** entry calls `cpa_keepalive.py`, which resolves the
   inference endpoint from `--inference-url`, `CPA_INFERENCE_URL`, or
   `inferenceUrl` in `cpa-agents.json` (falling back to loopback
   `http://127.0.0.1:8317/v1/chat/completions` only when `baseUrl` is loopback).
   It sends real keepalive traffic only when pressed and needs Python plus
   `CPA_API_KEY` (or the `environment.d/cpa.conf` fallback); quota display
-  itself no longer needs either.
+  itself no longer needs either. Switching the panel off ends a running keepalive
+  helper too.
 - **Empty states.** No CPA config shows "Not configured. Add cpa-agents.json to
   the shell config folder." in the muted colour; an unreachable endpoint shows
   one saved-data line; a valid summary with no accounts shows the original
@@ -156,16 +189,27 @@ powershell -NoProfile -File windows/scripts/Test-Quota.ps1 `
 ```
 
 The harness stages the production graph and runs `QuotaSmoke.qml` offscreen in
-three isolated profiles:
+isolated profiles:
 
 1. **configured** - a local synthetic CPA stub (`fixtures/stub_cpa.py`) serves
-   the summary shape with three providers, five accounts and one model-scoped
-   window. The drawer opens on Claude, the meters (including the model-scoped one),
-   spend card and provider sections render, and dark plus light-palette screenshots are saved.
-2. **offline** - the endpoint refuses connections. With the configured run's
+   the summary shape with three providers, five accounts, one model-scoped
+   window and one window at 7% left. The drawer opens on All Usage; the
+   sections, shared columns and spend rows are checked, then Priority and the
+   footer menu, and dark, light, Priority and menu screenshots are saved.
+2. **states** - long names, 0% left, stale, reconnect, disabled and unreported
+   accounts, each section checked for what it reports and no more.
+3. **offline** - the endpoint refuses connections. With the configured run's
    cache copied in, the saved rows stay visible behind the single error line;
    the run must settle without hanging.
-3. **unconfigured** - no config; no request and the drawer stays disabled.
+4. **unconfigured** - no config; no request, no input region, and the drawer
+   stays disabled.
+5. **disabled** - a valid config with the Agent usage panel off: the drawer
+   never opens, the input region is empty and no request is made. Switching the
+   setting on, off and on again at runtime opens, closes and quiets the drawer
+   and keeps the cache.
+6. **keepalive** - a fake helper process stands in for `cpa_keepalive.py` and
+   would write a marker file three seconds later. The panel is switched off
+   while it runs: the helper must be gone and the marker never written.
 
 It writes `result.json`, per-mode logs, screenshots and the two profile caches
 under a disposable `%TEMP%\caelestia-quota-smoke\<run>` directory. Logs,
@@ -183,5 +227,8 @@ screenshots and caches are intentionally not committed.
   needs CPA inference reachability plus `CPA_API_KEY`.
 - The light screenshot uses a fixed Material 3 baseline palette fixture, not a
   generated wallpaper scheme.
+- Provider logos are tinted flat `m3onSurfaceVariant` through the icon colour of
+  a decorative Qt Controls button (no GPU effect, so the offscreen screenshots
+  show the real tint). Native DPI rendering still needs a live check.
 - The provider icon marks are copied from the custom overlay. They are
   third-party brand marks; verify redistribution terms before publishing.

@@ -39,6 +39,16 @@ PageBase {
 
     title: Tr.tr("Services")
 
+    readonly property bool agentUsageOn: GlobalConfig.windows?.quota?.enabled ?? true
+
+    // GlobalConfig.windows is one QVariantMap, not a sub-object: copy it and
+    // write it back whole, as the window management page does.
+    function setAgentUsage(on: bool): void {
+        const windows = JSON.parse(JSON.stringify(GlobalConfig.windows ?? {}));
+        windows.quota = Object.assign(windows.quota ?? {}, { enabled: on });
+        GlobalConfig.windows = windows;
+    }
+
     ColumnLayout {
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.top: parent.top
@@ -95,6 +105,22 @@ PageBase {
             label: Tr.tr("Recording")
             subtext: Tr.tr("Win+Shift+R")
             value: Recorder.available ? Tr.trCtx("Ready", "Glazier state") : Tr.trCtx("Unavailable", "Glazier state")
+        }
+
+        // The agent usage drawer. Off removes the drawer and its hover strip and
+        // stops every CPA request, live. The key is windows.quota.enabled.
+        SectionHeader {
+            text: Tr.tr("Agent usage")
+        }
+
+        ToggleRow {
+            objectName: "agentUsageToggle"
+            first: true
+            last: true
+            text: Tr.tr("Agent usage panel")
+            subtext: Tr.tr("Top-right drawer with AI quota. Also needs a CPA config")
+            checked: root.agentUsageOn
+            onToggled: root.setAgentUsage(checked)
         }
 
         // Polling

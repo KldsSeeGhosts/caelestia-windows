@@ -21,11 +21,13 @@ Region {
     height: win.height - clampedThickness * 2 - win.dragMaskPadding * 2
     intersection: Intersection.Xor
 
-    // Windows: the ported quota drawer's top-right input strip and panel.
+    // Windows: the ported quota drawer's top-right input strip and panel. Both
+    // are gone while the panel is switched off (Nexus > Services).
     R {
         panel: root.panels.quota
         y: 0
-        height: panel.height * (1 - root.panels.quota.offsetScale) + root.borderThickness
+        width: root.panels.quotaEnabled ? panel.width : 0
+        height: root.panels.quotaEnabled ? panel.height * (1 - root.panels.quota.offsetScale) + root.borderThickness : 0
     }
 
     R {
