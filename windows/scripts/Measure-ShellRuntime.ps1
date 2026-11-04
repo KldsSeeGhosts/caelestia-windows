@@ -15,7 +15,8 @@ own request-to-frame timer. Neither endpoint proves DWM scanout.
 Plant changes only the disposable staged QML. Production reads no test variable.
 Results with a plant must never be saved as a production baseline.
 #>
-[CmdletBinding()]
+# Named arguments only: a stray value is an error, not a silently ignored request.
+[CmdletBinding(PositionalBinding = $false)]
 param(
     [Parameter(Mandatory)][string]$QtPrefix,
     [Parameter(Mandatory)][string]$BuildRoot,

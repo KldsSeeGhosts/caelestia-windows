@@ -20,6 +20,29 @@ RESOURCES = {
     "cpuCorePercent": ("cpuCorePercent", 1),
     "cpuMachinePercent": ("cpuMachinePercent", 1),
 }
+RESOURCE_LABELS = ("privateMiB", "workingSetMiB", "handles", "gdi", "user")
+# Every metric each workload must produce. A trial without one is incomplete,
+# so its group is invalid and every comparison of it is inconclusive. Panel also
+# requires a pair of metrics for each panel the trial presented.
+REQUIRED_METRICS = {
+    "Idle": ("idleCpuCorePercent", "idleCpuMachinePercent"),
+    "Resources": tuple(label + suffix for label in RESOURCE_LABELS
+                       for suffix in ("NetGrowth", "SlopePerMinute", "SlopePerCycle")),
+    "Panel": ("panelRequestToFrameObservedMs", "panelShellRequestToFrameMs"),
+    "Reload": ("reloadRequestToReadyMs",),
+}
+PANEL_METRICS = ("RequestToFrameObservedMs", "ShellRequestToFrameMs")
+
+
+def panel_prefix(panel):
+    return "panel" + panel[0].upper() + panel[1:]
+
+
+def required_metrics(category, panels=()):
+    names = list(REQUIRED_METRICS.get(category, ()))
+    if category == "Panel":
+        names += [panel_prefix(panel) + suffix for panel in sorted(panels) for suffix in PANEL_METRICS]
+    return names
 
 
 def slope(rows, key, divisor):
@@ -116,7 +139,7 @@ def summarize_trial(path):
                 or work["cyclesCompleted"] != expected or work["panelsShown"] != expected):
             errors.append("Resource workload did not complete every cycle.")
         elif len(cycles) >= 2:
-            for label in ("privateMiB", "workingSetMiB", "handles", "gdi", "user"):
+            for label in RESOURCE_LABELS:
                 key, divisor = RESOURCES[label]
                 start = statistics.median(r[key] / divisor for r in initial)
                 end = statistics.median(r[key] / divisor for r in final)
@@ -138,7 +161,7 @@ def summarize_trial(path):
             metrics["panelShellRequestToFrameMs"] = statistics.median(a["shellRequestToFrameMs"] for a in shown)
             for panel in sorted({a["panel"] for a in shown}):
                 panel_actions = [a for a in shown if a["panel"] == panel]
-                prefix = "panel" + panel[0].upper() + panel[1:]
+                prefix = panel_prefix(panel)
                 metrics[prefix + "RequestToFrameObservedMs"] = statistics.median(
                     a["requestToFrameObservedMs"] for a in panel_actions
                 )
@@ -157,6 +180,10 @@ def summarize_trial(path):
         errors.append("Action log and work count disagree.")
     if any(not math.isfinite(v) for v in metrics.values()):
         errors.append("Non-finite metric.")
+    shown_panels = {a["panel"] for a in actions if a["panel"] != "idle"}
+    missing = [name for name in required_metrics(category, shown_panels) if name not in metrics]
+    if missing:
+        errors.append("Missing required metrics: " + ", ".join(missing) + ".")
     return {
         "path": str(path), "metadata": metadata, "metrics": metrics, "counters": counters,
         "panelScales": {a["panel"]: a.get("dpr") for a in actions if a["panel"] != "idle"},
@@ -200,6 +227,10 @@ def aggregate(manifest_path):
             group["trials"].append(summarize_trial(Path(run["path"])))
         except (OSError, ValueError, KeyError, ZeroDivisionError) as error:
             group["errors"].append(f'{run["path"]}: {error}')
+    # A requested category with no recorded trial is a failed group, not an absent one.
+    for category in manifest.get("requested", []):
+        for side in ("A", "B") if manifest["twoBuilds"] else ("A",):
+            groups.setdefault(f"{side}/{category}", {"trials": [], "errors": ["No trials were recorded."]})
     for group_name, group in groups.items():
         category = group_name.split("/", 1)[1]
         order = [run["side"] for run in manifest["runs"] if run["metric"] == category]
@@ -268,7 +299,10 @@ def compare_groups(baseline, candidate, baseline_side="A", candidate_side="A", c
             reason = "Contract mismatch: " + ", ".join(mismatch) + "."
         else:
             reason = None
-        names = {
+        # Required metrics are compared even when neither side produced them.
+        panels = {p for group in (a, b) if group and group.get("contract")
+                  for p in group["contract"].get("panelScales") or {}}
+        names = set(required_metrics(category, panels)) | {
             name for group in (a, b) if group
             for name in list(group["metrics"]) + [n for t in group.get("trials", []) for n in t["metrics"]]
         }

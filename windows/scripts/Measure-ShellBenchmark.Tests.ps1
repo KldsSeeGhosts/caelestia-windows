@@ -9,6 +9,7 @@ import copy
 import json
 import re
 import runpy
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -57,7 +58,8 @@ assert overall(mismatch) == "mismatch" and mismatch["latencyMs"]["contractMismat
 assert overall({}) == "inconclusive"
 # Comparing against a baseline covers the categories measured now.
 wide = {"A/Panel": group([10]*5), "A/Idle": group([1]*5, name="idleMs")}
-assert set(compare(wide, {"A/Panel": group([10]*5)}, categories={"Panel"})) == {"latencyMs"}
+narrow = compare(wide, {"A/Panel": group([10]*5)}, categories={"Panel"})
+assert "latencyMs" in narrow and {v["group"] for v in narrow.values()} == {"Panel"}, narrow
 assert compare({"A/Panel": group([10]*5)}, {"A/Idle": group([1]*5)}, categories={"Idle"})["latencyMs"]["verdict"] == "inconclusive"
 
 # Overall verdict precedence and exit codes.
@@ -226,11 +228,69 @@ assert trial["metrics"]["idleCpuCorePercent"] == 12.5
 meta["workload"]["idleSeconds"] = 3
 (idle / "metadata.json").write_text(json.dumps(meta))
 assert module["summarize_trial"](idle)["errorCount"] > 0
+meta["workload"]["idleSeconds"] = 2
+(idle / "metadata.json").write_text(json.dumps(meta))
 
-print("Benchmark fixtures passed. Verdicts, exit codes, failures, work counts, contracts, baselines and privacy checked.")
+# Coverage: a required metric missing from both sides is never a pass.
+failures = []
+def check(name, test):
+    try:
+        test()
+        print("PASS " + name)
+    except Exception as error:
+        failures.append(name)
+        print("FAIL %s: %r" % (name, error))
+
+def compared_without_required():
+    partial = {"A/Idle": group([1]*5, name="idleCpuCorePercent")}
+    result = compare(partial, copy.deepcopy(partial))
+    assert result["idleCpuCorePercent"]["verdict"] == "same", result
+    assert result.get("idleCpuMachinePercent", {}).get("verdict") == "inconclusive", sorted(result)
+    assert overall(result) == "inconclusive", result
+
+def idle_manifest(name):
+    manifest = {"twoBuilds": True, "runs": []}
+    for index in range(5):
+        for side in ("A", "B"):
+            run = root / name / f"{side}-{index}"
+            shutil.copytree(idle, run)
+            manifest["runs"].append({"side": side, "metric": "Idle", "path": str(run), "exitCode": 0})
+    (root / name / "manifest.json").write_text(json.dumps(manifest))
+    return root / name / "manifest.json"
+
+def summarizer_drops_metric():
+    # The reviewer's mutation: the summarizer stops computing one Idle metric.
+    source = Path(script).read_text(encoding="utf-8")
+    line = '            metrics["idleCpuMachinePercent"] = core / metadata["logicalProcessors"]\n'
+    assert line in source, "mutation target moved"
+    (root / "mutant.py").write_text(source.replace(line, ""), encoding="utf-8")
+    mutant = runpy.run_path(str(root / "mutant.py"))
+    manifest_path = idle_manifest("idle-coverage")
+    intact = module["build_verdict"](aggregate(manifest_path))
+    assert intact["overall"] == "same", intact
+    verdict = mutant["build_verdict"](mutant["aggregate"](manifest_path))
+    assert verdict["overall"] == "inconclusive" and verdict["exitCode"] == 3, verdict
+    assert not any(g["valid"] for g in verdict["groups"].values()), verdict
+
+def requested_category_without_trials():
+    value = copy.deepcopy(manifest)
+    value["requested"] = ["Panel", "Reload"]
+    verdict = module["build_verdict"](summarize(value))
+    assert verdict["overall"] == "inconclusive", verdict["overall"]
+    assert not verdict["groups"]["B/Reload"]["valid"], verdict["groups"]
+
+check("required metric missing from both compared sides", compared_without_required)
+check("summarizer that drops a required metric", summarizer_drops_metric)
+check("requested category without trials", requested_category_without_trials)
+if failures:
+    raise SystemExit("Coverage fixtures failed: " + ", ".join(failures))
+
+print("Benchmark fixtures passed. Verdicts, exit codes, failures, work counts, contracts, coverage, baselines and privacy checked.")
 '@
 $test | & py -3 - "$PSScriptRoot\Summarize-ShellRuntime.py" $TestRoot $env:USERNAME
-if ($LASTEXITCODE -ne 0) { throw 'Benchmark fixtures failed.' }
+# Report the runner fixtures below even when a Python fixture failed.
+$fixtureFailures = @()
+if ($LASTEXITCODE -ne 0) { $fixtureFailures += 'Python benchmark fixtures' }
 $tokens = $null
 $parseErrors = $null
 foreach ($script in @('Measure-ShellRuntime.ps1', 'Measure-ShellBenchmark.ps1', 'Caelestia-Privacy.ps1', 'Test-Candidate.ps1')) {
@@ -305,3 +365,70 @@ if (-not ($verdict.powerRequest.held -and $verdict.powerRequest.system -and $ver
     throw 'The verdict does not record a held power request and the display topology.'
 }
 Write-Output 'Failed-trial verdict and power request passed.'
+
+# The real runner, with a stub worker that copies a recorded fixture trial, so
+# a failure after the summary can be checked end to end without a shell.
+$stub = Join-Path $TestRoot 'stub\windows\scripts'
+New-Item -ItemType Directory -Path $stub | Out-Null
+foreach ($script in @('Measure-ShellBenchmark.ps1', 'Summarize-ShellRuntime.py', 'Caelestia-Privacy.ps1')) {
+    Copy-Item -LiteralPath "$PSScriptRoot\$script" -Destination $stub
+}
+@'
+$ErrorActionPreference = 'Stop'
+if ($env:BENCH_FIXTURE_COLLIDE) { New-Item -ItemType File -Force -Path $env:BENCH_FIXTURE_COLLIDE | Out-Null }
+Copy-Item -Recurse -LiteralPath $env:BENCH_FIXTURE_TRIAL -Destination $args[[Array]::IndexOf($args, '-RunRoot') + 1]
+'@ | Set-Content -LiteralPath "$stub\Measure-ShellRuntime.ps1" -Encoding UTF8
+# The fixture trial names the account in metadata.json; this copy does not.
+$clean = Join-Path $TestRoot 'clean-trial'
+Copy-Item -Recurse -LiteralPath "$TestRoot\A-0" -Destination $clean
+$meta = Get-Content -LiteralPath "$clean\metadata.json" -Raw | ConvertFrom-Json
+$meta.build.qtPrefix = '<qt>'
+$meta | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath "$clean\metadata.json" -Encoding UTF8
+$store = Join-Path $TestRoot 'baselines'
+$machineStore = Join-Path $store $env:COMPUTERNAME
+function Invoke-StubRun([string]$Name, [string]$Trial, [string[]]$Extra, [string]$Collide) {
+    $env:BENCH_FIXTURE_TRIAL = $Trial
+    $env:BENCH_FIXTURE_COLLIDE = $Collide
+    $run = Join-Path $TestRoot "stub-$Name"
+    $ErrorActionPreference = 'Continue'
+    & $hostPath -NoProfile -File "$stub\Measure-ShellBenchmark.ps1" -QtPrefix $TestRoot -BuildRoot $TestRoot `
+        -RunRoot $run -Metric Panel -Mode Offscreen -BaselineRoot $store @Extra *> "$run.log"
+    $code = $LASTEXITCODE
+    $ErrorActionPreference = 'Stop'
+    $env:BENCH_FIXTURE_TRIAL = $null
+    $env:BENCH_FIXTURE_COLLIDE = $null
+    $verdict = if (Test-Path -LiteralPath "$run\verdict.json") { Get-Content -LiteralPath "$run\verdict.json" -Raw | ConvertFrom-Json }
+    [pscustomobject]@{ code = $code; overall = $verdict.overall; exitCode = $verdict.exitCode
+        pending = Test-Path -LiteralPath "$run\verdict.pending.json" }
+}
+function Test-Fixture([string]$Name, [scriptblock]$Body) {
+    $problem = & $Body
+    if ($problem) { $script:fixtureFailures += $Name; Write-Output "FAIL ${Name}: $problem" } else { Write-Output "PASS $Name" }
+}
+Test-Fixture 'clean run publishes its baseline and a passing verdict' {
+    $r = Invoke-StubRun 'clean' $clean @('-BuildRootB', $TestRoot, '-SaveBaseline', 'fixture-clean')
+    if ($r.code -ne 0 -or $r.overall -ne 'same' -or $r.pending -or -not (Test-Path "$machineStore\fixture-clean.json")) { "exit $($r.code), verdict '$($r.overall)'" }
+}
+Test-Fixture 'privacy failure after a passing summary leaves runner-error' {
+    $r = Invoke-StubRun 'privacy' "$TestRoot\A-0" @('-BuildRootB', $TestRoot)
+    if ($r.code -ne 1 -or $r.overall -ne 'runner-error' -or $r.exitCode -ne 1 -or $r.pending) { "exit $($r.code), verdict '$($r.overall)'/$($r.exitCode)" }
+}
+Test-Fixture 'refused baseline after failed workers leaves runner-error' {
+    $r = Invoke-StubRun 'refused' (Join-Path $TestRoot 'no-such-trial') @('-SaveBaseline', 'fixture-refused')
+    if ($r.code -ne 1 -or $r.overall -ne 'runner-error' -or $r.exitCode -ne 1 -or (Test-Path "$machineStore\fixture-refused.json")) { "exit $($r.code), verdict '$($r.overall)'/$($r.exitCode)" }
+}
+Test-Fixture 'failed second publication removes the first and leaves runner-error' {
+    $r = Invoke-StubRun 'collide' $clean @('-BuildRootB', $TestRoot, '-SaveBaseline', 'fixture-a', '-SaveBaselineB', 'fixture-b') "$machineStore\fixture-b.json"
+    if ($r.code -ne 1 -or $r.overall -ne 'runner-error' -or (Test-Path "$machineStore\fixture-a.json")) { "exit $($r.code), verdict '$($r.overall)', fixture-a kept: $(Test-Path "$machineStore\fixture-a.json")" }
+}
+Test-Fixture 'stray positional argument is refused before any trial' {
+    $run = Join-Path $TestRoot 'stub-positional'
+    $ErrorActionPreference = 'Continue'
+    & $hostPath -NoProfile -File "$stub\Measure-ShellBenchmark.ps1" -QtPrefix $TestRoot -BuildRoot $TestRoot `
+        -RunRoot $run -Mode Offscreen -Metric Idle Panel Reload *> "$run.log"
+    $code = $LASTEXITCODE
+    $ErrorActionPreference = 'Stop'
+    if ($code -eq 0 -or (Test-Path -LiteralPath $run)) { "exit $code, run started: $(Test-Path -LiteralPath $run)" }
+}
+if ($fixtureFailures) { throw "Benchmark fixtures failed: $($fixtureFailures -join '; ')" }
+Write-Output 'Runner verdict finalization, baseline publication and argument checks passed.'

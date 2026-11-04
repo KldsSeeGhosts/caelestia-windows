@@ -146,8 +146,9 @@ Do not save a calibration as evidence of production parity.
 
 Record and compare, for example before promoting `dev` to `main`.
 Run multi-metric commands from a Windows PowerShell prompt, not through
-`powershell -File`: `-File` binds `-Metric Idle, Panel, Reload` as `Idle` alone.
-The script's exit code is then in `$LASTEXITCODE`.
+`powershell -File`: `-File` receives `-Metric Idle, Panel, Reload` as three
+separate words, and the runner refuses the stray `Panel` and `Reload` rather
+than measure `Idle` alone. The script's exit code is then in `$LASTEXITCODE`.
 
 ```powershell
 $wt = 'C:\b-perf\src'
@@ -188,14 +189,25 @@ Agents act on the exit code and `verdict.json` alone.
 
 | Exit | Overall verdict | Meaning |
 | --- | --- | --- |
-| 0 | `same`, `improved`, `measured` | No gating metric regressed and every group was valid. `measured` means nothing was compared. |
-| 1 | none | Runner error: bad arguments, failed summary, private data in a record, or a refused baseline. |
+| 0 | `same`, `improved`, `measured` | No gating metric regressed and every group was valid. `measured` means nothing was compared and is not a pass: gates require `same` or `improved`. |
+| 1 | `runner-error`, or no `verdict.json` | Runner error: bad arguments, failed summary, private data in a record, or a refused baseline. |
 | 2 | `regressed` | At least one gating metric regressed. |
-| 3 | `inconclusive` | A group failed, ran fewer than five trials, or lost a metric, and nothing regressed. |
+| 3 | `inconclusive` | A group failed, ran fewer than five trials, or lost a required metric, and nothing regressed. |
 | 4 | `mismatch` | The contracts differ. Nothing in that group was compared. |
 
 When several apply, the order is mismatch, regressed, inconclusive, improved,
 same. A skipped, failed, or missing metric is never a pass.
+The runner writes `verdict.json` last, after the privacy check and baseline
+publication. If anything fails after the summary, `verdict.json` says
+`runner-error` with exit code 1, and baselines published by that run are removed.
+
+Each workload declares the metrics it must produce (`REQUIRED_METRICS` in
+`Summarize-ShellRuntime.py`; Panel adds a pair per presented panel). A trial
+that lacks one is invalid, so its group is `inconclusive`, even when both sides
+lack it. A comparison also lists every required metric, so a stored baseline
+without one is `inconclusive` too. A requested category with no recorded trial
+is a failed group. Coverage gaps are `inconclusive`, not `mismatch`: the
+contracts agree, but the measurement is incomplete.
 
 `verdict.json`, schema version 1:
 

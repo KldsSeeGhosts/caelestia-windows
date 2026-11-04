@@ -13,7 +13,8 @@ The default store is %LOCALAPPDATA%\caelestia-windows-bench\baselines\<machine>.
 
 Writes benchmark.json (raw evidence) and verdict.json (shareable) to RunRoot.
 Exit codes: 0 same, improved, or measured with every group valid; 1 runner
-error; 2 regressed; 3 inconclusive; 4 contract mismatch.
+error (verdict runner-error); 2 regressed; 3 inconclusive; 4 contract mismatch.
+Gates accept only same or improved; measured compared nothing.
 
 Use -PlantB CPU, Resources, Panel, or Reload only for sensitivity experiments.
 Plants affect disposable staged QML, never source or production behavior.
@@ -23,7 +24,10 @@ Live mode refuses without -LiveDesktop. Only the designated desktop QA owner
 may run it. NonVisible never calls SwitchDesktop. Offscreen measures software
 rendering and must not be described as native D3D11 presentation performance.
 #>
-[CmdletBinding()]
+# Named arguments only: a stray value, such as "Panel" in "-Metric Idle Panel",
+# is an error instead of a silently dropped request. -File cannot pass a list;
+# to choose several metrics, use -Command "& <script> -Metric Idle, Panel".
+[CmdletBinding(PositionalBinding = $false)]
 param(
     [Parameter(Mandatory)][string]$QtPrefix,
     [Parameter(Mandatory)][string]$BuildRoot,
@@ -130,71 +134,88 @@ public static class ShellBenchRunner {
     }
 }
 "@
-$displayRequired = $Mode -ne 'Offscreen'
-$manifest = [ordered]@{
-    schemaVersion=3; twoBuilds=[bool]$BuildRootB; displays=[ShellBenchRunner]::Displays()
-    powerRequest=[ordered]@{ held=$false; system=$true; display=$displayRequired }; runs=@()
-}
-$sides = [ordered]@{ A=$BuildRoot }
-if ($BuildRootB) { $sides.B = $BuildRootB }
-$powerRequest = [ShellBenchRunner]::Hold('Caelestia shell benchmark', $displayRequired)
-$manifest.powerRequest.held = $true
+# verdict.json appears only after every check and publication has passed. Any
+# failure leaves a runner-error verdict instead, so no pass outlives a failed run.
+$verdictPath = Join-Path $RunRoot 'verdict.json'
+$pendingPath = Join-Path $RunRoot 'verdict.pending.json'
+$published = @()
 try {
-    for ($index = 1; $index -le $Runs; $index++) {
-        foreach ($category in $Metric) {
-            foreach ($side in $sides.Keys) {
-                $path = Join-Path $RunRoot "$category-$side-$index"
-                $plant = if ($side -eq 'B') { $PlantB } else { 'None' }
-                $arguments = @('-NoProfile', '-File', "$PSScriptRoot\Measure-ShellRuntime.ps1",
-                    '-QtPrefix', $QtPrefix, '-BuildRoot', $sides[$side], '-RunRoot', $path,
-                    '-Metric', $category, '-Mode', $Mode, '-WarmupSeconds', $WarmupSeconds,
-                    '-IdleSeconds', $IdleSeconds, '-Cycles', $Cycles, '-RecoverySeconds', $RecoverySeconds,
-                    '-CycleIntervalSeconds', $CycleIntervalSeconds,
-                    '-ScreenIndex', $ScreenIndex, '-Plant', $plant)
-                $source = if ($side -eq 'B') { $SourceRootB } else { $SourceRoot }
-                if ($source) { $arguments += @('-SourceRoot', $source) }
-                if ($LiveDesktop) { $arguments += '-LiveDesktop' }
-                Write-Host "$category $side trial $index/$Runs ($Mode, plant $plant)"
-                $before = [ShellBenchRunner]::Displays()
-                # A failed trial is recorded and makes its group inconclusive. Under
-                # Stop, Windows PowerShell turns the worker's stderr into a terminating
-                # error and the run would end without a verdict.
-                $ErrorActionPreference = 'Continue'
-                & $windowsPowerShell @arguments *> "$RunRoot\$category-$side-$index.worker.log"
-                $exitCode = $LASTEXITCODE
-                $ErrorActionPreference = 'Stop'
-                $after = [ShellBenchRunner]::Displays()
-                $manifest.runs += [ordered]@{ side=$side; metric=$category; index=$index; path=$path; exitCode=$exitCode
-                    displaysBefore=$before; displaysAfter=$after
-                    displayChanged=($before -ne $manifest.displays -or $after -ne $manifest.displays) }
-                $manifest | ConvertTo-Json -Depth 8 | Set-Content "$RunRoot\manifest.json" -Encoding UTF8
+    $displayRequired = $Mode -ne 'Offscreen'
+    $manifest = [ordered]@{
+        schemaVersion=3; twoBuilds=[bool]$BuildRootB; displays=[ShellBenchRunner]::Displays()
+        powerRequest=[ordered]@{ held=$false; system=$true; display=$displayRequired }; requested=@($Metric); runs=@()
+    }
+    $sides = [ordered]@{ A=$BuildRoot }
+    if ($BuildRootB) { $sides.B = $BuildRootB }
+    $powerRequest = [ShellBenchRunner]::Hold('Caelestia shell benchmark', $displayRequired)
+    $manifest.powerRequest.held = $true
+    try {
+        for ($index = 1; $index -le $Runs; $index++) {
+            foreach ($category in $Metric) {
+                foreach ($side in $sides.Keys) {
+                    $path = Join-Path $RunRoot "$category-$side-$index"
+                    $plant = if ($side -eq 'B') { $PlantB } else { 'None' }
+                    $arguments = @('-NoProfile', '-File', "$PSScriptRoot\Measure-ShellRuntime.ps1",
+                        '-QtPrefix', $QtPrefix, '-BuildRoot', $sides[$side], '-RunRoot', $path,
+                        '-Metric', $category, '-Mode', $Mode, '-WarmupSeconds', $WarmupSeconds,
+                        '-IdleSeconds', $IdleSeconds, '-Cycles', $Cycles, '-RecoverySeconds', $RecoverySeconds,
+                        '-CycleIntervalSeconds', $CycleIntervalSeconds,
+                        '-ScreenIndex', $ScreenIndex, '-Plant', $plant)
+                    $source = if ($side -eq 'B') { $SourceRootB } else { $SourceRoot }
+                    if ($source) { $arguments += @('-SourceRoot', $source) }
+                    if ($LiveDesktop) { $arguments += '-LiveDesktop' }
+                    Write-Host "$category $side trial $index/$Runs ($Mode, plant $plant)"
+                    $before = [ShellBenchRunner]::Displays()
+                    # A failed trial is recorded and makes its group inconclusive. Under
+                    # Stop, Windows PowerShell turns the worker's stderr into a terminating
+                    # error and the run would end without a verdict.
+                    $ErrorActionPreference = 'Continue'
+                    & $windowsPowerShell @arguments *> "$RunRoot\$category-$side-$index.worker.log"
+                    $exitCode = $LASTEXITCODE
+                    $ErrorActionPreference = 'Stop'
+                    $after = [ShellBenchRunner]::Displays()
+                    $manifest.runs += [ordered]@{ side=$side; metric=$category; index=$index; path=$path; exitCode=$exitCode
+                        displaysBefore=$before; displaysAfter=$after
+                        displayChanged=($before -ne $manifest.displays -or $after -ne $manifest.displays) }
+                    $manifest | ConvertTo-Json -Depth 8 | Set-Content "$RunRoot\manifest.json" -Encoding UTF8
+                }
             }
         }
+    } finally {
+        [ShellBenchRunner]::Release($powerRequest, $displayRequired)
     }
-} finally {
-    [ShellBenchRunner]::Release($powerRequest, $displayRequired)
-}
-$summaryArguments = @('-3', "$PSScriptRoot\Summarize-ShellRuntime.py", "$RunRoot\manifest.json", '--manifest',
-    '--output', "$RunRoot\benchmark.json", '--verdict', "$RunRoot\verdict.json", '--baselines', $RunRoot)
-if ($baseline) { $summaryArguments += @('--compare', $baseline) }
-& py @summaryArguments
-$exitCode = $LASTEXITCODE
-if ($exitCode -notin @(0, 2, 3, 4) -or -not (Test-Path -LiteralPath "$RunRoot\verdict.json")) { throw 'Summary failed.' }
-# Shareable records must not name the account or a home path.
-. (Join-Path $PSScriptRoot 'Caelestia-Privacy.ps1')
-Initialize-CaelestiaPrivacy
-$records = @(Get-ChildItem -LiteralPath $RunRoot -File -Filter 'baseline-*.json') + @(Get-Item -LiteralPath "$RunRoot\verdict.json") +
-    @($manifest.runs | ForEach-Object { Get-Item -LiteralPath "$($_.path)\metadata.json" -ErrorAction SilentlyContinue })
-$leaks = @($records | Where-Object { (Get-ManifestPrivacyReport $_.FullName).total -gt 0 } | ForEach-Object { $_.FullName.Substring($RunRoot.Length + 1) })
-if ($leaks) { throw "Private path or user-name data in: $($leaks -join ', ')" }
-foreach ($save in @(@{ name = $SaveBaseline; side = 'A' }, @{ name = $SaveBaselineB; side = 'B' }) | Where-Object { $_.name }) {
-    $projection = "$RunRoot\baseline-$($save.side).json"
-    $groups = @((Get-Content -LiteralPath $projection -Raw | ConvertFrom-Json).groups.PSObject.Properties)
-    if (-not $groups -or @($groups | Where-Object { -not $_.Value.valid }).Count) { throw "Incomplete results cannot become a baseline: $($save.name)" }
-    New-Item -ItemType Directory -Force -Path $BaselineRoot | Out-Null
-    [IO.File]::Copy($projection, "$BaselineRoot\$($save.name).json", $false)
+    $summaryArguments = @('-3', "$PSScriptRoot\Summarize-ShellRuntime.py", "$RunRoot\manifest.json", '--manifest',
+        '--output', "$RunRoot\benchmark.json", '--verdict', $pendingPath, '--baselines', $RunRoot)
+    if ($baseline) { $summaryArguments += @('--compare', $baseline) }
+    & py @summaryArguments
+    $exitCode = $LASTEXITCODE
+    if ($exitCode -notin @(0, 2, 3, 4) -or -not (Test-Path -LiteralPath $pendingPath)) { throw 'Summary failed.' }
+    # Shareable records must not name the account or a home path.
+    . (Join-Path $PSScriptRoot 'Caelestia-Privacy.ps1')
+    Initialize-CaelestiaPrivacy
+    $records = @(Get-ChildItem -LiteralPath $RunRoot -File -Filter 'baseline-*.json') + @(Get-Item -LiteralPath $pendingPath) +
+        @($manifest.runs | ForEach-Object { Get-Item -LiteralPath "$($_.path)\metadata.json" -ErrorAction SilentlyContinue })
+    $leaks = @($records | Where-Object { (Get-ManifestPrivacyReport $_.FullName).total -gt 0 } | ForEach-Object { $_.FullName.Substring($RunRoot.Length + 1) })
+    if ($leaks) { throw "Private path or user-name data in: $($leaks -join ', ')" }
+    $saves = @(@(@{ name = $SaveBaseline; side = 'A' }, @{ name = $SaveBaselineB; side = 'B' }) | Where-Object { $_.name })
+    foreach ($save in $saves) {
+        $groups = @((Get-Content -LiteralPath "$RunRoot\baseline-$($save.side).json" -Raw | ConvertFrom-Json).groups.PSObject.Properties)
+        if (-not $groups -or @($groups | Where-Object { -not $_.Value.valid }).Count) { throw "Incomplete results cannot become a baseline: $($save.name)" }
+    }
+    foreach ($save in $saves) {
+        New-Item -ItemType Directory -Force -Path $BaselineRoot | Out-Null
+        [IO.File]::Copy("$RunRoot\baseline-$($save.side).json", "$BaselineRoot\$($save.name).json", $false)
+        $published += "$BaselineRoot\$($save.name).json"
+    }
+    Move-Item -LiteralPath $pendingPath -Destination $verdictPath
+} catch {
+    # Only baselines this run created are removed.
+    foreach ($file in $published) { Remove-Item -LiteralPath $file -ErrorAction SilentlyContinue }
+    Remove-Item -LiteralPath $pendingPath -ErrorAction SilentlyContinue
+    [ordered]@{ schemaVersion=1; overall='runner-error'; exitCode=1 } | ConvertTo-Json | Set-Content $verdictPath -Encoding UTF8
+    throw
 }
 Write-Output "$RunRoot\benchmark.json"
-Write-Output "$RunRoot\verdict.json"
-Write-Output "Overall verdict: $((Get-Content -LiteralPath "$RunRoot\verdict.json" -Raw | ConvertFrom-Json).overall) (exit $exitCode)"
+Write-Output $verdictPath
+Write-Output "Overall verdict: $((Get-Content -LiteralPath $verdictPath -Raw | ConvertFrom-Json).overall) (exit $exitCode)"
 exit $exitCode
