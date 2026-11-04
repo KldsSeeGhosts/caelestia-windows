@@ -15,7 +15,8 @@ own request-to-frame timer. Neither endpoint proves DWM scanout.
 Plant changes only the disposable staged QML. Production reads no test variable.
 Results with a plant must never be saved as a production baseline.
 #>
-[CmdletBinding()]
+# Named arguments only: a stray value is an error, not a silently ignored request.
+[CmdletBinding(PositionalBinding = $false)]
 param(
     [Parameter(Mandatory)][string]$QtPrefix,
     [Parameter(Mandatory)][string]$BuildRoot,
@@ -41,10 +42,26 @@ if (-not $SourceRoot) {
     $sourceLine = Get-Content "$BuildRoot\caelestia\CMakeCache.txt" | Where-Object { $_ -like 'CMAKE_HOME_DIRECTORY:INTERNAL=*' }
     if (-not $sourceLine) { throw 'Cannot locate the shell checkout. Pass -SourceRoot or use a Build-Prototype build root.' }
     $SourceRoot = $sourceLine.Substring('CMAKE_HOME_DIRECTORY:INTERNAL='.Length)
+    # Build roots record their checkout's path, not its revision. A checkout that
+    # moved on would stage different QML over these binaries.
+    $built = (Get-Content "$BuildRoot\logs\build.json" -Raw | ConvertFrom-Json).sourceRevision
+    $current = (& git -C $SourceRoot rev-parse HEAD).Trim()
+    if ($current -ne $built) { throw "The build root's checkout moved from $built to $current. Pass -SourceRoot with a checkout of $built." }
 }
 $SourceRoot = (Resolve-Path -LiteralPath $SourceRoot).Path
 $QtPrefix = (Resolve-Path -LiteralPath $QtPrefix).Path
 $RunRoot = [IO.Path]::GetFullPath($RunRoot)
+# metadata.json names no account or home path. See Caelestia-Privacy.ps1.
+. (Join-Path $PSScriptRoot 'Caelestia-Privacy.ps1')
+Initialize-CaelestiaPrivacy @(
+    @{ from = $RunRoot; to = '<runRoot>' }, @{ from = $BuildRoot; to = '<buildRoot>' },
+    @{ from = $SourceRoot; to = '<source>' }, @{ from = $QtPrefix; to = '<qt>' }
+)
+function Get-TextSha256([string]$Text) {
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try { return [BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($Text))).Replace('-', '') }
+    finally { $sha.Dispose() }
+}
 if ($Mode -eq 'Live' -and -not $LiveDesktop) { throw 'Live trials require -LiveDesktop.' }
 if ($Mode -ne 'Live' -and $LiveDesktop) { throw '-LiveDesktop requires -Mode Live.' }
 if ($Mode -eq 'Offscreen' -and $ScreenIndex -ne 0) { throw 'Offscreen has only screen 0.' }
@@ -362,7 +379,9 @@ for ($index = 0; $index + 1 -lt $localCounters.Length; $index += 2) {
 $cpuLoadCounter = '\' + $counterNames[$counterIds['Processor']] + '(_Total)\' + $counterNames[$counterIds['% Processor Time']]
 $metadata = [ordered]@{
     schemaVersion=2; metric=$Metric; mode=$Mode; plant=$Plant
-    machine=$env:COMPUTERNAME; logicalProcessors=[Environment]::ProcessorCount
+    # A stable per-installation identifier that does not reveal the computer name.
+    machine='sha256:' + (Get-TextSha256 ('caelestia-bench:' + (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Cryptography').MachineGuid)).Substring(0, 16).ToLowerInvariant()
+    logicalProcessors=[Environment]::ProcessorCount
     os=[Environment]::OSVersion.VersionString
     culture=[Globalization.CultureInfo]::CurrentCulture.Name
     uiCulture=[Globalization.CultureInfo]::CurrentUICulture.Name
@@ -395,12 +414,7 @@ $metadata.shellManifestSha256 = $metadata.payloadSha256
 $metadata.configSha256 = (Get-FileHash "$profileRoot\config\shell.json").Hash
 $identity = @($metadata.shellManifestSha256, $metadata.executableSha256, $metadata.probeSha256,
     $metadata.qtCoreSha256, $metadata.configSha256, $metadata.nativeModules)
-$sha = [Security.Cryptography.SHA256]::Create()
-try {
-    $metadata.payloadSha256 = [BitConverter]::ToString(
-        $sha.ComputeHash([Text.Encoding]::UTF8.GetBytes(($identity | ConvertTo-Json -Depth 8 -Compress)))
-    ).Replace('-', '')
-} finally { $sha.Dispose() }
+$metadata.payloadSha256 = Get-TextSha256 ($identity | ConvertTo-Json -Depth 8 -Compress)
 foreach ($variable in $info.EnvironmentVariables.Keys | Where-Object { $_ -match '^(CAELESTIA_|QS_|QSG_|QT_|QML_|XDG_)' }) {
     $metadata.environment[$variable] = $info.EnvironmentVariables[$variable]
 }
@@ -582,7 +596,7 @@ try {
         $liveLock.Dispose()
     }
     $metadata.qpcFrequency = [Diagnostics.Stopwatch]::Frequency
-    $metadata | ConvertTo-Json -Depth 32 | Set-Content "$RunRoot\metadata.json" -Encoding UTF8
+    ConvertTo-SafeManifestValue $metadata | ConvertTo-Json -Depth 32 | Set-Content "$RunRoot\metadata.json" -Encoding UTF8
     foreach ($sample in $samples) {
         foreach ($property in $sample.PSObject.Properties) {
             if ($property.Value -is [double]) {

@@ -24,13 +24,28 @@ Each trial starts with an empty pipeline cache and warms it through its workload
 Qt supports explicit load and save paths for this cache.
 See the [Qt pipeline-cache documentation](https://doc.qt.io/qt-6.11/qquickgraphicsconfiguration.html#pipeline-cache-save-and-load).
 
+A build root records its checkout's path, not its revision.
+If that checkout has moved since the build, the runner refuses to start.
+Pass `-SourceRoot` with a checkout of the built revision, for example a
+detached `git worktree add --detach <dir> <sha>`.
+
 `benchmark.json` contains the raw trial summaries, exact revisions, work
 counts, errors, machine load, median, range, and comparison.
+It is raw evidence and may contain paths from logs.
 Keep the run directory for the raw samples, actions, startup phases, and traces.
-A failed action, incomplete trial, changed workload, or fewer than five trials
-makes the comparison inconclusive.
-The noise floor is the larger run-to-run range of the two sides.
-A median delta inside that range is no measurable difference.
+`verdict.json` is the shareable, agent-facing result described below.
+
+The runner can run unattended. For the whole run it holds a
+`PowerCreateRequest` power request that keeps the system awake and, outside
+`Offscreen`, keeps the displays on. It releases the request when the run ends.
+`verdict.json` records the request under `powerRequest`.
+The request cannot turn on a monitor that is already off or in standby.
+`NonVisible` still needs presented frames, so it cannot measure while the
+monitors are off. Its trials then fail with `No presented frame` and the
+verdict is `inconclusive`.
+The runner records the active display topology at the start, then again before
+and after each trial. A change makes that trial invalid and its group
+`inconclusive`. `displayChangedTrials` in `verdict.json` counts those trials.
 
 ## Choose a workload
 
@@ -110,17 +125,141 @@ Coordinate with other desktop work before running them.
 ## Store and compare baselines
 
 Without `-BuildRootB`, the runner measures only side A.
-Add `-SaveBaseline <name>` to save successful unplanted results.
+Add `-SaveBaseline <name>` to save side A, or `-SaveBaselineB <name>` to save
+side B, when every group of that side is valid and unplanted.
 The default store is
 `%LOCALAPPDATA%\caelestia-windows-bench\baselines\<machine>\<name>.json`.
 Use `-BaselineRoot` to choose another external directory.
 Existing baseline names cannot be overwritten.
+A baseline holds contracts, distributions, per-trial metric values, and
+revisions. It holds no paths, logs, or raw samples.
 
 Add `-CompareBaseline <name>` to compare the current A trials with that baseline.
+The runner takes the baseline's metrics, mode, and workload unless you pass them.
 The machine, Windows build, Qt version, core count, mode, screen geometry,
 scale, workload, service control gates, and both measurement-script hashes must match.
+The machine is a truncated SHA-256 of the Windows installation's `MachineGuid`.
+Any change to `Measure-ShellRuntime.ps1` or `Summarize-ShellRuntime.py`
+changes their hashes, so record new baselines after a protocol change.
 Baselines and raw evidence stay outside the repository.
 Do not save a calibration as evidence of production parity.
+
+Record and compare, for example before promoting `dev` to `main`.
+Run multi-metric commands from a Windows PowerShell prompt, not through
+`powershell -File`: `-File` receives `-Metric Idle, Panel, Reload` as three
+separate words, and the runner refuses the stray `Panel` and `Reload` rather
+than measure `Idle` alone. The script's exit code is then in `$LASTEXITCODE`.
+
+```powershell
+$wt = 'C:\b-perf\src'
+git worktree add --detach "$wt\main" <main-sha>
+git worktree add --detach "$wt\dev" <dev-sha>
+windows/scripts/Measure-ShellBenchmark.ps1 `
+    -QtPrefix $qt -BuildRoot C:\b-main -SourceRoot "$wt\main" `
+    -BuildRootB C:\b-dev -SourceRootB "$wt\dev" `
+    -RunRoot C:\b-perf\runs\promote -Metric Idle, Panel, Reload -Mode NonVisible `
+    -SaveBaseline main-<main-sha> -SaveBaselineB candidate-<dev-sha>
+```
+
+Then compare any later build with the saved baseline:
+
+```powershell
+powershell -NoProfile -File windows/scripts/Measure-ShellBenchmark.ps1 `
+    -QtPrefix $qt -BuildRoot C:\b-topic -RunRoot C:\b-topic\runs\perf `
+    -CompareBaseline main-<main-sha>
+```
+
+`Test-Candidate.ps1 -PerformanceBaseline <name>` runs the same comparison as a
+manifest step after the correctness gate. The step fails unless the verdict is
+`same` or `improved`.
+
+The resource soak uses the same tooling. Each side takes about 3 hours:
+
+```powershell
+powershell -NoProfile -File windows/scripts/Measure-ShellBenchmark.ps1 `
+    -QtPrefix $qt -BuildRoot C:\b-main -SourceRoot "$wt\main" `
+    -BuildRootB C:\b-dev -SourceRootB "$wt\dev" `
+    -RunRoot C:\b-perf\runs\resources -Metric Resources -Mode NonVisible `
+    -SaveBaseline main-<main-sha>-resources -SaveBaselineB candidate-<dev-sha>-resources
+```
+
+## Read the verdict
+
+Agents act on the exit code and `verdict.json` alone.
+
+| Exit | Overall verdict | Meaning |
+| --- | --- | --- |
+| 0 | `same`, `improved`, `measured` | No gating metric regressed and every group was valid. `measured` means nothing was compared and is not a pass: gates require `same` or `improved`. |
+| 1 | `runner-error`, or no `verdict.json` | Runner error: bad arguments, failed summary, private data in a record, or a refused baseline. |
+| 2 | `regressed` | At least one gating metric regressed. |
+| 3 | `inconclusive` | A group failed, ran fewer than five trials, or lost a required metric, and nothing regressed. |
+| 4 | `mismatch` | The contracts differ. Nothing in that group was compared. |
+
+When several apply, the order is mismatch, regressed, inconclusive, improved,
+same. A skipped, failed, or missing metric is never a pass.
+The runner writes `verdict.json` last, after the privacy check and baseline
+publication. If anything fails after the summary, `verdict.json` says
+`runner-error` with exit code 1, and baselines published by that run are removed.
+
+Each workload declares the metrics it must produce (`REQUIRED_METRICS` in
+`Summarize-ShellRuntime.py`; Panel adds a pair per presented panel). A trial
+that lacks one is invalid, so its group is `inconclusive`, even when both sides
+lack it. A comparison also lists every required metric, so a stored baseline
+without one is `inconclusive` too. A requested category with no recorded trial
+is a failed group. Coverage gaps are `inconclusive`, not `mismatch`: the
+contracts agree, but the measurement is incomplete.
+
+`verdict.json`, schema version 1:
+
+```json
+{
+  "schemaVersion": 1,
+  "overall": "same",
+  "exitCode": 0,
+  "analysisSha256": "...",
+  "displays": "\\\\.\\DISPLAY1 0,0 2560x1440 primary",
+  "powerRequest": { "held": true, "system": true, "display": true },
+  "displayChangedTrials": 0,
+  "groups": {
+    "A/Panel": { "valid": true, "trials": 5, "errorCount": 0, "shellRevision": "...",
+                 "backendPin": "...", "buildSourceRevision": "...", "payloadSha256": "...", "plant": "None" }
+  },
+  "comparisons": [
+    { "baseline": "A", "candidate": "B", "overall": "same",
+      "metrics": {
+        "panelShellRequestToFrameMs": {
+          "group": "Panel", "gating": true, "verdict": "same",
+          "baselineMedian": 503.3, "candidateMedian": 503.9, "delta": 0.6, "deltaPercent": 0.12,
+          "noiseFloor": 1.9, "baseline": { "runs": 5, "median": 503.3, "min": 502.9, "max": 504.8, "spread": 1.9 },
+          "candidate": { "runs": 5, "median": 503.9, "min": 503.1, "max": 504.4, "spread": 1.3 } } } }
+  ]
+}
+```
+
+A two-build run compares A with B. `-CompareBaseline` adds a comparison of the
+baseline (`"baseline": "baseline:<name>"`) with A. An inconclusive metric has a
+`reason`, and a mismatched one lists the differing `contractMismatch` fields.
+Metrics with `"gating": false` are advisory and never decide the verdict.
+Every current metric is a cost, so a higher median is a regression.
+
+### Determinism rule
+
+Each metric compares medians of at least five fresh-process trials per side.
+The noise floor is the larger run-to-run range (maximum minus minimum) of the
+two sides. A median delta within the floor is `same`. A larger delta is
+`regressed` or `improved`.
+
+The range rule needs no distribution assumption, and five alternating trials
+give it both the in-run drift and the outliers that a variance estimate would
+smooth away. For identically distributed sides, a false `regressed` needs the
+two samples almost completely separated and the median gap wider than either
+range. Complete separation alone has a chance of 1 in 252. Each plant is far
+outside the floor of its metric.
+
+An A/B run alternates sides, so slow machine drift affects both equally. A
+comparison with a saved baseline crosses sessions and can include drift that
+neither range saw. Treat a small regression against an old baseline as a reason
+to run an A/B comparison, not as proof.
 
 Run the parser and comparison fixtures without launching a shell.
 

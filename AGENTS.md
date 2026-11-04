@@ -84,6 +84,10 @@ project "Caelestia Windows".
   repository or a home directory.
 - After changing pins, run
   `windows/scripts/Test-Environment.ps1 -Json`.
+- PRs that claim a performance change or touch hot paths (polls, timers,
+  providers, rendering) report `Measure-ShellBenchmark.ps1 -CompareBaseline`
+  deltas. Every promotion to `main` saves a `main-<sha>` baseline after an A/B
+  comparison with no regression. See `windows/docs/BENCHMARKS.md`.
 
 ## Live desktop
 
