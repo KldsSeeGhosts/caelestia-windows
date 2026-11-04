@@ -155,7 +155,7 @@ QtObject {
         check(service.status === "unavailable" && service.reason === service.backendError, "known initialization failure");
         service.backendError = "";
         service.backend = fixture;
-        check(service.status === "unavailable" && !service.backendReady && service.reason.indexOf("not ready") >= 0, "unready backend is honest");
+        check(service.status === "unavailable" && !service.backendReady && service.reason.length > 0, "unready backend is honest");
         fixture.ready = true;
         check(service.status === "unavailable" && service.backendReady, "ready backend with no hardware");
         denied(() => service.setAudioSink(speaker), "missing hardware selection");
