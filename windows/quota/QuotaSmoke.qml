@@ -509,7 +509,7 @@ ShellRoot {
     }
 
     function setPanel(on: bool): void {
-        GlobalConfig.windows = { quota: { enabled: on } };
+        GlobalConfig.windows = { quota: { enabled: on, cpaHub: QuotaConfig.cpaHub } };
     }
 
     Timer {
@@ -559,6 +559,23 @@ ShellRoot {
                 width: root.quotaRegion().width, height: root.quotaRegion().height,
                 quotaWidth: quota.width, quotaEnabled: panels.quotaEnabled
             }));
+
+            if (root.mode === "refused" || root.mode === "refused-restart") {
+                // The hub answers 401 to every key (refused), or the cache already
+                // holds this key's refusal (refused-restart). The harness counts
+                // what reached the hub.
+                if (!Quota.keyRefused || Quota.status !== "error") {
+                    if (driver.retries++ < 100)
+                        return;
+                    root.fail("the refused key was not remembered: refused=" + Quota.keyRefused
+                        + " status=" + Quota.status + " error=" + Quota.error);
+                    return;
+                }
+                driver.step = 20;
+                driver.phase = 0;
+                driver.retries = 0;
+                return;
+            }
 
             if (root.mode === "hub") {
                 // Stock CLIProxyAPI: the summary answers 404, so the hub helper
@@ -1220,6 +1237,61 @@ ShellRoot {
                 driver.stop();
                 console.log("CAELESTIA_QUOTA_SMOKE_PASS", root.mode);
                 Qt.quit();
+            }
+            return;
+        }
+
+        // Refused key: every way to ask again (Refresh now, Keepalive, the panel
+        // off and on) must send nothing; the footer says what to change.
+        if (driver.step === 20) {
+            if (driver.phase === 0) {
+                Quota.refresh(true);
+                Quota.refresh(true);
+                Quota.triggerKeepalive();
+                root.setPanel(false);
+                driver.phase = 1;
+                return;
+            }
+            if (driver.phase === 1) {
+                if (driver.retries++ < 5)
+                    return;
+                root.setPanel(true);
+                driver.phase = 2;
+                driver.retries = 0;
+                return;
+            }
+            if (driver.phase === 2) {
+                // Two seconds for the endpoint to be read again and anything to go out.
+                if (driver.retries++ < 10)
+                    return;
+                Quota.refresh(true);
+                root.screenState.quota = true;
+                driver.phase = 3;
+                driver.retries = 0;
+                return;
+            }
+            if (driver.phase === 3) {
+                if (!quota.visible || quota.offsetScale > 0.01) {
+                    if (driver.retries++ < 40)
+                        return;
+                    root.fail("the refused-key drawer did not open");
+                    return;
+                }
+                const footer = root.hasText(quota, /Update cpa-agents\.json/);
+                console.log("CAELESTIA_QUOTA_SMOKE_REFUSED", JSON.stringify({
+                    refused: Quota.keyRefused, status: Quota.status, error: Quota.error,
+                    footer: footer, hubWanted: Quota.hubWanted, keepalive: Quota.keepaliveRunning
+                }));
+                if (!Quota.keyRefused || !footer || Quota.hubWanted || Quota.keepaliveRunning) {
+                    root.fail("refused key state: footer=" + footer + " hubWanted=" + Quota.hubWanted);
+                    return;
+                }
+                driver.phase = 4;
+                root.captureTo(Quickshell.env("CAELESTIA_SHELL_SCREENSHOT"), () => {
+                    driver.stop();
+                    console.log("CAELESTIA_QUOTA_SMOKE_PASS", root.mode);
+                    Qt.quit();
+                });
             }
             return;
         }

@@ -7,8 +7,10 @@ every secret registered with `REDACTOR` first.
 from __future__ import annotations
 
 import datetime as dt
+import http.client
 import json
 import math
+import socket
 import sys
 import threading
 import urllib.error
@@ -103,12 +105,34 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 _OPENER = urllib.request.build_opener(_NoRedirect)
 
 
+class _PinnedHandler(urllib.request.HTTPHandler):
+    """Plain http to one already-validated address; the URL's name is only the Host header."""
+
+    def __init__(self, address: str) -> None:
+        super().__init__()
+        self.address = address
+
+    def http_open(self, req):
+        address = self.address
+
+        class Connection(http.client.HTTPConnection):
+            def connect(self):
+                self.sock = socket.create_connection((address, self.port), self.timeout)
+
+        return self.do_open(Connection, req)
+
+
 def http_request(method: str, url: str, headers: dict[str, str] | None = None,
-                 body: bytes | None = None, timeout: float = 15) -> Response:
-    """One HTTP request with a timeout and no redirects. Raises OSError on transport failure."""
+                 body: bytes | None = None, timeout: float = 15, address: str | None = None) -> Response:
+    """One HTTP request with a timeout and no redirects. Raises OSError on transport failure.
+
+    With `address`, a plain http request connects to that address and never
+    resolves the name again, and no proxy is used."""
     request = urllib.request.Request(url, data=body, method=method, headers=dict(headers or {}))
+    opener = _OPENER if address is None else urllib.request.build_opener(
+        urllib.request.ProxyHandler({}), _NoRedirect, _PinnedHandler(address))
     try:
-        with _OPENER.open(request, timeout=timeout) as reply:
+        with opener.open(request, timeout=timeout) as reply:
             return Response(reply.status, dict(reply.headers.items()), reply.read())
     except urllib.error.HTTPError as error:
         try:

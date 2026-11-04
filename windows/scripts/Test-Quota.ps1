@@ -3,8 +3,8 @@ param(
     [Parameter(Mandatory)][string]$QtPrefix,
     [Parameter(Mandatory)][string]$BuildRoot,
     [string]$RunRoot,
-    [ValidateSet('configured', 'states', 'offline', 'unconfigured', 'disabled', 'keepalive', 'hub')]
-    [string[]]$Modes = @('configured', 'states', 'offline', 'unconfigured', 'disabled', 'keepalive', 'hub'),
+    [ValidateSet('configured', 'states', 'offline', 'unconfigured', 'disabled', 'keepalive', 'hub', 'refused', 'refused-restart')]
+    [string[]]$Modes = @('configured', 'states', 'offline', 'unconfigured', 'disabled', 'keepalive', 'hub', 'refused', 'refused-restart'),
     # Drawer sizes as "<width>x<height>". configured runs every size, states
     # runs the sizes at least 400 high, offline, unconfigured and disabled use the first.
     [ValidatePattern('^\d+x\d+$')]
@@ -50,6 +50,12 @@ param(
 #                 switched off and the helper must be gone within a second. The
 #                 management key and a token the hub lists are sentinels that must
 #                 not appear in the logs, the cache or the drawer's model.
+#   refused       "Detailed usage via CLIProxyAPI" on, against a hub that answers
+#                 401 to the key. Exactly one request reaches it: Refresh now,
+#                 Keepalive and the panel off and on send nothing more, the helper
+#                 never starts and the footer says to update cpa-agents.json. The
+#                 cache keeps a fingerprint of the refusal, never the key;
+#   refused-restart  a new shell with that cache and the same key sends nothing.
 ## It never contacts a real CPA or upstream provider, uses no credentials, takes
 # no pointer input and never touches the live desktop.
 $ErrorActionPreference = 'Stop'
@@ -72,6 +78,8 @@ $hubStubScript = Join-Path $repoRoot 'windows\quota\fixtures\stub_cpa_hub.py'
 # stub hub's login list carries. Neither may appear anywhere the run leaves.
 $hubKey = 'SENTINEL-ADMIN-KEY-5d0b3e'
 $hubToken = 'SENTINEL-TOKEN-91c2e7'
+# A login with no email or name; only a neutral label may reach the drawer.
+$hubLoginId = 'SENTINEL-LOGIN-ID-4f8a21'
 $qmlRoot = Join-Path $BuildRoot 'install\qml'
 $exe = Join-Path $BuildRoot 'quickshell\qs.exe'
 foreach ($required in @($exe, "$qmlRoot\Caelestia\Config\qmldir", "$qmlRoot\Caelestia\Windows\qmldir", $stubScript, "$stage\quota-light-scheme.json")) {
@@ -142,6 +150,7 @@ function Start-Stub([string]$Root, [string]$Scenario = 'default', [string]$Scrip
 }
 
 $script:configuredCache = $null
+$script:refusedCache = $null
 
 function Invoke-QuotaSmoke([string]$Mode, [string]$Geometry) {
     $modeRoot = Join-Path $run "$Mode-$Geometry"
@@ -152,7 +161,9 @@ function Invoke-QuotaSmoke([string]$Mode, [string]$Geometry) {
     $width, $height = $Geometry -split 'x'
     # Keep the bar wrapper's Loader inactive; the quota drawer is the subject.
     # The disabled mode also switches the Nexus "Agent usage panel" setting off.
-    $shellJson = if ($Mode -eq 'disabled') { '{"bar":{"persistent":false},"windows":{"quota":{"enabled":false}}}' } else { '{"bar":{"persistent":false}}' }
+    $shellJson = if ($Mode -eq 'disabled') { '{"bar":{"persistent":false},"windows":{"quota":{"enabled":false}}}' }
+        elseif ($Mode -like 'refused*') { '{"bar":{"persistent":false},"windows":{"quota":{"cpaHub":true}}}' }
+        else { '{"bar":{"persistent":false}}' }
     Write-Utf8NoBom "$profile\config\shell.json" $shellJson
     # The replacement entry keeps all three directory pragmas, pointed at this
     # run's own profile, so Quickshell's data, state and cache dirs stay inside it.
@@ -174,6 +185,14 @@ function Invoke-QuotaSmoke([string]$Mode, [string]$Geometry) {
         } elseif ($Mode -eq 'hub') {
             $stub = Start-Stub $modeRoot 'stock' $hubStubScript "--admin-key $hubKey"
             $baseUrl = $stub.BaseUrl
+        } elseif ($Mode -like 'refused*') {
+            $stub = Start-Stub $modeRoot 'manager' $hubStubScript "--admin-key $hubKey --refuse 401"
+            $baseUrl = $stub.BaseUrl
+            if ($Mode -eq 'refused-restart') {
+                if (-not $script:refusedCache -or -not (Test-Path -LiteralPath $script:refusedCache)) { throw 'refused-restart needs the refused run''s cache.' }
+                Copy-Item -LiteralPath $script:refusedCache -Destination $cachePath
+                $savedCache = $true
+            }
         } elseif ($Mode -eq 'offline') {
             # Port 9 is discard; a local connection is refused immediately.
             $baseUrl = 'http://127.0.0.1:9'
@@ -186,7 +205,7 @@ function Invoke-QuotaSmoke([string]$Mode, [string]$Geometry) {
         }
         if ($Mode -ne 'unconfigured') {
             Write-Utf8NoBom "$profile\config\quota.json" ('{{"enabled":true,"refreshIntervalMs":600000,"geometry":{{"width":{0},"height":{1}}}}}' -f $width, $height)
-            $configJson = [ordered]@{ baseUrl = $baseUrl; adminKey = $(if ($Mode -eq 'hub') { $hubKey } else { 'smoke-placeholder' }) } | ConvertTo-Json
+            $configJson = [ordered]@{ baseUrl = $baseUrl; adminKey = $(if ($Mode -eq 'hub' -or $Mode -like 'refused*') { $hubKey } else { 'smoke-placeholder' }) } | ConvertTo-Json
             Write-Utf8NoBom "$profile\config\cpa-agents.json" $configJson
         }
 
@@ -246,7 +265,7 @@ function Invoke-QuotaSmoke([string]$Mode, [string]$Geometry) {
         $info.EnvironmentVariables['XDG_STATE_HOME'] = "$profile\state"
         $info.EnvironmentVariables['XDG_CACHE_HOME'] = "$profile\cache"
         $info.EnvironmentVariables['XDG_DATA_HOME'] = "$profile\data"
-        if ($Mode -eq 'keepalive' -or $Mode -eq 'hub') { $info.EnvironmentVariables['CAELESTIA_QUOTA_PYTHON'] = $python }
+        if ($Mode -eq 'keepalive' -or $Mode -eq 'hub' -or $Mode -like 'refused*') { $info.EnvironmentVariables['CAELESTIA_QUOTA_PYTHON'] = $python }
         $tokensScreenshot = Join-Path $modeRoot 'quota-tokens.png'
         $resetsScreenshot = Join-Path $modeRoot 'quota-resets.png'
         $info.EnvironmentVariables['CAELESTIA_QUOTA_TOKENS_SCREENSHOT'] = ([Uri]$tokensScreenshot).AbsoluteUri
@@ -293,9 +312,9 @@ function Invoke-QuotaSmoke([string]$Mode, [string]$Geometry) {
         $cacheLeaks = $cacheText -match 'adminKey|baseUrl|smoke-placeholder|@'
         # Hub mode's leak check: the sentinels never reach stdout, stderr (which
         # carry the drawer's whole model, see CAELESTIA_QUOTA_SMOKE_HUB_STATE) or the cache.
-        $sentinelLeaks = @(@($hubKey, $hubToken) | Where-Object { "$text`n$cacheText".Contains($_) })
+        $sentinelLeaks = @(@($hubKey, $hubToken, $hubLoginId) | Where-Object { "$text`n$cacheText".Contains($_) })
         $hubStats = $null
-        if ($Mode -eq 'hub' -and $stub) {
+        if (($Mode -eq 'hub' -or $Mode -like 'refused*') -and $stub) {
             try { $hubStats = Invoke-RestMethod -Uri "$($stub.BaseUrl)/__stats" -TimeoutSec 5 } catch { $hubStats = $null }
         }
 
@@ -357,6 +376,16 @@ function Invoke-QuotaSmoke([string]$Mode, [string]$Geometry) {
                 -not ($screenshot, $tokensScreenshot, $resetsScreenshot | Where-Object { -not (Test-Path -LiteralPath $_) -or (Get-Item -LiteralPath $_).Length -le 0 }) -and
                 $cacheProviders -eq 3 -and $cacheText.Contains('"history"') -and $cacheText.Contains('"resetCredits":{"count":2') -and
                 $hubStats -and $hubStats.calls.'api-call' -gt 0 -and $hubStats.maxInFlight -eq 1 -and $hubStats.badTokenHeaders -eq 0 -and
+                -not $cacheLeaks -and $sentinelLeaks.Count -eq 0
+        } elseif ($Mode -like 'refused*') {
+            if ($Mode -eq 'refused' -and (Test-Path -LiteralPath $cachePath)) { $script:refusedCache = $cachePath }
+            # refused: the one request that found out; refused-restart: none at all.
+            $passed = $passed -and
+                $text -match 'CAELESTIA_QUOTA_SMOKE_REFUSED .*"refused":true' -and
+                $text -match 'CAELESTIA_QUOTA_SMOKE_REFUSED .*"footer":true' -and
+                $hubStats -and $hubStats.total -eq $(if ($Mode -eq 'refused') { 1 } else { 0 }) -and
+                $cacheText -match '"refusal":\{"salt":"[0-9a-f]+","fingerprint":"[0-9a-f]{16}","code":"key_rejected"' -and
+                (Test-Path -LiteralPath $screenshot) -and (Get-Item -LiteralPath $screenshot).Length -gt 0 -and
                 -not $cacheLeaks -and $sentinelLeaks.Count -eq 0
         } elseif ($Mode -eq 'keepalive') {
             $passed = $passed -and $helperGone -and

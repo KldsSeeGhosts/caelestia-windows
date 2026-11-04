@@ -16,15 +16,20 @@ further call is sent with that key. Only a different key reopens the gate.
 """
 from __future__ import annotations
 
+import hashlib
 import ipaddress
 import json
+import secrets
+import socket
 import threading
+import time
 import urllib.parse
 
 import core
 from core import Response
 
 SUPPORTED = {"codex": "codex", "claude": "claude", "antigravity": "antigravity"}
+LABELS = {"codex": "Codex", "claude": "Claude", "antigravity": "Antigravity"}
 
 
 class HubRefused(Exception):
@@ -75,25 +80,49 @@ def normalize_base(url: str) -> str:
     return urllib.parse.urlunsplit((parts.scheme.lower(), parts.netloc, path, "", ""))
 
 
-def allows_key(url: str) -> bool:
-    """https anywhere; plain http only to this PC, the local network or a Tailscale peer."""
+# Where plain http may carry the key: this PC, RFC 1918 networks and Tailscale
+# (CGNAT and its IPv6 range). Link-local and other unique-local addresses are not.
+PLAIN_HTTP_NETWORKS = tuple(ipaddress.ip_network(n) for n in (
+    "127.0.0.0/8", "::1/128", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16",
+    "100.64.0.0/10", "fd7a:115c:a1e0::/48"))
+
+
+def key_address(url: str) -> str | None:
+    """Where the key may be sent for url: None for https (TLS checks the name),
+    else the one resolved address to connect to. Plain http needs every address
+    the host resolves to inside PLAIN_HTTP_NETWORKS; names are never trusted."""
     parts = urllib.parse.urlsplit(url)
-    if parts.scheme == "https":
-        return bool(parts.hostname)
+    if parts.scheme == "https" and parts.hostname:
+        return None
     if parts.scheme != "http" or not parts.hostname:
-        return False
-    host = parts.hostname.lower()
-    if host == "localhost" or host.endswith(".local") or host.endswith(".ts.net"):
-        return True
+        raise HubRefused("insecure")
     try:
-        address = ipaddress.ip_address(host)
-    except ValueError:
+        infos = socket.getaddrinfo(parts.hostname, parts.port or 80, type=socket.SOCK_STREAM)
+        addresses = [ipaddress.ip_address(str(info[4][0]).split("%")[0]) for info in infos]
+    except (OSError, UnicodeError, ValueError):
+        raise HubRefused("unreachable") from None
+    if not addresses or not all(any(a in n for n in PLAIN_HTTP_NETWORKS) for a in addresses):
+        raise HubRefused("insecure")
+    return str(addresses[0])
+
+
+def allows_key(url: str) -> bool:
+    try:
+        key_address(url)
+        return True
+    except HubRefused:
         return False
-    if address.version == 6:
-        return address.is_loopback or address.is_link_local or address in ipaddress.ip_network("fc00::/7")
-    return (address.is_loopback or address.is_link_local or address in ipaddress.ip_network("10.0.0.0/8")
-            or address in ipaddress.ip_network("172.16.0.0/12") or address in ipaddress.ip_network("192.168.0.0/16")
-            or address in ipaddress.ip_network("100.64.0.0/10"))
+
+
+def fingerprint(salt: str, key: str) -> str:
+    """A non-reversible tag of a key, so a refusal can outlive the helper without the key."""
+    return hashlib.sha256((salt + "\0" + key).encode("utf-8")).hexdigest()[:16]
+
+
+def refusal_matches(record, key: str) -> bool:
+    return (isinstance(record, dict) and isinstance(record.get("salt"), str) and bool(key)
+            and record.get("code") in HubRefused.CLOSES_GATE
+            and record.get("fingerprint") == fingerprint(record["salt"], key))
 
 
 class Login:
@@ -105,7 +134,8 @@ class Login:
         self.auth_index = str(index) if index not in (None, "") else None
         self.provider = str(entry.get("provider") or entry.get("type") or "").lower()
         names = [entry.get(k) for k in ("email", "account", "label", "name")]
-        self.label = next((n.strip() for n in names if isinstance(n, str) and n.strip()), self.id)
+        # No name: listing() gives a neutral one. The raw id never leaves the helper.
+        self.label = next((n.strip() for n in names if isinstance(n, str) and n.strip()), "")
         token = entry.get("id_token") if isinstance(entry.get("id_token"), dict) else {}
         account_id = token.get("chatgpt_account_id")
         self.chatgpt_account_id = account_id if isinstance(account_id, str) and account_id else None
@@ -135,16 +165,25 @@ def listing(body) -> list:
         login = Login(entry)
         if login.kind and login.auth_index:
             out.append(login)
+    numbered: dict = {}
+    for login in sorted((l for l in out if not l.label), key=lambda l: l.id):
+        numbered[login.kind] = numbered.get(login.kind, 0) + 1
+        login.label = "%s account %d" % (LABELS[login.kind], numbered[login.kind])
     return out
 
 
+BAN_S = 30 * 60
+
+
 class Hub:
-    def __init__(self, base_url: str, key: str, http=core.http_request) -> None:
+    def __init__(self, base_url: str, key: str, http=core.http_request, clock=time.time) -> None:
         self.base_url = normalize_base(base_url)
         self.key = key
         self.http = http
+        self.clock = clock
         self._lock = threading.Lock()
-        self._refused: tuple | None = None  # (key, code)
+        # {salt, fingerprint, code, until}: persisted by the drawer, never the key.
+        self.refused: dict | None = None
         core.REDACTOR.add(key)
 
     def set_key(self, base_url: str, key: str) -> None:
@@ -154,30 +193,37 @@ class Hub:
                 self.key = key
                 core.REDACTOR.add(key)
 
+    def restore_refusal(self, record) -> None:
+        if refusal_matches(record, self.key):
+            self.refused = dict(record)
+
     @property
     def refusal(self) -> str | None:
-        refused = self._refused
-        return refused[1] if refused and refused[0] == self.key else None
+        return self.refused["code"] if refusal_matches(self.refused, self.key) else None
 
     def management(self, method: str, path: str, payload: dict | None = None, timeout: float = 15) -> Response:
-        if not allows_key(self.base_url):
-            raise HubRefused("insecure")
         with self._lock:
             key = self.key
-            if self._refused and self._refused[0] == key:
-                raise HubRefused(self._refused[1])
+            if refusal_matches(self.refused, key):
+                raise HubRefused(self.refused["code"])
+            # Resolved and checked on every call, then connected to that very
+            # address, so a second DNS answer cannot redirect the key.
+            address = key_address(self.base_url)
             headers = {"Authorization": "Bearer " + key, "Accept": "application/json"}
             data = None
             if payload is not None:
                 headers["Content-Type"] = "application/json"
                 data = json.dumps(payload).encode("utf-8")
+            pin = {} if address is None else {"address": address}
             try:
-                response = self.http(method, self.base_url + "/v0/management/" + path, headers, data, timeout)
+                response = self.http(method, self.base_url + "/v0/management/" + path, headers, data, timeout, **pin)
             except OSError:
                 raise HubRefused("unreachable") from None
             code = classify(response)
             if code in HubRefused.CLOSES_GATE:
-                self._refused = (key, code)
+                salt = secrets.token_hex(8)
+                self.refused = {"salt": salt, "fingerprint": fingerprint(salt, key), "code": code,
+                                "until": int((self.clock() + BAN_S) * 1000) if code == "banned" else 0}
                 core.log("hub refused the management key (%s); not calling it again until the key changes" % code)
             if code:
                 raise HubRefused(code, response.status)

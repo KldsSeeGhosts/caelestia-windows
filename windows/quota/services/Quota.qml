@@ -34,6 +34,11 @@ import "QuotaHub.js" as Hub
 // is on, providers/quota_providers.py reads each hub login through the hub's
 // api-call tunnel. It runs only while the panel is on, gets the key over stdin
 // and answers with masked accounts; QuotaHub.js merges them with the summary.
+//
+// A refused key (401 or IP ban) is remembered in the cache as a salted
+// fingerprint, never the key. While it matches the key in cpa-agents.json no
+// management request of any kind goes out, here or in the helper, across panel
+// toggles, reloads and restarts; CLIProxyAPI bans after five wrong keys.
 Singleton {
     id: root
 
@@ -93,8 +98,18 @@ Singleton {
     property double hubUpdatedAt: 0
     // The helper's persisted state (Claude 429 windows by opaque account tag).
     property var hubSaved: ({})
+    // quota/summary answered with this key, so the helper may use it too. One
+    // source probes a new key first; the helper never doubles its strikes.
+    property bool summaryAnswered: false
+    // The cache has been read (or found missing), so a saved refusal is known
+    // before the first request.
+    property bool cacheReady: false
+    // { salt, fingerprint, code, until } of the last refused key (QuotaHub.js).
+    property var keyRefusal: null
+    readonly property bool keyRefused: Hub.refusalMatches(root.keyRefusal, root.adminKey)
     readonly property bool hubWanted: root.enabled && root.endpointLoaded && root.baseUrl !== "" && root.adminKey !== ""
-        && (QuotaConfig.cpaHub || root.summaryMissing)
+        && root.cacheReady && !root.keyRefused
+        && (root.summaryMissing || (QuotaConfig.cpaHub && root.summaryAnswered))
     readonly property string hubScript: Quickshell.shellPath("providers/quota_providers.py")
     // Read by the offscreen smoke to prove the helper is gone once switched off.
     readonly property var hubProcessId: hubProcess.processId
@@ -240,8 +255,8 @@ Singleton {
     })
 
     function triggerKeepalive(): void {
-        if (!QuotaConfig.enabled || !QuotaConfig.configured || keepaliveProcess.running)
-            return;
+        if (!QuotaConfig.enabled || !QuotaConfig.configured || keepaliveProcess.running || root.keyRefused)
+            return; // keepalive lists the hub's logins with the key too
         keepaliveRunning = true;
         keepaliveDone = 0;
         keepaliveError = "";
@@ -279,7 +294,7 @@ Singleton {
 
     Process {
         id: keepaliveProcess
-        command: [QuotaConfig.python, "-I", root.keepaliveScript, "--cpa-config", QuotaConfig.cpaConfigPath]
+        command: QuotaConfig.pythonCommand.concat(["-I", root.keepaliveScript, "--cpa-config", QuotaConfig.cpaConfigPath])
         environment: root.keepaliveEnvironment
 
         stdout: SplitParser {
@@ -350,7 +365,18 @@ Singleton {
         watchChanges: false
         blockWrites: false
 
-        onLoaded: root.loadCache(cacheFile.text())
+        onLoaded: {
+            root.loadCache(cacheFile.text());
+            root.cacheChecked();
+        }
+        onLoadFailed: root.cacheChecked()
+    }
+
+    function cacheChecked(): void {
+        if (root.cacheReady)
+            return;
+        root.cacheReady = true;
+        root.maybeRefresh();
     }
 
     function applyEndpoint(raw: string): void {
@@ -370,6 +396,7 @@ Singleton {
         if (previous !== base + "\n" + key) {
             // Another endpoint: find out again whether it has a summary.
             root.summaryMissing = false;
+            root.summaryAnswered = false;
             root.sendHubConfig();
             root.refresh(true);
         } else {
@@ -378,15 +405,17 @@ Singleton {
     }
 
     function loadCache(raw: string): void {
-        // A live response always wins over the cache, even if it arrives first.
-        if (root.providers.length > 0 || root.lastUpdatedAt > 0)
-            return;
         let cached = null;
         try {
             cached = JSON.parse((raw || "").replace(/^\uFEFF/, ""));
         } catch (e) {
             return;
         }
+        if (cached && cached.refusal && typeof cached.refusal === "object" && !root.keyRefusal)
+            root.keyRefusal = cached.refusal;
+        // A live response always wins over the cache, even if it arrives first.
+        if (root.providers.length > 0 || root.lastUpdatedAt > 0)
+            return;
         if (!cached || !Array.isArray(cached.providers) || cached.providers.length === 0)
             return;
         root.providers = cached.providers;
@@ -468,6 +497,7 @@ Singleton {
                 todayCostUsd: root.todayCostUsd,
                 spend: root.spend,
                 hub: root.hubSaved,
+                refusal: root.keyRefusal,
                 providers: cachedProviders
             }));
         } catch (e) {
@@ -497,6 +527,13 @@ Singleton {
         }
         if (!root.enabled)
             return;
+        if (!root.cacheReady)
+            return;
+        // The one gate for every management request made with this key.
+        if (root.keyRefused) {
+            root.showRefusal();
+            return;
+        }
         // Refresh now also asks the helper, which skips accounts read in the
         // last minute, and starts it again if it stopped on its own.
         if (force && root.hubWanted && !hubProcess.running)
@@ -521,9 +558,10 @@ Singleton {
         // The admin key travels as a Bearer header: plain HTTP only to loopback.
         if (!/^https:\/\//i.test(root.baseUrl)
                 && !/^http:\/\/(127\.0\.0\.1|localhost|\[::1\])(:\d+)?(\/|$)/i.test(root.baseUrl)) {
-            // The hub helper may use plain http on the local network or Tailscale,
-            // as OpenUsage does; the summary read stays loopback-only.
-            if (root.hubAllowsHttp(root.baseUrl)) {
+            // With "Detailed usage via CLIProxyAPI" on, the hub helper may use
+            // plain http on the local network or Tailscale; it resolves the host
+            // and checks every address itself. The summary read stays loopback-only.
+            if (QuotaConfig.cpaHub && /^http:\/\//i.test(root.baseUrl)) {
                 root.useHubOnly();
                 return;
             }
@@ -549,8 +587,6 @@ Singleton {
             return;
         }
 
-        if (!root.summaryMissing)
-            root.refreshSpend();
         root.inFlight = true;
         root.loading = true;
         root.requestTimedOut = false;
@@ -562,12 +598,20 @@ Singleton {
             if (root.activeRequest !== request)
                 return;
             try {
+                const refused = Hub.refusalCode(request.status, request.responseText);
+                if (refused) {
+                    root.finishRequest();
+                    root.recordRefusal(refused);
+                    return;
+                }
                 if (request.status >= 200 && request.status < 300) {
                     if (!root.applySummary(request.responseText)) {
                         root.failRefresh(false);
                         return;
                     }
                     root.finishRequest();
+                    // Spend goes out only once the summary accepted the key.
+                    root.refreshSpend();
                     return;
                 }
                 if (request.status === 404) {
@@ -632,6 +676,8 @@ Singleton {
     // Best effort: a failed read keeps the last good figures and never sets
     // the drawer's error line, which belongs to the quota summary.
     function fetchSpend(key: string, fromMs: double, toMs: double): void {
+        if (root.keyRefused)
+            return;
         let request = null;
         try {
             request = new XMLHttpRequest();
@@ -646,6 +692,9 @@ Singleton {
         };
         request.onload = function () {
             settle();
+            const refused = Hub.refusalCode(request.status, request.responseText);
+            if (refused)
+                root.recordRefusal(refused);
             if (request.status < 200 || request.status >= 300)
                 return;
             let body = null;
@@ -698,6 +747,10 @@ Singleton {
             keepaliveProcess.signal(9);
         root.keepaliveRunning = false;
         root.stopHub();
+        root.abortRequests();
+    }
+
+    function abortRequests(): void {
         const aborting = root.spendRequests.concat([root.activeRequest]);
         root.spendRequests = [];
         root.activeRequest = null;
@@ -709,6 +762,22 @@ Singleton {
                     request.abort();
             } catch (e) {}
         }
+    }
+
+    // The hub refused this key: close the gate (which also stops the helper
+    // through hubWanted), remember it and say what to do.
+    function recordRefusal(code: string): void {
+        if (!root.keyRefused) {
+            root.keyRefusal = Hub.refusal(code, root.adminKey, Date.now());
+            root.writeCache();
+        }
+        root.abortRequests();
+        root.showRefusal();
+    }
+
+    function showRefusal(): void {
+        root.error = root.friendlyError(root.keyRefusal ? root.keyRefusal.code : "key_rejected");
+        root.status = "error";
     }
 
     function finishRequest(): void {
@@ -770,12 +839,12 @@ Singleton {
             return qsTr("CPA reported no quota accounts.");
         case "hub_key":
         case "key_rejected":
-            return qsTr("CLIProxyAPI rejected the management key. Replace adminKey in cpa-agents.json.");
+            return qsTr("CLIProxyAPI rejected the management key. Update cpa-agents.json.");
         case "hub_banned":
         case "banned":
-            return qsTr("CLIProxyAPI blocked this PC after too many wrong keys. Wait 30 minutes, then replace adminKey.");
+            return qsTr("CLIProxyAPI blocked this PC after too many wrong keys. Update cpa-agents.json, then wait 30 minutes.");
         case "insecure":
-            return qsTr("Use https for CLIProxyAPI. Plain http is only used on this PC, the local network or Tailscale.");
+            return qsTr("Use https for CLIProxyAPI. Plain http is only used for addresses on this PC, the local network or Tailscale.");
         case "unreachable":
             return qsTr("Can't reach CLIProxyAPI.");
         case "management_off":
@@ -949,6 +1018,7 @@ Singleton {
         const summaryCode = root.errorCode(summary.error);
         const summaryError = summaryCode ? root.friendlyError(summaryCode) : "";
         root.summaryMissing = false;
+        root.summaryAnswered = true;
         root.summaryRecords = ordered;
         root.summaryIdentities = Hub.identities(summary);
         root.hubCommand({ type: "summary", accounts: root.summaryIdentities });
@@ -988,26 +1058,7 @@ Singleton {
 
     // -- Hub mode --------------------------------------------------------------
 
-    // OpenUsage's rule for sending the management key over plain http: this PC,
-    // the local network (private, link-local, unique-local or .local) or
-    // Tailscale (.ts.net, 100.64.0.0/10). The helper applies the same rule itself.
-    function hubAllowsHttp(url: string): bool {
-        const match = /^http:\/\/(\[[^\]]+\]|[^\/:?#]+)(:\d+)?(\/|$)/i.exec(url);
-        if (!match)
-            return false;
-        const host = match[1].toLowerCase().replace(/^\[|\]$/g, "");
-        if (host === "localhost" || /\.(local|ts\.net)$/.test(host))
-            return true;
-        if (host.indexOf(":") >= 0)
-            return host === "::1" || /^(fe80|fc|fd)/.test(host);
-        const o = host.split(".").map(Number);
-        if (o.length !== 4 || o.some(n => !Number.isInteger(n) || n < 0 || n > 255))
-            return false;
-        return o[0] === 127 || o[0] === 10 || (o[0] === 192 && o[1] === 168) || (o[0] === 169 && o[1] === 254)
-            || (o[0] === 172 && o[1] >= 16 && o[1] <= 31) || (o[0] === 100 && o[1] >= 64 && o[1] <= 127);
-    }
-
-    // No summary (stock CPA, or a LAN/Tailscale http hub): the hub is the only source.
+    // No summary (stock CPA, or an opted-in LAN/Tailscale http hub): the hub is the only source.
     function useHubOnly(): void {
         root.summaryMissing = true;
         root.summaryRecords = [];
@@ -1037,7 +1088,8 @@ Singleton {
     function sendHubConfig(): void {
         root.hubCommand({
             type: "configure", baseUrl: root.baseUrl, adminKey: root.adminKey,
-            refreshIntervalMs: root.refreshIntervalMs, state: root.hubSaved
+            refreshIntervalMs: root.refreshIntervalMs,
+            state: Object.assign({}, root.hubSaved, { refusal: root.keyRefusal })
         });
     }
 
@@ -1070,6 +1122,17 @@ Singleton {
     }
 
     function applyHubSnapshot(message: var): void {
+        const refusal = message.state && message.state.refusal;
+        if (Hub.refusalMatches(refusal, root.adminKey)) {
+            // The helper was refused: adopt its record; hubWanted then stops it.
+            if (!root.keyRefused) {
+                root.keyRefusal = refusal;
+                root.writeCache();
+            }
+            root.abortRequests();
+            root.showRefusal();
+            return;
+        }
         root.hubState = String(message.hub && message.hub.state || "");
         root.hubRecords = (Array.isArray(message.accounts) ? message.accounts : [])
             .filter(a => a && typeof a === "object" && a.provider)
@@ -1091,7 +1154,7 @@ Singleton {
 
     Process {
         id: hubProcess
-        command: [QuotaConfig.python, "-I", root.hubScript, "serve"]
+        command: QuotaConfig.pythonCommand.concat(["-I", root.hubScript, "serve"])
         environment: ({ "PYTHONUTF8": "1", "PYTHONDONTWRITEBYTECODE": "1" })
         stdinEnabled: true
 

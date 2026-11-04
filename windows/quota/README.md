@@ -84,12 +84,12 @@ Hub mode runs when:
 - `quota/summary` answers 404 (stock CLIProxyAPI). The hub is then the only
   source, and the summary is asked again only on **Refresh now** or a new
   endpoint;
-- `baseUrl` is plain http on the local network or Tailscale, which the summary
-  read refuses but the hub rule allows (see below);
 - **Detailed usage via CLIProxyAPI** is on (Nexus > Services, under the Agent
   usage panel switch; `windows.quota.cpaHub` in `shell.json`, off when absent).
   With CPA Manager this adds history, Top Models and Limit Resets to the
-  summary's rows.
+  summary's rows; the helper starts once the summary has accepted the key. A
+  plain http `baseUrl` on the local network or Tailscale, which the summary
+  read refuses, is read through the hub only with this switch on.
 
 The reads are done by `providers/quota_providers.py`, a standard-library
 Python helper started as `py -3 -I quota_providers.py serve`. It runs only
@@ -107,11 +107,21 @@ stdin only, never its command line or environment.
 Rules, after OpenUsage:
 
 - Calls to the hub go one at a time. A 401 or an IP-ban answer stops every
-  further call with that key until `adminKey` changes: CLIProxyAPI bans an IP
-  for 30 minutes after five wrong keys.
-- The key goes over https anywhere, and over plain http only to this PC, the
-  local network (private, link-local, unique-local or `.local` addresses) or
-  Tailscale (`.ts.net` or `100.64.0.0/10`). No redirect is followed.
+  further management request with that key, from the drawer, the helper and
+  Keepalive alike, until `adminKey` changes: CLIProxyAPI bans an IP for 30
+  minutes after five wrong keys. The refusal is kept in the drawer's cache as a
+  salted SHA-256 fingerprint of the key (never the key), so panel toggles,
+  reloads and restarts send nothing either. The footer then reads "CLIProxyAPI
+  rejected the management key. Update cpa-agents.json."
+- The key goes over https anywhere. Over plain http it goes only when every
+  address the host resolves to is on this PC (`127.0.0.0/8`, `::1`), a private
+  network (`10/8`, `172.16/12`, `192.168/16`) or Tailscale (`100.64.0.0/10`,
+  `fd7a:115c:a1e0::/48`). Names such as `.local` or `.ts.net` are not trusted
+  on their own, and link-local and other unique-local addresses are refused.
+  The helper connects to the address it checked, so a second DNS answer cannot
+  redirect the key. No redirect or proxy is followed.
+- A login with no email or name is shown as "Codex account 1" and so on,
+  numbered by its id inside the helper; the id itself never leaves it.
 - A login is dropped only after two listings in a row lack it. The list is
   read at start, hourly and on **Refresh now**. The same login listed twice is
   read once.

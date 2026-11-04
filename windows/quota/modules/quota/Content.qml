@@ -287,7 +287,8 @@ Item {
                     width: parent.width
                     horizontalAlignment: Text.AlignHCenter
                     bottomPadding: 7
-                    text: Quota.status === "unconfigured" ? qsTr("Not Configured") : qsTr("No Usage Yet")
+                    text: Quota.status === "unconfigured" ? qsTr("Not Configured")
+                        : Quota.keyRefused ? qsTr("Key Rejected") : qsTr("No Usage Yet")
                     color: Colours.palette.m3onSurface
                     font.family: root.family
                     font.pixelSize: 19
@@ -298,7 +299,8 @@ Item {
                     anchors.horizontalCenter: parent.horizontalCenter
                     width: Math.min(230, parent.width - 32)
                     horizontalAlignment: Text.AlignHCenter
-                    text: Quota.status === "unconfigured" ? qsTr("Add cpa-agents.json to the shell config folder.") : qsTr("No agent usage records found.")
+                    text: Quota.status === "unconfigured" ? qsTr("Add cpa-agents.json to the shell config folder.")
+                        : Quota.keyRefused ? root.error : qsTr("No agent usage records found.")
                     wrapMode: Text.WordWrap
                     color: root.muted
                 }
@@ -736,6 +738,9 @@ Item {
             anchors.rightMargin: 8
             anchors.verticalCenter: more.verticalCenter
             text: root.loading ? qsTr("Updating…")
+                // A refused key is not a failed refresh: say what to change
+                // (the full line is in the tooltip and the empty state).
+                : Quota.keyRefused ? qsTr("Management key rejected. Update cpa-agents.json.")
                 : root.hasError ? qsTr("Refresh failed, showing saved data")
                 : Quota.keepaliveRunning ? qsTr("Keepalive %1/%2").arg(Quota.keepaliveDone).arg(Quota.keepaliveTotal)
                 : root.nextUpdateText !== "" ? root.nextUpdateText

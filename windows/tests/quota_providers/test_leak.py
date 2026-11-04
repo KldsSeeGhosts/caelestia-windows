@@ -21,7 +21,7 @@ import stub_cpa_hub  # noqa: E402
 
 HELPER = os.path.join(ROOT, "providers", "quota_providers.py")
 SENTINEL_KEY = "SENTINEL-ADMIN-KEY-5d0b3e"
-SENTINELS = (SENTINEL_KEY, stub_cpa_hub.SENTINEL_TOKEN)
+SENTINELS = (SENTINEL_KEY, stub_cpa_hub.SENTINEL_TOKEN, stub_cpa_hub.SENTINEL_LOGIN_ID)
 
 
 def find_leaks(texts, sentinels=SENTINELS):
@@ -57,6 +57,7 @@ class LeakCheck(unittest.TestCase):
         # The check has to be able to fail: a line carrying either sentinel is caught.
         self.assertEqual(find_leaks(['{"note":"Bearer %s"}' % SENTINEL_KEY]), [SENTINEL_KEY])
         self.assertEqual(find_leaks(["x" + stub_cpa_hub.SENTINEL_TOKEN]), [stub_cpa_hub.SENTINEL_TOKEN])
+        self.assertEqual(find_leaks(['"label":"%s"' % stub_cpa_hub.SENTINEL_LOGIN_ID]), [stub_cpa_hub.SENTINEL_LOGIN_ID])
 
     def test_no_secret_in_helper_output(self):
         server, stats, base = stub_cpa_hub.start(SENTINEL_KEY, "stock")

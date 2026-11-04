@@ -54,6 +54,7 @@ QtObject {
     property var todayCostUsd: null
     property var spend: ({})
     property bool keepaliveRunning: false
+    property bool keyRefused: false
     property int keepaliveDone: 0
     property int keepaliveTotal: 0
     function selectGroup(provider): void {}

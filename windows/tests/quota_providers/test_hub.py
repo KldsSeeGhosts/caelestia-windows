@@ -1,11 +1,15 @@
 """Hub mode behaviour against the loopback stub hub (fixtures/stub_cpa_hub.py)."""
 from __future__ import annotations
 
+import ipaddress
+import json
 import os
+import socket
 import sys
 import threading
 import time
 import unittest
+from unittest import mock
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "quota"))
 sys.path.insert(0, os.path.join(ROOT, "providers"))
@@ -18,6 +22,22 @@ import stub_cpa_hub  # noqa: E402
 from scheduler import Scheduler  # noqa: E402
 
 KEY = "test-admin-key-0001"
+
+
+def resolving(table):
+    """Stand-in DNS for the hub's getaddrinfo: a {name: [addresses]} table or a
+    function of the name. Address literals resolve to themselves; other names fail."""
+    def fake(host, port, *args, **kwargs):
+        try:
+            ipaddress.ip_address(host)
+            addresses = [host]
+        except ValueError:
+            addresses = table(host) if callable(table) else table.get(host)
+        if not addresses:
+            raise socket.gaierror("no such name")
+        return [(socket.AF_INET6 if ":" in a else socket.AF_INET, socket.SOCK_STREAM, 6, "", (a, port))
+                for a in addresses]
+    return mock.patch.object(socket, "getaddrinfo", fake)
 
 
 class Clock:
@@ -70,6 +90,7 @@ class HubReads(Stub):
         self.assertEqual(claude["plan"], "Max")
         self.assertEqual([w["id"] for w in claude["windows"]], ["five-hour", "weekly", "seven-day-sonnet", "seven-day-fable"])
         self.assertEqual(gravity["plan"], "Google AI Pro")
+        self.assertEqual(gravity["label"], "Antigravity account 1")
         self.assertEqual(len(gravity["windows"]), 5)
         self.assertEqual(self.stats.snapshot()["badTokenHeaders"], 0)
 
@@ -189,7 +210,7 @@ class Refusals(unittest.TestCase):
     def test_401_during_api_call_stops_the_rest_of_the_pass(self):
         calls = []
 
-        def http(method, url, headers, data, timeout):
+        def http(method, url, headers, data, timeout, **_):
             calls.append(url)
             if url.endswith("auth-files"):
                 return core.Response(200, {}, '{"files":[{"id":"a","auth_index":"1","provider":"codex"},'
@@ -204,18 +225,94 @@ class Refusals(unittest.TestCase):
 
     def test_plain_http_only_to_local_or_tailscale(self):
         calls = []
-        svc, out = service("http://hub.example.com:8317", http=lambda *a: calls.append(a))
-        svc.run_pass()
+        with resolving({"hub.example.com": ["93.184.216.34"]}):
+            svc, out = service("http://hub.example.com:8317", http=lambda *a, **k: calls.append(a))
+            svc.run_pass()
         self.assertEqual(calls, [])
         self.assertEqual(out[-1]["hub"]["state"], "insecure")
-        allowed = ["https://hub.example.com", "http://127.0.0.1:8317", "http://localhost:8317", "http://[::1]:8317",
-                   "http://10.1.2.3", "http://172.20.0.1", "http://192.168.1.20:8317", "http://169.254.0.9",
-                   "http://100.101.102.103:8317", "http://box.tailnet.ts.net", "http://nas.local", "http://[fd7a:115c:a1e0::1]"]
-        refused = ["http://hub.example.com", "http://8.8.8.8", "http://172.32.0.1", "http://100.128.0.1",
-                   "http://myserver", "ftp://127.0.0.1", "http://[2001:db8::1]"]
-        self.assertEqual([u for u in allowed if not hubmod.allows_key(u)], [])
-        self.assertEqual([u for u in refused if hubmod.allows_key(u)], [])
         self.assertEqual(hubmod.normalize_base("https://hub.example.com/v0/management/"), "https://hub.example.com")
+
+    def test_plain_http_needs_every_resolved_address_inside_the_ranges(self):
+        names = {"hub.lan": ["192.168.1.5"], "localhost": ["::1", "127.0.0.1"],
+                 # Names are not trusted: a .local or .ts.net name answering a
+                 # public address, even once, is refused.
+                 "nas.local": ["8.8.8.8"], "box.tailnet.ts.net": ["100.100.1.1", "203.0.113.9"]}
+        allowed = ["https://hub.example.com", "http://127.0.0.1:8317", "http://localhost:8317", "http://[::1]:8317",
+                   "http://10.1.2.3", "http://172.20.0.1", "http://192.168.1.20:8317", "http://hub.lan",
+                   "http://100.101.102.103:8317", "http://[fd7a:115c:a1e0::1]"]
+        refused = ["http://nas.local", "http://box.tailnet.ts.net", "http://169.254.0.9", "http://[fe80::1]",
+                   "http://[fd00::1]", "http://8.8.8.8", "http://172.32.0.1", "http://100.128.0.1",
+                   "http://unknown.invalid", "ftp://127.0.0.1", "http://[2001:db8::1]"]
+        with resolving(names):
+            self.assertEqual([u for u in allowed if not hubmod.allows_key(u)], [])
+            self.assertEqual([u for u in refused if hubmod.allows_key(u)], [])
+
+    def test_the_key_goes_to_the_address_that_was_validated(self):
+        calls = []
+
+        def http(method, url, headers, data, timeout, **kw):
+            calls.append(kw.get("address"))
+            return core.Response(200, {}, '{"files":[]}')
+
+        answers = [["192.168.1.5"], ["8.8.8.8"]]
+        with resolving(lambda host: answers.pop(0) if answers else ["8.8.8.8"]):
+            svc, out = service("http://hub.lan:8317", http=http)
+            svc.run_pass()
+            self.assertEqual(calls, ["192.168.1.5"])
+            # The name now answers a public address: nothing is sent.
+            svc.run_pass(force=True)
+        self.assertEqual(calls, ["192.168.1.5"])
+        self.assertEqual(out[-1]["hub"]["state"], "insecure")
+
+    def test_pinned_transport_connects_to_the_given_address(self):
+        server, stats, base = stub_cpa_hub.start(KEY, "stock")
+        try:
+            port = base.rsplit(":", 1)[1]
+            # The name does not resolve anywhere; only the pinned address is used.
+            response = core.http_request("GET", "http://pinned.invalid:%s/v0/management/auth-files" % port,
+                                         {"Authorization": "Bearer " + KEY}, None, 5, address="127.0.0.1")
+            self.assertEqual(response.status, 200)
+        finally:
+            server.shutdown()
+            server.server_close()
+
+    def test_a_refusal_outlives_the_helper(self):
+        server, stats, base = stub_cpa_hub.start(KEY, "stock", "401")
+        try:
+            first, out = service(base)
+            first.run_pass()
+            state = out[-1]["state"]
+            self.assertEqual(stats.snapshot()["total"], 1)
+            self.assertEqual(state["refusal"]["code"], "key_rejected")
+            self.assertNotIn(KEY, json.dumps(state))
+            # A new helper (panel toggle, reload, restart) given the saved state sends nothing.
+            second, out2 = service(base, state=state)
+            second.run_pass(force=True)
+            second.run_pass(force=True)
+            self.assertEqual(stats.snapshot()["total"], 1)
+            self.assertEqual(out2[-1]["hub"]["state"], "key_rejected")
+            # A replaced key is tried again.
+            third, _ = service(base, key=KEY + "-replaced", state=state)
+            third.run_pass()
+            self.assertEqual(stats.snapshot()["total"], 2)
+        finally:
+            server.shutdown()
+            server.server_close()
+
+    def test_a_login_without_a_name_gets_a_neutral_label(self):
+        def http(method, url, headers, data, timeout, **_):
+            if url.endswith("auth-files"):
+                return core.Response(200, {}, json.dumps({"files": [
+                    {"id": "zz-raw-login-2", "auth_index": "1", "provider": "codex"},
+                    {"id": "aa-raw-login-1", "auth_index": "2", "provider": "codex"},
+                    {"id": "mm-raw-login-3", "auth_index": "3", "provider": "claude"}]}))
+            return core.Response(200, {}, '{"status_code":500,"header":{},"body":""}')
+
+        svc, out = service("http://127.0.0.1:1", http=http)
+        svc.run_pass()
+        self.assertEqual([a["label"] for a in out[-1]["accounts"]],
+                         ["Codex account 2", "Codex account 1", "Claude account 1"])
+        self.assertNotIn("raw-login", json.dumps(out))
 
 
 class Reconciliation(unittest.TestCase):
@@ -226,7 +323,7 @@ class Reconciliation(unittest.TestCase):
             [{"id": "a", "auth_index": "1", "provider": "codex", "email": "a@x"}],
             [{"id": "a", "auth_index": "1", "provider": "codex", "email": "a@x"}],
         ]
-        svc, _ = service("http://127.0.0.1:1", http=lambda *a: None)
+        svc, _ = service("http://127.0.0.1:1", http=lambda *a, **k: None)
         for index, files in enumerate(listings):
             svc.hub.logins = lambda files=files: hubmod.listing({"files": files})
             svc.list_logins(0)
@@ -238,7 +335,7 @@ class ClaudeWindow(unittest.TestCase):
     def test_429_window_is_honoured_and_persisted(self):
         calls = []
 
-        def http(method, url, headers, data, timeout):
+        def http(method, url, headers, data, timeout, **_):
             calls.append(url)
             if url.endswith("auth-files"):
                 return core.Response(200, {}, '{"files":[{"id":"c","auth_index":"9","provider":"claude","email":"c@x"}]}')

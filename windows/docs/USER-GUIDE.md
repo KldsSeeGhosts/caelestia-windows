@@ -586,8 +586,10 @@ and Antigravity login on the hub through its management `api-call`, with the
 same `cpa-agents.json`. That adds token history by day with Top Models, and
 Limit Resets with their expiry times. It needs Python, runs a small helper only
 while the panel is on, reads each account at most every 5 minutes, and never
-claims a reset. The hub's management key goes over plain http only to this PC,
-the local network or Tailscale. Hub mode calls the vendors' internal usage
+claims a reset. The hub's management key goes over plain http only when the
+host's addresses are all on this PC, the local network or Tailscale, and only
+with the switch on. If the hub rejects the key, the drawer stops asking, even
+after a restart, until you update `adminKey` in `cpa-agents.json`. Hub mode calls the vendors' internal usage
 endpoints and sends their own clients' headers, which their terms may not
 allow; see [the port notes](../quota/README.md#hub-mode-cliproxyapi).
 

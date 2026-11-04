@@ -29,6 +29,7 @@ from urllib.parse import parse_qs, urlsplit
 # A value a leak check looks for. The listing carries it the way a careless hub
 # build might; the helper must never repeat it.
 SENTINEL_TOKEN = "SENTINEL-TOKEN-91c2e7"
+SENTINEL_LOGIN_ID = "SENTINEL-LOGIN-ID-4f8a21"
 DEFAULT_KEY = "smoke-placeholder"
 
 
@@ -50,8 +51,8 @@ AUTH_FILES = {
         # The same Claude login listed twice: one usage read per identity.
         {"id": "claude-copy.json", "auth_index": "a3", "type": "claude", "account_type": "oauth",
          "email": "Claude.Hub@example.test"},
-        {"id": "antigravity-main.json", "auth_index": "a4", "provider": "antigravity", "account_type": "oauth",
-         "email": "gravity.hub@example.test"},
+        # No email or name: the drawer must get a neutral label, never this id.
+        {"id": SENTINEL_LOGIN_ID, "auth_index": "a4", "provider": "antigravity", "account_type": "oauth"},
         {"id": "gemini-cli.json", "auth_index": "a5", "provider": "gemini-cli", "account_type": "oauth",
          "email": "unsupported@example.test"},
         {"id": "codex-off.json", "auth_index": "a6", "provider": "codex", "account_type": "oauth",

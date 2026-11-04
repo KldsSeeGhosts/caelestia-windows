@@ -82,7 +82,7 @@ class Service:
         key = str(message.get("adminKey") or "")
         core.REDACTOR.add(key)
         if self.hub is None:
-            self.hub = hubmod.Hub(base, key, self.http)
+            self.hub = hubmod.Hub(base, key, self.http, self.clock)
         else:
             changed = key != self.hub.key or hubmod.normalize_base(base) != self.hub.base_url
             self.hub.set_key(base, key)
@@ -93,7 +93,10 @@ class Service:
                 self.scheduler = Scheduler(self.scheduler.interval)
                 self.listed = False
         self.scheduler.set_interval((core.number(message.get("refreshIntervalMs")) or 0) / 1000)
-        windows = core.obj(core.obj(message.get("state")).get("claudeWindows"))
+        state = core.obj(message.get("state"))
+        # A key the hub refused before, in an earlier helper or shell: nothing is sent with it.
+        self.hub.restore_refusal(state.get("refusal"))
+        windows = core.obj(state.get("claudeWindows"))
         for tag, entry in windows.items():
             until = core.number(core.obj(entry).get("until"))
             strikes = core.number(core.obj(entry).get("strikes"))
@@ -250,13 +253,16 @@ class Service:
         now = self.clock()
         windows = {tag: {"until": int(w["until"] * 1000), "strikes": w["strikes"]}
                    for tag, w in self.rate_windows.items() if w["until"] > now}
+        state = {"claudeWindows": windows}
+        if self.hub.refusal:
+            state["refusal"] = self.hub.refused
         self.write({
             "type": "snapshot",
             "schemaVersion": core.SCHEMA_VERSION,
             "hub": {"state": self.hub_state},
             "accounts": accounts,
             "nextDueAt": None if self.hub.refusal else int(self.scheduler.next_deadline(now) * 1000),
-            "state": {"claudeWindows": windows},
+            "state": state,
         })
 
 

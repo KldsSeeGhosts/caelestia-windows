@@ -102,3 +102,31 @@ test("the usage detail has the cost, tokens, mix and model shares", () => {
     assert.deepEqual(partialDetail.tokenParts, [{ title: "Output", number: 10 }]);
     assert.deepEqual(partialDetail.models, []);
 });
+
+test("a refused key is remembered by a salted SHA-256 fingerprint, the same one the helper writes", () => {
+    const crypto = require("node:crypto");
+    for (const key of ["", "k", "SENTINEL-ADMIN-KEY-5d0b3e", "ключ-🔑", "x".repeat(200)]) {
+        const expected = crypto.createHash("sha256").update("salt01\0" + key, "utf8").digest("hex").slice(0, 16);
+        assert.equal(hub("fingerprint", "salt01", key), expected);
+    }
+    const record = hub("refusal", "key_rejected", "the-key", 1000);
+    assert.equal(record.code, "key_rejected");
+    assert.equal(record.until, 0);
+    assert.ok(!JSON.stringify(record).includes("the-key"));
+    assert.equal(hub("refusalMatches", record, "the-key"), true);
+    assert.equal(hub("refusalMatches", record, "a-new-key"), false);
+    assert.equal(hub("refusalMatches", record, ""), false);
+    assert.equal(hub("refusal", "banned", "k", 1000).until, 1000 + 30 * 60000);
+    // A record written by providers/hub.py (salt "a1b2", key "test-admin-key-0001").
+    const python = { salt: "a1b2", code: "key_rejected", until: 0,
+                     fingerprint: crypto.createHash("sha256").update("a1b2\0test-admin-key-0001").digest("hex").slice(0, 16) };
+    assert.equal(hub("refusalMatches", python, "test-admin-key-0001"), true);
+});
+
+test("only a 401 or an IP ban closes the gate", () => {
+    assert.equal(hub("refusalCode", 401, ""), "key_rejected");
+    assert.equal(hub("refusalCode", 403, '{"error":"IP banned due to too many failed attempts"}'), "banned");
+    assert.equal(hub("refusalCode", 403, '{"error":"remote management disabled"}'), "");
+    assert.equal(hub("refusalCode", 404, ""), "");
+    assert.equal(hub("refusalCode", 200, "{}"), "");
+});

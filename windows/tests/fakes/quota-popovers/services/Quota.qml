@@ -61,6 +61,7 @@ QtObject {
         month: { total: 312.4, rows: [{ provider: "codex", cost: 130 }, { provider: "claude", cost: 182.4 }] }
     })
     property bool keepaliveRunning: false
+    property bool keyRefused: false
     property int keepaliveDone: 0
     property int keepaliveTotal: 0
     function selectGroup(provider): void {}

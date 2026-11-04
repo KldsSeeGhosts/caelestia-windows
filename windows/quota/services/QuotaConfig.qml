@@ -34,6 +34,8 @@ Singleton {
     // read over HTTP by QML and needs no interpreter.
     readonly property string schemePython: Quickshell.env("CAELESTIA_SCHEME_PYTHON")
     readonly property string python: Quickshell.env("CAELESTIA_QUOTA_PYTHON") || root.schemePython || "py"
+    // The launcher needs -3 to pick Python 3; an explicit interpreter path does not.
+    readonly property var pythonCommand: root.python === "py" ? ["py", "-3"] : [root.python]
 
     // Quickshell resolves cacheDir from the staged shell's CacheDir pragma in
     // the combined prototype. Production falls back to the per-user Caelestia
