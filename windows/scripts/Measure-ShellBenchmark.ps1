@@ -42,6 +42,7 @@ param(
     [switch]$LiveDesktop
 )
 $ErrorActionPreference = 'Stop'
+$windowsPowerShell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
 if ($Mode -eq 'Live' -and -not $LiveDesktop) { throw 'Live trials require -LiveDesktop.' }
 if ($PlantB -ne 'None' -and (-not $BuildRootB -or $SaveBaseline)) { throw 'Plants require a B build and cannot save a baseline.' }
 $RunRoot = [IO.Path]::GetFullPath($RunRoot)
@@ -71,7 +72,7 @@ for ($index = 1; $index -le $Runs; $index++) {
             if ($source) { $arguments += @('-SourceRoot', $source) }
             if ($LiveDesktop) { $arguments += '-LiveDesktop' }
             Write-Host "$category $side trial $index/$Runs ($Mode, plant $plant)"
-            & (Join-Path $PSHOME 'powershell.exe') @arguments *> "$RunRoot\$category-$side-$index.worker.log"
+            & $windowsPowerShell @arguments *> "$RunRoot\$category-$side-$index.worker.log"
             $manifest.runs += [ordered]@{ side=$side; metric=$category; index=$index; path=$path; exitCode=$LASTEXITCODE }
             $manifest | ConvertTo-Json -Depth 8 | Set-Content "$RunRoot\manifest.json" -Encoding UTF8
         }

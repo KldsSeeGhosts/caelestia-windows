@@ -35,7 +35,8 @@ for b in [
     {}, {"A/Panel": group([20]*5, valid=False)},
     {"A/Panel": group([20]*5, contract={"mode": "NonVisible"})},
 ]:
-    assert compare(a, b)["Panel"]["verdict"] == "inconclusive"
+    result = compare(a, b)
+    assert result and all(v["verdict"] == "inconclusive" for v in result.values())
 
 manifest = {"twoBuilds": True, "runs": []}
 for index in range(5):
@@ -71,15 +72,17 @@ def summarize(value):
 
 result = summarize(manifest)
 assert result["groups"]["A/Panel"]["metrics"]["panelRequestToFrameObservedMs"]["runs"] == 5
+assert result["groups"]["A/Panel"]["metrics"]["panelLauncherRequestToFrameObservedMs"]["runs"] == 5
+assert result["groups"]["A/Panel"]["metrics"]["panelDashboardRequestToFrameObservedMs"]["median"] == 10
 assert result["groups"]["A/Panel"]["work"]["panelsShown"] == 10
 assert result["comparison"]["panelRequestToFrameObservedMs"]["verdict"] == "no measurable difference"
 
-for change in ("missing", "exit", "count", "diagnostic", "workload"):
+for change in ("missing", "exit", "count", "diagnostic", "workload", "order"):
     broken = copy.deepcopy(manifest)
     run = Path(broken["runs"][0]["path"])
     original = {name: (run / name).read_text() for name in ("metadata.json", "completion.json")}
     if change == "missing":
-        broken["runs"].pop(0)
+        broken["runs"] = broken["runs"][:-2]
     elif change == "exit":
         broken["runs"][0]["exitCode"] = 1
     elif change == "count":
@@ -92,12 +95,38 @@ for change in ("missing", "exit", "count", "diagnostic", "workload"):
         meta = json.loads((run / "metadata.json").read_text())
         meta["workload"]["cycles"] = 9
         (run / "metadata.json").write_text(json.dumps(meta))
+    elif change == "order":
+        broken["runs"].sort(key=lambda value: value["side"])
     result = summarize(broken)
-    assert result["comparison"]["Panel"]["verdict"] == "inconclusive", (change, result)
+    assert result["comparison"] and all(
+        value["verdict"] == "inconclusive" for value in result["comparison"].values()
+    ), (change, result)
     for name, content in original.items():
         (run / name).write_text(content)
     if (run / "stdout.log").exists():
         (run / "stdout.log").unlink()
+
+idle = root / "idle-endpoints"
+idle.mkdir()
+meta = json.loads((root / "A-0" / "metadata.json").read_text())
+meta["metric"] = "Idle"
+meta["workload"] = {"idleSeconds": 2}
+(idle / "metadata.json").write_text(json.dumps(meta))
+(idle / "completion.json").write_text(json.dumps({
+    "completed": True, "errors": [],
+    "work": {"actionsConfirmed": 0, "panelsShown": 0, "idleIntervals": 1},
+}))
+(idle / "actions.jsonl").write_text("")
+(idle / "samples.csv").write_text(
+    "phase,elapsedSeconds,cpuSeconds,systemCpuPercent\n"
+    "idle,0,1,20\nidle,2,1.25,20\n"
+)
+trial = module["summarize_trial"](idle)
+assert trial["errorCount"] == 0, trial
+assert trial["metrics"]["idleCpuCorePercent"] == 12.5
+meta["workload"]["idleSeconds"] = 3
+(idle / "metadata.json").write_text(json.dumps(meta))
+assert module["summarize_trial"](idle)["errorCount"] > 0
 
 print("Benchmark fixtures passed. Spread, direction, failures, work counts, and contracts checked.")
 '@

@@ -2,6 +2,7 @@
 
 import argparse
 import csv
+import hashlib
 import json
 import math
 import re
@@ -94,7 +95,8 @@ def summarize_trial(path):
     category = metadata["metric"]
     if category == "Idle":
         idle = [r for r in rows if r["phase"] == "idle"]
-        if len(idle) < 3 or work["idleIntervals"] != len(idle) - 1:
+        if (len(idle) < 2 or work["idleIntervals"] != len(idle) - 1
+                or idle[-1]["elapsedSeconds"] - idle[0]["elapsedSeconds"] < metadata["workload"]["idleSeconds"]):
             errors.append("Idle intervals were not confirmed.")
         else:
             elapsed = idle[-1]["elapsedSeconds"] - idle[0]["elapsedSeconds"]
@@ -134,6 +136,15 @@ def summarize_trial(path):
         elif shown:
             metrics["panelRequestToFrameObservedMs"] = statistics.median(a["requestToFrameObservedMs"] for a in shown)
             metrics["panelShellRequestToFrameMs"] = statistics.median(a["shellRequestToFrameMs"] for a in shown)
+            for panel in sorted({a["panel"] for a in shown}):
+                panel_actions = [a for a in shown if a["panel"] == panel]
+                prefix = "panel" + panel[0].upper() + panel[1:]
+                metrics[prefix + "RequestToFrameObservedMs"] = statistics.median(
+                    a["requestToFrameObservedMs"] for a in panel_actions
+                )
+                metrics[prefix + "ShellRequestToFrameMs"] = statistics.median(
+                    a["shellRequestToFrameMs"] for a in panel_actions
+                )
             counters["panelTransportOverheadMs"] = distribution([
                 a["requestToFrameObservedMs"] - a["shellRequestToFrameMs"] for a in shown
             ])
@@ -148,6 +159,7 @@ def summarize_trial(path):
         errors.append("Non-finite metric.")
     return {
         "path": str(path), "metadata": metadata, "metrics": metrics, "counters": counters,
+        "panelScales": {a["panel"]: a.get("dpr") for a in actions if a["panel"] != "idle"},
         "errorCount": len(errors), "errors": errors, "work": work,
         "transitionTraceDropped": dropped,
         "warnings": warning_lines,
@@ -168,11 +180,14 @@ def trial_contract(trial):
         "controlGates": meta.get("controlGates"),
         "qtCoreSha256": meta.get("qtCoreSha256"), "configSha256": meta.get("configSha256"),
         "workloadDimensions": meta.get("workloadDimensions"),
+        "culture": meta.get("culture"), "uiCulture": meta.get("uiCulture"),
+        "panelScales": trial["panelScales"],
     }
 
 
 def aggregate(manifest_path):
     manifest = read_json(manifest_path)
+    analysis_sha256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
     groups = {}
     for run in manifest["runs"]:
         key = f'{run["side"]}/{run["metric"]}'
@@ -183,14 +198,18 @@ def aggregate(manifest_path):
             group["trials"].append(summarize_trial(Path(run["path"])))
         except (OSError, ValueError, KeyError, ZeroDivisionError) as error:
             group["errors"].append(f'{run["path"]}: {error}')
-    for group in groups.values():
+    for group_name, group in groups.items():
+        category = group_name.split("/", 1)[1]
+        order = [run["side"] for run in manifest["runs"] if run["metric"] == category]
+        if manifest["twoBuilds"] and order != ["A" if i % 2 == 0 else "B" for i in range(len(order))]:
+            group["errors"].append("Trials did not alternate A, B.")
         trials = group["trials"]
         group["errorCount"] = len(group["errors"]) + sum(t["errorCount"] for t in trials)
         group["work"] = {
             key: sum(t["work"][key] for t in trials)
             for key in trials[0]["work"]
         } if trials else {}
-        contracts = [trial_contract(t) for t in trials]
+        contracts = [dict(trial_contract(t), analysisSha256=analysis_sha256) for t in trials]
         group["contract"] = contracts[0] if contracts else None
         valid = (
             len(trials) >= 5 and not group["errorCount"]
@@ -204,7 +223,8 @@ def aggregate(manifest_path):
             for name in trials[0]["metrics"]
         } if valid else {}
     return {
-        "schemaVersion": 2, "manifest": manifest, "groups": groups,
+        "schemaVersion": 2, "analysisSha256": analysis_sha256,
+        "manifest": manifest, "groups": groups,
         "errorCount": sum(g["errorCount"] for g in groups.values()),
         "comparison": compare_groups(groups, groups, "A", "B") if manifest["twoBuilds"] else {},
     }
@@ -221,7 +241,16 @@ def compare_groups(baseline, candidate, baseline_side="A", candidate_side="A"):
         a = baseline.get(baseline_side + "/" + category)
         b = candidate.get(candidate_side + "/" + category)
         if not a or not b or not a["valid"] or not b["valid"] or a["contract"] != b["contract"]:
-            comparison[category] = {"verdict": "inconclusive", "reason": "Missing, failed, fewer than five, or incompatible trials."}
+            names = {
+                name for group in (a, b) if group
+                for name in group["metrics"]
+            }
+            names.update(
+                name for group in (a, b) if group
+                for trial in group.get("trials", []) for name in trial["metrics"]
+            )
+            for name in sorted(names or {category}):
+                comparison[name] = {"verdict": "inconclusive", "reason": "Missing, failed, fewer than five, or incompatible trials."}
             continue
         for name, after in b["metrics"].items():
             before = a["metrics"].get(name)

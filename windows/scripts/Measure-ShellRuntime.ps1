@@ -35,6 +35,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+$windowsPowerShell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
 $BuildRoot = (Resolve-Path -LiteralPath $BuildRoot).Path
 if (-not $SourceRoot) {
     $sourceLine = Get-Content "$BuildRoot\caelestia\CMakeCache.txt" | Where-Object { $_ -like 'CMAKE_HOME_DIRECTORY:INTERNAL=*' }
@@ -129,7 +130,7 @@ public sealed class ShellBenchLog : IDisposable {
 if ($Mode -eq 'NonVisible' -and -not $WorkerDesktop) {
     if (Test-Path -LiteralPath $RunRoot) { throw 'RunRoot must be new.' }
     $desktop = 'CaelestiaBench-' + [guid]::NewGuid().ToString('N')
-    $command = '"' + (Join-Path $PSHOME 'powershell.exe') + '" -NoProfile -File "' + $PSCommandPath + '"'
+    $command = '"' + $windowsPowerShell + '" -NoProfile -File "' + $PSCommandPath + '"'
     foreach ($key in @('QtPrefix', 'BuildRoot', 'RunRoot', 'SourceRoot', 'Metric', 'Mode', 'WarmupSeconds',
             'IdleSeconds', 'Cycles', 'CycleIntervalSeconds', 'RecoverySeconds', 'ScreenIndex', 'Plant')) {
         $value = [string](Get-Variable -Name $key -ValueOnly)
@@ -146,18 +147,18 @@ if ($Mode -eq 'NonVisible' -and [ShellBenchNative]::DesktopName() -ne $WorkerDes
 }
 if (Test-Path -LiteralPath $RunRoot) { throw 'RunRoot must be new.' }
 New-Item -ItemType Directory -Path $RunRoot | Out-Null
-$profile = Join-Path $RunRoot 'profile'
-$stage = & "$SourceRoot\windows\scripts\Stage-ShellPrototype.ps1" -Destination "$RunRoot\stage" -ProfileRoot $profile -Prototype combined
+$profileRoot = Join-Path $RunRoot 'profile'
+$stage = & "$SourceRoot\windows\scripts\Stage-ShellPrototype.ps1" -Destination "$RunRoot\stage" -ProfileRoot $profileRoot -Prototype combined
 foreach ($dir in @('config', 'state', 'runtime', 'cache', 'data')) {
-    New-Item -ItemType Directory -Force -Path "$profile\$dir" | Out-Null
+    New-Item -ItemType Directory -Force -Path "$profileRoot\$dir" | Out-Null
 }
 $config = Get-Content "$SourceRoot\windows\shell\shell.json" -Raw | ConvertFrom-Json
 $config.background.enabled = $false
 $config.windows.clipboard.enabled = $false
 $config.session.commands = @{}
-$config | ConvertTo-Json -Depth 32 | Set-Content "$profile\config\shell.json" -Encoding UTF8
-Copy-Item -LiteralPath "$SourceRoot\windows\shell\windows.json" -Destination "$profile\config\windows.json"
-'{"binds":[]}' | Set-Content "$profile\config\keybinds.json" -Encoding UTF8
+$config | ConvertTo-Json -Depth 32 | Set-Content "$profileRoot\config\shell.json" -Encoding UTF8
+Copy-Item -LiteralPath "$SourceRoot\windows\shell\windows.json" -Destination "$profileRoot\config\windows.json"
+'{"binds":[]}' | Set-Content "$profileRoot\config\keybinds.json" -Encoding UTF8
 
 # This overlay lives only in the trial stage. The source and backend stay unchanged.
 $probe = @'
@@ -244,6 +245,7 @@ $probe = @'
                 ready: root.benchFrames > 0 && win.backingWindowVisible,
                 dpr: win.devicePixelRatio, width: win.width, height: win.height,
                 nexusWindows: Nexus.WindowFactory.windowCount,
+                nexusDpr: Nexus.WindowFactory.activeWindow()?.devicePixelRatio ?? null,
                 busyTicks: root.benchBusyTicks, retainedAllocations: root.benchRetained.length
             });
         }
@@ -305,11 +307,16 @@ foreach ($variable in @($info.EnvironmentVariables.Keys | Where-Object { $_ -mat
 $info.EnvironmentVariables['PATH'] = "$QtPrefix\bin;$qmlRoot\Caelestia\lib;$qmlRoot\M3Shapes;$env:PATH"
 $info.EnvironmentVariables['QML_IMPORT_PATH'] = "$stage\imports;$qmlRoot;$QtPrefix\qml"
 $info.EnvironmentVariables['QML2_IMPORT_PATH'] = "$stage\imports;$qmlRoot;$QtPrefix\qml"
-$info.EnvironmentVariables['QML_DISK_CACHE_PATH'] = "$profile\cache"
-$info.EnvironmentVariables['QS_RUNTIME_DIR'] = "$profile\runtime\quickshell"
-foreach ($dir in @('CONFIG', 'STATE', 'RUNTIME')) { $info.EnvironmentVariables["CAELESTIA_${dir}_DIR"] = "$profile\$($dir.ToLowerInvariant())" }
-$info.EnvironmentVariables['CAELESTIA_PROFILE_ROOT'] = $profile
-foreach ($dir in @('CONFIG', 'STATE', 'DATA', 'CACHE')) { $info.EnvironmentVariables["XDG_${dir}_HOME"] = "$profile\$($dir.ToLowerInvariant())" }
+$info.EnvironmentVariables['QML_DISK_CACHE_PATH'] = "$profileRoot\cache"
+$info.EnvironmentVariables['QS_RUNTIME_DIR'] = "$profileRoot\runtime\quickshell"
+# An explicit empty RHI load file prevents fallback to Qt's shared app cache.
+$pipelineCache = "$profileRoot\cache\pipeline-cache.bin"
+[IO.File]::WriteAllBytes($pipelineCache, [byte[]]@())
+$info.EnvironmentVariables['QSG_RHI_PIPELINE_CACHE_LOAD'] = $pipelineCache
+$info.EnvironmentVariables['QSG_RHI_PIPELINE_CACHE_SAVE'] = $pipelineCache
+foreach ($dir in @('CONFIG', 'STATE', 'RUNTIME')) { $info.EnvironmentVariables["CAELESTIA_${dir}_DIR"] = "$profileRoot\$($dir.ToLowerInvariant())" }
+$info.EnvironmentVariables['CAELESTIA_PROFILE_ROOT'] = $profileRoot
+foreach ($dir in @('CONFIG', 'STATE', 'DATA', 'CACHE')) { $info.EnvironmentVariables["XDG_${dir}_HOME"] = "$profileRoot\$($dir.ToLowerInvariant())" }
 foreach ($service in @('AUDIO', 'BATTERY', 'BLUETOOTH', 'BRIGHTNESS', 'MEDIA', 'NETWORK', 'APPS', 'HYPR', 'TRAY', 'SESSION', 'NOTIFICATIONS')) {
     $info.EnvironmentVariables["CAELESTIA_WINDOWS_$service"] = '1'
 }
@@ -317,7 +324,7 @@ $info.EnvironmentVariables['CAELESTIA_WINDOWS_POWER_PROFILES'] = '1'
 $info.EnvironmentVariables['CAELESTIA_SHELL_SESSION'] = '1'
 $info.EnvironmentVariables['CAELESTIA_SHELL_SESSION_MODE'] = 'Observe'
 $info.EnvironmentVariables['CAELESTIA_WINDOWS_TILING'] = 'off'
-$info.EnvironmentVariables['CAELESTIA_WINDOWS_KEYBINDS'] = "$profile\config\keybinds.json"
+$info.EnvironmentVariables['CAELESTIA_WINDOWS_KEYBINDS'] = "$profileRoot\config\keybinds.json"
 $info.EnvironmentVariables['CAELESTIA_RUNTIME_PROBE'] = '1'
 $info.EnvironmentVariables['CAELESTIA_SHELL_SCREEN'] = [string]$ScreenIndex
 $info.EnvironmentVariables['QS_WINDOWS_TRAY_HOOK'] = '0'
@@ -341,10 +348,25 @@ $actions = [Collections.Generic.List[object]]::new()
 $clock = [Diagnostics.Stopwatch]::StartNew()
 $lastCpu = 0.0
 $lastTime = 0.0
+$perflib = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Perflib'
+$englishCounters = (Get-ItemProperty -LiteralPath "$perflib\009" -Name Counter).Counter
+$localCounters = (Get-ItemProperty -LiteralPath "$perflib\CurrentLanguage" -Name Counter).Counter
+$counterIds = @{}
+$counterNames = @{}
+for ($index = 0; $index + 1 -lt $englishCounters.Length; $index += 2) {
+    $counterIds[$englishCounters[$index + 1]] = $englishCounters[$index]
+}
+for ($index = 0; $index + 1 -lt $localCounters.Length; $index += 2) {
+    $counterNames[$localCounters[$index]] = $localCounters[$index + 1]
+}
+$cpuLoadCounter = '\' + $counterNames[$counterIds['Processor']] + '(_Total)\' + $counterNames[$counterIds['% Processor Time']]
 $metadata = [ordered]@{
     schemaVersion=2; metric=$Metric; mode=$Mode; plant=$Plant
     machine=$env:COMPUTERNAME; logicalProcessors=[Environment]::ProcessorCount
     os=[Environment]::OSVersion.VersionString
+    culture=[Globalization.CultureInfo]::CurrentCulture.Name
+    uiCulture=[Globalization.CultureInfo]::CurrentUICulture.Name
+    cpuLoadCounter=$cpuLoadCounter
     windowsBuild=Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' |
         Select-Object CurrentBuildNumber, UBR, DisplayVersion
     uptimeSeconds=([DateTime]::Now - (Get-CimInstance Win32_OperatingSystem).LastBootUpTime).TotalSeconds
@@ -370,7 +392,7 @@ $metadata.nativeModules = @(
         }
 )
 $metadata.shellManifestSha256 = $metadata.payloadSha256
-$metadata.configSha256 = (Get-FileHash "$profile\config\shell.json").Hash
+$metadata.configSha256 = (Get-FileHash "$profileRoot\config\shell.json").Hash
 $identity = @($metadata.shellManifestSha256, $metadata.executableSha256, $metadata.probeSha256,
     $metadata.qtCoreSha256, $metadata.configSha256, $metadata.nativeModules)
 $sha = [Security.Cryptography.SHA256]::Create()
@@ -409,7 +431,7 @@ function Read-Sample([string]$Phase, [int]$Cycle) {
     $time = $clock.Elapsed.TotalSeconds
     $cpu = $process.TotalProcessorTime.TotalSeconds
     $cpuPercent = if ($time -gt $script:lastTime) { 100 * ($cpu - $script:lastCpu) / ($time - $script:lastTime) } else { 0 }
-    $load = (Get-Counter '\Processor(_Total)\% Processor Time' -ErrorAction Stop).CounterSamples[0].CookedValue
+    $load = (Get-Counter $cpuLoadCounter -ErrorAction Stop).CounterSamples[0].CookedValue
     $row = [pscustomobject][ordered]@{
         elapsedSeconds=$time; phase=$Phase; cycle=$Cycle
         privateBytes=$process.PrivateMemorySize64; workingSet=$process.WorkingSet64
@@ -443,6 +465,7 @@ function Wait-Frame([string]$Panel) {
         panel=$Panel; requestQpc=$start; observedQpc=$log.Markers[$marker]
         requestToFrameObservedMs=1000 * ($log.Markers[$marker] - $start) / [Diagnostics.Stopwatch]::Frequency
         shellRequestToFrameMs=$state.frameMs; frameCount=$state.frames
+        dpr=$(if ($Panel -eq 'nexus') { $state.nexusDpr } else { $state.dpr })
     })
 }
 function Sample-Idle([string]$Phase, [int]$Seconds) {
@@ -560,6 +583,13 @@ try {
     }
     $metadata.qpcFrequency = [Diagnostics.Stopwatch]::Frequency
     $metadata | ConvertTo-Json -Depth 32 | Set-Content "$RunRoot\metadata.json" -Encoding UTF8
+    foreach ($sample in $samples) {
+        foreach ($property in $sample.PSObject.Properties) {
+            if ($property.Value -is [double]) {
+                $property.Value = $property.Value.ToString('R', [Globalization.CultureInfo]::InvariantCulture)
+            }
+        }
+    }
     $samples | Export-Csv "$RunRoot\samples.csv" -NoTypeInformation
     $actions | ForEach-Object { $_ | ConvertTo-Json -Compress } | Set-Content "$RunRoot\actions.jsonl" -Encoding UTF8
     [ordered]@{ completed=($errors.Count -eq 0); errorCount=$errors.Count; errors=@($errors); work=$work } |
