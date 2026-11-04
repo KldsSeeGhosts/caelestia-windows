@@ -100,8 +100,13 @@ ColumnLayout {
                 tray.expanded = true;
             }
         } else if (id === "activeWindow" && Config.bar.popouts.activeWindow && Config.bar.activeWindow.showOnHover) {
+            const entry = ch.item as Item;
             popouts.currentName = id.toLowerCase();
-            popouts.currentCenter = (ch.item as Item).mapToItem(root, 0, (ch.item as Item).implicitHeight / 2).y ?? 0;
+            // Windows: the running-app strip anchors the shared popout on the
+            // row being pointed at through hoverCenter. Entries without that
+            // property keep their own centre, as upstream does.
+            const anchor = "hoverCenter" in entry ? entry.hoverCenter : entry.implicitHeight / 2;
+            popouts.currentCenter = entry.mapToItem(root, 0, anchor).y;
             popouts.hasCurrent = true;
         }
     }

@@ -61,3 +61,27 @@ function project(windows, previousGroups, previousWindows) {
     }
     return { byId, groups, windowIds, groupIds, windowOrder, groupOrder };
 }
+
+// Windows 11 taskbar click on one application.
+// - A not-focused app (or one with minimized windows only) focuses its
+//   last-active window, restoring it if it is minimized.
+// - A focused single-window app minimizes.
+// - A focused multi-window app cycles to its next window in stable order; the
+//   order never follows focus, so repeated clicks walk the whole list.
+// `foregroundId` is the native foreground window, not a facade value retained
+// while the shell itself has focus.
+function clickAction(group, windows, foregroundId) {
+    if (!group || !Array.isArray(group.windowIds) || group.windowIds.length === 0)
+        return { action: "none", id: "" };
+    const ids = group.windowIds;
+    const at = ids.indexOf(foregroundId);
+    const focused = at >= 0 && !!windows[foregroundId]
+        && windows[foregroundId].appId.toLowerCase() === group.id;
+    if (!focused) {
+        const last = ids.find(id => windows[id] && windows[id].active) || ids[0];
+        return { action: "activate", id: last };
+    }
+    if (ids.length === 1)
+        return { action: "minimize", id: ids[0] };
+    return { action: "activate", id: ids[(at + 1) % ids.length] };
+}

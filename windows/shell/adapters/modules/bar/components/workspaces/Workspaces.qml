@@ -6,35 +6,17 @@ import qs.components
 import qs.services as Services
 
 // Keep upstream workspace content and motion intact. Only the Windows graph
-// adds the bounded running-app pill below it and the desktop-control state
-// from the Windows Hypr service.
+// adds the desktop-control state from the Windows Hypr service; the running
+// applications are the bar's own activeWindow entry.
 Column {
     id: root
 
     required property ShellScreen screen
     required property bool fullscreen
 
-    readonly property Item owningBar: parent?.parent ?? null
     readonly property bool controlAvailable: Services.Hypr.workspaceControlAvailable
     readonly property string controlNotice: Services.Hypr.workspaceControlNotice
-    readonly property real rowSize: Tokens.sizes.bar.innerWidth - Tokens.padding.small
-    readonly property real appBudget: {
-        const bar = owningBar;
-        if (!bar || !bar.height)
-            return rowSize * 5 + Tokens.padding.small * 2;
-        const entries = bar.children.filter(c => c.entryId && c.entryId !== "spacer" && c.item !== root);
-        // The active title already elides to its available height. Reserve a
-        // useful title area rather than depending on that reciprocal binding.
-        const used = entries.reduce((sum, entry) => sum + (entry.entryId === "activeWindow"
-            ? rowSize * 3 : (entry.item?.nonAnimHeight ?? entry.implicitHeight)), 0);
-        const free = bar.height - used - workspaceContent.implicitHeight
-            - bar.vPadding * 2 - bar.spacing * (bar.children.length - 1) - spacing;
-        const rows = Math.max(1, Math.min(5,
-            Math.floor((free - Tokens.padding.small * 2) / rowSize)));
-        return rows * rowSize + Tokens.padding.small * 2;
-    }
 
-    spacing: runningApps.implicitHeight > 0 ? Tokens.spacing.medium : 0
     // Column's implicitWidth is read-only. WorkspacesContent already reserves
     // the bar's inner width, so assigning it would prevent this adapter from
     // loading.
@@ -73,14 +55,5 @@ Column {
             ToolTip.delay: 500
             ToolTip.text: root.controlNotice
         }
-    }
-
-    RunningApps {
-        id: runningApps
-        maximumHeight: root.appBudget
-        rowSize: root.rowSize
-        edgeItem: root.owningBar
-        visible: !root.fullscreen
-        onInteractionStarted: root.owningBar?.popouts.close()
     }
 }

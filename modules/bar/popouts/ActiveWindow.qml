@@ -17,7 +17,12 @@ Item {
     // while retaining the upstream layout and animations everywhere else.
     property bool reservePreviewGeometry: false
 
-    implicitWidth: reservePreviewGeometry || Hypr.activeToplevel ? child.implicitWidth : -Tokens.padding.extraLargeIncreased
+    // Windows: the running-app strip previews the application it points at
+    // through this property. Linux leaves the default and keeps the upstream
+    // single-window view.
+    property var toplevel: Hypr.activeToplevel
+
+    implicitWidth: reservePreviewGeometry || toplevel ? child.implicitWidth : -Tokens.padding.extraLargeIncreased
     implicitHeight: child.implicitHeight
 
     Column {
@@ -39,7 +44,7 @@ Item {
                 asynchronous: true
                 Layout.alignment: Qt.AlignVCenter
                 implicitSize: details.implicitHeight
-                source: Icons.getAppIcon(Hypr.activeToplevel?.lastIpcObject.class ?? "", "image-missing")
+                source: Icons.getAppIcon(root.toplevel?.lastIpcObject.class ?? "", "image-missing")
             }
 
             ColumnLayout {
@@ -50,14 +55,14 @@ Item {
 
                 StyledText {
                     Layout.fillWidth: true
-                    text: Hypr.activeToplevel?.title ?? ""
+                    text: root.toplevel?.title ?? ""
                     font: Tokens.font.body.medium
                     elide: Text.ElideRight
                 }
 
                 StyledText {
                     Layout.fillWidth: true
-                    text: Hypr.activeToplevel?.lastIpcObject.class ?? ""
+                    text: root.toplevel?.lastIpcObject.class ?? ""
                     color: Colours.palette.m3onSurfaceVariant
                     elide: Text.ElideRight
                 }
@@ -100,7 +105,7 @@ Item {
 
                     objectName: "activeWindowPreview"
                     anchors.centerIn: parent
-                    captureSource: Hypr.activeToplevel?.wayland ?? null
+                    captureSource: root.toplevel?.wayland ?? null
                     live: visible
 
                     constraintSize.width: Tokens.sizes.bar.windowPreviewSize

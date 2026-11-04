@@ -8,6 +8,19 @@ QtObject {
 
     property var source: []
     property bool actionsEnabled: false
+    // Raw native foreground HWND, lowercase hex without a prefix, from the
+    // backend's WinEvent stream. Empty while a shell surface or another
+    // non-application window owns the foreground. The facade's `activated`
+    // value is retained while the bar itself has focus, so it must never decide
+    // whether an application is focused.
+    property string foregroundAddress: ""
+    readonly property var foregroundWindow: foregroundAddress ? (windows[foregroundAddress] ?? null) : null
+    readonly property string focusedGroupId: foregroundWindow ? foregroundWindow.appId.toLowerCase() : ""
+    // Hover preview shared by the running-app strip and the bar popout. The
+    // popout keeps one row per window of this application.
+    property string previewGroupId: ""
+    property string previewWindowId: ""
+    readonly property var previewGroup: previewGroupId ? (groups[previewGroupId] ?? null) : null
     property var groupIds: []
     property var windowIds: []
     property var groups: ({})
@@ -117,6 +130,10 @@ QtObject {
             pendingCloses = pendingCloses.filter(tracksTarget);
         if (recentCloses.length)
             pruneRecentCloses(nowMs(0));
+        if (previewGroupId && !next.groups[previewGroupId]) {
+            previewGroupId = "";
+            previewWindowId = "";
+        }
         if (pendingCloses.length)
             Qt.callLater(() => root.flushCloses(0));
     }
@@ -241,5 +258,16 @@ QtObject {
         pendingCloses = pendingCloses.concat({ id, native, deadline: 0 });
         promoteClose(nowMs(0));
         Qt.callLater(() => root.flushCloses(0));
+    }
+
+    // Windows 11 taskbar click, decided from the native foreground window.
+    function clickAction(id: string): var {
+        return Logic.clickAction(groups[id] ?? null, windows, foregroundAddress);
+    }
+
+    function click(id: string): void {
+        const result = clickAction(id);
+        if (result.action !== "none")
+            request(result.id, result.action);
     }
 }
