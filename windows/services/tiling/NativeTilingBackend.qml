@@ -77,6 +77,31 @@ QtObject {
             + " borderColours=" + Tiling.borderColours);
     }
 
+    // Incremental per-field setters. A live option change writes only the field
+    // that changed instead of stopping the session, so the wrapper maps each
+    // service option onto the pinned `Tiling` property it already exposes. The
+    // manager's setters mark their windows dirty and arm one shared sync timer,
+    // so a batch of related rule writes still syncs once.
+    function setExcluded(excluded): void {
+        Tiling.excluded = excluded;
+    }
+    function setIncluded(included): void {
+        if (root.supportsIncluded)
+            Tiling.included = included;
+    }
+    function setGapsIn(gaps): void {
+        Tiling.gapsIn = gaps;
+    }
+    function setGapsOut(gaps): void {
+        Tiling.gapsOut = gaps;
+    }
+    function setSingleWindowGapsOut(gaps): void {
+        Tiling.singleWindowGapsOut = gaps;
+    }
+    function setBorderColours(enabled): void {
+        Tiling.borderColours = enabled;
+    }
+
     // DWM accepts opaque COLORREFs. Match Hyprland's 0xe6 / 0x11
     // scheme borders by compositing against the scheme surface.
     function blend(foreground, surface, alpha): color {
