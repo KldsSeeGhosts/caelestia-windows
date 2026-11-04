@@ -65,9 +65,15 @@ The Windows-only `windows` map holds service extensions; the facade validates
 - `monitors` maps Qt screen-name wildcard patterns to booleans. All monitors
   default enabled; `false` adds a native `screen:` exclusion, `true` leaves
   the monitor enabled. A blanket false wildcard also excludes true exceptions.
-- Live changes stop the current session before applying rules/gaps/colours, then
-  request enable through the existing native mutex gate. Observe/disabled
-  stop the tiler. A held mutex produces the existing
+- Live changes keep a running session: the effective rules/gaps/colours are
+  diffed against the last applied set and only the changed fields are written
+  through the native incremental setters (`gapsIn`, `gapsOut`,
+  `singleWindowGapsOut`, `borderColours`, `included`, `excluded`), so explicit
+  floats, split ratios and the window tree survive. An identical config is a
+  no-op. Only a real switch to Observe/disabled, a config that can no longer
+  sustain the session (for example an allowlist that validates to nothing), or
+  a backend without the needed setter stops the tiler. Enables still go through
+  the existing native mutex gate. A held mutex produces the existing
   `Another tiling manager is already running.` toast. Invalid JSON uses
   Caelestia's ordinary config error handling. Interactive requires a non-empty
   effective include list and is downgraded to Observe during smoke.
@@ -169,7 +175,10 @@ backend allowlist.
 shapes (pinned build without the new members, fork shape with them); it
 covers the mode policy, gating refusals, pattern parsing, failure records,
 the list cap, every toast copy string, both rate limits, the collapse toast,
-enable-refusal toasts and the count/error projection. It imports no
+enable-refusal toasts and the count/error projection. It also records every
+write a fake backend receives, proving that a live gap, border, rule or
+identical-config change takes only the incremental setters and never a
+stop/disable. It imports no
 Quickshell or Caelestia module. Run it through
 `windows/scripts/Test-TilingService.ps1`.
 

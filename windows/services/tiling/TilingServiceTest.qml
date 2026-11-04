@@ -22,28 +22,76 @@ QtObject {
         property bool supportsScopedRules: true
         property int gapsInApplied: 0
         property int gapsOutApplied: 0
+        property int singleWindowGapsOutApplied: 0
+        property bool borderColoursApplied: true
         property string lastError: ""
         property int managedCount: 0
         property int failedCount: 0
         property var excludedApplied: null
         property var includedApplied: null
         property int enableRequests: 0
+        property int disableRequests: 0
+        // Every write the service made, in order, so a scenario can prove which
+        // fields a reconfigure touched and that nothing stopped the session.
+        property var calls: []
         // Mirrors Tiling.includedRuleCount: -1 until options are applied, then
         // the entries that survive validation. The real backend rejects an
         // unterminated character class, which `[` stands in for here.
         property int includedRuleCount: -1
 
-        function applyOptions(excluded, included, gapsIn, gapsOut): void {
+        function record(name, value): void {
+            calls.push({name: name, value: value});
+        }
+        function clearCalls(): void {
+            calls = [];
+            enableRequests = 0;
+            disableRequests = 0;
+        }
+
+        function applyOptions(excluded, included, gapsIn, gapsOut,
+                singleWindowGapsOut, borderColours): void {
+            record("applyOptions", null);
             excludedApplied = excluded;
             includedApplied = included;
             includedRuleCount = included.filter(pattern => pattern.indexOf("[") < 0).length;
             gapsInApplied = gapsIn;
             gapsOutApplied = gapsOut;
+            singleWindowGapsOutApplied = singleWindowGapsOut;
+            borderColoursApplied = borderColours;
+        }
+        // Incremental setters, mirroring the wrapper's per-field writes.
+        function setExcluded(excluded): void {
+            record("setExcluded", excluded);
+            excludedApplied = excluded;
+        }
+        function setIncluded(included): void {
+            record("setIncluded", included);
+            includedApplied = included;
+            includedRuleCount = included.filter(pattern => pattern.indexOf("[") < 0).length;
+        }
+        function setGapsIn(gaps): void {
+            record("setGapsIn", gaps);
+            gapsInApplied = gaps;
+        }
+        function setGapsOut(gaps): void {
+            record("setGapsOut", gaps);
+            gapsOutApplied = gaps;
+        }
+        function setSingleWindowGapsOut(gaps): void {
+            record("setSingleWindowGapsOut", gaps);
+            singleWindowGapsOutApplied = gaps;
+        }
+        function setBorderColours(enabled): void {
+            record("setBorderColours", enabled);
+            borderColoursApplied = enabled;
         }
         function requestEnable(): void {
+            record("requestEnable", null);
             enableRequests++;
         }
         function requestDisable(): void {
+            record("requestDisable", null);
+            disableRequests++;
             enabled = false;
         }
     }
@@ -82,6 +130,8 @@ QtObject {
     readonly property FakeTilingBackend observeOnly: FakeTilingBackend {}
     readonly property FakeTilingBackend failingBackend: FakeTilingBackend {}
     readonly property FakeTilingBackend burstBackend: FakeTilingBackend {}
+    // F6: a live session that must survive option edits.
+    readonly property FakeTilingBackend reconfigBackend: FakeTilingBackend {}
 
     // Startup ordering as the facade sees it: Tiling.qml binds its Loader to
     // nativeRequested, so the backend attaches synchronously inside
@@ -530,6 +580,79 @@ QtObject {
         check(service.reason.length > 0, "scoped rule refusal explanation");
         checkJson(service.parsePatternList("exe:;class: ;screen:;title:;exe:a"),
             ["exe:a"], "empty typed rules never authorize unrestricted tiling");
+
+        // --- F6: option edits keep the running session ------------------------
+        // The profile watcher funnels gap, border and rule edits through
+        // configure(). Stopping the tiler there restores every frame and rebuilds
+        // from scratch, losing explicit floats, split ratios and the tree, so a
+        // live session must take the backend's incremental setters instead.
+        service.backend = null;
+        service.configure("interactive", "org.mozilla.firefox", "explorer", false,
+            5, 10, 20, true);
+        service.backend = reconfigBackend;
+        reconfigBackend.enabled = true;
+        checkEqual(service.status, "tiling", "live scenario is tiling before the edit");
+        const callNames = () => reconfigBackend.calls.map(call => call.name);
+
+        // A gap change writes only the gap setter.
+        reconfigBackend.clearCalls();
+        service.configure("interactive", "org.mozilla.firefox", "explorer", false,
+            12, 10, 20, true);
+        checkJson(callNames(), ["setGapsIn"], "gap edit calls only the gap setter");
+        checkEqual(reconfigBackend.calls[0].value, 12, "gap edit wrote the new inner gap");
+        checkEqual(reconfigBackend.disableRequests, 0, "gap edit never stops the session");
+        check(!reconfigBackend.calls.some(call => call.name === "applyOptions"),
+            "gap edit skips the full option apply");
+        checkEqual(service.status, "tiling", "gap edit keeps tiling");
+
+        // A border-colour change restores no geometry: only stop() does that, and
+        // requestDisable() is the only path into it.
+        reconfigBackend.clearCalls();
+        service.configure("interactive", "org.mozilla.firefox", "explorer", false,
+            12, 10, 20, false);
+        checkJson(callNames(), ["setBorderColours"], "border edit calls only the border setter");
+        checkEqual(reconfigBackend.calls[0].value, false, "border edit wrote the new setting");
+        checkEqual(reconfigBackend.disableRequests, 0, "border edit performs no geometry restore");
+        checkEqual(reconfigBackend.gapsInApplied, 12, "border edit rewrote no gap");
+
+        // An identical config is a no-op, twice over.
+        reconfigBackend.clearCalls();
+        for (let i = 0; i < 2; i++)
+            service.configure("interactive", "org.mozilla.firefox", "explorer", false,
+                12, 10, 20, false);
+        checkEqual(reconfigBackend.calls.length, 0, "identical config makes zero backend calls");
+        checkEqual(reconfigBackend.disableRequests, 0, "identical config does not stop the session");
+
+        // An allowlist and denylist edit apply together, in one batch, without
+        // stopping or re-enabling the session.
+        reconfigBackend.clearCalls();
+        service.configure("interactive", "org.mozilla.firefox;title:Inbox*",
+            "explorer;class:Taskmgr", false, 12, 10, 20, false);
+        checkJson(callNames(), ["setExcluded", "setIncluded"],
+            "rule edit writes both lists through the rule setters");
+        checkJson(reconfigBackend.calls[0].value, ["explorer", "class:Taskmgr"],
+            "rule edit wrote the new denylist");
+        checkJson(reconfigBackend.calls[1].value,
+            ["org.mozilla.firefox", "title:Inbox*"], "rule edit wrote the new allowlist");
+        checkEqual(reconfigBackend.disableRequests, 0, "rule edit never stops the session");
+        checkEqual(reconfigBackend.enableRequests, 0,
+            "rule edit does not re-enable a running session");
+        checkEqual(service.status, "tiling", "rule edit keeps tiling");
+
+        // A narrowing the backend validates down to nothing cannot keep the
+        // session: an empty compiled allowlist matches every window, so the
+        // update stops it once instead of running unrestricted.
+        reconfigBackend.clearCalls();
+        service.configure("interactive", "title:[", "explorer", false, 12, 10, 20, false);
+        checkEqual(reconfigBackend.disableRequests, 1,
+            "an allowlist that validates to nothing stops the session once");
+
+        // A real switch to off is the one live edit that must stop the session.
+        reconfigBackend.clearCalls();
+        service.configure("off", "", "", false);
+        checkEqual(reconfigBackend.disableRequests, 1,
+            "a real switch to off calls requestDisable() exactly once");
+        checkEqual(service.mode, "off", "off transition committed");
 
         console.log("CAELESTIA_TILING_FIXTURE_PASS " + JSON.stringify({
             assertions: assertions
