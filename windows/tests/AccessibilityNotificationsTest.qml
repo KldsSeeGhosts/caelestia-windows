@@ -4,7 +4,9 @@
 // action is recorded in memory; no native notification, clipboard or session
 // path is touched. Every audit row is independent, so the before-fix run shows
 // every missing name, role and keyboard binding rather than stopping at the
-// first.
+// first. The card is also collapsed and expanded again: a collapsed card hides
+// its action row with opacity only, so the hidden controls must leave the tab
+// chain and must not keep active focus.
 import QtQuick
 import QtTest
 import Quickshell
@@ -126,6 +128,23 @@ ShellRoot {
         return null;
     }
 
+    // The Quickshell window wrapper does not expose the QQuickWindow's focus.
+    function focusItem(): var {
+        return win.contentItem.Window.activeFocusItem;
+    }
+
+    // Visible on screen: every ancestor up to the window is visible and not
+    // faded out.
+    function shown(item): bool {
+        if (!item || !item.visible)
+            return false;
+        for (let node = item; node && node !== win.contentItem; node = node.parent) {
+            if (!node.visible || node.opacity <= 0.01)
+                return false;
+        }
+        return true;
+    }
+
     function row(name, fn): void {
         root.rows++;
         try {
@@ -208,6 +227,52 @@ ShellRoot {
             root.check(expand.activeFocusOnTab, "the expand control is not in the tab chain");
             root.check(expand.Accessible.role === Accessible.Button, `role is ${expand.Accessible.role}`);
             root.check(expand.Accessible.name === "Collapse notification", `name is "${expand.Accessible.name}"`);
+        });
+
+        root.row("collapsed notification skips its hidden actions", () => {
+            view.expanded = false;
+            root.input.wait(80);
+            root.check(!close.activeFocusOnTab, "collapsed close is still in the tab chain");
+            root.check(!action.activeFocusOnTab, "collapsed action is still in the tab chain");
+            root.check(!copy.activeFocusOnTab, "collapsed copy is still in the tab chain");
+            expand.forceActiveFocus(Qt.TabFocusReason);
+            root.check(expand.activeFocus, "the expand control did not take focus");
+            root.input.keyClick(Qt.Key_Tab);
+            const focused = root.focusItem();
+            root.check(focused !== close && focused !== action && focused !== copy,
+                `Tab landed on a hidden action (${focused?.Accessible?.name ?? "unnamed"})`);
+            root.check(root.shown(focused), "Tab landed on an invisible item");
+        });
+
+        root.row("collapsing moves focus off the hidden action", () => {
+            view.expanded = true;
+            root.input.wait(80);
+            action.forceActiveFocus(Qt.TabFocusReason);
+            root.check(action.activeFocus, "the action did not take focus before collapsing");
+            view.expanded = false;
+            root.input.wait(80);
+            root.check(!action.activeFocus && !close.activeFocus && !copy.activeFocus,
+                "focus stayed on an action hidden by the collapse");
+            const focused = root.focusItem();
+            root.check(focused !== null, "the collapse left focus on nothing");
+            root.check(root.shown(focused), "the collapse left focus on an invisible item");
+            root.check(focused === expand || focused === view,
+                `focus moved to ${focused?.Accessible?.name ?? "an unexpected item"}`);
+        });
+
+        root.row("expanding restores action traversal", () => {
+            view.expanded = false;
+            root.input.wait(80);
+            root.check(!close.activeFocusOnTab && !action.activeFocusOnTab && !copy.activeFocusOnTab,
+                "a collapsed action stayed in the tab chain before expanding");
+            view.expanded = true;
+            root.input.wait(80);
+            root.check(close.activeFocusOnTab, "expanded close is not in the tab chain");
+            root.check(action.activeFocusOnTab, "expanded action is not in the tab chain");
+            root.check(copy.activeFocusOnTab, "expanded copy is not in the tab chain");
+            expand.forceActiveFocus(Qt.TabFocusReason);
+            root.input.keyClick(Qt.Key_Tab);
+            root.check(root.focusItem() !== null, "expanding lost the tab chain");
         });
 
         root.row("Return invokes the focused notification action", () => {

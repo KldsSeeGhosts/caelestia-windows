@@ -35,6 +35,25 @@ StyledRect {
         copyTimer.restart();
     }
 
+    // Windows port (ERM-615): a collapsed card hides its action row with
+    // opacity only. Take those controls out of traversal and hand focus back
+    // to the visible expand control instead of leaving it on an invisible
+    // button.
+    function containsActionFocus(item): bool {
+        for (let node = item; node && node !== root; node = node.parent) {
+            if (node === actions)
+                return true;
+        }
+        return false;
+    }
+
+    onExpandedChanged: {
+        if (root.expanded)
+            return;
+        if (root.containsActionFocus(Window.activeFocusItem))
+            expandBtn.forceActiveFocus(Qt.TabFocusReason);
+    }
+
     Component.onCompleted: {
         x = 0;
         modelData.lock(this);
@@ -504,8 +523,9 @@ StyledRect {
                     onClicked: root.modelData.close()
 
                     // Windows port (ERM-615): the close action is reachable and
-                    // named for keyboard and assistive-technology users.
-                    activeFocusOnTab: true
+                    // named for keyboard and assistive-technology users only
+                    // while the expanded row is actually visible.
+                    activeFocusOnTab: root.expanded
                     Accessible.role: Accessible.Button
                     Accessible.name: "Dismiss notification"
                     Accessible.onPressAction: root.modelData.close()
@@ -544,8 +564,9 @@ StyledRect {
 
                         // Windows port (ERM-615): the action label was only
                         // painted. It becomes a named, focusable button with a
-                        // keyboard path that invokes exactly once per press.
-                        activeFocusOnTab: !disabled
+                        // keyboard path that invokes exactly once per press,
+                        // and leaves traversal while the row is collapsed.
+                        activeFocusOnTab: root.expanded && !disabled
                         Accessible.role: Accessible.Button
                         Accessible.name: modelData.text
                         Accessible.onPressAction: modelData.invoke()
@@ -585,8 +606,9 @@ StyledRect {
                     label.animate: true
 
                     // Windows port (ERM-615): copy is a named, focusable
-                    // control whose name reports the copied state.
-                    activeFocusOnTab: true
+                    // control whose name reports the copied state, and leaves
+                    // traversal while the row is collapsed.
+                    activeFocusOnTab: root.expanded
                     Accessible.role: Accessible.Button
                     Accessible.name: copyTimer.running ? "Notification text copied" : "Copy notification text"
                     Accessible.onPressAction: root.copyBody()

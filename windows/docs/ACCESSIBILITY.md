@@ -24,7 +24,7 @@ gates cover the launcher and notification actions.
 | --- | --- | --- | --- | --- | --- | --- |
 | Launcher (search + action/app results) | Yes: open, type, Up/Down, Return, Escape (offscreen) | Search caret and list selection highlight; no ring on the field or result rows | No: only the search field is in the tab chain; results are selected, never focused | Yes after fix: named list rows and a named search field | Not read; palette does not adapt | Not read |
 | Session confirmation (`adapters/modules/session/Content.qml`) | Yes: open, arrows, Return/Enter/Space, Escape, focus returns to origin; launcher close hands focus back to Cancel | Yes: `FocusRing` on the focused button | No: arrows are confined to Cancel/Confirm, then focus returns | Yes: `Button` role and current action names | Not read | Not read |
-| Notification popup actions (`modules/notifications/Notification.qml`) | Yes after fix: expand, action, close and copy are in the tab chain and activate on Return/Enter/Space | Yes after fix: `FocusRing` on every control | No: the card is one shallow focus group | Yes after fix: names reflect current action/state | Not read | Not read |
+| Notification popup actions (`modules/notifications/Notification.qml`) | Yes after fix: expand, action, close and copy are in the tab chain and activate on Return/Enter/Space; collapsed cards take the hidden row out of traversal | Yes after fix: `FocusRing` on every control; collapsing hands focus to the expand control | No: the card is one shallow focus group | Yes after fix: names reflect current action/state | Not read | Not read |
 | Notification sidebar (`modules/sidebar/Notif*.qml`) | No: expand, dismiss and actions are pointer-only (`MouseArea`/`StateLayer`) | Pointer state layer only | n/a | Missing on group/action controls | Not read | Not read |
 | Nexus settings (`modules/nexus/**`) | Yes: Tab walks every page/sub-page, rows toggle/open, Return on nav opens a page; Escape closes the window after fix | Yes: `FocusRing` on rows, toggles and nav entries | No: the tab walk is a closed cycle and skips hidden/disabled rows | Partial: `RowButton`/nav entries named; inline slider, spinner and text-field controls have no row label | Not read | Not read |
 | Quota provider tabs (`windows/quota/modules/quota/Content.qml`) | Yes: Tab/Shift+Tab, Return/Enter/Space, pointer parity | Yes: selected/focused tab treatment | No | Yes: provider labels and state in `Accessible.name` | Not read | Not read |
@@ -34,7 +34,7 @@ gates cover the launcher and notification actions.
 | Gate | Rows/checks | Result |
 | --- | --- | --- |
 | `windows/scripts/Test-AccessibilityLauncher.ps1` | 8 audit rows: focus on open, named search, action provider, row role/name, every instantiated row named, Up/Down, Return activation, Escape close | Pass after the launcher fix; all name/role rows failed before it |
-| `windows/scripts/Test-AccessibilityNotifications.ps1` | 7 audit rows: action/close/copy/expand in tab chain, names and roles, Return invokes, Space dismisses | Pass after the notification fix; all 7 failed before it |
+| `windows/scripts/Test-AccessibilityNotifications.ps1` | 10 audit rows: action/close/copy/expand in tab chain, names and roles, Return invokes, Space dismisses, collapsed actions leave traversal, collapse moves focus, expanding restores traversal | Pass; the 7 name/tab rows failed before the first fix, and the 3 collapsed rows failed before the collapsed-state fix |
 | `windows/scripts/Test-SessionConfirmKeyboard.ps1` | 66 checks | Pass unchanged |
 | `windows/scripts/Test-QuotaProviderKeyboard.ps1` | 28 assertions | Pass unchanged |
 | `windows/scripts/Test-Nexus.ps1 -Suite Keyboard` | 36 pages/sub-pages, 27 reachable rows, plus close name and Escape | Pass after the Nexus fix; close name failed before it |
@@ -46,7 +46,8 @@ gates cover the launcher and notification actions.
    "Search applications and actions".
 2. Notification popup expand/action/close/copy controls joined the tab chain
    with `Button` roles, state-aware names, existing `FocusRing` treatment and
-   Return/Enter/Space activation.
+   Return/Enter/Space activation. A collapsed card takes those controls out of
+   traversal and hands focus back to the visible expand control.
 3. Nexus names its only close control and Escape now dismisses the inline
    overlay and the detached window through the same close signal.
 
