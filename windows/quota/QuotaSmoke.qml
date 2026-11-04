@@ -241,7 +241,9 @@ ShellRoot {
         for (const child of item.children) {
             if (!child)
                 continue;
-            if (typeof child.text === "string" && child.visible && pattern.test(child.text))
+            // A notice glyph carries its text in `notice` (tooltip and accessible name).
+            if (child.visible && ((typeof child.text === "string" && pattern.test(child.text))
+                    || (typeof child.notice === "string" && pattern.test(child.notice))))
                 return true;
             if (root.hasText(child, pattern))
                 return true;
@@ -277,7 +279,8 @@ ShellRoot {
         const resets = meters.map(m => root.findNamed(m, "quotaMeterReset"));
         const labels = meters.map(m => root.findNamed(m, "quotaMeterLabel"));
         const priority = root.named(origin, "quotaPriorityRow").filter(r => r.visible);
-        const priorityBars = priority.map(r => root.findNamed(r, "quotaBar"));
+        // OpenUsage's Priority rows carry a 32 dp ring gauge, not a bar.
+        const priorityGauges = priority.map(r => root.findNamed(r, "quotaGauge"));
         const priorityPcts = priority.map(r => root.findNamed(r, "quotaMeterLeft"));
         const values = root.named(origin, "quotaValueRow").filter(r => r.visible && r.label !== "")
             .map(r => root.findNamed(r, "quotaValue"));
@@ -295,7 +298,7 @@ ShellRoot {
             pctR: pcts.map(p => root.xr(p, origin)), resetR: resets.map(r => root.xr(r, origin)),
             labelX: labels.map(l => root.x0(l, origin)),
             valueR: values.map(v => root.xr(v, origin)),
-            pBarX: priorityBars.map(b => root.x0(b, origin)), pBarW: priorityBars.map(b => b.width),
+            pGaugeX: priorityGauges.map(g => g ? root.x0(g, origin) : -1), pGaugeW: priorityGauges.map(g => g ? g.width : 0),
             pPctR: priorityPcts.map(p => root.xr(p, origin)),
             overflow: everyRow.some(r => root.x0(r, origin) < -1 || root.xr(r, origin) > content.width + 1),
             footerOk: !!more && !!status && inside(more) && inside(status),
@@ -326,8 +329,16 @@ ShellRoot {
         if (m.valueR.length && !root.same(m.valueR.concat([m.resetR[0]])))
             return "value rows do not end on the reset column: " + m.valueR.join(",") + " vs " + m.resetR[0];
         const content = m.content;
-        if (Math.abs(m.barW[0] - content.grid.bar) > 0.5 || content.grid.bar !== Math.round(content.inner * (content.narrow ? 0.30 : 0.40)))
-            return "bar column is not " + (content.narrow ? "30" : "40") + "%: " + m.barW[0] + " of " + content.inner;
+        // OpenUsage's grid: label 90 (less only when the bar would drop under 48),
+        // value 52, reset 48, gaps 8, the bar takes the rest.
+        const g = content.grid;
+        if (g.value !== 52 || g.reset !== 48 || g.gap !== 8 || g.label + g.bar + g.value + g.reset + g.gap * 3 !== content.inner
+                || (g.label !== 90 && g.bar !== 48) || g.bar < 48)
+            return "column grid is not OpenUsage's: " + JSON.stringify(g) + " in " + content.inner;
+        if (Math.abs(m.barW[0] - g.bar) > 0.5)
+            return "bar is not the grid's bar column: " + m.barW[0] + " vs " + g.bar;
+        if (m.meters.some(x => x.height !== 22) || m.segments.height !== 28)
+            return "row or segment height is not OpenUsage's";
         if (m.overflow)
             return "content overflows the drawer width";
         if (!m.footerOk)
@@ -339,7 +350,7 @@ ShellRoot {
         return "";
     }
 
-    // Priority: least left first, one row per account with a reading.
+    // Priority: every window at 30% left or less (but not used up), least left first.
     function priorityError(quota): string {
         const m = root.measure(quota);
         if (!m)
@@ -347,18 +358,24 @@ ShellRoot {
         // The expectation is computed here, from the summary, not from QuotaLogic.
         const expected = [];
         for (const account of Quota.providers) {
-            const used = (account.limits || []).map(l => l.percent).filter(p => p !== null && p !== undefined);
-            if (used.length)
-                expected.push(1 - Math.max.apply(null, used));
+            for (const l of account.limits || []) {
+                if (l.percent === null || l.percent === undefined || l.percent === "")
+                    continue;
+                const left = Math.round((1 - Number(l.percent)) * 100);
+                if (left > 0 && left <= 30)
+                    expected.push(1 - Number(l.percent));
+            }
         }
         expected.sort((a, b) => a - b);
+        if (m.priority.some(r => r.height !== 46))
+            return "Priority rows are not 46 dp";
         const actual = m.priority.map(r => r.remaining);
         if (actual.length !== expected.length || actual.some((v, i) => Math.abs(v - expected[i]) > 1e-9))
             return "priority order: " + actual.map(v => Math.round(v * 100)).join(",") + " expected " + expected.map(v => Math.round(v * 100)).join(",");
         if (actual.some((v, i) => i > 0 && v < actual[i - 1]))
             return "priority does not ascend: " + actual.join(",");
-        if (!root.same(m.pBarX) || !root.same(m.pBarW) || !root.same(m.pPctR))
-            return "priority columns do not align: x=" + m.pBarX.join(",") + " w=" + m.pBarW.join(",");
+        if (!root.same(m.pGaugeX) || m.pGaugeW.some(w => w !== 32) || !root.same(m.pPctR))
+            return "priority columns do not align: gauge x=" + m.pGaugeX.join(",") + " w=" + m.pGaugeW.join(",") + " pct=" + m.pPctR.join(",");
         if (m.overflow)
             return "priority overflows the drawer width";
         if (root.named(m.origin, "quotaSection").length !== 0)
@@ -793,7 +810,8 @@ ShellRoot {
             }
             if (driver.phase === 1) {
                 const items = root.named(menu, "quotaMenuItem");
-                if (!menu.visible || items.length !== 2 || items[0].modelData.key !== "refresh") {
+                // Refresh now and Keepalive, a separator, then OpenUsage's Accounts and Settings.
+                if (!menu.visible || items.map(i => i.modelData.key).join(",") !== "refresh,keepalive,accounts,settings") {
                     if (driver.retries++ < 20)
                         return;
                     root.fail("footer menu did not open with Refresh now first: visible=" + menu.visible + " items=" + items.length);
