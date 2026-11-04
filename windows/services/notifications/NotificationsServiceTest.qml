@@ -2112,6 +2112,37 @@ QtObject {
         check(ownershipService.bannerSuppressionAllowed,
             "becoming owner restores suppression");
 
+        // #317: a lock-initialisation failure is an explicit error state, never
+        // mistaken for another shell owning the bus. It stops observation and
+        // mirroring without claiming contention, and it must not forward.
+        ownershipFixture.ownership = "error";
+        ownershipFixture.systemMirrorActive = false;
+        expectStatusFor(ownershipService, "error", "lock-initialisation failure is explicit");
+        check(ownershipService.ownership === "error" && ownershipService.ownershipKnown
+            && ownershipService.ownershipFailed,
+            "lock failure is a known, separate ownership state: " + ownershipService.ownership);
+        check(!ownershipService.contended
+            && ownershipService.reason.indexOf("session-bus lock") >= 0,
+            "lock failure names the lock and is not contention: " + ownershipService.reason);
+        check(!ownershipService.deliveryAllowed() && !ownershipService.mirrorStaged
+            && ownershipService.handleNotification(makeNotification(906, "Lock error")) === false,
+            "lock failure refuses delivery instead of forwarding");
+        check(!ownershipService.observationApplied
+            && ownershipFixture.lastAccessObservation === false,
+            "lock failure stops consent observation");
+        check(!ownershipService.mirroringApplied
+            && ownershipFixture.lastMirroringValue === false
+            && ownershipService.mirrorStatus === "error",
+            "lock failure stops mirroring");
+        ownershipFixture.ownership = "owner";
+        expectStatusFor(ownershipService, "local", "ownership recovers after a lock failure");
+        check(ownershipService.mirroringApplied
+            && ownershipFixture.lastMirroringValue === true,
+            "owner recovery restarts mirroring after a lock failure");
+        ownershipFixture.systemMirrorActive = true;
+        check(ownershipService.bannerSuppressionAllowed,
+            "owner recovery restores suppression after a lock failure");
+
         // --- Bounded denied polling -------------------------------------------
         stageMirror(deniedService, deniedFixture, 0);
         check(deniedService.requestAccess(), "denied path starts with one explicit request");

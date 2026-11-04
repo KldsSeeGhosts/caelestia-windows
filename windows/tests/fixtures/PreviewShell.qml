@@ -969,11 +969,17 @@ ShellRoot {
                 root.capturePhase("utilities", () => {
                     win.screenState.utilities = false;
                     Toaster.toast("Caelestia", "Original shell toast", "check");
-                    // A live shell owning the session bus makes local delivery
-                    // refuse the fixture by design. The backend unit tests cover
-                    // local delivery and forwarding; skip the popup/history
-                    // assertions here instead of failing the combined smoke.
-                    if (Notifs.contended) {
+                    // Only confirmed ownership by another shell may skip the
+                    // local-owner assertions: a live shell makes local delivery
+                    // refuse the fixture by design, and the backend unit tests
+                    // cover local delivery and forwarding. A lock-initialisation
+                    // failure is this shell's defect, not contention, so it must
+                    // fail the combined smoke instead of skipping it.
+                    if (Notifs.ownershipFailed) {
+                        root.fail("notification session-bus lock failed to initialise");
+                        return;
+                    }
+                    if (Notifs.ownership === "contended") {
                         console.log("CAELESTIA_COMBINED_SKIP notification owner held by live shell");
                         return;
                     }

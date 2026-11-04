@@ -182,6 +182,7 @@ Singleton {
     readonly property bool ownershipKnown: service.ownershipKnown
     readonly property string ownershipNote: service.ownershipNote
     readonly property bool contended: service.contended
+    readonly property bool ownershipFailed: service.ownershipFailed
     readonly property bool deliveryUnconfirmed: service.deliveryUnconfirmed
     readonly property string deliveryConfirmation: service.deliveryConfirmation
 
@@ -206,6 +207,8 @@ Singleton {
             return "Windows did not answer the access request. Use Windows settings; it is not asked again.";
         case "blocked":
             return "Another notification owner is active; mirroring stays off.";
+        case "error":
+            return "The notification session-bus lock could not be initialised; mirroring stays off.";
         default:
             return "Windows notification access has not been reported yet.";
         }

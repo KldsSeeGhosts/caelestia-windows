@@ -273,7 +273,8 @@ QtObject {
 
     // Staged means the opt-in is present and a usable backend exists. It does
     // not mean access was requested or granted.
-    readonly property bool mirrorStaged: enabled && mirrorOptIn && backendPresent && !contended
+    readonly property bool mirrorStaged: enabled && mirrorOptIn && backendPresent
+        && !contended && !ownershipFailed
     readonly property bool windowsDismissPermitted: mirrorStaged && windowsDismissOptIn
     readonly property bool appOpenPermitted: mirrorStaged && appOpenOptIn
 
@@ -299,6 +300,8 @@ QtObject {
             return "unavailable";
         if (!backend || backend.ready !== true)
             return "initializing";
+        if (ownershipFailed)
+            return "error";
         if (contended)
             return "blocked";
         if (mirroringUnexpected)
@@ -326,6 +329,8 @@ QtObject {
             return "Windows notification-listener access is unavailable on this system.";
         case "initializing":
             return "Waiting for the Windows notification server before mirroring can be offered.";
+        case "error":
+            return "The notification session-bus lock could not be initialised, so mirroring stays off.";
         case "blocked":
             return "Another notification owner is active. Mirroring and access requests stay disabled.";
         case "denied":
@@ -383,7 +388,7 @@ QtObject {
         const candidate = root.backend;
         if (!root.useExistingAccess || !root.enabled || !root.mirrorOptIn
                 || root.backendError !== "" || !candidate || candidate.ready !== true
-                || candidate.ownership === "contended"
+                || candidate.ownership === "contended" || candidate.ownership === "error"
                 || root.accessProbeBackend === candidate
                 || typeof candidate.refreshAccessStatus !== "function")
             return;
@@ -457,7 +462,8 @@ QtObject {
     function applyMirroring(): void {
         const backend = root.backend;
         const staged = root.enabled && root.mirrorOptIn && root.backendError === ""
-            && !!backend && backend?.ownership !== "contended";
+            && !!backend && backend?.ownership !== "contended"
+            && backend?.ownership !== "error";
         const usable = staged && backend?.ready === true;
 
         if (!usable) {
@@ -546,14 +552,15 @@ QtObject {
             root.backend.setMirroring(false);
     }
 
-    // Ownership is real mutex ownership. A contended shell stops observing and
-    // mirroring; becoming owner runs the same start pass as a fresh shell:
-    // probe existing consent, re-observe, and reconcile mirroring/suppression.
+    // Ownership is real mutex ownership. A contended shell or one whose lock
+    // could not be initialised stops observing and mirroring; becoming owner
+    // runs the same start pass as a fresh shell: probe existing consent,
+    // re-observe, and reconcile mirroring/suppression.
     function handleOwnershipChange(): void {
         // Read the backend value directly: this handler can run before the
         // computed ownership/contended bindings have re-evaluated.
         const value = root.backend?.ownership;
-        if (value === "contended") {
+        if (value === "contended" || value === "error") {
             root.disableObservation();
             root.disableMirroring();
             root.refreshAccess();
@@ -567,16 +574,22 @@ QtObject {
     }
 
     // The backend publishes real session-bus ownership: "owner" once its lock
-    // thread holds the mutex and "contended" while another shell owns it
-    // (server.cpp claimSession). Values outside the known set are "unknown"
-    // and never guessed into "owner" or "contended".
+    // thread holds the mutex, "contended" while another shell owns it and
+    // "error" when the lock could not be initialised at all (server.cpp
+    // claimSession). "error" is a failure of this shell, never contention.
+    // Values outside the known set are "unknown" and never guessed into
+    // "owner", "contended" or "error".
     readonly property string ownership: {
         const value = backend?.ownership;
         return value === "owner" || value === "contended" || value === "forwarding"
+                || value === "error"
             ? value : "unknown";
     }
     readonly property bool ownershipKnown: ownership !== "unknown"
     readonly property bool contended: enabled && ownership === "contended"
+    // A lock-initialisation failure. It must stay an explicit failure: never
+    // forwarding as another shell's bus, and never used to stage mirroring.
+    readonly property bool ownershipFailed: enabled && ownership === "error"
     readonly property bool ready: status === "local" || status === "unconfirmed"
 
     readonly property string status: {
@@ -590,6 +603,8 @@ QtObject {
             return "initializing";
         if (backend.ready !== true)
             return "initializing";
+        if (ownershipFailed)
+            return "error";
         if (contended)
             return "contended";
         if (deliveryUnconfirmed)
@@ -608,6 +623,8 @@ QtObject {
             return "Waiting for the Windows notification server.";
         if (backend.ready !== true)
             return "Waiting for the Windows notification server to finish loading.";
+        if (ownershipFailed)
+            return "The notification session-bus lock could not be initialised (Win32 error in the shell log). No other notification owner was detected; this shell does not deliver or mirror notifications.";
         if (contended)
             return "Another notification owner is active. This shell is not delivering notifications and leaves the backend's bounded ownership retry alone.";
         if (deliveryUnconfirmed)
@@ -755,7 +772,7 @@ QtObject {
 
     function deliveryAllowed(): bool {
         return root.enabled && root.backendPresent && root.backend.ready === true
-            && !root.mirroringUnexpected && !root.contended;
+            && !root.mirroringUnexpected && !root.contended && !root.ownershipFailed;
     }
 
     // A mirrored/toast-backed notification carries the backend's Windows toast
