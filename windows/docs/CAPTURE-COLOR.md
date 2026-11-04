@@ -52,7 +52,7 @@ requests an FP16 pool (no `R16G16B16A16` in `src/windows`).
   `QImage::Format_RGB32`, the format Microsoft documents for the WGC pool.
 - `chooseFrameFormat` tries that format, then the 8-bit `R8G8B8A8` fallback
   (the format the backend used before the policy was explicit), then reports
-  that no format is available. Both attempts log the HRESULT; a session with no
+  that no format is available. Each rejected attempt logs its HRESULT; a session with no
   format stops with `stopped(true)` instead of staying silently black.
 - The chosen format travels with the frame: `SharedFrame::format` is set by the
   producer and the Qt consumer creates its scene-graph texture with
