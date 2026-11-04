@@ -21,7 +21,10 @@ multiple threads are ordered. Producers use a non-waiting bounded queue; if
 the queue is full or contended, events are dropped and a `trace_dropped`
 record reports the count once the queue drains. Shutdown waits at most 250 ms
 for the worker; a blocked sink or process termination can lose queued records
-and drop reports. UTC is estimated from a single startup QPC/UTC calibration,
+and drop reports. That loss is deliberately not reported at exit: writing the
+trace file or a log line then can block exit under file or pipe backpressure,
+and a bounded exit matters more than a complete diagnostic tail
+([backend #90](https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/issues/90)). UTC is estimated from a single startup QPC/UTC calibration,
 so later wall-clock changes are not reflected. Events include observed fullscreen, style,
 physical rectangles, foreground and tracked focus, tiler state and reason,
 placement request and result, AppBar calls, and work-area snapshots before,

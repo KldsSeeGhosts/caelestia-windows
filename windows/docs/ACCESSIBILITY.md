@@ -51,7 +51,7 @@ gates cover the launcher and notification actions.
    collapse took focus from that card's own action row.
 3. Nexus names its only close control and Escape now dismisses the inline
    overlay and the detached window through the same close signal.
-4. Session drawer (ERM-615): all four buttons name both their Tab and
+4. Session drawer: all four buttons name both their Tab and
    Shift+Tab neighbour, so traversal is a closed cycle and never falls back to
    Qt's default chain; the vim keybind path uses the same links. Focus and
    Escape can no longer leave the drawer. Session actions run immediately, as
