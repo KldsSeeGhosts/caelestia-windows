@@ -1,6 +1,6 @@
 # Staged-shell accessibility audit
 
-Linear ERM-615. Scope: the surfaces the Windows graph actually stages in
+Scope: the surfaces the Windows graph actually stages in
 `windows/shell/sources.json` - launcher, session confirmation, notification
 actions and Nexus settings. Keyboard-only use plus the accessible names, roles
 and actions a screen reader reads are in scope. Narrator was **not tested

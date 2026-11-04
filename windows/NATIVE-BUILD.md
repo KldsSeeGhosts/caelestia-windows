@@ -170,6 +170,43 @@ is not a containment boundary and accepts relative, traversal and UNC paths.
 The command does not install anything, run the live shell, or read the live
 profile.
 
+## Candidate validation
+
+`windows/scripts/Test-Candidate.ps1` is the single candidate-validation entry
+point. It runs only the checks above and the offscreen service fixtures, then
+writes one machine-readable result:
+
+```powershell
+$devRoot = Join-Path $env:LOCALAPPDATA 'caelestia-dev'
+powershell -NoProfile -File windows/scripts/Test-Candidate.ps1 `
+    -QtPrefix "$devRoot\Qt\6.11.2\msvc2022_64" `
+    -LlvmBin "$devRoot\clang+llvm-20.1.8-x86_64-pc-windows-msvc\bin" `
+    -Cli11Include "$devRoot\deps\CLI11-2.5.0\include" `
+    -ToolsBin "$devRoot\tools\Scripts" `
+    -BuildRoot C:\b-cand `
+    -OutFile C:\b-cand\candidate\manifest.json
+```
+
+Steps are the environment check, a `-Tests` build, the backend native fixtures,
+the public smoke, every `Test-*Service.ps1` offscreen fixture and the offscreen
+`Test-RunningApps` fixture. `-SkipBuild` reuses an existing build root for a
+cached run. The manifest records the shell commit, the backend gitlink and
+checkout against `windows/sources.lock.json`, toolchain versions, and each step's
+command, exit code, duration, pass/fail/skip counts where the step reports them,
+skip reasons and log paths. Absolute paths are serialised with `<repo>`,
+`<toolchain>`, `<buildRoot>`, `<temp>` and `%USERPROFILE%`-style placeholders, so
+a manifest carries no home path or account name. `-VerifyManifest <path>` checks
+an existing manifest and returns exit code 1 if it still does. A failed step
+fails the whole run and returns exit code 1; a step skipped after a failed
+prerequisite is never counted as a pass. Suites that need a live desktop, real
+hardware, input or a visible window are listed under `notRun` and are not
+executed.
+
+On this PC (Windows 11, Qt 6.11.2, clang-cl 20.1.8, 4 jobs), a cold run took
+10 min 35 s (635 s) and cached `-SkipBuild` runs took 2 min 19 s to 3 min 1 s
+(139–181 s). The cold run included a clean build root. Build roots are
+disposable: remove one when the candidate work is finished.
+
 ## Service fixtures and live checks
 
 The pure service fixtures force Qt's offscreen platform themselves and use
