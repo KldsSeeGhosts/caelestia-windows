@@ -88,6 +88,22 @@ A missing capability is refused with reason `desktop-control-unavailable` and
 text `Native Windows desktop control is unavailable on this build or dispatch
 is disabled.` Graceful `killwindow` translation is not gated on this capability.
 
+## Desktop-control UI state
+
+`workspaceControlAvailable` is true only when the capability is `available` and
+the `switch` operation is supported. `workspaceControlNotice` is empty then, and
+otherwise holds one short sentence derived from the published reason, for
+example `Workspace switching is paused while Explorer restarts.` The bar's
+Windows workspaces adapter dims the upstream `WorkspacesContent` to the 0.5
+opacity upstream already uses for inactive content, covers its click area with
+an overlay, and shows the sentence in the existing `ToolTip` style. Both values
+follow the capability, so the widget returns to normal without a reload.
+
+`desktopControlDiagnostics` exposes the same availability, reason and operation
+support plus a per-operation provider map. `move` is `documented-api` because
+the own-window move uses `IVirtualDesktopManager::MoveWindowToDesktop`; the
+other operations keep the backend's provider.
+
 Everything else is refused before the backend call with a `console.warn` and a
 `lastRefusal` object (`request`, `reason`, `text`, `sequence`). Reasons:
 `dispatch-disabled`, `unavailable`, `not-string`, `invalid`, `unsupported`,

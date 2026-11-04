@@ -279,10 +279,13 @@ QtObject {
         fixture.desktopControl = nativeControl;
         const operations = { switch: true, create: true, move: true, remove: false, pin: false };
         const rows = [
-            ["unknown-build", "unavailable", "unsupported-build"],
-            ["disconnected", "unavailable", "provider-disconnected"],
-            ["permission-denied", "denied", "permission-denied"],
-            ["available", "available", ""]
+            ["unknown-build", "unavailable", "unsupported-build",
+                "Workspace switching is unavailable on this Windows build."],
+            ["disconnected", "unavailable", "provider-disconnected",
+                "Workspace switching is paused while Explorer restarts."],
+            ["permission-denied", "denied", "permission-denied",
+                "Workspace switching is unavailable because Windows denied access."],
+            ["available", "available", "", ""]
         ];
         for (const row of rows) {
             nativeControl.capability = {
@@ -294,6 +297,20 @@ QtObject {
             check(service.desktopControlCapability.reason === row[2], row[0] + " reason");
             check(service.desktopControlCapability.provider === "build-gated-private-com", row[0] + " provider");
             check(service.desktopControlSupported === (row[1] === "available"), row[0] + " support");
+            // The bar's workspace widget must render disabled and say why for
+            // every non-available capability, and return to normal without a
+            // reload as soon as the provider is available again.
+            check(service.workspaceControlAvailable === (row[1] === "available"),
+                row[0] + " workspace-control disabled state");
+            check(service.workspaceControlNotice === row[3],
+                row[0] + " workspace-control notice " + service.workspaceControlNotice
+                + " != " + row[3]);
+            // The own-window move uses the documented IVirtualDesktopManager
+            // API even though switch/create share the private COM provider.
+            check(service.desktopControlDiagnostics.operationProviders.move === "documented-api",
+                row[0] + " own-window move provider is documented");
+            check(service.desktopControlDiagnostics.operationProviders.switch
+                === "build-gated-private-com", row[0] + " switch provider is unchanged");
             if (row[1] !== "available") {
                 const before = fixture.dispatchCalls;
                 service.dispatch("workspace 2");
@@ -307,6 +324,10 @@ QtObject {
         service.dispatchEnabled = false;
         check(service.desktopControlCapability.availability === "disabled", "dispatch disabled availability");
         check(service.desktopControlCapability.reason === "dispatch-disabled", "dispatch disabled reason");
+        check(service.workspaceControlAvailable === false,
+            "dispatch disabled dims the workspace widget");
+        check(service.workspaceControlNotice === "Workspace switching is disabled in this shell configuration.",
+            "dispatch disabled notice " + service.workspaceControlNotice);
         service.dispatch("workspace 2");
         check(service.lastDesktopCommand.reason === "dispatch-disabled", "dispatch disabled refusal");
         console.log("DESKTOP_STATE dispatch-disabled " + JSON.stringify(service.desktopControlCapability));
