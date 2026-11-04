@@ -275,6 +275,12 @@ QtObject {
     // not mean access was requested or granted.
     readonly property bool mirrorStaged: enabled && mirrorOptIn && backendPresent
         && !contended && !ownershipFailed
+    // Whether the notification centre shows the mirroring status row. This is
+    // deliberately separate from mirrorStaged: a failed bus lock refuses
+    // mirroring but must still show its error reason, while the row's actions
+    // stay gated by mirrorStaged and the per-action opt-ins.
+    readonly property bool mirrorControlVisible: enabled && mirrorOptIn
+        && (mirrorStaged || ownershipFailed)
     readonly property bool windowsDismissPermitted: mirrorStaged && windowsDismissOptIn
     readonly property bool appOpenPermitted: mirrorStaged && appOpenOptIn
 
@@ -343,6 +349,32 @@ QtObject {
             return "Windows did not answer the access request. It is not retried automatically.";
         case "consent-required":
             return "Windows notifications can be mirrored after you allow access. Access is requested only from the button; it is never requested automatically.";
+        default:
+            return "Windows notification access has not been reported yet.";
+        }
+    }
+
+    // The text the notification centre's status row shows. It lives with the
+    // status it describes so the row's visibility and its error copy can be
+    // asserted together.
+    readonly property string mirrorStatusText: {
+        switch (root.mirrorStatus) {
+        case "consent-required":
+            return "Windows notifications can be mirrored here after you allow access. They are requested only when you choose it.";
+        case "pending":
+            return "Waiting for Windows to answer the access request.";
+        case "allowed":
+            return "Windows notifications are mirrored here.";
+        case "denied":
+            return "Windows notification access is denied.";
+        case "unavailable":
+            return "Windows notification-listener access is unavailable on this system.";
+        case "timed-out":
+            return "Windows did not answer the access request. Use Windows settings; it is not asked again.";
+        case "blocked":
+            return "Another notification owner is active; mirroring stays off.";
+        case "error":
+            return "The notification session-bus lock could not be initialised; mirroring stays off.";
         default:
             return "Windows notification access has not been reported yet.";
         }

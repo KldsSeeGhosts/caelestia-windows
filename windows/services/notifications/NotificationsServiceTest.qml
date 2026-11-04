@@ -2134,6 +2134,13 @@ QtObject {
             && ownershipFixture.lastMirroringValue === false
             && ownershipService.mirrorStatus === "error",
             "lock failure stops mirroring");
+        check(ownershipService.mirrorControlVisible && !ownershipService.mirrorStaged,
+            "the notification-centre status row stays visible on a lock failure");
+        check(String(ownershipService.mirrorStatusText ?? "").indexOf("session-bus lock") >= 0,
+            "the visible status row carries the lock error text: "
+            + ownershipService.mirrorStatusText);
+        check(!ownershipService.canRequestAccess,
+            "a lock failure leaves the row without an enable action");
         ownershipFixture.ownership = "owner";
         expectStatusFor(ownershipService, "local", "ownership recovers after a lock failure");
         check(ownershipService.mirroringApplied
