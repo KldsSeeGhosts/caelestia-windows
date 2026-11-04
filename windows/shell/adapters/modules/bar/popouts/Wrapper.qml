@@ -2,6 +2,8 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import Quickshell
+import Quickshell.Hyprland
+import Quickshell.Wayland
 import Caelestia.Config
 import qs.components
 import qs.modules.bar.popouts
@@ -38,6 +40,11 @@ Item {
     property alias currentName: popoutState.currentName
     property alias hasCurrent: popoutState.hasCurrent
     property real currentCenter
+    // Set by the running-apps strip when a popout is opened on purpose (right
+    // click or keyboard). It makes the drawers window keyboard-focusable below,
+    // so Escape and the arrow keys reach the popout. A hover-opened popout
+    // never sets it and so never takes focus from the user's app.
+    property bool pinned: false
 
     property string detachedMode
     property string queuedMode
@@ -89,6 +96,39 @@ Item {
     // password-dialog forwarding has no target and Escape just closes.
     focus: hasCurrent
     Keys.onEscapePressed: root.close()
+
+    // A pin lasts only while its popout is open.
+    onHasCurrentChanged: {
+        if (!hasCurrent)
+            pinned = false;
+    }
+    onCurrentNameChanged: {
+        if (currentName !== "activewindow")
+            pinned = false;
+    }
+
+    // The drawers window is keyboard-focusable only while a popout is pinned,
+    // the same override upstream applies for its detached popouts. The binding
+    // is released when the pin ends, so the window goes back to None and the
+    // user's app keeps focus. Declared before the grab so the window accepts
+    // focus before the grab asks for it.
+    Binding {
+        when: root.pinned
+
+        target: QsWindow.window
+        property: "WlrLayershell.keyboardFocus"
+        value: WlrKeyboardFocus.OnDemand
+    }
+
+    // OnDemand only permits focus. The grab asks for it, on the right-click
+    // that pinned the popout (a click is a documented foreground right, so
+    // there is no AttachThreadInput escalation), and an outside click or
+    // another app's foreground clears it, which closes the popout.
+    HyprlandFocusGrab {
+        active: root.pinned
+        windows: [QsWindow.window]
+        onCleared: root.close()
+    }
 
     PopoutState {
         id: popoutState

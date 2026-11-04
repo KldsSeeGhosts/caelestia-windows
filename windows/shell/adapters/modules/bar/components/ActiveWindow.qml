@@ -46,8 +46,9 @@ StyledRect {
     // item's coordinates. Bar.qml prefers it over the entry's centre.
     property real hoverCenter: implicitHeight / 2
     // A right-click opens the popout deliberately, so a hover must not
-    // retarget it until it closes again.
-    property bool pinned: false
+    // retarget it until it closes again. The popouts wrapper owns the state:
+    // it also makes the drawers window keyboard-focusable while pinned.
+    readonly property bool pinned: bar?.popouts?.pinned ?? false
 
     function appName(group): string {
         // Re-resolve friendly names when the existing catalog finishes scanning.
@@ -105,13 +106,14 @@ StyledRect {
         const popouts = bar?.popouts ?? null;
         if (!popouts)
             return;
-        pinned = true;
         Services.RunningApps.previewGroupId = key;
         Services.RunningApps.previewWindowId = lastActive(group);
         hoverCenter = item.mapToItem(root, 0, root.rowSize / 2).y;
         popouts.currentName = "activewindow";
         popouts.currentCenter = mapToItem(bar, 0, hoverCenter).y;
         popouts.hasCurrent = true;
+        // Last: changing the popout above resets a pin.
+        popouts.pinned = true;
         focusPinnedPopout();
         interactionStarted();
     }
@@ -237,20 +239,8 @@ StyledRect {
         }
     }
 
-    // A hover-opened popout closes by itself; a pinned one stops following the
-    // pointer only for as long as it is open.
     Connections {
         target: root.bar?.popouts ?? null
-
-        function onHasCurrentChanged(): void {
-            if (!target.hasCurrent)
-                root.pinned = false;
-        }
-
-        function onCurrentNameChanged(): void {
-            if (target.currentName !== "activewindow")
-                root.pinned = false;
-        }
 
         // The pinned popout content loads after the open request; take focus
         // when it appears.
