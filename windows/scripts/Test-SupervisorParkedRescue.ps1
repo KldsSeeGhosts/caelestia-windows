@@ -42,15 +42,14 @@ try {
     $control = (Get-Content -LiteralPath (Join-Path $root ($marker.Name -replace '^window-', 'control-')) -Raw).Trim()
 
     # The rectangle to restore, packed exactly as the tiler packs it.
-    $packed = [uint64]100 -bor ([uint64]100 -shl 16) -bor ([uint64]320 -shl 32) -bor ([uint64]200 -shl 48)
+    $restore = @(100, 100, 320, 200)
+    $packed = [uint64]$restore[0] -bor ([uint64]$restore[1] -shl 16) -bor ([uint64]$restore[2] -shl 32) -bor ([uint64]$restore[3] -shl 48)
+    $restored = '{0},{1},{2},{3}' -f $restore[0], $restore[1], ($restore[0] + $restore[2]), ($restore[1] + $restore[3])
     # A fake shell parks the window off screen, tags it, and dies.
     & $fixture 'park' $root $handle ([string]$packed) '-32000' '-32000' | Out-Null
     Wait-Until { (Read-State $handle).onscreen -eq '0' } 5 'Fixture window was not parked off screen.'
     $before = Read-State $handle
     if ($before.prop -ne '1') { throw 'Fixture window does not carry the parked property.' }
-    # Safety: a real parked window must never be part of this run.
-    $others = @(& $fixture 'list' | Where-Object { $_ -ne "parked=$handle" })
-    if ($others.Count -ne 0) { throw "Another shell has parked windows; refusing to run: $($others -join ', ')" }
 
     $dir = Join-Path $root 'supervisor'
     New-Item -ItemType Directory -Path $dir | Out-Null
@@ -63,6 +62,8 @@ try {
         WorkingDirectory = $dir; StateDirectory = $dir
         StdoutPath = (Join-Path $dir 'stdout.log'); StderrPath = (Join-Path $dir 'stderr.log')
         RestoreWorkAreas = $false; Environment = @{}
+        # The isolated supervisor rescues only this fixture's window.
+        TestWindowOwners = @([int]$windowHost.Id)
     } | ConvertTo-Json | Set-Content -LiteralPath $specPath -Encoding UTF8
     $workerArgs = @('-NoProfile', '-STA', '-File', ('"' + $PSCommandPath + '"'),
         '-Worker', '-Spec', ('"' + $specPath + '"'), '-Token', $token)
@@ -76,6 +77,7 @@ try {
 
     $after = Read-State $handle
     if ($after.onscreen -ne '1') { throw "Window is still off screen after the supervisor gave up: $($after.rect)" }
+    if ($after.rect -ne $restored) { throw "Window was restored to $($after.rect), not $restored." }
     if ($after.prop -ne '0') { throw 'The parked property was left on the window.' }
     if ((Read-State $control).onscreen -ne '0') { throw 'A window without the parked property was moved.' }
     Write-Output 'PASS parked-rescue: a window a crashing shell parked off screen came back on screen when the supervisor gave up.'

@@ -16,6 +16,10 @@ namespace Caelestia.Takeover {
         public string StdoutPath, StderrPath;
         public bool RestoreWorkAreas;
         public Dictionary<string, string> Environment = new Dictionary<string, string>();
+        // Isolated test supervisors rescue only windows of these processes.
+        // A production supervisor rescues the whole session, apart from the
+        // tiler guard, so this is ignored outside isolated mode.
+        public List<int> TestWindowOwners = new List<int>();
     }
     public struct Rect {
         public int Left, Top, Right, Bottom;
@@ -604,6 +608,13 @@ namespace Caelestia.Takeover {
         [DllImport("user32.dll", SetLastError = true)] static extern IntPtr GetProp(IntPtr window, IntPtr name);
         [DllImport("user32.dll", SetLastError = true)] static extern IntPtr RemoveProp(IntPtr window, IntPtr name);
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] static extern ushort GlobalFindAtom(string name);
+        // The tiler's own session owner guard, opened the same way it does.
+        [DllImport("kernel32.dll", SetLastError = true)] static extern IntPtr OpenMutex(uint access, bool inherit, string name);
+        [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr handle);
+        const uint Synchronize = 0x00100000;
+        // TilingManager creates this mutex while it tiles; the shell's next
+        // start runs its own rescue once the mutex is free again.
+        public const string TilingMutex = @"Local\QuickshellTiling";
         const string ParkedProperty = "QuickshellTilingParked";
         const uint MonitorDefaultToNull = 0, MonitorDefaultToNearest = 2;
         const uint SwpNoZOrder = 0x0004, SwpNoActivate = 0x0010, SwpNoOwnerZOrder = 0x0200, SwpAsyncWindowPos = 0x4000;
@@ -1095,7 +1106,12 @@ namespace Caelestia.Takeover {
         // shell rescues them from its own next start; when it crashed and the
         // supervisor stops restarting it, this process is the only one left to
         // do it. Mirrors TilingManager::rescueParked.
-        public static int RescueParkedWindows() {
+        // tilerMutex is the guard that a live tiler holds while it owns parked
+        // windows. owned, when set, narrows the pass to those processes; an
+        // isolated test supervisor uses it so it can never touch a real shell.
+        public static int RescueParkedWindows(string tilerMutex, Func<int, bool> owned) {
+            var tiler = OpenMutex(Synchronize, false, tilerMutex);
+            if (tiler != IntPtr.Zero) { CloseHandle(tiler); return 0; }
             var atom = GlobalFindAtom(ParkedProperty);
             if (atom == 0) return 0;
             var tag = new IntPtr(atom);
@@ -1106,6 +1122,11 @@ namespace Caelestia.Takeover {
             var previous = SetThreadDpiAwarenessContext(new IntPtr(-4));
             try {
                 foreach (var window in windows) {
+                    if (owned != null) {
+                        uint owner;
+                        GetWindowThreadProcessId(window, out owner);
+                        if (!owned((int)owner)) continue;
+                    }
                     var packed = GetProp(window, tag);
                     if (packed == IntPtr.Zero) continue;
                     // The tag is consumed whether or not the window needs a move.
@@ -1190,6 +1211,11 @@ namespace Caelestia.Takeover {
         readonly RegionSuppression regions;
         readonly StartupPersistence startup;
         readonly TaskbarShortcutHook shortcutHook;
+        readonly string tilerMutex;
+        // Isolated tests rescue only the windows of the processes this
+        // supervisor launched and any the test named in its spec.
+        readonly List<int> rescueOwners;
+        readonly Func<int, bool> rescueFilter;
         Process child;
         LogDrain childDrain;
         long drainDeadline;
@@ -1244,17 +1270,27 @@ namespace Caelestia.Takeover {
                 if (!acquired) throw new InvalidOperationException("A desktop supervisor already owns this Windows session.");
                 try {
                     var launch = new JavaScriptSerializer().Deserialize<Launch>(File.ReadAllText(specPath));
-                    using (var supervisor = new Supervisor(launch, hide, restart, invisible, eventName, isolatedTest, testLogDelayMs)) {
+                    // An isolated supervisor must not be blocked by the live
+                    // shell's tiler guard, so it uses its own unheld name.
+                    string tilerMutex = isolatedTest ? mutexName + "-Tiling" : Native.TilingMutex;
+                    using (var supervisor = new Supervisor(launch, hide, restart, invisible, eventName, tilerMutex, isolatedTest, testLogDelayMs)) {
                         Application.Run();
                         return supervisor.ExitCode;
                     }
                 } finally { mutex.ReleaseMutex(); }
             }
         }
-        Supervisor(Launch launch, bool hide, bool restart, bool invisible, string eventName, bool isolatedTest, int testLogDelayMs) {
+        Supervisor(Launch launch, bool hide, bool restart, bool invisible, string eventName,
+            string tilerMutex, bool isolatedTest, int testLogDelayMs) {
             this.launch = launch; this.hide = hide; this.restart = restart; this.invisible = invisible && hide;
             this.isolatedTest = isolatedTest;
+            this.tilerMutex = tilerMutex;
             this.testLogDelayMs = testLogDelayMs;
+            if (isolatedTest) {
+                rescueOwners = new List<int>();
+                if (launch.TestWindowOwners != null) rescueOwners.AddRange(launch.TestWindowOwners);
+                rescueFilter = OwnsRescuedWindow;
+            }
             Directory.CreateDirectory(launch.StateDirectory);
             // Create and reset the recovery event before publishing "starting" so
             // any RecoverActive() signal during banner recovery is preserved.
@@ -1542,6 +1578,7 @@ namespace Caelestia.Takeover {
             childDrain = drain;
             drainDeadline = 0;
             ownedPid = child.Id;
+            if (rescueOwners != null) rescueOwners.Add(child.Id);
             if (hide) {
                 shortcutHook.Activate();
                 if (process.HasExited) shortcutHook.Deactivate();
@@ -1629,6 +1666,7 @@ namespace Caelestia.Takeover {
                 finally { Application.ExitThread(); }
             }
         }
+        bool OwnsRescuedWindow(int pid) { return rescueOwners.Contains(pid); }
         public void Dispose() {
             if (done) return;
             done = true;
@@ -1649,7 +1687,7 @@ namespace Caelestia.Takeover {
                         try { if (!isolatedTest) Native.RestoreOwned(saved, ownedPid, launch.RestoreWorkAreas, hide || adoptedUncleanBaseline); }
                         // No shell is left to run TilingManager::rescueParked, so
                         // the windows it parked must come back from here.
-                        finally { Native.RescueParkedWindows(); }
+                        finally { Native.RescueParkedWindows(tilerMutex, rescueFilter); }
                     } finally {
                         Native.RecordAction = null;
                         recovery.Dispose();

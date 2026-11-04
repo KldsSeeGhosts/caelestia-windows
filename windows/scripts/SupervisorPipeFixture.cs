@@ -42,6 +42,7 @@ public static class SupervisorPipeFixture {
     [DllImport("user32.dll", SetLastError = true)]
     static extern IntPtr GetProp(IntPtr window, IntPtr name);
     [DllImport("user32.dll")] static extern IntPtr MonitorFromWindow(IntPtr window, uint flags);
+    [DllImport("user32.dll")] static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
     [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr window, out Rect rect);
     [DllImport("user32.dll")] static extern bool EnumWindows(WindowCallback callback, IntPtr data);
     [DllImport("user32.dll")] static extern int GetMessage(out Msg message, IntPtr window, uint min, uint max);
@@ -93,6 +94,8 @@ public static class SupervisorPipeFixture {
         }
         if (args[0] == "window") {
             // Hidden: these fixtures park and rescue their own windows only.
+            // Per-monitor aware, so the packed physical rectangle lands exactly.
+            SetThreadDpiAwarenessContext(new IntPtr(-4));
             var target = CreateWindowEx(WsExToolWindow, "STATIC", "parked",
                 WsPopup, 100, 100, 320, 200, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
             // The control is off screen and never tagged: a rescue must leave it there.
@@ -136,6 +139,8 @@ public static class SupervisorPipeFixture {
     static int State(string text) {
         var window = new IntPtr(Int64.Parse(text));
         var atom = GlobalFindAtom(ParkProperty);
+        // Read in physical pixels, the space the tiler packs and restores.
+        SetThreadDpiAwarenessContext(new IntPtr(-4)); // DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2
         Rect rect;
         GetWindowRect(window, out rect);
         Console.Out.WriteLine("onscreen=" + (MonitorFromWindow(window, 0) != IntPtr.Zero ? 1 : 0));
