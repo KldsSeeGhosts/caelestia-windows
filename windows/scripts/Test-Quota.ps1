@@ -3,8 +3,8 @@ param(
     [Parameter(Mandatory)][string]$QtPrefix,
     [Parameter(Mandatory)][string]$BuildRoot,
     [string]$RunRoot,
-    [ValidateSet('configured', 'states', 'offline', 'unconfigured', 'disabled', 'keepalive')]
-    [string[]]$Modes = @('configured', 'states', 'offline', 'unconfigured', 'disabled', 'keepalive'),
+    [ValidateSet('configured', 'states', 'offline', 'unconfigured', 'disabled', 'keepalive', 'hub')]
+    [string[]]$Modes = @('configured', 'states', 'offline', 'unconfigured', 'disabled', 'keepalive', 'hub'),
     # Drawer sizes as "<width>x<height>". configured runs every size, states
     # runs the sizes at least 400 high, offline, unconfigured and disabled use the first.
     [ValidatePattern('^\d+x\d+$')]
@@ -41,7 +41,15 @@ param(
 #   keepalive     a fake Keepalive helper (a real Python process, swapped in for
 #                 the staged script) reports progress, then would write a marker
 #                 file after a delay. The panel is switched off meanwhile: the
-#                 helper process must be gone and the marker never written.
+#                 helper process must be gone and the marker never written;
+#   hub           a synthetic stock CLIProxyAPI hub (fixtures/stub_cpa_hub.py)
+#                 answers quota/summary with 404, so the provider helper reads
+#                 Codex, Claude and Antigravity logins through api-call. All
+#                 Usage, the Today token popover with Top Models and the Limit
+#                 Resets popover are checked and screenshotted; the panel is then
+#                 switched off and the helper must be gone within a second. The
+#                 management key and a token the hub lists are sentinels that must
+#                 not appear in the logs, the cache or the drawer's model.
 ## It never contacts a real CPA or upstream provider, uses no credentials, takes
 # no pointer input and never touches the live desktop.
 $ErrorActionPreference = 'Stop'
@@ -59,6 +67,11 @@ if (-not $python -or -not (Test-Path -LiteralPath $python)) {
 if (-not $python) { throw 'Python is required for the synthetic quota stub.' }
 $python = [IO.Path]::GetFullPath($python)
 $stubScript = Join-Path $repoRoot 'windows\quota\fixtures\stub_cpa.py'
+$hubStubScript = Join-Path $repoRoot 'windows\quota\fixtures\stub_cpa_hub.py'
+# Hub mode's sentinels: the management key in cpa-agents.json and the token the
+# stub hub's login list carries. Neither may appear anywhere the run leaves.
+$hubKey = 'SENTINEL-ADMIN-KEY-5d0b3e'
+$hubToken = 'SENTINEL-TOKEN-91c2e7'
 $qmlRoot = Join-Path $BuildRoot 'install\qml'
 $exe = Join-Path $BuildRoot 'quickshell\qs.exe'
 foreach ($required in @($exe, "$qmlRoot\Caelestia\Config\qmldir", "$qmlRoot\Caelestia\Windows\qmldir", $stubScript, "$stage\quota-light-scheme.json")) {
@@ -101,13 +114,13 @@ function Write-Utf8NoBom([string]$Path, [string]$Text) {
     [IO.File]::WriteAllText($Path, $Text, (New-Object Text.UTF8Encoding($false)))
 }
 
-function Start-Stub([string]$Root, [string]$Scenario = 'default') {
+function Start-Stub([string]$Root, [string]$Scenario = 'default', [string]$Script = $stubScript, [string]$Extra = '') {
     $portFile = Join-Path $Root 'stub-port.txt'
     $info = New-Object Diagnostics.ProcessStartInfo
     $info.FileName = $python
     # Windows PowerShell 5.1 has no ProcessStartInfo.ArgumentList; quote the
     # two paths explicitly instead.
-    $info.Arguments = '"{0}" --port 0 --port-file "{1}" --scenario {2}' -f $stubScript, $portFile, $Scenario
+    $info.Arguments = ('"{0}" --port 0 --port-file "{1}" --scenario {2} {3}' -f $Script, $portFile, $Scenario, $Extra).Trim()
     $info.UseShellExecute = $false
     $info.CreateNoWindow = $true
     $info.RedirectStandardOutput = $true
@@ -158,6 +171,9 @@ function Invoke-QuotaSmoke([string]$Mode, [string]$Geometry) {
         if ($Mode -eq 'configured' -or $Mode -eq 'states' -or $Mode -eq 'disabled' -or $Mode -eq 'keepalive') {
             $stub = Start-Stub $modeRoot $(if ($Mode -eq 'states') { 'states' } else { 'default' })
             $baseUrl = $stub.BaseUrl
+        } elseif ($Mode -eq 'hub') {
+            $stub = Start-Stub $modeRoot 'stock' $hubStubScript "--admin-key $hubKey"
+            $baseUrl = $stub.BaseUrl
         } elseif ($Mode -eq 'offline') {
             # Port 9 is discard; a local connection is refused immediately.
             $baseUrl = 'http://127.0.0.1:9'
@@ -170,7 +186,7 @@ function Invoke-QuotaSmoke([string]$Mode, [string]$Geometry) {
         }
         if ($Mode -ne 'unconfigured') {
             Write-Utf8NoBom "$profile\config\quota.json" ('{{"enabled":true,"refreshIntervalMs":600000,"geometry":{{"width":{0},"height":{1}}}}}' -f $width, $height)
-            $configJson = [ordered]@{ baseUrl = $baseUrl; adminKey = 'smoke-placeholder' } | ConvertTo-Json
+            $configJson = [ordered]@{ baseUrl = $baseUrl; adminKey = $(if ($Mode -eq 'hub') { $hubKey } else { 'smoke-placeholder' }) } | ConvertTo-Json
             Write-Utf8NoBom "$profile\config\cpa-agents.json" $configJson
         }
 
@@ -230,7 +246,11 @@ function Invoke-QuotaSmoke([string]$Mode, [string]$Geometry) {
         $info.EnvironmentVariables['XDG_STATE_HOME'] = "$profile\state"
         $info.EnvironmentVariables['XDG_CACHE_HOME'] = "$profile\cache"
         $info.EnvironmentVariables['XDG_DATA_HOME'] = "$profile\data"
-        if ($Mode -eq 'keepalive') { $info.EnvironmentVariables['CAELESTIA_QUOTA_PYTHON'] = $python }
+        if ($Mode -eq 'keepalive' -or $Mode -eq 'hub') { $info.EnvironmentVariables['CAELESTIA_QUOTA_PYTHON'] = $python }
+        $tokensScreenshot = Join-Path $modeRoot 'quota-tokens.png'
+        $resetsScreenshot = Join-Path $modeRoot 'quota-resets.png'
+        $info.EnvironmentVariables['CAELESTIA_QUOTA_TOKENS_SCREENSHOT'] = ([Uri]$tokensScreenshot).AbsoluteUri
+        $info.EnvironmentVariables['CAELESTIA_QUOTA_RESETS_SCREENSHOT'] = ([Uri]$resetsScreenshot).AbsoluteUri
         $info.EnvironmentVariables['CAELESTIA_QUOTA_SMOKE_MODE'] = $Mode
         $info.EnvironmentVariables['CAELESTIA_QUOTA_SMOKE_GEOMETRY'] = $Geometry
         $info.EnvironmentVariables['CAELESTIA_QUOTA_PRIORITY_SCREENSHOT'] = ([Uri]$priorityScreenshot).AbsoluteUri
@@ -271,6 +291,13 @@ function Invoke-QuotaSmoke([string]$Mode, [string]$Geometry) {
             try { $cacheProviders = @((ConvertFrom-Json $cacheText).providers).Count } catch { $cacheProviders = -1 }
         }
         $cacheLeaks = $cacheText -match 'adminKey|baseUrl|smoke-placeholder|@'
+        # Hub mode's leak check: the sentinels never reach stdout, stderr (which
+        # carry the drawer's whole model, see CAELESTIA_QUOTA_SMOKE_HUB_STATE) or the cache.
+        $sentinelLeaks = @(@($hubKey, $hubToken) | Where-Object { "$text`n$cacheText".Contains($_) })
+        $hubStats = $null
+        if ($Mode -eq 'hub' -and $stub) {
+            try { $hubStats = Invoke-RestMethod -Uri "$($stub.BaseUrl)/__stats" -TimeoutSec 5 } catch { $hubStats = $null }
+        }
 
         $helperGone = $true
         if ($Mode -eq 'keepalive') {
@@ -321,6 +348,16 @@ function Invoke-QuotaSmoke([string]$Mode, [string]$Geometry) {
                 $text -match 'CAELESTIA_QUOTA_SMOKE_DISABLED .*"enabled":false' -and
                 $text -match 'CAELESTIA_QUOTA_SMOKE_DISABLED .*"regionWidth":0' -and
                 $text -match 'CAELESTIA_QUOTA_SMOKE_DISABLED .*"requests":0'
+        } elseif ($Mode -eq 'hub') {
+            $passed = $passed -and
+                $text -match 'CAELESTIA_QUOTA_SMOKE_HUB .*"accounts":3' -and
+                $text -match 'CAELESTIA_QUOTA_SMOKE_HUB .*"providers":"codex,claude,antigravity"' -and
+                $text -match 'CAELESTIA_QUOTA_SMOKE_HUB_TOKENS .*"parts":3' -and
+                $text -match 'CAELESTIA_QUOTA_SMOKE_HUB_OFF .*"helper":"gone"' -and
+                -not ($screenshot, $tokensScreenshot, $resetsScreenshot | Where-Object { -not (Test-Path -LiteralPath $_) -or (Get-Item -LiteralPath $_).Length -le 0 }) -and
+                $cacheProviders -eq 3 -and $cacheText.Contains('"history"') -and $cacheText.Contains('"resetCredits":{"count":2') -and
+                $hubStats -and $hubStats.calls.'api-call' -gt 0 -and $hubStats.maxInFlight -eq 1 -and $hubStats.badTokenHeaders -eq 0 -and
+                -not $cacheLeaks -and $sentinelLeaks.Count -eq 0
         } elseif ($Mode -eq 'keepalive') {
             $passed = $passed -and $helperGone -and
                 $text -match 'CAELESTIA_QUOTA_SMOKE_KEEPALIVE .*"running":false'
@@ -342,6 +379,8 @@ function Invoke-QuotaSmoke([string]$Mode, [string]$Geometry) {
             cache = $cachePath
             cacheProviders = $cacheProviders
             cacheLeaks = [bool]$cacheLeaks
+            sentinelLeaks = $sentinelLeaks.Count
+            hubStats = $hubStats
             savedCache = $savedCache
             screenshot = $screenshot
             lightScreenshot = $lightScreenshot

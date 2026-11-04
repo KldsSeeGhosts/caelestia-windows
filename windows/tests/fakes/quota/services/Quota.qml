@@ -48,6 +48,7 @@ QtObject {
     property int effectiveRefreshMs: 60000
     property double nowMs: Date.now()
     property double lastUpdatedAt: Date.now()
+    property double nextUpdateAt: lastUpdatedAt + effectiveRefreshMs
     property bool configured: true
     property string status: "ok"
     property var todayCostUsd: null

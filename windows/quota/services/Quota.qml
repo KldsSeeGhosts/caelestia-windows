@@ -5,6 +5,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import qs.services
+import "QuotaHub.js" as Hub
 
 // CPA quota data service for the Windows drawer.
 //
@@ -26,6 +27,13 @@ import qs.services
 // Privacy: baseUrl/adminKey are parsed from cpa-agents.json in memory only.
 // The key, the response body, emails and account ids are never logged. Errors
 // are mapped from CPA's known codes to short UI strings.
+//
+// Hub mode: stock CLIProxyAPI has no quota/summary (404), and CPA Manager's
+// summary has no token history or limit resets. In either case, when the
+// summary is missing or "Detailed usage via CLIProxyAPI" (windows.quota.cpaHub)
+// is on, providers/quota_providers.py reads each hub login through the hub's
+// api-call tunnel. It runs only while the panel is on, gets the key over stdin
+// and answers with masked accounts; QuotaHub.js merges them with the summary.
 Singleton {
     id: root
 
@@ -70,6 +78,28 @@ Singleton {
     property var todayCostUsd: null
     // { today | yesterday | month: { total, rows: [{ provider, cost }] } }
     property var spend: ({})
+
+    // Hub mode (see above). summaryRecords and hubRecords are the two sources;
+    // providers is their merge.
+    property var summaryRecords: []
+    property var hubRecords: []
+    property var summaryIdentities: []
+    // quota/summary answered 404: stock CLIProxyAPI, so the hub is the only source.
+    property bool summaryMissing: false
+    // The helper's view of the hub: "" (not started), ok, key_rejected, banned,
+    // insecure, unreachable, management_off, remote_off, ...
+    property string hubState: ""
+    property double hubNextDueAt: 0
+    property double hubUpdatedAt: 0
+    // The helper's persisted state (Claude 429 windows by opaque account tag).
+    property var hubSaved: ({})
+    readonly property bool hubWanted: root.enabled && root.endpointLoaded && root.baseUrl !== "" && root.adminKey !== ""
+        && (QuotaConfig.cpaHub || root.summaryMissing)
+    readonly property string hubScript: Quickshell.shellPath("providers/quota_providers.py")
+    // Read by the offscreen smoke to prove the helper is gone once switched off.
+    readonly property var hubProcessId: hubProcess.processId
+    readonly property double nextUpdateAt: root.summaryMissing ? root.hubNextDueAt
+        : root.lastUpdatedAt > 0 ? root.lastUpdatedAt + root.effectiveRefreshMs : 0
 
     readonly property int providerIndex: {
         for (let i = 0; i < providers.length; i++) {
@@ -337,10 +367,14 @@ Singleton {
         root.baseUrl = base;
         root.adminKey = key;
         root.endpointLoaded = true;
-        if (previous !== base + "\n" + key)
+        if (previous !== base + "\n" + key) {
+            // Another endpoint: find out again whether it has a summary.
+            root.summaryMissing = false;
+            root.sendHubConfig();
             root.refresh(true);
-        else
+        } else {
             root.maybeRefresh();
+        }
     }
 
     function loadCache(raw: string): void {
@@ -362,6 +396,8 @@ Singleton {
             ? cached.todayCostUsd : null;
         if (cached.spend && typeof cached.spend === "object" && Object.keys(root.spend).length === 0)
             root.spend = cached.spend;
+        if (cached.hub && typeof cached.hub === "object" && Object.keys(root.hubSaved).length === 0)
+            root.hubSaved = cached.hub;
         root.status = root.error !== "" ? "error" : "ok";
         root.selectedProviderId = root.defaultProviderId();
     }
@@ -411,7 +447,10 @@ Singleton {
             dailyMetric: "tokens",
             tokensToday: 0,
             requestsToday: 0,
-            providerRank: rec.providerRank
+            providerRank: rec.providerRank,
+            // Hub detail: aggregates and expiry times only.
+            resetCredits: rec.resetCredits ? { count: Number(rec.resetCredits.count) || 0, expiries: (rec.resetCredits.expiries || []).map(String) } : null,
+            history: rec.history && rec.history.days ? { days: rec.history.days } : null
         };
     }
 
@@ -428,6 +467,7 @@ Singleton {
                 ttlMs: root.ttlMs,
                 todayCostUsd: root.todayCostUsd,
                 spend: root.spend,
+                hub: root.hubSaved,
                 providers: cachedProviders
             }));
         } catch (e) {
@@ -455,7 +495,19 @@ Singleton {
             root.status = "unconfigured";
             return;
         }
-        if (!root.enabled || root.inFlight)
+        if (!root.enabled)
+            return;
+        // Refresh now also asks the helper, which skips accounts read in the
+        // last minute, and starts it again if it stopped on its own.
+        if (force && root.hubWanted && !hubProcess.running)
+            root.startHub();
+        else if (force)
+            root.hubCommand({ type: "refresh", force: true });
+        if (root.inFlight)
+            return;
+        // Stock CLIProxyAPI has no summary to poll; only Refresh now or a new
+        // endpoint asks again.
+        if (!force && root.summaryMissing)
             return;
         // Automatic refreshes never outpace the manager's own TTL.
         if (!force && root.lastRequestAt > 0 && root.ttlMs > 0
@@ -469,6 +521,12 @@ Singleton {
         // The admin key travels as a Bearer header: plain HTTP only to loopback.
         if (!/^https:\/\//i.test(root.baseUrl)
                 && !/^http:\/\/(127\.0\.0\.1|localhost|\[::1\])(:\d+)?(\/|$)/i.test(root.baseUrl)) {
+            // The hub helper may use plain http on the local network or Tailscale,
+            // as OpenUsage does; the summary read stays loopback-only.
+            if (root.hubAllowsHttp(root.baseUrl)) {
+                root.useHubOnly();
+                return;
+            }
             root.error = qsTr("CPA baseUrl must use https. Plain http is only allowed for localhost.");
             root.status = "error";
             return;
@@ -491,7 +549,8 @@ Singleton {
             return;
         }
 
-        root.refreshSpend();
+        if (!root.summaryMissing)
+            root.refreshSpend();
         root.inFlight = true;
         root.loading = true;
         root.requestTimedOut = false;
@@ -509,6 +568,12 @@ Singleton {
                         return;
                     }
                     root.finishRequest();
+                    return;
+                }
+                if (request.status === 404) {
+                    // Stock CLIProxyAPI: no summary, so the hub helper reads it all.
+                    root.finishRequest();
+                    root.useHubOnly();
                     return;
                 }
             } catch (e) {
@@ -632,6 +697,7 @@ Singleton {
         if (keepaliveProcess.running)
             keepaliveProcess.signal(9);
         root.keepaliveRunning = false;
+        root.stopHub();
         const aborting = root.spendRequests.concat([root.activeRequest]);
         root.spendRequests = [];
         root.activeRequest = null;
@@ -702,6 +768,22 @@ Singleton {
             return qsTr("Quota reporting is not configured in CPA.");
         case "no_accounts":
             return qsTr("CPA reported no quota accounts.");
+        case "hub_key":
+        case "key_rejected":
+            return qsTr("CLIProxyAPI rejected the management key. Replace adminKey in cpa-agents.json.");
+        case "hub_banned":
+        case "banned":
+            return qsTr("CLIProxyAPI blocked this PC after too many wrong keys. Wait 30 minutes, then replace adminKey.");
+        case "insecure":
+            return qsTr("Use https for CLIProxyAPI. Plain http is only used on this PC, the local network or Tailscale.");
+        case "unreachable":
+            return qsTr("Can't reach CLIProxyAPI.");
+        case "management_off":
+            return qsTr("CLIProxyAPI's management API is off. Set a management key in its config.");
+        case "remote_off":
+            return qsTr("CLIProxyAPI only allows management from its own machine. Turn on allow-remote.");
+        case "helper_failed":
+            return qsTr("The usage helper stopped. Refresh to start it again.");
         default:
             return qsTr("CPA could not read this account's quota.");
         }
@@ -817,7 +899,8 @@ Singleton {
             dailyMetric: "tokens",
             tokensToday: 0,
             requestsToday: 0,
-            providerRank: providerRank
+            providerRank: providerRank,
+            planReported: plan !== ""
         };
     }
 
@@ -842,16 +925,8 @@ Singleton {
         const ttl = Number(summary.ttlMs);
         root.ttlMs = (Number.isFinite(ttl) && ttl > 0) ? ttl : 0;
 
-        const groups = [];
         const records = [];
-        const prior = root.selectedProviderId;
-        let priorProvider = "";
-        for (let i = 0; i < root.providers.length; i++) {
-            if (root.providers[i].id === prior) {
-                priorProvider = root.providers[i].provider;
-                break;
-            }
-        }
+        let rank = 0;
         for (let i = 0; i < summary.providers.length; i++) {
             const provider = summary.providers[i];
             if (!provider || typeof provider !== "object")
@@ -860,40 +935,23 @@ Singleton {
             if (!id)
                 continue;
             const accounts = Array.isArray(provider.accounts) ? provider.accounts : [];
-            if (!groups.some(group => group.id === id))
-                groups.push({ id: id, label: String(provider.label || provider.id), rank: i, order: groups.length });
             const providerError = root.errorCode(provider.error);
             for (let j = 0; j < accounts.length; j++) {
                 if (accounts[j] && typeof accounts[j] === "object")
-                    records.push(root.mapAccount(provider, accounts[j], groups.length - 1, stampIso, providerError));
+                    records.push(root.mapAccount(provider, accounts[j], rank, stampIso, providerError));
             }
+            rank++;
         }
-
         // Stable provider order, codex-first like the original drawer. Unknown
         // providers keep the manager's own order at the end.
-        const preferred = ["codex", "claude", "antigravity", "cursor", "zai", "opencode-go", "vertex", "kimi"];
-        groups.sort((a, b) => {
-            const aIdx = preferred.indexOf(a.id);
-            const bIdx = preferred.indexOf(b.id);
-            const aRank = aIdx >= 0 ? aIdx : 99;
-            const bRank = bIdx >= 0 ? bIdx : 99;
-            if (aRank !== bRank)
-                return aRank - bRank;
-            return a.order - b.order;
-        });
-
-        const ordered = [];
-        for (let i = 0; i < groups.length; i++) {
-            const group = groups[i];
-            for (let j = 0; j < records.length; j++) {
-                if (records[j].provider === group.id)
-                    ordered.push(records[j]);
-            }
-        }
+        const ordered = Hub.order(records);
 
         const summaryCode = root.errorCode(summary.error);
         const summaryError = summaryCode ? root.friendlyError(summaryCode) : "";
-        root.providers = ordered;
+        root.summaryMissing = false;
+        root.summaryRecords = ordered;
+        root.summaryIdentities = Hub.identities(summary);
+        root.hubCommand({ type: "summary", accounts: root.summaryIdentities });
         root.todayCostUsd = (typeof summary.todayCostUsd === "number" && Number.isFinite(summary.todayCostUsd))
             ? summary.todayCostUsd : null;
         root.lastUpdatedAt = stamp;
@@ -902,29 +960,188 @@ Singleton {
             || (typeof summary.status === "string" && summary.status !== "ok")
             || (summaryError !== "" && ordered.length > 0);
         root.status = root.error !== "" ? "error" : degraded ? "partial" : "ok";
+        root.rebuild();
+        return true;
+    }
 
-        let exists = false;
-        for (let i = 0; i < ordered.length; i++) {
-            if (ordered[i].id === prior) {
-                exists = true;
+    // providers = the summary rows with the hub's detail merged in, plus the
+    // hub accounts the summary does not have. Keeps the selected provider.
+    function rebuild(): void {
+        const prior = root.selectedProviderId;
+        let priorProvider = "";
+        for (let i = 0; i < root.providers.length; i++) {
+            if (root.providers[i].id === prior) {
+                priorProvider = root.providers[i].provider;
                 break;
             }
         }
-        if (!exists) {
+        const merged = Hub.order(Hub.merge(root.summaryRecords, root.hubRecords));
+        root.providers = merged;
+        if (!merged.some(r => r.id === prior)) {
             // A cached summary uses display-only ids. Keep the same provider
             // when the first live summary replaces it.
-            let fallback = "";
-            for (let i = 0; i < ordered.length && priorProvider; i++) {
-                if (ordered[i].provider === priorProvider) {
-                    fallback = ordered[i].id;
-                    break;
+            const fallback = priorProvider ? merged.find(r => r.provider === priorProvider) : null;
+            root.selectedProviderId = fallback ? fallback.id : root.defaultProviderId();
+        }
+        root.writeCache();
+    }
+
+    // -- Hub mode --------------------------------------------------------------
+
+    // OpenUsage's rule for sending the management key over plain http: this PC,
+    // the local network (private, link-local, unique-local or .local) or
+    // Tailscale (.ts.net, 100.64.0.0/10). The helper applies the same rule itself.
+    function hubAllowsHttp(url: string): bool {
+        const match = /^http:\/\/(\[[^\]]+\]|[^\/:?#]+)(:\d+)?(\/|$)/i.exec(url);
+        if (!match)
+            return false;
+        const host = match[1].toLowerCase().replace(/^\[|\]$/g, "");
+        if (host === "localhost" || /\.(local|ts\.net)$/.test(host))
+            return true;
+        if (host.indexOf(":") >= 0)
+            return host === "::1" || /^(fe80|fc|fd)/.test(host);
+        const o = host.split(".").map(Number);
+        if (o.length !== 4 || o.some(n => !Number.isInteger(n) || n < 0 || n > 255))
+            return false;
+        return o[0] === 127 || o[0] === 10 || (o[0] === 192 && o[1] === 168) || (o[0] === 169 && o[1] === 254)
+            || (o[0] === 172 && o[1] >= 16 && o[1] <= 31) || (o[0] === 100 && o[1] >= 64 && o[1] <= 127);
+    }
+
+    // No summary (stock CPA, or a LAN/Tailscale http hub): the hub is the only source.
+    function useHubOnly(): void {
+        root.summaryMissing = true;
+        root.summaryRecords = [];
+        root.summaryIdentities = [];
+        root.applyHubStatus();
+        root.rebuild();
+    }
+
+    function applyHubStatus(): void {
+        if (!root.summaryMissing)
+            return;
+        const bad = root.hubState !== "" && root.hubState !== "ok";
+        root.error = bad && root.hubRecords.length === 0 ? root.friendlyError(root.hubState) : "";
+        root.status = root.error !== "" ? "error"
+            : root.hubState === "" ? "loading"
+            : (bad || root.hubRecords.some(a => a.unavailable)) ? "partial" : "ok";
+        if (root.hubUpdatedAt > 0)
+            root.lastUpdatedAt = root.hubUpdatedAt;
+    }
+
+    function hubCommand(message: var): void {
+        if (hubProcess.running)
+            hubProcess.write(JSON.stringify(message) + "\n");
+    }
+
+    // The key goes to the helper here, over stdin, and nowhere else.
+    function sendHubConfig(): void {
+        root.hubCommand({
+            type: "configure", baseUrl: root.baseUrl, adminKey: root.adminKey,
+            refreshIntervalMs: root.refreshIntervalMs, state: root.hubSaved
+        });
+    }
+
+    function startHub(): void {
+        if (!hubProcess.running)
+            hubProcess.running = true;
+    }
+
+    function stopHub(): void {
+        hubTimer.stop();
+        // signal(9) kills; `running = false` only terminates, which does not stop the Python helper on Windows.
+        if (hubProcess.running)
+            hubProcess.signal(9);
+        // Switched off: keep the reading for when it comes back on. Not wanted
+        // any more (the setting went off and the summary answers): drop it.
+        if (root.enabled && root.hubRecords.length > 0) {
+            root.hubRecords = [];
+            root.hubState = "";
+            root.rebuild();
+        }
+    }
+
+    function mapHubAccount(account: var): var {
+        const stamp = account.readAt || new Date().toISOString();
+        const record = root.mapAccount({ id: account.provider, label: account.providerLabel }, account, 0, stamp, "");
+        record.resetCredits = account.resetCredits || null;
+        record.history = account.history || null;
+        record.summaryRef = account.summaryRef || "";
+        return record;
+    }
+
+    function applyHubSnapshot(message: var): void {
+        root.hubState = String(message.hub && message.hub.state || "");
+        root.hubRecords = (Array.isArray(message.accounts) ? message.accounts : [])
+            .filter(a => a && typeof a === "object" && a.provider)
+            .map(a => root.mapHubAccount(a));
+        if (message.state && typeof message.state === "object")
+            root.hubSaved = message.state;
+        root.hubUpdatedAt = Date.now();
+        const due = Number(message.nextDueAt);
+        root.hubNextDueAt = Number.isFinite(due) && due > 0 ? due : 0;
+        hubTimer.stop();
+        if (root.hubNextDueAt > 0) {
+            // One single-shot timer to the helper's earliest deadline; nothing polls.
+            hubTimer.interval = Math.max(1000, root.hubNextDueAt - Date.now());
+            hubTimer.start();
+        }
+        root.applyHubStatus();
+        root.rebuild();
+    }
+
+    Process {
+        id: hubProcess
+        command: [QuotaConfig.python, "-I", root.hubScript, "serve"]
+        environment: ({ "PYTHONUTF8": "1", "PYTHONDONTWRITEBYTECODE": "1" })
+        stdinEnabled: true
+
+        stdout: SplitParser {
+            splitMarker: "\n"
+            onRead: data => {
+                let message = null;
+                try {
+                    message = JSON.parse(String(data));
+                } catch (e) {
+                    return;
                 }
+                if (message && message.type === "snapshot")
+                    root.applyHubSnapshot(message);
             }
-            root.selectedProviderId = fallback || root.defaultProviderId();
+        }
+        // Drained, never shown: the helper writes only short redacted diagnostics.
+        stderr: SplitParser {
+            splitMarker: "\n"
         }
 
-        root.writeCache();
-        return true;
+        onRunningChanged: {
+            if (hubProcess.running) {
+                root.sendHubConfig();
+                if (!root.summaryMissing)
+                    root.hubCommand({ type: "summary", accounts: root.summaryIdentities });
+            }
+        }
+        onExited: (exitCode, exitStatus) => {
+            hubTimer.stop();
+            // Still wanted: it failed on its own. No blind restart; the next
+            // Refresh now or setting change starts it again.
+            if (root.hubWanted) {
+                root.hubState = "helper_failed";
+                root.applyHubStatus();
+            }
+        }
+    }
+
+    Timer {
+        id: hubTimer
+        repeat: false
+        onTriggered: root.hubCommand({ type: "refresh", force: false })
+    }
+
+    onHubWantedChanged: {
+        if (root.hubWanted)
+            root.startHub();
+        else
+            root.stopHub();
     }
 
     // -- Clock ---------------------------------------------------------------

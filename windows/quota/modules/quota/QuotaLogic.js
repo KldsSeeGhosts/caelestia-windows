@@ -213,6 +213,82 @@ function spendFor(spend, range, provider) {
     return row ? Number(row.cost) : 0;
 }
 
+// The UTC dates a usage range covers; the providers' daily reports are dated in UTC.
+function usageDates(range, now) {
+    const day = 86400000;
+    const date = t => new Date(t).toISOString().slice(0, 10);
+    if (range === "today")
+        return [date(now)];
+    if (range === "yesterday")
+        return [date(now - day)];
+    const out = [];
+    for (let i = 0; i < 30; i++)
+        out.push(date(now - i * day));
+    return out;
+}
+
+// Tokens of a provider's accounts in one range, from the history a hub read
+// reports (history.days[date].{totals, byModel}); null when no account has any.
+function usageFor(accounts, range, now) {
+    const sum = {tokens: 0, input: 0, cached: 0, output: 0, turns: 0};
+    const seen = {};
+    const models = {};
+    let found = false;
+    for (const account of accounts || []) {
+        const days = account && account.history && account.history.days;
+        if (!days || typeof days !== "object")
+            continue;
+        found = true;
+        for (const date of usageDates(range, now)) {
+            const day = days[date];
+            if (!day)
+                continue;
+            const totals = day.totals || {};
+            for (const key in sum) {
+                const n = Number(totals[key]);
+                if (totals[key] !== null && totals[key] !== undefined && Number.isFinite(n)) {
+                    sum[key] += n;
+                    seen[key] = true;
+                }
+            }
+            for (const name in day.byModel || {}) {
+                const n = Number(day.byModel[name] && day.byModel[name].tokens);
+                if (Number.isFinite(n))
+                    models[name] = (models[name] || 0) + n;
+            }
+        }
+    }
+    if (!found)
+        return null;
+    return Object.assign(sum, {
+        parts: ["input", "cached", "output"].filter(k => seen[k]),
+        models: Object.keys(models).map(name => ({name: name, tokens: models[name]})).sort((a, b) => b.tokens - a.tokens)
+    });
+}
+
+var PART_TITLES = {input: "Input", cached: "Cache Read", output: "Output"};
+
+// A usage row's breakdown detail (see QuotaBreakdown.qml): the spend and the
+// token total, the token mix when reported, and the top five models by share.
+function usageDetail(title, cost, usage) {
+    const figures = [];
+    if (cost !== null && cost !== undefined)
+        figures.push(money(cost));
+    if (usage)
+        figures.push(count(usage.tokens) + " tokens");
+    const detail = {title: title, figures: figures};
+    if (!usage)
+        return detail;
+    const parts = usage.parts.map(k => ({title: PART_TITLES[k], number: usage[k]})).filter(p => p.number > 0);
+    const partSum = parts.reduce((s, p) => s + p.number, 0);
+    detail.tokenParts = parts;
+    detail.fillsTotal = usage.tokens > 0 && Math.abs(partSum - usage.tokens) <= usage.tokens * 0.005;
+    const modelTotal = usage.models.reduce((s, m) => s + m.tokens, 0);
+    detail.models = modelTotal > 0 ? usage.models.slice(0, 5).filter(m => m.tokens > 0)
+        .map(m => ({name: m.name, value: Math.round(m.tokens / modelTotal * 100) + "%"})) : [];
+    return detail;
+}
+
 // Whole minutes to the reset, rounded up; 0 within five minutes or once it has
 // passed ("soon"); null when CPA gave no reset.
 function resetMinutes(resetAt, now) {

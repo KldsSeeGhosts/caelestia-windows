@@ -61,12 +61,9 @@ Item {
         menu.open = false;
         popover.dismiss();
     }
-    // A provider's spend for one range as the breakdown detail. CPA's analytics
-    // give the drawer a cost per provider and range only, so that is all it
-    // shows; the token mix and Top Models stay hidden until a source reports them.
-    function spendDetail(label: string, cost: real): var {
-        return { title: label, figures: [Logic.money(cost)] };
-    }
+    // A provider's usage for one range as the breakdown detail: CPA's analytics
+    // give a cost per provider and range; a hub read adds the tokens, their
+    // mix and Top Models (Logic.usageDetail).
 
     // OpenUsage's popover keys: Return opens Accounts, Ctrl+, Settings and
     // Ctrl+R refreshes. Keys a focused control uses itself never reach here.
@@ -166,8 +163,8 @@ Item {
     }
     // OpenUsage's footer countdown: minutes rounded up from a minute out, then seconds.
     readonly property string nextUpdateText: {
-        if (Quota.lastUpdatedAt <= 0) return "";
-        const secs = Math.ceil((Quota.lastUpdatedAt + Quota.effectiveRefreshMs - Quota.nowMs) / 1000);
+        if (Quota.nextUpdateAt <= 0) return "";
+        const secs = Math.ceil((Quota.nextUpdateAt - Quota.nowMs) / 1000);
         if (secs <= 0) return qsTr("Update due");
         return secs >= 60 ? qsTr("Next update in %1m").arg(Math.ceil(secs / 60)) : qsTr("Next update in %1s").arg(secs);
     }
@@ -521,8 +518,11 @@ Item {
                         { key: "today", label: qsTr("Today") },
                         { key: "yesterday", label: qsTr("Yesterday") },
                         { key: "month", label: qsTr("Last 30 Days") }
-                    ].map(r => ({ label: r.label, cost: Logic.spendFor(Quota.spend, r.key, modelData.provider) }))
-                        .filter(r => r.cost !== null)
+                    ].map(r => ({
+                        label: r.label,
+                        cost: Logic.spendFor(Quota.spend, r.key, modelData.provider),
+                        usage: Logic.usageFor(modelData.accounts, r.key, Quota.nowMs)
+                    })).filter(r => r.cost !== null || r.usage !== null)
                     readonly property string peak: modelData.provider === "zai" ? root.zaiPeakText() : ""
                     objectName: "quotaSection"
                     width: stack.width
@@ -679,11 +679,12 @@ Item {
                                     delegate: QuotaValueRow {
                                         id: spendRow
                                         required property var modelData
-                                        readonly property var detailData: root.spendDetail(modelData.label, modelData.cost)
+                                        readonly property var detailData: Logic.usageDetail(modelData.label, modelData.cost, modelData.usage)
                                         width: card.width
                                         family: root.family
                                         label: modelData.label
-                                        value: Logic.money(modelData.cost)
+                                        // Spend when the manager reports it; tokens from a hub read otherwise.
+                                        value: modelData.cost !== null ? Logic.money(modelData.cost) : qsTr("%1 tokens").arg(Logic.count(modelData.usage.tokens))
                                         hasDetail: true
                                         lit: popover.open && popover.anchorItem === figure
                                         onDetailHover: (anchor, active) => popover.hover(anchor, breakdownDetail, detailData, active)
