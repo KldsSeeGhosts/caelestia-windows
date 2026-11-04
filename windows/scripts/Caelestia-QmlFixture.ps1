@@ -21,7 +21,10 @@ function Invoke-QmlFixture {
         [string]$ShellConfig,
         [string[]]$FakeDirectories = @(),
         [string]$RunName,
-        [string]$LogSuffix
+        [string]$LogSuffix,
+        # Keep the temporary stage and profile for debugging; logs always stay
+        # under the build root.
+        [switch]$Keep
     )
 
     $ErrorActionPreference = 'Stop'
@@ -36,6 +39,7 @@ function Invoke-QmlFixture {
     $stage = Join-Path $run 'imports\qs'
     $logRoot = Join-Path $BuildRoot 'logs'
     New-Item -ItemType Directory -Force -Path $stage, $logRoot | Out-Null
+    try {
     if ($ShellFixture) {
         & "$PSScriptRoot\Stage-ShellPrototype.ps1" -Destination $stage -ProfileRoot (Join-Path $run 'profile') -Prototype shell-live | Out-Null
         foreach ($directory in $FakeDirectories) {
@@ -156,6 +160,9 @@ function Invoke-QmlFixture {
         runnerSha256 = (Get-FileHash -LiteralPath $exe).Hash
         command = $exe; arguments = $info.Arguments; sources = @($stagedSources)
         fakeDirectories = @($FakeDirectories)
-        stage = $stage; stdout = $stdoutPath; stderr = $stderrPath
+        stage = if ($Keep) { $stage } else { $null }; stdout = $stdoutPath; stderr = $stderrPath
+    }
+    } finally {
+        if (-not $Keep) { Remove-Item -LiteralPath $run -Recurse -Force -ErrorAction SilentlyContinue }
     }
 }

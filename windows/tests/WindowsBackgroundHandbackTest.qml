@@ -52,6 +52,8 @@ ShellRoot {
     readonly property bool backgroundRequested: true
     readonly property bool underlaySupported: "underlayActive" in desktopLayer
     readonly property bool externalActive: wallpapers.externalWallpaperActive
+    // yielded and hostEnabled are hand-copied from WindowsBackground.qml and
+    // kept in step by review; Test-WindowsBackground covers the real predicate.
     // The screen-host fake consumes the real WallpaperEngine claim. The
     // claim keeps the host mounted while the backend withdraws the
     // acknowledgement and the guard releases it, so no window is recreated
