@@ -5,6 +5,7 @@ import Quickshell
 import Caelestia.Config
 import qs.components
 import qs.services
+import qs.modules.nexus as Nexus
 
 // Quota / Agents Usage Dropdown Panel.
 // Lives inside the drawers ContentWindow in the top-right corner.
@@ -16,6 +17,14 @@ Item {
     readonly property bool shouldBeActive: screenState.quota && QuotaConfig.enabled
     // The relative-time tick only runs while this drawer is open.
     property bool clockHeld: false
+
+    // Close the drawer and open Nexus on its Services page, found by its icon
+    // rather than a fixed index so a reordered registry still lands there.
+    function openServices(): void {
+        root.screenState.quota = false;
+        const idx = Nexus.PageRegistry.pages.findIndex(p => p.icon === "build");
+        Nexus.WindowFactory.openPage(Math.max(0, idx));
+    }
 
     function syncClock(): void {
         if (root.shouldBeActive && !root.clockHeld) {
@@ -46,7 +55,7 @@ Item {
     implicitWidth: QuotaConfig.panelWidth
     implicitHeight: Math.min(
         QuotaConfig.panelHeight,
-        ((content.item as Content)?.implicitHeight ?? 0) + Tokens.padding.large * 2
+        ((content.item as Content)?.implicitHeight ?? 0) + Tokens.padding.medium * 2
     )
     opacity: 1 - offsetScale
 
@@ -65,7 +74,8 @@ Item {
         id: content
 
         anchors.fill: parent
-        anchors.margins: Tokens.padding.large
+        // OpenUsage's 12 dp panel margin (Support/PanelMetrics.swift).
+        anchors.margins: Tokens.padding.medium
 
         active: root.shouldBeActive || root.visible
         sourceComponent: Content {
@@ -73,6 +83,11 @@ Item {
             hasError: Quota.hasError
             error: Quota.error
             revealed: root.shouldBeActive
+            // Quota sources and the panel switch live on Nexus > Services
+            // (the "Agent usage" section), which answers both of OpenUsage's
+            // Accounts and Settings until a page of its own exists.
+            onAccountsRequested: root.openServices()
+            onSettingsRequested: root.openServices()
         }
     }
 }

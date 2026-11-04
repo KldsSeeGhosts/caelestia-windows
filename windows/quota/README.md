@@ -67,44 +67,61 @@ drawer shows the previous reading instantly on start.
 
 | Source here | Staged as |
 | --- | --- |
-| `modules/quota/{Wrapper,Content,QuotaBar,QuotaLogo,QuotaMenu,QuotaMeter,QuotaPriorityRow,QuotaSegments,QuotaToolTip,QuotaValueRow}.qml` | `modules/quota/` |
+| `modules/quota/{Wrapper,Content,QuotaBar,QuotaBreakdown,QuotaLogo,QuotaMenu,QuotaMeter,QuotaPopover,QuotaPriorityRow,QuotaResets,QuotaSegments,QuotaToolTip,QuotaValueRow}.qml` | `modules/quota/` |
 | `modules/quota/QuotaLogic.js` | `modules/quota/QuotaLogic.js` |
 | `services/Quota.qml` | `services/Quota.qml` |
 | `services/QuotaConfig.qml` | `services/QuotaConfig.qml` |
 | `scripts/cpa_keepalive.py` | `scripts/cpa_keepalive.py` |
 | `assets/provider-icons/*` | `assets/provider-icons/*` |
 
-The Windows drawer follows [OpenUsage](https://github.com/robinebers/openusage)'s
-panel in Caelestia's Material 3 tokens, so it takes the wallpaper scheme in dark
-and light. Top to bottom:
+The Windows drawer is a port of the menu bar panel of
+[OpenUsage](https://github.com/robinebers/openusage) (MIT, Copyright (c) 2026
+Robin Ebers). Its structure, spacing, type sizes and weights, Priority rules,
+countdown and number formats come from OpenUsage's SwiftUI source; colour comes
+from Caelestia's scheme, so it follows the wallpaper in dark and light, and text
+uses Caelestia's font. No OpenUsage code or assets are included. Top to bottom,
+inside a 12 dp margin:
 
-1. a **Priority | All Usage** switch: a full-width pill track with a raised pill
-   that slides under the chosen segment. The choice lasts while the shell runs
-   and starts on **All Usage**;
-   - **All Usage** is one scroll of provider sections, in the original
-     codex-first order, with no provider strip;
-   - **Priority** is one card listing each account's single most constrained
-     window (least `% left` first, across all providers), with the provider logo
-     and account label. It answers "what runs out first". Accounts with no
-     reading are left out; their notice is in All Usage;
-2. a section per provider: a large bold title with the provider logo on the
-   right, then a card (`m3surfaceContainer`, a hairline `m3outlineVariant`
-   border). Each account has a muted label with its plan as a small chip on the
-   right, then one **grid row per window**: label, a thick rounded bar showing
-   `% left`, the `%` and the reset countdown (`4h 10m`, `6d 23h`). The bar column
-   is 40% of the card (30% at the 280 dp minimum, where the label elides), and
-   every row in the drawer shares the same columns. A bar turns to the error
-   colour at 10% left or less; nothing else is colour coded. Accounts are
-   separated by space, not rules. A stale, reconnect, disabled or unreported
-   account keeps its notice as one muted (or error) row above its meters.
-   Windows are never invented: a provider that reports only `API`/`Auto` or a
-   monthly window shows exactly those. The card ends with that provider's
-   Today / Yesterday / Last 30 Days spend from the analytics (API-equivalent
-   cost, a range appears once it has loaded), as label and value rows;
-3. a footer pinned to the bottom that the content fades under: "Next update in
-   Xm" (or the updating or error status) on the left and a round `...` button on
-   the right. The button opens a small menu with **Refresh now** and
-   **Keepalive**.
+1. a **Priority | All Usage** switch: a 28 dp capsule track with a raised thumb
+   that springs to the chosen segment. The choice lasts while the shell runs and
+   starts on **All Usage**;
+2. **All Usage** is one scroll of provider sections, in the original
+   codex-first order. Each has a 24 dp title row (15 dp semibold, the provider
+   mark on the right) and a card (radius 12, `m3surfaceContainer`, a hairline
+   border) padded 12 / 8 / 10. Each account has an 11 dp muted caption with its
+   plan as a small badge, then one 22 dp **row per window**: label (90 dp
+   column), bar, `% left` (52 dp) and the reset countdown (48 dp: `4h 10m`,
+   `6d 23h`, `soon`). Every row shares the same columns; below OpenUsage's
+   340 dp width the label column gives way so the bar keeps 48 dp. A bar and its
+   `%` turn to the warm accent at 30% left or less and to the error colour at
+   10% or less. A stale, reconnect, disabled or unreported account carries a
+   small warning (or clock) mark in its caption, with the reason in a tooltip
+   and its accessible name. Windows are never invented. The card ends with the
+   provider's Today / Yesterday / Last 30 Days spend from the analytics
+   (API-equivalent cost);
+3. **Priority** lists every window at 30% left or less under **Running Out**,
+   least left first, each as a 46 dp row with a ring gauge round the provider
+   mark, and windows with nothing left under **Used Up**. With nothing low it
+   shows **All Clear**; accounts whose usage cannot be read are listed under
+   **Needs Attention**. OpenUsage's "burning fast" tier needs a usage pace that
+   CPA does not report, and pins and the share card have no counterpart here;
+4. a footer under a 1 dp divider: "Next update in Xm" (a click refreshes; or the
+   updating or error status) on the left and a round 26 dp `...` button on the
+   right. Its menu follows OpenUsage's: the drawer's own **Refresh now**
+   (Ctrl+R) and **Keepalive**, a separator, then **Accounts** (Return) and
+   **Settings** (Ctrl+,), which close the drawer and open Nexus > Services,
+   where the quota switch lives. OpenUsage's Check for Updates, Report an
+   Issue, About and Quit are app-level and left out: the shell has its own.
+
+Hovering a spend figure (Today, Yesterday, Last 30 Days) for 400 ms opens
+OpenUsage's breakdown detail with its arrow on the figure: the range and its
+total, plus a token mix and Top Models when a source reports them (CPA's
+analytics give a cost per provider only, so today those sections stay hidden).
+An account whose data carries reset credits gets a **Limit Resets** row whose
+detail is the numbered list of resets with their times and countdowns; its
+**Use** button is a stub until provider integrations land, and no reset is ever
+claimed. A click opens a detail until Escape or another click. OpenUsage's
+copy-screenshot buttons are not ported.
 
 Tab reaches the two segments, the scrolling content (Up, Down, Page Up, Page
 Down, Home and End scroll it) and the `...` button. In the menu Up and Down move,
@@ -116,8 +133,8 @@ The tooltip and data semantics are adapted from the overlay.
 
 `windows/scripts/Test-Quota.ps1` checks this offscreen: the configured stub at
 the 384x520 default, the 280 dp minimum width and a short 280x300 drawer, with
-the column alignment (one x for every bar, `%` and reset), the Priority order
-and the 10% error colour asserted; a `states` scenario (long account name, 0%
+OpenUsage's column grid and row heights, the column alignment (one x for every
+bar, `%` and reset), the Priority rule and order and the error colour asserted; a `states` scenario (long account name, 0%
 left, stale, reconnect, disabled and unreported accounts, `API`/`Auto` and
 monthly-only providers); the offline, unconfigured and `disabled` profiles;
 and a `keepalive` run that switches the panel off while a fake helper runs.

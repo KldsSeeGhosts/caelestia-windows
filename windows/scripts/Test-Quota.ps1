@@ -295,7 +295,8 @@ function Invoke-QuotaSmoke([string]$Mode, [string]$Geometry) {
                 $text -match '"claudeLimits":3' -and $text -match '"scoped":1' -and
                 $text -match '"todayCostUsd":3.71' -and
                 $text -match 'CAELESTIA_QUOTA_SMOKE_OPEN .*"mode":"configured"' -and
-                $text -match 'CAELESTIA_QUOTA_SMOKE_PRIORITY .*"rows":5' -and
+                # OpenUsage's rule: the windows at 30% left or less (7, 12, 29), least left first.
+                $text -match 'CAELESTIA_QUOTA_SMOKE_PRIORITY .*"rows":3,"left":"7,12,29"' -and
                 (Test-Path -LiteralPath $screenshot) -and (Get-Item -LiteralPath $screenshot).Length -gt 0 -and
                 (Test-Path -LiteralPath $priorityScreenshot) -and (Get-Item -LiteralPath $priorityScreenshot).Length -gt 0 -and
                 (Test-Path -LiteralPath $menuScreenshot) -and (Get-Item -LiteralPath $menuScreenshot).Length -gt 0 -and

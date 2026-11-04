@@ -41,6 +41,16 @@ previews) replace Omarchy's `wl-paste` helpers and shell scripts.
 | --- | --- | --- | --- | --- |
 | [Omarchy](https://github.com/omacom/omarchy) clipboard | David Heinemeier Hansson | MIT | `windows/services/clipboard/upstream/LICENSE-MIT.txt` | `licenses/Clipboard-Overlay-MIT.txt` |
 
+## Agent usage drawer
+
+The agent usage drawer's layout, spacing, typography and Priority rules follow
+OpenUsage's menu bar panel. They are reimplemented in QML; no OpenUsage source
+code or assets are included.
+
+| Component and source | Copyright holders | License | License text in repository | Installed notice |
+| --- | --- | --- | --- | --- |
+| [OpenUsage](https://github.com/robinebers/openusage) panel design | Copyright (c) 2026 Robin Ebers | MIT | Not vendored; the license is in the OpenUsage repository | None: no OpenUsage code or assets are distributed |
+
 ## Windows backend and runtime
 
 | Component and source | Copyright holders | License | License text in repository or build prerequisite | Installed notice |
