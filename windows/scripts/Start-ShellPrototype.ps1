@@ -10,6 +10,7 @@ param(
     # keeps test frames independent of desktop composition, a live shell, and
     # monitor state, and never opens a native window.
     [switch]$Offscreen,
+    [switch]$NoThrow,
     [switch]$Wait,
     [switch]$MonitorCycle,
     [switch]$TraceInput,
@@ -661,6 +662,6 @@ $result['sessionButtons'] = @($sessionButtonRecords.ToArray())
 $result = $result | ConvertTo-Json -Depth 12
 $result | Set-Content -LiteralPath (Join-Path $logRoot "$runName.json") -Encoding UTF8
 Write-Output $result
-if (($Smoke -and -not $passed) -or $exitCode -ne 0) {
+if (-not $NoThrow -and (($Smoke -and -not $passed) -or $exitCode -ne 0)) {
     throw "$kind prototype failed. See $stdoutPath and $stderrPath."
 }
