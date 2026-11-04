@@ -21,7 +21,10 @@ QtObject {
 
     readonly property var applications: DesktopEntries.applications
 
-    property bool scanCompleted: false
+    // DesktopEntryManager and its model outlive QML engines. A replacement
+    // generation must use an existing snapshot without waiting for a rescan.
+    // Keep the completion signal below for the first scan, including empty ones.
+    property bool scanCompleted: (applications?.values?.length ?? 0) > 0
     property string scanError: ""
 
     readonly property Connections scan: Connections {
