@@ -53,8 +53,6 @@ QtObject {
 
     function reset(): void {
         backend.calls = [];
-        service.pendingAction = "";
-        service.pendingCommand = [];
         service.lastResult = {};
     }
 
@@ -74,7 +72,6 @@ QtObject {
         equal(service.lastResult.dispatched, true, message + " dispatched");
         equal(service.lastResult.requested, true, message + " requested");
         equal(service.lastResult.succeeded, false, message + " not succeeded");
-        equal(service.lastResult.requiresConfirmation, false, message + " not confirmation");
         // The void backend proves dispatch, not success. Its explanatory prose
         // is not part of the command contract.
         callsAre([call], message + " recorded exactly one call");
@@ -101,7 +98,9 @@ QtObject {
         equal(service.hibernateCapabilityKnown, false, "disabled hibernate unknown");
         equal(service.hibernateSupported, false, "disabled hibernate unsupported");
         equal(service.canHibernate, false, "disabled canHibernate false");
-        equal(service.confirmationPending, false, "no pending confirmation");
+        // The confirmation gate is gone: destructive actions dispatch directly,
+        // so no confirm surface exists on the service.
+        equal(service.confirm, undefined, "no confirm step");
         check(service.actionNames.length === 7, "seven explicit actions");
         for (const action of ["lock", "logout", "shutdown", "reboot", "suspend", "hibernate", "firmware"]) {
             check(service.actionDefinitions[action], "definition " + action);
@@ -116,7 +115,6 @@ QtObject {
         equal(service.exec(["lock"]), true, "disabled command consumed");
         expectOutcome("disabled", "disabled outcome");
         expectConsumedNoDispatch("disabled command");
-        equal(service.confirmationPending, false, "disabled does not arm confirmation");
         service.request(["lock"]);
         expectOutcome("disabled", "disabled request outcome");
 
@@ -144,7 +142,7 @@ QtObject {
 
         equal(service.sessionAction("lock").supported, true, "lock supported contract");
         equal(service.sessionAction("lock").available, false, "lock unavailable while disabled");
-        equal(service.sessionAction(["logout"]).requiresConfirmation, true, "logout needs confirmation");
+        equal(service.sessionAction(["logout"]).destructive, true, "logout is destructive (information only)");
         equal(service.sessionAction(["logout"]).available, false, "logout unavailable while disabled");
         equal(service.sessionAction("bogus").supported, false, "unknown action unsupported");
         equal(service.sessionAction([]).supported, false, "empty action unsupported");
@@ -244,73 +242,47 @@ QtObject {
         expectConsumedNoDispatch("combined action");
         callsAre([], "combined action sends no call");
 
-        // --- Destructive confirmation gate ----------------------------------
-        reset();
-        equal(service.exec(["logout"]), true, "logout exec consumed");
-        expectOutcome("confirmation-required", "logout confirmation outcome");
-        expectConsumedNoDispatch("logout confirmation");
-        equal(service.lastResult.requiresConfirmation, true, "logout requires confirmation");
-        equal(service.lastResult.action, "logout", "pending logout action");
-        equal(service.confirmationPending, true, "logout armed confirmation");
-        equal(service.pendingAction, "logout", "pending action name");
-        equal(service.pendingCommand[0], "logout", "pending command name");
-        callsAre([], "logout not sent without confirmation");
-        equal(service.confirm(), true, "logout confirmation dispatched");
-        expectRequested("logout", "confirmed logout");
-        equal(service.confirmationPending, false, "confirmation cleared after dispatch");
-        equal(service.pendingAction, "", "pending action cleared");
-        equal(service.confirm(), false, "second confirmation is a no-op");
-        expectOutcome("requested", "second confirmation leaves the result");
+        // --- Destructive actions dispatch immediately ------------------------
+        // Upstream Caelestia's session panel calls exec() straight through, so
+        // each destructive command is exactly one backend call, first try.
+        for (const row of [
+            {command: ["logout"], action: "logout", call: "logout"},
+            {command: ["shutdown"], action: "shutdown", call: "shutdown"},
+            {command: ["poweroff"], action: "shutdown", call: "shutdown"},
+            {command: ["reboot"], action: "reboot", call: "reboot"},
+            {command: ["firmware-reboot"], action: "firmware", call: "rebootToFirmware"}
+        ]) {
+            reset();
+            equal(service.exec(row.command), true, row.command[0] + " exec consumed");
+            expectRequested(row.call, row.command[0] + " dispatch");
+            equal(service.lastResult.action, row.action, row.command[0] + " action recorded");
+            equal(service.sessionAction(row.action).destructive, true,
+                row.action + " stays marked destructive as information only");
+            equal(service.sessionAction(row.action).available, true,
+                row.action + " available with dispatch opt-in");
+        }
 
-        reset();
-        service.exec(["shutdown"]);
-        expectOutcome("confirmation-required", "shutdown confirmation outcome");
-        equal(service.lastResult.action, "shutdown", "shutdown pending action");
-        callsAre([], "shutdown not sent without confirmation");
-        equal(service.confirm(), true, "shutdown confirmation dispatched");
-        expectRequested("shutdown", "confirmed shutdown");
-
-        reset();
-        service.exec(["poweroff"]);
-        equal(service.confirm(), true, "poweroff alias confirmation dispatched");
-        expectRequested("shutdown", "poweroff maps to shutdown");
-
-        reset();
-        service.exec(["reboot"]);
-        equal(service.confirm(), true, "reboot confirmation dispatched");
-        expectRequested("reboot", "confirmed reboot");
-
-        reset();
-        service.exec(["firmware-reboot"]);
-        expectOutcome("confirmation-required", "firmware confirmation outcome");
-        equal(service.lastResult.action, "firmware", "firmware pending action");
-        equal(service.lastResult.requiresConfirmation, true, "firmware requires confirmation");
-        callsAre([], "firmware not sent without confirmation");
-        equal(service.confirm(), true, "firmware confirmation dispatched");
-        expectRequested("rebootToFirmware", "confirmed firmware reboot");
-
-        reset();
-        service.exec(["logout"]);
-        equal(service.confirmationPending, true, "cancel fixture armed");
-        equal(service.cancelConfirmation(), true, "cancel clears pending");
-        equal(service.confirmationPending, false, "cancel leaves no pending action");
-        equal(service.confirm(), false, "cancel prevents later dispatch");
-        callsAre([], "cancelled confirmation sends no call");
-
-        reset();
-        service.exec(["logout"]);
-        service.exec(["shutdown"]);
-        equal(service.pendingAction, "shutdown", "latest destructive request replaces pending action");
-        equal(service.confirm(), true, "latest pending action dispatches");
-        expectRequested("shutdown", "replaced pending action dispatch");
-        callsAre(["shutdown"], "replaced pending action sent only once");
-
-        reset();
-        service.exec(["logout"]);
-        equal(service.confirm(), true, "pending logout before disable");
+        // The dispatch opt-in is still the only gate: with it off, none of the
+        // destructive actions reaches the backend.
         service.actionsEnabled = false;
-        equal(service.confirmationPending, false, "disable clears pending confirmation");
+        for (const command of [["logout"], ["shutdown"], ["poweroff"], ["reboot"], ["firmware-reboot"]]) {
+            reset();
+            equal(service.exec(command), true, "disabled " + command[0] + " consumed");
+            expectOutcome("actions-disabled", "disabled " + command[0] + " outcome");
+            expectConsumedNoDispatch("disabled " + command[0]);
+            callsAre([], "disabled " + command[0] + " sends no call");
+        }
         service.actionsEnabled = true;
+
+        // Two destructive commands in a row dispatch twice; nothing is held or
+        // replaced between them.
+        reset();
+        equal(service.exec(["logout"]), true, "first immediate logout consumed");
+        equal(service.exec(["shutdown"]), true, "second immediate shutdown consumed");
+        expectOutcome("requested", "second destructive dispatch outcome");
+        equal(service.lastResult.action, "shutdown", "second destructive action recorded");
+        equal(service.lastResult.dispatched, true, "second destructive dispatched");
+        callsAre(["logout", "shutdown"], "both destructive commands dispatched once each");
 
         // --- Unknown/arbitrary commands consumed without execution ----------
         reset();
@@ -361,17 +333,16 @@ QtObject {
 
         // --- Disable clears observation and dispatch ------------------------
         service.exec(["shutdown"]);
-        equal(service.confirmationPending, true, "pending before disable");
+        expectRequested("shutdown", "shutdown dispatches immediately before disable");
         service.enabled = false;
         equal(service.status, "disabled", "disable returns to disabled");
         equal(service.available, false, "disable clears availability");
         equal(service.hibernateSupported, false, "disable clears hibernate capability");
-        equal(service.confirmationPending, false, "disable clears pending confirmation");
         expectActionsUnavailable("disabled after use");
         equal(service.exec(["lock"]), true, "post-disable command consumed");
         expectOutcome("disabled", "post-disable outcome");
         expectConsumedNoDispatch("post-disable");
-        callsAre([], "disable prevents dispatch");
+        callsAre(["shutdown"], "disable prevents any further dispatch");
 
         // --- Verified result and capability counts --------------------------
         equal(service.lastResult.succeeded, false, "no success claim");

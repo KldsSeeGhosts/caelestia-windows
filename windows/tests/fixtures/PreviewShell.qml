@@ -164,8 +164,7 @@ ShellRoot {
         return state ? {
             supported: state.supported === true,
             capability: state.capability === true,
-            available: state.available === true,
-            requiresConfirmation: state.requiresConfirmation === true
+            available: state.available === true
         } : null;
     }
 
@@ -460,17 +459,6 @@ ShellRoot {
                     visible: root.live
                     text: "Choose wallpaper"
                     onActivated: Wallpapers.choose()
-                }
-
-                Column {
-                    visible: SessionManager.confirmationPending
-                    spacing: 8
-                    StyledText { text: "Confirm Windows " + SessionManager.pendingAction + "?" }
-                    Row {
-                        spacing: 8
-                        PreviewButton { text: "Confirm"; primary: true; onActivated: SessionManager.confirm() }
-                        PreviewButton { text: "Cancel"; onActivated: SessionManager.cancelConfirmation() }
-                    }
                 }
 
                 Row {

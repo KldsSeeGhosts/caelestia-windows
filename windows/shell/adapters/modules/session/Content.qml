@@ -15,13 +15,6 @@ Column {
 
     required property ScreenState screenState
 
-    readonly property bool liveSession: Quickshell.env("CAELESTIA_SHELL_LIVE") === "1"
-    readonly property bool confirming: liveSession && SessionManager.confirmationPending
-
-    // The button whose exec() opened the confirmation. Cancel and confirm both
-    // return keyboard focus there, so it never lands nowhere.
-    property Item confirmOrigin
-
     padding: Tokens.padding.large
     rightPadding: CUtils.clamp(padding - Config.border.thickness, 0, padding)
     spacing: Tokens.spacing.large
@@ -34,13 +27,18 @@ Column {
         accessibleName: "Log out"
 
         KeyNavigation.down: shutdown
+        // Windows a11y fix (ERM-615): every button names both Tab neighbours,
+        // so traversal is a closed cycle over the four buttons and never falls
+        // back to Qt's default chain, which leaves the drawer for the bar.
+        KeyNavigation.tab: shutdown
+        KeyNavigation.backtab: reboot
 
         Component.onCompleted: forceActiveFocus()
 
         Connections {
             function onLauncherChanged(): void {
                 if (!root.screenState.launcher)
-                    (root.confirming ? cancel : logout).forceActiveFocus();
+                    logout.forceActiveFocus();
             }
 
             target: root.screenState
@@ -56,6 +54,8 @@ Column {
 
         KeyNavigation.up: logout
         KeyNavigation.down: hibernate
+        KeyNavigation.tab: hibernate
+        KeyNavigation.backtab: logout
     }
 
     Loader {
@@ -83,6 +83,8 @@ Column {
 
         KeyNavigation.up: shutdown
         KeyNavigation.down: reboot
+        KeyNavigation.tab: reboot
+        KeyNavigation.backtab: shutdown
     }
 
     SessionButton {
@@ -93,67 +95,8 @@ Column {
         accessibleName: "Reboot"
 
         KeyNavigation.up: hibernate
-    }
-
-    // Production has no preview control window. Keep explicit confirmation
-    // inside the original session drawer; closing it cancels the pending action.
-    Column {
-        visible: root.confirming
-        spacing: Tokens.spacing.small
-
-        // A confirmation armed before the drawer opened is already visible on
-        // creation, so onVisibleChanged never runs for it.
-        Component.onCompleted: if (visible) cancel.forceActiveFocus()
-
-        onVisibleChanged: {
-            if (visible) {
-                cancel.forceActiveFocus();
-                return;
-            }
-            const origin = root.confirmOrigin ?? logout;
-            root.confirmOrigin = null;
-            if (root.screenState?.session)
-                origin.forceActiveFocus();
-        }
-
-        StyledText { text: "Confirm Windows " + SessionManager.pendingAction + "?" }
-        Row {
-            spacing: Tokens.spacing.small
-
-            ConfirmButton {
-                id: cancel
-
-                text: "Cancel"
-                accessibleName: "Cancel"
-
-                KeyNavigation.left: confirm
-                KeyNavigation.right: confirm
-                KeyNavigation.up: confirm
-                KeyNavigation.down: confirm
-                onClicked: SessionManager.cancelConfirmation()
-            }
-
-            ConfirmButton {
-                id: confirm
-
-                text: "Confirm"
-                accessibleName: "Confirm " + SessionManager.pendingAction
-
-                KeyNavigation.left: cancel
-                KeyNavigation.right: cancel
-                KeyNavigation.up: cancel
-                KeyNavigation.down: cancel
-                onClicked: SessionManager.confirm()
-            }
-        }
-    }
-
-    Connections {
-        target: root.screenState
-        function onSessionChanged(): void {
-            if (!root.screenState.session && root.liveSession)
-                SessionManager.cancelConfirmation();
-        }
+        KeyNavigation.tab: logout
+        KeyNavigation.backtab: hibernate
     }
 
     component SessionButton: IconButton {
@@ -183,11 +126,8 @@ Column {
         function exec(): void {
             if (button.disabled)
                 return;
-            if (SessionManager.exec(command)) {
-                if (SessionManager.confirmationPending)
-                    root.confirmOrigin = button;
+            if (SessionManager.exec(command))
                 return;
-            }
             if (SessionManager.allowDetachedFallback === false)
                 return;
             Quickshell.execDetached(command);
@@ -228,48 +168,19 @@ Column {
                     KeyNavigation.up.focus = true;
                     event.accepted = true;
                 }
-            } else if (event.key === Qt.Key_Tab && KeyNavigation.down) {
-                KeyNavigation.down.focus = true;
-                event.accepted = true;
             } else if (event.key === Qt.Key_Backtab || (event.key === Qt.Key_Tab && (event.modifiers & Qt.ShiftModifier))) {
-                if (KeyNavigation.up) {
-                    KeyNavigation.up.focus = true;
+                // Windows a11y fix (ERM-615): the vim path uses the same
+                // closed tab cycle as the plain path.
+                if (KeyNavigation.backtab) {
+                    KeyNavigation.backtab.focus = true;
+                    event.accepted = true;
+                }
+            } else if (event.key === Qt.Key_Tab) {
+                if (KeyNavigation.tab) {
+                    KeyNavigation.tab.focus = true;
                     event.accepted = true;
                 }
             }
-        }
-    }
-
-    component ConfirmButton: TextButton {
-        id: button
-
-        property string accessibleName
-        property bool pointerUsed
-
-        readonly property bool focusVisible: activeFocus && !pointerUsed
-
-        onActiveFocusChanged: pointerUsed = false
-        onPressedChanged: if (pressed) pointerUsed = true
-
-        Accessible.role: Accessible.Button
-        Accessible.name: button.accessibleName
-        Accessible.onPressAction: button.clicked()
-
-        FocusRing {
-            showing: button.focusVisible
-            radius: button.radius
-        }
-
-        Keys.onPressed: event => {
-            if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
-                event.accepted = true;
-                if (!event.isAutoRepeat)
-                    button.clicked();
-            }
-        }
-        Keys.onEscapePressed: event => {
-            event.accepted = true;
-            SessionManager.cancelConfirmation();
         }
     }
 }
