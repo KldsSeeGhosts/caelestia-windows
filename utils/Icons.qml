@@ -146,7 +146,11 @@ Singleton {
     }
 
     function getAppIcon(name: string, fallback: string): string {
-        const icon = DesktopEntries.heuristicLookup(name)?.icon;
+        // Windows: a media player's desktopEntry is a lowercased AUMID or an
+        // executable path. Keep the original key when no desktop entry matches
+        // so the icon provider can read the executable directly instead of
+        // requesting the literal "undefined" icon (#314).
+        const icon = DesktopEntries.heuristicLookup(name)?.icon || name;
         if (fallback !== "undefined")
             return Quickshell.iconPath(icon, fallback);
         return Quickshell.iconPath(icon);

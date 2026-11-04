@@ -310,6 +310,7 @@
   "windows/shell/adapters/modules/dashboard/dash/User.qml": "modules/dashboard/dash/User.qml",
   "windows/shell/adapters/modules/dashboard/Media.qml": "modules/dashboard/Media.qml",
   "windows/shell/adapters/modules/dashboard/media/LyricsAndSelector.qml": "modules/dashboard/media/LyricsAndSelector.qml",
+  "windows/shell/adapters/modules/dashboard/media/PlayerIconSource.qml": "modules/dashboard/media/PlayerIconSource.qml",
   "windows/shell/adapters/modules/dashboard/performance/HeroCard.qml": "modules/dashboard/performance/HeroCard.qml",
   "windows/shell/adapters/modules/dashboard/performance/VramMeter.js": "modules/dashboard/performance/VramMeter.js",
   "windows/shell/adapters/modules/dashboard/Wrapper.qml": "modules/dashboard/Wrapper.qml",
