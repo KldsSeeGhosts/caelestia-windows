@@ -164,8 +164,7 @@ ShellRoot {
         return state ? {
             supported: state.supported === true,
             capability: state.capability === true,
-            available: state.available === true,
-            requiresConfirmation: state.requiresConfirmation === true
+            available: state.available === true
         } : null;
     }
 

@@ -7,14 +7,16 @@
 //
 //   a) Return on a focused button dispatches exactly one fake backend call, with
 //      no confirmation step and no confirmation UI;
-//   b) Tab from the last button wraps to the first, and Shift+Tab from the first
-//      wraps back to the last;
-//   c) Escape still closes the session drawer after that wrap;
-//   d) the same wrap works with vim keybinds on.
+//   b) from the drawer's initial focus, Tab visits all four buttons in order and
+//      Shift+Tab visits them in reverse, with focus inside the drawer after
+//      every hop;
+//   c) Escape still closes the session drawer after that walk;
+//   d) the same walk runs with vim keybinds off and on, and with the session GIF
+//      Loader inactive and active.
 //
-// A bar entry outside the drawer is in the default Qt tab chain, so on the
-// unfixed adapter Tab leaves the menu for it exactly as it did on the desktop;
-// that item is what makes rows b and c fail without the wrap.
+// A bar entry outside the drawer is in the default Qt tab chain, so on an
+// adapter that only links the endpoints Tab leaves the menu for it exactly as it
+// did on the desktop; that item is what makes row b fail without a full cycle.
 import QtQuick
 import QtTest
 import Quickshell
@@ -33,6 +35,10 @@ ShellRoot {
     // child evaluates a Config or Tokens binding, as the production window does.
     Config.screen: screenState.modelData?.name ?? ""
     Tokens.screen: screenState.modelData?.name ?? ""
+
+    readonly property var buttonNames: ["Log out", "Shut down", "Hibernate", "Reboot"]
+    readonly property var tabOrder: ["Shut down", "Hibernate", "Reboot", "Log out"]
+    readonly property var backtabOrder: ["Reboot", "Hibernate", "Shut down", "Log out"]
 
     property var input: null
     property var outside: null
@@ -137,6 +143,24 @@ ShellRoot {
         return root.byName(content, name);
     }
 
+    // The drawer's focused button, or "" when focus is anywhere else.
+    function focusedButtonName(): string {
+        for (const name of root.buttonNames) {
+            const button = root.sessionButton(name);
+            if (button && button.activeFocus)
+                return name;
+        }
+        return "";
+    }
+
+    function gifLoader(): var {
+        for (const child of content.children ?? []) {
+            if (child?.sourceComponent !== undefined && child?.active !== undefined)
+                return child;
+        }
+        return null;
+    }
+
     function focusOn(item): void {
         item.forceActiveFocus(Qt.TabFocusReason);
         root.input.wait(20);
@@ -175,6 +199,50 @@ ShellRoot {
         Qt.quit();
     }
 
+    // One full keyboard walk from the drawer's initial focus: Tab over every
+    // button, Shift+Tab back, then Escape. Focus must stay inside the drawer
+    // after every hop, not only at the endpoints.
+    function walk(name, vim, gif): void {
+        GlobalConfig.session.vimKeybinds = vim;
+        GlobalConfig.paths.sessionGif = gif;
+        root.input.wait(50);
+        root.equal(Config.session.vimKeybinds, vim, `${name}: vim keybinds are not ${vim}`);
+        root.equal(Config.paths.sessionGif.trim() !== "", gif !== "", `${name}: session GIF is not ${gif !== "" ? "set" : "empty"}`);
+        const loader = root.gifLoader();
+        root.check(loader !== null, `${name}: the session GIF Loader is missing`);
+        if (loader)
+            root.equal(loader.active, gif !== "", `${name}: the session GIF Loader active state is wrong`);
+
+        const logout = root.sessionButton("Log out");
+        screenState.session = true;
+        root.focusOn(logout);
+        root.equal(root.focusedButtonName(), "Log out", `${name}: the drawer did not start on Log out`);
+
+        for (let index = 0; index < root.tabOrder.length; ++index) {
+            root.input.keyClick(Qt.Key_Tab);
+            root.input.wait(10);
+            root.equal(root.focusedButtonName(), root.tabOrder[index],
+                `${name}: Tab hop ${index + 1}`);
+            root.check(root.focusedButtonName() !== "",
+                `${name}: Tab hop ${index + 1} left the drawer`);
+        }
+
+        for (let index = 0; index < root.backtabOrder.length; ++index) {
+            root.input.keyClick(Qt.Key_Backtab, Qt.ShiftModifier);
+            root.input.wait(10);
+            root.equal(root.focusedButtonName(), root.backtabOrder[index],
+                `${name}: Shift+Tab hop ${index + 1}`);
+            root.check(root.focusedButtonName() !== "",
+                `${name}: Shift+Tab hop ${index + 1} left the drawer`);
+        }
+
+        root.input.keyClick(Qt.Key_Escape);
+        root.input.wait(10);
+        root.equal(screenState.session, false, `${name}: Escape after the walk did not close the drawer`);
+        screenState.session = true;
+        root.input.wait(10);
+    }
+
     function run(): void {
         const logout = root.sessionButton("Log out");
         const shutdown = root.sessionButton("Shut down");
@@ -190,7 +258,7 @@ ShellRoot {
 
         // Every session button draws the keyboard indicator and exposes one
         // accessible button whose name is its action.
-        for (const name of ["Log out", "Shut down", "Hibernate", "Reboot"]) {
+        for (const name of root.buttonNames) {
             const button = root.sessionButton(name);
             root.check(button, `${name} button is missing`);
             if (!button)
@@ -227,67 +295,23 @@ ShellRoot {
                 `${row.name} left a confirmation button in the drawer`);
         }
 
-        // (b) Tab wraps forward from the last button, Shift+Tab wraps back from
-        // the first. Vim keybinds are off for this row, so this is the plain
-        // KeyNavigation path.
-        GlobalConfig.session.vimKeybinds = false;
-        root.input.wait(10);
-        root.equal(Config.session.vimKeybinds, false, "vim keybinds did not turn off");
-
-        root.focusOn(reboot);
-        root.check(reboot.activeFocus, "Reboot is not focused before Tab");
-        root.input.keyClick(Qt.Key_Tab);
-        root.input.wait(10);
-        root.check(logout.activeFocus, "Tab from Reboot did not wrap to Log out");
-        root.check(root.outside === null || !root.outside.activeFocus,
-            "Tab from Reboot escaped the drawer");
-
-        root.focusOn(logout);
-        root.check(logout.activeFocus, "Log out is not focused before Shift+Tab");
-        root.input.keyClick(Qt.Key_Backtab, Qt.ShiftModifier);
-        root.input.wait(10);
-        root.check(reboot.activeFocus, "Shift+Tab from Log out did not wrap to Reboot");
-        root.check(root.outside === null || !root.outside.activeFocus,
-            "Shift+Tab from Log out escaped the drawer");
-
-        // (c) Escape still closes the drawer after wrapping with Tab: focus is
-        // inside the menu, so the button's Escape handler runs.
-        screenState.session = true;
-        root.focusOn(reboot);
-        root.input.keyClick(Qt.Key_Tab);
-        root.input.wait(10);
-        root.check(logout.activeFocus, "Tab did not wrap before the Escape check");
-        root.input.keyClick(Qt.Key_Escape);
-        root.input.wait(10);
-        root.equal(screenState.session, false, "Escape after the wrap did not close the drawer");
-        screenState.session = true;
-        root.input.wait(10);
-
-        // (d) The vim Tab path wraps too: its down/up chain ends at the last and
-        // first buttons, so it falls back to tab/backtab.
-        GlobalConfig.session.vimKeybinds = true;
-        root.input.wait(10);
-        root.equal(Config.session.vimKeybinds, true, "vim keybinds did not turn on");
-
-        root.focusOn(reboot);
-        root.input.keyClick(Qt.Key_Tab);
-        root.input.wait(10);
-        root.check(logout.activeFocus, "vim Tab from Reboot did not wrap to Log out");
-        root.check(root.outside === null || !root.outside.activeFocus,
-            "vim Tab from Reboot escaped the drawer");
-
-        root.focusOn(logout);
-        root.input.keyClick(Qt.Key_Backtab, Qt.ShiftModifier);
-        root.input.wait(10);
-        root.check(reboot.activeFocus, "vim Shift+Tab from Log out did not wrap to Reboot");
+        // (b)-(d) The whole cycle, for both keybind modes and both GIF Loader
+        // states. The Loader sits between Shut down and Hibernate in the drawer,
+        // so its presence must not change traversal either.
+        root.walk("vim off, gif off", false, "");
+        root.walk("vim off, gif on", false, "root:/assets/dino.png");
+        root.walk("vim on, gif off", true, "");
+        root.walk("vim on, gif on", true, "root:/assets/dino.png");
 
         // The existing vim down/up chain is unchanged.
+        GlobalConfig.session.vimKeybinds = true;
+        root.input.wait(10);
         root.focusOn(logout);
         root.input.keyClick(Qt.Key_J, Qt.ControlModifier);
         root.input.wait(10);
-        root.check(shutdown.activeFocus, "vim Ctrl+J no longer moves to Shut down");
+        root.equal(root.focusedButtonName(), "Shut down", "vim Ctrl+J no longer moves to Shut down");
 
         GlobalConfig.session.vimKeybinds = false;
+        GlobalConfig.paths.sessionGif = "";
     }
 }
-

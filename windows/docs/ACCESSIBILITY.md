@@ -23,7 +23,7 @@ gates cover the launcher and notification actions.
 | Surface | Keyboard reach/operate | Focus visible | Trapped in hidden drawer | `Accessible.name` / role | Windows high contrast | Reduced motion |
 | --- | --- | --- | --- | --- | --- | --- |
 | Launcher (search + action/app results) | Yes: open, type, Up/Down, Return, Escape (offscreen) | Search caret and list selection highlight; no ring on the field or result rows | No: only the search field is in the tab chain; results are selected, never focused | Yes after fix: named list rows and a named search field | Not read; palette does not adapt | Not read |
-| Session drawer (`adapters/modules/session/Content.qml`) | Yes: open, Up/Down, Return/Enter, Escape; Tab from the last button and Shift+Tab from the first wrap inside the menu (vim keybinds included) | Yes: `FocusRing` on the focused button | No after fix: Tab/Shift+Tab are a closed cycle over the four buttons, so Escape always reaches one | Yes: `Button` role and action names | Not read | Not read |
+| Session drawer (`adapters/modules/session/Content.qml`) | Yes: open, Up/Down, Return/Enter, Escape; Tab and Shift+Tab walk a closed cycle over all four buttons, with and without vim keybinds and with the session GIF loaded | Yes: `FocusRing` on the focused button | No after fix: every button names both Tab neighbours, so focus cannot fall back to Qt's default chain, and Escape always reaches one | Yes: `Button` role and action names | Not read | Not read |
 | Notification popup actions (`modules/notifications/Notification.qml`) | Yes after fix: expand, action, close and copy are in the tab chain and activate on Return/Enter/Space; collapsed cards take the hidden row out of traversal | Yes after fix: `FocusRing` on every control; collapsing hands focus to the expand control | No: the card is one shallow focus group | Yes after fix: names reflect current action/state | Not read | Not read |
 | Notification sidebar (`modules/sidebar/Notif*.qml`) | No: expand, dismiss and actions are pointer-only (`MouseArea`/`StateLayer`) | Pointer state layer only | n/a | Missing on group/action controls | Not read | Not read |
 | Nexus settings (`modules/nexus/**`) | Yes: Tab walks every page/sub-page, rows toggle/open, Return on nav opens a page; Escape closes the window after fix | Yes: `FocusRing` on rows, toggles and nav entries | No: the tab walk is a closed cycle and skips hidden/disabled rows | Partial: `RowButton`/nav entries named; inline slider, spinner and text-field controls have no row label | Not read | Not read |
@@ -35,7 +35,7 @@ gates cover the launcher and notification actions.
 | --- | --- | --- |
 | `windows/scripts/Test-AccessibilityLauncher.ps1` | 8 audit rows: focus on open, named search, action provider, row role/name, every instantiated row named, Up/Down, Return activation, Escape close | Pass after the launcher fix; all name/role rows failed before it |
 | `windows/scripts/Test-AccessibilityNotifications.ps1` | 14 audit rows: action/close/copy/expand in tab chain, names and roles, Return invokes, Space dismisses, collapsed actions leave traversal, collapse moves focus from a focused action row, expanding restores traversal, and negative collapses (another surface, another card, an inactive window, a pointer click without row focus) leave focus alone | Pass; the 7 name/tab rows failed before the first fix, the 3 collapsed rows failed before the collapsed-state fix, and the 4 negative rows fail when every collapse grabs focus |
-| `windows/scripts/Test-AccessibilitySession.ps1` | 58 checks, 4 audit rows: Return dispatches once with no confirmation UI, Tab/Shift+Tab wrap, Escape still closes the drawer after the wrap, and the same wrap under vim keybinds | Pass after the ERM-615 wrap; the wrap, Escape and confirmation rows failed on `origin/dev` |
+| `windows/scripts/Test-AccessibilitySession.ps1` | 133 checks, 4 audit rows: Return dispatches once with no confirmation UI, a full Tab/Shift+Tab walk with focus inside the drawer after every hop, Escape still closes the drawer after the walk, and the same walk with vim keybinds off/on and the session GIF Loader off/on | Pass after the full-cycle fix; the non-vim walk and Escape rows failed on the endpoint-only wrap, and the walk fails on `origin/dev` |
 | `windows/scripts/Test-QuotaProviderKeyboard.ps1` | 28 assertions | Pass unchanged |
 | `windows/scripts/Test-Nexus.ps1 -Suite Keyboard` | 36 pages/sub-pages, 27 reachable rows, plus close name and Escape | Pass after the Nexus fix; close name failed before it |
 
@@ -51,11 +51,12 @@ gates cover the launcher and notification actions.
    collapse took focus from that card's own action row.
 3. Nexus names its only close control and Escape now dismisses the inline
    overlay and the detached window through the same close signal.
-4. Session drawer (ERM-615): Tab from the last button and Shift+Tab from the
-   first wrap inside the menu, with the same fallback in the vim keybind path,
-   so focus and Escape can no longer leave the drawer. Session actions run
-   immediately, as in upstream Caelestia; the Windows confirmation step is
-   gone, so there is no Cancel/Confirm group to tab into.
+4. Session drawer (ERM-615): all four buttons name both their Tab and
+   Shift+Tab neighbour, so traversal is a closed cycle and never falls back to
+   Qt's default chain; the vim keybind path uses the same links. Focus and
+   Escape can no longer leave the drawer. Session actions run immediately, as
+   in upstream Caelestia; the Windows confirmation step is gone, so there is no
+   Cancel/Confirm group to tab into.
 
 No colour, spacing, type or motion value was changed. Focus rings reuse the
 existing `components/FocusRing.qml`; no new focus-ring appearance is proposed

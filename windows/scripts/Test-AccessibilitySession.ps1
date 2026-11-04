@@ -109,7 +109,7 @@ $checks = if ($checksMatch.Success) { [int]$checksMatch.Groups[1].Value } else {
 # Four audit rows: immediate dispatch, the Tab/Shift+Tab wrap, Escape after the
 # wrap, and the same wrap under vim keybinds, plus the accessible name/role and
 # focus-ring rows every button must keep.
-$minimumAssertions = 50
+$minimumAssertions = 120
 $passed = -not $timedOut -and $process.ExitCode -eq 0 -and
     $text.Contains('CAELESTIA_SESSION_KEYBOARD_PASS') -and $checks -ge $minimumAssertions -and
     $diagnostics.Count -eq 0 -and $failures.Count -eq 0

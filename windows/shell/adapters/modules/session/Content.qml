@@ -27,8 +27,10 @@ Column {
         accessibleName: "Log out"
 
         KeyNavigation.down: shutdown
-        // Windows a11y fix (ERM-615): Tab must wrap inside the drawer, so focus
-        // can never leave the session menu.
+        // Windows a11y fix (ERM-615): every button names both Tab neighbours,
+        // so traversal is a closed cycle over the four buttons and never falls
+        // back to Qt's default chain, which leaves the drawer for the bar.
+        KeyNavigation.tab: shutdown
         KeyNavigation.backtab: reboot
 
         Component.onCompleted: forceActiveFocus()
@@ -52,6 +54,8 @@ Column {
 
         KeyNavigation.up: logout
         KeyNavigation.down: hibernate
+        KeyNavigation.tab: hibernate
+        KeyNavigation.backtab: logout
     }
 
     Loader {
@@ -79,6 +83,8 @@ Column {
 
         KeyNavigation.up: shutdown
         KeyNavigation.down: reboot
+        KeyNavigation.tab: reboot
+        KeyNavigation.backtab: shutdown
     }
 
     SessionButton {
@@ -89,9 +95,8 @@ Column {
         accessibleName: "Reboot"
 
         KeyNavigation.up: hibernate
-        // Windows a11y fix (ERM-615): the last button wraps to the first, so
-        // Tab past it cannot land outside the drawer.
         KeyNavigation.tab: logout
+        KeyNavigation.backtab: hibernate
     }
 
     component SessionButton: IconButton {
@@ -164,19 +169,15 @@ Column {
                     event.accepted = true;
                 }
             } else if (event.key === Qt.Key_Backtab || (event.key === Qt.Key_Tab && (event.modifiers & Qt.ShiftModifier))) {
-                // Windows a11y fix (ERM-615): the up chain ends at the first
-                // button, so fall back to backtab to keep focus in the drawer.
-                const previous = KeyNavigation.up ?? KeyNavigation.backtab;
-                if (previous) {
-                    previous.focus = true;
+                // Windows a11y fix (ERM-615): the vim path uses the same
+                // closed tab cycle as the plain path.
+                if (KeyNavigation.backtab) {
+                    KeyNavigation.backtab.focus = true;
                     event.accepted = true;
                 }
             } else if (event.key === Qt.Key_Tab) {
-                // Same wrap forward: the down chain ends at the last button,
-                // then Tab wraps to the first.
-                const next = KeyNavigation.down ?? KeyNavigation.tab;
-                if (next) {
-                    next.focus = true;
+                if (KeyNavigation.tab) {
+                    KeyNavigation.tab.focus = true;
                     event.accepted = true;
                 }
             }

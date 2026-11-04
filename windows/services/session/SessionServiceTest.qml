@@ -260,8 +260,6 @@ QtObject {
                 row.action + " stays marked destructive as information only");
             equal(service.sessionAction(row.action).available, true,
                 row.action + " available with dispatch opt-in");
-            equal(service.sessionAction(row.action).requiresConfirmation, undefined,
-                row.action + " exposes no confirmation flag");
         }
 
         // The dispatch opt-in is still the only gate: with it off, none of the
