@@ -20,6 +20,9 @@ function Invoke-FixtureBoundary([string]$Name) {
 function Get-CaelestiaProcesses([string]$Prefix) {
     Assert-FixturePrefix $Prefix
     Invoke-FixtureBoundary 'processes'
+    # Fail closed even if a busy-lock regression unexpectedly lets this
+    # source-install contender through. Never reach native assembly/deployment.
+    if ($env:CAELESTIA_FIXTURE_OPERATION -eq 'SourceInstall') { throw 'Injected external boundary exception.' }
     return @()
 }
 function Get-CaelestiaSupervisors([string]$ProfileRoot) {
@@ -47,6 +50,7 @@ function Remove-ItemProperty {
     if ($LiteralPath -ne (Join-Path $env:CAELESTIA_FIXTURE_CASE 'integration') -or $Name -ne 'fixture-run') {
         throw 'Blocked removal outside fixture integration.'
     }
+    Invoke-FixtureBoundary 'remove-integration'
     Remove-Item -LiteralPath (Join-Path $LiteralPath $Name)
 }
 # Scheme provisioning/probes and task-backed launches are external boundaries,
@@ -59,7 +63,57 @@ function Select-CaelestiaRestoreScheme { return $null }
 function Set-CaelestiaSchemeRuntimeForRevision { return $null }
 function Remove-CaelestiaSchemeGenerations { }
 function New-CaelestiaLaunchTask { return 'fixture-no-task' }
-function Unregister-ScheduledTask { }
+function Get-FixtureTaskPath([string]$TaskName) {
+    if ($TaskName -notmatch '^Caelestia-Maintenance(?:Watch)?-[a-f0-9]{32}$') { throw 'Blocked unexpected task name.' }
+    return Join-Path $env:CAELESTIA_FIXTURE_CASE "tasks\$TaskName.json"
+}
+function New-ScheduledTaskAction {
+    param($Execute, $WorkingDirectory, $Argument)
+    [pscustomobject]@{ Execute = $Execute; WorkingDirectory = $WorkingDirectory; Arguments = $Argument }
+}
+function New-ScheduledTaskPrincipal { param($UserId, $LogonType, $RunLevel) return $null }
+function New-ScheduledTaskSettingsSet {
+    param([switch]$AllowStartIfOnBatteries, [switch]$DontStopIfGoingOnBatteries, [switch]$StartWhenAvailable,
+        $ExecutionTimeLimit, $RestartCount, $RestartInterval)
+    [pscustomobject]@{ ExecutionTimeLimitSeconds = $ExecutionTimeLimit.TotalSeconds; RestartCount = $RestartCount; RestartIntervalSeconds = $RestartInterval.TotalSeconds }
+}
+function New-ScheduledTaskTrigger { param([switch]$Once, $At) [pscustomobject]@{ At = $At } }
+function Register-ScheduledTask {
+    param($TaskName, $Action, $Trigger, $Principal, $Settings, $ErrorAction)
+    Invoke-FixtureBoundary 'register-task'
+    @{ TaskName = $TaskName; Actions = @($Action); Trigger = $Trigger; Settings = $Settings } |
+        ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Get-FixtureTaskPath $TaskName) -Encoding UTF8
+    Invoke-FixtureBoundary 'after-register-task'
+}
+function Get-ScheduledTask {
+    param($TaskName, $TaskPath, $ErrorAction)
+    if ($TaskName -eq 'Caelestia-Maintenance*') {
+        foreach ($file in Get-ChildItem -LiteralPath (Join-Path $env:CAELESTIA_FIXTURE_CASE 'tasks') -File) {
+            Get-Content -LiteralPath $file.FullName -Raw | ConvertFrom-Json
+        }
+        return
+    }
+    $path = Get-FixtureTaskPath $TaskName
+    if (Test-Path -LiteralPath $path) { Get-Content -LiteralPath $path -Raw | ConvertFrom-Json }
+}
+function Start-ScheduledTask {
+    param($TaskName, $ErrorAction)
+    $null = Get-FixtureTaskPath $TaskName
+    Invoke-FixtureBoundary 'start-task'
+    # Assert that a different process can enter the real locked transaction at
+    # this boundary in the controller tests. No real task starts here.
+}
+function Stop-ScheduledTask {
+    param($TaskName, $TaskPath, $ErrorAction)
+    $null = Get-FixtureTaskPath $TaskName
+    Invoke-FixtureBoundary 'stop-task'
+}
+function Unregister-ScheduledTask {
+    param($TaskName, $TaskPath, [switch]$Confirm, $ErrorAction)
+    if ($TaskName -eq 'fixture-no-task') { return }
+    $path = Get-FixtureTaskPath $TaskName
+    if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path }
+}
 function Start-CaelestiaDetached {
     param([string]$Prefix, [switch]$LegacyReady, [string]$TaskName, [switch]$PreparedSchemeRuntime)
     Assert-FixturePrefix $Prefix

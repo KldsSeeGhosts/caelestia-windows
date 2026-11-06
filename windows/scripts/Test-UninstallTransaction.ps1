@@ -2,7 +2,9 @@
 param(
     [string]$OutputRoot = 'D:\Caelestia\validation-erm629',
     # Negative control: read only this revision's uninstall into the sandbox.
-    [ValidatePattern('^$|^[a-f0-9]{40}$')][string]$UninstallSourceRevision = ''
+    [ValidatePattern('^$|^[a-f0-9]{40}$')][string]$UninstallSourceRevision = '',
+    [ValidatePattern('^$|^[a-f0-9]{40}$')][string]$ManageSourceRevision = '',
+    [switch]$StaleReadOnly
 )
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'Caelestia-InstallCommon.ps1')
@@ -26,9 +28,14 @@ $script:scenarios = @()
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $revision = (& git -C $repoRoot rev-parse HEAD).Trim()
 $uninstallText = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'Uninstall-Caelestia.ps1'))
+$manageText = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'Manage-Caelestia.ps1'))
 if ($UninstallSourceRevision) {
     $uninstallText = (& git -C $repoRoot show "${UninstallSourceRevision}:windows/scripts/Uninstall-Caelestia.ps1") -join "`n"
     if ($LASTEXITCODE -ne 0) { throw 'Cannot read negative-control revision.' }
+}
+if ($ManageSourceRevision) {
+    $manageText = (& git -C $repoRoot show "${ManageSourceRevision}:windows/scripts/Manage-Caelestia.ps1") -join "`n"
+    if ($LASTEXITCODE -ne 0) { throw 'Cannot read negative-control Manage revision.' }
 }
 $boundary = Join-Path $PSScriptRoot 'UninstallTransaction-FixtureBoundary.ps1'
 $importBoundary = "`r`n. '" + $boundary.Replace("'", "''") + "'"
@@ -54,8 +61,24 @@ function New-Case([string]$Name) {
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $scripts
     }
     $import = ". (Join-Path `$PSScriptRoot 'Caelestia-InstallCommon.ps1')"
-    $manage = [IO.File]::ReadAllText((Join-Path $scripts 'Manage-Caelestia.ps1'))
-    Write-FixtureText (Join-Path $scripts 'Manage-Caelestia.ps1') (Replace-Exactly $manage $import ($import + $importBoundary))
+    $manage = Replace-Exactly $manageText $import ($import + $importBoundary + "`r`nInvoke-FixtureBoundary 'entry'")
+    # Pause after the real mutable read, not a fabricated selector. Old Manage
+    # read before locking; the changed path reads only after acquiring.
+    $manage = $manage.Replace('$record = Read-CaelestiaInstall $Prefix',
+        "`$record = Read-CaelestiaInstall `$Prefix`r`nInvoke-FixtureBoundary 'record-read'")
+    Write-FixtureText (Join-Path $scripts 'Manage-Caelestia.ps1') $manage
+    $sourceInstall = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'Install-Caelestia.ps1'))
+    Write-FixtureText (Join-Path $scripts 'Install-Caelestia.ps1') (Replace-Exactly $sourceInstall $import ($import + $importBoundary))
+    # Source installer preflight runs against data-only prerequisites. Tests
+    # either refuse busy, or throw at its first post-lock external boundary,
+    # before assembly, deployment or compilation can execute.
+    foreach ($relative in @('source-build\quickshell\qs.exe', 'source-build\install\glazier.exe',
+        'source-build\install\qml\Caelestia\Windows\qmldir', 'source-build\install\qml\M3Shapes\qmldir',
+        'source-qt\bin\windeployqt.exe', 'source-crt\msvcp140.dll',
+        'source-crt\vcruntime140.dll', 'source-crt\vcruntime140_1.dll', 'source-repo\fixture.txt')) {
+        Write-FixtureText (Join-Path $case $relative) 'synthetic prerequisite; never execute'
+    }
+    [IO.Directory]::CreateDirectory((Join-Path $case 'tasks')) | Out-Null
     $uninstall = Replace-Exactly $uninstallText $import ($import + $importBoundary)
     # Exact direct Run-key boundary: never inspect or remove even a hashed
     # temporary-prefix value from the user's actual startup key.
@@ -156,7 +179,7 @@ Add-Content -LiteralPath (Join-Path $env:CAELESTIA_FIXTURE_CONTROL 'boundaries.t
     return $case
 }
 function Start-Worker([string]$Case, [string]$Operation, [string]$Pause = '', [bool]$Purge = $false,
-    [bool]$KeepAlive = $false, [bool]$ThrowAtBoundary = $false, [bool]$AliasPrefix = $false) {
+    [bool]$KeepAlive = $false, [bool]$ThrowAtBoundary = $false, [bool]$AliasPrefix = $false, [string]$OperationId = '') {
     $control = Join-Path $Case ('control-' + [guid]::NewGuid().ToString('N'))
     [IO.Directory]::CreateDirectory($control) | Out-Null
     $arguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File "' +
@@ -167,6 +190,7 @@ function Start-Worker([string]$Case, [string]$Operation, [string]$Pause = '', [b
     if ($KeepAlive) { $arguments += ' -KeepAlive' }
     if ($ThrowAtBoundary) { $arguments += ' -ThrowAtBoundary' }
     if ($AliasPrefix) { $arguments += ' -AliasPrefix' }
+    if ($OperationId) { $arguments += ' -OperationId ' + $OperationId }
     $process = Start-Process -FilePath (Get-WindowsPowerShellPath) -ArgumentList $arguments `
         -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $control 'stdout.txt') `
         -RedirectStandardError (Join-Path $control 'stderr.txt')
@@ -195,16 +219,42 @@ function Assert-Result($Worker, [string]$Expected) {
     $result = Get-Content -LiteralPath (Join-Path $Worker.Control 'result.json') -Raw | ConvertFrom-Json
     Assert ($result.status -eq $Expected) "Expected $Expected, got $($result.status): $($result.message)"
 }
-function Snapshot([string]$Case, [switch]$ExceptOperationJournal) {
-    $lines = foreach ($tree in @('prefix', 'profile', 'integration', 'unrelated-profile')) {
+function Read-Result($Worker) {
+    Wait-Marker $Worker 'result.json'
+    return Get-Content -LiteralPath (Join-Path $Worker.Control 'result.json') -Raw | ConvertFrom-Json
+}
+function Finish-ErrorWorker($Worker) {
+    Assert-Result $Worker 'Error'
+    [IO.File]::WriteAllText((Join-Path $Worker.Control 'finish'), 'finish')
+    Assert ($Worker.Process.WaitForExit(10000)) 'Refused worker did not exit.'
+    Assert ($Worker.Process.ExitCode -eq 1) 'Expected refusal exit code.'
+}
+function Start-QueuedOperation([string]$Case) {
+    $queue = Start-Worker $Case 'Queue'
+    Assert-Result $queue 'Success'
+    $id = (Read-Result $queue).operationId
+    Assert ($id -match '^[a-f0-9]{32}$') 'Queue did not return its tracked operation.'
+    Finish-Worker $queue
+    return $id
+}
+function Snapshot([string]$Case) {
+    $lines = foreach ($tree in @('prefix', 'profile', 'integration', 'unrelated-profile', 'tasks')) {
         $path = Join-Path $Case $tree
         if (-not (Test-Path -LiteralPath $path)) { "$tree ABSENT"; continue }
         $tree
         foreach ($item in Get-ChildItem -LiteralPath $path -Recurse -Force | Sort-Object FullName) {
             $relative = $item.FullName.Substring($Case.Length + 1)
-            if ($ExceptOperationJournal -and $relative -eq 'profile\state\update-operation.json') { continue }
             if ($item.PSIsContainer) { $relative + ' DIRECTORY' }
             else { $relative + ' ' + (Get-FileHash -LiteralPath $item.FullName).Hash }
+        }
+    }
+    # Staging/tombstone siblings are transaction state too, not invisible
+    # leftovers outside the prefix snapshot.
+    $lines += foreach ($item in Get-ChildItem -LiteralPath $Case -Force |
+        Where-Object { $_.Name -like 'prefix.staging-*' -or $_.Name -like 'prefix.uninstall-*' } | Sort-Object Name) {
+        $item.Name
+        foreach ($file in Get-ChildItem -LiteralPath $item.FullName -File -Recurse -Force | Sort-Object FullName) {
+            $file.FullName.Substring($Case.Length + 1) + ' ' + (Get-FileHash -LiteralPath $file.FullName).Hash
         }
     }
     return $lines -join "`n"
@@ -216,10 +266,17 @@ function Assert-Coherent([string]$Case) {
     Assert (Test-CaelestiaVersionPayload $prefix $record.current) 'Selected payload is not coherent.'
     Assert (Test-CaelestiaVersionPayload $prefix $record.previous) 'Previous payload is not coherent.'
     Assert ((Read-CaelestiaProfileOwner (Join-Path $Case 'profile')).installId -eq $record.installId) 'Profile owner changed.'
+    Assert (@(Get-ChildItem -LiteralPath $Case -Directory -Filter 'prefix.staging-*').Count -eq 0) 'Staging sibling was left behind.'
 }
 function Assert-Uninstalled([string]$Case, [bool]$Purge) {
     Assert (-not (Test-Path -LiteralPath (Join-Path $Case 'prefix'))) 'Prefix not removed.'
     Assert (@(Get-ChildItem -LiteralPath $Case -Directory -Filter 'prefix.uninstall-*').Count -eq 0) 'Tombstone not cleaned.'
+    Assert (@(Get-ChildItem -LiteralPath $Case -Directory -Filter 'prefix.staging-*').Count -eq 0) 'Staging sibling was left behind.'
+    $ownedTasks = @(foreach ($file in Get-ChildItem -LiteralPath (Join-Path $Case 'tasks') -File) {
+        $task = Get-Content -LiteralPath $file.FullName -Raw | ConvertFrom-Json
+        if (@($task.Actions | Where-Object { $_.WorkingDirectory -eq (Join-Path $Case 'prefix') }).Count) { $task }
+    })
+    Assert ($ownedTasks.Count -eq 0) 'Owned maintenance tasks were left behind.'
     Assert (@(Get-ChildItem -LiteralPath (Join-Path $Case 'integration') -Force).Count -eq 0) 'Integration not removed.'
     Assert ((Test-Path -LiteralPath (Join-Path $Case 'profile')) -eq (-not $Purge)) 'Purge/profile preservation mismatch.'
     if (-not $Purge) {
@@ -230,6 +287,7 @@ function Assert-Uninstalled([string]$Case, [bool]$Purge) {
 $passed = $false
 $failure = ''
 try {
+    if (-not $StaleReadOnly) {
     foreach ($purge in @($false, $true)) {
         foreach ($operation in @('Install', 'Rollback')) {
             $name = "held-$operation-purge-$purge"
@@ -262,20 +320,16 @@ try {
             Finish-Worker $uninstall
             $script:scenarios += $name
         }
-        foreach ($operation in @('Install', 'Rollback')) {
+        foreach ($operation in @('Install', 'Rollback', 'SourceInstall', 'Queue')) {
             $name = "held-Uninstall-vs-$operation-purge-$purge"
             $case = New-Case $name
             $owner = Start-Worker $case 'Uninstall' 'integration' $purge $true
             Wait-Marker $owner 'ready'
-            $before = Snapshot $case -ExceptOperationJournal:($operation -eq 'Rollback')
+            $before = Snapshot $case
             $contender = Start-Worker $case $operation
             Assert-Result $contender 'Busy'
             Finish-Worker $contender
-            Assert ((Snapshot $case -ExceptOperationJournal:($operation -eq 'Rollback')) -ceq $before) 'Busy transaction mutated managed data or integration.'
-            if ($operation -eq 'Rollback') {
-                $journal = Get-Content -LiteralPath (Join-Path $case 'profile\state\update-operation.json') -Raw | ConvertFrom-Json
-                Assert ($journal.phase -eq 'failed') 'Expected existing rollback busy journal behavior.'
-            }
+            Assert ((Snapshot $case) -ceq $before) 'Busy transaction mutated managed data, journal, tasks or integration.'
             Release-Worker $owner
             Assert-Result $owner 'Success'
             Assert-Uninstalled $case $purge
@@ -353,6 +407,237 @@ try {
     Assert ($next.Process.WaitForExit(10000)) 'Refusal worker did not exit.'
     Assert ($next.Process.ExitCode -eq 1) 'Expected refusal exit code.'
     $script:scenarios += 'foreign-profile-purge-refusal'
+    }
+    $case = New-Case 'rollback-read-vs-purge'
+    $owner = Start-Worker $case 'Rollback' 'record-read'
+    Wait-Marker $owner 'ready'
+    $before = Snapshot $case
+    $purgeWorker = Start-Worker $case 'Uninstall' '' $true
+    $purgeResult = Read-Result $purgeWorker
+    if ($purgeResult.status -ne 'Busy') {
+        # Negative control completes the stale read race, not merely its first
+        # half: old Manage mkdirs/writes AFTER successful purge.
+        Release-Worker $owner
+        $null = Read-Result $owner
+        $resurrected = Test-Path -LiteralPath (Join-Path $case 'profile')
+        throw "Stale-read race: purge returned $($purgeResult.status); profile recreated=$resurrected."
+    }
+    Assert-Result $purgeWorker 'Busy'
+    Finish-Worker $purgeWorker
+    Assert ((Snapshot $case) -ceq $before) 'Purge changed a locked rollback snapshot.'
+    Release-Worker $owner
+    Assert-Result $owner 'Success'
+    Finish-Worker $owner
+    Assert-Coherent $case
+    $script:scenarios += 'rollback-read-vs-purge'
+
+    $case = New-Case 'purged-before-rollback-entry'
+    $owner = Start-Worker $case 'Rollback' 'entry'
+    Wait-Marker $owner 'ready'
+    $purgeWorker = Start-Worker $case 'Uninstall' '' $true
+    Assert-Result $purgeWorker 'Success'
+    Finish-Worker $purgeWorker
+    Assert-Uninstalled $case $true
+    $before = Snapshot $case
+    Release-Worker $owner
+    Finish-ErrorWorker $owner
+    foreach ($operation in @('Queue', 'TrackedRollback', 'Watch')) {
+        $next = Start-Worker $case $operation -OperationId ('a' * 32)
+        if ($operation -eq 'Watch') { Assert-Result $next 'Success'; Finish-Worker $next }
+        else { Finish-ErrorWorker $next }
+        Assert ((Snapshot $case) -ceq $before) 'Late maintenance recreated a purged profile or changed integration.'
+    }
+    $script:scenarios += 'purged-before-rollback-entry'
+
+    if (-not $StaleReadOnly) {
+    foreach ($failureMode in @('Success', 'Injected')) {
+        $case = New-Case "direct-journal-free-$failureMode"
+        $journalPath = Join-Path $case 'profile\state\update-operation.json'
+        Remove-Item -LiteralPath $journalPath
+        Remove-Item -LiteralPath (Join-Path $case 'profile\state')
+        $pause = if ($failureMode -eq 'Injected') { 'scheme' } else { '' }
+        $direct = Start-Worker $case 'Rollback' $pause -ThrowAtBoundary:($failureMode -eq 'Injected')
+        if ($pause) { Wait-Marker $direct 'ready'; Release-Worker $direct }
+        Assert-Result $direct $failureMode
+        Finish-Worker $direct
+        Assert (-not (Test-Path -LiteralPath (Join-Path $case 'profile\state'))) 'Untracked rollback created its journal directory.'
+        Assert-Coherent $case
+        $script:scenarios += "direct-journal-free-$failureMode"
+    }
+    foreach ($failureMode in @('Success', 'Injected')) {
+        $case = New-Case "direct-preserves-journal-$failureMode"
+        $journalPath = Join-Path $case 'profile\state\update-operation.json'
+        $before = [IO.File]::ReadAllText($journalPath)
+        $pause = if ($failureMode -eq 'Injected') { 'scheme' } else { '' }
+        $direct = Start-Worker $case 'Rollback' $pause -ThrowAtBoundary:($failureMode -eq 'Injected')
+        if ($pause) { Wait-Marker $direct 'ready'; Release-Worker $direct }
+        Assert-Result $direct $failureMode
+        Finish-Worker $direct
+        Assert ([IO.File]::ReadAllText($journalPath) -ceq $before) 'Untracked rollback rewrote an existing operation journal.'
+        Assert-Coherent $case
+        $script:scenarios += "direct-preserves-journal-$failureMode"
+    }
+
+    $case = New-Case 'source-installer-held'
+    $owner = Start-Worker $case 'SourceInstall' 'processes' -ThrowAtBoundary:$true
+    Wait-Marker $owner 'ready'
+    $before = Snapshot $case
+    $next = Start-Worker $case 'Uninstall' '' $true
+    Assert-Result $next 'Busy'
+    Finish-Worker $next
+    Assert ((Snapshot $case) -ceq $before) 'Busy uninstall changed source-installer transaction state.'
+    Release-Worker $owner
+    Assert-Result $owner 'Injected'
+    Finish-Worker $owner
+    Assert ((Snapshot $case) -ceq $before) 'Source installer crossed the injected pre-assembly boundary.'
+    Assert-Coherent $case
+    $script:scenarios += 'source-installer-held'
+
+    $case = New-Case 'tracked-contention-watchdog'
+    $id = Start-QueuedOperation $case
+    $taskPath = Join-Path $case "tasks\Caelestia-MaintenanceWatch-$id.json"
+    $task = Get-Content -LiteralPath $taskPath -Raw | ConvertFrom-Json
+    Assert ($task.Settings.RestartCount -eq 3 -and $task.Settings.RestartIntervalSeconds -eq 60) 'Watchdog has no bounded contention retry policy.'
+    Assert ($task.Settings.ExecutionTimeLimitSeconds -eq 30) 'Watchdog execution is unbounded.'
+    $owner = Start-Worker $case 'SourceInstall' 'processes' -ThrowAtBoundary:$true
+    Wait-Marker $owner 'ready'
+    $before = Snapshot $case
+    foreach ($operation in @('TrackedRollback', 'Watch', 'Queue')) {
+        $next = Start-Worker $case $operation -OperationId $id
+        Assert-Result $next 'Busy'
+        Finish-Worker $next
+        Assert ((Snapshot $case) -ceq $before) 'Tracked busy refusal changed bytes or removed its watchdog.'
+    }
+    Release-Worker $owner
+    Assert-Result $owner 'Injected'
+    Finish-Worker $owner
+    $watch = Start-Worker $case 'Watch' -OperationId $id
+    Assert-Result $watch 'Success'
+    Finish-Worker $watch
+    $journal = Get-Content -LiteralPath (Join-Path $case 'profile\state\update-operation.json') -Raw | ConvertFrom-Json
+    Assert ($journal.operationId -eq $id -and $journal.phase -eq 'failed') 'Watchdog did not report its deferred failure after lock release.'
+    Assert (@(Get-ChildItem -LiteralPath (Join-Path $case 'tasks') -File).Count -eq 0) 'Watchdog did not clean its tasks.'
+    $before = Snapshot $case
+    $late = Start-Worker $case 'TrackedRollback' -OperationId $id
+    Finish-ErrorWorker $late
+    Assert ((Snapshot $case) -ceq $before) 'Late tracked worker overwrote a terminal operation.'
+    Assert-Coherent $case
+    $script:scenarios += 'tracked-contention-watchdog'
+
+    foreach ($purge in @($false, $true)) {
+        $case = New-Case "queued-vs-uninstall-purge-$purge"
+        $queue = Start-Worker $case 'Queue' 'start-task'
+        Wait-Marker $queue 'ready'
+        # If queue still held its lock, this real source installer could not
+        # reach process preflight. It throws there, before any assembly.
+        $probe = Start-Worker $case 'SourceInstall' 'processes' -ThrowAtBoundary:$true
+        Wait-Marker $probe 'ready'
+        Release-Worker $probe
+        Assert-Result $probe 'Injected'
+        Finish-Worker $probe
+        Release-Worker $queue
+        Assert-Result $queue 'Success'
+        $id = (Read-Result $queue).operationId
+        Finish-Worker $queue
+        $owner = Start-Worker $case 'Uninstall' 'integration' $purge -AliasPrefix:$true
+        Wait-Marker $owner 'ready'
+        $before = Snapshot $case
+        foreach ($operation in @('TrackedRollback', 'Watch')) {
+            $next = Start-Worker $case $operation -OperationId $id
+            Assert-Result $next 'Busy'
+            Finish-Worker $next
+            Assert ((Snapshot $case) -ceq $before) 'Queued busy operation changed uninstall-owned data or tasks.'
+        }
+        Release-Worker $owner
+        Assert-Result $owner 'Success'
+        Finish-Worker $owner
+        Assert-Uninstalled $case $purge
+        $before = Snapshot $case
+        $late = Start-Worker $case 'Watch' -OperationId $id
+        Assert-Result $late 'Success'
+        Finish-Worker $late
+        Assert ((Snapshot $case) -ceq $before) 'Late watchdog resurrected cancelled installation/profile state.'
+        $script:scenarios += "queued-vs-uninstall-purge-$purge"
+    }
+    foreach ($failureMode in @('Success', 'Injected')) {
+        $case = New-Case "tracked-terminal-$failureMode"
+        $id = Start-QueuedOperation $case
+        $pause = if ($failureMode -eq 'Injected') { 'scheme' } else { '' }
+        $worker = Start-Worker $case 'TrackedRollback' $pause -ThrowAtBoundary:($failureMode -eq 'Injected') -OperationId $id
+        if ($pause) { Wait-Marker $worker 'ready'; Release-Worker $worker }
+        Assert-Result $worker $failureMode
+        Finish-Worker $worker
+        $journal = Get-Content -LiteralPath (Join-Path $case 'profile\state\update-operation.json') -Raw | ConvertFrom-Json
+        $phase = if ($failureMode -eq 'Success') { 'complete' } else { 'failed' }
+        Assert ($journal.operationId -eq $id -and $journal.phase -eq $phase) 'Tracked terminal result is not truthful.'
+        Assert (@(Get-ChildItem -LiteralPath (Join-Path $case 'tasks') -File).Count -eq 0) 'Tracked terminal result left tasks behind.'
+        Assert-Coherent $case
+        $script:scenarios += "tracked-terminal-$failureMode"
+    }
+    $case = New-Case 'foreign-task-preserved'
+    $id = Start-QueuedOperation $case
+    $taskPath = Join-Path $case "tasks\Caelestia-MaintenanceWatch-$id.json"
+    $foreignTask = Get-Content -LiteralPath $taskPath -Raw | ConvertFrom-Json
+    $foreignTask.Actions[0].WorkingDirectory = Join-Path $case 'unrelated-prefix'
+    Write-FixtureText $taskPath ($foreignTask | ConvertTo-Json -Depth 6)
+    $before = [IO.File]::ReadAllText($taskPath)
+    $owner = Start-Worker $case 'Uninstall' '' $true
+    Assert-Result $owner 'Success'
+    Finish-Worker $owner
+    Assert ([IO.File]::ReadAllText($taskPath) -ceq $before) 'Uninstall touched a task belonging to another prefix.'
+    Assert-Uninstalled $case $true
+    $script:scenarios += 'foreign-task-preserved'
+    $case = New-Case 'interrupted-queue-orphan-watchdog'
+    $owner = Start-Worker $case 'Queue' 'after-register-task'
+    Wait-Marker $owner 'ready'
+    Assert (@(Get-ChildItem -LiteralPath (Join-Path $case 'tasks') -File).Count -eq 1) 'Queue did not reach its pre-journal watchdog registration window.'
+    $before = Snapshot $case
+    $next = Start-Worker $case 'Uninstall' '' $true
+    Assert-Result $next 'Busy'
+    Finish-Worker $next
+    Assert ((Snapshot $case) -ceq $before) 'Busy uninstall changed interrupted queue state.'
+    $owner.Process.Kill()
+    Assert ($owner.Process.WaitForExit(10000)) 'Queue owner did not exit.'
+    $retry = Start-Worker $case 'Uninstall' '' $true
+    Assert-Result $retry 'Success'
+    Finish-Worker $retry
+    Assert-Uninstalled $case $true
+    $script:scenarios += 'interrupted-queue-orphan-watchdog'
+    foreach ($interrupted in @($false, $true)) {
+        $case = New-Case "post-rename-interrupted-$interrupted"
+        $prefix = Join-Path $case 'prefix'
+        $owner = Start-Worker $case 'Uninstall' 'remove-integration' $true $true (-not $interrupted)
+        Wait-Marker $owner 'ready'
+        Assert (-not (Test-Path -LiteralPath $prefix)) 'Post-rename boundary did not execute after the real rename.'
+        $tombstones = @(Get-ChildItem -LiteralPath $case -Directory -Filter 'prefix.uninstall-*')
+        Assert ($tombstones.Count -eq 1) 'Expected exactly one interrupted tombstone.'
+        $before = Snapshot $case
+        foreach ($operation in @('Rollback', 'SourceInstall', 'Watch')) {
+            $next = Start-Worker $case $operation -OperationId ('b' * 32)
+            Assert-Result $next 'Busy'
+            Finish-Worker $next
+            Assert ((Snapshot $case) -ceq $before) 'Post-rename contender changed transaction state.'
+        }
+        if ($interrupted) { $owner.Process.Kill(); Assert ($owner.Process.WaitForExit(10000)) 'Post-rename owner did not exit.' }
+        else { Release-Worker $owner; Assert-Result $owner 'Injected' }
+        Assert ([IO.File]::ReadAllText((Join-Path $case 'profile\config\sentinel.txt')) -eq 'owned profile content') 'Pre-purge interruption modified profile content.'
+        Assert ([IO.File]::ReadAllText((Join-Path $case 'unrelated-profile\sentinel.txt')) -eq 'unrelated profile content') 'Post-rename interruption touched unrelated profile.'
+        # Explicit fixture recovery, not a claim of automatic production crash
+        # recovery. Validate exact owned paths before moving the tree back.
+        $tombstone = Resolve-CaelestiaDirectory $tombstones[0].FullName
+        Assert ($tombstone -match ('^' + [regex]::Escape($prefix) + '\.uninstall-[a-f0-9]{32}$')) 'Unsafe interrupted recovery target.'
+        $record = Get-Content -LiteralPath (Join-Path $tombstone 'install.json') -Raw | ConvertFrom-Json
+        Assert ($record.product -eq 'caelestia-windows' -and $record.prefix -eq $prefix -and $record.installId -eq 'erm629-fixture') 'Tombstone ownership mismatch.'
+        Assert-CaelestiaNoReparsePoints $tombstone
+        [IO.Directory]::Move($tombstone, $prefix)
+        $retry = Start-Worker $case 'Uninstall' '' $true
+        Assert-Result $retry 'Success'
+        Finish-Worker $retry
+        Assert-Uninstalled $case $true
+        if (-not $interrupted) { Finish-Worker $owner }
+        $script:scenarios += "post-rename-interrupted-$interrupted"
+    }
+    }
     $passed = $true
 } catch {
     $failure = Protect-CaelestiaText $_.Exception.Message
@@ -373,7 +658,9 @@ try {
     $receipt = [ordered]@{
         passed = $passed; assertions = $script:assertions; scenarios = $script:scenarios; failure = $failure
         sourceRevision = $revision; negativeControlRevision = $UninstallSourceRevision
+        negativeControlManageRevision = $ManageSourceRevision; staleReadOnly = [bool]$StaleReadOnly
         uninstallSha256 = (Get-FileHash -LiteralPath (Join-Path $PSScriptRoot 'Uninstall-Caelestia.ps1')).Hash
+        manageSha256 = (Get-FileHash -LiteralPath (Join-Path $PSScriptRoot 'Manage-Caelestia.ps1')).Hash
         backendRevision = (& git -C (Join-Path $repoRoot 'windows\deps\quickshell') rev-parse HEAD).Trim()
         glazierRevision = (& git -C (Join-Path $repoRoot 'windows\deps\glazier') rev-parse HEAD).Trim()
         m3shapesRevision = (& git -C (Join-Path $repoRoot 'windows\deps\m3shapes') rev-parse HEAD).Trim()
@@ -383,7 +670,7 @@ try {
         architecture = $env:PROCESSOR_ARCHITECTURE
         sourceDirty = [bool](& git -C $repoRoot status --porcelain)
         fullAcceptanceComplete = $false
-        limit = 'Fixture/component only. Busy rollback writes its existing operation journal; all other managed bytes are unchanged. No live desktop/integration or actual release qualification.'
+        limit = 'Fixture/component only; strict busy snapshots have no journal exclusion. Watchdog reports after lock release within its configured retry window; indefinite unrelated lock ownership still requires a consumer timeout. Post-rename crash recovery is explicit fixture recovery, not automatic production recovery. No live desktop/integration or release qualification.'
     }
     Write-FixtureText (Join-Path $runRoot 'receipt.json') ($receipt | ConvertTo-Json -Depth 6)
 }

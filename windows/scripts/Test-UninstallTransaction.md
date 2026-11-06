@@ -11,19 +11,37 @@ marker. Each invocation retains its own `run-<guid>` directory and sanitized
 `receipt.json`, worker results, boundary traces and stdout/stderr. It does not
 recursively clean old runs. Do not point it at an existing installation.
 
-Policy: uninstall uses the same nonblocking prefix lock as installation and
-rollback. Contention returns `An installation, rollback or uninstall is already
-in progress.` before reading the mutable manifest/profile or stopping anything.
-There is no wait/retry policy and no additional mutex.
+Policy: uninstall and every non-Status maintenance path use the same nonblocking
+prefix lock as installation. Contention returns a clear busy error before
+reading the mutable manifest/profile, creating directories or writing journals.
+Direct `Rollback -Wait` never creates or writes an operation journal, even on
+failure. No additional mutex is introduced.
+
+Queued setup takes that lock too. It registers the existing watchdog before
+accepting the operation and starts the worker only after releasing the lock.
+A busy tracked worker does not overwrite `queued` or unregister the watchdog.
+The watchdog uses the same lock, never creates missing profiles/journals, and
+has three one-minute Task Scheduler failure retries (30-second execution limit
+per attempt). Successful/failed tracked work records a terminal phase before
+removing its reporting task. Journal writes include prefix/install identity.
+
+Uninstall cancels only maintenance tasks whose action proves the same prefix,
+including a watchdog registered before an interrupted queue could write its
+journal. Other-prefix task actions are left alone. An owned queued/working
+journal is marked failed under the lock; purge then deletes only the owned
+profile.
 
 ## What executes
 
 The controller creates disposable, separate prefix, owned profile, unrelated
 profile, fake integration and synthetic release directories. Independently
 controlled hidden Windows PowerShell processes run copies of the actual
-`Install-CaelestiaRelease.ps1`, `Manage-Caelestia.ps1 -Command Rollback -Wait`,
-and `Uninstall-Caelestia.ps1` entrypoints. Common and version helpers are copied
-unchanged. Release file enumeration, hashes, relocation, staging, publication,
+`Install-CaelestiaRelease.ps1`, the direct/queued/tracked/watch paths of
+`Manage-Caelestia.ps1`, and `Uninstall-Caelestia.ps1` entrypoints. The real source
+installer's preflight and shared-lock path also execute against data-only
+prerequisites: it either refuses busy or throws at its first post-lock process
+boundary, before assembly/deployment/compilation. Common and version helpers
+are copied unchanged. Release file enumeration, hashes, relocation, staging, publication,
 selector writes, rollback, tombstone removal and purge run their actual bodies.
 Checks assert the install publishes a new payload and rollback selects `v1`.
 This is not a standalone mutex reacquisition test.
@@ -31,7 +49,9 @@ This is not a standalone mutex reacquisition test.
 Test copies have exact-match, fail-closed injections only:
 
 * Immediately after importing common helpers, load the fixture's external
-  process, task, scheme-provisioning and integration boundaries.
+  process, task, scheme-provisioning and integration boundaries. Maintenance
+  copies also expose entry and actual-manifest-read barriers for the stale-read
+  race. No production transaction body is replaced.
 * Replace the release's machine VC runtime probe call with success. All other
   release validation runs against the synthetic manifest and file hashes.
 * Redirect uninstall's literal live HKCU Run path to the case's fake integration
@@ -41,22 +61,32 @@ Test copies have exact-match, fail-closed injections only:
 * Synthetic launchers accept only this prefix's `Quit` and record that boundary.
   Payload EXE/DLL files are never executed. No real shell, Glazier, supervisor,
   task, desktop, registry value, menu, authentication or ACL is changed.
+* Task registration/discovery/start/stop/removal operate on case-owned JSON
+  records. The controller invokes the real scheduled entrypoints explicitly.
+  Tests validate retry settings; they do not claim to qualify Task Scheduler.
 
 Install pauses in its process preflight after acquisition; rollback pauses in
 its scheme-selection boundary after acquisition; uninstall pauses in integration
-discovery after acquisition and identity validation. The controller releases
-each explicitly. Each boundary and worker has a bounded timeout.
+discovery after manifest read and prefix/profile separation checks, but BEFORE
+purge ownership validation or tombstone rename. Additional barriers cover
+queued task registration/start, the actual manifest read, and post-rename
+integration removal. The controller releases each explicitly. Each boundary
+and worker has a bounded timeout.
 
 ## Scenarios and assertions
 
-The default run has 18 scenarios, currently 270 controller assertions, plus
-fail-closed boundary checks:
+The receipt records the scenario/assertion counts, plus fail-closed boundary
+checks. The extended run currently passes 38 scenarios and 664 controller
+assertions. Coverage includes:
 
 * Install-held and rollback-held versus uninstall, normal and purge. Busy
   uninstall preserves every prefix/profile/integration/unrelated-profile byte.
   Alternate case/slash/dot/trailing-separator spellings use the installers'
   existing `Resolve-CaelestiaDirectory` identity, not a fixture-specific key.
-* Uninstall-held versus real install and rollback, normal and purge.
+* Uninstall-held versus release install, source-install preflight, direct
+  rollback and GUI queue setup, normal and purge. Every busy snapshot is
+  byte-identical, including the journal, task records and staging/tombstone
+  siblings. There is no journal exclusion.
 * Terminated install, rollback and uninstall owners, normal and purge. Observer
   handles keep **both existing shared mutex objects** alive after the owner is
   killed, so recovery exercises abandoned ownership rather than a new mutex.
@@ -69,15 +99,27 @@ fail-closed boundary checks:
 * Foreign profile ownership refuses purge with all managed bytes unchanged.
 * Tombstones are removed, purge removes only the owned profile, ordinary
   uninstall preserves config, and the unrelated profile sentinel survives.
-
-**Known acceptance limit:** the current, unmodified `Manage-Caelestia -Wait`
-writes `profile/state/update-operation.json` with `failed` on a busy refusal.
-Reverse rollback contention checks all other directories/files byte-for-byte
-and explicitly asserts that journal behavior. Reverse install contention has no
-exception. This fixture does not claim literal unchanged-profile acceptance for
-the reverse rollback case. `fullAcceptanceComplete` stays false in the receipt.
-Changing Manage is outside ERM-629's assigned file lease; the coordinator must
-review/disposition that criterion separately.
+* Direct rollback success and injected exception both preserve an existing
+  journal, or leave an absent state directory absent.
+* Purge versus a paused real rollback manifest read; purge completed before a
+  late direct/queued/tracked/watch action enters. No profile resurrection.
+* Tracked contention leaves both queued bytes and reporting tasks untouched;
+  the watchdog records failure after lock release. Late tracked work cannot
+  overwrite that terminal result. Tracked success/exception results are also
+  checked independently.
+* Queue start happens after lock release; a separately controlled source
+  installer can reach its real post-lock boundary during the queued start.
+* Queued tasks are cancelled by normal/purge uninstall; late watchdogs do not
+  recreate state. An interrupted pre-journal queue leaves an orphan watchdog
+  which prefix-verified uninstall discovers and removes. A foreign-prefix
+  action is preserved.
+* Post-rename injected exception and terminated owner, with busy direct/source
+  install/watch contenders while the prefix is absent. Existing production
+  behavior retains the owned tombstone, integration and profile at this early
+  cleanup boundary. The fixture verifies those remnants, validates the exact
+  tombstone path/product/install identity and reparse safety, moves it back,
+  then retries the real uninstall. This is explicit fixture recovery, NOT
+  automatic production crash recovery or partial-purge recovery.
 
 ## Negative control and evidence
 
@@ -92,18 +134,47 @@ The old uninstall actually removes the disposable prefix while the real
 installer is paused holding the shared lock. This is a controlled synthetic
 Windows race result, not a claim of observed production data loss.
 
+Two additional negative controls use the original Manage implementation:
+
+```powershell
+powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File windows/scripts/Test-UninstallTransaction.ps1 -OutputRoot D:\Caelestia\validation-erm629 -ManageSourceRevision b1e63431da54ffeb6e6c9904328b54b294c7e28a
+powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File windows/scripts/Test-UninstallTransaction.ps1 -OutputRoot D:\Caelestia\validation-erm629 -ManageSourceRevision b1e63431da54ffeb6e6c9904328b54b294c7e28a -StaleReadOnly
+```
+
+The strict busy test fails because old Manage mutates the operation journal.
+The stale-read test completes the controlled race and fails with
+`Stale-read race: purge returned Success; profile recreated=True`.
+`-StaleReadOnly` without a revision runs just the two corrected stale/purged
+profile cases.
+
 Initial implementation validation on Windows build 26300.9711, AMD64, Windows
 PowerShell 5.1.26100.9711: 18/18 scenarios and 270 assertions passed. The negative
 control failed as expected at assertion 1. Earlier fixture-development failures
 (missing worker-scope diagnostic helper, then PowerShell process-handle exit-code
 collection) remain in their separate sanitized local run receipts.
 
-The receipt records the exact checked-out source and dependency heads and the
-current production uninstall file digest. For negative controls,
-`negativeControlRevision` identifies the uninstall read from Git instead.
+The receipt records the exact checked-out source and dependency heads and
+production uninstall/Manage digests. For negative controls, the corresponding
+revision field identifies source read from Git instead. Prior receipts and
+failure logs are retained, not overwritten.
 
-This is component/fixture evidence only. It does not execute the source-build
-installer, native payloads, real process shutdown/integration, a packaged release
-or an interactive desktop. Independent review, integration, disposition of the
-busy rollback journal criterion and exact-release qualification remain external
-gates. Do not mark the issue Done from this receipt alone.
+## Remaining boundary, not a waiver
+
+The existing QML consumer has no independent deadline after a queue request
+returns its operation ID. If an unrelated transaction holds the lock beyond
+all watchdog retries, no journal failure can be written without violating
+unchanged-profile acceptance. This patch therefore does NOT claim unconditional
+bounded async UI failure. `fullAcceptanceComplete` remains false.
+
+The concrete remaining design choice is a consumer-local deadline (recommended,
+outside the current source lease), or an explicitly revised reporting contract.
+Increasing retries alone cannot guarantee a bound against indefinite ownership.
+Neither busy journal writes nor deleting another owner's reporting task is an
+acceptable substitute. The current test proves deferred failure after release
+within the retry policy, not behavior after perpetual lock contention.
+
+This is component/fixture evidence only. Native payloads, actual task execution,
+real process shutdown/integration, source assembly/compilation, an exact packaged
+release and an interactive desktop were not qualified. Independent review,
+integration, the async consumer deadline decision and exact-release qualification
+remain external gates. Do not mark the issue Done from this receipt alone.
