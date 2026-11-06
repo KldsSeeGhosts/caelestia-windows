@@ -93,7 +93,8 @@ function Get-CaelestiaVCRedist {
     if ($RuntimeRoot -and [IO.Path]::GetFullPath($RuntimeRoot).TrimEnd('\') -ine $qualifiedRoot) {
         throw 'The explicit runtime source does not match the selected VS redist marker.'
     }
-    foreach ($name in @('msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll')) {
+    foreach ($name in @('msvcp140.dll', 'msvcp140_1.dll', 'msvcp140_2.dll',
+        'msvcp140_atomic_wait.dll', 'vcruntime140.dll', 'vcruntime140_1.dll')) {
         $version = Get-CaelestiaBinaryFileVersion (Join-Path $qualifiedRoot $name)
         if ($version -cne $Spec.vcRedistVersion -or [version]$version -gt [version]$Spec.runtimeMinimum) {
             throw "Unsupported VC CRT $name version '$version'; required '$($Spec.vcRedistVersion)', runtime floor '$($Spec.runtimeMinimum)'. Qualify the supplier and runtime before rebuilding or packaging."
