@@ -7,6 +7,8 @@ qml_module(caelestia-windows
         windowsfontfallback.cpp
         windowsfiles.hpp
         windowsprocess.hpp
+        capturehost.hpp
+        capturehost.cpp
         knownfolders.hpp
         Clipboard/clipboardcache.hpp
         Clipboard/clipboardlogic.hpp
@@ -47,6 +49,7 @@ target_include_directories(caelestia-windows PRIVATE
 )
 
 if(CAELESTIA_WINDOWS_TESTS)
+    include(test/capturehost-fixtures.cmake)
     add_executable(clipboard-logic-tests Clipboard/test/clipboardlogic_test.cpp)
     target_include_directories(clipboard-logic-tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/Clipboard")
     target_link_libraries(clipboard-logic-tests PRIVATE Qt::Core Qt::Test)

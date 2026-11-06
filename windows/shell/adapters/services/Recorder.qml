@@ -226,19 +226,19 @@ Singleton {
             sound = sound || arg.indexOf("s") !== -1;
         }
         // Shell-owned host options on every command that can cold-start the host.
-        const args = [executable].concat(Glazier.hostOptions(), ["--record", "--system-sound", sound ? "on" : "off", "--mic", "off"]);
-        Glazier.ownedHost = true;
-        Glazier.launchedHost = true;
+        const args = Glazier.hostOptions().concat(["--record", "--system-sound", sound ? "on" : "off", "--mic", "off"]);
         if (!region)
             args.push("--fullscreen");
+        if (!Glazier.sendHostCommand(args, executable)) {
+            lastError = "Capture host is not ready. Try again.";
+            return false;
+        }
         lastError = "";
         connectionError = "";
         lastFile = "";
         pendingStart = true;
-        // the backend detached path redirects all stdio to NUL and disowns
-        // handles. Do not host the long-lived tray app in a QML Process.
-        // Start in Glazier's own folder so it never holds the shell's (install prefix) cwd.
-        Quickshell.execDetached({ command: args, workingDirectory: executable.replace(/[\\/][^\\/]*$/, "") });
+        // Native launch inherits no shell handles or console, and uses the
+        // executable's folder rather than holding the install prefix as cwd.
         startTimeout.restart();
         return true;
     }

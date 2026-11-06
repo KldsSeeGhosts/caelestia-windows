@@ -44,16 +44,18 @@ Singleton {
     property var pendingArgs: []
     property string pendingLabel: "Screenshot"
     property var watchedSurfaces: []
-    property bool hostStarted: false
-    property bool ownedHost: false
+    readonly property bool ownedHost: hostLifecycle.snapshot.owned ?? false
     // True only after this shell session's process creates the host. Its journal
     // began after the shell did, so Recorder treats that host's first response as
     // fresh events instead of a pre-restart baseline. Forwarding a command to a
     // host that is already running does not create one, and an adopted host never
-    // sets this. Tests replace hostProbe; production uses the real process query.
-    property bool launchedHost: false
-    property var hostProbe: WindowsProcess
-    property string statusOutput: ""
+    // sets this. Native identity and launch-generation lease establish this,
+    // never the lifetime of a forwarding command client.
+    readonly property bool launchedHost: hostLifecycle.snapshot.launched ?? false
+    readonly property var hostState: hostLifecycle.snapshot
+    property string lifecyclePath: ""
+    property var reloadCallback: null
+    property bool quitPending: false
     readonly property string hostWindowClass: "GlazierHost"
 
     readonly property var panelNames: ["osd", "session", "launcher", "dashboard", "quota", "utilities", "sidebar"]
@@ -166,15 +168,9 @@ Singleton {
         pendingArgs = [];
         hiddenTimer.stop();
         unwatchSurfaces();
-        // execDetached redirects stdio to the null device and disowns handles.
-        // Glazier's single-instance entry point forwards this command when a host
-        // is already running, so that does not start a journal. Freshness follows
-        // only the process that creates the host.
-        const creatingHost = !hostIsRunning();
-        ownedHost = true;
-        if (creatingHost)
-            launchedHost = true;
-        Quickshell.execDetached([path].concat(args));
+        // Native ownership verification gates the detached forwarding client.
+        if (!sendHostCommand(args, path))
+            Toaster.toast(pendingLabel, "Capture host is not ready. " + (hostState.error || hostState.state), "screenshot_region");
     }
     function reportNotReady(): void {
         if (!pendingPath)
@@ -223,45 +219,75 @@ Singleton {
     function record(): bool {
         return begin("Record screen", hostOptions().concat(["--record"]), "screen_record");
     }
-    function hostIsRunning(): bool {
-        return hostProbe.windowProcessId(hostWindowClass) !== 0;
+    function ensureLifecycle(path): bool {
+        if (!path)
+            return false;
+        if (lifecyclePath !== path) {
+            lifecyclePath = path;
+            hostLifecycle.acquire(path, hostWindowClass, hostOptions());
+        }
+        return true;
     }
-    function samePath(a, b): bool {
-        return typeof a === "string" && typeof b === "string" && a.length > 0 && b.length > 0
-            && a.replace(/\\/g, "/").toLowerCase() === b.replace(/\\/g, "/").toLowerCase();
+    function sendHostCommand(args, path = executable): bool {
+        return ensureLifecycle(path) && hostLifecycle.command(args);
     }
-    function launchHost(): void {
-        ownedHost = true;
-        launchedHost = true;
-        Quickshell.execDetached([executable].concat(hostOptions()));
-    }
-    // Only a host this payload launched (or adopted after checking its image)
-    // may be stopped. A standalone install is never modified or unregistered.
+    // Compatibility entry point: true means accepted, not exited. Completion
+    // and failure remain visible in hostState, including a late exit.
     function stopHost(wait): bool {
-        if (!ownedHost)
+        if (executable)
+            ensureLifecycle(executable);
+        return hostLifecycle.close(false);
+    }
+    function restartHost(): bool {
+        if (executable)
+            ensureLifecycle(executable);
+        return hostLifecycle.close(true);
+    }
+    function prepareReload(callback): bool {
+        if (reloadCallback)
+            return false;
+        if (executable)
+            ensureLifecycle(executable);
+        reloadCallback = callback;
+        if (hostLifecycle.prepareReload())
             return true;
-        ownedHost = false;
-        if (!samePath(WindowsProcess.windowImagePath(hostWindowClass), executable))
+        reloadCallback = null;
+        console.warn("CAELESTIA_CAPTURE_HANDOFF refused:", hostState.error);
+        return false;
+    }
+    function requestQuit(): bool {
+        if (quitPending)
+            return true; // A repeated request must not cancel an accepted quit.
+        if (executable)
+            ensureLifecycle(executable);
+        if (!hostState.owned && !hostState.closeAttempted) {
+            if (!hostLifecycle.quit())
+                return false;
+            Qt.quit();
             return true;
-        return wait ? WindowsProcess.closeWindowAndWait(hostWindowClass, 2000)
-                    : WindowsProcess.closeWindow(hostWindowClass);
+        }
+        // Set before close: it can synchronously publish a refusal.
+        quitPending = true;
+        const accepted = hostLifecycle.quit();
+        if (!accepted)
+            quitPending = false;
+        return accepted;
     }
 
     // The tray host starts once with the shell. The shell owns the hotkeys
     // (--no-hotkeys) and Glazier follows the profile's theme tokens
     // (--theme-file), both supported by the pinned revision.
     function maybeStartHost(): void {
-        if (hostStarted || !permitted || !ready || !available)
+        if (!permitted || !ready || !available)
             return;
-        hostStarted = true;
-        statusProbe.running = true;
+        ensureLifecycle(executable);
     }
-    // A one-shot timer, not a poll: the binding turns it on exactly once when
-    // the payload resolves in a live shell, whichever property settles last.
+    // Initial graph setup only. Observed process exit and bounded recovery live
+    // in the process-global registry, not a QML generation's one-shot latch.
     Timer {
         interval: 0
         repeat: false
-        running: root.permitted && root.ready && root.available && !root.hostStarted
+        running: root.permitted && root.ready && root.available && root.lifecyclePath !== root.executable
         onTriggered: root.maybeStartHost()
     }
 
@@ -282,42 +308,22 @@ Singleton {
         interval: root.hiddenTimeout
         onTriggered: root.reportNotReady()
     }
-    // Take ownership of the running host only when its image is the bundled
-    // executable of this payload. A standalone Glazier (or a host from an old
-    // payload) is asked to exit through its own WM_CLOSE, then replaced; its
-    // install and HKCU Run entry are untouched.
-    Process {
-        id: statusProbe
-        command: [root.executable, "--status"]
-        stdout: StdioCollector { onStreamFinished: root.statusOutput = text }
-        onExited: code => {
-            let running = false;
-            try {
-                running = JSON.parse(root.statusOutput.trim()).ok === true;
-            } catch (_) {}
-            if (!running)
-                running = WindowsProcess.windowProcessId(root.hostWindowClass) !== 0;
-            if (!running) {
-                root.launchHost();
-                return;
-            }
-            const image = WindowsProcess.windowImagePath(root.hostWindowClass);
-            if (!image) {
-                // A protocol host without its expected window cannot be
-                // identified safely; never start a second one.
-                console.warn("CAELESTIA_GLAZIER_HOST could not identify the running host; not starting a second one");
-                return;
-            }
-            if (root.samePath(image, root.executable)) {
-                root.ownedHost = true;
-                return;
-            }
-            // One notice, no paths: this is a lifecycle repair, not an error.
-            console.log("CAELESTIA_GLAZIER_HOST replacing a host that was not started from this payload");
-            if (WindowsProcess.closeWindowAndWait(root.hostWindowClass, 2000))
-                root.launchHost();
+    CaptureHost {
+        id: hostLifecycle
+        onReloadReady: ok => {
+            const callback = root.reloadCallback;
+            root.reloadCallback = null;
+            if (ok && callback)
+                callback();
             else
-                console.warn("CAELESTIA_GLAZIER_HOST the previous host did not exit; not starting a second one");
+                console.warn("CAELESTIA_CAPTURE_HANDOFF failed:", root.hostState.error);
+        }
+        onQuitReady: ok => {
+            root.quitPending = false;
+            if (ok)
+                Qt.quit();
+            else
+                console.warn("CAELESTIA_CAPTURE_CLOSE refused or failed:", root.hostState.error);
         }
     }
     IpcHandler {
