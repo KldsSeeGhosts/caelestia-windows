@@ -44,6 +44,12 @@ locked dependency graph. Rust is not selected through `stable`.
 wheels, verified aqt source, LLVM/CLI11 SHA-256, six committed Qt archive hashes,
 and the hash-checked official Rust release manifest plus rustup's component
 verification. `Build-Prototype.ps1` never installs missing tools.
+Serviced compiler/linker file versions and Rust's official release commit are
+asserted too. The selected VS redist marker must resolve CRT DLLs matching the
+qualified `vcRedistVersion` (14.44.35211.0), not merely a plausible folder name.
+The release preflight rechecks that same actual supplier source. Qt's packaged
+SBOM compiler/linker versions are asserted separately; they do not declare a
+minimum runtime or substitute for clean-VM acceptance.
 
 The versioned exact-match cache contains Qt, LLVM/CLI11 archives and extracted
 trees, and pip's download cache. Warm runs avoid extracting LLVM and CLI11
@@ -54,6 +60,13 @@ trusted `main` runs save this cache; pull requests may restore it. There are
 no native object, CMake build, Cargo target, staged-shell or installed-product
 caches shared across trust boundaries. Change the cache schema key when the
 tooling selection or extraction contract changes.
+The archive hashes authenticate the downloaded inputs, not every byte of an
+already extracted cache tree. Reused extracted directories receive required-file,
+version and supplier-metadata checks, not a complete per-file hash comparison
+with those archives. Trust therefore rests on the existing trusted-`main`-only
+cache writer boundary. An untrusted or suspect extracted tree must be discarded
+and reprovisioned from the verified archives; it is not made trustworthy by a
+version string. No new cache trust or performance guarantee is claimed.
 
 All Actions are commit-pinned. Permissions stay read-only; checkout does not
 persist credentials. There is no `pull_request_target`, injected publication
@@ -74,7 +87,8 @@ Failure output remains visible in the job that executed it.
 The native job runs the release assembler's read-only toolchain preflight on
 the build receipt. Fast checks exercise supported receipts plus incompatible
 VC/SDK/Rust/Qt/build tools, missing fields, stale specification hashes, corrupt
-downloads and missing installed VC tools. The runtime minimum stays
+downloads, missing installed VC tools, servicing changes and missing/newer CRT
+DLLs through the actual assembler preflight. The runtime minimum stays
 14.44.35211.0. This receipt preflight is not a full package/lifecycle gate.
 
 The preparation recipe and version assertions are implemented, not a hosted

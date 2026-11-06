@@ -20,6 +20,7 @@ if ($env:OS -ne 'Windows_NT' -or -not [Environment]::Is64BitProcess) {
 if ($ValidateToolchainOnly) {
     $receipt = Get-Content -LiteralPath (Join-Path $BuildRoot 'logs\build.json') -Raw | ConvertFrom-Json
     Assert-CaelestiaBuildToolchain $receipt
+    $null = Assert-CaelestiaReleaseVCRedist -Toolchain $receipt.toolchain -RuntimeRoot $VCRuntimeRoot
     Write-Output 'Supported build toolchain and runtime receipt.'
     return
 }
@@ -65,6 +66,7 @@ if ($build.sourceDirty -ne $false -or $build.publicRelease -ne $true -or $build.
 # Builds and packaging share the exact toolchain and runtime compatibility
 # guard. Old/incomplete receipts require a rebuild, never a relaxed guard.
 Assert-CaelestiaBuildToolchain $build
+$VCRuntimeRoot = Assert-CaelestiaReleaseVCRedist -Toolchain $build.toolchain -RuntimeRoot $VCRuntimeRoot
 $lock = Get-Content -LiteralPath "$repoRoot\windows\sources.lock.json" -Raw | ConvertFrom-Json
 $dependencies = [ordered]@{}
 foreach ($name in @('quickshell', 'm3shapes', 'glazier')) {
@@ -97,17 +99,7 @@ $deploymentQtVersion = (& "$QtPrefix\bin\qtpaths.exe" --qt-version) -join ''
 if ($LASTEXITCODE -ne 0 -or $deploymentQtVersion.Trim() -cne $build.toolchain.qtVersion) {
     throw 'The deployment Qt prefix does not match the supported build receipt. Use the exact reviewed Qt SDK.'
 }
-if (-not $VCRuntimeRoot) {
-    $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
-    $instances = & $vswhere -all -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -format json | ConvertFrom-Json
-    if ($LASTEXITCODE -ne 0) { throw 'Cannot establish the matching Visual C++ runtime origin.' }
-    $vsRoot = (Select-CaelestiaVisualStudio $instances).installationPath
-    $version = Get-ChildItem -LiteralPath (Join-Path $vsRoot 'VC\Redist\MSVC') -Directory |
-        Where-Object { $_.Name -match '^\d+\.\d+\.\d+$' } |
-        Sort-Object { [version]$_.Name } -Descending | Select-Object -First 1
-    if (-not $version) { throw 'Supply the matching x64 Visual C++ runtime directory.' }
-    $VCRuntimeRoot = Join-Path $version.FullName 'x64\Microsoft.VC143.CRT'
-}
+$null = Get-CaelestiaQtSupplier -QtPrefix $QtPrefix
 $VCRuntimeRoot = Resolve-CaelestiaDirectory $VCRuntimeRoot
 foreach ($source in @($QtPrefix, $VCRuntimeRoot) | Where-Object { $_ }) {
     if ($OutputDirectory -eq $source -or $OutputDirectory.StartsWith($source + '\', [StringComparison]::OrdinalIgnoreCase) -or

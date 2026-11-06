@@ -26,16 +26,18 @@ function Assert-CaelestiaToolchainReceipt {
         $Receipt.contractSha256 -cne (Get-CaelestiaToolchainHash)) {
         throw 'Toolchain receipt is missing or belongs to another specification. Rebuild with windows/scripts/Build-Prototype.ps1.'
     }
-    foreach ($name in @('vcToolsVersion', 'windowsSdkVersion', 'clangVersion', 'clangTarget',
-        'rustVersion', 'cargoVersion', 'rustTarget', 'qtVersion', 'cmakeVersion', 'ninjaVersion', 'cli11Version')) {
+    foreach ($name in @('vcToolsVersion', 'vcCompilerFileVersion', 'vcLinkerFileVersion',
+        'vcRedistDirectoryVersion', 'vcRedistVersion', 'windowsSdkVersion', 'clangVersion', 'clangTarget',
+        'rustVersion', 'rustCommit', 'cargoVersion', 'rustTarget', 'qtVersion',
+        'qtCompilerFileVersion', 'qtLinkerFileVersion', 'cmakeVersion', 'ninjaVersion', 'cli11Version')) {
         if ([string]$Receipt.$name -cne [string]$Spec.$name) {
             throw "Unsupported toolchain $name '$($Receipt.$name)'; required '$($Spec.$name)'. Install the exact prerequisite in windows/NATIVE-BUILD.md and rebuild."
         }
     }
     if ($Receipt.runtimeMinimum -cne $Spec.runtimeMinimum -or
-        $Receipt.vcToolsVersion -notmatch '^\d+\.\d+\.\d+$' -or
-        [version]$Receipt.vcToolsVersion -gt [version]$Spec.runtimeMinimum) {
-        throw 'The build toolset exceeds or disagrees with the reviewed system runtime prerequisite. A runtime upgrade requires explicit qualification.'
+        $Receipt.vcRedistVersion -notmatch '^\d+\.\d+\.\d+\.\d+$' -or
+        [version]$Receipt.vcRedistVersion -gt [version]$Spec.runtimeMinimum) {
+        throw 'The qualified CRT exceeds or disagrees with the reviewed system runtime prerequisite. A runtime upgrade requires explicit qualification.'
     }
 }
 
@@ -50,6 +52,89 @@ function Assert-CaelestiaBuildToolchain {
         if ([string]$Build.($pair[0]) -cne [string]$Build.toolchain.($pair[1])) {
             throw "Build receipt $($pair[0]) disagrees with its toolchain. Rebuild before packaging."
         }
+    }
+}
+
+function Get-CaelestiaBinaryFileVersion {
+    param([Parameter(Mandatory)][string]$Path)
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        throw "Missing toolchain supplier file: $(Split-Path -Leaf $Path). Repair the exact prerequisite in windows/NATIVE-BUILD.md."
+    }
+    $info = [Diagnostics.FileVersionInfo]::GetVersionInfo($Path)
+    if (-not $info.FileVersion) { throw "Missing file-version metadata: $(Split-Path -Leaf $Path)." }
+    return '{0}.{1}.{2}.{3}' -f $info.FileMajorPart, $info.FileMinorPart, $info.FileBuildPart, $info.FilePrivatePart
+}
+
+function Get-CaelestiaVCRedist {
+    param([string]$VsRoot, [string]$RuntimeRoot, $Spec = (Get-CaelestiaToolchain))
+    if (-not $VsRoot -and $RuntimeRoot) {
+        # An explicit source must still belong to the marker-selected layout,
+        # not an arbitrary/newest directory of DLLs.
+        $VsRoot = [IO.Path]::GetFullPath($RuntimeRoot).TrimEnd('\')
+        for ($i = 0; $i -lt 6; $i++) { $VsRoot = Split-Path -Parent $VsRoot }
+        if (-not $VsRoot) { throw 'The runtime source must retain its VS VC/Redist/MSVC marker layout.' }
+    }
+    if (-not $VsRoot) {
+        $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+        if (-not (Test-Path -LiteralPath $vswhere -PathType Leaf)) { throw 'Install the selected VS toolchain or supply its marker-qualified -VCRuntimeRoot.' }
+        $instances = & $vswhere -all -products '*' -requires $Spec.vcComponent -format json | ConvertFrom-Json
+        if ($LASTEXITCODE -ne 0) { throw 'Cannot enumerate the selected VS CRT supplier.' }
+        $VsRoot = (Select-CaelestiaVisualStudio $instances $Spec).installationPath
+    }
+    $marker = Join-Path $VsRoot 'VC\Auxiliary\Build\Microsoft.VCRedistVersion.default.txt'
+    if (-not (Test-Path -LiteralPath $marker -PathType Leaf)) {
+        throw 'Missing VC/Auxiliary/Build/Microsoft.VCRedistVersion.default.txt. Repair the selected VS C++ tools; no newest-folder fallback is allowed.'
+    }
+    $directoryVersion = (Get-Content -LiteralPath $marker -Raw).Trim()
+    if ($directoryVersion -cne $Spec.vcRedistDirectoryVersion) {
+        throw "Unsupported VC redist marker '$directoryVersion'; required '$($Spec.vcRedistDirectoryVersion)'. Qualify supplier servicing before rebuilding."
+    }
+    $qualifiedRoot = [IO.Path]::GetFullPath((Join-Path $VsRoot "VC\Redist\MSVC\$directoryVersion\x64\Microsoft.VC143.CRT")).TrimEnd('\')
+    if ($RuntimeRoot -and [IO.Path]::GetFullPath($RuntimeRoot).TrimEnd('\') -ine $qualifiedRoot) {
+        throw 'The explicit runtime source does not match the selected VS redist marker.'
+    }
+    foreach ($name in @('msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll')) {
+        $version = Get-CaelestiaBinaryFileVersion (Join-Path $qualifiedRoot $name)
+        if ($version -cne $Spec.vcRedistVersion -or [version]$version -gt [version]$Spec.runtimeMinimum) {
+            throw "Unsupported VC CRT $name version '$version'; required '$($Spec.vcRedistVersion)', runtime floor '$($Spec.runtimeMinimum)'. Qualify the supplier and runtime before rebuilding or packaging."
+        }
+    }
+    return [pscustomobject]@{
+        root = $qualifiedRoot
+        directoryVersion = $directoryVersion
+        version = $Spec.vcRedistVersion
+    }
+}
+
+function Assert-CaelestiaReleaseVCRedist {
+    param([Parameter(Mandatory)]$Toolchain, [string]$RuntimeRoot)
+    Assert-CaelestiaToolchainReceipt $Toolchain
+    $supplier = Get-CaelestiaVCRedist -RuntimeRoot $RuntimeRoot
+    if ($supplier.version -cne $Toolchain.vcRedistVersion -or
+        $supplier.directoryVersion -cne $Toolchain.vcRedistDirectoryVersion) {
+        throw 'The packaging CRT supplier disagrees with the qualified build receipt. Rebuild with the reviewed supplier.'
+    }
+    return $supplier.root
+}
+
+function Get-CaelestiaQtSupplier {
+    param([Parameter(Mandatory)][string]$QtPrefix, $Spec = (Get-CaelestiaToolchain))
+    foreach ($module in $Spec.qtDownloads.module) {
+        $path = Join-Path $QtPrefix "sbom\$module-$($Spec.qtVersion).cdx.json"
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Missing Qt supplier build metadata for $module. Reprovision the verified Qt archives." }
+        $sbom = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
+        foreach ($entry in @(
+            @('Compiler MSVC', 'qtCompilerFileVersion'), @('Linker MSVC', 'qtLinkerFileVersion'))) {
+            $tools = @($sbom.components | Where-Object name -eq $entry[0])
+            if ($tools.Count -ne 1 -or $tools[0].version -cne $Spec.($entry[1])) {
+                throw "Unsupported Qt $module supplier $($entry[0]); required '$($Spec.($entry[1]))'. Reprovision or qualify the changed Qt package."
+            }
+        }
+    }
+    # The supplier SBOM records build tools, not a minimum CRT declaration.
+    return [pscustomobject]@{
+        compiler = $Spec.qtCompilerFileVersion
+        linker = $Spec.qtLinkerFileVersion
     }
 }
 
@@ -150,6 +235,8 @@ function Get-CaelestiaActualToolchain {
     $vcVersion = [string]$env:VCToolsVersion
     $sdkVersion = [string]$env:WindowsSDKVersion
     $vcCompiler = if ($env:VCToolsInstallDir) { Join-Path $env:VCToolsInstallDir 'bin\Hostx64\x64\cl.exe' } else { '' }
+    $redist = Get-CaelestiaVCRedist -VsRoot $env:VSINSTALLDIR
+    $qtSupplier = Get-CaelestiaQtSupplier -QtPrefix $QtPrefix -Spec $spec
     $receipt = [pscustomobject][ordered]@{
         schemaVersion = 1
         contractId = $spec.id
@@ -157,8 +244,10 @@ function Get-CaelestiaActualToolchain {
         runtimeMinimum = $spec.runtimeMinimum
         vcToolsVersion = $vcVersion.TrimEnd('\')
         # Servicing binary version is distinct from VC/Tools/MSVC directory.
-        vcCompilerFileVersion = $(if (Test-Path -LiteralPath $vcCompiler -PathType Leaf) { (Get-Item -LiteralPath $vcCompiler).VersionInfo.FileVersion } else { '' })
-        vcLinkerFileVersion = $(if ($env:VCToolsInstallDir) { (Get-Item -LiteralPath (Join-Path $env:VCToolsInstallDir 'bin\Hostx64\x64\link.exe')).VersionInfo.FileVersion } else { '' })
+        vcCompilerFileVersion = Get-CaelestiaBinaryFileVersion $vcCompiler
+        vcLinkerFileVersion = Get-CaelestiaBinaryFileVersion (Join-Path $env:VCToolsInstallDir 'bin\Hostx64\x64\link.exe')
+        vcRedistDirectoryVersion = $redist.directoryVersion
+        vcRedistVersion = $redist.version
         windowsSdkVersion = $sdkVersion.TrimEnd('\')
         clangVersion = [regex]::Match($clang, '(?m)^clang version ([0-9.]+)').Groups[1].Value
         clangTarget = [regex]::Match($clang, '(?m)^Target: (.+)$').Groups[1].Value.Trim()
@@ -167,6 +256,8 @@ function Get-CaelestiaActualToolchain {
         rustCommit = [regex]::Match($rust, '(?m)^commit-hash: (.+)$').Groups[1].Value.Trim()
         cargoVersion = [regex]::Match($cargo, '^cargo ([0-9.]+)').Groups[1].Value
         qtVersion = $qt
+        qtCompilerFileVersion = $qtSupplier.compiler
+        qtLinkerFileVersion = $qtSupplier.linker
         cmakeVersion = [regex]::Match($cmake, '^cmake version ([0-9.]+)').Groups[1].Value
         ninjaVersion = $ninja
         cli11Version = $cli

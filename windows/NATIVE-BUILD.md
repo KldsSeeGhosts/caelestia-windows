@@ -21,6 +21,12 @@ requests both versions, and asserts the selected x64 environment. A later VS
 installation/banner alone is not sufficient. Missing components fail before
 compilation with the required version and manual installation step.
 No machine PATH, VS installation, Rust default or override is changed by a build.
+The reviewed serviced `cl.exe` and `link.exe` file versions are respectively
+19.44.35229.0 and 14.44.35229.0. A folder with different serviced binaries is
+not interchangeable. The same VS instance must provide
+`VC/Auxiliary/Build/Microsoft.VCRedistVersion.default.txt`, currently selecting
+`VC/Redist/MSVC/14.44.35112/x64/Microsoft.VC143.CRT`. The selected `msvcp140.dll`,
+`vcruntime140.dll` and `vcruntime140_1.dll` must each be version 14.44.35211.0.
 
 The following setup commands download development tools into a separate
 per-user directory. Run them in native Windows PowerShell. Python 3.12, Git,
@@ -152,12 +158,30 @@ powershell -NoProfile -File windows/scripts/Test-Toolchain.ps1
 ```
 
 Legacy, incomplete, wrong-specification or incompatible receipts require a
-rebuild. The selected VC directory version, VS installation version, and serviced
-`cl.exe` file version are separate fields, not interchangeable banner numbers.
-The existing x64 system-runtime minimum remains **14.44.35211.0**, with VC tools
-14.44.35207 below that reviewed floor. Qt's supplier compiler patch is not the
-selected local VC directory version. This change retains the existing Qt/runtime
-qualification; it does not claim a new clean-VM or physical-desktop pass.
+rebuild. The selected VC directory, VS installation banner, serviced compiler/
+linker versions, redist marker and actual CRT DLL versions are separate fields.
+All qualified receipt fields are asserted, including the Rust commit from the
+hash-pinned official release manifest.
+
+The x64 system-runtime minimum remains **14.44.35211.0** because that is the
+actual version of all three required DLLs in the reviewed marker-selected CRT,
+not because `14.44.35207` sorts below it. Compiler/linker servicing numbers
+are pinned independently; they are not substituted for the CRT's file version.
+Missing, differently serviced or newer CRT inputs, including 14.44.35213.0,
+require new qualification rather than silently changing the runtime floor.
+The assembler re-resolves that same marker and checks the actual DLL versions
+against the receipt. It never selects the newest redist directory. An explicit
+`-VCRuntimeRoot` must retain the matching VS marker layout.
+
+For Qt, all six hash-pinned package SBOMs (`sbom/*-6.11.2.cdx.json`) record
+compiler 19.44.35227.0 and linker 14.44.35227.0; these actual supplier metadata
+values are checked before compilation and deployment. The SBOMs and
+`config_qtbase.summary` do **not** declare a minimum CRT version. Qt's generic
+online `tools_vcredist` package is not an exact Qt 6.11.2 minimum-runtime
+declaration either. Build metadata, import/export inspection and local smoke
+are bounded evidence, not a clean-machine compatibility guarantee. A clean
+Windows environment with the exact floor runtime must still qualify every
+shipped component before claiming minimum-runtime/package acceptance.
 See [Microsoft's compatibility guidance](https://learn.microsoft.com/en-us/cpp/porting/binary-compat-2015-2017).
 
 Upgrades require a reviewed change to the specification, download hashes and
