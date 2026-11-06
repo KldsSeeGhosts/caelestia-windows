@@ -144,14 +144,15 @@ ShellRoot {
     // IPC selects this installation; tiling retains its separate opt-in.
     IpcHandler {
         target: "shell"
-        function quit(): void {
-            // The bundled tray host belongs to this shell process.
-            Glazier.requestQuit();
+        function quit(): bool {
+            // Acceptance is not completion; captureHostState reports refusal
+            // or asynchronous close failure while the shell remains alive.
+            return Glazier.requestQuit();
         }
         function restart(): string {
             const previous = root.generation;
             // Keep the generation-string acknowledgement compatible. Reload
-            // only after asynchronous verified handoff, including recording.
+            // after asynchronous registry handoff, including recording.
             // Refusal leaves this generation alive, so readiness cannot lie.
             Glazier.prepareReload(() => Quickshell.reload(false));
             return previous;

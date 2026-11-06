@@ -63,6 +63,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
         0, 0, 0, 0, nullptr, nullptr, instance, nullptr);
     if (!window)
         return 4;
+    // Every fixture child self-bounds even if an assertion aborts its parent.
+    SetTimer(window, 2, 30000, nullptr);
     // Deliberately no ShowWindow, focus or capture calls.
     MSG message{};
     while (GetMessageW(&message, nullptr, 0, 0) > 0) {

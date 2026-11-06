@@ -234,18 +234,20 @@ Singleton {
     // Compatibility entry point: true means accepted, not exited. Completion
     // and failure remain visible in hostState, including a late exit.
     function stopHost(wait): bool {
+        if (executable)
+            ensureLifecycle(executable);
         return hostLifecycle.close(false);
     }
     function restartHost(): bool {
+        if (executable)
+            ensureLifecycle(executable);
         return hostLifecycle.close(true);
     }
     function prepareReload(callback): bool {
         if (reloadCallback)
             return false;
-        if (!lifecyclePath && !hostState.owned && hostState.state === "Absent") {
-            callback();
-            return true;
-        }
+        if (executable)
+            ensureLifecycle(executable);
         reloadCallback = callback;
         if (hostLifecycle.prepareReload())
             return true;
@@ -253,12 +255,23 @@ Singleton {
         console.warn("CAELESTIA_CAPTURE_HANDOFF refused:", hostState.error);
         return false;
     }
-    function requestQuit(): void {
-        if (hostState.state === "Absent" || hostState.state === "Exited") {
+    function requestQuit(): bool {
+        if (quitPending)
+            return true; // A repeated request must not cancel an accepted quit.
+        if (executable)
+            ensureLifecycle(executable);
+        if (!hostState.owned && !hostState.closeAttempted) {
+            if (!hostLifecycle.quit())
+                return false;
             Qt.quit();
-            return;
+            return true;
         }
-        quitPending = hostLifecycle.close(false);
+        // Set before close: it can synchronously publish a refusal.
+        quitPending = true;
+        const accepted = hostLifecycle.quit();
+        if (!accepted)
+            quitPending = false;
+        return accepted;
     }
 
     // The tray host starts once with the shell. The shell owns the hotkeys
@@ -305,14 +318,12 @@ Singleton {
             else
                 console.warn("CAELESTIA_CAPTURE_HANDOFF failed:", root.hostState.error);
         }
-        onChanged: {
-            if (root.quitPending && root.hostState.state === "Exited") {
-                root.quitPending = false;
+        onQuitReady: ok => {
+            root.quitPending = false;
+            if (ok)
                 Qt.quit();
-            } else if (root.quitPending && !root.hostState.checking && root.hostState.error) {
-                root.quitPending = false;
+            else
                 console.warn("CAELESTIA_CAPTURE_CLOSE refused or failed:", root.hostState.error);
-            }
         }
     }
     IpcHandler {

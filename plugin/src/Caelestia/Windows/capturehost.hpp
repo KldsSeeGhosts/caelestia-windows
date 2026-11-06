@@ -2,6 +2,8 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
+#include <qelapsedtimer.h>
 #include <qobject.h>
 #include <qqmlintegration.h>
 #include <qstringlist.h>
@@ -45,6 +47,7 @@ public:
         std::function<void(CaptureStatus)> complete) = 0;
     virtual QObject* watch(const CaptureIdentity& identity, QObject* context,
         std::function<void()> exited) = 0;
+    virtual std::optional<quint32> exitCode(const CaptureIdentity& identity) = 0;
 };
 
 std::shared_ptr<CaptureHostOps> makeCaptureHostOps();
@@ -53,20 +56,25 @@ class CaptureHostRegistry : public QObject {
     Q_OBJECT
 public:
     explicit CaptureHostRegistry(std::shared_ptr<CaptureHostOps> ops, QObject* parent = nullptr);
+    ~CaptureHostRegistry() override;
     quint64 acquire(const QString& image, const QString& windowClass, const QStringList& options);
+    quint64 acquireCurrent();
     void release(quint64 lease);
     QVariantMap snapshot() const;
     bool command(quint64 lease, const QStringList& args);
     bool close(quint64 lease, bool restart = false);
+    bool quit(quint64 lease);
     bool prepareReload(quint64 lease);
     void ensure(quint64 lease);
     // Short bounds in deterministic fixtures, unchanged production defaults.
     int closeTimeoutMs = 2000;
-    int startupTimeoutMs = 5000;
+    int startupTimeoutMs = 20000;
     int recoveryDelayMs = 200;
+    int stableWindowMs = 60000;
 signals:
     void changed();
     void reloadReady(quint64 lease, bool ok);
+    void quitReady(quint64 lease, bool ok);
 private:
     bool writer(quint64 lease) const;
     bool verified();
@@ -76,10 +84,13 @@ private:
     void probeStartup();
     bool launch(const QStringList& args);
     void observe(const CaptureIdentity& identity);
+    void stopWatching();
     void exited();
     void deadline();
     void check(std::function<void(bool)> complete);
+    bool refuse(const QString& error);
     void completeReload(quint64 lease, bool ok);
+    void completeQuit(bool ok);
     std::shared_ptr<CaptureHostOps> mOps;
     CaptureIdentity mIdentity;
     QObject* mWatch = nullptr;
@@ -95,13 +106,19 @@ private:
     quint64 mOperation = 0;
     quint64 mLaunchLease = 0;
     quint64 mReloadLease = 0;
+    quint64 mQuitLease = 0;
     quint32 mLaunchedPid = 0;
-    int mAttempts = 0;
+    int mRecoveries = 0;
+    quint64 mObservation = 0;
+    QElapsedTimer mStableSince;
+    bool mOwned = false;
     bool mLaunched = false;
     bool mWanted = true;
     bool mChecking = false;
     bool mCloseAttempted = false;
     bool mLaunchPending = false;
+    bool mStartupExpired = false;
+    bool mRestartAfterClose = false;
 };
 
 // Each QML generation gets a facade, not the process-global registry. Destroying
@@ -118,10 +135,12 @@ public:
     Q_INVOKABLE void acquire(const QString& image, const QString& windowClass, const QStringList& options);
     Q_INVOKABLE bool command(const QStringList& args);
     Q_INVOKABLE bool close(bool restart = false);
+    Q_INVOKABLE bool quit();
     Q_INVOKABLE bool prepareReload();
 signals:
     void changed();
     void reloadReady(bool ok);
+    void quitReady(bool ok);
 private:
     CaptureHostRegistry* mRegistry;
     quint64 mLease = 0;

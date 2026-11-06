@@ -20,8 +20,8 @@ if (Test-Path -LiteralPath $output) {
     New-Item -ItemType Directory -Path $output | Out-Null
     $repo | Set-Content -LiteralPath $owner -Encoding UTF8
 }
-$logs = Join-Path $output 'logs'
-New-Item -ItemType Directory -Force -Path $logs | Out-Null
+$logs = Join-Path $output ("logs/" + (Get-Date -Format 'yyyyMMdd-HHmmss-fff') + "-" + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $logs | Out-Null
 $env:PATH = "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer;$env:PATH"
 Import-Module (Join-Path $VsRoot 'Common7/Tools/Microsoft.VisualStudio.DevShell.dll')
 Enter-VsDevShell -VsInstallPath $VsRoot -SkipAutomaticLocation `
@@ -40,20 +40,31 @@ function Run([string]$Name, [string]$Program, [string[]]$Arguments) {
     & $Program @Arguments 2>&1 | ForEach-Object { "$_" } | Tee-Object -FilePath "$logs/$Name.log"
     if ($LASTEXITCODE -ne 0) { throw "$Name failed with $LASTEXITCODE. See $logs/$Name.log" }
 }
+$sourceDiff = & git -C $repo diff --binary --no-ext-diff | Out-String
+Set-Content -LiteralPath "$logs/source.diff" -Value $sourceDiff -Encoding UTF8
 Run 'configure' 'cmake' @('-S', "$repo/plugin/src/Caelestia/Windows/test", '-B', "$output/native",
     '-G', 'Ninja', '-DCMAKE_BUILD_TYPE=Release', '-DCMAKE_CXX_COMPILER=clang-cl',
     '-DCMAKE_LINKER_TYPE=MSVC', "-DCMAKE_PREFIX_PATH=$QtPrefix")
 Run 'build' 'cmake' @('--build', "$output/native", '--parallel', '2')
-Run 'native' "$output/native/capture-host-tests.exe" @('-o', "$logs/native.txt,txt", '-o', "$logs/native.xml,junitxml")
+try {
+    Run 'native' 'ctest' @('--test-dir', "$output/native", '--verbose', '--output-on-failure', '--timeout', '90')
+} finally {
+    foreach ($name in @('native.txt', 'native.xml')) {
+        if (Test-Path -LiteralPath "$output/native/$name") {
+            Copy-Item -LiteralPath "$output/native/$name" -Destination "$logs/$name"
+        }
+    }
+}
 [xml]$results = Get-Content -LiteralPath "$logs/native.xml" -Raw
 $suite = $results.testsuite
-if ([int]$suite.tests -lt 25 -or [int]$suite.failures -ne 0 -or [int]$suite.errors -ne 0 -or [int]$suite.skipped -ne 0) {
+if ([int]$suite.tests -lt 44 -or [int]$suite.failures -ne 0 -or [int]$suite.errors -ne 0 -or [int]$suite.skipped -ne 0) {
     throw 'Missing, failed or skipped native lifecycle cases.'
 }
 Run 'node' 'node' @("$repo/windows/tests/GlazierRecorderLogic.test.js")
 [ordered]@{
     shell = (& git -C $repo rev-parse HEAD).Trim()
     dirty = [bool](& git -C $repo status --porcelain)
+    diffSha256 = (Get-FileHash -LiteralPath "$logs/source.diff" -Algorithm SHA256).Hash
     backend = (& git -C "$repo/windows/deps/quickshell" rev-parse HEAD).Trim()
     glazier = (& git -C "$repo/windows/deps/glazier" rev-parse HEAD).Trim()
     m3shapes = (& git -C "$repo/windows/deps/m3shapes" rev-parse HEAD).Trim()

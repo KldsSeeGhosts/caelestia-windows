@@ -201,6 +201,13 @@ public:
         });
         return notifier;
     }
+
+    std::optional<quint32> exitCode(const CaptureIdentity& identity) override {
+        DWORD code = 0;
+        if (!identity.handle || !GetExitCodeProcess(identity.handle.get(), &code) || code == STILL_ACTIVE)
+            return std::nullopt;
+        return code;
+    }
 };
 }
 
@@ -214,9 +221,17 @@ CaptureHostRegistry::CaptureHostRegistry(std::shared_ptr<CaptureHostOps> ops, QO
     connect(&mDeadline, &QTimer::timeout, this, &CaptureHostRegistry::deadline);
 }
 
+CaptureHostRegistry::~CaptureHostRegistry() {
+    // QObject destroys children after members. A threadpool wait must be
+    // unregistered before the member holding its HANDLE can be destroyed.
+    stopWatching();
+}
+
 bool CaptureHostRegistry::writer(quint64 lease) const { return lease && lease == mLease; }
 
 void CaptureHostRegistry::setState(const QString& state, const QString& error) {
+    if (state == QStringLiteral("Owned") && !mStableSince.isValid())
+        mStableSince.start();
     mState = state;
     mError = error;
     emit changed();
@@ -224,24 +239,41 @@ void CaptureHostRegistry::setState(const QString& state, const QString& error) {
 
 QVariantMap CaptureHostRegistry::snapshot() const {
     return {{QStringLiteral("state"), mState}, {QStringLiteral("error"), mError},
-        {QStringLiteral("owned"), bool(mIdentity.handle)},
+        {QStringLiteral("owned"), mOwned},
         {QStringLiteral("launched"), mLaunched && mLaunchLease == mLease && mState == QStringLiteral("Owned")},
         {QStringLiteral("pid"), mIdentity.pid}, {QStringLiteral("hostId"), mIdentity.hostId},
         {QStringLiteral("phase"), mPhase}, {QStringLiteral("checking"), mChecking},
-        {QStringLiteral("closeAttempted"), mCloseAttempted}};
+        {QStringLiteral("closeAttempted"), mCloseAttempted},
+        {QStringLiteral("recoveries"), mRecoveries}};
+}
+
+quint64 CaptureHostRegistry::acquireCurrent() {
+    completeReload(mReloadLease, false);
+    completeQuit(false);
+    mLease = ++mSerial;
+    return mLease;
 }
 
 quint64 CaptureHostRegistry::acquire(const QString& image, const QString& windowClass, const QStringList& options) {
-    mLease = ++mSerial;
-    completeReload(mReloadLease, false);
+    acquireCurrent();
     // A different payload is never silently adopted by soft reload. Installation
     // replacement uses full quit/Stop-CaelestiaHosts, not this handoff.
-    if (mIdentity.handle && (!sameImage(image, mImage) || windowClass != mClass)) {
+    const bool changedPayload = !mImage.isEmpty() && (!sameImage(image, mImage) || windowClass != mClass);
+    if (changedPayload) {
+        ++mOperation;
+        mChecking = false;
+        if (!mCloseAttempted)
+            mDeadline.stop();
+    }
+    if (mIdentity.handle && changedPayload) {
         mImage = image;
         mClass = windowClass;
         mOptions = options;
         mWanted = false; // Never recover the retired payload after its exit.
-        setState(QStringLiteral("Foreign"), QStringLiteral("Capture host belongs to another payload; full stop required."));
+        mOwned = false;
+        mStableSince.invalidate();
+        setState(mCloseAttempted ? mState : QStringLiteral("Foreign"),
+            QStringLiteral("Capture host belongs to another payload; retained for exit observation only."));
         return mLease;
     }
     mImage = image;
@@ -272,21 +304,49 @@ bool CaptureHostRegistry::acceptStatus(const CaptureStatus& status) {
 }
 
 void CaptureHostRegistry::observe(const CaptureIdentity& identity) {
+    stopWatching();
+    const bool sameProcess = mIdentity.pid == identity.pid && mIdentity.created == identity.created;
+    const auto hostId = sameProcess ? mIdentity.hostId : QString();
+    if (!sameProcess)
+        mStableSince.invalidate();
     mIdentity = identity;
+    mIdentity.hostId = hostId;
     mLaunched = mLaunchedPid != 0 && mLaunchedPid == identity.pid;
-    delete mWatch;
-    mWatch = mOps->watch(mIdentity, this, [this, pid = identity.pid, created = identity.created] {
-        if (mIdentity.pid == pid && mIdentity.created == created)
+    const auto observation = ++mObservation;
+    mWatch = mOps->watch(mIdentity, this, [this, observation] {
+        if (observation == mObservation)
             exited();
     });
 }
 
+void CaptureHostRegistry::stopWatching() {
+    ++mObservation;
+    if (auto* notifier = qobject_cast<QWinEventNotifier*>(mWatch))
+        notifier->setEnabled(false);
+    delete mWatch;
+    mWatch = nullptr;
+}
+
+bool CaptureHostRegistry::refuse(const QString& error) {
+    mError = error;
+    emit changed();
+    return false;
+}
+
 void CaptureHostRegistry::ensure(quint64 lease) {
-    if (!writer(lease) || mChecking || !mWanted || mCloseAttempted || mLaunchPending
-        || mState == QStringLiteral("Starting") || mState == QStringLiteral("Foreign"))
+    if (!writer(lease) || mChecking || !mWanted || mCloseAttempted)
         return;
-    if (mIdentity.handle)
-        return; // Includes uncertain/closing identities, never re-adopt.
+    if (mLaunchPending) {
+        mStartupExpired = false;
+        mDeadline.start(startupTimeoutMs);
+        probeStartup();
+        return;
+    }
+    if (mIdentity.handle) {
+        if (mState != QStringLiteral("Owned"))
+            check([](bool) {});
+        return;
+    }
     inspect();
 }
 
@@ -305,11 +365,15 @@ void CaptureHostRegistry::inspect() {
                 launch(mOptions);
         } else if (probe.kind == CaptureProbe::Verified) {
             observe(probe.identity);
+            mOwned = true;
             if (acceptStatus(status))
                 setState(QStringLiteral("Owned"));
             else
                 setState(QStringLiteral("CloseFailed"), QStringLiteral("Capture host status could not be verified."));
         } else {
+            mOwned = false;
+            if (probe.identity.handle)
+                observe(probe.identity); // Observe Foreign, never claim it.
             setState(probe.kind == CaptureProbe::Foreign ? QStringLiteral("Foreign") : QStringLiteral("CloseFailed"),
                 QStringLiteral("Capture host identity is foreign or inaccessible; no process was changed."));
         }
@@ -317,11 +381,10 @@ void CaptureHostRegistry::inspect() {
 }
 
 bool CaptureHostRegistry::launch(const QStringList& args) {
-    if (mIdentity.handle || mCloseAttempted || mAttempts >= 3) {
-        setState(QStringLiteral("CloseFailed"), QStringLiteral("Capture host recovery limit reached."));
+    if (mIdentity.handle || mCloseAttempted || mLaunchPending) {
+        setState(QStringLiteral("CloseFailed"), QStringLiteral("Capture host identity is still retained; launch refused."));
         return false;
     }
-    ++mAttempts;
     mLaunchLease = mLease;
     mLaunchedPid = 0;
     CaptureIdentity child;
@@ -331,6 +394,8 @@ bool CaptureHostRegistry::launch(const QStringList& args) {
     }
     mLaunchedPid = child.pid;
     mLaunchPending = true;
+    mStartupExpired = false;
+    mOwned = bool(child.handle); // CreateProcess handle, not a class-only claim.
     if (child.handle)
         observe(child);
     setState(QStringLiteral("Starting"));
@@ -348,7 +413,7 @@ void CaptureHostRegistry::probeStartup() {
         if (operation != mOperation)
             return;
         mChecking = false;
-        if (mState != QStringLiteral("Starting"))
+        if (!mLaunchPending || mCloseAttempted)
             return;
         const auto probe = mOps->probe(mImage, mClass);
         if (probe.kind == CaptureProbe::Verified) {
@@ -359,18 +424,22 @@ void CaptureHostRegistry::probeStartup() {
                 mLaunchedPid = 0;
             }
             observe(probe.identity);
+            mOwned = true;
             if (acceptStatus(status)) {
                 mLaunchPending = false;
                 mDeadline.stop();
                 setState(QStringLiteral("Owned"));
                 return;
             }
+        } else if (probe.kind == CaptureProbe::Foreign && !mIdentity.handle) {
+            observe(probe.identity);
+            mOwned = false;
         }
         // Retain startup uncertainty and its deadline, never claim launch from
         // the lifetime of a forwarding command client.
         emit changed();
         QTimer::singleShot(100, this, [this] {
-            if (mState == QStringLiteral("Starting") && !mChecking)
+            if (mLaunchPending && !mStartupExpired && !mChecking)
                 probeStartup();
         });
     });
@@ -385,11 +454,22 @@ void CaptureHostRegistry::check(std::function<void(bool)> complete) {
         if (operation != mOperation)
             return;
         mChecking = false;
+        const auto probe = mOps->probe(mImage, mClass);
+        if (probe.kind == CaptureProbe::Verified && mIdentity.handle
+            && probe.identity.pid == mIdentity.pid && probe.identity.created == mIdentity.created
+            && sameImage(probe.identity.image, mIdentity.image)
+            && (probe.identity.window == mIdentity.window || (mLaunchPending && !mIdentity.window)))
+            observe(probe.identity);
         const bool ok = acceptStatus(status);
-        if (!ok)
+        if (!ok) {
+            mStableSince.invalidate();
             setState(QStringLiteral("CloseFailed"), QStringLiteral("Capture host health/identity could not be verified."));
-        else
-            emit changed();
+        } else {
+            mOwned = true;
+            mLaunchPending = false;
+            mDeadline.stop();
+            setState(QStringLiteral("Owned"));
+        }
         complete(ok);
     });
 }
@@ -398,80 +478,113 @@ bool CaptureHostRegistry::command(quint64 lease, const QStringList& args) {
     if (writer(lease) && !mChecking && !mIdentity.handle && !mCloseAttempted
         && (mState == QStringLiteral("Absent") || mState == QStringLiteral("Exited"))) {
         mWanted = true;
-        mAttempts = 0; // An explicit user command can re-arm bounded recovery.
+        mRecoveries = 0; // Cold launch is not a crash recovery.
         return launch(args);
     }
-    if (!writer(lease) || mChecking || mCloseAttempted || mState != QStringLiteral("Owned") || !verified())
+    if (!writer(lease))
         return false;
+    if (mChecking || mCloseAttempted)
+        return refuse(QStringLiteral("Capture command refused: host operation is pending."));
+    if (mState != QStringLiteral("Owned") || !verified()) {
+        if (mIdentity.handle) {
+            // A single bounded recheck can revive a slow startup, restored
+            // access or transient status failure. Never replace a retained PID.
+            check([](bool) {});
+        } else {
+            mWanted = true;
+            mRecoveries = 0;
+            inspect();
+        }
+        return false; // Re-verification requested, command not yet delivered.
+    }
     CaptureIdentity forwardingClient;
     // Forwarding to an existing host never grants launchedHost freshness.
-    return mOps->launch(mImage, args, forwardingClient);
+    const bool sent = mOps->launch(mImage, args, forwardingClient);
+    if (sent) {
+        mWanted = true;
+        mRecoveries = 0;
+    }
+    return sent;
 }
 
 bool CaptureHostRegistry::close(quint64 lease, bool restart) {
-    if (!writer(lease) || mChecking || mCloseAttempted)
+    if (!writer(lease))
         return false;
+    if (mChecking || mCloseAttempted)
+        return refuse(QStringLiteral("Capture host close refused: host operation is pending."));
     if (mState == QStringLiteral("Absent") || mState == QStringLiteral("Exited")) {
         mWanted = restart;
         if (restart) {
-            mAttempts = 0;
+            mRecoveries = 0;
             ensure(lease);
         }
         return true;
     }
-    if (mState != QStringLiteral("Owned") || !verified()) {
-        mError = QStringLiteral("Capture host close refused: identity is not verified.");
-        emit changed();
-        return false;
-    }
+    if (!mOwned || !mIdentity.handle)
+        return refuse(QStringLiteral("Capture host close refused: no owned identity."));
     check([this, lease, restart](bool ok) {
         if (!writer(lease)) {
             mError = QStringLiteral("Capture host close superseded by a newer generation.");
             emit changed();
+            completeQuit(false);
             return;
         }
         if (!ok || mPhase != QStringLiteral("idle") || mOps->hasCaptureWindow(mIdentity)) {
             if (ok)
                 mError = QStringLiteral("Capture host close refused: capture or recording is active.");
             emit changed();
+            completeQuit(false);
+            return;
+        }
+        if (!verified() || !mOps->postClose(mIdentity)) {
+            setState(QStringLiteral("CloseFailed"), QStringLiteral("Capture host close could not be posted; ownership retained."));
+            completeQuit(false);
             return;
         }
         mWanted = restart;
+        mRestartAfterClose = restart;
         if (restart)
-            mAttempts = 0;
-        mCloseAttempted = true;
+            mRecoveries = 0;
+        mCloseAttempted = true; // Only a genuinely posted close blocks reload.
         setState(QStringLiteral("Closing"));
-        if (!verified() || !mOps->postClose(mIdentity)) {
-            setState(QStringLiteral("CloseFailed"), QStringLiteral("Capture host close could not be posted; ownership retained."));
-            return;
-        }
         mDeadline.start(closeTimeoutMs);
     });
     return true; // Accepted for asynchronous checking, not completion.
 }
 
+bool CaptureHostRegistry::quit(quint64 lease) {
+    if (!writer(lease))
+        return false;
+    if (mOwned || mCloseAttempted) {
+        mQuitLease = lease;
+        const bool accepted = close(lease);
+        if (!accepted)
+            completeQuit(false);
+        return accepted;
+    }
+    // No owned identity to close. Cancel pending discovery so it cannot launch
+    // a new host after shell quit has been accepted. Foreign observation is
+    // retained until destruction, without posting anything to that process.
+    ++mOperation;
+    mWanted = false;
+    mChecking = false;
+    mDeadline.stop();
+    emit changed();
+    return true;
+}
+
 bool CaptureHostRegistry::prepareReload(quint64 lease) {
     if (!writer(lease))
         return false;
-    if (mChecking || mCloseAttempted) {
-        mError = QStringLiteral("Capture handoff refused: host operation is pending.");
-        emit changed();
-        return false;
-    }
-    if (mState == QStringLiteral("Absent") || mState == QStringLiteral("Exited")) {
-        mReloadLease = lease;
-        QTimer::singleShot(0, this, [this, lease] { completeReload(lease, writer(lease)); });
-        return true;
-    }
-    if (mState != QStringLiteral("Owned") || !verified()) {
-        mError = QStringLiteral("Capture handoff refused: host is not healthy and verified.");
-        emit changed();
-        return false;
-    }
+    if (mCloseAttempted)
+        return refuse(QStringLiteral("Capture handoff refused: a posted close is unresolved."));
+    // No native ownership or process lifetime is changed by QML reload.
+    // Preserve even uncertain observations and in-flight checks across graphs.
     mReloadLease = lease;
-    check([this, lease](bool ok) {
-        // Recording is deliberately allowed. A reload does not close the host.
-        completeReload(lease, ok && writer(lease));
+    QTimer::singleShot(0, this, [this, lease] {
+        if (mCloseAttempted)
+            refuse(QStringLiteral("Capture handoff refused: a posted close is unresolved."));
+        completeReload(lease, writer(lease) && !mCloseAttempted);
     });
     return true;
 }
@@ -483,36 +596,61 @@ void CaptureHostRegistry::completeReload(quint64 lease, bool ok) {
     emit reloadReady(lease, ok);
 }
 
+void CaptureHostRegistry::completeQuit(bool ok) {
+    const auto lease = std::exchange(mQuitLease, 0);
+    if (lease)
+        emit quitReady(lease, ok);
+}
+
 void CaptureHostRegistry::deadline() {
-    // Cancel a pending status response logically, not by deleting its running
-    // client. Its eventual response must not adopt a timed-out startup.
-    ++mOperation;
-    mChecking = false;
+    // Startup timeout is nonterminal. Accept a healthy response already in
+    // flight (the production status client itself is bounded to 16 seconds).
+    // Stop automatic polling, with explicit command/close/ensure able to retry.
+    if (mLaunchPending)
+        mStartupExpired = true;
     setState(QStringLiteral("CloseFailed"),
         QStringLiteral("Capture host deadline missed; exit is unconfirmed and ownership retained."));
-    completeReload(mReloadLease, false);
+    if (mCloseAttempted) {
+        completeQuit(false);
+        completeReload(mReloadLease, false);
+    }
 }
 
 void CaptureHostRegistry::exited() {
+    const auto code = mOps->exitCode(mIdentity);
+    const bool crashed = mOwned && code && *code != 0;
+    const bool restart = mRestartAfterClose;
+    const bool quitting = mQuitLease != 0;
+    if (mStableSince.isValid() && mStableSince.elapsed() >= stableWindowMs)
+        mRecoveries = 0;
     mDeadline.stop();
     ++mOperation;
     mChecking = false;
-    if (mWatch) {
-        mWatch->deleteLater();
-        mWatch = nullptr;
-    }
+    stopWatching();
     mIdentity = {};
+    mOwned = false;
+    mStableSince.invalidate();
     mPhase.clear();
     mLaunched = false;
     mLaunchedPid = 0;
     mLaunchLease = 0;
     mCloseAttempted = false;
     mLaunchPending = false;
-    setState(QStringLiteral("Exited"), mWanted && mAttempts >= 3
+    mRestartAfterClose = false;
+    if (quitting || (!restart && !crashed))
+        mWanted = false; // Respect clean tray exit, including unknown exit code.
+    const bool recover = mWanted && (restart || crashed) && (restart || mRecoveries < 3);
+    setState(QStringLiteral("Exited"), mWanted && !recover
         ? QStringLiteral("Automatic capture host recovery limit reached; an explicit capture can retry.") : QString());
-    completeReload(mReloadLease, false);
-    if (mLease && mWanted && mAttempts < 3) {
-        QTimer::singleShot(recoveryDelayMs, this, [this] { ensure(mLease); });
+    completeQuit(true);
+    if (recover) {
+        if (!restart)
+            ++mRecoveries;
+        const auto operation = mOperation;
+        QTimer::singleShot(recoveryDelayMs, this, [this, operation] {
+            if (operation == mOperation && mWanted)
+                ensure(mLease);
+        });
     }
 }
 
@@ -528,6 +666,10 @@ CaptureHost::CaptureHost(CaptureHostRegistry* registry, QObject* parent)
         if (lease == mLease)
             emit reloadReady(ok);
     });
+    connect(registry, &CaptureHostRegistry::quitReady, this, [this](quint64 lease, bool ok) {
+        if (lease == mLease)
+            emit quitReady(ok);
+    });
 }
 CaptureHost::~CaptureHost() { mRegistry->release(mLease); }
 QVariantMap CaptureHost::snapshot() const { return mRegistry->snapshot(); }
@@ -535,7 +677,20 @@ void CaptureHost::acquire(const QString& image, const QString& windowClass, cons
     mLease = mRegistry->acquire(image, windowClass, options);
 }
 bool CaptureHost::command(const QStringList& args) { return mRegistry->command(mLease, args); }
-bool CaptureHost::close(bool restart) { return mRegistry->close(mLease, restart); }
-bool CaptureHost::prepareReload() { return mRegistry->prepareReload(mLease); }
+bool CaptureHost::close(bool restart) {
+    if (!mLease)
+        mLease = mRegistry->acquireCurrent();
+    return mRegistry->close(mLease, restart);
+}
+bool CaptureHost::quit() {
+    if (!mLease)
+        mLease = mRegistry->acquireCurrent();
+    return mRegistry->quit(mLease);
+}
+bool CaptureHost::prepareReload() {
+    if (!mLease)
+        mLease = mRegistry->acquireCurrent();
+    return mRegistry->prepareReload(mLease);
+}
 
 } // namespace caelestia::shell::windows

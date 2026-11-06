@@ -10,5 +10,9 @@ add_executable(capture-host-child WIN32 "${CMAKE_CURRENT_LIST_DIR}/capturehost_c
 target_compile_definitions(capture-host-child PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
 target_link_libraries(capture-host-child PRIVATE Qt::Core user32 shell32)
 add_dependencies(capture-host-tests capture-host-child)
-add_test(NAME capture-host COMMAND capture-host-tests)
-set_tests_properties(capture-host PROPERTIES TIMEOUT 90 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+add_test(NAME capture-host COMMAND capture-host-tests
+    -o "-,txt"
+    -o "${CMAKE_CURRENT_BINARY_DIR}/native.txt,txt"
+    -o "${CMAKE_CURRENT_BINARY_DIR}/native.xml,junitxml")
+set_tests_properties(capture-host PROPERTIES TIMEOUT 90
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QML_DISABLE_DISK_CACHE=1")
