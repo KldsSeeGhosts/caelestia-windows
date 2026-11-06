@@ -1,5 +1,6 @@
 #include "../capturehost.hpp"
 
+#include <windows.h>
 #include <qcoreapplication.h>
 #include <qfile.h>
 #include <qjsondocument.h>
@@ -877,6 +878,22 @@ Item {
         const auto fixtureClass = QStringLiteral("CaelestiaCaptureFixture.%1").arg(QCoreApplication::applicationPid());
         qputenv("CAELESTIA_CAPTURE_FIXTURE_CLASS", fixtureClass.toUtf8());
         qputenv("CAELESTIA_CAPTURE_FIXTURE_CLOSE_DELAY", "180");
+        const auto gateName = QStringLiteral("Local\\CaelestiaCaptureFixture.Exit.%1")
+            .arg(QCoreApplication::applicationPid());
+        struct ExitGate {
+            HANDLE handle;
+            ~ExitGate() {
+                if (handle) {
+                    SetEvent(handle);
+                    CloseHandle(handle);
+                }
+                qunsetenv("CAELESTIA_CAPTURE_FIXTURE_EXIT_GATE");
+                qunsetenv("CAELESTIA_CAPTURE_FIXTURE_CLASS");
+                qunsetenv("CAELESTIA_CAPTURE_FIXTURE_CLOSE_DELAY");
+            }
+        } gate{CreateEventW(nullptr, TRUE, FALSE, reinterpret_cast<LPCWSTR>(gateName.utf16()))};
+        QVERIFY(gate.handle);
+        qputenv("CAELESTIA_CAPTURE_FIXTURE_EXIT_GATE", gateName.toUtf8());
         const auto childPath = QCoreApplication::applicationDirPath() + QStringLiteral("/capture-host-child.exe");
         QProcess child;
         child.setProgram(childPath);
@@ -884,6 +901,7 @@ Item {
         QVERIFY(child.waitForStarted(2000)); // Test setup, not production GUI close.
         auto ops = makeCaptureHostOps();
         QTRY_COMPARE(ops->probe(childPath, fixtureClass).kind, CaptureProbe::Verified);
+        QStringList transitions;
         CaptureHostRegistry registry(ops);
         registry.closeTimeoutMs = 35;
         const auto old = registry.acquire(childPath, fixtureClass, {});
@@ -902,13 +920,20 @@ Item {
         heartbeat.setInterval(2);
         connect(&heartbeat, &QTimer::timeout, this, [&] { ++ticks; });
         heartbeat.start();
+        connect(&registry, &CaptureHostRegistry::changed, this, [&] {
+            transitions.append(state(registry));
+        });
         QVERIFY(registry.close(old));
-        QTRY_COMPARE(state(registry), QStringLiteral("Closing"));
+        // Closing may be shorter than QTRY's sampling interval. Observe the
+        // real transition, and hold only this fixture child until the deadline
+        // and responsiveness checks complete.
+        QTRY_VERIFY(transitions.contains(QStringLiteral("Closing")));
         registry.acquire(childPath, fixtureClass, {});
         registry.release(old);
         QTRY_COMPARE(state(registry), QStringLiteral("CloseFailed"));
         QVERIFY(owned(registry));
-        QVERIFY(ticks >= 3);
+        QTRY_VERIFY(ticks >= 10);
+        QVERIFY(SetEvent(gate.handle));
         QTRY_COMPARE(state(registry), QStringLiteral("Exited"));
         QVERIFY(!owned(registry));
         QTRY_COMPARE(child.state(), QProcess::NotRunning);

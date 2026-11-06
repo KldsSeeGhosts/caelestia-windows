@@ -8,13 +8,15 @@
 
 namespace {
 int closeDelay = 0;
+HANDLE exitGate = nullptr;
 LRESULT CALLBACK procedure(HWND window, UINT message, WPARAM w, LPARAM l) {
     if (message == WM_CLOSE) {
-        SetTimer(window, 1, UINT(closeDelay > 0 ? closeDelay : 1), nullptr);
+        SetTimer(window, 1, exitGate ? 10 : UINT(closeDelay > 0 ? closeDelay : 1), nullptr);
         return 0;
     }
     if (message == WM_TIMER) {
-        DestroyWindow(window);
+        if (w == 2 || !exitGate || WaitForSingleObject(exitGate, 0) == WAIT_OBJECT_0)
+            DestroyWindow(window);
         return 0;
     }
     if (message == WM_DESTROY) {
@@ -53,6 +55,14 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     if (FindWindowW(reinterpret_cast<LPCWSTR>(name.utf16()), nullptr))
         return 0; // A forwarded client is not a host.
     closeDelay = qEnvironmentVariableIntValue("CAELESTIA_CAPTURE_FIXTURE_CLOSE_DELAY");
+    const auto gateName = qEnvironmentVariable("CAELESTIA_CAPTURE_FIXTURE_EXIT_GATE");
+    if (!gateName.isEmpty()) {
+        if (!gateName.startsWith(QStringLiteral("Local\\CaelestiaCaptureFixture.Exit.")))
+            return 5;
+        exitGate = OpenEventW(SYNCHRONIZE, FALSE, reinterpret_cast<LPCWSTR>(gateName.utf16()));
+        if (!exitGate)
+            return 6;
+    }
     WNDCLASSW wc{};
     wc.hInstance = instance;
     wc.lpszClassName = reinterpret_cast<LPCWSTR>(name.utf16());
@@ -71,5 +81,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
         TranslateMessage(&message);
         DispatchMessageW(&message);
     }
+    if (exitGate)
+        CloseHandle(exitGate);
     return 0;
 }
