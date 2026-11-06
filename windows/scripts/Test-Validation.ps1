@@ -79,6 +79,7 @@ try {
         Invoke-ScriptCheck 'Test-PublicDocs'
         Invoke-ScriptCheck 'Test-Toolchain'
         Invoke-ScriptCheck 'Test-PairContract'
+        Invoke-ScriptCheck 'Test-CaptureIntegration'
         Invoke-ValidationStep 'toolchain-modules' $Python @('-B', 'windows/tests/ToolchainModules.test.py',
             '--output-root', (Join-Path $OutputRoot 'toolchain-modules'))
         foreach ($name in @('Test-CIChanges', 'Test-SchemeProbeGuard', 'Test-KsgSettingsImport', 'Test-ShellLifecycle', 'Test-ValidationCounts')) {
@@ -92,6 +93,7 @@ try {
     } elseif ($Suite -eq 'Packaging') {
         Invoke-ScriptCheck 'Test-VersionedInstall'
         Invoke-ScriptCheck 'Test-UninstallTransaction' @('-OutputRoot', (Join-Path $OutputRoot 'uninstall-transactions'))
+        Invoke-ScriptCheck 'Test-CaptureRelease' @('-OutputRoot', (Join-Path $OutputRoot 'capture-release'))
     } elseif ($Suite -eq 'Scheme') {
         Invoke-ValidationStep 'scheme-worker' $Python @('-B', 'windows/scripts/scheme/test_win_scheme.py', '-v') '(?m)^Ran ([0-9]+) tests?\b'
     } else {

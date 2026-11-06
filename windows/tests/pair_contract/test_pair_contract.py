@@ -42,7 +42,14 @@ class PairTests(unittest.TestCase):
         run_git(self.backend, "update-ref", "refs/remotes/origin/main", self.backend_sha)
         self.put("windows/sources.lock.json", {"quickshell": {
             "revision": self.backend_sha, "repository": "https://github.com/" + p.REPOS["backend"]},
-            "m3shapes": {"revision": "d" * 40}, "glazier": {"revision": "e" * 40}})
+            "m3shapes": {"revision": "d" * 40}, "glazier": {
+                "revision": "e" * 40, "originRevision": "e" * 40,
+                "representation": "in-tree", "sourceRevision": "shell",
+                "path": "windows/capture", "cargoLockPath": "windows/capture/Cargo.lock",
+                "cargoLockSha256": hashlib.sha256(b"synthetic capture lock\n").hexdigest(),
+                "executable": "caelestia-capture.exe"}})
+        (self.shell / "windows/capture").mkdir()
+        (self.shell / "windows/capture/Cargo.lock").write_bytes(b"synthetic capture lock\n")
         self.put("windows/toolchain.json", {"id": "synthetic"})
         self.put("windows/ci/pair-contract.json", {})
         self.put("windows/ci/Invoke-PairIntegration.ps1", {})
@@ -330,8 +337,16 @@ class PairTests(unittest.TestCase):
             "sourceRevision": request["shell"], "pinnedBackendRevision": request["gitlinkBackend"],
             "lockBackendRevision": request["lockBackend"], "sourceDirty": False,
             "publicRelease": True, "pluginTests": True, "glazierBundled": True,
+            "captureBundled": True, "captureSourceRevision": request["shell"],
+            "captureSourcePath": "windows/capture", "captureOriginRevision": "e" * 40,
+            "captureCargoLockSha256": hashlib.sha256(b"synthetic capture lock\n").hexdigest(),
+            "captureExecutable": "caelestia-capture.exe",
+            "captureSha256": hashlib.sha256(b"synthetic capture binary").hexdigest(),
             "m3shapesRevision": "d" * 40, "glazierRevision": "e" * 40, "glazierSha256": "f" * 64,
             "toolchain": {"contractSha256": request["contractSha256"]}})
+        capture_exe = Path(args.build_root) / "install/caelestia-capture.exe"
+        capture_exe.parent.mkdir(parents=True)
+        capture_exe.write_bytes(b"synthetic capture binary")
         def validate(value, **expectations):
             p.require(value["result"] == "pass", "synthetic-validator-nonpass")
         counts = {"total": 1, "executed": 1, "failed": 0, "skipped": 0, "skips": []}
@@ -388,12 +403,28 @@ class PairTests(unittest.TestCase):
         p.verify_build(args.build_root, request, self.shell)
         for key, value in (("backendRevision", "f" * 40), ("sourceRevision", "f" * 40),
                            ("backendMode", "candidate"), ("sourceDirty", True),
-                           ("glazierBundled", False), ("pluginTests", False)):
+                           ("captureBundled", False), ("pluginTests", False),
+                           ("captureSourceRevision", "f" * 40),
+                           ("captureSourcePath", "elsewhere"),
+                           ("captureOriginRevision", "f" * 40),
+                           ("captureExecutable", "glazier.exe"),
+                           ("captureCargoLockSha256", "f" * 64),
+                           ("captureSha256", "f" * 64)):
             changed = copy.deepcopy(build)
             changed[key] = value
             p.write(path, changed)
             with self.subTest(key=key), self.assertRaises(ValueError):
                 p.verify_build(args.build_root, request, self.shell)
+        p.write(path, build)
+        capture_exe = Path(args.build_root) / "install/caelestia-capture.exe"
+        capture_exe.write_bytes(b"changed binary")
+        with self.assertRaisesRegex(ValueError, "built-capture-binary-mismatch"):
+            p.verify_build(args.build_root, request, self.shell)
+        capture_exe.write_bytes(b"synthetic capture binary")
+        (self.shell / "windows/capture/Cargo.lock").write_bytes(b"changed lock")
+        with self.assertRaisesRegex(ValueError, "built-capture-source-mismatch"):
+            p.verify_build(args.build_root, request, self.shell)
+        (self.shell / "windows/capture/Cargo.lock").write_bytes(b"synthetic capture lock\n")
         build["toolchain"]["contractSha256"] = "f" * 64
         p.write(path, build)
         with self.assertRaisesRegex(ValueError, "production-toolchain-digest"):

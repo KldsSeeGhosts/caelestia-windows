@@ -302,18 +302,39 @@ def verify_build(build_root, request, shell):
             and build["lockBackendRevision"] == request["lockBackend"],
             "built-pair-mismatch")
     require(build["sourceDirty"] is False and build["publicRelease"] is True
-            and build["pluginTests"] is True and build["glazierBundled"] is True,
+            and build["pluginTests"] is True and build["captureBundled"] is True,
             "incomplete-production-build")
     require(build["toolchain"]["contractSha256"] == request["contractSha256"],
             "production-toolchain-digest-mismatch")
     lock = read(Path(shell) / "windows/sources.lock.json")
-    for name in ("m3shapes", "glazier"):
+    for name in ("m3shapes",):
         require(SHA.fullmatch(build[name + "Revision"])
                 and build[name + "Revision"] == lock[name]["revision"], "built-dependency-mismatch")
-    require(DIGEST.fullmatch(build["glazierSha256"]), "missing-glazier-binary-digest")
+    capture = lock["glazier"]
+    require(capture["representation"] == "in-tree" and capture["sourceRevision"] == "shell"
+            and capture["path"] == "windows/capture"
+            and capture["cargoLockPath"] == "windows/capture/Cargo.lock"
+            and capture["executable"] == "caelestia-capture.exe"
+            and capture["originRevision"] == capture["revision"]
+            and SHA.fullmatch(capture["originRevision"]),
+            "invalid-capture-source-contract")
+    require(build["captureSourceRevision"] == request["shell"]
+            and build["captureSourcePath"] == capture["path"]
+            and build["captureOriginRevision"] == capture["originRevision"]
+            and build["captureExecutable"] == capture["executable"]
+            and DIGEST.fullmatch(capture["cargoLockSha256"])
+            and build["captureCargoLockSha256"] == capture["cargoLockSha256"]
+            and hashlib.sha256((Path(shell) / capture["cargoLockPath"]).read_bytes()).hexdigest()
+            == capture["cargoLockSha256"],
+            "built-capture-source-mismatch")
+    require(DIGEST.fullmatch(build["captureSha256"])
+            and hashlib.sha256((Path(build_root) / "install" / capture["executable"]).read_bytes()).hexdigest()
+            == build["captureSha256"],
+            "built-capture-binary-mismatch")
     return {key: build[key] for key in (
         "sourceRevision", "backendRevision", "backendMode",
-        "m3shapesRevision", "glazierRevision", "glazierSha256")}
+        "m3shapesRevision", "captureSourceRevision", "captureSourcePath",
+        "captureOriginRevision", "captureCargoLockSha256", "captureExecutable", "captureSha256")}
 
 
 def envelope(args):

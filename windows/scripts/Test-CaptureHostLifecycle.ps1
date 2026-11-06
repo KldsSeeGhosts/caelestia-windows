@@ -8,6 +8,8 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $repo = (Resolve-Path -LiteralPath "$PSScriptRoot/../..").Path
+. "$repo/windows/capture/Source.ps1"
+$captureSource = Get-CaelestiaCaptureSource $repo
 $output = [IO.Path]::GetFullPath($BuildRoot).TrimEnd('\', '/')
 if ($output -eq [IO.Path]::GetPathRoot($output) -or $output -eq $repo -or
     $output -eq [Environment]::GetFolderPath('UserProfile')) { throw 'An exclusive fixture output directory is required.' }
@@ -66,7 +68,10 @@ Run 'node' 'node' @("$repo/windows/tests/GlazierRecorderLogic.test.js")
     dirty = [bool](& git -C $repo status --porcelain)
     diffSha256 = (Get-FileHash -LiteralPath "$logs/source.diff" -Algorithm SHA256).Hash
     backend = (& git -C "$repo/windows/deps/quickshell" rev-parse HEAD).Trim()
-    glazier = (& git -C "$repo/windows/deps/glazier" rev-parse HEAD).Trim()
+    captureSourceRevision = $captureSource.sourceRevision
+    captureSourcePath = $captureSource.relativePath
+    captureOriginRevision = $captureSource.originRevision
+    captureCargoLockSha256 = $captureSource.cargoLockSha256
     m3shapes = (& git -C "$repo/windows/deps/m3shapes" rev-parse HEAD).Trim()
     qt = (& "$QtPrefix/bin/qtpaths.exe" --qt-version).Trim()
     vcTools = $env:VCToolsVersion
