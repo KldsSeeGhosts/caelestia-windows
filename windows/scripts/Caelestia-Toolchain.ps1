@@ -1,5 +1,14 @@
 # Shared by local builds, hosted preparation, prerequisite checks and packaging.
 # Dot-sourcing this file never installs tools or changes the environment.
+function Initialize-CaelestiaToolchainModules {
+    # pwsh -> Python -> powershell.exe can inherit a PSModulePath without
+    # Windows PowerShell's inbox modules. Resolve these against the running
+    # engine, not the caller's module search path. Do not rewrite PSModulePath.
+    foreach ($name in @('Microsoft.PowerShell.Utility', 'Microsoft.PowerShell.Archive')) {
+        Import-Module -Name (Join-Path $PSHOME "Modules\$name\$name.psd1") -Global -ErrorAction Stop
+    }
+}
+
 function Get-CaelestiaToolchain {
     $path = Join-Path $PSScriptRoot '..\toolchain.json'
     $spec = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
