@@ -70,6 +70,25 @@ platform, and supplies fakes for service mutations. Production staging never
 includes these fixtures. Output defaults to a unique directory outside the
 checkout; use `-OutputRoot` to choose another external location.
 
+## Updates status and manual-download regression
+
+`UpdatesLogic.test.js` runs automatically in the Unit suite against the actual
+staged model source. It covers current, legacy, partial and unavailable status,
+retained-version eligibility, unknown remote versions and restricted manual URLs.
+
+Run the additional Windows component check explicitly:
+
+```powershell
+windows/scripts/Test-UpdatesPage.ps1 -QtPrefix <Qt-prefix> -BuildRoot <native-build-root>
+```
+
+This runs the real manager's read-only Status command against three disposable
+synthetic installation records, then the real staged Updates page and RowButton
+offscreen. Enter and Space activate a recording browser callback, never a real
+browser; no installed prefix, rollback or live desktop is used. This script
+is not yet in the aggregate Shell suite; it does not establish installed
+rollback or physical keyboard/accessibility acceptance.
+
 ## Not covered by these restored gates
 
 The backend's standalone C++ fixtures live and run in the backend
