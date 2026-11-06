@@ -78,6 +78,8 @@ try {
         }
         Invoke-ScriptCheck 'Test-PublicDocs'
         Invoke-ScriptCheck 'Test-Toolchain'
+        Invoke-ValidationStep 'toolchain-modules' $Python @('-B', 'windows/tests/ToolchainModules.test.py',
+            '--output-root', (Join-Path $OutputRoot 'toolchain-modules'))
         foreach ($name in @('Test-CIChanges', 'Test-SchemeProbeGuard', 'Test-KsgSettingsImport', 'Test-ShellLifecycle', 'Test-ValidationCounts')) {
             Invoke-ScriptCheck $name
         }
