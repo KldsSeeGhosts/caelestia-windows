@@ -103,13 +103,15 @@ public class Fixture_$id {}
     $crtRoot = Join-Path $supplierRoot "VC\Redist\MSVC\$($spec.vcRedistDirectoryVersion)\x64\Microsoft.VC143.CRT"
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $marker), $crtRoot | Out-Null
     $spec.vcRedistDirectoryVersion | Set-Content -LiteralPath $marker
-    foreach ($name in @('msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll')) {
+    foreach ($name in @('msvcp140.dll', 'msvcp140_1.dll', 'msvcp140_2.dll',
+        'msvcp140_atomic_wait.dll', 'vcruntime140.dll', 'vcruntime140_1.dll')) {
         Copy-Item -LiteralPath $qualifiedBinary -Destination (Join-Path $crtRoot $name)
     }
     $supplier = Get-CaelestiaVCRedist -VsRoot $supplierRoot
     Assert-True ($supplier.version -eq $spec.vcRedistVersion) 'Use actual CRT DLL metadata, not the differently numbered redist folder.'
     Assert-True ((Assert-CaelestiaReleaseVCRedist (New-SupportedReceipt) $crtRoot) -eq $crtRoot) 'Release and build must resolve the same marker-qualified supplier.'
-    foreach ($name in @('msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll')) {
+    foreach ($name in @('msvcp140.dll', 'msvcp140_1.dll', 'msvcp140_2.dll',
+        'msvcp140_atomic_wait.dll', 'vcruntime140.dll', 'vcruntime140_1.dll')) {
         $path = Join-Path $crtRoot $name
         Remove-Item -LiteralPath $path
         Assert-Rejected { Get-CaelestiaVCRedist -VsRoot $supplierRoot } "Missing toolchain supplier file: $([regex]::Escape($name))"
