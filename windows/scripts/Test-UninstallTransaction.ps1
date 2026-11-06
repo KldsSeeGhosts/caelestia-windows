@@ -291,6 +291,76 @@ $passed = $false
 $failure = ''
 try {
     if (-not $StaleReadOnly) {
+    foreach ($recovery in @('orphan-queued', 'dead-working', 'expired-queued', 'legacy-queued', 'foreign-task')) {
+        $case = New-Case "queue-recovery-$recovery"
+        $oldId = Start-QueuedOperation $case
+        $journalPath = Join-Path $case 'profile\state\update-operation.json'
+        $journal = Get-Content -LiteralPath $journalPath -Raw | ConvertFrom-Json
+        $oldTaskPaths = @(
+            (Join-Path $case "tasks\Caelestia-Maintenance-$oldId.json"),
+            (Join-Path $case "tasks\Caelestia-MaintenanceWatch-$oldId.json"))
+        $foreignBefore = ''
+        if ($recovery -eq 'orphan-queued') {
+            foreach ($path in $oldTaskPaths) { Remove-Item -LiteralPath $path }
+        } elseif ($recovery -eq 'dead-working') {
+            # No worker owns the lock. The registered records must not make a
+            # dead 'working' journal permanently block later requests.
+            $journal.phase = 'working'
+        } elseif ($recovery -eq 'expired-queued') {
+            $journal | Add-Member -NotePropertyName queuedDeadlineUtc -NotePropertyValue ([DateTime]::UtcNow.AddSeconds(-1).ToString('o')) -Force
+        } elseif ($recovery -eq 'legacy-queued') {
+            $journal.PSObject.Properties.Remove('queuedDeadlineUtc')
+        } else {
+            foreach ($path in $oldTaskPaths) {
+                $task = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
+                $task.Actions[0].WorkingDirectory = Join-Path $case 'unrelated-prefix'
+                Write-FixtureText $path ($task | ConvertTo-Json -Depth 6)
+            }
+            $foreignBefore = ($oldTaskPaths | ForEach-Object { [IO.File]::ReadAllText($_) }) -join "`n"
+        }
+        Write-FixtureText $journalPath ($journal | ConvertTo-Json)
+        $newId = Start-QueuedOperation $case
+        Assert ($newId -ne $oldId) 'Stale request did not receive a new fenced identity.'
+        $journal = Get-Content -LiteralPath $journalPath -Raw | ConvertFrom-Json
+        Assert ($journal.operationId -eq $newId -and $journal.phase -eq 'queued') 'Recovered queue did not publish its new identity.'
+        Assert ([DateTime]::Parse($journal.queuedDeadlineUtc).ToUniversalTime() -gt [DateTime]::UtcNow) 'Queue has no future deadline.'
+        if ($recovery -eq 'foreign-task') {
+            Assert ((($oldTaskPaths | ForEach-Object { [IO.File]::ReadAllText($_) }) -join "`n") -ceq $foreignBefore) 'Queue recovery changed foreign-prefix tasks.'
+        } else {
+            foreach ($path in $oldTaskPaths) { Assert (-not (Test-Path -LiteralPath $path)) 'Stale request left an owned task behind.' }
+        }
+        $before = Snapshot $case
+        $late = Start-Worker $case 'TrackedRollback' -OperationId $oldId
+        Finish-ErrorWorker $late
+        Assert ((Snapshot $case) -ceq $before) 'Fenced old worker changed the new operation or installation.'
+        Assert-Coherent $case
+        $script:scenarios += "queue-recovery-$recovery"
+    }
+    $case = New-Case 'live-queued-request-refused'
+    $id = Start-QueuedOperation $case
+    $before = Snapshot $case
+    $duplicate = Start-Worker $case 'Queue'
+    Finish-ErrorWorker $duplicate
+    Assert ((Snapshot $case) -ceq $before) 'Live queued duplicate changed managed state.'
+    $script:scenarios += 'live-queued-request-refused'
+
+    $case = New-Case 'malformed-journal-uninstall'
+    Write-FixtureText (Join-Path $case 'profile\state\update-operation.json') '{invalid'
+    $uninstall = Start-Worker $case 'Uninstall'
+    Assert-Result $uninstall 'Success'
+    Finish-Worker $uninstall
+    Assert-Uninstalled $case $false
+    $script:scenarios += 'malformed-journal-uninstall'
+
+    $case = New-Case 'malformed-journal-maintenance-refusal'
+    Write-FixtureText (Join-Path $case 'profile\state\update-operation.json') '{invalid'
+    $before = Snapshot $case
+    $queue = Start-Worker $case 'Queue'
+    Finish-ErrorWorker $queue
+    Assert ((Snapshot $case) -ceq $before) 'Unreadable journal refusal changed managed state.'
+    Assert-Coherent $case
+    $script:scenarios += 'malformed-journal-maintenance-refusal'
+
     foreach ($purge in @($false, $true)) {
         foreach ($operation in @('Install', 'Rollback')) {
             $name = "held-$operation-purge-$purge"
@@ -674,7 +744,7 @@ try {
         architecture = $env:PROCESSOR_ARCHITECTURE
         sourceDirty = [bool](& git -C $repoRoot status --porcelain)
         fullAcceptanceComplete = $false
-        limit = 'Fixture/component only; strict busy snapshots have no journal exclusion. Watchdog reports after lock release within its configured retry window; the separate Test-UpdateManager fixture qualifies the consumer deadline. Post-rename crash recovery is explicit fixture recovery, not automatic production recovery. No live desktop/integration or release qualification.'
+        limit = 'Fixture/component only; strict busy snapshots have no journal exclusion. Scheduler retries are configured but unqualified. Later queue requests recover dead/orphaned/expired journals under the prefix lock; Test-UpdateManager separately qualifies the consumer deadline. Post-rename crash recovery is explicit fixture recovery, not automatic production recovery. No live desktop/integration or release qualification.'
     }
     Write-FixtureText (Join-Path $runRoot 'receipt.json') ($receipt | ConvertTo-Json -Depth 6)
 }

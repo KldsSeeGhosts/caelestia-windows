@@ -58,6 +58,8 @@ QtObject {
             check(manager.submitted && manager.deadline.running, "queued journal changed deadline");
             journal(firstId, "working");
             check(manager.submitted && manager.deadline.running, "working journal changed deadline");
+            manager.operationFile.loadFailed();
+            check(manager.submitted && manager.deadline.running, "transient journal failure ended the deadline early");
             afterFirst.start();
         } catch (error) { fail(error); }
     }

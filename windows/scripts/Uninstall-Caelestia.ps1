@@ -53,7 +53,11 @@ foreach ($task in @(Get-ScheduledTask -TaskPath '\' -TaskName 'Caelestia-Mainten
 $operationFile = Join-Path $profile 'state\update-operation.json'
 if (Test-Path -LiteralPath $operationFile -PathType Leaf) {
     $null = Resolve-CaelestiaDirectory ([IO.Path]::GetDirectoryName($operationFile))
-    $operation = Get-Content -LiteralPath $operationFile -Raw -Encoding UTF8 | ConvertFrom-Json
+    # A corrupt optional reporting journal must not prevent uninstall. Task
+    # cancellation above independently proves prefix ownership.
+    $operation = $null
+    try { $operation = Get-Content -LiteralPath $operationFile -Raw -Encoding UTF8 | ConvertFrom-Json -ErrorAction Stop }
+    catch { }
     if ($operation.schema -eq 1 -and $operation.operationId -match '^[a-f0-9]{32}$' -and
         (-not $operation.prefix -or $operation.prefix -eq $Prefix) -and
         (-not $operation.installId -or $operation.installId -eq $record.installId)) {

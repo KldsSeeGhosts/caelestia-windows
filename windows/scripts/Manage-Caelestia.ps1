@@ -52,15 +52,29 @@ function Write-Operation([string]$Id, [string]$Phase) {
     Write-CaelestiaJsonAtomic $operationFile @{
         schema = 1; operationId = $Id; phase = $Phase
         prefix = $Prefix; installId = $record.installId
+        # Bound a queued request even if its watchdog never starts or retries.
+        # A later request can fence the expired worker under the prefix lock.
+        queuedDeadlineUtc = [DateTime]::UtcNow.AddSeconds($PhaseTimeoutSeconds + 60).ToString('o')
     }
 }
 function Read-Operation {
     if (-not (Test-Path -LiteralPath $operationFile -PathType Leaf)) { return $null }
-    $state = Get-Content -LiteralPath $operationFile -Raw -Encoding UTF8 | ConvertFrom-Json
+    try { $state = Get-Content -LiteralPath $operationFile -Raw -Encoding UTF8 | ConvertFrom-Json -ErrorAction Stop }
+    catch { throw 'The rollback operation journal is unreadable. Inspect it before requesting maintenance.' }
     if ($state.schema -ne 1 -or $state.operationId -notmatch '^[a-f0-9]{32}$' -or
         ($state.prefix -and $state.prefix -ne $Prefix) -or
         ($state.installId -and $state.installId -ne $record.installId)) { return $null }
     return $state
+}
+function Get-OperationTasks([string]$Id) {
+    foreach ($name in @("Caelestia-Maintenance-$Id", "Caelestia-MaintenanceWatch-$Id")) {
+        foreach ($task in @(Get-ScheduledTask -TaskPath '\' -TaskName $name -ErrorAction SilentlyContinue)) {
+            $actions = @($task.Actions)
+            if ($actions.Count -eq 1 -and $actions[0].WorkingDirectory -eq $Prefix -and
+                ([string]$actions[0].Arguments).IndexOf('-File "' + (Join-Path $Prefix 'Manage-Caelestia.ps1') + '"', [StringComparison]::OrdinalIgnoreCase) -ge 0 -and
+                ([string]$actions[0].Arguments).IndexOf('-Prefix "' + $Prefix + '"', [StringComparison]::OrdinalIgnoreCase) -ge 0) { $task }
+        }
+    }
 }
 try {
     # No manifest/profile read, directory creation, journal write or queued-task
@@ -78,8 +92,9 @@ try {
     if ($Command -eq 'Watch' -or -not $Wait -or $TaskName) {
         $operationFile = Join-Path (Resolve-CaelestiaDirectory $record.profile) 'state\update-operation.json'
     }
-    # A dead/busy tracked worker leaves reporting to this watchdog. Lock
-    # refusal throws without unregistering it, so Task Scheduler can retry.
+    # A dead/busy tracked worker leaves reporting to this watchdog. Scheduler
+    # retries are configured, not qualified here. A later queued request also
+    # recovers expired journals, without depending on those retries.
     # No missing journal/profile is ever created by the watcher.
     if ($Command -eq 'Watch') {
         $state = Read-Operation
@@ -95,7 +110,25 @@ try {
         if ($record.version -ne 2 -or -not $record.previous) { throw 'No previous version is retained.' }
         if ($ExpectedCurrent -and $record.current -ne $ExpectedCurrent) { throw 'The selected version changed. Refresh before requesting rollback.' }
         $pending = Read-Operation
-        if ($pending -and $pending.phase -in @('queued', 'working')) { throw 'A rollback request is already in progress.' }
+        if ($pending -and $pending.phase -in @('queued', 'working')) {
+            $pendingTasks = @(Get-OperationTasks ([string]$pending.operationId))
+            $queuedDeadline = [DateTime]::MinValue
+            $hasDeadline = [DateTime]::TryParseExact([string]$pending.queuedDeadlineUtc, 'o',
+                [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind, [ref]$queuedDeadline)
+            if ($pending.phase -eq 'queued' -and $pendingTasks.Count -gt 0 -and $hasDeadline -and
+                $queuedDeadline.Kind -eq [DateTimeKind]::Utc -and $queuedDeadline -gt [DateTime]::UtcNow -and
+                $queuedDeadline -le [DateTime]::UtcNow.AddSeconds(86460)) {
+                throw 'A rollback request is already in progress.'
+            }
+            # Holding the prefix lock proves no tracked worker is inside its
+            # transaction. Fence a dead working, orphaned/expired queued or
+            # legacy unbounded request before another worker can enter.
+            Write-Operation ([string]$pending.operationId) 'failed'
+            foreach ($task in $pendingTasks) {
+                Stop-ScheduledTask -TaskPath '\' -TaskName $task.TaskName -ErrorAction Stop
+                Unregister-ScheduledTask -TaskPath '\' -TaskName $task.TaskName -Confirm:$false -ErrorAction Stop
+            }
+        }
         [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($operationFile)) | Out-Null
         $operationId = [guid]::NewGuid().ToString('N')
         $name = 'Caelestia-Maintenance-' + $operationId
@@ -105,9 +138,9 @@ try {
                 '" -ExpectedCurrent "' + $record.current + '"')
         $principal = New-ScheduledTaskPrincipal -UserId ([Security.Principal.WindowsIdentity]::GetCurrent().Name) -LogonType Interactive -RunLevel Limited
         # The worker's existing hard execution bound releases a hung worker's
-        # lock. A busy watcher retries at one-minute intervals, without writing
-        # through another transaction. Indefinitely held unrelated locks still
-        # need a separate consumer timeout to guarantee a UI deadline.
+        # lock. One-minute scheduler retries are configured but not assumed
+        # to run: stale-request recovery above provides a separate path.
+        # Indefinitely held unrelated locks still need a consumer deadline.
         $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
             -ExecutionTimeLimit ([TimeSpan]::FromSeconds($PhaseTimeoutSeconds + 60))
         $watchName = 'Caelestia-MaintenanceWatch-' + $operationId

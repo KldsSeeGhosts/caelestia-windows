@@ -21,9 +21,19 @@ Queued setup takes that lock too. It registers the existing watchdog before
 accepting the operation and starts the worker only after releasing the lock.
 A busy tracked worker does not overwrite `queued` or unregister the watchdog.
 The watchdog uses the same lock, never creates missing profiles/journals, and
-has three one-minute Task Scheduler failure retries (30-second execution limit
-per attempt). Successful/failed tracked work records a terminal phase before
-removing its reporting task. Journal writes include prefix/install identity.
+has three one-minute Task Scheduler failure retries configured (30-second
+execution limit per attempt). Actual scheduler retry behavior is unqualified;
+correctness does not depend on those retries. Successful/failed tracked work
+records a terminal phase before removing its reporting task. Journal writes
+include prefix/install identity and a bounded queued deadline.
+
+A later queue request holding the prefix lock can recover a dead `working`
+journal or an orphaned, expired or legacy unbounded `queued` journal. It fences
+the old operation before stopping/removing only prefix-verified tasks. A late
+old worker cannot enter the replacement transaction. A fresh bounded queue
+with registered owned tasks still refuses duplicates without any writes.
+Malformed maintenance journals refuse clearly without mutation; uninstall
+ignores malformed optional journal data instead of becoming unusable.
 
 Uninstall cancels only maintenance tasks whose action proves the same prefix,
 including a watchdog registered before an interrupted queue could write its
@@ -76,8 +86,9 @@ and worker has a bounded timeout.
 ## Scenarios and assertions
 
 The receipt records the scenario/assertion counts, plus fail-closed boundary
-checks. The extended run requires 38 scenarios and 665 controller
-assertions. Coverage includes:
+checks. The extended run includes eight queue-recovery, duplicate and malformed
+journal cases in addition to the earlier 38 scenarios / 665 assertions.
+Coverage includes:
 
 * Install-held and rollback-held versus uninstall, normal and purge. Busy
   uninstall preserves every prefix/profile/integration/unrelated-profile byte.
@@ -107,6 +118,11 @@ assertions. Coverage includes:
   the watchdog records failure after lock release. Late tracked work cannot
   overwrite that terminal result. Tracked success/exception results are also
   checked independently.
+* Dead working, orphaned/expired/legacy queued and foreign-task journals recover
+  under the lock. Old workers are fenced, owned stale tasks are removed and
+  foreign task bytes are preserved. A fresh queue refuses a duplicate.
+* A malformed optional journal does not block uninstall. Queued maintenance
+  refuses an unreadable journal with every managed byte unchanged.
 * Queue start happens after lock release; a separately controlled source
   installer can reach its real post-lock boundary during the queued start.
 * Queued tasks are cancelled by normal/purge uninstall; late watchdogs do not
@@ -175,7 +191,8 @@ windows/scripts/Test-UpdateManager.ps1 -QtPrefix <Qt-prefix> -BuildRoot <native-
 
 The fixture exercises real timer expiry both before and after acknowledgement,
 duplicate refusal, wrong/missing acknowledgements, smoke gating, foreign/stale
-journals, late terminal results and terminal-state preservation. It neither
+journals, transient load failure without early timeout, late terminal results
+and terminal-state preservation. It neither
 starts a real process nor writes a journal. The transaction and consumer
 fixtures also run in the Packaging and Shell aggregate lanes respectively.
 Default transaction output uses a unique temporary directory; explicit output

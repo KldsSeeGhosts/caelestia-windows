@@ -76,11 +76,8 @@ QtObject {
         printErrors: false
         onLoaded: root.loadOperation()
         onFileChanged: reload()
-        onLoadFailed: {
-            if (root.operationId && !root.failed && !root.complete) {
-                deadline.stop();
-                root.operationState = "unconfirmed";
-            }
-        }
+        // Atomic replacement can briefly make the journal unreadable. Keep
+        // the original deadline; a later change can still load a terminal
+        // result. A transient read failure is not an early timeout.
     }
 }
