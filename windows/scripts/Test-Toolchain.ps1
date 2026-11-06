@@ -53,6 +53,16 @@ foreach ($name in @('vcCompilerFileVersion', 'vcLinkerFileVersion', 'vcRedistVer
 $bad = New-SupportedReceipt
 $bad.vcRedistVersion = '14.44.35213.0'
 Assert-Rejected { Assert-CaelestiaToolchainReceipt $bad } 'vcRedistVersion'
+# Validly formatted, same-family substitutions must fail too. Checking only
+# version/hash syntax would not enforce the qualified supplier identities.
+foreach ($pair in @(
+    @('vcCompilerFileVersion', '19.44.35230.0'),
+    @('vcLinkerFileVersion', '14.44.35230.0'),
+    @('rustCommit', ('0' * 40)))) {
+    $bad = New-SupportedReceipt
+    $bad.($pair[0]) = $pair[1]
+    Assert-Rejected { Assert-CaelestiaToolchainReceipt $bad } "Unsupported toolchain $($pair[0])"
+}
 $bad = New-SupportedReceipt
 $bad.runtimeMinimum = '14.50.0.0'
 Assert-Rejected { Assert-CaelestiaToolchainReceipt $bad } 'runtime prerequisite'
@@ -179,6 +189,15 @@ public class Fixture_$id {}
         $build.toolchain.PSObject.Properties.Remove($name)
         $build | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $logs 'build.json') -Encoding UTF8
         Assert-Rejected { & $assembler -BuildRoot $testRoot -ValidateToolchainOnly -VCRuntimeRoot $crtRoot } "Unsupported toolchain $name"
+    }
+    foreach ($pair in @(
+        @('vcCompilerFileVersion', '19.44.35230.0'),
+        @('vcLinkerFileVersion', '14.44.35230.0'),
+        @('rustCommit', ('0' * 40)))) {
+        $build.toolchain = New-SupportedReceipt
+        $build.toolchain.($pair[0]) = $pair[1]
+        $build | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $logs 'build.json') -Encoding UTF8
+        Assert-Rejected { & $assembler -BuildRoot $testRoot -ValidateToolchainOnly -VCRuntimeRoot $crtRoot } "Unsupported toolchain $($pair[0])"
     }
 } finally {
     $resolved = [IO.Path]::GetFullPath($testRoot).TrimEnd('\')
