@@ -8,16 +8,15 @@ param(
     [ValidateRange(1, 64)][int]$Jobs = 4,
     # Remap native source paths before distributing the resulting binaries.
     [switch]$PublicRelease,
-    # Retained so obsolete private-harness requests fail explicitly.
+    [switch]$PluginTests,
+    # Also build the backend's standalone native fixtures into
+    # <BuildRoot>\quickshell-tests; they are never installed or staged.
     [switch]$Tests,
     # Offscreen fixtures only. Production payloads always bundle Glazier.
     [switch]$SkipGlazier
 )
 
 $ErrorActionPreference = 'Stop'
-if ($Tests) {
-    throw 'Private test sources are not shipped. Build production without -Tests; use Test-Smoke.ps1 for the public smoke gate.'
-}
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
 if (-not $BuildRoot) { $BuildRoot = Join-Path $repoRoot 'windows\.local\build' }
 $BuildRoot = [IO.Path]::GetFullPath($BuildRoot)
@@ -147,6 +146,16 @@ Invoke-BuildCommand 'configure-backend' (@('-S', "$repoRoot\windows\deps\quicksh
     '-DQS_AUTOSTART_DESCRIPTION=Caelestia compatibility prototype'))
 Invoke-BuildCommand 'build-backend' @('--build', "$BuildRoot\quickshell", '--target', 'quickshell', '--parallel', "$Jobs")
 Invoke-BuildCommand 'build-brightness-probe' @('--build', "$BuildRoot\quickshell", '--target', 'brightness-probe', '--parallel', "$Jobs")
+if ($Tests) {
+    # Run with: ctest --test-dir <BuildRoot>\quickshell-tests -L '^portable$'
+    # (see windows/deps/quickshell/src/windows/test/README.md for the tiers).
+    $fixtureSource = "$repoRoot\windows\deps\quickshell\src\windows\test"
+    if (-not (Test-Path -LiteralPath "$fixtureSource\CMakeLists.txt")) {
+        throw 'The pinned backend has no native fixture project; update windows/deps/quickshell.'
+    }
+    Invoke-BuildCommand 'configure-backend-tests' (@('-S', $fixtureSource, '-B', "$BuildRoot\quickshell-tests") + $common)
+    Invoke-BuildCommand 'build-backend-tests' @('--build', "$BuildRoot\quickshell-tests", '--parallel', "$Jobs")
+}
 Invoke-BuildCommand 'configure-m3shapes' (@('-S', $m3shapesPath, '-B', "$BuildRoot\m3shapes") + $common +
     @('-DINSTALL_QMLDIR=qml', "-DCMAKE_INSTALL_PREFIX=$installRoot", '-DM3SHAPES_BUILD_EXAMPLES=OFF'))
 Invoke-BuildCommand 'build-m3shapes' @('--build', "$BuildRoot\m3shapes", '--parallel', "$Jobs")
@@ -227,7 +236,7 @@ $fullSourceRevision = if ($fullRevExit -eq 0 -and $rawFullRevision) { "$rawFullR
 Invoke-BuildCommand 'configure-plugins' (@('-S', $repoRoot, '-B', "$BuildRoot\caelestia") + $common +
     @('-DCAELESTIA_PORTABLE_UI=ON', '-DENABLE_MODULES=plugin', '-DINSTALL_QMLDIR=qml',
     "-DCMAKE_INSTALL_PREFIX=$installRoot", "-DVERSION=$sourceVersion", "-DGIT_REVISION=$sourceRevision",
-    '-DCAELESTIA_WINDOWS_TESTS=OFF'))
+    "-DCAELESTIA_WINDOWS_TESTS=$(if ($PluginTests) { 'ON' } else { 'OFF' })"))
 Invoke-BuildCommand 'build-plugins' @('--build', "$BuildRoot\caelestia", '--parallel', "$Jobs")
 Invoke-BuildCommand 'install-plugins' @('--install', "$BuildRoot\caelestia")
 
@@ -240,6 +249,8 @@ Invoke-BuildCommand 'install-plugins' @('--install', "$BuildRoot\caelestia")
     glazierSha256 = $glazierSha256
     glazierBundled = -not $SkipGlazier
     publicRelease = [bool]$PublicRelease
+    pluginTests = [bool]$PluginTests
+    backendTests = [bool]$Tests
     nativeVersion = $sourceVersion
     windowsSdkVersion = $env:WindowsSDKVersion
     msvcToolsVersion = $env:VCToolsVersion

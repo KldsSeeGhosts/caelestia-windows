@@ -334,6 +334,10 @@ function New-CaelestiaShortcut([string]$Path, [string]$PowerShellPath, [string]$
     $shortcut.Save()
 }
 
+function Get-CaelestiaAutostartKey {
+    return 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+}
+
 # The Start-menu shortcut and the optional HKCU Run entry are part of the
 # activation transaction: a failure here must not leave a selector claiming a
 # replacement the user was told failed, or a half-written integration behind.
@@ -358,7 +362,7 @@ function Complete-CaelestiaInstallIntegration {
     }
     $powershell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
     $arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + (Join-Path $Prefix 'Start-Caelestia.ps1') + '"'
-    $run = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+    $run = Get-CaelestiaAutostartKey
     $backup = $null
     $runExisted = $false
     $runValue = ''

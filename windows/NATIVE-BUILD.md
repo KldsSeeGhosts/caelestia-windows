@@ -102,10 +102,13 @@ encoded environment is restored after Cargo exits. This mode selects explicit
 compiler flags for the public build; final package privacy checks are still
 required, including inspection of binary strings. Never distribute private
 build logs, profiles or debug-symbol files as release assets.
-Private test sources and the combined developer preview are not shipped.
-`-Tests`, `CAELESTIA_WINDOWS_TESTS=ON` and preview requests fail explicitly
-instead of silently skipping requested checks. Production builds use the
-default test-disabled configuration.
+Production builds use the default test-disabled configuration, and no test
+binary is installed or staged. `-PluginTests` builds this repository's
+native plugin fixtures. `-Tests` also builds the backend's standalone native
+fixtures into `<BuildRoot>\quickshell-tests`; run them with
+`ctest --test-dir <BuildRoot>\quickshell-tests -L '^portable$'` (tiers are
+described in `windows/deps/quickshell/src/windows/test/README.md`). The
+combined developer preview is not shipped.
 
 The build also produces `quickshell/brightness-probe.exe`. It uses the native
 brightness controller without starting the shell. Set Qt's bin directory in

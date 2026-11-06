@@ -1,0 +1,671 @@
+pragma ComponentBehavior: Bound
+
+import QtQuick
+
+// Standalone fixture for windows/services/tiling/TilingService.qml. Imports
+// no Quickshell, no native Tiling singleton, no configuration and no external
+// state; reads no environment or hardware; never constructs Tiling.qml or
+// NativeTilingBackend.qml. The fakes mirror the two backend shapes the
+// wrapper can sit on: the fork branch with the allowlist and telemetry
+// members, and the pinned build without them. The injected clock keeps the
+// ten-second toast window deterministic without sleeping. Intended runner:
+//   powershell -NoProfile -File windows/scripts/Test-TilingService.ps1 -QtPrefix <Windows Qt prefix>
+QtObject {
+    id: test
+
+    // Fork shape (windows/m3-windows-stack cd170acf): allowlist plus
+    // telemetry members and both signals.
+    component FakeTilingBackend: QtObject {
+        property bool initialized: true
+        property bool enabled: false
+        property bool supportsIncluded: true
+        property bool supportsScopedRules: true
+        property int gapsInApplied: 0
+        property int gapsOutApplied: 0
+        property int singleWindowGapsOutApplied: 0
+        property bool borderColoursApplied: true
+        property string lastError: ""
+        property int managedCount: 0
+        property int failedCount: 0
+        property var excludedApplied: null
+        property var includedApplied: null
+        property int enableRequests: 0
+        property int disableRequests: 0
+        // Every write the service made, in order, so a scenario can prove which
+        // fields a reconfigure touched and that nothing stopped the session.
+        property var calls: []
+        // Mirrors Tiling.includedRuleCount: -1 until options are applied, then
+        // the entries that survive validation. The real backend rejects an
+        // unterminated character class, which `[` stands in for here.
+        property int includedRuleCount: -1
+
+        function record(name, value): void {
+            calls.push({name: name, value: value});
+        }
+        function clearCalls(): void {
+            calls = [];
+            enableRequests = 0;
+            disableRequests = 0;
+        }
+
+        function applyOptions(excluded, included, gapsIn, gapsOut,
+                singleWindowGapsOut, borderColours): void {
+            record("applyOptions", null);
+            excludedApplied = excluded;
+            includedApplied = included;
+            includedRuleCount = included.filter(pattern => pattern.indexOf("[") < 0).length;
+            gapsInApplied = gapsIn;
+            gapsOutApplied = gapsOut;
+            singleWindowGapsOutApplied = singleWindowGapsOut;
+            borderColoursApplied = borderColours;
+        }
+        // Incremental setters, mirroring the wrapper's per-field writes.
+        function setExcluded(excluded): void {
+            record("setExcluded", excluded);
+            excludedApplied = excluded;
+        }
+        function setIncluded(included): void {
+            record("setIncluded", included);
+            includedApplied = included;
+            includedRuleCount = included.filter(pattern => pattern.indexOf("[") < 0).length;
+        }
+        function setGapsIn(gaps): void {
+            record("setGapsIn", gaps);
+            gapsInApplied = gaps;
+        }
+        function setGapsOut(gaps): void {
+            record("setGapsOut", gaps);
+            gapsOutApplied = gaps;
+        }
+        function setSingleWindowGapsOut(gaps): void {
+            record("setSingleWindowGapsOut", gaps);
+            singleWindowGapsOutApplied = gaps;
+        }
+        function setBorderColours(enabled): void {
+            record("setBorderColours", enabled);
+            borderColoursApplied = enabled;
+        }
+        function requestEnable(): void {
+            record("requestEnable", null);
+            enableRequests++;
+        }
+        function requestDisable(): void {
+            record("requestDisable", null);
+            disableRequests++;
+            enabled = false;
+        }
+    }
+
+    // Pinned-build shape (14010429): no allowlist and no telemetry. The
+    // wrapper over this pin drops the included list and never reports
+    // counts, errors or signals.
+    component LegacyTilingBackend: QtObject {
+        property bool initialized: true
+        property bool enabled: false
+        property var excludedApplied: null
+        property var includedApplied: null
+        property int enableRequests: 0
+
+        function applyOptions(excluded, included): void {
+            excludedApplied = excluded;
+            includedApplied = null;
+        }
+        function requestEnable(): void {
+            enableRequests++;
+        }
+    }
+
+    readonly property TilingService service: TilingService {}
+
+    // One fake per scenario so enable/request bookkeeping stays isolated.
+    readonly property FakeTilingBackend offBackend: FakeTilingBackend {}
+    readonly property FakeTilingBackend observeBackend: FakeTilingBackend {}
+    readonly property FakeTilingBackend noListBackend: FakeTilingBackend {}
+    readonly property FakeTilingBackend invalidListBackend: FakeTilingBackend {}
+    readonly property LegacyTilingBackend legacyBackend: LegacyTilingBackend {}
+    readonly property FakeTilingBackend smokeBackend: FakeTilingBackend {}
+    readonly property FakeTilingBackend liveBackend: FakeTilingBackend {}
+    readonly property FakeTilingBackend refusedBackend: FakeTilingBackend {}
+    readonly property FakeTilingBackend unknownBackend: FakeTilingBackend {}
+    readonly property FakeTilingBackend observeOnly: FakeTilingBackend {}
+    readonly property FakeTilingBackend failingBackend: FakeTilingBackend {}
+    readonly property FakeTilingBackend burstBackend: FakeTilingBackend {}
+    // F6: a live session that must survive option edits.
+    readonly property FakeTilingBackend reconfigBackend: FakeTilingBackend {}
+
+    // Startup ordering as the facade sees it: Tiling.qml binds its Loader to
+    // nativeRequested, so the backend attaches synchronously inside
+    // configure() as soon as the mode leaves off. The toast bridge is
+    // connected before configure(), like the facade.
+    readonly property FakeTilingBackend startupBackend: FakeTilingBackend {}
+    property var startupToasts: []
+    readonly property TilingService startupService: TilingService {
+        onNativeRequestedChanged: backend = nativeRequested ? test.startupBackend : null
+        onToastDecision: (title, message, icon, type) => {
+            test.startupToasts.push({title: title, message: message, icon: icon, type: type});
+        }
+    }
+
+    property double currentTime: 100000
+    property var toasts: []
+
+    property int assertions: 0
+
+    function check(condition, message): void {
+        assertions++;
+        if (!condition)
+            throw new Error(message);
+    }
+
+    function checkEqual(actual, expected, message): void {
+        assertions++;
+        if (actual !== expected)
+            throw new Error(message + " (got " + JSON.stringify(actual)
+                + ", expected " + JSON.stringify(expected) + ")");
+    }
+
+    function checkJson(actual, expected, message): void {
+        assertions++;
+        if (JSON.stringify(actual) !== JSON.stringify(expected))
+            throw new Error(message + " (got " + JSON.stringify(actual)
+                + ", expected " + JSON.stringify(expected) + ")");
+    }
+
+    // QtObject has no default property, so the recorder is a property value.
+    readonly property Connections _toastRecorder: Connections {
+        target: test.service
+
+        function onToastDecision(title, message, icon, type): void {
+            test.toasts.push({title: title, message: message, icon: icon, type: type});
+        }
+    }
+
+    function resetToasts(): void {
+        toasts = [];
+    }
+
+    function run(): void {
+        service.clock = () => test.currentTime;
+
+        // --- Pattern list parsing -------------------------------------------
+        checkJson(service.parsePatternList(""), [], "empty text");
+        checkJson(service.parsePatternList("a"), ["a"], "single entry");
+        checkEqual(service.parsePatternList("a;b").length, 2, "two entries");
+        checkJson(service.parsePatternList(" a ; b "), ["a", "b"], "trimmed entries");
+        checkJson(service.parsePatternList("a;;b;"), ["a", "b"], "empty entries dropped");
+        checkJson(service.parsePatternList(";"), [], "separator only");
+        checkJson(service.parsePatternList("   "), [], "whitespace only");
+        checkJson(service.parsePatternList(null), [], "null text");
+        checkJson(service.parsePatternList(undefined), [], "undefined text");
+        checkJson(service.parsePatternList(5), [], "non-string text");
+        checkJson(service.parsePatternList("a*;title:Foo Bar"),
+            ["a*", "title:Foo Bar"], "wildcards and title rules preserved");
+        checkJson(service.parsePatternList(" title:X ; "), ["title:X"],
+            "edges trimmed without touching interiors");
+        // The backend drops a title rule with nothing after the prefix and
+        // reads an empty allowlist as unrestricted, so these are not rules.
+        checkJson(service.parsePatternList("title:"), [], "bare title prefix dropped");
+        checkJson(service.parsePatternList(" TITLE:   ;"), [], "blank title rule dropped");
+        checkJson(service.parsePatternList("title:;firefox"), ["firefox"],
+            "blank title rule dropped beside a real rule");
+
+        // --- Startup through a Loader-shaped attach --------------------------
+        startupService.configure("interactive", "org.mozilla.firefox", "explorer", false);
+        check(startupService.backend === startupBackend, "startup attached during configure");
+        checkJson(startupBackend.includedApplied, ["org.mozilla.firefox"],
+            "startup attach saw the final allowlist");
+        checkJson(startupBackend.excludedApplied, ["explorer"],
+            "startup attach saw the final excluded list");
+        checkEqual(startupBackend.enableRequests, 1, "valid interactive startup requested enabling");
+        checkEqual(startupToasts.length, 0, "valid startup decided no toast");
+
+        startupService.configure("off", "", "", false);
+        check(startupService.backend === null, "off detached the startup backend");
+        startupBackend.enableRequests = 0;
+        startupService.configure("interactive", "title:", "", false);
+        checkEqual(startupService.status, "refused", "a blank title allowlist is refused");
+        checkEqual(startupBackend.enableRequests, 0, "a blank title allowlist never enables");
+        checkEqual(startupToasts.length, 1, "startup policy refusal decided one toast");
+        check(startupToasts[0].title.length > 0, "policy refusal toast title");
+        check(startupToasts[0].message.length > 0, "included-empty toast message");
+        checkEqual(startupToasts[0].icon, "view_quilt", "policy refusal toast icon");
+        checkEqual(startupToasts[0].type, 3, "policy refusal toast is an error");
+
+        // --- Off mode ---------------------------------------------------------
+        service.configure("off", "firefox*", "explorer", false);
+        checkEqual(service.mode, "off", "off mode");
+        checkEqual(service.requestedMode, "off", "off requested");
+        checkEqual(service.status, "disabled", "off status");
+        check(service.reason.length > 0, "off reason");
+        check(!service.nativeRequested, "off never requests the native wrapper");
+        check(!service.backendLoaded, "off has no backend");
+        checkEqual(service.includedPatterns.length, 1,
+            "off still reports the parsed included list for the status line");
+        checkEqual(service.excludedPatterns.length, 1, "off parsed the excluded list");
+
+        // Even a wrongly attached backend is never touched in off mode.
+        service.backend = offBackend;
+        checkEqual(service.status, "disabled", "off ignores an attached backend");
+        check(offBackend.excludedApplied === null, "off applied no options");
+        check(offBackend.includedApplied === null, "off applied no allowlist");
+        checkEqual(offBackend.enableRequests, 0, "off never requested enabling");
+        service.backend = null;
+
+        // --- Invalid mode values ----------------------------------------------
+        service.configure("full", "", "", false);
+        checkEqual(service.mode, "off", "unknown mode word falls back to off");
+        service.configure(null, "", "", false);
+        checkEqual(service.mode, "off", "null mode falls back to off");
+        service.configure(7, "", "", false);
+        checkEqual(service.mode, "off", "non-string mode falls back to off");
+
+        // --- Observe mode ------------------------------------------------------
+        service.configure("observe", "", "explorer;ksg-shell", false);
+        checkEqual(service.mode, "observe", "observe mode");
+        checkEqual(service.requestedMode, "observe", "observe requested");
+        check(service.nativeRequested, "observe requests the native wrapper");
+        checkEqual(service.status, "observing", "observe status before backend");
+        check(service.reason.length > 0, "observe reason");
+
+        service.backend = observeBackend;
+        check(service.backendLoaded, "observe attached the backend");
+        checkJson(observeBackend.excludedApplied, ["explorer", "ksg-shell"],
+            "observe applied the excluded list");
+        checkJson(observeBackend.includedApplied, [], "observe applied an empty allowlist");
+        check(!observeBackend.enabled, "observe keeps the tiler disabled");
+        checkEqual(observeBackend.enableRequests, 0, "observe never requested enabling");
+        checkEqual(service.status, "observing", "observe status after backend");
+        check(!service.backendEnabled, "observe backendEnabled false");
+        check(service.backendIncludedSupported, "fork backend supports the allowlist");
+
+        // Telemetry projection through the fork shape.
+        observeBackend.managedCount = 7;
+        checkEqual(service.managedCount, 7, "managedCount projected");
+        observeBackend.failedCount = 3;
+        checkEqual(service.failedCount, 3, "failedCount projected");
+        observeBackend.lastError = "boom";
+        checkEqual(service.lastError, "boom", "lastError projected");
+
+        // Reconfiguring reapplies the options to the attached backend.
+        service.configure("observe", "org.mozilla.firefox;title:Notes*", "explorer", false);
+        checkJson(observeBackend.includedApplied,
+            ["org.mozilla.firefox", "title:Notes*"], "reconfigured allowlist applied");
+        checkEqual(observeBackend.enableRequests, 0, "observe still never enables");
+
+        // --- Interactive without an allowlist -----------------------------------
+        service.backend = null;
+        service.configure("interactive", "", "", false);
+        checkEqual(service.mode, "interactive", "interactive mode");
+        check(service.nativeRequested, "interactive requests the native wrapper");
+        service.backend = noListBackend;
+        checkEqual(service.status, "refused", "interactive without included is refused");
+        check(service.reason.length > 0, "included-empty refusal reason");
+        checkEqual(noListBackend.enableRequests, 0, "empty allowlist never enables");
+        check(!noListBackend.enabled, "empty allowlist leaves the tiler disabled");
+        checkEqual(toasts.length, 1, "included-empty refusal decided one toast");
+        check(toasts[0].message.length > 0, "included-empty refusal toast message");
+        checkEqual(toasts[0].type, 3, "included-empty refusal toast is an error");
+        resetToasts();
+
+        // --- Interactive with an allowlist the backend rejected entirely -----------
+        // The raw list is non-empty, but validation left nothing: the backend
+        // would match no window, and the gate must not read the length alone.
+        service.backend = null;
+        service.configure("interactive", "title:[", "", false);
+        check(service.includedPatterns.length === 1, "malformed entry survives the parse");
+        service.backend = invalidListBackend;
+        checkEqual(invalidListBackend.includedRuleCount, 0, "backend validated nothing");
+        checkEqual(service.status, "refused", "all-invalid allowlist is refused");
+        check(service.reason.length > 0, "included-invalid refusal reason");
+        checkEqual(invalidListBackend.enableRequests, 0, "all-invalid allowlist never enables");
+        check(!invalidListBackend.enabled, "all-invalid allowlist leaves the tiler disabled");
+        checkEqual(toasts.length, 1, "included-invalid refusal decided one toast");
+        check(toasts[0].message.length > 0, "included-invalid refusal toast message");
+        checkEqual(toasts[0].type, 3, "included-invalid refusal toast is an error");
+        resetToasts();
+
+        // One valid entry is enough for the same backend to enable.
+        service.configure("interactive", "title:[;exe:editor.exe", "", false);
+        checkEqual(invalidListBackend.includedRuleCount, 1, "one entry validated");
+        checkEqual(invalidListBackend.enableRequests, 1, "a usable allowlist enables");
+        checkEqual(toasts.length, 0, "a usable allowlist decides no refusal toast");
+        resetToasts();
+
+        // --- Interactive without backend allowlist support -----------------------
+        service.configure("interactive", "fixture*", "explorer", false);
+        service.backend = legacyBackend;
+        checkEqual(service.status, "refused", "unsupported allowlist is refused");
+        check(service.reason.length > 0, "included-unsupported refusal reason");
+        checkEqual(legacyBackend.enableRequests, 0, "legacy backend never enables");
+        checkEqual(toasts.length, 1, "included-unsupported refusal decided one toast");
+        check(toasts[0].message.length > 0, "included-unsupported refusal toast message");
+        checkEqual(toasts[0].type, 3, "included-unsupported refusal toast is an error");
+        resetToasts();
+        checkJson(legacyBackend.excludedApplied, ["explorer"],
+            "legacy backend still receives the excluded list");
+        check(legacyBackend.includedApplied === null, "legacy backend drops the allowlist");
+        checkEqual(service.managedCount, 0, "legacy managedCount reports zero");
+        checkEqual(service.failedCount, 0, "legacy failedCount reports zero");
+        checkEqual(service.lastError, "", "legacy lastError reports empty");
+        check(!service.backendIncludedSupported, "legacy backendIncludedSupported false");
+
+        // --- Smoke forces interactive down to observe ------------------------------
+        service.configure("interactive", "fixture*", "", true);
+        checkEqual(service.mode, "observe", "smoke downgraded interactive to observe");
+        checkEqual(service.requestedMode, "interactive", "smoke kept the requested mode");
+        check(service.smoke, "smoke flag recorded");
+        check(service.nativeRequested, "smoke observe still constructs the wrapper");
+        service.backend = smokeBackend;
+        checkEqual(smokeBackend.enableRequests, 0, "smoke never enables");
+        checkEqual(service.status, "observing", "smoke status is observing");
+        check(service.reason.length > 0, "smoke downgrade reason");
+
+        // --- Permitted interactive -------------------------------------------------
+        service.configure("interactive", "org.mozilla.firefox;title:Notes*", "explorer", false);
+        checkEqual(service.status, "observing",
+            "permitted interactive waits for the backend");
+        service.backend = liveBackend;
+        checkEqual(liveBackend.enableRequests, 1, "permitted interactive requested enabling");
+        checkJson(liveBackend.includedApplied, ["org.mozilla.firefox", "title:Notes*"],
+            "permitted interactive applied the allowlist");
+        checkEqual(service.status, "observing", "still observing before the backend enables");
+        liveBackend.enabled = true;
+        check(service.backendEnabled, "backendEnabled projected");
+        checkEqual(service.status, "tiling", "enabled backend reports tiling");
+        check(service.reason.length > 0, "tiling reason");
+        checkEqual(service.toastCount, 0, "no toast decided without a failure");
+
+        // --- Wrapper load failure ----------------------------------------------------
+        service.backendError = "The Windows tiling backend component failed to load.";
+        checkEqual(service.status, "refused", "backend error is a refusal");
+        checkEqual(service.reason, service.backendError, "backend error is forwarded");
+        service.backendError = "";
+        checkEqual(service.status, "tiling", "cleared backend error restores tiling");
+
+        // --- Enable refusal toasts ------------------------------------------------
+        resetToasts();
+        liveBackend.enabled = false;
+        service.handleEnableRefused("tiler-mutex-held");
+        checkEqual(service.status, "refused", "mutex refusal status");
+        check(service.reason.length > 0, "mutex refusal reason");
+        const firstRefusal = service.reason;
+        checkEqual(toasts.length, 1, "mutex refusal decided one toast");
+        check(toasts[0].title.length > 0, "enable-refused toast title");
+        check(toasts[0].message.length > 0, "mutex toast message");
+        checkEqual(toasts[0].icon, "view_quilt", "enable-refused toast icon");
+        checkEqual(toasts[0].type, 3, "enable-refused toast is an error");
+        service.handleEnableRefused("no-screen");
+        checkEqual(toasts.length, 1, "a second refusal adds no toast");
+        checkEqual(service.reason, firstRefusal, "the first refusal reason is kept");
+
+        service.configure("interactive", "fixture*", "", false);
+        service.backend = refusedBackend;
+        resetToasts();
+        service.handleEnableRefused("no-screen");
+        checkEqual(toasts.length, 1, "no-screen refusal decided one toast");
+        check(toasts[0].message.length > 0, "no-screen toast message");
+        checkEqual(toasts[0].type, 3, "no-screen toast is an error");
+        check(service.reason.length > 0, "no-screen refusal reason");
+
+        service.configure("interactive", "fixture*", "", false);
+        service.backend = unknownBackend;
+        resetToasts();
+        service.handleEnableRefused("bizarre");
+        checkEqual(toasts.length, 1, "unknown refusal decided one toast");
+        check(toasts[0].message.length > 0, "unknown refusal message fallback");
+
+        // Observe mode ignores enable refusals entirely.
+        service.configure("observe", "", "", false);
+        service.backend = observeOnly;
+        resetToasts();
+        service.handleEnableRefused("tiler-mutex-held");
+        checkEqual(toasts.length, 0, "observe never explains a refusal");
+        checkEqual(service.status, "observing", "observe ignores enable refusal");
+
+        // --- Failure records and toast copy ------------------------------------
+        service.configure("interactive", "org.mozilla.firefox", "", false);
+        service.backend = failingBackend;
+        failingBackend.enabled = true;
+        service.resolveToplevel = address => {
+            if (address === "2a1b")
+                return {appClass: "org.mozilla.firefox", title: "Mozilla Firefox"};
+            if (address === "3c4d")
+                return {appClass: "", title: "Sticky Notes"};
+            return null;
+        };
+        resetToasts();
+        currentTime = 100000;
+
+        service.handleWindowTilingFailed("2a1b", "min-size");
+        checkEqual(service.recentFailureCount, 1, "failure recorded");
+        checkEqual(service.recentFailures[0].address, "2a1b", "recorded address");
+        checkEqual(service.recentFailures[0].appClass, "org.mozilla.firefox",
+            "recorded app class");
+        checkEqual(service.recentFailures[0].title, "Mozilla Firefox", "recorded title");
+        checkEqual(service.recentFailures[0].reason, "min-size", "recorded reason");
+        check(service.recentFailures[0].time === 100000, "recorded injected time");
+        checkEqual(toasts.length, 1, "min-size decided one toast");
+        check(toasts[0].title.indexOf("org.mozilla.firefox") >= 0, "app class is preferred in the title");
+        check(toasts[0].message.length > 0, "min-size message");
+        checkEqual(toasts[0].icon, "view_quilt", "failure toast icon");
+        checkEqual(toasts[0].type, 2, "failure toast is a warning");
+
+        currentTime = 111000;
+        service.handleWindowTilingFailed("3c4d", "off-target");
+        check(toasts[1].title.indexOf("Sticky Notes") >= 0, "title used when no app class resolves");
+        check(toasts[1].message.length > 0, "off-target message");
+
+        currentTime = 122000;
+        service.handleWindowTilingFailed("5e6f", "correction-limit");
+        check(toasts[2].title.length > 0, "generic wording without resolution");
+        check(toasts[2].message.length > 0, "correction-limit message");
+
+        currentTime = 133000;
+        service.handleWindowTilingFailed("5e6f", "unresponsive");
+        checkEqual(toasts.length, 4, "same address with a new reason toasts again");
+        check(toasts[3].message.length > 0, "unresponsive message");
+
+        currentTime = 144000;
+        service.handleWindowTilingFailed("9a0b", "bizarre");
+        check(toasts[4].message.length > 0, "unknown reason message fallback");
+        checkEqual(service.recentFailureCount, 5, "unknown reason still recorded");
+
+        // Per address+reason dedupe: the record still grows, the toast does not.
+        service.handleWindowTilingFailed("2a1b", "min-size");
+        checkEqual(toasts.length, 5, "duplicate address+reason adds no toast");
+        checkEqual(service.recentFailureCount, 6, "duplicate failure still recorded");
+
+        // --- Recent-failure list cap ------------------------------------------
+        for (let i = 0; i < 25; i++)
+            service.handleWindowTilingFailed("cap" + i, "min-size");
+        checkEqual(service.recentFailureCount, 20, "failure list capped at 20");
+        checkEqual(service.recentFailures[0].address, "cap5", "oldest entries dropped");
+        checkEqual(service.recentFailures[19].address, "cap24", "newest entry kept");
+        check(!service.recentFailures.some(e => e.address === "2a1b"),
+            "dropped entries are gone");
+        // The frozen clock holds 9a0b's toast in the window: cap0 takes the
+        // second slot, cap1 the third as the summary, cap2..cap24 add nothing.
+        checkEqual(toasts.length, 7, "cap loop toasts are burst limited");
+        check(toasts[6].title.length > 0, "cap loop produced the collapse toast");
+
+        // --- Burst limit and collapse toast --------------------------------------
+        currentTime = 200000;
+        service.configure("interactive", "fixture*", "", false);
+        service.backend = burstBackend;
+        burstBackend.enabled = true;
+        resetToasts();
+        for (const address of ["a1", "a2", "a3", "a4"])
+            service.handleWindowTilingFailed(address, "min-size");
+        checkEqual(toasts.length, 3, "the summary counts toward the three-toast budget");
+        check(toasts[1].title.length > 0, "first two toast individually");
+        check(toasts[2].title.length > 0, "collapse title");
+        checkEqual(toasts[2].message, "", "collapse message");
+        checkEqual(toasts[2].icon, "view_quilt", "collapse icon");
+        checkEqual(toasts[2].type, 2, "collapse toast is a warning");
+
+        service.handleWindowTilingFailed("a5", "min-size");
+        checkEqual(toasts.length, 3, "nothing more inside the window");
+        checkEqual(service.recentFailures[service.recentFailureCount - 1].address, "a5",
+            "suppressed failures are still recorded");
+
+        currentTime = 210001;
+        service.handleWindowTilingFailed("a6", "min-size");
+        checkEqual(toasts.length, 4, "budget resets after the window passes");
+        check(toasts[3].title.length > 0, "individual toasts resume");
+
+        for (const address of ["a7", "a8", "a9"])
+            service.handleWindowTilingFailed(address, "min-size");
+        check(toasts[5].title.length > 0, "a second window collapses again");
+        checkEqual(toasts.length, 6, "exactly one collapse per window");
+
+        // --- Enabled-session reset -------------------------------------------------
+        burstBackend.enabled = false;
+        burstBackend.enabled = true;
+        resetToasts();
+        service.handleWindowTilingFailed("a1", "min-size");
+        check(toasts[0].title.length > 0, "a new enabled session renotifies the same address+reason");
+
+        // --- Localization hook ------------------------------------------------------
+        service.tr = text => "T:" + text;
+        service.handleWindowTilingFailed("b1", "min-size");
+        check(toasts[1].title.indexOf("T:") === 0, "titles pass through the translate hook");
+        check(toasts[1].message.indexOf("T:") === 0, "messages pass through the translate hook");
+        service.tr = text => text;
+        // Past the burst window, so b2 gets an individual toast, not the summary.
+        currentTime = 230000;
+        service.handleWindowTilingFailed("b2", "min-size");
+        check(toasts[2].title.length > 0 && toasts[2].title.indexOf("T:") !== 0,
+            "identity translate removes the injected prefix");
+        checkEqual(service.toastCount, toasts.length,
+            "toastCount matches the emitted decisions");
+
+        // Live config uses the same enable gate and can always disable.
+        service.backend = null;
+        resetToasts();
+        const settings = {
+            enabled: true, mode: "interactive", gapsIn: 10, gapsOut: 10,
+            include: ["exe:editor.exe", "class:Chrome*"],
+            exclude: ["title:Secret*"], float: ["title:Dialog*"],
+            monitors: {"DISPLAY2": false, "DISPLAY1": true}
+        };
+        service.configureProfile(settings, {}, false);
+        service.backend = liveBackend;
+        checkEqual(liveBackend.gapsInApplied, 10, "config inner gap applied");
+        checkEqual(liveBackend.gapsOutApplied, 10, "config outer gap applied");
+        checkJson(liveBackend.excludedApplied,
+            ["title:Secret*", "title:Dialog*", "screen:DISPLAY2"], "float and monitor precedence");
+        service.handleEnableRefused("tiler-mutex-held");
+        checkEqual(service.status, "refused", "config enable uses mutex refusal");
+        checkEqual(toasts.length, 1, "config mutex refusal has existing toast");
+        service.configureProfile(settings, {mode: "observe", included: ""}, false);
+        checkEqual(service.mode, "observe", "env mode overrides config");
+        checkEqual(service.includedPatterns.length, 0, "explicit empty env overrides config list");
+        checkEqual(service.gapsIn, 10, "env keeps config gaps");
+        service.configureProfile(settings, {}, true);
+        checkEqual(service.mode, "observe", "config interactive downgraded in smoke");
+        liveBackend.enabled = true;
+        service.configureProfile({enabled: false}, {}, false);
+        check(!liveBackend.enabled, "live disable stops native session before loader unload");
+        checkEqual(service.mode, "off", "config disabled");
+        checkEqual(service.gapsOut, 10, "gap defaults");
+        service.configureProfile({enabled: true, gapsIn: -1, gapsOut: 500}, {}, false);
+        checkEqual(service.gapsIn, 0, "gap lower clamp");
+        checkEqual(service.gapsOut, 100, "gap upper clamp");
+        checkEqual(service.mode, "observe", "enabled defaults to observe");
+        service.configureProfile({enabled: true, gapsIn: "bad"}, {}, false);
+        checkEqual(service.gapsIn, 5, "invalid gap fallback");
+        liveBackend.supportsScopedRules = false;
+        service.configureProfile(settings, {}, false);
+        checkEqual(service.status, "refused", "old backend refuses scoped rules");
+        check(service.reason.length > 0, "scoped rule refusal explanation");
+        checkJson(service.parsePatternList("exe:;class: ;screen:;title:;exe:a"),
+            ["exe:a"], "empty typed rules never authorize unrestricted tiling");
+
+        // --- F6: option edits keep the running session ------------------------
+        // The profile watcher funnels gap, border and rule edits through
+        // configure(). Stopping the tiler there restores every frame and rebuilds
+        // from scratch, losing explicit floats, split ratios and the tree, so a
+        // live session must take the backend's incremental setters instead.
+        service.backend = null;
+        service.configure("interactive", "org.mozilla.firefox", "explorer", false,
+            5, 10, 20, true);
+        service.backend = reconfigBackend;
+        reconfigBackend.enabled = true;
+        checkEqual(service.status, "tiling", "live scenario is tiling before the edit");
+        const callNames = () => reconfigBackend.calls.map(call => call.name);
+
+        // A gap change writes only the gap setter.
+        reconfigBackend.clearCalls();
+        service.configure("interactive", "org.mozilla.firefox", "explorer", false,
+            12, 10, 20, true);
+        checkJson(callNames(), ["setGapsIn"], "gap edit calls only the gap setter");
+        checkEqual(reconfigBackend.calls[0].value, 12, "gap edit wrote the new inner gap");
+        checkEqual(reconfigBackend.disableRequests, 0, "gap edit never stops the session");
+        check(!reconfigBackend.calls.some(call => call.name === "applyOptions"),
+            "gap edit skips the full option apply");
+        checkEqual(service.status, "tiling", "gap edit keeps tiling");
+
+        // A border-colour change restores no geometry: only stop() does that, and
+        // requestDisable() is the only path into it.
+        reconfigBackend.clearCalls();
+        service.configure("interactive", "org.mozilla.firefox", "explorer", false,
+            12, 10, 20, false);
+        checkJson(callNames(), ["setBorderColours"], "border edit calls only the border setter");
+        checkEqual(reconfigBackend.calls[0].value, false, "border edit wrote the new setting");
+        checkEqual(reconfigBackend.disableRequests, 0, "border edit performs no geometry restore");
+        checkEqual(reconfigBackend.gapsInApplied, 12, "border edit rewrote no gap");
+
+        // An identical config is a no-op, twice over.
+        reconfigBackend.clearCalls();
+        for (let i = 0; i < 2; i++)
+            service.configure("interactive", "org.mozilla.firefox", "explorer", false,
+                12, 10, 20, false);
+        checkEqual(reconfigBackend.calls.length, 0, "identical config makes zero backend calls");
+        checkEqual(reconfigBackend.disableRequests, 0, "identical config does not stop the session");
+
+        // An allowlist and denylist edit apply together, in one batch, without
+        // stopping or re-enabling the session.
+        reconfigBackend.clearCalls();
+        service.configure("interactive", "org.mozilla.firefox;title:Inbox*",
+            "explorer;class:Taskmgr", false, 12, 10, 20, false);
+        checkJson(callNames(), ["setExcluded", "setIncluded"],
+            "rule edit writes both lists through the rule setters");
+        checkJson(reconfigBackend.calls[0].value, ["explorer", "class:Taskmgr"],
+            "rule edit wrote the new denylist");
+        checkJson(reconfigBackend.calls[1].value,
+            ["org.mozilla.firefox", "title:Inbox*"], "rule edit wrote the new allowlist");
+        checkEqual(reconfigBackend.disableRequests, 0, "rule edit never stops the session");
+        checkEqual(reconfigBackend.enableRequests, 0,
+            "rule edit does not re-enable a running session");
+        checkEqual(service.status, "tiling", "rule edit keeps tiling");
+
+        // A narrowing the backend validates down to nothing cannot keep the
+        // session: an empty compiled allowlist matches every window, so the
+        // update stops it once instead of running unrestricted.
+        reconfigBackend.clearCalls();
+        service.configure("interactive", "title:[", "explorer", false, 12, 10, 20, false);
+        checkEqual(reconfigBackend.disableRequests, 1,
+            "an allowlist that validates to nothing stops the session once");
+
+        // A real switch to off is the one live edit that must stop the session.
+        reconfigBackend.clearCalls();
+        service.configure("off", "", "", false);
+        checkEqual(reconfigBackend.disableRequests, 1,
+            "a real switch to off calls requestDisable() exactly once");
+        checkEqual(service.mode, "off", "off transition committed");
+
+        console.log("CAELESTIA_TILING_FIXTURE_PASS " + JSON.stringify({
+            assertions: assertions
+        }));
+        Qt.quit();
+    }
+
+    Component.onCompleted: Qt.callLater(() => {
+        try {
+            test.run();
+        } catch (error) {
+            console.error("CAELESTIA_TILING_FIXTURE_FAIL " + error.message);
+            Qt.exit(1);
+        }
+    })
+}

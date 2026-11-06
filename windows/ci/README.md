@@ -1,71 +1,69 @@
-# Public Windows CI preparation
+# Public Windows CI
 
-`windows-build.yml.template` is deliberately inert, outside
-`.github/workflows`. Preparing or statically checking it does not establish
-hosted-build acceptance. The active workflow, when enabled after the source
-prerequisites below, is `.github/workflows/windows-build.yml`.
+The active workflow is
+[.github/workflows/windows-build.yml](../../.github/workflows/windows-build.yml).
+The old `windows-build.yml.template` is an inert historical preparation
+reference, not the active configuration.
 
-## Public-source prerequisites
+## Gates and build scheduling
 
-The active [Windows workflow](../../.github/workflows/windows-build.yml) was
-enabled after maintainer publication authorization and an anonymous recursive
-source check. Keep the shell, backend, and **all required recursive
-submodule repositories and exact pinned refs** anonymously accessible. Check
-the gitlinks, `.gitmodules`, and `windows/sources.lock.json`, including Glazier
-and M3Shapes. Do not work around private dependencies with a PAT, deploy key,
-or injected authentication secret.
+Every push to `main`, pull request and manual dispatch runs fast source,
+documentation, PowerShell, JavaScript and quota-provider regressions first.
+After those pass, two jobs can run independently:
 
-The template remains a non-executing reference; changes to it do not update the
-active workflow automatically. The active file runs one `windows-latest` job on pushes to `main`, pull
-requests, and manual dispatch. It has read-only contents permission, no
-`pull_request_target`, no persisted checkout credentials, and no injected
-tokens or authentication secrets for untrusted PR code. The official Actions
-use their normal scoped runner credentials, not publication credentials.
+- Installer/rollback tests and the real colour-worker tests use isolated,
+  temporary profiles and pinned Python dependencies.
+- The native job prepares the Windows tools, runs service contracts, builds
+  the production payload and plugin tests once, then runs native CTest
+  fixtures, shell fixtures and production smoke.
 
-## What the job does
+Only a narrow allowlist of documentation and issue-template changes skips the
+native job. Unknown files, empty diffs, first pushes and manual dispatches
+require a build. The path decision itself has regression tests. Installer and
+fast checks still run for documentation changes. The final `Windows validation`
+job fails if any applicable gate failed, was cancelled or was unexpectedly
+skipped. No branch-protection settings are changed by this workflow.
 
-Preparation follows [NATIVE-BUILD.md](../NATIVE-BUILD.md): Python 3.12,
-CMake 4.4.4, Ninja 1.13.2, aqtinstall revision
-`076e1659807d0b362a3ed684d54c2e9c775eb9c7`, Qt 6.11.2
-`win64_msvc2022_64`, LLVM 20.1.8, and CLI11 v2.5.0. Qt includes
-`qtshadertools qtimageformats` and base archives
-`qtbase qtdeclarative qtsvg qttools`. It intentionally omits `qttranslations`
-as documented there. LLVM and CLI11 archive SHA-256 checks run on both
-downloads and cache restores, before extraction. aqt's archive checksum
-verification stays enabled; restored Qt tooling is checked for version and
-required files.
+[Test-Validation.ps1](../scripts/Test-Validation.ps1) is the shared local/CI
+entry point. [Coverage and exclusions](../tests/README.md) distinguish
+offscreen checks from live-desktop acceptance.
 
-Glazier's pinned `Cargo.toml` declares Rust edition 2024, not an exact compiler
-version or `rust-toolchain` file. Its README requires Windows MSVC Rust. The
-job selects the hosted runner's `stable-x86_64-pc-windows-msvc` toolchain
-through a job-local environment variable and records `rustc`/`cargo`
-versions. It does not invent a Rust version pin, install a new toolchain, or
-skip Glazier. The existing build uses Cargo's `--locked` dependency graph.
+## Tooling and cache trust
 
-The only gates are the existing `Build-Prototype.ps1` production build into
-`C:\b-public`, then `Test-Smoke.ps1` with its isolated offscreen profile.
-Preparation stays inline. The build discovers Visual Studio and its SDK and
-enters the compiler environment itself. No machine-wide PATH/settings changes,
-extra suites, benchmark tooling, live desktop/input/DPI/hotplug/hardware
-checks, installation, signing, or publication are included.
+The native toolchain remains Python 3.12, CMake 4.4.4, Ninja 1.13.2,
+aqtinstall revision `076e1659807d0b362a3ed684d54c2e9c775eb9c7`,
+Qt 6.11.2 `win64_msvc2022_64`, LLVM 20.1.8 and CLI11 2.5.0.
+Qt includes `qtshadertools qtimageformats` and archives
+`qtbase qtdeclarative qtsvg qttools`, not `qttranslations`.
+The hosted stable MSVC Rust toolchain builds Glazier's locked dependency
+graph; the job records the compiler version rather than inventing a Rust pin.
 
-The versioned exact-match tooling cache contains Qt, verified LLVM/CLI11
-download archives, and pip's download/wheel cache. Python tooling is installed
-fresh from those cached downloads. Only trusted `main` runs save this cache;
-PRs may restore it. There are no compiler, Cargo target, build-tree, staged
-shell, or product-output caches mixing untrusted payloads. Change the cache
-schema key when preparation or Qt's selected components change.
+The versioned exact-match cache contains Qt, LLVM/CLI11 archives and extracted
+trees, and pip's download cache. Warm runs avoid extracting LLVM and CLI11
+again. Archive checksums still run after restore, and required tool files and
+versions are checked before use. Python tooling is installed fresh. Only
+trusted `main` runs save this cache; pull requests may restore it. There are
+no native object, CMake build, Cargo target, staged-shell or installed-product
+caches shared across trust boundaries. Change the cache schema key when the
+tooling selection or extraction contract changes.
 
-Superseded runs are cancelled and the job has a 60-minute limit. On failure,
-only preparation/build logs, smoke's redacted failure summary, and build
-records outside the source checkout are uploaded, with three-day retention.
-Raw smoke capture logs, profiles, and staged payloads are not uploaded. These
-diagnostics are not release artifacts.
+All Actions are commit-pinned. Permissions stay read-only; checkout does not
+persist credentials. There is no `pull_request_target`, injected publication
+secret, installation into a user's profile, signing or release publication.
+The source and every pinned recursive dependency must remain anonymously
+accessible. Never substitute private dependency credentials.
 
-## Still pending
+## Evidence and limits
 
-After authorization, record actual cold and cached hosted runs, their heads,
-outcomes, and timings in the release record. Neither run is established by
-preparing this source template.
-Local static validation is not a substitute for that acceptance or for live
-desktop validation.
+Regression jobs upload only compact summaries containing test names, exit
+codes, timings, source revision and dirty status, with three-day retention. Raw fixture
+logs, profiles and provider data are not uploaded. Existing build-failure
+diagnostics and the production smoke's redacted failure summary remain
+available on failure.
+
+Local passes establish only the exact tested working tree, native runner and
+scenarios. They do not establish hosted acceptance of a workflow edit. Record
+fresh cold and warm hosted runs after publication before claiming a CI
+performance improvement. Hardware, input, DPI, hotplug, sleep/wake and
+long-running desktop acceptance still require the
+[live checklist](../docs/LIVE-CHECKLIST.md).

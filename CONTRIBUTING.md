@@ -24,15 +24,36 @@ runtime pass. Run it again after changing dependency pins or setup instructions.
 
 ## Test
 
-Build first, then run the public smoke with your actual Qt prefix:
+Run the fast, SDK-free regression suite before building:
+
+```powershell
+powershell -NoProfile -File windows/scripts/Test-Validation.ps1 -Suite Unit
+powershell -NoProfile -File windows/scripts/Test-Validation.ps1 -Suite Packaging
+```
+
+These use Windows PowerShell, Node 24 and Python 3.12. They cover source and
+documentation checks, JavaScript logic, quota providers, lifecycle, settings
+import, versioned installation, rollback and scheme-runtime safety. Tests use
+synthetic data, local fixture servers and temporary profiles, never your live
+accounts or desktop. Packaging checks run separately because they exercise
+timeouts and recovery rather than returning immediately.
+
+Build once, then run the Qt/offscreen regressions and production smoke with
+your actual Qt prefix. Add `-PluginTests` to `Build-Prototype.ps1` to build the
+native plugin regression targets as CI does; run those with CTest as described
+in the coverage guide below.
 
 ```powershell
 $qt = "$env:LOCALAPPDATA\caelestia-dev\Qt\6.11.2\msvc2022_64"
+powershell -NoProfile -File windows/scripts/Test-Validation.ps1 `
+    -Suite Services -BuildRoot <build> -QtPrefix $qt
+powershell -NoProfile -File windows/scripts/Test-Validation.ps1 `
+    -Suite Shell -BuildRoot <build> -QtPrefix $qt
 powershell -NoProfile -File windows/scripts/Test-Smoke.ps1 `
     -BuildRoot <build> -QtPrefix $qt
 ```
 
-`Test-Smoke.ps1` is the single smoke command for public CI and contributors. It
+`Test-Smoke.ps1` is the production smoke command for public CI and contributors. It
 stages the production graph from `windows/shell/sources.json`, runs the built
 `qs.exe` on the offscreen QPA under a temporary profile, and waits for every
 drawer's first frame. It does not install, start the live shell or touch its
@@ -40,6 +61,9 @@ profile, services, taskbar, registry or autostart. It exits 0 on pass and 1 on
 failure, prints a one-line summary, and keeps the run directory on failure.
 Allow up to 90 seconds for a cold start. See
 [windows/NATIVE-BUILD.md](windows/NATIVE-BUILD.md#smoke) for the build context.
+See [validation coverage](windows/tests/README.md) for colour-worker tests,
+installed-release runner support, safe test isolation and the suites not yet
+restored from the historical validation work.
 
 Use
 [the live checklist](windows/docs/LIVE-CHECKLIST.md) for installed-shell checks

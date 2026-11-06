@@ -46,10 +46,43 @@ target_include_directories(caelestia-windows PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/Focus"
 )
 
-# Keep obsolete private-harness requests explicit, not silently skipped.
-option(CAELESTIA_WINDOWS_TESTS "Build Caelestia Windows plugin tests" OFF)
 if(CAELESTIA_WINDOWS_TESTS)
-    message(FATAL_ERROR "Private test sources are not shipped. Configure with CAELESTIA_WINDOWS_TESTS=OFF.")
+    add_executable(clipboard-logic-tests Clipboard/test/clipboardlogic_test.cpp)
+    target_include_directories(clipboard-logic-tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/Clipboard")
+    target_link_libraries(clipboard-logic-tests PRIVATE Qt::Core Qt::Test)
+
+    add_executable(clipboard-qml-tests Clipboard/test/clipboardqml_test.cpp)
+    target_compile_definitions(clipboard-qml-tests PRIVATE
+        CLIPBOARD_SERVICE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../../../windows/services/clipboard")
+    target_link_libraries(clipboard-qml-tests PRIVATE Qt::Core Qt::Qml Qt::Test)
+
+    add_executable(displaypower-tests DisplayPower/test/displaypower_test.cpp DisplayPower/displaypower.cpp)
+    target_include_directories(displaypower-tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/DisplayPower")
+    target_compile_definitions(displaypower-tests PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+    target_link_libraries(displaypower-tests PRIVATE Qt::Core Qt::Qml Qt::Test user32)
+
+    add_executable(focus-follows-mouse-tests Focus/test/focusfollowsmouse_test.cpp Focus/focusfollowsmouse.cpp)
+    target_include_directories(focus-follows-mouse-tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/Focus")
+    target_link_libraries(focus-follows-mouse-tests PRIVATE Qt::Core Qt::Test)
+
+    add_executable(knownfolders-tests test/knownfolders_test.cpp knownfolders.hpp)
+    target_include_directories(knownfolders-tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+    target_link_libraries(knownfolders-tests PRIVATE Qt::Core Qt::Qml Qt::Test shell32 ole32)
+
+    add_executable(windowsfocusguard-tests test/windowsfocusguard_test.cpp windowsfocusguard.hpp)
+    target_include_directories(windowsfocusguard-tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+    target_compile_definitions(windowsfocusguard-tests PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+    target_link_libraries(windowsfocusguard-tests PRIVATE Qt::Core Qt::Gui Qt::Quick Qt::Qml Qt::Test user32)
+
+    add_executable(wasapi-format-tests Audio/test/wasapiformat_test.cpp Audio/wasapiformat.cpp Audio/wasapiformat.hpp)
+    target_include_directories(wasapi-format-tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/Audio")
+    target_compile_definitions(wasapi-format-tests PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+    target_link_libraries(wasapi-format-tests PRIVATE Qt::Core Qt::Test)
+
+    foreach(fixture clipboard-logic clipboard-qml displaypower focus-follows-mouse knownfolders windowsfocusguard wasapi-format)
+        add_test(NAME ${fixture} COMMAND ${fixture}-tests)
+        set_tests_properties(${fixture} PROPERTIES TIMEOUT 60 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    endforeach()
 endif()
 
 # WASAPI loopback analysis: CavaProvider/BeatTracker/ServiceRef for the

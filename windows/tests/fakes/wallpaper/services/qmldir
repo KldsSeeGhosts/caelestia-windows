@@ -1,0 +1,5 @@
+module qs.services
+singleton Wallpapers 1.0 Wallpapers.qml
+singleton WallpaperEngine 1.0 WallpaperEngine.qml
+singleton SchemeGenerator 1.0 SchemeGenerator.qml
+singleton Toaster 1.0 Toaster.qml

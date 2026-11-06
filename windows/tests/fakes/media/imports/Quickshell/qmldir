@@ -1,0 +1,4 @@
+module Quickshell
+Singleton 1.0 Singleton.qml
+singleton DesktopEntries 1.0 DesktopEntries.qml
+singleton Quickshell 1.0 Quickshell.qml
