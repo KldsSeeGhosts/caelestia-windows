@@ -25,7 +25,7 @@ Item {
     // wins over the Windows account picture. Windows account settings are
     // never changed.
     readonly property string stateFolder: Quickshell.stateDir.replace(/\\/g, "/")
-    readonly property string customPicture: "file:///" + stateFolder + "/profile-picture"
+    readonly property string customPicture: Paths.absolutePath(Paths.joinPath(stateFolder, "profile-picture"))
     readonly property bool hasPicture: custom.ready || pfp.ready
     property bool customExists: false
     property int customPictureRequest: 0
