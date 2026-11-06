@@ -413,6 +413,22 @@ class PairTests(unittest.TestCase):
         self.assertEqual(12, result["suiteCounts"]["services"]["reportedAssertions"])
         self.assertFalse(result["releaseEligible"])
 
+    def test_malformed_plugin_xml_retains_nonpass_envelope(self):
+        args, module, _, _ = self.envelope_fixture()
+        # Use the real XML parser used by the producer, not the successful
+        # fixture's JUnit stub, to exercise truncated CTest output.
+        module.junit = lambda path: (p.ET.parse(path), "")
+        for xml in ('<testsuite><testcase', '<private-content>'):
+            with self.subTest(xml=xml):
+                (Path(args.results) / "plugins.raw.xml").write_text(xml)
+                with patch.object(p, "validator", return_value=module):
+                    self.assertEqual(1, p.envelope(args))
+                result = p.read(Path(args.results) / "pair-result.json")
+                self.assertEqual("non-pass", result["result"])
+                self.assertFalse(result["releaseEligible"])
+                self.assertIn("pair-validation-nonpass", result["reasons"])
+                self.assertNotIn("private-content", json.dumps(result))
+
     def test_failed_test_counts_and_skip_sanitization(self):
         counts = p.public_counts({"total": 3, "executed": 2, "failed": 1, "skipped": 1,
                                   "skips": [{"test": "C:/Users/private",

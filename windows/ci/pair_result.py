@@ -414,7 +414,7 @@ def envelope(args):
         if args.workflow_sha != request["shell"]:
             result["reasons"].append("workflow-shell-sha-mismatch")
         result["releaseEligible"] = not result["reasons"]
-    except (ValueError, OSError, KeyError, TypeError, ImportError):
+    except (ValueError, OSError, KeyError, TypeError, ImportError, ET.ParseError):
         result["reasons"].append("pair-validation-nonpass")
     write(results / "pair-result.json", result)
     return 0 if result["result"] == "pass" else 1
