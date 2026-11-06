@@ -95,6 +95,10 @@ updated to the reviewed producer main revision and hosted controls pass.
 The producer's shell pin supplies toolchain policy only, not the shell under
 test, so updating it does not create a pair-SHA fixed point.
 
+Public builds remap backend paths to `/backend/...` in both pinned and candidate
+mode. Earlier pinned releases used `/source/windows/deps/quickshell/...`;
+account for this change when comparing embedded source/debug strings or bytes.
+
 ## Local contract checks and hosted controls
 
 ```powershell
