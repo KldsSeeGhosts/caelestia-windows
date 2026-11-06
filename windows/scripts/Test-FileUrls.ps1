@@ -121,7 +121,7 @@ try {
         if ($counts.Count -ne 1) { throw "Missing or ambiguous Node TAP count: $name." }
         $summary[$countFields[$name]] = [int]$counts[0].Groups[1].Value
     }
-    if ($summary.nodeExitCode -ne 0 -or $summary.nodeTests -lt 1 -or
+    if ($summary.nodeExitCode -ne 0 -or $summary.nodeTests -ne 9 -or
         $summary.nodePassed -ne $summary.nodeTests -or $summary.nodeFailed -ne 0 -or
         $summary.nodeCancelled -ne 0 -or $summary.nodeSkipped -ne 0 -or $summary.nodeTodo -ne 0) {
         throw 'Node file-URL regressions failed, were skipped, or reported inconsistent counts.'
@@ -152,7 +152,7 @@ try {
     $summary.nativeExitCode = $result.exitCode
     $summary.nativeTimedOut = $result.timedOut
     $summary.diagnostics = @($result.diagnostics | ForEach-Object { ConvertTo-SafeReceiptText "$_" })
-    if (-not $result.passed) { throw 'Qt file-URL regression fixture failed.' }
+    if (-not $result.passed -or $summary.qmlAssertions -ne 34) { throw 'Qt file-URL regression fixture failed or assertion count changed.' }
     if ((& git -C $repoRoot rev-parse HEAD).Trim() -ne $summary.sourceRevision -or
         [bool](& git -C $repoRoot status --porcelain) -ne $summary.sourceDirty) {
         throw 'Source revision or dirty state changed during validation.'

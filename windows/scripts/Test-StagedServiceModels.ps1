@@ -223,6 +223,7 @@ try {
         dependencies = $dependencies
         qtVersion = $qtVersion; qmlRunnerSha256 = $qmlRunnerHash
         javascriptSourceSha256 = (Get-FileHash -LiteralPath "$repoRoot\windows\services\clipboard\ClipboardHistory.js").Hash
+        fileUrlsSourceSha256 = (Get-FileHash -LiteralPath "$repoRoot\windows\shell\adapters\utils\FileUrls.js").Hash
         mode = if ($PureOnly) { 'pure-only' } else { 'pure-and-qml' }
         mutationControls = @{
             requested = [bool]$MutationControls
