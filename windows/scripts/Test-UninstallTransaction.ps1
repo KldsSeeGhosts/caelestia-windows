@@ -340,7 +340,8 @@ try {
     $id = Start-QueuedOperation $case
     $before = Snapshot $case
     $duplicate = Start-Worker $case 'Queue'
-    Finish-ErrorWorker $duplicate
+    Assert-Result $duplicate 'Busy'
+    Finish-Worker $duplicate
     Assert ((Snapshot $case) -ceq $before) 'Live queued duplicate changed managed state.'
     $script:scenarios += 'live-queued-request-refused'
 
