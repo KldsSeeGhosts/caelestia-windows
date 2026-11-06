@@ -41,7 +41,14 @@ function normalizeEntry(value) {
 }
 
 function decodeFileUri(uri) {
-    return FileUrls.toLocalPath(String(uri || "").trim());
+    const parsed = FileUrls.parseFileUrl(String(uri || "").trim());
+    // Clipboard text is untrusted, not an explicit request to browse a share.
+    // Reject remote authorities and decoded UNC/device spellings before a row
+    // can hand a path to Image or any file probe. Explicit Paths conversion
+    // deliberately keeps UNC support.
+    if (!parsed || parsed.authority || /^[\\/]{2}/.test(parsed.path))
+        return "";
+    return parsed.path;
 }
 
 // Windows clipboard text may contain "file://" lines. Keep the reference's

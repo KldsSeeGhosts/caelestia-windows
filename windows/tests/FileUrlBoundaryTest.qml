@@ -89,12 +89,42 @@ Item {
             check(CUtils.toLocalFile(Qt.resolvedUrl(encodedDirectUrl)) === "C:/Synthetic Data/photo#draft%.png",
                 "Qt QUrl decodes an already-encoded URL once");
 
+            const rawSpaceUrl = "file:///C:/Synthetic Data/literal%2523 photo%23draft.png";
+            const normalizedSpaceUrl = "file:///C:/Synthetic%20Data/literal%2523%20photo%23draft.png";
+            check(Paths.absolutePath(rawSpaceUrl) === normalizedSpaceUrl,
+                "raw spaces normalize without changing existing URL escapes");
+            check(ClipboardRows.decodeFileUri(rawSpaceUrl) === "C:/Synthetic Data/literal%23 photo#draft.png",
+                "clipboard raw-space URLs decode exactly once");
+            check(CUtils.toLocalFile(Qt.resolvedUrl(normalizedSpaceUrl)) === "C:/Synthetic Data/literal%23 photo#draft.png",
+                "Qt QUrl agrees on raw-space normalization");
+
             const uncPath = "//synthetic-server/synthetic-share/photo#draft %.png";
-            const uncUrl = ClipboardRows.fileUrl(uncPath);
+            const uncUrl = Paths.absolutePath(uncPath);
             check(uncUrl === "file://synthetic-server/synthetic-share/photo%23draft%20%25.png",
                 "UNC paths keep the server and share as URL authority/path");
             check(CUtils.toLocalFile(Qt.resolvedUrl(uncUrl)).replace(/\\/g, "/") === uncPath,
                 "Qt QUrl round-trips a synthetic UNC path");
+
+            // Pure classification assertions only. Never assign these strings
+            // to Image, copyFile, a file model, or any filesystem probe.
+            const remoteText = [
+                uncUrl, "\\\\synthetic-server\\synthetic-share\\photo.png",
+                "//synthetic-server/synthetic-share/photo.png",
+                "file:////synthetic-server/synthetic-share/photo.png",
+                "file://localhost//synthetic-server/synthetic-share/photo.png",
+                "file://localhost/%2Fsynthetic-server/synthetic-share/photo.png",
+                "file:///%5C%5Csynthetic-server/synthetic-share/photo.png",
+                "file:///%5Csynthetic-server/synthetic-share/photo.png"
+            ];
+            for (const text of remoteText) {
+                check(ClipboardRows.decodeFileUri(text) === "", "remote clipboard reference rejected");
+                const rejectedRows = ClipboardRows.displayRows([
+                    { id: "synthetic-remote-text", kind: "text", text: text }
+                ], "", 10);
+                check(rejectedRows.length === 1 && rejectedRows[0].entryType !== "file" &&
+                    rejectedRows[0].path === "" && rejectedRows[0].previewImage === "",
+                    "remote text never produces a preview or probe path");
+            }
 
             const rootAsset = Paths.absolutePath("root:/assets/wallpaper.webp");
             check(rootAsset.endsWith("/assets/wallpaper.webp") && !rootAsset.includes("%3A"),

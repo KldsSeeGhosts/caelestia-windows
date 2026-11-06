@@ -16,7 +16,9 @@ function encodePathSegments(path) {
 }
 
 function parseFileUrl(url) {
-    const value = String(url || "");
+    // Older clipboard/config values may contain literal ASCII spaces. Escape
+    // only those spaces, leaving existing escapes intact for one decode below.
+    const value = String(url || "").replace(/ /g, "%20");
     const match = /^file:\/\/([^/?#]*)(\/[^?#]*)?$/i.exec(value);
     if (!match || /[\\\s]/.test(value) || /%(?![0-9a-f]{2})/i.test(value))
         return null;
@@ -83,12 +85,14 @@ function fromLocalPath(path) {
     return "";
 }
 
-// Local paths are raw text; file URLs are already encoded data. Keep a valid
-// URL byte-for-byte so % escapes are neither decoded nor encoded a second time.
+// Local paths are raw text; file URLs are already encoded data. Keep an encoded
+// URL byte-for-byte; normalize legacy raw spaces without touching its escapes.
 function fromPathOrUrl(value) {
     const text = String(value || "");
-    if (isFileUrl(text))
-        return parseFileUrl(text) ? text : "";
+    if (isFileUrl(text)) {
+        const normalized = text.replace(/ /g, "%20");
+        return parseFileUrl(normalized) ? normalized : "";
+    }
     return fromLocalPath(text);
 }
 

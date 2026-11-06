@@ -16,6 +16,7 @@ loadQmlScript("../shell/adapters/utils/FileUrls.js", context);
 context.FileUrls = {
     isFileUrl: context.isFileUrl,
     encodePathSegments: context.encodePathSegments,
+    parseFileUrl: context.parseFileUrl,
     fromLocalPath: context.fromLocalPath,
     fromPathOrUrl: context.fromPathOrUrl,
     toLocalPath: context.toLocalPath
@@ -58,6 +59,19 @@ test("already-encoded URLs are preserved and decoded exactly once", () => {
     assert.equal(urls.fromPathOrUrl(urls.toLocalPath(fileUrl)), fileUrl);
     assert.equal(urls.toLocalPath("file://localhost/C:/Pictures/photo%23draft.png"),
         "C:/Pictures/photo#draft.png");
+    const mixedCaseUrl = "FILE:///C:/Pictures/%c3%bc%20literal%2520.png";
+    assert.equal(urls.fromPathOrUrl(mixedCaseUrl), mixedCaseUrl);
+    assert.equal(urls.toLocalPath(mixedCaseUrl), "C:/Pictures/\u00fc literal%20.png");
+});
+
+test("legacy raw spaces normalize without decoding existing URL escapes twice", () => {
+    const rawSpaceUrl = "file:///C:/Synthetic Data/literal%2523 photo%23draft.png";
+    const normalized = "file:///C:/Synthetic%20Data/literal%2523%20photo%23draft.png";
+    assert.equal(urls.fromPathOrUrl(rawSpaceUrl), normalized);
+    assert.equal(urls.toLocalPath(rawSpaceUrl), "C:/Synthetic Data/literal%23 photo#draft.png");
+    const rows = context.displayRows([{ id: "raw-space", kind: "text", text: rawSpaceUrl }], "", 10);
+    assert.equal(rows[0].path, "C:/Synthetic Data/literal%23 photo#draft.png");
+    assert.equal(rows[0].previewImage, normalized);
 });
 
 test("unsupported and malformed inputs fail closed", () => {
@@ -66,6 +80,8 @@ test("unsupported and malformed inputs fail closed", () => {
     assert.equal(urls.fromPathOrUrl("file:///C:/Pictures/photo%ZZ.png"), "");
     assert.equal(urls.toLocalPath("file:///C:/Pictures/photo#draft.png"), "");
     assert.equal(urls.toLocalPath("file://server/"), "");
+    assert.equal(urls.fromPathOrUrl("file://remote host/share/photo.png"), "");
+    assert.equal(urls.fromPathOrUrl("file:///C:/Pictures/photo\tname.png"), "");
 });
 
 test("clipboard rows use the shared URL and decode helpers for file previews", () => {
@@ -80,6 +96,41 @@ test("clipboard rows use the shared URL and decode helpers for file previews", (
     assert.equal(rows.length, 1);
     assert.equal(rows[0].path, localPath);
     assert.equal(rows[0].previewImage, fileUrl);
+});
+
+test("clipboard text never promotes remote file authorities or UNC spellings into previews", () => {
+    const remoteText = [
+        "file://synthetic-server/share/photo.png",
+        "FILE://synthetic-server/share/photo%23draft.png",
+        "\\\\synthetic-server\\share\\photo.png",
+        "//synthetic-server/share/photo.png",
+        "file:////synthetic-server/share/photo.png",
+        "file://///synthetic-server/share/photo.png",
+        "file://localhost//synthetic-server/share/photo.png",
+        "file://localhost/%2Fsynthetic-server/share/photo.png",
+        "file:///%2Fsynthetic-server/share/photo.png",
+        "file:///%5C%5Csynthetic-server/share/photo.png",
+        "file:///%5Csynthetic-server/share/photo.png",
+        "file://localhost/%5C%5Csynthetic-server/share/photo.png"
+    ];
+    for (const text of remoteText) {
+        assert.equal(context.decodeFileUri(text), "", text);
+        const rows = context.displayRows([{ id: "remote-text", kind: "text", text }], "", 10);
+        assert.equal(rows.length, 1);
+        assert.notEqual(rows[0].entryType, "file", text);
+        assert.equal(rows[0].path, "", text);
+        assert.equal(rows[0].previewImage, "", text);
+        assert.equal(rows[0].fullText, text, text);
+    }
+    // A mixed list may preview its local member, never the remote member.
+    const rows = context.displayRows([{
+        id: "mixed", kind: "text",
+        text: "file://synthetic-server/share/remote.png\nfile:///C:/Synthetic/local.png"
+    }], "", 10);
+    assert.equal(rows[0].path, "C:/Synthetic/local.png");
+    assert.equal(rows[0].previewImage, "file:///C:/Synthetic/local.png");
+    assert.equal(context.decodeFileUri("file://localhost/C:/Synthetic/local.png"),
+        "C:/Synthetic/local.png");
 });
 
 test("active leased QML path boundaries call the shared Paths converter", () => {
