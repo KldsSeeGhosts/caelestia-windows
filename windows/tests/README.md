@@ -72,10 +72,11 @@ checkout; use `-OutputRoot` to choose another external location.
 
 ## Not covered by these restored gates
 
-The backend's removed standalone C++ fixtures need a separate reviewed
-restoration in the backend repository before advancing its pin here. They
-are not replaced by QML service fakes. The old `Build-Prototype.ps1 -Tests`
-switch still refuses that unavailable suite explicitly.
+The backend's standalone C++ fixtures live and run in the backend
+repository (`src/windows/test`, with its own CI for the portable tier).
+`Build-Prototype.ps1 -Tests` builds them against the pinned backend; the
+`desktop` tier, which opens visible windows, is run by hand with the shell
+stopped.
 
 Interactive keyboard/focus tests, native device-loss/capture fixtures,
 desktop takeover, physical hotplug/DPI and long-running benchmarks are not
