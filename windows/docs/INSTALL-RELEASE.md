@@ -102,6 +102,12 @@ Other optional integrations retain their own availability requirements.
 
 ## Update and rollback
 
+Settings > Updates links to the project's [manual downloads](https://github.com/KldsSeeGhosts/caelestia-windows/releases),
+including public previews. It reads installed and retained versions, not the
+latest online release, so the latest public version is shown as unknown.
+Automatic downloading and updating are not implemented. A manual download link
+does not mean a newer version is available for your installation.
+
 Download and verify the new release, extract into a **different** directory,
 then run its installer against the same stable prefix. The installed profile
 is discovered automatically when `-ProfileRoot` is omitted. Existing config,
