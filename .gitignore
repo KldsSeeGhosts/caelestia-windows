@@ -3,5 +3,7 @@ build/
 .cache/
 logs
 /windows/.local/
+# Retain already initialized historical clones after the in-tree migration.
+/windows/deps/glazier/
 __pycache__/
 *.pyc
