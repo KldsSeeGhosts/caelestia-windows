@@ -1,0 +1,2 @@
+module UpdateManagerFixture
+singleton UpdateManager 1.0 UpdateManager.qml

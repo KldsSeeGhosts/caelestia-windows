@@ -87,6 +87,7 @@ try {
         Invoke-ValidationStep 'quota-providers' $Python @('-B', '-m', 'unittest', 'discover', '-s', 'windows/tests/quota_providers', '-v') '(?m)^Ran ([0-9]+) tests?\b'
     } elseif ($Suite -eq 'Packaging') {
         Invoke-ScriptCheck 'Test-VersionedInstall'
+        Invoke-ScriptCheck 'Test-UninstallTransaction' @('-OutputRoot', (Join-Path $OutputRoot 'uninstall-transactions'))
     } elseif ($Suite -eq 'Scheme') {
         Invoke-ValidationStep 'scheme-worker' $Python @('-B', 'windows/scripts/scheme/test_win_scheme.py', '-v') '(?m)^Ran ([0-9]+) tests?\b'
     } else {
@@ -97,7 +98,7 @@ try {
               'Test-HotplugTeardown', 'Test-IdleInhibitStatus', 'Test-LauncherHoverClose',
               'Test-PerMonitorFullscreen', 'Test-PinnedPopoutFocus', 'Test-QuotaPopovers',
               'Test-QuotaProviderKeyboard', 'Test-WallpaperColours', 'Test-WallpaperHandback',
-              'Test-WallpaperPreview', 'Test-WindowsBackground')
+              'Test-WallpaperPreview', 'Test-WindowsBackground', 'Test-UpdateManager')
         }
         if (-not $scripts.Count) { throw 'No QML regressions were discovered.' }
         $fixtureArguments = @('-QtPrefix', $QtPrefix)
