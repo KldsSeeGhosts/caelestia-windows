@@ -6,13 +6,25 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      mode:
+        description: Explicit pinned or integration-only candidate mode
+        type: choice
+        options: [pinned, candidate]
+        default: pinned
+      backend_sha:
+        description: Candidate backend, exactly 40 lowercase hex characters (candidate mode only)
+        type: string
+      shell_sha:
+        description: Exact shell commit, 40 lowercase hex characters (defaults to workflow SHA)
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: windows-build-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  group: windows-build-${{ github.event_name }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   checks:
@@ -22,9 +34,22 @@ jobs:
     outputs:
       native: ${{ steps.changes.outputs.native }}
     steps:
+      - name: Refuse mutable dispatch inputs
+        shell: pwsh
+        env:
+          PAIR_MODE: ${{ inputs.mode || 'pinned' }}
+          PAIR_SHELL: ${{ inputs.shell_sha || github.sha }}
+          PAIR_BACKEND: ${{ inputs.backend_sha }}
+        run: |
+          if ($env:PAIR_SHELL -cnotmatch '^[a-f0-9]{40}$') { throw 'Immutable shell SHA required: exactly 40 lowercase hex characters.' }
+          if ($env:PAIR_MODE -eq 'candidate' -and $env:PAIR_BACKEND -cnotmatch '^[a-f0-9]{40}$') {
+            throw 'Immutable candidate backend SHA required: exactly 40 lowercase hex characters.'
+          }
+          if ($env:PAIR_MODE -eq 'pinned' -and $env:PAIR_BACKEND) { throw 'Candidate SHA requires mode=candidate.' }
       - name: Checkout public sources
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
+          ref: ${{ inputs.shell_sha || github.sha }}
           fetch-depth: 0
           persist-credentials: false
       - name: Python 3.12
@@ -67,6 +92,7 @@ jobs:
       - name: Checkout public sources
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
+          ref: ${{ inputs.shell_sha || github.sha }}
           persist-credentials: false
       - name: Python 3.12
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
@@ -118,7 +144,7 @@ jobs:
     needs: checks
     if: needs.checks.outputs.native == 'true'
     runs-on: windows-2022
-    timeout-minutes: 60
+    timeout-minutes: 90
     defaults:
       run:
         shell: pwsh
@@ -129,11 +155,15 @@ jobs:
       PIP_CACHE_DIR: C:\t-public\pip
       DIAGNOSTICS: C:\ci-public
       SMOKE_ROOT: C:\ci-public\smoke
+      PAIR_RESULTS: C:\ci-pair
+      TRUSTED_ROOT: C:\pair-trusted
+      PYTHONDONTWRITEBYTECODE: '1'
 
     steps:
       - name: Checkout recursive sources
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
+          ref: ${{ inputs.shell_sha || github.sha }}
           submodules: recursive
           persist-credentials: false
 
@@ -143,6 +173,41 @@ jobs:
         with:
           python-version: '3.12'
           architecture: x64
+
+      - name: Resolve exact pair and trusted producer
+        id: pair
+        env:
+          PAIR_MODE: ${{ inputs.mode || 'pinned' }}
+          PAIR_BACKEND: ${{ inputs.backend_sha }}
+          PAIR_SHELL: ${{ inputs.shell_sha || github.sha }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not (Test-Path "$env:GITHUB_WORKSPACE\windows\ci\Resolve-PairRequest.ps1")) {
+            throw 'Incompatible shell revision: exact-pair entry point is missing.'
+          }
+          & "$env:GITHUB_WORKSPACE\windows\ci\Resolve-PairRequest.ps1" `
+            -Mode $env:PAIR_MODE -BackendSha $env:PAIR_BACKEND -ShellSha $env:PAIR_SHELL `
+            -ShellRoot $env:GITHUB_WORKSPACE -CandidateRoot C:\pair-backend -Results $env:PAIR_RESULTS
+          $local = Get-Content "$env:PAIR_RESULTS\pair-local.json" -Raw | ConvertFrom-Json
+          python -I -B "$env:GITHUB_WORKSPACE\windows\ci\pair_result.py" bootstrap `
+            --shell $env:GITHUB_WORKSPACE --backend $local.backendRoot --target $env:TRUSTED_ROOT
+          if ($LASTEXITCODE -ne 0) { throw 'Trusted producer extraction or digest check failed.' }
+      - name: Initialize downstream receipt and inspect sources
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $request = Get-Content "$env:PAIR_RESULTS\pair-request.json" -Raw | ConvertFrom-Json
+          $local = Get-Content "$env:PAIR_RESULTS\pair-local.json" -Raw | ConvertFrom-Json
+          $validator = "$env:TRUSTED_ROOT\.github\scripts\candidate_contract.py"
+          python -I -B $validator --receipt "$env:PAIR_RESULTS\candidate-result.json" init `
+            --kind downstream --backend-sha $request.backend --shell-sha $request.shell
+          if ($LASTEXITCODE -ne 0) { throw 'Downstream receipt initialization failed.' }
+          python -I -B $validator --receipt "$env:PAIR_RESULTS\candidate-result.json" sources `
+            --backend $local.backendRoot --shell $env:GITHUB_WORKSPACE
+          if ($LASTEXITCODE -ne 0) { throw 'Exact source verification failed.' }
+          python -I -B $validator --receipt "$env:PAIR_RESULTS\candidate-result.json" run `
+            --stage producer --unittest -- python -B -m unittest discover `
+            -s "$env:TRUSTED_ROOT\.github\candidate-contract" -p "test_*.py"
+          if ($LASTEXITCODE -ne 0) { throw 'Producer contract fixtures failed.' }
 
       - name: Restore versioned tooling
         id: tools
@@ -159,13 +224,14 @@ jobs:
       - name: Prepare pinned tooling
         run: |
           $ErrorActionPreference = 'Stop'
-          New-Item -ItemType Directory -Force -Path $env:DIAGNOSTICS | Out-Null
-          & powershell.exe -NoProfile -NonInteractive -File "$env:GITHUB_WORKSPACE\windows\scripts\Prepare-Toolchain.ps1" `
+          python -I -B "$env:TRUSTED_ROOT\.github\scripts\candidate_contract.py" `
+            --receipt "$env:PAIR_RESULTS\candidate-result.json" run --stage prepare -- `
+            powershell.exe -NoProfile -NonInteractive -File "$env:GITHUB_WORKSPACE\windows\scripts\Prepare-Toolchain.ps1" `
             -ToolRoot $env:TOOL_ROOT -InstallRust
           if ($LASTEXITCODE -ne 0) { throw 'Supported public toolchain preparation failed.' }
 
       - name: Save tooling from trusted main only
-        if: steps.tools.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        if: steps.tools.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main' && github.event_name == 'push'
         uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           key: ${{ steps.tools.outputs.cache-primary-key }}
@@ -176,57 +242,79 @@ jobs:
             C:\t-public\clang+llvm-20.1.8-x86_64-pc-windows-msvc
             C:\t-public\deps\CLI11-2.5.0
 
-      - name: Service contracts before native compilation
+      - name: Backend component build and portable tier
         run: |
-          & powershell.exe -NoProfile -NonInteractive -File "$env:GITHUB_WORKSPACE\windows\scripts\Test-Validation.ps1" `
-            -Suite Services -BuildRoot $env:BUILD_ROOT `
-            -QtPrefix "$env:TOOL_ROOT\Qt\6.11.2\msvc2022_64" -OutputRoot "$env:DIAGNOSTICS\Services"
-          if ($LASTEXITCODE -ne 0) { throw 'Service regressions failed.' }
+          $ErrorActionPreference = 'Stop'
+          $local = Get-Content "$env:PAIR_RESULTS\pair-local.json" -Raw | ConvertFrom-Json
+          Set-Location -LiteralPath $local.backendRoot
+          $validator = "$env:TRUSTED_ROOT\.github\scripts\candidate_contract.py"
+          $gate = "$env:TRUSTED_ROOT\.github\scripts\Invoke-WindowsFixtureGate.ps1"
+          foreach ($phase in @('configure', 'build', 'portable')) {
+            $testArguments = if ($phase -eq 'portable') { @('--junit', "$env:PAIR_RESULTS\portable.raw.xml") } else { @() }
+            python -I -B $validator --receipt "$env:PAIR_RESULTS\candidate-result.json" run `
+              --stage $phase @testArguments -- powershell.exe -NoProfile -NonInteractive -File $gate `
+              -Phase $phase -ContractRoot $env:GITHUB_WORKSPACE -ToolRoot $env:TOOL_ROOT `
+              -BuildRoot C:\b-fixtures -Results $env:PAIR_RESULTS -Jobs 2
+            if ($LASTEXITCODE -ne 0) { throw "Backend component phase failed: $phase" }
+          }
+          python -I -B $validator --receipt "$env:PAIR_RESULTS\candidate-result.json" inventory `
+            --ctest "$env:TOOL_ROOT\tools\Scripts\ctest.exe" --build C:\b-fixtures
+          if ($LASTEXITCODE -ne 0) { throw 'Backend tier inventory failed.' }
 
-      - name: Build production payload
+      - name: Exact-pair production integration
         run: |
-          & powershell.exe -NoProfile -File "$env:GITHUB_WORKSPACE\windows\scripts\Build-Prototype.ps1" `
-            -BuildRoot $env:BUILD_ROOT `
-            -QtPrefix "$env:TOOL_ROOT\Qt\6.11.2\msvc2022_64" `
-            -LlvmBin "$env:TOOL_ROOT\clang+llvm-20.1.8-x86_64-pc-windows-msvc\bin" `
-            -Cli11Include "$env:TOOL_ROOT\deps\CLI11-2.5.0\include" `
-            -ToolsBin "$env:TOOL_ROOT\tools\Scripts" `
-            -PublicRelease `
-            -PluginTests `
-            2>&1 | Tee-Object -FilePath "$env:DIAGNOSTICS\build.log"
-          if ($LASTEXITCODE -ne 0) { throw 'Build-Prototype failed.' }
+          $local = Get-Content "$env:PAIR_RESULTS\pair-local.json" -Raw | ConvertFrom-Json
+          $request = Get-Content "$env:PAIR_RESULTS\pair-request.json" -Raw | ConvertFrom-Json
+          python -I -B "$env:TRUSTED_ROOT\.github\scripts\candidate_contract.py" `
+            --receipt "$env:PAIR_RESULTS\candidate-result.json" run --stage integration `
+            --junit "$env:PAIR_RESULTS\integration.raw.xml" -- powershell.exe -NoProfile -NonInteractive `
+            -File "$env:GITHUB_WORKSPACE\windows\ci\Invoke-PairIntegration.ps1" `
+            -ShellRoot $env:GITHUB_WORKSPACE -BackendRoot $local.backendRoot `
+            -Mode $request.mode -BackendSha $request.backend -ToolRoot $env:TOOL_ROOT `
+            -BuildRoot $env:BUILD_ROOT -Results $env:PAIR_RESULTS -JUnit "$env:PAIR_RESULTS\integration.raw.xml"
+          if ($LASTEXITCODE -ne 0) { throw 'Consuming-shell integration failed.' }
 
-      - name: Validate release toolchain receipt
+      - name: Finalize exact-pair receipt
+        if: always()
+        env:
+          PAIR_OUTCOME: ${{ job.status }}
         run: |
-          & powershell.exe -NoProfile -NonInteractive -File "$env:GITHUB_WORKSPACE\windows\scripts\New-CaelestiaRelease.ps1" `
-            -BuildRoot $env:BUILD_ROOT -ValidateToolchainOnly
-          if ($LASTEXITCODE -ne 0) { throw 'Release toolchain receipt is incompatible.' }
+          $validator = "$env:TRUSTED_ROOT\.github\scripts\candidate_contract.py"
+          if (-not (Test-Path "$env:PAIR_RESULTS\pair-local.json") -or -not (Test-Path $validator)) {
+            throw 'Pair never resolved or trusted validator unavailable; cannot claim pass.'
+          }
+          $local = Get-Content "$env:PAIR_RESULTS\pair-local.json" -Raw | ConvertFrom-Json
+          python -I -B $validator --receipt "$env:PAIR_RESULTS\candidate-result.json" finalize `
+            --workflow-outcome $env:PAIR_OUTCOME --toolchain "$env:PAIR_RESULTS\actual-toolchain.json" `
+            --backend $local.backendRoot --shell $env:GITHUB_WORKSPACE
+          if ($LASTEXITCODE -ne 0) { throw 'Pair receipt is non-pass.' }
 
-      - name: Native plugin regressions
+      - name: Independently validate pair and eligibility
+        if: always()
+        env:
+          PAIR_OUTCOME: ${{ job.status }}
         run: |
-          $qt = "$env:TOOL_ROOT\Qt\6.11.2\msvc2022_64"
-          $env:PATH = "$qt\bin;$env:BUILD_ROOT\caelestia\lib;$env:PATH"
-          $env:QT_QPA_PLATFORM = 'offscreen'
-          $env:QT_QPA_PLATFORM_PLUGIN_PATH = "$qt\plugins\platforms"
-          & "$env:TOOL_ROOT\tools\Scripts\ctest.exe" --test-dir "$env:BUILD_ROOT\caelestia" `
-            --output-on-failure --timeout 60 --no-tests=error
-          if ($LASTEXITCODE -ne 0) { throw 'Native plugin regressions failed.' }
+          python -I -B "$env:GITHUB_WORKSPACE\windows\ci\pair_result.py" envelope `
+            --results $env:PAIR_RESULTS --shell $env:GITHUB_WORKSPACE `
+            --build-root $env:BUILD_ROOT `
+            --validator "$env:TRUSTED_ROOT\.github\scripts\candidate_contract.py" `
+            --workflow-outcome $env:PAIR_OUTCOME --event $env:GITHUB_EVENT_NAME --ref $env:GITHUB_REF `
+            --run-id $env:GITHUB_RUN_ID --attempt $env:GITHUB_RUN_ATTEMPT --workflow-sha $env:GITHUB_SHA
+          if ($LASTEXITCODE -ne 0) { throw 'Independent pair validation is non-pass.' }
 
-      - name: Shell regressions
-        run: |
-          & powershell.exe -NoProfile -NonInteractive -File "$env:GITHUB_WORKSPACE\windows\scripts\Test-Validation.ps1" `
-            -Suite Shell -BuildRoot $env:BUILD_ROOT -QtPrefix "$env:TOOL_ROOT\Qt\6.11.2\msvc2022_64" `
-            -OutputRoot "$env:DIAGNOSTICS\Shell"
-          if ($LASTEXITCODE -ne 0) { throw 'Shell regressions failed.' }
-
-      - name: Offscreen production smoke
-        run: |
-          & powershell.exe -NoProfile -File "$env:GITHUB_WORKSPACE\windows\scripts\Test-Smoke.ps1" `
-            -BuildRoot $env:BUILD_ROOT `
-            -QtPrefix "$env:TOOL_ROOT\Qt\6.11.2\msvc2022_64" `
-            -RunRoot $env:SMOKE_ROOT `
-            2>&1 | Tee-Object -FilePath "$env:DIAGNOSTICS\smoke.log"
-          if ($LASTEXITCODE -ne 0) { throw 'Test-Smoke failed.' }
+      - name: Sanitized exact-pair receipts
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: pair-results-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 7
+          if-no-files-found: warn
+          path: |
+            C:/ci-pair/pair-request.json
+            C:/ci-pair/candidate-result.json
+            C:/ci-pair/pair-result.json
+            C:/ci-pair/portable.xml
+            C:/ci-pair/integration.xml
 
       - name: Sanitized test summaries
         if: always()
@@ -234,8 +322,8 @@ jobs:
         with:
           name: offscreen-summary-${{ github.run_id }}
           path: |
-            C:/ci-public/Services/summary.json
-            C:/ci-public/Shell/summary.json
+            C:/ci-pair/Services/summary.json
+            C:/ci-pair/Shell/summary.json
           if-no-files-found: ignore
           retention-days: 3
 

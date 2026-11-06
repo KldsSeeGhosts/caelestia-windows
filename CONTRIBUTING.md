@@ -125,6 +125,13 @@ The M3Shapes gitlink and its manifest entry must likewise agree. Do not
 silently edit dependency checkouts or advance pins to uncommitted code.
 Keep upstream changes localized and explain why they are needed.
 
+Before merging coordinated backend changes, test both immutable commits with
+[exact-pair integration](windows/ci/PAIR-INTEGRATION.md). Candidate mode uses a
+separate backend clone and records integration-only provenance, never a
+rewritten release lock. After the backend merges, advance both shell pins
+together and obtain new pinned-pair receipts for the shell PR and its final
+main-push SHA.
+
 ## Report an issue
 
 Use this port's bug or feature template in

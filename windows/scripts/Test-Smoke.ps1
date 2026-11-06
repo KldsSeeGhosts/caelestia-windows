@@ -6,6 +6,7 @@ param(
     # The negative import check uses it; normal runs must omit it.
     [string]$StageRoot,
     [string]$RunRoot,
+    [ValidatePattern('^[a-f0-9]{40}$')][string]$CandidateBackendRevision,
     [ValidateRange(15, 600)][int]$TimeoutSeconds = 90,
     # Keep the isolated run directory after a pass too.
     [switch]$Keep
@@ -80,7 +81,17 @@ try {
     }
     $lock = Get-Content -LiteralPath $lockPath -Raw | ConvertFrom-Json
     $buildRecord = Get-Content -LiteralPath $buildRecordPath -Raw | ConvertFrom-Json
-    if ([string]$buildRecord.backendRevision -ne [string]$lock.quickshell.revision) {
+    if ($buildRecord.backendMode -eq 'candidate') {
+        if (-not $CandidateBackendRevision -or $buildRecord.backendRevision -cne $CandidateBackendRevision -or
+            $buildRecord.lockBackendRevision -cne $lock.quickshell.revision -or
+            $buildRecord.pinnedBackendRevision -cne $lock.quickshell.revision) {
+            throw 'Candidate smoke requires the explicit exact candidate SHA and unchanged shell pins.'
+        }
+    } elseif ($CandidateBackendRevision) {
+        throw 'Candidate smoke input requires a candidate build receipt.'
+    } elseif ($buildRecord.backendMode -and $buildRecord.backendMode -cne 'pinned') {
+        throw 'Unknown backend build mode.'
+    } elseif ([string]$buildRecord.backendRevision -ne [string]$lock.quickshell.revision) {
         throw "Backend pin mismatch: build has $($buildRecord.backendRevision), windows/sources.lock.json pins $($lock.quickshell.revision)."
     }
     if ([string]$buildRecord.m3shapesRevision -ne [string]$lock.m3shapes.revision) {

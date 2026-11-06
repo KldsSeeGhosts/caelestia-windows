@@ -59,6 +59,9 @@ if (Invoke-ReleaseGit $repoRoot @('status', '--porcelain', '--untracked-files=al
 }
 $revision = (Invoke-ReleaseGit $repoRoot @('rev-parse', 'HEAD')) -join ''
 $build = Get-Content -LiteralPath "$BuildRoot\logs\build.json" -Raw | ConvertFrom-Json
+if ($build.backendMode -cne 'pinned') {
+    throw 'Release assembly requires a pinned build, never an integration candidate or legacy receipt.'
+}
 if ($build.sourceDirty -ne $false -or $build.publicRelease -ne $true -or $build.sourceRevision -notmatch '^[a-f0-9]{40}$' -or
     -not $build.glazierBundled -or $build.qtVersion -notmatch '^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9._-]+)?$') {
     throw 'An exact clean production build record is required.'
