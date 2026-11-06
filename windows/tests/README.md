@@ -17,11 +17,14 @@ servers rather than real provider accounts.
   Native launchers, Task Scheduler and provisioning are faked.
 - `-Suite Services`: app catalog, audio, battery/power profiles, Bluetooth,
   brightness, media, network, notifications, session, tiling, tray,
-  workspace dispatch and wallpaper-target service contracts.
+  workspace dispatch and wallpaper-target service contracts. The staged-model
+  lane additionally runs five QML scenarios, 36 assertions and five behavioral
+  mutation controls against production components with synthetic providers.
 - `-Suite Shell`: launcher/notification accessibility contracts, drag
   previews, teardown, idle status, launcher hover, fullscreen routing,
   focus-return policy, quota interaction, wallpaper/background ownership and
-  rollback consumer acknowledgement/deadline/late-result state.
+  rollback consumer acknowledgement/deadline/late-result state, plus local
+  file-URL round trips and preview/copy boundaries with synthetic files.
 - `-Suite Scheme`: the real pinned colour generator's worker protocol,
   image downscaling, caching and wallpaper-input handling.
 - `Build-Prototype.ps1 -PluginTests` plus CTest: nine native plugin fixtures
