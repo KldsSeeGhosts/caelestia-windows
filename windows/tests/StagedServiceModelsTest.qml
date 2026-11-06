@@ -101,7 +101,7 @@ QtObject {
         check("persistence.atomic-confined-document", Driver.writes.length === writes + 1
             && Driver.writes[writes].path === path && Driver.writes[writes].atomic
             && JSON.parse(Driver.writes[writes].text).frequencies["synthetic.app"] === 5);
-        store.fileView.saveFailed(FileViewError.AccessDenied);
+        store.fileView.saveFailed(FileViewError.PermissionDenied);
         check("persistence.adapter-write-failure", store.writes === 0 && store.writesPending === 0 && store.lastError.length > 0);
         check("persistence.failed-write-retains-memory", store.frequencyFor("synthetic.app") === 5
             && JSON.parse(Driver.files[path]).frequencies["synthetic.app"] === 4);
@@ -117,7 +117,7 @@ QtObject {
         const storage = facade._storage;
         check("persistence.notification-confined", facade.pathConfined && storage.path === Driver.profile + "/state/notifs.json");
         Driver.files[storage.path] = "preserve unreadable synthetic bytes";
-        storage.loadFailed(FileViewError.AccessDenied);
+        storage.loadFailed(FileViewError.PermissionDenied);
         const writes = Driver.writes.length;
         const notification = notificationComponent.createObject(test);
         // Exercise the actual wrapper signal route, not handleNotification().
@@ -138,7 +138,7 @@ QtObject {
         // A missing file schedules a write with callLater. Revoke read access
         // before that completion: both the queued and debounced writers must gate.
         storage.loadFailed(FileViewError.FileNotFound);
-        storage.loadFailed(FileViewError.AccessDenied);
+        storage.loadFailed(FileViewError.PermissionDenied);
         facade._saveTimer.stop();
         facade._saveTimer.triggered();
         completedBeforeDisable = Driver.writes.length;

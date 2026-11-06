@@ -147,7 +147,7 @@ function Invoke-StagedQml([hashtable]$Mutation) {
                 -and $actual.text.Contains("CAELESTIA_STAGED_MODELS_FAIL Error: $($Mutation.failure)") -and -not $match.Success
         } else {
             $passed = -not $actual.timedOut -and $actual.exitCode -eq 0 -and $diagnostics.Count -eq 0 -and $null -ne $payload `
-                -and $payload.assertions -ge 30 -and $payload.cases.Count -eq $expectedCases.Count `
+                -and $payload.assertions -eq 36 -and $payload.cases.Count -eq $expectedCases.Count `
                 -and @(Compare-Object $expectedCases $payload.cases).Count -eq 0 `
                 -and $actual.text -notmatch 'CAELESTIA_STAGED_MODELS_FAIL'
         }
@@ -159,29 +159,38 @@ function Invoke-StagedQml([hashtable]$Mutation) {
     } finally {
         $resolved = [IO.Path]::GetFullPath($run)
         $tempParent = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\')
-        if ((Split-Path -Parent $resolved) -ne $tempParent -or (Split-Path -Leaf $resolved) -notlike 'caelestia-staged-models-*') {
-            throw 'Refusing cleanup outside the owned fixture directory.'
+        try {
+            if ((Split-Path -Parent $resolved) -ne $tempParent -or (Split-Path -Leaf $resolved) -notlike 'caelestia-staged-models-*') {
+                throw 'Refusing cleanup outside the owned fixture directory.'
+            }
+            Remove-Item -LiteralPath $resolved -Recurse -Force
+        } catch {
+            # Keep the original fixture failure while making cleanup failure fatal
+            # to the aggregate result when there was no earlier exception.
+            $results.Add(@{ name = 'cleanup'; passed = $false; reason = 'owned-fixture-cleanup-failed' })
+            Write-Warning 'Owned fixture cleanup failed; retained output requires inspection.'
         }
-        Remove-Item -LiteralPath $resolved -Recurse -Force
     }
 }
 
 try {
     foreach ($dependency in @(@{name = 'backend'; directory = 'quickshell'}, @{name = 'glazier'; directory = 'glazier'}, @{name = 'm3shapes'; directory = 'm3shapes'})) {
+        if ($PureOnly) { continue } # JavaScript does not load native dependencies.
         $directory = Join-Path $repoRoot ('windows\deps\' + $dependency.directory)
-        $topLevel = (& git -C $directory rev-parse --show-toplevel).Trim()
-        if ($LASTEXITCODE -ne 0 -or [IO.Path]::GetFullPath($topLevel) -ne [IO.Path]::GetFullPath($directory)) {
+        $topLevel = & git -C $directory rev-parse --show-toplevel
+        if ($LASTEXITCODE -ne 0 -or -not $topLevel -or [IO.Path]::GetFullPath($topLevel.Trim()) -ne [IO.Path]::GetFullPath($directory)) {
             throw "Dependency is not initialized as its own checkout: $($dependency.directory)"
         }
-        $dependencies[$dependency.name] = (& git -C $directory rev-parse HEAD).Trim()
-        if ($LASTEXITCODE -ne 0) { throw "Cannot identify dependency: $($dependency.directory)" }
+        $revision = & git -C $directory rev-parse HEAD
+        if ($LASTEXITCODE -ne 0 -or -not $revision) { throw "Cannot identify dependency: $($dependency.directory)" }
+        $dependencies[$dependency.name] = $revision.Trim()
     }
     $node = (Get-Command node -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
     $js = Invoke-OwnedProcess $node ('--test --test-reporter=tap "' + "$repoRoot\windows\tests\StagedClipboardModels.test.js" + '"') 'javascript' $repoRoot @{}
     $count = [regex]::Match($js.text, '(?m)^# tests ([0-9]+)\s*$')
     $passes = [regex]::Match($js.text, '(?m)^# pass ([0-9]+)\s*$')
     $skips = [regex]::Match($js.text, '(?m)^# skipped ([0-9]+)\s*$')
-    $passed = -not $js.timedOut -and $js.exitCode -eq 0 -and $count.Success -and [int]$count.Groups[1].Value -ge 5 `
+    $passed = -not $js.timedOut -and $js.exitCode -eq 0 -and $count.Success -and [int]$count.Groups[1].Value -eq 5 `
         -and $passes.Success -and $passes.Groups[1].Value -eq $count.Groups[1].Value -and $skips.Success -and [int]$skips.Groups[1].Value -eq 0
     $results.Add([ordered]@{ name = 'javascript'; passed = $passed; exitCode = $js.exitCode; timedOut = $js.timedOut
         tests = if ($count.Success) { [int]$count.Groups[1].Value } else { 0 }; seconds = $js.seconds; skipped = 0 })

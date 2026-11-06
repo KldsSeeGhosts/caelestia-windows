@@ -94,8 +94,12 @@ acceptance or establish that every staged-shell regression is covered.
 
 Aggregate runner registration, relevant-change CI, independent review and public
 status are integration-owner work. This change intentionally does not edit the
-aggregate runner, workflow, staging map or production code. Do not infer a CI
-pass from a local fixture receipt.
+aggregate runner, workflow, staging map or production code. The Unit gate already
+discovers the five JavaScript tests; only the QML lane needs explicit aggregate
+registration with a Qt prefix. Do not infer a CI pass from a local fixture receipt.
+`-PureOnly` requires no initialized native dependency checkouts and records an
+empty dependency map because that lane does not load them. Full runs record the
+actual checked-out dependency revisions.
 
 The summary explicitly classifies these scopes as skipped, with reasons:
 
