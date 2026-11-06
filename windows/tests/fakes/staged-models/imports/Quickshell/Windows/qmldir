@@ -1,0 +1,2 @@
+module Quickshell.Windows
+singleton NotificationSettings 1.0 NotificationSettings.qml
