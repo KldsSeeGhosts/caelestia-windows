@@ -1,0 +1,23 @@
+{
+  "schema": "caelestia-source-recipe",
+  "version": 1,
+  "referenceRelease": "v0.1.0-preview.2",
+  "referenceAssets": {
+    "supplier": {
+      "url": "https://github.com/KldsSeeGhosts/caelestia-windows/releases/download/v0.1.0-preview.2/caelestia-windows-0.1.0-preview.2-supplier-source.zip",
+      "sha256": "9214f9c74be0f0283e3d6d5e9554ab523b81114c526a71e52cacbeb2b00d7f78"
+    },
+    "application": {
+      "url": "https://github.com/KldsSeeGhosts/caelestia-windows/releases/download/v0.1.0-preview.2/caelestia-windows-0.1.0-preview.2-windows-x64.zip",
+      "sha256": "b74649cbebd7d3e4d188f9882db8921cda9dd792344a80698969b16d53f91715"
+    }
+  },
+  "shellRepository": "https://github.com/KldsSeeGhosts/caelestia-windows.git",
+  "rules": [
+    "Reuse the hash-identified public supplier manifest as acquisition and notice provenance data, not as the identity of a new candidate.",
+    "Require exact toolchain versions and every registry package/checksum in the candidate capture Cargo.lock to match the recorded supplier data.",
+    "Extract verbatim notices from their exact supplier members. Preserve previously published hash-verified derived notice bytes and their recorded derivations.",
+    "Keep all six recorded Qt source modules and all locked Cargo sources conservatively; source inclusion alone does not mean runtime deployment.",
+    "Require explicit review when inputs or payload suppliers change. This recipe does not decide legal applicability."
+  ]
+}
