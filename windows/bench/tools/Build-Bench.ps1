@@ -52,9 +52,31 @@ if ($LASTEXITCODE) { throw 'Benchmark compilation failed.' }
 # Match the backend fixtures' plain asInvoker manifest.
 & $mt -nologo -manifest "$SourceRoot\windows\deps\quickshell\src\windows\test\test-as-invoker.manifest" "-outputresource:$BuildRoot\native-bench.exe;#1"
 if ($LASTEXITCODE) { throw 'Benchmark manifest embedding failed.' }
+$cacheLines = [IO.File]::ReadAllLines("$BuildRoot\CMakeCache.txt")
+function Get-ActualBuildTool([string]$Key, [switch]$FileVersion) {
+    $line = @($cacheLines | Where-Object { $_ -match ('^' + $Key + ':[^=]+=') })
+    if ($line.Count -ne 1) { throw "Missing actual configured tool: $Key" }
+    $path = $line[0].Substring($line[0].IndexOf('=') + 1)
+    $path = (Resolve-Path -LiteralPath $path).Path
+    if ($FileVersion) { $version = (Get-Item -LiteralPath $path).VersionInfo.FileVersion }
+    else {
+        $version = (@(& $path --version 2>&1) -join "`n").Trim()
+        if ($LASTEXITCODE) { throw "Cannot identify configured tool: $Key" }
+    }
+    if (-not $version) { throw "Configured tool has no actual version identity: $Key" }
+    return [ordered]@{path=$path; sha256=(Get-FileHash -LiteralPath $path).Hash.ToLowerInvariant(); version=$version}
+}
 [ordered]@{
+    schemaVersion=2
+    privacy='PRIVATE-local-evidence; never upload raw receipts automatically'
     backendRevision=(& git -C "$SourceRoot\windows\deps\quickshell" rev-parse HEAD).Trim()
     probeSourceSha256=(Get-FileHash "$PSScriptRoot\..\native\main.cpp").Hash.ToLowerInvariant()
     cmakeSha256=(Get-FileHash "$PSScriptRoot\..\native\CMakeLists.txt").Hash.ToLowerInvariant()
     executableSha256=(Get-FileHash "$BuildRoot\native-bench.exe").Hash.ToLowerInvariant()
-} | ConvertTo-Json | Set-Content "$BuildRoot\probe-build.json" -Encoding UTF8
+    toolchain=[ordered]@{
+        compiler=(Get-ActualBuildTool 'CMAKE_CXX_COMPILER')
+        linker=(Get-ActualBuildTool 'CMAKE_LINKER' -FileVersion)
+        cmake=(Get-ActualBuildTool 'CMAKE_COMMAND')
+        ninja=(Get-ActualBuildTool 'CMAKE_MAKE_PROGRAM')
+    }
+} | ConvertTo-Json -Depth 8 | Set-Content "$BuildRoot\probe-build.json" -Encoding UTF8

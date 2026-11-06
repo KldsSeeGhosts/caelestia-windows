@@ -19,6 +19,8 @@ param(
     [string]$NativeRootB,
     [string]$PlantB = 'None',
     [ValidateSet('AB', 'counterbalanced')][string]$Order = 'counterbalanced',
+    [ValidateSet('diagnostic','floor-discovery','held-out','confirm')][string]$Purpose = 'diagnostic',
+    [string]$Calibration,
     [ValidateRange(0, 100)][double]$PlantPercent = 25
 )
 $ErrorActionPreference = 'Stop'
@@ -41,6 +43,7 @@ if (-not $QtPrefix) { $QtPrefix = (Get-Content "$BuildRoot\logs\build.json" -Raw
 $arguments = @{
     QtPrefix=$QtPrefix; BuildRoot=$BaseRoot; BuildRootB=$BuildRoot
     RunRoot=$RunRoot; SelectAreas=($selection -join ','); PlantB=$PlantB; PlantPercent=$PlantPercent; Order=$Order
+    Purpose=$Purpose
 }
 if ($details.notCovered) { $arguments.NotCovered=$details.notCovered }
 if ($Area) { $arguments.Area=$Area }
@@ -49,5 +52,6 @@ if ($BaseSourceRoot) { $arguments.SourceRoot=$BaseSourceRoot }
 if ($SchemePython) { $arguments.SchemePython=$SchemePython }
 if ($NativeRootA) { $arguments.NativeRootA=$NativeRootA }
 if ($NativeRootB) { $arguments.NativeRootB=$NativeRootB }
+if ($Calibration) { $arguments.Calibration=$Calibration }
 & "$PSScriptRoot\Measure-ShellBenchmark.ps1" @arguments
 exit $LASTEXITCODE

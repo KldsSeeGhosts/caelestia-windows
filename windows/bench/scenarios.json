@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "protocol": "public-paired-cost-v4",
+  "protocol": "public-paired-cost-v5",
   "status": "coverage inventory, not baseline or qualification",
   "defaults": {
     "scoredDeadlineSeconds": 580,

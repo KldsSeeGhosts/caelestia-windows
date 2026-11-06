@@ -29,6 +29,7 @@ if ($output -eq $repo -or $output.StartsWith($repo + '\', [StringComparison]::Or
 if (Test-Path -LiteralPath $output) { throw 'RunRoot must be new; existing evidence is preserved.' }
 New-Item -ItemType Directory -Path $output | Out-Null
 $record=[ordered]@{
+    privacy='PRIVATE-local-evidence; never upload raw receipts automatically'
     schemaVersion=1; evidenceClass='profile'; scoredBenchmark=$false
     captureExecuted=$false; complete=$false; secondsRequested=$Seconds
     instrumentationOverhead=$null; overheadStatus='not-measured'

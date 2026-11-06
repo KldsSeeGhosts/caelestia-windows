@@ -25,6 +25,7 @@ if (Test-Path -LiteralPath $output) { throw 'RunRoot must be new; preserve exist
 New-Item -ItemType Directory -Path $output | Out-Null
 $clock = [Diagnostics.Stopwatch]::StartNew()
 $record = [ordered]@{
+    privacy='PRIVATE-local-evidence; never upload raw receipts automatically'
     schemaVersion=1; evidenceClass='profile'; scoredBenchmark=$false
     secondsRequested=$Seconds; captureExecuted=$false; complete=$false
     instrumentationOverhead=$null; overheadStatus='not-measured'

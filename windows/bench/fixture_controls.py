@@ -22,12 +22,14 @@ args = parser.parse_args()
 output = bench.external_output(args.output)
 output.mkdir(parents=True)
 started = time.perf_counter()
+hashing_started = time.perf_counter()
 record = {"schemaVersion": 1, "evidenceClass": "fixture", "wholeAppQualification": False,
+          "privacy": bench.PRIVATE, "subprocessCount": 0, "complete": False,
           "protocol": bench.PROTOCOL, "toolSha256": bench.sha(__file__),
           "harnessSha256": bench.sha(HERE.parent / "scripts/ShellBench.py"),
           "probeSha256": bench.sha(HERE / "fixture_probe.py"), "experiments": []}
-setup = time.perf_counter()
-record["setupSeconds"] = setup - started
+record["identityHashingSeconds"] = time.perf_counter() - hashing_started
+record["setupAndStagingTurnaround"] = "not-measured; arithmetic fixture only, no shell staging"
 for repeat in range(1, 4):
     for kind in ("aa", "added"):
         trials = []
@@ -36,10 +38,24 @@ for repeat in range(1, 4):
             for side in bench.pair_order(index, "counterbalanced"):
                 cmd = [sys.executable, "-B", str(HERE / "fixture_probe.py"), "--added-percent",
                        "100" if kind == "added" and side == "B" else "0"]
-                probe = subprocess.run(cmd, capture_output=True, text=True, timeout=10, check=True)
-                raw = json.loads(probe.stdout)
-                if raw["operations"] <= 0 or raw["elapsedNs"] <= 0 or raw["checksum"] <= 0:
-                    raise ValueError("Fixture did no measurable work.")
+                child = None
+                try:
+                    child = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                    record["subprocessCount"] += 1
+                    stdout, stderr = child.communicate(timeout=10)
+                    if child.returncode:
+                        raise RuntimeError("Fixture subprocess failed.")
+                    raw = json.loads(stdout)
+                    if raw["operations"] <= 0 or raw["elapsedNs"] <= 0 or raw["checksum"] <= 0:
+                        raise ValueError("Fixture did no measurable work.")
+                except Exception as error:
+                    if child and child.poll() is None:
+                        child.kill()
+                        child.wait(timeout=2)
+                    record["error"] = str(error)
+                    record["wallSeconds"] = time.perf_counter() - started
+                    bench.write(output / "fixture-controls.json", record)
+                    raise
                 trials.append({"index": index, "side": side, "raw": raw,
                                "values": {"fixture.nsPerOperation": raw["elapsedNs"] / raw["operations"]}})
         data = {"schemaVersion": 1, "evidenceClass": "fixture",
@@ -60,7 +76,7 @@ for repeat in range(1, 4):
                                      "kind": kind, "repeat": repeat,
                                      "expected": "same" if kind == "aa" else "regressed",
                                      "actual": data["summary"]["overall"], "wallSeconds": data["wallSeconds"]})
-record["subprocessCount"] = 96
+record["complete"] = True
 record["wallSeconds"] = time.perf_counter() - started
 record["limits"] = "A/A misses and unresolved outcomes retained. Not native, QML, desktop, ETW overhead or whole-app performance evidence."
 bench.write(output / "fixture-controls.json", record)

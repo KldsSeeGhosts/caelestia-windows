@@ -25,7 +25,9 @@ if os.name == "nt":
     import winreg
 
 HERE = Path(__file__).resolve().parent
-PROTOCOL = "public-paired-cost-v4"
+PROTOCOL = "public-paired-cost-v5"
+DEADLINE = None
+PRIVATE = "PRIVATE-local-evidence; never upload raw receipts automatically"
 POLICY = {"version": "paired-log-wilcoxon-v3", "excludedMetrics": {
     "payloadAssemblyMs": "Removed after a full-suite A/A false positive: identical B payload assembly was 7.3% slower on experiment three. Raw packaging phases remain diagnostic, not a performance verdict.",
     "quota.nanosecondsPerOperation": "The calibration used priorityRows, which does not exist on main. Replaced with quota.windowProjectionNs, exercising the same production window ordering/projection functions on both revisions.",
@@ -67,13 +69,39 @@ def pair_order(index, order):
     return ("B", "A") if order == "counterbalanced" and index % 2 == 0 else ("A", "B")
 
 
+def remaining_budget(timeout):
+    value = timeout if DEADLINE is None else min(timeout, DEADLINE - time.monotonic())
+    if value <= 0:
+        raise TimeoutError("Session deadline exhausted before subprocess or integrity work.")
+    return value
+
+
+def kill_owned(child):
+    if child.poll() is None:
+        if os.name == "nt":
+            try:
+                SP.run(["taskkill", "/PID", str(child.pid), "/T", "/F"], capture_output=True,
+                       creationflags=NO_WINDOW, timeout=2)
+            except SP.TimeoutExpired:
+                pass
+        if child.poll() is None:
+            child.kill()
+        child.wait(timeout=2)
+
+
 def command(args, timeout=30, cwd=None):
-    result = SP.run(list(map(str, args)), capture_output=True, text=True,
-                    encoding="utf-8", errors="replace", timeout=timeout, cwd=cwd,
-                    creationflags=NO_WINDOW)
-    if result.returncode:
-        raise RuntimeError(f"Command failed ({result.returncode}): {args[0]}\n{result.stderr[-1500:]}")
-    return result.stdout.strip()
+    timeout = remaining_budget(timeout)
+    child = SP.Popen(list(map(str, args)), stdout=SP.PIPE, stderr=SP.PIPE, text=True,
+                     encoding="utf-8", errors="replace", cwd=cwd,
+                     creationflags=NO_WINDOW if os.name == "nt" else 0)
+    try:
+        stdout, stderr = child.communicate(timeout=remaining_budget(timeout))
+    except (SP.TimeoutExpired, TimeoutError) as error:
+        kill_owned(child)
+        raise TimeoutError("Subprocess exceeded remaining session budget; owned process terminated.") from error
+    if child.returncode:
+        raise RuntimeError(f"Command failed ({child.returncode}): {args[0]}\n{stderr[-1500:]}")
+    return stdout.strip()
 
 
 def git(source, *args):
@@ -81,7 +109,47 @@ def git(source, *args):
 
 
 def sha(path):
-    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+    value = hashlib.sha256()
+    with Path(path).open("rb") as stream:
+        while True:
+            remaining_budget(30)
+            chunk = stream.read(1024 * 1024)
+            if not chunk:
+                break
+            value.update(chunk)
+    return value.hexdigest()
+
+
+def campaign_module():
+    sys.path.insert(0, str(HERE.parent / "bench"))
+    import campaign
+    return campaign
+
+
+def probe_identity(root):
+    root = Path(root)
+    record = read(root / "probe-build.json")
+    required = ("compiler", "linker", "cmake", "ninja")
+    if record.get("schemaVersion") != 2 or any(not record.get("toolchain", {}).get(k) for k in required):
+        raise ValueError("Native probe lacks actual compiler/toolchain provenance; rebuild in a new root.")
+    for name in required:
+        tool = record["toolchain"][name]
+        if not tool.get("sha256") or not tool.get("version"):
+            raise ValueError("Native probe toolchain identity is incomplete.")
+    if sha(root / "native-bench.exe") != record["executableSha256"]:
+        raise ValueError("Native probe executable changed.")
+    return {"executableSha256": record["executableSha256"],
+            "receiptSha256": sha(root / "probe-build.json"),
+            "cacheSha256": sha(root / "CMakeCache.txt"),
+            "probeSourceSha256": record["probeSourceSha256"], "cmakeSha256": record["cmakeSha256"],
+            "backendRevision": record["backendRevision"],
+            "toolchain": {k: {"sha256": record["toolchain"][k]["sha256"],
+                               "version": record["toolchain"][k]["version"]} for k in required}}
+
+
+def verify_probe(root, expected):
+    if probe_identity(root) != expected:
+        raise ValueError("External native probe or toolchain receipt mutated during acquisition.")
 
 
 def tree_hashes(root):
@@ -264,6 +332,9 @@ def summarize(data):
                for name in sorted(names) if name not in excluded}
     if not metrics:
         raise ValueError("No supported metric was measured.")
+    for name, metric in metrics.items():
+        if name.startswith("panel.") and name.endswith(".p95Ms"):
+            metric["claimability"] = campaign_module().claimability(data, name)
     verdicts = [m["verdict"] for m in metrics.values()]
     return {"metrics": metrics, "overall": "regressed" if "regressed" in verdicts else
             "unresolved" if "unresolved" in verdicts else
@@ -369,7 +440,7 @@ def report(data, target):
     metrics = dict(sorted(result["metrics"].items(), key=lambda i: (ORDER[kind(i[1])], label(i[0]))))
     plant = data.get("plantB", "None")
     if plant in ("Sensitivity", "Resources", "Panel", "Reload", "Tiling", "Tracker") + PROVIDERS:
-        plant += f' ({data.get("plantPercent", 25):g}% nominal extra work)'
+        plant += f' (setting {data.get("plantPercent", 25):g}; see metric-specific plant units)'
     parts = [f'<!doctype html><html lang="en"><meta charset="utf-8"><title>Shell benchmark</title>'
              f'<style>{STYLE}</style><h1>{html.escape(headline(result))}</h1>',
              f'<p>A {html.escape(data["sides"]["A"]["revision"][:12])} / '
@@ -425,6 +496,7 @@ def runtime_values(path):
            "plantPercent": metadata.get("plantPercent"),
            "plantResourceBytes": metadata.get("plantResourceBytes"),
            "plantPanelDelaysMs": metadata.get("plantPanelDelaysMs"),
+           "plantReferenceValues": metadata.get("plantReferenceValues"),
            "warmupSeconds": metadata["workload"]["warmupSeconds"],
            "busyTicksBefore": metadata.get("idleStateBefore", {}).get("busyTicks", 0),
            "busyTicksFinal": metadata.get("finalState", {}).get("busyTicks", 0),
@@ -511,15 +583,13 @@ def derive_values(trial):
 
 
 def worker(args, path, remaining):
-    if remaining <= 0:
-        raise TimeoutError("Comparison exceeded its wall-time budget.")
+    timeout = remaining_budget(min(remaining, 90))
     with (path.parent / (path.name + ".worker.log")).open("w", encoding="utf-8") as log:
         child = SP.Popen(list(map(str, args)), stdout=log, stderr=SP.STDOUT, cwd=path.parent, creationflags=NO_WINDOW)
         try:
-            code = child.wait(timeout=min(remaining, 90))
-        except SP.TimeoutExpired:
-            SP.run(["taskkill", "/PID", str(child.pid), "/T", "/F"], capture_output=True, creationflags=NO_WINDOW)
-            child.wait(timeout=5)
+            code = child.wait(timeout=remaining_budget(timeout))
+        except (SP.TimeoutExpired, TimeoutError):
+            kill_owned(child)
             raise TimeoutError("Worker exceeded its deadline; process tree terminated.")
         if code:
             raise RuntimeError(f"Worker failed ({code}); see {path.name}.worker.log. Aborted at first failed trial.")
@@ -542,32 +612,22 @@ def select_paths(changed, mapping):
 
 
 def calibrate(paths):
-    ratios, inputs = {}, []
-    for path in paths:
-        data = read(path)
-        if data["plantB"] != "None" or data["protocol"]["version"] != PROTOCOL:
-            raise ValueError("Calibration requires unplanted current-protocol A/A observations.")
-        if any(data["sides"]["A"][key] != data["sides"]["B"][key]
-               for key in ("revision", "executableSha256", "nativeModules")):
-            raise ValueError("Floor calibration requires identical A/A payloads.")
-        # Recompute from raw counters. Do not trust an acquisition's verdict.
-        result = summarize(data)
-        for name, metric in result["metrics"].items():
-            ratios.setdefault(name, []).extend(metric["pairedLogRatios"])
-        inputs.append({"file": str(path), "sha256": sha(path)})
-    details, floors = {}, {}
-    for name, values in sorted(ratios.items()):
-        center = S.median(values)
-        robust_sd = 1.4826 * S.median(abs(x - center) for x in values) * 100
-        floors[name] = max(2, 1.5 * robust_sd)
-        details[name] = {"pairs": len(values), "robustPairedSdPercent": robust_sd,
-                         "floorPercent": floors[name]}
-    return {"method": "max(2%, 1.5 * 1.4826 * MAD of paired A/A log ratios * 100)",
-            "status": "empirical v3 A/A calibration", "inputs": inputs,
-            "metrics": details, "floorsPercent": floors}
+    return campaign_module().calibrate(paths, sys.modules[__name__])
+
+
+def record_failure(data, error, output, started):
+    data["error"] = str(error)
+    data.pop("summary", None)
+    data["complete"] = False
+    data["workerAcquisitionSeconds"] = data.pop("workloadSeconds", data.get("workerAcquisitionSeconds", 0))
+    data["privacy"] = PRIVATE
+    data["failure"] = {"kind": "deadline-exceeded" if isinstance(error, (TimeoutError, SP.TimeoutExpired)) else "measurement-failed"}
+    data["wallSeconds"] = time.monotonic() - started
+    write(Path(output) / "results.json", data)
 
 
 def run(args):
+    global DEADLINE
     if os.name != "nt":
         raise ValueError("Measurement requires Windows; raw-data summarization is portable.")
     started = time.monotonic()
@@ -589,12 +649,13 @@ def run(args):
     if not 0 <= args.plant_percent <= 100:
         raise ValueError("Plant percentage must be between 0 and 100.")
     mapping = read(HERE.parent / "bench/map.json")
-    data = {"schemaVersion": 1, "acquisitionId": uuid.uuid4().hex,
+    data = {"schemaVersion": 1, "acquisitionId": uuid.uuid4().hex, "privacy": PRIVATE, "complete": False,
             "date": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "command": [PS, "-NoProfile", "-File", str(HERE / "Measure-ShellBenchmark.ps1"),
                         "-QtPrefix", args.qt, "-BuildRoot", args.a, "-BuildRootB", args.b,
                         "-RunRoot", str(output), "-Area", args.area, "-Runs", str(args.runs), "-PlantB", args.plant],
             "protocol": {"version": PROTOCOL, "runs": args.runs, "order": args.order,
+                         "purpose": args.purpose,
                          "area": args.area, "mode": "Offscreen",
                          "qualification": "unqualified-public-protocol",
                          "cachePolicy": "fresh-process-profile-and-qml-cache",
@@ -611,6 +672,7 @@ def run(args):
                          "analysisSha256": sha(__file__), "runtimeSha256": sha(HERE.parent / "bench/tools/Measure-ShellRuntime.ps1")},
             "sides": {}, "trials": [], "plantB": args.plant, "plantPercent": args.plant_percent,
             "evidenceClass": "offscreen-or-isolated-logic",
+            "integrityCheckSeconds": 0, "workloadSeconds": 0, "machineCheckSeconds": 0,
             "notCovered": args.not_covered or [],
             "analysisPolicy": POLICY,
             "machine": {"os": platform.platform(), "logicalProcessors": os.cpu_count()},
@@ -630,12 +692,26 @@ def run(args):
         data["command"] += ["-NotCovered"] + args.not_covered
     if args.scheme_python:
         data["command"] += ["-SchemePython", args.scheme_python]
-    data["command"] += ["-PlantPercent", str(args.plant_percent), "-Order", args.order]
+    data["command"] += ["-PlantPercent", str(args.plant_percent), "-Order", args.order, "-Purpose", args.purpose]
+    if args.calibration:
+        data["command"] += ["-Calibration", args.calibration]
     for side, root in (("A", args.native_a), ("B", args.native_b)):
         if root:
             data["command"] += ["-NativeRoot" + side, root]
     power_state = None
+    DEADLINE = started + LIMIT_SECONDS
+    write(output / "results.json", data)
     try:
+        if args.calibration:
+            calibration, _ = campaign_module().load_calibration(args.calibration, sys.modules[__name__])
+            if args.purpose == "floor-discovery":
+                raise ValueError("Floor discovery cannot reuse frozen calibration.")
+            data["protocol"]["floorsPercent"] = calibration["floorsPercent"]
+            data["protocol"]["floorCalibration"] = calibration
+            data["protocol"]["floorCalibrationId"] = calibration["identitySha256"]
+        elif args.purpose in ("held-out", "confirm"):
+            raise ValueError("Held-out and confirmation runs require --calibration with frozen provenance.")
+        integrity_started = time.monotonic()
         execution_state = C.windll.kernel32.SetThreadExecutionState
         execution_state.argtypes, execution_state.restype = [W.DWORD], W.DWORD
         power_state = execution_state(0x80000001)  # continuous, system required, not display
@@ -650,10 +726,12 @@ def run(args):
                  "scripts/Stage-ShellPrototype.ps1", "scripts/Caelestia-Privacy.ps1")
         data["protocol"]["filesSha256"] = {name: sha(HERE.parent / name) for name in files}
         data["sides"] = {"A": identity(args.a, args.source_a), "B": identity(args.b, args.source_b)}
+        data["integrityCheckSeconds"] += time.monotonic() - integrity_started
         config_root = data["sides"]["A"]["source"]
         data["protocol"]["settingsSha256"] = {name: sha(Path(config_root) / "windows/shell" / name)
                                               for name in ("shell.json", "windows.json")}
         data["removed"].update(POLICY["excludedMetrics"])
+        integrity_started = time.monotonic()
         qt_version = command([Path(args.qt) / "bin/qtpaths.exe", "--qt-version"])
         if any(side["buildRecord"]["qtVersion"] != qt_version for side in data["sides"].values()):
             raise ValueError("Qt prefix does not match the builds' Qt version.")
@@ -667,6 +745,7 @@ def run(args):
             json.dumps(data["machine"]["qtRuntimeFiles"], sort_keys=True).encode()).hexdigest()
         with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Cryptography") as key:
             data["machine"]["id"] = hashlib.sha256(winreg.QueryValueEx(key, "MachineGuid")[0].encode()).hexdigest()[:16]
+        data["integrityCheckSeconds"] += time.monotonic() - integrity_started
         initial = machine()
         check_machine(initial, initial)
         load_check = machine()
@@ -718,19 +797,33 @@ def run(args):
                         or built["executableSha256"] != data["sides"][side]["nativeProbeSha256"]):
                     raise ValueError("Native probe build is stale or its source identity differs.")
                 data["sides"][side]["nativeProbeBuild"] = built
+                integrity_started = time.monotonic()
+                data["sides"][side]["nativeProbeIdentity"] = probe_identity(native)
+                data["sides"][side]["nativeProbeRoot"] = str(native.resolve())
+                data["integrityCheckSeconds"] += time.monotonic() - integrity_started
         data["setupIncludingNativeProbeSeconds"] = time.monotonic() - started
         measurement_started = time.monotonic()
         for index in range(1, args.runs + 1):
             for side in pair_order(index, args.order):
                 trial_started = time.monotonic()
+                integrity_started = time.monotonic()
+                for stable in data["sides"].values():
+                    if stable.get("nativeProbeIdentity"):
+                        verify_probe(stable["nativeProbeRoot"], stable["nativeProbeIdentity"])
+                pre_integrity_seconds = time.monotonic() - integrity_started
+                data["integrityCheckSeconds"] += pre_integrity_seconds
+                machine_started = time.monotonic()
                 before = machine()
                 check_machine(initial, before)
+                data["machineCheckSeconds"] += time.monotonic() - machine_started
                 ident = data["sides"][side]
                 plant = args.plant if side == "B" else "None"
                 path = output / f"{side}-{index}"
                 reference = output / f"A-{index}-reference.json"
                 values, raw, commands = {}, {}, []
+                data["inFlightTrial"] = {"side": side, "index": index, "raw": raw, "commands": commands}
                 print(f"{side} trial {index}/{args.runs} ({args.area}, plant {plant})", flush=True)
+                workload_started = time.monotonic()
                 service_areas = selected & set(PROVIDERS)
                 if service_areas:
                     service_path = output / f"{side}-{index}-services"
@@ -809,8 +902,13 @@ def run(args):
                     worker(cmd, scheme_path, LIMIT_SECONDS - (time.monotonic() - started))
                     raw["scheme"] = read(scheme_path / "trial.json")
                     values.update(raw["scheme"]["values"])
+                workload_seconds = time.monotonic() - workload_started
+                data["workloadSeconds"] += workload_seconds
+                machine_started = time.monotonic()
                 after = machine()
                 check_machine(initial, after)
+                data["machineCheckSeconds"] += time.monotonic() - machine_started
+                integrity_started = time.monotonic()
                 if (sha(Path(ident["build"]) / "logs/build.json") != ident["buildRecordSha256"]
                         or sha(Path(ident["build"]) / "quickshell/qs.exe") != ident["executableSha256"]):
                     raise ValueError("Measured build changed during the session. Aborting.")
@@ -824,6 +922,11 @@ def run(args):
                     raise ValueError("A measured source checkout changed during the session.")
                 if any(sha(HERE.parent / p) != digest for p, digest in data["protocol"]["filesSha256"].items()):
                     raise ValueError("Measurement tooling changed during the session.")
+                for stable in data["sides"].values():
+                    if stable.get("nativeProbeIdentity"):
+                        verify_probe(stable["nativeProbeRoot"], stable["nativeProbeIdentity"])
+                post_integrity_seconds = time.monotonic() - integrity_started
+                data["integrityCheckSeconds"] += post_integrity_seconds
                 total = after["systemTimes100ns"]["total"] - before["systemTimes100ns"]["total"]
                 load = 100 * (1 - (after["systemTimes100ns"]["idle"] - before["systemTimes100ns"]["idle"]) / total) if total else 0
                 if load > data["protocol"]["maximumSystemCpuPercent"]:
@@ -834,7 +937,10 @@ def run(args):
                 data["trials"].append({"side": side, "index": index, "values": values, "raw": raw,
                                        "commands": commands, "machineBefore": before, "machineAfter": after,
                                        "systemCpuPercent": load,
+                                       "workerAcquisitionSeconds": workload_seconds,
+                                       "integrityCheckSeconds": pre_integrity_seconds + post_integrity_seconds,
                                        "wallSeconds": time.monotonic() - trial_started})
+                data.pop("inFlightTrial", None)
                 if side == "A":
                     write(reference, values)
                 data["wallSeconds"] = time.monotonic() - started
@@ -843,18 +949,30 @@ def run(args):
                 # explicit later operation, never part of a measured trial.
         # A may have changed while the final B trial was running. Recheck both
         # identities at the session boundary, not only the last measured side.
+        integrity_started = time.monotonic()
         for stable in data["sides"].values():
+            if stable.get("nativeProbeIdentity"):
+                verify_probe(stable["nativeProbeRoot"], stable["nativeProbeIdentity"])
             if (git(stable["source"], "rev-parse", "HEAD") != stable["revision"]
                     or git(stable["source"], "status", "--porcelain")
                     or sha(Path(stable["build"]) / "logs/build.json") != stable["buildRecordSha256"]
                     or any(sha(Path(stable["build"]) / p) != digest
                            for p, digest in stable["runtimeFiles"].items())):
                 raise ValueError("A measured source or payload changed before session completion.")
+        data["integrityCheckSeconds"] += time.monotonic() - integrity_started
+        remaining_budget(30)
         data["summary"] = summarize(data)
-        data["measurementSeconds"] = time.monotonic() - measurement_started
+        data["trialLoopWallSeconds"] = time.monotonic() - measurement_started
+        data["workerAcquisitionSeconds"] = data.pop("workloadSeconds")
+        data["measurementSeconds"] = None
+        data["measurementTimeStatus"] = "Use per-metric raw timers; worker acquisition wall includes staging, not a scored duration."
         data["wallSeconds"] = time.monotonic() - started
         write(output / "results.json", data)
         report(data, output / "report.html")
+        remaining_budget(30)
+        data["complete"] = True
+        data["wallSeconds"] = time.monotonic() - started
+        write(output / "results.json", data)
         print(f'{headline(data["summary"])} ({data["wallSeconds"]:.0f} s; {output / "results.json"})')
         for name, metric in data["summary"]["metrics"].items():
             print(f'{label(name)}: {reading(metric)}')
@@ -862,12 +980,11 @@ def run(args):
         # reading ("possibly slower, up to +X%") but A/A runs land there by chance.
         return 2 if data["summary"]["overall"] == "regressed" else 0
     except Exception as error:
-        data["error"] = str(error)
-        data["wallSeconds"] = time.monotonic() - started
-        write(output / "results.json", data)
+        record_failure(data, error, output, started)
         print(f"FAILED in {data['wallSeconds']:.3f}s: {error}", file=sys.stderr)
         return 1
     finally:
+        DEADLINE = None
         if power_state:
             execution_state(power_state)
 
@@ -887,6 +1004,8 @@ def main():
     p.add_argument("--runs", type=int, choices=(7, 8, 9))
     p.add_argument("--order", choices=("AB", "counterbalanced"), default="counterbalanced")
     p.add_argument("--plant-percent", type=float, default=25)
+    p.add_argument("--purpose", choices=("diagnostic", "floor-discovery", "held-out", "confirm"), default="diagnostic")
+    p.add_argument("--calibration")
     p.add_argument("--not-covered", nargs="*")
     p.add_argument("--area", type=str.lower, choices=("all", "providers") + AREAS, default="all")
     p.add_argument("--plant", type=lambda s: next((p for p in PLANTS if p.lower() == s.lower()), s),
@@ -912,6 +1031,7 @@ def main():
     p = sub.add_parser("qualify", help="Independent same-artifact A/A and added-cost evidence")
     p.add_argument("--aa", nargs="+", required=True)
     p.add_argument("--added", nargs="+", required=True)
+    p.add_argument("--calibration", required=True)
     p.add_argument("--output", required=True)
     p = sub.add_parser("profile", help="Inspect trace/QML capability and write a bounded capture plan")
     p.add_argument("--output", required=True)
@@ -926,8 +1046,11 @@ def main():
     p.add_argument("--interval", type=float, default=5)
     p.add_argument("--allow-process-observation", action="store_true")
     p = sub.add_parser("scenarios", help="Public feature and coverage manifest")
+    p = sub.add_parser("export-public", help="Allowlisted summary only; no raw upload")
+    p.add_argument("results")
+    p.add_argument("--output", required=True)
     args = parser.parse_args()
-    if args.action in ("gate", "qualify", "profile", "monitor", "scenarios"):
+    if args.action in ("gate", "qualify", "profile", "monitor", "scenarios", "export-public"):
         sys.path.insert(0, str(HERE.parent / "bench"))
         import campaign
         return campaign.main(args, sys.modules[__name__])

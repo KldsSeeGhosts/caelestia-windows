@@ -22,16 +22,30 @@ param(
     [string]$NativeRootB,
     [string]$SelectAreas,
     [string]$SchemePython,
+    [ValidateSet('diagnostic','floor-discovery','held-out','confirm')][string]$Purpose = 'diagnostic',
+    [string]$Calibration,
     [ValidateRange(0, 100)][double]$PlantPercent = 25,
     [string[]]$NotCovered
 )
 $ErrorActionPreference = 'Stop'
+$RunRoot = [IO.Path]::GetFullPath($RunRoot)
+if (Test-Path -LiteralPath $RunRoot) { throw 'RunRoot must be new; do not overwrite evidence.' }
+foreach ($root in @($BuildRoot, $BuildRootB, $QtPrefix, $SourceRoot, $SourceRootB, $NativeRootA, $NativeRootB,
+                    (Join-Path $PSScriptRoot '..\..'))) {
+    if (-not $root) { continue }
+    $resolved = [IO.Path]::GetFullPath($root).TrimEnd('\')
+    if ($RunRoot -eq $resolved -or $RunRoot.StartsWith($resolved + '\', [StringComparison]::OrdinalIgnoreCase)) {
+        throw 'RunRoot must be external to source and measured payload/probe roots.'
+    }
+}
 (Get-Process -Id $PID).PriorityClass = 'Normal'
 Add-Type -Name BenchmarkErrorMode -Namespace W -MemberDefinition '[DllImport("kernel32.dll")] public static extern uint SetErrorMode(uint m);'
 [W.BenchmarkErrorMode]::SetErrorMode(0x8003) | Out-Null
 $arguments = @('-3', "$PSScriptRoot\ShellBench.py", 'run',
     '--qt', $QtPrefix, '--a', $BuildRoot, '--b', $BuildRootB,
-    '--output', $RunRoot, '--area', $Area, '--plant', $PlantB, '--plant-percent', "$PlantPercent", '--order', $Order)
+    '--output', $RunRoot, '--area', $Area, '--plant', $PlantB, '--plant-percent', "$PlantPercent", '--order', $Order,
+    '--purpose', $Purpose)
+if ($Calibration) { $arguments += @('--calibration', $Calibration) }
 if ($Runs) { $arguments += @('--runs', "$Runs") }
 if ($NotCovered) { $arguments += @('--not-covered') + $NotCovered }
 if ($SourceRoot) { $arguments += @('--source-a', $SourceRoot) }
@@ -57,7 +71,33 @@ try {
     $stdout = $child.StandardOutput.ReadToEndAsync()
     $stderr = $child.StandardError.ReadToEndAsync()
     if (-not $child.WaitForExit(580000)) {
-        & taskkill.exe /PID $child.Id /T /F 2>&1 | Out-Null
+        if (-not (Test-Path -LiteralPath $RunRoot)) { New-Item -ItemType Directory -Path $RunRoot | Out-Null }
+        $failureReceipt = [ordered]@{
+            schemaVersion=1; privacy='PRIVATE-local-evidence; never upload raw receipts automatically'
+            complete=$false; error='Outer 580-second deadline exceeded; owned-tree termination requested.'
+            failure=[ordered]@{kind='outer-deadline-exceeded'; exitCode=1; ownedRootExited=$false; treeTerminationExitCode=$null}
+        }
+        $failureReceipt | ConvertTo-Json -Depth 6 |
+            Set-Content -LiteralPath (Join-Path $RunRoot 'outer-deadline.json') -Encoding UTF8
+        $killInfo = [Diagnostics.ProcessStartInfo]::new()
+        $killInfo.FileName = Join-Path $env:SystemRoot 'System32\taskkill.exe'
+        $killInfo.Arguments = "/PID $($child.Id) /T /F"
+        $killInfo.UseShellExecute = $false
+        $killInfo.CreateNoWindow = $true
+        $killer = [Diagnostics.Process]::Start($killInfo)
+        $treeExitCode = $null
+        try {
+            if ($killer.WaitForExit(2000)) { $treeExitCode = $killer.ExitCode }
+            else { $killer.Kill() }
+        } finally { $killer.Dispose() }
+        if (-not $child.HasExited) { $child.Kill() }
+        $rootExited = $child.WaitForExit(2000)
+        # Independent terminal evidence survives a partial Python JSON write.
+        # Never modify a prior acquisition receipt or mistake it for completion.
+        $failureReceipt.failure.ownedRootExited=$rootExited
+        $failureReceipt.failure.treeTerminationExitCode=$treeExitCode
+        $failureReceipt | ConvertTo-Json -Depth 6 |
+            Set-Content -LiteralPath (Join-Path $RunRoot 'outer-deadline.json') -Encoding UTF8
         throw 'Benchmark exceeded its 580-second external deadline; owned process tree terminated.'
     }
     Write-Output $stdout.GetAwaiter().GetResult()

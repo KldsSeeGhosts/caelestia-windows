@@ -20,6 +20,9 @@ $prefix = Join-Path $RunRoot 'prefix'
 $profile = Join-Path $RunRoot 'profile'
 $values = [ordered]@{}
 $activationExtraValidationMs = 0.0
+$activationHashes = 0
+$reloadExtraMs = 0.0
+$startupExtraMs = 0.0
 $tooling = Join-Path $RunRoot 'tooling\windows\scripts'
 New-Item -ItemType Directory -Path $tooling -Force | Out-Null
 # Use each side's actual packaging and activation implementation. Using the
@@ -80,8 +83,19 @@ if (-not $supportsTimings) {
 if ($Plant -eq 'Update') {
     $assemblyPoint = '(?m)^(\s*)(Write-CaelestiaProfileOwner [^\r\n]+)'
     if ([regex]::Matches($text, $assemblyPoint).Count -ne 1) { throw 'Unknown payload completion boundary for the update plant.' }
-    $text = [regex]::Replace($text, $assemblyPoint,
-        ('$1for ($benchmarkHash = 0; $benchmarkHash -lt 256; $benchmarkHash++) { $null = Get-FileHash -LiteralPath "$payload\qs.exe" }' + "`n" + '$1$2'))
+    $assemblyProbe = @'
+$benchmarkHashClock = [Diagnostics.Stopwatch]::StartNew()
+$benchmarkHashes = 0
+for ($benchmarkHash = 0; $benchmarkHash -lt 256; $benchmarkHash++) {
+    $benchmarkDigest = (Get-FileHash -LiteralPath "$payload\qs.exe").Hash
+    if (-not $benchmarkDigest) { throw 'Added hash work did not return a digest.' }
+    $benchmarkHashes++
+}
+[ordered]@{kind='UpdateAssembly'; hashesCompleted=$benchmarkHashes; elapsedMs=$benchmarkHashClock.Elapsed.TotalMilliseconds; checksum=$benchmarkDigest} |
+    ConvertTo-Json -Compress | Add-Content -LiteralPath '__EVIDENCE__' -Encoding UTF8
+'@
+    $assemblyProbe = $assemblyProbe.Replace('__EVIDENCE__', "$RunRoot\assembly-plant.jsonl".Replace("'", "''"))
+    $text = [regex]::Replace($text, $assemblyPoint, { param($match) $assemblyProbe + "`n" + $match.Value })
 }
 [IO.File]::WriteAllText($installer, $text, [Text.UTF8Encoding]::new($false))
 # The stage helper's source map remains the measured checkout's map.
@@ -128,7 +142,12 @@ $shellPath = Join-Path $stage 'shell.qml'
 $shell = [IO.File]::ReadAllText($shellPath)
 $shell = $shell.Replace('running: root.smoke', 'running: false')
 if ($Plant -eq 'Startup') {
-    $shell = $shell.Replace('Component.onCompleted: {', 'Component.onCompleted: { const until = Date.now() + 400; while (Date.now() < until) {}')
+    if (($shell.Split(@('Component.onCompleted: {'), [StringSplitOptions]::None).Count - 1) -ne 1) {
+        throw 'Unknown startup boundary; refusing an unverified startup plant.'
+    }
+    $startupExtraMs = 400.0
+    $shell = $shell.Replace('Component.onCompleted: {',
+        'Component.onCompleted: { const plantStart = Date.now(); let plantIterations = 0; while (Date.now() - plantStart < 400) { plantIterations++; } console.log("CAELESTIA_BENCH_PLANT " + JSON.stringify({kind:"Startup", requestedMs:400, elapsedMs:Date.now()-plantStart, iterations:plantIterations}));')
 }
 if ($Plant -eq 'Reload') {
     if (-not $PlantReference) { throw 'A percentage reload plant requires the paired A reference.' }
@@ -136,9 +155,18 @@ if ($Plant -eq 'Reload') {
         throw 'Unknown reload boundary; cannot verify a percentage reload plant.'
     }
     $reference = Get-Content -LiteralPath $PlantReference -Raw | ConvertFrom-Json
+    $referenceProperty = $reference.PSObject.Properties['qmlReloadToReadyMs']
+    if (-not $referenceProperty -or -not ($referenceProperty.Value -is [ValueType]) -or
+        [double]::IsNaN([double]$referenceProperty.Value) -or [double]::IsInfinity([double]$referenceProperty.Value) -or
+        [double]$referenceProperty.Value -le 0) { throw 'Missing or invalid numeric reload reference.' }
     $reloadExtraMs = [Math]::Round($reference.qmlReloadToReadyMs * $PlantPercent / 100, 3)
+    if ($reloadExtraMs -le 0) { throw 'Reload plant rounds to zero.' }
     # Deliberate regression work, not a production delay or edited result.
-    $shell = $shell.Replace('Quickshell.reload(false)', ('{ const until = Date.now() + ' + $reloadExtraMs.ToString([Globalization.CultureInfo]::InvariantCulture) + '; while (Date.now() < until) {} Quickshell.reload(false); }'))
+    $reloadLiteral = $reloadExtraMs.ToString([Globalization.CultureInfo]::InvariantCulture)
+    $shell = $shell.Replace('Quickshell.reload(false)',
+        ('{ const plantStart = Date.now(); let plantIterations = 0; while (Date.now() - plantStart < ' + $reloadLiteral +
+        ') { plantIterations++; } console.log("CAELESTIA_BENCH_PLANT " + JSON.stringify({kind:"Reload", requestedMs:' + $reloadLiteral +
+        ', elapsedMs:Date.now()-plantStart, iterations:plantIterations})); Quickshell.reload(false); }'))
 }
 [IO.File]::WriteAllText($shellPath, $shell, [Text.UTF8Encoding]::new($false))
 $info = [Diagnostics.ProcessStartInfo]::new()
@@ -179,7 +207,9 @@ try {
     if ($Plant -eq 'Update') {
         $clock.Restart()
         for ($i = 0; $i -lt 256; $i++) {
-            $null = Get-FileHash -LiteralPath (Join-Path $runtime 'qs.exe')
+            $activationDigest = (Get-FileHash -LiteralPath (Join-Path $runtime 'qs.exe')).Hash
+            if (-not $activationDigest) { throw 'Activation hash work did not return a digest.' }
+            $activationHashes++
         }
         $activationExtraValidationMs = $clock.Elapsed.TotalMilliseconds
     }
@@ -211,11 +241,21 @@ try {
     # Strip those before JSON serialization, which otherwise walks drive trees.
     $startupPhases = @([IO.File]::ReadAllLines("$RunRoot\stdout.log") + [IO.File]::ReadAllLines("$RunRoot\stderr.log") |
         Where-Object { $_ -match 'quickshell.startup' })
+    $plantEvidence = @([regex]::Matches(
+        ([IO.File]::ReadAllText("$RunRoot\stdout.log") + [IO.File]::ReadAllText("$RunRoot\stderr.log")),
+        'CAELESTIA_BENCH_PLANT (\{[^\r\n]+\})') | ForEach-Object { $_.Groups[1].Value | ConvertFrom-Json })
+    $assemblyEvidence = if (Test-Path -LiteralPath "$RunRoot\assembly-plant.jsonl") {
+        @(Get-Content -LiteralPath "$RunRoot\assembly-plant.jsonl" | ForEach-Object { $_ | ConvertFrom-Json })
+    } else { @() }
     [ordered]@{
+        privacy='PRIVATE-local-evidence; never upload raw receipts automatically'
         values=$values; installWallMs=$installWall; installPhases=$timings; seedInstallPhases=$seedTimings
-        plant=$Plant; plantPercent=$PlantPercent; reloadExtraMs=$reloadExtraMs
-        activationExtraValidationMs=$activationExtraValidationMs; activationValidationHashes=$(if ($Plant -eq 'Update') { 256 } else { 0 })
-        assemblyValidationHashes=$(if ($Plant -eq 'Update') { 256 } else { 0 })
+        plant=$Plant; plantPercent=$PlantPercent; reloadExtraMs=$reloadExtraMs; startupExtraMs=$startupExtraMs
+        reloadReferenceMs=$(if ($Plant -eq 'Reload') { $reference.qmlReloadToReadyMs } else { 0 })
+        plantEvidence=$plantEvidence; assemblyPlantEvidence=$assemblyEvidence
+        activationExtraValidationMs=$activationExtraValidationMs; activationValidationHashes=$activationHashes
+        activationValidationChecksum=$activationDigest
+        assemblyValidationHashes=$(if ($assemblyEvidence.Count) { $assemblyEvidence[-1].hashesCompleted } else { 0 })
         installerSourceSha256=(Get-FileHash "$SourceRoot\windows\scripts\Install-Caelestia.ps1").Hash
         isolatedInstallerSha256=(Get-FileHash $installer).Hash
         installerArguments=$installArguments

@@ -37,21 +37,27 @@ wallpaper = root / "synthetic.jpg"
 image.save(wallpaper, "JPEG", quality=90)
 values, work = {}, []
 for name in ("scheme.wallpaperApplyMs",):
+    extra_count, extra_ns, extra_checksums = 0, 0, []
     start = time.perf_counter_ns()
     result = helper.apply_wallpaper(wallpaper, None, None, None, True)
     if args.plant:
         # Simulate duplicate quantizer work in the disposable harness. Same
         # production scoring algorithm and pixels, not a fabricated time delta.
         thumb = helper._thumbnail(wallpaper)
+        extra_start = time.perf_counter_ns()
         for _ in range(8):
-            helper._score(str(thumb))
+            scored = helper._score(str(thumb))
+            extra_checksums.append(hashlib.sha256(repr(scored).encode()).hexdigest())
+            extra_count += 1
+        extra_ns = time.perf_counter_ns() - extra_start
     elapsed = time.perf_counter_ns() - start
     if not result.colours.get("primary"):
         raise RuntimeError("Scheme work produced no palette.")
     values[name] = elapsed / 1e6
-    work.append({"metric": name, "elapsedNs": elapsed, "extraQuantizations": 8 if args.plant else 0,
+    work.append({"metric": name, "elapsedNs": elapsed, "extraQuantizations": extra_count,
+                 "extraQuantizationNs": extra_ns, "extraQuantizationChecksums": extra_checksums,
                  "paletteSha256": hashlib.sha256(str(result.colours).encode()).hexdigest()})
-record = {"values": values, "work": work,
+record = {"values": values, "work": work, "privacy": "PRIVATE-local-evidence; never upload raw receipts automatically",
           "helperSha256": hashlib.sha256(source.read_bytes()).hexdigest(),
           "imageSha256": hashlib.sha256(wallpaper.read_bytes()).hexdigest(),
           "python": sys.version, "packages": {

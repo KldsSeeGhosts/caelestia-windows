@@ -238,6 +238,8 @@ $probe = @'
     property real benchFrameMs: 0
     property int benchBusyTicks: 0
     property real benchBusyWork: 0
+    property int benchPlantDelayFires: 0
+    property real benchPlantDelayElapsedMs: 0
     property int benchResourceBytes: __RESOURCE_BYTES__
     property var benchRetained: __RESOURCES__ ? [new Uint8Array(benchResourceBytes).fill(1)] : []
     readonly property var benchPanelDelays: __PANEL_DELAYS__
@@ -257,7 +259,11 @@ $probe = @'
     Timer {
         id: benchDelay
         interval: root.benchPanelDelays[root.benchPanel] ?? 0
-        onTriggered: root.benchOpen()
+        onTriggered: {
+            root.benchPlantDelayFires++;
+            root.benchPlantDelayElapsedMs = benchClock.elapsed() * 1000;
+            root.benchOpen();
+        }
     }
     Timer {
         id: benchReloadDelay
@@ -321,6 +327,7 @@ $probe = @'
                 nexusWindows: Nexus.WindowFactory.windowCount,
                 nexusDpr: Nexus.WindowFactory.activeWindow()?.devicePixelRatio ?? null,
                 busyTicks: root.benchBusyTicks, busyWork: root.benchBusyWork, retainedAllocations: root.benchRetained.length,
+                plantDelayFires: root.benchPlantDelayFires, plantDelayElapsedMs: root.benchPlantDelayElapsedMs,
                 retainedBytes: root.benchRetained.reduce((sum, value) => sum + value.byteLength, 0)
             });
         }
@@ -359,10 +366,23 @@ foreach ($category in @('CPU', 'Resources', 'Panel', 'Reload')) {
 }
 $reference = if ($PlantReference) { Get-Content -LiteralPath $PlantReference -Raw | ConvertFrom-Json } else { $null }
 if ($Plant -in @('Panel', 'Resources', 'Sensitivity') -and -not $reference) { throw 'A percentage plant requires the paired A reference.' }
-$resourceBytes = if ($Plant -in @('Resources', 'Sensitivity')) { [long][Math]::Ceiling($reference.privateMiB * 1MB * $PlantPercent / 100) } else { 0 }
+function Get-PositivePlantReference([string]$Name) {
+    $property = $reference.PSObject.Properties[$Name]
+    if (-not $property -or -not ($property.Value -is [ValueType])) { throw "Missing numeric plant reference: $Name" }
+    $value = [double]$property.Value
+    if ([double]::IsNaN($value) -or [double]::IsInfinity($value) -or $value -le 0) { throw "Invalid plant reference: $Name" }
+    return $value
+}
+$referenceValues = @{}
+if ($Plant -in @('Resources','Sensitivity')) { $referenceValues.privateMiB = Get-PositivePlantReference 'privateMiB' }
+$resourceBytes = if ($Plant -in @('Resources', 'Sensitivity')) { [long][Math]::Ceiling($referenceValues.privateMiB * 1MB * $PlantPercent / 100) } else { 0 }
 $panelDelays = @{}
 foreach ($panel in @('dashboard', 'launcher', 'utilities', 'sidebar')) {
-    $panelDelays[$panel] = if ($Plant -in @('Panel', 'Sensitivity')) { [Math]::Max(1, [int][Math]::Round($reference."panel.$panel.p50Ms" * $PlantPercent / 100)) } else { 0 }
+    if ($Plant -in @('Panel', 'Sensitivity')) {
+        $referenceValues["panel.$panel.p50Ms"] = Get-PositivePlantReference "panel.$panel.p50Ms"
+        $panelDelays[$panel] = [int][Math]::Round($referenceValues["panel.$panel.p50Ms"] * $PlantPercent / 100)
+        if ($panelDelays[$panel] -le 0) { throw 'Requested panel plant rounds to zero; choose a meaningful added cost.' }
+    } else { $panelDelays[$panel] = 0 }
 }
 $probe = $probe.Replace('__RESOURCE_BYTES__', "$resourceBytes").Replace('__PANEL_DELAYS__', ($panelDelays | ConvertTo-Json -Compress))
 $shellPath = "$stage\shell.qml"
@@ -432,6 +452,8 @@ $clock = [Diagnostics.Stopwatch]::StartNew()
 $lastTime = 0.0
 $metadata = [ordered]@{
     schemaVersion=2; metric=$Metric; mode=$Mode; plant=$Plant
+    privacy='PRIVATE-local-evidence; never upload raw receipts automatically'
+    plantReferenceValues=$referenceValues
     setupSeconds=$setupClock.Elapsed.TotalSeconds
     plantPercent=$PlantPercent; plantResourceBytes=$resourceBytes; plantPanelDelaysMs=$panelDelays
     # A stable per-installation identifier that does not reveal the computer name.
@@ -526,6 +548,9 @@ function Wait-Frame([string]$Panel) {
         panel=$Panel; requestQpc=$start; observedQpc=$log.Markers[$marker]
         requestToFrameObservedMs=1000 * ($log.Markers[$marker] - $start) / [Diagnostics.Stopwatch]::Frequency
         shellRequestToFrameMs=$state.frameMs; frameCount=$state.frames
+        plantDelayFires=($state.plantDelayFires - $before.plantDelayFires)
+        plantDelayRequestedMs=$(if ($Panel -ne 'idle') { $panelDelays[$Panel] } else { 0 })
+        plantDelayMeasuredMs=$(if ($Panel -ne 'idle') { $state.plantDelayElapsedMs } else { 0 })
         dpr=$(if ($Panel -eq 'nexus') { $state.nexusDpr } else { $state.dpr })
     })
 }

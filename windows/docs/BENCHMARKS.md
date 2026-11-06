@@ -44,6 +44,11 @@ It preserves every raw observation, expected and actual verdict, including misse
 and unresolved outcomes. Its ten-percent fixture threshold is arbitrary.
 These fixtures cannot qualify native, QML, shell or desktop metrics, establish
 app floors, measure trace overhead or demonstrate app savings.
+The fixture counts actual successfully started subprocesses, not a hardcoded
+expected count. `identityHashingSeconds` times only fixture identity hashing.
+It is not runner setup, staging or shell turnaround. Older fixture receipts
+with `setupSeconds` retain their historical bytes; that field measured hashing
+only and must not be cited as setup/staging evidence.
 
 ## Confirm: immutable same-session pairs
 
@@ -61,6 +66,11 @@ powershell -NoProfile -File windows/bench/tools/Build-Bench.ps1 `
 This standalone probe compiles with two jobs. Reuse it only when its exact
 backend, probe source, CMake and executable hashes match. A Release probe is
 synthetic layout/foreground logic, not native window placement or hook delivery.
+Schema-2 probe receipts record the actual configured compiler/linker/CMake/Ninja
+paths, executable hashes and reported versions, not just a requested selector.
+Old receipts without those actuals must be rebuilt in a new root. Probe
+executable, receipt and cache identities are checked before and after every
+paired trial and at completion, including externally reused probe roots.
 
 Select workloads before measuring:
 
@@ -70,7 +80,7 @@ windows/scripts/Measure-Bench.ps1 -Area tiling `
     -BaseRoot E:\build\baseline -BuildRoot E:\build\candidate `
     -BaseSourceRoot C:\src\baseline -SourceRoot C:\src\candidate `
     -QtPrefix C:\tools\Qt -NativeRootA E:\Perf\native-baseline `
-    -NativeRootB E:\Perf\native-candidate -RunRoot E:\Perf\confirm-001
+    -NativeRootB E:\Perf\native-candidate -RunRoot E:\Perf\diagnostic-001
 ```
 
 All evidence roots must be new and external to the tool/source and payload
@@ -84,23 +94,32 @@ match. Each fresh runtime trial gets its own process, profile and empty cache.
 Disposable lifecycle runs require the installer's real `-NoIntegration` mode,
 and refuse a legacy shortcut/HKCU fallback.
 
-Protocol `public-paired-cost-v4` alternates AB then BA pairs by default. Seven
+Protocol `public-paired-cost-v5` alternates AB then BA pairs by default. Seven
 pairs remain the full-suite default, nine the focused default; use `-Runs 8`
 for equal numbers of AB and BA pairs. Reference-dependent Panel, Resources,
 Reload and Sensitivity plants require explicit `-Order AB`, for both controls
-and comparisons. This ordering change invalidates old qualification.
+and comparisons. The provenance/gate repair invalidates old v4 qualification.
 Do not mix ordering schemes within a qualification set.
 
 The Python budget is 570 seconds; the outer PowerShell deadline is 580 seconds
 including setup, workers and reporting. A timeout is a measurement failure,
 never equivalence. Only the runner's owned child tree may be terminated.
+Every subprocess timeout is capped by the remaining Python budget. Internal
+deadline failures record `complete:false`, remove any cached summary and retain
+an error. An outer kill writes a separate private `outer-deadline.json`, so a
+partial Python write cannot hide the cause; campaign replay refuses that marker.
 The longer-session monitor is not allowed to extend this bound.
 The complete suite may exceed the budget on slower hardware and must then
 be reported failed, not silently shortened. Select focused areas during edits.
 
 Setup and total turnaround are in `setupSeconds`,
-`setupIncludingNativeProbeSeconds`, `measurementSeconds`, `wallSeconds` and
-per-trial `wallSeconds`. Worker setup includes actual staging. Do not describe
+`setupIncludingNativeProbeSeconds`, `workerAcquisitionSeconds`, `wallSeconds`
+and per-trial `wallSeconds`. Parent verification is separately recorded as
+`integrityCheckSeconds`, and machine checks as `machineCheckSeconds`.
+Worker acquisition wall time includes worker staging/metadata and is not a
+scored duration. `measurementSeconds` is deliberately null: use each metric's
+raw timers, rather than inventing one universal measurement duration.
+Worker setup includes actual staging. Do not describe
 these as measured staging-cache savings. Staging is retained, not reused across
 trials; native probes can be reused after identity verification. Benchmark
 staging copies and all raw evidence are retained, including after failures.
@@ -131,12 +150,18 @@ example, use `-PlantB Tiling -PlantPercent 25` for the synthetic tiling plant.
 Recalibrate floors using independent A/A discovery data, freeze them, then
 acquire new held-out A/A and added-cost confirmation. Do not tune floors on the
 same controls used to claim validation.
+Discovery requires three original unplanted acquisitions made with
+`-Purpose floor-discovery`. After calibration, make each new A/A and added-cost
+control with `-Purpose held-out -Calibration E:\Perf\discovery-floors.json`.
+Make the fresh candidate comparison with `-Purpose confirm` and that same
+calibration. Without frozen provenance a run is diagnostic-only by default.
 
 ```powershell
 py -3 -B windows/scripts/ShellBench.py calibrate `
-    E:\Perf\discovery-aa1\results.json E:\Perf\discovery-aa2\results.json `
+    E:\Perf\discovery-aa1\results.json E:\Perf\discovery-aa2\results.json E:\Perf\discovery-aa3\results.json `
     --output E:\Perf\discovery-floors.json
 py -3 -B windows/scripts/ShellBench.py qualify `
+    --calibration E:\Perf\discovery-floors.json `
     --aa E:\Perf\aa1\results.json E:\Perf\aa2\results.json E:\Perf\aa3\results.json `
     --added E:\Perf\plant1\results.json E:\Perf\plant2\results.json E:\Perf\plant3\results.json `
     --output E:\Perf\qualification
@@ -145,7 +170,15 @@ py -3 -B windows/scripts/ShellBench.py gate E:\Perf\confirm-001\results.json `
 ```
 
 Qualification refuses fixtures, failed/nonraw acquisitions, different payloads
-within controls, repeated input records and configuration changes. It retains
+within controls, repeated input records and configuration changes. Original
+acquisition IDs, canonical raw acquisition identities and per-trial raw hashes
+are deduplicated across discovery, held-out controls and confirmation. Renaming
+an acquisition, reanalyzing it or copying some of its trials does not make it
+independent. Analysis replays cannot supply qualification inputs. The frozen
+calibration is reproduced from its original discovery receipts; controls must
+record its exact identity and floors. A map-file hash alone is not provenance.
+These checks prevent receipt reuse, not deliberate fabrication of source data.
+It retains
 unresolved A/A outcomes, plant misses and tested nominal sizes. Unsupported
 plants/metrics cannot qualify by omission. In particular, the fixed-delay QML
 load plant is not yet mapped into the percentage-based qualification contract;
@@ -154,12 +187,56 @@ appropriate controls. Smaller-than-tested sensitivity is never inferred.
 `gate` recomputes raw metric verdicts and the supporting controls, rather than
 trusting an acquisition exit code or a hand-edited qualification boolean.
 It rejects unresolved, unqualified, planted or regressed comparisons.
+Native probe/toolchain fingerprints are part of qualification environment and
+payload identity. A changed probe invalidates the previous qualification; the
+gate does not transfer sensitivity between native binaries. Current native
+candidate acceptance remains blocked until matching proof is available.
+
+Panel p95 requires at least 200 completed observations per panel in every trial.
+The existing two-opening workload is marked
+`diagnostic-only-insufficient-observations` by replay and qualification, and
+cannot pass `gate` even when all A/A and added-cost verdicts resolve. A protocol
+field cannot lower this hard minimum. This does not qualify rare-stutter claims
+automatically at 200; distribution quality and uncertainty still need review.
+
+Timing plants require actual worker evidence: fired panel timers with measured
+delay; executed startup/reload burn markers; completed assembly/activation
+hashes; and completed additional quantizer calls. Missing or invalid reference
+keys refuse acquisition instead of falling back to one millisecond.
+Sensitivity checks every selected constituent. Nominal effects are
+metric-specific: panel delays are based on paired p50, not a p95 percentage;
+startup is a fixed 400 ms; update uses 256 additional hashes; scheme uses eight
+additional quantizations. Qualification records these units and per-metric
+relative amounts rather than relabelling every plant as a percentage.
 
 Exit zero from acquisition/replay only means execution/reproduction succeeded.
 It can accompany unresolved results. Campaign automation must call `gate` and
 inspect all metric verdicts. A statistical gate is not promotion authorization:
 absolute user benefit, correctness, full-suite, desktop and longer-session
 checks remain separate requirements.
+
+## Evidence privacy and public summaries
+
+All raw `results.json`, build/probe receipts, calibration, qualification,
+profile, monitor, logs and trace artifacts are PRIVATE local evidence.
+They can contain absolute paths, the full build record, an unsalted truncated
+MachineGuid hash, power-scheme output, monitor geometry and process identities.
+Do not attach these raw files or their private HTML reports to public issues.
+No command uploads them or automatically publishes evidence.
+
+Generate an allowlisted numeric summary instead:
+
+```powershell
+py -3 -B windows/scripts/ShellBench.py export-public E:\Perf\confirm-001\results.json `
+    --output E:\Perf\public-summary-001
+```
+
+The exporter constructs only fixed fields and known metric names. It excludes
+commands, raw trials, local paths, machine/build records, arbitrary errors and
+free-form metadata. It does not recursively copy/redact unknown fields.
+Qualification export also rechecks supporting evidence. Manually review the
+new `public-summary.json` before any separately authorized publication.
+An allowlisted summary is not whole-app certification or upload permission.
 
 ## Explore: bounded Windows and QML profiling
 
