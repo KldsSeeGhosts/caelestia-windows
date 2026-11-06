@@ -1,0 +1,1189 @@
+{
+  "matrixVersion": 1,
+  "baseline": {
+    "shellRevision": "eec2778123d47c3555006b3af5e75fd893c7b9c2",
+    "backendRevision": "e6039b2b9cbb35b97473bda4dcc3f12789ae7f0c",
+    "glazierRevision": "37f795041cbbb32ed46cba103f3f000a3a99ac13",
+    "m3shapesRevision": "32ad9ce328bb77ed349b40a3be10ee9ea610b8ab",
+    "scope": "Source trace baseline only; not a release, install, hardware, or full candidate qualification."
+  },
+  "sourceRepositories": {
+    "shell": {
+      "url": "https://github.com/KldsSeeGhosts/caelestia-windows",
+      "revision": "eec2778123d47c3555006b3af5e75fd893c7b9c2",
+      "localRoot": "."
+    },
+    "backend": {
+      "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows",
+      "revision": "e6039b2b9cbb35b97473bda4dcc3f12789ae7f0c",
+      "localRoot": "windows/deps/quickshell"
+    },
+    "glazier": {
+      "url": "https://github.com/KldsSeeGhosts/glazier",
+      "revision": "37f795041cbbb32ed46cba103f3f000a3a99ac13",
+      "localRoot": "windows/deps/glazier"
+    },
+    "m3shapes": {
+      "url": "https://github.com/soramanew/m3shapes",
+      "revision": "32ad9ce328bb77ed349b40a3be10ee9ea610b8ab",
+      "localRoot": "windows/deps/m3shapes"
+    }
+  },
+  "supportContract": {
+    "categories": [
+      "supported",
+      "unsupported",
+      "denied",
+      "unavailable",
+      "transient",
+      "failed",
+      "empty"
+    ],
+    "nullableBooleanFields": [
+      "ready",
+      "requested",
+      "accepted",
+      "completed"
+    ],
+    "phaseMeanings": {
+      "ready": "Observed provider readiness; null means not observed, and initialization alone is not readiness.",
+      "requested": "A user or shell caller expressed intent.",
+      "accepted": "The provider explicitly accepted dispatch. A shell-side queue or void call does not imply acceptance.",
+      "completed": "A provider result or observed readback confirms the operation. Accepted asynchronous work alone is not complete."
+    },
+    "supportBundleV1": {
+      "providerIds": [
+        "shell",
+        "tiling",
+        "audio",
+        "battery",
+        "bluetooth",
+        "brightness",
+        "network",
+        "media",
+        "notifications",
+        "desktop",
+        "capture",
+        "idleInhibit",
+        "keyboard",
+        "tray",
+        "wallpaper"
+      ],
+      "identityTrust": "declared-unverified",
+      "providerObservation": "Caller-supplied offline snapshot only; no live provider query is implied.",
+      "clipboardProviderId": null
+    }
+  },
+  "capabilities": [
+    {
+      "id": "shell",
+      "bundleProviderId": "shell",
+      "uiEntry": "Session menu, launcher actions, and shell lifecycle IPC.",
+      "provider": "Windows Session facade over Quickshell.Windows.Session.",
+      "operations": [
+        "Allowlisted lock, logout, shutdown, reboot, suspend, hibernate, and firmware-reboot requests.",
+        "Observe whether hibernation is available."
+      ],
+      "requirements": [
+        "Session observation and action dispatch are independently opt-in; the live shell must enable both before dispatch.",
+        "Windows itself decides whether a requested system action can proceed."
+      ],
+      "degradedExamples": [
+        {
+          "category": "unsupported",
+          "case": "The combined suspend-then-hibernate command is intentionally not implemented."
+        },
+        {
+          "category": "unavailable",
+          "case": "The native session component has not loaded or failed to load."
+        }
+      ],
+      "operationCaveat": "Native session methods return void. Report a dispatched action as requested only; the current interface cannot establish provider acceptance or completion.",
+      "staging": [
+        {
+          "source": "windows/shell/adapters/modules/session/Content.qml",
+          "destination": "modules/session/Content.qml"
+        },
+        {
+          "source": "windows/shell/adapters/imports/Caelestia/Services/SessionManager.qml",
+          "destination": "imports/Caelestia/Services/SessionManager.qml"
+        },
+        {
+          "source": "windows/services/session/SessionService.qml",
+          "destination": "imports/Caelestia/Services/SessionService.qml"
+        },
+        {
+          "source": "windows/services/session/NativeSessionBackend.qml",
+          "destination": "imports/Caelestia/Services/NativeSessionBackend.qml"
+        }
+      ],
+      "sourceLinks": [
+        {
+          "repository": "shell",
+          "path": "windows/shell/adapters/modules/session/Content.qml",
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/eec2778123d47c3555006b3af5e75fd893c7b9c2/windows/shell/adapters/modules/session/Content.qml"
+        },
+        {
+          "repository": "shell",
+          "path": "windows/services/session/SessionService.qml",
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/eec2778123d47c3555006b3af5e75fd893c7b9c2/windows/services/session/SessionService.qml"
+        },
+        {
+          "repository": "backend",
+          "path": "src/windows/system/session.cpp",
+          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/e6039b2b9cbb35b97473bda4dcc3f12789ae7f0c/src/windows/system/session.cpp"
+        }
+      ],
+      "acceptanceOwners": []
+    },
+    {
+      "id": "tiling",
+      "bundleProviderId": "tiling",
+      "uiEntry": "Settings > Window management, plus staged drag/drop preview.",
+      "provider": "Opt-in Quickshell Windows Tiling manager behind the staged Tiling service.",
+      "operations": [
+        "Observe eligible top-level windows and layout state.",
+        "Interactive mode tiles only windows admitted by the configured rules; options include gaps, border colors, and drag/drop."
+      ],
+      "requirements": [
+        "Tiling is off by default and must be explicitly enabled; Interactive mode is a separate choice from Observe.",
+        "A usable screen and an eligible application/window are required for a concrete tile."
+      ],
+      "degradedExamples": [
+        {
+          "category": "denied",
+          "case": "A session-owner conflict or empty eligibility policy refuses an enable request."
+        },
+        {
+          "category": "unavailable",
+          "case": "The native backend or screen observation is unavailable."
+        },
+        {
+          "category": "failed",
+          "case": "A concrete placement fails and is surfaced as a per-window failure."
+        }
+      ],
+      "staging": [
+        {
+          "source": "windows/shell/adapters/modules/nexus/pages/WindowManagementPage.qml",
+          "destination": "modules/nexus/pages/WindowManagementPage.qml"
+        },
+        {
+          "source": "windows/shell/adapters/modules/tiling/DragPreview.qml",
+          "destination": "modules/tiling/DragPreview.qml"
+        },
+        {
+          "source": "windows/services/tiling/TilingService.qml",
+          "destination": "services/TilingService.qml"
+        },
+        {
+          "source": "windows/services/tiling/NativeTilingBackend.qml",
+          "destination": "services/NativeTilingBackend.qml"
+        }
+      ],
+      "sourceLinks": [
+        {
+          "repository": "shell",
+          "path": "windows/shell/adapters/modules/nexus/pages/WindowManagementPage.qml",
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/eec2778123d47c3555006b3af5e75fd893c7b9c2/windows/shell/adapters/modules/nexus/pages/WindowManagementPage.qml"
+        },
+        {
+          "repository": "shell",
+          "path": "windows/services/tiling/TilingService.qml",
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/eec2778123d47c3555006b3af5e75fd893c7b9c2/windows/services/tiling/TilingService.qml"
+        },
+        {
+          "repository": "backend",
+          "path": "src/windows/tiling.cpp",
+          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/e6039b2b9cbb35b97473bda4dcc3f12789ae7f0c/src/windows/tiling.cpp"
+        }
+      ],
+      "acceptanceOwners": [
+        "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/issues/12"
+      ]
+    },
+    {
+      "id": "audio",
+      "bundleProviderId": "audio",
+      "uiEntry": "Bar audio popout, Settings > Audio, and volume hotkeys.",
+      "provider": "Quickshell Windows audio service backed by Windows audio endpoints and sessions.",
+      "operations": [
+        "Observe default input/output and application streams.",
+        "Change supported endpoint selection, mute, and stream volume."
+      ],
+      "requirements": [
+        "A usable Windows audio endpoint or application session is required for a non-empty model.",
+        "Input availability and output availability are independent."
+      ],
+      "degradedExamples": [
+        {
+          "category": "empty",
+          "case": "The backend initializes successfully but reports no usable audio endpoints or streams."
+        },
+        {
+          "category": "unavailable",
+          "case": "The backend cannot initialize or a default endpoint disappears."
+        },
+        {
+          "category": "failed",
+          "case": "A concrete control call reports a failure."
+        }
+      ],
+      "staging": [
+        {
+          "source": "windows/shell/adapters/modules/bar/popouts/AudioPopout.qml",
+          "destination": "modules/bar/popouts/AudioPopout.qml"
+        },
+        {
+          "source": "windows/shell/adapters/modules/nexus/pages/AudioPage.qml",
+          "destination": "modules/nexus/pages/AudioPage.qml"
+        },
+        {
+          "source": "windows/services/audio/AudioService.qml",
+          "destination": "services/AudioService.qml"
+        },
+        {
+          "source": "windows/services/audio/NativeAudioBackend.qml",
+          "destination": "services/NativeAudioBackend.qml"
+        }
+      ],
+      "sourceLinks": [
+        {
+          "repository": "shell",
+          "path": "windows/services/audio/AudioService.qml",
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/eec2778123d47c3555006b3af5e75fd893c7b9c2/windows/services/audio/AudioService.qml"
+        },
+        {
+          "repository": "shell",
+          "path": "windows/shell/adapters/modules/nexus/pages/AudioPage.qml",
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/eec2778123d47c3555006b3af5e75fd893c7b9c2/windows/shell/adapters/modules/nexus/pages/AudioPage.qml"
+        },
+        {
+          "repository": "backend",
+          "path": "src/windows/services/pipewire/pw_session_worker.cpp",
+          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/e6039b2b9cbb35b97473bda4dcc3f12789ae7f0c/src/windows/services/pipewire/pw_session_worker.cpp"
+        }
+      ],
+      "acceptanceOwners": [
+        "https://github.com/KldsSeeGhosts/caelestia-windows/issues/31"
+      ]
+    },
+    {
+      "id": "battery",
+      "bundleProviderId": "battery",
+      "uiEntry": "Bar battery popout/status and its optional power-profile selector.",
+      "provider": "Quickshell Windows power-status and power-profile adapters.",
+      "operations": [
+        "Observe battery/power status when Windows exposes a battery.",
+        "Observe a mapped effective power profile; optional profile writes require their separate gate and verified result."
+      ],
+      "requirements": [
+        "Battery fields depend on an attached battery; desktops may have none.",
+        "Power-profile observations/writes are separately gated and only mapped profiles are exposed."
+      ],
+      "degradedExamples": [
+        {
+          "category": "empty",
+          "case": "A successful power-status read on a device with no battery is not a battery failure."
+        },
+        {
+          "category": "unsupported",
+          "case": "The provider cannot map a requested profile on this device/configuration."
+        },
+        {
+          "category": "failed",
+          "case": "A profile write was requested but did not receive a successful result/readback."
+        }
+      ],
+      "staging": [
+        {
+          "source": "windows/shell/adapters/modules/bar/popouts/Battery.qml",
+          "destination": "modules/bar/popouts/Battery.qml"
+        },
+        {
+          "source": "windows/shell/adapters/modules/bar/components/status/BatteryStatus.qml",
+          "destination": "modules/bar/components/status/BatteryStatus.qml"
+        },
+        {
+          "source": "windows/services/battery/BatteryService.qml",
+          "destination": "services/BatteryService.qml"
+        },
+        {
+          "source": "windows/services/battery/PowerProfilesService.qml",
+          "destination": "services/PowerProfilesService.qml"
+        },
+        {
+          "source": "windows/services/battery/NativePowerBackend.qml",
+          "destination": "services/NativePowerBackend.qml"
+        }
+      ],
+      "sourceLinks": [
+        {
+          "repository": "shell",
+          "path": "windows/services/battery/BatteryService.qml",
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/eec2778123d47c3555006b3af5e75fd893c7b9c2/windows/services/battery/BatteryService.qml"
+        },
+        {
+          "repository": "shell",
+          "path": "windows/services/battery/PowerProfilesService.qml",
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/eec2778123d47c3555006b3af5e75fd893c7b9c2/windows/services/battery/PowerProfilesService.qml"
+        },
+        {
+          "repository": "backend",
+          "path": "src/windows/services/upower/device.cpp",
+          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/e6039b2b9cbb35b97473bda4dcc3f12789ae7f0c/src/windows/services/upower/device.cpp"
+        },
+        {
+          "repository": "backend",
+          "path": "src/windows/services/upower/powerprofiles.cpp",
+          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/e6039b2b9cbb35b97473bda4dcc3f12789ae7f0c/src/windows/services/upower/powerprofiles.cpp"
+        }
+      ],
+      "acceptanceOwners": [
+        "https://github.com/KldsSeeGhosts/caelestia-windows/issues/32"
+      ]
+    },
+    {
+      "id": "bluetooth",
+      "bundleProviderId": "bluetooth",
+      "uiEntry": "Bar Bluetooth status/popout, Settings > Bluetooth, and radio toggle.",
+      "provider": "Quickshell Bluetooth WinRT adapter and the staged Bluetooth service.",
+      "operations": [
+        "Observe adapters/devices, request discovery, connect/disconnect, and forget supported devices.",
+        "Pairing is explicit; PIN/passkey completion may be handed to Windows."
+      ],
+      "requirements": [
+        "A functioning Windows Bluetooth adapter and radio are required; radio state and operation policy are separate.",
+        "A Windows-owned PIN/passkey prompt remains the authority when the provider requests it."
+      ],
+      "degradedExamples": [
+        {
+          "category": "unavailable",
+          "case": "No adapter is observed before the bounded first-scan deadline, or the native component fails."
+        },
+        {
+          "category": "denied",
+          "case": "The adapter/radio is blocked by hardware switch or policy."
+        },
+        {
+          "category": "empty",
+          "case": "A ready adapter reports no devices."
+        },
+        {
+          "category": "transient",
+          "case": "Radio or device state is changing or the Explorer/OS provider is recovering."
+        }
+      ],
+      "staging": [
+        {
+          "source": "windows/shell/adapters/modules/nexus/pages/BluetoothPage.qml",
+          "destination": "modules/nexus/pages/BluetoothPage.qml"
+        },
+        {
+          "source": "windows/shell/adapters/modules/nexus/pages/bluetooth/BluetoothPairing.qml",
+          "destination": "modules/nexus/pages/bluetooth/BluetoothPairing.qml"
+        },
+        {
+          "source": "windows/services/bluetooth/BluetoothService.qml",
+          "destination": "services/BluetoothService.qml"
+        },
+        {
+          "source": "windows/services/bluetooth/NativeBluetoothBackend.qml",
+          "destination": "services/NativeBluetoothBackend.qml"
+        }
+      ],
+      "sourceLinks": [
+        {
+          "repository": "shell",
+          "path": "windows/shell/adapters/modules/nexus/pages/BluetoothPage.qml",
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/eec2778123d47c3555006b3af5e75fd893c7b9c2/windows/shell/adapters/modules/nexus/pages/BluetoothPage.qml"
+        },
+        {
+          "repository": "shell",
+          "path": "windows/services/bluetooth/BluetoothService.qml",
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/eec2778123d47c3555006b3af5e75fd893c7b9c2/windows/services/bluetooth/BluetoothService.qml"
+        },
+        {
+          "repository": "backend",
+          "path": "src/windows/bluetooth/bluetooth.cpp",
+          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/e6039b2b9cbb35b97473bda4dcc3f12789ae7f0c/src/windows/bluetooth/bluetooth.cpp"
+        }
+      ],
+      "acceptanceOwners": []
+    },
+    {
+      "id": "brightness",
+      "bundleProviderId": "brightness",
+      "uiEntry": "Bar scroll actions and the per-screen OSD brightness control.",
+      "provider": "Quickshell Windows brightness service with a per-display route selected from observed target identity/capabilities.",
+      "operations": [
+        "Read and request brightness changes for an identified screen where a safe route is available.",
+        "Possible backend methods include WMI, built-in LCD, DDC/CI, HDR SDR-white, and owned software dimming; these are conditional routes, not a universal monitor guarantee."
+      ],
+      "requirements": [
+        "A screen-to-target correlation and a compatible device/driver route are required for hardware writes.",
+        "External DDC/CI availability and monitor range behavior vary by physical hardware."
+      ],
+      "degradedExamples": [
+        {
+          "category": "unsupported",
+          "case": "No safe brightness target or compatible write route can be established for a display."
+        },
+        {
+          "category": "unavailable",
+          "case": "The display/provider disappears or a query cannot be completed."
+        },
+        {
+          "category": "failed",
+          "case": "A routed write/readback reports failure; one monitor is not evidence for another."
+        }
+      ],
+      "staging": [
+        {
+          "source": "modules/bar/Bar.qml",
+          "destination": "modules/bar/Bar.qml"
+        },
+        {
+          "source": "windows/shell/adapters/modules/osd/Content.qml",
+          "destination": "modules/osd/Content.qml"
+        },
+        {
+          "source": "windows/services/brightness/Brightness.qml",
+          "destination": "services/Brightness.qml"
+        },
+        {
+          "source": "windows/services/brightness/BrightnessService.qml",
+          "destination": "services/BrightnessService.qml"
+        },
+        {
+          "source": "windows/services/brightness/NativeBrightnessBackend.qml",
+          "destination": "services/NativeBrightnessBackend.qml"
+        }
+      ],
+      "sourceLinks": [
+        {
+          "repository": "shell",
+          "path": "windows/services/brightness/BrightnessService.qml",
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/eec2778123d47c3555006b3af5e75fd893c7b9c2/windows/services/brightness/BrightnessService.qml"
+        },
+        {
+          "repository": "shell",
+          "path": "modules/bar/Bar.qml",
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/eec2778123d47c3555006b3af5e75fd893c7b9c2/modules/bar/Bar.qml"
+        },
+        {
+          "repository": "backend",
+          "path": "src/windows/system/brightness.cpp",
+          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/e6039b2b9cbb35b97473bda4dcc3f12789ae7f0c/src/windows/system/brightness.cpp"
+        }
+      ],
+      "acceptanceOwners": [
+        "https://github.com/KldsSeeGhosts/caelestia-windows/issues/13"
+      ]
+    },
+    {
+      "id": "network",
+      "bundleProviderId": "network",
+      "uiEntry": "Network popout and Settings > Network > Wi-Fi.",
+      "provider": "Staged Windows NetworkService/Nmcli adapters over Quickshell Windows WLAN and connectivity providers.",
+      "operations": [
+        "Observe Wi-Fi radio, interface, scan list, current connection and an available-network snapshot.",
+        "When controls are enabled, request radio changes, connect to a saved profile or open network, disconnect, forget, and rescan.",
+        "Ethernet is a connected/not-connected observation only; VPN and new protected profiles are owned by Windows Settings."
+      ],
+      "requirements": [
+        "Nearby Wi-Fi listing can require Windows Location permission; denying it hides the list rather than preserving stale observations.",
+        "The native network observation/control environment gates are separate; read-only observation does not enable radio or connection writes.",
+        "Caelestia passes no Wi-Fi password and does not collect credentials. A new protected network opens Windows Settings."
+      ],
+      "degradedExamples": [
+        {
+          "category": "denied",
+          "case": "Windows Location access is denied for nearby-network enumeration."
+        },
+        {
+          "category": "unavailable",
+          "case": "WLAN initialization/subscription fails; no adapter is not reported as an empty network list."
+        },
+        {
+          "category": "transient",
+          "case": "WLAN is initializing, scanning, or connecting."
+        },
+        {
+          "category": "empty",
+          "case": "A completed, permission-valid refresh returns no visible access points."
+        },
+        {
+          "category": "unsupported",
+          "case": "Wired connection controls, VPN configuration, and profile creation are not implemented by this UI."
+        }
+      ],
+      "staging": [
+        {
+          "source": "windows/shell/adapters/modules/nexus/pages/NetworkPage.qml",
+          "destination": "modules/nexus/pages/NetworkPage.qml"
+        },
+        {
+          "source": "windows/shell/adapters/modules/nexus/pages/network/AddNetworkPage.qml",
+          "destination": "modules/nexus/pages/network/AddNetworkPage.qml"
+        },
+        {
+          "source": "windows/shell/adapters/modules/bar/popouts/Network.qml",
+          "destination": "modules/bar/popouts/Network.qml"
+        },
+        {
+          "source": "windows/services/network/Nmcli.qml",
+          "destination": "services/Nmcli.qml"
+        },
+        {
+          "source": "windows/services/network/NativeNetworkBackend.qml",
+          "destination": "services/NativeNetworkBackend.qml"
+        },
+        {
+          "source": "windows/services/network/NetworkService.qml",
+          "destination": "services/NetworkService.qml"
+        }
+      ],
+      "sourceLinks": [
+        {
+          "repository": "shell",
+          "path": "windows/shell/adapters/modules/nexus/pages/NetworkPage.qml",
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/eec2778123d47c3555006b3af5e75fd893c7b9c2/windows/shell/adapters/modules/nexus/pages/NetworkPage.qml"
+        },
+        {
+          "repository": "shell",
+          "path": "windows/services/network/NetworkService.qml",
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/eec2778123d47c3555006b3af5e75fd893c7b9c2/windows/services/network/NetworkService.qml"
+        },
+        {
+          "repository": "backend",
+          "path": "src/windows/system/network_wifi.cpp",
+          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/e6039b2b9cbb35b97473bda4dcc3f12789ae7f0c/src/windows/system/network_wifi.cpp"
+        }
+      ],
+      "acceptanceOwners": [
+        "https://github.com/KldsSeeGhosts/caelestia-windows/issues/14"
+      ]
+    },
+    {
+      "id": "media",
+      "bundleProviderId": "media",
+      "uiEntry": "Dashboard/lock media cards and media transport keybinds.",
+      "provider": "Quickshell Windows GSMTC-backed media-session adapter.",
+      "operations": [
+        "Observe active Windows media sessions and supported per-session transport capabilities.",
+        "Send play/pause, next, previous, or stop only when the selected session advertises that operation."
+      ],
+      "requirements": [
+        "Windows must expose a media session; a successful scan with no session is empty, not a provider failure.",
+        "Individual applications may not support every transport command."
+      ],
+      "degradedExamples": [
+        {
+          "category": "empty",
+          "case": "GSMTC is ready and no media sessions are active."
+        },
+        {
+          "category": "unavailable",
+          "case": "GSMTC initialization or session scan fails."
+        },
+        {
+          "category": "unsupported",
+          "case": "A selected media app does not expose the requested transport command."
+        }
+      ],
+      "staging": [
+        {
+          "source": "windows/shell/adapters/modules/dashboard/Media.qml",
+          "destination": "modules/dashboard/Media.qml"
+        },
+        {
+          "source": "windows/shell/adapters/modules/dashboard/media/LyricsAndSelector.qml",
+          "destination": "modules/dashboard/media/LyricsAndSelector.qml"
+        },
+        {
+          "source": "windows/services/media/PlayersService.qml",
+          "destination": "services/PlayersService.qml"
+        },
+        {
+          "source": "windows/services/media/NativeMediaBackend.qml",
+          "destination": "services/NativeMediaBackend.qml"
+        }
+      ],
+      "sourceLinks": [
+        {
+          "repository": "shell",
+          "path": "windows/services/media/PlayersService.qml",
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/eec2778123d47c3555006b3af5e75fd893c7b9c2/windows/services/media/PlayersService.qml"
+        },
+        {
+          "repository": "shell",
+          "path": "windows/shell/adapters/modules/dashboard/Media.qml",
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/eec2778123d47c3555006b3af5e75fd893c7b9c2/windows/shell/adapters/modules/dashboard/Media.qml"
+        },
+        {
+          "repository": "backend",
+          "path": "src/windows/services/mpris/gsmtc_worker.cpp",
+          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/e6039b2b9cbb35b97473bda4dcc3f12789ae7f0c/src/windows/services/mpris/gsmtc_worker.cpp"
+        }
+      ],
+      "acceptanceOwners": []
+    },
+    {
+      "id": "notifications",
+      "bundleProviderId": "notifications",
+      "uiEntry": "Notification center/sidebar and notification preference rows.",
+      "provider": "Quickshell Windows notification server; Windows toast mirroring is a separate consent-gated capability.",
+      "operations": [
+        "Receive and render shell-local notifications, history, dismissal and fullscreen policy.",
+        "Optionally mirror Windows notifications after the user explicitly grants notification access."
+      ],
+      "requirements": [
+        "Windows notification access must be explicitly requested by user action; denial or revocation disables mirroring but does not itself disable local shell notifications.",
+        "A usable notification server owner is required for local forwarding."
+      ],
+      "degradedExamples": [
+        {
+          "category": "denied",
+          "case": "The user denies Windows user-notification access or later revokes it."
+        },
+        {
+          "category": "unavailable",
+          "case": "Notification service ownership/initialization fails."
+        },
+        {
+          "category": "transient",
+          "case": "Windows has not answered a consent request or provider recovery is pending."
+        },
+        {
+          "category": "empty",
+          "case": "The service is healthy and there are no retained notifications."
+        }
+      ],
+      "staging": [
+        {
+          "source": "windows/shell/adapters/modules/sidebar/Content.qml",
+          "destination": "modules/sidebar/Content.qml"
+        },
+        {
+          "source": "windows/shell/adapters/modules/nexus/pages/ServicesPage.qml",
+          "destination": "modules/nexus/pages/ServicesPage.qml"
+        },
+        {
+          "source": "windows/services/notifications/Notifs.qml",
+          "destination": "services/Notifs.qml"
+        },
+        {
+          "source": "windows/services/notifications/NotificationsService.qml",
+          "destination": "services/NotificationsService.qml"
+        },
+        {
+          "source": "windows/services/notifications/NativeNotificationBackend.qml",
+          "destination": "services/NativeNotificationBackend.qml"
+        }
+      ],
+      "sourceLinks": [
+        {
+          "repository": "shell",
+          "path": "windows/services/notifications/NotificationsService.qml",
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/eec2778123d47c3555006b3af5e75fd893c7b9c2/windows/services/notifications/NotificationsService.qml"
+        },
+        {
+          "repository": "shell",
+          "path": "windows/services/notifications/NativeNotificationBackend.qml",
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/eec2778123d47c3555006b3af5e75fd893c7b9c2/windows/services/notifications/NativeNotificationBackend.qml"
+        },
+        {
+          "repository": "backend",
+          "path": "src/windows/services/notifications/toast_mirror.cpp",
+          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/e6039b2b9cbb35b97473bda4dcc3f12789ae7f0c/src/windows/services/notifications/toast_mirror.cpp"
+        }
+      ],
+      "acceptanceOwners": [
+        "https://github.com/KldsSeeGhosts/caelestia-windows/issues/30"
+      ]
+    },
+    {
+      "id": "desktop",
+      "bundleProviderId": "desktop",
+      "uiEntry": "Bar workspaces/active-window widgets, global keybinds, and window-dispatch consumers.",
+      "provider": "Staged Hypr compatibility facade over Quickshell Windows foreground/window tracking, keyboard hooks, and optional virtual-desktop COM control.",
+      "operations": [
+        "Observe tracked top-level windows, foreground application, keyboard layout/lock state, monitors and workspace state.",
+        "Allowlisted workspace switch/move and graceful WM_CLOSE dispatch when the applicable operation is enabled and supported."
+      ],
+      "requirements": [
+        "Hypr observation and dispatch are separate opt-ins; dispatch needs both.",
+        "Workspace switch/move use supported virtual-desktop interface families 26100, 26200, or 26300 and require Explorer/provider availability.",
+        "The facade exposes one globally focused workspace, not independent per-monitor workspaces."
+      ],
+      "degradedExamples": [
+        {
+          "category": "unsupported",
+          "case": "A request outside the adapter allowlist is refused; special workspaces are consumed as no-ops."
+        },
+        {
+          "category": "unavailable",
+          "case": "The observation backend is disabled, has not initialized, or Explorer/provider is disconnected."
+        },
+        {
+          "category": "denied",
+          "case": "Windows refuses a workspace/window move."
+        },
+        {
+          "category": "transient",
+          "case": "Explorer or a desktop-control provider is restarting."
+        }
+      ],
+      "operationCaveat": "The native dispatch method returns void; a sent request is not a confirmed window/workspace result.",
+      "staging": [
+        {
+          "source": "windows/services/hypr/Hypr.qml",
+          "destination": "services/Hypr.qml"
+        },
+        {
+          "source": "windows/services/hypr/HyprService.qml",
+          "destination": "services/HyprService.qml"
+        },
+        {
+          "source": "windows/services/hypr/NativeHyprBackend.qml",
+          "destination": "services/NativeHyprBackend.qml"
+        },
+        {
+          "source": "windows/shell/adapters/modules/bar/components/workspaces/Workspaces.qml",
+          "destination": "modules/bar/components/workspaces/Workspaces.qml"
+        },
+        {
+          "source": "windows/shell/adapters/daemons/Shortcuts.qml",
+          "destination": "daemons/Shortcuts.qml"
+        }
+      ],
+      "sourceLinks": [
+        {
+          "repository": "shell",
+          "path": "windows/services/hypr/README.md",
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/eec2778123d47c3555006b3af5e75fd893c7b9c2/windows/services/hypr/README.md"
+        },
+        {
+          "repository": "shell",
+          "path": "windows/services/hypr/HyprService.qml",
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/eec2778123d47c3555006b3af5e75fd893c7b9c2/windows/services/hypr/HyprService.qml"
+        },
+        {
+          "repository": "backend",
+          "path": "src/windows/hyprland/dispatcher.cpp",
+          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/e6039b2b9cbb35b97473bda4dcc3f12789ae7f0c/src/windows/hyprland/dispatcher.cpp"
+        }
+      ],
+      "acceptanceOwners": [
+        "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/issues/12"
+      ]
+    },
+    {
+      "id": "capture",
+      "bundleProviderId": "capture",
+      "uiEntry": "PrintScreen, Win+Shift+S, Win+Shift+R, launcher actions, and the recording card.",
+      "provider": "Pinned bundled Glazier executable, orchestrated by the staged Glazier/Recorder adapters.",
+      "operations": [
+        "Launch Glazier's screenshot picker/editor after shell surfaces are dismissed.",
+        "Start, stop, pause/resume, and observe Glazier recording states and finalized-file ownership."
+      ],
+      "requirements": [
+        "The live installed shell, bundled executable and interactive desktop are required; smoke/read-only profiles suppress process launch.",
+        "Executable-path availability does not prove a running host, accepted command, completed screenshot, or saved recording."
+      ],
+      "degradedExamples": [
+        {
+          "category": "unavailable",
+          "case": "The bundled executable cannot be resolved or a known process/status client fails."
+        },
+        {
+          "category": "transient",
+          "case": "The host is starting, shell surfaces are still hiding, a command is queued, or a recording is finalizing."
+        },
+        {
+          "category": "failed",
+          "case": "The provider reports an error or a recording start is not confirmed before its bounded deadline."
+        },
+        {
+          "category": "empty",
+          "case": "The provider is healthy and no recording is active."
+        }
+      ],
+      "operationCaveat": "Screenshot launch is asynchronous. A shell return value/accepted detached launch is not a file-completion result; use provider status/journal evidence for recording state.",
+      "captureMigration": "The current staged route remains Glazier at the recorded pin. Lifecycle changes and the first-party source/product migration are separate active work; migration is pending, not a final identity change.",
+      "staging": [
+        {
+          "source": "windows/shell/adapters/services/Glazier.qml",
+          "destination": "services/Glazier.qml"
+        },
+        {
+          "source": "windows/shell/adapters/services/Recorder.qml",
+          "destination": "services/Recorder.qml"
+        },
+        {
+          "source": "windows/shell/adapters/daemons/Shortcuts.qml",
+          "destination": "daemons/Shortcuts.qml"
+        },
+        {
+          "source": "windows/shell/adapters/modules/launcher/services/Actions.qml",
+          "destination": "modules/launcher/services/Actions.qml"
+        },
+        {
+          "source": "defaults/windows/keybinds.json",
+          "destination": "defaults/windows/keybinds.json"
+        }
+      ],
+      "sourceLinks": [
+        {
+          "repository": "shell",
+          "path": "windows/shell/adapters/services/Glazier.qml",
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/eec2778123d47c3555006b3af5e75fd893c7b9c2/windows/shell/adapters/services/Glazier.qml"
+        },
+        {
+          "repository": "shell",
+          "path": "windows/shell/adapters/services/Recorder.qml",
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/eec2778123d47c3555006b3af5e75fd893c7b9c2/windows/shell/adapters/services/Recorder.qml"
+        },
+        {
+          "repository": "shell",
+          "path": "windows/shell/adapters/modules/nexus/pages/ServicesPage.qml",
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/eec2778123d47c3555006b3af5e75fd893c7b9c2/windows/shell/adapters/modules/nexus/pages/ServicesPage.qml"
+        },
+        {
+          "repository": "glazier",
+          "path": "src/capture.rs",
+          "url": "https://github.com/KldsSeeGhosts/glazier/blob/37f795041cbbb32ed46cba103f3f000a3a99ac13/src/capture.rs"
+        },
+        {
+          "repository": "glazier",
+          "path": "src/recording.rs",
+          "url": "https://github.com/KldsSeeGhosts/glazier/blob/37f795041cbbb32ed46cba103f3f000a3a99ac13/src/recording.rs"
+        }
+      ],
+      "acceptanceOwners": [
+        "https://github.com/KldsSeeGhosts/caelestia-windows/issues/28"
+      ]
+    },
+    {
+      "id": "idleInhibit",
+      "bundleProviderId": "idleInhibit",
+      "uiEntry": "Utilities > Keep awake card.",
+      "provider": "Quickshell Windows execution-state/power-request backend through the staged IdleHold facade.",
+      "operations": [
+        "Acquire and release a Windows system/display idle-inhibition request."
+      ],
+      "requirements": [
+        "Only a user-enabled live shell requests inhibition; read-only/offscreen modes do not change power state."
+      ],
+      "degradedExamples": [
+        {
+          "category": "unavailable",
+          "case": "Windows power request acquisition fails; the card shows a provider error."
+        },
+        {
+          "category": "failed",
+          "case": "A release fails; the held state remains visible rather than claiming inhibition ended."
+        }
+      ],
+      "staging": [
+        {
+          "source": "windows/shell/adapters/modules/utilities/cards/IdleInhibit.qml",
+          "destination": "modules/utilities/cards/IdleInhibit.qml"
+        },
+        {
+          "source": "windows/shell/adapters/daemons/IdleInhibit.qml",
+          "destination": "daemons/IdleInhibit.qml"
+        },
+        {
+          "source": "windows/shell/adapters/imports/Caelestia/Services/IdleHold.qml",
+          "destination": "imports/Caelestia/Services/IdleHold.qml"
+        }
+      ],
+      "sourceLinks": [
+        {
+          "repository": "shell",
+          "path": "windows/shell/adapters/modules/utilities/cards/IdleInhibit.qml",
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/eec2778123d47c3555006b3af5e75fd893c7b9c2/windows/shell/adapters/modules/utilities/cards/IdleInhibit.qml"
+        },
+        {
+          "repository": "shell",
+          "path": "windows/shell/adapters/imports/Caelestia/Services/IdleHold.qml",
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/eec2778123d47c3555006b3af5e75fd893c7b9c2/windows/shell/adapters/imports/Caelestia/Services/IdleHold.qml"
+        },
+        {
+          "repository": "backend",
+          "path": "src/windows/system/idle_power.cpp",
+          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/e6039b2b9cbb35b97473bda4dcc3f12789ae7f0c/src/windows/system/idle_power.cpp"
+        }
+      ],
+      "acceptanceOwners": []
+    },
+    {
+      "id": "keyboard",
+      "bundleProviderId": "keyboard",
+      "uiEntry": "Bar keyboard-layout popout and global shortcut handling.",
+      "provider": "Quickshell Windows keyboard/layout APIs behind the staged Hypr and shortcut adapters.",
+      "operations": [
+        "Observe the foreground application's input layout and lock keys.",
+        "List installed input profiles and request a layout switch for the validated target application."
+      ],
+      "requirements": [
+        "Layout observation is per foreground input thread; a valid target window is needed for switching.",
+        "TSF and registered-layout fallback behavior can differ for IMEs and substituted profiles."
+      ],
+      "degradedExamples": [
+        {
+          "category": "unavailable",
+          "case": "The installed layout profile cannot be resolved or the target application/window is no longer valid."
+        },
+        {
+          "category": "unsupported",
+          "case": "A substituted or handle-less profile cannot be switched through the available target API."
+        },
+        {
+          "category": "transient",
+          "case": "The foreground application or its input thread changes during the request."
+        }
+      ],
+      "staging": [
+        {
+          "source": "windows/shell/adapters/modules/bar/popouts/kblayout/KbLayoutModel.qml",
+          "destination": "modules/bar/popouts/kblayout/KbLayoutModel.qml"
+        },
+        {
+          "source": "windows/shell/adapters/daemons/Shortcuts.qml",
+          "destination": "daemons/Shortcuts.qml"
+        },
+        {
+          "source": "windows/services/hypr/NativeHyprBackend.qml",
+          "destination": "services/NativeHyprBackend.qml"
+        }
+      ],
+      "sourceLinks": [
+        {
+          "repository": "shell",
+          "path": "windows/shell/adapters/modules/bar/popouts/kblayout/KbLayoutModel.qml",
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/eec2778123d47c3555006b3af5e75fd893c7b9c2/windows/shell/adapters/modules/bar/popouts/kblayout/KbLayoutModel.qml"
+        },
+        {
+          "repository": "shell",
+          "path": "windows/services/hypr/NativeHyprBackend.qml",
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/eec2778123d47c3555006b3af5e75fd893c7b9c2/windows/services/hypr/NativeHyprBackend.qml"
+        },
+        {
+          "repository": "backend",
+          "path": "src/windows/system/keyboard.cpp",
+          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/e6039b2b9cbb35b97473bda4dcc3f12789ae7f0c/src/windows/system/keyboard.cpp"
+        }
+      ],
+      "acceptanceOwners": [
+        "https://github.com/KldsSeeGhosts/caelestia-windows/issues/15"
+      ]
+    },
+    {
+      "id": "tray",
+      "bundleProviderId": "tray",
+      "uiEntry": "Bar notification-area tray, item activation, and native context menus.",
+      "provider": "Quickshell Windows SystemTray hook/host projected by the staged WindowsTray adapter.",
+      "operations": [
+        "Observe eligible notification-area items when the tray interceptor is enabled.",
+        "Activate items and open their native menus only when the hook capability and activation policy permit it."
+      ],
+      "requirements": [
+        "Explorer and the native tray hook must be available; observation and activation are separate gates.",
+        "The native item uses Windows-owned menus, not the inherited Linux semantic menu model."
+      ],
+      "degradedExamples": [
+        {
+          "category": "unavailable",
+          "case": "The hook is unavailable or never reaches ready; tray items are not claimed observable."
+        },
+        {
+          "category": "transient",
+          "case": "Explorer restarts and the tray host is reconnecting."
+        },
+        {
+          "category": "empty",
+          "case": "A ready tray host reports no eligible icons."
+        }
+      ],
+      "staging": [
+        {
+          "source": "windows/shell/adapters/modules/bar/components/Tray.qml",
+          "destination": "modules/bar/components/Tray.qml"
+        },
+        {
+          "source": "windows/services/tray/Tray.qml",
+          "destination": "services/WindowsTray.qml"
+        },
+        {
+          "source": "windows/services/tray/TrayService.qml",
+          "destination": "services/TrayService.qml"
+        },
+        {
+          "source": "windows/services/tray/NativeTrayBackend.qml",
+          "destination": "services/NativeTrayBackend.qml"
+        }
+      ],
+      "sourceLinks": [
+        {
+          "repository": "shell",
+          "path": "windows/shell/adapters/modules/bar/components/Tray.qml",
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/eec2778123d47c3555006b3af5e75fd893c7b9c2/windows/shell/adapters/modules/bar/components/Tray.qml"
+        },
+        {
+          "repository": "shell",
+          "path": "windows/services/tray/TrayService.qml",
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/eec2778123d47c3555006b3af5e75fd893c7b9c2/windows/services/tray/TrayService.qml"
+        },
+        {
+          "repository": "backend",
+          "path": "src/windows/services/systray/host.cpp",
+          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/e6039b2b9cbb35b97473bda4dcc3f12789ae7f0c/src/windows/services/systray/host.cpp"
+        }
+      ],
+      "acceptanceOwners": []
+    },
+    {
+      "id": "wallpaper",
+      "bundleProviderId": "wallpaper",
+      "uiEntry": "Settings > Wallpaper and style, wallpaper file picker, and desktop background.",
+      "provider": "Staged Wallpapers orchestration over Quickshell Windows wallpaper/background APIs; WallpaperEngine is a separate optional underlay participant.",
+      "operations": [
+        "Select a local wallpaper and apply its background/palette behavior.",
+        "Observe the desktop host/underlay handoff when an external wallpaper owner is present."
+      ],
+      "requirements": [
+        "The Windows interactive desktop and current wallpaper host ownership determine which background route can be applied.",
+        "Dynamic scheme generation is optional and depends on the configured local generator/runtime."
+      ],
+      "degradedExamples": [
+        {
+          "category": "unavailable",
+          "case": "The selected screen, wallpaper host, or optional scheme generator is unavailable."
+        },
+        {
+          "category": "transient",
+          "case": "The desktop owner/underlay is being rediscovered or handed back."
+        },
+        {
+          "category": "empty",
+          "case": "No wallpaper has been selected for a screen."
+        }
+      ],
+      "staging": [
+        {
+          "source": "windows/shell/adapters/services/Wallpapers.qml",
+          "destination": "services/Wallpapers.qml"
+        },
+        {
+          "source": "windows/shell/adapters/services/SchemeGenerator.qml",
+          "destination": "services/SchemeGenerator.qml"
+        },
+        {
+          "source": "windows/shell/adapters/modules/nexus/pages/wallandstyle/WallpaperSelect.qml",
+          "destination": "modules/nexus/pages/wallandstyle/WallpaperSelect.qml"
+        },
+        {
+          "source": "windows/shell/adapters/modules/background/WindowsBackground.qml",
+          "destination": "modules/background/WindowsBackground.qml"
+        },
+        {
+          "source": "windows/services/wallpaperengine/WallpaperEngine.qml",
+          "destination": "services/WallpaperEngine.qml"
+        }
+      ],
+      "sourceLinks": [
+        {
+          "repository": "shell",
+          "path": "windows/shell/adapters/services/Wallpapers.qml",
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/eec2778123d47c3555006b3af5e75fd893c7b9c2/windows/shell/adapters/services/Wallpapers.qml"
+        },
+        {
+          "repository": "shell",
+          "path": "windows/shell/adapters/modules/background/WindowsBackground.qml",
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/eec2778123d47c3555006b3af5e75fd893c7b9c2/windows/shell/adapters/modules/background/WindowsBackground.qml"
+        },
+        {
+          "repository": "backend",
+          "path": "src/windows/system/wallpaper.cpp",
+          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/e6039b2b9cbb35b97473bda4dcc3f12789ae7f0c/src/windows/system/wallpaper.cpp"
+        }
+      ],
+      "acceptanceOwners": [
+        "https://github.com/KldsSeeGhosts/caelestia-windows/issues/25"
+      ]
+    },
+    {
+      "id": "clipboard",
+      "bundleProviderId": null,
+      "uiEntry": "Clipboard picker opened by the named caelestia:clipboard action/IPC after the user configures a binding.",
+      "provider": "Caelestia.Windows.WindowsClipboard plugin over Windows' own WinRT clipboard history; no parallel shell capture store.",
+      "operations": [
+        "Refresh/read history, request bounded previews, paste, remove, clear, and open Windows clipboard settings."
+      ],
+      "requirements": [
+        "The feature setting is enabled, Windows clipboard history is on, and Windows permits this user's history access.",
+        "The default profile ships no clipboard key binding; a user may bind Super+V, replacing Windows' own Win+V flyout for that chord.",
+        "Caelestia never enables Windows clipboard history itself."
+      ],
+      "degradedExamples": [
+        {
+          "category": "denied",
+          "case": "Windows refuses history access."
+        },
+        {
+          "category": "unavailable",
+          "case": "The native plugin/component fails to load."
+        },
+        {
+          "category": "empty",
+          "case": "History is healthy but contains no visible items, including when Windows history is off."
+        }
+      ],
+      "supportBundleNote": "The support-bundle v1 provider list has no clipboard ID. Do not add a synthetic clipboard row or imply that its provider health is currently exported. Never put clipboard content or preview material into support diagnostics.",
+      "staging": [
+        {
+          "source": "windows/services/clipboard/ClipboardHistory.qml",
+          "destination": "services/ClipboardHistory.qml"
+        },
+        {
+          "source": "windows/services/clipboard/NativeClipboardBackend.qml",
+          "destination": "services/NativeClipboardBackend.qml"
+        },
+        {
+          "source": "windows/services/clipboard/ClipboardOverlay.qml",
+          "destination": "modules/clipboard/ClipboardOverlay.qml"
+        },
+        {
+          "source": "windows/services/clipboard/ClipboardHistory.js",
+          "destination": "modules/clipboard/ClipboardHistory.js"
+        }
+      ],
+      "sourceLinks": [
+        {
+          "repository": "shell",
+          "path": "windows/services/clipboard/README.md",
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/eec2778123d47c3555006b3af5e75fd893c7b9c2/windows/services/clipboard/README.md"
+        },
+        {
+          "repository": "shell",
+          "path": "windows/services/clipboard/NativeClipboardBackend.qml",
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/eec2778123d47c3555006b3af5e75fd893c7b9c2/windows/services/clipboard/NativeClipboardBackend.qml"
+        },
+        {
+          "repository": "shell",
+          "path": "plugin/src/Caelestia/Windows/Clipboard/windowsclipboard.cpp",
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/eec2778123d47c3555006b3af5e75fd893c7b9c2/plugin/src/Caelestia/Windows/Clipboard/windowsclipboard.cpp"
+        },
+        {
+          "repository": "backend",
+          "path": "src/windows/system/clipboard.cpp",
+          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/e6039b2b9cbb35b97473bda4dcc3f12789ae7f0c/src/windows/system/clipboard.cpp"
+        }
+      ],
+      "acceptanceOwners": []
+    }
+  ]
+}
