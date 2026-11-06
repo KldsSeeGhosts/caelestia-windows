@@ -9,6 +9,11 @@ if (-not $Prefix) {
     $Prefix = if (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'install.json')) { $PSScriptRoot } else { Join-Path $env:LOCALAPPDATA 'Programs\caelestia-windows' }
 }
 $Prefix = Resolve-CaelestiaDirectory $Prefix
+# Use the installers' nonblocking prefix lock before reading any mutable
+# installation/profile identity. Keep it through integration and purge cleanup.
+$installLock = Enter-CaelestiaInstallLock $Prefix
+try {
+if (-not $installLock) { throw 'An installation, rollback or uninstall is already in progress.' }
 $record = Read-CaelestiaInstall $Prefix
 $profile = Resolve-CaelestiaDirectory $record.profile
 if ($profile -eq $Prefix -or $Prefix.StartsWith($profile + '\', [StringComparison]::OrdinalIgnoreCase) -or $profile.StartsWith($Prefix + '\', [StringComparison]::OrdinalIgnoreCase)) {
@@ -75,3 +80,6 @@ if ($Purge -and (Test-Path -LiteralPath $profile)) {
 }
 Write-Output "Uninstalled Caelestia: $Prefix"
 if (-not $Purge) { Write-Output "Kept profile: $profile" }
+} finally {
+    Exit-CaelestiaInstallLock $installLock
+}
