@@ -93,7 +93,7 @@ rejected rather than toggled or queued to begin later.
   "elapsed_ms": 1250,
   "system_sound": true,
   "mic": false,
-  "output_directory": "C:\\Users\\Example\\Videos\\Screen Recordings",
+  "output_directory": "C:\\CaptureFixtures\\Screen Recordings",
   "event_sequence": 1,
   "events": [{"sequence":1,"type":"started"}]
 }
