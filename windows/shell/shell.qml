@@ -146,19 +146,17 @@ ShellRoot {
         target: "shell"
         function quit(): void {
             // The bundled tray host belongs to this shell process.
-            Glazier.stopHost(false);
-            Qt.quit();
+            Glazier.requestQuit();
         }
         function restart(): string {
             const previous = root.generation;
-            // Stop and wait so the reloaded graph starts its own host from the
-            // selected payload instead of adopting a host being torn down.
-            Glazier.stopHost(true);
-            // Soft reload transfers the existing native windows to the new
-            // graph. A hard reload unnecessarily destroys/recreates them.
-            Quickshell.reload(false);
+            // Keep the generation-string acknowledgement compatible. Reload
+            // only after asynchronous verified handoff, including recording.
+            // Refusal leaves this generation alive, so readiness cannot lie.
+            Glazier.prepareReload(() => Quickshell.reload(false));
             return previous;
         }
+        function captureHostState(): string { return JSON.stringify(Glazier.hostState); }
         function state(): string { return JSON.stringify(root.snapshot()); }
         // on-demand, content-free stage counts, separate from smoke readiness.
         function tilingState(): string {
