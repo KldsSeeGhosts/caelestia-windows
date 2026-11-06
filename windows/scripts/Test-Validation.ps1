@@ -28,7 +28,7 @@ $powershell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powersh
 $results = New-Object 'System.Collections.Generic.List[object]'
 $completed = $false
 
-function Invoke-ValidationStep([string]$Name, [string]$Executable, [string[]]$CommandArguments) {
+function Invoke-ValidationStep([string]$Name, [string]$Executable, [string[]]$CommandArguments, [string]$TestCountPattern = '') {
     $Executable = (Get-Command $Executable -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
     $clock = [Diagnostics.Stopwatch]::StartNew()
     $logPath = Join-Path $OutputRoot ($Name + '.log')
@@ -39,7 +39,16 @@ function Invoke-ValidationStep([string]$Name, [string]$Executable, [string[]]$Co
         Set-Content -LiteralPath $logPath -Encoding UTF8
     $code = $LASTEXITCODE
     $ErrorActionPreference = 'Stop'
-    $results.Add([ordered]@{ name = $Name; exitCode = $code; seconds = [Math]::Round($clock.Elapsed.TotalSeconds, 2) })
+    $testCount = $null
+    if ($TestCountPattern) {
+        $counts = [regex]::Matches([string](Get-Content -LiteralPath $logPath -Raw -Encoding UTF8), $TestCountPattern)
+        if ($counts.Count) { $testCount = [int]$counts[$counts.Count - 1].Groups[1].Value }
+        if ($null -eq $testCount -or $testCount -lt 1) {
+            Add-Content -LiteralPath $logPath -Value 'Validation requires a nonzero reported test count.' -Encoding UTF8
+            if ($code -eq 0) { $code = 1 }
+        }
+    }
+    $results.Add([ordered]@{ name = $Name; exitCode = $code; testCount = $testCount; seconds = [Math]::Round($clock.Elapsed.TotalSeconds, 2) })
     Write-Output ("{0} {1} ({2:N2}s)" -f $(if ($code -eq 0) { 'PASS' } else { 'FAIL' }), $Name, $clock.Elapsed.TotalSeconds)
     # The log is not uploaded, so show the end of a failure where it ran.
     if ($code -ne 0) {
@@ -68,14 +77,14 @@ try {
             throw 'Production staging must not include test fixtures.'
         }
         Invoke-ScriptCheck 'Test-PublicDocs'
-        foreach ($name in @('Test-CIChanges', 'Test-SchemeProbeGuard', 'Test-KsgSettingsImport', 'Test-ShellLifecycle')) {
+        foreach ($name in @('Test-CIChanges', 'Test-SchemeProbeGuard', 'Test-KsgSettingsImport', 'Test-ShellLifecycle', 'Test-ValidationCounts')) {
             Invoke-ScriptCheck $name
         }
         $node = (Get-Command node -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
         $javascript = @(Get-ChildItem -LiteralPath "$repoRoot\windows\tests" -Filter '*.test.js' -File | Sort-Object Name | ForEach-Object FullName)
         if (-not $javascript.Count) { throw 'No JavaScript regressions were discovered.' }
-        Invoke-ValidationStep 'javascript' $node (@('--test', '--test-reporter=tap') + $javascript)
-        Invoke-ValidationStep 'quota-providers' $Python @('-B', '-m', 'unittest', 'discover', '-s', 'windows/tests/quota_providers', '-v')
+        Invoke-ValidationStep 'javascript' $node (@('--test', '--test-reporter=tap') + $javascript) '(?m)^# tests ([0-9]+)\s*$'
+        Invoke-ValidationStep 'quota-providers' $Python @('-B', '-m', 'unittest', 'discover', '-s', 'windows/tests/quota_providers', '-v') '(?m)^Ran ([0-9]+) tests?\b'
     } elseif ($Suite -eq 'Packaging') {
         Invoke-ScriptCheck 'Test-VersionedInstall'
     } elseif ($Suite -eq 'Scheme') {

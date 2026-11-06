@@ -4,6 +4,10 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'Caelestia-InstallCommon.ps1')
 $root = Resolve-CaelestiaDirectory (Join-Path $env:TEMP ('caelestia-version-test-' + [guid]::NewGuid().ToString('N')))
 [IO.Directory]::CreateDirectory($root) | Out-Null
+$script:registryTestId = [guid]::NewGuid().ToString('N')
+$script:registryTestRoot = 'HKCU:\Software\CaelestiaWindowsTests\' + $script:registryTestId
+# Exercise the real registry operations, but never Windows' live startup key.
+function Get-CaelestiaAutostartKey { return $script:registryTestRoot + '\Run' }
 $script:started = 0
 $script:failStart = $false
 $script:runningPaths = @()
@@ -560,7 +564,10 @@ try {
     $autoShortcut = Join-Path $root 'auto-shortcut\Caelestia.lnk'
     [IO.Directory]::CreateDirectory((Split-Path -Parent $autoShortcut)) | Out-Null
     'previous shortcut' | Set-Content -LiteralPath $autoShortcut -Encoding UTF8
-    $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+    $fixtureRegistryKey = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey(
+        'Software\CaelestiaWindowsTests\' + $script:registryTestId)
+    $fixtureRegistryKey.Dispose()
+    $runKey = Get-CaelestiaAutostartKey
     $autoRunName = 'CaelestiaTestAuto-' + [guid]::NewGuid().ToString('N')
     $autoRunValue = '"C:\existing\CaelestiaWindows.exe"'
     if (-not (Test-Path -LiteralPath $runKey)) { New-Item -Path $runKey | Out-Null }
@@ -1926,6 +1933,12 @@ public static class LegacyInstallLockFixture {
     Assert (@(Get-ChildItem -LiteralPath $root -Directory -Filter 'locked-app.uninstall-*').Count -eq 0) 'Uninstall left a tombstone.'
     Write-Output 'PASS uninstall: a locked installation is unchanged; a clean run removes prefix and tombstone.'
 } finally {
+    if (Test-Path -LiteralPath $script:registryTestRoot) {
+        $registryItem = Get-Item -LiteralPath $script:registryTestRoot
+        $expected = 'HKEY_CURRENT_USER\Software\CaelestiaWindowsTests\' + $script:registryTestId
+        if ($registryItem.Name -ne $expected) { throw 'Unsafe test registry cleanup.' }
+        Remove-Item -LiteralPath $script:registryTestRoot -Recurse -Force
+    }
     $safe = Resolve-CaelestiaDirectory $root
     if ((Split-Path -Parent $safe) -ne [IO.Path]::GetFullPath($env:TEMP).TrimEnd('\') -or
         (Split-Path -Leaf $safe) -notlike 'caelestia-version-test-*') { throw 'Unsafe test cleanup.' }

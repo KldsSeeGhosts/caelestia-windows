@@ -341,6 +341,10 @@ function New-CaelestiaShortcut([string]$Path, [string]$PowerShellPath, [string]$
 # select the previous version again (and restart when the install did). A first
 # install has no previous payload, so only the integration is removed and the
 # error is rethrown; the version stays installed.
+function Get-CaelestiaAutostartKey {
+    return 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+}
+
 function Complete-CaelestiaInstallIntegration {
     param(
         [string]$Prefix,
@@ -358,7 +362,7 @@ function Complete-CaelestiaInstallIntegration {
     }
     $powershell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
     $arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + (Join-Path $Prefix 'Start-Caelestia.ps1') + '"'
-    $run = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+    $run = Get-CaelestiaAutostartKey
     $backup = $null
     $runExisted = $false
     $runValue = ''
