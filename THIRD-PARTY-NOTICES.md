@@ -63,6 +63,11 @@ code or assets are included.
 | [Qt 6](https://www.qt.io/development/qt-framework) | The Qt Company Ltd. and Qt contributors; bundled third parties retain their own copyright | LGPL-3.0 for the deployed Qt libraries, plus applicable module and third-party licenses | License files supplied by `QtPrefix` (`licenses/`, `LICENSES/`, or component license files); some aqt archives provide `sbom/` instead. Standard GPL/LGPL texts are also in the backend license files above | `licenses/Qt/` holds supplied license files and GPL/LGPL texts; `licenses/Qt-sbom/` holds supplied SBOMs |
 | [Microsoft Visual C++ runtime](https://learn.microsoft.com/en-us/cpp/windows/redistributing-visual-cpp-files) | Microsoft Corporation | Microsoft Visual Studio redistribution terms, proprietary | The Visual Studio installation's license terms and redistributable list; supplied via `VCRuntimeRoot`, not vendored here | App-local CRT DLLs; redistribution must follow the supplying Visual Studio license |
 
+The app-local Microsoft runtime row applies only to the developer assembler.
+Public release ZIPs contain neither Microsoft runtime DLLs nor Microsoft's
+runtime installer. Users install Microsoft's official x64 Redistributable
+separately, subject to its own terms; the public installer checks that prerequisite.
+
 Qt is dynamically linked. The installer uses the build's Qt prefix and
 `windeployqt` to deploy its runtime. SBOMs record component provenance and
 license identifiers; they are not a substitute for applicable license texts.
