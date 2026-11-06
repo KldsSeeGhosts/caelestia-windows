@@ -51,12 +51,12 @@ Singleton {
         if (connectionError)
             return connectionError;
         if (!probed)
-            return "Checking Glazier...";
+            return "Checking Caelestia capture...";
         if (!available)
-            return "Unavailable: Glazier is missing from this installation.";
+            return "Unavailable: Caelestia capture is missing from this installation.";
         if (pendingStart)
-            return "Starting Glazier...";
-        return ({ idle: "Ready", selecting: "Select a region in Glazier", ready: "Ready in Glazier",
+            return "Starting Caelestia capture...";
+        return ({ idle: "Ready", selecting: "Select a region in Caelestia capture", ready: "Ready in Caelestia capture",
             recording: "Running...", paused: "Paused", finalizing: "Saving recording..." })[state];
     }
 
@@ -118,18 +118,18 @@ Singleton {
         // by the watchdog) is a transient poll failure, not a protocol
         // mismatch, so it must not disable the recorder until reload.
         if (!text.trim()) {
-            disconnected("Glazier is not responding.");
+            disconnected("Caelestia capture is not responding.");
             return false;
         }
         let data;
         try {
             data = JSON.parse(text.trim());
         } catch (_) {
-            disconnected("Glazier returned an unreadable status response.");
+            disconnected("Caelestia capture returned an unreadable status response.");
             return false;
         }
         if (data === null || typeof data !== "object" || Array.isArray(data)) {
-            disconnected("Glazier returned an unreadable status response.");
+            disconnected("Caelestia capture returned an unreadable status response.");
             return false;
         }
         if (typeof data.version === "number" && data.version !== 1) {
@@ -137,11 +137,11 @@ Singleton {
             // incompatibility; a valid compatible response clears it.
             available = false;
             incompatible = true;
-            disconnected("Glazier is incompatible: control protocol v1 is required.");
+            disconnected("Caelestia capture is incompatible: control protocol v1 is required.");
             return false;
         }
         if (data.version !== 1 || typeof data.ok !== "boolean") {
-            disconnected("Glazier returned an incomplete status response.");
+            disconnected("Caelestia capture returned an incomplete status response.");
             return false;
         }
         if (!data.ok && !data.host_id) {
@@ -152,14 +152,14 @@ Singleton {
             available = Boolean(executable);
             baselinePending = false; // a future host starts during this shell session
             if (!pendingStart)
-                disconnected("Glazier stopped");
+                disconnected("Caelestia capture stopped");
             return false;
         }
         if (["idle", "selecting", "ready", "recording", "paused", "finalizing"].indexOf(data.state) < 0
                 || !Number.isFinite(data.elapsed_ms) || data.elapsed_ms < 0
                 || typeof data.host_id !== "string" || typeof data.output_directory !== "string"
                 || !Array.isArray(data.events)) {
-            disconnected("Glazier returned an invalid recorder state.");
+            disconnected("Caelestia capture returned an invalid recorder state.");
             return false;
         }
         available = true;
@@ -195,7 +195,7 @@ Singleton {
             if (replay)
                 continue;
             if (event.type === "error")
-                lastError = event.message || "Glazier recording failed.";
+                lastError = event.message || "Caelestia capture recording failed.";
             else if (event.type === "started")
                 lastError = "";
             if (state === "idle" && ["finished", "cancelled", "error"].indexOf(event.type) !== -1) {
@@ -204,7 +204,7 @@ Singleton {
             }
         }
         if (!data.ok)
-            lastError = data.error || "Glazier command failed.";
+            lastError = data.error || "Caelestia capture command failed.";
         if (state !== "idle") {
             pendingStart = false;
             startTimeout.stop();
@@ -268,7 +268,7 @@ Singleton {
     function probe(): void {
         if (!permitted)
             return;
-        const override = Quickshell.env("CAELESTIA_GLAZIER_EXE") || "";
+        const override = Quickshell.env("CAELESTIA_CAPTURE_EXE") || Quickshell.env("CAELESTIA_GLAZIER_EXE") || "";
         let found = "";
         if (override) {
             found = Native.FsUtils.classify(override) === "file" ? override : "";
@@ -283,7 +283,7 @@ Singleton {
             lastError = "";
             poll();
         } else {
-            lastError = "Glazier is missing from this installation.";
+            lastError = "Caelestia capture is missing from this installation.";
         }
     }
 
@@ -331,7 +331,7 @@ Singleton {
         onTriggered: {
             statusProcess.running = false;
             commandProcess.running = false;
-            root.disconnected("Glazier control timed out.");
+            root.disconnected("Caelestia capture control timed out.");
         }
     }
 
@@ -344,7 +344,7 @@ Singleton {
                 // A healthy idle reply is not a successful Start. Keep this
                 // failure until a new attempt or a started event, like errors
                 // reported by Glazier itself.
-                root.lastError = "Glazier did not start recording.";
+                root.lastError = "Caelestia capture did not start recording.";
             }
         }
     }

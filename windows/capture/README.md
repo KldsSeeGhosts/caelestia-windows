@@ -1,18 +1,20 @@
 <img src="assets/icon.svg" width="64" height="64" alt="">
 
-# Glazier
+# Caelestia capture
 
-A screenshot annotator for Windows, ported from the Noctalia Screen Toolkit
-annotator. It runs in the tray. A shortcut
+A first-party Caelestia Windows screenshot and recording component, derived
+from Glazier and the Noctalia Screen Toolkit annotator. Its isolated internal
+Rust helper is built and delivered with the shell, not separately installed.
+It runs in the tray. A shell shortcut
 freezes all monitors, you pick a region, and the editor opens
 in place over it.
 
 ## Use
 
-1. Run `glazier.exe`. It adds a tray icon and stays running.
-2. Press **PrintScreen** or **Win+Shift+S** (both replace the Snipping Tool
-   shortcuts while Glazier runs). You can also left-click the tray icon or run
-   `glazier.exe --capture`.
+1. Start Caelestia Windows. The shell starts `caelestia-capture.exe` with
+   `--no-hotkeys --theme-file <profile theme>`. It adds a capture tray icon.
+2. Use the shell's screenshot binding or left-click the capture tray icon.
+   `caelestia-capture.exe --capture` is the compatible direct command.
 3. Pick a region. Hover to snap to a window, drag to draw a region, or press
    Enter to take what is highlighted. Esc or right-click cancels.
 4. Annotate, then **Copy** (Ctrl+C) or **Save** (Ctrl+S).
@@ -106,7 +108,8 @@ part of the selection. An odd width or height is cropped by one pixel for H.264.
 Review the adjusted border, toggle the microphone and system sound icons, then
 click the red record button. Hover any icon for a tooltip. Highlighted toggles
 are on. System sound defaults on and the microphone off. These choices persist in
-`%APPDATA%\Glazier\state.toml`, keeping comments in `config.toml` intact.
+`%APPDATA%\Caelestia\capture\state.toml`, keeping comments in `config.toml` intact.
+Existing `%APPDATA%\Glazier\state.toml` is copied only if the new file is absent.
 
 During recording, the bar shows a pulsing dot with the elapsed time, then
 pause/resume, stop and save, the live microphone and sound toggles, and discard. Pauses are removed from both
@@ -139,8 +142,8 @@ encoders can reduce the delivered frame rate.
 
 ## External recording controls
 
-Glazier exposes [control protocol v1](docs/control-protocol.md) for shells and
-other apps. For example, `glazier.exe --record --fullscreen --system-sound on
+Caelestia capture exposes [control protocol v1](docs/control-protocol.md) for shells and
+other apps. For example, `caelestia-capture.exe --record --fullscreen --system-sound on
 --mic off`, then `--pause`, `--resume`, `--stop` or `--status`. A plain `--record`
 opens the region picker and starts after selection. Tray/hotkey recordings keep
 their existing review step and are visible through the same status interface.
@@ -148,11 +151,11 @@ Status and stop never start the tray app. No installed binary is updated by buil
 
 ## Shell integration
 
-A host shell can bundle Glazier, start it hidden in the tray, and own the
+Caelestia starts its bundled capture helper hidden in the tray and owns the
 capture shortcuts itself:
 
 ```powershell
-glazier.exe --no-hotkeys --theme-file "C:\path\to\theme-tokens.json"
+caelestia-capture.exe --no-hotkeys --theme-file "C:\path\to\theme-tokens.json"
 ```
 
 - `--theme-file <path>` uses that theme-token JSON instead of `config.toml`'s
@@ -161,21 +164,29 @@ glazier.exe --no-hotkeys --theme-file "C:\path\to\theme-tokens.json"
   settings**. Launch options apply to the process that starts the host; a
   command forwarded to an already running host keeps that host's appearance.
 - `--no-hotkeys` does not register PrintScreen, Win+Shift+S or Win+Shift+R, so
-  the shell can own them and trigger `glazier.exe --capture` and the recording
+  the shell can own them and trigger `caelestia-capture.exe --capture` and the recording
   command itself. The tray menu, capture and recording commands, and control
   protocol v1 continue to work, and Escape from the editor is still routed.
   No window appears at startup; only the tray icon is shown.
 
 Launch options may be combined with a command that starts the host, for example
-`glazier.exe --no-hotkeys --capture`. When Glazier is already running, a later
+`caelestia-capture.exe --no-hotkeys --capture`. When capture is already running, a later
 `--capture`, `--record`, `--stop`, `--pause`, `--resume` or `--status` is
 forwarded to it through the control protocol rather than starting a second
 instance.
 
 ## Settings
 
-The tray menu has **Edit settings** (`%APPDATA%\Glazier\config.toml`),
-**Reload settings**, **Start with Windows** and **Open screenshots folder**.
+The tray menu has **Edit settings** (`%APPDATA%\Caelestia\capture\config.toml`),
+**Reload settings** and **Open screenshots folder**. There is no independent
+autostart setting. Shell installation owns startup. The helper never writes or
+removes the legacy Glazier Run entry.
+
+The legacy `%APPDATA%\Glazier\config.toml` is copied byte-for-byte only when the
+new config is absent. Existing or invalid new files are never overwritten.
+Custom recording directories and the default `Videos\Screen Recordings` remain
+unchanged. Legacy temporary `.glazier-*` names and thumbnail cache paths remain
+for compatibility; they are not product or ownership identities.
 The file is commented. It covers shortcuts, save folder, file name format,
 default tool, color and size, which toolbar groups to show, and
 `toolbar_theme` (`"auto"` follows the Windows app theme, or `"dark"` / `"light"`).
@@ -190,7 +201,7 @@ For Caelestia for Windows, set it to the full path of
 literal string avoids backslash escaping, for example:
 `theme_file = 'C:\ExampleProfile\state\caelestia\theme-tokens.json'`.
 A custom Caelestia profile uses its own `state\caelestia\theme-tokens.json`.
-Reload settings after changing the path. Glazier reads the file again at the
+Reload settings after changing the path. Caelestia capture reads the file again at the
 next capture. Missing or invalid tokens, including an unreadable supplied font
 file, retain the built-in appearance. The theme file is limited to 64 KiB;
 both paths must be plain local drive-letter paths, not network or device paths.
@@ -215,14 +226,34 @@ applies to recordings. Audio preferences live in the separate state file.
 
 ## Build
 
-Requires Rust (MSVC toolchain) on Windows 10 1809 or later.
+Use the shell's reviewed Windows toolchain and production build, which builds
+this source with `--locked` and stages `caelestia-capture.exe`. No separate
+repository or upstream release is required. See [origin attribution](ORIGIN.md).
 
 ```powershell
-cargo build --release
-.\target\release\glazier.exe
+powershell -NoProfile -NonInteractive -File windows/scripts/Test-CaptureRust.ps1 `
+  -ToolRoot D:/tools -OutputRoot D:/validation/capture-rust -Jobs 2
 ```
 
-Run `cargo test` for the automated tests. With the release app running,
+Run the command from the repository root with a new output directory. It selects
+the pinned compiler, compiles with `cargo test --locked --no-run
+--message-format=json`, then executes Cargo's exact test binary from a fresh
+owned TEMP cwd with a synthetic profile. It checks the reviewed noninteractive
+allowlist before execution. `capture-rust.json` records actual counts, exact
+source/lock/toolchain identities, binary hash and all native acceptance reasons.
+Raw paths/logs remain local. Empty execution, unreviewed tests, compiler failure
+or a failed test makes the gate fail. No ignored test runs in public CI.
+
+The original 61 attributes were not 61 executed tests. Four desktop tests and
+14 additional GPU/native-window/OLE/encoding cases are now explicitly ignored
+with reasons. Two added config/identity regressions bring the current inventory
+to 63 tests: the measured baseline is 45 passed and 18 ignored, not 63 passed.
+The private pipe fixture uses only an owned message-only HWND and a
+process-unique test pipe, never the installed host. Filesystem tests use the
+synthetic TEMP/profile. Native cases remain trusted acceptance, not removed
+coverage or proof of live capture.
+
+Only with separate trusted desktop authorization and the release app running,
 `cargo test real_input_desktop -- --ignored --nocapture --test-threads=1`
 briefly operates the desktop through real `SendInput` keyboard/mouse events.
 It checks both shortcuts, focus loss, text cancellation, selection on another
@@ -234,7 +265,7 @@ checks both monitors' previews, hover pause and controls, reopening, capture
 exclusion, a real PNG drop into a scratch Explorer folder, saving before reveal,
 and auto-dismiss. It removes its scratch files. The separate
 `real_input_thumbnail_settings_and_exit` opt-in test temporarily edits and restores
-the settings file, checks live reload and zero lifetime, then exits Glazier to
+the settings file, checks live reload and zero lifetime, then exits capture to
 verify temporary-file cleanup. Relaunch the release app after that test.
 
 `cargo test real_input_recording -- --ignored --nocapture --test-threads=1`
@@ -248,7 +279,8 @@ placed inside the selected area. It toggles the mic but does not require a
 physical mic signal. It also checks live unmute after starting with both sources
 off and stopping from the tray. Scratch files are removed. The regular suite covers
 region clamping, even dimensions, pause math, audio state round trips, and the
-recording hotkey parser, and finalizes and decodes a short software-encoded MP4.
+recording hotkey parser. The software-encoded MP4 check is retained as ignored
+native acceptance rather than run unattended.
 
 ## Differences from the Linux version
 

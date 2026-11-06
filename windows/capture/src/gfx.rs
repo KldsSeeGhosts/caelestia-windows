@@ -318,6 +318,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[ignore = "native acceptance: Direct2D/GPU device and private native font loading"]
     fn private_ui_font_and_invalid_file_fallback() {
         unsafe {
             CoInitializeEx(None, COINIT_APARTMENTTHREADED).ok().unwrap();

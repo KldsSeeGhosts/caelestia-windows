@@ -152,6 +152,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "native acceptance: OLE shell data object and clipboard format registration"]
     fn shell_data_object_enumerates_and_copies_our_media() {
         unsafe {
             OleInitialize(None).unwrap();

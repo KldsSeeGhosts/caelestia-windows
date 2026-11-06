@@ -2,8 +2,12 @@
 name = "glazier"
 version = "0.1.0"
 edition = "2024"
-description = "Screenshot region picker and annotator for Windows, ported from the Noctalia Screen Toolkit annotator"
+description = "First-party Caelestia capture helper, derived from Glazier and Noctalia Screen Toolkit"
 license = "MIT"
+
+[[bin]]
+name = "caelestia-capture"
+path = "src/main.rs"
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }

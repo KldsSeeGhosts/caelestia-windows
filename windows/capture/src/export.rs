@@ -411,6 +411,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "native acceptance: Direct2D/GPU rendering and WIC image encoding"]
     fn annotations_flatten_and_png_preserves_pixels() {
         unsafe {
             CoInitializeEx(None, COINIT_APARTMENTTHREADED).ok().unwrap();

@@ -8,7 +8,7 @@ import Caelestia.Windows
 import qs.services
 import qs.utils
 
-// Windows: Glazier ships with the shell. The shell resolves the bundled
+// Windows: first-party Caelestia capture ships with the shell. The shell resolves the bundled
 // executable, launches its tray host and owns the capture/record hotkeys;
 // Glazier owns the picker, editor and recorder. Never read the executable as data.
 Singleton {
@@ -20,7 +20,7 @@ Singleton {
     // fixtures stage their own payload.
     readonly property string defaultPayloadRoot: Quickshell.shellDir.replace(/\\/g, "/").replace(/\/[^/]*$/, "")
     property string payloadRoot: defaultPayloadRoot
-    readonly property string bundledPath: payloadRoot.replace(/\/+$/, "") + "/glazier.exe"
+    readonly property string bundledPath: payloadRoot.replace(/\/+$/, "") + "/caelestia-capture.exe"
     readonly property string themeFile: Paths.state + "/theme-tokens.json"
     // Explicit fallback only: the bundled payload wins, and there is no
     // machine-wide or %LOCALAPPDATA% install location.
@@ -56,7 +56,12 @@ Singleton {
     property string lifecyclePath: ""
     property var reloadCallback: null
     property bool quitPending: false
-    readonly property string hostWindowClass: "GlazierHost"
+    readonly property string hostWindowClass: hostClass(executable)
+    function hostClass(path): string {
+        // External legacy overrides keep their legacy class AND v1 protocol.
+        // The first-party binary uses managed identity even for --status alone.
+        return /(?:^|[\\/])caelestia-capture\.exe$/i.test(path) ? "CaelestiaCaptureHost" : "GlazierHost";
+    }
 
     readonly property var panelNames: ["osd", "session", "launcher", "dashboard", "quota", "utilities", "sidebar"]
 
@@ -179,16 +184,16 @@ Singleton {
         pendingPath = "";
         pendingArgs = [];
         unwatchSurfaces();
-        Toaster.toast(label, "Glazier is not ready. The shell is still on screen.", label === "Screenshot" ? "screenshot_region" : "screen_record");
+        Toaster.toast(label, "Caelestia capture is not ready. The shell is still on screen.", label === "Screenshot" ? "screenshot_region" : "screen_record");
     }
     function begin(label, args, icon): bool {
         if (!ready) {
-            Toaster.toast(label, "Glazier is still starting. Try again.", icon);
+            Toaster.toast(label, "Caelestia capture is still starting. Try again.", icon);
             return false;
         }
         refresh();
         if (!available) {
-            Toaster.toast(label, "Glazier is unavailable.", icon);
+            Toaster.toast(label, "Caelestia capture is unavailable.", icon);
             return false;
         }
         if (Quickshell.env("CAELESTIA_SHELL_SMOKE") === "1" || pendingPath)
@@ -224,7 +229,7 @@ Singleton {
             return false;
         if (lifecyclePath !== path) {
             lifecyclePath = path;
-            hostLifecycle.acquire(path, hostWindowClass, hostOptions());
+            hostLifecycle.acquire(path, hostClass(path), hostOptions());
         }
         return true;
     }

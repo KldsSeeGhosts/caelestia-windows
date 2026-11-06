@@ -21,8 +21,15 @@
   "glazier": {
     "repository": "https://github.com/KldsSeeGhosts/glazier.git",
     "revision": "37f795041cbbb32ed46cba103f3f000a3a99ac13",
-    "path": "windows/deps/glazier",
-    "role": "Bundled Glazier screenshot and recording tool. Build-Prototype.ps1 compiles this pinned source with Cargo and stages glazier.exe beside qs.exe in the versioned payload, so update and rollback carry it. The pinned revision accepts the shell's --no-hotkeys and --theme-file launch options and keeps the selection toolbar on screen. It is not a separately installed companion."
+    "originRevision": "37f795041cbbb32ed46cba103f3f000a3a99ac13",
+    "originTree": "93febb37222fb93e44f50d51972a5612f1440483",
+    "representation": "in-tree",
+    "sourceRevision": "shell",
+    "path": "windows/capture",
+    "cargoLockPath": "windows/capture/Cargo.lock",
+    "cargoLockSha256": "334db81cddfdb2020dd6738b0acc10a449bfb22178a425ac882501ea61b16f70",
+    "executable": "caelestia-capture.exe",
+    "role": "Maintained first-party Caelestia capture source. The legacy glazier key/revision retain origin compatibility for receipt consumers, not a separate dependency checkout or release. Actual captureSourceRevision is the shell build SHA. Build-Prototype.ps1 builds this in-tree Cargo.lock and bundles caelestia-capture.exe alongside qs.exe. MIT and Noctalia/Tabler attribution remain in windows/capture."
   },
   "schemeCli": {
     "repository": "https://github.com/caelestia-dots/cli.git",

@@ -879,6 +879,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "native acceptance: toolbar layout uses Direct2D/GPU fonts"]
     fn narrow_selection_collapses_tool_groups() {
         let gfx = gfx();
         let fonts = Fonts::new(&gfx, 1.0).unwrap();
@@ -898,6 +899,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "native acceptance: toolbar layout uses Direct2D/GPU fonts"]
     fn full_height_selection_keeps_the_bar_and_chip_above_the_taskbar() {
         let gfx = gfx();
         let fonts = Fonts::new(&gfx, 1.0).unwrap();
@@ -913,6 +915,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "native acceptance: toolbar layout uses Direct2D/GPU fonts"]
     fn full_monitor_selection_puts_the_bar_inside_the_bottom_edge() {
         let gfx = gfx();
         for (k, work, region) in [
@@ -930,6 +933,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "native acceptance: toolbar layout uses Direct2D/GPU fonts"]
     fn dragged_bar_is_clamped_to_the_work_area() {
         let gfx = gfx();
         let fonts = Fonts::new(&gfx, 1.0).unwrap();

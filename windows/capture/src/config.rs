@@ -1,4 +1,5 @@
-//! User settings stored in `%APPDATA%\Glazier\config.toml`.
+//! First-party settings in `%APPDATA%\Caelestia\capture\config.toml`.
+//! A legacy Glazier config is copied only when this destination is absent.
 
 use serde::Deserialize;
 use std::path::PathBuf;
@@ -45,7 +46,7 @@ impl Default for Config {
     }
 }
 
-const TEMPLATE: &str = r##"# Glazier settings. Choose "Reload settings" from the tray menu after editing.
+const TEMPLATE: &str = r##"# Caelestia capture settings. Choose "Reload settings" from the tray menu after editing.
 
 # Shortcuts that freeze all monitors and open the region picker.
 # Modifiers: Ctrl, Alt, Shift, Win. Keys: A-Z, 0-9, F1-F24, PrintScreen, Insert,
@@ -89,7 +90,7 @@ thumbnail_seconds = 6
 
 pub fn dir() -> PathBuf {
     let base = std::env::var_os("APPDATA").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
-    base.join("Glazier")
+    base.join("Caelestia").join("capture")
 }
 
 pub fn path() -> PathBuf {
@@ -99,18 +100,54 @@ pub fn path() -> PathBuf {
 /// Loads settings, creating the commented template on first run.
 /// Returns the defaults and an error message when the file is invalid.
 pub fn load() -> (Config, Option<String>) {
-    let path = path();
+    let base = std::env::var_os("APPDATA").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
+    let (cfg, error) = load_paths(&path(), &base.join("Glazier").join("config.toml"));
+    // Audio choices migrate separately, without ever rewriting legacy state.
+    // A refused audio migration must not discard valid screenshot settings.
+    let audio_error = initialize_file(&dir().join("state.toml"), &base.join("Glazier").join("state.toml"), None)
+        .err().map(|e| format!("Could not migrate audio settings: {e}"));
+    (cfg, error.or(audio_error))
+}
+
+fn load_paths(path: &std::path::Path, legacy: &std::path::Path) -> (Config, Option<String>) {
+    if let Err(e) = initialize(path, legacy) {
+        return (Config::default(), Some(format!("Could not initialize config.toml: {e}")));
+    }
     match std::fs::read_to_string(&path) {
         Ok(text) => match toml::from_str::<Config>(&text) {
             Ok(cfg) => (cfg, None),
             Err(e) => (Config::default(), Some(format!("config.toml: {}", e.message()))),
         },
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            let _ = std::fs::create_dir_all(dir());
-            let _ = std::fs::write(&path, TEMPLATE);
-            (Config::default(), None)
-        }
         Err(e) => (Config::default(), Some(format!("Could not read config.toml: {e}"))),
+    }
+}
+
+fn initialize(path: &std::path::Path, legacy: &std::path::Path) -> std::io::Result<()> {
+    initialize_file(path, legacy, Some(TEMPLATE.as_bytes()))
+}
+
+fn initialize_file(path: &std::path::Path, legacy: &std::path::Path, fallback: Option<&[u8]>) -> std::io::Result<()> {
+    use std::io::Write;
+    // exists() alone cannot distinguish access denial from absence. Only
+    // NotFound authorizes creation, and create_new closes the overwrite race.
+    match std::fs::metadata(path) {
+        Ok(_) => return Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(e),
+    }
+    let contents = match std::fs::read(legacy) {
+        Ok(bytes) => bytes,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => match fallback {
+            Some(bytes) => bytes.to_vec(),
+            None => return Ok(()),
+        },
+        Err(e) => return Err(e),
+    };
+    if let Some(parent) = path.parent() { std::fs::create_dir_all(parent)?; }
+    match std::fs::OpenOptions::new().write(true).create_new(true).open(path) {
+        Ok(mut file) => file.write_all(&contents),
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => Ok(()),
+        Err(e) => Err(e),
     }
 }
 
@@ -131,5 +168,41 @@ mod tests {
         assert_eq!(cfg.theme_file, def.theme_file);
         assert_eq!(cfg.show_thumbnail, def.show_thumbnail);
         assert_eq!(cfg.thumbnail_seconds, def.thumbnail_seconds);
+    }
+
+    #[test]
+    fn legacy_settings_copy_only_if_missing_and_never_rewrite_user_files() {
+        let dir = std::env::temp_dir().join(format!("capture-config-test-{}", std::process::id()));
+        std::fs::create_dir(&dir).unwrap();
+        let legacy = dir.join("legacy.toml");
+        let current = dir.join("capture").join("config.toml");
+        let old = b"recording_directory = 'D:\\Old Recordings'\nrecording_fps = 24\n";
+        std::fs::write(&legacy, old).unwrap();
+        let (cfg, error) = load_paths(&current, &legacy);
+        assert!(error.is_none());
+        assert_eq!(cfg.recording_fps, 24);
+        assert_eq!(cfg.recording_directory, r"D:\Old Recordings");
+        assert_eq!(std::fs::read(&legacy).unwrap(), old);
+        std::fs::write(&current, b"recording_fps = 48").unwrap();
+        assert_eq!(load_paths(&current, &legacy).0.recording_fps, 48);
+        assert_eq!(std::fs::read(&current).unwrap(), b"recording_fps = 48");
+        std::fs::write(&current, b"invalid = [").unwrap();
+        assert!(load_paths(&current, &legacy).1.is_some());
+        assert_eq!(std::fs::read(&current).unwrap(), b"invalid = [");
+        let old_state = dir.join("old-state.toml");
+        let state = dir.join("capture").join("state.toml");
+        std::fs::write(&old_state, b"mic = true\nsound = false").unwrap();
+        initialize_file(&state, &old_state, None).unwrap();
+        assert_eq!(std::fs::read(&state).unwrap(), std::fs::read(&old_state).unwrap());
+        std::fs::write(&state, b"mic = false").unwrap();
+        initialize_file(&state, &old_state, None).unwrap();
+        assert_eq!(std::fs::read(&state).unwrap(), b"mic = false");
+        assert_eq!(std::fs::read(&old_state).unwrap(), b"mic = true\nsound = false");
+        std::fs::remove_file(state).unwrap();
+        std::fs::remove_file(old_state).unwrap();
+        std::fs::remove_file(current).unwrap();
+        std::fs::remove_file(legacy).unwrap();
+        std::fs::remove_dir(dir.join("capture")).unwrap();
+        std::fs::remove_dir(dir).unwrap();
     }
 }

@@ -44,10 +44,12 @@ fn main() {
     }
     unsafe {
         let _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
-        let instance = match CreateMutexW(None, false, w!(r"Local\Glazier.Instance")) {
+        // The binary has one managed identity, including clients invoked ONLY
+        // with --status by CaptureHost. No launch-only mode flag changes pipes.
+        let instance = match CreateMutexW(None, false, w!(r"Local\Caelestia.Capture.Instance")) {
             Ok(handle) => handle,
             Err(e) => {
-                MessageBoxW(None, &HSTRING::from(e.message()), w!("Glazier could not start"), MB_ICONERROR);
+                MessageBoxW(None, &HSTRING::from(e.message()), w!("Caelestia capture could not start"), MB_ICONERROR);
                 return;
             }
         };
@@ -64,8 +66,8 @@ fn main() {
         let result = OleInitialize(None);
         let initialized = result.is_ok();
         if let Err(e) = result.and_then(|_| host::run(options)) {
-            let text = HSTRING::from(format!("Glazier could not start: {}", e.message()));
-            MessageBoxW(None, &text, w!("Glazier"), MB_ICONERROR);
+            let text = HSTRING::from(format!("Caelestia capture could not start: {}", e.message()));
+            MessageBoxW(None, &text, w!("Caelestia capture"), MB_ICONERROR);
         }
         if initialized {
             OleUninitialize();

@@ -199,7 +199,7 @@ fn open_inner(gfx: Rc<Gfx>, cfg: Rc<Config>, cap: Capture, image: Option<(IRect,
         let hwnd = CreateWindowExW(
             WS_EX_TOPMOST | WS_EX_TOOLWINDOW,
             CLASS,
-            w!("Glazier"),
+            w!("Caelestia capture"),
             WS_POPUP,
             x,
             y,
@@ -1767,6 +1767,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "native acceptance: editor HWND and Direct2D/GPU resources"]
     fn compact_clear_confirms_and_discards_pending_text() {
         with_editor(|overlay| {
             overlay.commit(Stroke::new(Tool::Step, 0, 3.0, 10.0, 10.0));
@@ -1793,6 +1794,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "native acceptance: editor HWND and Direct2D/GPU resources"]
     fn erasing_discards_stale_redo_history() {
         with_editor(|overlay| {
             overlay.commit(Stroke::new(Tool::Step, 0, 3.0, 10.0, 10.0));
@@ -1807,6 +1809,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "native acceptance: editor HWND, GPU export and notification path"]
     fn failed_save_preserves_annotations_and_allows_retry() {
         with_editor(|overlay| {
             let dir = std::env::temp_dir().join(format!("glazier-export-retry-{}", std::process::id()));

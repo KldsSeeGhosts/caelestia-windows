@@ -242,6 +242,12 @@ jobs:
             C:\t-public\clang+llvm-20.1.8-x86_64-pc-windows-msvc
             C:\t-public\deps\CLI11-2.5.0
 
+      - name: First-party capture Rust regressions
+        run: |
+          & powershell.exe -NoProfile -NonInteractive -File "$env:GITHUB_WORKSPACE\windows\scripts\Test-CaptureRust.ps1" `
+            -ToolRoot $env:TOOL_ROOT -OutputRoot C:\ci-capture -Jobs 2
+          if ($LASTEXITCODE -ne 0) { throw 'Capture Rust regressions failed or were empty.' }
+
       - name: Backend component build and portable tier
         run: |
           $ErrorActionPreference = 'Stop'
@@ -337,6 +343,15 @@ jobs:
           path: |
             C:/t-public/toolchain.json
             C:/b-public/logs/toolchain.json
+
+      - name: Capture Rust result and native acceptance inventory
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: capture-rust-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 7
+          if-no-files-found: warn
+          path: C:/ci-capture/capture-rust.json
 
   validation:
     name: Windows validation

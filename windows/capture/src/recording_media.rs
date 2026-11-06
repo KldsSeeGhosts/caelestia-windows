@@ -914,6 +914,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "native acceptance: Media Foundation software MP4 encoder and decoder"]
     fn software_encoder_finalizes_decodable_mp4() {
         let _runtime = Runtime::new().unwrap();
         let temp = temp_file(&std::env::temp_dir(), "software-test").unwrap();

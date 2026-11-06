@@ -5,7 +5,7 @@ Git history, from the complete public Glazier source tree at:
 
 - Repository: https://github.com/KldsSeeGhosts/glazier.git
 - Commit: `37f795041cbbb32ed46cba103f3f000a3a99ac13`
-- Original tree: `git rev-parse 37f795041cbbb32ed46cba103f3f000a3a99ac13^{tree}`
+- Original tree: `93febb37222fb93e44f50d51972a5612f1440483`
 - Original Cargo.lock SHA-256: `334db81cddfdb2020dd6738b0acc10a449bfb22178a425ac882501ea61b16f70`
 
 `LICENSE`, `THIRD_PARTY_NOTICES.md`, and the Noctalia/Tabler assets retain their

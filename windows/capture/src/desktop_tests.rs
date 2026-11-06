@@ -1311,7 +1311,7 @@ fn real_input_recording() {
             );
             assert!(wait(|| !thumbnails().is_empty()), "video poster was not shown");
             hold(Duration::from_millis(350));
-            let video = FindWindowW(crate::thumbnail::CLASS, w!("Glazier recording preview")).unwrap();
+            let video = FindWindowW(crate::thumbnail::CLASS, w!("Caelestia capture recording preview")).unwrap();
             let r = bounds(video);
             mouse((r.left + r.right) / 2, r.top + 25, MOUSE_EVENT_FLAGS(0));
             hold(Duration::from_millis(300));

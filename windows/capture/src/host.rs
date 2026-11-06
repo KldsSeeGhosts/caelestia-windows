@@ -17,28 +17,24 @@ use windows::Win32::Graphics::Dwm::DwmFlush;
 use windows::Win32::Graphics::Gdi::*;
 use windows::Win32::Graphics::Imaging::*;
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
-use windows::Win32::System::Registry::*;
 use windows::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
 use windows::Win32::UI::Input::KeyboardAndMouse::*;
 use windows::Win32::UI::Shell::*;
 use windows::Win32::UI::WindowsAndMessaging::*;
 use windows::core::*;
 
-pub const CLASS: PCWSTR = w!("GlazierHost");
+pub const CLASS: PCWSTR = w!("CaelestiaCaptureHost");
 pub const WM_APP_CAPTURE: u32 = WM_APP + 4;
 pub const WM_APP_ALREADY_RUNNING: u32 = WM_APP + 5;
 const WM_APP_TRAY: u32 = WM_APP + 3;
 const TIMER_RECAPTURE: usize = 1;
 const TRAY_ID: u32 = 1;
 const NIN_KEYSELECT: u32 = NIN_SELECT | 1;
-const RUN_KEY: PCWSTR = w!("Software\\Microsoft\\Windows\\CurrentVersion\\Run");
-const RUN_VALUE: PCWSTR = w!("Glazier");
 
 const CMD_CAPTURE: usize = 1;
 const CMD_FOLDER: usize = 2;
 const CMD_SETTINGS: usize = 3;
 const CMD_RELOAD: usize = 4;
-const CMD_AUTOSTART: usize = 5;
 const CMD_EXIT: usize = 6;
 const CMD_RECORD: usize = 7;
 const WM_APP_RECORDING_CHANGED: u32 = WM_APP + 7;
@@ -99,7 +95,7 @@ pub fn run(options: Options) -> Result<()> {
         let hwnd = CreateWindowExW(
             WINDOW_EX_STYLE(0),
             CLASS,
-            w!("Glazier"),
+            w!("Caelestia capture"),
             WS_OVERLAPPED,
             0,
             0,
@@ -140,7 +136,7 @@ pub fn run(options: Options) -> Result<()> {
         if let Some(command) = options.command {
             if let Err(e) = control(command) {
                 control::error(e.clone());
-                notify("Glazier control failed", &e, None, true);
+                notify("Caelestia capture control failed", &e, None, true);
             }
         }
 
@@ -197,7 +193,7 @@ fn apply_hotkeys(cfg: &Config, error: Option<String>, no_hotkeys: bool) {
         hotkey::set(keys, recording);
     }
     if let Some(e) = error {
-        notify("Glazier settings were not loaded", &e, None, true);
+        notify("Caelestia capture settings were not loaded", &e, None, true);
     } else if !bad.is_empty() {
         notify("Unknown shortcut in settings", &bad.join(", "), None, true);
     }
@@ -216,7 +212,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
             }
             WM_APP_RECORDING_CHANGED => update_recording_tray(),
             control::WM_CONTROL => control::dispatch(),
-            WM_APP_ALREADY_RUNNING => notify("Glazier is running", &hotkey_hint(), None, false),
+            WM_APP_ALREADY_RUNNING => notify("Caelestia capture is running", &hotkey_hint(), None, false),
             WM_TIMER if wp.0 == TIMER_RECAPTURE => {
                 let _ = KillTimer(Some(hwnd), TIMER_RECAPTURE);
                 start_capture();
@@ -383,7 +379,7 @@ pub fn control(command: Command) -> std::result::Result<(), String> {
         Command::Record { fullscreen, system_sound, mic } => {
             let ready = APP.with_borrow(|a| a.as_ref().is_some_and(|a| !a.opening && a.overlay.is_none()));
             if !ready || crate::recording::exists() {
-                return Err("Glazier is busy".into());
+                return Err("Caelestia capture is busy".into());
             }
             if fullscreen {
                 let (gfx, cfg) = APP.with_borrow(|a| a.as_ref().map(|a| (a.gfx.clone(), a.cfg.clone()))).unwrap();
@@ -424,7 +420,7 @@ fn update_recording_tray() {
     let recording = crate::recording::running();
     let mut data = tray_data(hwnd());
     data.uFlags = NIF_TIP | NIF_ICON;
-    fill(&mut data.szTip, if recording { "Glazier - Recording" } else { "Glazier" });
+    fill(&mut data.szTip, if recording { "Caelestia capture - Recording" } else { "Caelestia capture" });
     data.hIcon = APP.with_borrow(|a| a.as_ref().map(|a| if recording { a.recording_icon } else { a.icon })).unwrap_or_default();
     unsafe {
         let _ = Shell_NotifyIconW(NIM_MODIFY, &data);
@@ -458,7 +454,7 @@ fn add_tray(hwnd: HWND, icon: HICON) {
     data.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP | NIF_SHOWTIP;
     data.uCallbackMessage = WM_APP_TRAY;
     data.hIcon = icon;
-    fill(&mut data.szTip, "Glazier");
+    fill(&mut data.szTip, "Caelestia capture");
     data.Anonymous.uVersion = NOTIFYICON_VERSION_4;
     unsafe {
         let _ = Shell_NotifyIconW(NIM_ADD, &data);
@@ -513,29 +509,6 @@ fn open_path(path: &std::path::Path) {
     }
 }
 
-fn autostart_enabled() -> bool {
-    unsafe { RegGetValueW(HKEY_CURRENT_USER, RUN_KEY, RUN_VALUE, RRF_RT_REG_SZ, None, None, None) == ERROR_SUCCESS }
-}
-
-fn set_autostart(enable: bool) {
-    unsafe {
-        if enable {
-            let exe = std::env::current_exe().unwrap_or_default();
-            let value: Vec<u16> = format!("\"{}\"", exe.display()).encode_utf16().chain(std::iter::once(0)).collect();
-            let _ = RegSetKeyValueW(
-                HKEY_CURRENT_USER,
-                RUN_KEY,
-                RUN_VALUE,
-                REG_SZ.0,
-                Some(value.as_ptr().cast()),
-                (value.len() * 2) as u32,
-            );
-        } else {
-            let _ = RegDeleteKeyValueW(HKEY_CURRENT_USER, RUN_KEY, RUN_VALUE);
-        }
-    }
-}
-
 fn show_menu(hwnd: HWND) {
     unsafe {
         let Ok(menu) = CreatePopupMenu() else { return };
@@ -556,8 +529,8 @@ fn show_menu(hwnd: HWND) {
         let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
         let _ = AppendMenuW(menu, MF_STRING, CMD_SETTINGS, w!("Edit settings"));
         let _ = AppendMenuW(menu, MF_STRING, CMD_RELOAD, w!("Reload settings"));
-        let check = if autostart_enabled() { MF_CHECKED } else { MF_UNCHECKED };
-        let _ = AppendMenuW(menu, MF_STRING | check, CMD_AUTOSTART, w!("Start with Windows"));
+        // Managed by the shell's installation. Never create or modify a
+        // separate autostart entry, including a historical Glazier entry.
         let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
         let _ = AppendMenuW(menu, MF_STRING, CMD_EXIT, w!("Exit"));
 
@@ -608,7 +581,6 @@ fn show_menu(hwnd: HWND) {
                     notify("Settings reloaded", &hotkey_hint(), None, false);
                 }
             }
-            CMD_AUTOSTART => set_autostart(!autostart_enabled()),
             CMD_EXIT => {
                 // COM can dispatch the menu inside an export or render. Let
                 // that live borrow finish before destroying any app windows.
@@ -635,7 +607,7 @@ pub fn exported(
 }
 
 pub fn save_thumbnail(png: &[u8]) -> std::result::Result<PathBuf, String> {
-    let cfg = APP.with_borrow(|a| a.as_ref().map(|a| a.cfg.clone())).ok_or("Glazier is shutting down")?;
+    let cfg = APP.with_borrow(|a| a.as_ref().map(|a| a.cfg.clone())).ok_or("Caelestia capture is shutting down")?;
     let path = crate::export::save_png(&cfg, png)?;
     saved(&path);
     Ok(path)

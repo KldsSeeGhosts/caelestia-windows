@@ -293,7 +293,7 @@ fn open(
         let hwnd = CreateWindowExW(
             WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_LAYERED,
             CLASS,
-            if video { w!("Glazier recording preview") } else { w!("Glazier thumbnail") },
+            if video { w!("Caelestia capture recording preview") } else { w!("Caelestia capture thumbnail") },
             WS_POPUP,
             work.x + work.w,
             work.y + work.h - height,

@@ -309,7 +309,7 @@ fn identity() -> Result<(String, String)> {
         let sid = sid.to_string()?;
         let mut session = 0;
         ProcessIdToSessionId(GetCurrentProcessId(), &mut session)?;
-        let name = format!(r"\\.\pipe\Glazier.Control.v1.{sid}.{session}");
+        let name = format!(r"\\.\pipe\Caelestia.Capture.Control.v1.{sid}.{session}");
         // Unit tests must never connect to or compete with the installed host.
         #[cfg(test)]
         let name = format!("{name}.test-{}", std::process::id());
@@ -353,7 +353,7 @@ pub fn start(hwnd: HWND) -> Result<()> {
     let _ = INBOX.set(Mutex::new(receive));
     let hwnd = hwnd.0 as isize;
     std::thread::Builder::new()
-        .name("Glazier control".into())
+        .name("Caelestia capture control".into())
         .spawn(move || {
             let handle = HANDLE(pipe as *mut _);
             let _handle = Handle(handle);
@@ -459,7 +459,7 @@ fn exchange(request: &Request) -> std::result::Result<serde_json::Value, String>
             Err(e) if e.raw_os_error() == Some(ERROR_PIPE_BUSY.0 as i32) && Instant::now() < deadline => {
                 std::thread::sleep(Duration::from_millis(10))
             }
-            Err(_) => return Err("Glazier control v1 is not available (not running, old version, or busy)".into()),
+            Err(_) => return Err("Caelestia capture control v1 is not available (not running, old version, or busy)".into()),
         }
     };
     let mut bytes = serde_json::to_vec(request).map_err(|e| e.to_string())?;
@@ -480,7 +480,7 @@ fn exchange(request: &Request) -> std::result::Result<serde_json::Value, String>
                 .read(&mut chunk[..(available as usize).min(2048)])
                 .map_err(|e| format!("Reading response: {e}"))?;
             if n == 0 {
-                return Err("Glazier disconnected without a response".into());
+                return Err("Caelestia capture disconnected without a response".into());
             }
             bytes.extend_from_slice(&chunk[..n]);
         }
@@ -493,7 +493,7 @@ fn exchange(request: &Request) -> std::result::Result<serde_json::Value, String>
             return response;
         }
         if Instant::now() > deadline {
-            return Err("Glazier control timed out".into());
+            return Err("Caelestia capture control timed out".into());
         }
         std::thread::sleep(Duration::from_millis(10));
     }
@@ -551,6 +551,16 @@ mod tests {
         assert!(args("--capture --no-hotkeys").unwrap().no_hotkeys);
         assert!(args("--theme-file").is_err());
         assert!(args("--theme-file --capture").is_err());
+    }
+
+    #[test]
+    fn status_and_launch_use_the_same_managed_pipe() {
+        let before = identity().unwrap().0;
+        assert_eq!(command("--status").unwrap(), Some(Command::Status));
+        assert!(args("--no-hotkeys --theme-file C:\\theme.json").unwrap().no_hotkeys);
+        assert_eq!(identity().unwrap().0, before);
+        assert!(before.starts_with(r"\\.\pipe\Caelestia.Capture.Control.v1."));
+        assert!(before.ends_with(&format!(".test-{}", std::process::id())));
     }
 
     #[test]

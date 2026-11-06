@@ -1,4 +1,14 @@
-# Glazier control protocol v1
+# Caelestia capture control protocol v1
+
+The original Glazier command names and JSON v1 schema remain compatible.
+The first-party binary is `caelestia-capture.exe`. Its managed identity is the
+default for every command, including a client invoked with ONLY `--status`;
+there is no `--managed` launch/status split. The host window class is
+`CaelestiaCaptureHost`, the mutex is `Local\Caelestia.Capture.Instance`.
+The shell's legacy `Glazier` service/keybind/IPC aliases remain supported.
+External legacy `glazier.exe` overrides retain `GlazierHost` and the old pipe
+inside that legacy executable. A separate legacy host is never adopted by class
+alone or sent a first-party quit.
 
 ## CLI
 
@@ -42,7 +52,7 @@ v1 support is not supported; upgrade the app first.
 ## Transport and security
 
 The local byte-mode named pipe is
-`\\.\pipe\Glazier.Control.v1.<current-user-SID>.<Windows-session-id>`.
+`\\.\pipe\Caelestia.Capture.Control.v1.<current-user-SID>.<Windows-session-id>`.
 Its protected DACL grants access only to that user SID, it rejects remote clients,
 and the first-instance flag prevents silently joining another server's pipe.
 Client handles are non-inheritable and use anonymous security QoS so a server

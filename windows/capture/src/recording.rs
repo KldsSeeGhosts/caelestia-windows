@@ -374,7 +374,7 @@ fn poll() {
                     None,
                 );
                 unsafe {
-                    let _ = SetWindowTextW(s.hwnd, &HSTRING::from(format!("Glazier recording | {encoder}")));
+                    let _ = SetWindowTextW(s.hwnd, &HSTRING::from(format!("Caelestia capture recording | {encoder}")));
                 }
                 host::recording_changed();
             }
@@ -459,7 +459,7 @@ fn open(gfx: Rc<Gfx>, cfg: Rc<Config>, region: IRect, monitor: IRect, work: IRec
         let hwnd = CreateWindowExW(
             WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_LAYERED,
             CLASS,
-            w!("Glazier recording"),
+            w!("Caelestia capture recording"),
             WS_POPUP,
             x,
             y,
@@ -473,7 +473,7 @@ fn open(gfx: Rc<Gfx>, cfg: Rc<Config>, region: IRect, monitor: IRect, work: IRec
         let border = match CreateWindowExW(
             WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_TRANSPARENT | WS_EX_LAYERED,
             BORDER,
-            w!("Glazier recording border"),
+            w!("Caelestia capture recording border"),
             WS_POPUP,
             region.x - 2,
             region.y - 2,
@@ -685,7 +685,7 @@ impl Controls {
                     let cfg = (*self.cfg).clone();
                     let region = self.region;
                     let audio = self.audio;
-                    match std::thread::Builder::new().name("Glazier recording".into()).spawn(move || {
+                    match std::thread::Builder::new().name("Caelestia capture recording".into()).spawn(move || {
                         media::run(cfg, region, audio, recv, events);
                     }) {
                         Ok(_) => self.start_worker(send, results),
@@ -953,6 +953,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[ignore = "native acceptance: control fixture creates Direct2D/GPU resources"]
     fn public_controls_share_worker_state_without_capturing() {
         unsafe {
             windows::Win32::System::Com::CoInitializeEx(None, windows::Win32::System::Com::COINIT_APARTMENTTHREADED)
@@ -1001,6 +1002,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "native acceptance: layered-window presentation and Direct2D/GPU resources"]
     fn failed_initial_presentation_releases_controls() {
         unsafe {
             windows::Win32::System::Com::CoInitializeEx(None, windows::Win32::System::Com::COINIT_APARTMENTTHREADED)
@@ -1068,6 +1070,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "native acceptance: native HWND placement and Direct2D/GPU resources"]
     fn expanding_to_recording_width_repositions_the_bar() {
         unsafe {
             windows::Win32::System::Com::CoInitializeEx(None, windows::Win32::System::Com::COINIT_APARTMENTTHREADED)
