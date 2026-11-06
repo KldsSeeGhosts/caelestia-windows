@@ -334,6 +334,10 @@ function New-CaelestiaShortcut([string]$Path, [string]$PowerShellPath, [string]$
     $shortcut.Save()
 }
 
+function Get-CaelestiaAutostartKey {
+    return 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+}
+
 # The Start-menu shortcut and the optional HKCU Run entry are part of the
 # activation transaction: a failure here must not leave a selector claiming a
 # replacement the user was told failed, or a half-written integration behind.
@@ -341,10 +345,6 @@ function New-CaelestiaShortcut([string]$Path, [string]$PowerShellPath, [string]$
 # select the previous version again (and restart when the install did). A first
 # install has no previous payload, so only the integration is removed and the
 # error is rethrown; the version stays installed.
-function Get-CaelestiaAutostartKey {
-    return 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
-}
-
 function Complete-CaelestiaInstallIntegration {
     param(
         [string]$Prefix,

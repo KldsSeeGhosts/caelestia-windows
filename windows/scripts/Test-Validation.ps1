@@ -88,7 +88,7 @@ try {
     } elseif ($Suite -eq 'Packaging') {
         Invoke-ScriptCheck 'Test-VersionedInstall'
     } elseif ($Suite -eq 'Scheme') {
-        Invoke-ValidationStep 'scheme-worker' $Python @('-B', 'windows/scripts/scheme/test_win_scheme.py', '-v')
+        Invoke-ValidationStep 'scheme-worker' $Python @('-B', 'windows/scripts/scheme/test_win_scheme.py', '-v') '(?m)^Ran ([0-9]+) tests?\b'
     } else {
         $scripts = if ($Suite -eq 'Services') {
             @(Get-ChildItem -LiteralPath $PSScriptRoot -Filter 'Test-*Service.ps1' -File | Sort-Object Name | ForEach-Object BaseName)
