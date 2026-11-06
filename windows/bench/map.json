@@ -1,0 +1,191 @@
+{
+    "schemaVersion":  2,
+    "floorCalibration":  {
+                             "method":  "max(2%, 1.5 * 1.4826 * MAD of paired A/A log ratios * 100)",
+                             "status":  "Inherited diagnostic floors only. Public protocol requires fresh independent A/A and added-cost qualification; no current qualification claimed."
+                         },
+    "floorsPercent":  {
+                          "tiling.cyclesPerOperation":  5,
+                          "tracker.cyclesPerOperation":  5,
+                          "panel.dashboard.p50Ms":  2,
+                          "panel.dashboard.p95Ms":  3.916198351425398,
+                          "panel.launcher.p50Ms":  2,
+                          "panel.launcher.p95Ms":  2.149612873375108,
+                          "panel.utilities.p50Ms":  2,
+                          "panel.utilities.p95Ms":  2,
+                          "panel.sidebar.p50Ms":  4.542315899948964,
+                          "panel.sidebar.p95Ms":  2.108216903994899,
+                          "audio.nanosecondsPerOperation":  5,
+                          "module.audio.loadMs":  8.064036952639926,
+                          "media.nanosecondsPerOperation":  5,
+                          "module.media.loadMs":  29.584297714198513,
+                          "tray.nanosecondsPerOperation":  5,
+                          "module.tray.loadMs":  3.655055381483207,
+                          "notifications.nanosecondsPerOperation":  5,
+                          "module.notifications.loadMs":  5.441376324404663,
+                          "quota.windowProjectionNs":  5,
+                          "scheme.wallpaperApplyMs":  3.014738205352698,
+                          "privateMiB":  2,
+                          "workingSetMiB":  2,
+                          "coldStartToReadyMs":  2,
+                          "qmlReloadToReadyMs":  2,
+                          "isolatedActivationMs":  3.4668875639819356
+                      },
+    "areas":  {
+                  "tiling":  {
+                                 "paths":  [
+                                               "^windows/deps/quickshell/src/windows/tiling",
+                                               "^windows/services/tiling/"
+                                           ],
+                                 "metrics":  [
+                                                 "tiling.cyclesPerOperation"
+                                             ],
+                                 "workload":  "Recompute production DwindleLayout for 32 synthetic windows.",
+                                 "excludes":  "Native placement acknowledgement and DWM presentation require desktop QA, not synthetic HWNDs."
+                             },
+                  "tracker":  {
+                                  "paths":  [
+                                                "^windows/deps/quickshell/src/windows/(window_tracker|foreground_|fullscreen_|window_style)"
+                                            ],
+                                  "metrics":  [
+                                                  "tracker.cyclesPerOperation"
+                                              ],
+                                  "workload":  "Production Foreground signal delivery and identity projection, alternating synthetic foreground identities.",
+                                  "excludes":  "The Windows hook and cross-thread event queue are not started."
+                              },
+                  "panels":  {
+                                 "paths":  [
+                                               "^(modules|windows/shell/adapters/modules)/(drawers|dashboard|launcher|sidebar|utilities|nexus)/",
+                                               "^windows/deps/quickshell/src/(window/|windows/panel)"
+                                           ],
+                                 "metrics":  [
+                                                 "panel.dashboard.p50Ms",
+                                                 "panel.dashboard.p95Ms",
+                                                 "panel.launcher.p50Ms",
+                                                 "panel.launcher.p95Ms",
+                                                 "panel.utilities.p50Ms",
+                                                 "panel.utilities.p95Ms",
+                                                 "panel.sidebar.p50Ms",
+                                                 "panel.sidebar.p95Ms"
+                                             ],
+                                 "workload":  "Two complete open/close observations per panel per trial, confirmed by geometry and two rendered frames.",
+                                 "excludes":  "This is software request-to-frame latency, not DWM scanout or input-to-photon latency."
+                             },
+                  "audio":  {
+                                "paths":  [
+                                              "^windows/services/audio/"
+                                          ],
+                                "metrics":  [
+                                                "audio.nanosecondsPerOperation",
+                                                "module.audio.loadMs"
+                                            ],
+                                "workload":  "AudioService projection of 32 synthetic nodes; cold adapter component load and instantiation.",
+                                "excludes":  "No endpoint, capture, volume change or hardware callback is opened."
+                            },
+                  "media":  {
+                                "paths":  [
+                                              "^windows/services/media/"
+                                          ],
+                                "metrics":  [
+                                                "media.nanosecondsPerOperation",
+                                                "module.media.loadMs"
+                                            ],
+                                "workload":  "PlayersService identity/art projection; cold adapter component load and instantiation."
+                            },
+                  "tray":  {
+                               "paths":  [
+                                             "^windows/services/tray/"
+                                         ],
+                               "metrics":  [
+                                               "tray.nanosecondsPerOperation",
+                                               "module.tray.loadMs"
+                                           ],
+                               "workload":  "TrayService item projection; cold adapter component load and instantiation.",
+                               "excludes":  "No Explorer interception, app activation or context menu."
+                           },
+                  "notifications":  {
+                                        "paths":  [
+                                                      "^windows/services/notifications/"
+                                                  ],
+                                        "metrics":  [
+                                                        "notifications.nanosecondsPerOperation",
+                                                        "module.notifications.loadMs"
+                                                    ],
+                                        "workload":  "Production notification body sanitization; cold adapter component load and instantiation. Synthetic text only."
+                                    },
+                  "quota":  {
+                                "paths":  [
+                                              "^windows/quota/"
+                                          ],
+                                "metrics":  [
+                                                "quota.windowProjectionNs"
+                                            ],
+                                "workload":  "Production QuotaLogic window ordering and remaining-quota projection for 32 synthetic accounts. Same functions on main and candidate; no network or credentials."
+                            },
+                  "scheme":  {
+                                 "paths":  [
+                                               "^windows/scripts/(scheme/|Install-SchemeRuntime)",
+                                               "^windows/services/wallpaperengine/",
+                                               "^windows/shell/adapters/(services/(SchemeGenerator|Wallpapers)|modules/background)/"
+                                           ],
+                                 "metrics":  [
+                                                 "scheme.wallpaperApplyMs"
+                                             ],
+                                 "workload":  "Real scheme helper and colour quantizer on a deterministic synthetic wallpaper, in an isolated profile.",
+                                 "excludes":  "Requires an explicitly prepared benchmark Python runtime. No live profile or wallpaper is read."
+                             },
+                  "idle":  {
+                               "paths":  [
+                                             "^windows/shell/adapters/(daemons/|services/)",
+                                             "^services/",
+                                             "^windows/deps/quickshell/src/windows/services/",
+                                             "^plugin/"
+                                         ],
+                               "metrics":  [
+                                               "privateMiB",
+                                               "workingSetMiB"
+                                           ],
+                               "workload":  "Read-only whole-shell preview idle memory.",
+                               "excludes":  "Short idle CPU/cycles observations do not resolve useful small changes. Wakeups are removed: context switches are not wakeups. Disabled native providers are not covered."
+                           },
+                  "lifecycle":  {
+                                    "paths":  [
+                                                  "^windows/(shell/shell.qml|scripts/Start-Caelestia)",
+                                                  "^windows/deps/quickshell/src/core/"
+                                              ],
+                                    "metrics":  [
+                                                    "coldStartToReadyMs",
+                                                    "qmlReloadToReadyMs"
+                                                ],
+                                    "workload":  "Production lifecycle.ready, and the actual Start-Caelestia -Command Restart path on an isolated offscreen prefix."
+                                },
+                  "update":  {
+                                 "paths":  [
+                                               "^windows/scripts/(Install-Caelestia|Caelestia-(InstallCommon|Versions)|Stage-ShellPrototype|Build-Prototype)"
+                                           ],
+                                 "metrics":  [
+                                                 "isolatedActivationMs"
+                                             ],
+                                 "workload":  "Seed then update a disposable prefix through the real installer; version selection plus direct offscreen launch to ready.",
+                                 "excludes":  "No live stop, interactive scheduled task, shortcut or HKCU Run write. Payload assembly verdict removed after an A/A false positive; its phases remain raw diagnostics."
+                             }
+              },
+    "allPaths":  [
+                     "^CMakeLists.txt$",
+                     "^windows/sources.lock.json$",
+                     "^windows/shell/sources.json$",
+                     "^windows/bench/",
+                     "^windows/scripts/(ShellBench|Measure-.*Bench|Measure-ShellRuntime|Measure-ShellLifecycle)"
+                 ],
+    "notCovered":  [
+                       "^windows/deps/quickshell/src/windows/services/",
+                       "^plugin/src/Caelestia/Windows/Audio/"
+                   ],
+    "ignore":  [
+                   "\\.md$",
+                   "^windows/validation/",
+                   "^windows/tests/",
+                   "^windows/deps/quickshell/src/windows/test/",
+                   "^windows/deps/quickshell/test/"
+               ]
+}

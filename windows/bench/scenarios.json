@@ -1,0 +1,110 @@
+{
+  "schemaVersion": 1,
+  "protocol": "public-paired-cost-v4",
+  "status": "coverage inventory, not baseline or qualification",
+  "defaults": {
+    "scoredDeadlineSeconds": 580,
+    "captureInScoredRuns": false,
+    "profile": "disposable synthetic settings, no personal data",
+    "cache": "fresh process/profile/QML cache unless explicitly stated",
+    "presentation": "offscreen software frames are not DWM presentation or physical input-to-photon",
+    "desktopAuthority": "one separately authorized operator; never silently enable takeover, tiling, autostart or native providers",
+    "accounting": "private commit and CPU time summed across explicit owned processes; working sets per process, never summed",
+    "hardware": "initial qualification is restricted to the actually measured Windows build, CPU, GPU, driver, power source, display topology, refresh and scale; no fleet claim"
+  },
+  "scenarios": [
+    {
+      "id": "idle-offscreen", "phase": "confirm", "area": "idle",
+      "driver": "Measure-Bench.ps1 -Area idle",
+      "features": {"renderer": "software", "controls": false, "tiling": false, "trayHook": false, "clipboard": false, "background": false},
+      "fixture": "production staged read-only shell; observation adapters may read native state",
+      "metrics": ["privateMiB", "workingSetMiB"],
+      "excludes": ["GPU", "owned helper total", "energy", "qualified idle CPU", "wakeups"],
+      "qualification": "pending current native baseline"
+    },
+    {
+      "id": "panels-offscreen", "phase": "confirm", "area": "panels",
+      "driver": "Measure-Bench.ps1 -Area panels",
+      "features": {"renderer": "software", "controls": false, "panels": ["dashboard", "launcher", "utilities", "sidebar"]},
+      "fixture": "geometry and two frame markers for every completed opening",
+      "observationsPerPanelPerTrial": 2,
+      "metrics": ["request-to-frame p50", "two-observation diagnostic p95"],
+      "excludes": ["rare-stutter/tail qualification", "DWM scanout", "physical input latency"],
+      "qualification": "pending; do not make rare-stutter claims"
+    },
+    {
+      "id": "launcher-search", "phase": "validate",
+      "driver": null, "status": "blocked: content-free search injection and correctness driver not yet qualified",
+      "features": {"renderer": "native D3D11", "controls": true, "search": true},
+      "fixture": {"applications": 256, "queries": ["alpha", "a", "missing", "", "cafe"], "names": "generated application-000..255; no installed app names"},
+      "checks": ["result ordering", "cancelled query not published", "clear/repeat query", "no real launch"],
+      "required": ["request/result/frame events", "CPU/helper accounting", "post-interaction retention"]
+    },
+    {
+      "id": "panel-tail-native", "phase": "validate", "driver": null,
+      "status": "blocked: authorized native renderer and adequate event sample required",
+      "features": {"renderer": "native D3D11", "controls": true, "motion": "upstream unchanged"},
+      "fixture": {"warmupOpeningsPerPanel": 8, "measuredOpeningsPerPanelMinimum": 200},
+      "checks": ["all opens/closes complete", "distribution/raw timestamps retained", "missed frames", "sampling uncertainty"],
+      "excludes": ["physical input-to-photon without external instrumentation"]
+    },
+    {
+      "id": "startup-fresh-cache", "phase": "confirm", "area": "lifecycle",
+      "driver": "Measure-Bench.ps1 -Area lifecycle",
+      "features": {"renderer": "software", "cache": "fresh QML cache", "controls": false},
+      "fixture": "disposable -NoIntegration prefix, lifecycle generation readiness",
+      "excludes": ["OS cold boot", "cold filesystem cache", "normal warm startup"]
+    },
+    {
+      "id": "startup-normal-cached", "phase": "validate", "driver": null,
+      "status": "blocked: persistent immutable prewarmed cache driver not yet qualified",
+      "features": {"renderer": "native D3D11", "cache": "prewarmed QML/pipeline cache copied independently for each side"},
+      "required": ["cache seed and final content hashes", "fresh process and isolated profile per trial", "no cache sharing across A/B"]
+    },
+    {
+      "id": "audio-media-logic", "phase": "confirm", "area": "providers",
+      "driver": "Measure-Bench.ps1 -Area providers",
+      "features": {"renderer": "none", "controls": false, "nativeEndpoints": false, "nativeMedia": false},
+      "fixture": "32 generated nodes and synthetic media identities; pure production projection/sanitization functions",
+      "excludes": ["WASAPI/WinRT callbacks", "real sessions", "audio output", "whole-app benefit"]
+    },
+    {
+      "id": "audio-media-native", "phase": "validate", "driver": null,
+      "status": "blocked: authorized synthetic playback/session owner and endpoint qualification",
+      "features": {"renderer": "native D3D11", "nativeEndpoints": true, "nativeMedia": true, "loopback": "explicit separate consent"},
+      "fixture": "generated fixed-duration tone and generated artwork, no personal media",
+      "checks": ["idle/play/pause/track burst", "device loss/recovery", "helper CPU/private commit", "post-interaction retention"],
+      "excludes": ["recording user audio"]
+    },
+    {
+      "id": "tiling-logic", "phase": "confirm", "area": "tiling",
+      "driver": "Measure-Bench.ps1 -Area tiling",
+      "features": {"nativePlacement": false, "nativeHooks": false, "windows": 32},
+      "fixture": "production layout with synthetic identities; 500000 nominal operations and equal warmup",
+      "metrics": ["thread cycles per nominal operation"],
+      "qualification": "pending; historical large-plant sensitivity does not qualify small effects"
+    },
+    {
+      "id": "tiling-native", "phase": "validate", "driver": null,
+      "status": "blocked: disposable owned windows and explicit tiling authorization",
+      "features": {"renderer": "native D3D11", "nativePlacement": true, "tiling": "explicit opt-in allowlist only"},
+      "fixture": "owned synthetic windows; constrained/refused and late placement",
+      "checks": ["planned versus acknowledged geometry", "fullscreen/reload/recovery", "DWM events", "no foreign window changes"]
+    },
+    {
+      "id": "native-idle-gpu", "phase": "validate", "driver": null,
+      "status": "blocked: authorized desktop candidate and trace",
+      "features": {"renderer": "native D3D11", "providers": "explicit recorded production configuration", "controls": "as authorized"},
+      "required": ["30..120 second matched ETW trace", "symbols", "DWM/GPU providers", "owned helper list", "display refresh/scale/power/driver manifest"],
+      "excludes": ["battery savings inferred from CPU", "context switches labelled as wakeups"]
+    },
+    {
+      "id": "longer-session-growth", "phase": "monitor",
+      "driver": "ShellBench.py monitor --manifest <owned-processes.json> --seconds 3600 --interval 5 --allow-process-observation --output <new-external-root>",
+      "features": {"scoredBenchmark": false, "readOnly": true, "persistentProcesses": "explicit owner manifest only"},
+      "fixture": "explicit interactions and recovery schedule recorded by the authorized owner",
+      "checks": ["private commit/handles/CPU diagnostics", "retention after repeated interactions", "missing/exited helpers fail closed", "steady-state and cooldown"],
+      "qualification": "observation only, no automatic leak verdict; retain earlier bounded soak acceptance"
+    }
+  ]
+}

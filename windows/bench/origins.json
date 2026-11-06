@@ -1,0 +1,60 @@
+{
+    "schemaVersion":  1,
+    "origin":  "Existing local harness working files, sanitized for public publication",
+    "historyImported":  false,
+    "changes":  "Workers relocated under bench/tools; private evidence links removed; public v4 ordering, identity, qualification, profiling and accounting controls added. Historical floors are not public qualification.",
+    "originals":  [
+                      {
+                          "originalPath":  "scripts/Measure-Bench.ps1",
+                          "originalSha256":  "1e2305dd8ed6d784d9da45167a73b4d6d69300c68f24a94b59e9bb6efd85ebc1"
+                      },
+                      {
+                          "originalPath":  "scripts/Measure-ShellBenchmark.ps1",
+                          "originalSha256":  "fc2e68ad54b73b5085678277ffb0762bfd7ee85bc4a02fe50f8732be29600b0b"
+                      },
+                      {
+                          "originalPath":  "scripts/ShellBench.py",
+                          "originalSha256":  "1a3796964176e595d7e05a593e0c1e7f083e6d0b62834c946af790b799cccd87"
+                      },
+                      {
+                          "originalPath":  "scripts/Measure-ShellRuntime.ps1",
+                          "originalSha256":  "fed769d76f91f684cca1c3d2d8494fc64d000442537e3b9f269112454dba0a9e"
+                      },
+                      {
+                          "originalPath":  "scripts/Measure-ShellLifecycle.ps1",
+                          "originalSha256":  "eff8b37815d969d99d720859f3d447f11a678206403410d052174331c8346fb5"
+                      },
+                      {
+                          "originalPath":  "scripts/Measure-ServiceBench.ps1",
+                          "originalSha256":  "5e6e86bf1a54093168f215aa0162345f09bdda9460f8b8eabcfa2ccc4eea20af"
+                      },
+                      {
+                          "originalPath":  "scripts/Measure-SchemeBench.py",
+                          "originalSha256":  "90ad112126740a1e542f72144f78aabdeb2a9d90a74cef7c83e7944144e4c123"
+                      },
+                      {
+                          "originalPath":  "scripts/Build-Bench.ps1",
+                          "originalSha256":  "cc0c66c76f260eeb5b30388ae16a0624216e5ebe42139eed06f9bf6a10dc7dc3"
+                      },
+                      {
+                          "originalPath":  "scripts/Test-ShellBench.py",
+                          "originalSha256":  "b73299fb2e0a214d9ca98faf50ede9487c852eb19a23115754c565dc7726a0f4"
+                      },
+                      {
+                          "originalPath":  "bench/Services.qml",
+                          "originalSha256":  "3f66382f30ff4e94bb38f6c5abf97508e5fac81fc5ee6f233ad72ed4cd837ccc"
+                      },
+                      {
+                          "originalPath":  "bench/native/main.cpp",
+                          "originalSha256":  "4734e53eabf250c7948f519fd3b080ee187a75199e6fba31faaacfa4ebfb52e9"
+                      },
+                      {
+                          "originalPath":  "bench/native/CMakeLists.txt",
+                          "originalSha256":  "bc4aaef49671ffcac4d289ebdfd14aa9088f21a1a0f4370b1436a6a42af233f3"
+                      },
+                      {
+                          "originalPath":  "bench/map.json",
+                          "originalSha256":  "e2137c3c4a460b0e9e86ad6734d976c8c795fe6d59c31e7e886f4f446033a488"
+                      }
+                  ]
+}
