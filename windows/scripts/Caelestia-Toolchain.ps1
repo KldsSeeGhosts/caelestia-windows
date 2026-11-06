@@ -80,6 +80,12 @@ function Enter-CaelestiaToolchain {
     $instances = & $vswhere -all -products '*' -requires $spec.vcComponent -format json | ConvertFrom-Json
     if ($LASTEXITCODE -ne 0) { throw 'vswhere could not enumerate C++ Build Tools. Repair the Visual Studio Installer.' }
     $instance = Select-CaelestiaVisualStudio $instances $spec
+    $vcRoot = Join-Path $instance.installationPath "VC\Tools\MSVC\$($spec.vcToolsVersion)"
+    foreach ($file in @('bin\Hostx64\x64\link.exe', 'include\vcruntime.h', 'lib\x64\msvcrt.lib', 'lib\x64\vcruntime.lib')) {
+        if (-not (Test-Path -LiteralPath (Join-Path $vcRoot $file) -PathType Leaf)) {
+            throw "Incomplete VC tools $($spec.vcToolsVersion) x64 ($file). Repair the exact MSVC v143 optional component in Visual Studio Installer."
+        }
+    }
     $sdkRoot = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits\10'
     foreach ($file in @("Include\$($spec.windowsSdkVersion)\um\Windows.h",
         "Lib\$($spec.windowsSdkVersion)\um\x64\kernel32.lib", "bin\$($spec.windowsSdkVersion)\x64\mt.exe")) {
@@ -92,7 +98,7 @@ function Enter-CaelestiaToolchain {
     $devModule = Join-Path $instance.installationPath 'Common7\Tools\Microsoft.VisualStudio.DevShell.dll'
     $env:PATH = "$(Split-Path -Parent $vswhere);$env:PATH"
     Import-Module -Name $devModule -ErrorAction Stop
-    Enter-VsDevShell -VsInstallPath $instance.installationPath -SkipAutomaticLocation `
+    Enter-VsDevShell -VsInstallPath $instance.installationPath -SkipAutomaticLocation -SkipExistingEnvironmentVariables `
         -DevCmdArguments "-arch=x64 -host_arch=x64 -vcvars_ver=$($spec.vcToolsVersion) -winsdk=$($spec.windowsSdkVersion)" | Out-Null
     if ($env:VCToolsVersion.TrimEnd('\') -cne $spec.vcToolsVersion -or
         $env:WindowsSDKVersion.TrimEnd('\') -cne $spec.windowsSdkVersion -or
