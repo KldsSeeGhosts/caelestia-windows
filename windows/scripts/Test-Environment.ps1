@@ -1,12 +1,14 @@
 [CmdletBinding()]
 param(
     [string]$QtPrefix,
+    [string]$Cli11Include,
     [string]$QuickshellExecutable,
     [switch]$Json,
     [switch]$Strict
 )
 
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'Caelestia-Toolchain.ps1')
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
 $lock = Get-Content -LiteralPath (Join-Path $repoRoot 'windows\sources.lock.json') -Raw |
     ConvertFrom-Json
@@ -48,14 +50,14 @@ foreach ($name in @('git', 'cmake', 'ninja')) {
     }
 }
 
-$compiler = Get-Command cl.exe, clang-cl.exe -CommandType Application -ErrorAction SilentlyContinue |
+$compiler = Get-Command clang-cl.exe -CommandType Application -ErrorAction SilentlyContinue |
     Select-Object -First 1
 $tools.Add([pscustomobject]@{
     name = 'cxxCompiler'
     path = $(if ($compiler) { $compiler.Source } else { $null })
 })
 if (-not $compiler) {
-    $blockers.Add('No MSVC cl.exe or clang-cl.exe is available in this environment.')
+    $blockers.Add('The supported clang-cl.exe is not available in this environment; run the documented toolchain setup.')
 }
 
 $qtTool = $null
@@ -129,6 +131,13 @@ if (-not $glazierMatches) {
     $blockers.Add('Glazier is absent or does not match sources.lock.json; initialize the pinned submodule.')
 }
 $sourceMatches = $backendMatches -and $m3shapesMatches -and $glazierMatches
+$toolchain = $null
+try {
+    if (-not $QtPrefix) { throw 'Supply -QtPrefix and -Cli11Include in the selected VC/SDK environment, or use Build-Prototype.ps1.' }
+    $toolchain = Get-CaelestiaActualToolchain -QtPrefix $QtPrefix -Cli11Include $Cli11Include
+} catch {
+    $blockers.Add($_.Exception.Message)
+}
 
 $report = [pscustomobject][ordered]@{
     schemaVersion = 1
@@ -144,6 +153,7 @@ $report = [pscustomobject][ordered]@{
         matches = $sourceMatches
     }
     tools = @($tools.ToArray())
+    toolchain = $toolchain
     stagingManifest = [pscustomobject][ordered]@{
         path = 'windows/shell/sources.json'
         entries = $stagingEntries.Count
@@ -152,7 +162,7 @@ $report = [pscustomobject][ordered]@{
     nativeToolchainReady = $blockers.Count -eq 0
     blockers = @($blockers.ToArray())
     notes = @(
-        'This report does not validate a Caelestia build, Qt module coverage, SDK compatibility, or runtime behavior.',
+        'This report asserts the supported toolchain versions, not a Caelestia build, Qt module coverage, or runtime behavior.',
         'No software was installed and no desktop, configuration, authentication, or environment settings were changed.',
         'The portable plugin build does not validate the full bar/drawer or Windows service adaptation.'
     )
