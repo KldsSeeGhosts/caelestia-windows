@@ -1,0 +1,139 @@
+{
+  "schemaVersion": 1,
+  "caelestia": {
+    "repository": "https://github.com/caelestia-dots/shell.git",
+    "revision": "4b1dae84b1b3b28bf486776ba30c1c1ec74fb64d",
+    "role": "Initial upstream source baseline; local port commits follow this commit."
+  },
+  "quickshell": {
+    "repository": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows.git",
+    "revision": "747817bdfab55ff118af0550802e9528ee79eefd",
+    "path": "windows/deps/quickshell",
+    "sourceLayout": "Production sources, including brightness-probe and complete licensing. Private tests, manual fixtures and validation archives are maintained separately; historical test-project notes in role describe the archived baseline, not shipped targets.",
+    "role": "Windows backend and QML compatibility interfaces. Preserves nunreasonable/quickshell e8ae0ef124b1c14b547c80d00422d2ffbd423d81, native mask hover handoff, Core Audio capability/error reporting, UPower observation validity, GSMTC initialization/session-scan status, profile-isolated artwork caching, verified power profile results, confirm-only Bluetooth pairing, opt-in strict brightness routes with owned gamma restoration, explicit-consent notification mirroring, M3 tiling/Hypr window observation with allowlist scope and fitting outcomes, the single-desktop placeholder fix, 64-bit brightness query request ids, DPI-unaware tiling placement, and native virtual-desktop workspace dispatch, and global hotkeys with profile-local overrides and live reload. Typed app/screen tiling selectors and leak/crash lifetime fixes. Explorer reconnection for workspace dispatch and MTA-worker audio sessions. Foreground-thread keyboard layout and Caps Lock/Num Lock observation. Single-window outer gaps and focus/scheme DWM border colours with lifecycle restoration. Browser fullscreen suspends tiling before floating style rules; failed automatic tiling is retried on a larger physical monitor; explicit exclusions still apply during fullscreen. Opt-in QPC transition trace (QS_TRANSITION_TRACE) and a monotonic tiler clock. Fullscreen keeps its layout slot through a smaller display mode, work-area and DPI changes, rapid re-entry and a minimize on exit, with neighbours keeping their exact tiles; detection tolerates a small inset and bridges a display-mode change; reserve bars seed the panel z-order when they register below an already fullscreen application; a minimize is not treated as a fullscreen exit; a regained frame style confirms an exit whose rectangle still looks fullscreen, and the display-mode latch is bound to the exact fullscreen frame and monitor. Windows shell surfaces are classified once (CoreWindow only under explorer or a shell host); they never become tracked toplevels, foreground applications or AppBar fullscreen seeds. Cloaking is classified by DWMWA_CLOAKED flags: a shell cloak keeps the mapped tile, while an app or inherited cloak publishes hidden, releases the tiled space like a minimize, and preserves the fullscreen episode and latch for an uncloak restore. The Alt+Tab Task Switching overlay classes, including MultitaskingViewFrame and TaskSwitcherOverlayWnd, are rejected before they can become toplevels, so the primary-display-only QML fullscreen path cannot fire. Every deferred AppBar opening carries a generation; each episode retries at 150/500 ms, a stale retry does nothing, and a close bumps the generation. Shell identity (Windows' own shell classes and hosts, plus optional user selectors) is separate from taskbar eligibility and from fullscreen occlusion; a fullscreen window hidden from the task list still occludes, and the per-screen occluder verdict is published to QML. A tiling allowlist whose entries all fail validation matches nothing, and a tracked window's title change never re-runs eligibility. Optional CPU temperature from LibreHardwareMonitor's local web server. Hyprland dispatcher mappings for relative workspace moves, pin actions, exact and percentage resize, a splitratio alias, and named refusals for special workspaces and window groups. Super chords stay on the keyboard hook unless a bind sets register to true; those use RegisterHotKey and keep a hook masking tap so the Start menu still stays closed when the Windows key is released, except chords the desktop supervisor consumes; a swallowed Super chord also masks and replays the Win key release, so Explorer's Win+V flyout cannot open next to the shell's picker. FloatingWindow.frameless removes a Windows toplevel's title bar and frame while keeping resize borders, snap, minimize, shadow and rounded corners. A tiled window that resizes itself, such as a remote desktop session growing into fullscreen, gets a quiet interval to settle before the tiler corrects or floats it, and eases back into its tile instead of snapping. Popup windows opt out of the Windows class drop shadow. Desktop-embedded panels recreate only on a real monitor-scale change, and a disowned popup backer is never dereferenced. The desktop host publishes a refused embed so the shell can fail closed after a refused SetParent while keeping the external wallpaper handback. A bare Win press is deferred and kept local, so Explorer never sees it and another app's keyboard hook cannot let Start open; native Win chords replay Win-down before the chord key. Hyprland monitors drop their screen when Qt destroys it, so a hot-unplug cannot dereference a freed QScreen. The desktop host acknowledges an external wallpaper underlay only while a visible foreign wallpaper window is present, keeps shell backgrounds below that visible child, raises them to the top of the host when every foreign child is hidden or gone, reconciles the real z-order every second and on foreign-process events, and hands the desktop back when the external wallpaper goes away. After a genuine handback it rediscovers a replacement WorkerW host and re-embeds; a hidden panel HWND stays hidden on that parentChanged ShowWindow. A visible embedded background then presents again: ShowWindow, requestUpdate and RedrawWindow on parent change, reconciliation and underlay withdrawal. Logs carry no user or device identifiers: a central scrub replaces the profile, AppData and temp roots in every spelling and the account name, and other identifiers are logged as per-run hashes. The source guard that backs that policy rejects streamed ssid, identity, bind.argument and tray-id expressions across src/windows, src/core and src/io, and does not treat a member call that never streams the value as a leak. Notification access consent is requested asynchronously on the UI thread, a non-prompting backstop notices revoked access and stops mirroring so Windows' own banners return, and the notification bus mutex is truly owned on a dedicated waiter thread with release and abandonment handoff published to QML. Consent observation is separate from active mirroring: AppCapability.AccessChanged on the userNotificationListener capability is the primary signal with the GetAccessStatus backstop as fallback, a failed status read withdraws mirroring and banner suppression, and a denied mirror no longer stops the observer. Observation is owned by generation and the QML facade holds that generation as a lease released with the facade, so a destroyed or replaced shell object, in any teardown order, neither leaves it on nor switches off its replacement; every notification test override exists only in the test target. Keyboard layouts are listed read-only through TSF with a registry KLID fallback, keyed by profile identity (clsid, langid, guidProfile) so handle-less IMEs stay listed and TSF-substituted layouts stay out of the installed-HKL fallback, and a switch is posted with WM_INPUTLANGCHANGEREQUEST to the validated input window of the intended app (the hosted CoreWindow for UWP), never to a shell window. A WM_DISPLAYCHANGE pass re-places existing panels from the current native monitor rectangles before Qt announces an added screen, and hides a surface whose monitor has already detached before Qt can migrate it. New top-level windows open on the focused monitor the Hyprland compatibility layer publishes from the foreground window (including its return after a Start menu or shell panel), clicks and focus-follows-mouse, so the tiler and the shell agree. A fullscreen verdict requires a window to stay on one monitor, allowing only a few physical pixels of border or shadow overhang, so a desktop-spanning Alt+Tab switcher no longer hides the panel. The panel backend also loads on the offscreen QPA for the public smoke, skipping native desktop state and the input-mask mouse hook. Separate display identity from monitor labels: persistent interface-path identities route brightness and gamma, unique collision-suffixed QML names keep per-monitor settings independent, and legacy per-monitor layers are copied non-destructively, once per storage area. Reserved names are keyed by a hash of the identity and are never reassigned or evicted; an unreadable name file is never overwritten. A screen's identity is resolved once at discovery, a path that appears later is a removal followed by an addition, and a retired identity restores its gamma ramp and drops its brightness work, including anything in flight. Backend dev. Idle inhibition reports PowerSetRequest and PowerClearRequest results, rolls back a partial acquire, and keeps a failed clear held. Hardware brightness writes need a proven correlation between monitor and target: a single matching WMI instance, or the only active built-in panel for LCD. DDC writes use a range from that exact target and report partial failures per target. WLAN state and notifications are routed by interface GUID, a removed adapter ends its pending connection, and initialisation and subscription errors are published apart from no adapter. The unused backend visualiser stack is removed. Media players are named from the AUMID at runtime, through AppInfo, the AppsFolder item, the desktop-entry index (including the executable stem) and the version resource, with no fixed app table; unresolved ids retry on the next session. Quickshell.Windows.Foreground is the single foreground observer over the existing EVENT_SYSTEM_FOREGROUND and name-change hook: deduplicated address, title and appId, plus a raw foregroundChanged(hwnd, time, sequence) for every event, numbered on the hook thread. On the offscreen QPA a window id is never treated as a native HWND. A keybind-triggered display-off waits for the chord's key-ups observed by the keyboard hook (armed atomically on the hook thread, reset on desktop switch, cancelled by other input), while IPC requests send immediately. Super-drag places windows synchronously on a dedicated placement thread and acknowledges the actual rect, so constrained or refused geometry is learned instead of stalling; a deadline only reports failure. Foreground activation has one source-aware path. Hotkey, click and IPC requests make a single SetForegroundWindow, with AllowSetForegroundWindow on handoff, and report refusal. Only hook-delivered input (lone-modifier taps), which Windows grants no foreground right, may apply one AttachThreadInput escalation after a refusal. Deferred first shows keep the opening source, and no delayed re-grabs remain. A tiling session is owned by the newest QML generation's per-engine facade lease, which is its only writer and stops the session on teardown even when JavaScript is interrupted, so a reload can neither leave tiling running nor let a retiring facade switch off its replacement. The standalone backend test project builds all fixtures again: three link activation_policy.cpp and idle_request_test includes <qtest.h>. Desktop-control capability and command-result contract. A mouse press while the Windows key is held suppresses the lone Super tap, so releasing a Super-drag no longer opens the launcher. The tiler tells an accepted move apart from observed placement, floats a window whose move is refused so its neighbours reflow, gives each correction episode a fresh generation and reports a cut-short snap as superseded; desktop recovery restarts after a window expires; tray readiness follows the native hook state and refuses clicks whose callback can never arrive; and the fixture gate covers every registered test. Hyprland monitor focus (focusmonitor, Lua focus monitor) and stable window cycling (cyclenext, Lua cycle_next) share one eligibility walk and the activation path; the focused monitor follows only real foreground changes, so a cursor or click choice survives duplicate foreground events and same-app restores; opt-in shortcut submaps reset on lock, desktop switch, reload and shutdown; and default keybinds introduced after a user file was created are merged by appid and name. A notification bus-lock initialisation failure is published as its own error state, never as another shell owning the bus, and a notification is neither forwarded nor shown locally in that state. The capture path uses one explicit 8-bit SDR format through the WGC pool, the shared texture and the Qt RHI import, with a tested fallback and explicit unsupported-format and device-loss outcomes; after a GPU device removal the next capture request recreates the device instead of failing forever. Tray icons are pruned when their owner process exits, the taskbar mirror follows Explorer through reorder and location WinEvents (with one sync on Explorer restart and a one-shot brief-mode deadline), and the desktop layer follows foreign WorkerW owners through WinEvents, so none of these keeps a steady-state poll. Tiling no longer floats a window for a fit conflict: a window that cannot shrink to its tile stays tiled at its larger size, anchored at its slot inside the work area; a slow app keeps its tile and lands late; an explicit tile always wins; an automatic float retries on a monitor or desktop change or when a sibling closes. A title-bar drop over another tile swaps the two, a Super drop swaps in a tile's centre or inserts at its edge band, and the Tiling facade exposes the planned drop so the shell's preview is the committed result. The drop is re-planned on every layout change and a target that stops being tiled makes it home; gaps are home; Esc cancels a Super drag. Closing a focused panel or pinned popout returns the foreground to the previously focused application; Super-drag Esc cancels without configured keybinds and restores a maximized window's exact placement; key release state is tracked whenever the hook runs; a tiling drag target stays invalidated until real pointer motion; focusmonitor prefers the window last focused on that monitor; capture recovery is scoped to the failed device generation; desktop-host WinEvent hooks install independently; and Wi-Fi publishes a completed-refresh snapshot generation. A desktop-entry alias (an executable path or basename) is kept only while it names exactly one app."
+  },
+  "m3shapes": {
+    "repository": "https://github.com/soramanew/m3shapes.git",
+    "revision": "32ad9ce328bb77ed349b40a3be10ee9ea610b8ab",
+    "path": "windows/deps/m3shapes",
+    "role": "Material 3 Expressive shape QML plugin. Upstream Caelestia split it into this external project (caelestia-dots/shell 24aa15ee) and pins the same revision in flake.nix/flake.lock. The Windows portable plugin build compiles and installs the M3Shapes QML module."
+  },
+  "glazier": {
+    "repository": "https://github.com/KldsSeeGhosts/glazier.git",
+    "revision": "37f795041cbbb32ed46cba103f3f000a3a99ac13",
+    "path": "windows/deps/glazier",
+    "role": "Bundled Glazier screenshot and recording tool. Build-Prototype.ps1 compiles this pinned source with Cargo and stages glazier.exe beside qs.exe in the versioned payload, so update and rollback carry it. The pinned revision accepts the shell's --no-hotkeys and --theme-file launch options and keeps the selection toolbar on screen. It is not a separately installed companion."
+  },
+  "schemeCli": {
+    "repository": "https://github.com/caelestia-dots/cli.git",
+    "revision": "5e804b10c146c9f3278b2da37c8e4b5d8e9708d9",
+    "pythonPackages": {
+      "materialyoucolor": "3.0.4",
+      "pillow": "13.0.0"
+    },
+    "role": "Dynamic Material You scheme generation. Installed into a virtual environment under the isolated combined profile, never into the repository; only its scheme/material modules are used, not the Linux theme writer."
+  },
+  "iiWindowsReference": {
+    "repository": "https://github.com/nunreasonable/ii-windows.git",
+    "revision": "b59ac3b1389c1d562bec8a81aa3f6fb6480ca6b1",
+    "role": "Porting and packaging reference. Its sources.lock supplies the backend pin; it is not the Caelestia UI dependency."
+  },
+  "fonts": [
+    {
+      "repository": "https://github.com/ryanoasis/nerd-fonts",
+      "release": "v3.4.0",
+      "archiveUrl": "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.4.0/NerdFontsSymbolsOnly.zip",
+      "archiveSha256": "8e617904b980fe3648a4b116808788fe50c99d2d495376cb7c0badbd8a564c47",
+      "family": "Symbols Nerd Font Mono",
+      "license": "MIT",
+      "files": [
+        {
+          "path": "windows/assets/nerd-font-symbols/LICENSE",
+          "sha256": "84a7a98c82140fb12c37fe42b93805baa16024cb3e5acc599b7ffe612c55d847"
+        },
+        {
+          "path": "windows/assets/nerd-font-symbols/SymbolsNerdFontMono-Regular.ttf",
+          "sha256": "f0f624d9b474bea1662cf7e862d44aebe1ae1f6c7f9cb7a0ca5d0e5ac9561c60"
+        }
+      ]
+    },
+    {
+      "repository": "https://github.com/ryanoasis/nerd-fonts",
+      "release": "v3.4.0",
+      "archiveUrl": "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.4.0/CascadiaCode.zip",
+      "archiveSha256": "8d80993351a0a6b69a998e5c72060b7200c4f1af1f32b3ad4d8cad27c245940e",
+      "family": "CaskaydiaCove NF",
+      "license": "OFL-1.1",
+      "files": [
+        {
+          "path": "windows/assets/caskaydia-cove/CaskaydiaCoveNerdFont-Bold.ttf",
+          "sha256": "d38b2e9461f52c70ef9f18c5c79f869d8b084432416ea6e850855c5222fbdc38"
+        },
+        {
+          "path": "windows/assets/caskaydia-cove/CaskaydiaCoveNerdFont-BoldItalic.ttf",
+          "sha256": "b9679d1e9ef18bbc5889c5352a1e8593065da2a4b5a84ca1ad4a30b4d592f728"
+        },
+        {
+          "path": "windows/assets/caskaydia-cove/CaskaydiaCoveNerdFont-Italic.ttf",
+          "sha256": "a9e51ea159fcb6376f4897a8161a03e701ae08f0ca14b1990fe8bd9187202ade"
+        },
+        {
+          "path": "windows/assets/caskaydia-cove/CaskaydiaCoveNerdFont-Regular.ttf",
+          "sha256": "701d7ec08f58f07251c1758361c5d1ab57ba0a867dd378cbb0fa52e1d2beccad"
+        },
+        {
+          "path": "windows/assets/caskaydia-cove/LICENSE",
+          "sha256": "82c05d6c53dfa0c9025985c19e371810020b74ed2c61d51d370f2a8ab2506d52"
+        }
+      ]
+    },
+    {
+      "repository": "https://github.com/google/material-design-icons",
+      "revision": "10ecc14790612ca8fd164e3f4ffe9c16fc50d5b7",
+      "family": "Material Symbols Rounded",
+      "license": "Apache-2.0",
+      "files": [
+        {
+          "path": "windows/assets/material-symbols-rounded/LICENSE",
+          "sha256": "58d1e17ffe5109a7ae296caafcadfdbe6a7d176f0bc4ab01e12a689b0499d8bd"
+        },
+        {
+          "path": "windows/assets/material-symbols-rounded/MaterialSymbolsRounded.ttf",
+          "sha256": "7e74e36533ccee12c2b81e75bfcf3ccf123d3bb7e7e46d65d94445f23db0c97c"
+        }
+      ]
+    },
+    {
+      "repository": "https://github.com/google/fonts",
+      "revision": "e7db6ca603fd4862010383ff17ffd6cc4ffac1c0",
+      "family": "Rubik",
+      "license": "OFL-1.1",
+      "files": [
+        {
+          "path": "windows/assets/rubik/OFL.txt",
+          "sha256": "472cbe7c25441df63e9c7864b43eb3c0f4b3df950c66a76224e6cfe1eae843fb"
+        },
+        {
+          "path": "windows/assets/rubik/Rubik.ttf",
+          "sha256": "1b3a7437ba2af80e465e773ed60c5036d1ba6ace492d89046dbcf18fb31e4e88"
+        }
+      ]
+    },
+    {
+      "repository": "https://github.com/caelestia-dots/shell",
+      "revision": "4b1dae84b1b3b28bf486776ba30c1c1ec74fb64d",
+      "family": "Google Sans Flex",
+      "license": "OFL-1.1",
+      "files": [
+        {
+          "path": "assets/google-sans-flex/GoogleSansFlex-VariableFont_GRAD,ROND,opsz,slnt,wdth,wght.ttf",
+          "sha256": "2510a8b7a24beb1fe8163e9a49813ccfe96b5453444b9443d42665ca4fa320c9"
+        },
+        {
+          "path": "assets/google-sans-flex/LICENSE",
+          "sha256": "fb755fa3280d1d215a20df2e64fe6a0f75f8208439b11671978214aae60d2997"
+        }
+      ]
+    }
+  ]
+}

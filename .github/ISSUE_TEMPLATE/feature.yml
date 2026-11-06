@@ -1,0 +1,28 @@
+name: Windows feature request
+description: Suggest an improvement to the Windows port
+title: "[Windows feature] "
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or use case
+      description: What task are you trying to complete, and what is missing?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the Windows behavior you want, including any relevant Caelestia upstream behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives and desktop effects
+      description: Describe alternatives, affected Windows versions or hardware, and any taskbar, tiling, permission or startup implications.
+  - type: textarea
+    id: references
+    attributes:
+      label: References
+      description: Optional screenshots, source links or examples. Redact personal information.

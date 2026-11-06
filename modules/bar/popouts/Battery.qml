@@ -1,0 +1,331 @@
+pragma ComponentBehavior: Bound
+
+import QtQuick
+import Quickshell.Services.UPower
+import Caelestia.Config
+import Caelestia.I18n
+import qs.components
+import qs.services
+
+Column {
+    id: root
+
+    // Windows host: the profile text and degradation warning read PowerProfiles
+    // and the selector below writes an overlay scheme. Hosts that keep that
+    // service out of the process set these false; the text then reports the
+    // unavailable profile status and neither the warning nor the selector
+    // renders. Defaults preserve upstream behavior.
+    property bool profileStatusEnabled: true
+    property bool profileControlsEnabled: true
+    // Windows host: controls can stay visible while writes are separately
+    // disabled. The default preserves upstream's interactive selector.
+    property bool profileWritesEnabled: true
+    // Windows host: profiles the native backend can truthfully map. null keeps
+    // upstream's all-three behavior; unavailable entries use the selector's
+    // existing disabled styling.
+    property var availableProfiles: null
+    // Hosts can route selections through their write lifecycle. The default
+    // retains the original Linux setter.
+    property var selectProfile: profile => { PowerProfiles.profile = profile; }
+
+    // Windows host: a native UPower read can fail, or report an unknown level
+    // instead of a percentage. Linux always supplies a usable level, so these
+    // defaults preserve upstream behavior.
+    property bool observationAvailable: true
+    property bool percentageKnown: true
+    property bool powerSourceKnown: true
+    property bool timeToFullSupported: true
+
+    function formatSeconds(s: int): string {
+        const day = Math.floor(s / 86400);
+        const hr = Math.floor(s / 3600) % 24;
+        const min = Math.floor(s / 60) % 60;
+
+        let comps = [];
+        if (day > 0)
+            comps.push(Tr.trN("%n day", "%n days", day));
+        if (hr > 0)
+            comps.push(Tr.trN("%n hour", "%n hours", hr));
+        if (min > 0)
+            comps.push(Tr.trN("%n min", "%n mins", min));
+
+        return comps.join(Tr.trCtx(", ", "duration component separator"));
+    }
+
+    function powerProfileToString(p: int): string {
+        switch (p) {
+        case PowerProfile.Balanced:
+            return Tr.trCtx("Balanced", "power profile");
+        case PowerProfile.Performance:
+            return Tr.trCtx("Performance", "power profile");
+        case PowerProfile.PowerSaver:
+            return Tr.trCtx("Power saver", "power profile");
+        default:
+            return Tr.trCtx("Unknown", "power profile");
+        }
+    }
+
+    function isProfileAvailable(profile: int): bool {
+        if (root.availableProfiles === null || root.availableProfiles === undefined)
+            return true;
+        return root.availableProfiles.indexOf(profile) >= 0;
+    }
+
+    function perfDegradationToString(p: int): string {
+        switch (p) {
+        case PerformanceDegradationReason.HighTemperature:
+            return Tr.tr("The device is too hot");
+        case PerformanceDegradationReason.LapDetected:
+            return Tr.tr("The device is on a lap");
+        default:
+            return Tr.tr("Unknown reason");
+        }
+    }
+
+    spacing: Tokens.spacing.medium
+    width: Tokens.sizes.bar.batteryWidth
+
+    StyledText {
+        text: {
+            if (!root.observationAvailable)
+                return Tr.tr("Battery status unavailable");
+            if (!UPower.displayDevice.isLaptopBattery)
+                return Tr.tr("No battery detected");
+            if (!root.percentageKnown)
+                return Tr.tr("Battery level unknown");
+            return Tr.trCtx("Remaining: %1%", "battery remaining").arg(Math.round(UPower.displayDevice.percentage * 100));
+        }
+    }
+
+    StyledText {
+        text: {
+            if (!root.observationAvailable)
+                return Tr.tr("Power source unavailable");
+            const dev = UPower.displayDevice;
+            if (!dev.isLaptopBattery)
+                return profileStatusEnabled
+                    ? Tr.tr("Power profile: %1").arg(root.powerProfileToString(PowerProfiles.profile))
+                    : Tr.tr("Power profile unavailable");
+
+            if (!root.powerSourceKnown)
+                return Tr.tr("Power source unknown");
+            if (UPower.onBattery) {
+                const time = root.formatSeconds(dev.timeToEmpty);
+                if (time)
+                    return Tr.tr("Time remaining: %1").arg(time);
+                return Tr.tr("Calculating remaining battery life...");
+            }
+
+            if (dev.timeToFull > 0)
+                return Tr.tr("Time until charged: %1").arg(root.formatSeconds(dev.timeToFull));
+            if (!root.percentageKnown)
+                return Tr.tr("Battery level unknown");
+            if (Math.round(dev.percentage * 100) === 100)
+                return Tr.tr("Fully charged!");
+            if (!root.timeToFullSupported)
+                return Tr.tr("Charge time unavailable");
+            return Tr.tr("Calculating time until charged...");
+        }
+    }
+
+    Loader {
+        asynchronous: true
+        anchors.horizontalCenter: parent.horizontalCenter
+
+        // Short-circuits before referencing PowerProfiles when disabled.
+        active: root.profileStatusEnabled && PowerProfiles.degradationReason !== PerformanceDegradationReason.None
+
+        height: active ? ((item as Item)?.implicitHeight ?? 0) : 0
+
+        sourceComponent: StyledRect {
+            implicitWidth: child.implicitWidth + Tokens.padding.medium * 2
+            implicitHeight: child.implicitHeight + Tokens.padding.large
+
+            color: Colours.palette.m3error
+            radius: Tokens.rounding.large
+
+            Column {
+                id: child
+
+                anchors.centerIn: parent
+
+                Row {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    spacing: Tokens.spacing.small
+
+                    MaterialIcon {
+                        anchors.verticalCenter: parent.verticalCenter
+                        anchors.verticalCenterOffset: -font.pointSize / 10
+
+                        text: "warning"
+                        color: Colours.palette.m3onError
+                    }
+
+                    StyledText {
+                        anchors.verticalCenter: parent.verticalCenter
+                        // TRANSLATORS: charger or thermal warning: the battery cannot draw full power
+                        text: Tr.tr("Performance degraded")
+                        color: Colours.palette.m3onError
+                        font: Tokens.font.title.small
+                    }
+
+                    MaterialIcon {
+                        anchors.verticalCenter: parent.verticalCenter
+                        anchors.verticalCenterOffset: -font.pointSize / 10
+
+                        text: "warning"
+                        color: Colours.palette.m3onError
+                    }
+                }
+
+                StyledText {
+                    anchors.horizontalCenter: parent.horizontalCenter
+
+                    text: root.perfDegradationToString(PowerProfiles.degradationReason)
+                    color: Colours.palette.m3onError
+                }
+            }
+        }
+    }
+
+    StyledRect {
+        id: profiles
+
+        property string current: {
+            if (!root.profileControlsEnabled)
+                return "";
+            const p = PowerProfiles.profile;
+            if (!root.isProfileAvailable(p))
+                return "";
+            if (p === PowerProfile.PowerSaver)
+                return saver.icon;
+            if (p === PowerProfile.Performance)
+                return perf.icon;
+            return balance.icon;
+        }
+
+        visible: root.profileControlsEnabled
+
+        anchors.horizontalCenter: parent.horizontalCenter
+
+        implicitWidth: saver.implicitHeight + balance.implicitHeight + perf.implicitHeight + Tokens.padding.medium * 2 + Tokens.spacing.largeIncreased * 2
+        implicitHeight: Math.max(saver.implicitHeight, balance.implicitHeight, perf.implicitHeight) + Tokens.padding.small
+
+        color: Colours.tPalette.m3surfaceContainer
+        radius: Tokens.rounding.full
+
+        StyledRect {
+            id: indicator
+
+            color: Colours.palette.m3primary
+            radius: Tokens.rounding.full
+            state: profiles.current
+
+            states: [
+                State {
+                    name: saver.icon
+
+                    Fill {
+                        item: saver
+                    }
+                },
+                State {
+                    name: balance.icon
+
+                    Fill {
+                        item: balance
+                    }
+                },
+                State {
+                    name: perf.icon
+
+                    Fill {
+                        item: perf
+                    }
+                }
+            ]
+
+            transitions: Transition {
+                AnchorAnim {}
+            }
+        }
+
+        Profile {
+            id: saver
+
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.left: parent.left
+            anchors.leftMargin: Tokens.padding.extraSmall
+
+            profile: PowerProfile.PowerSaver
+            icon: "energy_savings_leaf"
+        }
+
+        Profile {
+            id: balance
+
+            anchors.centerIn: parent
+
+            profile: PowerProfile.Balanced
+            icon: "balance"
+        }
+
+        Profile {
+            id: perf
+
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.right: parent.right
+            anchors.rightMargin: Tokens.padding.extraSmall
+
+            profile: PowerProfile.Performance
+            icon: "rocket_launch"
+        }
+    }
+
+    component Fill: AnchorChanges {
+        required property Item item
+
+        target: indicator
+        anchors.left: item.left
+        anchors.right: item.right
+        anchors.top: item.top
+        anchors.bottom: item.bottom
+    }
+
+    component Profile: Item {
+        required property string icon
+        required property int profile
+
+        readonly property bool available: root.isProfileAvailable(profile)
+
+        implicitWidth: icon.implicitHeight + Tokens.padding.small
+        implicitHeight: icon.implicitHeight + Tokens.padding.small
+
+        StateLayer {
+            radius: Tokens.rounding.full
+            disabled: !root.profileControlsEnabled || !root.profileWritesEnabled || !parent.available
+            color: profiles.current === parent.icon ? Colours.palette.m3onPrimary : Colours.palette.m3onSurface
+            onClicked: {
+                if (root.profileWritesEnabled && parent.available)
+                    root.selectProfile(parent.profile);
+            }
+        }
+
+        MaterialIcon {
+            id: icon
+
+            anchors.centerIn: parent
+
+            text: parent.icon
+            fontStyle: Tokens.font.icon.large
+            color: profiles.current === text ? Colours.palette.m3onPrimary : Colours.palette.m3onSurfaceVariant
+            fill: profiles.current === text ? 1 : 0
+
+            Behavior on fill {
+                Anim {
+                    type: Anim.DefaultEffects
+                }
+            }
+        }
+    }
+}

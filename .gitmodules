@@ -1,0 +1,12 @@
+[submodule "windows-quickshell"]
+	path = windows/deps/quickshell
+	url = https://github.com/KldsSeeGhosts/caelestia-quickshell-windows.git
+	shallow = true
+[submodule "windows-m3shapes"]
+	path = windows/deps/m3shapes
+	url = https://github.com/soramanew/m3shapes.git
+	shallow = true
+[submodule "windows-glazier"]
+	path = windows/deps/glazier
+	url = https://github.com/KldsSeeGhosts/glazier.git
+	shallow = true

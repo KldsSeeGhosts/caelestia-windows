@@ -1,0 +1,9 @@
+.direnv
+/result
+/.qmlls.ini
+build/
+.cache/
+logs
+/windows/.local/
+__pycache__/
+*.pyc

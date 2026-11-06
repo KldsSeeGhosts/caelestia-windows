@@ -1,0 +1,170 @@
+{
+  "userFile": "caelestia/windows/keybinds.json",
+  "configFile": "keybinds.json",
+  "binds": [
+    {
+      "keys": "Super",
+      "action": "global",
+      "name": "caelestia:launcher",
+      "onRelease": true,
+      "description": "Toggle the launcher (lone Super tap)"
+    },
+    {
+      "keys": "PrintScreen",
+      "action": "global",
+      "name": "caelestia:screenshot",
+      "since": "2.6.0",
+      "description": "Screenshot with Glazier"
+    },
+    {
+      "keys": "Win+Shift+S",
+      "action": "global",
+      "name": "caelestia:screenshotFreeze",
+      "since": "2.6.0",
+      "description": "Screenshot with Glazier"
+    },
+    {
+      "keys": "Win+Shift+R",
+      "action": "global",
+      "name": "caelestia:record",
+      "since": "2.6.0",
+      "description": "Record the screen with Glazier"
+    },
+    {
+      "keys": "Super+K",
+      "action": "global",
+      "name": "caelestia:showall",
+      "description": "Toggle the launcher, dashboard, OSD and utilities together"
+    },
+    {
+      "keys": "Super+Shift+D",
+      "action": "global",
+      "name": "caelestia:dashboard",
+      "description": "Toggle the dashboard"
+    },
+    {
+      "keys": "Super+N",
+      "action": "global",
+      "name": "caelestia:sidebar",
+      "description": "Toggle the notification sidebar"
+    },
+    {
+      "keys": "Super+Shift+U",
+      "action": "global",
+      "name": "caelestia:utilities",
+      "description": "Toggle utilities"
+    },
+    {
+      "keys": "Ctrl+Alt+End",
+      "action": "global",
+      "name": "caelestia:session",
+      "description": "Toggle the session menu (Ctrl+Alt+Delete is reserved by Windows)"
+    },
+    {
+      "keys": "Ctrl+Alt+C",
+      "action": "global",
+      "name": "caelestia:clearNotifs",
+      "description": "Clear all notifications"
+    },
+    {
+      "keys": "Super+Shift+N",
+      "action": "global",
+      "name": "caelestia:toggleDnd",
+      "description": "Toggle do not disturb"
+    },
+    {
+      "keys": "Ctrl+Super+Space",
+      "action": "global",
+      "name": "caelestia:mediaToggle",
+      "description": "Play or pause the active player"
+    },
+    {
+      "keys": "XF86AudioPlay",
+      "action": "global",
+      "name": "caelestia:mediaToggle",
+      "description": "Play or pause the active player"
+    },
+    {
+      "keys": "Ctrl+Super+Equal",
+      "action": "global",
+      "name": "caelestia:mediaNext",
+      "description": "Next track"
+    },
+    {
+      "keys": "XF86AudioNext",
+      "action": "global",
+      "name": "caelestia:mediaNext",
+      "description": "Next track"
+    },
+    {
+      "keys": "Ctrl+Super+Minus",
+      "action": "global",
+      "name": "caelestia:mediaPrev",
+      "description": "Previous track"
+    },
+    {
+      "keys": "XF86AudioPrev",
+      "action": "global",
+      "name": "caelestia:mediaPrev",
+      "description": "Previous track"
+    },
+    {
+      "keys": "Ctrl+Super+Backspace",
+      "action": "global",
+      "name": "caelestia:mediaStop",
+      "description": "Stop the active player when it supports stop"
+    },
+    {
+      "keys": "XF86AudioStop",
+      "action": "global",
+      "name": "caelestia:mediaStop",
+      "description": "Stop the active player when it supports stop"
+    },
+    {
+      "keys": "XF86AudioRaiseVolume",
+      "action": "global",
+      "name": "caelestia:volumeUp",
+      "repeat": true,
+      "description": "Raise the default output volume"
+    },
+    {
+      "keys": "XF86AudioLowerVolume",
+      "action": "global",
+      "name": "caelestia:volumeDown",
+      "repeat": true,
+      "description": "Lower the default output volume"
+    },
+    {
+      "keys": "XF86AudioMute",
+      "action": "global",
+      "name": "caelestia:volumeMute",
+      "description": "Mute or unmute the default output"
+    },
+    {
+      "keys": "Super+Shift+M",
+      "action": "global",
+      "name": "caelestia:volumeMute",
+      "description": "Mute or unmute the default output"
+    },
+    {
+      "keys": "Ctrl+Alt+Page_Up",
+      "action": "global",
+      "name": "caelestia:brightnessUp",
+      "repeat": true,
+      "description": "Raise the active display brightness"
+    },
+    {
+      "keys": "Ctrl+Alt+Page_Down",
+      "action": "global",
+      "name": "caelestia:brightnessDown",
+      "repeat": true,
+      "description": "Lower the active display brightness"
+    },
+    {
+      "keys": "Super+L",
+      "action": "exec",
+      "command": "rundll32.exe user32.dll,LockWorkStation",
+      "description": "Lock Windows"
+    }
+  ]
+}

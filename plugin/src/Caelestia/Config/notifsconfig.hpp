@@ -1,0 +1,25 @@
+#pragma once
+
+#include "util/export.hpp"
+
+#include "settings/objectnode.hpp"
+#include "common.hpp"
+#include "enums.hpp"
+
+namespace caelestia::shell::config {
+
+class CAELESTIA_CONFIG_API NotifsConfig : public settings::ObjectNode {
+    CONFIG_NODE(NotifsConfig, settings::ObjectNode)
+
+    CONFIG_GLOBAL_PROPERTY(bool, expire, true)
+    CONFIG_GLOBAL_ENUM_PROPERTY(NotifsFullscreen, fullscreen, NotifsFullscreen::On)
+    CONFIG_GLOBAL_PROPERTY(int, defaultExpireTimeout, 5000)
+    CONFIG_GLOBAL_PROPERTY(int, fullscreenExpireTimeout, 2000)
+    CONFIG_PROPERTY(qreal, clearThreshold, 0.3)
+    CONFIG_PROPERTY(int, expandThreshold, 20)
+    CONFIG_GLOBAL_PROPERTY(bool, actionOnClick, false)
+    CONFIG_PROPERTY(int, groupPreviewNum, 3)
+    CONFIG_PROPERTY(bool, openExpanded, false)
+};
+
+} // namespace caelestia::shell::config

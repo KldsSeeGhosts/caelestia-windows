@@ -1,0 +1,2 @@
+#pragma once
+#include "@CMAKE_CURRENT_SOURCE_DIR@/@header@"

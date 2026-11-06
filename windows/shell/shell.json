@@ -1,0 +1,208 @@
+{
+  "bar": {
+    "persistent": true,
+    "showOnHover": true,
+    "entries": [
+      {
+        "id": "logo",
+        "enabled": true
+      },
+      {
+        "id": "workspaces",
+        "enabled": true
+      },
+      {
+        "id": "spacer",
+        "enabled": true
+      },
+      {
+        "id": "activeWindow",
+        "enabled": true
+      },
+      {
+        "id": "spacer",
+        "enabled": true
+      },
+      {
+        "id": "tray",
+        "enabled": true
+      },
+      {
+        "id": "clock",
+        "enabled": true
+      },
+      {
+        "id": "statusIcons",
+        "enabled": true
+      },
+      {
+        "id": "power",
+        "enabled": true
+      }
+    ],
+    "clock": {
+      "showIcon": true,
+      "showDate": true,
+      "showSeconds": false
+    },
+    "scrollActions": {
+      "workspaces": true,
+      "volume": false,
+      "brightness": false
+    },
+    "popouts": {
+      "activeWindow": true,
+      "tray": false,
+      "statusIcons": true
+    },
+    "workspaces": {
+      "shown": 5,
+      "showUnoccupied": true,
+      "perMonitor": true,
+      "showWindows": true
+    },
+    "activeWindow": {
+      "showOnHover": true,
+      "compact": false,
+      "inverted": false
+    },
+    "statusIcons": [
+      {
+        "id": "lockStatus",
+        "enabled": false
+      },
+      {
+        "id": "audio",
+        "enabled": true
+      },
+      {
+        "id": "microphone",
+        "enabled": false
+      },
+      {
+        "id": "kbLayout",
+        "enabled": false
+      },
+      {
+        "id": "network",
+        "enabled": true
+      },
+      {
+        "id": "bluetooth",
+        "enabled": true
+      },
+      {
+        "id": "battery",
+        "enabled": true
+      }
+    ],
+    "tray": {
+      "compact": true,
+      "background": false,
+      "recolour": false
+    }
+  },
+  "session": {
+    "enabled": true,
+    "vimKeybinds": true,
+    "commands": {
+      "logout": [
+        "logout"
+      ],
+      "shutdown": [
+        "shutdown"
+      ],
+      "hibernate": [
+        "hibernate"
+      ],
+      "reboot": [
+        "reboot"
+      ]
+    }
+  },
+  "paths": {
+    "sessionGif": "root:/assets/kurukuru.gif"
+  },
+  "dashboard": {
+    "enabled": true,
+    "showOnHover": true
+  },
+  "launcher": {
+    "enabled": true,
+    "showOnHover": true
+  },
+  "sidebar": {
+    "enabled": true,
+    "showOnHover": true
+  },
+  "osd": {
+    "enabled": true
+  },
+  "utilities": {
+    "enabled": true,
+    "cards": {
+      "keepAwake": true,
+      "recorder": true,
+      "quickToggles": true
+    },
+    "quickToggles": [
+      {
+        "id": "wifi",
+        "enabled": true
+      },
+      {
+        "id": "bluetooth",
+        "enabled": true
+      },
+      {
+        "id": "dnd",
+        "enabled": true
+      }
+    ]
+  },
+  "background": {
+    "enabled": true,
+    "wallpaperEnabled": true,
+    "desktopClock": {
+      "enabled": false,
+      "position": "bottom-right"
+    },
+    "visualiser": {
+      "enabled": false
+    }
+  },
+  "windows": {
+    "clipboard": {
+      "enabled": true
+    },
+    "focusFollowsMouse": {
+      "enabled": false,
+      "delay": 100,
+      "raise": false
+    },
+    "tiling": {
+      "enabled": false,
+      "mode": "observe",
+      "gapsIn": 5,
+      "gapsOut": 10,
+      "singleWindowGapsOut": 20,
+      "borderColours": true
+    }
+  },
+  "appearance": {
+    "font": {
+      "headline": {
+        "family": "Google Sans Flex"
+      },
+      "title": {
+        "family": "Google Sans Flex"
+      },
+      "body": {
+        "family": "Google Sans Flex"
+      },
+      "label": {
+        "family": "Google Sans Flex"
+      }
+    }
+  }
+}
