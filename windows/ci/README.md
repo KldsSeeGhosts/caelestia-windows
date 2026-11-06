@@ -2,8 +2,8 @@
 
 The active workflow is
 [.github/workflows/windows-build.yml](../../.github/workflows/windows-build.yml).
-The old `windows-build.yml.template` is an inert historical preparation
-reference, not the active configuration.
+The `windows-build.yml.template` is an inert minimal native recipe using the
+same supported toolchain, not the active regression configuration.
 
 ## Gates and build scheduling
 
@@ -30,22 +30,43 @@ offscreen checks from live-desktop acceptance.
 
 ## Tooling and cache trust
 
-The native toolchain remains Python 3.12, CMake 4.4.4, Ninja 1.13.2,
+The authoritative [toolchain specification](../toolchain.json) selects
+`windows-2022`, VC tools 14.44.35207 and SDK 10.0.26100.0 explicitly.
+A hosted label is not a version pin: every build asserts the actual tool versions
+before compiling. The toolchain includes Python 3.12, CMake 4.4.4, Ninja 1.13.2,
 aqtinstall revision `076e1659807d0b362a3ed684d54c2e9c775eb9c7`,
 Qt 6.11.2 `win64_msvc2022_64`, LLVM 20.1.8 and CLI11 2.5.0.
 Qt includes `qtshadertools qtimageformats` and archives
 `qtbase qtdeclarative qtsvg qttools`, not `qttranslations`.
-The hosted stable MSVC Rust toolchain builds Glazier's locked dependency
-graph; the job records the compiler version rather than inventing a Rust pin.
+Rust/Cargo 1.99.1 and explicit `x86_64-pc-windows-msvc` target build Glazier's
+locked dependency graph. Rust is not selected through `stable`.
+`Prepare-Toolchain.ps1` is the same local/hosted recipe: hash-locked Python
+wheels, verified aqt source, LLVM/CLI11 SHA-256, six committed Qt archive hashes,
+and the hash-checked official Rust release manifest plus rustup's component
+verification. `Build-Prototype.ps1` never installs missing tools.
+Serviced compiler/linker file versions and Rust's official release commit are
+asserted too. The selected VS redist marker must resolve CRT DLLs matching the
+qualified `vcRedistVersion` (14.44.35211.0), not merely a plausible folder name.
+The release preflight rechecks that same actual supplier source. Qt's packaged
+SBOM compiler/linker versions are asserted separately; they do not declare a
+minimum runtime or substitute for clean-VM acceptance.
 
 The versioned exact-match cache contains Qt, LLVM/CLI11 archives and extracted
 trees, and pip's download cache. Warm runs avoid extracting LLVM and CLI11
 again. Archive checksums still run after restore, and required tool files and
-versions are checked before use. Python tooling is installed fresh. Only
+versions are checked before use. Python tooling is installed fresh. The cache
+identity includes the specification and Python locks, not a floating channel. Only
 trusted `main` runs save this cache; pull requests may restore it. There are
 no native object, CMake build, Cargo target, staged-shell or installed-product
 caches shared across trust boundaries. Change the cache schema key when the
 tooling selection or extraction contract changes.
+The archive hashes authenticate the downloaded inputs, not every byte of an
+already extracted cache tree. Reused extracted directories receive required-file,
+version and supplier-metadata checks, not a complete per-file hash comparison
+with those archives. Trust therefore rests on the existing trusted-`main`-only
+cache writer boundary. An untrusted or suspect extracted tree must be discarded
+and reprovisioned from the verified archives; it is not made trustworthy by a
+version string. No new cache trust or performance guarantee is claimed.
 
 All Actions are commit-pinned. Permissions stay read-only; checkout does not
 persist credentials. There is no `pull_request_target`, injected publication
@@ -57,9 +78,23 @@ accessible. Never substitute private dependency credentials.
 
 Regression jobs upload only compact summaries containing test names, exit
 codes, timings, source revision and dirty status, with three-day retention. Raw fixture
-logs, profiles and provider data are not uploaded. Existing build-failure
-diagnostics and the production smoke's redacted failure summary remain
-available on failure.
+logs, profiles and provider data are not uploaded. Native jobs always upload
+path-free `toolchain.json` receipts from preparation and build, including the
+specification/lock digest and actual versions. Raw `build.json`, environment
+reports and build logs contain deployment paths and are not artifact inputs.
+Failure output remains visible in the job that executed it.
+
+The native job runs the release assembler's read-only toolchain preflight on
+the build receipt. Fast checks exercise supported receipts plus incompatible
+VC/SDK/Rust/Qt/build tools, missing fields, stale specification hashes, corrupt
+downloads, missing installed VC tools, servicing changes and missing/newer CRT
+DLLs through the actual assembler preflight. The runtime minimum stays
+14.44.35211.0. This receipt preflight is not a full package/lifecycle gate.
+
+The preparation recipe and version assertions are implemented, not a hosted
+pass. A new published PR run must establish clean hosted acceptance. The audited
+run 42243987117 used `windows-latest` / VS 2026 and Rust 1.99.1; it did not retain
+an actual VC-tools receipt, and no packaging failure was reproduced by the audit.
 
 Local passes establish only the exact tested working tree, native runner and
 scenarios. They do not establish hosted acceptance of a workflow edit. Record
