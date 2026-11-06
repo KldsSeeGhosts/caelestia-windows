@@ -1,4 +1,4 @@
-# Uninstall transaction regression fixture (ERM-629)
+# Uninstall transaction regression fixture
 
 Run in 64-bit Windows PowerShell 5.1 on Windows 11 x64, from the repository root:
 
