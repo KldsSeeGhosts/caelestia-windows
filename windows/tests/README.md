@@ -13,13 +13,15 @@ servers rather than real provider accounts.
   lifecycle, JavaScript logic and Python quota-provider tests.
 - `-Suite Packaging`: version selection, update, rollback, failure recovery,
   scheme-generation identity/receipts, contention, pruning, privacy and
-  uninstall contracts. Native launchers and provisioning are faked.
+  uninstall contracts, including controlled two-process transaction races.
+  Native launchers, Task Scheduler and provisioning are faked.
 - `-Suite Services`: app catalog, audio, battery/power profiles, Bluetooth,
   brightness, media, network, notifications, session, tiling, tray,
   workspace dispatch and wallpaper-target service contracts.
 - `-Suite Shell`: launcher/notification accessibility contracts, drag
   previews, teardown, idle status, launcher hover, fullscreen routing,
-  focus-return policy, quota interaction and wallpaper/background ownership.
+  focus-return policy, quota interaction, wallpaper/background ownership and
+  rollback consumer acknowledgement/deadline/late-result state.
 - `-Suite Scheme`: the real pinned colour generator's worker protocol,
   image downscaling, caching and wallpaper-input handling.
 - `Build-Prototype.ps1 -PluginTests` plus CTest: nine native plugin fixtures
@@ -88,6 +90,12 @@ offscreen. Enter and Space activate a recording browser callback, never a real
 browser; no installed prefix, rollback or live desktop is used. This script
 is not yet in the aggregate Shell suite; it does not establish installed
 rollback or physical keyboard/accessibility acceptance.
+
+`Test-UpdateManager.ps1` separately loads the unmodified production singleton
+with recording process/file boundaries. It verifies the ten-minute production
+deadline using shortened real fixture timers, truthful unconfirmed outcomes,
+duplicate refusal and late matching results without processes or journal writes.
+It runs automatically in the Shell suite.
 
 ## Not covered by these restored gates
 
