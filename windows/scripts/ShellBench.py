@@ -335,10 +335,22 @@ def summarize(data):
     for name, metric in metrics.items():
         if name.startswith("panel.") and name.endswith(".p95Ms"):
             metric["claimability"] = campaign_module().claimability(data, name)
-    verdicts = [m["verdict"] for m in metrics.values()]
-    return {"metrics": metrics, "overall": "regressed" if "regressed" in verdicts else
+    scored = scored_metrics({"metrics": metrics})
+    verdicts = [m["verdict"] for m in scored.values()]
+    result = {"metrics": metrics, "overall": "unresolved" if not scored else
+            "regressed" if "regressed" in verdicts else
             "unresolved" if "unresolved" in verdicts else
             "improved" if "improved" in verdicts else "same"}
+    diagnostics = sorted(set(metrics) - set(scored))
+    if diagnostics:
+        result["diagnosticMetricNames"] = diagnostics
+    return result
+
+
+def scored_metrics(result):
+    """Diagnostic observations remain replayable, but cannot carry a verdict."""
+    return {name: metric for name, metric in result["metrics"].items()
+            if metric.get("claimability", {}).get("claimable", True)}
 
 
 STYLE = """body{font:15px "Segoe UI",sans-serif;font-variant-numeric:tabular-nums;margin:32px auto;max-width:1200px;padding:0 24px;color:#172b38;background:#f6f8f7}
@@ -392,11 +404,14 @@ def reading(m):
 
 
 def headline(result):
-    kinds = [kind(m) for m in result["metrics"].values()]
-    names = lambda k: ", ".join(label(n) for n, m in result["metrics"].items() if kind(m) == k)
+    metrics = scored_metrics(result)
+    if not metrics:
+        return "Diagnostic-only observations. No scored performance verdict."
+    kinds = [kind(m) for m in metrics.values()]
+    names = lambda k: ", ".join(label(n) for n, m in metrics.items() if kind(m) == k)
     if "regressed" in kinds:
         text = f"Regressed: {names('regressed')}."
-    elif any(m["verdict"] == "unresolved" for m in result["metrics"].values()):
+    elif any(m["verdict"] == "unresolved" for m in metrics.values()):
         text = "Unresolved comparison. No promotion verdict."
     elif "improved" in kinds:
         text = f"Resolved diagnostic improvement: {names('improved')}. Qualification still required."
@@ -404,10 +419,26 @@ def headline(result):
         text = "Within diagnostic floors. Qualification still required."
     if "slower" in kinds:
         text += f" Possibly slower, not resolved: {names('slower')}."
+    if len(metrics) != len(result["metrics"]):
+        text += " Diagnostic-only metrics excluded."
     return text
 
 
+def emit_verdict(data, results_path):
+    """Shared terminal acquisition CLI policy, also runnable on offline fixtures."""
+    result = data["summary"]
+    scored = scored_metrics(result)
+    print(f'{headline(result)} ({data["wallSeconds"]:.0f} s; {results_path})')
+    for name, metric in result["metrics"].items():
+        prefix = "" if name in scored else "Diagnostic only, not scored: "
+        print(f'{prefix}{label(name)}: {reading(metric)}')
+    # Execution success is not qualification. Only a scored regression fails.
+    return 2 if any(m["verdict"] == "regressed" for m in scored.values()) else 0
+
+
 def summary_chart(metrics):
+    if not metrics:
+        return "<section><h2>No scored metrics</h2><p>Diagnostic-only observations do not determine a performance verdict.</p></section>"
     extent = 10  # Axis clipped so 2-5% changes stay readable; arrows mark anything beyond.
 
     def x(percent):
@@ -451,11 +482,12 @@ def report(data, target):
              '<p>Same: the whole interval is inside the noise floor. Faster/slower: the whole interval is beyond it. '
              'Otherwise the change is too small to resolve; the row says whether it could be a slowdown and by how much. '
              'Only a resolved slowdown fails acquisition. Exit zero is not qualification or improvement; automation must inspect the raw-replayed gate.</p>',
-             summary_chart(metrics), '<h2>Individual fresh-process trials</h2>'
+             summary_chart(scored_metrics(result)), '<h2>Individual fresh-process trials</h2>'
              '<p>Dots are fresh processes. Vertical ticks mark A/B medians. The axis is zoomed to the data.</p>']
     for name, m in metrics.items():
         k = kind(m)
-        parts.append(f'<section><h2>{html.escape(label(name))}: <span class="{k}">{html.escape(reading(m))}</span></h2>')
+        prefix = "" if name in scored_metrics(result) else "Diagnostic only, not scored: "
+        parts.append(f'<section><h2>{prefix}{html.escape(label(name))}: <span class="{k}">{html.escape(reading(m))}</span></h2>')
         values = m["A"]["trials"] + m["B"]["trials"]
         low, high = min(values), max(values)
         pad = (high - low) * 0.08 or abs(high) * 0.01 or 1
@@ -973,12 +1005,7 @@ def run(args):
         data["complete"] = True
         data["wallSeconds"] = time.monotonic() - started
         write(output / "results.json", data)
-        print(f'{headline(data["summary"])} ({data["wallSeconds"]:.0f} s; {output / "results.json"})')
-        for name, metric in data["summary"]["metrics"].items():
-            print(f'{label(name)}: {reading(metric)}')
-        # Only a resolved regression fails. "Unresolved" is reported with its
-        # reading ("possibly slower, up to +X%") but A/A runs land there by chance.
-        return 2 if data["summary"]["overall"] == "regressed" else 0
+        return emit_verdict(data, output / "results.json")
     except Exception as error:
         record_failure(data, error, output, started)
         print(f"FAILED in {data['wallSeconds']:.3f}s: {error}", file=sys.stderr)

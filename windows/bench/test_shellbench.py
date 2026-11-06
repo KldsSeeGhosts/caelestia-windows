@@ -663,6 +663,205 @@ $outcomes | ConvertTo-Json -Compress
         self.assertIn("tiling.cyclesPerOperation", summary["metrics"])
         self.assertFalse(summary["wholeAppCertification"])
 
+    def test_real_qualification_report_exports_through_api_and_cli(self):
+        with tempfile.TemporaryDirectory() as directory:
+            groups = self.controls(directory)
+            qualification, _ = campaign.qualification_report(
+                groups["aa"], groups["added"], groups["calibration"], bench)
+            self.assertIsInstance(qualification["protocol"], str)
+            public = campaign.public_summary(qualification, bench)
+            self.assertEqual(public["protocol"], bench.PROTOCOL)
+            self.assertTrue(public["metrics"]["tiling.cyclesPerOperation"]["qualified"])
+            self.assertNotIn("calibration", public)
+            path = Path(directory) / "qualification.json"
+            output = Path(directory) / "public"
+            bench.write(path, qualification)
+            stdout = bench.command([sys.executable, "-B", str(root / "ShellBench.py"),
+                                    "export-public", str(path), "--output", str(output)], timeout=10)
+            self.assertEqual(json.loads(stdout), bench.read(output / "public-summary.json"))
+            self.assertEqual(public, json.loads(stdout))
+
+    def test_all_qualification_shapes_fail_closed_without_cli_tracebacks(self):
+        with tempfile.TemporaryDirectory() as directory:
+            groups = self.controls(directory)
+            valid, _ = campaign.qualification_report(groups["aa"], groups["added"], groups["calibration"], bench)
+            cases = {}
+            for field in ("calibration", "inputs", "metrics"):
+                broken = copy.deepcopy(valid)
+                broken.pop(field)
+                cases["missing-" + field] = broken
+            for schema in (1, 3, None):
+                cases["schema-" + str(schema)] = dict(valid, schemaVersion=schema)
+            cases["wrong-protocol-type"] = dict(valid, protocol={"version": bench.PROTOCOL})
+            cases["bare-qualified-metrics"] = {
+                "schemaVersion": 1, "protocol": {"version": bench.PROTOCOL},
+                "metrics": {"tiling.cyclesPerOperation": {"qualified": True}}}
+            cases["bare-string-protocol"] = {
+                "protocol": bench.PROTOCOL, "metrics": {"tiling.cyclesPerOperation": {"qualified": True}}}
+            cases["status-only"] = {"status": "qualified", "protocol": bench.PROTOCOL}
+            cases["malformed-calibration"] = dict(valid, calibration="not-provenance")
+            cases["missing-calibration-hash"] = dict(valid, calibration={"path": groups["calibration"]})
+            cases["malformed-metrics"] = dict(valid, metrics=True)
+            tampered = copy.deepcopy(valid)
+            tampered["metrics"]["tiling.cyclesPerOperation"]["qualified"] = False
+            cases["tampered-verdict"] = tampered
+            tampered = copy.deepcopy(valid)
+            tampered["inputs"][0]["group"] = "unknown"
+            cases["tampered-input-group"] = tampered
+            path = Path(directory) / "qualification.json"
+            for name, data in cases.items():
+                with self.subTest(case=name):
+                    with self.assertRaises(ValueError):
+                        campaign.public_summary(data, bench)
+                    bench.write(path, data)
+                    output = Path(directory) / ("public-" + name)
+                    child = bench.SP.run(
+                        [sys.executable, "-B", str(root / "ShellBench.py"), "export-public",
+                         str(path), "--output", str(output)], capture_output=True, text=True, timeout=10,
+                        creationflags=bench.NO_WINDOW if os.name == "nt" else 0)
+                    self.assertEqual(child.returncode, 1)
+                    self.assertEqual(json.loads(child.stdout)["status"], "refused")
+                    self.assertNotIn("Traceback", child.stdout + child.stderr)
+                    self.assertNotIn("AttributeError", child.stdout + child.stderr)
+                    self.assertFalse(output.exists())
+
+    def test_qualification_export_rechecks_changed_supporting_receipt(self):
+        with tempfile.TemporaryDirectory() as directory:
+            groups = self.controls(directory)
+            qualification, _ = campaign.qualification_report(
+                groups["aa"], groups["added"], groups["calibration"], bench)
+            data = bench.read(groups["aa"][0])
+            data["serial"] = "changed after qualification"
+            bench.write(groups["aa"][0], data)
+            with self.assertRaisesRegex(ValueError, "input changed"):
+                campaign.public_summary(qualification, bench)
+
+    def tail_case(self, direction, openings=2, only_tail=False):
+        data = self.panel_control(openings=openings)
+        for trial in data["trials"]:
+            if trial["side"] == "B":
+                scale = .5 if direction == "improved" else 2
+                for action in trial["raw"]["runtime"]["actions"]:
+                    if action["panel"] == "dashboard":
+                        action["shellRequestToFrameMs"] = 150 + scale * (action["shellRequestToFrameMs"] - 150)
+                trial["values"] = bench.derive_runtime(trial["raw"]["runtime"])
+        name = "panel.dashboard.p95Ms"
+        if only_tail:
+            data["analysisPolicy"] = {"excludedMetrics": {n: "fixture isolates the tail policy"
+                for n in data["protocol"]["requiredMetrics"] if n != name}}
+        data["summary"] = bench.summarize(data)
+        return data
+
+    def emitted_cli(self, data, directory, name):
+        """Execute exactly the terminal function used by run, without native acquisition."""
+        path = Path(directory) / (name + ".json")
+        bench.write(path, data)
+        code = """
+import importlib.util, sys
+spec = importlib.util.spec_from_file_location('offline_shellbench', sys.argv[1])
+bench = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = bench
+spec.loader.exec_module(bench)
+data = bench.read(sys.argv[2])
+assert bench.summarize(data) == data['summary']
+sys.exit(bench.emit_verdict(data, sys.argv[2]))
+"""
+        return bench.SP.run([sys.executable, "-B", "-c", code, str(root / "ShellBench.py"), str(path)],
+                            capture_output=True, text=True, timeout=10,
+                            creationflags=bench.NO_WINDOW if os.name == "nt" else 0)
+
+    def test_two_sample_p95_cannot_change_scored_overall_headline_or_public_summary(self):
+        name = "panel.dashboard.p95Ms"
+        for direction in ("improved", "regressed"):
+            with self.subTest(direction=direction):
+                data = self.tail_case(direction)
+                self.assertEqual(data["summary"]["metrics"][name]["verdict"], direction)
+                self.assertEqual(data["summary"]["overall"], "same")
+                title = bench.headline(data["summary"])
+                self.assertNotIn("Regressed:", title)
+                self.assertNotIn("improvement", title)
+                self.assertIn("Diagnostic-only metrics excluded", title)
+                public = campaign.public_summary(data, bench)
+                self.assertEqual(public["overall"], "same")
+                self.assertNotIn(name, public["metrics"])
+                self.assertEqual(public["diagnostics"][name]["diagnosticVerdict"], direction)
+                self.assertEqual(public["diagnostics"][name]["claimStatus"], "diagnostic-only-insufficient-observations")
+
+    def test_diagnostic_only_p95_cli_path_never_claims_improvement_or_exits_regressed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            for direction in ("improved", "regressed"):
+                with self.subTest(direction=direction):
+                    data = self.tail_case(direction, only_tail=True)
+                    self.assertEqual(data["summary"]["overall"], "unresolved")
+                    self.assertFalse(bench.scored_metrics(data["summary"]))
+                    child = self.emitted_cli(data, directory, direction)
+                    self.assertEqual(child.returncode, 0)
+                    self.assertIn("No scored performance verdict", child.stdout.splitlines()[0])
+                    self.assertNotIn("Regressed:", child.stdout.splitlines()[0])
+                    self.assertNotIn("improvement", child.stdout.splitlines()[0])
+                    self.assertIn("Diagnostic only, not scored:", child.stdout)
+                    public = campaign.public_summary(data, bench)
+                    self.assertEqual(public["overall"], "unresolved")
+                    self.assertEqual(public["metrics"], {})
+
+    def test_200_sample_p95_still_scores_and_changes_acquisition_cli_exit(self):
+        name = "panel.dashboard.p95Ms"
+        with tempfile.TemporaryDirectory() as directory:
+            for direction, code in (("improved", 0), ("regressed", 2)):
+                with self.subTest(direction=direction):
+                    data = self.tail_case(direction, openings=200, only_tail=True)
+                    self.assertTrue(campaign.claimability(data, name)["claimable"])
+                    self.assertEqual(data["summary"]["overall"], direction)
+                    child = self.emitted_cli(data, directory, direction)
+                    self.assertEqual(child.returncode, code)
+                    self.assertNotIn("No scored performance verdict", child.stdout)
+                    self.assertNotIn("Diagnostic only, not scored:", child.stdout)
+                    public = campaign.public_summary(data, bench)
+                    self.assertEqual(public["overall"], direction)
+                    self.assertIn(name, public["metrics"])
+                    self.assertNotIn(name, public.get("diagnostics", {}))
+
+    def test_diagnostic_p95_does_not_mask_a_scored_metric_in_terminal_cli(self):
+        with tempfile.TemporaryDirectory() as directory:
+            for scored_verdict, value, tail_verdict, code in (
+                    ("improved", 70, "regressed", 0), ("regressed", 150, "improved", 2)):
+                with self.subTest(scored=scored_verdict):
+                    data = self.tail_case(tail_verdict)
+                    native = self.control(value)
+                    for trial, added in zip(data["trials"], native["trials"]):
+                        trial["raw"]["tiling"] = added["raw"]["tiling"]
+                        trial["values"].update(added["values"])
+                    data["protocol"]["requiredMetrics"] = list(data["trials"][0]["values"])
+                    data["protocol"]["floorsPercent"]["tiling.cyclesPerOperation"] = 5
+                    data["summary"] = bench.summarize(data)
+                    self.assertEqual(data["summary"]["overall"], scored_verdict)
+                    child = self.emitted_cli(data, directory, scored_verdict)
+                    self.assertEqual(child.returncode, code)
+                    self.assertIn("Tiling", child.stdout.splitlines()[0])
+                    self.assertNotIn("Dashboard", child.stdout.splitlines()[0])
+
+    def test_diagnostic_report_and_public_export_do_not_publish_a_scored_p95(self):
+        with tempfile.TemporaryDirectory() as directory:
+            data = self.tail_case("regressed", only_tail=True)
+            data["removed"] = {}
+            report = Path(directory) / "report.html"
+            bench.report(data, report)
+            markup = report.read_text()
+            self.assertIn("No scored performance verdict", re.search(r"<h1>(.*?)</h1>", markup)[1])
+            self.assertNotIn('id="summary-chart"', markup)
+            self.assertIn("Diagnostic only, not scored: Dashboard", markup)
+            path = Path(directory) / "results.json"
+            output = Path(directory) / "public"
+            bench.write(path, data)
+            stdout = bench.command([sys.executable, "-B", str(root / "ShellBench.py"),
+                                    "export-public", str(path), "--output", str(output)], timeout=10)
+            public = json.loads(stdout)
+            self.assertEqual(public["metrics"], {})
+            self.assertEqual(public["overall"], "unresolved")
+            diagnostic = public["diagnostics"]["panel.dashboard.p95Ms"]
+            self.assertNotIn("verdict", diagnostic)
+            self.assertEqual(diagnostic["diagnosticVerdict"], "regressed")
+
     def test_zero_work_missing_pairs_nan_and_negative_floor_fail(self):
         for mode in ("operations", "checksum", "pairs", "nan"):
             data = self.control()

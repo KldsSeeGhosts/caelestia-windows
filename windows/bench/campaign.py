@@ -421,8 +421,48 @@ def aggregate(rows, seconds):
             "limits": "Private commit, not unique resident RAM. CPU is a diagnostic, not battery energy. Scheduling requires ETW."}
 
 
+def qualification_shaped(data):
+    return (any(key in data for key in ("metrics", "calibration", "inputs", "environment"))
+            or data.get("status") in ("qualified", "partial"))
+
+
+def reproduce_public_qualification(data, bench):
+    """No schema downgrade or missing provenance may bypass export validation."""
+    try:
+        if (data.get("schemaVersion") != 2 or data.get("protocol") != bench.PROTOCOL
+                or not isinstance(data.get("calibration"), dict)
+                or not isinstance(data.get("inputs"), list)
+                or not isinstance(data.get("metrics"), dict) or not data["metrics"]):
+            raise ValueError("Qualification export requires the current schema and complete calibration provenance.")
+        calibration = data["calibration"]
+        if not isinstance(calibration.get("path"), str) or not isinstance(calibration.get("sha256"), str):
+            raise ValueError("Qualification export requires a recorded calibration path and hash.")
+        if bench.sha(calibration["path"]) != calibration["sha256"]:
+            raise ValueError("Qualification calibration changed before public export.")
+        for record in data["inputs"]:
+            if (not isinstance(record, dict) or record.get("group") not in ("aa", "added")
+                    or not isinstance(record.get("path"), str) or not isinstance(record.get("sha256"), str)):
+                raise ValueError("Malformed qualification input provenance.")
+            if bench.sha(record["path"]) != record["sha256"]:
+                raise ValueError("Qualification input changed before public export.")
+        rebuilt, _ = qualification_report(
+            [r["path"] for r in data["inputs"] if r["group"] == "aa"],
+            [r["path"] for r in data["inputs"] if r["group"] == "added"],
+            calibration["path"], bench)
+        if rebuilt != data:
+            raise ValueError("Qualification must reproduce before public summary export.")
+        return rebuilt
+    except (AttributeError, TypeError, KeyError, IndexError) as error:
+        raise ValueError("Malformed qualification evidence cannot be exported.") from error
+
+
 def public_summary(data, bench):
     """Construct only allowlisted fields, never recursive blacklisting/redaction."""
+    if not isinstance(data, dict):
+        raise ValueError("Public export requires an evidence object.")
+    qualification = qualification_shaped(data)
+    if qualification:
+        data = reproduce_public_qualification(data, bench)
     allowed = set(bench.read(HERE / "map.json")["floorsPercent"]) | {"fixture.nsPerOperation"}
     verdicts = {"same", "improved", "regressed", "unresolved"}
     numeric = ("delta", "deltaPercent", "floorPercent", "resolutionPercent")
@@ -432,9 +472,12 @@ def public_summary(data, bench):
     result["evidenceClass"] = (data.get("evidenceClass") if data.get("evidenceClass") in
                                ("fixture", "offscreen-or-isolated-logic", "profile", "process-observation")
                                else "unclassified")
-    if data.get("protocol", {}).get("version") == bench.PROTOCOL:
+    protocol = data.get("protocol")
+    if (protocol.get("version") if isinstance(protocol, dict) else protocol) == bench.PROTOCOL:
         result["protocol"] = bench.PROTOCOL
     if "trials" in data and not result["failureRecorded"]:
+        if not isinstance(protocol, dict):
+            raise ValueError("Acquisition export requires a structured protocol.")
         summary = bench.summarize(data)
         if summary != data.get("summary"):
             raise ValueError("Public export requires a replayable stored summary.")
@@ -453,8 +496,13 @@ def public_summary(data, bench):
                     row[side + "Median"] = value
             policy = claimability(data, name)
             row["observationPolicySatisfied"] = policy["claimable"]
-            result["metrics"][name] = row
-    elif isinstance(data.get("metrics"), dict):
+            if policy["claimable"]:
+                result["metrics"][name] = row
+            else:
+                row["diagnosticVerdict"] = row.pop("verdict")
+                row["claimStatus"] = policy["status"]
+                result.setdefault("diagnostics", {})[name] = row
+    elif qualification:
         # Qualification exports do not include raw receipts, local paths,
         # calibration/environment identities or free-form nominal-effect text.
         for name in sorted(allowed.intersection(data["metrics"])):
@@ -470,13 +518,6 @@ def public_summary(data, bench):
 def export_public(args, bench):
     output = bench.external_output(args.output)
     data = bench.read(args.results)
-    if data.get("schemaVersion") == 2 and "calibration" in data and "inputs" in data:
-        rebuilt, _ = qualification_report(
-            [r["path"] for r in data["inputs"] if r["group"] == "aa"],
-            [r["path"] for r in data["inputs"] if r["group"] == "added"],
-            data["calibration"]["path"], bench)
-        if rebuilt != data:
-            raise ValueError("Qualification must reproduce before public summary export.")
     summary = public_summary(data, bench)
     output.mkdir(parents=True)
     bench.write(output / "public-summary.json", summary)

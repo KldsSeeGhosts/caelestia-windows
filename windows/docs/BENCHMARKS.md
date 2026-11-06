@@ -198,6 +198,12 @@ The existing two-opening workload is marked
 cannot pass `gate` even when all A/A and added-cost verdicts resolve. A protocol
 field cannot lower this hard minimum. This does not qualify rare-stutter claims
 automatically at 200; distribution quality and uncertainty still need review.
+Diagnostic-only metrics remain in raw replay records, but do not contribute
+to scored overall verdicts, headlines, summary charts or acquisition exit codes.
+If no scored metric remains, overall is `unresolved`, never an improvement or
+equivalence claim. Detailed rows explicitly say they are not scored. Reaching
+200 observations restores scoring eligibility, not automatic qualification.
+The promotion gate still requires complete applicable qualification.
 
 Timing plants require actual worker evidence: fired panel timers with measured
 delay; executed startup/reload burn markers; completed assembly/activation
@@ -237,6 +243,12 @@ free-form metadata. It does not recursively copy/redact unknown fields.
 Qualification export also rechecks supporting evidence. Manually review the
 new `public-summary.json` before any separately authorized publication.
 An allowlisted summary is not whole-app certification or upload permission.
+Every qualification-shaped input must reproduce from current complete
+provenance, including direct summary API calls. Old schemas, missing
+calibration, malformed inputs and edited verdicts refuse export. The actual
+qualification protocol is a string, distinct from the acquisition protocol
+object. Diagnostic acquisition metrics are exported separately under
+`diagnostics` with `diagnosticVerdict`, never as scored entries in `metrics`.
 
 ## Explore: bounded Windows and QML profiling
 
