@@ -17,6 +17,8 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'Caelestia-Toolchain.ps1')
+$toolchainSpec = Get-CaelestiaToolchain
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
 if (-not $BuildRoot) { $BuildRoot = Join-Path $repoRoot 'windows\.local\build' }
 $BuildRoot = [IO.Path]::GetFullPath($BuildRoot)
@@ -30,20 +32,19 @@ foreach ($required in @("$QtPrefix\bin\qtpaths.exe", "$LlvmBin\clang-cl.exe", "$
     }
 }
 
-# Enter only this process's VS environment; do not change the user's PATH.
-$installer = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer'
-$vswhere = Join-Path $installer 'vswhere.exe'
-if (-not (Test-Path -LiteralPath $vswhere)) { throw 'Visual Studio Build Tools with C++ tools are required.' }
-$vsRoot = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
-if (-not $vsRoot) { throw 'No Visual Studio installation with the x64 C++ tools was found.' }
-$env:PATH = "$installer;$env:PATH"
-& (Join-Path $vsRoot 'Common7\Tools\Launch-VsDevShell.ps1') -Arch amd64 -HostArch amd64 -SkipAutomaticLocation
-$env:PATH = "$LlvmBin;$QtPrefix\bin;$env:PATH"
-if ($ToolsBin) { $env:PATH = "$ToolsBin;$env:PATH" }
+# Select exact installed VC/SDK and Rust, never the newest installation's
+# default toolset. Only this process's environment is changed.
+$vsInstance = Enter-CaelestiaToolchain -QtPrefix $QtPrefix -LlvmBin $LlvmBin -ToolsBin $ToolsBin
+$vsRoot = $vsInstance.installationPath
+Select-CaelestiaRust
+$toolchain = Get-CaelestiaActualToolchain -QtPrefix $QtPrefix -Cli11Include $Cli11Include
+$toolchain | Add-Member -NotePropertyName vsInstallationVersion -NotePropertyValue $vsInstance.installationVersion
+$toolchain | ConvertTo-Json -Depth 5 |
+    Set-Content -LiteralPath (Join-Path $logRoot 'toolchain.json') -Encoding UTF8
 $manifestTool = Join-Path $env:WindowsSdkDir "bin\$($env:WindowsSDKVersion.TrimEnd('\'))\x64\mt.exe"
 if (-not (Test-Path -LiteralPath $manifestTool)) { throw 'Windows SDK manifest tool is required.' }
 
-$report = & (Join-Path $PSScriptRoot 'Test-Environment.ps1') -QtPrefix $QtPrefix -Json -Strict
+$report = & (Join-Path $PSScriptRoot 'Test-Environment.ps1') -QtPrefix $QtPrefix -Cli11Include $Cli11Include -Json -Strict
 $report | Set-Content -LiteralPath (Join-Path $logRoot 'environment.json') -Encoding UTF8
 if ($LASTEXITCODE -ne 0) { throw 'The prerequisite check failed. See logs/environment.json.' }
 if (& git -C "$repoRoot\windows\deps\quickshell" status --porcelain) {
@@ -99,7 +100,8 @@ function Invoke-BuildCommand([string]$Name, [string[]]$CommandArguments) {
     if ($commandExit -ne 0) { throw "$Name failed. See $logRoot\$Name.log." }
 }
 
-$common = @('-G', 'Ninja', '-DCMAKE_BUILD_TYPE=Release', '-DCMAKE_CXX_COMPILER=clang-cl',
+$common = @('-G', 'Ninja', '-DCMAKE_BUILD_TYPE=Release', "-DCMAKE_CXX_COMPILER:FILEPATH=$LlvmBin\clang-cl.exe",
+    "-DCMAKE_MAKE_PROGRAM:FILEPATH=$((Get-Command ninja.exe -CommandType Application | Select-Object -First 1).Source)",
     '-DCMAKE_LINKER_TYPE=MSVC', "-DCMAKE_MT:FILEPATH=$manifestTool", "-DCMAKE_PREFIX_PATH=$QtPrefix")
 $publicPathMappings = @()
 if ($PublicRelease) {
@@ -140,7 +142,7 @@ if ($PublicRelease) {
     $common += @('-C', $publicCache)
 }
 Invoke-BuildCommand 'configure-backend' (@('-S', "$repoRoot\windows\deps\quickshell",
-    '-B', "$BuildRoot\quickshell") + $common + @('-DCMAKE_C_COMPILER=clang-cl',
+    '-B', "$BuildRoot\quickshell") + $common + @("-DCMAKE_C_COMPILER:FILEPATH=$LlvmBin\clang-cl.exe",
     "-DCLI11_INCLUDE_DIR=$Cli11Include", '-DCRASH_HANDLER=OFF', '-DBUILD_TESTING=OFF', '-DINSTALL_QMLDIR=qml',
     '-DQS_AUTOSTART_NAME=CaelestiaPrototype', '-DQS_AUTOSTART_ARGS=',
     '-DQS_AUTOSTART_DESCRIPTION=Caelestia compatibility prototype'))
@@ -169,7 +171,7 @@ if ($SkipGlazier) {
     New-Item -ItemType Directory -Force -Path $installRoot | Out-Null
     # Keep Cargo's whole target tree inside the disposable build root, never in
     # the submodule or the user's profile. --locked refuses an unpinned update.
-    $cargoArguments = @('build', '--release', '--locked', '--manifest-path', (Join-Path $glazierPath 'Cargo.toml'),
+    $cargoArguments = @('build', '--release', '--locked', '--jobs', "$Jobs", '--target', $toolchainSpec.rustTarget, '--manifest-path', (Join-Path $glazierPath 'Cargo.toml'),
         '--target-dir', (Join-Path $BuildRoot 'glazier-target'))
     $cargoArguments | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $logRoot 'build-glazier-command.json') -Encoding UTF8
     $previousEncodedRustFlags = [Environment]::GetEnvironmentVariable('CARGO_ENCODED_RUSTFLAGS', 'Process')
@@ -207,7 +209,7 @@ if ($SkipGlazier) {
         }
     }
     if ($cargoExit -ne 0) { throw "build-glazier failed. See $logRoot\build-glazier.log." }
-    $glazierExe = Join-Path $BuildRoot 'glazier-target\release\glazier.exe'
+    $glazierExe = Join-Path $BuildRoot "glazier-target\$($toolchainSpec.rustTarget)\release\glazier.exe"
     if (-not (Test-Path -LiteralPath $glazierExe -PathType Leaf)) {
         throw "Glazier built without producing $glazierExe."
     }
@@ -252,8 +254,9 @@ Invoke-BuildCommand 'install-plugins' @('--install', "$BuildRoot\caelestia")
     pluginTests = [bool]$PluginTests
     backendTests = [bool]$Tests
     nativeVersion = $sourceVersion
-    windowsSdkVersion = $env:WindowsSDKVersion
-    msvcToolsVersion = $env:VCToolsVersion
+    toolchain = $toolchain
+    windowsSdkVersion = $toolchain.windowsSdkVersion
+    msvcToolsVersion = $toolchain.vcToolsVersion
     qtVersion = (& "$QtPrefix\bin\qtpaths.exe" --qt-version).Trim()
     qtPrefix = $QtPrefix
     compiler = (& "$LlvmBin\clang-cl.exe" --version | Select-Object -First 1)
@@ -261,5 +264,20 @@ Invoke-BuildCommand 'install-plugins' @('--install', "$BuildRoot\caelestia")
     ninja = (& ninja --version)
     windows = [Environment]::OSVersion.VersionString
     builtAtUtc = [DateTime]::UtcNow.ToString('o')
-} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $logRoot 'build.json') -Encoding UTF8
+} | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $logRoot 'build.json') -Encoding UTF8
+# Explicit public allowlist. Never upload the private build/environment
+# receipts, command arguments, local paths or raw logs as toolchain evidence.
+[ordered]@{
+    schemaVersion = 1
+    toolchain = $toolchain
+    sourceRevision = $fullSourceRevision
+    sourceDirty = [bool]$rawDirty
+    backendRevision = (& git -C "$repoRoot\windows\deps\quickshell" rev-parse HEAD).Trim()
+    m3shapesRevision = $m3shapesRevision
+    glazierRevision = $glazierRevision
+    glazierBundled = -not $SkipGlazier
+    glazierSha256 = $glazierSha256
+    publicRelease = [bool]$PublicRelease
+    builtAtUtc = [DateTime]::UtcNow.ToString('o')
+} | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $logRoot 'toolchain.json') -Encoding UTF8
 Write-Host "Built backend, portable plugins and bundled Glazier. Evidence: $logRoot"

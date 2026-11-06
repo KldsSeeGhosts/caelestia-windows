@@ -1,18 +1,27 @@
-[CmdletBinding()]
+[CmdletBinding(DefaultParameterSetName = 'Assemble')]
 param(
     [Parameter(Mandatory)][string]$BuildRoot,
-    [Parameter(Mandatory)][ValidatePattern('^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$')][string]$ReleaseId,
+    [Parameter(Mandatory, ParameterSetName = 'Assemble')][ValidatePattern('^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$')][string]$ReleaseId,
     # Must not exist. Contains the extracted bundle, ZIP and external digests.
-    [Parameter(Mandatory)][string]$OutputDirectory,
+    [Parameter(Mandatory, ParameterSetName = 'Assemble')][string]$OutputDirectory,
     # Reviewed supplier license/NOTICE texts, not source archives or build logs.
-    [Parameter(Mandatory)][string]$SupplementalNoticesRoot,
+    [Parameter(Mandatory, ParameterSetName = 'Assemble')][string]$SupplementalNoticesRoot,
     [string]$QtPrefix,
-    [string]$VCRuntimeRoot
+    [string]$VCRuntimeRoot,
+    # Read-only preflight of exactly the same guard used by assembly.
+    [Parameter(Mandatory, ParameterSetName = 'ValidateToolchain')][switch]$ValidateToolchainOnly
 )
 
 . (Join-Path $PSScriptRoot 'Caelestia-InstallCommon.ps1')
+. (Join-Path $PSScriptRoot 'Caelestia-Toolchain.ps1')
 if ($env:OS -ne 'Windows_NT' -or -not [Environment]::Is64BitProcess) {
     throw 'Packaging requires 64-bit Windows PowerShell and the existing native build tools.'
+}
+if ($ValidateToolchainOnly) {
+    $receipt = Get-Content -LiteralPath (Join-Path $BuildRoot 'logs\build.json') -Raw | ConvertFrom-Json
+    Assert-CaelestiaBuildToolchain $receipt
+    Write-Output 'Supported build toolchain and runtime receipt.'
+    return
 }
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
 $BuildRoot = Resolve-CaelestiaDirectory $BuildRoot
@@ -53,11 +62,9 @@ if ($build.sourceDirty -ne $false -or $build.publicRelease -ne $true -or $build.
     -not $build.glazierBundled -or $build.qtVersion -notmatch '^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9._-]+)?$') {
     throw 'An exact clean production build record is required.'
 }
-# A toolset update must deliberately raise and revalidate the prerequisite.
-if ($build.msvcToolsVersion -notmatch '^\d+\.\d+\.\d+(?:\.\d+)?$' -or
-    [version]$build.msvcToolsVersion -gt [version]'14.44.35211.0') {
-    throw 'The build toolset exceeds the reviewed system runtime prerequisite; update and validate it before packaging.'
-}
+# Builds and packaging share the exact toolchain and runtime compatibility
+# guard. Old/incomplete receipts require a rebuild, never a relaxed guard.
+Assert-CaelestiaBuildToolchain $build
 $lock = Get-Content -LiteralPath "$repoRoot\windows\sources.lock.json" -Raw | ConvertFrom-Json
 $dependencies = [ordered]@{}
 foreach ($name in @('quickshell', 'm3shapes', 'glazier')) {
@@ -80,16 +87,21 @@ if ($revision -ne $build.sourceRevision) {
     $null = Invoke-ReleaseGit $repoRoot @('merge-base', '--is-ancestor', $build.sourceRevision, $revision)
     $changed = @(Invoke-ReleaseGit $repoRoot @('diff', '--name-only', $build.sourceRevision, $revision))
     if (@($changed | Where-Object {
-        $_ -match '^plugin/|^cmake/|^windows/deps/|^windows/scripts/Build-|\.(cpp|hpp|h|c|cc|cmake|qrc)$|(^|/)(CMakeLists\.txt|Cargo\.toml|Cargo\.lock)$'
+        $_ -match '^plugin/|^cmake/|^windows/deps/|^windows/toolchain[/.]|^windows/scripts/(Build-|Caelestia-Toolchain|Prepare-Toolchain)|\.(cpp|hpp|h|c|cc|cmake|qrc)$|(^|/)(CMakeLists\.txt|Cargo\.toml|Cargo\.lock)$'
     }).Count) { throw 'Native inputs changed since this build; rebuild before packaging.' }
 }
 if (-not $QtPrefix) { $QtPrefix = [string]$build.qtPrefix }
 if (-not $QtPrefix) { throw 'The matching Qt deployment prefix is required only on the packaging machine.' }
 $QtPrefix = Resolve-CaelestiaDirectory $QtPrefix
+$deploymentQtVersion = (& "$QtPrefix\bin\qtpaths.exe" --qt-version) -join ''
+if ($LASTEXITCODE -ne 0 -or $deploymentQtVersion.Trim() -cne $build.toolchain.qtVersion) {
+    throw 'The deployment Qt prefix does not match the supported build receipt. Use the exact reviewed Qt SDK.'
+}
 if (-not $VCRuntimeRoot) {
     $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
-    $vsRoot = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
-    if ($LASTEXITCODE -ne 0 -or -not $vsRoot) { throw 'Cannot establish the matching Visual C++ runtime origin.' }
+    $instances = & $vswhere -all -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -format json | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 0) { throw 'Cannot establish the matching Visual C++ runtime origin.' }
+    $vsRoot = (Select-CaelestiaVisualStudio $instances).installationPath
     $version = Get-ChildItem -LiteralPath (Join-Path $vsRoot 'VC\Redist\MSVC') -Directory |
         Where-Object { $_.Name -match '^\d+\.\d+\.\d+$' } |
         Sort-Object { [version]$_.Name } -Descending | Select-Object -First 1
@@ -297,10 +309,11 @@ try {
         schema = 'caelestia-windows-release'; version = 1; platform = 'windows-x64'
         releaseId = $ReleaseId; sourceRevision = $revision; nativeSourceRevision = $build.sourceRevision
         backendRevision = $build.backendRevision; qtVersion = $build.qtVersion
+        toolchain = $build.toolchain
         dependencies = $dependencies; nativeInputs = $nativeInputs
         prerequisites = [ordered]@{
             visualCppRuntime = [ordered]@{
-                deployment = 'system'; architecture = 'x64'; minimumVersion = '14.44.35211.0'
+                deployment = 'system'; architecture = 'x64'; minimumVersion = (Get-CaelestiaToolchain).runtimeMinimum
                 downloadUrl = 'https://aka.ms/vc14/vc_redist.x64.exe'
             }
         }
