@@ -30,8 +30,14 @@ if ($Command -eq 'Status') {
         previous = $(if ($previous) { $previous.versionId } else { '' })
         previousRevision = $(if ($previous) { $previous.sourceRevision } else { '' })
         canRollback = $null -ne $previous
-        # No release assets/feed are published yet. Never equate a GitHub
-        # source commit with a downloadable, authenticated Windows update.
+        # Public previews are manually downloadable. This command reads only
+        # installed state; it neither checks remote versions nor downloads.
+        automaticUpdatesAvailable = $false
+        remoteVersionChecked = $false
+        latestVersion = $null
+        manualReleaseUrl = 'https://github.com/KldsSeeGhosts/caelestia-windows/releases'
+        # Compatibility field: means an automatic/authenticated channel,
+        # never the existence of a public manual download.
         downloadChannelAvailable = $false
         releasesUrl = 'https://github.com/KldsSeeGhosts/caelestia-windows/releases'
     } | ConvertTo-Json

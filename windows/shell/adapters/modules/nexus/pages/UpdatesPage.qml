@@ -9,6 +9,7 @@ import Caelestia.I18n
 import qs.components
 import qs.services
 import qs.modules.nexus.common
+import "UpdatesLogic.js" as UpdatesLogic
 
 // Windows page for the "Updates" entry. Upstream's registry still maps this
 // entry to PlaceholderComp (caelestia-dots/shell main, stable and feat/plugins
@@ -16,8 +17,9 @@ import qs.modules.nexus.common
 // `caelestia update`, so there is no upstream design to adapt. This page is
 // built from the same nexus rows as AboutPage and AppsPage.
 //
-// It only reports and switches installed versions. No release feed or download
-// channel is published yet, so nothing here checks the network, downloads or
+// It only reports and switches installed versions. Public previews are available
+// for manual download, but no automatic update channel is implemented.
+// Nothing here checks the network, downloads or
 // claims an update is available. The version status comes from the stable
 // install root's Manage-Caelestia.ps1 (`-Command Status`, which touches neither
 // the desktop nor the network). Rollback queues an independent maintenance task
@@ -29,7 +31,11 @@ import qs.modules.nexus.common
 PageBase {
     id: root
 
-    readonly property string releasesUrl: "https://github.com/KldsSeeGhosts/caelestia-windows/releases"
+    readonly property var updateStatus: UpdatesLogic.normalize(loaded ? info : null)
+    readonly property string releasesUrl: updateStatus.manualReleaseUrl
+    // Declarative action boundary also lets offscreen fixtures record the target
+    // without opening a browser in the user's session.
+    property var openReleasePage: url => Qt.openUrlExternally(url)
 
     readonly property string installRoot: String(Quickshell.env("CAELESTIA_INSTALL_ROOT") ?? "")
     readonly property string runningId: String(Quickshell.env("CAELESTIA_VERSION_ID") ?? "")
@@ -49,10 +55,10 @@ PageBase {
 
     readonly property bool loaded: loadState === "ready" && info !== null
     readonly property bool busy: loadState === "loading" || rollbackSubmitted
-    readonly property bool versioned: loaded && info.versioned === true
-    readonly property string selectedId: loaded ? String(info.current ?? "") : ""
-    readonly property string previousId: loaded ? String(info.previous ?? "") : ""
-    readonly property string previousRevision: loaded ? String(info.previousRevision ?? "") : ""
+    readonly property bool versioned: loaded && updateStatus.versioned
+    readonly property string selectedId: loaded ? updateStatus.current : ""
+    readonly property string previousId: loaded ? updateStatus.previous : ""
+    readonly property string previousRevision: loaded ? updateStatus.previousRevision : ""
     // The shell was started from an older version than the one now selected.
     readonly property bool stale: loaded && runningId !== "" && selectedId !== "" && selectedId !== runningId
     readonly property string runningLabel: runningId === "" ? Tr.tr("Unknown") : runningId === "legacy" ? Tr.tr("Legacy install") : runningId
@@ -71,7 +77,7 @@ PageBase {
             return Tr.tr("This install does not keep earlier versions");
         if (stale)
             return Tr.tr("Restart Caelestia first; a different version is selected");
-        if (info.canRollback !== true || previousId === "")
+        if (!updateStatus.canRollback)
             return Tr.tr("No earlier version is kept");
         return "";
     }
@@ -138,15 +144,8 @@ PageBase {
         }
 
         onExited: code => {
-            let data = null;
-            if (code === 0) {
-                try {
-                    data = JSON.parse(statusOut.text.trim());
-                } catch (error) {
-                    data = null;
-                }
-            }
-            if (data && data.schema === 1) {
+            const data = UpdatesLogic.parseStatus(code, statusOut.text.trim());
+            if (data) {
                 root.info = data;
                 root.loadState = "ready";
             } else {
@@ -274,18 +273,26 @@ PageBase {
 
         InfoRow {
             first: true
+            icon: "help"
+            label: Tr.tr("Latest public version")
+            subtext: Tr.tr("This page does not check online for new versions")
+            value: Tr.tr("Unknown")
+        }
+
+        InfoRow {
             icon: "cloud_off"
-            label: Tr.tr("Download channel")
-            subtext: Tr.tr("No releases are published yet, so Caelestia cannot download updates")
+            label: Tr.tr("Automatic updates")
+            subtext: Tr.tr("Download and verify a release, then run its installer to update")
             value: Tr.tr("Not available")
         }
 
         RowButton {
+            objectName: "manualReleasesButton"
             last: true
             icon: "open_in_new"
-            text: Tr.tr("View releases")
-            subtext: Tr.tr("Opens the project page in your browser")
-            onClicked: Qt.openUrlExternally(root.releasesUrl)
+            text: Tr.tr("View manual downloads")
+            subtext: Tr.tr("Public previews and verification instructions on GitHub")
+            onClicked: root.openReleasePage(root.releasesUrl)
         }
     }
 }
