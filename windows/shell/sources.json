@@ -349,6 +349,7 @@
   "windows/shell/adapters/modules/nexus/pages/NetworkPage.qml": "modules/nexus/pages/NetworkPage.qml",
   "windows/shell/adapters/modules/nexus/pages/ServicesPage.qml": "modules/nexus/pages/ServicesPage.qml",
   "windows/shell/adapters/modules/nexus/pages/UpdatesPage.qml": "modules/nexus/pages/UpdatesPage.qml",
+  "windows/shell/adapters/modules/nexus/pages/UpdatesLogic.js": "modules/nexus/pages/UpdatesLogic.js",
   "windows/shell/adapters/modules/nexus/pages/wallandstyle/WallpaperCategory.qml": "modules/nexus/pages/wallandstyle/WallpaperCategory.qml",
   "windows/shell/adapters/modules/nexus/pages/wallandstyle/WallpaperSelect.qml": "modules/nexus/pages/wallandstyle/WallpaperSelect.qml",
   "windows/shell/adapters/modules/nexus/pages/WindowManagementPage.qml": "modules/nexus/pages/WindowManagementPage.qml",
