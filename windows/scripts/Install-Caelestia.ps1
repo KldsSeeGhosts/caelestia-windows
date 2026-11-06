@@ -272,6 +272,7 @@ try {
         sourceRevision = (& git -C $repoRoot rev-parse HEAD).Trim()
         backendRevision = $(if ($buildInfo) { $buildInfo.backendRevision } else { '' })
         glazierRevision = $(if ($buildInfo) { [string]$buildInfo.glazierRevision } else { '' })
+        captureSourcePath = $(if ($buildInfo) { [string]$buildInfo.captureSourcePath } else { '' })
         captureSourceRevision = $(if ($buildInfo) { [string]$buildInfo.captureSourceRevision } else { '' })
         captureOriginRevision = $(if ($buildInfo) { [string]$buildInfo.captureOriginRevision } else { '' })
         captureCargoLockSha256 = $(if ($buildInfo) { [string]$buildInfo.captureCargoLockSha256 } else { '' })

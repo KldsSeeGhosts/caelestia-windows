@@ -94,6 +94,24 @@ function Test-ReleaseVCRuntime([version]$MinimumVersion) {
     }
 }
 
+# Pure-data validation. Kept verbatim in the standalone release bootstrap so
+# no supplied bundle code is loaded before complete verification.
+function Assert-CaelestiaCaptureRelease {
+    param([Parameter(Mandatory)]$Capture, [Parameter(Mandatory)][string]$NativeSourceRevision,
+        [Parameter(Mandatory)][string]$ExecutableSha256)
+    if ($Capture.representation -cne 'in-tree' -or $Capture.path -cne 'windows/capture' -or
+        $NativeSourceRevision -cnotmatch '^[a-f0-9]{40}$' -or
+        $Capture.sourceRevision -cne $NativeSourceRevision -or
+        $Capture.originRepository -cne 'https://github.com/KldsSeeGhosts/glazier.git' -or
+        $Capture.originRevision -cne '37f795041cbbb32ed46cba103f3f000a3a99ac13' -or
+        $Capture.cargoLockSha256 -cnotmatch '^[a-f0-9]{64}$' -or
+        $Capture.executable -cne 'caelestia-capture.exe' -or
+        $Capture.sha256 -cnotmatch '^[a-f0-9]{64}$' -or
+        $ExecutableSha256.ToLowerInvariant() -cne $Capture.sha256) {
+        throw 'Invalid first-party capture release provenance.'
+    }
+}
+
 function Test-ReleaseBundle([string]$Root, [string]$ExpectedHash = '') {
     $Root = Assert-ReleaseDirectory $Root
     # Enumerate manually, without following junctions even once. This also
@@ -121,7 +139,6 @@ function Test-ReleaseBundle([string]$Root, [string]$ExpectedHash = '') {
         $manifest.nativeSourceRevision -notmatch '^[a-f0-9]{40}$' -or $manifest.backendRevision -notmatch '^[a-f0-9]{40}$' -or
         $manifest.releaseId -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$' -or
         $manifest.dependencies.quickshell.revision -ne $manifest.backendRevision -or
-        $manifest.dependencies.glazier.revision -notmatch '^[a-f0-9]{40}$' -or
         $manifest.dependencies.m3shapes.revision -notmatch '^[a-f0-9]{40}$' -or
         $manifest.prerequisites.visualCppRuntime.deployment -ne 'system' -or
         $manifest.prerequisites.visualCppRuntime.architecture -ne 'x64' -or
@@ -129,6 +146,11 @@ function Test-ReleaseBundle([string]$Root, [string]$ExpectedHash = '') {
         $manifest.prerequisites.visualCppRuntime.downloadUrl -ne 'https://aka.ms/vc14/vc_redist.x64.exe' -or
         -not $manifest.files -or $manifest.relocation -ne 'profile-pragmas-v1') {
         throw 'Unsupported or incomplete release manifest.'
+    }
+    $firstPartyCapture = $null -ne $manifest.dependencies.capture
+    $captureExecutable = if ($firstPartyCapture) { 'caelestia-capture.exe' } else { 'glazier.exe' }
+    if (-not $firstPartyCapture -and $manifest.dependencies.glazier.revision -notmatch '^[a-f0-9]{40}$') {
+        throw 'Missing capture release provenance.'
     }
     $listed = @{}
     $parents = @{}
@@ -163,7 +185,7 @@ function Test-ReleaseBundle([string]$Root, [string]$ExpectedHash = '') {
     }
     foreach ($required in @(
         'Install.cmd', 'Install-CaelestiaRelease.ps1', 'INSTALL-RELEASE.md',
-        'payload/qs.exe', 'payload/glazier.exe', 'payload/qt.conf',
+        'payload/qs.exe', "payload/$captureExecutable", 'payload/qt.conf',
         'payload/Qt6Core.dll', 'payload/Qt6Qml.dll', 'payload/Qt6Quick.dll',
         'payload/plugins/platforms/qwindows.dll', 'payload/qml/Caelestia/Windows/qmldir',
         'payload/qml/M3Shapes/qmldir', 'payload/m3shapes.dll', 'payload/shell/shell.qml',
@@ -182,6 +204,26 @@ function Test-ReleaseBundle([string]$Root, [string]$ExpectedHash = '') {
     )) {
         if (-not $listed.ContainsKey($required)) { throw "Incomplete release: $required" }
     }
+    if ($firstPartyCapture) {
+        $capture = $manifest.dependencies.capture
+        $captureHash = (Get-FileHash -LiteralPath (Join-Path $Root "payload\$captureExecutable") -Algorithm SHA256).Hash
+        Assert-CaelestiaCaptureRelease $capture $manifest.nativeSourceRevision $captureHash
+        if ($listed.ContainsKey('payload/glazier.exe') -or
+            -not $listed.ContainsKey('payload/licenses/Caelestia-Capture-ORIGIN.md')) {
+            throw 'First-party capture requires its origin notice and a single helper identity.'
+        }
+        # Read only already hash-verified JSON. Bootstrap executes no supplied
+        # capture/maintenance code during provenance validation.
+        $sourceLock = Get-Content -LiteralPath (Join-Path $Root 'payload\licenses\sources.lock.json') -Raw | ConvertFrom-Json
+        $pin = $sourceLock.glazier
+        if ($pin.representation -cne 'in-tree' -or $pin.sourceRevision -cne 'shell' -or
+            $pin.path -cne $capture.path -or $pin.repository -cne $capture.originRepository -or
+            $pin.originRevision -cne $capture.originRevision -or $pin.revision -cne $capture.originRevision -or
+            $pin.cargoLockPath -cne 'windows/capture/Cargo.lock' -or
+            $pin.cargoLockSha256 -cne $capture.cargoLockSha256 -or $pin.executable -cne $captureExecutable) {
+            throw 'Capture release descriptor and bundled source lock disagree.'
+        }
+    }
     $header = "//@ pragma DataDir @CAELESTIA_PROFILE@/data`n//@ pragma StateDir @CAELESTIA_PROFILE@/state`n//@ pragma CacheDir @CAELESTIA_PROFILE@/cache`n"
     $shell = [IO.File]::ReadAllText((Join-Path $Root 'payload\shell\shell.qml'))
     if (-not $shell.StartsWith($header, [StringComparison]::Ordinal) -or
@@ -194,6 +236,8 @@ function Test-ReleaseBundle([string]$Root, [string]$ExpectedHash = '') {
 $BundleRoot = Assert-ReleaseDirectory $BundleRoot
 $verified = Test-ReleaseBundle $BundleRoot $ExpectedManifestSha256
 $release = $verified.Manifest
+$captureRelease = $release.dependencies.capture
+$captureExecutable = if ($null -ne $captureRelease) { 'caelestia-capture.exe' } else { 'glazier.exe' }
 $verifiedManifestHash = $verified.Sha256
 if ((Get-FileHash -LiteralPath (Join-Path $BundleRoot 'release.json') -Algorithm SHA256).Hash -ne $verifiedManifestHash) {
     throw 'Release manifest changed during verification.'
@@ -271,9 +315,16 @@ try {
     [ordered]@{
         product = 'caelestia-windows'; version = 1; prefix = $Prefix; profile = $ProfileRoot
         installId = $context.InstallId; sourceRevision = $release.sourceRevision
-        backendRevision = $release.backendRevision; glazierRevision = $release.dependencies.glazier.revision
+        backendRevision = $release.backendRevision
+        glazierRevision = $(if ($captureRelease) { $captureRelease.originRevision } else { $release.dependencies.glazier.revision })
+        captureSourcePath = $(if ($captureRelease) { $captureRelease.path } else { '' })
+        captureSourceRevision = $(if ($captureRelease) { $captureRelease.sourceRevision } else { '' })
+        captureOriginRevision = $(if ($captureRelease) { $captureRelease.originRevision } else { '' })
+        captureCargoLockSha256 = $(if ($captureRelease) { $captureRelease.cargoLockSha256 } else { '' })
+        captureExecutable = $captureExecutable
+        captureSha256 = $(if ($captureRelease) { (Get-FileHash -LiteralPath "$payload\$captureExecutable" -Algorithm SHA256).Hash.ToLowerInvariant() } else { '' })
         executableSha256 = (Get-FileHash -LiteralPath "$payload\qs.exe" -Algorithm SHA256).Hash
-        glazierSha256 = (Get-FileHash -LiteralPath "$payload\glazier.exe" -Algorithm SHA256).Hash
+        glazierSha256 = (Get-FileHash -LiteralPath "$payload\$captureExecutable" -Algorithm SHA256).Hash
         releaseId = $release.releaseId
         releaseManifestSha256 = (Get-FileHash -LiteralPath "$payload\release-manifest.json" -Algorithm SHA256).Hash
         relocatedShellSha256 = $shellHash

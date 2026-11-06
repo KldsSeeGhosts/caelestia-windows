@@ -46,3 +46,21 @@ function Test-CaelestiaCaptureNativeInput {
     param([Parameter(Mandatory)][string]$Path)
     return $Path -match '^plugin/|^cmake/|^windows/(capture/|deps/|sources\.lock\.json$|toolchain[/.])|^windows/scripts/(Build-|Caelestia-Toolchain|Prepare-Toolchain)|\.(rs|cpp|hpp|h|c|cc|cmake|qrc)$|(^|/)(CMakeLists\.txt|Cargo\.toml|Cargo\.lock)$'
 }
+
+# Pure-data validation. Kept verbatim in the standalone release bootstrap so
+# no supplied bundle code is loaded before complete verification.
+function Assert-CaelestiaCaptureRelease {
+    param([Parameter(Mandatory)]$Capture, [Parameter(Mandatory)][string]$NativeSourceRevision,
+        [Parameter(Mandatory)][string]$ExecutableSha256)
+    if ($Capture.representation -cne 'in-tree' -or $Capture.path -cne 'windows/capture' -or
+        $NativeSourceRevision -cnotmatch '^[a-f0-9]{40}$' -or
+        $Capture.sourceRevision -cne $NativeSourceRevision -or
+        $Capture.originRepository -cne 'https://github.com/KldsSeeGhosts/glazier.git' -or
+        $Capture.originRevision -cne '37f795041cbbb32ed46cba103f3f000a3a99ac13' -or
+        $Capture.cargoLockSha256 -cnotmatch '^[a-f0-9]{64}$' -or
+        $Capture.executable -cne 'caelestia-capture.exe' -or
+        $Capture.sha256 -cnotmatch '^[a-f0-9]{64}$' -or
+        $ExecutableSha256.ToLowerInvariant() -cne $Capture.sha256) {
+        throw 'Invalid first-party capture release provenance.'
+    }
+}

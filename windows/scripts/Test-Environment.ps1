@@ -119,18 +119,14 @@ if (-not $m3shapesMatches) {
     $blockers.Add('M3Shapes is absent or does not match sources.lock.json; initialize the pinned submodule.')
 }
 
-$glazierPath = Join-Path $repoRoot $lock.glazier.path
-$glazierRevision = $null
-if ($git -and (Test-Path -LiteralPath (Join-Path $glazierPath '.git'))) {
-    $glazierRevision = & $git.Source -C $glazierPath rev-parse HEAD
-    if ($LASTEXITCODE -ne 0) { throw 'Could not read the initialized Glazier revision.' }
-    $glazierRevision = $glazierRevision.Trim()
+$captureSource = $null
+try {
+    . (Join-Path $repoRoot 'windows\capture\Source.ps1')
+    $captureSource = Get-CaelestiaCaptureSource $repoRoot
+} catch {
+    $blockers.Add("First-party capture source is invalid: $($_.Exception.Message)")
 }
-$glazierMatches = $glazierRevision -eq $lock.glazier.revision
-if (-not $glazierMatches) {
-    $blockers.Add('Glazier is absent or does not match sources.lock.json; initialize the pinned submodule.')
-}
-$sourceMatches = $backendMatches -and $m3shapesMatches -and $glazierMatches
+$sourceMatches = $backendMatches -and $m3shapesMatches -and $null -ne $captureSource
 $toolchain = $null
 try {
     if (-not $QtPrefix) { throw 'Supply -QtPrefix and -Cli11Include in the selected VC/SDK environment, or use Build-Prototype.ps1.' }
@@ -148,8 +144,11 @@ $report = [pscustomobject][ordered]@{
         actualBackendRevision = $backendRevision
         expectedM3ShapesRevision = $lock.m3shapes.revision
         actualM3ShapesRevision = $m3shapesRevision
-        expectedGlazierRevision = $lock.glazier.revision
-        actualGlazierRevision = $glazierRevision
+        captureRepresentation = 'in-tree'
+        captureSourcePath = $(if ($captureSource) { $captureSource.relativePath } else { $null })
+        captureSourceRevision = $(if ($captureSource) { $captureSource.sourceRevision } else { $null })
+        captureOriginRevision = $(if ($captureSource) { $captureSource.originRevision } else { $null })
+        captureCargoLockSha256 = $(if ($captureSource) { $captureSource.cargoLockSha256 } else { $null })
         matches = $sourceMatches
     }
     tools = @($tools.ToArray())

@@ -46,6 +46,9 @@ source. The lock's `representation: in-tree`, `sourceRevision: shell`,
 - `Test-CaelestiaCaptureNativeInput <relative-path>`: shared install/release
   reuse classifier. Every `windows/capture/**` input, Rust source, dependency
   path, lock, toolchain or build script change requires rebuilding.
+- `Assert-CaelestiaCaptureRelease <descriptor> <native-source-SHA> <exe-SHA>`:
+  pure-data release validation. The standalone installer contains the exact
+  function body, tested for parity, so bootstrap imports no bundle code.
 
 Build receipt authoritative fields are `captureSourcePath`,
 `captureSourceRevision` (actual shell build SHA), `captureOriginRevision`,
@@ -68,6 +71,8 @@ From a native Windows PowerShell prompt at the repository root:
 powershell -NoProfile -NonInteractive -File windows/scripts/Test-CaptureIntegration.ps1
 powershell -NoProfile -NonInteractive -File windows/scripts/Test-CaptureRust.ps1 `
   -ToolRoot D:/tools -OutputRoot D:/validation/capture-rust -Jobs 2
+powershell -NoProfile -NonInteractive -File windows/scripts/Test-CaptureRelease.ps1 `
+  -OutputRoot D:/validation/capture-release
 ```
 
 Use a new output directory. `ToolRoot` is read-only canonical reviewed tooling,
@@ -105,9 +110,16 @@ native work.
 
 ## Retained integration/acceptance gates
 
-Capture-only changes must also reach the root-owned environment preflight,
-smoke payload path/hash checks, release installer inventory/receipt, license
-fixtures and lifecycle receipt source fields. The source-notice assembler recipe
+The environment preflight validates the in-tree source/lock through the shared
+helper. Smoke validates the capture build and executable, refuses changed capture
+inputs, and stages the first-party executable without launching it. The release
+installer verifies first-party capture descriptor, binary digest, bundled source
+lock and origin notice before any supplied code or activation. Existing legacy
+release packages remain supported on their legacy path. Its new fixture uses
+`-VerifyOnly` with synthetic bundles, never an installation.
+
+Root retains license fixtures, lifecycle receipt source fields, aggregate test
+registration and final pair pins/review. The source-notice assembler recipe
 must take this in-tree source from the shell archive, preserve origin, and
 inventory the current Cargo.lock. Do not create an upstream capture source
 checkout/archive requirement. Root owns these adjacent file leases and the final

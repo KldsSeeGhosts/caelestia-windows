@@ -93,6 +93,7 @@ $dependencies['capture'] = [ordered]@{
     cargoLockSha256 = $captureSource.cargoLockSha256
     executable = $captureSource.executable; sha256 = $build.captureSha256
 }
+Assert-CaelestiaCaptureRelease ([pscustomobject]$dependencies.capture) $build.sourceRevision $build.captureSha256
 $dependencies['schemeCli'] = [ordered]@{ repository = $lock.schemeCli.repository; revision = $lock.schemeCli.revision; pythonPackages = $lock.schemeCli.pythonPackages }
 $dependencies['fonts'] = $lock.fonts
 if ($revision -ne $build.sourceRevision) {

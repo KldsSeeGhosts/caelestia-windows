@@ -97,16 +97,16 @@ try {
     if ([string]$buildRecord.m3shapesRevision -ne [string]$lock.m3shapes.revision) {
         throw "M3Shapes pin mismatch: build has $($buildRecord.m3shapesRevision), windows/sources.lock.json pins $($lock.m3shapes.revision)."
     }
-    if ($buildRecord.glazierBundled -eq $false) {
-        throw 'Build skipped the bundled Glazier; rebuild without -SkipGlazier.'
-    }
-    if ([string]$buildRecord.glazierRevision -ne [string]$lock.glazier.revision) {
-        throw "Glazier pin mismatch: build has $($buildRecord.glazierRevision), windows/sources.lock.json pins $($lock.glazier.revision)."
-    }
-    $stagedGlazier = Join-Path $BuildRoot 'install\glazier.exe'
-    if (-not (Test-Path -LiteralPath $stagedGlazier -PathType Leaf) -or
-        (Get-FileHash -LiteralPath $stagedGlazier -Algorithm SHA256).Hash.ToLowerInvariant() -ne [string]$buildRecord.glazierSha256) {
-        throw 'The staged bundled Glazier is missing or does not match build.json.'
+    . (Join-Path $repoRoot 'windows\capture\Source.ps1')
+    $captureSource = Get-CaelestiaCaptureSource $repoRoot
+    $stagedCapture = Join-Path $BuildRoot 'install\caelestia-capture.exe'
+    Assert-CaelestiaCaptureBuild $buildRecord $captureSource $stagedCapture
+    if ($captureSource.sourceRevision -cne $buildRecord.captureSourceRevision) {
+        $changedCapture = @(& git -C $repoRoot diff --name-only $buildRecord.captureSourceRevision `
+            $captureSource.sourceRevision -- windows/capture windows/sources.lock.json)
+        if ($LASTEXITCODE -ne 0 -or $changedCapture.Count) {
+            throw 'Capture source changed since the recorded build; rebuild before smoke.'
+        }
     }
 
     if ($StageRoot) {
@@ -127,7 +127,7 @@ try {
         }
         # Mirror the installed payload layout: the shell resolves its bundled
         # tool beside the staged shell's parent, not from a separate install.
-        Copy-Item -LiteralPath $stagedGlazier -Destination (Join-Path $run 'glazier.exe')
+        Copy-Item -LiteralPath $stagedCapture -Destination (Join-Path $run 'caelestia-capture.exe')
     }
 
     # Seed only the profile files these services read. Inert binds take the
