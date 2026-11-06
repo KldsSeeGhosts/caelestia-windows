@@ -1,0 +1,3 @@
+module Caelestia
+FixtureStub 1.0 FixtureStub.qml
+singleton CUtils 1.0 CUtils.qml

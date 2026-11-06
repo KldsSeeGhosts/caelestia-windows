@@ -8,7 +8,8 @@ param(
     [ValidateRange(1, 64)][int]$Jobs = 4,
     # Remap native source paths before distributing the resulting binaries.
     [switch]$PublicRelease,
-    # Retained so obsolete private-harness requests fail explicitly.
+    [switch]$PluginTests,
+    # Retained so unavailable backend-native test requests fail explicitly.
     [switch]$Tests,
     # Offscreen fixtures only. Production payloads always bundle Glazier.
     [switch]$SkipGlazier
@@ -16,7 +17,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 if ($Tests) {
-    throw 'Private test sources are not shipped. Build production without -Tests; use Test-Smoke.ps1 for the public smoke gate.'
+    throw 'The pinned backend does not ship its standalone native fixtures. Build without -Tests, then use Test-Validation.ps1 and Test-Smoke.ps1 for public validation.'
 }
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
 if (-not $BuildRoot) { $BuildRoot = Join-Path $repoRoot 'windows\.local\build' }
@@ -227,7 +228,7 @@ $fullSourceRevision = if ($fullRevExit -eq 0 -and $rawFullRevision) { "$rawFullR
 Invoke-BuildCommand 'configure-plugins' (@('-S', $repoRoot, '-B', "$BuildRoot\caelestia") + $common +
     @('-DCAELESTIA_PORTABLE_UI=ON', '-DENABLE_MODULES=plugin', '-DINSTALL_QMLDIR=qml',
     "-DCMAKE_INSTALL_PREFIX=$installRoot", "-DVERSION=$sourceVersion", "-DGIT_REVISION=$sourceRevision",
-    '-DCAELESTIA_WINDOWS_TESTS=OFF'))
+    "-DCAELESTIA_WINDOWS_TESTS=$(if ($PluginTests) { 'ON' } else { 'OFF' })"))
 Invoke-BuildCommand 'build-plugins' @('--build', "$BuildRoot\caelestia", '--parallel', "$Jobs")
 Invoke-BuildCommand 'install-plugins' @('--install', "$BuildRoot\caelestia")
 
@@ -240,6 +241,7 @@ Invoke-BuildCommand 'install-plugins' @('--install', "$BuildRoot\caelestia")
     glazierSha256 = $glazierSha256
     glazierBundled = -not $SkipGlazier
     publicRelease = [bool]$PublicRelease
+    pluginTests = [bool]$PluginTests
     nativeVersion = $sourceVersion
     windowsSdkVersion = $env:WindowsSDKVersion
     msvcToolsVersion = $env:VCToolsVersion
