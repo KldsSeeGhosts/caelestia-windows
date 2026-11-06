@@ -139,7 +139,8 @@ made with `Build-Prototype.ps1 -PublicRelease`:
 ```powershell
 .\windows\scripts\New-CaelestiaRelease.ps1 `
     -BuildRoot $testedBuildRoot -ReleaseId $previewId `
-    -OutputDirectory $newOutputDirectory -QtPrefix $matchingQtPrefix `
+    -OutputDirectory $newOutputDirectory -SupplementalNoticesRoot $verifiedNoticesRoot `
+    -QtPrefix $matchingQtPrefix `
     -VCRuntimeRoot $matchingX64CrtDirectory
 ```
 
@@ -148,6 +149,12 @@ an owned temporary prefix. It does not build native inputs or modify the
 supplied build. A descendant packaging/QML-only candidate can reuse the native
 build only if native inputs and dependency pins still match. Qt deployment and
 supervisor compilation are packaging-time work, not user prerequisites.
+The supplemental notice tree must contain the reviewed supplier license,
+copyright, NOTICE and provenance texts for the exact linked dependencies,
+including Qt's embedded third parties, CLI11, Rust and the locked Rust crates.
+It is copied without overwriting existing notices, checked by SHA-256, included
+in the release manifest and scanned by the same privacy guard. Corresponding
+source archives are separate release assets, not files to put in that tree.
 
 Output contains one extracted bundle, one ZIP, a ZIP SHA256 file and an external
 manifest SHA256 file. Output must not already exist. A failed assembly leaves

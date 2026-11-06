@@ -99,9 +99,14 @@ function Test-ReleaseBundle([string]$Root, [string]$ExpectedHash = '') {
     foreach ($entry in $manifest.files) {
         $relative = [string]$entry.path
         $path = Resolve-ReleaseFile $Root $relative
+        # Supplier notice trees preserve upstream attribution paths, including
+        # licenses from upstream tests. They are data, never runtime test wiring.
+        $supplementalNotice = $relative.StartsWith('payload/licenses/supplemental/', [StringComparison]::Ordinal)
         if ($relative -eq 'release.json' -or $listed.ContainsKey($relative) -or
             (-not $relative.StartsWith('payload/', [StringComparison]::Ordinal) -and $relative -notin @('Install.cmd', 'Install-CaelestiaRelease.ps1', 'INSTALL-RELEASE.md')) -or
-            $relative -match '(^|/)(\.git|tests?|screenshots?|evidence)(/|$)|\.pdb$|^payload/(install\.json|build\.json|versions|profile|config|runtime|logs?|cache|state|data)(/|$)' -or
+            $relative -match '(^|/)(\.git|\.zcode|screenshots?|evidence)(/|$)|\.pdb$|^payload/(install\.json|build\.json|versions|profile|config|runtime|logs?|cache|state|data)(/|$)' -or
+            ($relative -match '(^|/)tests?(/|$)' -and -not $supplementalNotice) -or
+            ($supplementalNotice -and [IO.Path]::GetExtension($relative) -in @('.exe', '.dll', '.pdb', '.zip', '.7z', '.tar', '.xz')) -or
             [string]$entry.sha256 -notmatch '^[a-fA-F0-9]{64}$' -or
             ($entry.size -isnot [long] -and $entry.size -isnot [int])) { throw 'Invalid or duplicate release file record.' }
         if (-not $actual.ContainsKey($relative) -or $actual[$relative].Length -ne $entry.size -or

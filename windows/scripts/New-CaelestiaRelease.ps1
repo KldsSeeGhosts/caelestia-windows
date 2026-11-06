@@ -4,6 +4,8 @@ param(
     [Parameter(Mandatory)][ValidatePattern('^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$')][string]$ReleaseId,
     # Must not exist. Contains the extracted bundle, ZIP and external digests.
     [Parameter(Mandatory)][string]$OutputDirectory,
+    # Reviewed supplier license/NOTICE texts, not source archives or build logs.
+    [Parameter(Mandatory)][string]$SupplementalNoticesRoot,
     [string]$QtPrefix,
     [string]$VCRuntimeRoot
 )
@@ -14,8 +16,9 @@ if ($env:OS -ne 'Windows_NT' -or -not [Environment]::Is64BitProcess) {
 }
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
 $BuildRoot = Resolve-CaelestiaDirectory $BuildRoot
+$SupplementalNoticesRoot = Resolve-CaelestiaDirectory $SupplementalNoticesRoot
 $OutputDirectory = Resolve-CaelestiaDirectory $OutputDirectory
-foreach ($source in @($repoRoot, $BuildRoot)) {
+foreach ($source in @($repoRoot, $BuildRoot, $SupplementalNoticesRoot)) {
     if ($OutputDirectory -eq $source -or $OutputDirectory.StartsWith($source + '\', [StringComparison]::OrdinalIgnoreCase) -or
         $source.StartsWith($OutputDirectory + '\', [StringComparison]::OrdinalIgnoreCase)) {
         throw 'Release output must be separate from the checkout and read-only build.'
@@ -23,6 +26,18 @@ foreach ($source in @($repoRoot, $BuildRoot)) {
 }
 if (Test-Path -LiteralPath $OutputDirectory) { throw 'Release output already exists; choose a new directory.' }
 Assert-CaelestiaNoReparsePoints $BuildRoot
+Assert-CaelestiaNoReparsePoints $SupplementalNoticesRoot
+$supplementalInputs = @(Get-ChildItem -LiteralPath $SupplementalNoticesRoot -File -Recurse -Force |
+    Sort-Object FullName | ForEach-Object {
+        if ($_.Extension -in @('.exe', '.dll', '.pdb', '.zip', '.7z', '.tar', '.xz')) {
+            throw 'Supplemental notices must contain license/provenance texts, not binaries or archives.'
+        }
+        [ordered]@{
+            path = $_.FullName.Substring($SupplementalNoticesRoot.Length + 1).Replace('\', '/')
+            sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+        }
+    })
+if (-not $supplementalInputs.Count) { throw 'Reviewed supplemental supplier notices are required.' }
 
 function Invoke-ReleaseGit([string]$Root, [string[]]$Arguments) {
     $result = @(& git -C $Root @Arguments)
@@ -206,6 +221,20 @@ try {
     New-Item -ItemType Directory -Path $bundle | Out-Null
     Copy-Item -LiteralPath $runtime -Destination (Join-Path $bundle 'payload') -Recurse
     $payload = Join-Path $bundle 'payload'
+    $supplementalTarget = Join-Path $payload 'licenses\supplemental'
+    if (Test-Path -LiteralPath $supplementalTarget) { throw 'Supplemental notice destination must be new.' }
+    Copy-Item -LiteralPath $SupplementalNoticesRoot -Destination $supplementalTarget -Recurse
+    Assert-CaelestiaNoReparsePoints $supplementalTarget
+    if (@(Get-ChildItem -LiteralPath $supplementalTarget -File -Recurse -Force).Count -ne $supplementalInputs.Count -or
+        @(Get-ChildItem -LiteralPath $SupplementalNoticesRoot -File -Recurse -Force).Count -ne $supplementalInputs.Count) {
+        throw 'Supplier notice inventory changed during copying.'
+    }
+    foreach ($entry in $supplementalInputs) {
+        if ((Get-FileHash -LiteralPath (Join-Path $supplementalTarget $entry.path) -Algorithm SHA256).Hash -ne $entry.sha256 -or
+            (Get-FileHash -LiteralPath (Join-Path $SupplementalNoticesRoot $entry.path) -Algorithm SHA256).Hash -ne $entry.sha256) {
+            throw 'Supplier notices changed during copying.'
+        }
+    }
     # The local install record is intentionally replaced, not redacted: none
     # of its machine-specific prefix, profile or identity fields are shipped.
     Remove-Item -LiteralPath "$payload\install.json"
@@ -259,13 +288,14 @@ try {
         releaseId = $ReleaseId; sourceRevision = $revision; nativeSourceRevision = $build.sourceRevision
         backendRevision = $build.backendRevision; qtVersion = $build.qtVersion
         dependencies = $dependencies; nativeInputs = $nativeInputs
+        supplementalNotices = $supplementalInputs
         vendorPrivacyReviewSha256 = (Get-FileHash -LiteralPath $vendorReviewPath -Algorithm SHA256).Hash.ToLowerInvariant()
         relocation = 'profile-pragmas-v1'; signing = 'unsigned-preview'
         files = $files
     } | ConvertTo-Json -Depth 16 | Set-Content -LiteralPath "$bundle\release.json" -Encoding UTF8
     # Scan the manifest too. Never rewrite DLLs, fonts, SBOMs or notices to get
     # a distributable result. Report relative names, not matched identities.
-    $privateRoots = @($repoRoot, $BuildRoot, $QtPrefix, $VCRuntimeRoot, $scratch,
+    $privateRoots = @($repoRoot, $BuildRoot, $QtPrefix, $VCRuntimeRoot, $scratch, $SupplementalNoticesRoot,
         $env:USERPROFILE, $env:CARGO_HOME, $env:RUSTUP_HOME) | Where-Object { $_ }
     $privacyCandidates = @()
     foreach ($file in Get-ChildItem -LiteralPath $bundle -File -Recurse -Force) {
