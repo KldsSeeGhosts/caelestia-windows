@@ -1,0 +1,30 @@
+# Current repository owner and maintainer account: @KldsSeeGhosts.
+# These entries route review; they do not activate branch protection.
+
+/.github/CODEOWNERS @KldsSeeGhosts
+/.github/workflows/ @KldsSeeGhosts
+/windows/ci/ @KldsSeeGhosts
+/windows/cmake/ @KldsSeeGhosts
+/windows/scripts/Build-Prototype.ps1 @KldsSeeGhosts
+/windows/scripts/Test-Validation.ps1 @KldsSeeGhosts
+/windows/scripts/Test-Smoke.ps1 @KldsSeeGhosts
+/windows/scripts/New-CaelestiaRelease.ps1 @KldsSeeGhosts
+
+/windows/scripts/Install-Caelestia.ps1 @KldsSeeGhosts
+/windows/scripts/Install-CaelestiaRelease.ps1 @KldsSeeGhosts
+/windows/scripts/Caelestia-InstallCommon.ps1 @KldsSeeGhosts
+/windows/scripts/Install-SchemeRuntime.ps1 @KldsSeeGhosts
+/windows/scripts/Uninstall-Caelestia.ps1 @KldsSeeGhosts
+/windows/scripts/Manage-Caelestia.ps1 @KldsSeeGhosts
+/windows/scripts/Start-Caelestia.ps1 @KldsSeeGhosts
+/windows/scripts/Start-CaelestiaEntry.ps1 @KldsSeeGhosts
+/windows/scripts/Start-DesktopShell.ps1 @KldsSeeGhosts
+/windows/scripts/Watch-DesktopShell.ps1 @KldsSeeGhosts
+/windows/scripts/Restore-Desktop.ps1 @KldsSeeGhosts
+/windows/scripts/DesktopTakeover.cs @KldsSeeGhosts
+
+/plugin/src/Caelestia/Windows/ @KldsSeeGhosts
+/windows/scripts/NativeAudioSnapshot.cs @KldsSeeGhosts
+/windows/deps/ @KldsSeeGhosts
+/.gitmodules @KldsSeeGhosts
+/windows/sources.lock.json @KldsSeeGhosts

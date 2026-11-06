@@ -1,0 +1,54 @@
+name: Detailed Windows bug report (sanitized)
+description: Preferred form for a reproducible Caelestia for Windows problem
+title: "[Windows bug] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not report a security vulnerability here. See [SECURITY.md](https://github.com/KldsSeeGhosts/caelestia-windows/blob/main/SECURITY.md).
+        A planned opt-in support bundle is [not available yet](https://github.com/KldsSeeGhosts/caelestia-windows/issues/8).
+        Do not attach a raw user profile or an unreviewed archive. Screenshots are not required.
+  - type: textarea
+    id: release_build
+    attributes:
+      label: Release and build identifiers
+      description: Include the installed release/channel and build ID. For a source build, include the shell commit and backend revision/pin if known. Do not paste private build paths.
+      placeholder: "Release/channel ...; build ID ...; shell commit ...; backend revision ..."
+    validations:
+      required: true
+  - type: textarea
+    id: windows_version
+    attributes:
+      label: Windows version
+      description: Include Windows edition and OS build as shown by winver. A sanitized version string is enough.
+      placeholder: "Windows 11 edition ...; OS build ..."
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Provide the shortest exact sequence, how often it occurs, and whether this was an installed release or source build.
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: textarea
+    id: expected_actual
+    attributes:
+      label: Expected and actual behavior
+      description: State what you expected, what happened, and any recovery or error state.
+    validations:
+      required: true
+  - type: textarea
+    id: relevant_environment
+    attributes:
+      label: Relevant display or device details
+      description: Optional. Include only details needed to reproduce the issue, such as display layout, scaling, HDR, or the affected device.
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Sanitized support data
+      description: Optional. Attach only selected, reviewed diagnostics with secrets, personal paths, account names, clipboard/notification content, and unrelated user data removed. A support bundle is not currently available; do not substitute a raw profile or full log archive.
