@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
-const { spawnSync } = require('node:child_process');
+const { spawnSync, execFileSync } = require('node:child_process');
 
 const output = process.env.CAELESTIA_SUPPORT_TEST_OUTPUT;
 assert.ok(output, 'Run Test-SupportBundle.ps1 with an explicit disposable output directory');
@@ -167,6 +167,76 @@ test('missing metadata and missing provider stay unavailable; no arbitrary log i
     assert.equal(b.sources.snapshot.reason, 'not-collected');
 });
 
+test('a trailing-backslash prefix preserves the worker argument boundary', () => {
+    const f = fixture();
+    f.prefix += path.sep;
+    const b = run(f, input({ audio: { category: 'supported', reason: 'none', ready: true } }));
+    assert.equal(b.identity.sourceRevision, sha);
+    assert.equal(b.sources.snapshot.category, 'supported');
+    assert.equal(b.providers[2].ready, true);
+});
+
+test('worker policy is explicit when inherited process policy is absent', () => {
+    const f = fixture();
+    const scripts = path.join(f.dir, 'policy-fixture');
+    fs.mkdirSync(scripts);
+    const source = fs.readFileSync(exporter, 'utf8');
+    assert.equal(source.split('$start.UseShellExecute = $false').length, 2);
+    assert.equal(source.split('if ($Collect) {').length, 2);
+    const instrumented = source
+        .replace('$start.UseShellExecute = $false',
+            "$start.EnvironmentVariables.Remove('PSExecutionPolicyPreference')\n    $start.UseShellExecute = $false")
+        .replace('if ($Collect) {',
+            "if ($Collect) {\n    if ((Get-ExecutionPolicy -Scope Process) -ne 'Bypass') { exit 37 }");
+    f.exporter = path.join(scripts, 'Export-CaelestiaSupport.ps1');
+    fs.writeFileSync(f.exporter, instrumented);
+    fs.copyFileSync(path.join(path.dirname(exporter), 'Caelestia-Support.ps1'),
+        path.join(scripts, 'Caelestia-Support.ps1'));
+    assert.equal(run(f).identity.sourceRevision, sha);
+});
+
+test('BOM metadata is accepted and invalid release IDs preserve valid installed identity', () => {
+    const f = fixture();
+    const bom = Buffer.from([0xef, 0xbb, 0xbf]);
+    fs.writeFileSync(path.join(f.prefix, 'install.json'),
+        Buffer.concat([bom, Buffer.from(JSON.stringify(f.record))]));
+    fs.writeFileSync(path.join(f.prefix, 'release-manifest.json'),
+        Buffer.concat([bom, Buffer.from(JSON.stringify({ ...f.release, releaseId: personal }))]));
+    const b = run(f);
+    assert.equal(b.sources.install.category, 'supported');
+    assert.equal(b.sources.release.category, 'supported');
+    assert.equal(b.identity.releaseId, f.record.releaseId);
+});
+
+test('conflicting declared backend identities refuse release metadata', () => {
+    const f = fixture();
+    writeJson(path.join(f.prefix, 'release-manifest.json'), { ...f.release, backendRevision: 'd'.repeat(40) });
+    const b = run(f);
+    assert.equal(b.sources.release.reason, 'invalid');
+    assert.equal(b.identity.backendRevision, backend);
+    assert.equal(b.identity.nativeSourceRevision, null);
+});
+
+test('status projections replace stale provider operation and error fields', () => {
+    const snapshot = input({
+        shell: { category: 'failed', reason: 'operation-failed', requested: true, accepted: true,
+            errors: [{ category: 'failed', reason: 'operation-failed', count: 1 }] },
+        tiling: { category: 'failed', reason: 'operation-failed', requested: true, accepted: true,
+            errors: [{ category: 'failed', reason: 'operation-failed', count: 1 }] }
+    });
+    snapshot.shellState = { lifecycle: { ready: false } };
+    snapshot.tilingState = { backendLoaded: true, failedCount: 2 };
+    const b = run(fixture(), snapshot);
+    assert.equal(b.providers[0].category, 'unavailable');
+    assert.equal(b.providers[0].reason, 'completion-unobserved');
+    assert.equal(b.providers[0].requested, null);
+    assert.deepEqual(b.providers[0].errors, []);
+    assert.equal(b.providers[1].category, 'supported');
+    assert.equal(b.providers[1].ready, true);
+    assert.equal(b.providers[1].accepted, null);
+    assert.deepEqual(b.providers[1].errors, []);
+});
+
 test('copied installed scripts run without repository working directory or SDK/Node PATH', () => {
     const f = fixture();
     const scripts = path.join(f.dir, 'copied-payload');
@@ -231,7 +301,7 @@ test('manifest IDs and module versions reject content, paths, banners and wrong 
     const clean = run(g);
     assert.equal(clean.modules.qt, null);
     assert.equal(clean.modules.pillow, null);
-    assert.equal(clean.identity.releaseId, null);
+    assert.equal(clean.identity.releaseId, g.record.releaseId);
 });
 
 test('all stable categories survive and accepted never implies completed', () => {
@@ -420,8 +490,11 @@ test('sanitized committed example validates against strict schema', () => {
 });
 
 test.after(() => {
+    const repo = path.resolve(__dirname, '../../..');
     writeJson(path.join(root, 'receipt.json'), {
         evidence: 'synthetic-support-fixtures', invocations: receipts.length, commands: receipts,
+        sourceRevision: execFileSync('git', ['-C', repo, 'rev-parse', 'HEAD'], { encoding: 'utf8', windowsHide: true }).trim(),
+        sourceDirty: Boolean(execFileSync('git', ['-C', repo, 'status', '--porcelain'], { encoding: 'utf8', windowsHide: true }).trim()),
         note: 'No live profile, desktop, shell IPC, device or package acceptance was exercised.'
     });
     console.log(`Retained synthetic support evidence: ${root}`);

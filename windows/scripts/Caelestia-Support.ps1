@@ -217,12 +217,15 @@ function Get-CaelestiaSupportBundle([string]$Prefix, [string]$SnapshotPath) {
         -not (Test-SupportVersion (Get-SupportField $release.data 'version')) -or
         -not (Test-SupportLiteral (Get-SupportField $release.data 'platform') 'windows-x64') -or
         -not $install.data -or -not $bundle.identity.sourceRevision -or
-        -not (Test-SupportLiteral (Get-SupportField $release.data 'sourceRevision') $bundle.identity.sourceRevision))) {
+        -not (Test-SupportLiteral (Get-SupportField $release.data 'sourceRevision') $bundle.identity.sourceRevision) -or
+        ($bundle.identity.backendRevision -and
+            -not (Test-SupportLiteral (Get-SupportField $release.data 'backendRevision') $bundle.identity.backendRevision)))) {
         $release = @{ reason = 'invalid'; data = $null }
     }
     $bundle.sources.release = New-SupportSource $release.reason
     if ($release.data) {
-        $bundle.identity.releaseId = Get-SupportToken (Get-SupportField $release.data 'releaseId') $releaseId
+        $manifestReleaseId = Get-SupportToken (Get-SupportField $release.data 'releaseId') $releaseId
+        if ($manifestReleaseId) { $bundle.identity.releaseId = $manifestReleaseId }
         $bundle.identity.nativeSourceRevision = Get-SupportToken (Get-SupportField $release.data 'nativeSourceRevision') $sha
         $dependencies = Get-SupportField $release.data 'dependencies'
         foreach ($pair in @(@('m3shapes', 'm3shapesRevision'), @('schemeCli', 'schemeRevision'))) {
@@ -256,14 +259,19 @@ function Get-CaelestiaSupportBundle([string]$Prefix, [string]$SnapshotPath) {
             $state = Get-SupportField $snapshot.data 'shellState'
             $ready = Get-SupportBoolean (Get-SupportField (Get-SupportField $state 'lifecycle') 'ready')
             if ($null -ne $ready) {
-                $bundle.providers[0].category = 'supported'; $bundle.providers[0].reason = 'none'; $bundle.providers[0].ready = $ready
+                $bundle.providers[0] = New-SupportProvider 'shell'
+                $bundle.providers[0].category = if ($ready) { 'supported' } else { 'unavailable' }
+                $bundle.providers[0].reason = if ($ready) { 'none' } else { 'completion-unobserved' }
+                $bundle.providers[0].ready = $ready
             }
             # Existing shell.tilingState is content-free, but still project it.
             $tiling = Get-SupportField $snapshot.data 'tilingState'
             $loaded = Get-SupportBoolean (Get-SupportField $tiling 'backendLoaded')
             if ($null -ne $loaded) {
+                $bundle.providers[1] = New-SupportProvider 'tiling'
                 $bundle.providers[1].category = if ($loaded) { 'supported' } else { 'unavailable' }
                 $bundle.providers[1].reason = if ($loaded) { 'none' } else { 'provider-unavailable' }
+                $bundle.providers[1].ready = $loaded
                 $bundle.providers[1].counters.failures = Get-SupportNumber (Get-SupportField $tiling 'failedCount')
                 $bundle.providers[1].counters.recentFailures = Get-SupportNumber (Get-SupportField $tiling 'recentFailureCount')
             }

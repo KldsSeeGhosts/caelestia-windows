@@ -41,10 +41,14 @@ try {
     # No shell, profile, executable from the payload, or arbitrary provider runs.
     $start = [Diagnostics.ProcessStartInfo]::new()
     $start.FileName = Join-Path ([Environment]::GetFolderPath('System')) 'WindowsPowerShell\v1.0\powershell.exe'
-    $arguments = @('-NoProfile', '-NonInteractive', '-File', $PSCommandPath, '-Collect', '-Prefix', $Prefix)
+    $arguments = @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+        '-File', $PSCommandPath, '-Collect', '-Prefix', $Prefix)
     if ($SnapshotPath) { $arguments += @('-SnapshotPath', $SnapshotPath) }
-    # All arguments are literal local paths. Quotes are illegal in Windows paths.
-    $start.Arguments = ($arguments | ForEach-Object { '"' + $_ + '"' }) -join ' '
+    # Quotes are illegal in these literal Windows paths, but a trailing
+    # backslash must be doubled before the closing command-line quote.
+    $start.Arguments = ($arguments | ForEach-Object {
+        '"' + [regex]::Replace($_, '\\+$', '$0$0') + '"'
+    }) -join ' '
     $start.UseShellExecute = $false
     $start.CreateNoWindow = $true
     $start.WindowStyle = [Diagnostics.ProcessWindowStyle]::Hidden
