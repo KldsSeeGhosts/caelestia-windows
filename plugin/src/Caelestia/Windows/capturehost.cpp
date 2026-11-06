@@ -438,8 +438,8 @@ void CaptureHostRegistry::probeStartup() {
         // Retain startup uncertainty and its deadline, never claim launch from
         // the lifetime of a forwarding command client.
         emit changed();
-        QTimer::singleShot(100, this, [this] {
-            if (mLaunchPending && !mStartupExpired && !mChecking)
+        QTimer::singleShot(100, this, [this, operation] {
+            if (operation == mOperation && mLaunchPending && !mStartupExpired && !mChecking)
                 probeStartup();
         });
     });
@@ -576,15 +576,19 @@ bool CaptureHostRegistry::quit(quint64 lease) {
 bool CaptureHostRegistry::prepareReload(quint64 lease) {
     if (!writer(lease))
         return false;
+    if (mQuitLease)
+        return refuse(QStringLiteral("Capture handoff refused: shell quit is pending."));
     if (mCloseAttempted)
         return refuse(QStringLiteral("Capture handoff refused: a posted close is unresolved."));
     // No native ownership or process lifetime is changed by QML reload.
     // Preserve even uncertain observations and in-flight checks across graphs.
     mReloadLease = lease;
     QTimer::singleShot(0, this, [this, lease] {
-        if (mCloseAttempted)
+        if (mQuitLease)
+            refuse(QStringLiteral("Capture handoff refused: shell quit is pending."));
+        else if (mCloseAttempted)
             refuse(QStringLiteral("Capture handoff refused: a posted close is unresolved."));
-        completeReload(lease, writer(lease) && !mCloseAttempted);
+        completeReload(lease, writer(lease) && !mCloseAttempted && !mQuitLease);
     });
     return true;
 }
@@ -640,7 +644,10 @@ void CaptureHostRegistry::exited() {
     if (quitting || (!restart && !crashed))
         mWanted = false; // Respect clean tray exit, including unknown exit code.
     const bool recover = mWanted && (restart || crashed) && (restart || mRecoveries < 3);
-    setState(QStringLiteral("Exited"), mWanted && !recover
+    const bool recoveryLimited = mWanted && !recover;
+    if (recoveryLimited)
+        mWanted = false; // Soft reload must not re-arm an exhausted budget.
+    setState(QStringLiteral("Exited"), recoveryLimited
         ? QStringLiteral("Automatic capture host recovery limit reached; an explicit capture can retry.") : QString());
     completeQuit(true);
     if (recover) {

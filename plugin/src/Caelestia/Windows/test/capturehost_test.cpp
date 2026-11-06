@@ -346,6 +346,10 @@ private slots:
         QTest::qWait(20);
         QCOMPARE(state(registry), QStringLiteral("Exited"));
         QCOMPARE(ops->launches, 4); // Cold launch plus three crash recoveries.
+        registry.acquire(image(), hostClass, {}); // Reload cannot bypass the budget.
+        QTest::qWait(20);
+        QCOMPARE(state(registry), QStringLiteral("Exited"));
+        QCOMPARE(ops->launches, 4);
     }
     void cleanExitAndStableRecoveryWindow() {
         auto ops = std::make_shared<FakeHostOps>();
@@ -531,6 +535,23 @@ private slots:
         ops->response = {true, false, QString::number(ops->identity.pid) + QStringLiteral("-fixture"), QStringLiteral("idle")};
         QVERIFY(!registry.command(lease, {}));
         QTRY_COMPARE(state(registry), QStringLiteral("Owned"));
+        QCOMPARE(ops->launches, 1);
+    }
+    void payloadChangeCancelsQueuedStartupRetry() {
+        auto ops = std::make_shared<FakeHostOps>();
+        ops->kind = CaptureProbe::Absent;
+        ops->response = {false, true, {}, {}};
+        ops->startupInvisible = true;
+        CaptureHostRegistry registry(ops);
+        registry.startupTimeoutMs = 500;
+        registry.acquire(image(), hostClass, {});
+        QTRY_VERIFY(ops->reads > 0 && !registry.snapshot().value(QStringLiteral("checking")).toBool());
+        const auto replacement = QCoreApplication::applicationDirPath() + QStringLiteral("/capture-host-child.exe");
+        registry.acquire(replacement, hostClass, {});
+        QCOMPARE(state(registry), QStringLiteral("Foreign"));
+        const auto reads = ops->reads;
+        QTest::qWait(160);
+        QCOMPARE(ops->reads, reads);
         QCOMPARE(ops->launches, 1);
     }
     void quitWhileDiscoveryPendingCannotLaunchAfterward() {
@@ -768,6 +789,11 @@ Item {
             // Repeating quit cannot cancel the already accepted request.
             QVERIFY(QMetaObject::invokeMethod(root.data(), "quitIpc", Q_RETURN_ARG(QVariant, result)));
             QVERIFY(result.toBool());
+            // Refuse immediately, while the asynchronous status check is
+            // pending, not only after its close message has been posted.
+            QVERIFY(QMetaObject::invokeMethod(root.data(), "restartIpc", Q_RETURN_ARG(QVariant, result)));
+            QCOMPARE(root->property("reloads").toInt(), 1);
+            QVERIFY(!registry.snapshot().value(QStringLiteral("error")).toString().isEmpty());
             QTRY_COMPARE(state(registry), QStringLiteral("Closing"));
             QVERIFY(QMetaObject::invokeMethod(root.data(), "restartIpc", Q_RETURN_ARG(QVariant, result)));
             QCOMPARE(result.toString(), QStringLiteral("fixture-generation")); // Not a success claim.

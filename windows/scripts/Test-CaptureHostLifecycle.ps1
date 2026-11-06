@@ -57,7 +57,7 @@ try {
 }
 [xml]$results = Get-Content -LiteralPath "$logs/native.xml" -Raw
 $suite = $results.testsuite
-if ([int]$suite.tests -lt 44 -or [int]$suite.failures -ne 0 -or [int]$suite.errors -ne 0 -or [int]$suite.skipped -ne 0) {
+if ([int]$suite.tests -ne 45 -or [int]$suite.failures -ne 0 -or [int]$suite.errors -ne 0 -or [int]$suite.skipped -ne 0) {
     throw 'Missing, failed or skipped native lifecycle cases.'
 }
 Run 'node' 'node' @("$repo/windows/tests/GlazierRecorderLogic.test.js")
