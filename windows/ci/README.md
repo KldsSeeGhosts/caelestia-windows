@@ -5,19 +5,18 @@
 hosted-build acceptance. The active workflow, when enabled after the source
 prerequisites below, is `.github/workflows/windows-build.yml`.
 
-## Activation is a future authorized publication step
+## Public-source prerequisites
 
-Do not activate this template without explicit maintainer publication
-authorization. First make the shell, backend, and **all required recursive
+The active [Windows workflow](../../.github/workflows/windows-build.yml) was
+enabled after maintainer publication authorization and an anonymous recursive
+source check. Keep the shell, backend, and **all required recursive
 submodule repositories and exact pinned refs** anonymously accessible. Check
 the gitlinks, `.gitmodules`, and `windows/sources.lock.json`, including Glazier
 and M3Shapes. Do not work around private dependencies with a PAT, deploy key,
 or injected authentication secret.
 
-At that authorized future step, review the template and Action pins again,
-then copy `windows/ci/windows-build.yml.template` to
-`.github/workflows/windows-build.yml` in the public shell repository. Only
-then does it become one `windows-latest` job on pushes to `main`, pull
+The template remains a non-executing reference; changes to it do not update the
+active workflow automatically. The active file runs one `windows-latest` job on pushes to `main`, pull
 requests, and manual dispatch. It has read-only contents permission, no
 `pull_request_target`, no persisted checkout credentials, and no injected
 tokens or authentication secrets for untrusted PR code. The official Actions
