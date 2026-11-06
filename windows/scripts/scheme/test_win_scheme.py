@@ -65,7 +65,7 @@ def _decode(line: str) -> dict:
 
 class ThumbnailTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.directory = Path(tempfile.mkdtemp(prefix="caelestia-scheme-image-"))
+        self.directory = Path(tempfile.mkdtemp(prefix="caelestia-scheme-image-")).resolve()
         self.addCleanup(shutil.rmtree, self.directory, True)
 
     def test_thumbnail_matches_upstream_size_and_is_cached(self):
@@ -123,7 +123,7 @@ class UnicodePathTests(unittest.TestCase):
     """Non-ASCII paths must survive argv, the persisted path file and output."""
 
     def setUp(self) -> None:
-        self.directory = Path(tempfile.mkdtemp(prefix="caelestia-scheme-unicode-"))
+        self.directory = Path(tempfile.mkdtemp(prefix="caelestia-scheme-unicode-")).resolve()
         self.addCleanup(shutil.rmtree, self.directory, True)
 
     def _round_trip(self, profile_name: str, folder_name: str, image_name: str) -> None:
@@ -232,7 +232,7 @@ def _stop(worker: subprocess.Popen) -> None:
 
 class WarmWorkerTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.directory = Path(tempfile.mkdtemp(prefix="caelestia-scheme-worker-"))
+        self.directory = Path(tempfile.mkdtemp(prefix="caelestia-scheme-worker-")).resolve()
         self.addCleanup(shutil.rmtree, self.directory, True)
         self.profile = self.directory / "profile"
 

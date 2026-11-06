@@ -41,6 +41,12 @@ function Invoke-ValidationStep([string]$Name, [string]$Executable, [string[]]$Co
     $ErrorActionPreference = 'Stop'
     $results.Add([ordered]@{ name = $Name; exitCode = $code; seconds = [Math]::Round($clock.Elapsed.TotalSeconds, 2) })
     Write-Output ("{0} {1} ({2:N2}s)" -f $(if ($code -eq 0) { 'PASS' } else { 'FAIL' }), $Name, $clock.Elapsed.TotalSeconds)
+    # The log is not uploaded, so show the end of a failure where it ran.
+    if ($code -ne 0) {
+        Write-Output "--- last 80 lines of $Name ---"
+        Get-Content -LiteralPath $logPath -Tail 80 -Encoding UTF8
+        Write-Output "--- end of $Name ---"
+    }
 }
 
 function Invoke-ScriptCheck([string]$Name, [string[]]$Extra = @()) {
