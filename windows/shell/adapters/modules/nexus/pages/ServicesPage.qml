@@ -99,7 +99,7 @@ PageBase {
             icon: "screenshot_region"
             label: Tr.tr("Screenshot")
             subtext: Tr.tr("PrintScreen or Win+Shift+S")
-            value: Glazier.available ? Tr.trCtx("Ready", "Glazier state") : Tr.trCtx("Unavailable", "Glazier state")
+            value: Glazier.available ? Tr.trCtx("Available", "Glazier state") : Tr.trCtx("Unavailable", "Glazier state")
         }
 
         InfoRow {
@@ -107,7 +107,7 @@ PageBase {
             icon: "screen_record"
             label: Tr.tr("Recording")
             subtext: Tr.tr("Win+Shift+R")
-            value: Recorder.available ? Tr.trCtx("Ready", "Glazier state") : Tr.trCtx("Unavailable", "Glazier state")
+            value: Recorder.available ? Tr.trCtx("Available", "Glazier state") : Tr.trCtx("Unavailable", "Glazier state")
         }
 
         // The agent usage drawer. Off removes the drawer and its hover strip and

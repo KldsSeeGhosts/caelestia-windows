@@ -42,6 +42,7 @@ function Test-ProviderSupportMatrix {
     $problems = New-Object System.Collections.Generic.List[string]
     $expectedCategories = @("supported", "unsupported", "denied", "unavailable", "transient", "failed", "empty")
     $expectedFields = @("ready", "requested", "accepted", "completed")
+    $hardwareOwners = @{ brightness = 13; network = 14; keyboard = 15 }
     $expectedProviderIds = @(
         "shell", "tiling", "audio", "battery", "bluetooth", "brightness", "network",
         "media", "notifications", "desktop", "capture", "idleInhibit", "keyboard", "tray", "wallpaper"
@@ -157,6 +158,12 @@ function Test-ProviderSupportMatrix {
                 $problems.Add("acceptance owner must be a public GitHub issue URL on $id.")
             }
         }
+        if ($hardwareOwners.ContainsKey($id)) {
+            $expectedOwner = "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/issues/$($hardwareOwners[$id])"
+            if ($capability.acceptanceOwners -notcontains $expectedOwner -or -not $Document.Contains($expectedOwner)) {
+                $problems.Add("acceptance owner mismatch: $id must use its backend hardware issue.")
+            }
+        }
     }
 
     foreach ($providerId in $actualProviderIds) {
@@ -229,6 +236,13 @@ if (-not ($negative | Where-Object { $_ -like "public provider documentation mus
     throw "Negative control failed: a universal hardware claim was not detected."
 }
 
+$wrongOwner = Copy-JsonObject $matrix
+($wrongOwner.capabilities | Where-Object id -eq 'brightness').acceptanceOwners = @('https://github.com/KldsSeeGhosts/caelestia-windows/issues/13')
+$negative = @(Test-ProviderSupportMatrix -Matrix $wrongOwner -StagingMap $stagingMap -SourceLock $sourceLock -Document $doc -Root $repoRoot)
+if (-not ($negative | Where-Object { $_ -like 'acceptance owner mismatch:*' })) {
+    throw 'Negative control failed: an owner in the wrong repository was not detected.'
+}
+
 Write-Host ("PASS: {0} provider rows trace to staged paths, pinned source links, and dependency pins." -f $matrix.capabilities.Count)
-Write-Host "PASS: missing-staging, pin-mismatch, broken-source-link, and universal-claim negative controls."
+Write-Host "PASS: missing-staging, pin-mismatch, broken-source-link, wrong-owner, and universal-claim negative controls."
 Write-Host "NOTE: source trace only; provider, GUI, package, permission, and hardware behavior were not run."
