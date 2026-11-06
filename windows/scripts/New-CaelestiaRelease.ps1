@@ -53,6 +53,11 @@ if ($build.sourceDirty -ne $false -or $build.publicRelease -ne $true -or $build.
     -not $build.glazierBundled -or $build.qtVersion -notmatch '^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9._-]+)?$') {
     throw 'An exact clean production build record is required.'
 }
+# A toolset update must deliberately raise and revalidate the prerequisite.
+if ($build.msvcToolsVersion -notmatch '^\d+\.\d+\.\d+(?:\.\d+)?$' -or
+    [version]$build.msvcToolsVersion -gt [version]'14.44.35211.0') {
+    throw 'The build toolset exceeds the reviewed system runtime prerequisite; update and validate it before packaging.'
+}
 $lock = Get-Content -LiteralPath "$repoRoot\windows\sources.lock.json" -Raw | ConvertFrom-Json
 $dependencies = [ordered]@{}
 foreach ($name in @('quickshell', 'm3shapes', 'glazier')) {
@@ -114,7 +119,7 @@ function Get-NativeReleaseInputs {
 }
 $nativeInputs = Get-NativeReleaseInputs
 function Get-ReleaseVendorPrivacyExceptions([string]$PayloadRoot, [string]$ReviewPath,
-    [string]$QtRoot, [string]$CrtRoot, [object[]]$NativeInputs) {
+    [string]$QtRoot, [object[]]$NativeInputs) {
     $review = Get-Content -LiteralPath $ReviewPath -Raw | ConvertFrom-Json
     if ($review.schema -ne 'caelestia-vendor-privacy-review' -or $review.version -ne 1 -or -not $review.files) {
         throw 'Invalid vendor privacy review.'
@@ -124,7 +129,7 @@ function Get-ReleaseVendorPrivacyExceptions([string]$PayloadRoot, [string]$Revie
     $exceptions = @{}
     foreach ($entry in $review.files) {
         $relative = [string]$entry.path
-        $binaryReview = $relative -match '^[A-Za-z0-9_./-]+\.(dll|exe)$' -and $entry.origin -in @('qt', 'vcruntime')
+        $binaryReview = $relative -match '^[A-Za-z0-9_./-]+\.(dll|exe)$' -and $entry.origin -eq 'qt'
         $sbomReview = $relative -match '^licenses/Qt-sbom/[A-Za-z0-9_.-]+\.(json|spdx)$' -and $entry.origin -eq 'qt-sbom'
         if ((-not $binaryReview -and -not $sbomReview) -or
             @($relative.Split('/') | Where-Object { $_ -in @('', '.', '..') }).Count -or
@@ -142,8 +147,6 @@ function Get-ReleaseVendorPrivacyExceptions([string]$PayloadRoot, [string]$Revie
             @((Join-Path $QtRoot ('bin\' + (Split-Path -Leaf $relative))), (Join-Path $QtRoot $relative))
         } elseif ($entry.origin -eq 'qt-sbom') {
             @(Join-Path $QtRoot ('sbom\' + $relative.Substring('licenses/Qt-sbom/'.Length)))
-        } elseif (-not $relative.Contains('/')) {
-            @(Join-Path $CrtRoot $relative)
         } else { @() }
         $matchingOrigin = $false
         foreach ($candidate in $candidates | Select-Object -Unique) {
@@ -221,6 +224,13 @@ try {
     New-Item -ItemType Directory -Path $bundle | Out-Null
     Copy-Item -LiteralPath $runtime -Destination (Join-Path $bundle 'payload') -Recurse
     $payload = Join-Path $bundle 'payload'
+    # The existing developer assembler uses a local CRT in its temporary
+    # prefix. Public delivery uses Microsoft's centrally serviced runtime.
+    # Remove only these copied files, never the SDK or read-only native build.
+    foreach ($file in @(Get-ChildItem -LiteralPath $payload -File -Recurse |
+        Where-Object { $_.Name -match '^((concrt|msvcp|msvcr|vccorlib|vcruntime)\d.*\.dll|ucrtbase(?:d)?\.dll|api-ms-win-crt-.*\.dll|vc_redist.*\.exe)$' })) {
+        Remove-Item -LiteralPath $file.FullName
+    }
     $supplementalTarget = Join-Path $payload 'licenses\supplemental'
     if (Test-Path -LiteralPath $supplementalTarget) { throw 'Supplemental notice destination must be new.' }
     Copy-Item -LiteralPath $SupplementalNoticesRoot -Destination $supplementalTarget -Recurse
@@ -275,7 +285,7 @@ try {
         throw 'The production source changed during packaging.'
     }
     $vendorReviewPath = Join-Path $repoRoot 'windows\release\vendor-privacy-review.json'
-    $vendorExceptions = Get-ReleaseVendorPrivacyExceptions $payload $vendorReviewPath $QtPrefix $VCRuntimeRoot $nativeInputs
+    $vendorExceptions = Get-ReleaseVendorPrivacyExceptions $payload $vendorReviewPath $QtPrefix $nativeInputs
     $files = @(Get-ChildItem -LiteralPath $bundle -File -Recurse -Force | Sort-Object FullName | ForEach-Object {
         [ordered]@{
             path = $_.FullName.Substring($bundle.Length + 1).Replace('\', '/')
@@ -288,6 +298,12 @@ try {
         releaseId = $ReleaseId; sourceRevision = $revision; nativeSourceRevision = $build.sourceRevision
         backendRevision = $build.backendRevision; qtVersion = $build.qtVersion
         dependencies = $dependencies; nativeInputs = $nativeInputs
+        prerequisites = [ordered]@{
+            visualCppRuntime = [ordered]@{
+                deployment = 'system'; architecture = 'x64'; minimumVersion = '14.44.35211.0'
+                downloadUrl = 'https://aka.ms/vc14/vc_redist.x64.exe'
+            }
+        }
         supplementalNotices = $supplementalInputs
         vendorPrivacyReviewSha256 = (Get-FileHash -LiteralPath $vendorReviewPath -Algorithm SHA256).Hash.ToLowerInvariant()
         relocation = 'profile-pragmas-v1'; signing = 'unsigned-preview'

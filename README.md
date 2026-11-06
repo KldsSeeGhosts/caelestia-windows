@@ -11,6 +11,9 @@ Caelestia for Windows requires Windows 11 64-bit, a Direct3D 11-capable GPU, and
 1. Download the Windows x64 ZIP and checksum from [Releases](https://github.com/KldsSeeGhosts/caelestia-windows/releases).
 2. Verify the published SHA-256, extract the whole ZIP, and run `Install.cmd`.
    The prebuilt package needs no Git, Qt SDK, compiler or Python for basic use.
+   It requires Microsoft's free x64 C++ Redistributable, version 14.44.35211.0
+   or newer. If needed, the installer points to Microsoft's official download;
+   it never downloads or installs that prerequisite automatically.
 3. Start it from the Start menu, or start without optional Python provisioning:
 
    ```powershell

@@ -62,6 +62,38 @@ function Resolve-ReleaseFile([string]$Root, [string]$Relative) {
     return $full
 }
 
+function Test-ReleaseVCRuntimeVersions([int]$Installed, [string]$RegisteredVersion,
+    [version[]]$FileVersions, [version]$MinimumVersion) {
+    if ($Installed -ne 1 -or $RegisteredVersion -notmatch '^v?\d+\.\d+\.\d+\.\d+$' -or
+        $FileVersions.Count -ne 3) { return $false }
+    if ([version]($RegisteredVersion -replace '^v', '') -lt $MinimumVersion) { return $false }
+    return @($FileVersions | Where-Object { $null -eq $_ -or $_ -lt $MinimumVersion }).Count -eq 0
+}
+
+function Test-ReleaseVCRuntime([version]$MinimumVersion) {
+    $baseKey = $null
+    $runtimeKey = $null
+    try {
+        # Read the native x64 registration, never PATH or a developer SDK.
+        $baseKey = [Microsoft.Win32.RegistryKey]::OpenBaseKey(
+            [Microsoft.Win32.RegistryHive]::LocalMachine, [Microsoft.Win32.RegistryView]::Registry64)
+        $runtimeKey = $baseKey.OpenSubKey('SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64')
+        if (-not $runtimeKey) { return $false }
+        $versions = foreach ($name in @('msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll')) {
+            $file = Join-Path ([Environment]::SystemDirectory) $name
+            if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { return $false }
+            $info = [Diagnostics.FileVersionInfo]::GetVersionInfo($file)
+            [version]::new($info.FileMajorPart, $info.FileMinorPart, $info.FileBuildPart, $info.FilePrivatePart)
+        }
+        return Test-ReleaseVCRuntimeVersions ([int]$runtimeKey.GetValue('Installed', 0)) `
+            ([string]$runtimeKey.GetValue('Version', '')) $versions $MinimumVersion
+    } catch { return $false }
+    finally {
+        if ($runtimeKey) { $runtimeKey.Dispose() }
+        if ($baseKey) { $baseKey.Dispose() }
+    }
+}
+
 function Test-ReleaseBundle([string]$Root, [string]$ExpectedHash = '') {
     $Root = Assert-ReleaseDirectory $Root
     # Enumerate manually, without following junctions even once. This also
@@ -91,6 +123,10 @@ function Test-ReleaseBundle([string]$Root, [string]$ExpectedHash = '') {
         $manifest.dependencies.quickshell.revision -ne $manifest.backendRevision -or
         $manifest.dependencies.glazier.revision -notmatch '^[a-f0-9]{40}$' -or
         $manifest.dependencies.m3shapes.revision -notmatch '^[a-f0-9]{40}$' -or
+        $manifest.prerequisites.visualCppRuntime.deployment -ne 'system' -or
+        $manifest.prerequisites.visualCppRuntime.architecture -ne 'x64' -or
+        $manifest.prerequisites.visualCppRuntime.minimumVersion -ne '14.44.35211.0' -or
+        $manifest.prerequisites.visualCppRuntime.downloadUrl -ne 'https://aka.ms/vc14/vc_redist.x64.exe' -or
         -not $manifest.files -or $manifest.relocation -ne 'profile-pragmas-v1') {
         throw 'Unsupported or incomplete release manifest.'
     }
@@ -107,6 +143,7 @@ function Test-ReleaseBundle([string]$Root, [string]$ExpectedHash = '') {
             $relative -match '(^|/)(\.git|\.zcode|screenshots?|evidence)(/|$)|\.pdb$|^payload/(install\.json|build\.json|versions|profile|config|runtime|logs?|cache|state|data)(/|$)' -or
             ($relative -match '(^|/)tests?(/|$)' -and -not $supplementalNotice) -or
             ($supplementalNotice -and [IO.Path]::GetExtension($relative) -in @('.exe', '.dll', '.pdb', '.zip', '.7z', '.tar', '.xz')) -or
+            $relative -match '(^|/)((concrt|msvcp|msvcr|vccorlib|vcruntime)\d[^/]*\.dll|ucrtbase(?:d)?\.dll|api-ms-win-crt-[^/]*\.dll|vc_redist[^/]*\.exe)$' -or
             [string]$entry.sha256 -notmatch '^[a-fA-F0-9]{64}$' -or
             ($entry.size -isnot [long] -and $entry.size -isnot [int])) { throw 'Invalid or duplicate release file record.' }
         if (-not $actual.ContainsKey($relative) -or $actual[$relative].Length -ne $entry.size -or
@@ -128,7 +165,6 @@ function Test-ReleaseBundle([string]$Root, [string]$ExpectedHash = '') {
         'Install.cmd', 'Install-CaelestiaRelease.ps1', 'INSTALL-RELEASE.md',
         'payload/qs.exe', 'payload/glazier.exe', 'payload/qt.conf',
         'payload/Qt6Core.dll', 'payload/Qt6Qml.dll', 'payload/Qt6Quick.dll',
-        'payload/msvcp140.dll', 'payload/vcruntime140.dll', 'payload/vcruntime140_1.dll',
         'payload/plugins/platforms/qwindows.dll', 'payload/qml/Caelestia/Windows/qmldir',
         'payload/qml/M3Shapes/qmldir', 'payload/m3shapes.dll', 'payload/shell/shell.qml',
         'payload/shell/sources.json', 'payload/defaults/shell.json', 'payload/defaults/windows.json',
@@ -163,6 +199,12 @@ if ((Get-FileHash -LiteralPath (Join-Path $BundleRoot 'release.json') -Algorithm
     throw 'Release manifest changed during verification.'
 }
 if ($VerifyOnly) { $release; return }
+if (-not (Test-ReleaseVCRuntime ([version]$release.prerequisites.visualCppRuntime.minimumVersion))) {
+    throw ('Microsoft Visual C++ x64 Redistributable 14.44.35211.0 or newer is required. ' +
+        'Install or repair it using Microsoft''s official download, then rerun Install.cmd: ' +
+        'https://aka.ms/vc14/vc_redist.x64.exe . The runtime installer may require administrator approval. ' +
+        'Caelestia has not downloaded anything or changed your installation.')
+}
 $payloadSource = Join-Path $BundleRoot 'payload'
 # Supplied maintenance code is loaded only after every file passed verification.
 . (Join-Path $payloadSource 'Caelestia-InstallCommon.ps1')

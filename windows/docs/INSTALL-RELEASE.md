@@ -7,6 +7,27 @@ third-party notices. Basic use needs no Qt SDK, compiler, Git or Python.
 Read the [preview limitations](https://github.com/KldsSeeGhosts/caelestia-windows/blob/main/windows/docs/KNOWN-LIMITATIONS.md)
 before installing.
 
+## Microsoft runtime prerequisite
+
+Install Microsoft's free **Visual C++ x64 Redistributable**, version
+**14.44.35211.0 or newer**, if a compatible version is not already installed:
+
+https://aka.ms/vc14/vc_redist.x64.exe
+
+This is Microsoft's official download, not a bundled or third-party installer.
+Visual Studio and developer tools are not required. The runtime installer may
+request administrator approval; Caelestia's own installation stays per-user.
+The release installer checks the x64 runtime registration and system DLL
+versions before changing an installation. If the runtime is missing, outdated
+or incomplete, install or repair it and rerun `Install.cmd`. Nothing is
+downloaded, launched or elevated automatically. Bundle verification with
+`-VerifyOnly` does not require the runtime.
+
+Microsoft runtime DLLs are deliberately not bundled. The shared runtime can
+receive Microsoft servicing independently of Caelestia. See
+[Microsoft's deployment guidance](https://learn.microsoft.com/en-us/cpp/windows/deployment-in-visual-cpp?view=msvc-170#central-deployment).
+Qt and the project's own DLLs remain included.
+
 ## Trust and unsigned previews
 
 Preview packages are currently unsigned. There is no invented certificate or
@@ -45,7 +66,7 @@ every listed file, rejects extra/missing files, unsafe paths and reparse points,
 but is only a self-consistency check. The bootstrap itself must be trusted by
 checking the ZIP before running it.
 
-Installation is per-user and does not need elevation. It does not start the
+After the runtime prerequisite is met, installation is per-user and does not need elevation. It does not start the
 shell, register autostart, hide the taskbar or enable tiling. A Start-menu
 shortcut is created unless `-NoIntegration` is supplied. Defaults:
 
@@ -120,7 +141,8 @@ or authenticated update feed is implied by this manual release installer.
 
 `release.json` schema `caelestia-windows-release`, version 1 records the exact
 shell and native-build source revisions, backend/dependency revisions, Qt
-version, read-only native input digests, and size/SHA256 for every shipped file
+version, the system Visual C++ runtime prerequisite, read-only native input
+digests, and size/SHA256 for every shipped file
 except the manifest itself. It contains no raw build/install record or machine
 paths. Its external digest covers the manifest. The ZIP digest covers the
 entire deliverable, including bootstrap and manifest.
@@ -149,6 +171,10 @@ an owned temporary prefix. It does not build native inputs or modify the
 supplied build. A descendant packaging/QML-only candidate can reuse the native
 build only if native inputs and dependency pins still match. Qt deployment and
 supervisor compilation are packaging-time work, not user prerequisites.
+`VCRuntimeRoot` supplies only the existing developer assembler's temporary local
+installation. Those Microsoft DLLs are removed from the copied public payload
+before hashing. The release verifier refuses runtime DLLs or redistributable
+installers anywhere in the bundle.
 The supplemental notice tree must contain the reviewed supplier license,
 copyright, NOTICE and provenance texts for the exact linked dependencies,
 including Qt's embedded third parties, CLI11, Rust and the locked Rust crates.
@@ -164,8 +190,9 @@ Privacy scanning checks every packaged file's UTF-8/UTF-16 strings for source,
 build, SDK, temporary and user roots, private key/token patterns and absolute
 PDB paths, plus drive-rooted paths in native binaries. It reports relative
 candidate names only and fails closed. The committed
-`windows/release/vendor-privacy-review.json` identifies reviewed Qt and Microsoft
-runtime and public Qt SBOM bytes by exact payload path and SHA256. Only generic path findings in
+`windows/release/vendor-privacy-review.json` identifies reviewed Qt and public
+Qt SBOM bytes by exact payload path and SHA256. Microsoft runtime files must
+be absent and have no privacy exceptions. Only generic path findings in
 those files can be excepted, and only when the deployed file still matches both
 the review and its SDK origin. Project binaries, personal build roots and
 credential matches are never excepted. PEM format headers alone are not key
