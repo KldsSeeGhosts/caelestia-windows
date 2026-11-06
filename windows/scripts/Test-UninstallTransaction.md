@@ -76,7 +76,7 @@ and worker has a bounded timeout.
 ## Scenarios and assertions
 
 The receipt records the scenario/assertion counts, plus fail-closed boundary
-checks. The extended run currently passes 38 scenarios and 664 controller
+checks. The extended run requires 38 scenarios and 665 controller
 assertions. Coverage includes:
 
 * Install-held and rollback-held versus uninstall, normal and purge. Busy
@@ -158,23 +158,31 @@ production uninstall/Manage digests. For negative controls, the corresponding
 revision field identifies source read from Git instead. Prior receipts and
 failure logs are retained, not overwritten.
 
-## Remaining boundary, not a waiver
+## Consumer deadline and evidence boundaries
 
-The existing QML consumer has no independent deadline after a queue request
-returns its operation ID. If an unrelated transaction holds the lock beyond
-all watchdog retries, no journal failure can be written without violating
-unchanged-profile acceptance. This patch therefore does NOT claim unconditional
-bounded async UI failure. `fullAcceptanceComplete` remains false.
+`UpdateManager.qml` independently bounds queue startup and journal waiting to
+ten minutes. If no terminal result is confirmed, it stops the busy indication
+and reports **unconfirmed**, not a fabricated failure. It keeps the operation
+identity and file watcher, refuses duplicate requests, and accepts a late
+matching terminal result. Queued/working or foreign journals cannot reset the
+deadline. No timeout writes into the profile or cancels another lock owner.
 
-The concrete remaining design choice is a consumer-local deadline (recommended,
-outside the current source lease), or an explicitly revised reporting contract.
-Increasing retries alone cannot guarantee a bound against indefinite ownership.
-Neither busy journal writes nor deleting another owner's reporting task is an
-acceptable substitute. The current test proves deferred failure after release
-within the retry policy, not behavior after perpetual lock contention.
+Run the actual singleton with recording process/file boundaries:
+
+```powershell
+windows/scripts/Test-UpdateManager.ps1 -QtPrefix <Qt-prefix> -BuildRoot <native-build-root>
+```
+
+The fixture exercises real timer expiry both before and after acknowledgement,
+duplicate refusal, wrong/missing acknowledgements, smoke gating, foreign/stale
+journals, late terminal results and terminal-state preservation. It neither
+starts a real process nor writes a journal. The transaction and consumer
+fixtures also run in the Packaging and Shell aggregate lanes respectively.
+Default transaction output uses a unique temporary directory; explicit output
+roots require the fixture ownership marker before reuse.
 
 This is component/fixture evidence only. Native payloads, actual task execution,
 real process shutdown/integration, source assembly/compilation, an exact packaged
 release and an interactive desktop were not qualified. Independent review,
-integration, the async consumer deadline decision and exact-release qualification
+integration and exact-release qualification
 remain external gates. Do not mark the issue Done from this receipt alone.

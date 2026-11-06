@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$OutputRoot = 'D:\Caelestia\validation-erm629',
+    [string]$OutputRoot,
     # Negative control: read only this revision's uninstall into the sandbox.
     [ValidatePattern('^$|^[a-f0-9]{40}$')][string]$UninstallSourceRevision = '',
     [ValidatePattern('^$|^[a-f0-9]{40}$')][string]$ManageSourceRevision = '',
@@ -8,6 +8,9 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'Caelestia-InstallCommon.ps1')
+if (-not $OutputRoot) {
+    $OutputRoot = Join-Path ([IO.Path]::GetTempPath()) ('caelestia-uninstall-transaction-' + [guid]::NewGuid().ToString('N'))
+}
 $OutputRoot = Resolve-CaelestiaDirectory $OutputRoot
 if (Test-Path -LiteralPath $OutputRoot) {
     Assert-CaelestiaNoReparsePoints $OutputRoot
@@ -638,6 +641,7 @@ try {
         $script:scenarios += "post-rename-interrupted-$interrupted"
     }
     }
+    Assert ($script:scenarios.Count -ge $(if ($StaleReadOnly) { 2 } else { 38 })) 'Required transaction scenarios did not execute.'
     $passed = $true
 } catch {
     $failure = Protect-CaelestiaText $_.Exception.Message
@@ -670,7 +674,7 @@ try {
         architecture = $env:PROCESSOR_ARCHITECTURE
         sourceDirty = [bool](& git -C $repoRoot status --porcelain)
         fullAcceptanceComplete = $false
-        limit = 'Fixture/component only; strict busy snapshots have no journal exclusion. Watchdog reports after lock release within its configured retry window; indefinite unrelated lock ownership still requires a consumer timeout. Post-rename crash recovery is explicit fixture recovery, not automatic production recovery. No live desktop/integration or release qualification.'
+        limit = 'Fixture/component only; strict busy snapshots have no journal exclusion. Watchdog reports after lock release within its configured retry window; the separate Test-UpdateManager fixture qualifies the consumer deadline. Post-rename crash recovery is explicit fixture recovery, not automatic production recovery. No live desktop/integration or release qualification.'
     }
     Write-FixtureText (Join-Path $runRoot 'receipt.json') ($receipt | ConvertTo-Json -Depth 6)
 }

@@ -48,10 +48,12 @@ PageBase {
     property string loadState: "idle"
     property var info: null
     property bool confirming: false
-    // Set on submit and kept after success: the shell restarts, so the page
-    // never re-enables the action.
+    // The singleton retains ownership after the page closes. An unconfirmed
+    // or complete request cannot be submitted again from this session.
     readonly property bool rollbackSubmitted: UpdateManager.submitted
     readonly property bool rollbackFailed: UpdateManager.failed
+    readonly property bool rollbackUnconfirmed: UpdateManager.unconfirmed
+    readonly property bool rollbackComplete: UpdateManager.complete
 
     readonly property bool loaded: loadState === "ready" && info !== null
     readonly property bool busy: loadState === "loading" || rollbackSubmitted
@@ -71,6 +73,10 @@ PageBase {
             return Tr.tr("Needs an installed Caelestia");
         if (rollbackSubmitted)
             return Tr.tr("Restarting on the previous version");
+        if (rollbackUnconfirmed)
+            return Tr.tr("The earlier rollback outcome is unconfirmed");
+        if (rollbackComplete)
+            return Tr.tr("Rollback completed; restart Caelestia if this session remains");
         if (loadState === "loading" || !loaded)
             return loadState === "error" ? Tr.tr("Version status could not be read") : Tr.tr("Reading installed versions");
         if (!versioned)
@@ -86,6 +92,10 @@ PageBase {
     readonly property string notice: {
         if (!available)
             return Tr.tr("Version management needs an installed Caelestia. This session was not started from one.");
+        if (rollbackUnconfirmed)
+            return Tr.tr("Rollback confirmation is unavailable. It may still run. Refresh to check the selected version; another request is blocked.");
+        if (rollbackComplete)
+            return Tr.tr("Rollback completed. Refresh to check the selected version.");
         if (loadState === "error")
             return Tr.tr("Version status could not be read. Try refreshing.");
         if (rollbackFailed)
