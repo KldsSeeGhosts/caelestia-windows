@@ -9,6 +9,8 @@
 
 // Bound rendering, not searching. Searchable text is read from the complete
 // entry so a match past the rendered preview still finds the original item.
+.import "../../utils/FileUrls.js" as FileUrls
+
 const displayTextLimit = 8192;
 
 function normalizeEntry(value) {
@@ -39,21 +41,7 @@ function normalizeEntry(value) {
 }
 
 function decodeFileUri(uri) {
-    const value = String(uri || "").trim();
-    if (value.indexOf("file://") !== 0)
-        return "";
-
-    let path = value.substring(7);
-    if (path.indexOf("localhost/") === 0)
-        path = path.substring(9);
-    if (path.charAt(0) !== "/")
-        return "";
-
-    try {
-        return decodeURIComponent(path);
-    } catch (error) {
-        return path;
-    }
+    return FileUrls.toLocalPath(String(uri || "").trim());
 }
 
 // Windows clipboard text may contain "file://" lines. Keep the reference's
@@ -84,18 +72,7 @@ function isImagePath(path) {
 // Local path or file URL to a QML Image source. Empty when the path cannot be
 // represented as a file URL.
 function fileUrl(path) {
-    const value = String(path || "");
-    if (!value)
-        return "";
-    if (/^file:\/\//i.test(value))
-        return value;
-
-    const normalized = value.replace(/\\/g, "/");
-    if (/^[A-Za-z]:\//.test(normalized))
-        return "file:///" + encodeURI(normalized);
-    if (normalized.charAt(0) === "/")
-        return "file://" + encodeURI(normalized);
-    return "";
+    return FileUrls.fromPathOrUrl(path);
 }
 
 function isCodeText(text) {

@@ -7,6 +7,7 @@ import Caelestia.Config
 import Caelestia.I18n
 import qs.components
 import qs.services
+import qs.utils
 import qs.modules.nexus.common
 
 // Windows adaptation of modules/nexus/pages/wallandstyle/WallpaperCategory.qml.
@@ -56,7 +57,7 @@ PageBase {
                 // Wallpaper Engine entries use `path` (project.json) only for
                 // selection; the tile must show `preview`, matching the launcher
                 // adapter, or Qt decodes project.json as an image.
-                source: !modelData ? "" : modelData.preview ? "file:///" + modelData.preview : modelData.engine ? "" : String(modelData.path ?? "")
+                source: !modelData ? "" : modelData.preview ? Paths.absolutePath(String(modelData.preview)) : modelData.engine ? "" : String(modelData.path ?? "")
                 text: modelData?.name ?? ""
                 onClicked: {
                     Wallpapers.setWallpaper(modelData.path, root.QsWindow.window?.screen);

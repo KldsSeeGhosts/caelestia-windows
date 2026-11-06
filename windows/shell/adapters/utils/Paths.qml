@@ -6,6 +6,7 @@ import Caelestia
 import Caelestia.Config
 import Caelestia.Windows as Native
 import qs.services
+import "FileUrls.js" as FileUrls
 
 // Resolve the original shell's asset namespace inside the isolated stage.
 QtObject {
@@ -143,18 +144,18 @@ QtObject {
     function absolutePath(path: string): string {
         if (!path || !path.trim())
             return "";
-        if (path.startsWith("file:"))
-            return path;
+        if (FileUrls.isFileUrl(path))
+            return FileUrls.fromPathOrUrl(path);
         if (path.startsWith("root:/"))
             return Qt.resolvedUrl("../" + path.slice(6)).toString();
         const local = path.replace(/\\/g, "/").replace(/^~(?=\/|$)|^\$(?:HOME|\{HOME\})(?=\/|$)/, home);
-        const encoded = local.split("/").map(segment => encodeURIComponent(segment)).join("/");
-        if (/^[A-Za-z]:\//.test(local))
-            return "file:///" + local.slice(0, 2) + encoded.slice(4);
-        if (local.startsWith("//"))
-            return "file:" + encoded;
-        if (local.startsWith("/"))
-            return "file://" + encoded;
+        if (/^[A-Za-z]:\//.test(local) || local.startsWith("/"))
+            return FileUrls.fromLocalPath(local);
+        if (/^[A-Za-z][A-Za-z0-9+.-]*:/.test(local))
+            return "";
+        const encoded = FileUrls.encodePathSegments(local);
+        if (local && !encoded)
+            return "";
         return Qt.resolvedUrl("../" + encoded).toString();
     }
 }

@@ -22,7 +22,7 @@ Item {
         title: Tr.tr("Select a profile picture")
         nameFilters: ["Images (*.png *.jpg *.jpeg *.bmp *.webp)"]
         onAccepted: {
-            const target = "file:///" + Quickshell.stateDir.replace(/\\/g, "/") + "/profile-picture";
+            const target = Paths.absolutePath(Paths.joinPath(Quickshell.stateDir, "profile-picture"));
             if (CUtils.copyFile(selectedFile, Qt.resolvedUrl(target))) {
                 selected(String(selectedFile));
                 Toaster.toast("Profile image", "Profile image changed. This does not change your Windows account picture.", "person");
