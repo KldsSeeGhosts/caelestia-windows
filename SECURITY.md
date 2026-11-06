@@ -13,7 +13,7 @@ repository's Security tab offers **Report a vulnerability**, use that private
 form. Do not assume it is enabled unless GitHub actually presents the option.
 
 If the private form is unavailable, use the existing
-[public issue tracker](https://github.com/KldsSeeGhosts/caelestia-windows/issues/new/choose)
+[public issue tracker contact-request form](https://github.com/KldsSeeGhosts/caelestia-windows/issues/new?template=security_contact.yml)
 only to ask maintainer [@KldsSeeGhosts](https://github.com/KldsSeeGhosts) for a
 private reporting channel. Keep that request generic: do not include affected
 versions, reproduction steps, logs, proof-of-concept files, or other vulnerability

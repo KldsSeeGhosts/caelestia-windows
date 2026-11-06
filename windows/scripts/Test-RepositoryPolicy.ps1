@@ -1,9 +1,10 @@
 [CmdletBinding()]
 param(
-    [string]$RepositoryRoot = (Join-Path $PSScriptRoot '..\..')
+    [string]$RepositoryRoot
 )
 
 $ErrorActionPreference = 'Stop'
+if (-not $RepositoryRoot) { $RepositoryRoot = Join-Path $PSScriptRoot '..\..' }
 $root = (Resolve-Path -LiteralPath $RepositoryRoot).Path
 
 function Get-RequiredText {
@@ -126,11 +127,29 @@ if ($security -match '(?i)mailto:|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}') {
     throw 'Policy check failed: SECURITY.md must not invent or publish an unverified email address'
 }
 
-foreach ($fieldId in @('release_build', 'windows_version', 'reproduction', 'diagnostics')) {
+foreach ($fieldId in @('release_build', 'windows_version', 'reproduction', 'expected_actual', 'diagnostics')) {
     Assert-Contains $bugTemplate ('id: ' + $fieldId) "bug form is missing the $fieldId field"
 }
 if ([regex]::Matches($bugTemplate, '(?m)^\s+required: true\s*$').Count -lt 4) {
     throw 'Policy check failed: release/build, Windows, reproduction, and behavior details must be requested'
+}
+foreach ($fieldId in @('release_build', 'windows_version', 'reproduction', 'expected_actual')) {
+    $fieldPattern = '(?ms)^    id: ' + [regex]::Escape($fieldId) + '\s*$(?:(?!^  - type:).)*?^      required: true\s*$'
+    if ($bugTemplate -notmatch $fieldPattern) { throw "Policy check failed: $fieldId must be required" }
+}
+Assert-Contains $bugTemplate 'Do not report a security vulnerability here' 'bug form must direct security reports to the private route'
+if ($scopeName -eq 'shell') {
+    if (Test-Path -LiteralPath (Join-Path $root '.github\ISSUE_TEMPLATE\issue.yml')) {
+        throw 'Policy check failed: superseded unsanitized bug form remains available'
+    }
+    $contact = Get-RequiredText (Join-Path $root '.github\ISSUE_TEMPLATE\security_contact.yml')
+    Assert-Contains $security 'template=security_contact.yml' 'security fallback must reach the no-details contact form'
+    Assert-Contains $contact 'This request is public' 'contact form must disclose public visibility'
+    Assert-Contains $contact 'contains no technical details' 'contact form must request no vulnerability details'
+    Assert-Contains $contact 'required: true' 'contact form must contain a usable acknowledgement'
+    if ($contact -match 'type: (input|textarea|dropdown)') {
+        throw 'Policy check failed: security contact form must not solicit report details'
+    }
 }
 Assert-Contains $bugTemplate 'Screenshots are not required' 'screenshots must not be required'
 Assert-Contains $bugTemplate 'raw user profile' 'raw profile data must be prohibited'
