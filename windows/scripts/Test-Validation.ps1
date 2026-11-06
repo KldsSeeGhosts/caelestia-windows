@@ -78,6 +78,7 @@ try {
         }
         Invoke-ScriptCheck 'Test-PublicDocs'
         Invoke-ScriptCheck 'Test-Toolchain'
+        Invoke-ScriptCheck 'Test-PairContract'
         foreach ($name in @('Test-CIChanges', 'Test-SchemeProbeGuard', 'Test-KsgSettingsImport', 'Test-ShellLifecycle', 'Test-ValidationCounts')) {
             Invoke-ScriptCheck $name
         }

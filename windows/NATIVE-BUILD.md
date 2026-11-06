@@ -229,6 +229,13 @@ profile.
 
 ## Release-facing checks
 
+For coordinated shell/backend changes, use the
+[exact-pair integration entry point](ci/PAIR-INTEGRATION.md). Candidate builds
+use an explicit exact-SHA backend clone outside the shell, preserve strict
+production pins, and cannot be assembled as releases. A candidate preflight
+receipt does not replace the final pinned main-push receipt for its own shell
+commit.
+
 The repository ships four validation interfaces:
 
 - `Test-Environment.ps1 -Json -Strict` checks prerequisites and source pins.

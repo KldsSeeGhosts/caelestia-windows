@@ -5,6 +5,9 @@ param(
     [Parameter(Mandatory)][string]$Cli11Include,
     [string]$ToolsBin,
     [string]$BuildRoot,
+    # Integration-only canonical checkout, outside this shell repository.
+    [string]$BackendRoot,
+    [ValidatePattern('^[a-f0-9]{40}$')][string]$CandidateBackendRevision,
     [ValidateRange(1, 64)][int]$Jobs = 4,
     # Remap native source paths before distributing the resulting binaries.
     [switch]$PublicRelease,
@@ -20,6 +23,34 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'Caelestia-Toolchain.ps1')
 $toolchainSpec = Get-CaelestiaToolchain
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
+$backendMode = 'pinned'
+if ([bool]$BackendRoot -ne [bool]$CandidateBackendRevision) {
+    throw 'BackendRoot and CandidateBackendRevision must be supplied together.'
+}
+$backendPath = Join-Path $repoRoot 'windows\deps\quickshell'
+if ($BackendRoot) {
+    $backendPath = (Resolve-Path -LiteralPath $BackendRoot).Path
+    if ($backendPath -eq $repoRoot -or $backendPath.StartsWith($repoRoot + '\', [StringComparison]::OrdinalIgnoreCase) -or
+        $repoRoot.StartsWith($backendPath + '\', [StringComparison]::OrdinalIgnoreCase)) {
+        throw 'Candidate backend must be a separate clone outside the shell checkout.'
+    }
+    $backendTop = & git -C $backendPath rev-parse --show-toplevel
+    if ($LASTEXITCODE -ne 0 -or [IO.Path]::GetFullPath($backendTop) -ne $backendPath) { throw 'Invalid candidate source root.' }
+    $backendOrigin = & git -C $backendPath remote get-url origin
+    if ($LASTEXITCODE -ne 0 -or "$backendOrigin".Trim().TrimEnd('/') -notin @(
+        'https://github.com/KldsSeeGhosts/caelestia-quickshell-windows',
+        'https://github.com/KldsSeeGhosts/caelestia-quickshell-windows.git')) { throw 'Candidate backend repository mismatch.' }
+    $actualBackend = & git -C $backendPath rev-parse HEAD
+    if ($LASTEXITCODE -ne 0 -or $actualBackend -cne $CandidateBackendRevision) { throw 'Candidate backend resolved SHA mismatch.' }
+    $backendMode = 'candidate'
+}
+$backendDirt = & git -C $backendPath status --porcelain --untracked-files=all
+if ($LASTEXITCODE -ne 0 -or $backendDirt) { throw 'Backend source must be a clean exact checkout.' }
+$gitlink = & git -C $repoRoot ls-tree HEAD -- windows/deps/quickshell
+if ($LASTEXITCODE -ne 0 -or "$gitlink" -notmatch '^160000 commit ([a-f0-9]{40})\s') { throw 'Backend gitlink is missing.' }
+$pinnedBackendRevision = $Matches[1]
+$sourceLock = Get-Content -LiteralPath "$repoRoot\windows\sources.lock.json" -Raw | ConvertFrom-Json
+if ($pinnedBackendRevision -cne $sourceLock.quickshell.revision) { throw 'Backend gitlink and source lock disagree.' }
 if (-not $BuildRoot) { $BuildRoot = Join-Path $repoRoot 'windows\.local\build' }
 $BuildRoot = [IO.Path]::GetFullPath($BuildRoot)
 $installRoot = Join-Path $BuildRoot 'install'
@@ -120,6 +151,7 @@ if ($PublicRelease) {
         @{ path = $QtPrefix; public = '/qt' },
         @{ path = $Cli11Include; public = '/cli11' },
         @{ path = $repoRoot; public = '/source' },
+        @{ path = $backendPath; public = '/backend' },
         @{ path = $BuildRoot; public = '/build' }
     )
     $nativePathFlags = @()
@@ -142,7 +174,7 @@ if ($PublicRelease) {
         Set-Content -LiteralPath $publicCache -Encoding UTF8
     $common += @('-C', $publicCache)
 }
-Invoke-BuildCommand 'configure-backend' (@('-S', "$repoRoot\windows\deps\quickshell",
+Invoke-BuildCommand 'configure-backend' (@('-S', $backendPath,
     '-B', "$BuildRoot\quickshell") + $common + @("-DCMAKE_C_COMPILER:FILEPATH=$LlvmBin\clang-cl.exe",
     "-DCLI11_INCLUDE_DIR=$Cli11Include", '-DCRASH_HANDLER=OFF', '-DBUILD_TESTING=OFF', '-DINSTALL_QMLDIR=qml',
     '-DQS_AUTOSTART_NAME=CaelestiaPrototype', '-DQS_AUTOSTART_ARGS=',
@@ -152,7 +184,7 @@ Invoke-BuildCommand 'build-brightness-probe' @('--build', "$BuildRoot\quickshell
 if ($Tests) {
     # Run with: ctest --test-dir <BuildRoot>\quickshell-tests -L '^portable$'
     # (see windows/deps/quickshell/src/windows/test/README.md for the tiers).
-    $fixtureSource = "$repoRoot\windows\deps\quickshell\src\windows\test"
+    $fixtureSource = Join-Path $backendPath 'src\windows\test'
     if (-not (Test-Path -LiteralPath "$fixtureSource\CMakeLists.txt")) {
         throw 'The pinned backend has no native fixture project; update windows/deps/quickshell.'
     }
@@ -246,7 +278,10 @@ Invoke-BuildCommand 'install-plugins' @('--install', "$BuildRoot\caelestia")
 [ordered]@{
     sourceRevision = $fullSourceRevision
     sourceDirty = [bool]$rawDirty
-    backendRevision = (& git -C "$repoRoot\windows\deps\quickshell" rev-parse HEAD).Trim()
+    backendRevision = (& git -C $backendPath rev-parse HEAD).Trim()
+    backendMode = $backendMode
+    pinnedBackendRevision = $pinnedBackendRevision
+    lockBackendRevision = $sourceLock.quickshell.revision
     m3shapesRevision = $m3shapesRevision
     glazierRevision = $glazierRevision
     glazierSha256 = $glazierSha256
@@ -273,7 +308,10 @@ Invoke-BuildCommand 'install-plugins' @('--install', "$BuildRoot\caelestia")
     toolchain = $toolchain
     sourceRevision = $fullSourceRevision
     sourceDirty = [bool]$rawDirty
-    backendRevision = (& git -C "$repoRoot\windows\deps\quickshell" rev-parse HEAD).Trim()
+    backendRevision = (& git -C $backendPath rev-parse HEAD).Trim()
+    backendMode = $backendMode
+    pinnedBackendRevision = $pinnedBackendRevision
+    lockBackendRevision = $sourceLock.quickshell.revision
     m3shapesRevision = $m3shapesRevision
     glazierRevision = $glazierRevision
     glazierBundled = -not $SkipGlazier

@@ -2,8 +2,12 @@
 
 The active workflow is
 [.github/workflows/windows-build.yml](../../.github/workflows/windows-build.yml).
-The `windows-build.yml.template` is an inert minimal native recipe using the
-same supported toolchain, not the active regression configuration.
+The `windows-build.yml.template` is an inert identical copy for review and
+recovery, not a second active workflow.
+
+[Exact-pair integration](PAIR-INTEGRATION.md) documents immutable candidate
+inputs, the trusted producer validator, separate source roots, receipt
+semantics and coordinated backend/shell changes.
 
 ## Gates and build scheduling
 
@@ -56,7 +60,8 @@ trees, and pip's download cache. Warm runs avoid extracting LLVM and CLI11
 again. Archive checksums still run after restore, and required tool files and
 versions are checked before use. Python tooling is installed fresh. The cache
 identity includes the specification and Python locks, not a floating channel. Only
-trusted `main` runs save this cache; pull requests may restore it. There are
+trusted pushes to `main` save this cache; pull requests and manual candidate
+dispatches may restore it but cannot save it. There are
 no native object, CMake build, Cargo target, staged-shell or installed-product
 caches shared across trust boundaries. Change the cache schema key when the
 tooling selection or extraction contract changes.
@@ -76,13 +81,16 @@ accessible. Never substitute private dependency credentials.
 
 ## Evidence and limits
 
-Regression jobs upload only compact summaries containing test names, exit
+Fast and packaging jobs upload compact summaries containing test names, exit
 codes, timings, source revision and dirty status, with three-day retention. Raw fixture
 logs, profiles and provider data are not uploaded. Native jobs always upload
 path-free `toolchain.json` receipts from preparation and build, including the
 specification/lock digest and actual versions. Raw `build.json`, environment
 reports and build logs contain deployment paths and are not artifact inputs.
-Failure output remains visible in the job that executed it.
+The pair recorder suppresses raw native output and retains bounded diagnostic
+categories in the public receipt instead.
+Its exact-pair receipts and sanitized JUnit have seven-day retention, as
+documented in the [pair contract](PAIR-INTEGRATION.md#execution-and-receipts).
 
 The native job runs the release assembler's read-only toolchain preflight on
 the build receipt. Fast checks exercise supported receipts plus incompatible
