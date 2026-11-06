@@ -98,15 +98,23 @@ function Enter-CaelestiaToolchain {
     $devModule = Join-Path $instance.installationPath 'Common7\Tools\Microsoft.VisualStudio.DevShell.dll'
     $env:PATH = "$(Split-Path -Parent $vswhere);$env:PATH"
     Import-Module -Name $devModule -ErrorAction Stop
-    Enter-VsDevShell -VsInstallPath $instance.installationPath -SkipAutomaticLocation -SkipExistingEnvironmentVariables `
+    Enter-VsDevShell -VsInstallPath $instance.installationPath -SkipAutomaticLocation `
         -DevCmdArguments "-arch=x64 -host_arch=x64 -vcvars_ver=$($spec.vcToolsVersion) -winsdk=$($spec.windowsSdkVersion)" | Out-Null
     if ($env:VCToolsVersion.TrimEnd('\') -cne $spec.vcToolsVersion -or
         $env:WindowsSDKVersion.TrimEnd('\') -cne $spec.windowsSdkVersion -or
         $env:VSCMD_ARG_TGT_ARCH -ne 'x64' -or $env:VSCMD_ARG_HOST_ARCH -ne 'x64') {
         throw "Visual Studio did not select VC $($spec.vcToolsVersion) and SDK $($spec.windowsSdkVersion). Repair these exact optional components; no compilation was started."
     }
-    $env:PATH = "$LlvmBin;$QtPrefix\bin;$env:PATH"
+    # Make the selected linker unambiguous even when the caller already had
+    # another VS, LLVM or Unix-style link executable on PATH.
+    $vcBin = Join-Path $vcRoot 'bin\Hostx64\x64'
+    $sdkBin = Join-Path $sdkRoot "bin\$($spec.windowsSdkVersion)\x64"
+    $env:PATH = "$LlvmBin;$QtPrefix\bin;$vcBin;$sdkBin;$env:PATH"
     if ($ToolsBin) { $env:PATH = "$ToolsBin;$env:PATH" }
+    if ((Get-Command link.exe -CommandType Application | Select-Object -First 1).Source -ine (Join-Path $vcBin 'link.exe')) {
+        throw 'The selected VC linker is shadowed on PATH. Use an unmodified tool directory and rerun the build in a fresh PowerShell process.'
+    }
+    $env:CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER = Join-Path $vcBin 'link.exe'
     return $instance
 }
 
@@ -150,6 +158,7 @@ function Get-CaelestiaActualToolchain {
         vcToolsVersion = $vcVersion.TrimEnd('\')
         # Servicing binary version is distinct from VC/Tools/MSVC directory.
         vcCompilerFileVersion = $(if (Test-Path -LiteralPath $vcCompiler -PathType Leaf) { (Get-Item -LiteralPath $vcCompiler).VersionInfo.FileVersion } else { '' })
+        vcLinkerFileVersion = $(if ($env:VCToolsInstallDir) { (Get-Item -LiteralPath (Join-Path $env:VCToolsInstallDir 'bin\Hostx64\x64\link.exe')).VersionInfo.FileVersion } else { '' })
         windowsSdkVersion = $sdkVersion.TrimEnd('\')
         clangVersion = [regex]::Match($clang, '(?m)^clang version ([0-9.]+)').Groups[1].Value
         clangTarget = [regex]::Match($clang, '(?m)^Target: (.+)$').Groups[1].Value.Trim()

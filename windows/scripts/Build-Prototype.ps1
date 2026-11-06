@@ -102,6 +102,7 @@ function Invoke-BuildCommand([string]$Name, [string[]]$CommandArguments) {
 
 $common = @('-G', 'Ninja', '-DCMAKE_BUILD_TYPE=Release', "-DCMAKE_CXX_COMPILER:FILEPATH=$LlvmBin\clang-cl.exe",
     "-DCMAKE_MAKE_PROGRAM:FILEPATH=$((Get-Command ninja.exe -CommandType Application | Select-Object -First 1).Source)",
+    "-DCMAKE_LINKER:FILEPATH=$env:VCToolsInstallDir\bin\Hostx64\x64\link.exe",
     '-DCMAKE_LINKER_TYPE=MSVC', "-DCMAKE_MT:FILEPATH=$manifestTool", "-DCMAKE_PREFIX_PATH=$QtPrefix")
 $publicPathMappings = @()
 if ($PublicRelease) {
