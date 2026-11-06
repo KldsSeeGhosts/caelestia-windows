@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "producerRepository": "KldsSeeGhosts/caelestia-quickshell-windows",
-  "producerRevision": "27a88e507fc6077a237e1d4c8b94045fc7ef57a3",
+  "producerRevision": "cd729d253478c24e64eb5d1fb54d3d752873e265",
   "validatorPath": ".github/scripts/candidate_contract.py",
-  "validatorSha256": "13414713ebe6b2b97a243ca6b73c636504a6855b8dbe4bb1b1674365a57adcb9",
+  "validatorSha256": "f1ee61b86ee9042d727391683668f85f71e677deceeb0de991357d313e13600f",
   "contractSchemaVersion": 1
 }
