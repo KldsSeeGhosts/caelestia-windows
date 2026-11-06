@@ -25,7 +25,6 @@ if ($ValidateToolchainOnly) {
     return
 }
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
-. (Join-Path $repoRoot 'windows\capture\Source.ps1')
 $BuildRoot = Resolve-CaelestiaDirectory $BuildRoot
 $SupplementalNoticesRoot = Resolve-CaelestiaDirectory $SupplementalNoticesRoot
 $OutputDirectory = Resolve-CaelestiaDirectory $OutputDirectory
@@ -67,6 +66,7 @@ if ($build.sourceDirty -ne $false -or $build.publicRelease -ne $true -or $build.
     -not $build.captureBundled -or $build.qtVersion -notmatch '^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9._-]+)?$') {
     throw 'An exact clean production build record is required.'
 }
+. (Join-Path $repoRoot 'windows\capture\Source.ps1')
 # Builds and packaging share the exact toolchain and runtime compatibility
 # guard. Old/incomplete receipts require a rebuild, never a relaxed guard.
 Assert-CaelestiaBuildToolchain $build
