@@ -92,11 +92,12 @@ those results, including the confirmed URL defect's old-code-fail/corrected-pass
 evidence. This contribution alone does not satisfy that historical-defect
 acceptance or establish that every staged-shell regression is covered.
 
-Aggregate runner registration, relevant-change CI, independent review and public
-status are integration-owner work. This change intentionally does not edit the
-aggregate runner, workflow, staging map or production code. The Unit gate already
-discovers the five JavaScript tests; only the QML lane needs explicit aggregate
-registration with a Qt prefix. Do not infer a CI pass from a local fixture receipt.
+The Unit gate discovers the five JavaScript tests. The Services aggregate runs
+the QML lane with its Qt prefix and all five mutation controls. The Shell aggregate
+also runs the separate URL boundary suite. Existing relevant-change CI invokes
+these aggregates and uploads their sanitized summaries, not raw fixture logs.
+Independent review and hosted results are still required; a local fixture receipt
+does not establish a CI pass.
 `-PureOnly` requires no initialized native dependency checkouts and records an
 empty dependency map because that lane does not load them. Full runs record the
 actual checked-out dependency revisions.

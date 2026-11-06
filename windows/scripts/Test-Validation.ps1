@@ -98,12 +98,16 @@ try {
               'Test-HotplugTeardown', 'Test-IdleInhibitStatus', 'Test-LauncherHoverClose',
               'Test-PerMonitorFullscreen', 'Test-PinnedPopoutFocus', 'Test-QuotaPopovers',
               'Test-QuotaProviderKeyboard', 'Test-WallpaperColours', 'Test-WallpaperHandback',
-              'Test-WallpaperPreview', 'Test-WindowsBackground', 'Test-UpdateManager')
+              'Test-WallpaperPreview', 'Test-WindowsBackground', 'Test-UpdateManager', 'Test-FileUrls')
         }
         if (-not $scripts.Count) { throw 'No QML regressions were discovered.' }
         $fixtureArguments = @('-QtPrefix', $QtPrefix)
         if ($BuildRoot) { $fixtureArguments += @('-BuildRoot', $BuildRoot) }
         foreach ($name in $scripts) { Invoke-ScriptCheck $name $fixtureArguments }
+        if ($Suite -eq 'Services') {
+            Invoke-ScriptCheck 'Test-StagedServiceModels' @('-QtPrefix', $QtPrefix,
+                '-OutputRoot', (Join-Path $OutputRoot 'staged-models'), '-MutationControls')
+        }
     }
     $completed = $true
 } finally {

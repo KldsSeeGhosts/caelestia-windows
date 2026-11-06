@@ -6,8 +6,13 @@ const vm = require("node:vm");
 
 const source = fs.readFileSync(path.join(__dirname, "../services/clipboard/ClipboardHistory.js"), "utf8");
 function load(text = source) {
-    const context = vm.createContext({});
-    vm.runInContext(text, context, { filename: "production/ClipboardHistory.js" });
+    const urls = vm.createContext({});
+    const urlSource = fs.readFileSync(path.join(__dirname, "../shell/adapters/utils/FileUrls.js"), "utf8");
+    vm.runInContext(urlSource.replace(/^\s*\.pragma library\s*$/gm, ""), urls,
+        { filename: "production/FileUrls.js" });
+    const context = vm.createContext({ FileUrls: urls });
+    vm.runInContext(text.replace(/^\s*\.import[^\r\n]*$/gm, ""), context,
+        { filename: "production/ClipboardHistory.js" });
     return context;
 }
 const model = load();
