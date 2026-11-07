@@ -9,13 +9,21 @@ param(
     [Parameter(Mandatory)][string]$Results,
     [Parameter(Mandatory)][string]$JUnit,
     [string]$Python = 'python',
+    # Compile parallelism for the production build only; tests stay serial.
+    [ValidateRange(1, 16)][int]$Jobs = 2,
+    # Early, unrecorded Services run for a fast first error. It writes only
+    # under this fresh root, never Results, and is never pass evidence: the
+    # recorded integration reruns the Services gate from scratch.
+    [string]$ServicesPreflightRoot,
     # Only opt in for disposable hosted fixtures, never retained artifacts.
     [switch]$EchoDiagnostics
 )
 $ErrorActionPreference = 'Stop'
 $ShellRoot = (Resolve-Path -LiteralPath $ShellRoot).Path
 $BackendRoot = (Resolve-Path -LiteralPath $BackendRoot).Path
-foreach ($output in @($BuildRoot, $Results)) {
+$outputs = @($BuildRoot, $Results)
+if ($ServicesPreflightRoot) { $outputs += $ServicesPreflightRoot }
+foreach ($output in $outputs) {
     $absolute = [IO.Path]::GetFullPath($output)
     foreach ($source in @($ShellRoot, $BackendRoot)) {
         if ($absolute -eq $source -or $absolute.StartsWith($source + '\', [StringComparison]::OrdinalIgnoreCase)) {
@@ -24,7 +32,6 @@ foreach ($output in @($BuildRoot, $Results)) {
     }
 }
 if (Test-Path -LiteralPath $BuildRoot) { throw 'Pair production build requires a fresh build root.' }
-New-Item -ItemType Directory -Force -Path $Results | Out-Null
 $spec = Get-Content -LiteralPath "$ShellRoot\windows\toolchain.json" -Raw | ConvertFrom-Json
 $qt = Join-Path $ToolRoot $spec.qtDirectory
 $llvm = Join-Path $ToolRoot "$($spec.llvmDirectory)\bin"
@@ -36,6 +43,53 @@ $env:QT_QPA_PLATFORM = 'offscreen'
 $env:QT_QPA_PLATFORM_PLUGIN_PATH = "$qt\plugins\platforms"
 $env:QT_QUICK_BACKEND = 'software'
 $env:PYTHONDONTWRITEBYTECODE = '1'
+$common = @('-NoProfile', '-NonInteractive', '-File')
+function Get-ServicesArguments([string]$OutputRoot) {
+    return $common + @("$scripts\Test-Validation.ps1", '-Suite', 'Services',
+        '-BuildRoot', $BuildRoot, '-QtPrefix', $qt, '-OutputRoot', $OutputRoot)
+}
+function Invoke-Logged([string]$Log, [string]$Executable, [string[]]$CommandArguments) {
+    $code = 1
+    try {
+        $ErrorActionPreference = 'Continue'
+        $global:LASTEXITCODE = 1
+        & $Executable @CommandArguments 2>&1 | ForEach-Object { "$_" } |
+            Set-Content -LiteralPath $Log -Encoding UTF8
+        $code = $LASTEXITCODE
+    } finally { $ErrorActionPreference = 'Stop' }
+    return $code
+}
+function Write-FailureTail([string]$Name, [string]$Log) {
+    if (-not $EchoDiagnostics) { return }
+    Write-Output "Failed isolated stage: $Name (last 80 lines)"
+    $tail = (Get-Content -LiteralPath $Log -Tail 80 -Encoding UTF8) -join "`n"
+    if ($tail.Length -gt 16000) { $tail = '[earlier output truncated]' + "`n" + $tail.Substring($tail.Length - 15970) }
+    Write-Output $tail
+}
+
+if ($ServicesPreflightRoot) {
+    $preflight = [IO.Path]::GetFullPath($ServicesPreflightRoot)
+    $resultsRoot = [IO.Path]::GetFullPath($Results)
+    foreach ($pair in @(@($preflight, $resultsRoot), @($resultsRoot, $preflight))) {
+        if ($pair[0] -eq $pair[1] -or $pair[0].StartsWith($pair[1].TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase)) {
+            throw 'The Services preflight must stay separate from pair results.'
+        }
+    }
+    if (Test-Path -LiteralPath $preflight) { throw 'The Services preflight requires a fresh output root.' }
+    New-Item -ItemType Directory -Path $preflight | Out-Null
+    $log = Join-Path $preflight 'services.private.log'
+    $code = Invoke-Logged $log $ps (Get-ServicesArguments (Join-Path $preflight 'Services'))
+    if ($code -ne 0) {
+        Write-FailureTail 'services-preflight' $log
+        Write-Output "Services preflight failed: exit=$code. Local diagnostic log: $log"
+        Write-Output 'This early run is not a pair receipt; the recorded integration stage was not started.'
+        exit 1
+    }
+    Write-Output 'Services preflight passed. It is not evidence; the recorded integration reruns Services.'
+    exit 0
+}
+
+New-Item -ItemType Directory -Force -Path $Results | Out-Null
 $journal = @('services', 'production', 'release-toolchain', 'plugins', 'shell', 'smoke') | ForEach-Object {
     [ordered]@{ name = $_; outcome = 'not_run'; exitCode = $null; durationSeconds = $null }
 }
@@ -50,38 +104,27 @@ function Invoke-Gate([int]$Index, [string]$Executable, [string[]]$CommandArgumen
     Save-Journal
     $clock = [Diagnostics.Stopwatch]::StartNew()
     $code = 1
+    $log = "$Results\$($item.name).private.log"
     try {
-        $ErrorActionPreference = 'Continue'
-        $global:LASTEXITCODE = 1
-        & $Executable @CommandArguments 2>&1 | ForEach-Object { "$_" } |
-            Set-Content -LiteralPath "$Results\$($item.name).private.log" -Encoding UTF8
-        $code = $LASTEXITCODE
+        $code = Invoke-Logged $log $Executable $CommandArguments
     } finally {
-        $ErrorActionPreference = 'Stop'
         $item.exitCode = $code
         $item.durationSeconds = [Math]::Round($clock.Elapsed.TotalSeconds, 6)
         $item.outcome = if ($code -eq 0) { 'success' } else { 'failure' }
         Save-Journal
     }
     if ($code -ne 0) {
-        if ($EchoDiagnostics) {
-            Write-Output "Failed isolated stage: $($item.name) (last 80 lines)"
-            $tail = (Get-Content -LiteralPath "$Results\$($item.name).private.log" -Tail 80 -Encoding UTF8) -join "`n"
-            if ($tail.Length -gt 16000) { $tail = '[earlier output truncated]' + "`n" + $tail.Substring($tail.Length - 15970) }
-            Write-Output $tail
-        }
+        Write-FailureTail $item.name $log
         throw "Pair integration stage failed: $($item.name). Raw output excluded from retained artifacts."
     }
 }
-$common = @('-NoProfile', '-NonInteractive', '-File')
 $failed = $false
 Save-Journal
 try {
-    Invoke-Gate 0 $ps ($common + @("$scripts\Test-Validation.ps1", '-Suite', 'Services',
-        '-BuildRoot', $BuildRoot, '-QtPrefix', $qt, '-OutputRoot', "$Results\Services"))
+    Invoke-Gate 0 $ps (Get-ServicesArguments "$Results\Services")
     $buildArguments = $common + @("$scripts\Build-Prototype.ps1", '-BuildRoot', $BuildRoot,
         '-QtPrefix', $qt, '-LlvmBin', $llvm, '-Cli11Include', (Join-Path $ToolRoot $spec.cli11Directory),
-        '-ToolsBin', $tools, '-Jobs', '2', '-PublicRelease', '-PluginTests')
+        '-ToolsBin', $tools, '-Jobs', "$Jobs", '-PublicRelease', '-PluginTests')
     if ($Mode -eq 'candidate') { $buildArguments += @('-BackendRoot', $BackendRoot, '-CandidateBackendRevision', $BackendSha) }
     Invoke-Gate 1 $ps $buildArguments
     Invoke-Gate 2 $ps ($common + @("$scripts\New-CaelestiaRelease.ps1", '-BuildRoot', $BuildRoot, '-ValidateToolchainOnly'))
