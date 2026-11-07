@@ -29,6 +29,7 @@ param(
 . (Join-Path $PSScriptRoot 'Caelestia-InstallCommon.ps1')
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
 if ($SourceRoot) { $repoRoot = (Resolve-Path -LiteralPath $SourceRoot).Path }
+. (Join-Path $repoRoot 'windows\capture\Source.ps1')
 if ($NoIntegration -and ($Restart -or $Autostart -or
     [IO.Path]::GetFullPath($Prefix).TrimEnd('\') -eq [IO.Path]::GetFullPath((Join-Path $env:LOCALAPPDATA 'Programs\caelestia-windows')).TrimEnd('\'))) {
     throw '-NoIntegration requires a separate prefix and cannot launch or register autostart.'
@@ -48,7 +49,7 @@ if (Test-Path -LiteralPath $buildRecord) {
         $changedInputs = @(& git -C $repoRoot diff --name-only $buildInfo.sourceRevision $sourceRevision)
         if ($LASTEXITCODE -ne 0) { throw 'Cannot verify native inputs of the source override.' }
         $nativeInputs = @($changedInputs | Where-Object {
-            $_ -match '^plugin/|^cmake/|\.(cpp|hpp|h|c|cc|cmake|qrc)$|(^|/)(CMakeLists\.txt|Cargo\.toml|Cargo\.lock)$' })
+            Test-CaelestiaCaptureNativeInput $_ })
         $nativeOverride = $nativeInputs.Count -eq 0
     }
     if ($LASTEXITCODE -ne 0 -or ($sourceRevision -ne $buildInfo.sourceRevision -and -not $nativeOverride)) {
@@ -110,18 +111,14 @@ foreach ($sourceRoot in @($BuildRoot, $QtPrefix, $VCRuntimeRoot, $repoRoot, $Pro
 }
 $qmlRoot = Join-Path $BuildRoot 'install\qml'
 $deploy = Join-Path $QtPrefix 'bin\windeployqt.exe'
-# Glazier is bundled beside qs.exe, never downloaded or resolved from a
+# Caelestia capture is bundled beside qs.exe, never downloaded or resolved from a
 # machine-wide location. The whole versioned payload carries it.
-$glazierSource = Join-Path $BuildRoot 'install\glazier.exe'
+$glazierSource = Join-Path $BuildRoot 'install\caelestia-capture.exe'
 foreach ($file in @("$BuildRoot\quickshell\qs.exe", $glazierSource, $deploy, "$qmlRoot\Caelestia\Windows\qmldir", "$qmlRoot\M3Shapes\qmldir")) {
     if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw "Missing runtime prerequisite: $file" }
 }
-if ($buildInfo -and $buildInfo.glazierBundled -eq $false) {
-    throw 'This build skipped the bundled Glazier; rebuild without -SkipGlazier before installing.'
-}
-if ($buildInfo -and $buildInfo.glazierSha256 -and
-    (Get-FileHash -LiteralPath $glazierSource -Algorithm SHA256).Hash.ToLowerInvariant() -ne [string]$buildInfo.glazierSha256) {
-    throw 'The staged glazier.exe does not match build.json; rebuild the payload.'
+if ($buildInfo) {
+    Assert-CaelestiaCaptureBuild $buildInfo (Get-CaelestiaCaptureSource $repoRoot) $glazierSource
 }
 # Serialize preparation as well as activation. Otherwise two simultaneous
 # updates can both pass the staging scan and overwrite the same rollback tree.
@@ -207,7 +204,10 @@ try {
         Set-Content -LiteralPath "$payload\DesktopTakeover.build.json" -Encoding UTF8
     $timings.compileSupervisorSeconds = $phaseClock.Elapsed.TotalSeconds
     $timings.supervisorCacheHit = $supervisorCached
-    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'scheme') -Destination $payload -Recurse
+    New-Item -ItemType Directory -Path "$payload\scheme" | Out-Null
+    foreach ($schemeFile in @('win_scheme.py', 'fcntl.py', 'requirements.lock.txt')) {
+        Copy-Item -LiteralPath (Join-Path $PSScriptRoot "scheme\$schemeFile") -Destination "$payload\scheme"
+    }
     New-Item -ItemType Directory -Path "$payload\licenses" | Out-Null
     Copy-Item -LiteralPath "$repoRoot\LICENSE", "$repoRoot\THIRD-PARTY-NOTICES.md" -Destination "$payload\licenses"
     Copy-Item -LiteralPath "$repoRoot\windows\services\clipboard\upstream\LICENSE-MIT.txt" -Destination "$payload\licenses\Clipboard-Overlay-MIT.txt"
@@ -219,10 +219,9 @@ try {
     Copy-Item -LiteralPath "$repoRoot\windows\deps\quickshell\src\windows\third_party\material_color\LICENSE" -Destination "$payload\licenses\MaterialColor-LICENSE"
     # Glazier's MIT licence and its own upstream third-party notices travel
     # with the bundled executable.
-    Copy-Item -LiteralPath "$repoRoot\windows\deps\glazier\LICENSE" -Destination "$payload\licenses\Glazier-LICENSE"
-    if (Test-Path -LiteralPath "$repoRoot\windows\deps\glazier\THIRD_PARTY_NOTICES.md" -PathType Leaf) {
-        Copy-Item -LiteralPath "$repoRoot\windows\deps\glazier\THIRD_PARTY_NOTICES.md" -Destination "$payload\licenses\Glazier-THIRD_PARTY_NOTICES.md"
-    }
+    Copy-Item -LiteralPath "$repoRoot\windows\capture\LICENSE" -Destination "$payload\licenses\Glazier-LICENSE"
+    Copy-Item -LiteralPath "$repoRoot\windows\capture\THIRD_PARTY_NOTICES.md" -Destination "$payload\licenses\Glazier-THIRD_PARTY_NOTICES.md"
+    Copy-Item -LiteralPath "$repoRoot\windows\capture\ORIGIN.md" -Destination "$payload\licenses\Caelestia-Capture-ORIGIN.md"
     Copy-Item -LiteralPath "$repoRoot\windows\sources.lock.json" -Destination "$payload\licenses"
     # Keep component-relative paths and copyright/NOTICE files, including new
     # fonts and backend dependencies added after this packaging script.
@@ -280,8 +279,14 @@ try {
         sourceRevision = (& git -C $repoRoot rev-parse HEAD).Trim()
         backendRevision = $(if ($buildInfo) { $buildInfo.backendRevision } else { '' })
         glazierRevision = $(if ($buildInfo) { [string]$buildInfo.glazierRevision } else { '' })
+        captureSourcePath = $(if ($buildInfo) { [string]$buildInfo.captureSourcePath } else { '' })
+        captureSourceRevision = $(if ($buildInfo) { [string]$buildInfo.captureSourceRevision } else { '' })
+        captureOriginRevision = $(if ($buildInfo) { [string]$buildInfo.captureOriginRevision } else { '' })
+        captureCargoLockSha256 = $(if ($buildInfo) { [string]$buildInfo.captureCargoLockSha256 } else { '' })
+        captureExecutable = 'caelestia-capture.exe'
         executableSha256 = (Get-FileHash -LiteralPath "$payload\qs.exe").Hash
-        glazierSha256 = (Get-FileHash -LiteralPath "$payload\glazier.exe").Hash
+        captureSha256 = (Get-FileHash -LiteralPath "$payload\caelestia-capture.exe").Hash.ToLowerInvariant()
+        glazierSha256 = (Get-FileHash -LiteralPath "$payload\caelestia-capture.exe").Hash
     } | ConvertTo-Json | Set-Content -LiteralPath "$payload\install.json" -Encoding UTF8
     Remove-Item -LiteralPath "$payload\.caelestia-staging.json" -Force -ErrorAction SilentlyContinue
 

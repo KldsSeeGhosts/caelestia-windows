@@ -31,7 +31,7 @@ not interchangeable. The same VS instance must provide
 The following setup commands download development tools into a separate
 per-user directory. Run them in native Windows PowerShell. Python 3.12, Git,
 `curl.exe`, and `tar.exe` must be available. Production builds also bundle the
-Glazier recorder from the pinned `windows/deps/glazier` submodule, so the Rust
+Caelestia Capture helper from maintained `windows/capture` source, so the Rust
 toolchain (`cargo` on PATH, installed with [rustup](https://rustup.rs/)) is
 required. Install the exact Rust toolchain once:
 
@@ -228,6 +228,13 @@ The command does not install anything, run the live shell, or read the live
 profile.
 
 ## Release-facing checks
+
+For coordinated shell/backend changes, use the
+[exact-pair integration entry point](ci/PAIR-INTEGRATION.md). Candidate builds
+use an explicit exact-SHA backend clone outside the shell, preserve strict
+production pins, and cannot be assembled as releases. A candidate preflight
+receipt does not replace the final pinned main-push receipt for its own shell
+commit.
 
 The repository ships four validation interfaces:
 

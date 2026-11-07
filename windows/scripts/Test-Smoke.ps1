@@ -6,6 +6,7 @@ param(
     # The negative import check uses it; normal runs must omit it.
     [string]$StageRoot,
     [string]$RunRoot,
+    [ValidatePattern('^[a-f0-9]{40}$')][string]$CandidateBackendRevision,
     [ValidateRange(15, 600)][int]$TimeoutSeconds = 90,
     # Keep the isolated run directory after a pass too.
     [switch]$Keep
@@ -29,6 +30,8 @@ param(
 # A pass removes the run directory; a failure keeps it and prints its path.
 # Exit code is 0 on pass and 1 on failure.
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'Caelestia-Toolchain.ps1')
+Initialize-CaelestiaToolchainModules
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
 $BuildRoot = [IO.Path]::GetFullPath($BuildRoot)
 $QtPrefix = [IO.Path]::GetFullPath($QtPrefix)
@@ -80,22 +83,32 @@ try {
     }
     $lock = Get-Content -LiteralPath $lockPath -Raw | ConvertFrom-Json
     $buildRecord = Get-Content -LiteralPath $buildRecordPath -Raw | ConvertFrom-Json
-    if ([string]$buildRecord.backendRevision -ne [string]$lock.quickshell.revision) {
+    if ($buildRecord.backendMode -eq 'candidate') {
+        if (-not $CandidateBackendRevision -or $buildRecord.backendRevision -cne $CandidateBackendRevision -or
+            $buildRecord.lockBackendRevision -cne $lock.quickshell.revision -or
+            $buildRecord.pinnedBackendRevision -cne $lock.quickshell.revision) {
+            throw 'Candidate smoke requires the explicit exact candidate SHA and unchanged shell pins.'
+        }
+    } elseif ($CandidateBackendRevision) {
+        throw 'Candidate smoke input requires a candidate build receipt.'
+    } elseif ($buildRecord.backendMode -and $buildRecord.backendMode -cne 'pinned') {
+        throw 'Unknown backend build mode.'
+    } elseif ([string]$buildRecord.backendRevision -ne [string]$lock.quickshell.revision) {
         throw "Backend pin mismatch: build has $($buildRecord.backendRevision), windows/sources.lock.json pins $($lock.quickshell.revision)."
     }
     if ([string]$buildRecord.m3shapesRevision -ne [string]$lock.m3shapes.revision) {
         throw "M3Shapes pin mismatch: build has $($buildRecord.m3shapesRevision), windows/sources.lock.json pins $($lock.m3shapes.revision)."
     }
-    if ($buildRecord.glazierBundled -eq $false) {
-        throw 'Build skipped the bundled Glazier; rebuild without -SkipGlazier.'
-    }
-    if ([string]$buildRecord.glazierRevision -ne [string]$lock.glazier.revision) {
-        throw "Glazier pin mismatch: build has $($buildRecord.glazierRevision), windows/sources.lock.json pins $($lock.glazier.revision)."
-    }
-    $stagedGlazier = Join-Path $BuildRoot 'install\glazier.exe'
-    if (-not (Test-Path -LiteralPath $stagedGlazier -PathType Leaf) -or
-        (Get-FileHash -LiteralPath $stagedGlazier -Algorithm SHA256).Hash.ToLowerInvariant() -ne [string]$buildRecord.glazierSha256) {
-        throw 'The staged bundled Glazier is missing or does not match build.json.'
+    . (Join-Path $repoRoot 'windows\capture\Source.ps1')
+    $captureSource = Get-CaelestiaCaptureSource $repoRoot
+    $stagedCapture = Join-Path $BuildRoot 'install\caelestia-capture.exe'
+    Assert-CaelestiaCaptureBuild $buildRecord $captureSource $stagedCapture
+    if ($captureSource.sourceRevision -cne $buildRecord.captureSourceRevision) {
+        $changedCapture = @(& git -C $repoRoot diff --name-only $buildRecord.captureSourceRevision `
+            $captureSource.sourceRevision -- windows/capture windows/sources.lock.json)
+        if ($LASTEXITCODE -ne 0 -or $changedCapture.Count) {
+            throw 'Capture source changed since the recorded build; rebuild before smoke.'
+        }
     }
 
     if ($StageRoot) {
@@ -116,7 +129,7 @@ try {
         }
         # Mirror the installed payload layout: the shell resolves its bundled
         # tool beside the staged shell's parent, not from a separate install.
-        Copy-Item -LiteralPath $stagedGlazier -Destination (Join-Path $run 'glazier.exe')
+        Copy-Item -LiteralPath $stagedCapture -Destination (Join-Path $run 'caelestia-capture.exe')
     }
 
     # Seed only the profile files these services read. Inert binds take the

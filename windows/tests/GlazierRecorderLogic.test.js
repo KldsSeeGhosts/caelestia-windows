@@ -6,8 +6,14 @@ const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
 
-const source = fs.readFileSync(path.join(__dirname,
-    "../shell/adapters/services/Recorder.qml"), "utf8");
+const revision = process.argv[2];
+if (revision && !/^[a-f0-9]{40}$/.test(revision))
+    throw new Error("Expected a full source revision");
+const source = revision
+    ? require("node:child_process").execFileSync("git",
+        ["show", `${revision}:windows/shell/adapters/services/Recorder.qml`],
+        { cwd: path.join(__dirname, "../.."), encoding: "utf8" })
+    : fs.readFileSync(path.join(__dirname, "../shell/adapters/services/Recorder.qml"), "utf8");
 function capture(pattern) {
     const match = source.match(pattern);
     assert.ok(match, "adapter source block found");
@@ -35,7 +41,8 @@ function recorder() {
         hostId: "", eventSequence: 0, connectionFailed: false, incompatible: false,
         startTimeout: { stop() {}, restart() {} },
         Quickshell: { env() { return ""; }, execDetached(spec) { context.launched = spec; } },
-        Glazier: { ownedHost: false,
+        Glazier: { ownedHost: false, launchedHost: false,
+            sendHostCommand(args) { context.launched = { command: [context.executable].concat(args) }; return true; },
             hostOptions() { return ["--no-hotkeys", "--theme-file", "C:/synthetic/theme-tokens.json"]; } },
         store: { restored: false, saved: "", input: "", text() { return this.input; },
             setText(text) { this.saved = text; } },
@@ -81,7 +88,7 @@ check(r.applyResponse(reply("new-host", [error()])) && r.lastError !== "",
 check(!r.pendingStart, "replacement failure needs no pending Start");
 
 r = recorder();
-check(!r.applyResponse(offline) && r.statusValue() === "Glazier stopped", "short stopped-host copy");
+check(!r.applyResponse(offline) && /^(?:Glazier|Caelestia capture) stopped$/.test(r.statusValue()), "short stopped-host copy");
 check(r.applyResponse(reply("new-host", [error()])) && r.lastError !== "",
     "first host after offline observation has fresh errors even without Start");
 for (const observeOffline of [false, true]) {
@@ -91,7 +98,9 @@ for (const observeOffline of [false, true]) {
     check(r.start(), "cold Start accepted");
     // A Start can cold-start the host, so it must carry the shell-owned host options.
     check(r.launched.command.slice(1, 4).join(" ") === "--no-hotkeys --theme-file C:/synthetic/theme-tokens.json"
-        && r.launched.command.includes("--record") && r.Glazier.ownedHost, "cold Start uses shell-owned host options");
+        && r.launched.command.includes("--record"), "cold Start uses shell-owned host options");
+    check(!r.Glazier.ownedHost && !r.Glazier.launchedHost,
+        "forwarded Start never assigns native ownership or launched-host journal freshness");
     check(r.applyResponse(reply("cold-host", [error()])) && r.lastError !== "",
         "cold Start first-response error visible");
     check(!r.pendingStart, "cold Start error completes pending attempt");
@@ -102,7 +111,7 @@ r = recorder();
 r.applyResponse(reply("idle-host"));
 check(r.start(), "timeout attempt accepted");
 r.expireStart();
-check(!r.pendingStart && r.lastError.startsWith("Glazier did not start recording."), "Start timeout visible");
+check(!r.pendingStart && /^(?:Glazier|Caelestia capture) did not start recording\./.test(r.lastError), "Start timeout visible");
 check(r.applyResponse(reply("idle-host")) && r.lastError !== "", "valid idle response retains timeout");
 r.disconnected("Synthetic transport failure");
 check(r.applyResponse(reply("idle-host")) && r.lastError !== "", "reconnection retains timeout");

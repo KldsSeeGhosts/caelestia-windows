@@ -1,58 +1,384 @@
-# INERT minimal native recipe. The active workflow also runs regression gates:
-# .github/workflows/windows-build.yml. Both consume windows/toolchain.json.
-name: Windows native recipe
+# All recursive dependency sources are publicly accessible at their pinned refs.
+name: Windows build
+
 on:
+  push:
+    branches: [main]
+  pull_request:
   workflow_dispatch:
+    inputs:
+      mode:
+        description: Explicit pinned or integration-only candidate mode
+        type: choice
+        options: [pinned, candidate]
+        default: pinned
+      backend_sha:
+        description: Candidate backend, exactly 40 lowercase hex characters (candidate mode only)
+        type: string
+      shell_sha:
+        description: Exact shell commit, 40 lowercase hex characters (defaults to workflow SHA)
+        type: string
+
 permissions:
   contents: read
+
+concurrency:
+  group: windows-build-${{ github.event_name }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  build:
+  checks:
+    name: Fast regressions
     runs-on: windows-2022
-    timeout-minutes: 60
-    defaults:
-      run:
-        shell: pwsh
-    env:
-      TOOL_ROOT: C:\t-public
-      BUILD_ROOT: C:\b-public
+    timeout-minutes: 10
+    outputs:
+      native: ${{ steps.changes.outputs.native }}
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - name: Refuse mutable dispatch inputs
+        shell: pwsh
+        env:
+          PAIR_MODE: ${{ inputs.mode || 'pinned' }}
+          PAIR_SHELL: ${{ inputs.shell_sha || github.sha }}
+          PAIR_BACKEND: ${{ inputs.backend_sha }}
+        run: |
+          if ($env:PAIR_SHELL -cnotmatch '^[a-f0-9]{40}$') { throw 'Immutable shell SHA required: exactly 40 lowercase hex characters.' }
+          if ($env:PAIR_MODE -eq 'candidate' -and $env:PAIR_BACKEND -cnotmatch '^[a-f0-9]{40}$') {
+            throw 'Immutable candidate backend SHA required: exactly 40 lowercase hex characters.'
+          }
+          if ($env:PAIR_MODE -eq 'pinned' -and $env:PAIR_BACKEND) { throw 'Candidate SHA requires mode=candidate.' }
+      - name: Checkout public sources
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
-          submodules: recursive
+          ref: ${{ inputs.shell_sha || github.sha }}
+          fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+      - name: Python 3.12
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: '3.12'
           architecture: x64
-      - name: Prepare and assert supported public tools
-        run: |
-          & powershell.exe -NoProfile -NonInteractive -File windows/scripts/Prepare-Toolchain.ps1 `
-            -ToolRoot $env:TOOL_ROOT -InstallRust
-          if ($LASTEXITCODE -ne 0) { throw 'Toolchain preparation failed.' }
-      - name: Build production payload
-        run: |
-          & powershell.exe -NoProfile -NonInteractive -File windows/scripts/Build-Prototype.ps1 `
-            -BuildRoot $env:BUILD_ROOT -QtPrefix "$env:TOOL_ROOT\Qt\6.11.2\msvc2022_64" `
-            -LlvmBin "$env:TOOL_ROOT\clang+llvm-20.1.8-x86_64-pc-windows-msvc\bin" `
-            -Cli11Include "$env:TOOL_ROOT\deps\CLI11-2.5.0\include" `
-            -ToolsBin "$env:TOOL_ROOT\tools\Scripts" -PublicRelease
-          if ($LASTEXITCODE -ne 0) { throw 'Native build failed.' }
-      - name: Release receipt preflight
-        run: |
-          & powershell.exe -NoProfile -NonInteractive -File windows/scripts/New-CaelestiaRelease.ps1 `
-            -BuildRoot $env:BUILD_ROOT -ValidateToolchainOnly
-          if ($LASTEXITCODE -ne 0) { throw 'Incompatible release toolchain.' }
-      - name: Offscreen smoke
-        run: |
-          & powershell.exe -NoProfile -NonInteractive -File windows/scripts/Test-Smoke.ps1 `
-            -BuildRoot $env:BUILD_ROOT -QtPrefix "$env:TOOL_ROOT\Qt\6.11.2\msvc2022_64"
-          if ($LASTEXITCODE -ne 0) { throw 'Offscreen smoke failed.' }
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
-        if: always()
+      - name: Node 24
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
-          name: toolchain-receipts
+          node-version: '24'
+      - name: Determine native build scope
+        id: changes
+        shell: pwsh
+        env:
+          CHANGE_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          & .\windows\ci\Get-NativeBuildRequired.ps1 -Base $env:CHANGE_BASE
+      - name: Source, lifecycle, quota and JavaScript regressions
+        shell: pwsh
+        run: |
+          & powershell.exe -NoProfile -NonInteractive -File windows/scripts/Test-Validation.ps1 `
+            -Suite Unit -Python python -OutputRoot "$env:RUNNER_TEMP\validation-unit"
+          if ($LASTEXITCODE -ne 0) { throw 'Fast regressions failed.' }
+      - name: Sanitized test summary
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: unit-summary-${{ github.run_id }}
+          path: ${{ runner.temp }}/validation-unit/summary.json
+          if-no-files-found: ignore
+          retention-days: 3
+
+  packaging:
+    name: Installer and colour regressions
+    needs: checks
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - name: Checkout public sources
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ inputs.shell_sha || github.sha }}
+          persist-credentials: false
+      - name: Python 3.12
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: '3.12'
+          architecture: x64
+      - name: Installer, rollback and scheme-generation contracts
+        shell: pwsh
+        run: |
+          & powershell.exe -NoProfile -NonInteractive -File windows/scripts/Test-Validation.ps1 `
+            -Suite Packaging -OutputRoot "$env:RUNNER_TEMP\validation-packaging"
+          if ($LASTEXITCODE -ne 0) { throw 'Installer regressions failed.' }
+      - name: Prepare isolated colour-test dependencies
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $venv = "$env:RUNNER_TEMP\colour-test-venv"
+          python -m venv $venv
+          if ($LASTEXITCODE -ne 0) { throw 'Colour-test environment creation failed.' }
+          $python = "$venv\Scripts\python.exe"
+          & $python -m pip install --disable-pip-version-check --no-deps --only-binary=:all: `
+            --require-hashes -r windows/scripts/scheme/requirements.lock.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Locked colour dependencies failed.' }
+          $lock = Get-Content windows/sources.lock.json -Raw | ConvertFrom-Json
+          if ($lock.schemeCli.revision -notmatch '^[a-f0-9]{40}$') { throw 'Invalid colour CLI pin.' }
+          & $python -m pip install --disable-pip-version-check --no-deps --ignore-requires-python `
+            "git+https://github.com/caelestia-dots/cli@$($lock.schemeCli.revision)"
+          if ($LASTEXITCODE -ne 0) { throw 'Pinned colour CLI installation failed.' }
+      - name: Colour worker and wallpaper-input regressions
+        shell: pwsh
+        run: |
+          & powershell.exe -NoProfile -NonInteractive -File windows/scripts/Test-Validation.ps1 `
+            -Suite Scheme -Python "$env:RUNNER_TEMP\colour-test-venv\Scripts\python.exe" `
+            -OutputRoot "$env:RUNNER_TEMP\validation-scheme"
+          if ($LASTEXITCODE -ne 0) { throw 'Colour regressions failed.' }
+      - name: Sanitized test summaries
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: packaging-summary-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/validation-packaging/summary.json
+            ${{ runner.temp }}/validation-scheme/summary.json
+          if-no-files-found: ignore
+          retention-days: 3
+
+  build:
+    name: Native build and offscreen regressions
+    needs: checks
+    if: needs.checks.outputs.native == 'true'
+    runs-on: windows-2022
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: C:\
+    env:
+      BUILD_ROOT: C:\b-public
+      TOOL_ROOT: C:\t-public
+      PIP_CACHE_DIR: C:\t-public\pip
+      DIAGNOSTICS: C:\ci-public
+      SMOKE_ROOT: C:\ci-public\smoke
+      PAIR_RESULTS: C:\ci-pair
+      TRUSTED_ROOT: C:\pair-trusted
+      PYTHONDONTWRITEBYTECODE: '1'
+
+    steps:
+      - name: Checkout recursive sources
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ inputs.shell_sha || github.sha }}
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Python 3.12
+        id: python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: '3.12'
+          architecture: x64
+
+      - name: Resolve exact pair and trusted producer
+        id: pair
+        env:
+          PAIR_MODE: ${{ inputs.mode || 'pinned' }}
+          PAIR_BACKEND: ${{ inputs.backend_sha }}
+          PAIR_SHELL: ${{ inputs.shell_sha || github.sha }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not (Test-Path "$env:GITHUB_WORKSPACE\windows\ci\Resolve-PairRequest.ps1")) {
+            throw 'Incompatible shell revision: exact-pair entry point is missing.'
+          }
+          & "$env:GITHUB_WORKSPACE\windows\ci\Resolve-PairRequest.ps1" `
+            -Mode $env:PAIR_MODE -BackendSha $env:PAIR_BACKEND -ShellSha $env:PAIR_SHELL `
+            -ShellRoot $env:GITHUB_WORKSPACE -CandidateRoot C:\pair-backend -Results $env:PAIR_RESULTS
+          $local = Get-Content "$env:PAIR_RESULTS\pair-local.json" -Raw | ConvertFrom-Json
+          python -I -B "$env:GITHUB_WORKSPACE\windows\ci\pair_result.py" bootstrap `
+            --shell $env:GITHUB_WORKSPACE --backend $local.backendRoot --target $env:TRUSTED_ROOT
+          if ($LASTEXITCODE -ne 0) { throw 'Trusted producer extraction or digest check failed.' }
+      - name: Initialize downstream receipt and inspect sources
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $request = Get-Content "$env:PAIR_RESULTS\pair-request.json" -Raw | ConvertFrom-Json
+          $local = Get-Content "$env:PAIR_RESULTS\pair-local.json" -Raw | ConvertFrom-Json
+          $validator = "$env:TRUSTED_ROOT\.github\scripts\candidate_contract.py"
+          python -I -B $validator --receipt "$env:PAIR_RESULTS\candidate-result.json" init `
+            --kind downstream --backend-sha $request.backend --shell-sha $request.shell
+          if ($LASTEXITCODE -ne 0) { throw 'Downstream receipt initialization failed.' }
+          python -I -B $validator --receipt "$env:PAIR_RESULTS\candidate-result.json" sources `
+            --backend $local.backendRoot --shell $env:GITHUB_WORKSPACE
+          if ($LASTEXITCODE -ne 0) { throw 'Exact source verification failed.' }
+          python -I -B $validator --receipt "$env:PAIR_RESULTS\candidate-result.json" run `
+            --stage producer --unittest --echo -- python -B -m unittest discover `
+            -s "$env:TRUSTED_ROOT\.github\candidate-contract" -p "test_*.py"
+          if ($LASTEXITCODE -ne 0) { throw 'Producer contract fixtures failed.' }
+
+      - name: Restore versioned tooling
+        id: tools
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          key: windows-x64-tools-contract-v1-py${{ steps.python.outputs.python-version }}-${{ hashFiles('windows/toolchain.json', 'windows/toolchain/*.lock.txt', 'windows/toolchain/extract_llvm.py') }}
+          path: |
+            C:\t-public\Qt
+            C:\t-public\downloads
+            C:\t-public\pip
+            C:\t-public\clang+llvm-20.1.8-x86_64-pc-windows-msvc
+            C:\t-public\deps\CLI11-2.5.0
+
+      - name: Prepare pinned tooling
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -I -B "$env:TRUSTED_ROOT\.github\scripts\candidate_contract.py" `
+            --receipt "$env:PAIR_RESULTS\candidate-result.json" run --stage prepare --echo -- `
+            powershell.exe -NoProfile -NonInteractive -File "$env:GITHUB_WORKSPACE\windows\scripts\Prepare-Toolchain.ps1" `
+            -ToolRoot $env:TOOL_ROOT -InstallRust
+          if ($LASTEXITCODE -ne 0) { throw 'Supported public toolchain preparation failed.' }
+
+      - name: Save tooling from trusted main only
+        if: steps.tools.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          key: ${{ steps.tools.outputs.cache-primary-key }}
+          path: |
+            C:\t-public\Qt
+            C:\t-public\downloads
+            C:\t-public\pip
+            C:\t-public\clang+llvm-20.1.8-x86_64-pc-windows-msvc
+            C:\t-public\deps\CLI11-2.5.0
+
+      - name: First-party capture Rust regressions
+        run: |
+          & powershell.exe -NoProfile -NonInteractive -File "$env:GITHUB_WORKSPACE\windows\scripts\Test-CaptureRust.ps1" `
+            -ToolRoot $env:TOOL_ROOT -OutputRoot C:\ci-capture -Jobs 2
+          if ($LASTEXITCODE -ne 0) { throw 'Capture Rust regressions failed or were empty.' }
+
+      - name: Backend component build and portable tier
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $local = Get-Content "$env:PAIR_RESULTS\pair-local.json" -Raw | ConvertFrom-Json
+          Set-Location -LiteralPath $local.backendRoot
+          $validator = "$env:TRUSTED_ROOT\.github\scripts\candidate_contract.py"
+          $gate = "$env:TRUSTED_ROOT\.github\scripts\Invoke-WindowsFixtureGate.ps1"
+          foreach ($phase in @('configure', 'build', 'portable')) {
+            $testArguments = if ($phase -eq 'portable') { @('--junit', "$env:PAIR_RESULTS\portable.raw.xml") } else { @() }
+            python -I -B $validator --receipt "$env:PAIR_RESULTS\candidate-result.json" run `
+              --stage $phase --echo @testArguments -- powershell.exe -NoProfile -NonInteractive -File $gate `
+              -Phase $phase -ContractRoot $env:GITHUB_WORKSPACE -ToolRoot $env:TOOL_ROOT `
+              -BuildRoot C:\b-fixtures -Results $env:PAIR_RESULTS -Jobs 2
+            if ($LASTEXITCODE -ne 0) { throw "Backend component phase failed: $phase" }
+          }
+          python -I -B $validator --receipt "$env:PAIR_RESULTS\candidate-result.json" inventory `
+            --ctest "$env:TOOL_ROOT\tools\Scripts\ctest.exe" --build C:\b-fixtures
+          if ($LASTEXITCODE -ne 0) { throw 'Backend tier inventory failed.' }
+
+      - name: Exact-pair production integration
+        run: |
+          $local = Get-Content "$env:PAIR_RESULTS\pair-local.json" -Raw | ConvertFrom-Json
+          $request = Get-Content "$env:PAIR_RESULTS\pair-request.json" -Raw | ConvertFrom-Json
+          # Isolated hosted fixtures only. Echo failures into the job log;
+          # retained receipt/artifact output remains allowlisted.
+          python -I -B "$env:TRUSTED_ROOT\.github\scripts\candidate_contract.py" `
+            --receipt "$env:PAIR_RESULTS\candidate-result.json" run --stage integration --echo `
+            --junit "$env:PAIR_RESULTS\integration.raw.xml" -- powershell.exe -NoProfile -NonInteractive `
+            -File "$env:GITHUB_WORKSPACE\windows\ci\Invoke-PairIntegration.ps1" `
+            -ShellRoot $env:GITHUB_WORKSPACE -BackendRoot $local.backendRoot `
+            -Mode $request.mode -BackendSha $request.backend -ToolRoot $env:TOOL_ROOT `
+            -BuildRoot $env:BUILD_ROOT -Results $env:PAIR_RESULTS -JUnit "$env:PAIR_RESULTS\integration.raw.xml" -EchoDiagnostics
+          if ($LASTEXITCODE -ne 0) { throw 'Consuming-shell integration failed.' }
+
+      - name: Finalize exact-pair receipt
+        if: always()
+        env:
+          PAIR_OUTCOME: ${{ job.status }}
+        run: |
+          $validator = "$env:TRUSTED_ROOT\.github\scripts\candidate_contract.py"
+          if (-not (Test-Path "$env:PAIR_RESULTS\pair-local.json") -or -not (Test-Path $validator)) {
+            throw 'Pair never resolved or trusted validator unavailable; cannot claim pass.'
+          }
+          $local = Get-Content "$env:PAIR_RESULTS\pair-local.json" -Raw | ConvertFrom-Json
+          python -I -B $validator --receipt "$env:PAIR_RESULTS\candidate-result.json" finalize `
+            --workflow-outcome $env:PAIR_OUTCOME --toolchain "$env:PAIR_RESULTS\actual-toolchain.json" `
+            --backend $local.backendRoot --shell $env:GITHUB_WORKSPACE
+          if ($LASTEXITCODE -ne 0) { throw 'Pair receipt is non-pass.' }
+
+      - name: Independently validate pair and eligibility
+        if: always()
+        env:
+          PAIR_OUTCOME: ${{ job.status }}
+        run: |
+          python -I -B "$env:GITHUB_WORKSPACE\windows\ci\pair_result.py" envelope `
+            --results $env:PAIR_RESULTS --shell $env:GITHUB_WORKSPACE `
+            --build-root $env:BUILD_ROOT `
+            --validator "$env:TRUSTED_ROOT\.github\scripts\candidate_contract.py" `
+            --workflow-outcome $env:PAIR_OUTCOME --event $env:GITHUB_EVENT_NAME --ref $env:GITHUB_REF `
+            --run-id $env:GITHUB_RUN_ID --attempt $env:GITHUB_RUN_ATTEMPT --workflow-sha $env:GITHUB_SHA
+          if ($LASTEXITCODE -ne 0) { throw 'Independent pair validation is non-pass.' }
+
+      - name: Sanitized exact-pair receipts
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: pair-results-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 7
+          if-no-files-found: warn
+          path: |
+            C:/ci-pair/pair-request.json
+            C:/ci-pair/candidate-result.json
+            C:/ci-pair/pair-result.json
+            C:/ci-pair/portable.xml
+            C:/ci-pair/integration.xml
+
+      - name: Sanitized test summaries
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: offscreen-summary-${{ github.run_id }}
+          path: |
+            C:/ci-pair/Services/summary.json
+            C:/ci-pair/Shell/summary.json
+          if-no-files-found: ignore
+          retention-days: 3
+
+      - name: Public toolchain receipts
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: windows-toolchain-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 3
+          if-no-files-found: ignore
           path: |
             C:/t-public/toolchain.json
             C:/b-public/logs/toolchain.json
-          if-no-files-found: ignore
-          retention-days: 3
+
+      - name: Capture Rust result and native acceptance inventory
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: capture-rust-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 7
+          if-no-files-found: warn
+          path: C:/ci-capture/capture-rust.json
+
+  validation:
+    name: Windows validation
+    if: always()
+    needs: [checks, packaging, build]
+    runs-on: windows-2022
+    timeout-minutes: 2
+    steps:
+      - name: Require every applicable gate
+        shell: pwsh
+        env:
+          CHECKS: ${{ needs.checks.result }}
+          PACKAGING: ${{ needs.packaging.result }}
+          BUILD: ${{ needs.build.result }}
+          NATIVE_REQUIRED: ${{ needs.checks.outputs.native }}
+        run: |
+          if ($env:CHECKS -ne 'success' -or $env:PACKAGING -ne 'success') {
+            throw 'Source or installer validation did not pass.'
+          }
+          if ($env:NATIVE_REQUIRED -notin @('true', 'false')) {
+            throw 'The native-build decision is missing or invalid.'
+          }
+          if ($env:NATIVE_REQUIRED -eq 'true' -and $env:BUILD -ne 'success') {
+            throw 'Required native validation did not pass.'
+          }
+          if ($env:NATIVE_REQUIRED -eq 'false' -and $env:BUILD -ne 'skipped') {
+            throw 'Unexpected native-gate result.'
+          }

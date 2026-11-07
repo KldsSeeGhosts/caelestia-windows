@@ -1,7 +1,8 @@
 # Glazier recorder adapter
 
-Glazier ships with Caelestia. The adapter uses the bundled executable, resolving
-it first from the running payload (`<payload>\glazier.exe`, the sibling of
+Caelestia Capture ships with Caelestia, maintained from the recorded Glazier
+origin. The adapter uses the bundled executable, resolving
+it first from the running payload (`<payload>\caelestia-capture.exe`, the sibling of
 `qs.exe`) and only then from an explicit absolute path in the profile's
 `config\glazier.json`. `CAELESTIA_GLAZIER_EXE` is an explicit test and
 development override. There is no `%LOCALAPPDATA%\Programs\Glazier` or PATH
@@ -19,13 +20,22 @@ The shell starts Glazier in its tray with `--no-hotkeys --theme-file
 options. The shell owns `PrintScreen` / `Win+Shift+S` for screenshots and
 `Win+Shift+R` for recording (see `windows/docs/KEYBINDS.md`).
 
-At startup the shell identifies the running host by the image path of its
-`GlazierHost` window. A host from this payload is adopted. A standalone host, or
-one left by an older payload, is asked to exit through its own `WM_CLOSE` and is
-then replaced by the bundled executable; its install and HKCU Run entry are not
-touched. Shell quit/restart stops the owned host, and the installer stops any
-`glazier.exe` under `<prefix>\versions\` before a payload swap, retirement or
-uninstall, so an old payload cannot stay locked.
+At startup the shell verifies the host's image, process creation time, window
+identity and v1 status, retaining its process handle outside the QML graph.
+A matching host can be adopted. A standalone host or one from an older payload
+is observed without ownership, never closed or silently replaced. Shell reload
+preserves the registry and any recording. Only a posted unresolved close blocks
+reload. Quit leaves an unowned host alone; for an owned host it first requires
+fresh idle status and no visible capture windows, then waits asynchronously for
+exit. Refusal or timeout leaves the shell alive with an error. The installer
+separately stops any
+`caelestia-capture.exe` or legacy `glazier.exe` under `<prefix>\versions\` before a payload swap, retirement or
+uninstall. Those full-stop and supervisor paths retain separate acceptance;
+the lifecycle fixture does not establish their recording safety. Clean tray
+Quit stays stopped until an explicit capture. Crashes allow three recovery
+launches beyond cold start, reset after a 60-second verified runtime window.
+See [capture-host-lifecycle.md](docs/decisions/capture-host-lifecycle.md) for
+retry, timeout, ownership and protocol-v1 limits.
 
 Screenshot dismissal collapses the Windows click-toggle tray as well as the
 panels (`autoCollapse` is false there) and waits for the tray's height animation
@@ -47,8 +57,10 @@ can change either audio source. A selected region begins recording automatically
 Glazier's tray/hotkey review behavior is unchanged. Full current monitor means the
 monitor containing the pointer, with Glazier's existing even-pixel H.264 crop.
 
-Start uses `Quickshell.execDetached`, whose Windows  implementation redirects
-stdio to NUL and disowns inherited handles. Short-lived status/pause/resume/stop
+Start delegates to the native identity registry. Cold launch retains the
+`CreateProcessW` handle without inherited handles or a console. A forwarding
+client never claims host ownership or launched-host journal freshness.
+Short-lived status/pause/resume/stop
 clients use `Process`. No recorder is killed to stop a recording.
 
 Status is polled even with the card closed, every 1 s while the card is open or

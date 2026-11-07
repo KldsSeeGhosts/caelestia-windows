@@ -5,6 +5,9 @@ param(
     [Parameter(Mandatory)][string]$Cli11Include,
     [string]$ToolsBin,
     [string]$BuildRoot,
+    # Integration-only canonical checkout, outside this shell repository.
+    [string]$BackendRoot,
+    [ValidatePattern('^[a-f0-9]{40}$')][string]$CandidateBackendRevision,
     [ValidateRange(1, 64)][int]$Jobs = 4,
     # Remap native source paths before distributing the resulting binaries.
     [switch]$PublicRelease,
@@ -12,14 +15,44 @@ param(
     # Also build the backend's standalone native fixtures into
     # <BuildRoot>\quickshell-tests; they are never installed or staged.
     [switch]$Tests,
-    # Offscreen fixtures only. Production payloads always bundle Glazier.
-    [switch]$SkipGlazier
+    # Offscreen fixtures only. Production payloads always bundle capture.
+    [Alias('SkipGlazier')][switch]$SkipCapture
 )
 
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'Caelestia-Toolchain.ps1')
+Initialize-CaelestiaToolchainModules
 $toolchainSpec = Get-CaelestiaToolchain
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
+. (Join-Path $repoRoot 'windows\capture\Source.ps1')
+$backendMode = 'pinned'
+if ([bool]$BackendRoot -ne [bool]$CandidateBackendRevision) {
+    throw 'BackendRoot and CandidateBackendRevision must be supplied together.'
+}
+$backendPath = Join-Path $repoRoot 'windows\deps\quickshell'
+if ($BackendRoot) {
+    $backendPath = (Resolve-Path -LiteralPath $BackendRoot).Path
+    if ($backendPath -eq $repoRoot -or $backendPath.StartsWith($repoRoot + '\', [StringComparison]::OrdinalIgnoreCase) -or
+        $repoRoot.StartsWith($backendPath + '\', [StringComparison]::OrdinalIgnoreCase)) {
+        throw 'Candidate backend must be a separate clone outside the shell checkout.'
+    }
+    $backendTop = & git -C $backendPath rev-parse --show-toplevel
+    if ($LASTEXITCODE -ne 0 -or [IO.Path]::GetFullPath($backendTop) -ne $backendPath) { throw 'Invalid candidate source root.' }
+    $backendOrigin = & git -C $backendPath remote get-url origin
+    if ($LASTEXITCODE -ne 0 -or "$backendOrigin".Trim().TrimEnd('/') -notin @(
+        'https://github.com/KldsSeeGhosts/caelestia-quickshell-windows',
+        'https://github.com/KldsSeeGhosts/caelestia-quickshell-windows.git')) { throw 'Candidate backend repository mismatch.' }
+    $actualBackend = & git -C $backendPath rev-parse HEAD
+    if ($LASTEXITCODE -ne 0 -or $actualBackend -cne $CandidateBackendRevision) { throw 'Candidate backend resolved SHA mismatch.' }
+    $backendMode = 'candidate'
+}
+$backendDirt = & git -C $backendPath status --porcelain --untracked-files=all
+if ($LASTEXITCODE -ne 0 -or $backendDirt) { throw 'Backend source must be a clean exact checkout.' }
+$gitlink = & git -C $repoRoot ls-tree HEAD -- windows/deps/quickshell
+if ($LASTEXITCODE -ne 0 -or "$gitlink" -notmatch '^160000 commit ([a-f0-9]{40})\s') { throw 'Backend gitlink is missing.' }
+$pinnedBackendRevision = $Matches[1]
+$sourceLock = Get-Content -LiteralPath "$repoRoot\windows\sources.lock.json" -Raw | ConvertFrom-Json
+if ($pinnedBackendRevision -cne $sourceLock.quickshell.revision) { throw 'Backend gitlink and source lock disagree.' }
 if (-not $BuildRoot) { $BuildRoot = Join-Path $repoRoot 'windows\.local\build' }
 $BuildRoot = [IO.Path]::GetFullPath($BuildRoot)
 $installRoot = Join-Path $BuildRoot 'install'
@@ -65,25 +98,12 @@ if (& git -C $m3shapesPath status --porcelain) {
     throw 'The pinned M3Shapes dependency has local changes. Patch and pin it upstream before building.'
 }
 
-# Glazier is built from the pinned submodule, not downloaded as a release. The
-# release payload is a single static-ish Rust executable next to qs.exe, so an
-# update or rollback carries its matching shell and tool together.
-$glazierPath = Join-Path $repoRoot $lock.glazier.path
-$glazierRevision = ''
-$glazierSha256 = ''
-if (-not $SkipGlazier) {
-    if (-not (Test-Path -LiteralPath (Join-Path $glazierPath 'Cargo.toml'))) {
-        throw 'The pinned Glazier dependency is absent; initialize windows/deps/glazier.'
-    }
-    $glazierRevision = (& git -C $glazierPath rev-parse HEAD).Trim()
-    if ($glazierRevision -ne $lock.glazier.revision) {
-        throw "Glazier is at $glazierRevision but sources.lock.json pins $($lock.glazier.revision)."
-    }
-    if (& git -C $glazierPath status --porcelain) {
-        throw 'The pinned Glazier dependency has local changes. Patch and pin it upstream before building.'
-    }
+# First-party source is part of this shell revision, not a separate checkout.
+$captureSource = Get-CaelestiaCaptureSource $repoRoot
+$captureSha256 = ''
+if (-not $SkipCapture) {
     if (-not (Get-Command cargo -CommandType Application -ErrorAction SilentlyContinue)) {
-        throw 'Rust Cargo is required to bundle Glazier. Install the Rust toolchain, or pass -SkipGlazier for offscreen tests only.'
+        throw 'Rust Cargo is required to bundle Caelestia capture. Use -SkipCapture for offscreen tests only.'
     }
 }
 
@@ -120,6 +140,7 @@ if ($PublicRelease) {
         @{ path = $QtPrefix; public = '/qt' },
         @{ path = $Cli11Include; public = '/cli11' },
         @{ path = $repoRoot; public = '/source' },
+        @{ path = $backendPath; public = '/backend' },
         @{ path = $BuildRoot; public = '/build' }
     )
     $nativePathFlags = @()
@@ -142,7 +163,7 @@ if ($PublicRelease) {
         Set-Content -LiteralPath $publicCache -Encoding UTF8
     $common += @('-C', $publicCache)
 }
-Invoke-BuildCommand 'configure-backend' (@('-S', "$repoRoot\windows\deps\quickshell",
+Invoke-BuildCommand 'configure-backend' (@('-S', $backendPath,
     '-B', "$BuildRoot\quickshell") + $common + @("-DCMAKE_C_COMPILER:FILEPATH=$LlvmBin\clang-cl.exe",
     "-DCLI11_INCLUDE_DIR=$Cli11Include", '-DCRASH_HANDLER=OFF', '-DBUILD_TESTING=OFF', '-DINSTALL_QMLDIR=qml',
     '-DQS_AUTOSTART_NAME=CaelestiaPrototype', '-DQS_AUTOSTART_ARGS=',
@@ -152,7 +173,7 @@ Invoke-BuildCommand 'build-brightness-probe' @('--build', "$BuildRoot\quickshell
 if ($Tests) {
     # Run with: ctest --test-dir <BuildRoot>\quickshell-tests -L '^portable$'
     # (see windows/deps/quickshell/src/windows/test/README.md for the tiers).
-    $fixtureSource = "$repoRoot\windows\deps\quickshell\src\windows\test"
+    $fixtureSource = Join-Path $backendPath 'src\windows\test'
     if (-not (Test-Path -LiteralPath "$fixtureSource\CMakeLists.txt")) {
         throw 'The pinned backend has no native fixture project; update windows/deps/quickshell.'
     }
@@ -163,18 +184,18 @@ Invoke-BuildCommand 'configure-m3shapes' (@('-S', $m3shapesPath, '-B', "$BuildRo
     @('-DINSTALL_QMLDIR=qml', "-DCMAKE_INSTALL_PREFIX=$installRoot", '-DM3SHAPES_BUILD_EXAMPLES=OFF'))
 Invoke-BuildCommand 'build-m3shapes' @('--build', "$BuildRoot\m3shapes", '--parallel', "$Jobs")
 Invoke-BuildCommand 'install-m3shapes' @('--install', "$BuildRoot\m3shapes")
-if ($SkipGlazier) {
+if ($SkipCapture) {
     # Never leave a previous run's tool in a payload that claims to omit it.
-    Remove-Item -LiteralPath (Join-Path $installRoot 'glazier.exe') -Force -ErrorAction SilentlyContinue
-    Write-Warning 'Skipping the bundled Glazier build (-SkipGlazier); the staged payload is not installable.'
+    Remove-Item -LiteralPath (Join-Path $installRoot 'caelestia-capture.exe') -Force -ErrorAction SilentlyContinue
+    Write-Warning 'Skipping Caelestia capture (-SkipCapture); the staged payload is not installable.'
 } else {
-    Write-Host '== build-glazier =='
+    Write-Host '== build-capture =='
     New-Item -ItemType Directory -Force -Path $installRoot | Out-Null
     # Keep Cargo's whole target tree inside the disposable build root, never in
-    # the submodule or the user's profile. --locked refuses an unpinned update.
-    $cargoArguments = @('build', '--release', '--locked', '--jobs', "$Jobs", '--target', $toolchainSpec.rustTarget, '--manifest-path', (Join-Path $glazierPath 'Cargo.toml'),
-        '--target-dir', (Join-Path $BuildRoot 'glazier-target'))
-    $cargoArguments | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $logRoot 'build-glazier-command.json') -Encoding UTF8
+    # the source or the user's profile. --locked refuses an unpinned update.
+    $cargoArguments = @('build', '--release', '--locked', '--jobs', "$Jobs", '--target', $toolchainSpec.rustTarget, '--manifest-path', (Join-Path $captureSource.path 'Cargo.toml'),
+        '--target-dir', (Join-Path $BuildRoot 'capture-target'))
+    $cargoArguments | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $logRoot 'build-capture-command.json') -Encoding UTF8
     $previousEncodedRustFlags = [Environment]::GetEnvironmentVariable('CARGO_ENCODED_RUSTFLAGS', 'Process')
     if ($PublicRelease) {
         # Rust panic/file! strings can retain Cargo's personal registry path.
@@ -201,7 +222,7 @@ if ($SkipGlazier) {
         # Cargo writes progress to stderr; the native exit code is the failure criterion.
         $ErrorActionPreference = 'Continue'
         & cargo @cargoArguments 2>&1 | ForEach-Object { "$_" } |
-            Tee-Object -FilePath (Join-Path $logRoot 'build-glazier.log')
+            Tee-Object -FilePath (Join-Path $logRoot 'build-capture.log')
         $cargoExit = $LASTEXITCODE
     } finally {
         $ErrorActionPreference = 'Stop'
@@ -209,14 +230,16 @@ if ($SkipGlazier) {
             [Environment]::SetEnvironmentVariable('CARGO_ENCODED_RUSTFLAGS', $previousEncodedRustFlags, 'Process')
         }
     }
-    if ($cargoExit -ne 0) { throw "build-glazier failed. See $logRoot\build-glazier.log." }
-    $glazierExe = Join-Path $BuildRoot "glazier-target\$($toolchainSpec.rustTarget)\release\glazier.exe"
-    if (-not (Test-Path -LiteralPath $glazierExe -PathType Leaf)) {
-        throw "Glazier built without producing $glazierExe."
+    if ($cargoExit -ne 0) { throw "build-capture failed. See $logRoot\build-capture.log." }
+    $captureExe = Join-Path $BuildRoot "capture-target\$($toolchainSpec.rustTarget)\release\caelestia-capture.exe"
+    if (-not (Test-Path -LiteralPath $captureExe -PathType Leaf)) {
+        throw "Capture built without producing $captureExe."
     }
-    Copy-Item -LiteralPath $glazierExe -Destination (Join-Path $installRoot 'glazier.exe') -Force
-    $glazierSha256 = (Get-FileHash -LiteralPath (Join-Path $installRoot 'glazier.exe') -Algorithm SHA256).Hash.ToLowerInvariant()
+    Copy-Item -LiteralPath $captureExe -Destination (Join-Path $installRoot 'caelestia-capture.exe') -Force
+    $captureSha256 = (Get-FileHash -LiteralPath (Join-Path $installRoot 'caelestia-capture.exe') -Algorithm SHA256).Hash.ToLowerInvariant()
 }
+# Old payload names must never survive a rebuild in this owned output.
+Remove-Item -LiteralPath (Join-Path $installRoot 'glazier.exe') -Force -ErrorAction SilentlyContinue
 # Resolve the version and revision up front so configure works without a reachable git tag or git metadata.
 $ErrorActionPreference = 'Continue'
 $sourceVersion = & git -C $repoRoot describe --tags --abbrev=0 2>$null
@@ -246,11 +269,22 @@ Invoke-BuildCommand 'install-plugins' @('--install', "$BuildRoot\caelestia")
 [ordered]@{
     sourceRevision = $fullSourceRevision
     sourceDirty = [bool]$rawDirty
-    backendRevision = (& git -C "$repoRoot\windows\deps\quickshell" rev-parse HEAD).Trim()
+    backendRevision = (& git -C $backendPath rev-parse HEAD).Trim()
+    backendMode = $backendMode
+    pinnedBackendRevision = $pinnedBackendRevision
+    lockBackendRevision = $sourceLock.quickshell.revision
     m3shapesRevision = $m3shapesRevision
-    glazierRevision = $glazierRevision
-    glazierSha256 = $glazierSha256
-    glazierBundled = -not $SkipGlazier
+    captureSourcePath = $captureSource.relativePath
+    captureSourceRevision = $fullSourceRevision
+    captureOriginRevision = $captureSource.originRevision
+    captureCargoLockSha256 = $captureSource.cargoLockSha256
+    captureExecutable = $captureSource.executable
+    captureSha256 = $captureSha256
+    captureBundled = -not $SkipCapture
+    # Compatibility aliases, not the revision of maintained capture source.
+    glazierRevision = $captureSource.originRevision
+    glazierSha256 = $captureSha256
+    glazierBundled = -not $SkipCapture
     publicRelease = [bool]$PublicRelease
     pluginTests = [bool]$PluginTests
     backendTests = [bool]$Tests
@@ -273,12 +307,22 @@ Invoke-BuildCommand 'install-plugins' @('--install', "$BuildRoot\caelestia")
     toolchain = $toolchain
     sourceRevision = $fullSourceRevision
     sourceDirty = [bool]$rawDirty
-    backendRevision = (& git -C "$repoRoot\windows\deps\quickshell" rev-parse HEAD).Trim()
+    backendRevision = (& git -C $backendPath rev-parse HEAD).Trim()
+    backendMode = $backendMode
+    pinnedBackendRevision = $pinnedBackendRevision
+    lockBackendRevision = $sourceLock.quickshell.revision
     m3shapesRevision = $m3shapesRevision
-    glazierRevision = $glazierRevision
-    glazierBundled = -not $SkipGlazier
-    glazierSha256 = $glazierSha256
+    captureSourcePath = $captureSource.relativePath
+    captureSourceRevision = $fullSourceRevision
+    captureOriginRevision = $captureSource.originRevision
+    captureCargoLockSha256 = $captureSource.cargoLockSha256
+    captureExecutable = $captureSource.executable
+    captureBundled = -not $SkipCapture
+    captureSha256 = $captureSha256
+    glazierRevision = $captureSource.originRevision
+    glazierBundled = -not $SkipCapture
+    glazierSha256 = $captureSha256
     publicRelease = [bool]$PublicRelease
     builtAtUtc = [DateTime]::UtcNow.ToString('o')
 } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $logRoot 'toolchain.json') -Encoding UTF8
-Write-Host "Built backend, portable plugins and bundled Glazier. Evidence: $logRoot"
+Write-Host "Built backend, portable plugins and Caelestia capture. Evidence: $logRoot"

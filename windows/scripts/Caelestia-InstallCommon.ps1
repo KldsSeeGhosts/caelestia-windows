@@ -47,13 +47,13 @@ function Get-CaelestiaProcesses([string]$Prefix) {
     })
 }
 
-# Glazier hosts shipped inside version payloads. Both the image path and the
-# version root prove ownership, so a standalone or other-prefix Glazier is
+# Capture hosts shipped inside version payloads, including the legacy name.
+# Both the image path and version root prove ownership, so other-prefix hosts are
 # never touched.
 function Get-CaelestiaHostProcesses([string]$Prefix, [string]$VersionRoot = '') {
     $root = $(if ($VersionRoot) { $VersionRoot } else { Join-Path $Prefix 'versions' })
     $versions = $root.TrimEnd('\') + '\'
-    return @(Get-Process -Name glazier -ErrorAction SilentlyContinue | Where-Object {
+    return @(Get-Process -Name caelestia-capture, glazier -ErrorAction SilentlyContinue | Where-Object {
         try {
             $_.Path -and $_.Path.StartsWith($versions, [StringComparison]::OrdinalIgnoreCase)
         } catch {
@@ -73,7 +73,7 @@ function Stop-CaelestiaHosts([string]$Prefix, [string]$VersionRoot = '', [int]$T
     }
     foreach ($hostProcess in $hosts) {
         if (-not $hostProcess.WaitForExit($TimeoutSeconds * 1000)) {
-            throw "Glazier is still running from the Caelestia install. Quit it and retry."
+            throw "A capture host is still running from the Caelestia install. Quit it and retry."
         }
     }
 }

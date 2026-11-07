@@ -14,6 +14,7 @@ param(
 
 . (Join-Path $PSScriptRoot 'Caelestia-InstallCommon.ps1')
 . (Join-Path $PSScriptRoot 'Caelestia-Toolchain.ps1')
+Initialize-CaelestiaToolchainModules
 if ($env:OS -ne 'Windows_NT' -or -not [Environment]::Is64BitProcess) {
     throw 'Packaging requires 64-bit Windows PowerShell and the existing native build tools.'
 }
@@ -59,17 +60,21 @@ if (Invoke-ReleaseGit $repoRoot @('status', '--porcelain', '--untracked-files=al
 }
 $revision = (Invoke-ReleaseGit $repoRoot @('rev-parse', 'HEAD')) -join ''
 $build = Get-Content -LiteralPath "$BuildRoot\logs\build.json" -Raw | ConvertFrom-Json
+if ($build.backendMode -cne 'pinned') {
+    throw 'Release assembly requires a pinned build, never an integration candidate or legacy receipt.'
+}
 if ($build.sourceDirty -ne $false -or $build.publicRelease -ne $true -or $build.sourceRevision -notmatch '^[a-f0-9]{40}$' -or
-    -not $build.glazierBundled -or $build.qtVersion -notmatch '^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9._-]+)?$') {
+    -not $build.captureBundled -or $build.qtVersion -notmatch '^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9._-]+)?$') {
     throw 'An exact clean production build record is required.'
 }
+. (Join-Path $repoRoot 'windows\capture\Source.ps1')
 # Builds and packaging share the exact toolchain and runtime compatibility
 # guard. Old/incomplete receipts require a rebuild, never a relaxed guard.
 Assert-CaelestiaBuildToolchain $build
 $VCRuntimeRoot = Assert-CaelestiaReleaseVCRedist -Toolchain $build.toolchain -RuntimeRoot $VCRuntimeRoot
 $lock = Get-Content -LiteralPath "$repoRoot\windows\sources.lock.json" -Raw | ConvertFrom-Json
 $dependencies = [ordered]@{}
-foreach ($name in @('quickshell', 'm3shapes', 'glazier')) {
+foreach ($name in @('quickshell', 'm3shapes')) {
     $pin = $lock.$name
     $root = Join-Path $repoRoot $pin.path
     $actual = (Invoke-ReleaseGit $root @('rev-parse', 'HEAD')) -join ''
@@ -80,6 +85,16 @@ foreach ($name in @('quickshell', 'm3shapes', 'glazier')) {
     if ($recorded -ne $actual) { throw "The build and source disagree about $name." }
     $dependencies[$name] = [ordered]@{ repository = $pin.repository; revision = $actual }
 }
+$captureSource = Get-CaelestiaCaptureSource $repoRoot
+Assert-CaelestiaCaptureBuild $build $captureSource "$BuildRoot\install\caelestia-capture.exe"
+$dependencies['capture'] = [ordered]@{
+    representation = 'in-tree'; path = $captureSource.relativePath
+    sourceRevision = $build.captureSourceRevision
+    originRepository = $captureSource.originRepository; originRevision = $captureSource.originRevision
+    cargoLockSha256 = $captureSource.cargoLockSha256
+    executable = $captureSource.executable; sha256 = $build.captureSha256
+}
+Assert-CaelestiaCaptureRelease ([pscustomobject]$dependencies.capture) $build.sourceRevision $build.captureSha256
 $dependencies['schemeCli'] = [ordered]@{ repository = $lock.schemeCli.repository; revision = $lock.schemeCli.revision; pythonPackages = $lock.schemeCli.pythonPackages }
 $dependencies['fonts'] = $lock.fonts
 if ($revision -ne $build.sourceRevision) {
@@ -89,7 +104,7 @@ if ($revision -ne $build.sourceRevision) {
     $null = Invoke-ReleaseGit $repoRoot @('merge-base', '--is-ancestor', $build.sourceRevision, $revision)
     $changed = @(Invoke-ReleaseGit $repoRoot @('diff', '--name-only', $build.sourceRevision, $revision))
     if (@($changed | Where-Object {
-        $_ -match '^plugin/|^cmake/|^windows/deps/|^windows/toolchain[/.]|^windows/scripts/(Build-|Caelestia-Toolchain|Prepare-Toolchain)|\.(cpp|hpp|h|c|cc|cmake|qrc)$|(^|/)(CMakeLists\.txt|Cargo\.toml|Cargo\.lock)$'
+        Test-CaelestiaCaptureNativeInput $_
     }).Count) { throw 'Native inputs changed since this build; rebuild before packaging.' }
 }
 if (-not $QtPrefix) { $QtPrefix = [string]$build.qtPrefix }
@@ -112,7 +127,7 @@ foreach ($source in @($QtPrefix, $VCRuntimeRoot) | Where-Object { $_ }) {
 # install into or copy raw build.json from the supplied read-only build tree.
 function Get-NativeReleaseInputs {
     $files = @((Get-Item -LiteralPath "$BuildRoot\quickshell\qs.exe"),
-        (Get-Item -LiteralPath "$BuildRoot\install\glazier.exe"))
+        (Get-Item -LiteralPath "$BuildRoot\install\caelestia-capture.exe"))
     $files += @(Get-ChildItem -LiteralPath "$BuildRoot\install\qml" -File -Recurse)
     return @($files | Sort-Object FullName | ForEach-Object {
         [ordered]@{
@@ -139,7 +154,7 @@ function Get-ReleaseVendorPrivacyExceptions([string]$PayloadRoot, [string]$Revie
             @($relative.Split('/') | Where-Object { $_ -in @('', '.', '..') }).Count -or
             $entry.sha256 -notmatch '^[a-f0-9]{64}$' -or
             $exceptions.ContainsKey($relative) -or $nativeHashes.ContainsKey([string]$entry.sha256) -or
-            $relative -match '^(qs\.exe|glazier\.exe|m3shapes\.dll|caelestia-windows\.dll|DesktopTakeover\.dll)$|^qml/(Caelestia|M3Shapes|Quickshell)(/|$)') {
+            $relative -match '^(qs\.exe|caelestia-capture\.exe|glazier\.exe|m3shapes\.dll|caelestia-windows\.dll|DesktopTakeover\.dll)$|^qml/(Caelestia|M3Shapes|Quickshell)(/|$)') {
             throw 'Vendor exceptions cannot cover project binaries or unsafe review entries.'
         }
         $deployed = Join-Path $PayloadRoot $relative

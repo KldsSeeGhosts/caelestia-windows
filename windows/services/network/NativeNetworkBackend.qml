@@ -47,6 +47,11 @@ QtObject {
 
     // Re-emitted so the adapter does not have to know the native signal name.
     signal connectResult(string ssid, bool success, string reason)
+    signal connectResultById(string selectionId, string ssid, bool success, string reason)
+    readonly property bool selectionIdentityAvailable: typeof Network.connectToNetworkById === "function"
+        && typeof Network.forgetNetworkById === "function"
+    property string pendingSelectionId: ""
+    property string pendingLabel: ""
 
     function setWifiListVisible(visible): void {
         Network.setWifiListVisible(visible === true);
@@ -62,11 +67,22 @@ QtObject {
         // open networks are the supported paths.
         Network.connectToNetwork(ssid, password ?? "");
     }
+    function connectToNetworkById(selectionId, ssid, password): void {
+        if (!root.selectionIdentityAvailable)
+            return;
+        root.pendingSelectionId = selectionId;
+        root.pendingLabel = ssid;
+        Network.connectToNetworkById(selectionId, password ?? "");
+    }
     function disconnectActive(): void {
         Network.disconnectActive();
     }
     function forgetNetwork(ssid): void {
         Network.forgetNetwork(ssid);
+    }
+    function forgetNetworkById(selectionId): void {
+        if (root.selectionIdentityAvailable)
+            Network.forgetNetworkById(selectionId);
     }
     function openWifiSettings(): void {
         Network.openWifiSettings();
@@ -99,7 +115,17 @@ QtObject {
         target: Network
 
         function onWifiConnectResult(ssid, success, reason): void {
-            root.connectResult(ssid, success, reason);
+            const selectionId = root.pendingSelectionId;
+            if (selectionId !== "") {
+                if (ssid !== root.pendingLabel && ssid !== selectionId)
+                    return;
+                const label = root.pendingLabel;
+                root.pendingSelectionId = "";
+                root.pendingLabel = "";
+                root.connectResultById(selectionId, label, success, reason);
+            } else {
+                root.connectResult(ssid, success, reason);
+            }
         }
     }
 }

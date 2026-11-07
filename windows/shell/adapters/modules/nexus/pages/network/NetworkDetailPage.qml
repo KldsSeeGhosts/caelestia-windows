@@ -22,7 +22,9 @@ import qs.modules.nexus.common
 PageBase {
     id: root
 
-    readonly property var ap: Nmcli.findNetwork(root.nState.selectedNetworkSsid)
+    readonly property var ap: root.nState.selectedNetworkId
+        ? Nmcli.findNetworkById(root.nState.selectedNetworkId)
+        : Nmcli.findNetwork(root.nState.selectedNetworkSsid)
     readonly property bool isActive: !!root.ap && root.ap.active
 
     title: root.nState.selectedNetworkSsid || Tr.trCtx("Network", "wifi network name")
@@ -125,7 +127,7 @@ PageBase {
             text: Tr.tr("Forget network")
             subtext: Tr.tr("Removes the saved Windows profile")
             disabled: !(root.ap?.hasProfile ?? false) || !Nmcli.controlsEnabled
-            onClicked: Nmcli.forgetNetwork(root.nState.selectedNetworkSsid)
+            onClicked: Nmcli.forgetAccessPoint(root.ap)
         }
 
         NavRow {

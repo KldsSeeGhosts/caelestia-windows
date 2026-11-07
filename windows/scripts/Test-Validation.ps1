@@ -78,6 +78,8 @@ try {
         }
         Invoke-ScriptCheck 'Test-PublicDocs'
         Invoke-ScriptCheck 'Test-Toolchain'
+        Invoke-ScriptCheck 'Test-PairContract'
+        Invoke-ScriptCheck 'Test-CaptureIntegration'
         Invoke-ValidationStep 'llvm-extraction' $Python @('-I', '-B', 'windows/tests/LlvmExtract.test.py',
             '--output-root', (Join-Path $OutputRoot 'llvm-extraction'))
         Invoke-ValidationStep 'toolchain-modules' $Python @('-B', 'windows/tests/ToolchainModules.test.py',
@@ -91,9 +93,11 @@ try {
         Invoke-ValidationStep 'javascript' $node (@('--test', '--test-reporter=tap') + $javascript) '(?m)^# tests ([0-9]+)\s*$'
         Invoke-ValidationStep 'quota-providers' $Python @('-B', '-m', 'unittest', 'discover', '-s', 'windows/tests/quota_providers', '-v') '(?m)^Ran ([0-9]+) tests?\b'
     } elseif ($Suite -eq 'Packaging') {
+        Invoke-ScriptCheck 'Test-SourceAssets' @('-OutputDirectory', (Join-Path $OutputRoot 'source-assets'))
         Invoke-ScriptCheck 'Test-SupportBundle' @('-OutputDirectory', (Join-Path $OutputRoot 'support-bundle'))
         Invoke-ScriptCheck 'Test-VersionedInstall'
         Invoke-ScriptCheck 'Test-UninstallTransaction' @('-OutputRoot', (Join-Path $OutputRoot 'uninstall-transactions'))
+        Invoke-ScriptCheck 'Test-CaptureRelease' @('-OutputRoot', (Join-Path $OutputRoot 'capture-release'))
     } elseif ($Suite -eq 'Scheme') {
         Invoke-ValidationStep 'scheme-worker' $Python @('-B', 'windows/scripts/scheme/test_win_scheme.py', '-v') '(?m)^Ran ([0-9]+) tests?\b'
     } else {

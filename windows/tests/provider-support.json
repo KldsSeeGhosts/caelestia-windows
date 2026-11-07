@@ -6,27 +6,33 @@
     "qualification": "Source and fixture candidate only; no release, installed-package, desktop, or hardware qualification."
   },
   "baseline": {
-    "shellRevision": "eec2778123d47c3555006b3af5e75fd893c7b9c2",
-    "backendRevision": "e6039b2b9cbb35b97473bda4dcc3f12789ae7f0c",
+    "shellRevision": "2bed3ddf26a240b967705aba2e5f9e4ee5bb0e44",
+    "backendRevision": "3855b96dff584c71a21a90c0631ddcfc062d6593",
     "glazierRevision": "37f795041cbbb32ed46cba103f3f000a3a99ac13",
+    "captureRevision": "f637fcdc6bc1a52e2a405ef1935b199276d06a9c",
     "m3shapesRevision": "32ad9ce328bb77ed349b40a3be10ee9ea610b8ab",
     "scope": "Source trace baseline only; not a release, install, hardware, or full candidate qualification."
   },
   "sourceRepositories": {
     "shell": {
       "url": "https://github.com/KldsSeeGhosts/caelestia-windows",
-      "revision": "eec2778123d47c3555006b3af5e75fd893c7b9c2",
+      "revision": "2bed3ddf26a240b967705aba2e5f9e4ee5bb0e44",
       "localRoot": "."
     },
     "backend": {
       "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows",
-      "revision": "e6039b2b9cbb35b97473bda4dcc3f12789ae7f0c",
+      "revision": "3855b96dff584c71a21a90c0631ddcfc062d6593",
       "localRoot": "windows/deps/quickshell"
     },
     "glazier": {
       "url": "https://github.com/KldsSeeGhosts/glazier",
       "revision": "37f795041cbbb32ed46cba103f3f000a3a99ac13",
-      "localRoot": "windows/deps/glazier"
+      "localRoot": "windows/capture"
+    },
+    "capture": {
+      "url": "https://github.com/KldsSeeGhosts/caelestia-windows",
+      "revision": "f637fcdc6bc1a52e2a405ef1935b199276d06a9c",
+      "localRoot": "."
     },
     "m3shapes": {
       "url": "https://github.com/soramanew/m3shapes",
@@ -57,7 +63,7 @@
       "completed": "A provider result or observed readback confirms the operation. Accepted asynchronous work alone is not complete."
     },
     "supportBundleV1": {
-      "status": "pending-integration",
+      "status": "integrated-offline-export",
       "providerIds": [
         "shell",
         "tiling",
@@ -127,17 +133,17 @@
         {
           "repository": "shell",
           "path": "windows/shell/adapters/modules/session/Content.qml",
-          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/eec2778123d47c3555006b3af5e75fd893c7b9c2/windows/shell/adapters/modules/session/Content.qml"
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/2bed3ddf26a240b967705aba2e5f9e4ee5bb0e44/windows/shell/adapters/modules/session/Content.qml"
         },
         {
           "repository": "shell",
           "path": "windows/services/session/SessionService.qml",
-          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/eec2778123d47c3555006b3af5e75fd893c7b9c2/windows/services/session/SessionService.qml"
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/2bed3ddf26a240b967705aba2e5f9e4ee5bb0e44/windows/services/session/SessionService.qml"
         },
         {
           "repository": "backend",
           "path": "src/windows/system/session.cpp",
-          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/e6039b2b9cbb35b97473bda4dcc3f12789ae7f0c/src/windows/system/session.cpp"
+          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/3855b96dff584c71a21a90c0631ddcfc062d6593/src/windows/system/session.cpp"
         }
       ],
       "acceptanceOwners": []
@@ -191,17 +197,17 @@
         {
           "repository": "shell",
           "path": "windows/shell/adapters/modules/nexus/pages/WindowManagementPage.qml",
-          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/eec2778123d47c3555006b3af5e75fd893c7b9c2/windows/shell/adapters/modules/nexus/pages/WindowManagementPage.qml"
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/2bed3ddf26a240b967705aba2e5f9e4ee5bb0e44/windows/shell/adapters/modules/nexus/pages/WindowManagementPage.qml"
         },
         {
           "repository": "shell",
           "path": "windows/services/tiling/TilingService.qml",
-          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/eec2778123d47c3555006b3af5e75fd893c7b9c2/windows/services/tiling/TilingService.qml"
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/2bed3ddf26a240b967705aba2e5f9e4ee5bb0e44/windows/services/tiling/TilingService.qml"
         },
         {
           "repository": "backend",
           "path": "src/windows/tiling.cpp",
-          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/e6039b2b9cbb35b97473bda4dcc3f12789ae7f0c/src/windows/tiling.cpp"
+          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/3855b96dff584c71a21a90c0631ddcfc062d6593/src/windows/tiling.cpp"
         }
       ],
       "acceptanceOwners": [
@@ -257,17 +263,17 @@
         {
           "repository": "shell",
           "path": "windows/services/audio/AudioService.qml",
-          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/eec2778123d47c3555006b3af5e75fd893c7b9c2/windows/services/audio/AudioService.qml"
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/2bed3ddf26a240b967705aba2e5f9e4ee5bb0e44/windows/services/audio/AudioService.qml"
         },
         {
           "repository": "shell",
           "path": "windows/shell/adapters/modules/nexus/pages/AudioPage.qml",
-          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/eec2778123d47c3555006b3af5e75fd893c7b9c2/windows/shell/adapters/modules/nexus/pages/AudioPage.qml"
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/2bed3ddf26a240b967705aba2e5f9e4ee5bb0e44/windows/shell/adapters/modules/nexus/pages/AudioPage.qml"
         },
         {
           "repository": "backend",
           "path": "src/windows/services/pipewire/pw_session_worker.cpp",
-          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/e6039b2b9cbb35b97473bda4dcc3f12789ae7f0c/src/windows/services/pipewire/pw_session_worker.cpp"
+          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/3855b96dff584c71a21a90c0631ddcfc062d6593/src/windows/services/pipewire/pw_session_worker.cpp"
         }
       ],
       "acceptanceOwners": [
@@ -327,22 +333,22 @@
         {
           "repository": "shell",
           "path": "windows/services/battery/BatteryService.qml",
-          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/eec2778123d47c3555006b3af5e75fd893c7b9c2/windows/services/battery/BatteryService.qml"
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/2bed3ddf26a240b967705aba2e5f9e4ee5bb0e44/windows/services/battery/BatteryService.qml"
         },
         {
           "repository": "shell",
           "path": "windows/services/battery/PowerProfilesService.qml",
-          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/eec2778123d47c3555006b3af5e75fd893c7b9c2/windows/services/battery/PowerProfilesService.qml"
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/2bed3ddf26a240b967705aba2e5f9e4ee5bb0e44/windows/services/battery/PowerProfilesService.qml"
         },
         {
           "repository": "backend",
           "path": "src/windows/services/upower/device.cpp",
-          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/e6039b2b9cbb35b97473bda4dcc3f12789ae7f0c/src/windows/services/upower/device.cpp"
+          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/3855b96dff584c71a21a90c0631ddcfc062d6593/src/windows/services/upower/device.cpp"
         },
         {
           "repository": "backend",
           "path": "src/windows/services/upower/powerprofiles.cpp",
-          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/e6039b2b9cbb35b97473bda4dcc3f12789ae7f0c/src/windows/services/upower/powerprofiles.cpp"
+          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/3855b96dff584c71a21a90c0631ddcfc062d6593/src/windows/services/upower/powerprofiles.cpp"
         }
       ],
       "acceptanceOwners": [
@@ -402,17 +408,17 @@
         {
           "repository": "shell",
           "path": "windows/shell/adapters/modules/nexus/pages/BluetoothPage.qml",
-          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/eec2778123d47c3555006b3af5e75fd893c7b9c2/windows/shell/adapters/modules/nexus/pages/BluetoothPage.qml"
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/2bed3ddf26a240b967705aba2e5f9e4ee5bb0e44/windows/shell/adapters/modules/nexus/pages/BluetoothPage.qml"
         },
         {
           "repository": "shell",
           "path": "windows/services/bluetooth/BluetoothService.qml",
-          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/eec2778123d47c3555006b3af5e75fd893c7b9c2/windows/services/bluetooth/BluetoothService.qml"
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/2bed3ddf26a240b967705aba2e5f9e4ee5bb0e44/windows/services/bluetooth/BluetoothService.qml"
         },
         {
           "repository": "backend",
           "path": "src/windows/bluetooth/bluetooth.cpp",
-          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/e6039b2b9cbb35b97473bda4dcc3f12789ae7f0c/src/windows/bluetooth/bluetooth.cpp"
+          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/3855b96dff584c71a21a90c0631ddcfc062d6593/src/windows/bluetooth/bluetooth.cpp"
         }
       ],
       "acceptanceOwners": []
@@ -470,17 +476,17 @@
         {
           "repository": "shell",
           "path": "windows/services/brightness/BrightnessService.qml",
-          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/eec2778123d47c3555006b3af5e75fd893c7b9c2/windows/services/brightness/BrightnessService.qml"
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/2bed3ddf26a240b967705aba2e5f9e4ee5bb0e44/windows/services/brightness/BrightnessService.qml"
         },
         {
           "repository": "shell",
           "path": "modules/bar/Bar.qml",
-          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/eec2778123d47c3555006b3af5e75fd893c7b9c2/modules/bar/Bar.qml"
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/2bed3ddf26a240b967705aba2e5f9e4ee5bb0e44/modules/bar/Bar.qml"
         },
         {
           "repository": "backend",
           "path": "src/windows/system/brightness.cpp",
-          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/e6039b2b9cbb35b97473bda4dcc3f12789ae7f0c/src/windows/system/brightness.cpp"
+          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/3855b96dff584c71a21a90c0631ddcfc062d6593/src/windows/system/brightness.cpp"
         }
       ],
       "acceptanceOwners": [
@@ -554,17 +560,17 @@
         {
           "repository": "shell",
           "path": "windows/shell/adapters/modules/nexus/pages/NetworkPage.qml",
-          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/eec2778123d47c3555006b3af5e75fd893c7b9c2/windows/shell/adapters/modules/nexus/pages/NetworkPage.qml"
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/2bed3ddf26a240b967705aba2e5f9e4ee5bb0e44/windows/shell/adapters/modules/nexus/pages/NetworkPage.qml"
         },
         {
           "repository": "shell",
           "path": "windows/services/network/NetworkService.qml",
-          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/eec2778123d47c3555006b3af5e75fd893c7b9c2/windows/services/network/NetworkService.qml"
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/2bed3ddf26a240b967705aba2e5f9e4ee5bb0e44/windows/services/network/NetworkService.qml"
         },
         {
           "repository": "backend",
           "path": "src/windows/system/network_wifi.cpp",
-          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/e6039b2b9cbb35b97473bda4dcc3f12789ae7f0c/src/windows/system/network_wifi.cpp"
+          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/3855b96dff584c71a21a90c0631ddcfc062d6593/src/windows/system/network_wifi.cpp"
         }
       ],
       "acceptanceOwners": [
@@ -620,17 +626,17 @@
         {
           "repository": "shell",
           "path": "windows/services/media/PlayersService.qml",
-          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/eec2778123d47c3555006b3af5e75fd893c7b9c2/windows/services/media/PlayersService.qml"
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/2bed3ddf26a240b967705aba2e5f9e4ee5bb0e44/windows/services/media/PlayersService.qml"
         },
         {
           "repository": "shell",
           "path": "windows/shell/adapters/modules/dashboard/Media.qml",
-          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/eec2778123d47c3555006b3af5e75fd893c7b9c2/windows/shell/adapters/modules/dashboard/Media.qml"
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/2bed3ddf26a240b967705aba2e5f9e4ee5bb0e44/windows/shell/adapters/modules/dashboard/Media.qml"
         },
         {
           "repository": "backend",
           "path": "src/windows/services/mpris/gsmtc_worker.cpp",
-          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/e6039b2b9cbb35b97473bda4dcc3f12789ae7f0c/src/windows/services/mpris/gsmtc_worker.cpp"
+          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/3855b96dff584c71a21a90c0631ddcfc062d6593/src/windows/services/mpris/gsmtc_worker.cpp"
         }
       ],
       "acceptanceOwners": []
@@ -692,17 +698,17 @@
         {
           "repository": "shell",
           "path": "windows/services/notifications/NotificationsService.qml",
-          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/eec2778123d47c3555006b3af5e75fd893c7b9c2/windows/services/notifications/NotificationsService.qml"
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/2bed3ddf26a240b967705aba2e5f9e4ee5bb0e44/windows/services/notifications/NotificationsService.qml"
         },
         {
           "repository": "shell",
           "path": "windows/services/notifications/NativeNotificationBackend.qml",
-          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/eec2778123d47c3555006b3af5e75fd893c7b9c2/windows/services/notifications/NativeNotificationBackend.qml"
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/2bed3ddf26a240b967705aba2e5f9e4ee5bb0e44/windows/services/notifications/NativeNotificationBackend.qml"
         },
         {
           "repository": "backend",
           "path": "src/windows/services/notifications/toast_mirror.cpp",
-          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/e6039b2b9cbb35b97473bda4dcc3f12789ae7f0c/src/windows/services/notifications/toast_mirror.cpp"
+          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/3855b96dff584c71a21a90c0631ddcfc062d6593/src/windows/services/notifications/toast_mirror.cpp"
         }
       ],
       "acceptanceOwners": [
@@ -768,17 +774,17 @@
         {
           "repository": "shell",
           "path": "windows/services/hypr/README.md",
-          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/eec2778123d47c3555006b3af5e75fd893c7b9c2/windows/services/hypr/README.md"
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/2bed3ddf26a240b967705aba2e5f9e4ee5bb0e44/windows/services/hypr/README.md"
         },
         {
           "repository": "shell",
           "path": "windows/services/hypr/HyprService.qml",
-          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/eec2778123d47c3555006b3af5e75fd893c7b9c2/windows/services/hypr/HyprService.qml"
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/2bed3ddf26a240b967705aba2e5f9e4ee5bb0e44/windows/services/hypr/HyprService.qml"
         },
         {
           "repository": "backend",
           "path": "src/windows/hyprland/dispatcher.cpp",
-          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/e6039b2b9cbb35b97473bda4dcc3f12789ae7f0c/src/windows/hyprland/dispatcher.cpp"
+          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/3855b96dff584c71a21a90c0631ddcfc062d6593/src/windows/hyprland/dispatcher.cpp"
         }
       ],
       "acceptanceOwners": [
@@ -789,10 +795,10 @@
       "id": "capture",
       "bundleProviderId": "capture",
       "uiEntry": "PrintScreen, Win+Shift+S, Win+Shift+R, launcher actions, and the recording card.",
-      "provider": "Pinned bundled Glazier executable, orchestrated by the staged Glazier/Recorder adapters.",
+      "provider": "First-party caelestia-capture.exe from windows/capture, managed by Caelestia.Windows.CaptureHost and the compatibility-named Glazier/Recorder adapters.",
       "operations": [
-        "Launch Glazier's screenshot picker/editor after shell surfaces are dismissed.",
-        "Start, stop, pause/resume, and observe Glazier recording states and finalized-file ownership."
+        "Launch the first-party screenshot picker/editor after shell surfaces are dismissed.",
+        "Start, stop, pause/resume, and observe capture recording states and finalized-file ownership."
       ],
       "requirements": [
         "The live installed shell, bundled executable and interactive desktop are required; smoke/read-only profiles suppress process launch.",
@@ -817,7 +823,7 @@
         }
       ],
       "operationCaveat": "Screenshot launch is asynchronous. A shell return value/accepted detached launch is not a file-completion result; use provider status/journal evidence for recording state.",
-      "captureMigration": "The current staged route remains Glazier at the recorded pin. Lifecycle changes and the first-party source/product migration are separate active work; migration is pending, not a final identity change.",
+      "captureMigration": "Maintained source and managed identity are integrated at the capture source revision. The Glazier origin revision remains attribution/provenance, not the active source revision. Exact-pair, installed-package and live capture acceptance remain separate.",
       "staging": [
         {
           "source": "windows/shell/adapters/services/Glazier.qml",
@@ -844,27 +850,27 @@
         {
           "repository": "shell",
           "path": "windows/shell/adapters/services/Glazier.qml",
-          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/eec2778123d47c3555006b3af5e75fd893c7b9c2/windows/shell/adapters/services/Glazier.qml"
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/2bed3ddf26a240b967705aba2e5f9e4ee5bb0e44/windows/shell/adapters/services/Glazier.qml"
         },
         {
           "repository": "shell",
           "path": "windows/shell/adapters/services/Recorder.qml",
-          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/eec2778123d47c3555006b3af5e75fd893c7b9c2/windows/shell/adapters/services/Recorder.qml"
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/2bed3ddf26a240b967705aba2e5f9e4ee5bb0e44/windows/shell/adapters/services/Recorder.qml"
         },
         {
           "repository": "shell",
           "path": "windows/shell/adapters/modules/nexus/pages/ServicesPage.qml",
-          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/eec2778123d47c3555006b3af5e75fd893c7b9c2/windows/shell/adapters/modules/nexus/pages/ServicesPage.qml"
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/2bed3ddf26a240b967705aba2e5f9e4ee5bb0e44/windows/shell/adapters/modules/nexus/pages/ServicesPage.qml"
         },
         {
-          "repository": "glazier",
-          "path": "src/capture.rs",
-          "url": "https://github.com/KldsSeeGhosts/glazier/blob/37f795041cbbb32ed46cba103f3f000a3a99ac13/src/capture.rs"
+          "repository": "capture",
+          "path": "windows/capture/src/capture.rs",
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/f637fcdc6bc1a52e2a405ef1935b199276d06a9c/windows/capture/src/capture.rs"
         },
         {
-          "repository": "glazier",
-          "path": "src/recording.rs",
-          "url": "https://github.com/KldsSeeGhosts/glazier/blob/37f795041cbbb32ed46cba103f3f000a3a99ac13/src/recording.rs"
+          "repository": "capture",
+          "path": "windows/capture/src/recording.rs",
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/f637fcdc6bc1a52e2a405ef1935b199276d06a9c/windows/capture/src/recording.rs"
         }
       ],
       "acceptanceOwners": [
@@ -910,17 +916,17 @@
         {
           "repository": "shell",
           "path": "windows/shell/adapters/modules/utilities/cards/IdleInhibit.qml",
-          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/eec2778123d47c3555006b3af5e75fd893c7b9c2/windows/shell/adapters/modules/utilities/cards/IdleInhibit.qml"
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/2bed3ddf26a240b967705aba2e5f9e4ee5bb0e44/windows/shell/adapters/modules/utilities/cards/IdleInhibit.qml"
         },
         {
           "repository": "shell",
           "path": "windows/shell/adapters/imports/Caelestia/Services/IdleHold.qml",
-          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/eec2778123d47c3555006b3af5e75fd893c7b9c2/windows/shell/adapters/imports/Caelestia/Services/IdleHold.qml"
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/2bed3ddf26a240b967705aba2e5f9e4ee5bb0e44/windows/shell/adapters/imports/Caelestia/Services/IdleHold.qml"
         },
         {
           "repository": "backend",
           "path": "src/windows/system/idle_power.cpp",
-          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/e6039b2b9cbb35b97473bda4dcc3f12789ae7f0c/src/windows/system/idle_power.cpp"
+          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/3855b96dff584c71a21a90c0631ddcfc062d6593/src/windows/system/idle_power.cpp"
         }
       ],
       "acceptanceOwners": []
@@ -970,17 +976,17 @@
         {
           "repository": "shell",
           "path": "windows/shell/adapters/modules/bar/popouts/kblayout/KbLayoutModel.qml",
-          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/eec2778123d47c3555006b3af5e75fd893c7b9c2/windows/shell/adapters/modules/bar/popouts/kblayout/KbLayoutModel.qml"
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/2bed3ddf26a240b967705aba2e5f9e4ee5bb0e44/windows/shell/adapters/modules/bar/popouts/kblayout/KbLayoutModel.qml"
         },
         {
           "repository": "shell",
           "path": "windows/services/hypr/NativeHyprBackend.qml",
-          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/eec2778123d47c3555006b3af5e75fd893c7b9c2/windows/services/hypr/NativeHyprBackend.qml"
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/2bed3ddf26a240b967705aba2e5f9e4ee5bb0e44/windows/services/hypr/NativeHyprBackend.qml"
         },
         {
           "repository": "backend",
           "path": "src/windows/system/keyboard.cpp",
-          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/e6039b2b9cbb35b97473bda4dcc3f12789ae7f0c/src/windows/system/keyboard.cpp"
+          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/3855b96dff584c71a21a90c0631ddcfc062d6593/src/windows/system/keyboard.cpp"
         }
       ],
       "acceptanceOwners": [
@@ -1036,17 +1042,17 @@
         {
           "repository": "shell",
           "path": "windows/shell/adapters/modules/bar/components/Tray.qml",
-          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/eec2778123d47c3555006b3af5e75fd893c7b9c2/windows/shell/adapters/modules/bar/components/Tray.qml"
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/2bed3ddf26a240b967705aba2e5f9e4ee5bb0e44/windows/shell/adapters/modules/bar/components/Tray.qml"
         },
         {
           "repository": "shell",
           "path": "windows/services/tray/TrayService.qml",
-          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/eec2778123d47c3555006b3af5e75fd893c7b9c2/windows/services/tray/TrayService.qml"
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/2bed3ddf26a240b967705aba2e5f9e4ee5bb0e44/windows/services/tray/TrayService.qml"
         },
         {
           "repository": "backend",
           "path": "src/windows/services/systray/host.cpp",
-          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/e6039b2b9cbb35b97473bda4dcc3f12789ae7f0c/src/windows/services/systray/host.cpp"
+          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/3855b96dff584c71a21a90c0631ddcfc062d6593/src/windows/services/systray/host.cpp"
         }
       ],
       "acceptanceOwners": []
@@ -1104,17 +1110,17 @@
         {
           "repository": "shell",
           "path": "windows/shell/adapters/services/Wallpapers.qml",
-          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/eec2778123d47c3555006b3af5e75fd893c7b9c2/windows/shell/adapters/services/Wallpapers.qml"
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/2bed3ddf26a240b967705aba2e5f9e4ee5bb0e44/windows/shell/adapters/services/Wallpapers.qml"
         },
         {
           "repository": "shell",
           "path": "windows/shell/adapters/modules/background/WindowsBackground.qml",
-          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/eec2778123d47c3555006b3af5e75fd893c7b9c2/windows/shell/adapters/modules/background/WindowsBackground.qml"
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/2bed3ddf26a240b967705aba2e5f9e4ee5bb0e44/windows/shell/adapters/modules/background/WindowsBackground.qml"
         },
         {
           "repository": "backend",
           "path": "src/windows/system/wallpaper.cpp",
-          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/e6039b2b9cbb35b97473bda4dcc3f12789ae7f0c/src/windows/system/wallpaper.cpp"
+          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/3855b96dff584c71a21a90c0631ddcfc062d6593/src/windows/system/wallpaper.cpp"
         }
       ],
       "acceptanceOwners": [
@@ -1171,22 +1177,22 @@
         {
           "repository": "shell",
           "path": "windows/services/clipboard/README.md",
-          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/eec2778123d47c3555006b3af5e75fd893c7b9c2/windows/services/clipboard/README.md"
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/2bed3ddf26a240b967705aba2e5f9e4ee5bb0e44/windows/services/clipboard/README.md"
         },
         {
           "repository": "shell",
           "path": "windows/services/clipboard/NativeClipboardBackend.qml",
-          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/eec2778123d47c3555006b3af5e75fd893c7b9c2/windows/services/clipboard/NativeClipboardBackend.qml"
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/2bed3ddf26a240b967705aba2e5f9e4ee5bb0e44/windows/services/clipboard/NativeClipboardBackend.qml"
         },
         {
           "repository": "shell",
           "path": "plugin/src/Caelestia/Windows/Clipboard/windowsclipboard.cpp",
-          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/eec2778123d47c3555006b3af5e75fd893c7b9c2/plugin/src/Caelestia/Windows/Clipboard/windowsclipboard.cpp"
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/2bed3ddf26a240b967705aba2e5f9e4ee5bb0e44/plugin/src/Caelestia/Windows/Clipboard/windowsclipboard.cpp"
         },
         {
           "repository": "backend",
           "path": "src/windows/system/clipboard.cpp",
-          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/e6039b2b9cbb35b97473bda4dcc3f12789ae7f0c/src/windows/system/clipboard.cpp"
+          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/3855b96dff584c71a21a90c0631ddcfc062d6593/src/windows/system/clipboard.cpp"
         }
       ],
       "acceptanceOwners": []
