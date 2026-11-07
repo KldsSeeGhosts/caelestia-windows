@@ -1,6 +1,6 @@
 # Uninstall transaction regression fixture
 
-Run in 64-bit Windows PowerShell 5.1 on Windows 11 x64, from the repository root:
+Run in 64-bit Windows PowerShell 5.1 on native Windows x64, from the repository root:
 
 ```powershell
 powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File windows/scripts/Test-UninstallTransaction.ps1 -OutputRoot D:\Caelestia\validation-erm629
@@ -10,6 +10,14 @@ The output directory must be absent or carry this fixture's exact ownership
 marker. Each invocation retains its own `run-<guid>` directory and sanitized
 `receipt.json`, worker results, boundary traces and stdout/stderr. It does not
 recursively clean old runs. Do not point it at an existing installation.
+
+This data-only fixture also runs on Windows Server 2022 CI. Its private copy of
+the release bootstrap excludes the application's Windows 11 build-number floor
+and runtime prerequisite, while keeping Windows/x64 checks and the real
+manifest, hash and transaction validation. Payload binaries are inert data and
+launch/integration boundaries are mocked. The production bootstrap is unchanged
+and still requires Windows 11. A fixture pass is not application support or
+native acceptance on Server 2022.
 
 Policy: uninstall and every non-Status maintenance path use the same nonblocking
 prefix lock as installation. Contention returns a clear busy error before

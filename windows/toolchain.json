@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "id": "windows-x64-v1",
+  "hostedImage": "windows-2022",
+  "architecture": "x64",
+  "runtimeMinimum": "14.44.35211.0",
+  "vcToolsVersion": "14.44.35207",
+  "vcCompilerFileVersion": "19.44.35229.0",
+  "vcLinkerFileVersion": "14.44.35229.0",
+  "vcRedistDirectoryVersion": "14.44.35112",
+  "vcRedistVersion": "14.44.35211.0",
+  "vcComponent": "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
+  "windowsSdkVersion": "10.0.26100.0",
+  "clangVersion": "20.1.8",
+  "clangTarget": "x86_64-pc-windows-msvc",
+  "rustVersion": "1.99.1",
+  "rustCommit": "58cf8f9c35b355199727627d07ae34a4e2846d67",
+  "cargoVersion": "1.99.1",
+  "rustTarget": "x86_64-pc-windows-msvc",
+  "rustManifest": {
+    "file": "channel-rust-1.99.1.toml",
+    "url": "https://static.rust-lang.org/dist/channel-rust-1.99.1.toml",
+    "sha256": "fb152be80975c194aa5fc684b2aec3a6e14e2b855efe2faa4e5f8ae6e590f463"
+  },
+  "qtVersion": "6.11.2",
+  "qtCompilerFileVersion": "19.44.35227.0",
+  "qtLinkerFileVersion": "14.44.35227.0",
+  "qtArchitecture": "win64_msvc2022_64",
+  "qtDirectory": "Qt/6.11.2/msvc2022_64",
+  "qtModules": ["qtshadertools", "qtimageformats"],
+  "qtArchives": ["qtbase", "qtdeclarative", "qtsvg", "qttools"],
+  "cmakeVersion": "4.4.4",
+  "ninjaVersion": "1.13.2.git.kitware.jobserver-pipe-1",
+  "cli11Version": "2.5.0",
+  "pythonVersion": "3.12",
+  "llvmDirectory": "clang+llvm-20.1.8-x86_64-pc-windows-msvc",
+  "cli11Directory": "deps/CLI11-2.5.0/include",
+  "qtRepository": "https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6112/qt6_6112_msvc2022_64",
+  "qtPackageVersion": "6.11.2-0-202608131017",
+  "qtDownloads": [
+    {"component": "qt.qt6.6112.win64_msvc2022_64", "module": "qtbase", "sha256": "fd984b7264361b4dd3fd2a417702ca1258e4086268f2ee6a69b9a393d9c3f6bb"},
+    {"component": "qt.qt6.6112.win64_msvc2022_64", "module": "qtsvg", "sha256": "417f44499c835b2303f3ff78043179bb23442f33d5d2816fbf7e8dbf275b1c89"},
+    {"component": "qt.qt6.6112.win64_msvc2022_64", "module": "qtdeclarative", "sha256": "5591ca564c1a9299a45a15b6b1d324c86e0aaed7cf6c47b7e6fe464aecae2587"},
+    {"component": "qt.qt6.6112.win64_msvc2022_64", "module": "qttools", "sha256": "5f2b387a1f8055102b1388ff4ea743124ed6389d442f75c659728bb5c2a56946"},
+    {"component": "qt.qt6.6112.addons.qtshadertools.win64_msvc2022_64", "module": "qtshadertools", "sha256": "d434c320f5788cf54c71e68ab28488ceb2f1ba725e63241530155347a4c5081e"},
+    {"component": "qt.qt6.6112.addons.qtimageformats.win64_msvc2022_64", "module": "qtimageformats", "sha256": "d6822c2160ebb675525173deb84bbfb68b4be046ee7f126af74a400a285b933d"}
+  ],
+  "downloads": {
+    "aqt": {
+      "file": "aqtinstall-076e1659807d0b362a3ed684d54c2e9c775eb9c7.zip",
+      "url": "https://github.com/miurahr/aqtinstall/archive/076e1659807d0b362a3ed684d54c2e9c775eb9c7.zip",
+      "sha256": "baf8dd80bf687d90c67022dd75646760b462198c1f7d6bcf289f231d2547829e"
+    },
+    "llvm": {
+      "file": "llvm-20.1.8.tar.xz",
+      "url": "https://github.com/llvm/llvm-project/releases/download/llvmorg-20.1.8/clang+llvm-20.1.8-x86_64-pc-windows-msvc.tar.xz",
+      "sha256": "f229769f11d6a6edc8ada599c0cda964b7dee6ab1a08c6cf9dd7f513e85b107f"
+    },
+    "cli11": {
+      "file": "cli11-v2.5.0.zip",
+      "url": "https://github.com/CLIUtils/CLI11/archive/refs/tags/v2.5.0.zip",
+      "sha256": "887270cae374a0b9e22b39647f9fc4bc742587fb26d6a221da2d2bbcf3109b0b"
+    }
+  }
+}
