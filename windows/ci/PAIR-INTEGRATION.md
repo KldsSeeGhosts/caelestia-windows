@@ -71,6 +71,11 @@ One-day exact-run/attempt artifacts carry allowlisted inputs. Candidate assembly
 depends on the join and aggregate validation. Documentation-only runs must skip
 fixtures, build and pair together. Estimated critical path is
 `max(fixtures, build) + join overhead`, plus checkout/tool preparation.
+The fixtures job also runs first-party capture Rust regressions with its measured
+`BUILD_JOBS` and retains the separate `capture-rust-<run>-<attempt>` receipt.
+Neither production integration nor the receipt join consumes that receipt.
+A capture failure fails fixtures and therefore `Windows validation`, before any
+candidate assembly. Capture output never enters pair or Nexus inputs.
 Integration executes:
 
 1. Services suite.
@@ -88,14 +93,16 @@ memory measurements fail closed. The same value drives the capture Rust build,
 the trusted fixture build and production. It changes compile scheduling only.
 CTest, QML suites and recorded stages stay serial.
 
-Before any native compilation, the workflow runs the same Services command
-once with `-ServicesPreflightRoot`. That early copy writes only under its own
+Recorded integration runs Services before production compilation. CI no longer
+repeats it in an unrecorded preflight, which added 29 seconds to the warm
+critical path without adding evidence. For local diagnostics,
+`-ServicesPreflightRoot` runs an early copy that writes only under its own
 fresh root, disjoint from pair results, the production build, sources and
 read-only tools in both directions. Preflight rejects junction/symlink
 ancestors on these paths rather than guessing where output will land.
 It is not recorded in the receipt or envelope and is never evidence.
-A failure stops the job early; a pass changes
-nothing, because recorded integration reruns Services from scratch.
+A failure stops the invocation early; a pass changes nothing, because a later
+recorded integration still runs Services from scratch.
 
 Candidate builds require both `-BackendRoot` and
 `-CandidateBackendRevision`; smoke requires the same explicit SHA.

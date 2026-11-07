@@ -7,6 +7,8 @@ param(
     [string]$BuildRoot,
     # Optional accelerator. An empty value also clears a reused CMake cache.
     [string]$CompilerLauncher,
+    # Opt-in Rust cache, separate from C/C++ objects. Requires CompilerLauncher.
+    [string]$RustCacheDirectory,
     # Integration-only canonical checkout, outside this shell repository.
     [string]$BackendRoot,
     [ValidatePattern('^[a-f0-9]{40}$')][string]$CandidateBackendRevision,
@@ -126,6 +128,9 @@ if ($CompilerLauncher -and (-not [IO.Path]::IsPathRooted($CompilerLauncher) -or
     -not (Test-Path -LiteralPath $CompilerLauncher -PathType Leaf))) {
     throw 'CompilerLauncher must name an existing absolute executable path.'
 }
+if ($RustCacheDirectory -and (-not $CompilerLauncher -or -not [IO.Path]::IsPathRooted($RustCacheDirectory))) {
+    throw 'RustCacheDirectory requires an absolute path and CompilerLauncher.'
+}
 $common = @('-G', 'Ninja', '-DCMAKE_BUILD_TYPE=Release',
     "-DCMAKE_C_COMPILER_LAUNCHER:FILEPATH=$CompilerLauncher",
     "-DCMAKE_CXX_COMPILER_LAUNCHER:FILEPATH=$CompilerLauncher",
@@ -213,6 +218,17 @@ if ($SkipCapture) {
         '--target-dir', (Join-Path $BuildRoot 'capture-target'))
     $cargoArguments | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $logRoot 'build-capture-command.json') -Encoding UTF8
     $previousEncodedRustFlags = [Environment]::GetEnvironmentVariable('CARGO_ENCODED_RUSTFLAGS', 'Process')
+    $rustCacheEnvironment = @{}
+    if ($RustCacheDirectory) {
+        foreach ($name in @('RUSTC_WRAPPER', 'CARGO_INCREMENTAL', 'SCCACHE_DIR', 'SCCACHE_SERVER_PORT')) {
+            $rustCacheEnvironment[$name] = [Environment]::GetEnvironmentVariable($name, 'Process')
+        }
+        $env:RUSTC_WRAPPER = $CompilerLauncher
+        $env:CARGO_INCREMENTAL = '0'
+        $env:SCCACHE_DIR = $RustCacheDirectory
+        # Separate server: a running sccache server keeps its original cache dir.
+        $env:SCCACHE_SERVER_PORT = '4227'
+    }
     if ($PublicRelease) {
         # Rust panic/file! strings can retain Cargo's personal registry path.
         # Encoded arguments preserve paths containing spaces. Caller-supplied
@@ -235,6 +251,7 @@ if ($SkipCapture) {
         [Environment]::SetEnvironmentVariable('CARGO_ENCODED_RUSTFLAGS', ($publicRustFlags -join $separator), 'Process')
     }
     try {
+        $captureClock = [Diagnostics.Stopwatch]::StartNew()
         # Cargo writes progress to stderr; the native exit code is the failure criterion.
         $ErrorActionPreference = 'Continue'
         & cargo @cargoArguments 2>&1 | ForEach-Object { "$_" } |
@@ -242,6 +259,13 @@ if ($SkipCapture) {
         $cargoExit = $LASTEXITCODE
     } finally {
         $ErrorActionPreference = 'Stop'
+        [ordered]@{
+            durationSeconds = [Math]::Round($captureClock.Elapsed.TotalSeconds, 6)
+            exitCode = $cargoExit
+        } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $logRoot 'build-capture-timing.json') -Encoding UTF8
+        foreach ($name in $rustCacheEnvironment.Keys) {
+            [Environment]::SetEnvironmentVariable($name, $rustCacheEnvironment[$name], 'Process')
+        }
         if ($PublicRelease) {
             [Environment]::SetEnvironmentVariable('CARGO_ENCODED_RUSTFLAGS', $previousEncodedRustFlags, 'Process')
         }

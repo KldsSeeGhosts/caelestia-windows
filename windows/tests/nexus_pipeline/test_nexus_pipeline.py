@@ -943,8 +943,8 @@ class Pipeline(unittest.TestCase):
         self.assertIn("New-NexusCandidate.ps1", candidate)
         self.assertNotIn("actions/cache/save@", candidate)
         saves = re.findall(r"        if: ([^\n]+)\n        uses: actions/cache/save@", text)
-        self.assertEqual(3, text.count("actions/cache/save@"))
-        self.assertEqual(3, len(saves))
+        self.assertEqual(4, text.count("actions/cache/save@"))
+        self.assertEqual(4, len(saves))
         for condition in saves:
             self.assertIn("github.ref == 'refs/heads/main' && github.event_name == 'push'", condition)
             self.assertNotIn("||", condition)
@@ -955,6 +955,11 @@ class Pipeline(unittest.TestCase):
         self.assertIn("retention-days: 1\n", build)
         fixtures = text.split("\n  fixtures:\n")[1].split("\n  build:\n")[0]
         pair = text.split("\n  pair:\n")[1].split("\n  validation:\n")[0]
+        self.assertIn("Test-CaptureRust.ps1", fixtures)
+        self.assertIn("name: capture-rust-${{ github.run_id }}-${{ github.run_attempt }}", fixtures)
+        for job in (build, pair, candidate, publish):
+            self.assertNotIn("ci-capture", job)
+            self.assertNotIn("capture-rust", job)
         self.assertIn("needs: [scope, fixtures, build]", pair)
         self.assertIn("needs.fixtures.result == 'success' && needs.build.result == 'success'", pair)
         self.assertIn("Require identical actual toolchains", pair)

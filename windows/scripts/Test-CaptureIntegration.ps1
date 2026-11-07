@@ -74,8 +74,12 @@ Assert-True ($workflow.Contains('name: native-reuse-${{ github.sha }}') -and
     $workflow.Contains('retention-days: 14')) 'Trusted native reuse artifact must be retained.'
 Assert-True ($workflow.Contains('Test-CaptureRust.ps1') -and $workflow.Contains('C:/ci-capture/capture-rust.json')) 'Public gate and sanitized receipt upload required.'
 $nativeJob = ($workflow -split '(?m)^  build:\r?$')[1] -split '(?m)^  pair:\r?$' | Select-Object -First 1
-Assert-True ($nativeJob.Contains('Test-CaptureRust.ps1') -and -not $nativeJob.Contains('New-NexusCandidate.ps1')) 'Capture validation must not wait for candidate assembly.'
-Assert-True (-not $nativeJob.Contains('Invoke-WindowsFixtureGate.ps1') -and -not $nativeJob.Contains(' finalize ')) 'Capture and integration run independently of fixtures and finalization.'
+$fixturesJob = ($workflow -split '(?m)^  fixtures:\r?$')[1] -split '(?m)^  build:\r?$' | Select-Object -First 1
+Assert-True ($fixturesJob.Contains('Test-CaptureRust.ps1') -and $fixturesJob.Contains('C:/ci-capture/capture-rust.json') -and
+    $fixturesJob.Contains('-OutputRoot C:\ci-capture -Jobs $env:BUILD_JOBS')) 'Fixtures must run capture with measured parallelism and retain its receipt.'
+Assert-True (-not $nativeJob.Contains('Test-CaptureRust.ps1') -and -not $nativeJob.Contains('ci-capture')) 'Capture regressions must not delay production integration.'
+Assert-True (-not $fixturesJob.Contains('New-NexusCandidate.ps1') -and -not $fixturesJob.Contains(' finalize ')) 'Capture validation must not wait for candidate assembly or receipt finalization.'
+Assert-True (-not $nativeJob.Contains('Invoke-WindowsFixtureGate.ps1') -and -not $nativeJob.Contains(' finalize ')) 'Production integration runs independently of fixtures and finalization.'
 Assert-True ((Get-Content "$PSScriptRoot\New-CaelestiaRelease.ps1" -Raw).Contains("if (`$build.backendMode -cne 'pinned')")) 'Candidate-release refusal guard must remain.'
 & node "$repo\windows\tests\CaptureIntegration.test.js"
 if ($LASTEXITCODE -ne 0) { throw 'Capture adapter integration checks failed.' }

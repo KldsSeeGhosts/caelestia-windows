@@ -10,6 +10,7 @@ param(
     [Parameter(Mandatory)][string]$JUnit,
     [string]$Python = 'python',
     [string]$CompilerLauncher,
+    [string]$RustCacheDirectory,
     # Compile parallelism for the production build only; tests stay serial.
     [ValidateRange(1, 16)][int]$Jobs = 2,
     # Early, unrecorded Services run for a fast first error. It writes only
@@ -190,6 +191,7 @@ try {
         '-ToolsBin', $tools, '-Jobs', "$Jobs", '-PublicRelease', '-PluginTests')
     if ($Mode -eq 'candidate') { $buildArguments += @('-BackendRoot', $BackendRoot, '-CandidateBackendRevision', $BackendSha) }
     if ($CompilerLauncher) { $buildArguments += @('-CompilerLauncher', $CompilerLauncher) }
+    if ($RustCacheDirectory) { $buildArguments += @('-RustCacheDirectory', $RustCacheDirectory) }
     Invoke-Gate 1 $ps $buildArguments
     Invoke-Gate 2 $ps ($common + @("$scripts\New-CaelestiaRelease.ps1", '-BuildRoot', $BuildRoot, '-ValidateToolchainOnly'))
     Invoke-Gate 3 "$tools\ctest.exe" (Get-PluginArguments)
