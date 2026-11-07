@@ -905,6 +905,9 @@ class Pipeline(unittest.TestCase):
         self.assertIn("needs.scope.outputs.native", validation)
         self.assertIn("-notin @('true', 'false')", validation)
         self.assertIn("needs: [scope, pair, validation]", candidate)
+        # Eligibility rechecks backend-main ancestry; only pair resolution
+        # fetches that ref, so it must run before the trusted bootstrap.
+        self.assertLess(candidate.index("Resolve-PairRequest.ps1"), candidate.index("pair_result.py\" bootstrap"))
         for condition in ("needs.validation.result == 'success'", "needs.pair.result == 'success'",
                           "needs.scope.result == 'success'", "needs.scope.outputs.native == 'true'",
                           "github.event_name == 'push'", "github.ref == 'refs/heads/main'"):
