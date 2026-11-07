@@ -56,7 +56,9 @@ if ($PSCmdlet.ParameterSetName -eq 'Coverage') {
         -VerifyOnly -ExpectedManifestSha256 $ExpectedManifestSha256
     $manifest = Get-Content -LiteralPath (Join-Path $BundleRoot 'release.json') -Raw | ConvertFrom-Json
     $files = @(Assert-SourcePayloadCoverage $inventory $manifest)
-    $stagingRecord = @(Get-Content -LiteralPath (Join-Path $BundleRoot 'payload/shell/sources.json') -Raw | ConvertFrom-Json)
+    # Windows PowerShell returns a JSON array as one pipeline object. Do not
+    # wrap it again, or a real multi-row staging record becomes a nested array.
+    $stagingRecord = Get-Content -LiteralPath (Join-Path $BundleRoot 'payload/shell/sources.json') -Raw | ConvertFrom-Json
     foreach ($entry in $inventory.payloadRules.staged) {
         $match = @($stagingRecord | Where-Object staged -CEQ $entry.path.Substring('payload/shell/'.Length))
         if ($match.Count -ne 1 -or $match[0].source -cne $entry.sourcePath -or

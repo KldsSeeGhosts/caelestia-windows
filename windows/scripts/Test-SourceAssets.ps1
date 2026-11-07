@@ -262,7 +262,7 @@ $requiredNames = @($requiredLoop[0].Condition.FindAll({
             $_.NestedExpressions[0].VariablePath.UserPath -ceq 'captureExecutable') 'Unknown dynamic required-file expression'
         'payload/glazier.exe'
     } else { $_.Value }
-}) + @('payload/licenses/supplemental/fixture-LICENSE')
+}) + @('payload/licenses/supplemental/fixture-LICENSE', 'payload/shell/extra.qml')
 $header = "//@ pragma DataDir @CAELESTIA_PROFILE@/data`n//@ pragma StateDir @CAELESTIA_PROFILE@/state`n//@ pragma CacheDir @CAELESTIA_PROFILE@/cache`n"
 foreach ($name in $requiredNames) {
     $target = Join-Path $bundleFixture $name
@@ -270,8 +270,11 @@ foreach ($name in $requiredNames) {
     [IO.File]::WriteAllText($target, $(if ($name -ceq 'payload/shell/shell.qml') { $header + 'fixture' } else { 'inert generated fixture' }), [Text.UTF8Encoding]::new($false))
 }
 $shellHash = Get-SourceHash (Join-Path $bundleFixture 'payload/shell/shell.qml')
+$extraHash = Get-SourceHash (Join-Path $bundleFixture 'payload/shell/extra.qml')
 Write-SourceJson (Join-Path $bundleFixture 'payload/shell/sources.json') @([ordered]@{
     source = 'shell.qml'; staged = 'shell.qml'; sourceSha256 = $shellHash; stagedSha256 = $shellHash
+}, [ordered]@{
+    source = 'extra.qml'; staged = 'extra.qml'; sourceSha256 = $extraHash; stagedSha256 = $extraHash
 })
 $fixtureManifest = [ordered]@{
     schema = 'caelestia-windows-release'; version = 1; platform = 'windows-x64'; releaseId = 'source-fixture'
@@ -322,7 +325,9 @@ $fixtureInventory = [ordered]@{
         reference = @($fixtureManifest.files | ForEach-Object {
             [ordered]@{ path = $_.path; component = $fixtureOwners[$_.path]; sha256 = $_.sha256 }
         })
-        staged = @(@{ path = 'payload/shell/shell.qml'; component = 'shell'; sourcePath = 'shell.qml'; sourceSha256 = $shellHash; sha256 = $shellHash })
+        staged = @(
+            @{ path = 'payload/shell/shell.qml'; component = 'shell'; sourcePath = 'shell.qml'; sourceSha256 = $shellHash; sha256 = $shellHash },
+            @{ path = 'payload/shell/extra.qml'; component = 'shell'; sourcePath = 'extra.qml'; sourceSha256 = $extraHash; sha256 = $extraHash })
     }
 }
 $fixtureManifestPath = Join-Path $bundleFixture 'release.json'
