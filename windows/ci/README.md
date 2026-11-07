@@ -153,6 +153,19 @@ verification. Server 2022 verification is data-only; actual install still
 requires Windows 11. The 120-minute native job budget includes source assembly
 but is not a measured first-hosted timing.
 
+Candidate children run through `nexus_process.py`: start/end labels,
+15-second heartbeats, private combined logs and explicit deadlines. Exact
+commit history fetches allow 300 seconds, source preparation 1800, assembly
+900, coverage/original-ZIP verification 300 each, and license/payload checks
+600 each. Timeout exits 124 and terminates the owned Windows process tree.
+Fetches are anonymous, noninteractive, nonrecursive and limited to the chosen
+commit's ancestry; standalone bundles still require complete history.
+Source preparation labels each supplier, notice group and Git bundle.
+Only stage name, outcome, exit, duration and budget enter the three-day
+`nexus-stage-states` artifact; private logs never become release artifacts.
+Echoed failure tails remain bounded and limited to disposable CI inputs.
+These limits diagnose stalled work, not certify candidate assembly speed.
+
 The aggregate gate requires this candidate on native main pushes. Publication
 waits for build, Packaging and all aggregate validation. Its write token and
 development secret exist only in the variable/environment-gated main publish
