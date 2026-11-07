@@ -1,0 +1,18 @@
+name: Request a private security contact
+description: Ask for a private reporting channel without disclosing vulnerability details
+title: "[Security contact] Private reporting channel requested"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This request is public. Do not change the title to include vulnerability details or attach files.
+        If GitHub offers **Report a vulnerability** in the Security tab, use that private form instead.
+        Otherwise submit this generic request and wait for the maintainer to provide a private channel.
+        Do not include affected versions, reproduction steps, logs, credentials, or proof-of-concept material.
+  - type: checkboxes
+    id: contact_request
+    attributes:
+      label: Private contact request
+      options:
+        - label: Please provide a private channel for a security report. This public request contains no technical details.
+          required: true

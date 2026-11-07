@@ -20,11 +20,16 @@ New-Item -ItemType Directory -Force -Path $ToolRoot, $downloads | Out-Null
 
 function Get-VerifiedToolchainArchive($Download) {
     $path = Join-Path $downloads $Download.file
+    $timer = [Diagnostics.Stopwatch]::StartNew()
+    Write-Host "Checking pinned archive: $($Download.file)"
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
-        & curl.exe -L --fail --silent --show-error $Download.url -o $path
+        Write-Host "Downloading pinned archive: $($Download.file) (600s per attempt, at most 2 retries)"
+        & curl.exe -L --fail --silent --show-error --connect-timeout 30 --max-time 600 `
+            --retry 2 --retry-delay 2 $Download.url -o $path
         if ($LASTEXITCODE -ne 0) { throw "Download failed: $($Download.file). Check public network access; do not add credentials." }
     }
     Assert-CaelestiaDownload $path $Download.sha256
+    Write-Host ("Verified pinned archive: {0} ({1:N2}s)" -f $Download.file, $timer.Elapsed.TotalSeconds)
     return $path
 }
 
@@ -72,16 +77,28 @@ try {
         if (-not (Test-Path -LiteralPath (Join-Path $qtPrefix $file) -PathType Leaf)) { throw "Incomplete Qt prerequisite: $file. Reprovision a fresh ToolRoot." }
     }
     $llvm = Get-VerifiedToolchainArchive $spec.downloads.llvm
-    if (-not (Test-Path -LiteralPath (Join-Path $ToolRoot "$($spec.llvmDirectory)\bin\clang-cl.exe"))) {
-        & "$env:SystemRoot\System32\tar.exe" -xf $llvm -C $ToolRoot
+    $llvmResources = "$($spec.llvmDirectory)/lib/clang/$($spec.clangVersion.Split('.')[0])/include/stddef.h"
+    if (-not (Test-Path -LiteralPath (Join-Path $ToolRoot "$($spec.llvmDirectory)/bin/clang-cl.exe")) -or
+        -not (Test-Path -LiteralPath (Join-Path $ToolRoot $llvmResources))) {
+        # The project consumes the compiler/tools and its built-in headers and
+        # runtimes, not the LLVM development libraries or API headers. Avoid
+        # materializing that unused SDK from the same hash-verified archive.
+        Write-Host 'Extracting compiler binaries and resource headers from verified LLVM archive.'
+        & "$env:SystemRoot\System32\tar.exe" -xf $llvm -C $ToolRoot `
+            "$($spec.llvmDirectory)/bin" "$($spec.llvmDirectory)/lib/clang"
         if ($LASTEXITCODE -ne 0) { throw 'Verified LLVM extraction failed.' }
+    }
+    if (-not (Test-Path -LiteralPath (Join-Path $ToolRoot $llvmResources))) {
+        throw 'Incomplete LLVM compiler resource headers. Reprovision a fresh ToolRoot.'
     }
     $cli = Get-VerifiedToolchainArchive $spec.downloads.cli11
     if (-not (Test-Path -LiteralPath (Join-Path $ToolRoot "$($spec.cli11Directory)\CLI\CLI.hpp"))) {
+        Write-Host 'Extracting verified CLI11 archive.'
         Expand-Archive -LiteralPath $cli -DestinationPath (Join-Path $ToolRoot 'deps') -Force
     }
     if ($InstallRust) {
         $null = Get-VerifiedToolchainArchive $spec.rustManifest
+        Write-Host 'Installing the pinned Rust toolchain.'
         # rustup verifies component hashes from this exact public manifest.
         & rustup.exe toolchain install "$($spec.rustVersion)-$($spec.rustTarget)" --profile minimal --target $spec.rustTarget
         if ($LASTEXITCODE -ne 0) { throw 'Pinned Rust installation failed. Check public access without changing credentials.' }

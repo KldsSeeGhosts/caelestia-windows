@@ -125,6 +125,11 @@ Add-Content -LiteralPath (Join-Path $env:CAELESTIA_FIXTURE_CONTROL 'boundaries.t
     $releaseScript = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'Install-CaelestiaRelease.ps1'))
     $releaseImport = ". (Join-Path `$payloadSource 'Caelestia-InstallCommon.ps1')"
     $releaseScript = Replace-Exactly $releaseScript $releaseImport ($releaseImport + $importBoundary)
+    # This copy installs inert data through mocked launch/integration boundaries,
+    # including on Server 2022 CI. It does not qualify the real Windows 11 app.
+    # Keep the native Windows/x64 checks; exclude only the app's OS-build floor.
+    $releaseScript = Replace-Exactly $releaseScript `
+        ' -or [Environment]::OSVersion.Version.Build -lt 22000' ''
     # The machine's VC runtime is not a prerequisite for data-only fixtures.
     $releaseScript = Replace-Exactly $releaseScript `
         'if (-not (Test-ReleaseVCRuntime ([version]$release.prerequisites.visualCppRuntime.minimumVersion))) {' `
@@ -207,7 +212,19 @@ function Wait-Marker($Worker, [string]$Name) {
     $clock = [Diagnostics.Stopwatch]::StartNew()
     $path = Join-Path $Worker.Control $Name
     while (-not (Test-Path -LiteralPath $path)) {
-        if ($Worker.Process.HasExited -or $clock.Elapsed.TotalSeconds -gt 30) { throw "Worker failed before $Name. Inspect local worker diagnostics." }
+        if ($Worker.Process.HasExited -or $clock.Elapsed.TotalSeconds -gt 30) {
+            $detail = ''
+            $resultPath = Join-Path $Worker.Control 'result.json'
+            if (Test-Path -LiteralPath $resultPath) {
+                try {
+                    $result = Get-Content -LiteralPath $resultPath -Raw | ConvertFrom-Json
+                    $reason = Protect-CaelestiaText ([string]$result.message)
+                    if ($reason.Length -gt 512) { $reason = $reason.Substring(0, 512) }
+                    $detail = " Result $($result.status): $reason"
+                } catch { $detail = ' Saved worker result is unreadable.' }
+            }
+            throw "Worker failed before $Name.$detail Inspect local worker diagnostics."
+        }
         Start-Sleep -Milliseconds 20
     }
 }
