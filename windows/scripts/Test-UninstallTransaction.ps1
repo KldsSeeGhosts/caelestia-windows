@@ -207,7 +207,19 @@ function Wait-Marker($Worker, [string]$Name) {
     $clock = [Diagnostics.Stopwatch]::StartNew()
     $path = Join-Path $Worker.Control $Name
     while (-not (Test-Path -LiteralPath $path)) {
-        if ($Worker.Process.HasExited -or $clock.Elapsed.TotalSeconds -gt 30) { throw "Worker failed before $Name. Inspect local worker diagnostics." }
+        if ($Worker.Process.HasExited -or $clock.Elapsed.TotalSeconds -gt 30) {
+            $detail = ''
+            $resultPath = Join-Path $Worker.Control 'result.json'
+            if (Test-Path -LiteralPath $resultPath) {
+                try {
+                    $result = Get-Content -LiteralPath $resultPath -Raw | ConvertFrom-Json
+                    $reason = Protect-CaelestiaText ([string]$result.message)
+                    if ($reason.Length -gt 512) { $reason = $reason.Substring(0, 512) }
+                    $detail = " Result $($result.status): $reason"
+                } catch { $detail = ' Saved worker result is unreadable.' }
+            }
+            throw "Worker failed before $Name.$detail Inspect local worker diagnostics."
+        }
         Start-Sleep -Milliseconds 20
     }
 }
