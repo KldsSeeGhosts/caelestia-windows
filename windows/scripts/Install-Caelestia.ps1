@@ -178,7 +178,15 @@ try {
     $phaseClock.Restart()
     $supervisorSourceHash = (Get-FileHash -LiteralPath "$payload\DesktopTakeover.cs").Hash
     $supervisorCached = $false
-    if ($old -and -not $NoSupervisorCache) {
+    if (-not $NoSupervisorCache -and $buildInfo.supervisor -and
+        $buildInfo.supervisor.sourceSha256 -eq $supervisorSourceHash -and
+        $buildInfo.supervisor.clrVersion -eq [Environment]::Version.ToString() -and
+        (Test-Path -LiteralPath "$BuildRoot\install\DesktopTakeover.dll" -PathType Leaf) -and
+        (Get-FileHash -LiteralPath "$BuildRoot\install\DesktopTakeover.dll").Hash -eq $buildInfo.supervisor.assemblySha256) {
+        Copy-Item -LiteralPath "$BuildRoot\install\DesktopTakeover.dll" -Destination "$payload\DesktopTakeover.dll"
+        $supervisorCached = $true
+    }
+    if (-not $supervisorCached -and $old -and -not $NoSupervisorCache) {
         $prior = if ($old.version -eq 2) { Get-CaelestiaVersionPrefix $Prefix $old.current } else { $Prefix }
         $priorMetadata = Join-Path $prior 'DesktopTakeover.build.json'
         $priorAssembly = Join-Path $prior 'DesktopTakeover.dll'

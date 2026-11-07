@@ -141,6 +141,20 @@ function Test-CaelestiaMetadata([byte[]]$KeysEnvelope, [byte[]]$ChannelEnvelope,
     $old = if ($Highwater -and $Highwater.channels) { $Highwater.channels[$Channel] } else { $null }
     if ($old -and ($doc.sequence -lt $old.sequence -or ($doc.sequence -eq $old.sequence -and $verified.Sha256 -cne $old.sha256))) { throw 'replay' }
     $release = $doc.release
+    Assert-CaelestiaReleaseMetadata $release $Trust $Channel
+    if ($old -and $old.buildVersion) {
+        $comparison = Compare-CaelestiaSemVer $release.buildVersion $old.buildVersion
+        if ($comparison -lt 0 -or ($comparison -eq 0 -and
+            ($old.bundleSha256 -cne $release.bundle.sha256 -or $old.manifestSha256 -cne $release.manifestSha256))) { throw 'replay' }
+    }
+    return [pscustomobject]@{
+        Release = $release
+        KeysVersion = $keys.version; KeysSha256 = $keysVerified.Sha256
+        Sequence = $doc.sequence; Sha256 = $verified.Sha256
+    }
+}
+
+function Assert-CaelestiaReleaseMetadata($release, $Trust, [string]$Channel) {
     Assert-CaelestiaFields $release @('displayVersion', 'buildVersion', 'releaseId', 'tag', 'sourceRevision', 'backendRevision',
         'bundle', 'manifestSha256', 'profileSchema', 'minimumUpdaterSchema', 'notesUrl', 'provenance')
     if (-not (Test-CaelestiaDevVersion $release.buildVersion) -or $release.releaseId -cne $release.buildVersion -or
@@ -172,15 +186,5 @@ function Test-CaelestiaMetadata([byte[]]$KeysEnvelope, [byte[]]$ChannelEnvelope,
     }
     foreach ($field in @('pairResultSha256', 'candidateReceiptSha256')) {
         if ($release.provenance[$field] -cnotmatch '^[a-f0-9]{64}$') { throw 'bad-metadata' }
-    }
-    if ($old -and $old.buildVersion) {
-        $comparison = Compare-CaelestiaSemVer $release.buildVersion $old.buildVersion
-        if ($comparison -lt 0 -or ($comparison -eq 0 -and
-            ($old.bundleSha256 -cne $bundle.sha256 -or $old.manifestSha256 -cne $release.manifestSha256))) { throw 'replay' }
-    }
-    return [pscustomobject]@{
-        Release = $release
-        KeysVersion = $keys.version; KeysSha256 = $keysVerified.Sha256
-        Sequence = $doc.sequence; Sha256 = $verified.Sha256
     }
 }

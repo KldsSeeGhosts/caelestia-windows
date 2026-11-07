@@ -338,7 +338,7 @@ def verify_build(build_root, request, shell):
         "captureOriginRevision", "captureCargoLockSha256", "captureExecutable", "captureSha256")}
 
 
-def envelope(args):
+def compute_envelope(args):
     results, shell = Path(args.results), Path(args.shell)
     result = {"schemaVersion": 1, "pairMode": None, "result": "non-pass",
               "releaseEligible": False, "reasons": [], "pair": None,
@@ -438,7 +438,12 @@ def envelope(args):
         result["releaseEligible"] = not result["reasons"]
     except (ValueError, OSError, KeyError, TypeError, ImportError, ET.ParseError):
         result["reasons"].append("pair-validation-nonpass")
-    write(results / "pair-result.json", result)
+    return result
+
+
+def envelope(args):
+    result = compute_envelope(args)
+    write(Path(args.results) / "pair-result.json", result)
     return 0 if result["result"] == "pass" else 1
 
 

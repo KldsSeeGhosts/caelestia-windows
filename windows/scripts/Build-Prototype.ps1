@@ -263,6 +263,49 @@ Invoke-BuildCommand 'configure-plugins' (@('-S', $repoRoot, '-B', "$BuildRoot\ca
 Invoke-BuildCommand 'build-plugins' @('--build', "$BuildRoot\caelestia", '--parallel', "$Jobs")
 Invoke-BuildCommand 'install-plugins' @('--install', "$BuildRoot\caelestia")
 
+# Build the managed supervisor once, before the production gates. Release
+# assembly must copy these tested bytes, not compile another payload.
+$supervisorSource = Join-Path $PSScriptRoot 'DesktopTakeover.cs'
+$supervisorAssembly = Join-Path $installRoot 'DesktopTakeover.dll'
+$supervisorMetadata = Join-Path $installRoot 'DesktopTakeover.build.json'
+$supervisorSourceHash = (Get-FileHash -LiteralPath $supervisorSource).Hash
+$supervisorReady = $false
+if ((Test-Path -LiteralPath $supervisorMetadata) -and (Test-Path -LiteralPath $supervisorAssembly)) {
+    $priorSupervisor = Get-Content -LiteralPath $supervisorMetadata -Raw | ConvertFrom-Json
+    $supervisorReady = $priorSupervisor.sourceSha256 -eq $supervisorSourceHash -and
+        $priorSupervisor.clrVersion -eq [Environment]::Version.ToString() -and
+        $priorSupervisor.assemblySha256 -eq (Get-FileHash -LiteralPath $supervisorAssembly).Hash
+}
+if (-not $supervisorReady) {
+    if (Test-Path -LiteralPath $supervisorAssembly) { Remove-Item -LiteralPath $supervisorAssembly }
+    $compileSupervisor = "Add-Type -Path '" + $supervisorSource.Replace("'", "''") +
+        "' -OutputAssembly '" + $supervisorAssembly.Replace("'", "''") +
+        "' -ReferencedAssemblies System.Windows.Forms,System.Web.Extensions -ErrorAction Stop"
+    & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command $compileSupervisor
+    if ($LASTEXITCODE -ne 0) { throw 'Production supervisor compilation failed.' }
+}
+$supervisor = [ordered]@{
+    sourceSha256 = $supervisorSourceHash
+    assemblySha256 = (Get-FileHash -LiteralPath $supervisorAssembly).Hash
+    clrVersion = [Environment]::Version.ToString()
+}
+$supervisor | ConvertTo-Json | Set-Content -LiteralPath $supervisorMetadata -Encoding UTF8
+# Metadata-only reflection never constructs a supervisor or invokes Win32.
+$supervisorReflection = [Reflection.Assembly]::ReflectionOnlyLoadFrom($supervisorAssembly)
+if (-not $supervisorReflection.GetType('Caelestia.Takeover.SupervisorSafety', $false)) {
+    throw 'Production supervisor ABI verification failed.'
+}
+$nativeFiles = @((Get-Item -LiteralPath "$BuildRoot\quickshell\qs.exe"),
+    (Get-Item -LiteralPath $supervisorAssembly))
+if (-not $SkipCapture) { $nativeFiles += Get-Item -LiteralPath "$installRoot\caelestia-capture.exe" }
+$nativeFiles += @(Get-ChildItem -LiteralPath "$installRoot\qml" -File -Recurse)
+$nativeInputs = @($nativeFiles | Sort-Object FullName | ForEach-Object {
+    [ordered]@{
+        path = $_.FullName.Substring($BuildRoot.TrimEnd('\').Length + 1).Replace('\', '/')
+        sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+    }
+})
+
 [ordered]@{
     sourceRevision = $fullSourceRevision
     sourceDirty = [bool]$rawDirty
@@ -287,6 +330,8 @@ Invoke-BuildCommand 'install-plugins' @('--install', "$BuildRoot\caelestia")
     backendTests = [bool]$Tests
     nativeVersion = $sourceVersion
     versionFileSha256 = $versionFileSha256
+    supervisor = $supervisor
+    nativeInputs = $nativeInputs
     toolchain = $toolchain
     windowsSdkVersion = $toolchain.windowsSdkVersion
     msvcToolsVersion = $toolchain.vcToolsVersion

@@ -105,6 +105,10 @@ Assert-SourceNoLinks $CacheDirectory
 if (Test-Path -LiteralPath $OutputDirectory) { throw 'Source asset output must be new; failed outputs are retained.' }
 if (-not $SourceRevision) { $SourceRevision = (Invoke-SourceGit $SourceRoot @('rev-parse', 'HEAD')) -join '' }
 $null = Invoke-SourceGit $SourceRoot @('cat-file', '-e', "$SourceRevision^{commit}")
+# Historical promotion revalidates the exact reviewed recipe as DATA from
+# that commit. No historical scripts, new URL override or guard bypass runs.
+$recipe = Get-SourceGitJson $SourceRoot $SourceRevision 'windows/release/source-assets.json'
+if ($recipe.schema -cne 'caelestia-source-recipe' -or $recipe.version -ne 1) { throw 'Unsupported committed source recipe.' }
 $lock = Get-SourceGitJson $SourceRoot $SourceRevision 'windows/sources.lock.json'
 if (-not $PSBoundParameters.ContainsKey('CaptureLayout') -and
     $lock.glazier.PSObject.Properties['representation'] -and $lock.glazier.representation -ceq 'in-tree') {
@@ -138,6 +142,8 @@ $cargo = (Invoke-SourceGit $captureRoot @('show', "${captureRevision}:$cargoPath
 [IO.Directory]::CreateDirectory($OutputDirectory) | Out-Null
 $scratch = Join-Path $OutputDirectory 'work'
 [IO.Directory]::CreateDirectory($scratch) | Out-Null
+Export-SourceGitMembers $SourceRoot $SourceRevision @('windows/release/source-assets.json') (Join-Path $scratch 'recipe-data') $scratch
+$committedRecipeHash = Get-SourceRecipeHash (Join-Path $scratch 'recipe-data\windows\release\source-assets.json')
 $supplierPath = Get-SourceDownload $recipe.referenceAssets.supplier.url $recipe.referenceAssets.supplier.sha256 $CacheDirectory -Offline:$Offline
 $appPath = Get-SourceDownload $recipe.referenceAssets.application.url $recipe.referenceAssets.application.sha256 $CacheDirectory -Offline:$Offline
 $supplierZip = Open-SourceZip $supplierPath
@@ -390,7 +396,7 @@ try {
     $inventory = [ordered]@{
         schema = 'caelestia-component-inventory'; version = 1; sourceRevision = $SourceRevision
         captureLayout = $CaptureLayout; integratedCapturePath = $IntegratedCapturePath
-        recipeSha256 = (Get-SourceRecipeHash $recipePath); recipeHashFormat = 'sha256-utf8-lf'; toolchain = $toolchain
+        recipeSha256 = $committedRecipeHash; recipeHashFormat = 'sha256-utf8-lf'; toolchain = $toolchain
         sourceMaterialization = 'Git archive of exact commits with recorded Git text conversion; source and payload hashes must agree.'
         payloadState = 'not-supplied'; referenceAssets = $recipe.referenceAssets
         projects = $projectRecords; suppliers = $archives; notices = $notices; projectNotices = $projectNotices

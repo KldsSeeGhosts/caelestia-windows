@@ -63,6 +63,12 @@ $build = Get-Content -LiteralPath "$BuildRoot\logs\build.json" -Raw | ConvertFro
 if ($build.backendMode -cne 'pinned') {
     throw 'Release assembly requires a pinned build, never an integration candidate or legacy receipt.'
 }
+if (-not $build.supervisor -or $build.supervisor.sourceSha256 -ne
+    (Get-FileHash -LiteralPath "$PSScriptRoot\DesktopTakeover.cs").Hash -or
+    $build.supervisor.clrVersion -ne [Environment]::Version.ToString() -or
+    $build.supervisor.assemblySha256 -ne (Get-FileHash -LiteralPath "$BuildRoot\install\DesktopTakeover.dll").Hash) {
+    throw 'Release requires the exact prebuilt production supervisor, never a packaging-time compile.'
+}
 . (Join-Path $PSScriptRoot 'Caelestia-SemVer.ps1')
 $versionPath = Join-Path $repoRoot 'windows\release\version.json'
 $appVersion = Read-CaelestiaVersion $versionPath
@@ -139,7 +145,8 @@ foreach ($source in @($QtPrefix, $VCRuntimeRoot) | Where-Object { $_ }) {
 # install into or copy raw build.json from the supplied read-only build tree.
 function Get-NativeReleaseInputs {
     $files = @((Get-Item -LiteralPath "$BuildRoot\quickshell\qs.exe"),
-        (Get-Item -LiteralPath "$BuildRoot\install\caelestia-capture.exe"))
+        (Get-Item -LiteralPath "$BuildRoot\install\caelestia-capture.exe"),
+        (Get-Item -LiteralPath "$BuildRoot\install\DesktopTakeover.dll"))
     $files += @(Get-ChildItem -LiteralPath "$BuildRoot\install\qml" -File -Recurse)
     return @($files | Sort-Object FullName | ForEach-Object {
         [ordered]@{
@@ -149,6 +156,11 @@ function Get-NativeReleaseInputs {
     })
 }
 $nativeInputs = Get-NativeReleaseInputs
+if (-not $build.nativeInputs -or
+    (ConvertTo-Json -InputObject @($build.nativeInputs) -Compress) -cne
+    (ConvertTo-Json -InputObject @($nativeInputs) -Compress)) {
+    throw 'Native output bytes differ from the pre-validation build inventory; rebuild and retest.'
+}
 function Get-ReleaseVendorPrivacyExceptions([string]$PayloadRoot, [string]$ReviewPath,
     [string]$QtRoot, [object[]]$NativeInputs) {
     $review = Get-Content -LiteralPath $ReviewPath -Raw | ConvertFrom-Json
@@ -362,7 +374,8 @@ try {
     # Keep the directory's leaf in the ZIP, so extraction has one clear root.
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $zip = Join-Path $OutputDirectory ($bundleName + '.zip')
-    [IO.Compression.ZipFile]::CreateFromDirectory($bundle, $zip, [IO.Compression.CompressionLevel]::Optimal, $true)
+    . (Join-Path $PSScriptRoot 'Caelestia-Update.ps1')
+    New-CaelestiaUpdateArchive $bundle $zip
     $zipHash = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
     "$zipHash  $bundleName.zip" | Set-Content -LiteralPath ($zip + '.sha256') -Encoding ASCII
     "$manifestHash  release.json" | Set-Content -LiteralPath (Join-Path $OutputDirectory ($bundleName + '.manifest.sha256')) -Encoding ASCII
