@@ -11,6 +11,18 @@ if ($OutputRoot -eq $repo -or $OutputRoot.StartsWith($repo + '\', [StringCompari
 New-Item -ItemType Directory -Path $OutputRoot -Force | Out-Null
 $bootstrap = Join-Path $PSScriptRoot 'Install-CaelestiaRelease.ps1'
 $text = Get-Content -LiteralPath $bootstrap -Raw
+# The fixture contains inert EXE/DLL text and only invokes VerifyOnly. Permit
+# Server 2022 test runners without changing the production Windows 11 floor.
+$floorBoundary = ' -or [Environment]::OSVersion.Version.Build -lt 22000'
+$platformBoundary = 'if ($env:OS -ne'
+if ([regex]::Matches($text, [regex]::Escape($floorBoundary)).Count -ne 1 -or
+    [regex]::Matches($text, [regex]::Escape($platformBoundary)).Count -ne 1) {
+    throw 'Release verifier fixture platform boundary changed.'
+}
+$fixtureBootstrap = Join-Path $OutputRoot 'fixture-verifier.ps1'
+$fixtureText = $text.Replace($floorBoundary, '').Replace($platformBoundary,
+    "if (-not `$VerifyOnly) { throw 'Inert fixture verifier requires VerifyOnly.' }`r`n" + $platformBoundary)
+[IO.File]::WriteAllText($fixtureBootstrap, $fixtureText, [Text.UTF8Encoding]::new($false))
 $requiredBlock = [regex]::Match($text, 'foreach \(\$required in @\(([\s\S]*?)\n    \)\)')
 if (-not $requiredBlock.Success) { throw 'Release required-file inventory was not found.' }
 $required = @([regex]::Matches($requiredBlock.Groups[1].Value, '[''"]([^''"]+)[''"]') |
@@ -99,7 +111,7 @@ function Invoke-Verification($Case, [string]$ExpectedFailure = '') {
     $previousPreference = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     try {
-        $output = @(& powershell.exe -NoProfile -NonInteractive -File $bootstrap `
+        $output = @(& powershell.exe -NoProfile -NonInteractive -File $fixtureBootstrap `
             -BundleRoot $Case.root -ExpectedManifestSha256 $hash -VerifyOnly 2>&1 | ForEach-Object { "$_" })
         $exitCode = $LASTEXITCODE
     } finally { $ErrorActionPreference = $previousPreference }

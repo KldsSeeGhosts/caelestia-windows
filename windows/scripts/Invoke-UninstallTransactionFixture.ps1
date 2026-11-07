@@ -50,8 +50,11 @@ try {
 # while the controller runs a different REAL operation to prove finally release.
 $queuedId = ''
 if ($Operation -eq 'Queue' -and $status -eq 'Success') { $queuedId = ($output | ConvertFrom-Json).operationId }
-@{ status = $status; message = $message; operationId = $queuedId } | ConvertTo-Json |
-    Set-Content -LiteralPath (Join-Path $Control 'result.json') -Encoding UTF8
+# The controller uses existence as its readiness signal. Publish only after
+# serialization and close, not while Set-Content still holds the final file.
+Write-CaelestiaJsonAtomic (Join-Path $Control 'result.json') @{
+    status = $status; message = $message; operationId = $queuedId
+}
 if ($KeepAlive) {
     $clock = [Diagnostics.Stopwatch]::StartNew()
     while (-not [IO.File]::Exists((Join-Path $Control 'finish'))) {

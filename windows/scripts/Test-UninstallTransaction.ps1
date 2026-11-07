@@ -311,6 +311,8 @@ function Assert-Uninstalled([string]$Case, [bool]$Purge) {
 }
 $passed = $false
 $failure = ''
+$failureLine = $null
+$failureCase = $null
 try {
     if (-not $StaleReadOnly) {
     foreach ($recovery in @('orphan-queued', 'dead-working', 'expired-queued', 'legacy-queued', 'foreign-task')) {
@@ -738,6 +740,8 @@ try {
     $passed = $true
 } catch {
     $failure = Protect-CaelestiaText $_.Exception.Message
+    $failureLine = $_.InvocationInfo.ScriptLineNumber
+    $failureCase = $(if ($case) { Split-Path -Leaf $case } else { 'setup' })
 } finally {
     foreach ($child in $script:children) {
         if (-not $child.Process.HasExited) { $child.Process.Kill(); $child.Process.WaitForExit() }
@@ -754,6 +758,7 @@ try {
     }
     $receipt = [ordered]@{
         passed = $passed; assertions = $script:assertions; scenarios = $script:scenarios; failure = $failure
+        failureLine = $failureLine; failureCase = $failureCase
         sourceRevision = $revision; negativeControlRevision = $UninstallSourceRevision
         negativeControlManageRevision = $ManageSourceRevision; staleReadOnly = [bool]$StaleReadOnly
         uninstallSha256 = (Get-FileHash -LiteralPath (Join-Path $PSScriptRoot 'Uninstall-Caelestia.ps1')).Hash
@@ -775,4 +780,5 @@ try {
     Write-FixtureText (Join-Path $runRoot 'receipt.json') ($receipt | ConvertTo-Json -Depth 6)
 }
 Write-Output ("Uninstall transaction fixture: passed={0}; assertions={1}; scenarios={2}; run={3}" -f $passed, $script:assertions, $script:scenarios.Count, (Split-Path -Leaf $runRoot))
+if (-not $passed) { Write-Output "Failure case=$failureCase scriptLine=$failureLine" }
 if (-not $passed) { throw $failure }

@@ -348,13 +348,32 @@ $coverageArguments = @{
     ExpectedInventorySha256 = (Get-SourceHash $fixtureInventoryPath)
     CoverageOutputDirectory = (Join-Path $OutputDirectory 'coverage-result')
 }
-& (Join-Path $PSScriptRoot 'Prepare-CaelestiaSourceAssets.ps1') @coverageArguments
+# Coverage still executes the actual verifier on this inert bundle, but its
+# local test copy excludes the Windows 11 app floor on Server 2022 CI.
+# No production verifier or coverage entry point gains a bypass parameter.
+$coverageTools = Join-Path $OutputDirectory 'coverage-tools'
+$coverageScripts = Join-Path $coverageTools 'windows\scripts'
+[IO.Directory]::CreateDirectory($coverageScripts) | Out-Null
+[IO.Directory]::CreateDirectory((Join-Path $coverageTools 'windows\release')) | Out-Null
+foreach ($name in @('Prepare-CaelestiaSourceAssets.ps1', 'Caelestia-SourceAssets.ps1')) {
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $coverageScripts
+}
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot '../release/source-assets.json') -Destination (Join-Path $coverageTools 'windows\release')
+$coverageVerifier = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'Install-CaelestiaRelease.ps1'))
+$floorBoundary = ' -or [Environment]::OSVersion.Version.Build -lt 22000'
+$platformBoundary = 'if ($env:OS -ne'
+Assert-Recipe ([regex]::Matches($coverageVerifier, [regex]::Escape($floorBoundary)).Count -eq 1 -and
+    [regex]::Matches($coverageVerifier, [regex]::Escape($platformBoundary)).Count -eq 1) 'Unknown release verifier platform boundary'
+$coverageVerifier = $coverageVerifier.Replace($floorBoundary, '').Replace($platformBoundary,
+    "if (-not `$VerifyOnly) { throw 'Inert fixture verifier requires VerifyOnly.' }`r`n" + $platformBoundary)
+[IO.File]::WriteAllText((Join-Path $coverageScripts 'Install-CaelestiaRelease.ps1'), $coverageVerifier, [Text.UTF8Encoding]::new($false))
+& (Join-Path $coverageScripts 'Prepare-CaelestiaSourceAssets.ps1') @coverageArguments
 $coverageResult = Get-Content -LiteralPath (Join-Path $coverageArguments.CoverageOutputDirectory 'component-inventory.json') -Raw | ConvertFrom-Json
 Assert-Recipe ($coverageResult.payloadState -ceq 'verified-original-bundle' -and $coverageResult.application.files.Count -eq $requiredNames.Count) 'Read-only coverage entry point failed'
 Assert-Recipe (-not @($coverageResult.components | Where-Object id -eq 'python')[0].shipped) 'Read-only coverage falsely shipped Python'
 $coverageArguments.CoverageOutputDirectory = Join-Path $OutputDirectory 'coverage-refused'
 [IO.File]::WriteAllText($fixtureNotice, 'changed notice')
-Assert-RecipeRefused { & (Join-Path $PSScriptRoot 'Prepare-CaelestiaSourceAssets.ps1') @coverageArguments } 'wrong SHA256'
+Assert-RecipeRefused { & (Join-Path $coverageScripts 'Prepare-CaelestiaSourceAssets.ps1') @coverageArguments } 'wrong SHA256'
 Assert-Recipe (-not (Test-Path -LiteralPath $coverageArguments.CoverageOutputDirectory)) 'Rejected coverage created a final receipt'
 $script:cases++
 

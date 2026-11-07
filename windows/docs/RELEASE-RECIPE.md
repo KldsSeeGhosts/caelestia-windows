@@ -58,8 +58,9 @@ data, source-to-notice provenance, all notice hashes, payload rules, optional
 absent components and capture layout. Asset `SOURCE-MANIFEST.json` files point to
 that inventory by hash; they do not declare a second component list.
 
-Outputs include four self-contained Git bundles in `project-source.zip` for the
-current pin layout, 41 supplier source archives in `supplier-source.zip`,
+Outputs include three self-contained Git bundles in `project-source.zip` for the
+current integrated capture layout (four for older pinned capture candidates),
+41 supplier source archives in `supplier-source.zip`,
 `notices/` for `-SupplementalNoticesRoot`, `SHA256SUMS`, and `execution.json`.
 Every bundle passes `git bundle verify` in an empty repository, is fetched there,
 and is checked for its declared commit. SHA256 binds the bundle bytes.
