@@ -202,7 +202,10 @@ calls, including 10 crate-type exclusions and 6 compiler probes. Sccache cannot
 cache linked binaries or proc-macros, so the capture executable still compiles
 and links on every fresh build. Sccache also reports one compilation failure
 in each local run despite a successful Cargo build.
-These are local measurements, not hosted speed claims. Capture tests remain
+On hosted PR run 42421527915, a warm Rust cache (26 hits, 2 misses) cut the
+recorded production integration step from 6m38s to 5m18s and the native job
+from 9m37s to 7m54s. Push to `Windows validation` went from 10m31s to 8m50s.
+Capture tests remain
 uncached in fixtures. Public path remapping, capture hashes and the native
 inventory in `logs/build.json` are unchanged.
 The archive hashes authenticate the downloaded inputs, not every byte of an
