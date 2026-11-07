@@ -755,6 +755,28 @@ class PairTests(unittest.TestCase):
             with self.subTest(mutation=mutation), self.assertRaises(ValueError):
                 p.verify(changed, request, self.shell, module)
 
+    @unittest.skipUnless(os.name == "nt", "Windows PowerShell boundary")
+    def test_validation_fails_closed_without_delivery_dependency(self):
+        workflow = (ROOT / ".github/workflows/windows-build.yml").read_text()
+        validation = workflow.split("\n  validation:\n")[1].split("\n  candidate:\n")[0]
+        block = re.search(r"        run: \|\n((?:          [^\n]*\n|\n)+)", validation)[1]
+        harness = self.root / "validation.ps1"
+        harness.write_text("$ErrorActionPreference = 'Stop'\n" + block)
+        base = {**os.environ, "SCOPE": "success", "CHECKS": "success", "PACKAGING": "success",
+                "BUILD": "success", "NATIVE_REQUIRED": "true"}
+        cases = [({}, True), ({"NATIVE_REQUIRED": "false", "BUILD": "skipped"}, True)]
+        cases += [({"NATIVE_REQUIRED": value}, False) for value in ("", "invalid")]
+        cases += [({gate: outcome}, False) for gate in ("SCOPE", "CHECKS", "PACKAGING", "BUILD")
+                  for outcome in ("failure", "cancelled", "skipped")]
+        cases += [({"NATIVE_REQUIRED": "false", "BUILD": outcome}, False)
+                  for outcome in ("success", "failure", "cancelled")]
+        for changes, passed in cases:
+            with self.subTest(changes=changes):
+                result = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive",
+                                         "-File", str(harness)], env={**base, **changes},
+                                        capture_output=True)
+                self.assertEqual(passed, result.returncode == 0, result.stderr.decode(errors="replace"))
+
     def test_workflow_and_release_boundaries(self):
         workflow = (ROOT / ".github/workflows/windows-build.yml").read_text()
         self.assertEqual(workflow, (ROOT / "windows/ci/windows-build.yml.template").read_text())
@@ -770,7 +792,7 @@ class PairTests(unittest.TestCase):
         self.assertNotIn("secrets.", readonly)
         self.assertNotIn("contents: write", readonly)
         self.assertEqual(1, publication.count("contents: write"))
-        self.assertIn("needs: [build, validation]", publication)
+        self.assertIn("needs: [candidate, validation]", publication)
         self.assertIn("vars.NEXUS_DEVELOPMENT_PUBLISH == 'enabled'", publication)
         self.assertNotIn("pull_request_target", workflow)
         # Parallelism is measured, never hard-coded, and reaches every compile.

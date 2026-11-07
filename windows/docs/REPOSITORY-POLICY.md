@@ -35,17 +35,21 @@ selector when settings access is available; do not guess or rename a context.
 
 The shell workflow is `Windows build` and currently defines these job names:
 
+- `Change scope` (immutable dispatch guards and native-change classifier)
 - `Fast regressions`
 - `Installer and colour regressions`
 - `Native build and offscreen regressions` (conditional on the native-change classifier)
 - `Windows validation` (the always-run aggregate)
+- `Assemble exact-tested release candidate` (native main pushes, only after
+  aggregate validation succeeds; not a required validation prerequisite)
 - `Nexus development publication` (main-only, after validation, inert unless the
   owner enables its variable and protected environment)
 
 Required shell gate: `Windows validation`.
 
 For shell pull requests, the planned required gate is `Windows validation`.
-It waits for the fast and installer/colour jobs and checks the native job when
+Scope unlocks fast, installer/colour and applicable native jobs concurrently.
+The aggregate waits for scope, the fast and installer/colour jobs and checks the native job when
 the classifier says it is required. For a documentation-only change, the
 classifier deliberately marks native validation not required and the aggregate
 expects the native job to be skipped. Do not require the conditional native job

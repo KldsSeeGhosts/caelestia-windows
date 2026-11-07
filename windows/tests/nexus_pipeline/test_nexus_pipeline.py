@@ -264,6 +264,37 @@ class Evidence(unittest.TestCase):
         self.assertNotIn(str(self.root), "".join(path.read_text() for path in output.iterdir()))
         self.assertFalse((output / "build.json").exists())
 
+    def test_transferred_allowlist_recomputes_evidence_and_excludes_unrelated_files(self):
+        (self.build / "object.obj").write_bytes(b"not an assembly input")
+        (self.results / "environment.json").write_text('{"private": true}')
+        transfer = self.root / "transfer"
+        result = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-File",
+                                 str(ROOT / "windows/ci/Export-NexusCandidateInputs.ps1"),
+                                 "-BuildRoot", str(self.build), "-PairResults", str(self.results),
+                                 "-OutputDirectory", str(transfer)], capture_output=True, text=True)
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        expected_build = {"logs/build.json", "quickshell/qs.exe", "install/caelestia-capture.exe",
+                          "install/DesktopTakeover.dll"}
+        expected_build.update(path.relative_to(self.build).as_posix()
+                              for path in (self.build / "install/qml").rglob("*") if path.is_file())
+        expected_pair = {"pair-request.json", "candidate-result.json", "pair-result.json",
+                         "integration-stages.json", "portable.xml", "integration.xml", "plugins.raw.xml"}
+        for suite in ("Services", "Shell"):
+            expected_pair.add(f"{suite}/summary.json")
+            expected_pair.update(f"{suite}/{row['name']}.log"
+                                 for row in c.read(self.results / suite / "summary.json")["results"])
+        self.assertEqual({f"b-public/{name}" for name in expected_build}
+                         | {f"ci-pair/{name}" for name in expected_pair},
+                         {path.relative_to(transfer).as_posix() for path in transfer.rglob("*") if path.is_file()})
+        build, results = transfer / "b-public", transfer / "ci-pair"
+        self.assertEqual("0.2.0-dev.1.8.2",
+                         c.verify_live_evidence(self.shell, build, results, self.validator, self.ctx))
+        output = self.root / "transferred-public"; output.mkdir()
+        c.export_evidence(self.shell, build, results, self.validator, self.ctx, output)
+        rerun = c.context(env({**self.ctx, "runAttempt": "3"}))
+        with self.assertRaisesRegex(ValueError, "pair-run-mismatch"):
+            c.verify_live_evidence(self.shell, build, results, self.validator, rerun)
+
     def test_forged_pass_boolean_cannot_hide_failed_receipt_or_outputs(self):
         receipt = c.read(self.results / "candidate-result.json")
         receipt["tests"]["portable"]["failed"] = 1
@@ -794,7 +825,36 @@ class Pipeline(unittest.TestCase):
         before, publish = text.split("\n  publish:\n")
         self.assertNotIn("secrets.", before)
         self.assertNotIn("contents: write", before)
-        self.assertIn("needs: [build, validation]", publish)
+        self.assertIn("needs: [candidate, validation]", publish)
+        scope = text.split("\n  scope:\n")[1].split("\n  checks:\n")[0]
+        self.assertIn("runs-on: ubuntu-24.04", scope)
+        self.assertIn("fetch-depth: 0", scope)
+        self.assertIn("Refuse mutable dispatch inputs", scope)
+        self.assertIn("Get-NativeBuildRequired.ps1", scope)
+        for job, next_job in (("checks", "packaging"), ("packaging", "build"), ("build", "validation")):
+            block = text.split(f"\n  {job}:\n")[1].split(f"\n  {next_job}:\n")[0]
+            self.assertIn("needs: scope", block)
+            self.assertNotIn("Get-NativeBuildRequired.ps1", block)
+            self.assertNotIn("New-NexusCandidate.ps1", block)
+        validation, candidate = text.split("\n  validation:\n")[1].split("\n  candidate:\n")
+        candidate = candidate.split("\n  publish:\n")[0]
+        self.assertIn("needs: [scope, checks, packaging, build]", validation)
+        self.assertNotIn("candidate", validation.lower())
+        self.assertIn("needs.scope.outputs.native", validation)
+        self.assertIn("-notin @('true', 'false')", validation)
+        self.assertIn("needs: [scope, build, validation]", candidate)
+        for condition in ("needs.validation.result == 'success'", "needs.build.result == 'success'",
+                          "needs.scope.result == 'success'", "needs.scope.outputs.native == 'true'",
+                          "github.event_name == 'push'", "github.ref == 'refs/heads/main'"):
+            self.assertIn(condition, candidate)
+        self.assertIn("New-NexusCandidate.ps1", candidate)
+        self.assertNotIn("actions/cache/save@", candidate)
+        self.assertEqual(1, text.count("actions/cache/save@"))
+        self.assertEqual(2, text.count("key: windows-x64-tools-contract-v1-py"))
+        self.assertIn("name: nexus-inputs-${{ github.run_id }}-${{ github.run_attempt }}", candidate)
+        self.assertIn("path: C:/", candidate)
+        build = text.split("\n  build:\n")[1].split("\n  validation:\n")[0]
+        self.assertIn("retention-days: 1\n", build)
         self.assertIn("vars.NEXUS_DEVELOPMENT_PUBLISH == 'enabled'", publish)
         self.assertIn("environment: nexus-development", publish)
         self.assertIn("cancel-in-progress: false", publish)
