@@ -187,13 +187,14 @@ jobs:
         with:
           python-version: '3.12'
           architecture: x64
-      - name: Locate successful exact-base main push of this workflow
+      - name: Locate newest validated main ancestor of this PR
         id: producer
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          python -I -B windows/ci/native_reuse.py discover --base $env:REUSE_BASE --output $env:GITHUB_OUTPUT
+          python -I -B windows/ci/native_reuse.py discover --base $env:REUSE_BASE --head $env:REUSE_HEAD `
+            --shell $env:GITHUB_WORKSPACE --output $env:GITHUB_OUTPUT
           if ($LASTEXITCODE -ne 0) { throw 'No reusable trusted producer; selecting full build.' }
       - name: Download trusted native reuse artifact
         id: download
@@ -212,8 +213,9 @@ jobs:
         env:
           PRODUCER_RUN: ${{ steps.producer.outputs.run-id }}
           PRODUCER_ARTIFACT: ${{ steps.producer.outputs.artifact }}
+          PRODUCER_BASE: ${{ steps.producer.outputs.base }}
         run: |
-          python -I -B windows/ci/native_reuse.py verify --base $env:REUSE_BASE --head $env:REUSE_HEAD `
+          python -I -B windows/ci/native_reuse.py verify --base $env:PRODUCER_BASE --head $env:REUSE_HEAD `
             --shell $env:GITHUB_WORKSPACE --build $env:BUILD_ROOT --inventory C:/reuse-files.json `
             --run-id $env:PRODUCER_RUN --artifact $env:PRODUCER_ARTIFACT --output C:/native-reuse-summary.json
           if ($LASTEXITCODE -ne 0) { throw 'Reuse verification refused; selecting full build.' }
@@ -255,9 +257,11 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Verified-native PR tests failed.' }
       - name: Separate reuse summary or explicit full-build fallback
         if: always()
+        env:
+          PRODUCER_BASE: ${{ steps.producer.outputs.base }}
         run: |
           if (Test-Path C:/reuse-tests/reuse-tests.json) {
-            python -I -B windows/ci/native_reuse.py summary --base $env:REUSE_BASE `
+            python -I -B windows/ci/native_reuse.py summary --base $env:PRODUCER_BASE `
               --output C:/native-reuse-summary.json --tests C:/reuse-tests
             if ($LASTEXITCODE -ne 0) { throw 'Reuse summary failed.' }
           } else {

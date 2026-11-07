@@ -21,10 +21,18 @@ Assert-True ($source.cargoLockSha256 -ceq '334db81cddfdb2020dd6738b0acc10a449bfb
 foreach ($inputPath in @('windows/capture/src/main.rs', 'windows/capture/assets/tabler-icons.ttf',
     'windows/capture/Source.ps1', 'windows/capture/docs/control-protocol.md', 'windows/deps/quickshell',
     'windows/sources.lock.json', 'elsewhere/implementation.rs', 'windows/toolchain.json',
-    'windows/scripts/Build-Prototype.ps1', 'windows/scripts/Test-Validation.ps1',
-    '.github/ISSUE_TEMPLATE/bug_report.yml', 'windows/ci/README.md', 'unknown-input.txt')) {
+    'windows/scripts/Build-Prototype.ps1')) {
     Assert-True (Test-CaelestiaCaptureNativeInput $inputPath) "Native reuse must refuse: $inputPath"
+    Assert-True (Test-CaelestiaCiNativeInput $inputPath) "CI native reuse must refuse: $inputPath"
 }
+# The installer/release override still permits local script edits; CI does not.
+foreach ($inputPath in @('windows/scripts/Test-Validation.ps1', '.github/ISSUE_TEMPLATE/bug_report.yml',
+    'windows/ci/README.md', 'windows/tests/pair_contract/test_pair_contract.py', 'unknown-input.txt',
+    'windows/shell/undeclared.qml', 'windows/shell/../shell.qml')) {
+    Assert-True (Test-CaelestiaCiNativeInput $inputPath) "CI native reuse must refuse: $inputPath"
+}
+Assert-True (-not (Test-CaelestiaCaptureNativeInput 'windows/scripts/Test-Validation.ps1')) 'Installer QML/script override unchanged.'
+Assert-True (-not (Test-CaelestiaCiNativeInput 'windows/shell/shell.qml')) 'Declared QML may reuse in CI.'
 Assert-True (-not (Test-CaelestiaCaptureNativeInput 'windows/shell/shell.qml')) 'QML-only reuse remains possible.'
 $fixture = Join-Path ([IO.Path]::GetTempPath()) ('caelestia-capture-contract-' + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path "$fixture\windows\capture" -Force | Out-Null

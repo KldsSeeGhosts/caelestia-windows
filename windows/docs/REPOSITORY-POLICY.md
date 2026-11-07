@@ -38,7 +38,7 @@ The shell workflow is `Windows build` and currently defines these job names:
 - `Change scope` (immutable dispatch guards and native-change classifier)
 - `Fast regressions`
 - `Installer and colour regressions`
-- `Verified native reuse and offscreen regressions` (PR-only, verified exact-base main native inputs)
+- `Verified native reuse and offscreen regressions` (PR-only, verified native inputs from the newest validated main ancestor)
 - `Backend fixtures and portable tier` (conditional on the native-change classifier)
 - `Native build and offscreen regressions` (conditional on the native-change classifier)
 - `Exact-pair receipt` (joins successful fixture and integration evidence)

@@ -790,28 +790,44 @@ class PairTests(unittest.TestCase):
                                         capture_output=True)
                 self.assertEqual(passed, result.returncode == 0, result.stderr.decode(errors="replace"))
 
-    def test_reuse_only_discovers_exact_trusted_run_and_live_artifact(self):
-        base = "a" * 40
-        run = dict(id=7, path=reuse.WORKFLOW, event="push", head_branch="main",
-                   conclusion="success", head_sha=base, status="completed")
-        artifact = dict(name=f"native-reuse-{base}", expired=False)
+    def test_reuse_discovers_newest_validated_trusted_ancestor_and_live_artifact(self):
+        newest, older = "a" * 40, "c" * 40
+        run = dict(id=7, path=reuse.WORKFLOW, event="push", head_branch="main", head_sha=older)
+        passed = [{"name": name, "conclusion": "success"} for name in reuse.REQUIRED_JOBS]
         for field, value in (("path", ".github/workflows/other.yml"), ("event", "pull_request"),
-                             ("head_branch", "other"), ("conclusion", "failure"),
-                             ("head_sha", "b" * 40), ("status", "in_progress")):
+                             ("head_branch", "other"), ("head_sha", "not-a-sha")):
             with self.subTest(field=field):
-                self.assertIsNone(reuse.select_run([{**run, field: value}], base))
-        self.assertEqual(run, reuse.select_run([run], base))
+                self.assertFalse(reuse.trusted_shape({**run, field: value}))
+        self.assertTrue(reuse.trusted_shape(run))
+        self.assertTrue(reuse.validated(passed + [{"name": "Assemble exact-tested release candidate",
+                                                   "conclusion": "failure"}]))
+        for name in reuse.REQUIRED_JOBS:
+            with self.subTest(job=name):
+                self.assertFalse(reuse.validated([j for j in passed if j["name"] != name]))
+                self.assertFalse(reuse.validated(
+                    [j if j["name"] != name else {**j, "conclusion": None} for j in passed]))
+        artifact = dict(name=f"native-reuse-{older}", expired=False)
         for rows in ([], [{**artifact, "expired": True}], [{**artifact, "name": "other"}],
                      [artifact, artifact]):
             with self.subTest(rows=rows), self.assertRaisesRegex(ValueError, "artifact-unavailable"):
-                reuse.select_artifact(rows, base)
+                reuse.select_artifact(rows, older)
+        # Newest main run is still building; the previous validated ancestor is chosen.
+        runs = [dict(run, id=9, head_sha=newest), dict(run, id=8, head_sha="d" * 40), run]
+        jobs = {9: [{"name": reuse.REQUIRED_JOBS[0], "conclusion": None}], 7: passed}
         def api(path):
-            return {"workflow_runs": [run]} if "/workflows/" in path else {"artifacts": [artifact]}
-        self.assertEqual((7, artifact["name"]), reuse.discover(base, api))
+            if "/workflows/" in path:
+                return {"workflow_runs": runs}
+            run_id = int(path.split("/")[2])
+            return {"jobs": jobs[run_id]} if "/jobs" in path else {"artifacts": [artifact]}
+        not_ancestor = {"d" * 40}
+        self.assertEqual((7, artifact["name"], older),
+                         reuse.discover(lambda sha: sha not in not_ancestor, api))
         with self.assertRaisesRegex(ValueError, "trusted-main-run-unavailable"):
-            reuse.discover(base, lambda _: {"workflow_runs": []})
+            reuse.discover(lambda sha: False, api)
+        with self.assertRaisesRegex(ValueError, "trusted-main-run-unavailable"):
+            reuse.discover(lambda sha: True, lambda _: {"workflow_runs": []})
         with self.assertRaises(OSError):
-            reuse.discover(base, lambda _: (_ for _ in ()).throw(OSError("offline")))
+            reuse.discover(lambda sha: True, lambda _: (_ for _ in ()).throw(OSError("offline")))
 
     @unittest.skipUnless(os.name == "nt", "Windows PowerShell boundary")
     def test_reuse_verification_refusals(self):

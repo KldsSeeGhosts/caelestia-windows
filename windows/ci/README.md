@@ -48,21 +48,28 @@ artifact service variability.
 Only pull requests may skip compilation. Documentation-only means `none` for
 the existing top-level README/CONTRIBUTING and Windows README/NATIVE-BUILD/
 ROADMAP/docs Markdown paths. `.github/` and `windows/ci/`, including their docs,
-always mean `full`. For other PR changes, the shared
-`Test-CaelestiaCaptureNativeInput` definition governs reuse. Its old negative
-regex was too narrow, so it now fails closed: only QML/JS/image/font files
+always mean `full`. For other PR changes, `Test-CaelestiaCiNativeInput`
+governs reuse. It extends the installer/release `Test-CaelestiaCaptureNativeInput`
+override (which stays unchanged, so local script edits can still be installed
+over an existing native build) and fails closed: only QML/JS/image/font files
 already declared in `windows/shell/sources.json` are non-native. Native paths,
 build/test scripts, toolchain, locks, gitlinks, unknown files, ambiguous names
 and empty diffs require `full`. Every non-PR event, first push or unavailable
 base also means `full`. No separate broad UI path list is maintained.
 
 `reuse` runs **Verified native reuse and offscreen regressions** with read-only
-contents/actions access. It finds a completed successful `push` run of this exact
-workflow file on `main`, whose head SHA equals the PR base SHA, then downloads
-`native-reuse-<base-sha>` using that run ID and the read-only GitHub token.
+contents/actions access. Among the 30 newest `push` runs of this exact workflow
+file on `main`, it picks the newest whose head SHA is an ancestor of the PR head,
+whose **Native build and offscreen regressions** and **Windows validation** jobs
+succeeded, and which has a live `native-reuse-<sha>` artifact. It then downloads
+that artifact using the run ID and the read-only GitHub token. Release delivery
+jobs (candidate, publication) are not native validation and do not affect
+eligibility. Right after a merge, while the newest main run is still building,
+the previous validated ancestor is used. `verify` then independently reclassifies
+the whole ancestor..head diff, so any native change in between selects `full`.
 Only trusted main pushes upload these artifacts. Fourteen-day retention keeps
-recent PR bases useful without indefinitely storing executable build outputs;
-older bases deterministically fall back to compilation.
+recent producers useful without indefinitely storing executable build outputs;
+older ones deterministically fall back to compilation.
 
 The artifact contains `b-public/logs/build.json`, `quickshell/qs.exe`,
 `install/caelestia-capture.exe`, `install/DesktopTakeover.dll`, the installed

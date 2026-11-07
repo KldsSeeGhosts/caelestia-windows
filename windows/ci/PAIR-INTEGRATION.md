@@ -3,7 +3,7 @@
 ## PR native reuse is not exact-pair evidence
 
 QML/JS/asset-only PRs may run **Verified native reuse and offscreen regressions**
-using `native-reuse-<base-sha>` from a successful exact-base main push of
+using `native-reuse-<sha>` from the newest validated main-push ancestor run of
 `.github/workflows/windows-build.yml`. See [CI scheduling](README.md) for the
 fail-closed classifier, artifact inventory and independent verification.
 `Invoke-PairIntegration.ps1 -TestOnly` shares the Services, Shell and plugin

@@ -15,11 +15,22 @@ from nexus_candidate import check_native_outputs, digest, read, require
 WORKFLOW = ".github/workflows/windows-build.yml"
 
 
-def select_run(runs, base):
-    return next((run for run in runs if
-                 run.get("path") == WORKFLOW and run.get("event") == "push"
-                 and run.get("head_branch") == "main" and run.get("conclusion") == "success"
-                 and run.get("head_sha") == base and run.get("status") == "completed"), None)
+# Release delivery (candidate/publish) is not native validation. A main run
+# whose native build and aggregate validation passed is a trusted producer even
+# while, or after, its candidate job runs or fails.
+REQUIRED_JOBS = ("Native build and offscreen regressions", "Windows validation")
+SEARCH_DEPTH = 30
+
+
+def trusted_shape(run):
+    return (run.get("path") == WORKFLOW and run.get("event") == "push"
+            and run.get("head_branch") == "main"
+            and re.fullmatch(r"[a-f0-9]{40}", str(run.get("head_sha", ""))) is not None)
+
+
+def validated(jobs):
+    conclusions = {job.get("name"): job.get("conclusion") for job in jobs}
+    return all(conclusions.get(name) == "success" for name in REQUIRED_JOBS)
 
 
 def select_artifact(artifacts, base):
@@ -29,14 +40,27 @@ def select_artifact(artifacts, base):
     return matches[0]
 
 
-def discover(base, api):
-    query = urllib.parse.urlencode(dict(event="push", branch="main", status="success",
-                                       head_sha=base, per_page=100))
+def discover(is_ancestor, api):
+    """Newest trusted main run that is an ancestor of the PR head and validated.
+
+    Not only the exact PR base: right after a merge, the newest main run may
+    still be building, so the previous validated ancestor is used. Whether the
+    ancestor..head diff is reusable is decided independently by `verify`.
+    """
+    query = urllib.parse.urlencode(dict(event="push", branch="main", per_page=SEARCH_DEPTH))
     runs = api(f"actions/workflows/windows-build.yml/runs?{query}")["workflow_runs"]
-    run = select_run(runs, base)
-    require(run is not None, "trusted-main-run-unavailable")
-    artifact = select_artifact(api(f"actions/runs/{run['id']}/artifacts?per_page=100")["artifacts"], base)
-    return run["id"], artifact["name"]
+    for run in runs:
+        if not trusted_shape(run) or not is_ancestor(run["head_sha"]):
+            continue
+        if not validated(api(f"actions/runs/{run['id']}/jobs?per_page=100")["jobs"]):
+            continue
+        try:
+            artifact = select_artifact(
+                api(f"actions/runs/{run['id']}/artifacts?per_page=100")["artifacts"], run["head_sha"])
+        except ValueError:
+            continue
+        return run["id"], artifact["name"], run["head_sha"]
+    raise ValueError("trusted-main-run-unavailable")
 
 
 def git(shell, *args):
@@ -108,9 +132,12 @@ def main():
                          "Accept": "application/vnd.github+json"})
             with urllib.request.urlopen(request, timeout=30) as response:
                 return json.load(response)
-        run_id, artifact = discover(args.base, api)
+        def is_ancestor(sha):
+            return subprocess.run(["git", "-C", args.shell, "merge-base", "--is-ancestor", sha, args.head],
+                                  capture_output=True).returncode == 0
+        run_id, artifact, producer = discover(is_ancestor, api)
         with open(args.output, "a", encoding="utf-8") as output:
-            output.write(f"run-id={run_id}\nartifact={artifact}\n")
+            output.write(f"run-id={run_id}\nartifact={artifact}\nbase={producer}\n")
     elif args.action == "verify":
         rows = verify(args.shell, Path(args.build), args.inventory, args.base, args.head)
         Path(args.output).write_text(json.dumps({"evidenceClass": "native-reuse-tests-only",

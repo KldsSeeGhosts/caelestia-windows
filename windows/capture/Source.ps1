@@ -44,12 +44,17 @@ function Assert-CaelestiaCaptureBuild {
 
 function Test-CaelestiaCaptureNativeInput {
     param([Parameter(Mandatory)][string]$Path)
-    if ($Path -match '^plugin/|^cmake/|^\.github/|^windows/(capture/|deps/|ci/|scripts/|tests/|release/|sources\.lock\.json$|toolchain[/.])|\.(rs|cpp|hpp|h|c|cc|cmake|qrc)$|(^|/)(CMakeLists\.txt|Cargo\.toml|Cargo\.lock)$') {
-        return $true
-    }
-    # The former negative regex was too narrow for CI reuse: unknown files
-    # silently became "QML-only". Only already-declared production shell
-    # QML/JS/assets may override a native build. Do not grow a second path list.
+    return $Path -match '^plugin/|^cmake/|^windows/(capture/|deps/|release/version\.json$|sources\.lock\.json$|toolchain[/.])|^windows/scripts/(DesktopTakeover\.cs$|Build-|Caelestia-SemVer\.ps1$|Caelestia-Toolchain|Prepare-Toolchain)|\.(rs|cpp|hpp|h|c|cc|cmake|qrc)$|(^|/)(CMakeLists\.txt|Cargo\.toml|Cargo\.lock)$'
+}
+
+# CI-only, stricter than the installer/release override above (which keeps
+# permitting local script edits over an existing native build). A path may
+# reuse a trusted main native build only when it is an already-declared
+# production shell QML/JS/asset; CI, scripts, tests and unknown files compile.
+function Test-CaelestiaCiNativeInput {
+    param([Parameter(Mandatory)][string]$Path)
+    if ((Test-CaelestiaCaptureNativeInput $Path) -or
+        $Path -match '^\.github/|^windows/(ci|scripts|tests|release)/') { return $true }
     if ($Path -cmatch '\\|(^|/)\.\.?(/|$)' -or
         $Path -cnotmatch '\.(qml|js|png|svg|gif|webp|ttf|otf)$') { return $true }
     $map = Get-Content -LiteralPath "$PSScriptRoot\..\shell\sources.json" -Raw | ConvertFrom-Json

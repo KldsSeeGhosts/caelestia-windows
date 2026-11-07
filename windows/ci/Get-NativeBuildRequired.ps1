@@ -28,7 +28,7 @@ if ($EventName -eq 'pull_request' -and $Base -match '^[a-f0-9]{40}$' -and $Base 
         if ($files.Count -gt 0 -and -not $gitlinks.Count) {
             $nonDocs = @($files | Where-Object { $_ -cnotmatch $docs })
             if (-not $nonDocs.Count) { $mode = 'none' }
-            elseif (-not @($nonDocs | Where-Object { Test-CaelestiaCaptureNativeInput $_ }).Count) { $mode = 'reuse' }
+            elseif (-not @($nonDocs | Where-Object { Test-CaelestiaCiNativeInput $_ }).Count) { $mode = 'reuse' }
         }
     }
 }
