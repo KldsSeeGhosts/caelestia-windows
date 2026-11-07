@@ -552,10 +552,13 @@ class PairTests(unittest.TestCase):
         (scripts / "Build-Prototype.ps1").write_text(
             f"$args -join ' ' | Set-Content -LiteralPath '{arguments}'\nexit 9\n")
         results = self.root / "jobs"
-        result = subprocess.run(self.integration_command(results, "-Jobs", "5"),
+        rust_cache = str(self.root / "rust-cache")
+        result = subprocess.run(self.integration_command(results, "-Jobs", "5",
+                                                        "-RustCacheDirectory", rust_cache),
                                 capture_output=True, timeout=60)
         self.assertEqual(1, result.returncode, result.stderr.decode(errors="replace"))
         self.assertIn("-Jobs 5 ", arguments.read_text(encoding="utf-8-sig"))
+        self.assertIn("-RustCacheDirectory " + rust_cache, arguments.read_text(encoding="utf-8-sig"))
         journal = p.read(results / "integration-stages.json")
         self.assertEqual(["success", "failure"], [row["outcome"] for row in journal[:2]])
         self.assertEqual(9, journal[1]["exitCode"])
@@ -952,8 +955,15 @@ class PairTests(unittest.TestCase):
         fixtures = workflow.split("\n  fixtures:\n")[1].split("\n  build:\n")[0]
         build = workflow.split("\n  build:\n")[1].split("\n  pair:\n")[0]
         pair = workflow.split("\n  pair:\n")[1].split("\n  validation:\n")[0]
-        self.assertEqual(1, fixtures.count("-Jobs $env:BUILD_JOBS"))
-        self.assertEqual(2, build.count("-Jobs $env:BUILD_JOBS"))
+        self.assertEqual(2, fixtures.count("-Jobs $env:BUILD_JOBS"))
+        self.assertEqual(1, build.count("-Jobs $env:BUILD_JOBS"))
+        self.assertEqual(1, workflow.count("Test-CaptureRust.ps1"))
+        self.assertIn("Test-CaptureRust.ps1", fixtures)
+        self.assertIn("name: capture-rust-${{ github.run_id }}-${{ github.run_attempt }}", fixtures)
+        self.assertIn("path: C:/ci-capture/capture-rust.json", fixtures)
+        for job in (build, pair):
+            self.assertNotIn("ci-capture", job)
+            self.assertNotIn("capture-rust", job)
         self.assertNotIn("-Jobs $env:BUILD_JOBS", pair)
         for job in (fixtures, build):
             self.assertIn("Get-BuildJobs.ps1", job)
@@ -961,13 +971,15 @@ class PairTests(unittest.TestCase):
             self.assertIn("run --stage prepare --echo", job)
         for action in re.findall(r"uses: ([^\s]+)", workflow):
             self.assertRegex(action, r"^[\w/-]+@[a-f0-9]{40}$")
-        # The early Services run stays outside pair results and is not recorded.
-        self.assertIn("-ServicesPreflightRoot C:\\ci-preflight -EchoDiagnostics", workflow)
+        # Recorded Services still fails before compilation; no duplicate CI run.
+        self.assertNotIn("-ServicesPreflightRoot C:\\ci-preflight", workflow)
+        self.assertLess(integration.index('Invoke-Gate 0 $ps (Get-ServicesArguments'),
+                        integration.index('Invoke-Gate 1 $ps $buildArguments'))
         self.assertNotIn("--stage services", workflow)
         # Every cache writer, not just tooling, requires a trusted main push.
         saves = re.findall(r"        if: ([^\n]+)\n        uses: actions/cache/save@", workflow)
-        self.assertEqual(3, workflow.count("uses: actions/cache/save@"))
-        self.assertEqual(3, len(saves))
+        self.assertEqual(4, workflow.count("uses: actions/cache/save@"))
+        self.assertEqual(4, len(saves))
         for condition in saves:
             self.assertIn("github.ref == 'refs/heads/main' && github.event_name == 'push'", condition)
             self.assertNotIn("||", condition)
@@ -986,7 +998,14 @@ class PairTests(unittest.TestCase):
         prototype = (ROOT / "windows/scripts/Build-Prototype.ps1").read_text()
         for language in ("C", "CXX"):
             self.assertIn(f'"-DCMAKE_{language}_COMPILER_LAUNCHER:FILEPATH=$CompilerLauncher"', prototype)
-        self.assertNotIn("RUSTC_WRAPPER", workflow)
+        self.assertIn("-RustCacheDirectory $env:RUST_CACHE_DIR", build)
+        self.assertIn("path: C:\\sccache-rust-production", build)
+        self.assertIn("windows-production-rust-v1-sccache-0.15.0-", build)
+        self.assertIn("SCCACHE_SERVER_PORT: '4227'", build)
+        self.assertIn("$env:RUSTC_WRAPPER = $CompilerLauncher", prototype)
+        self.assertIn("$env:CARGO_INCREMENTAL = '0'", prototype)
+        self.assertIn("$env:SCCACHE_DIR = $RustCacheDirectory", prototype)
+        self.assertIn("[Environment]::SetEnvironmentVariable($name, $rustCacheEnvironment[$name], 'Process')", prototype)
         prepare = (ROOT / "windows/ci/Prepare-Sccache.ps1").read_text()
         self.assertIn("b0b257a164bf438b2dea134ca7ded41c100f59a64b3bf275a202f1e8102ab217", prepare)
         self.assertLess(prepare.index("Get-FileHash"), prepare.index("tar.exe"))

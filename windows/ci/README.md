@@ -22,14 +22,15 @@ checkout. Its `native=none|reuse|full` decision unlocks concurrent gates:
 - Installer/rollback tests and the real colour-worker tests use isolated,
   temporary profiles and pinned Python dependencies.
 - `fixtures` prepares tools, records sources/producer/prepare, then runs backend
-  configure/build/portable and inventory on its own unfinalized receipt.
-- `build` prepares the Windows tools and runs an early, unrecorded
-  Services preflight before compiling anything. It then runs the capture Rust
-  tests, then runs recorded integration:
+  configure/build/portable and inventory on its own unfinalized receipt. It also
+  runs the first-party capture Rust regressions and retains `capture-rust-*`.
+- `build` prepares the Windows tools and runs recorded integration:
   Services, the production payload/plugin-test build, the read-only release
   toolchain preflight, plugin CTest, shell fixtures and production smoke.
   Compile parallelism comes from the runner's processors and memory; test
   execution stays serial.
+  Recorded Services runs before compilation. CI omits the duplicate unrecorded
+  preflight; the local `-ServicesPreflightRoot` diagnostic remains available.
 
 `pair` waits for both native jobs to succeed, checks out the same recursive ref,
 re-resolves the pair and re-bootstraps the trusted producer. It requires identical
@@ -187,7 +188,26 @@ optional fixtures, M3Shapes and plugins. CI passes the launcher only to the
 production integration build and the backend fixture gate. Local developer
 builds, tooling contracts and `logs/build.json`/`nativeInputs` provenance
 semantics are unchanged. Release/debug-info flags are not changed for caching.
-Rust caching is not enabled: it needs separate measured justification.
+Production also opts into `-RustCacheDirectory C:\sccache-rust-production`.
+Only its Cargo invocation sets `RUSTC_WRAPPER` to the same pinned launcher,
+disables incremental compilation and selects a separate cache directory and
+server port 4227. The C/C++ server stays on its default port. The build restores
+the caller's Rust/cache environment afterward. Rust has its own restore-only
+Actions cache, trusted-main-only save and seven-day statistics artifact, which
+also records the capture build duration. No Cargo target tree is cached.
+On this Windows workstation with 16 build jobs and fresh Cargo targets, capture
+release compilation took 41.75 s without the wrapper, 46.57 s cold and 17.15 s
+warm. Warm Rust statistics were 26 hits and 2 misses, with 16 non-cacheable
+calls, including 10 crate-type exclusions and 6 compiler probes. Sccache cannot
+cache linked binaries or proc-macros, so the capture executable still compiles
+and links on every fresh build. Sccache also reports one compilation failure
+in each local run despite a successful Cargo build.
+On hosted PR run 42421527915, a warm Rust cache (26 hits, 2 misses) cut the
+recorded production integration step from 6m38s to 5m18s and the native job
+from 9m37s to 7m54s. Push to `Windows validation` went from 10m31s to 8m50s.
+Capture tests remain
+uncached in fixtures. Public path remapping, capture hashes and the native
+inventory in `logs/build.json` are unchanged.
 The archive hashes authenticate the downloaded inputs, not every byte of an
 already extracted cache tree. Reused extracted directories receive required-file,
 version and supplier-metadata checks, not a complete per-file hash comparison

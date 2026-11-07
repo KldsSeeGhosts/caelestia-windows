@@ -52,6 +52,9 @@ Required shell gate: `Windows validation`.
 
 For shell pull requests, the planned required gate is `Windows validation`.
 Scope unlocks fast, installer/colour and applicable native jobs concurrently.
+The fixtures job owns first-party capture Rust regressions and their separate
+`capture-rust-*` artifact. A capture failure fails fixtures and the required
+`Windows validation` aggregate. The native build does not wait for capture tests.
 The aggregate waits for scope, the fast and installer/colour jobs and requires
 fixtures, native integration and the receipt join to succeed when
 the classifier says it is required. For a documentation-only change, the
