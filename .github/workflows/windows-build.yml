@@ -563,10 +563,8 @@ jobs:
         uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: C:\sccache-rust-production
-          # TEMPORARY measurement only. Revert this PR-only cache before delivery.
-          key: windows-production-rust-v1-sccache-0.15.0-${{ hashFiles('windows/toolchain.json', 'windows/toolchain/*.lock.txt', 'windows/toolchain/extract_llvm.py') }}-pr-${{ github.event.pull_request.number }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: windows-production-rust-v1-sccache-0.15.0-${{ hashFiles('windows/toolchain.json', 'windows/toolchain/*.lock.txt', 'windows/toolchain/extract_llvm.py') }}-main-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            windows-production-rust-v1-sccache-0.15.0-${{ hashFiles('windows/toolchain.json', 'windows/toolchain/*.lock.txt', 'windows/toolchain/extract_llvm.py') }}-pr-${{ github.event.pull_request.number }}-
             windows-production-rust-v1-sccache-0.15.0-${{ hashFiles('windows/toolchain.json', 'windows/toolchain/*.lock.txt', 'windows/toolchain/extract_llvm.py') }}-main-
 
       - name: Select build parallelism from runner hardware
@@ -600,7 +598,7 @@ jobs:
           & "$env:GITHUB_WORKSPACE\windows\ci\Complete-Sccache.ps1" `
             -Launcher $env:CI_COMPILER_LAUNCHER -Results C:\sccache-rust-stats
       - name: Save production Rust objects from trusted main only
-        if: success() && steps.rust-cache-stats.outcome == 'success' && github.event_name == 'pull_request' && github.head_ref == 'ci/shorten-native-job' && github.event.pull_request.head.repo.full_name == github.repository
+        if: success() && steps.rust-cache-stats.outcome == 'success' && github.ref == 'refs/heads/main' && github.event_name == 'push'
         uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: C:\sccache-rust-production

@@ -946,12 +946,6 @@ class Pipeline(unittest.TestCase):
         self.assertEqual(4, text.count("actions/cache/save@"))
         self.assertEqual(4, len(saves))
         for condition in saves:
-            # TEMPORARY PR-ref-scoped Rust warm measurement. Revert with workflow.
-            if "steps.rust-cache-stats.outcome" in condition:
-                self.assertIn("github.event_name == 'pull_request' && github.head_ref == 'ci/shorten-native-job'", condition)
-                self.assertIn("github.event.pull_request.head.repo.full_name == github.repository", condition)
-                self.assertIn("-pr-${{ github.event.pull_request.number }}-", text)
-                continue
             self.assertIn("github.ref == 'refs/heads/main' && github.event_name == 'push'", condition)
             self.assertNotIn("||", condition)
         self.assertEqual(4, text.count("key: windows-x64-tools-contract-v1-py"))

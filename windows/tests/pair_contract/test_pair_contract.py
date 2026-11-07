@@ -981,12 +981,6 @@ class PairTests(unittest.TestCase):
         self.assertEqual(4, workflow.count("uses: actions/cache/save@"))
         self.assertEqual(4, len(saves))
         for condition in saves:
-            # TEMPORARY PR-ref-scoped Rust warm measurement. Revert with workflow.
-            if "steps.rust-cache-stats.outcome" in condition:
-                self.assertIn("github.event_name == 'pull_request' && github.head_ref == 'ci/shorten-native-job'", condition)
-                self.assertIn("github.event.pull_request.head.repo.full_name == github.repository", condition)
-                self.assertIn("-pr-${{ github.event.pull_request.number }}-", workflow)
-                continue
             self.assertIn("github.ref == 'refs/heads/main' && github.event_name == 'push'", condition)
             self.assertNotIn("||", condition)
         for job, kind in ((fixtures, "fixtures"), (build, "production")):
