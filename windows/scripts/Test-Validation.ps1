@@ -105,6 +105,10 @@ try {
         if ($BuildRoot) { $fixtureArguments += @('-BuildRoot', $BuildRoot) }
         foreach ($name in $scripts) { Invoke-ScriptCheck $name $fixtureArguments }
         if ($Suite -eq 'Services') {
+            # This check resolves pinned backend/capture source files. The
+            # Services job checks out recursive sources; the fast Unit job does not.
+            Invoke-ValidationStep 'provider-support' $powershell @('-NoProfile', '-NonInteractive',
+                '-File', (Join-Path $repoRoot 'windows/tests/Test-ProviderSupport.ps1'))
             Invoke-ScriptCheck 'Test-StagedServiceModels' @('-QtPrefix', $QtPrefix,
                 '-OutputRoot', (Join-Path $OutputRoot 'staged-models'), '-MutationControls')
         }
