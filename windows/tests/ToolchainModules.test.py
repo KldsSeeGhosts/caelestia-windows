@@ -118,6 +118,7 @@ Get-FileHash -LiteralPath {quote(archive)} -Algorithm SHA256
         "Caelestia-QmlFixture.ps1", "Test-StagedServiceModels.ps1",
         "Stage-ShellPrototype.ps1", "Build-Prototype.ps1",
         "New-CaelestiaRelease.ps1", "Test-Smoke.ps1",
+        "Test-UpdatesStatus.ps1",
         "../ci/New-NexusCandidate.ps1", "../ci/Test-NexusCandidatePayload.ps1",
     ):
         script = (helper.parent / entry).resolve()
@@ -150,6 +151,17 @@ if ($env:PSModulePath -cne $originalModulePath) {{ throw 'Entry point changed PS
         if checked.returncode != 0 or f"PASS actual child bootstrap: {entry}" not in checked.stdout:
             raise AssertionError(checked.stdout)
         print(f"PASS actual child bootstrap: {entry}")
+
+    # This fixture runs before the QML helper is imported by Test-UpdatesPage.
+    # Execute its full installed-status contract under the inherited module
+    # path as well as checking startup. It owns disposable synthetic records
+    # only, makes no network request and does not operate the installed shell.
+    checked = run("child-updates-status-contract", no_autoload + f"""
+& {quote(helper.with_name('Test-UpdatesStatus.ps1'))}
+""", True)
+    if checked.returncode != 0 or "PASS updates Status contract: 27 assertions" not in checked.stdout:
+        raise AssertionError(checked.stdout)
+    print("PASS inherited-path installed-status contract: 27 assertions")
 
     for inherited in (False, True):
         name = "inherited" if inherited else "normal"
