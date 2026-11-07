@@ -3,9 +3,9 @@
 `pinned_candidate_contract.py` is an unmodified copy of
 `.github/scripts/candidate_contract.py` from
 https://github.com/KldsSeeGhosts/caelestia-quickshell-windows at
-ae98287c8cd96db4ea4642cc91a1cd9ba7c32a1f.
+d91a9128294f60d3c1d0ec6d278483d80544ce98.
 
-SHA256: 220ab389252a15b8f4d9db25076aa01a927b3b07c62f3a07a76d1431d560f275.
+SHA256: e7e890428a49812208866349a00482cf0cddbca6ebbaf71cb7a06a5c3284b5a0.
 
 It belongs to the same GPL-licensed Caelestia Windows source family. Preserve
 the upstream bytes. This offline test fixture is never used as a production

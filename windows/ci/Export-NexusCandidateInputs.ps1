@@ -3,7 +3,8 @@
 param(
     [Parameter(Mandatory)][string]$BuildRoot,
     [Parameter(Mandatory)][string]$PairResults,
-    [Parameter(Mandatory)][string]$OutputDirectory
+    [Parameter(Mandatory)][string]$OutputDirectory,
+    [switch]$Integration
 )
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot\..\scripts\Caelestia-InstallCommon.ps1"
@@ -34,8 +35,21 @@ if (-not (Test-Path -LiteralPath $qml -PathType Container)) { throw 'Missing nat
 foreach ($file in Get-ChildItem -LiteralPath $qml -File -Recurse -Force) {
     Copy-TransferFile $BuildRoot $file.FullName.Substring($BuildRoot.Length + 1) 'b-public'
 }
-foreach ($relative in @('pair-request.json', 'candidate-result.json', 'pair-result.json',
-    'integration-stages.json', 'portable.xml', 'integration.xml', 'plugins.raw.xml')) {
+$pairFiles = @('pair-request.json', 'candidate-result.json',
+    'integration-stages.json', 'integration.xml', 'plugins.raw.xml')
+if ($Integration) {
+    $pairFiles += 'pair-local.json'
+    # This is the production compiler's measured record, not a runner banner
+    # or the fixture job's record. Preserve every identity for the join check.
+    $build = Get-Content -LiteralPath (Join-Path $BuildRoot 'logs/build.json') -Raw | ConvertFrom-Json
+    if (-not $build.toolchain) { throw 'Missing production actual toolchain.' }
+    New-Item -ItemType Directory -Path (Join-Path $OutputDirectory 'ci-pair') -Force | Out-Null
+    $build.toolchain | ConvertTo-Json -Depth 6 |
+        Set-Content -LiteralPath (Join-Path $OutputDirectory 'ci-pair/actual-toolchain.json') -Encoding UTF8
+} else {
+    $pairFiles += @('pair-result.json', 'portable.xml')
+}
+foreach ($relative in $pairFiles) {
     Copy-TransferFile $PairResults $relative 'ci-pair'
 }
 foreach ($suite in @('Services', 'Shell')) {
