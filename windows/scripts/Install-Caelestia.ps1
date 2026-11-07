@@ -200,7 +200,10 @@ try {
         Set-Content -LiteralPath "$payload\DesktopTakeover.build.json" -Encoding UTF8
     $timings.compileSupervisorSeconds = $phaseClock.Elapsed.TotalSeconds
     $timings.supervisorCacheHit = $supervisorCached
-    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'scheme') -Destination $payload -Recurse
+    New-Item -ItemType Directory -Path "$payload\scheme" | Out-Null
+    foreach ($schemeFile in @('win_scheme.py', 'fcntl.py', 'requirements.lock.txt')) {
+        Copy-Item -LiteralPath (Join-Path $PSScriptRoot "scheme\$schemeFile") -Destination "$payload\scheme"
+    }
     New-Item -ItemType Directory -Path "$payload\licenses" | Out-Null
     Copy-Item -LiteralPath "$repoRoot\LICENSE", "$repoRoot\THIRD-PARTY-NOTICES.md" -Destination "$payload\licenses"
     Copy-Item -LiteralPath "$repoRoot\windows\services\clipboard\upstream\LICENSE-MIT.txt" -Destination "$payload\licenses\Clipboard-Overlay-MIT.txt"

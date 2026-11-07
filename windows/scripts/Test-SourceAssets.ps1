@@ -345,6 +345,20 @@ Assert-RecipeRefused { & (Join-Path $PSScriptRoot 'Prepare-CaelestiaSourceAssets
 Assert-Recipe (-not (Test-Path -LiteralPath $coverageArguments.CoverageOutputDirectory)) 'Rejected coverage created a final receipt'
 $script:cases++
 
+$installerErrors = $null
+$installerTokens = $null
+$installerAst = [Management.Automation.Language.Parser]::ParseFile(
+    (Join-Path $PSScriptRoot 'Install-Caelestia.ps1'), [ref]$installerTokens, [ref]$installerErrors)
+$schemeLoops = @($installerAst.FindAll({
+    param($node)
+    $node -is [Management.Automation.Language.ForEachStatementAst] -and
+        $node.Variable.VariablePath.UserPath -ceq 'schemeFile'
+}, $true))
+Assert-Recipe ($installerErrors.Count -eq 0 -and $schemeLoops.Count -eq 1) 'Expected one bounded scheme payload copy'
+$schemeRuntimeFiles = @($schemeLoops[0].Condition.SafeGetValue())
+Assert-Recipe (@(Compare-Object @('win_scheme.py', 'fcntl.py', 'requirements.lock.txt') $schemeRuntimeFiles).Count -eq 0) 'Scheme tests or unknown files must not be packaged'
+$script:cases++
+
 $zipRoot = Join-Path $OutputDirectory 'zip-input'
 [IO.Directory]::CreateDirectory($zipRoot) | Out-Null
 [IO.File]::WriteAllText((Join-Path $zipRoot 'a.txt'), 'stable')
