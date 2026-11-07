@@ -13,3 +13,12 @@ $result = Invoke-QmlFixture -QtPrefix $QtPrefix -BuildRoot $BuildRoot -Name netw
 $result | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath ($result.stdout -replace '\.stdout\.log$', '.json') -Encoding UTF8
 $result | ConvertTo-Json -Depth 8
 if (-not $result.passed) { throw "Service fixture failed. See $($result.stdout) and $($result.stderr)." }
+
+$identity = Invoke-QmlFixture -QtPrefix $QtPrefix -Name network-identity `
+    -FakeDirectories @('windows/tests/fakes/network-identity') `
+    -Sources @('windows/services/network/NativeNetworkBackend.qml',
+        'windows/services/network/NativeNetworkIdentityTest.qml') `
+    -FixtureFile 'windows/services/network/NativeNetworkIdentityTest.qml' `
+    -Marker CAELESTIA_NETWORK_IDENTITY -MinimumAssertions 12
+$identity | ConvertTo-Json -Depth 8
+if (-not $identity.passed) { throw "Native identity projection fixture failed. See $($identity.stderr)." }

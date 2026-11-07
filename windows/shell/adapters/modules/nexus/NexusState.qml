@@ -30,6 +30,7 @@ QtObject {
     property var selectedApp
     property int editingVpnIndex: -1
     property string selectedNetworkSsid
+    property string selectedNetworkId
     property string selectedEthernetInterface
     property bool networkDetailsFromSaved
 

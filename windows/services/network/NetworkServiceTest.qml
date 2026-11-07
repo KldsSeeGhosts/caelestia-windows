@@ -15,6 +15,7 @@ QtObject {
     // (network_wifi_item.hpp:15-21) and the adapter contract.
     component FakeNetwork: QtObject {
         property string ssid: ""
+        property string selectionId: ""
         property string bssid: ""
         property int strength: 0
         property int frequency: 0
@@ -67,8 +68,13 @@ QtObject {
         // The native timer starts after the refresh returns, so a nested
         // setWifiListVisible(false) during that refresh does not stop it.
         property bool scanTimerRunning: false
+        property bool selectionIdentityAvailable: false
+        property int connectsById: 0
+        property int forgetsById: 0
+        property string lastSelectionId: ""
 
         signal connectResult(string ssid, bool success, string reason)
+        signal connectResultById(string selectionId, string ssid, bool success, string reason)
 
         function setWifiRadioEnabled(on): void {
             radioWrites++;
@@ -83,12 +89,23 @@ QtObject {
             if (failConnectSync)
                 connectResult(ssid, false, "failed");
         }
+        function connectToNetworkById(selectionId, ssid, password): void {
+            connectsById++;
+            lastSelectionId = selectionId;
+            lastConnectPassword = password;
+            if (failConnectSync)
+                connectResultById(selectionId, ssid, false, "stale-or-ambiguous");
+        }
         function disconnectActive(): void {
             disconnects++;
         }
         function forgetNetwork(ssid): void {
             forgets++;
             lastForgotten = ssid;
+        }
+        function forgetNetworkById(selectionId): void {
+            forgetsById++;
+            lastSelectionId = selectionId;
         }
         function setWifiListVisible(visible): void {
             listVisibilityCalls++;
@@ -769,6 +786,61 @@ QtObject {
         expectResult("refused", false, true, false, "controls cannot outlive observation");
         check(service.commandsSent === 0 && fixture.radioWrites === 0,
             "post-disable radio reached the backend");
+
+        // Same display name must not become a write selector. Old pinned
+        // backends fail closed on ambiguity; new backends receive the raw row ID.
+        service.enabled = true;
+        service.controlsEnabled = true;
+        fixture.nativeError = "";
+        fixture.needsLocationPermission = false;
+        fixture.wifiConnecting = false;
+        fixture.failConnectSync = false;
+        makeAvailable();
+        openNetwork.ssid = "Same display name";
+        openNetwork.selectionId = "adapter-a-profile-one";
+        openNetwork.hasProfile = true;
+        openNetwork.active = false;
+        secureProfile.ssid = openNetwork.ssid;
+        secureProfile.selectionId = "adapter-b-profile-two";
+        secureProfile.active = false;
+        model.values = [openNetwork, secureProfile];
+        resetCommandCounters();
+        check(service.findNetwork(openNetwork.ssid) === null, "ambiguous names must not select the first row");
+        service.requestConnect(secureProfile);
+        check(fixture.connects === 0 && service.lastResult.reason === "stale-or-ambiguous",
+            "legacy ambiguity must not reach a mutating name-based API");
+        fixture.selectionIdentityAvailable = true;
+        service.requestConnect(secureProfile);
+        check(fixture.connectsById === 1 && fixture.lastSelectionId === secureProfile.selectionId
+            && fixture.connects === 0, "connect uses exactly the selected identity");
+        check(service.pendingSelectionId === secureProfile.selectionId && !service.resultVerified,
+            "an ID request is pending, not observed completion");
+        fixture.connectResultById(openNetwork.selectionId, openNetwork.ssid, true, "");
+        check(service.pendingSelectionId === secureProfile.selectionId, "another same-name identity cannot complete this request");
+        fixture.connectResult(secureProfile.ssid, true, "");
+        check(!service.resultVerified && service.pendingSelectionId === secureProfile.selectionId,
+            "a name-only result cannot acknowledge an ID request");
+        service.requestConnect(openNetwork);
+        check(fixture.connectsById === 1 && service.lastResult.reason === "busy",
+            "pending state fences reentrant dispatch before native busy changes");
+        fixture.connectResultById(secureProfile.selectionId, secureProfile.ssid, true, "");
+        check(service.resultVerified && service.resultSucceeded && service.pendingSelectionId === "",
+            "matching terminal ID result completes and releases the request");
+        service.requestForgetSource(secureProfile);
+        check(fixture.forgetsById === 1 && fixture.lastSelectionId === secureProfile.selectionId
+            && fixture.forgets === 0 && !service.resultVerified, "forget uses the exact profile ID and stays unverified");
+        service.requestForget(secureProfile.ssid);
+        check(fixture.forgetsById === 1 && service.lastResult.reason === "stale-or-ambiguous",
+            "ambiguous legacy forget cannot choose a profile");
+        secureProfile.selectionId = "";
+        service.requestConnect(secureProfile);
+        check(fixture.connectsById === 1 && fixture.connects === 0,
+            "missing new identity cannot fall back to an unsafe display name");
+        secureProfile.selectionId = "adapter-b-profile-two";
+        fixture.failConnectSync = true;
+        service.requestConnect(secureProfile);
+        check(service.resultVerified && !service.resultSucceeded && service.pendingSelectionId === ""
+            && service.pendingSsid === "", "synchronous stale-ID refusal releases the pending request");
 
         console.log("CAELESTIA_NETWORK_FIXTURE_PASS " + JSON.stringify({assertions: assertions}));
         Qt.quit();

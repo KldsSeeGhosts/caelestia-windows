@@ -38,6 +38,7 @@ NetworkService {
         required property var raw
 
         readonly property string ssid: typeof raw?.ssid === "string" ? raw.ssid : ""
+        readonly property string selectionId: typeof raw?.selectionId === "string" ? raw.selectionId : ""
         readonly property string bssid: typeof raw?.bssid === "string" ? raw.bssid : ""
         readonly property int strength: Number.isFinite(raw?.strength)
             ? Math.max(0, Math.min(100, Math.round(raw.strength))) : 0
@@ -78,8 +79,9 @@ NetworkService {
     }
 
     // Reuse typed AccessPoint wrappers across polls. NetworkService rebuilds
-    // networkSources from each refreshed native list, but the BSSID (plus SSID)
-    // is stable, so update the existing wrapper's raw object in place and only
+    // networkSources from each refreshed native list. Prefer its opaque native
+    // selection ID, with BSSID/name fallback only on older backends. Update
+    // the existing wrapper's raw object in place and only
     // create/destroy wrappers when the visible set changes.
     property var _networkWrappers: ({})
     property var _networks: []
@@ -87,6 +89,8 @@ NetworkService {
     readonly property var networks: root._networks
 
     function networkKey(raw): string {
+        if (typeof raw?.selectionId === "string" && raw.selectionId !== "")
+            return "id:" + raw.selectionId;
         const bssid = typeof raw?.bssid === "string" ? raw.bssid.trim() : "";
         const ssid = typeof raw?.ssid === "string" ? raw.ssid : "";
         return bssid.length > 0 ? bssid + "\u0000" + ssid : "ssid:" + ssid;
@@ -231,7 +235,14 @@ NetworkService {
     function findNetwork(ssid): var {
         if (typeof ssid !== "string" || ssid.length === 0)
             return null;
-        return root.networks.find(point => point.ssid === ssid) ?? null;
+        const matches = root.networks.filter(point => point.ssid === ssid);
+        return matches.length === 1 ? matches[0] : null;
+    }
+
+    function findNetworkById(selectionId): var {
+        if (typeof selectionId !== "string" || selectionId === "")
+            return null;
+        return root.networks.find(point => point.selectionId === selectionId) ?? null;
     }
 
     function rescanWifi(): void {
@@ -248,6 +259,9 @@ NetworkService {
 
     function forgetNetwork(ssid): void {
         root.requestForget(ssid);
+    }
+    function forgetAccessPoint(point): void {
+        root.requestForgetSource(point?.raw ?? point);
     }
 
     // The pinned backend has no wired control, address, speed or usage API.

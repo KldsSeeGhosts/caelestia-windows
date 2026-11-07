@@ -72,6 +72,7 @@ PageBase {
                     subtext: savedRow.modelData.isSecure ? savedRow.modelData.security : Tr.trCtx("Open", "open wifi network")
                     onClicked: {
                         root.nState.selectedNetworkSsid = savedRow.modelData.ssid;
+                        root.nState.selectedNetworkId = savedRow.modelData.selectionId || "";
                         root.nState.networkDetailsFromSaved = true;
                         root.nState.openSubPage(3);
                     }

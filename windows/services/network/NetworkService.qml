@@ -33,6 +33,7 @@ QtObject {
     // activeSignalQuality, activeSecurity, wifiStatus, hasInternet,
     // needsLocationPermission, ethernetConnected, networks (.values),
     // setWifiListVisible(), scanWifiNetworks(), connectToNetwork(ssid, ""),
+    // optional selectionIdentityAvailable and ID-based connect/forget methods,
     // disconnectActive(), forgetNetwork(ssid), setWifiRadioEnabled(),
     // openWifiSettings(), openLocationSettings() and the
     // connectResult(ssid, success, reason) signal.
@@ -248,6 +249,8 @@ QtObject {
     property int commandsSent: 0
     property int scansRequested: 0
     property string pendingSsid: ""
+    property string pendingSelectionId: ""
+    readonly property bool selectionIdentityAvailable: root.backend?.selectionIdentityAvailable === true
 
     readonly property string resultText: lastResult?.text ?? ""
     readonly property string resultKind: lastResult?.kind ?? ""
@@ -329,7 +332,8 @@ QtObject {
     function findNetwork(ssid): var {
         if (typeof ssid !== "string" || ssid.length === 0)
             return null;
-        return root.networkSources.find(network => network.ssid === ssid) ?? null;
+        const matches = root.networkSources.filter(network => network.ssid === ssid);
+        return matches.length === 1 ? matches[0] : null;
     }
 
     function hasSavedProfile(ssid): bool {
@@ -359,10 +363,9 @@ QtObject {
             action + " requested. Windows has not confirmed the change.");
     }
 
-    // The backend's connectToNetwork() trusts its caller (network.cpp:41-54):
-    // an unknown SSID is treated as an open network and a profile may be
-    // written. Membership, state and credential policy are enforced here before
-    // the call.
+    // New backends consume the exact native selection ID. Legacy backends may
+    // treat an unknown name as an open network; membership, uniqueness, state
+    // and credential policy must therefore be checked before either route.
     function requestConnect(source): void {
         if (!root.controlsEnabled) {
             root._refuse("Connecting");
@@ -372,7 +375,7 @@ QtObject {
             root._result("refused", "", false, true, false, "unavailable", root._refusalText("Connecting"));
             return;
         }
-        if (root.connecting) {
+        if (root.connecting || root.pendingSsid !== "") {
             root._result("refused", "", false, true, false, "busy",
                 "Connecting was not requested because another connection request is in progress.");
             return;
@@ -384,6 +387,15 @@ QtObject {
         }
 
         const ssid = source.ssid;
+        const selectionId = typeof source.selectionId === "string" ? source.selectionId : "";
+        if ((root.selectionIdentityAvailable && (!selectionId
+                || typeof root.backend.connectToNetworkById !== "function"))
+                || (!root.selectionIdentityAvailable
+                    && root.networkSources.filter(network => network.ssid === ssid).length !== 1)) {
+            root._result("refused", ssid, false, true, false, "stale-or-ambiguous",
+                "Connecting requires an unambiguous current network identity.");
+            return;
+        }
         if (source.active === true) {
             root._result("refused", ssid, false, true, false, "active", ssid + " is already connected.");
             return;
@@ -400,9 +412,13 @@ QtObject {
         // emit wifiConnectResult synchronously (NetworkWifiBackend::connectToNetwork), and
         // that verified failure must not be overwritten afterwards.
         root.pendingSsid = ssid;
+        root.pendingSelectionId = root.selectionIdentityAvailable ? selectionId : "";
         root.commandsSent++;
         root._result("connect", ssid, true, false, null, "", "Connecting to " + ssid + "...");
-        root.backend.connectToNetwork(ssid, "");
+        if (root.selectionIdentityAvailable)
+            root.backend.connectToNetworkById(selectionId, ssid, "");
+        else
+            root.backend.connectToNetwork(ssid, "");
     }
 
     // Disconnect has no native result (NetworkWifiBackend::disconnectActive).
@@ -445,6 +461,17 @@ QtObject {
                 "Forgetting requires a network name.");
             return;
         }
+        const found = root.findNetwork(ssid);
+        const source = found?.raw ?? found;
+        if (!source && root.networkSources.some(network => network.ssid === ssid)) {
+            root._result("refused", ssid, false, true, false, "stale-or-ambiguous",
+                "Forgetting requires an unambiguous current network identity.");
+            return;
+        }
+        if (root.selectionIdentityAvailable && source) {
+            root.requestForgetSource(source);
+            return;
+        }
         if (!root.hasSavedProfile(ssid)) {
             root._result("refused", ssid, false, true, false, "no-profile",
                 "Forgetting was not requested because " + ssid + " has no saved Windows profile.");
@@ -454,6 +481,32 @@ QtObject {
         root.backend.forgetNetwork(ssid);
         root._result("forget", ssid, true, false, null, "",
             "Forget requested for " + ssid + ". Windows has not confirmed the change.");
+    }
+
+    function requestForgetSource(source): void {
+        if (!root.controlsEnabled) {
+            root._refuse("Forgetting a network");
+            return;
+        }
+        if (!root.listAvailable || !root.isKnownSource(source) || source.hasProfile !== true) {
+            root._result("refused", source?.ssid ?? "", false, true, false, "stale-or-ambiguous",
+                "Forgetting requires a current saved network.");
+            return;
+        }
+        if (!root.selectionIdentityAvailable) {
+            root.requestForget(source.ssid);
+            return;
+        }
+        const selectionId = typeof source.selectionId === "string" ? source.selectionId : "";
+        if (!selectionId || typeof root.backend.forgetNetworkById !== "function") {
+            root._result("refused", source.ssid, false, true, false, "stale-or-ambiguous",
+                "The saved network's selection identity is unavailable.");
+            return;
+        }
+        root.commandsSent++;
+        root.backend.forgetNetworkById(selectionId);
+        root._result("forget", source.ssid, true, false, null, "",
+            "Forget requested for " + source.ssid + ". Windows has not confirmed the change.");
     }
 
     function setListVisible(visible): void {
@@ -569,6 +622,7 @@ QtObject {
         if (!root.enabled) {
             root.listVisible = false;
             root.pendingSsid = "";
+            root.pendingSelectionId = "";
             root.lastResult = null;
             root.commandsSent = 0;
             root.scansRequested = 0;
@@ -592,14 +646,28 @@ QtObject {
         // outside this adapter (Windows UI, another tool); those are not our
         // success to claim.
         function onConnectResult(ssid, success, reason): void {
-            if (typeof ssid !== "string" || ssid === "" || ssid !== root.pendingSsid)
+            if (root.pendingSelectionId !== "")
                 return;
-
-            root.pendingSsid = "";
-            const ok = success === true;
-            root._result("connect", ssid, true, true, ok, reason,
-                ok ? "Connected to " + ssid + "." : "Could not connect to " + ssid + ": "
-                    + root.connectReasonText(reason) + ".");
+            root.finishConnect(ssid, success, reason);
         }
+
+        function onConnectResultById(selectionId, ssid, success, reason): void {
+            if (typeof selectionId !== "string" || selectionId === ""
+                    || selectionId !== root.pendingSelectionId)
+                return;
+            root.finishConnect(ssid, success, reason);
+        }
+    }
+
+    function finishConnect(ssid, success, reason): void {
+        if (typeof ssid !== "string" || ssid === "" || ssid !== root.pendingSsid)
+            return;
+
+        root.pendingSsid = "";
+        root.pendingSelectionId = "";
+        const ok = success === true;
+        root._result("connect", ssid, true, true, ok, reason,
+            ok ? "Connected to " + ssid + "." : "Could not connect to " + ssid + ": "
+                + root.connectReasonText(reason) + ".");
     }
 }

@@ -53,7 +53,7 @@ ItemList {
         values: {
             const connecting = Nmcli.connectingSsid;
             // Lower rank sorts higher in the list
-            const rank = n => n.active ? 0 : n.ssid === connecting ? 1 : Nmcli.hasSavedProfile(n.ssid) ? 2 : 3;
+            const rank = n => n.active ? 0 : n.ssid === connecting ? 1 : n.hasProfile ? 2 : 3;
             const sorted = [...Nmcli.networks].sort((a, b) => rank(a) - rank(b) || b.strength - a.strength);
             if (root.limit > 0 && sorted.length > root.limit)
                 sorted.length = root.limit;
@@ -70,7 +70,9 @@ ItemList {
         // accepts the request and cleared when the native result arrives, so a
         // refusal or failure re-enables the row without a local flag that only
         // a success path could clear.
-        readonly property bool pending: Nmcli.connectingSsid === modelData.ssid || Nmcli.pendingSsid === modelData.ssid
+        readonly property bool pending: Nmcli.pendingSelectionId !== ""
+            ? Nmcli.pendingSelectionId === modelData.selectionId
+            : Nmcli.connectingSsid === modelData.ssid || Nmcli.pendingSsid === modelData.ssid
         readonly property bool actionAvailable: modelData.active || root.needsWindowsSettings(modelData) || Nmcli.controlsEnabled
         property real textOpacity: disabled ? 0.5 : 1
 
@@ -88,6 +90,7 @@ ItemList {
             if (modelData.active) {
                 // Active network: open its detail/settings sub-page.
                 root.nState.selectedNetworkSsid = modelData.ssid;
+                root.nState.selectedNetworkId = modelData.selectionId || "";
                 root.nState.networkDetailsFromSaved = false;
                 root.nState.openSubPage(3);
             } else if (root.needsWindowsSettings(modelData)) {
@@ -142,7 +145,7 @@ ItemList {
                         let status = "";
                         if (net.active)
                             status = Tr.trCtx("Connected", "network connected");
-                        else if (Nmcli.hasSavedProfile(net.ssid))
+                        else if (net.hasProfile)
                             status = Tr.trCtx("Saved", "network saved");
                         if (status)
                             // TRANSLATORS: %1 = security type, %2 = connection status
