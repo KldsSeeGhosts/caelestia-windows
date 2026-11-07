@@ -5,8 +5,12 @@ This is a source-trace map for the Windows UI that is staged by
 The trace baseline is shell `eec2778123d47c3555006b3af5e75fd893c7b9c2`,
 backend `e6039b2b9cbb35b97473bda4dcc3f12789ae7f0c`, Glazier
 `37f795041cbbb32ed46cba103f3f000a3a99ac13`, and M3Shapes
-`32ad9ce328bb77ed349b40a3be10ee9ea610b8ab`. These are code-navigation pins,
-not a named or qualified release candidate. The machine-readable copy is
+`32ad9ce328bb77ed349b40a3be10ee9ea610b8ab`. These are code-navigation pins.
+The named source candidate is `provider-support-source-20261106`, shell
+`b3e632a62ef784e33a671f58caf377283b1d5d3b`, which includes current main and
+the availability-label correction below with those same dependency pins.
+It is a source and fixture candidate, with no release, installed-package,
+desktop or hardware qualification. The machine-readable copy is
 [`provider-support.json`](../tests/provider-support.json); its traceability
 check is [`Test-ProviderSupport.ps1`](../tests/Test-ProviderSupport.ps1).
 

@@ -54,6 +54,12 @@ function Test-ProviderSupportMatrix {
     if ($Matrix.matrixVersion -ne 1) {
         $problems.Add("matrixVersion must be 1.")
     }
+    if ($Matrix.candidate.name -cne 'provider-support-source-20261106' -or
+        $Matrix.candidate.shellRevision -cnotmatch '^[a-f0-9]{40}$' -or
+        -not $Document.Contains([string]$Matrix.candidate.name) -or
+        -not $Document.Contains([string]$Matrix.candidate.shellRevision)) {
+        $problems.Add("named source candidate is missing or differs from the guide.")
+    }
     if ((Compare-Object $expectedCategories $actualCategories).Count -ne 0) {
         $problems.Add("support category vocabulary differs from the v1 contract.")
     }

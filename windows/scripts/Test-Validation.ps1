@@ -77,6 +77,8 @@ try {
             throw 'Production staging must not include test fixtures.'
         }
         Invoke-ScriptCheck 'Test-PublicDocs'
+        Invoke-ValidationStep 'provider-support' $powershell @('-NoProfile', '-NonInteractive',
+            '-File', (Join-Path $repoRoot 'windows/tests/Test-ProviderSupport.ps1'))
         foreach ($name in @('Test-CIChanges', 'Test-SchemeProbeGuard', 'Test-KsgSettingsImport', 'Test-ShellLifecycle', 'Test-ValidationCounts')) {
             Invoke-ScriptCheck $name
         }

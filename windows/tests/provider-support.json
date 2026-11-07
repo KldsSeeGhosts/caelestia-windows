@@ -1,5 +1,10 @@
 {
   "matrixVersion": 1,
+  "candidate": {
+    "name": "provider-support-source-20261106",
+    "shellRevision": "b3e632a62ef784e33a671f58caf377283b1d5d3b",
+    "qualification": "Source and fixture candidate only; no release, installed-package, desktop, or hardware qualification."
+  },
   "baseline": {
     "shellRevision": "eec2778123d47c3555006b3af5e75fd893c7b9c2",
     "backendRevision": "e6039b2b9cbb35b97473bda4dcc3f12789ae7f0c",
