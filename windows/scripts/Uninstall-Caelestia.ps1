@@ -9,6 +9,11 @@ if (-not $Prefix) {
     $Prefix = if (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'install.json')) { $PSScriptRoot } else { Join-Path $env:LOCALAPPDATA 'Programs\caelestia-windows' }
 }
 $Prefix = Resolve-CaelestiaDirectory $Prefix
+# Use the installers' nonblocking prefix lock before reading any mutable
+# installation/profile identity. Keep it through integration and purge cleanup.
+$installLock = Enter-CaelestiaInstallLock $Prefix
+try {
+if (-not $installLock) { throw 'An installation, rollback or uninstall is already in progress.' }
 $record = Read-CaelestiaInstall $Prefix
 $profile = Resolve-CaelestiaDirectory $record.profile
 if ($profile -eq $Prefix -or $Prefix.StartsWith($profile + '\', [StringComparison]::OrdinalIgnoreCase) -or $profile.StartsWith($Prefix + '\', [StringComparison]::OrdinalIgnoreCase)) {
@@ -28,6 +33,42 @@ if ($Purge -and (Test-Path -LiteralPath $profile)) {
 # Only this prefix's executable may be stopped. Never kill other qs instances.
 # Quit also stops a supervisor that is starting or in restart backoff (no
 # qs.exe) and restores banners/desktop state before the journal can be purged.
+# Cancel queued maintenance while holding the same lock as its setup/worker.
+# Each task action must prove prefix ownership before it can be stopped or
+# removed. Enumerate even without a journal: queue setup can be interrupted
+# between registering its watchdog and writing 'queued'. Never leave actions
+# pointing at scripts that the tombstone rename is about to remove.
+$cancelledOperations = @()
+foreach ($task in @(Get-ScheduledTask -TaskPath '\' -TaskName 'Caelestia-Maintenance*' -ErrorAction SilentlyContinue)) {
+    if ($task.TaskName -notmatch '^Caelestia-Maintenance(?:Watch)?-([a-f0-9]{32})$') { continue }
+    $taskOperation = $Matches[1]
+    $actions = @($task.Actions)
+    if ($actions.Count -ne 1 -or $actions[0].WorkingDirectory -ne $Prefix -or
+        ([string]$actions[0].Arguments).IndexOf('-File "' + (Join-Path $Prefix 'Manage-Caelestia.ps1') + '"', [StringComparison]::OrdinalIgnoreCase) -lt 0 -or
+        ([string]$actions[0].Arguments).IndexOf('-Prefix "' + $Prefix + '"', [StringComparison]::OrdinalIgnoreCase) -lt 0) { continue }
+    Stop-ScheduledTask -TaskPath '\' -TaskName $task.TaskName -ErrorAction Stop
+    Unregister-ScheduledTask -TaskPath '\' -TaskName $task.TaskName -Confirm:$false -ErrorAction Stop
+    $cancelledOperations += $taskOperation
+}
+$operationFile = Join-Path $profile 'state\update-operation.json'
+if (Test-Path -LiteralPath $operationFile -PathType Leaf) {
+    $null = Resolve-CaelestiaDirectory ([IO.Path]::GetDirectoryName($operationFile))
+    # A corrupt optional reporting journal must not prevent uninstall. Task
+    # cancellation above independently proves prefix ownership.
+    $operation = $null
+    try { $operation = Get-Content -LiteralPath $operationFile -Raw -Encoding UTF8 | ConvertFrom-Json -ErrorAction Stop }
+    catch { }
+    if ($operation.schema -eq 1 -and $operation.operationId -match '^[a-f0-9]{32}$' -and
+        (-not $operation.prefix -or $operation.prefix -eq $Prefix) -and
+        (-not $operation.installId -or $operation.installId -eq $record.installId)) {
+        $ownsOperation = ($operation.prefix -eq $Prefix -and $operation.installId -eq $record.installId) -or
+            $operation.operationId -in $cancelledOperations
+        if ($ownsOperation -and $operation.phase -in @('queued', 'working')) {
+            $operation.phase = 'failed'
+            Write-CaelestiaJsonAtomic $operationFile $operation
+        }
+    }
+}
 $launcher = Join-Path $Prefix 'Start-Caelestia.ps1'
 $processes = @(Get-CaelestiaProcesses $Prefix)
 if (Test-Path -LiteralPath $launcher) {
@@ -75,3 +116,6 @@ if ($Purge -and (Test-Path -LiteralPath $profile)) {
 }
 Write-Output "Uninstalled Caelestia: $Prefix"
 if (-not $Purge) { Write-Output "Kept profile: $profile" }
+} finally {
+    Exit-CaelestiaInstallLock $installLock
+}

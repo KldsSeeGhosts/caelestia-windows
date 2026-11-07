@@ -1,0 +1,2 @@
+module Caelestia.Windows
+singleton KnownFolders 1.0 KnownFolders.qml

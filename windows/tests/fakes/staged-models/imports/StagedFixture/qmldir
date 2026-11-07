@@ -1,0 +1,2 @@
+module StagedFixture
+singleton Driver 1.0 Driver.qml
