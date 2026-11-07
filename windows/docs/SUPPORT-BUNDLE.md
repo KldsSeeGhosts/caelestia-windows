@@ -183,14 +183,14 @@ The focused runner requires Node for tests only. It creates synthetic prefixes,
 logs and canaries under the explicit output directory, invokes the real exporter
 and retains failure/timeout evidence without touching a real profile.
 
-Package integration must include `Export-CaelestiaSupport.ps1` and
-`Caelestia-Support.ps1` together in each installed payload, and distribute this
-document, schema and sanitized example as inspectable support material. Preserve
-`docs/SUPPORT-BUNDLE.md` and `support/*.json` in the payload to keep relative
-documentation links working without installing test fixtures. A stable-prefix
+The source and release assemblers include `Export-CaelestiaSupport.ps1` and
+`Caelestia-Support.ps1` together in each installed payload, with this document,
+schema and sanitized example as inspectable support material.
+`docs/SUPPORT-BUNDLE.md` and `support/*.json` retain their relative links.
+No test fixtures are installed. A stable-prefix
 shortcut/router is optional; do not imply it exists until wired by packaging.
-The aggregate validation owner must register the focused runner with an
-explicit isolated output. Exact-package acceptance remains open: qualify the
+The Packaging validation suite runs the focused runner with an
+explicit isolated output. Exact-package acceptance requires qualifying the
 assembled bytes in a disposable install without a checkout, SDK or Node, from
 both legacy and versioned layouts, including missing provider metadata and a
 deadline. Source fixtures do not close that installed-package gate.
