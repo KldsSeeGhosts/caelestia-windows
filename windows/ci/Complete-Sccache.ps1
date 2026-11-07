@@ -12,5 +12,9 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'sccache JSON statistics failed.' }
 } finally {
     & $Launcher --stop-server
-    if ($LASTEXITCODE -ne 0) { throw 'sccache server shutdown failed; do not save active objects.' }
+    # "Couldn't connect" when no compile ever started a server is not a
+    # failure; only a server that is still alive could be writing objects.
+    if ($LASTEXITCODE -ne 0 -and @(Get-Process -Name sccache -ErrorAction SilentlyContinue).Count) {
+        throw 'sccache server shutdown failed; do not save active objects.'
+    }
 }
