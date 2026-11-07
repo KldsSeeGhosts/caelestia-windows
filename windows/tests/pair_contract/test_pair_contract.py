@@ -650,13 +650,10 @@ class PairTests(unittest.TestCase):
         # The early Services run stays outside pair results and is not recorded.
         self.assertIn("-ServicesPreflightRoot C:\\ci-preflight -EchoDiagnostics", workflow)
         self.assertNotIn("--stage services", workflow)
-        # Only a successful trusted main push trims and writes compiler objects.
-        main_push = ("if: success() && steps.ccache.outputs.cache-hit != 'true' && "
-                     "github.ref == 'refs/heads/main' && github.event_name == 'push'")
-        for step in ("Trim compiler cache to this run's entries",
-                     "Save compiler cache from trusted main only"):
-            self.assertIn(f"- name: {step}\n        {main_push}\n", workflow)
-        self.assertEqual(2, workflow.count("uses: actions/cache/save@"))  # Tooling and objects.
+        # Only trusted main pushes write the single (tooling) cache.
+        self.assertEqual(1, workflow.count("uses: actions/cache/save@"))
+        self.assertIn("if: steps.tools.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main' "
+                      "&& github.event_name == 'push'\n        uses: actions/cache/save@", workflow)
         release = (ROOT / "windows/scripts/New-CaelestiaRelease.ps1").read_text()
         self.assertIn("$build.backendMode -cne 'pinned'", release)
 

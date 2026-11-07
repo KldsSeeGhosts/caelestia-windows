@@ -25,8 +25,8 @@ dependency checks remain enabled.
 
 Manual and main-push runs have unique concurrency groups and cannot cancel
 each other, including pending runs. Only superseded PR runs are cancellable.
-Only a successful **push to main** can save the shared tooling and compiler
-caches. Candidate dispatches and fork PRs may restore, but cannot save them.
+Only a **push to main** can save the shared tooling cache. Candidate dispatches
+and fork PRs may restore, but cannot save that trusted cache.
 
 ## Execution and receipts
 
