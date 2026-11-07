@@ -38,6 +38,7 @@ The shell workflow is `Windows build` and currently defines these job names:
 - `Change scope` (immutable dispatch guards and native-change classifier)
 - `Fast regressions`
 - `Installer and colour regressions`
+- `Verified native reuse and offscreen regressions` (PR-only, verified exact-base main native inputs)
 - `Backend fixtures and portable tier` (conditional on the native-change classifier)
 - `Native build and offscreen regressions` (conditional on the native-change classifier)
 - `Exact-pair receipt` (joins successful fixture and integration evidence)
@@ -55,7 +56,11 @@ The aggregate waits for scope, the fast and installer/colour jobs and requires
 fixtures, native integration and the receipt join to succeed when
 the classifier says it is required. For a documentation-only change, the
 classifier deliberately marks native validation not required and the aggregate
-expects all three native jobs to be skipped. Do not require a conditional native job
+expects all three native jobs and reuse to be skipped. For eligible QML/JS/assets
+PRs, the aggregate requires successful verified reuse and all three native jobs
+skipped, or explicit fallback with successful full fixtures/build/pair gates.
+Reuse does not claim pair or release eligibility. All non-PR events build fully.
+Do not require a conditional native job
 by itself, because that would leave documentation-only changes pending.
 
 The pinned backend workflow is `Windows fixtures`; its current job name is

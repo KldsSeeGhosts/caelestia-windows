@@ -57,8 +57,9 @@ jobs:
         shell: pwsh
         env:
           CHANGE_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          CHANGE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
-          & ./windows/ci/Get-NativeBuildRequired.ps1 -Base $env:CHANGE_BASE
+          & ./windows/ci/Get-NativeBuildRequired.ps1 -Base $env:CHANGE_BASE -Head $env:CHANGE_HEAD
 
   checks:
     name: Fast regressions
@@ -151,10 +152,133 @@ jobs:
           if-no-files-found: ignore
           retention-days: 3
 
+  reuse:
+    name: Verified native reuse and offscreen regressions
+    needs: scope
+    if: github.event_name == 'pull_request' && needs.scope.outputs.native == 'reuse'
+    runs-on: windows-2022
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      mode: ${{ steps.verify.outcome == 'success' && steps.runtime.outcome == 'success' && 'reuse' || 'full' }}
+    env:
+      BUILD_ROOT: C:\b-public
+      TOOL_ROOT: C:\t-public
+      PIP_CACHE_DIR: C:\t-public\pip
+      REUSE_BASE: ${{ github.event.pull_request.base.sha }}
+      REUSE_HEAD: ${{ github.event.pull_request.head.sha }}
+      PYTHONDONTWRITEBYTECODE: '1'
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout PR sources for independent verification and tests
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          submodules: recursive
+          persist-credentials: false
+      - name: Python 3.12
+        id: python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: '3.12'
+          architecture: x64
+      - name: Locate successful exact-base main push of this workflow
+        id: producer
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python -I -B windows/ci/native_reuse.py discover --base $env:REUSE_BASE --output $env:GITHUB_OUTPUT
+          if ($LASTEXITCODE -ne 0) { throw 'No reusable trusted producer; selecting full build.' }
+      - name: Download trusted native reuse artifact
+        id: download
+        if: steps.producer.outcome == 'success'
+        continue-on-error: true
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: ${{ steps.producer.outputs.artifact }}
+          run-id: ${{ steps.producer.outputs.run-id }}
+          github-token: ${{ github.token }}
+          path: C:/
+      - name: Independently verify sources and every restored hash
+        id: verify
+        if: steps.download.outcome == 'success'
+        continue-on-error: true
+        env:
+          PRODUCER_RUN: ${{ steps.producer.outputs.run-id }}
+          PRODUCER_ARTIFACT: ${{ steps.producer.outputs.artifact }}
+        run: |
+          python -I -B windows/ci/native_reuse.py verify --base $env:REUSE_BASE --head $env:REUSE_HEAD `
+            --shell $env:GITHUB_WORKSPACE --build $env:BUILD_ROOT --inventory C:/reuse-files.json `
+            --run-id $env:PRODUCER_RUN --artifact $env:PRODUCER_ARTIFACT --output C:/native-reuse-summary.json
+          if ($LASTEXITCODE -ne 0) { throw 'Reuse verification refused; selecting full build.' }
+      - name: Restore versioned tooling (never save)
+        if: steps.verify.outcome == 'success'
+        continue-on-error: true
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          key: windows-x64-tools-contract-v1-py${{ steps.python.outputs.python-version }}-${{ hashFiles('windows/toolchain.json', 'windows/toolchain/*.lock.txt', 'windows/toolchain/extract_llvm.py') }}
+          path: |
+            C:\t-public\Qt
+            C:\t-public\downloads
+            C:\t-public\pip
+            C:\t-public\clang+llvm-20.1.8-x86_64-pc-windows-msvc
+            C:\t-public\deps\CLI11-2.5.0
+      - name: Require Qt runtime and provision hash-locked CTest only
+        id: runtime
+        if: steps.verify.outcome == 'success'
+        continue-on-error: true
+        run: |
+          $spec = Get-Content windows/toolchain.json -Raw | ConvertFrom-Json
+          $qt = Join-Path $env:TOOL_ROOT $spec.qtDirectory
+          foreach ($file in @('bin/qtpaths.exe', 'bin/Qt6Quick.dll', 'plugins/platforms/qoffscreen.dll')) {
+            if (-not (Test-Path -LiteralPath (Join-Path $qt $file))) { throw 'Qt cache unavailable; selecting full build.' }
+          }
+          python -m venv "$env:TOOL_ROOT/tools"
+          if ($LASTEXITCODE -ne 0) { throw 'CTest environment unavailable; selecting full build.' }
+          & "$env:TOOL_ROOT/tools/Scripts/python.exe" -m pip install --disable-pip-version-check `
+            --only-binary=:all: --require-hashes -r windows/toolchain/python-tools.lock.txt
+          if ($LASTEXITCODE -ne 0) { throw 'CTest provisioning refused; selecting full build.' }
+      - name: Test current PR shell against verified native build (no pair evidence)
+        if: steps.verify.outcome == 'success' && steps.runtime.outcome == 'success'
+        run: |
+          $lock = Get-Content windows/sources.lock.json -Raw | ConvertFrom-Json
+          & powershell.exe -NoProfile -NonInteractive -File windows/ci/Invoke-PairIntegration.ps1 `
+            -TestOnly -ShellRoot $env:GITHUB_WORKSPACE -BackendRoot "$env:GITHUB_WORKSPACE/windows/deps/quickshell" `
+            -Mode pinned -BackendSha $lock.quickshell.revision -ToolRoot $env:TOOL_ROOT `
+            -BuildRoot $env:BUILD_ROOT -Results C:/reuse-tests -JUnit C:/reuse-tests/unused.xml -EchoDiagnostics
+          if ($LASTEXITCODE -ne 0) { throw 'Verified-native PR tests failed.' }
+      - name: Separate reuse summary or explicit full-build fallback
+        if: always()
+        run: |
+          if (Test-Path C:/reuse-tests/reuse-tests.json) {
+            python -I -B windows/ci/native_reuse.py summary --base $env:REUSE_BASE `
+              --output C:/native-reuse-summary.json --tests C:/reuse-tests
+            if ($LASTEXITCODE -ne 0) { throw 'Reuse summary failed.' }
+          } else {
+            'Native reuse unavailable or refused. Full fixtures/build/pair validation is required.' >> $env:GITHUB_STEP_SUMMARY
+          }
+      - name: Retain separate reuse summary only
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: native-reuse-summary-${{ github.run_id }}
+          path: C:/native-reuse-summary.json
+          if-no-files-found: ignore
+          retention-days: 3
+
   fixtures:
     name: Backend fixtures and portable tier
-    needs: scope
-    if: needs.scope.outputs.native == 'true'
+    needs: [scope, reuse]
+    if: >-
+      always() && needs.scope.result == 'success' &&
+      (needs.scope.outputs.native == 'full' ||
+      (needs.scope.outputs.native == 'reuse' && needs.reuse.result == 'success' && needs.reuse.outputs.mode == 'full'))
     runs-on: windows-2022
     timeout-minutes: 120
     defaults:
@@ -266,8 +390,11 @@ jobs:
 
   build:
     name: Native build and offscreen regressions
-    needs: scope
-    if: needs.scope.outputs.native == 'true'
+    needs: [scope, reuse]
+    if: >-
+      always() && needs.scope.result == 'success' &&
+      (needs.scope.outputs.native == 'full' ||
+      (needs.scope.outputs.native == 'reuse' && needs.reuse.result == 'success' && needs.reuse.outputs.mode == 'full'))
     runs-on: windows-2022
     timeout-minutes: 120
     defaults:
@@ -408,6 +535,20 @@ jobs:
         run: |
           & "$env:GITHUB_WORKSPACE\windows\ci\Export-NexusCandidateInputs.ps1" `
             -BuildRoot $env:BUILD_ROOT -PairResults $env:PAIR_RESULTS -OutputDirectory C:\integration-transfer -Integration
+      - name: Stage reusable native tests from trusted main only
+        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          & "$env:GITHUB_WORKSPACE\windows\ci\Export-NexusCandidateInputs.ps1" `
+            -BuildRoot $env:BUILD_ROOT -OutputDirectory C:\native-reuse-transfer -Reuse
+      - name: Retain trusted main native reuse inputs
+        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: native-reuse-${{ github.sha }}
+          path: C:/native-reuse-transfer/
+          retention-days: 14
+          if-no-files-found: error
+          include-hidden-files: true
       - name: Transfer same-run integration inputs
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
@@ -441,7 +582,8 @@ jobs:
     name: Exact-pair receipt
     needs: [scope, fixtures, build]
     if: >-
-      needs.scope.outputs.native == 'true' &&
+      always() && needs.scope.result == 'success' &&
+      needs.scope.outputs.native != 'none' &&
       needs.fixtures.result == 'success' && needs.build.result == 'success'
     runs-on: windows-2022
     timeout-minutes: 15
@@ -565,7 +707,7 @@ jobs:
   validation:
     name: Windows validation
     if: always()
-    needs: [scope, checks, packaging, fixtures, build, pair]
+    needs: [scope, checks, packaging, reuse, fixtures, build, pair]
     runs-on: windows-2022
     timeout-minutes: 2
     steps:
@@ -578,19 +720,30 @@ jobs:
           BUILD: ${{ needs.build.result }}
           FIXTURES: ${{ needs.fixtures.result }}
           PAIR: ${{ needs.pair.result }}
+          REUSE: ${{ needs.reuse.result }}
+          REUSE_MODE: ${{ needs.reuse.outputs.mode }}
           NATIVE_REQUIRED: ${{ needs.scope.outputs.native }}
         run: |
           if ($env:SCOPE -ne 'success' -or $env:CHECKS -ne 'success' -or $env:PACKAGING -ne 'success') {
             throw 'Source or installer validation did not pass.'
           }
-          if ($env:NATIVE_REQUIRED -notin @('true', 'false')) {
+          if ($env:NATIVE_REQUIRED -notin @('none', 'reuse', 'full')) {
             throw 'The native-build decision is missing or invalid.'
           }
           $nativeResults = @($env:FIXTURES, $env:BUILD, $env:PAIR)
-          if ($env:NATIVE_REQUIRED -eq 'true' -and @($nativeResults | Where-Object { $_ -ne 'success' }).Count) {
+          $full = $env:NATIVE_REQUIRED -eq 'full'
+          if ($env:NATIVE_REQUIRED -eq 'reuse') {
+            if ($env:REUSE -ne 'success' -or $env:REUSE_MODE -notin @('reuse', 'full')) {
+              throw 'Reuse validation or fallback decision did not pass.'
+            }
+            $full = $env:REUSE_MODE -eq 'full'
+          } elseif ($env:REUSE -ne 'skipped') {
+            throw 'Unexpected reuse-gate result.'
+          }
+          if ($full -and @($nativeResults | Where-Object { $_ -ne 'success' }).Count) {
             throw 'Required native validation did not pass.'
           }
-          if ($env:NATIVE_REQUIRED -eq 'false' -and @($nativeResults | Where-Object { $_ -ne 'skipped' }).Count) {
+          if (-not $full -and @($nativeResults | Where-Object { $_ -ne 'skipped' }).Count) {
             throw 'Unexpected native-gate result.'
           }
 
@@ -599,7 +752,7 @@ jobs:
     needs: [scope, pair, validation]
     if: >-
       github.event_name == 'push' && github.ref == 'refs/heads/main' &&
-      needs.scope.result == 'success' && needs.scope.outputs.native == 'true' &&
+      needs.scope.result == 'success' && needs.scope.outputs.native == 'full' &&
       needs.pair.result == 'success' && needs.validation.result == 'success'
     runs-on: windows-2022
     timeout-minutes: 120

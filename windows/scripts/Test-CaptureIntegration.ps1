@@ -21,7 +21,8 @@ Assert-True ($source.cargoLockSha256 -ceq '334db81cddfdb2020dd6738b0acc10a449bfb
 foreach ($inputPath in @('windows/capture/src/main.rs', 'windows/capture/assets/tabler-icons.ttf',
     'windows/capture/Source.ps1', 'windows/capture/docs/control-protocol.md', 'windows/deps/quickshell',
     'windows/sources.lock.json', 'elsewhere/implementation.rs', 'windows/toolchain.json',
-    'windows/scripts/Build-Prototype.ps1')) {
+    'windows/scripts/Build-Prototype.ps1', 'windows/scripts/Test-Validation.ps1',
+    '.github/ISSUE_TEMPLATE/bug_report.yml', 'windows/ci/README.md', 'unknown-input.txt')) {
     Assert-True (Test-CaelestiaCaptureNativeInput $inputPath) "Native reuse must refuse: $inputPath"
 }
 Assert-True (-not (Test-CaelestiaCaptureNativeInput 'windows/shell/shell.qml')) 'QML-only reuse remains possible.'
@@ -59,7 +60,10 @@ Add-Content -LiteralPath "$fixture\windows\capture\Cargo.lock" -Value '# corrupt
 Assert-Rejected { Get-CaelestiaCaptureSource $fixture } 'Cargo.lock does not match'
 $workflow = Get-Content -LiteralPath "$repo\.github\workflows\windows-build.yml" -Raw
 $mirror = Get-Content -LiteralPath "$repo\windows\ci\windows-build.yml.template" -Raw
-Assert-True ($workflow.Replace("`r`n", "`n") -ceq $mirror.Replace("`r`n", "`n")) 'Workflow mirror must remain exact.'
+Assert-True ([Convert]::ToBase64String([IO.File]::ReadAllBytes("$repo\.github\workflows\windows-build.yml")) -ceq
+    [Convert]::ToBase64String([IO.File]::ReadAllBytes("$repo\windows\ci\windows-build.yml.template"))) 'Workflow mirror must remain byte-identical.'
+Assert-True ($workflow.Contains('name: native-reuse-${{ github.sha }}') -and
+    $workflow.Contains('retention-days: 14')) 'Trusted native reuse artifact must be retained.'
 Assert-True ($workflow.Contains('Test-CaptureRust.ps1') -and $workflow.Contains('C:/ci-capture/capture-rust.json')) 'Public gate and sanitized receipt upload required.'
 $nativeJob = ($workflow -split '(?m)^  build:\r?$')[1] -split '(?m)^  pair:\r?$' | Select-Object -First 1
 Assert-True ($nativeJob.Contains('Test-CaptureRust.ps1') -and -not $nativeJob.Contains('New-NexusCandidate.ps1')) 'Capture validation must not wait for candidate assembly.'

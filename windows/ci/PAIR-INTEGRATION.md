@@ -1,5 +1,27 @@
 # Exact shell/backend integration
 
+## PR native reuse is not exact-pair evidence
+
+QML/JS/asset-only PRs may run **Verified native reuse and offscreen regressions**
+using `native-reuse-<base-sha>` from a successful exact-base main push of
+`.github/workflows/windows-build.yml`. See [CI scheduling](README.md) for the
+fail-closed classifier, artifact inventory and independent verification.
+`Invoke-PairIntegration.ps1 -TestOnly` shares the Services, Shell and plugin
+entry points, but returns before journal creation, compilation, release
+preflight, smoke, integration reporting or any downstream receipt processing.
+It writes only `reuse-tests.json`; the separate reuse summary records source,
+producer, hashes and outcomes. It never produces or edits `candidate-result.json`,
+`pair-result.json`, a downstream pair receipt or release eligibility.
+
+Backend fixtures are skipped only after the unchanged gitlink and lock are
+verified, because the trusted base main run validated that backend. Unavailable,
+expired or refused reuse inputs select full fixtures/build/pair validation.
+Once reuse tests start, a test failure fails the required aggregate. A skipped
+reuse job cannot validate a reuse-classified PR. Main pushes always build fully;
+candidate and publication semantics below are unchanged.
+
+## Full exact-pair validation
+
 The **Native build and offscreen regressions** and **Backend fixtures and
 portable tier** jobs test an exact shell/backend pair in parallel. **Exact-pair
 receipt** joins their evidence. **Windows validation** propagates failed, cancelled,

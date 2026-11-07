@@ -37,6 +37,7 @@ if (Test-Path -LiteralPath $shellWorkflow -PathType Leaf) {
         'Change scope',
         'Fast regressions',
         'Installer and colour regressions',
+        'Verified native reuse and offscreen regressions',
         'Backend fixtures and portable tier',
         'Native build and offscreen regressions',
         'Exact-pair receipt',

@@ -44,7 +44,16 @@ function Assert-CaelestiaCaptureBuild {
 
 function Test-CaelestiaCaptureNativeInput {
     param([Parameter(Mandatory)][string]$Path)
-    return $Path -match '^plugin/|^cmake/|^windows/(capture/|deps/|release/version\.json$|sources\.lock\.json$|toolchain[/.])|^windows/scripts/(DesktopTakeover\.cs$|Build-|Caelestia-SemVer\.ps1$|Caelestia-Toolchain|Prepare-Toolchain)|\.(rs|cpp|hpp|h|c|cc|cmake|qrc)$|(^|/)(CMakeLists\.txt|Cargo\.toml|Cargo\.lock)$'
+    if ($Path -match '^plugin/|^cmake/|^\.github/|^windows/(capture/|deps/|ci/|scripts/|tests/|release/|sources\.lock\.json$|toolchain[/.])|\.(rs|cpp|hpp|h|c|cc|cmake|qrc)$|(^|/)(CMakeLists\.txt|Cargo\.toml|Cargo\.lock)$') {
+        return $true
+    }
+    # The former negative regex was too narrow for CI reuse: unknown files
+    # silently became "QML-only". Only already-declared production shell
+    # QML/JS/assets may override a native build. Do not grow a second path list.
+    if ($Path -cmatch '\\|(^|/)\.\.?(/|$)' -or
+        $Path -cnotmatch '\.(qml|js|png|svg|gif|webp|ttf|otf)$') { return $true }
+    $map = Get-Content -LiteralPath "$PSScriptRoot\..\shell\sources.json" -Raw | ConvertFrom-Json
+    return $Path -cnotin @($map.PSObject.Properties.Name)
 }
 
 # Pure-data validation. Kept verbatim in the standalone release bootstrap so

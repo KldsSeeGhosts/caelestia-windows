@@ -15,6 +15,9 @@ param(
     # under this fresh root, never Results, and is never pass evidence: the
     # recorded integration reruns the Services gate from scratch.
     [string]$ServicesPreflightRoot,
+    # Verified native reuse only. No compiler, smoke/release checks or pair
+    # journal/report/receipt may run through this branch.
+    [switch]$TestOnly,
     # Only opt in for disposable hosted fixtures, never retained artifacts.
     [switch]$EchoDiagnostics
 )
@@ -63,7 +66,8 @@ if ($ServicesPreflightRoot) {
     }
     if (Test-Path -LiteralPath $ServicesPreflightRoot) { throw 'The Services preflight requires a fresh output root.' }
 }
-if (Test-Path -LiteralPath $BuildRoot) { throw 'Pair production build requires a fresh build root.' }
+if (-not $TestOnly -and (Test-Path -LiteralPath $BuildRoot)) { throw 'Pair production build requires a fresh build root.' }
+if ($TestOnly -and $ServicesPreflightRoot) { throw 'Test-only reuse cannot run a pair preflight.' }
 $spec = Get-Content -LiteralPath "$ShellRoot\windows\toolchain.json" -Raw | ConvertFrom-Json
 $qt = Join-Path $ToolRoot $spec.qtDirectory
 $llvm = Join-Path $ToolRoot "$($spec.llvmDirectory)\bin"
@@ -79,6 +83,14 @@ $common = @('-NoProfile', '-NonInteractive', '-File')
 function Get-ServicesArguments([string]$OutputRoot) {
     return $common + @("$scripts\Test-Validation.ps1", '-Suite', 'Services',
         '-BuildRoot', $BuildRoot, '-QtPrefix', $qt, '-OutputRoot', $OutputRoot)
+}
+function Get-ShellArguments {
+    return $common + @("$scripts\Test-Validation.ps1", '-Suite', 'Shell',
+        '-BuildRoot', $BuildRoot, '-QtPrefix', $qt, '-OutputRoot', "$Results\Shell")
+}
+function Get-PluginArguments {
+    return @('--test-dir', "$BuildRoot\caelestia", '--output-on-failure',
+        '--timeout', '60', '--no-tests=error', '--output-junit', "$Results\plugins.raw.xml")
 }
 function Invoke-Logged([string]$Log, [string]$Executable, [string[]]$CommandArguments) {
     $code = 1
@@ -98,6 +110,30 @@ function Write-FailureTail([string]$Name, [string]$Log) {
     $tail = (Get-Content -LiteralPath $Log -Tail 80 -Encoding UTF8) -join "`n"
     if ($tail.Length -gt 16000) { $tail = '[earlier output truncated]' + "`n" + $tail.Substring($tail.Length - 15970) }
     Write-Output $tail
+}
+
+if ($TestOnly) {
+    if (Test-Path -LiteralPath $Results) { throw 'Reuse tests require fresh results.' }
+    New-Item -ItemType Directory -Path $Results | Out-Null
+    $outcomes = @('Services', 'plugins', 'Shell') | ForEach-Object {
+        [pscustomobject]@{ name = $_; outcome = 'not_run'; exitCode = $null }
+    }
+    foreach ($stage in @(
+        @{ name = 'Services'; exe = $ps; arguments = (Get-ServicesArguments "$Results\Services") },
+        @{ name = 'plugins'; exe = "$tools\ctest.exe"; arguments = (Get-PluginArguments) },
+        @{ name = 'Shell'; exe = $ps; arguments = (Get-ShellArguments) })) {
+        $log = "$Results\$($stage.name).private.log"
+        $code = Invoke-Logged $log $stage.exe $stage.arguments
+        $outcome = $outcomes | Where-Object name -eq $stage.name
+        $outcome.exitCode = $code
+        $outcome.outcome = if ($code -eq 0) { 'success' } else { 'failure' }
+        $outcomes | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath "$Results\reuse-tests.json" -Encoding UTF8
+        if ($code -ne 0) {
+            Write-FailureTail $stage.name $log
+            throw "Reuse test failed: $($stage.name)"
+        }
+    }
+    return
 }
 
 if ($ServicesPreflightRoot) {
@@ -154,10 +190,8 @@ try {
     if ($Mode -eq 'candidate') { $buildArguments += @('-BackendRoot', $BackendRoot, '-CandidateBackendRevision', $BackendSha) }
     Invoke-Gate 1 $ps $buildArguments
     Invoke-Gate 2 $ps ($common + @("$scripts\New-CaelestiaRelease.ps1", '-BuildRoot', $BuildRoot, '-ValidateToolchainOnly'))
-    Invoke-Gate 3 "$tools\ctest.exe" @('--test-dir', "$BuildRoot\caelestia", '--output-on-failure',
-        '--timeout', '60', '--no-tests=error', '--output-junit', "$Results\plugins.raw.xml")
-    Invoke-Gate 4 $ps ($common + @("$scripts\Test-Validation.ps1", '-Suite', 'Shell',
-        '-BuildRoot', $BuildRoot, '-QtPrefix', $qt, '-OutputRoot', "$Results\Shell"))
+    Invoke-Gate 3 "$tools\ctest.exe" (Get-PluginArguments)
+    Invoke-Gate 4 $ps (Get-ShellArguments)
     $smokeArguments = $common + @("$scripts\Test-Smoke.ps1", '-BuildRoot', $BuildRoot,
         '-QtPrefix', $qt, '-RunRoot', "$Results\smoke")
     if ($Mode -eq 'candidate') { $smokeArguments += @('-CandidateBackendRevision', $BackendSha) }

@@ -20,6 +20,8 @@ ROOT = Path(__file__).resolve().parents[3]
 SPEC = importlib.util.spec_from_file_location("pair_result", ROOT / "windows/ci/pair_result.py")
 p = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(p)
+sys.path.insert(0, str(ROOT / "windows/ci"))
+import native_reuse as reuse
 
 
 def run_git(root, *args):
@@ -763,9 +765,19 @@ class PairTests(unittest.TestCase):
         harness = self.root / "validation.ps1"
         harness.write_text("$ErrorActionPreference = 'Stop'\n" + block)
         base = {**os.environ, "SCOPE": "success", "CHECKS": "success", "PACKAGING": "success",
-                "BUILD": "success", "FIXTURES": "success", "PAIR": "success", "NATIVE_REQUIRED": "true"}
-        skipped = {"NATIVE_REQUIRED": "false", "BUILD": "skipped", "FIXTURES": "skipped", "PAIR": "skipped"}
+                "BUILD": "success", "FIXTURES": "success", "PAIR": "success",
+                "REUSE": "skipped", "REUSE_MODE": "", "NATIVE_REQUIRED": "full"}
+        skipped = {"NATIVE_REQUIRED": "none", "BUILD": "skipped", "FIXTURES": "skipped", "PAIR": "skipped"}
+        reused = {**skipped, "NATIVE_REQUIRED": "reuse", "REUSE": "success", "REUSE_MODE": "reuse"}
         cases = [({}, True), (skipped, True)]
+        cases += [(reused, True),
+                  ({"NATIVE_REQUIRED": "reuse", "REUSE": "success", "REUSE_MODE": "full"}, True)]
+        cases += [({**reused, "REUSE": value}, False) for value in ("failure", "cancelled", "skipped")]
+        cases += [({**reused, "REUSE_MODE": value}, False) for value in ("", "invalid")]
+        cases += [({"REUSE": value}, False) for value in ("success", "failure", "cancelled")]
+        cases += [({**skipped, "REUSE": value}, False) for value in ("success", "failure", "cancelled")]
+        cases += [({**reused, gate: value}, False) for gate in ("FIXTURES", "BUILD", "PAIR")
+                  for value in ("success", "failure", "cancelled")]
         cases += [({"NATIVE_REQUIRED": value}, False) for value in ("", "invalid")]
         cases += [({gate: outcome}, False) for gate in ("SCOPE", "CHECKS", "PACKAGING", "FIXTURES", "BUILD", "PAIR")
                   for outcome in ("failure", "cancelled", "skipped")]
@@ -777,6 +789,115 @@ class PairTests(unittest.TestCase):
                                          "-File", str(harness)], env={**base, **changes},
                                         capture_output=True)
                 self.assertEqual(passed, result.returncode == 0, result.stderr.decode(errors="replace"))
+
+    def test_reuse_only_discovers_exact_trusted_run_and_live_artifact(self):
+        base = "a" * 40
+        run = dict(id=7, path=reuse.WORKFLOW, event="push", head_branch="main",
+                   conclusion="success", head_sha=base, status="completed")
+        artifact = dict(name=f"native-reuse-{base}", expired=False)
+        for field, value in (("path", ".github/workflows/other.yml"), ("event", "pull_request"),
+                             ("head_branch", "other"), ("conclusion", "failure"),
+                             ("head_sha", "b" * 40), ("status", "in_progress")):
+            with self.subTest(field=field):
+                self.assertIsNone(reuse.select_run([{**run, field: value}], base))
+        self.assertEqual(run, reuse.select_run([run], base))
+        for rows in ([], [{**artifact, "expired": True}], [{**artifact, "name": "other"}],
+                     [artifact, artifact]):
+            with self.subTest(rows=rows), self.assertRaisesRegex(ValueError, "artifact-unavailable"):
+                reuse.select_artifact(rows, base)
+        def api(path):
+            return {"workflow_runs": [run]} if "/workflows/" in path else {"artifacts": [artifact]}
+        self.assertEqual((7, artifact["name"]), reuse.discover(base, api))
+        with self.assertRaisesRegex(ValueError, "trusted-main-run-unavailable"):
+            reuse.discover(base, lambda _: {"workflow_runs": []})
+        with self.assertRaises(OSError):
+            reuse.discover(base, lambda _: (_ for _ in ()).throw(OSError("offline")))
+
+    @unittest.skipUnless(os.name == "nt", "Windows PowerShell boundary")
+    def test_reuse_verification_refusals(self):
+        for name in ("ci/Get-NativeBuildRequired.ps1", "capture/Source.ps1", "shell/sources.json"):
+            path = self.shell / "windows" / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(ROOT / "windows" / name, path)
+        self.commit(self.shell)
+        base = run_git(self.shell, "rev-parse", "HEAD")
+        path = self.shell / "windows/shell/shell.qml"
+        path.write_text("// synthetic QML change\n")
+        self.commit(self.shell)
+        build = self.root / "build"
+        rows = []
+        for name in ("quickshell/qs.exe", "install/caelestia-capture.exe",
+                     "install/DesktopTakeover.dll", "install/qml/Fixture/plugin.dll"):
+            file = build / name
+            file.parent.mkdir(parents=True, exist_ok=True)
+            file.write_bytes(b"inert")
+            rows.append(dict(path=name, sha256=reuse.digest(file)))
+        record = dict(sourceRevision=base, sourceDirty=False, backendMode="pinned",
+                      backendRevision=self.backend_sha, nativeInputs=rows)
+        for name in ("caelestia/CTestTestfile.cmake", "caelestia/test.exe"):
+            file = build / name
+            file.parent.mkdir(parents=True, exist_ok=True)
+            file.write_bytes(b"inert")
+        inventory = self.root / "inventory.json"
+        def save(value):
+            p.write(build / "logs/build.json", value)
+            p.write(inventory, [dict(path=f.relative_to(build).as_posix(), sha256=reuse.digest(f))
+                                for f in build.rglob("*") if f.is_file()])
+        def verify():
+            return reuse.verify(self.shell, build, inventory, base, "HEAD")
+        save(record)
+        self.assertGreater(len(verify()), len(rows))
+        for key, value, reason in (("sourceRevision", "f" * 40, "build-source-mismatch"),
+                                   ("sourceDirty", True, "dirty-native-build"),
+                                   ("sourceDirty", None, "dirty-native-build"),
+                                   ("backendMode", "candidate", "unpinned-native-build"),
+                                   ("backendRevision", "f" * 40, "backend-lock-mismatch"),
+                                   ("nativeInputs", [], "missing-native-inventory")):
+            with self.subTest(key=key, value=value):
+                save({**record, key: value})
+                with self.assertRaisesRegex(ValueError, reason): verify()
+        save(record)
+        (build / "quickshell/qs.exe").write_bytes(b"corrupt")
+        with self.assertRaisesRegex(ValueError, "tested-native-bytes-changed"): verify()
+        (build / "quickshell/qs.exe").write_bytes(b"inert")
+        (build / "caelestia/test.exe").write_bytes(b"corrupt")
+        with self.assertRaisesRegex(ValueError, "reuse-file-hash-mismatch"): verify()
+        (build / "caelestia/test.exe").write_bytes(b"inert")
+        original = p.read(inventory)
+        for changed, reason in ((original[:-1], "incomplete-reuse-inventory"),
+                                ([], "missing-reuse-inventory"),
+                                ([{**original[0], "path": "../escape"}] + original[1:], "unsafe-reuse-inventory"),
+                                ([{**original[0], "sha256": "invalid"}] + original[1:], "reuse-file-hash-mismatch"),
+                                (original + [original[0]], "unsafe-reuse-inventory")):
+            p.write(inventory, changed)
+            with self.assertRaisesRegex(ValueError, reason): verify()
+        p.write(inventory, original)
+        plugin_file = build / "caelestia/CTestTestfile.cmake"
+        plugin_file.unlink()
+        save(record)
+        with self.assertRaisesRegex(ValueError, "missing-plugin-tests"): verify()
+        plugin_file.write_bytes(b"inert")
+        save(record)
+        with self.assertRaisesRegex(ValueError, "invalid-base"):
+            reuse.verify(self.shell, build, inventory, "not-a-sha", "HEAD")
+        actual_git = reuse.git
+        def diverged_git(shell, *args):
+            if args[0] == "merge-base": return "f" * 40
+            return actual_git(shell, *args)
+        with patch.object(reuse, "git", side_effect=diverged_git):
+            with self.assertRaisesRegex(ValueError, "base-not-ancestor"): verify()
+        for path, reason in (("windows/deps/quickshell", "backend-gitlink-changed"),
+                             ("windows/sources.lock.json", "source-lock-changed"),
+                             ("windows/toolchain.json", "toolchain-spec-changed")):
+            def changed_git(shell, *args):
+                if args[:2] == ("ls-tree", "HEAD") and args[-1] == path: return "changed"
+                return actual_git(shell, *args)
+            with patch.object(reuse, "git", side_effect=changed_git):
+                with self.assertRaisesRegex(ValueError, reason): verify()
+        native = self.shell / "unknown-native.cpp"
+        native.write_text("// native input\n")
+        self.commit(self.shell)
+        with self.assertRaisesRegex(ValueError, "native-diff-refused"): verify()
 
     def test_workflow_and_release_boundaries(self):
         workflow = (ROOT / ".github/workflows/windows-build.yml").read_text()
@@ -796,6 +917,18 @@ class PairTests(unittest.TestCase):
         self.assertIn("needs: [candidate, validation]", publication)
         self.assertIn("vars.NEXUS_DEVELOPMENT_PUBLISH == 'enabled'", publication)
         self.assertNotIn("pull_request_target", workflow)
+        reused = workflow.split("\n  reuse:\n")[1].split("\n  fixtures:\n")[0]
+        self.assertIn("actions: read", reused)
+        self.assertIn("run-id: ${{ steps.producer.outputs.run-id }}", reused)
+        self.assertIn("github-token: ${{ github.token }}", reused)
+        self.assertNotIn("actions/cache/save@", reused)
+        self.assertNotIn("pair_result.py", reused)
+        self.assertIn("-TestOnly", reused)
+        integration = (ROOT / "windows/ci/Invoke-PairIntegration.ps1").read_text()
+        test_only = integration.split("if ($TestOnly) {")[1].split("if ($ServicesPreflightRoot) {")[0]
+        self.assertNotIn("pair_result.py", test_only)
+        self.assertNotIn("Save-Journal", test_only)
+        self.assertNotIn("Build-Prototype", test_only)
         # Three compile entry points remain: fixture loop (moved, not copied),
         # capture Rust and production integration. The join never compiles.
         self.assertNotIn("-Jobs 2", workflow)

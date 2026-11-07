@@ -16,7 +16,7 @@ semantics and coordinated backend/shell changes.
 
 Every push to `main`, pull request and manual dispatch first runs `Change scope`
 on Ubuntu 24.04 with PowerShell, immutable dispatch guards and a full-history
-checkout. Its native decision unlocks four concurrent gates:
+checkout. Its `native=none|reuse|full` decision unlocks concurrent gates:
 
 - Fast source, documentation, PowerShell, JavaScript and quota-provider regressions.
 - Installer/rollback tests and the real colour-worker tests use isolated,
@@ -37,7 +37,7 @@ actual-toolchain JSON records (all fields, independent of key order), merges the
 unfinalized receipts, finalizes with fresh source verification and independently
 computes the envelope. It does not compile or restore tools.
 
-Graph: `scope -> {checks, packaging, fixtures, build}`;
+Full-build graph: `scope -> {checks, packaging, fixtures, build}`;
 `{fixtures, build} -> pair`; `{scope, checks, packaging, fixtures, build, pair}
 -> validation`; `{scope, pair, validation} -> candidate -> publish`.
 Estimated native critical path: `max(fixtures, build) + join overhead`.
@@ -45,12 +45,59 @@ Observed stage durations of 8m45s and 9m30s suggest roughly 9m30s plus join
 instead of 18m15s sequential work, excluding checkout/tool preparation and
 artifact service variability.
 
-Only a narrow allowlist of documentation and issue-template changes skips the
-three native jobs. Unknown files, empty diffs, first pushes and manual dispatches
-require a build. The path decision itself has regression tests. Installer and
+Only pull requests may skip compilation. Documentation-only means `none` for
+the existing top-level README/CONTRIBUTING and Windows README/NATIVE-BUILD/
+ROADMAP/docs Markdown paths. `.github/` and `windows/ci/`, including their docs,
+always mean `full`. For other PR changes, the shared
+`Test-CaelestiaCaptureNativeInput` definition governs reuse. Its old negative
+regex was too narrow, so it now fails closed: only QML/JS/image/font files
+already declared in `windows/shell/sources.json` are non-native. Native paths,
+build/test scripts, toolchain, locks, gitlinks, unknown files, ambiguous names
+and empty diffs require `full`. Every non-PR event, first push or unavailable
+base also means `full`. No separate broad UI path list is maintained.
+
+`reuse` runs **Verified native reuse and offscreen regressions** with read-only
+contents/actions access. It finds a completed successful `push` run of this exact
+workflow file on `main`, whose head SHA equals the PR base SHA, then downloads
+`native-reuse-<base-sha>` using that run ID and the read-only GitHub token.
+Only trusted main pushes upload these artifacts. Fourteen-day retention keeps
+recent PR bases useful without indefinitely storing executable build outputs;
+older bases deterministically fall back to compilation.
+
+The artifact contains `b-public/logs/build.json`, `quickshell/qs.exe`,
+`install/caelestia-capture.exe`, `install/DesktopTakeover.dll`, the installed
+native QML tree, and plugin test EXEs/DLLs plus generated `CTestTestfile.cmake`
+entry points under `caelestia/`. `reuse-files.json` inventories every transferred
+file. It contains no pair receipts, CMake cache, objects, PDBs or release
+eligibility. The exporter shares the native allowlist with candidate transfer.
+
+Before tests, verification requires the recorded base revision and clean
+source, unchanged backend gitlink/source lock/toolchain spec, matching backend
+pin, every `nativeInputs` hash, every transferred-file hash, complete inventories,
+and an independent base-to-head classifier rerun. Reuse restores, never saves,
+the tooling cache for Qt and provisions only hash-locked Python test tools.
+Missing/expired artifacts, unavailable trusted runs, failed verification or
+missing Qt runtime select the normal fixtures/build/pair path. Test failures
+after successful verification fail validation.
+
+The existing `Invoke-PairIntegration.ps1 -TestOnly` path calls the same Services,
+Shell and plugin CTest entry points against the PR checkout, without compilation
+or pair reporting. Backend fixtures are skipped because the unchanged backend
+pin was validated by the successful base main run. The separate
+`native-reuse-summary.json` records base SHA, producing run ID, artifact name,
+verified hashes and test outcomes, never pair-result or release eligibility.
+Candidate/publication remain full-build main-only.
+
+Reuse can only be exercised after a main run containing this producer completes.
+The target of roughly 5-6 minutes end to end is an estimate, not a measured
+result; checkout, cache and artifact transfer can change it.
+
+The path decision itself has regression tests. Installer and
 fast checks still run for documentation changes. The final `Windows validation`
 job fails if any applicable gate failed, was cancelled or was unexpectedly
-skipped. No branch-protection settings are changed by this workflow.
+skipped. In reuse mode it requires reuse success with all three native jobs
+skipped, or an explicit full fallback with all three successful. In `none` mode
+reuse and all native jobs must be skipped. No branch-protection settings change.
 
 [Test-Validation.ps1](../scripts/Test-Validation.ps1) is the shared local/CI
 entry point. [Coverage and exclusions](../tests/README.md) distinguish
