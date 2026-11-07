@@ -77,7 +77,7 @@ try {
             throw 'Production staging must not include test fixtures.'
         }
         Invoke-ScriptCheck 'Test-PublicDocs'
-        foreach ($name in @('Test-CIChanges', 'Test-SchemeProbeGuard', 'Test-KsgSettingsImport', 'Test-ShellLifecycle', 'Test-ValidationCounts')) {
+        foreach ($name in @('Test-CIChanges', 'Test-SchemeProbeGuard', 'Test-KsgSettingsImport', 'Test-ShellLifecycle', 'Test-ValidationCounts', 'Test-RepositoryPolicy')) {
             Invoke-ScriptCheck $name
         }
         $node = (Get-Command node -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
