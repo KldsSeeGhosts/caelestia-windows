@@ -9,7 +9,9 @@ param(
     [Parameter(Mandatory)][ValidateRange(1, [long]::MaxValue)][long]$Version,
     [string]$Expires = [DateTime]::UtcNow.AddDays(365).ToString("yyyy-MM-dd'T'HH:mm:ss'Z'"),
     [ValidateRange(1, 16)][int]$Threshold = 1,
-    [string]$TrustPath = "$PSScriptRoot\..\release\update-trust.json",
+    # Empty selects the shipped trust. $PSScriptRoot is unset in parameter
+    # defaults under Windows PowerShell 5.1 -File, so resolve it in the body.
+    [string]$TrustPath,
     [Parameter(Mandatory)][string]$OutputPath
 )
 $ErrorActionPreference = 'Stop'
@@ -17,7 +19,8 @@ $ErrorActionPreference = 'Stop'
 $privateValues = @()
 $temporary = $null
 try {
-    $OutputPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutputPath)
+    if (-not $TrustPath) { $TrustPath = Join-Path $PSScriptRoot '..\release\update-trust.json' }
+    $OutputPath =$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutputPath)
     Assert-NexusOwnerOutput $OutputPath
     $trust = Read-CaelestiaStrictJsonFile (Resolve-Path -LiteralPath $TrustPath).Path
     Assert-CaelestiaTrust $trust

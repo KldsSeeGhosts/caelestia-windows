@@ -59,6 +59,16 @@ try {
         -RootPrivateKeyPath "$root\root a.pkcs8" -DelegatedKeysPath "$root\delegations.json" -Version 1 `
         -TrustPath "$root\single-trust.json" -OutputPath "$root\single.dsse.json" -Expires $future
     Assert ($LASTEXITCODE -eq 0 -and "$singleText" -match 'Keys document version: 1') 'Single-root -File invocation failed.'
+    # Omitted -TrustPath must resolve the shipped trust under -File. A test key
+    # is not the shipped root, so it reaches and fails the signer check.
+    $ErrorActionPreference = 'Continue'
+    $defaultText = & (Get-WindowsPowerShellPath) -NoProfile -NonInteractive -File "$PSScriptRoot\..\ci\New-NexusKeysDocument.ps1" `
+        -RootPrivateKeyPath "$root\root a.pkcs8" -DelegatedKeysPath "$root\delegations.json" -Version 1 `
+        -OutputPath "$root\default-trust.dsse.json" 2>&1
+    $defaultExit = $LASTEXITCODE
+    $ErrorActionPreference = 'Stop'
+    Assert ($defaultExit -ne 0 -and "$defaultText" -match 'Unauthorized or duplicate root signer' -and
+        -not (Test-Path "$root\default-trust.dsse.json")) "Default shipped trust path did not resolve: $defaultText"
     $hash = (Get-FileHash "$root\keys.dsse.json").Hash
     $null = Run-Keys "$root\keys.dsse.json" $false
     Assert ((Get-FileHash "$root\keys.dsse.json").Hash -ceq $hash) 'Existing output overwritten.'
