@@ -29,6 +29,8 @@ $script:assertions = 0
 $script:children = @()
 $script:scenarios = @()
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+. (Join-Path $repoRoot 'windows\capture\Source.ps1')
+$captureSource = Get-CaelestiaCaptureSource $repoRoot
 $revision = (& git -C $repoRoot rev-parse HEAD).Trim()
 $uninstallText = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'Uninstall-Caelestia.ps1'))
 $manageText = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'Manage-Caelestia.ps1'))
@@ -72,10 +74,13 @@ function New-Case([string]$Name) {
     Write-FixtureText (Join-Path $scripts 'Manage-Caelestia.ps1') $manage
     $sourceInstall = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'Install-Caelestia.ps1'))
     Write-FixtureText (Join-Path $scripts 'Install-Caelestia.ps1') (Replace-Exactly $sourceInstall $import ($import + $importBoundary))
+    $fixtureCapture = Join-Path $case 'source-repo\windows\capture'
+    [IO.Directory]::CreateDirectory($fixtureCapture) | Out-Null
+    Copy-Item -LiteralPath (Join-Path $repoRoot 'windows\capture\Source.ps1') -Destination $fixtureCapture
     # Source installer preflight runs against data-only prerequisites. Tests
     # either refuse busy, or throw at its first post-lock external boundary,
     # before assembly, deployment or compilation can execute.
-    foreach ($relative in @('source-build\quickshell\qs.exe', 'source-build\install\glazier.exe',
+    foreach ($relative in @('source-build\quickshell\qs.exe', 'source-build\install\caelestia-capture.exe',
         'source-build\install\qml\Caelestia\Windows\qmldir', 'source-build\install\qml\M3Shapes\qmldir',
         'source-qt\bin\windeployqt.exe', 'source-crt\msvcp140.dll',
         'source-crt\vcruntime140.dll', 'source-crt\vcruntime140_1.dll', 'source-repo\fixture.txt')) {
@@ -754,7 +759,10 @@ try {
         uninstallSha256 = (Get-FileHash -LiteralPath (Join-Path $PSScriptRoot 'Uninstall-Caelestia.ps1')).Hash
         manageSha256 = (Get-FileHash -LiteralPath (Join-Path $PSScriptRoot 'Manage-Caelestia.ps1')).Hash
         backendRevision = (& git -C (Join-Path $repoRoot 'windows\deps\quickshell') rev-parse HEAD).Trim()
-        glazierRevision = (& git -C (Join-Path $repoRoot 'windows\deps\glazier') rev-parse HEAD).Trim()
+        glazierRevision = $captureSource.originRevision
+        captureSourcePath = $captureSource.relativePath
+        captureSourceRevision = $captureSource.sourceRevision
+        captureCargoLockSha256 = $captureSource.cargoLockSha256
         m3shapesRevision = (& git -C (Join-Path $repoRoot 'windows\deps\m3shapes') rev-parse HEAD).Trim()
         windowsVersion = [Environment]::OSVersion.Version.ToString(); powershellVersion = $PSVersionTable.PSVersion.ToString()
         windowsBuild = [string](Get-ItemPropertyValue -LiteralPath 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' -Name CurrentBuildNumber) +
