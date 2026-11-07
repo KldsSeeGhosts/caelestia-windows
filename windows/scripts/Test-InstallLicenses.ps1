@@ -17,7 +17,12 @@ $profile = Join-Path $testRoot 'profile'
 # The license check covers packaging, not the optional Python download.
 $arguments = @{ BuildRoot = $BuildRoot; QtPrefix = $QtPrefix; Prefix = $prefix; ProfileRoot = $profile; SkipSchemeRuntime = $true }
 if ($VCRuntimeRoot) { $arguments.VCRuntimeRoot = $VCRuntimeRoot }
-if ($NoIntegration) { $arguments.NoIntegration = $true }
+if ($NoIntegration) {
+    $arguments.NoIntegration = $true
+    # Existing installer provenance checks permit a reused ancestor build only
+    # when its native inputs are unchanged. No -Force or receipt rewriting.
+    $arguments.SourceRoot = $repoRoot
+}
 $integration = Get-CaelestiaIntegration $prefix
 $pairs = [ordered]@{
     'LICENSE' = 'LICENSE'
@@ -47,10 +52,16 @@ $foreign = Join-Path $testRoot 'foreign-profile'
 New-Item -ItemType Directory -Path $foreign -Force | Out-Null
 'not a caelestia profile' | Set-Content -LiteralPath (Join-Path $foreign 'notes.txt')
 $refused = $false
+$refusalDetail = ''
 $foreignArguments = $arguments.Clone()
 $foreignArguments.ProfileRoot = $foreign
-try { & "$PSScriptRoot\Install-Caelestia.ps1" @foreignArguments } catch { $refused = "$_" -match 'ownership marker' }
-if (-not $refused -or (Test-Path -LiteralPath (Join-Path $foreign 'profile-owner.json'))) { throw 'An unmarked populated profile was not refused.' }
+try { & "$PSScriptRoot\Install-Caelestia.ps1" @foreignArguments } catch {
+    $refusalDetail = Protect-CaelestiaText $_.Exception.Message
+    $refused = $_.Exception.Message -match 'ownership marker'
+}
+if (-not $refused -or (Test-Path -LiteralPath (Join-Path $foreign 'profile-owner.json'))) {
+    throw "An unmarked populated profile was not refused. Diagnostic: $refusalDetail"
+}
 Write-CaelestiaProfileOwner $profile $prefix 'license-test' $true
 $marker = Join-Path $profile 'config\packaging-test.txt'
 'preserve this profile' | Set-Content -LiteralPath $marker
