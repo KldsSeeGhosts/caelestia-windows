@@ -19,9 +19,21 @@ DIGEST = re.compile(r"[a-f0-9]{64}")
 DEV = re.compile(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-dev\.([1-9][0-9]*)\.([1-9][0-9]*)\.([1-9][0-9]*)")
 
 
+class GateRejection(ValueError):
+    """A fixed, non-secret reason from a reviewed evidence/publisher gate."""
+
+
+def failure_reason(error):
+    # Never echo arbitrary exception values, child output, API bodies, keys,
+    # filesystem paths or process arguments from the signing environment.
+    if isinstance(error, GateRejection) and re.fullmatch(r"[a-z][a-z0-9-]{0,95}", str(error)):
+        return str(error)
+    return type(error).__name__
+
+
 def require(value, message):
     if not value:
-        raise ValueError(message)
+        raise GateRejection(message)
 
 
 def object_pairs(rows):
@@ -264,8 +276,8 @@ def main():
             export_evidence(args.shell, args.build, args.results, args.validator, context(os.environ), args.export_evidence)
         print(identity)
         return 0
-    except (ValueError, OSError, KeyError, TypeError, ImportError):
-        print("Nexus exact-tested evidence rejected.", file=sys.stderr)
+    except (ValueError, OSError, KeyError, TypeError, ImportError) as error:
+        print("Nexus exact-tested evidence rejected: " + failure_reason(error) + ".", file=sys.stderr)
         return 1
 
 

@@ -7,6 +7,8 @@ param(
     [Parameter(Mandatory)][string]$AssetsRoot
 )
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot '..\scripts\Caelestia-Toolchain.ps1')
+Initialize-CaelestiaToolchainModules
 . "$PSScriptRoot\..\scripts\Caelestia-InstallCommon.ps1"
 . "$PSScriptRoot\..\scripts\Caelestia-Update.ps1"
 . "$PSScriptRoot\..\scripts\Caelestia-SourceAssets.ps1"

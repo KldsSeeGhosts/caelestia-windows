@@ -107,6 +107,15 @@ Pipeline tests use ephemeral native CNG primitives, a fake GitHub API and a
 local bare Git remote. Guard mutation coverage remains partial, not the full
 design mutation matrix.
 
+Candidate failures report the stage, exit code and private log location.
+Disposable CI opts into an 80-line/16,000-character diagnostic tail; private
+logs are never retained release assets. Publication emits fixed gate reasons
+and preserves source/payload/crypto child diagnostics privately without
+echoing signing environments, arguments or arbitrary exception values.
+Both new assembly/verifier entrypoints explicitly import the running Windows
+PowerShell engine's inbox modules, including under inherited PowerShell 7
+module paths.
+
 Local CORE-local assembly and complete source preparation are also exercised
 without signing or publication. A separately labelled data-only rehearsal
 uses the unchanged local manifest/native bytes, not a forged development

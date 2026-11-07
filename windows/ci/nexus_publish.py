@@ -63,10 +63,16 @@ def no_links(path):
                     and not getattr(info, "st_file_attributes", 0) & 1024, "linked-output")
 
 
-def checked_run(arguments, *, cwd=None, env=None, input_bytes=None, timeout=120):
+def checked_run(arguments, *, cwd=None, env=None, input_bytes=None, timeout=120, diagnostic_log=None):
     result = subprocess.run(list(map(str, arguments)), cwd=cwd, env=env, input=input_bytes,
                             capture_output=True, timeout=timeout)
-    require(result.returncode == 0, "external-command-refused")
+    if result.returncode != 0:
+        # Never print argv, environments, stdin or arbitrary child output in
+        # the signing process. Keep private diagnostics outside release assets.
+        if diagnostic_log is not None:
+            Path(diagnostic_log).write_bytes(result.stdout + b"\n--- stderr ---\n" + result.stderr)
+            print("Private stage diagnostic log: " + str(diagnostic_log), file=sys.stderr)
+        require(False, "external-command-refused-exit-" + str(result.returncode).replace("-", "negative-"))
     return result.stdout
 
 
@@ -207,7 +213,8 @@ class Crypto:
             environment["NEXUS_SIGNING_KEY"] = self.secret
         checked_run(["powershell.exe", "-NoProfile", "-NonInteractive", "-File",
                      self.shell / "windows/ci/Invoke-NexusCrypto.ps1", "-Action", action,
-                     "-Directory", directory, "-TrustPath", self.trust], env=environment)
+                     "-Directory", directory, "-TrustPath", self.trust], env=environment,
+                    diagnostic_log=directory / "crypto.private.log")
         if action.startswith("Read"):
             return read(directory / "result.json")["payload"]
         return (directory / "envelope.dsse.json").read_bytes()
@@ -428,7 +435,8 @@ def verify_payload(shell, directory, work, ctx, validator, historical=False):
     checked_run(["powershell.exe", "-NoProfile", "-NonInteractive", "-File",
                  shell / "windows/scripts/Prepare-CaelestiaSourceAssets.ps1",
                  "-SourceRoot", shell, "-SourceRevision", ctx["sha"],
-                 "-OutputDirectory", reprepared, "-CacheDirectory", work / "supplier-cache"], timeout=3600)
+                 "-OutputDirectory", reprepared, "-CacheDirectory", work / "supplier-cache"], timeout=3600,
+                diagnostic_log=work / "independent-sources.private.log")
     original_inventory = read(directory / "source-assets-inventory.json")
     fresh_inventory = read(reprepared / "component-inventory.json")
     for inventory in (original_inventory, fresh_inventory):
@@ -445,7 +453,7 @@ def verify_payload(shell, directory, work, ctx, validator, historical=False):
     args = ["powershell.exe", "-NoProfile", "-NonInteractive", "-File", shell / "windows/ci/Test-NexusCandidatePayload.ps1",
             "-CandidateDirectory", directory, "-OutputDirectory", work / "payload-check",
             "-SourceDataRoot", source, "-AssetsRoot", assets_root]
-    checked_run(args, timeout=600)
+    checked_run(args, timeout=600, diagnostic_log=work / "independent-payload.private.log")
     return data
 
 
@@ -774,8 +782,9 @@ def main():
     except PermissionError:
         print("Nexus authorization denied; owner intervention required. No retry.", file=sys.stderr)
         return 1
-    except (ValueError, OSError, KeyError, TypeError, subprocess.SubprocessError, StopIteration, zipfile.BadZipFile):
-        print("Nexus publication refused. Inspect non-secret setup and exact-run gates.", file=sys.stderr)
+    except (ValueError, OSError, KeyError, TypeError, subprocess.SubprocessError, StopIteration, zipfile.BadZipFile) as error:
+        print("Nexus publication refused: " + candidate.failure_reason(error) +
+              ". Inspect non-secret setup and exact-run gates.", file=sys.stderr)
         return 1
     finally:
         secret = ""

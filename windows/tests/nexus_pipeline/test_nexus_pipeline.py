@@ -25,6 +25,73 @@ import evidence_fixture
 
 MATERIAL = json.loads(os.environ.pop("NEXUS_TEST_KEY_MATERIAL"))
 
+class Diagnostics(unittest.TestCase):
+    def test_publisher_child_failure_retains_private_log_not_secret_output(self):
+        with tempfile.TemporaryDirectory(prefix="nexus-command-diagnostics-") as temp:
+            log = Path(temp) / "fixture.private.log"
+            result = subprocess.CompletedProcess([], 7, b"UNDERLYING_FIXTURE_FAILURE", b"private fixture detail")
+            with patch.object(n.subprocess, "run", return_value=result):
+                with self.assertRaisesRegex(c.GateRejection, "^external-command-refused-exit-7$"):
+                    n.checked_run(["inert-fixture", "private-argument"], diagnostic_log=log)
+            self.assertIn(b"UNDERLYING_FIXTURE_FAILURE", log.read_bytes())
+            self.assertIn(b"private fixture detail", log.read_bytes())
+
+    def test_safe_reason_codes_never_echo_arbitrary_exception_values(self):
+        self.assertEqual("trusted-main-push-required", c.failure_reason(c.GateRejection("trusted-main-push-required")))
+        for error in (ValueError("private signing material"), KeyError("private signing material"),
+                      OSError("C:\\private\\path"), c.GateRejection("unexpected\nprivate output")):
+            self.assertEqual(type(error).__name__, c.failure_reason(error))
+
+    def test_actual_candidate_gate_exit_tail_and_log_failure(self):
+        with tempfile.TemporaryDirectory(prefix="nexus-diagnostics-") as temp:
+            root = Path(temp)
+            child = root / "child.ps1"
+            child.write_text("1..100 | ForEach-Object { 'line-' + $_ + ('x' * 400) }\n"
+                             "'UNDERLYING_FIXTURE_FAILURE'\nexit 7\n", encoding="utf-8")
+            quote = lambda value: "'" + str(value).replace("'", "''") + "'"
+            # Load only the real gate function, never the assembly entrypoint.
+            bootstrap = """
+$ErrorActionPreference = 'Stop'
+$tokens = $null; $errors = $null
+$ast = [Management.Automation.Language.Parser]::ParseFile(SOURCE, [ref]$tokens, [ref]$errors)
+if ($errors.Count) { throw 'candidate source does not parse' }
+$node = $ast.Find({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and
+    $n.Name -eq 'Invoke-CandidateGate' }, $true)
+if (-not $node) { throw 'candidate gate missing' }
+. ([scriptblock]::Create($node.Extent.Text))
+$ps = Join-Path $PSHOME 'powershell.exe'
+$privateLogs = ROOT
+$EchoDiagnostics = ECHO
+try { Invoke-CandidateGate 'fixture' CHILD @(); throw 'unexpected success' }
+catch {
+    $message = $_.Exception.Message
+    Write-Output ('CAUGHT:' + $message)
+    if ($message -notlike '*exit=7*' -or $message -notlike '*fixture.log*') { exit 8 }
+}
+""".replace("SOURCE", quote(ROOT / "windows/ci/New-NexusCandidate.ps1")).replace(
+                "ROOT", quote(root)).replace("CHILD", quote(child))
+            for echo in (False, True):
+                script = root / ("check-" + str(echo) + ".ps1")
+                script.write_text(bootstrap.replace("ECHO", "$true" if echo else "$false"), encoding="utf-8")
+                result = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-File", str(script)],
+                                        capture_output=True, text=True, timeout=30)
+                self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+                self.assertEqual(echo, "UNDERLYING_FIXTURE_FAILURE" in result.stdout)
+                self.assertIn("exit=7", result.stdout)
+                if echo:
+                    self.assertIn("[earlier output truncated]", result.stdout)
+                    self.assertLess(len(result.stdout), 17000)
+            self.assertIn("UNDERLYING_FIXTURE_FAILURE", (root / "fixture.log").read_text(encoding="utf-8-sig"))
+            # A failed log write must terminate even when the child succeeds.
+            child.write_text("'success'\nexit 0\n", encoding="utf-8")
+            blocked = root / "missing-parent" / "logs"
+            script.write_text(bootstrap.replace(quote(root), quote(blocked)).replace("ECHO", "$false"),
+                              encoding="utf-8")
+            result = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-File", str(script)],
+                                    capture_output=True, text=True, timeout=30)
+            self.assertNotEqual(0, result.returncode)
+            self.assertNotIn("unexpected success", result.stdout)
+
 class Evidence(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="nexus-evidence-", dir=os.environ.get("CAELESTIA_TEST_OUTPUT_ROOT"))

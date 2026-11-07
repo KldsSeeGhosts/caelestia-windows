@@ -335,7 +335,7 @@ jobs:
         run: |
           & powershell.exe -NoProfile -NonInteractive -File "$env:GITHUB_WORKSPACE\windows\ci\New-NexusCandidate.ps1" `
             -ShellRoot $env:GITHUB_WORKSPACE -BuildRoot $env:BUILD_ROOT -ToolRoot $env:TOOL_ROOT `
-            -PairResults $env:PAIR_RESULTS -TrustedRoot $env:TRUSTED_ROOT -OutputDirectory C:\nexus-candidate
+            -PairResults $env:PAIR_RESULTS -TrustedRoot $env:TRUSTED_ROOT -OutputDirectory C:\nexus-candidate -EchoDiagnostics
           if ($LASTEXITCODE -ne 0) { throw 'Exact-tested candidate assembly failed.' }
 
       - name: Retain exact-tested release candidate

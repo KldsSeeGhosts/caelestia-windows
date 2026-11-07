@@ -7,9 +7,14 @@ param(
     [Parameter(Mandatory)][string]$PairResults,
     [Parameter(Mandatory)][string]$TrustedRoot,
     [Parameter(Mandatory)][string]$OutputDirectory,
-    [string]$Python = 'python'
+    [string]$Python = 'python',
+    # Only disposable CI source/build diagnostics may be echoed. Logs never
+    # enter the public candidate directory or its release assets.
+    [switch]$EchoDiagnostics
 )
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot '..\scripts\Caelestia-Toolchain.ps1')
+Initialize-CaelestiaToolchainModules
 . "$PSScriptRoot\..\scripts\Caelestia-InstallCommon.ps1"
 . "$PSScriptRoot\..\scripts\Caelestia-Update.ps1"
 foreach ($name in @('ShellRoot', 'BuildRoot', 'ToolRoot', 'PairResults', 'TrustedRoot', 'OutputDirectory')) {
@@ -32,14 +37,25 @@ $privateLogs = Join-Path $OutputDirectory 'private'
 [IO.Directory]::CreateDirectory($privateLogs) | Out-Null
 $ps = Get-WindowsPowerShellPath
 function Invoke-CandidateGate([string]$Name, [string]$Script, [string[]]$Arguments) {
+    $log = Join-Path $privateLogs "$Name.log"
+    $exitCode = 1
     $preference = $ErrorActionPreference
     try {
         $ErrorActionPreference = 'Continue'
+        $global:LASTEXITCODE = 1
         & $ps -NoProfile -NonInteractive -File $Script @Arguments 2>&1 | ForEach-Object { "$_" } |
-            Set-Content -LiteralPath (Join-Path $privateLogs "$Name.log") -Encoding UTF8
+            Set-Content -LiteralPath $log -Encoding UTF8 -ErrorAction Stop
         $exitCode = $LASTEXITCODE
     } finally { $ErrorActionPreference = $preference }
-    if ($exitCode -ne 0) { throw "Candidate gate failed: $Name. Private diagnostics are not release artifacts." }
+    if ($exitCode -ne 0) {
+        if ($EchoDiagnostics) {
+            $tail = (Get-Content -LiteralPath $log -Tail 80 -Encoding UTF8 -ErrorAction Stop) -join "`n"
+            if ($tail.Length -gt 16000) { $tail = '[earlier output truncated]' + "`n" + $tail.Substring($tail.Length - 15970) }
+            Write-Output "Failed candidate stage: $Name (last 80 lines)"
+            Write-Output $tail
+        }
+        throw "Candidate gate failed: $Name (exit=$exitCode). Private diagnostic log: $log. Not a release artifact."
+    }
 }
 # Self-contained public Git bundles require full histories. Fetches remain
 # anonymous/read-only source acquisition on the isolated hosted runner.

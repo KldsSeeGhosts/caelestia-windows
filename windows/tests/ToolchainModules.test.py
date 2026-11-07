@@ -118,8 +118,9 @@ Get-FileHash -LiteralPath {quote(archive)} -Algorithm SHA256
         "Caelestia-QmlFixture.ps1", "Test-StagedServiceModels.ps1",
         "Stage-ShellPrototype.ps1", "Build-Prototype.ps1",
         "New-CaelestiaRelease.ps1", "Test-Smoke.ps1",
+        "../ci/New-NexusCandidate.ps1", "../ci/Test-NexusCandidatePayload.ps1",
     ):
-        script = helper.with_name(entry)
+        script = (helper.parent / entry).resolve()
         body = no_autoload + f"""
 $tokens = $null
 $errors = $null
