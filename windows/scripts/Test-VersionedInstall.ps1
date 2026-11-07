@@ -243,10 +243,12 @@ function Get-DirectoryListing([string]$Directory) {
         $_.FullName.Substring($Directory.Length + 1) + ':' + $_.Length
     }) -join "`n")
 }
-# The shell was stopped at the 'quit' event and relaunched at 'launch'. After
-# the stop nothing may be probed, and the stopped interval, which has no probe
-# time in it, must stay small.
-function Assert-NoPostQuitProbe([string]$Log, [string]$What, [double]$MaxStopped = 3, [switch]$LastLaunch, [switch]$NoProbesExpected) {
+# The shell was stopped at 'quit' and relaunched at 'launch'. Verify the
+# forbidden work directly, not against an arbitrary hosted-runner wall clock:
+# scheduling, filesystem and antivirus latency are not a scheme probe.
+# Report elapsed time as diagnostics, not as native performance qualification.
+# Separate hung-probe tests below continue to enforce their execution budgets.
+function Assert-NoPostQuitProbe([string]$Log, [string]$What, [switch]$LastLaunch, [switch]$NoProbesExpected) {
     $events = @(Get-Content -LiteralPath $Log | ForEach-Object {
         $parts = $_ -split ','
         [pscustomobject]@{ Ticks = [long]$parts[0]; Event = $parts[2] }
@@ -262,8 +264,12 @@ function Assert-NoPostQuitProbe([string]$Log, [string]$What, [double]$MaxStopped
         Assert (@($events | Where-Object { $_.Event -eq 'check' -and $_.Ticks -lt $quit.Ticks }).Count -ge 1) "$What did not probe before stopping the shell."
     }
     Assert (@($events | Where-Object { $_.Event -eq 'check' -and $_.Ticks -gt $quit.Ticks }).Count -eq 0) "$What probed a generation after the shell had stopped."
+    $unexpected = @($events | Where-Object {
+        $_.Event -in @('py-launcher', 'venv', 'pip-start', 'pip-end') -and $_.Ticks -gt $quit.Ticks
+    })
+    Assert ($unexpected.Count -eq 0) "$What started scheme discovery or provisioning after the shell had stopped."
     $stopped = ($launch.Ticks - $quit.Ticks) / 1e7
-    Assert ($stopped -lt $MaxStopped) "$What left the shell stopped for $([Math]::Round($stopped, 1)) s."
+    Write-Output ("INFO {0}: quit-to-launch={1:N3}s (fixture timing, not a latency gate)." -f $What, $stopped)
 }
 function New-LauncherPayload([string]$Prefix, [string]$ProfileRoot, [string]$Label, [string]$ProvisionMode, [switch]$LegacyStart) {
     $path = Join-Path $root ('launcher-' + [guid]::NewGuid().ToString('N'))
@@ -327,6 +333,26 @@ param([string]$CacheRoot)
     return $path
 }
 try {
+    # Exercise the event assertion itself. Synthetic timestamps simulate a
+    # slow hosted handoff without sleeping; forbidden work must fail even
+    # when its duration would fit the old three-second wall-clock limit.
+    $eventControl = Join-Path $root 'event-controls.log'
+    [IO.File]::WriteAllLines($eventControl, @('100,0,check', '200,0,quit', '100000200,0,launch'))
+    Assert-NoPostQuitProbe $eventControl 'Synthetic slow handoff'
+    foreach ($forbidden in @('check', 'py-launcher', 'venv', 'pip-start', 'pip-end')) {
+        [IO.File]::WriteAllLines($eventControl, @('100,0,check', '200,0,quit', "300,0,$forbidden", '400,0,launch'))
+        $rejected = $false
+        try { Assert-NoPostQuitProbe $eventControl "Injected $forbidden" }
+        catch { $rejected = $true }
+        Assert $rejected "Post-quit $forbidden negative control was accepted."
+    }
+    [IO.File]::WriteAllLines($eventControl, @('100,0,check', '200,0,quit', '400,0,launch'))
+    $rejected = $false
+    try { Assert-NoPostQuitProbe $eventControl 'Injected probe under lock contention' -NoProbesExpected }
+    catch { $rejected = $true }
+    Assert $rejected 'Lock-contention negative control accepted a probe.'
+    Write-Output 'PASS activation event controls: hosted delay is diagnostic; post-quit probes, discovery and provisioning remain forbidden.'
+
     $prefix = Join-Path $root 'app'
     $a = Install-CaelestiaVersion $prefix (New-Payload $prefix 'A')
     $recordA = Read-CaelestiaInstall $prefix
@@ -928,7 +954,7 @@ param([string]$Prefix, [string]$Command = 'Start', [switch]$SkipSchemeRuntime)
                 $failed = $true
             }
             Assert ($failed -and -not $script:failStart -and -not $script:failSelectorWrite) "The $Kind scenario did not fail as injected."
-            Assert-NoPostQuitProbe $rcLog "Recovery after a failed $Kind" -MaxStopped 6 -LastLaunch
+            Assert-NoPostQuitProbe $rcLog "Recovery after a failed $Kind" -LastLaunch
             Assert ((Read-CaelestiaInstall $rcPrefix).current -eq $restoreVersion) "Recovery after a failed $Kind did not select the previous version."
             $pointer = Read-Pointer $rcProfile
             Assert ($pointer.available -eq $true -and $pointer.generation -eq ('4' * 40)) "Recovery after a failed $Kind did not publish the restored version's generation."
