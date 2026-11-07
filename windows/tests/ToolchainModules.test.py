@@ -98,6 +98,58 @@ def main():
     )
     print(f"Uninitialized inherited-path baseline exit={old.returncode} (see log)")
 
+    # Unlike the host-dependent discovery baseline above, this control
+    # deterministically removes script-module functions in this process.
+    no_autoload = """
+Import-Module -Name (Join-Path $PSHOME 'Modules\\Microsoft.PowerShell.Management\\Microsoft.PowerShell.Management.psd1') -Global -ErrorAction Stop
+Remove-Module Microsoft.PowerShell.Utility -Force -ErrorAction SilentlyContinue
+$PSModuleAutoLoadingPreference = 'None'
+"""
+    missing = run("child-without-inbox-module", no_autoload + f"""
+Get-FileHash -LiteralPath {quote(archive)} -Algorithm SHA256
+""", True)
+    if missing.returncode == 0 or "Get-FileHash" not in missing.stdout:
+        raise AssertionError("Missing inbox-module negative control did not fail")
+
+    # Evaluate each entry point's actual startup statements through its explicit
+    # initializer, not a retyped bootstrap. Do not execute build/install/native
+    # fixture bodies. Every run is a fresh Python -> PowerShell process.
+    for entry in (
+        "Caelestia-QmlFixture.ps1", "Test-StagedServiceModels.ps1",
+        "Stage-ShellPrototype.ps1", "Build-Prototype.ps1",
+        "New-CaelestiaRelease.ps1", "Test-Smoke.ps1",
+    ):
+        script = helper.with_name(entry)
+        body = no_autoload + f"""
+$tokens = $null
+$errors = $null
+$ast = [Management.Automation.Language.Parser]::ParseFile({quote(script)}, [ref]$tokens, [ref]$errors)
+if ($errors.Count) {{ throw 'Entry point does not parse.' }}
+$parts = [Collections.Generic.List[string]]::new()
+$found = $false
+foreach ($statement in $ast.EndBlock.Statements) {{
+    $parts.Add($statement.Extent.Text)
+    if ($statement.Extent.Text -ceq 'Initialize-CaelestiaToolchainModules') {{
+        $found = $true
+        break
+    }}
+}}
+if (-not $found) {{ throw 'Entry point has no explicit module initializer.' }}
+$bootstrapRoot = {quote(script.parent)}
+$prefix = ($parts -join "`n").Replace('$PSScriptRoot', "'" + $bootstrapRoot.Replace("'", "''") + "'")
+. ([scriptblock]::Create($prefix))
+Assert-CaelestiaDownload {quote(archive)} '{digest}'
+if ((Get-Module Microsoft.PowerShell.Utility).Path -notlike "$PSHOME\\Modules\\Microsoft.PowerShell.Utility\\*") {{
+    throw 'Entry point did not load its own engine module.'
+}}
+if ($env:PSModulePath -cne $originalModulePath) {{ throw 'Entry point changed PSModulePath.' }}
+'PASS actual child bootstrap: {entry}'
+"""
+        checked = run("child-" + script.stem, body, True)
+        if checked.returncode != 0 or f"PASS actual child bootstrap: {entry}" not in checked.stdout:
+            raise AssertionError(checked.stdout)
+        print(f"PASS actual child bootstrap: {entry}")
+
     for inherited in (False, True):
         name = "inherited" if inherited else "normal"
         destination = root / (name + "-extracted")

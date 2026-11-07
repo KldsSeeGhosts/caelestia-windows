@@ -1,6 +1,9 @@
 # Pure services use explicit source lists; shell fixtures stage the real graph
 # with dependency fakes. Both run offscreen from disposable temporary profiles.
 # Apps keeps the repository layout for its cross-directory JS imports.
+. (Join-Path $PSScriptRoot 'Caelestia-Toolchain.ps1')
+Initialize-CaelestiaToolchainModules
+
 function Invoke-QmlFixture {
     [CmdletBinding()]
     param(
