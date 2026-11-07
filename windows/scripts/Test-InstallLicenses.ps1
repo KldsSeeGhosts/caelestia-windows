@@ -2,7 +2,9 @@
 param(
     [Parameter(Mandatory)][string]$BuildRoot,
     [Parameter(Mandatory)][string]$QtPrefix,
-    [string]$VCRuntimeRoot
+    [string]$VCRuntimeRoot,
+    # Isolated payload install/update/uninstall without shortcuts or autostart.
+    [switch]$NoIntegration
 )
 
 . (Join-Path $PSScriptRoot 'Caelestia-InstallCommon.ps1')
@@ -15,6 +17,7 @@ $profile = Join-Path $testRoot 'profile'
 # The license check covers packaging, not the optional Python download.
 $arguments = @{ BuildRoot = $BuildRoot; QtPrefix = $QtPrefix; Prefix = $prefix; ProfileRoot = $profile; SkipSchemeRuntime = $true }
 if ($VCRuntimeRoot) { $arguments.VCRuntimeRoot = $VCRuntimeRoot }
+if ($NoIntegration) { $arguments.NoIntegration = $true }
 $integration = Get-CaelestiaIntegration $prefix
 $pairs = [ordered]@{
     'LICENSE' = 'LICENSE'
@@ -119,7 +122,9 @@ try {
             throw "Qt libraries are deployed but only the generic LGPL/GPL texts accompany them ($phase)."
         }
         if ((Get-FileHash -LiteralPath $marker).Hash -ne $markerHash) { throw 'Profile changed.' }
-        if (-not (Test-Path -LiteralPath $integration.Shortcut)) { throw 'Install shortcut missing.' }
+        if ($NoIntegration) {
+            if (Test-Path -LiteralPath $integration.Shortcut) { throw 'NoIntegration unexpectedly created a shortcut.' }
+        } elseif (-not (Test-Path -LiteralPath $integration.Shortcut)) { throw 'Install shortcut missing.' }
         Write-Output "LICENSE_${phase}_PASS"
     }
     & "$PSScriptRoot\Uninstall-Caelestia.ps1" -Prefix $prefix
@@ -131,6 +136,7 @@ try {
     }
     Write-Output 'LICENSE_UNINSTALL_PASS'
     Write-Output 'INSTALL_LICENSES_PASS'
+    Write-Output "License lifecycle mode: NoIntegration=$([bool]$NoIntegration); no payload launch."
 } finally {
     if (Test-Path -LiteralPath "$prefix\install.json") {
         & "$PSScriptRoot\Uninstall-Caelestia.ps1" -Prefix $prefix
