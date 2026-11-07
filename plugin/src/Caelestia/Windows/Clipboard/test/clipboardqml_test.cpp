@@ -11,10 +11,13 @@
 #include <memory>
 
 #include <qcoreapplication.h>
+#include <qdir.h>
+#include <qfile.h>
 #include <qobject.h>
 #include <qqmlcomponent.h>
 #include <qqmlengine.h>
 #include <qstring.h>
+#include <qtemporarydir.h>
 #include <qurl.h>
 #include <qvariant.h>
 
@@ -98,9 +101,21 @@ void ClipboardQmlTest::nativeVariantListReachesDisplayRows() {
     QQmlEngine engine;
     NativeHistory service;
 
+    // Stage the unchanged production files in the shell's layout. The source
+    // clipboard directory alone cannot resolve ../../utils/FileUrls.js.
+    QTemporaryDir stage;
+    QVERIFY(stage.isValid());
+    const QDir source(QStringLiteral(CLIPBOARD_SERVICE_DIR));
+    const QDir staged(stage.path());
+    QVERIFY(staged.mkpath(QStringLiteral("modules/clipboard")));
+    QVERIFY(staged.mkpath(QStringLiteral("utils")));
+    QVERIFY(QFile::copy(source.filePath(QStringLiteral("ClipboardHistory.js")),
+        staged.filePath(QStringLiteral("modules/clipboard/ClipboardHistory.js"))));
+    QVERIFY(QFile::copy(source.filePath(QStringLiteral("../../shell/adapters/utils/FileUrls.js")),
+        staged.filePath(QStringLiteral("utils/FileUrls.js"))));
+
     QQmlComponent component(&engine);
-    // The JS file is imported by relative path from its real directory.
-    component.setData(harness, QUrl::fromLocalFile(QStringLiteral(CLIPBOARD_SERVICE_DIR "/harness.qml")));
+    component.setData(harness, QUrl::fromLocalFile(staged.filePath(QStringLiteral("modules/clipboard/harness.qml"))));
     QVERIFY2(component.isReady(), qPrintable(component.errorString()));
 
     std::unique_ptr<QObject> root(component.createWithInitialProperties(

@@ -160,7 +160,7 @@ PageBase {
                     // selection and a real image in `preview`. Feed the preview
                     // to the tile, as the launcher adapter does, so Qt never
                     // tries to decode project.json as an image.
-                    source: !modelData ? "" : modelData.preview ? "file:///" + modelData.preview : modelData.engine ? "" : String(modelData.path ?? "")
+                    source: !modelData ? "" : modelData.preview ? Paths.absolutePath(String(modelData.preview)) : modelData.engine ? "" : String(modelData.path ?? "")
                     text: modelData?.name ?? ""
                     onClicked: {
                         Wallpapers.setWallpaper(modelData.path, root.QsWindow.window?.screen);

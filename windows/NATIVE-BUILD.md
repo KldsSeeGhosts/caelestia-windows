@@ -1,82 +1,74 @@
 # Native Windows build and validation
 
-The supported build uses Windows 11, Qt 6.11.2 `msvc2022_64`, clang-cl 20.1.8,
-Visual Studio Build Tools 2022, Windows SDK 10.0.26100.0, CMake 4.4.4,
-Ninja 1.13.2, and CLI11 2.5.0. The production entry point is
+The supported x64 build is defined by [toolchain.json](toolchain.json):
+Qt 6.11.2 `msvc2022_64`, clang-cl 20.1.8, selected VC tools 14.44.35207,
+Windows SDK 10.0.26100.0, Rust/Cargo 1.99.1 with target
+`x86_64-pc-windows-msvc`, CMake 4.4.4, Ninja package 1.13.2
+(actual banner `1.13.2.git.kitware.jobserver-pipe-1`), and CLI11 2.5.0.
+Windows 11 is the desktop target; hosted builds use `windows-2022`.
+The production entry point is
 `windows/shell/shell.qml`. A build or smoke pass does not establish live
 desktop acceptance; use [LIVE-CHECKLIST.md](docs/LIVE-CHECKLIST.md) for that.
 
 ## Developer dependencies
 
-Visual Studio Build Tools must already include the x64 C++ tools and Windows
-SDK. The build script discovers them with `vswhere.exe` and enters their
-environment in its own process. No machine PATH or Visual Studio installation
-is changed by the build script.
+Visual Studio Installer must already provide MSVC v143 VS 2022 C++ x64/x86
+tools 14.44 (`Microsoft.VisualStudio.Component.VC.Tools.x86.x64`) with the exact
+`VC/Tools/MSVC/14.44.35207` directory, plus Windows 11 SDK 10.0.26100.0
+(`Microsoft.VisualStudio.Component.Windows11SDK.26100`). The build enumerates
+installations with `vswhere`, selects one containing that toolset, explicitly
+requests both versions, and asserts the selected x64 environment. A later VS
+installation/banner alone is not sufficient. Missing components fail before
+compilation with the required version and manual installation step.
+No machine PATH, VS installation, Rust default or override is changed by a build.
+The reviewed serviced `cl.exe` and `link.exe` file versions are respectively
+19.44.35229.0 and 14.44.35229.0. A folder with different serviced binaries is
+not interchangeable. The same VS instance must provide
+`VC/Auxiliary/Build/Microsoft.VCRedistVersion.default.txt`, currently selecting
+`VC/Redist/MSVC/14.44.35112/x64/Microsoft.VC143.CRT`. The selected `msvcp140.dll`,
+`vcruntime140.dll` and `vcruntime140_1.dll` must each be version 14.44.35211.0.
 
 The following setup commands download development tools into a separate
 per-user directory. Run them in native Windows PowerShell. Python 3.12, Git,
 `curl.exe`, and `tar.exe` must be available. Production builds also bundle the
 Glazier recorder from the pinned `windows/deps/glazier` submodule, so the Rust
 toolchain (`cargo` on PATH, installed with [rustup](https://rustup.rs/)) is
-required. Offscreen fixture builds can pass `-SkipGlazier` instead, but their
-payload is not installable.
+required. Install the exact Rust toolchain once:
+
+```powershell
+rustup toolchain install 1.99.1-x86_64-pc-windows-msvc --profile minimal `
+    --target x86_64-pc-windows-msvc
+```
+
+Builds resolve an already installed compiler by its actual Rust/Cargo versions,
+not a `stable` selector, then use its absolute tool directory and explicit Cargo
+target. A preinstalled alias with exactly those versions is acceptable; a later
+`stable` is rejected, not silently downloaded. Offscreen fixture builds can pass
+`-SkipGlazier`, but their payload is not installable. The same supported toolchain
+is still required.
+
+Prefer the shared local/hosted preparation entry point:
 
 ```powershell
 $devRoot = Join-Path $env:LOCALAPPDATA 'caelestia-dev'
-New-Item -ItemType Directory -Force -Path $devRoot | Out-Null
-py -m venv "$devRoot\tools"
-$python = "$devRoot\tools\Scripts\python.exe"
-& $python -m pip install cmake==4.4.4 ninja==1.13.2 `
-    'https://github.com/miurahr/aqtinstall/archive/076e1659807d0b362a3ed684d54c2e9c775eb9c7.zip'
+powershell -NoProfile -File windows/scripts/Prepare-Toolchain.ps1 -ToolRoot $devRoot
 ```
 
+The script uses Python 3.12 x64, committed hash-locked Python wheels and aqt
+source, LLVM/CLI11 hashes and all six Qt archive SHA-256 values. Cached archives
+are rehashed. Rust provisioning is opt-in with `-InstallRust`; its exact official
+manifest is hash-checked and rustup verifies component checksums. No credentials
+are required. Use a fresh external ToolRoot to repair an incomplete extracted
+cache; do not bypass a hash failure. Supplier URLs and expected hashes live in
+the specification and Python locks, not a second manual installation policy.
+
 The aqtinstall revision is intentional: released 3.3.0 does not support this
-Qt repository layout. The archive list below deliberately omits the separate
+Qt repository layout. The selected archives deliberately omit the separate
 `qttranslations` component, because the installer ships no Qt translation
 catalogs and the shell installs no `QTranslator`. As a result `windeployqt`
 prints `Translations will not be available ... translations/catalogs.json`
 even with `--no-translations`. That message is informational and does not
-prevent deployment. Keep its log outside the source checkout:
-
-```powershell
-Push-Location $devRoot
-try {
-    & $python -m aqt install-qt windows desktop 6.11.2 win64_msvc2022_64 `
-        -O "$devRoot\Qt" --modules qtshadertools qtimageformats `
-        --archives qtbase qtdeclarative qtsvg qttools
-} finally {
-    Pop-Location
-}
-```
-
-Download the LLVM archive from its
-[official release](https://github.com/llvm/llvm-project/releases/tag/llvmorg-20.1.8).
-The SHA-256 below matches the release asset digest.
-
-```powershell
-$llvmArchive = "$devRoot\llvm-20.1.8.tar.xz"
-curl.exe -L --fail --silent --show-error `
-    'https://github.com/llvm/llvm-project/releases/download/llvmorg-20.1.8/clang+llvm-20.1.8-x86_64-pc-windows-msvc.tar.xz' `
-    -o $llvmArchive
-if ($LASTEXITCODE -ne 0) { throw 'LLVM download failed.' }
-$expected = 'f229769f11d6a6edc8ada599c0cda964b7dee6ab1a08c6cf9dd7f513e85b107f'
-if ((Get-FileHash -LiteralPath $llvmArchive).Hash -ne $expected) {
-    throw 'LLVM checksum mismatch.'
-}
-tar.exe -xf $llvmArchive -C $devRoot
-if ($LASTEXITCODE -ne 0) { throw 'LLVM extraction failed.' }
-
-curl.exe -L --fail --silent --show-error `
-    'https://github.com/CLIUtils/CLI11/archive/refs/tags/v2.5.0.zip' `
-    -o "$devRoot\cli11.zip"
-if ($LASTEXITCODE -ne 0) { throw 'CLI11 download failed.' }
-$cli11Expected = '887270cae374a0b9e22b39647f9fc4bc742587fb26d6a221da2d2bbcf3109b0b'
-if ((Get-FileHash -Algorithm SHA256 -LiteralPath "$devRoot\cli11.zip").Hash -ne $cli11Expected) {
-    Remove-Item -LiteralPath "$devRoot\cli11.zip" -Force
-    throw 'CLI11 checksum mismatch.'
-}
-Expand-Archive -LiteralPath "$devRoot\cli11.zip" -DestinationPath "$devRoot\deps" -Force
-```
+prevent deployment. Preparation keeps aqt logs outside the source checkout.
 
 ## Build
 
@@ -148,7 +140,55 @@ The script:
    module into the build directory's `install/qml`. The latter supplies
    WindowsFocusGuard for the native prototype.
 6. Records command arguments, logs, source revisions (including M3Shapes), and
-   tool versions under `logs/`. No packages are published.
+   actual VC tools, SDK, Rust/target, compiler, Qt and build-tool versions under
+   `logs/`. No packages are published. `logs/toolchain.json` is a path-free
+   version/hash receipt; `logs/build.json` additionally contains private local
+   deployment paths and must not be uploaded.
+
+## Toolchain and runtime receipts
+
+Before compilation, `Build-Prototype.ps1` and `Test-Environment.ps1` use the
+same exact-version predicate as the release assembler. To check an existing
+build without assembling or installing anything:
+
+```powershell
+powershell -NoProfile -File windows/scripts/New-CaelestiaRelease.ps1 `
+    -BuildRoot C:\b-caelestia -ValidateToolchainOnly
+powershell -NoProfile -File windows/scripts/Test-Toolchain.ps1
+```
+
+Legacy, incomplete, wrong-specification or incompatible receipts require a
+rebuild. The selected VC directory, VS installation banner, serviced compiler/
+linker versions, redist marker and actual CRT DLL versions are separate fields.
+All qualified receipt fields are asserted, including the Rust commit from the
+hash-pinned official release manifest.
+
+The x64 system-runtime minimum remains **14.44.35211.0** because that is the
+actual version of all three required DLLs in the reviewed marker-selected CRT,
+not because `14.44.35207` sorts below it. Compiler/linker servicing numbers
+are pinned independently; they are not substituted for the CRT's file version.
+Missing, differently serviced or newer CRT inputs, including 14.44.35213.0,
+require new qualification rather than silently changing the runtime floor.
+The assembler re-resolves that same marker and checks the actual DLL versions
+against the receipt. It never selects the newest redist directory. An explicit
+`-VCRuntimeRoot` must retain the matching VS marker layout.
+
+For Qt, all six hash-pinned package SBOMs (`sbom/*-6.11.2.cdx.json`) record
+compiler 19.44.35227.0 and linker 14.44.35227.0; these actual supplier metadata
+values are checked before compilation and deployment. The SBOMs and
+`config_qtbase.summary` do **not** declare a minimum CRT version. Qt's generic
+online `tools_vcredist` package is not an exact Qt 6.11.2 minimum-runtime
+declaration either. Build metadata, import/export inspection and local smoke
+are bounded evidence, not a clean-machine compatibility guarantee. A clean
+Windows environment with the exact floor runtime must still qualify every
+shipped component before claiming minimum-runtime/package acceptance.
+See [Microsoft's compatibility guidance](https://learn.microsoft.com/en-us/cpp/porting/binary-compat-2015-2017).
+
+Upgrades require a reviewed change to the specification, download hashes and
+Python locks, a clean native build, receipt mismatch tests, and hosted evidence.
+Any deliberate runtime-floor increase additionally requires missing/outdated/
+current runtime tests on a clean Windows environment. Do not remove the guard
+to accommodate a drifting hosted image.
 
 ## Smoke
 

@@ -77,7 +77,10 @@ try {
             throw 'Production staging must not include test fixtures.'
         }
         Invoke-ScriptCheck 'Test-PublicDocs'
-        foreach ($name in @('Test-CIChanges', 'Test-SchemeProbeGuard', 'Test-KsgSettingsImport', 'Test-ShellLifecycle', 'Test-ValidationCounts')) {
+        Invoke-ScriptCheck 'Test-Toolchain'
+        Invoke-ValidationStep 'toolchain-modules' $Python @('-B', 'windows/tests/ToolchainModules.test.py',
+            '--output-root', (Join-Path $OutputRoot 'toolchain-modules'))
+        foreach ($name in @('Test-CIChanges', 'Test-SchemeProbeGuard', 'Test-KsgSettingsImport', 'Test-ShellLifecycle', 'Test-ValidationCounts', 'Test-RepositoryPolicy')) {
             Invoke-ScriptCheck $name
         }
         $node = (Get-Command node -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
@@ -87,6 +90,7 @@ try {
         Invoke-ValidationStep 'quota-providers' $Python @('-B', '-m', 'unittest', 'discover', '-s', 'windows/tests/quota_providers', '-v') '(?m)^Ran ([0-9]+) tests?\b'
     } elseif ($Suite -eq 'Packaging') {
         Invoke-ScriptCheck 'Test-VersionedInstall'
+        Invoke-ScriptCheck 'Test-UninstallTransaction' @('-OutputRoot', (Join-Path $OutputRoot 'uninstall-transactions'))
     } elseif ($Suite -eq 'Scheme') {
         Invoke-ValidationStep 'scheme-worker' $Python @('-B', 'windows/scripts/scheme/test_win_scheme.py', '-v') '(?m)^Ran ([0-9]+) tests?\b'
     } else {
@@ -97,12 +101,20 @@ try {
               'Test-HotplugTeardown', 'Test-IdleInhibitStatus', 'Test-LauncherHoverClose',
               'Test-PerMonitorFullscreen', 'Test-PinnedPopoutFocus', 'Test-QuotaPopovers',
               'Test-QuotaProviderKeyboard', 'Test-WallpaperColours', 'Test-WallpaperHandback',
-              'Test-WallpaperPreview', 'Test-WindowsBackground')
+              'Test-WallpaperPreview', 'Test-WindowsBackground', 'Test-UpdateManager', 'Test-FileUrls')
         }
         if (-not $scripts.Count) { throw 'No QML regressions were discovered.' }
         $fixtureArguments = @('-QtPrefix', $QtPrefix)
         if ($BuildRoot) { $fixtureArguments += @('-BuildRoot', $BuildRoot) }
         foreach ($name in $scripts) { Invoke-ScriptCheck $name $fixtureArguments }
+        if ($Suite -eq 'Services') {
+            # This check resolves pinned backend/capture source files. The
+            # Services job checks out recursive sources; the fast Unit job does not.
+            Invoke-ValidationStep 'provider-support' $powershell @('-NoProfile', '-NonInteractive',
+                '-File', (Join-Path $repoRoot 'windows/tests/Test-ProviderSupport.ps1'))
+            Invoke-ScriptCheck 'Test-StagedServiceModels' @('-QtPrefix', $QtPrefix,
+                '-OutputRoot', (Join-Path $OutputRoot 'staged-models'), '-MutationControls')
+        }
     }
     $completed = $true
 } finally {
