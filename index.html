@@ -4,18 +4,21 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Caelestia for Windows</title>
-<meta name="description" content="An unsigned Windows 11 x64 preview of the Caelestia shell, with a bar, launcher, dashboard and opt-in window tiling. Public sources and preview ZIP downloads are available.">
+<meta name="description" content="Caelestia, the Hyprland desktop shell, ported to Windows 11: a new bar, launcher, dashboard, notifications and window tiling, coloured by your wallpaper.">
 <meta name="color-scheme" content="dark">
 <meta name="theme-color" content="#1b1b24">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='10' fill='%231b1b24'/%3E%3Cpath fill='%23b8c3ff' d='M16 4.5l2.1 6.6a4 4 0 0 0 2.7 2.7L27.5 16l-6.7 2.1a4 4 0 0 0-2.7 2.7L16 27.5l-2.1-6.7a4 4 0 0 0-2.7-2.7L4.5 16l6.7-2.2a4 4 0 0 0 2.7-2.7z'/%3E%3C/svg%3E">
 <meta property="og:type" content="website">
-<meta property="og:url" content="https://kldsseeghosts.github.io/caelestia-windows/">
-<link rel="canonical" href="https://kldsseeghosts.github.io/caelestia-windows/">
 <meta property="og:title" content="Caelestia for Windows">
-<meta property="og:description" content="An unsigned Windows 11 x64 preview of the Caelestia shell, with a bar, launcher, dashboard and opt-in window tiling. Public sources and preview ZIP downloads are available.">
-<meta name="twitter:card" content="summary">
+<meta property="og:description" content="Caelestia, the Hyprland desktop shell, ported to Windows 11: a new bar, launcher, dashboard, notifications and window tiling, coloured by your wallpaper.">
+<meta property="og:image" content="https://kldsseeghosts.github.io/caelestia-windows/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="The Caelestia wordmark among bold rounded shapes.">
+<meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Caelestia for Windows">
-<meta name="twitter:description" content="An unsigned Windows 11 x64 preview of the Caelestia shell, with a bar, launcher, dashboard and opt-in window tiling. Public sources and preview ZIP downloads are available.">
+<meta name="twitter:description" content="Caelestia, the Hyprland desktop shell, ported to Windows 11: a new bar, launcher, dashboard, notifications and window tiling, coloured by your wallpaper.">
+<meta name="twitter:image" content="https://kldsseeghosts.github.io/caelestia-windows/og.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Google+Sans+Flex:opsz,wght,wdth,ROND@6..144,200..700,25..151,0..100&display=swap" rel="stylesheet">
@@ -63,6 +66,10 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
 .chip:focus-visible,.spaces a:focus-visible{border-radius:50%}
 .ws:focus{outline:none}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+/* Numbers land on rolling reels, one per digit, like an odometer. */
+.odo{display:inline-flex;vertical-align:top;line-height:1}
+.odo>span{display:block;height:1em;overflow:visible clip}
+.odo i{display:block;font-style:normal;white-space:pre}
 svg{display:block;overflow:visible}
 
 /* Shell: desk, grain, frame (a huge box-shadow paints the border round a rounded hole) and bar. */
@@ -177,6 +184,9 @@ main{position:relative;z-index:1;margin:var(--edge) var(--edge) var(--edge) var(
 .screen{position:absolute;right:4cqw;bottom:9.5cqh;width:min(56cqw,92cqh);aspect-ratio:16/9;z-index:2;border-radius:clamp(14px,1.5cqw,26px);
   box-shadow:0 3cqh 8cqh -3cqh oklch(.05 .04 var(--h) / .75);opacity:0;scale:.9;transition:opacity .6s .45s,scale 1.3s var(--spring) .45s}
 .on .screen{opacity:1;scale:1}
+.pscreen video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:inherit;background:var(--shell);opacity:0;transition:opacity .6s}
+.has-video>video{opacity:1}
+.has-video>.mini{opacity:0;visibility:hidden;transition:opacity .6s,visibility 0s .6s}
 .hold{position:absolute;right:0;top:calc(100% + 1.4cqh);display:flex;align-items:center;gap:7px;padding:5px 12px 5px 9px;border-radius:99px;font-size:14px;font-weight:450;color:var(--ink-3);transition:color .3s,background-color .3s}
 .hold:hover{color:var(--ink);background:var(--mid)}
 .hold svg{width:14px;height:14px;fill:currentColor}
@@ -340,7 +350,14 @@ main{position:relative;z-index:1;margin:var(--edge) var(--edge) var(--edge) var(
 .seg>i>i{display:block;height:100%;background:var(--primary);transform:scaleX(0);transform-origin:left}
 .seg span{display:block;margin-top:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ptime{flex:none;font-size:14px;font-weight:450;color:var(--ink-3);font-variant-numeric:tabular-nums}
-.note{color:var(--ink-2);max-width:26em}
+.pmute{display:grid;place-items:center;width:40px;height:40px;flex:none;border-radius:50%;color:var(--ink-2);transition:background-color .3s,color .3s}
+.pmute:hover{background:var(--mid);color:var(--ink)}
+.pmute[hidden]{display:none}
+.pmute svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.pmute .w,.pmute[aria-pressed="true"] .x{display:none}
+.pmute[aria-pressed="true"] .w{display:block}
+.note{color:var(--ink-3);max-width:24em}
+.run.has-video .note{display:none}
 
 /* Sound: four bars in the shell's bar. They dance while sound plays, and rest when it is off. */
 .snd{display:flex;align-items:center;justify-content:center;gap:3px;width:36px;height:36px;flex:none;border-radius:50%;color:var(--ink-3);transition:color .3s,background-color .3s}
@@ -426,21 +443,20 @@ main{position:relative;z-index:1;margin:var(--edge) var(--edge) var(--edge) var(
 .cpy:active{border-radius:8px}
 .fine{position:absolute;left:5.5cqw;right:5.5cqw;bottom:6cqh;display:flex;flex-direction:column;gap:6px;font-size:15px;font-weight:450;line-height:1.45;color:var(--fg2);z-index:2}
 
-/* Public release facts reuse the shell's typography and flat tonal surfaces. */
-.release .lead{width:40cqw;top:9cqh}
-.release-facts{position:absolute;left:52cqw;right:5.5cqw;top:9cqh;bottom:7cqh;overflow:auto;z-index:2}
-.release-facts>div{padding:16px 0;border-bottom:1px solid var(--outline)}
-.release-facts dt{font-size:15px;color:var(--ink-2)}
-.release-facts dd{margin-top:6px;font-size:clamp(18px,1.65cqw,26px);font-weight:350;line-height:1.35;text-wrap:pretty}
-.release-facts a,.fine a{text-decoration:underline;text-underline-offset:.2em}
-.release-facts small{display:block;margin-top:6px;font-size:15px;line-height:1.4;color:var(--ink-2)}
-.release .cap{max-width:23em}
-.release .cta{margin-top:12px}
-.release .small{max-width:32em}
-@media(max-width:999px){
-  .release-facts{overflow:visible}
-  .release-facts dd{font-size:22px}
-}
+/* How it was built: one sentence, with the figures rolling in it, and a dot for every agent. */
+.ledger{position:absolute;left:5.5cqw;top:10cqh;width:46cqw;z-index:2}
+.ledger>p:first-child{font-size:clamp(26px,min(3.2cqw,6cqh),54px);font-weight:300;font-stretch:108%;line-height:1.18;letter-spacing:-.015em;color:var(--ink-2);text-wrap:pretty}
+.num{color:var(--ink);font-weight:450;font-variant-numeric:tabular-nums;white-space:nowrap}
+.num .odo{vertical-align:baseline}
+.ledger .cap{margin-top:4cqh;max-width:26em}
+.galaxy{position:absolute;left:54cqw;right:3cqw;top:5cqh;bottom:10cqh}
+.gx{position:absolute;inset:0;width:100%;height:100%}
+.gx .d{fill:var(--primary);fill-opacity:var(--o);translate:var(--fx) var(--fy);opacity:0;transition:translate 1.7s cubic-bezier(.16,.9,.3,1) var(--dl),opacity .3s var(--dl)}
+.gx .d.t{fill:var(--tertiary)}
+.on .gx .d{translate:0 0;opacity:1}
+.on .gx .sp{animation:spin 260s linear 3.4s infinite}
+.gcap{position:absolute;right:3.2cqw;bottom:4.5cqh;font-size:14px;font-weight:450;color:var(--ink-3)}
+.bnote{position:absolute;left:5.5cqw;bottom:4.5cqh;max-width:46cqw;font-size:13.5px;font-weight:450;line-height:1.45;color:var(--ink-3)}
 
 /* Credits */
 .credits .big{right:-16cqw;top:-36cqh;width:min(62cqw,118cqh);aspect-ratio:1;fill:var(--s-cont);animation:spin 220s linear infinite reverse;
@@ -492,6 +508,10 @@ main{position:relative;z-index:1;margin:var(--edge) var(--edge) var(--edge) var(
   .step .btn{margin-top:16px}
   .cmd{margin-top:14px}
   .fine{margin-top:6px}
+  .ledger>p:first-child{font-size:clamp(26px,7cqw,44px)}
+  .ledger .cap{margin-top:20px}
+  .galaxy{height:min(96cqw,520px)}
+  .gcap,.bnote{max-width:none}
   .roles{grid-template-columns:1fr;gap:18px;margin-top:28px}
   .credits .cta{margin-top:28px}
   .foot{flex-direction:column;align-items:flex-start;margin-top:10px}
@@ -562,6 +582,7 @@ main{position:relative;z-index:1;margin:var(--edge) var(--edge) var(--edge) var(
   .pbar{display:grid;grid-template-columns:46px minmax(0,1fr) auto;gap:6px 12px;margin-top:14px}
   .pplay{width:46px;height:46px}
   .ptime{grid-column:2;grid-row:1;justify-self:end;font-size:13.5px}
+  .pmute{grid-column:3;grid-row:1;width:44px;height:44px}
   .segs{grid-column:1/-1;grid-row:2;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0 12px}
   .seg{min-height:48px;padding:8px 0}
   .seg span{margin-top:6px}
@@ -610,6 +631,14 @@ main{position:relative;z-index:1;margin:var(--edge) var(--edge) var(--edge) var(
   .cpy{height:44px;border-radius:14px}
   .fine{font-size:14.5px}
 
+  /* How it was built */
+  .ledger>p:first-child{font-size:clamp(26px,7.4cqw,38px)}
+  .galaxy{height:min(88cqw,420px)}
+  /* The galaxy blooms in as one picture. Dots that fly out and turn would repaint over a thousand circles every frame. */
+  .gx .d{translate:0 0;opacity:1;transition:none}
+  .on .gx .sp{animation:none}
+  .galaxy{opacity:0;scale:.86;transition:opacity .8s,scale 1.5s var(--spring)}
+  .on .galaxy{opacity:1;scale:1}
 
   /* Credits */
   .credits{--big:min(64cqw,280px)}
@@ -626,7 +655,7 @@ main{position:relative;z-index:1;margin:var(--edge) var(--edge) var(--edge) var(
     .hero .btn.pri:not(.off):hover{background:var(--mid)}
     .seg3 button:hover:not([aria-pressed="true"]){background:none;color:var(--ink-2)}
     .cpy:hover{background:color-mix(in oklch,var(--primary) 18%,transparent)}
-    .snd:hover,.hold:hover{background:none}
+    .pmute:hover,.snd:hover,.hold:hover{background:none}
   }
 }
 @media (max-width:999px) and (max-height:600px){
@@ -669,7 +698,7 @@ html:not(.staged) .ws:not(.in) *{animation-play-state:paused!important}
 </nav>
 
 <main id="app"></main>
-<noscript><div class="nojs"><h1>Caelestia for Windows</h1><p>Unsigned Windows 11 x64 preview. Preview ZIP published. Microsoft's x64 C++ runtime 14.44.35211.0 or newer is required.</p><p><a href="https://github.com/KldsSeeGhosts/caelestia-windows">Public source</a> · <a href="https://github.com/KldsSeeGhosts/caelestia-windows/releases/tag/v0.1.0-preview.2">Download preview</a></p><p>Turn on JavaScript for the illustrated shell walkthrough.</p></div></noscript>
+<noscript><p class="nojs">Caelestia for Windows. Turn on JavaScript to see the shell in action.</p></noscript>
 <div class="track" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
 
 <script>
@@ -677,6 +706,13 @@ html:not(.staged) .ws:not(.in) *{animation-play-state:paused!important}
   /* ---------- helpers ---------- */
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c =>
     ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+  const isNum = n => typeof n === "number" && isFinite(n);
+  // A figure missing from the data shows as a quiet dash, never a guess or a stale count.
+  const NA = "–";
+  const int = n => isNum(n) ? Math.round(n).toLocaleString("en-US") : NA;
+  const usd0 = n => isNum(n) ? "$" + Math.round(n).toLocaleString("en-US") : NA;
+  const sum = o => Object.values(o || {}).reduce((a, b) => a + (b || 0), 0);
+  const day = iso => new Date(iso).toLocaleDateString("en-US", {day: "numeric", month: "long"}).replace(" ", " ");
   const reduced = matchMedia("(prefers-reduced-motion:reduce)");
   const fine = matchMedia("(hover:hover) and (pointer:fine)");
   const narrow = matchMedia("(max-width:999px)");
@@ -686,18 +722,10 @@ html:not(.staged) .ws:not(.in) *{animation-play-state:paused!important}
   const rel = (el, anc) => { let x = 0, y = 0; for (let e = el; e && e !== anc; e = e.offsetParent) { x += e.offsetLeft; y += e.offsetTop; } return [x, y]; };
   const hidden = () => document.hidden;
 
-  // Release links remain useful before a preview binary is published.
-  const REPO = "https://github.com/KldsSeeGhosts/caelestia-windows";
+  // Public preview downloads. The releases index also includes prereleases.
+  const REPO = "https://github.com/KldsSeeGhosts/caelestia-windows", RELEASED = true;
   const UPSTREAM = "https://github.com/caelestia-dots/shell";
-  const INSTALL_CMD = "powershell -ExecutionPolicy Bypass -File .\\Install-Caelestia.ps1";
-  const publicUrl = (value, fallback) => {
-    try {
-      const u = new URL(value);
-      return u.protocol === "https:" && u.hostname === "github.com" &&
-        u.pathname.startsWith("/KldsSeeGhosts/caelestia-windows/") &&
-        !u.username && !u.password && !u.search && !u.hash ? u.href : fallback;
-    } catch { return fallback; }
-  };
+  const INSTALL_CMD = "powershell -NoProfile -ExecutionPolicy Bypass -File .\\Install-CaelestiaRelease.ps1";
 
   /* ---------- expressive shapes ----------
      Each shape is a radius for every angle, so any two shapes can morph by blending
@@ -939,13 +967,65 @@ html:not(.staged) .ws:not(.in) *{animation-play-state:paused!important}
     }).join("");
   }
 
-  /* ---------- illustrated walkthrough; no recorded media is loaded ---------- */
+  /* ---------- numbers roll in on reels when their scene arrives, settling through the font's axes ----------
+     Each digit is a reel. The left reel turns least and lands first, the right one spins most and lands
+     last; each overshoots a fraction of a digit and springs back. The final value is laid out from the
+     first frame, so nothing around a number shifts while it rolls. Numbers inside a sentence (data-flat)
+     skip the weight and width change, which would reflow the line. */
+  const FMT = {usd0, int, bn: v => (v / 1e9).toFixed(2) + " billion"};
+  const counter = (n, f, delay = 0) => `data-n="${n}" data-f="${f}"${delay ? ` data-cd="${delay}"` : ""}`;
+  const shown0 = (n, f) => isNum(n) ? FMT[f](reduced.matches ? n : 0) : NA;
+  function countUp(el) {
+    const n = +el.dataset.n, f = FMT[el.dataset.f];
+    if (!isNum(n) || !f) return;
+    const s = f(n);
+    if (reduced.matches) { el.textContent = s; return; }
+    const delay = +(el.dataset.cd || 0), D = (s.match(/\d/g) || []).length;
+    let di = 0;
+    el.innerHTML = `<span class="odo" aria-hidden="true">${[...s].map(ch => {
+      if (!/\d/.test(ch)) return `<span><i>${esc(ch)}</i></span>`;
+      const turns = Math.min(di, 3) + (D > 2 ? 1 : 0), d = +ch, len = turns * 10 + d;
+      return `<span><i data-k="${len}" data-o="${di++}">${Array.from({length: len + 2}, (_, k) => k % 10).join("\n")}</i></span>`;
+    }).join("")}</span><span class="sr">${esc(s)}</span>`;
+    el.querySelectorAll("i[data-k]").forEach(c => {
+      const k = +c.dataset.k, o = +c.dataset.o, dur = 1150 + o * 170;
+      c.style.transform = `translateY(${-k}em)`;
+      if (k) c.animate([{transform: "translateY(0)", easing: "cubic-bezier(.45,.05,.2,1)"},
+        {transform: `translateY(${-(k + .16)}em)`, offset: .8, easing: "cubic-bezier(.3,0,.25,1)"}, {transform: `translateY(${-k}em)`}],
+        {duration: dur, delay, fill: "backwards"});
+    });
+    const id = el._cu = {};
+    // with sound on, each reel ticks as it lands
+    if (Snd.live) el.querySelectorAll("i[data-k]").forEach(c => +c.dataset.k && setTimeout(() => el._cu === id && Snd.tick(+c.dataset.o), delay + 1150 + +c.dataset.o * 170));
+    if (el.hasAttribute("data-flat")) return;
+    // the whole number arrives heavy and condensed, and relaxes to its resting weight and width
+    el.style.fontWeight = el.style.fontStretch = "";
+    const cs = getComputedStyle(el), w0 = +cs.fontWeight || 300, s0 = parseFloat(cs.fontStretch) || 100, T = 1150 + D * 170;
+    let t0 = 0;
+    const step = now => {
+      if (el._cu !== id) return;
+      t0 ||= now + delay;
+      const t = Math.min(1, Math.max(0, (now - t0) / T)), e = 1 - Math.pow(1 - t, 3);
+      el.style.fontWeight = (w0 + (640 - w0) * (1 - e)).toFixed(0);
+      el.style.fontStretch = (s0 - (s0 - 40) * (1 - e)).toFixed(1) + "%";
+      if (t < 1) requestAnimationFrame(step); else el.style.fontWeight = el.style.fontStretch = "";
+    };
+    requestAnimationFrame(step);
+  }
+  function zero(el) { el._cu = null; el.style.fontWeight = el.style.fontStretch = ""; if (!reduced.matches && isNum(+el.dataset.n)) el.textContent = FMT[el.dataset.f](0); }
+
+  /* ---------- the demo: chapters, a living miniature of the shell, and the footage once it exists ---------- */
+  // Footage sits next to the page as an MP4 plus a poster JPG.
+  // When it is there the video replaces the drawing, with no code change.
+  const CLIPS = {full: ["demo-full", "demo-full-poster.jpg"]};
+  // The demo's chapters. `t` is the second each one starts in demo-full: edit these after recording.
+  // `dur`, `pose` and `steps` drive the drawing, which plays the same chapters when there is no footage.
   const CH = [
     {t: 0, label: "Theming", title: "Colour from your wallpaper", text: "Pick a wallpaper and every surface takes its colours from it.",
       dur: 10.5, pose: 4, steps: [[.8, {d: "wall", wsel: 0}], [2.4, {wsel: 1, mh: 75}], [4.2, {wsel: 2, mh: 150}], [6, {wsel: 3, mh: 230}], [7.8, {wsel: 0, mh: 0}], [9.3, {d: ""}]]},
     {t: 15.5, label: "Launcher", title: "Launcher", text: "Tap Super or click the logo, then type. Apps, maths and wallpapers, all in one search.",
       dur: 8.5, pose: 2.4, steps: [[0, {d: "launch", q: "", sel: 0}], [1.1, {q: "m"}], [1.35, {q: "mu", sel: 2}], [1.6, {q: "mus"}], [1.85, {q: "musi"}], [3.6, {d: "", tile: "3"}], [5, {q: "", sel: 0}]]},
-    {t: 19.5, label: "Tiling", title: "Tiling", text: "With tiling enabled, windows tile as they open and fill the space when one closes.",
+    {t: 19.5, label: "Tiling", title: "Tiling", text: "Windows tile as they open, and the others fill the space when one closes.",
       dur: 9.5, pose: 2, steps: [[1.2, {tile: "3s"}], [3.6, {tile: "3"}], [5.2, {ws: 2, tile: "1"}], [7.4, {ws: 1, tile: "3"}]]},
     {t: 31.5, label: "Notifications", title: "Notifications and dashboard", text: "Notifications slide in at the corner. The dashboard drops from the top edge with live system stats, your calendar, weather and music.",
       dur: 10.5, pose: 1.4, steps: [[.4, {n: 1}], [2.8, {n: 2}], [5, {n: 0}], [5.6, {d: "dash"}], [9.4, {d: ""}]]},
@@ -1018,6 +1098,22 @@ html:not(.staged) .ws:not(.in) *{animation-play-state:paused!important}
       get t() { return now() % TT; }, get playing() { return playing; }
     };
   }
+  // Published copies say which clips exist (export_site.py rewrites this line), so the
+  // public page never asks for a missing file. Locally it is null and the page probes.
+  const MEDIA = {"demo-loop": false, "demo-full": true};
+  // MP4 is the published format. Do not probe a missing WebM before the working video.
+  function footage([name, poster], v, ok) {
+    if (!/^https?:$/.test(location.protocol) || navigator.connection?.saveData) return;
+    if (MEDIA && !MEDIA[name]) return;
+    fetch(name + ".mp4", {method: "HEAD", cache: "no-store"}).then(r => {
+      if (!r.ok) return;
+      v.addEventListener("loadeddata", ok, {once: true});
+      v.poster = poster;
+      v.src = name + ".mp4";
+      v.load();
+    }).catch(() => {});
+  }
+
   // The hero: the drawing loops quietly.
   function heroDemo() {
     const box = document.getElementById("hero-screen"), btn = box.querySelector(".hold");
@@ -1028,51 +1124,75 @@ html:not(.staged) .ws:not(.in) *{animation-play-state:paused!important}
       on && !held && !hidden() ? w.play() : w.pause();
       btn.classList.toggle("held", held); btn.querySelector("span").textContent = held ? "Play" : "Pause";
       btn.setAttribute("aria-label", held ? "Play the drawing" : "Pause the drawing");
-      btn.setAttribute("aria-pressed", String(held));
     };
     btn.addEventListener("click", () => { held = !held; sync(); });
     sync();
     return {set(o) { on = o; sync(); }, sync};
   }
 
-  // The walkthrough is always the code-drawn illustration, never desktop footage.
+  // See it run: the full demo with chapters, or the drawing stepping through the same chapters.
   function runDemo() {
-    const sec = document.getElementById("run"), box = sec.querySelector(".pscreen");
-    const btn = sec.querySelector(".pplay"), shape = btn.querySelector("path[data-shape]");
-    const time = sec.querySelector(".ptime"), segs = [...sec.querySelectorAll(".seg")];
-    const fills = segs.map(s => s.querySelector("i i")), cues = [...sec.querySelectorAll(".cues li")];
-    let on = false, held = reduced.matches, raf = 0, k = -1, lastS = -1;
+    const sec = document.getElementById("run"), box = sec.querySelector(".pscreen"), v = box.querySelector("video");
+    const btn = sec.querySelector(".pplay"), shape = btn.querySelector("path[data-shape]"), mute = sec.querySelector(".pmute"), time = sec.querySelector(".ptime");
+    const segs = [...sec.querySelectorAll(".seg")], fills = segs.map(s => s.querySelector("i i")), cues = [...sec.querySelectorAll(".cues li")];
+    let on = false, held = reduced.matches, vid = false, raf = 0, k = -1, lastS = -1;
     const chapter = c => {
       if (c === k) return; k = c;
       cues.forEach((li, i) => li.classList.toggle("now", i === c));
       segs.forEach((s, i) => s.setAttribute("aria-current", i === c));
     };
     const w = walker(box.querySelector(".mini"), chapter);
+    const total = () => vid ? v.duration || TT : TT;
+    const starts = () => vid ? CH.map(c => Math.min(c.t, total())) : CH.map(c => c.s);
+    const playing = () => vid ? !v.paused : w.playing;
     const fmt = x => Math.floor(x / 60) + ":" + String(Math.floor(x % 60)).padStart(2, "0");
     const draw = () => {
-      const t = w.t;
-      fills.forEach((f, i) => {
-        const a = CH[i].s, b = CH[i + 1]?.s ?? TT;
-        f.style.transform = `scaleX(${Math.max(0, Math.min(1, (t - a) / (b - a || 1))).toFixed(4)})`;
-      });
-      const s = Math.floor(t);
-      if (s !== lastS) { lastS = s; time.textContent = fmt(t) + " / " + fmt(TT); }
+      const t = vid ? v.currentTime : w.t, S = starts(), T = total();
+      if (vid) chapter(S.reduce((c, s, i) => t >= s ? i : c, 0));
+      fills.forEach((f, i) => { const a = S[i], b = S[i + 1] ?? T; f.style.transform = `scaleX(${Math.max(0, Math.min(1, (t - a) / (b - a || 1))).toFixed(4)})`; });
+      const s = Math.floor(t); if (s !== lastS) { lastS = s; time.textContent = fmt(t) + " / " + fmt(T); }
     };
-    const loop = () => { draw(); raf = on && w.playing && !hidden() ? requestAnimationFrame(loop) : 0; };
+    const loop = () => { draw(); raf = on && playing() && !hidden() ? requestAnimationFrame(loop) : 0; };
+    const look = () => {
+      const p = playing();
+      btn.classList.toggle("playing", p); btn.setAttribute("aria-label", p ? "Pause" : "Play"); shape?._m?.to(p ? "cookie9" : "circle");
+      mute.setAttribute("aria-pressed", !v.muted);
+      Snd.duck(vid && p && !v.muted);
+      draw(); if (!raf && p && on) raf = requestAnimationFrame(loop);
+    };
     const sync = () => {
-      on && !held && !hidden() ? w.play() : w.pause();
-      btn.classList.toggle("playing", w.playing);
-      btn.setAttribute("aria-label", w.playing ? "Pause illustration" : "Play illustration");
-      shape?._m?.to(w.playing ? "cookie9" : "circle");
-      draw(); if (!raf && w.playing && on) raf = requestAnimationFrame(loop);
+      const go = on && !held && !hidden();
+      // if the browser refuses sound, play on silently rather than not at all
+      if (vid) { w.pause(); go ? v.play().catch(() => { v.muted = true; v.play().catch(() => {}); }) : v.pause(); } else go ? w.play() : w.pause();
+      look();
     };
-    btn.addEventListener("click", () => { held = w.playing; sync(); });
+    btn.addEventListener("click", () => {
+      held = playing();
+      if (vid && !held) v.muted = false;            // pressing play turns the video's sound on
+      sync();
+    });
+    mute.addEventListener("click", () => { v.muted = !v.muted; look(); });
+    // a chapter on its own shows a representative moment; while playing, it starts from the top
     segs.forEach((s, i) => s.addEventListener("click", () => {
-      w.seek(CH[i].s + (w.playing ? 0 : CH[i].pose)); chapter(i); draw();
+      if (vid) v.currentTime = starts()[i]; else { w.seek(CH[i].s + (w.playing ? 0 : CH[i].pose)); chapter(i); }
+      draw();
     }));
+    ["play", "pause", "volumechange"].forEach(e => v.addEventListener(e, look));
+    v.addEventListener("ended", () => { held = true; v.currentTime = 0; sync(); });
+    let asked = false;
+    const ask = () => {
+      if (asked) return; asked = true;
+      footage(CLIPS.full, v, () => {
+        vid = true; box.classList.add("has-video"); sec.classList.add("has-video"); mute.hidden = false;
+        const S = starts(), T = total(); segs.forEach((s, i) => s.style.setProperty("--len", Math.max(.5, (S[i + 1] ?? T) - S[i]).toFixed(1)));
+        sync();
+      });
+    };
+    // A phone visitor arriving from a post should not download footage before reaching it.
+    if (!narrow.matches) ask();
     if (reduced.matches) w.seek(CH[0].pose);
     sync();
-    return {set(o) { on = o; sync(); }, sync};
+    return {set(o) { on = o; if (o) ask(); sync(); }, sync};
   }
 
   /* ---------- every edge: pointing at a panel's name opens it in the drawing ----------
@@ -1114,7 +1234,7 @@ html:not(.staged) .ws:not(.in) *{animation-play-state:paused!important}
     ["Workspaces", "Each workspace is a Windows 11 virtual desktop.", "--primary", "cookie9"],
     ["Notifications", "Windows notifications land in Caelestia's sidebar.", "--tertiary", "flower"],
     ["Wallpaper Engine", "Its wallpapers set the colours too.", "--quad", "sunny"],
-    ["Monitors", "Multi-monitor integration. Check the preview limitations.", "--quin", "clover"]
+    ["Monitors", "A bar on every screen, at any scaling.", "--quin", "clover"]
   ];
   function tiler() {
     const sec = document.getElementById("tiling"), wins = [...sec.querySelectorAll(".tw")], btns = [...sec.querySelectorAll(".seg3 button")], L = ["dwindle", "master", "scrolling"];
@@ -1158,19 +1278,19 @@ html:not(.staged) .ws:not(.in) *{animation-play-state:paused!important}
   document.addEventListener("visibilitychange", () => Object.values(ctl).forEach(c => c.sync()));
 
   /* ---------- scenes ---------- */
-  const SCN = [["intro", "Caelestia", "cookie12"], ["run", "Shell walkthrough", "cookie6"], ["edges", "Panels", "sunny"], ["tiling", "Tiling", "flower"],
-    ["install", "Install", "cookie9"], ["release", "Release status", "verysunny"], ["credits", "Credits", "clover"]];
-  let D = null, builders = [], SECs = [], SCs = [], links = [];
+  const SCN = [["intro", "Caelestia", "cookie12"], ["run", "See it run", "cookie6"], ["edges", "Panels", "sunny"], ["tiling", "Tiling", "flower"],
+    ["install", "Install", "cookie9"], ["build", "How it was built", "verysunny"], ["credits", "Credits", "clover"]];
+  let D = null, agentsN = null, builders = [], SECs = [], SCs = [], links = [];
   function render(d) {
     D = d;
-    const p = d.project || {}, release = p.release || {}, validation = p.validation || {};
-    const releasesUrl = publicUrl(release.releasesUrl, REPO + "/releases");
-    const limitationsUrl = publicUrl(release.limitationsUrl, REPO + "/blob/main/windows/docs/KNOWN-LIMITATIONS.md");
-    const binaryState = release.binaryPublished === true ? "Preview ZIP published." : "Preview ZIP not yet published.";
-    const checkState = value => ({passed: "Passed", running: "Running", pending: "Pending", failed: "Failed"}[value] || "Not reported");
-    const cold = validation.coldHostedCi || {}, cached = validation.cachedHostedCi || {}, final = validation.finalHostedCi || {};
-    const ext = (href, text) => `<a href="${esc(href)}" target="_blank" rel="noopener noreferrer">${text}<span class="sr"> (opens in a new tab)</span></a>`;
-    const download = `<a class="btn pri" href="${esc(releasesUrl)}">${release.binaryPublished === true ? "Download preview" : "Check releases"}</a>`;
+    const p = d.project || {}, t3 = p.t3 || {}, u = d.usage || {}, t = u.totals || {}, code = p.code || {};
+    agentsN = t3.delegated || isNum(p.claudeAgents) ? sum(t3.delegated) + (p.claudeAgents || 0) : null;
+    const start = code.startedAt || t3.firstThreadAt;
+    const hours = start && p.asOf ? Math.round((new Date(p.asOf) - new Date(start)) / 36e5) : null;
+    const num = (v, f, src) => `<span class="num" ${counter(v, f)} data-flat${src ? " data-src" : ""}>${shown0(v, f)}</span>`;
+    const span = u.session?.start && u.asOf ? `, ${esc(day(u.session.start))} to ${esc(day(u.asOf))}` : "";
+    const ext = (href, text) => `<a href="${href}" target="_blank" rel="noopener">${text}<span class="sr"> (opens in a new tab)</span></a>`;
+    const download = RELEASED ? `<a class="btn pri" href="${REPO}/releases">Download Windows preview</a>` : `<span class="btn pri off">First release coming soon</span>`;
     const edge = (k, cls) => { const [, , name, text] = EDGES[k]; return `<button class="el el-${cls}" data-k="${k}" aria-pressed="false"><b>${name}</b><span>${text}</span></button>`; };
     const idx = id => EDGES.findIndex(e => e[0] === id);
 
@@ -1180,9 +1300,9 @@ html:not(.staged) .ws:not(.in) *{animation-play-state:paused!important}
         ${shapeSvg(pick(BLOOM), "shape sun", 'data-in="150"')}${shapeSvg("flower", "shape moon", 'data-in="380"')}
         <div class="copy">
           <h1 class="name">Caelestia</h1>
-          <p class="pitch rv" style="--rd:.75s">The Caelestia shell from Hyprland, on Windows&nbsp;11.</p>
-          <p class="sub rv" style="--rd:.9s">An unsigned x64 preview: a new bar, launcher, dashboard and opt-in tiling, coloured by your wallpaper.</p>
-          <div class="cta rv" style="--rd:1.05s"><a class="btn pri" href="#install">Get Caelestia</a><a class="btn ton" href="#run">Explore the shell</a></div>
+          <p class="pitch rv" style="--rd:.75s">The Caelestia shell from Hyprland, now on Windows&nbsp;11.</p>
+          <p class="sub rv" style="--rd:.9s">A new bar, launcher, dashboard and window tiling for your desktop, all coloured by your wallpaper.</p>
+          <div class="cta rv" style="--rd:1.05s"><a class="btn pri" href="#install">Get Caelestia</a><a class="btn ton" href="#run">Watch it run</a></div>
           <div class="wall rv" style="--rd:1.2s"><span>Try a wallpaper</span><div class="papers" role="group" aria-label="Wallpaper" data-papers>${chips()}</div></div>
         </div>
         <div class="screen" id="hero-screen">
@@ -1192,14 +1312,15 @@ html:not(.staged) .ws:not(.in) *{animation-play-state:paused!important}
 
       <div class="scene"><section id="run" class="ws run" tabindex="-1" aria-labelledby="run-h">
         <div class="drift" data-drift="13" data-shapes="6" data-fade=".45" aria-hidden="true"></div>
-        <div class="lead"><h2 class="title" id="run-h">Explore the shell</h2>
+        <div class="lead"><h2 class="title" id="run-h">See it run</h2>
           <ol class="cues" aria-label="What the demo shows">${CH.map((c, i) => `<li${i ? "" : ' class="now"'}><h3>${esc(c.title)}</h3><p>${esc(c.text)}</p></li>`).join("")}</ol>
-          <p class="small note rv" style="--rd:.8s">An illustrative walkthrough, drawn in code. Not recorded footage or a compatibility guarantee.</p></div>
-        <div class="player rv" style="--rd:.25s"><div class="pscreen">
+          <p class="small note rv" style="--rd:.8s">A drawing of the shell, made in code.</p></div>
+        <div class="player rv" style="--rd:.25s"><div class="pscreen"><video playsinline muted preload="metadata" aria-label="Demo of Caelestia running on Windows 11"></video>
             ${miniHtml("A drawing of the Caelestia shell, stepping through each chapter of the demo.")}</div>
           <div class="pbar"><button class="pplay" aria-label="Play">${shapeSvg("circle")}<svg class="ic ic-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.6-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z"/></svg><svg class="ic ic-pause" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1.5"/><rect x="14" y="5" width="4" height="14" rx="1.5"/></svg></button>
             <div class="segs" role="group" aria-label="Chapters">${CH.map((c, i) => `<button class="seg" style="--len:${c.dur}" aria-label="${esc(c.title)}" aria-current="${!i}"><i><i></i></i><span aria-hidden="true">${esc(c.label)}</span></button>`).join("")}</div>
-            <span class="ptime" aria-hidden="true"></span></div></div>
+            <span class="ptime" aria-hidden="true"></span>
+            <button class="pmute" hidden aria-pressed="false" aria-label="Video sound"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5v5h3.5L12 18.5v-13L7.5 9.5z"/><path class="x" d="M16 9.5l5 5M21 9.5l-5 5"/><path class="w" d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/></svg></button></div></div>
       </section></div>
 
       <div class="scene"><section id="edges" class="ws edges flood-t" tabindex="-1" aria-labelledby="edges-h">
@@ -1226,35 +1347,30 @@ html:not(.staged) .ws:not(.in) *{animation-play-state:paused!important}
       <div class="scene"><section id="install" class="ws install flood-p" tabindex="-1" aria-labelledby="inst-h">
         <div class="drift" data-drift="22" data-shapes="7" data-flood aria-hidden="true"></div>
         <svg class="ipath" aria-hidden="true"></svg>
-        <div class="lead"><h2 class="title" id="inst-h">Try the unsigned preview</h2></div>
+        <div class="lead"><h2 class="title" id="inst-h">Three steps, no admin rights</h2></div>
         <ol class="steps">
           <li class="step"><div class="sn" data-in="350" style="--i:0;--rot:140s">${shapeSvg("cookie9")}<span aria-hidden="true">1</span></div>
-            <h3><span class="sr">Step 1: </span>Download</h3><p>Download the Windows x64 preview ZIP from GitHub releases. Check its SHA-256, then extract the whole ZIP.</p>${download}</li>
+            <h3><span class="sr">Step 1: </span>Download</h3><p>Get the latest release from GitHub and unzip it.</p>${download}</li>
           <li class="step"><div class="sn" data-in="500" style="--i:1;--rot:120s">${shapeSvg("flower")}<span aria-hidden="true">2</span></div>
-            <h3><span class="sr">Step 2: </span>Run the installer</h3><p>Install <a href="https://aka.ms/vc14/vc_redist.x64.exe">Microsoft's x64 C++ runtime</a> if needed. Then open PowerShell in the extracted folder and run:</p>
+            <h3><span class="sr">Step 2: </span>Run the installer</h3><p>Open PowerShell in that folder and run:</p>
             <div class="cmd"><code>${INSTALL_CMD.split(" ").map(w => `<span>${esc(w)}</span>`).join(" ")}</code><button class="cpy" aria-live="polite">Copy</button></div></li>
           <li class="step"><div class="sn" data-in="650" style="--i:2;--rot:160s">${shapeSvg("sunny")}<span aria-hidden="true">3</span></div>
-            <h3><span class="sr">Step 3: </span>Start Caelestia</h3><p>Open it from the Start menu. Review the known limitations before enabling optional desktop integration.</p></li>
+            <h3><span class="sr">Step 3: </span>Start Caelestia</h3><p>Open it from the Start menu. The bar appears on the left edge of your screen.</p></li>
         </ol>
-        <div class="fine rv" style="--rd:.9s"><p>Autostart, taskbar takeover and tiling are opt-in. The basic install needs no Git, compiler or Python. The free Microsoft runtime must be version 14.44.35211.0 or newer.</p>
-          <p>Unsigned Windows 11 x64 preview. ${esc(binaryState)} <a href="${esc(limitationsUrl)}">Read known limitations</a> before installing.</p></div>
+        <div class="fine rv" style="--rd:.9s"><p>Tiling, taskbar hiding and start at sign-in stay off until you turn them on. Uninstalling restores your taskbar and keeps your settings.</p>
+          <p>Needs 64-bit Windows 11 and Python 3 for wallpaper colours. Switching workspaces needs Windows 11 24H2 or later.</p></div>
       </section></div>
 
-      <div class="scene"><section id="release" class="ws release" tabindex="-1" aria-labelledby="release-h">
+      <div class="scene"><section id="build" class="ws build" tabindex="-1" aria-labelledby="build-h">
         <div class="drift" data-drift="41" data-shapes="6" data-fade=".5" aria-hidden="true"></div>
-        <div class="lead"><h2 class="title" id="release-h">A preview,<br>in the open</h2>
-          <p class="cap rv">The sources are public. The release is still a preview, with validation and limits you can inspect.</p>
-          <div class="cta rv"><a class="btn pri" href="${REPO}">Browse source</a><a class="btn ton" href="${esc(limitationsUrl)}">Known limitations</a></div>
-          <p class="small rv">Release snapshot, not a live CI feed. Signing, real-hardware coverage, Narrator and broad performance certification are not claimed.</p>
+        <h2 class="sr" id="build-h">How it was built</h2>
+        <div class="ledger">
+          <p>Built across ${num(agentsN, "int", true)} recorded agent invocations, ${num(t3.threads, "int")} threads, ${num(p.pullRequests, "int")} public pull requests and ${num(code.commits, "int")} contributor commits, over ${num(hours, "int")} elapsed hours.</p>
+          <p class="cap rv" style="--rd:1s">The recorded activity includes ${num(t.totalTokens, "bn")} tokens, about ${num(t.apiCostUsd, "usd0")} at stored API price estimates. It all ran on subscriptions.</p>
         </div>
-        <dl class="release-facts">
-          <div><dt>Public sources</dt><dd>${ext(REPO, "Caelestia shell")}, ${ext("https://github.com/KldsSeeGhosts/caelestia-quickshell-windows", "Windows Quickshell")} and ${ext("https://github.com/KldsSeeGhosts/glazier", "Glazier")}</dd><dd><small>Anonymous recursive clone: ${esc(checkState(validation.publicRecursiveClone))}.</small></dd></div>
-          <div><dt>PublicRelease build</dt><dd>${esc(checkState(validation.publicReleaseBuild))}</dd></div>
-          <div><dt>Cold hosted Windows CI</dt><dd>${ext(publicUrl(cold.url, REPO + "/actions"), esc(checkState(cold.status)))}${cold.status === "passed" && cold.duration ? " in " + esc(cold.duration) : ""}</dd></div>
-          <div><dt>Cached hosted Windows CI</dt><dd>${ext(publicUrl(cached.url, REPO + "/actions"), esc(checkState(cached.status)))}</dd></div>
-          <div><dt>Release-source Windows CI</dt><dd>${ext(publicUrl(final.url, REPO + "/actions"), esc(checkState(final.status)))}</dd></div>
-          <div><dt>Windows 11 x64 preview</dt><dd>${esc(binaryState)}<small>Unsigned. Check releases for publication and install details.</small></dd></div>
-        </dl>
+        <div class="galaxy" id="galaxy" aria-hidden="true"></div>
+        <p class="gcap rv" style="--rd:2.2s" aria-hidden="true">One dot for each recorded agent invocation.</p>
+        <p class="bnote rv" style="--rd:1.4s">${p.asOf ? `Project metrics as of ${esc(day(p.asOf))}. ` : "Metrics freshness unavailable. "}Current and archived workspaces are included without duplicate commits. Recorded usage only; account-wide proxy totals are excluded. Cost uses stored price estimates, not billing. ${Object.values(p.sources || {}).some(s => s.state !== "fresh") ? "Some sources are stale." : ""}</p>
       </section></div>
 
       <div class="scene"><section id="credits" class="ws credits" tabindex="-1" aria-labelledby="cr-h">
@@ -1263,14 +1379,14 @@ html:not(.staged) .ws:not(.in) *{animation-play-state:paused!important}
         <div class="who">
           <h2 id="cr-h" class="rv" style="--rd:.2s">${ext(UPSTREAM, "Caelestia")} is by soramanew and the caelestia-dots contributors. This port brings it to Windows.</h2>
           <dl class="roles">
-            <div class="rv" style="--rd:.5s"><dt>Windows support</dt><dd>nunreasonable's ${ext("https://github.com/nunreasonable/quickshell", "Windows Quickshell")}, built for ${ext("https://github.com/nunreasonable/ii-windows", "ii-windows")}, on outfoxxed's ${ext("https://quickshell.org", "Quickshell")}</dd></div>
+            <div class="rv" style="--rd:.5s"><dt>Windows support</dt><dd>The maintained ${ext("https://github.com/KldsSeeGhosts/caelestia-quickshell-windows", "Windows backend")}, based on nunreasonable's ${ext("https://github.com/nunreasonable/quickshell", "Windows Quickshell")} for ${ext("https://github.com/nunreasonable/ii-windows", "ii-windows")}, on outfoxxed's ${ext("https://quickshell.org", "Quickshell")}</dd></div>
             <div class="rv" style="--rd:.62s"><dt>Expressive shapes</dt><dd>${ext("https://github.com/soramanew/m3shapes", "m3shapes")} by soramanew</dd></div>
-            <div class="rv" style="--rd:.74s"><dt>The port</dt><dd>KldsSeeGhosts</dd></div>
+            <div class="rv" style="--rd:.74s"><dt>The port</dt><dd>KldsSeeGhosts, with a team of AI agents</dd></div>
           </dl>
           <div class="cta rv" style="--rd:.9s">${download}<a class="btn ton" href="${UPSTREAM}" target="_blank" rel="noopener">Caelestia on GitHub<span class="sr"> (opens in a new tab)</span></a></div>
         </div>
         <footer class="foot rv" style="--rd:1.2s">
-          <p>Caelestia and this port are free software under the <a href="https://github.com/KldsSeeGhosts/caelestia-windows/blob/main/LICENSE">GPL-3.0 licence</a>. <a href="${REPO}">Public source</a>.</p>
+          <p>Caelestia and this port are free software under the GPL-3.0 licence.</p>
           <p class="sig"><svg viewBox="0 0 32 32" aria-hidden="true"><path fill="currentColor" d="${SPARK}"/></svg>Caelestia, on Windows</p>
         </footer>
       </section></div>`;
@@ -1290,13 +1406,32 @@ html:not(.staged) .ws:not(.in) *{animation-play-state:paused!important}
 
     document.querySelectorAll("[data-drift]").forEach(el => drift(el, narrow.matches ? Math.ceil(+el.dataset.shapes / 2) : +el.dataset.shapes, +el.dataset.drift, el.hasAttribute("data-flood"), +(el.dataset.fade || 1)));
     arm(document.getElementById("app"));
-    builders = [layoutPath];
+    builders = [layoutGalaxy, layoutPath];
     ctl.intro = heroDemo(); ctl.run = runDemo(); ctl.edges = edgeMap(); ctl.tiling = tiler();
     hoverShapes();
     setHue(hue, false);
     setMode();
     const k = SCN.findIndex(s => "#" + s[0] === location.hash);
     if (k > 0) jump(k); else startIntro();
+  }
+
+  // One dot for each agent, on a sunflower spiral. They fly out of the number that counts them.
+  function layoutGalaxy() {
+    const el = document.getElementById("galaxy"), n = agentsN;
+    if (!el) return;
+    const W = el.clientWidth, H = el.clientHeight;
+    if (!W || !H || !isNum(n) || n < 1) { el.innerHTML = ""; return; }
+    const sec = el.closest(".ws"), src = sec.querySelector("[data-src]"), [sx, sy] = rel(el, sec);
+    let ox = W / 2, oy = H / 2;
+    if (src) { const [x, y] = rel(src, sec); ox = x + src.offsetWidth / 2 - sx; oy = y + src.offsetHeight / 2 - sy; }
+    const R = Math.min(W, H) / 2 * .96, cx = W / 2, cy = H / 2, r0 = mulberry(7);
+    const dot = Math.max(1.4, Math.min(6, R * Math.sqrt(Math.PI / n) * .46));
+    let s = "";
+    for (let j = 0; j < n; j++) {
+      const rr = R * Math.sqrt((j + .5) / n), a = j * 2.39996, x = cx + rr * Math.cos(a), y = cy + rr * Math.sin(a);
+      s += `<circle class="d${j % 9 ? "" : " t"}" cx="${f1(x)}" cy="${f1(y)}" r="${f1(dot)}" style="--fx:${(ox - x + (r0() - .5) * 40).toFixed(0)}px;--fy:${(oy - y + (r0() - .5) * 40).toFixed(0)}px;--dl:${(.3 + j / n * 1.3 + r0() * .15).toFixed(2)}s;--o:${(.5 + r0() * .5).toFixed(2)}"/>`;
+    }
+    el.innerHTML = `<svg class="gx" viewBox="0 0 ${W} ${H}"><g class="sp" style="transform-origin:${f1(cx)}px ${f1(cy)}px">${s}</g></svg>`;
   }
 
   // A line joins the three install steps, with a gentle wave between them.
@@ -1325,7 +1460,12 @@ html:not(.staged) .ws:not(.in) *{animation-play-state:paused!important}
     if (on && ws === pendFocus) { pendFocus = null; ws.focus({preventScroll: true}); }
     bloom(ws, on);
     ctl[ws.id]?.set(on);
-
+    if (on && (!phone.matches || !ws._counted)) {
+      ws.querySelectorAll("[data-n]").forEach(countUp);
+      ws._counted = true;
+    } else if (!on && !phone.matches) {
+      ws.querySelectorAll("[data-n]").forEach(zero);
+    }
   }
   let cur = -1;
   function current(k) {
@@ -1439,7 +1579,7 @@ html:not(.staged) .ws:not(.in) *{animation-play-state:paused!important}
     // on the staged desktop the scene is still hidden here, so focus follows once it wakes
     if (a.closest("#app")) { if (staged) pendFocus = SECs[k]; else SECs[k].focus({preventScroll: true}); }
   });
-  // Number keys switch workspace, like the shell's workspace shortcuts.
+  // Number keys switch workspace, like Super+1 to 7 in the shell.
   // On the staged desktop, the usual paging keys move one workspace at a time.
   const PAGE = {ArrowDown: 1, PageDown: 1, " ": 1, ArrowUp: -1, PageUp: -1};
   addEventListener("keydown", e => {
@@ -1479,10 +1619,10 @@ html:not(.staged) .ws:not(.in) *{animation-play-state:paused!important}
       const pa = document.querySelector(sel); if (pa) setInterval(() => { if (shown(pa.closest(".ws"))) pa._m?.to(pick(BLOOM, pa._m.name)); }, ms);
     });
     // buttons and links click softly as they are pressed
-    app.addEventListener("pointerdown", e => { if (e.target.closest(".btn:not(.off),.seg,.pplay,.hold,.seg3 button,.cpy")) Snd.sfx("click"); });
+    app.addEventListener("pointerdown", e => { if (e.target.closest(".btn:not(.off),.seg,.pplay,.hold,.pmute,.seg3 button,.cpy")) Snd.sfx("click"); });
     // a click on the desktop throws out a handful of shapes
     app.addEventListener("pointerdown", e => {
-      if (e.pointerType === "touch" || reduced.matches || e.button !== 0 || e.target.closest("a,button,.screen,.player,.escreen,.tstage,.cmd,p,h1,h2,h3,li,dd,dt")) return;
+      if (e.pointerType === "touch" || reduced.matches || e.button !== 0 || e.target.closest("a,button,.screen,.player,.escreen,.tstage,.galaxy,.cmd,p,h1,h2,h3,li,dd,dt")) return;
       Snd.sfx("burst");
       const cols = ["--primary", "--tertiary", "--quad", "--quin", "--sext", "--p-cont", "--t-cont"];
       for (let i = 0; i < 10; i++) {
@@ -1514,11 +1654,11 @@ html:not(.staged) .ws:not(.in) *{animation-play-state:paused!important}
     if (SEEDS.some(s => s[1] === h)) { hue = h; root.style.transition = "none"; root.style.setProperty("--h", h); requestAnimationFrame(() => requestAnimationFrame(() => root.style.transition = "")); }
   } catch {}
   const s = document.createElement("script");
-  s.src = "status-data.js";
-  s.onload = () => render(window.__STATUS || {});
-  // Missing public facts never turn into guessed release or validation claims.
+  s.src = "status-data.js?t=" + Math.floor(Date.now() / 6e5);
+  s.onload = () => window.__STATUS && render(window.__STATUS);
+  // Without the figures the page still shows the shell; only the build numbers read as dashes.
   const failed = () => { if (!D) render({}); };
-  s.onerror = failed;
+  s.onerror = () => { const s2 = document.createElement('script'); s2.src = 'status-data.js'; s2.onload = () => window.__STATUS ? render(window.__STATUS) : failed(); s2.onerror = failed; document.body.appendChild(s2); };
   document.body.appendChild(s);
   document.fonts?.ready.then(() => D && layout());
 })();
