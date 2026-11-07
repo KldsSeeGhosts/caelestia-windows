@@ -3,7 +3,7 @@
 param([string]$Python = 'python')
 $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path -LiteralPath "$PSScriptRoot\..\..").Path
-foreach ($name in @('Resolve-PairRequest.ps1', 'Invoke-PairIntegration.ps1')) {
+foreach ($name in @('Resolve-PairRequest.ps1', 'Invoke-PairIntegration.ps1', 'Get-BuildJobs.ps1')) {
     $tokens = $null
     $parseErrors = $null
     $null = [Management.Automation.Language.Parser]::ParseFile(

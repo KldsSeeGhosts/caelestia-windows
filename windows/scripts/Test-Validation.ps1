@@ -84,7 +84,7 @@ try {
             '--output-root', (Join-Path $OutputRoot 'llvm-extraction'))
         Invoke-ValidationStep 'toolchain-modules' $Python @('-B', 'windows/tests/ToolchainModules.test.py',
             '--output-root', (Join-Path $OutputRoot 'toolchain-modules'))
-        foreach ($name in @('Test-CIChanges', 'Test-SchemeProbeGuard', 'Test-KsgSettingsImport', 'Test-ShellLifecycle', 'Test-ValidationCounts', 'Test-RepositoryPolicy')) {
+        foreach ($name in @('Test-CIChanges', 'Test-CIAcceleration', 'Test-SchemeProbeGuard', 'Test-KsgSettingsImport', 'Test-ShellLifecycle', 'Test-ValidationCounts', 'Test-RepositoryPolicy')) {
             Invoke-ScriptCheck $name
         }
         $node = (Get-Command node -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source

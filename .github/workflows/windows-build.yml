@@ -242,10 +242,26 @@ jobs:
             C:\t-public\clang+llvm-20.1.8-x86_64-pc-windows-msvc
             C:\t-public\deps\CLI11-2.5.0
 
+      - name: Select build parallelism from runner hardware
+        run: |
+          & "$env:GITHUB_WORKSPACE\windows\ci\Get-BuildJobs.ps1"
+
+      - name: Early Services preflight (unrecorded; recorded integration reruns it)
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $local = Get-Content "$env:PAIR_RESULTS\pair-local.json" -Raw | ConvertFrom-Json
+          $request = Get-Content "$env:PAIR_RESULTS\pair-request.json" -Raw | ConvertFrom-Json
+          & powershell.exe -NoProfile -NonInteractive -File "$env:GITHUB_WORKSPACE\windows\ci\Invoke-PairIntegration.ps1" `
+            -ShellRoot $env:GITHUB_WORKSPACE -BackendRoot $local.backendRoot `
+            -Mode $request.mode -BackendSha $request.backend -ToolRoot $env:TOOL_ROOT `
+            -BuildRoot $env:BUILD_ROOT -Results $env:PAIR_RESULTS -JUnit "$env:PAIR_RESULTS\integration.raw.xml" `
+            -ServicesPreflightRoot C:\ci-preflight -EchoDiagnostics
+          if ($LASTEXITCODE -ne 0) { throw 'Early Services preflight failed before any native compilation.' }
+
       - name: First-party capture Rust regressions
         run: |
           & powershell.exe -NoProfile -NonInteractive -File "$env:GITHUB_WORKSPACE\windows\scripts\Test-CaptureRust.ps1" `
-            -ToolRoot $env:TOOL_ROOT -OutputRoot C:\ci-capture -Jobs 2
+            -ToolRoot $env:TOOL_ROOT -OutputRoot C:\ci-capture -Jobs $env:BUILD_JOBS
           if ($LASTEXITCODE -ne 0) { throw 'Capture Rust regressions failed or were empty.' }
 
       - name: Backend component build and portable tier
@@ -260,7 +276,7 @@ jobs:
             python -I -B $validator --receipt "$env:PAIR_RESULTS\candidate-result.json" run `
               --stage $phase --echo @testArguments -- powershell.exe -NoProfile -NonInteractive -File $gate `
               -Phase $phase -ContractRoot $env:GITHUB_WORKSPACE -ToolRoot $env:TOOL_ROOT `
-              -BuildRoot C:\b-fixtures -Results $env:PAIR_RESULTS -Jobs 2
+              -BuildRoot C:\b-fixtures -Results $env:PAIR_RESULTS -Jobs $env:BUILD_JOBS
             if ($LASTEXITCODE -ne 0) { throw "Backend component phase failed: $phase" }
           }
           python -I -B $validator --receipt "$env:PAIR_RESULTS\candidate-result.json" inventory `
@@ -278,7 +294,7 @@ jobs:
             --junit "$env:PAIR_RESULTS\integration.raw.xml" -- powershell.exe -NoProfile -NonInteractive `
             -File "$env:GITHUB_WORKSPACE\windows\ci\Invoke-PairIntegration.ps1" `
             -ShellRoot $env:GITHUB_WORKSPACE -BackendRoot $local.backendRoot `
-            -Mode $request.mode -BackendSha $request.backend -ToolRoot $env:TOOL_ROOT `
+            -Mode $request.mode -BackendSha $request.backend -ToolRoot $env:TOOL_ROOT -Jobs $env:BUILD_JOBS `
             -BuildRoot $env:BUILD_ROOT -Results $env:PAIR_RESULTS -JUnit "$env:PAIR_RESULTS\integration.raw.xml" -EchoDiagnostics
           if ($LASTEXITCODE -ne 0) { throw 'Consuming-shell integration failed.' }
 

@@ -7,6 +7,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -358,6 +359,210 @@ class PairTests(unittest.TestCase):
                 self.assertTrue(all(row["outcome"] == "not_run" for row in journal[1:]))
                 self.assertNotIn(marker, (results / "integration.xml").read_text())
 
+    def integration_command(self, results, *extra, build=None):
+        return ["powershell.exe", "-NoProfile", "-NonInteractive", "-File",
+                str(ROOT / "windows/ci/Invoke-PairIntegration.ps1"),
+                "-ShellRoot", str(self.shell), "-BackendRoot", str(self.backend),
+                "-Mode", "pinned", "-BackendSha", self.backend_sha,
+                "-ToolRoot", str(self.root / "tools"),
+                "-BuildRoot", str(build or self.root / "unused-build"),
+                "-Results", str(results), "-JUnit", str(results / "integration.xml"),
+                "-Python", sys.executable, *extra]
+
+    def synthetic_scripts(self, validation):
+        self.put("windows/toolchain.json", {
+            "qtDirectory": "fixture-qt", "llvmDirectory": "fixture-llvm",
+            "cli11Directory": "fixture-cli"})
+        scripts = self.shell / "windows/scripts"
+        scripts.mkdir(exist_ok=True)
+        (scripts / "Test-Validation.ps1").write_text(validation)
+        return scripts
+
+    @unittest.skipUnless(os.name == "nt", "Windows PowerShell boundary")
+    def test_services_preflight_is_isolated_unrecorded_and_fail_closed(self):
+        self.synthetic_scripts(
+            "param($Suite, $BuildRoot, $QtPrefix, $OutputRoot)\n"
+            "New-Item -ItemType Directory -Force -Path $OutputRoot | Out-Null\n"
+            "'{\"passed\": true, \"results\": [{\"name\": \"synthetic\", \"exitCode\": 0}]}' |"
+            " Set-Content -LiteralPath (Join-Path $OutputRoot 'summary.json')\n"
+            "if (Test-Path -LiteralPath $BuildRoot) { exit 3 }\n"
+            "if ($env:PREFLIGHT_FIXTURE_FAIL) {\n"
+            " Write-Output 'EARLIER_PREFLIGHT_PRIVATE_DETAIL'\n"
+            " 1..100 | ForEach-Object { Write-Output ('x' * 300) }\n"
+            " Write-Output 'PREFLIGHT_FAILURE_DETAIL'; exit 5 }\n")
+        results = self.root / "results"
+        preflight = self.root / "preflight"
+
+        def run(root, env=None, results=results):
+            return subprocess.run(self.integration_command(
+                results, "-ServicesPreflightRoot", str(root), "-EchoDiagnostics"),
+                capture_output=True, timeout=60, env=env)
+
+        passed = run(preflight)
+        self.assertEqual(0, passed.returncode, passed.stdout.decode(errors="replace"))
+        self.assertTrue((preflight / "Services/summary.json").exists())
+        # Never pair evidence: no results, journal, JUnit or build root, and the
+        # envelope still sees an unrun Services suite.
+        self.assertFalse(results.exists())
+        self.assertFalse((self.root / "unused-build").exists())
+        self.assertFalse(p.suite_counts(results)["services"]["reportedPassed"])
+        self.assertNotEqual(0, run(preflight).returncode)  # Reuse refused.
+        failing = run(self.root / "preflight-failure", dict(os.environ, PREFLIGHT_FIXTURE_FAIL="1"))
+        output = failing.stdout.decode(errors="replace")
+        self.assertEqual(1, failing.returncode, output)
+        self.assertIn("PREFLIGHT_FAILURE_DETAIL", output)
+        self.assertIn("Services preflight failed: exit=5", output)
+        self.assertNotIn("EARLIER_PREFLIGHT_PRIVATE_DETAIL", output)
+        self.assertLess(len(output), 17000)
+        self.assertFalse(results.exists())
+        quiet = subprocess.run(self.integration_command(
+            results, "-ServicesPreflightRoot", str(self.root / "preflight-quiet")),
+            capture_output=True, timeout=60, env=dict(os.environ, PREFLIGHT_FIXTURE_FAIL="1"))
+        self.assertEqual(1, quiet.returncode)
+        self.assertNotIn("PREFLIGHT_FAILURE_DETAIL", quiet.stdout.decode(errors="replace"))
+        self.assertIn("exit=5", quiet.stdout.decode(errors="replace"))
+        outer = self.root / "outer"
+        for root, nested_results in ((results / "preflight", results), (outer, outer / "results")):
+            with self.subTest(root=root.name):
+                refused = run(root, results=nested_results)
+                self.assertNotEqual(0, refused.returncode)
+                self.assertIn("separate from pair results", refused.stdout.decode(errors="replace")
+                              + refused.stderr.decode(errors="replace"))
+                self.assertFalse(root.exists() and any(root.iterdir()))
+
+    @unittest.skipUnless(os.name == "nt", "Windows PowerShell boundary")
+    def test_preflight_refuses_build_tool_and_source_overlap_before_launch(self):
+        self.synthetic_scripts(
+            "New-Item -ItemType File -Force -Path $env:PREFLIGHT_LAUNCH_MARKER | Out-Null\n")
+        # Both directions, equality, normalized dot segments, trailing
+        # separators and case differences must refuse before creating output.
+        for index, kind in enumerate((
+                "build-equal", "build-child", "build-parent", "build-case", "build-dots",
+                "results-equal", "results-case", "tools-child", "source-parent", "source-child")):
+            base = self.root / f"case-{index}"
+            base.mkdir()
+            results, build, marker = base / "results", base / "build", base / "launched"
+            preflight, build, message = {
+                "build-equal": (build, build, "separate from the production build"),
+                "build-child": (build / "early", build, "separate from the production build"),
+                "build-parent": (base / "outer", base / "outer/build", "separate from the production build"),
+                "build-case": (str(build).upper() + "\\", build, "separate from the production build"),
+                "build-dots": (build / "child/..", build, "separate from the production build"),
+                "results-equal": (results, build, "separate from pair results"),
+                "results-case": (str(results).upper() + "\\", build, "separate from pair results"),
+                "tools-child": (self.root / "tools/early", build, "separate from read-only tools"),
+                "source-parent": (self.root, build, "outside both source roots"),
+                "source-child": (self.shell / "early", build, "outside both source roots"),
+            }[kind]
+            with self.subTest(case=kind):
+                result = subprocess.run(self.integration_command(
+                    results, "-ServicesPreflightRoot", str(preflight), build=build),
+                    capture_output=True, timeout=30,
+                    env=dict(os.environ, PREFLIGHT_LAUNCH_MARKER=str(marker)))
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn(message, (result.stdout + result.stderr).decode(errors="replace"))
+                self.assertFalse(marker.exists())
+                self.assertFalse(results.exists())
+                self.assertFalse(build.exists())
+
+    @unittest.skipUnless(os.name == "nt", "Windows PowerShell boundary")
+    def test_preflight_refuses_junction_ancestor(self):
+        self.synthetic_scripts("exit 0\n")
+        junction = self.root / "source-alias"
+        linked = subprocess.run(
+            ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command",
+             f"New-Item -ItemType Junction -Path '{junction}' -Target '{self.shell}' | Out-Null"],
+            capture_output=True, timeout=30)
+        self.assertEqual(0, linked.returncode, linked.stderr.decode(errors="replace"))
+        result = subprocess.run(self.integration_command(
+            self.root / "results", "-ServicesPreflightRoot", str(junction / "early")),
+            capture_output=True, timeout=30)
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("reparse", (result.stdout + result.stderr).decode(errors="replace"))
+        self.assertFalse((self.shell / "early").exists())
+
+    @unittest.skipUnless(os.name == "nt", "Windows PowerShell boundary")
+    def test_log_write_failure_is_not_success(self):
+        # A stage that exits zero must not mask failure of its log sink.
+        self.synthetic_scripts("Write-Output 'SYNTHETIC_STAGE_OUTPUT'\nexit 0\n")
+        results = self.root / "results"
+        (results / "services.private.log").mkdir(parents=True)
+        result = subprocess.run(self.integration_command(results),
+                                capture_output=True, timeout=30)
+        self.assertNotEqual(0, result.returncode)
+        journal = p.read(results / "integration-stages.json")
+        self.assertEqual("failure", journal[0]["outcome"])
+        self.assertNotEqual(0, journal[0]["exitCode"])
+        self.assertTrue(all(row["outcome"] == "not_run" for row in journal[1:]))
+        report = ET.parse(results / "integration.xml").getroot()
+        self.assertIsNotNone(report.find("testcase/failure"))
+
+    @unittest.skipUnless(os.name == "nt", "Windows PowerShell boundary")
+    def test_workflow_propagates_jobs_to_each_compile_entry_point(self):
+        workflow = (ROOT / ".github/workflows/windows-build.yml").read_text()
+        results = self.root / "workflow-results"
+        p.write(results / "pair-local.json", {"backendRoot": str(self.backend)})
+        p.write(results / "pair-request.json", {"mode": "pinned", "backend": self.backend_sha})
+        calls = self.root / "workflow-calls.jsonl"
+        # Run the actual workflow blocks with native entry points replaced by
+        # argument recorders. No compiler, fixture binary or validator is run.
+        harness = self.root / "workflow.ps1"
+        blocks = []
+        for name in ("First-party capture Rust regressions",
+                     "Backend component build and portable tier",
+                     "Exact-pair production integration"):
+            found = re.search(
+                r"(?m)^      - name: " + re.escape(name) +
+                r"\r?\n        run: \|\r?\n((?:          [^\r\n]*\r?\n|\r?\n)+)", workflow)
+            self.assertIsNotNone(found, name)
+            blocks.append(found[1])
+        harness.write_text(
+            "$ErrorActionPreference = 'Stop'\n"
+            "function Save-Call([string]$Executable, [object[]]$Arguments) {\n"
+            " [ordered]@{ executable = $Executable; arguments = $Arguments } |"
+            " ConvertTo-Json -Compress | Add-Content -LiteralPath $env:WORKFLOW_CALLS\n"
+            " $global:LASTEXITCODE = 0\n"
+            "}\n"
+            "function powershell.exe { Save-Call 'powershell' $args }\n"
+            "function python { Save-Call 'python' $args }\n" + "\n".join(blocks))
+        result = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive",
+                                 "-File", str(harness)], capture_output=True, timeout=30,
+                                env=dict(os.environ, BUILD_JOBS="5", PAIR_RESULTS=str(results),
+                                         GITHUB_WORKSPACE=str(ROOT), TRUSTED_ROOT=str(self.root / "trusted"),
+                                         TOOL_ROOT=str(self.root / "tools"), BUILD_ROOT=str(self.root / "build"),
+                                         WORKFLOW_CALLS=str(calls)))
+        self.assertEqual(0, result.returncode, (result.stdout + result.stderr).decode(errors="replace"))
+        rows = [json.loads(line) for line in calls.read_text(encoding="utf-8-sig").splitlines()]
+        commands = [row["arguments"] for row in rows]
+        compile_calls = [args for args in commands if "-Jobs" in args]
+        self.assertEqual(5, len(compile_calls))  # Capture, 3 fixture phases, integration.
+        for args in compile_calls:
+            self.assertEqual("5", args[args.index("-Jobs") + 1])
+        self.assertEqual(["configure", "build", "portable", "integration"],
+                         [args[args.index("--stage") + 1] for args in commands if "--stage" in args])
+        self.assertTrue(any("-JUnit" in args for args in compile_calls))
+
+    @unittest.skipUnless(os.name == "nt", "Windows PowerShell boundary")
+    def test_production_receives_selected_jobs_and_rejects_out_of_range(self):
+        scripts = self.synthetic_scripts("exit 0\n")
+        arguments = self.root / "production-arguments.txt"
+        (scripts / "Build-Prototype.ps1").write_text(
+            f"$args -join ' ' | Set-Content -LiteralPath '{arguments}'\nexit 9\n")
+        results = self.root / "jobs"
+        result = subprocess.run(self.integration_command(results, "-Jobs", "5"),
+                                capture_output=True, timeout=60)
+        self.assertEqual(1, result.returncode, result.stderr.decode(errors="replace"))
+        self.assertIn("-Jobs 5 ", arguments.read_text(encoding="utf-8-sig"))
+        journal = p.read(results / "integration-stages.json")
+        self.assertEqual(["success", "failure"], [row["outcome"] for row in journal[:2]])
+        self.assertEqual(9, journal[1]["exitCode"])
+        for jobs in ("0", "17"):
+            refused = self.root / ("jobs-" + jobs)
+            result = subprocess.run(self.integration_command(refused, "-Jobs", jobs),
+                                    capture_output=True, timeout=60)
+            self.assertNotEqual(0, result.returncode)
+            self.assertFalse(refused.exists())
+
     def envelope_fixture(self):
         request = self.resolve()
         results = Path(self.args.results)
@@ -563,6 +768,16 @@ class PairTests(unittest.TestCase):
         self.assertIn('-JUnit "$env:PAIR_RESULTS\\integration.raw.xml" -EchoDiagnostics', workflow)
         self.assertNotIn("secrets.", workflow)
         self.assertNotIn("pull_request_target", workflow)
+        # Parallelism is measured, never hard-coded, and reaches every compile.
+        self.assertNotIn("-Jobs 2", workflow)
+        self.assertEqual(3, workflow.count("-Jobs $env:BUILD_JOBS"))
+        # The early Services run stays outside pair results and is not recorded.
+        self.assertIn("-ServicesPreflightRoot C:\\ci-preflight -EchoDiagnostics", workflow)
+        self.assertNotIn("--stage services", workflow)
+        # Only trusted main pushes write the single (tooling) cache.
+        self.assertEqual(1, workflow.count("uses: actions/cache/save@"))
+        self.assertIn("if: steps.tools.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main' "
+                      "&& github.event_name == 'push'\n        uses: actions/cache/save@", workflow)
         release = (ROOT / "windows/scripts/New-CaelestiaRelease.ps1").read_text()
         self.assertIn("$build.backendMode -cne 'pinned'", release)
 
