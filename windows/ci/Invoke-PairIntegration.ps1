@@ -8,7 +8,9 @@ param(
     [Parameter(Mandatory)][string]$BuildRoot,
     [Parameter(Mandatory)][string]$Results,
     [Parameter(Mandatory)][string]$JUnit,
-    [string]$Python = 'python'
+    [string]$Python = 'python',
+    # Only opt in for disposable hosted fixtures, never retained artifacts.
+    [switch]$EchoDiagnostics
 )
 $ErrorActionPreference = 'Stop'
 $ShellRoot = (Resolve-Path -LiteralPath $ShellRoot).Path
@@ -50,6 +52,7 @@ function Invoke-Gate([int]$Index, [string]$Executable, [string[]]$CommandArgumen
     $code = 1
     try {
         $ErrorActionPreference = 'Continue'
+        $global:LASTEXITCODE = 1
         & $Executable @CommandArguments 2>&1 | ForEach-Object { "$_" } |
             Set-Content -LiteralPath "$Results\$($item.name).private.log" -Encoding UTF8
         $code = $LASTEXITCODE
@@ -60,7 +63,15 @@ function Invoke-Gate([int]$Index, [string]$Executable, [string[]]$CommandArgumen
         $item.outcome = if ($code -eq 0) { 'success' } else { 'failure' }
         Save-Journal
     }
-    if ($code -ne 0) { throw "Pair integration stage failed: $($item.name). Raw output excluded." }
+    if ($code -ne 0) {
+        if ($EchoDiagnostics) {
+            Write-Output "Failed isolated stage: $($item.name) (last 80 lines)"
+            $tail = (Get-Content -LiteralPath "$Results\$($item.name).private.log" -Tail 80 -Encoding UTF8) -join "`n"
+            if ($tail.Length -gt 16000) { $tail = '[earlier output truncated]' + "`n" + $tail.Substring($tail.Length - 15970) }
+            Write-Output $tail
+        }
+        throw "Pair integration stage failed: $($item.name). Raw output excluded from retained artifacts."
+    }
 }
 $common = @('-NoProfile', '-NonInteractive', '-File')
 $failed = $false
@@ -84,9 +95,21 @@ try {
     Invoke-Gate 5 $ps $smokeArguments
 } catch {
     $failed = $true
-    Write-Output 'Production pair integration failed; inspect sanitized stage outcomes.'
+    if ($EchoDiagnostics) {
+        $detail = ($_ | Out-String)
+        if ($detail.Length -gt 16000) { $detail = $detail.Substring(0, 16000) }
+        Write-Output $detail
+    }
+    foreach ($item in @($journal | Where-Object { $_.outcome -eq 'failure' })) {
+        Write-Output "Pair integration failed: stage=$($item.name) exit=$($item.exitCode)"
+        Write-Output "Local diagnostic log: $Results\$($item.name).private.log"
+    }
+    Write-Output 'First failed stage is preserved in integration-stages.json; later stages are not run.'
 } finally {
     & $Python -I -B "$PSScriptRoot\pair_result.py" integration-report --results $Results --junit $JUnit
-    if ($LASTEXITCODE -ne 0) { $failed = $true }
+    if ($LASTEXITCODE -ne 0) {
+        $failed = $true
+        Write-Output "Integration report generation also failed: exit=$LASTEXITCODE. Inspect the earlier stage failure first."
+    }
 }
 if ($failed) { exit 1 }
