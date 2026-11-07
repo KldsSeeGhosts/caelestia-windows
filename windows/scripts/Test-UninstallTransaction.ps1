@@ -140,7 +140,7 @@ Add-Content -LiteralPath (Join-Path $env:CAELESTIA_FIXTURE_CONTROL 'boundaries.t
     # including on Server 2022 CI. It does not qualify the real Windows 11 app.
     # Keep the native Windows/x64 checks; exclude only the app's OS-build floor.
     $releaseScript = Replace-Exactly $releaseScript `
-        ' -or [Environment]::OSVersion.Version.Build -lt 22000' ''
+        'if ([Environment]::OSVersion.Version.Build -lt 22000) {' 'if ($false) {'
     # The machine's VC runtime is not a prerequisite for data-only fixtures.
     $releaseScript = Replace-Exactly $releaseScript `
         'if (-not (Test-ReleaseVCRuntime ([version]$release.prerequisites.visualCppRuntime.minimumVersion))) {' `

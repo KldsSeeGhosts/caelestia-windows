@@ -20,6 +20,32 @@ function Assert-CaelestiaZipComponent([string]$Part) {
     }
 }
 
+function New-CaelestiaUpdateArchive([string]$Directory, [string]$Zip) {
+    Assert-CaelestiaUpdatePath $Directory
+    Assert-CaelestiaUpdatePath $Zip
+    Assert-CaelestiaNoReparsePoints $Directory
+    $root = Split-Path -Leaf $Directory
+    Assert-CaelestiaZipComponent $root
+    Add-Type -AssemblyName System.IO.Compression
+    $output = [IO.File]::Open($Zip, [IO.FileMode]::CreateNew)
+    $archive = $null
+    try {
+        $archive = [IO.Compression.ZipArchive]::new($output, [IO.Compression.ZipArchiveMode]::Create)
+        foreach ($file in Get-ChildItem -LiteralPath $Directory -File -Recurse -Force | Sort-Object FullName) {
+            $relative = $file.FullName.Substring($Directory.TrimEnd('\').Length + 1).Replace('\', '/')
+            foreach ($part in $relative.Split('/')) { Assert-CaelestiaZipComponent $part }
+            $entry = $archive.CreateEntry($root + '/' + $relative, [IO.Compression.CompressionLevel]::Optimal)
+            $entry.LastWriteTime = [DateTimeOffset]::new(1980, 1, 1, 0, 0, 0, [TimeSpan]::Zero)
+            $inputStream = [IO.File]::OpenRead($file.FullName)
+            $entryStream = $entry.Open()
+            try { $inputStream.CopyTo($entryStream) } finally { $entryStream.Dispose(); $inputStream.Dispose() }
+        }
+    } finally {
+        if ($archive) { $archive.Dispose() }
+        $output.Dispose()
+    }
+}
+
 function Expand-CaelestiaUpdate([string]$Zip, [string]$Destination, [string]$Root, [long]$Entries, [long]$UnpackedSize) {
     Assert-CaelestiaZipComponent $Root
     Assert-CaelestiaUpdatePath $Zip
@@ -182,7 +208,10 @@ function Invoke-CaelestiaUpdateCheck($Trust, [string]$Channel, [string]$CurrentV
     return [pscustomobject]$result
 }
 
-function Save-CaelestiaUpdateBundle($Release, $Trust, [string]$Directory) {
+function Save-CaelestiaUpdateBundle($Release, $Trust, [string]$Directory, [scriptblock]$Fetch = {
+    param($Address, $Hosts, $Redirects, $Cap, $Size, $Hash, $Destination, $Milliseconds)
+    [Caelestia.Update.Transport]::Fetch($Address, $Hosts, $Redirects, $Cap, $Size, $Hash, $Destination, $Milliseconds)
+}) {
     Assert-CaelestiaUpdatePath $Directory
     [IO.Directory]::CreateDirectory($Directory) | Out-Null
     $bundle = $Release.bundle
@@ -192,8 +221,8 @@ function Save-CaelestiaUpdateBundle($Release, $Trust, [string]$Directory) {
     $zip = $partial + '.zip'
     try {
         Assert-CaelestiaUpdatePath $partial
-        $null = [Caelestia.Update.Transport]::Fetch($bundle.url, (@('github.com') + @($Trust.redirectHosts)),
-            3, $bundle.size, $bundle.size, $bundle.sha256, $partial, 1200000)
+        $null = & $Fetch $bundle.url (@('github.com') + @($Trust.redirectHosts)) `
+            3 $bundle.size $bundle.size $bundle.sha256 $partial 1200000
         Assert-CaelestiaUpdatePath $partial
         [IO.File]::Move($partial, $zip)
         return $zip
@@ -213,6 +242,9 @@ function Invoke-CaelestiaUpdateInstall([string]$Prefix, [string]$ExpectedCurrent
     # Caller holds BOTH installation mutexes continuously. Installer is invoked
     # on this same PowerShell thread, so its nested named-mutex acquisition is
     # recursive, not a child-process deadlock. Never release through activation.
+    $workerLock = Enter-CaelestiaInstallLock $Prefix
+    if (-not $workerLock) { throw 'An installation, rollback or uninstall is already in progress.' }
+    try {
     $record = Read-CaelestiaInstall $Prefix
     if ($record.version -ne 2 -or $record.current -cne $ExpectedCurrent) { throw 'The selected version changed.' }
     $current = Read-CaelestiaInstall (Get-CaelestiaVersionPrefix $Prefix $record.current)
@@ -229,6 +261,9 @@ function Invoke-CaelestiaUpdateInstall([string]$Prefix, [string]$ExpectedCurrent
     try {
         & $Progress 'downloading'
         $zip = Save-CaelestiaUpdateBundle $release $Trust (Join-Path $base 'downloads')
+        if ((Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant() -cne $release.bundle.sha256) {
+            throw 'Authenticated bundle mismatch.'
+        }
         & $Progress 'verifying'
         $bundle = Expand-CaelestiaUpdate $zip $stage $release.bundle.root $release.bundle.entries $release.bundle.unpackedSize
         # No supplied code before BOTH signed bundle and manifest digests match.
@@ -246,6 +281,11 @@ function Invoke-CaelestiaUpdateInstall([string]$Prefix, [string]$ExpectedCurrent
         $integration = Get-CaelestiaIntegration $Prefix
         $autostart = $null -ne (Get-ItemProperty -LiteralPath (Get-CaelestiaAutostartKey) -Name $integration.RunName -ErrorAction SilentlyContinue)
         & $Progress 'installing'
+        $selected = Read-CaelestiaInstall $Prefix
+        if ($selected.installId -cne $record.installId -or $selected.current -cne $ExpectedCurrent -or
+            (Get-CaelestiaUpdateChannel $record.profile $current.appVersion) -cne $Channel) {
+            throw 'The selected version, owner or channel changed before activation.'
+        }
         & (Join-Path $bundle 'Install-CaelestiaRelease.ps1') -BundleRoot $bundle -Prefix $Prefix `
             -ExpectedManifestSha256 $release.manifestSha256 -Restart -Autostart:$autostart | Out-Null
         $after = Read-CaelestiaInstall $Prefix
@@ -270,4 +310,5 @@ function Invoke-CaelestiaUpdateInstall([string]$Prefix, [string]$ExpectedCurrent
             Remove-Item -LiteralPath $stage -Recurse -Force
         }
     }
+    } finally { Exit-CaelestiaInstallLock $workerLock }
 }

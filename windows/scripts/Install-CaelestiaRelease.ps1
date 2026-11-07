@@ -17,8 +17,8 @@ $ErrorActionPreference = 'Stop'
 # Resolve in the body for Windows PowerShell -File, like the stable launcher.
 if (-not $BundleRoot) { $BundleRoot = $PSScriptRoot }
 if ($env:OS -ne 'Windows_NT' -or -not [Environment]::Is64BitProcess -or
-    $env:PROCESSOR_ARCHITECTURE -ne 'AMD64' -or [Environment]::OSVersion.Version.Build -lt 22000) {
-    throw 'Use 64-bit Windows PowerShell on Windows 11 x64.'
+    $env:PROCESSOR_ARCHITECTURE -ne 'AMD64') {
+    throw 'Use 64-bit Windows PowerShell on Windows x64.'
 }
 
 # Bootstrap deliberately has no imports, dot-sources, native processes or
@@ -254,6 +254,9 @@ if ((Get-FileHash -LiteralPath (Join-Path $BundleRoot 'release.json') -Algorithm
     throw 'Release manifest changed during verification.'
 }
 if ($VerifyOnly) { $release; return }
+if ([Environment]::OSVersion.Version.Build -lt 22000) {
+    throw 'Installation requires Windows 11 x64. VerifyOnly is data-only and is not installation acceptance.'
+}
 if (-not (Test-ReleaseVCRuntime ([version]$release.prerequisites.visualCppRuntime.minimumVersion))) {
     throw ('Microsoft Visual C++ x64 Redistributable 14.44.35211.0 or newer is required. ' +
         'Install or repair it using Microsoft''s official download, then rerun Install.cmd: ' +

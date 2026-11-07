@@ -349,8 +349,8 @@ $coverageArguments = @{
     CoverageOutputDirectory = (Join-Path $OutputDirectory 'coverage-result')
 }
 # Coverage still executes the actual verifier on this inert bundle, but its
-# local test copy excludes the Windows 11 app floor on Server 2022 CI.
-# No production verifier or coverage entry point gains a bypass parameter.
+# local test copy additionally refuses any non-VerifyOnly invocation.
+# Data-only verification works on Server 2022 without removing the install floor.
 $coverageTools = Join-Path $OutputDirectory 'coverage-tools'
 $coverageScripts = Join-Path $coverageTools 'windows\scripts'
 [IO.Directory]::CreateDirectory($coverageScripts) | Out-Null
@@ -360,11 +360,11 @@ foreach ($name in @('Prepare-CaelestiaSourceAssets.ps1', 'Caelestia-SourceAssets
 }
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot '../release/source-assets.json') -Destination (Join-Path $coverageTools 'windows\release')
 $coverageVerifier = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'Install-CaelestiaRelease.ps1'))
-$floorBoundary = ' -or [Environment]::OSVersion.Version.Build -lt 22000'
+$floorBoundary = 'if ([Environment]::OSVersion.Version.Build -lt 22000) {'
 $platformBoundary = 'if ($env:OS -ne'
 Assert-Recipe ([regex]::Matches($coverageVerifier, [regex]::Escape($floorBoundary)).Count -eq 1 -and
     [regex]::Matches($coverageVerifier, [regex]::Escape($platformBoundary)).Count -eq 1) 'Unknown release verifier platform boundary'
-$coverageVerifier = $coverageVerifier.Replace($floorBoundary, '').Replace($platformBoundary,
+$coverageVerifier = $coverageVerifier.Replace($platformBoundary,
     "if (-not `$VerifyOnly) { throw 'Inert fixture verifier requires VerifyOnly.' }`r`n" + $platformBoundary)
 [IO.File]::WriteAllText((Join-Path $coverageScripts 'Install-CaelestiaRelease.ps1'), $coverageVerifier, [Text.UTF8Encoding]::new($false))
 & (Join-Path $coverageScripts 'Prepare-CaelestiaSourceAssets.ps1') @coverageArguments
