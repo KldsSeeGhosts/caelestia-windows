@@ -19,17 +19,49 @@ param(
     [switch]$EchoDiagnostics
 )
 $ErrorActionPreference = 'Stop'
-$ShellRoot = (Resolve-Path -LiteralPath $ShellRoot).Path
-$BackendRoot = (Resolve-Path -LiteralPath $BackendRoot).Path
+function Test-PathOverlap([string]$Left, [string]$Right) {
+    return $Left.Equals($Right, [StringComparison]::OrdinalIgnoreCase) -or
+        $Left.StartsWith($Right + '\', [StringComparison]::OrdinalIgnoreCase) -or
+        $Right.StartsWith($Left + '\', [StringComparison]::OrdinalIgnoreCase)
+}
+function Assert-NoReparseAncestor([string]$Path) {
+    # GetFullPath normalizes spelling, not filesystem aliases. Preflight must
+    # not reach a protected root through a junction/symlink in either path.
+    for ($current = $Path; $current; $current = Split-Path -Parent $current) {
+        if ((Test-Path -LiteralPath $current) -and
+            ((Get-Item -LiteralPath $current -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+            throw 'Services preflight paths must not contain reparse points.'
+        }
+    }
+}
+$ShellRoot = (Resolve-Path -LiteralPath $ShellRoot).Path.TrimEnd('\')
+$BackendRoot = (Resolve-Path -LiteralPath $BackendRoot).Path.TrimEnd('\')
+$BuildRoot = [IO.Path]::GetFullPath($BuildRoot).TrimEnd('\')
+$Results = [IO.Path]::GetFullPath($Results).TrimEnd('\')
+$ToolRoot = [IO.Path]::GetFullPath($ToolRoot).TrimEnd('\')
 $outputs = @($BuildRoot, $Results)
-if ($ServicesPreflightRoot) { $outputs += $ServicesPreflightRoot }
+if ($ServicesPreflightRoot) {
+    $ServicesPreflightRoot = [IO.Path]::GetFullPath($ServicesPreflightRoot).TrimEnd('\')
+    $outputs += $ServicesPreflightRoot
+    foreach ($path in @($ShellRoot, $BackendRoot, $ToolRoot) + $outputs) { Assert-NoReparseAncestor $path }
+}
 foreach ($output in $outputs) {
-    $absolute = [IO.Path]::GetFullPath($output)
     foreach ($source in @($ShellRoot, $BackendRoot)) {
-        if ($absolute -eq $source -or $absolute.StartsWith($source + '\', [StringComparison]::OrdinalIgnoreCase)) {
+        if (Test-PathOverlap $output $source) {
             throw 'Pair outputs must stay outside both source roots.'
         }
     }
+}
+if ($ServicesPreflightRoot) {
+    foreach ($protected in @(
+        @{ path = $Results; name = 'pair results' },
+        @{ path = $BuildRoot; name = 'the production build' },
+        @{ path = $ToolRoot; name = 'read-only tools' })) {
+        if (Test-PathOverlap $ServicesPreflightRoot $protected.path) {
+            throw "The Services preflight must stay separate from $($protected.name)."
+        }
+    }
+    if (Test-Path -LiteralPath $ServicesPreflightRoot) { throw 'The Services preflight requires a fresh output root.' }
 }
 if (Test-Path -LiteralPath $BuildRoot) { throw 'Pair production build requires a fresh build root.' }
 $spec = Get-Content -LiteralPath "$ShellRoot\windows\toolchain.json" -Raw | ConvertFrom-Json
@@ -50,13 +82,14 @@ function Get-ServicesArguments([string]$OutputRoot) {
 }
 function Invoke-Logged([string]$Log, [string]$Executable, [string[]]$CommandArguments) {
     $code = 1
+    $previousPreference = $ErrorActionPreference
     try {
         $ErrorActionPreference = 'Continue'
         $global:LASTEXITCODE = 1
         & $Executable @CommandArguments 2>&1 | ForEach-Object { "$_" } |
-            Set-Content -LiteralPath $Log -Encoding UTF8
+            Set-Content -LiteralPath $Log -Encoding UTF8 -ErrorAction Stop
         $code = $LASTEXITCODE
-    } finally { $ErrorActionPreference = 'Stop' }
+    } finally { $ErrorActionPreference = $previousPreference }
     return $code
 }
 function Write-FailureTail([string]$Name, [string]$Log) {
@@ -68,14 +101,7 @@ function Write-FailureTail([string]$Name, [string]$Log) {
 }
 
 if ($ServicesPreflightRoot) {
-    $preflight = [IO.Path]::GetFullPath($ServicesPreflightRoot)
-    $resultsRoot = [IO.Path]::GetFullPath($Results)
-    foreach ($pair in @(@($preflight, $resultsRoot), @($resultsRoot, $preflight))) {
-        if ($pair[0] -eq $pair[1] -or $pair[0].StartsWith($pair[1].TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase)) {
-            throw 'The Services preflight must stay separate from pair results.'
-        }
-    }
-    if (Test-Path -LiteralPath $preflight) { throw 'The Services preflight requires a fresh output root.' }
+    $preflight = $ServicesPreflightRoot
     New-Item -ItemType Directory -Path $preflight | Out-Null
     $log = Join-Path $preflight 'services.private.log'
     $code = Invoke-Logged $log $ps (Get-ServicesArguments (Join-Path $preflight 'Services'))

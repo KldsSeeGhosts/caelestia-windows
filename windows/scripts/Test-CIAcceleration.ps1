@@ -19,7 +19,10 @@ try {
     foreach ($case in @(
         @{ cpu = 4; memory = 16GB; jobs = 4 },
         @{ cpu = 4; memory = 7GB; jobs = 2 },
+        @{ cpu = 4; memory = (6GB - 1); jobs = 1 },
+        @{ cpu = 4; memory = 6GB; jobs = 2 },
         @{ cpu = 64; memory = 512GB; jobs = 16 },
+        @{ cpu = [int]::MaxValue; memory = [double]::MaxValue; jobs = 16 },
         @{ cpu = 16; memory = 63.6GB; jobs = 16 },
         @{ cpu = 1; memory = 1GB; jobs = 1 })) {
         $environment = Join-Path $root ('env-' + [guid]::NewGuid().ToString('N'))
@@ -31,7 +34,31 @@ try {
     $environment = Join-Path $root 'refused-env'
     Assert-Refused { & "$ci\Get-BuildJobs.ps1" -LogicalProcessors 0 -MemoryBytes 16GB -EnvironmentFile $environment } 'refusing to guess' 'zero processors'
     Assert-Refused { & "$ci\Get-BuildJobs.ps1" -LogicalProcessors 4 -MemoryBytes 0 -EnvironmentFile $environment } 'refusing to guess' 'zero memory'
+    foreach ($invalid in @(-1, [double]::NaN, [double]::PositiveInfinity, [double]::NegativeInfinity)) {
+        Assert-Refused { & "$ci\Get-BuildJobs.ps1" -LogicalProcessors 4 -MemoryBytes $invalid -EnvironmentFile $environment } 'refusing to guess' "invalid memory $invalid"
+    }
     if (Test-Path -LiteralPath $environment) { throw 'A refused parallelism measurement still wrote BUILD_JOBS.' }
+    $checks++
+    # Exercise the default discovery branch too, without assuming anything
+    # about the machine running this SDK-free regression.
+    function Get-CimInstance {
+        param([string]$ClassName)
+        if ($ClassName -cne 'Win32_ComputerSystem') { throw 'Unexpected hardware query.' }
+        return [pscustomobject]@{ TotalPhysicalMemory = $fixtureMemory }
+    }
+    $fixtureMemory = 7GB
+    $environment = Join-Path $root 'measured-env'
+    $null = & "$ci\Get-BuildJobs.ps1" -LogicalProcessors 4 -EnvironmentFile $environment
+    if ((Get-Content -LiteralPath $environment -Raw).Trim() -cne 'BUILD_JOBS=2') {
+        throw 'The measured hardware path did not use the detected memory.'
+    }
+    $checks++
+    $environment = Join-Path $root 'invalid-measured-env'
+    foreach ($invalid in @($null, -1, [double]::NaN, [double]::PositiveInfinity)) {
+        $fixtureMemory = $invalid
+        Assert-Refused { & "$ci\Get-BuildJobs.ps1" -LogicalProcessors 4 -EnvironmentFile $environment } 'refusing to guess' "invalid measured memory $invalid"
+    }
+    if (Test-Path -LiteralPath $environment) { throw 'Invalid measured hardware still wrote BUILD_JOBS.' }
     $checks++
     Write-Output "PASS CI acceleration: $checks build-parallelism checks."
 } finally {

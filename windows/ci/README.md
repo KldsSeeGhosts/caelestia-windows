@@ -19,10 +19,11 @@ After those pass, two jobs can run independently:
   temporary profiles and pinned Python dependencies.
 - The native job prepares the Windows tools and runs an early, unrecorded
   Services preflight before compiling anything. It then runs the capture Rust
-  tests, builds and tests the backend fixtures, builds the production payload
-  and plugin tests once, and runs the recorded Services suite, plugin CTest,
-  shell fixtures and production smoke. Compile parallelism comes from the
-  runner's processors and memory; test execution stays serial.
+  tests, builds and tests the backend fixtures, then runs recorded integration:
+  Services, the production payload/plugin-test build, the read-only release
+  toolchain preflight, plugin CTest, shell fixtures and production smoke.
+  Compile parallelism comes from the runner's processors and memory; test
+  execution stays serial.
 
 Only a narrow allowlist of documentation and issue-template changes skips the
 native job. Unknown files, empty diffs, first pushes and manual dispatches

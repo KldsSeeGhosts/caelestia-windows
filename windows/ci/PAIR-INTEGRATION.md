@@ -51,15 +51,19 @@ and consuming-shell integration. Integration executes:
 6. Production graph staging and isolated offscreen smoke.
 
 `<jobs>` is measured once per native job by
-[Get-BuildJobs.ps1](Get-BuildJobs.ps1): one per logical processor, at most one
-per 3 GiB of memory, within 1-16. The same value drives the capture Rust build,
+[Get-BuildJobs.ps1](Get-BuildJobs.ps1): the smaller of the logical processor
+count and `floor(physical memory / 3 GiB)`, clamped to 1-16. Invalid or nonfinite
+memory measurements fail closed. The same value drives the capture Rust build,
 the trusted fixture build and production. It changes compile scheduling only.
 CTest, QML suites and recorded stages stay serial.
 
 Before any native compilation, the workflow runs the same Services command
 once with `-ServicesPreflightRoot`. That early copy writes only under its own
-fresh root, outside the pair results. It is not recorded in the receipt or
-envelope and is never evidence. A failure stops the job early; a pass changes
+fresh root, disjoint from pair results, the production build, sources and
+read-only tools in both directions. Preflight rejects junction/symlink
+ancestors on these paths rather than guessing where output will land.
+It is not recorded in the receipt or envelope and is never evidence.
+A failure stops the job early; a pass changes
 nothing, because recorded integration reruns Services from scratch.
 
 Candidate builds require both `-BackendRoot` and
