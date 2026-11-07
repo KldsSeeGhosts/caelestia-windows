@@ -109,6 +109,24 @@ function Copy-CaelestiaRootEntries([string]$Prefix, [string]$Runtime) {
             if ([IO.File]::Exists($temporary)) { [IO.File]::Delete($temporary) }
         }
     }
+    # Old retained payloads may predate Nexus. Switch never calls this helper,
+    # so rolling back retains the newest self-sufficient root router.
+    foreach ($name in @('Caelestia-SemVer.ps1', 'Caelestia-UpdateTrust.ps1', 'Caelestia-Update.ps1',
+        'Caelestia-UpdateSecurity.cs', 'version.json', 'update-trust.json')) {
+        $source = Join-Path $Runtime $name
+        if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { continue }
+        $target = Join-Path $Prefix $name
+        $null = Resolve-CaelestiaDirectory $Prefix
+        if ((Test-Path -LiteralPath $target) -and ((Get-Item -LiteralPath $target -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+            throw 'Refusing to replace a linked update entry.'
+        }
+        $temporary = $target + '.tmp-' + [guid]::NewGuid().ToString('N')
+        try {
+            [IO.File]::Copy($source, $temporary)
+            if ([IO.File]::Exists($target)) { [IO.File]::Replace($temporary, $target, [System.Management.Automation.Language.NullString]::Value) }
+            else { [IO.File]::Move($temporary, $target) }
+        } finally { if ([IO.File]::Exists($temporary)) { [IO.File]::Delete($temporary) } }
+    }
 }
 
 # A retained payload a later start can actually use: its record belongs to this

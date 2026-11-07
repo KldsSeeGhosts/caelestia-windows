@@ -1,7 +1,7 @@
 #requires -Version 5.1
 # SemVer numbers stay strings: SemVer does not impose an integer-size limit.
 function ConvertTo-CaelestiaSemVer([string]$Version) {
-    $pattern = '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$'
+    $pattern = '\A(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?\z'
     $match = [regex]::Match($Version, $pattern, [Text.RegularExpressions.RegexOptions]::CultureInvariant)
     if (-not $match.Success) { throw 'Invalid SemVer 2.0.0 version.' }
     $pre = $match.Groups[4].Value
@@ -46,7 +46,7 @@ function Compare-CaelestiaSemVer([string]$Left, [string]$Right) {
 
 function Test-CaelestiaDevVersion([string]$Version) {
     # Restricted *publication* grammar, separate from the general SemVer parser.
-    return $Version -cmatch '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-dev\.[1-9][0-9]*\.[1-9][0-9]*\.[1-9][0-9]*$'
+    return $Version -cmatch '\A(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-dev\.[1-9][0-9]*\.[1-9][0-9]*\.[1-9][0-9]*\z'
 }
 
 function Read-CaelestiaVersion([string]$Path) {

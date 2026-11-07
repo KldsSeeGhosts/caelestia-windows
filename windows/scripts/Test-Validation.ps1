@@ -78,6 +78,7 @@ try {
         }
         Invoke-ScriptCheck 'Test-PublicDocs'
         Invoke-ScriptCheck 'Test-Toolchain'
+        Invoke-ScriptCheck 'Test-Versioning'
         Invoke-ScriptCheck 'Test-PairContract'
         Invoke-ScriptCheck 'Test-CaptureIntegration'
         Invoke-ValidationStep 'llvm-extraction' $Python @('-I', '-B', 'windows/tests/LlvmExtract.test.py',
@@ -93,6 +94,8 @@ try {
         Invoke-ValidationStep 'javascript' $node (@('--test', '--test-reporter=tap') + $javascript) '(?m)^# tests ([0-9]+)\s*$'
         Invoke-ValidationStep 'quota-providers' $Python @('-B', '-m', 'unittest', 'discover', '-s', 'windows/tests/quota_providers', '-v') '(?m)^Ran ([0-9]+) tests?\b'
     } elseif ($Suite -eq 'Packaging') {
+        Invoke-ScriptCheck 'Test-UpdateTrust'
+        Invoke-ScriptCheck 'Test-NexusUpdate'
         Invoke-ScriptCheck 'Test-SourceAssets' @('-OutputDirectory', (Join-Path $OutputRoot 'source-assets'))
         Invoke-ScriptCheck 'Test-SupportBundle' @('-OutputDirectory', (Join-Path $OutputRoot 'support-bundle'))
         Invoke-ScriptCheck 'Test-VersionedInstall'
@@ -108,7 +111,7 @@ try {
               'Test-HotplugTeardown', 'Test-IdleInhibitStatus', 'Test-LauncherHoverClose',
               'Test-PerMonitorFullscreen', 'Test-PinnedPopoutFocus', 'Test-QuotaPopovers',
               'Test-QuotaProviderKeyboard', 'Test-WallpaperColours', 'Test-WallpaperHandback',
-              'Test-WallpaperPreview', 'Test-WindowsBackground', 'Test-UpdateManager', 'Test-FileUrls')
+              'Test-WallpaperPreview', 'Test-WindowsBackground', 'Test-UpdateManager', 'Test-UpdatesPage', 'Test-FileUrls')
         }
         if (-not $scripts.Count) { throw 'No QML regressions were discovered.' }
         $fixtureArguments = @('-QtPrefix', $QtPrefix)

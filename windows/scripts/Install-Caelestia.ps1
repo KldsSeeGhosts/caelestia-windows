@@ -162,6 +162,10 @@ try {
     foreach ($script in @('Start-Caelestia.ps1', 'Start-CaelestiaEntry.ps1', 'Manage-Caelestia.ps1', 'Caelestia-Versions.ps1', 'Uninstall-Caelestia.ps1', 'Caelestia-InstallCommon.ps1', 'Start-DesktopShell.ps1', 'Watch-DesktopShell.ps1', 'Restore-Desktop.ps1', 'DesktopTakeover.cs', 'Install-SchemeRuntime.ps1', 'Get-AccountPicture.ps1', 'Banner-Suppression.ps1', 'Export-CaelestiaSupport.ps1', 'Caelestia-Support.ps1')) {
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot $script) -Destination $payload
     }
+    foreach ($script in @('Caelestia-SemVer.ps1', 'Caelestia-UpdateTrust.ps1', 'Caelestia-Update.ps1', 'Caelestia-UpdateSecurity.cs')) {
+        Copy-Item -LiteralPath (Join-Path $PSScriptRoot $script) -Destination $payload
+    }
+    Copy-Item -LiteralPath "$repoRoot\windows\release\version.json", "$repoRoot\windows\release\update-trust.json" -Destination $payload
     New-Item -ItemType Directory -Path "$payload\docs", "$payload\support" | Out-Null
     Copy-Item -LiteralPath "$repoRoot\windows\docs\SUPPORT-BUNDLE.md" -Destination "$payload\docs"
     Copy-Item -LiteralPath "$repoRoot\windows\support\support-bundle.schema.json",
@@ -273,9 +277,13 @@ try {
     $timings.deployQtSeconds = $phaseClock.Elapsed.TotalSeconds
     @('[Paths]', 'Prefix=.', 'Plugins=plugins', 'QmlImports=qml') | Set-Content -LiteralPath "$payload\qt.conf" -Encoding ASCII
     # install.json is written last: a staging directory without it is not an install.
+    . (Join-Path $PSScriptRoot 'Caelestia-SemVer.ps1')
+    $appVersion = Read-CaelestiaVersion "$payload\version.json"
     [ordered]@{
         product = 'caelestia-windows'; version = 1; prefix = $Prefix; profile = $ProfileRoot
         installId = $installId
+        appVersion = $appVersion.version; profileSchema = $appVersion.profileSchema
+        releaseId = $appVersion.version + '-local'
         sourceRevision = (& git -C $repoRoot rev-parse HEAD).Trim()
         backendRevision = $(if ($buildInfo) { $buildInfo.backendRevision } else { '' })
         glazierRevision = $(if ($buildInfo) { [string]$buildInfo.glazierRevision } else { '' })

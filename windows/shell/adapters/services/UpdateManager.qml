@@ -14,12 +14,16 @@ QtObject {
     readonly property bool unconfirmed: operationState === "unconfirmed"
     readonly property bool complete: operationState === "complete"
     property string operationId: ""
+    property string operationKind: "rollback"
+    property string step: ""
 
-    function request(command: var): void {
+    function request(command: var, kind: var): void {
         if (submitted || unconfirmed || complete || process.running || Quickshell.env("CAELESTIA_SHELL_SMOKE") === "1")
             return;
         operationState = "waiting";
         operationId = "";
+        operationKind = kind === "update" ? "update" : "rollback";
+        step = "";
         deadline.restart();
         process.command = command;
         process.running = true;
@@ -30,6 +34,10 @@ QtObject {
             return;
         try {
             const data = JSON.parse(operationFile.text());
+            if (data.schema === 1 && data.operationId === operationId) {
+                const steps = ["checking", "downloading", "verifying", "installing"];
+                step = steps.indexOf(data.step) >= 0 ? data.step : "";
+            }
             if (data.schema === 1 && data.operationId === operationId && (data.phase === "failed" || data.phase === "complete")) {
                 deadline.stop();
                 operationState = data.phase;
@@ -43,7 +51,7 @@ QtObject {
     // nor writes a journal through another transaction's prefix lock.
     property Timer deadline: Timer {
         id: deadline
-        interval: 600000
+        interval: root.operationKind === "update" ? 2400000 : 600000
         onTriggered: {
             if (root.submitted)
                 root.operationState = "unconfirmed";

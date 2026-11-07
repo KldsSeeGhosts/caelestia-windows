@@ -65,6 +65,9 @@ function New-Case([string]$Name) {
     foreach ($name in @('Caelestia-InstallCommon.ps1', 'Caelestia-Versions.ps1', 'Manage-Caelestia.ps1')) {
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $scripts
     }
+    foreach ($name in @('Caelestia-SemVer.ps1', 'Caelestia-UpdateTrust.ps1', 'Caelestia-Update.ps1', 'Caelestia-UpdateSecurity.cs')) {
+        Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $scripts
+    }
     $import = ". (Join-Path `$PSScriptRoot 'Caelestia-InstallCommon.ps1')"
     $manage = Replace-Exactly $manageText $import ($import + $importBoundary + "`r`nInvoke-FixtureBoundary 'entry'")
     # Pause after the real mutable read, not a fabricated selector. Old Manage
@@ -112,6 +115,8 @@ Add-Content -LiteralPath (Join-Path $env:CAELESTIA_FIXTURE_CONTROL 'boundaries.t
         'payload/Start-Caelestia.ps1', 'payload/Start-CaelestiaEntry.ps1',
         'payload/Manage-Caelestia.ps1', 'payload/Uninstall-Caelestia.ps1',
         'payload/Caelestia-InstallCommon.ps1', 'payload/Caelestia-Versions.ps1',
+        'payload/Caelestia-SemVer.ps1', 'payload/Caelestia-Update.ps1',
+        'payload/Caelestia-UpdateTrust.ps1', 'payload/Caelestia-UpdateSecurity.cs',
         'payload/Start-DesktopShell.ps1', 'payload/Watch-DesktopShell.ps1', 'payload/Restore-Desktop.ps1',
         'payload/Install-SchemeRuntime.ps1', 'payload/Get-AccountPicture.ps1', 'payload/Banner-Suppression.ps1',
         'payload/scheme/requirements.lock.txt', 'payload/scheme/win_scheme.py', 'payload/scheme/fcntl.py',
@@ -121,7 +126,8 @@ Add-Content -LiteralPath (Join-Path $env:CAELESTIA_FIXTURE_CONTROL 'boundaries.t
         'payload/licenses/Quickshell-LICENSE', 'payload/licenses/Qt/LGPL-3.0.txt'
     )
     foreach ($relative in $required) { Write-FixtureText (Join-Path $bundle $relative) 'synthetic fixture data' }
-    foreach ($name in @('Caelestia-InstallCommon.ps1', 'Caelestia-Versions.ps1', 'Manage-Caelestia.ps1', 'Uninstall-Caelestia.ps1')) {
+    foreach ($name in @('Caelestia-InstallCommon.ps1', 'Caelestia-Versions.ps1', 'Manage-Caelestia.ps1', 'Uninstall-Caelestia.ps1',
+        'Caelestia-SemVer.ps1', 'Caelestia-UpdateTrust.ps1', 'Caelestia-Update.ps1', 'Caelestia-UpdateSecurity.cs')) {
         Copy-Item -LiteralPath (Join-Path $scripts $name) -Destination (Join-Path $bundle "payload\$name") -Force
     }
     foreach ($name in @('Start-Caelestia.ps1', 'Start-CaelestiaEntry.ps1')) {
@@ -167,7 +173,8 @@ Add-Content -LiteralPath (Join-Path $env:CAELESTIA_FIXTURE_CONTROL 'boundaries.t
     foreach ($id in @('v1', 'v2')) {
         $runtime = Join-Path $prefix "versions\$id"
         [IO.Directory]::CreateDirectory($runtime) | Out-Null
-        foreach ($name in @('Caelestia-InstallCommon.ps1', 'Caelestia-Versions.ps1', 'Manage-Caelestia.ps1', 'Uninstall-Caelestia.ps1')) {
+        foreach ($name in @('Caelestia-InstallCommon.ps1', 'Caelestia-Versions.ps1', 'Manage-Caelestia.ps1', 'Uninstall-Caelestia.ps1',
+            'Caelestia-SemVer.ps1', 'Caelestia-UpdateTrust.ps1', 'Caelestia-Update.ps1', 'Caelestia-UpdateSecurity.cs')) {
             Copy-Item -LiteralPath (Join-Path $scripts $name) -Destination $runtime
         }
         Write-FixtureText (Join-Path $runtime 'Start-CaelestiaEntry.ps1') $launcher

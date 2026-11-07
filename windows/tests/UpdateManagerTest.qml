@@ -36,6 +36,16 @@ QtObject {
             check(!manager.process.running && !manager.submitted, "smoke request ran");
             Quickshell.environment = {CAELESTIA_PROFILE_ROOT: "C:/synthetic-profile"};
             check(manager.deadline.interval === 600000, "production deadline changed");
+            manager.request(["update"], "update");
+            check(manager.operationKind === "update" && manager.deadline.interval === 2400000, "update deadline/kind");
+            acknowledge(firstId);
+            Files.contents[manager.operationFile.path] = JSON.stringify({schema: 1, operationId: firstId,
+                phase: "working", kind: "update", step: "verifying"});
+            manager.operationFile.reload();
+            check(manager.step === "verifying" && manager.submitted, "matched update progress missing");
+            journal(firstId, "failed");
+            check(manager.failed, "update terminal phase not settled");
+            manager.operationKind = "rollback";
             manager.deadline.interval = 40;
             manager.request(["first"]);
             check(manager.submitted && !manager.failed, "request was not waiting");

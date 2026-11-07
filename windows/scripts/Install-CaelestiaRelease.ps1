@@ -205,6 +205,16 @@ function Test-ReleaseBundle([string]$Root, [string]$ExpectedHash = '') {
     )) {
         if (-not $listed.ContainsKey($required)) { throw "Incomplete release: $required" }
     }
+    # Additive contract. Historical preview bundles remain verifiable, while
+    # updater-enabled bundles cannot omit their root router dependencies.
+    if ($manifest.PSObject.Properties['appVersion']) {
+        if ($manifest.appVersion -cnotmatch '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$' -or
+            $manifest.profileSchema -ne 1) { throw 'Unsupported app/profile version contract.' }
+        foreach ($updateRequired in @('payload/version.json', 'payload/update-trust.json', 'payload/Caelestia-SemVer.ps1',
+            'payload/Caelestia-Update.ps1', 'payload/Caelestia-UpdateTrust.ps1', 'payload/Caelestia-UpdateSecurity.cs')) {
+            if (-not $listed.ContainsKey($updateRequired)) { throw "Incomplete release: $updateRequired" }
+        }
+    }
     if ($firstPartyCapture) {
         $capture = $manifest.dependencies.capture
         $captureHash = (Get-FileHash -LiteralPath (Join-Path $Root "payload\$captureExecutable") -Algorithm SHA256).Hash
@@ -327,6 +337,8 @@ try {
         executableSha256 = (Get-FileHash -LiteralPath "$payload\qs.exe" -Algorithm SHA256).Hash
         glazierSha256 = (Get-FileHash -LiteralPath "$payload\$captureExecutable" -Algorithm SHA256).Hash
         releaseId = $release.releaseId
+        appVersion = $release.appVersion
+        profileSchema = $release.profileSchema
         releaseManifestSha256 = (Get-FileHash -LiteralPath "$payload\release-manifest.json" -Algorithm SHA256).Hash
         relocatedShellSha256 = $shellHash
         relocatedSourcesSha256 = (Get-FileHash -LiteralPath $sourcesPath -Algorithm SHA256).Hash

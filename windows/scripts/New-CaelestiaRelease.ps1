@@ -63,6 +63,18 @@ $build = Get-Content -LiteralPath "$BuildRoot\logs\build.json" -Raw | ConvertFro
 if ($build.backendMode -cne 'pinned') {
     throw 'Release assembly requires a pinned build, never an integration candidate or legacy receipt.'
 }
+. (Join-Path $PSScriptRoot 'Caelestia-SemVer.ps1')
+$versionPath = Join-Path $repoRoot 'windows\release\version.json'
+$appVersion = Read-CaelestiaVersion $versionPath
+if ($build.nativeVersion -cne $appVersion.version -or $build.versionFileSha256 -cne
+    (Get-FileHash -LiteralPath $versionPath -Algorithm SHA256).Hash.ToLowerInvariant()) {
+    throw 'Build version provenance differs from the authoritative version source; rebuild.'
+}
+try { $parsedId = ConvertTo-CaelestiaSemVer $ReleaseId } catch { throw 'New release IDs must be SemVer build identities.' }
+if ($parsedId.Core -cne $appVersion.version -or $parsedId.Build -or
+    (-not (Test-CaelestiaDevVersion $ReleaseId) -and $parsedId.Prerelease -cne 'local')) {
+    throw 'Assemble only a matching development build identity or CORE-local, never a promotion alias.'
+}
 if ($build.sourceDirty -ne $false -or $build.publicRelease -ne $true -or $build.sourceRevision -notmatch '^[a-f0-9]{40}$' -or
     -not $build.captureBundled -or $build.qtVersion -notmatch '^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9._-]+)?$') {
     throw 'An exact clean production build record is required.'
@@ -315,6 +327,7 @@ try {
     [ordered]@{
         schema = 'caelestia-windows-release'; version = 1; platform = 'windows-x64'
         releaseId = $ReleaseId; sourceRevision = $revision; nativeSourceRevision = $build.sourceRevision
+        appVersion = $appVersion.version; profileSchema = $appVersion.profileSchema
         backendRevision = $build.backendRevision; qtVersion = $build.qtVersion
         toolchain = $build.toolchain
         dependencies = $dependencies; nativeInputs = $nativeInputs

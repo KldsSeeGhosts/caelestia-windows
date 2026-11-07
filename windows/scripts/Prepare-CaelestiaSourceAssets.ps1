@@ -318,6 +318,12 @@ try {
     # New support payloads are exact committed shell inputs, not an allowance
     # for arbitrary scripts or documentation absent from the reference release.
     $supportPayloads = @(
+        @('windows/scripts/Caelestia-SemVer.ps1', 'payload/Caelestia-SemVer.ps1'),
+        @('windows/scripts/Caelestia-UpdateTrust.ps1', 'payload/Caelestia-UpdateTrust.ps1'),
+        @('windows/scripts/Caelestia-Update.ps1', 'payload/Caelestia-Update.ps1'),
+        @('windows/scripts/Caelestia-UpdateSecurity.cs', 'payload/Caelestia-UpdateSecurity.cs'),
+        @('windows/release/version.json', 'payload/version.json'),
+        @('windows/release/update-trust.json', 'payload/update-trust.json'),
         @('windows/scripts/Export-CaelestiaSupport.ps1', 'payload/Export-CaelestiaSupport.ps1'),
         @('windows/scripts/Caelestia-Support.ps1', 'payload/Caelestia-Support.ps1'),
         @('windows/docs/SUPPORT-BUNDLE.md', 'payload/docs/SUPPORT-BUNDLE.md'),

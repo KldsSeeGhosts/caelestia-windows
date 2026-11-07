@@ -70,6 +70,19 @@ ShellRoot {
             root.input.keyClick(Qt.Key_Space);
             check(root.opened === 2, "Space did not activate the manual action");
             check(!page.statusProcess.running, "manual action started a status/download process");
+            check(!page.checkProcess.running && !page.channelProcess.running, "page open started a network or settings operation");
+            const updateRow = find(page, "updateResultRow");
+            check(updateRow !== null, "update result row is missing");
+            for (const state of ["not-newer", "not-configured", "offline", "http", "too-large",
+                "bad-signature", "bad-metadata", "expired", "clock", "replay", "unsupported", "busy"]) {
+                page.checkResult = {state: state, channel: "preview", available: null};
+                check(updateRow.label !== "", "empty update label for " + state);
+            }
+            page.checkResult = {state: "available", channel: "preview", available: {
+                displayVersion: "0.2.0-preview.1", buildVersion: "0.2.0-dev.1.57.1", size: 100, notesUrl: page.releasesUrl
+            }};
+            check(updateRow.label === "0.2.0-preview.1", "promotion alias not shown");
+            check(updateRow.subtext === "0.2.0-dev.1.57.1", "artifact build identity was hidden");
             console.log("CAELESTIA_UPDATES_PASS " + assertions);
             Qt.quit();
         } catch (error) {

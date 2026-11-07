@@ -63,6 +63,9 @@ function New-Payload([string]$Prefix, [string]$Label) {
     foreach ($name in @('Start-CaelestiaEntry.ps1', 'Caelestia-InstallCommon.ps1', 'Caelestia-Versions.ps1', 'Manage-Caelestia.ps1', 'Uninstall-Caelestia.ps1')) {
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $path
     }
+    foreach ($name in @('Caelestia-SemVer.ps1', 'Caelestia-UpdateTrust.ps1', 'Caelestia-Update.ps1', 'Caelestia-UpdateSecurity.cs')) {
+        Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $path
+    }
     @{
         product = 'caelestia-windows'; version = 1; prefix = $Prefix
         profile = (Join-Path $root 'profile'); installId = 'version-test'
@@ -267,6 +270,9 @@ function New-LauncherPayload([string]$Prefix, [string]$ProfileRoot, [string]$Lab
     [IO.Directory]::CreateDirectory($path) | Out-Null
     Copy-Item -LiteralPath (Get-SchemeQsFixture) -Destination (Join-Path $path 'qs.exe')
     foreach ($name in @('Start-CaelestiaEntry.ps1', 'Caelestia-InstallCommon.ps1', 'Caelestia-Versions.ps1', 'Manage-Caelestia.ps1', 'Uninstall-Caelestia.ps1')) {
+        Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $path
+    }
+    foreach ($name in @('Caelestia-SemVer.ps1', 'Caelestia-UpdateTrust.ps1', 'Caelestia-Update.ps1', 'Caelestia-UpdateSecurity.cs')) {
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $path
     }
     if ($LegacyStart) {

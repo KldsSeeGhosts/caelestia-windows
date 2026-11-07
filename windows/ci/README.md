@@ -1,5 +1,9 @@
 # Public Windows CI
 
+Nexus client work does not yet add candidate assembly, publishing, promotion
+or freshness jobs. Existing workflow permissions and exact-pair guards are
+unchanged. See [implementation boundaries](../docs/NEXUS-IMPLEMENTATION.md).
+
 The active workflow is
 [.github/workflows/windows-build.yml](../../.github/workflows/windows-build.yml).
 The `windows-build.yml.template` is an inert identical copy for review and

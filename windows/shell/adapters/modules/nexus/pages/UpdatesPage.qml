@@ -17,10 +17,8 @@ import "UpdatesLogic.js" as UpdatesLogic
 // `caelestia update`, so there is no upstream design to adapt. This page is
 // built from the same nexus rows as AboutPage and AppsPage.
 //
-// It only reports and switches installed versions. Public previews are available
-// for manual download, but no automatic update channel is implemented.
-// Nothing here checks the network, downloads or
-// claims an update is available. The version status comes from the stable
+// Explicit checks and authenticated updates run in the stable root's worker,
+// never through QML networking. No check occurs on page open. Status comes from the stable
 // install root's Manage-Caelestia.ps1 (`-Command Status`, which touches neither
 // the desktop nor the network). Rollback queues an independent maintenance task
 // that restarts the shell on the retained version.
@@ -48,6 +46,9 @@ PageBase {
     property string loadState: "idle"
     property var info: null
     property bool confirming: false
+    property bool confirmingUpdate: false
+    property bool confirmingDevelopment: false
+    property var checkResult: null
     // The singleton retains ownership after the page closes. An unconfirmed
     // or complete request cannot be submitted again from this session.
     readonly property bool rollbackSubmitted: UpdateManager.submitted
@@ -56,7 +57,7 @@ PageBase {
     readonly property bool rollbackComplete: UpdateManager.complete
 
     readonly property bool loaded: loadState === "ready" && info !== null
-    readonly property bool busy: loadState === "loading" || rollbackSubmitted
+    readonly property bool busy: loadState === "loading" || rollbackSubmitted || checkProc.running || channelProc.running
     readonly property bool versioned: loaded && updateStatus.versioned
     readonly property string selectedId: loaded ? updateStatus.current : ""
     readonly property string previousId: loaded ? updateStatus.previous : ""
@@ -72,7 +73,7 @@ PageBase {
         if (!available)
             return Tr.tr("Needs an installed Caelestia");
         if (rollbackSubmitted)
-            return Tr.tr("Restarting on the previous version");
+            return UpdateManager.operationKind === "update" ? Tr.tr("An update is in progress") : Tr.tr("Restarting on the previous version");
         if (rollbackUnconfirmed)
             return Tr.tr("The earlier rollback outcome is unconfirmed");
         if (rollbackComplete)
@@ -93,15 +94,15 @@ PageBase {
         if (!available)
             return Tr.tr("Version management needs an installed Caelestia. This session was not started from one.");
         if (rollbackUnconfirmed)
-            return Tr.tr("Rollback confirmation is unavailable. It may still run. Refresh to check the selected version; another request is blocked.");
+            return Tr.tr("Maintenance confirmation is unavailable. It may still run. Refresh to check the selected version; another request is blocked.");
         if (rollbackComplete)
-            return Tr.tr("Rollback completed. Refresh to check the selected version.");
+            return Tr.tr("Maintenance completed. Refresh to check the selected version.");
         if (loadState === "error")
             return Tr.tr("Version status could not be read. Try refreshing.");
         if (rollbackFailed)
-            return Tr.tr("Rollback could not complete. Refresh to check the selected version.");
+            return Tr.tr("Maintenance could not complete. Refresh to check the selected version.");
         if (rollbackSubmitted)
-            return Tr.tr("Rollback requested. Caelestia will restart shortly.");
+            return UpdateManager.operationKind === "update" ? Tr.tr("Authenticated update in progress. Caelestia will restart after verification.") : Tr.tr("Rollback requested. Caelestia will restart shortly.");
         return "";
     }
 
@@ -122,6 +123,35 @@ PageBase {
             return;
         confirming = false;
         UpdateManager.request(powershellCommand(["-Command", "Rollback", "-ExpectedCurrent", selectedId]));
+    }
+
+    function check(): void {
+        if (smoke || !loaded || busy || stale || UpdateManager.unconfirmed || UpdateManager.complete)
+            return;
+        checkResult = null;
+        confirmingUpdate = false;
+        checkProc.command = powershellCommand(["-Command", "CheckUpdate"]);
+        checkProc.running = true;
+    }
+
+    function setChannel(channel: string): void {
+        if (smoke || !loaded || busy || UpdateManager.unconfirmed || UpdateManager.complete)
+            return;
+        checkResult = null;
+        confirmingDevelopment = false;
+        const args = ["-Command", "SetChannel", "-Channel", channel];
+        if (channel === "development")
+            args.push("-AcceptDevelopment");
+        channelProc.command = powershellCommand(args);
+        channelProc.running = true;
+    }
+
+    function requestUpdate(): void {
+        if (smoke || busy || stale || !checkResult?.available || checkResult.channel !== updateStatus.channel)
+            return;
+        confirmingUpdate = false;
+        UpdateManager.request(powershellCommand(["-Command", "Update", "-ExpectedCurrent", selectedId,
+            "-ExpectedBuild", checkResult.available.buildVersion, "-Channel", checkResult.channel]), "update");
     }
 
     function powershellCommand(extra: var): var {
@@ -167,6 +197,22 @@ PageBase {
         }
     }
 
+    property Process checkProcess: Process {
+        id: checkProc
+        stdout: StdioCollector { id: checkOut }
+        onExited: code => {
+            root.checkResult = UpdatesLogic.parseCheck(code, checkOut.text.trim()) ||
+                {state: "bad-metadata", channel: root.updateStatus.channel, available: null};
+        }
+    }
+    property Process channelProcess: Process {
+        id: channelProc
+        onExited: code => {
+            if (code === 0)
+                root.refresh();
+        }
+    }
+
     ColumnLayout {
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.top: parent.top
@@ -194,7 +240,14 @@ PageBase {
             first: true
             icon: "deployed_code"
             label: Tr.tr("Running version")
-            value: root.runningLabel
+            value: !root.stale && root.updateStatus.displayVersion !== "" ? root.updateStatus.displayVersion : root.runningLabel
+        }
+
+        InfoRow {
+            visible: !root.stale && root.updateStatus.releaseVersion !== ""
+            icon: "fingerprint"
+            label: Tr.tr("Artifact build")
+            value: root.updateStatus.releaseVersion
         }
 
         InfoRow {
@@ -283,17 +336,72 @@ PageBase {
 
         InfoRow {
             first: true
-            icon: "help"
-            label: Tr.tr("Latest public version")
-            subtext: Tr.tr("This page does not check online for new versions")
-            value: Tr.tr("Unknown")
+            icon: "route"
+            label: Tr.tr("Update channel")
+            subtext: Tr.tr("Checks only when requested. Channel selection survives update and rollback.")
+            value: root.updateStatus.channel
         }
 
+        RowButton {
+            icon: "science"
+            text: Tr.tr("Use development channel")
+            subtext: Tr.tr("Automatic verified-main builds. Can break. Click again to accept.")
+            disabled: root.smoke || !root.loaded || root.busy
+            onClicked: {
+                if (root.confirmingDevelopment)
+                    root.setChannel("development");
+                else
+                    root.confirmingDevelopment = true;
+            }
+        }
+        RowButton {
+            icon: "preview"
+            text: Tr.tr("Use preview channel")
+            disabled: root.smoke || !root.loaded || root.busy
+            onClicked: root.setChannel("preview")
+        }
+        RowButton {
+            icon: "verified"
+            text: Tr.tr("Use stable channel")
+            subtext: Tr.tr("Owner-promoted 1.0 or newer only; never development builds")
+            disabled: root.smoke || !root.loaded || root.busy
+            onClicked: root.setChannel("stable")
+        }
+        RowButton {
+            icon: "refresh"
+            text: Tr.tr("Check for updates")
+            disabled: root.smoke || !root.loaded || root.busy || root.stale
+            onClicked: root.check()
+        }
         InfoRow {
-            icon: "cloud_off"
-            label: Tr.tr("Automatic updates")
-            subtext: Tr.tr("Download and verify a release, then run its installer to update")
-            value: Tr.tr("Not available")
+            objectName: "updateResultRow"
+            icon: "info"
+            label: checkProc.running ? Tr.tr("Checking") : root.checkResult?.available
+                ? root.checkResult.available.displayVersion : root.checkResult
+                ? Tr.tr(UpdatesLogic.checkLabel(root.checkResult.state)) : root.updateStatus.updatesConfigured
+                ? Tr.tr("Not checked") : Tr.tr("Updates aren't set up for this build")
+            subtext: root.checkResult?.available ? root.checkResult.available.buildVersion : ""
+            value: UpdateManager.operationKind === "update" && UpdateManager.submitted ? UpdateManager.step : ""
+        }
+        RowButton {
+            visible: root.checkResult?.available !== undefined && root.checkResult?.available !== null
+            icon: "download"
+            text: root.confirmingUpdate ? Tr.tr("Confirm download, verify and restart") : Tr.tr("Download and install")
+            subtext: root.confirmingUpdate ? Tr.tr("Settings are kept; the current payload remains available for rollback. No automatic settings migration.") : root.checkResult?.available
+                ? `${Math.ceil(root.checkResult.available.size / 1048576)} MB` : ""
+            disabled: root.smoke || root.busy || root.stale || UpdateManager.unconfirmed || UpdateManager.complete
+            onClicked: {
+                if (root.confirmingUpdate)
+                    root.requestUpdate();
+                else
+                    root.confirmingUpdate = true;
+            }
+        }
+        RowButton {
+            visible: root.checkResult?.available !== undefined && root.checkResult?.available !== null
+            icon: "open_in_new"
+            text: Tr.tr("Release notes")
+            onClicked: root.openReleasePage(root.checkResult.available.notesUrl)
         }
 
         RowButton {

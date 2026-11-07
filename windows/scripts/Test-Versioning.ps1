@@ -9,7 +9,7 @@ foreach ($version in @('0.0.0', '1.2.3+001', '1.2.3-a-b.0+foo.BAR', '99999999999
     Assert ((ConvertTo-CaelestiaSemVer $version).Version -ceq $version) "Rejected valid SemVer $version"
 }
 foreach ($version in @('', 'v1.2.3', '1.2', '01.2.3', '1.02.3', '1.2.03', '1.2.3-01',
-    '1.2.3-a.00', '1.2.3+', '1.2.3-', '1.2.3-a..b', '1.2.3+foo..bar', '1.2.3 ', '1.2.3-a_')) {
+    '1.2.3-a.00', '1.2.3+', '1.2.3-', '1.2.3-a..b', '1.2.3+foo..bar', '1.2.3 ', '1.2.3-a_', "1.2.3`n")) {
     $rejected = $false
     try { $null = ConvertTo-CaelestiaSemVer $version } catch { $rejected = $true }
     Assert $rejected "Accepted invalid SemVer $version"
