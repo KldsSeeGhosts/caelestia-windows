@@ -22,6 +22,15 @@ Start from the exact reviewed public candidate with initialized dependencies:
 git clone --recurse-submodules https://github.com/KldsSeeGhosts/caelestia-windows.git C:\src\caelestia
 git -C C:\src\caelestia checkout <full-reviewed-shell-commit>
 git -C C:\src\caelestia submodule update --init --recursive
+# Self-contained bundles require complete history. The submodule configuration
+# may select a shallow checkout; complete only those public dependency clones.
+foreach ($dependency in @('windows/deps/quickshell', 'windows/deps/m3shapes')) {
+    $dependencyRoot = Join-Path C:\src\caelestia $dependency
+    if ((git -C $dependencyRoot rev-parse --is-shallow-repository).Trim() -eq 'true') {
+        git -C $dependencyRoot fetch --unshallow origin
+        if ($LASTEXITCODE -ne 0) { throw 'Public dependency history fetch failed.' }
+    }
+}
 powershell -NoProfile -File C:\src\caelestia\windows\scripts\Prepare-CaelestiaSourceAssets.ps1 `
     -SourceRoot C:\src\caelestia -SourceRevision <full-reviewed-shell-commit> `
     -OutputDirectory C:\release\source-run-1 -CacheDirectory C:\release\source-cache
@@ -70,6 +79,9 @@ modules that might not be deployed. Inclusion is not a runtime-shipped claim.
 Python, the CLI and optional Python packages are not bundled; the Microsoft
 runtime is an external prerequisite, not redistributed. A prepared inventory
 has `payloadState: not-supplied`, not a package pass.
+Shallow histories are not self-contained bundle inputs. Preparation refuses
+incomplete ancestry rather than publishing a bundle with missing prerequisites;
+the explicit Git history step above happens before the read-only recipe.
 
 Verbatim notices are extracted from exact hash-verified supplier members, never
 guessed from filenames. The few already published derived/index notices are
@@ -121,6 +133,18 @@ New suppliers, per-embedded-library applicability decisions, optional Python
 bundling and changed notice derivations require bounded review by the release
 owner. The inventory is a shared input for dependency/SBOM work, not another
 independently maintained dependency lock.
+
+For a disposable license install/update/uninstall check without desktop
+integration, run the existing test in its explicit isolated mode:
+
+```powershell
+.\windows\scripts\Test-InstallLicenses.ps1 -BuildRoot $testedBuild `
+    -QtPrefix $matchingQt -VCRuntimeRoot $matchingCrt -NoIntegration
+```
+
+This keeps the license, capture provenance, rollback-payload and profile
+preservation checks. It does not create shortcuts or autostart entries and
+does not launch the payload. The default mode still checks integration.
 
 ## Capture migration input forms
 
