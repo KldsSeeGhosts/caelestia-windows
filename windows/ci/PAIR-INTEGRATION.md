@@ -25,8 +25,8 @@ dependency checks remain enabled.
 
 Manual and main-push runs have unique concurrency groups and cannot cancel
 each other, including pending runs. Only superseded PR runs are cancellable.
-Only a **push to main** can save the shared tooling cache. Candidate dispatches
-and fork PRs may restore, but cannot save that trusted cache.
+Only a successful **push to main** can save the shared tooling and compiler
+caches. Candidate dispatches and fork PRs may restore, but cannot save them.
 
 ## Execution and receipts
 
@@ -43,12 +43,24 @@ canonical tool preparation, backend fixture configure/build/portable tests
 and consuming-shell integration. Integration executes:
 
 1. Services suite.
-2. Production `Build-Prototype.ps1 -PublicRelease -PluginTests -Jobs 2`,
+2. Production `Build-Prototype.ps1 -PublicRelease -PluginTests -Jobs <jobs>`,
    including the actual backend, plugins, M3Shapes and locked Glazier.
 3. The release assembler's read-only toolchain preflight.
 4. Plugin CTest with `--no-tests=error`.
 5. Shell suite.
 6. Production graph staging and isolated offscreen smoke.
+
+`<jobs>` is measured once per native job by
+[Get-BuildJobs.ps1](Get-BuildJobs.ps1): one per logical processor, at most one
+per 3 GiB of memory, within 1-16. The same value drives the capture Rust build,
+the trusted fixture build and production. It changes compile scheduling only.
+CTest, QML suites and recorded stages stay serial.
+
+Before any native compilation, the workflow runs the same Services command
+once with `-ServicesPreflightRoot`. That early copy writes only under its own
+fresh root, outside the pair results. It is not recorded in the receipt or
+envelope and is never evidence. A failure stops the job early; a pass changes
+nothing, because recorded integration reruns Services from scratch.
 
 Candidate builds require both `-BackendRoot` and
 `-CandidateBackendRevision`; smoke requires the same explicit SHA.

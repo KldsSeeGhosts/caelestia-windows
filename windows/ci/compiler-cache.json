@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "tool": "ccache",
+  "version": "4.14.2",
+  "file": "ccache-4.14.2-windows-x86_64.zip",
+  "url": "https://github.com/ccache/ccache/releases/download/v4.14.2/ccache-4.14.2-windows-x86_64.zip",
+  "sha256": "6993ce645e53192cec592ee23186200b574ac4c59097ecde8d9cfd681b47ae84",
+  "executable": "ccache-4.14.2-windows-x86_64/ccache.exe",
+  "maxSize": "3G"
+}

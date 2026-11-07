@@ -17,9 +17,12 @@ After those pass, two jobs can run independently:
 
 - Installer/rollback tests and the real colour-worker tests use isolated,
   temporary profiles and pinned Python dependencies.
-- The native job prepares the Windows tools, runs service contracts, builds
-  the production payload and plugin tests once, then runs native CTest
-  fixtures, shell fixtures and production smoke.
+- The native job prepares the Windows tools and runs an early, unrecorded
+  Services preflight before compiling anything. It then runs the capture Rust
+  tests, builds and tests the backend fixtures, builds the production payload
+  and plugin tests once, and runs the recorded Services suite, plugin CTest,
+  shell fixtures and production smoke. Compile parallelism comes from the
+  runner's processors and memory; test execution stays serial.
 
 Only a narrow allowlist of documentation and issue-template changes skips the
 native job. Unknown files, empty diffs, first pushes and manual dispatches
@@ -68,9 +71,22 @@ versions are checked before use. Python tooling is installed fresh. The cache
 identity includes the specification and Python locks, not a floating channel. Only
 trusted pushes to `main` save this cache; pull requests and manual candidate
 dispatches may restore it but cannot save it. There are
-no native object, CMake build, Cargo target, staged-shell or installed-product
-caches shared across trust boundaries. Change the cache schema key when the
-tooling selection or extraction contract changes.
+no CMake build, Cargo target, staged-shell or installed-product caches. Change
+the cache schema key when the tooling selection or extraction contract changes.
+
+C/C++ compilation goes through ccache, pinned in
+[compiler-cache.json](compiler-cache.json) to the public 4.14.2 release
+archive and its SHA-256. [Enable-CompilerCache.ps1](Enable-CompilerCache.ps1)
+refuses any other archive before extraction and checks the reported version.
+It reads no configuration file. Reuse requires the same compiler binary
+content, arguments, source and included headers; no sloppiness is enabled.
+CMake picks the launcher up from the environment, so the trusted fixture runner
+and production build commands are unchanged. Every build directory is still
+fresh, every binary is linked in the current run and every test runs again.
+A cache hit is never a test result. The object cache follows the tooling-cache
+writer boundary. It is restored by toolchain digest, but only a fully successful
+push to `main` trims it to that run's entries and saves it. PRs and candidate
+dispatches restore it read-only. Rust/Cargo output is not cached.
 The archive hashes authenticate the downloaded inputs, not every byte of an
 already extracted cache tree. Reused extracted directories receive required-file,
 version and supplier-metadata checks, not a complete per-file hash comparison

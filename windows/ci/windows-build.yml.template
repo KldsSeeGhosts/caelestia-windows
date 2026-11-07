@@ -242,11 +242,41 @@ jobs:
             C:\t-public\clang+llvm-20.1.8-x86_64-pc-windows-msvc
             C:\t-public\deps\CLI11-2.5.0
 
+      - name: Select build parallelism from runner hardware
+        run: |
+          & "$env:GITHUB_WORKSPACE\windows\ci\Get-BuildJobs.ps1"
+
+      - name: Early Services preflight (unrecorded; recorded integration reruns it)
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $local = Get-Content "$env:PAIR_RESULTS\pair-local.json" -Raw | ConvertFrom-Json
+          $request = Get-Content "$env:PAIR_RESULTS\pair-request.json" -Raw | ConvertFrom-Json
+          & powershell.exe -NoProfile -NonInteractive -File "$env:GITHUB_WORKSPACE\windows\ci\Invoke-PairIntegration.ps1" `
+            -ShellRoot $env:GITHUB_WORKSPACE -BackendRoot $local.backendRoot `
+            -Mode $request.mode -BackendSha $request.backend -ToolRoot $env:TOOL_ROOT `
+            -BuildRoot $env:BUILD_ROOT -Results $env:PAIR_RESULTS -JUnit "$env:PAIR_RESULTS\integration.raw.xml" `
+            -ServicesPreflightRoot C:\ci-preflight -EchoDiagnostics
+          if ($LASTEXITCODE -ne 0) { throw 'Early Services preflight failed before any native compilation.' }
+
       - name: First-party capture Rust regressions
         run: |
           & powershell.exe -NoProfile -NonInteractive -File "$env:GITHUB_WORKSPACE\windows\scripts\Test-CaptureRust.ps1" `
-            -ToolRoot $env:TOOL_ROOT -OutputRoot C:\ci-capture -Jobs 2
+            -ToolRoot $env:TOOL_ROOT -OutputRoot C:\ci-capture -Jobs $env:BUILD_JOBS
           if ($LASTEXITCODE -ne 0) { throw 'Capture Rust regressions failed or were empty.' }
+
+      - name: Restore compiler cache written by trusted main
+        id: ccache
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          key: windows-x64-ccache-v1-${{ hashFiles('windows/toolchain.json', 'windows/toolchain/*.lock.txt', 'windows/ci/compiler-cache.json') }}-${{ github.sha }}
+          restore-keys: |
+            windows-x64-ccache-v1-${{ hashFiles('windows/toolchain.json', 'windows/toolchain/*.lock.txt', 'windows/ci/compiler-cache.json') }}-
+          path: C:\t-ccache
+
+      - name: Enable verified compiler cache
+        id: ccache-enable
+        run: |
+          & "$env:GITHUB_WORKSPACE\windows\ci\Enable-CompilerCache.ps1" -ToolDirectory C:\t-ccache-tool -CacheDirectory C:\t-ccache
 
       - name: Backend component build and portable tier
         run: |
@@ -260,7 +290,7 @@ jobs:
             python -I -B $validator --receipt "$env:PAIR_RESULTS\candidate-result.json" run `
               --stage $phase --echo @testArguments -- powershell.exe -NoProfile -NonInteractive -File $gate `
               -Phase $phase -ContractRoot $env:GITHUB_WORKSPACE -ToolRoot $env:TOOL_ROOT `
-              -BuildRoot C:\b-fixtures -Results $env:PAIR_RESULTS -Jobs 2
+              -BuildRoot C:\b-fixtures -Results $env:PAIR_RESULTS -Jobs $env:BUILD_JOBS
             if ($LASTEXITCODE -ne 0) { throw "Backend component phase failed: $phase" }
           }
           python -I -B $validator --receipt "$env:PAIR_RESULTS\candidate-result.json" inventory `
@@ -278,9 +308,14 @@ jobs:
             --junit "$env:PAIR_RESULTS\integration.raw.xml" -- powershell.exe -NoProfile -NonInteractive `
             -File "$env:GITHUB_WORKSPACE\windows\ci\Invoke-PairIntegration.ps1" `
             -ShellRoot $env:GITHUB_WORKSPACE -BackendRoot $local.backendRoot `
-            -Mode $request.mode -BackendSha $request.backend -ToolRoot $env:TOOL_ROOT `
+            -Mode $request.mode -BackendSha $request.backend -ToolRoot $env:TOOL_ROOT -Jobs $env:BUILD_JOBS `
             -BuildRoot $env:BUILD_ROOT -Results $env:PAIR_RESULTS -JUnit "$env:PAIR_RESULTS\integration.raw.xml" -EchoDiagnostics
           if ($LASTEXITCODE -ne 0) { throw 'Consuming-shell integration failed.' }
+
+      - name: Compiler cache statistics
+        if: always() && steps.ccache-enable.outcome == 'success'
+        run: |
+          & C:\t-ccache-tool\ccache.exe --show-stats
 
       - name: Finalize exact-pair receipt
         if: always()
@@ -309,6 +344,21 @@ jobs:
             --workflow-outcome $env:PAIR_OUTCOME --event $env:GITHUB_EVENT_NAME --ref $env:GITHUB_REF `
             --run-id $env:GITHUB_RUN_ID --attempt $env:GITHUB_RUN_ATTEMPT --workflow-sha $env:GITHUB_SHA
           if ($LASTEXITCODE -ne 0) { throw 'Independent pair validation is non-pass.' }
+
+      # Only a fully successful trusted main push writes objects; PRs and
+      # dispatches restore them read-only. Keep only entries this run used.
+      - name: Trim compiler cache to this run's entries
+        if: success() && steps.ccache.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: |
+          & C:\t-ccache-tool\ccache.exe --evict-older-than 7200s
+          if ($LASTEXITCODE -ne 0) { throw 'Compiler cache trimming failed.' }
+
+      - name: Save compiler cache from trusted main only
+        if: success() && steps.ccache.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          key: ${{ steps.ccache.outputs.cache-primary-key }}
+          path: C:\t-ccache
 
       - name: Sanitized exact-pair receipts
         if: always()
