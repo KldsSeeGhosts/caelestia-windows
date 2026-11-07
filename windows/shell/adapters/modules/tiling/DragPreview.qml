@@ -11,8 +11,10 @@ import qs.services
 // Windows-only preview of where a dragged tiled window will land. The tiler
 // plans the drop from the cursor on every move of the window and publishes
 // the result on `Tiling` (TilingService.qml); this draws exactly that: the
-// plate where the dragged window lands and, when exactly one other tile moves,
-// a ghost where that one goes. A drop that changes nothing draws nothing.
+// plate where the dragged window lands, a marker on it saying what the
+// release does (swap, split, or move to this monitor) and, when exactly one
+// other tile moves, a ghost where that one goes. A drop that changes nothing
+// draws nothing. Nothing here decides the drop; it only reads the plan.
 //
 // One click-through overlay per screen, because screens can differ in DPI.
 // It is created on the first drag on its screen, kept afterwards, and is a
@@ -48,12 +50,29 @@ Scope {
                     id: win
 
                     readonly property bool drawing: screenScope.here
-                        && (Tiling.dragMode === "swap" || Tiling.dragMode === "insert")
+                        && (Tiling.dragMode === "swap" || Tiling.dragMode === "insert" || Tiling.dragMode === "move")
                         && Tiling.dragLanding.width > 0
                     readonly property bool ghostDrawn: drawing && Tiling.dragDisplaced.width > 0
                     property rect landing
                     property rect displaced
                     property bool hasGhost
+                    property string mode
+
+                    // An insert's side is where the plate lies against the one
+                    // tile it splits; without that ghost the split is shown plain.
+                    function markerGlyph(): string {
+                        if (mode === "swap")
+                            return "swap_horiz";
+                        if (mode === "move")
+                            return "move_item";
+                        if (!hasGhost)
+                            return "splitscreen_add";
+                        const dx = (landing.x + landing.width / 2) - (displaced.x + displaced.width / 2);
+                        const dy = (landing.y + landing.height / 2) - (displaced.y + displaced.height / 2);
+                        if (Math.abs(dx) >= Math.abs(dy))
+                            return dx < 0 ? "splitscreen_left" : "splitscreen_right";
+                        return dy < 0 ? "splitscreen_top" : "splitscreen_bottom";
+                    }
 
                     screen: screenScope.modelData
                     name: "tiling-drop-preview"
@@ -85,6 +104,11 @@ Scope {
                     Binding on hasGhost {
                         when: win.drawing
                         value: win.ghostDrawn
+                        restoreMode: Binding.RestoreNone
+                    }
+                    Binding on mode {
+                        when: win.drawing
+                        value: Tiling.dragMode
                         restoreMode: Binding.RestoreNone
                     }
 
@@ -132,6 +156,8 @@ Scope {
                         }
 
                         Rectangle {
+                            id: plate
+
                             objectName: "tilingDropPlate"
                             x: win.landing.x
                             y: win.landing.y
@@ -146,6 +172,33 @@ Scope {
                             Behavior on y { enabled: drops.opacity > 0; Anim { type: Anim.EmphasizedSmall } }
                             Behavior on width { enabled: drops.opacity > 0; Anim { type: Anim.EmphasizedSmall } }
                             Behavior on height { enabled: drops.opacity > 0; Anim { type: Anim.EmphasizedSmall } }
+
+                            // What the release does: swap, split on a side, or move.
+                            StyledRect {
+                                id: marker
+
+                                objectName: "tilingDropMarker"
+
+                                readonly property string glyph: win.markerGlyph()
+
+                                anchors.centerIn: parent
+                                implicitWidth: icon.implicitHeight + Tokens.padding.large * 2
+                                implicitHeight: implicitWidth
+                                visible: plate.width >= implicitWidth * 2 && plate.height >= implicitHeight * 2
+                                radius: Tokens.rounding.full
+                                color: Colours.palette.m3primary
+
+                                MaterialIcon {
+                                    id: icon
+
+                                    objectName: "tilingDropMarkerIcon"
+                                    anchors.centerIn: parent
+                                    animate: true
+                                    text: marker.glyph
+                                    color: Colours.palette.m3onPrimary
+                                    fontStyle: Tokens.font.icon.large
+                                }
+                            }
                         }
                     }
                 }

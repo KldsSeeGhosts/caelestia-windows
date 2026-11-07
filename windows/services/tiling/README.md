@@ -176,20 +176,30 @@ backend allowlist.
 
 ## Dragging tiled windows
 
-What a release does depends on how the window was dragged and where the
-cursor is:
+What a release does depends only on where the cursor is. A title-bar drag
+and a Super+drag follow the same rule:
 
-| gesture | over another tile | elsewhere |
-| --- | --- | --- |
-| title bar | the two windows swap | own slot, a gap or the bar: back home; another monitor's empty area: moves there |
-| Super+drag | centre: swap; edge band: insert on that side | same as the title bar |
+| cursor over | release |
+| --- | --- |
+| another tile's centre | the two windows swap |
+| another tile's edge band (dwindle) | the window splits that tile and goes on that side |
+| another tile (master, scrolling) | the two windows swap; these layouts have no sides |
+| its own slot, a gap or the bar | back home |
+| another monitor's empty area | moves to that monitor |
 
-An edge band is 20% of the tile on that axis, at most 120 DIPs. The master
-and scrolling layouts always swap, because they have no sides to insert on.
-A zone or target holds until the cursor is 8 DIPs past it, so a boundary
-does not flicker. Esc returns the window home. Resizing a tile by its border
-moves its split edges as before, even when Snap changes the frame during a
-title-bar move.
+An edge band is 20% of the tile on that axis, at most 120 DIPs at that
+monitor's scale. In a corner equally deep in two bands, the left or right
+band wins. A zone or target holds until the cursor is 8 DIPs past it, so a
+boundary does not flicker.
+
+The release does what the preview last showed. Windows reports the end of
+a drag late, and the cursor may have moved on without a new preview, so the
+release re-checks the shown drop at the cursor position it was planned from
+and never swaps a shown split for a swap or the other way round. If the
+target closed, minimized or reflowed so that the shown drop no longer holds,
+the window goes home, and the preview stays home until the cursor moves on.
+Esc returns the window home. Resizing a tile by its border moves its split
+edges as before, even when Snap changes the frame during a title-bar move.
 
 The keyboard equivalents are `swapwindow` (or `movewindow` inside a layout)
 for a swap and `movewindow` into another layout for an insert.
@@ -199,12 +209,15 @@ layout trees and publishes it on the `Tiling` facade (`dragActive`,
 `dragMode`, `dragScreen`, `dragLanding`, `dragDisplaced`; logical rectangles
 local to that screen). `NativeTilingBackend.qml` and `TilingService.qml`
 forward it, feature-detected, and `modules/tiling/DragPreview.qml` draws it:
-a primary-tinted plate where the window lands and, in dwindle when exactly
-one other window moves, an outline where that one goes. A drop that changes
-nothing draws nothing. The plan follows layout changes during the drag; if the
-target closes or minimizes, the drop goes home until the cursor moves on. The preview needs window contents shown while dragging (the
-Windows default); with outline dragging the drop still works, without a
-preview.
+a primary-tinted plate where the window lands, including on another monitor
+for a move, with a marker for what the release does (a swap glyph, a split
+glyph that points to the side when the split tile is outlined, or a move
+glyph) and, in dwindle when exactly one other window moves, an outline where
+that one goes. A drop that changes nothing draws nothing. The preview only
+reads the plan; it decides nothing. The preview needs window contents shown
+while dragging (the Windows default); with outline dragging there are no
+location events and no preview, and the release plans once by the same rule
+at the release cursor.
 
 ## Validation
 
