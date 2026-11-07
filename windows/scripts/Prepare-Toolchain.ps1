@@ -78,14 +78,23 @@ try {
     }
     $llvm = Get-VerifiedToolchainArchive $spec.downloads.llvm
     $llvmResources = "$($spec.llvmDirectory)/lib/clang/$($spec.clangVersion.Split('.')[0])/include/stddef.h"
+    $llvmMarkerPath = Join-Path $ToolRoot "$($spec.llvmDirectory)/.caelestia-extraction.json"
+    $llvmMarker = $null
+    if (Test-Path -LiteralPath $llvmMarkerPath -PathType Leaf) {
+        try { $llvmMarker = Get-Content -LiteralPath $llvmMarkerPath -Raw | ConvertFrom-Json } catch { $llvmMarker = $null }
+    }
     if (-not (Test-Path -LiteralPath (Join-Path $ToolRoot "$($spec.llvmDirectory)/bin/clang-cl.exe")) -or
-        -not (Test-Path -LiteralPath (Join-Path $ToolRoot $llvmResources))) {
+        -not (Test-Path -LiteralPath (Join-Path $ToolRoot $llvmResources)) -or
+        $null -eq $llvmMarker -or $llvmMarker.schemaVersion -ne 1 -or
+        $llvmMarker.archiveSha256 -cne $spec.downloads.llvm.sha256 -or $llvmMarker.directory -cne $spec.llvmDirectory) {
         # The project consumes the compiler/tools and its built-in headers and
         # runtimes, not the LLVM development libraries or API headers. Avoid
         # materializing that unused SDK from the same hash-verified archive.
         Write-Host 'Extracting compiler binaries and resource headers from verified LLVM archive.'
-        & "$env:SystemRoot\System32\tar.exe" -xf $llvm -C $ToolRoot `
-            "$($spec.llvmDirectory)/bin" "$($spec.llvmDirectory)/lib/clang"
+        $llvmExtractor = Join-Path $PSScriptRoot '..\toolchain\extract_llvm.py'
+        & $venvPython -I -B $llvmExtractor --archive $llvm --destination $ToolRoot `
+            --directory $spec.llvmDirectory --sha256 $spec.downloads.llvm.sha256 `
+            --clang-major $spec.clangVersion.Split('.')[0]
         if ($LASTEXITCODE -ne 0) { throw 'Verified LLVM extraction failed.' }
     }
     if (-not (Test-Path -LiteralPath (Join-Path $ToolRoot $llvmResources))) {

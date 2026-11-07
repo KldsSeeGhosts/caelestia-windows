@@ -10,6 +10,7 @@ import io
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tarfile
 import zipfile
 
@@ -38,12 +39,13 @@ def main():
             entry = tarfile.TarInfo(name)
             entry.type = tarfile.DIRTYPE
             bundle.addfile(entry)
-        for name in ("bin/clang-cl.exe", "lib/clang/20/include/stddef.h",
+        for name in ("bin/clang-cl.exe", "bin/lld-link.exe", "bin/llvm-rc.exe", "lib/clang/20/include/stddef.h",
                      "lib/unused-sdk.lib", "include/unused-api.h"):
             payload = b"synthetic archive member, never executed"
             entry = tarfile.TarInfo("fixture-llvm/" + name)
             entry.size = len(payload)
             bundle.addfile(entry, io.BytesIO(payload))
+    llvm_digest = hashlib.sha256(llvm_archive.read_bytes()).hexdigest()
     # An incompatible caller module must not shadow the current engine's inbox
     # modules. It also prevents accidental success on machines with pwsh absent.
     modules = root / "PowerShell-7-Modules"
@@ -175,12 +177,15 @@ if (-not $rejected) {{ throw 'Download timeout was accepted.' }}
 $extract = $ast.Find({{
     param($node)
     $node -is [Management.Automation.Language.CommandAst] -and
-        $node.Extent.Text -match 'System32\\\\tar.exe'
+        $node.Extent.Text -match '\\$llvmExtractor\\s+--archive'
 }}, $true)
 if ($null -eq $extract) {{ throw 'Missing production LLVM extraction command.' }}
 $llvm = {quote(llvm_archive)}
 $ToolRoot = {quote(root / (name + "-llvm"))}
-$spec = [pscustomobject]@{{ llvmDirectory = 'fixture-llvm' }}
+$spec = [pscustomobject]@{{ llvmDirectory = 'fixture-llvm'; clangVersion = '20.1.8';
+    downloads = [pscustomobject]@{{ llvm = [pscustomobject]@{{ sha256 = '{llvm_digest}' }} }} }}
+$venvPython = {quote(sys.executable)}
+$llvmExtractor = {quote(prepare.parent.parent / 'toolchain' / 'extract_llvm.py')}
 $null = [IO.Directory]::CreateDirectory($ToolRoot)
 & ([scriptblock]::Create($extract.Extent.Text))
 if ($LASTEXITCODE -ne 0) {{ throw 'Production LLVM member extraction failed.' }}
@@ -192,6 +197,9 @@ foreach ($file in @('bin/clang-cl.exe', 'lib/clang/20/include/stddef.h')) {{
 if ((Test-Path "$ToolRoot/fixture-llvm/lib/unused-sdk.lib") -or
     (Test-Path "$ToolRoot/fixture-llvm/include/unused-api.h")) {{
     throw 'Production extraction materialized the unused LLVM development SDK.'
+}}
+if (-not (Test-Path "$ToolRoot/fixture-llvm/.caelestia-extraction.json")) {{
+    throw 'Complete extraction marker missing.'
 }}
 'PASS {name}: actual LLVM extraction command preserves binaries/resources and excludes unused SDK'
 'PASS {name}: production archive download bounds, cache, checksum and timeout refusal (fake curl; no network)'
