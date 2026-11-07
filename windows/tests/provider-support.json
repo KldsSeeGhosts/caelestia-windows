@@ -9,6 +9,7 @@
     "shellRevision": "eec2778123d47c3555006b3af5e75fd893c7b9c2",
     "backendRevision": "e6039b2b9cbb35b97473bda4dcc3f12789ae7f0c",
     "glazierRevision": "37f795041cbbb32ed46cba103f3f000a3a99ac13",
+    "captureRevision": "f637fcdc6bc1a52e2a405ef1935b199276d06a9c",
     "m3shapesRevision": "32ad9ce328bb77ed349b40a3be10ee9ea610b8ab",
     "scope": "Source trace baseline only; not a release, install, hardware, or full candidate qualification."
   },
@@ -26,7 +27,12 @@
     "glazier": {
       "url": "https://github.com/KldsSeeGhosts/glazier",
       "revision": "37f795041cbbb32ed46cba103f3f000a3a99ac13",
-      "localRoot": "windows/deps/glazier"
+      "localRoot": "windows/capture"
+    },
+    "capture": {
+      "url": "https://github.com/KldsSeeGhosts/caelestia-windows",
+      "revision": "f637fcdc6bc1a52e2a405ef1935b199276d06a9c",
+      "localRoot": "."
     },
     "m3shapes": {
       "url": "https://github.com/soramanew/m3shapes",
@@ -789,10 +795,10 @@
       "id": "capture",
       "bundleProviderId": "capture",
       "uiEntry": "PrintScreen, Win+Shift+S, Win+Shift+R, launcher actions, and the recording card.",
-      "provider": "Pinned bundled Glazier executable, orchestrated by the staged Glazier/Recorder adapters.",
+      "provider": "First-party caelestia-capture.exe from windows/capture, managed by Caelestia.Windows.CaptureHost and the compatibility-named Glazier/Recorder adapters.",
       "operations": [
-        "Launch Glazier's screenshot picker/editor after shell surfaces are dismissed.",
-        "Start, stop, pause/resume, and observe Glazier recording states and finalized-file ownership."
+        "Launch the first-party screenshot picker/editor after shell surfaces are dismissed.",
+        "Start, stop, pause/resume, and observe capture recording states and finalized-file ownership."
       ],
       "requirements": [
         "The live installed shell, bundled executable and interactive desktop are required; smoke/read-only profiles suppress process launch.",
@@ -817,7 +823,7 @@
         }
       ],
       "operationCaveat": "Screenshot launch is asynchronous. A shell return value/accepted detached launch is not a file-completion result; use provider status/journal evidence for recording state.",
-      "captureMigration": "The current staged route remains Glazier at the recorded pin. Lifecycle changes and the first-party source/product migration are separate active work; migration is pending, not a final identity change.",
+      "captureMigration": "Maintained source and managed identity are integrated at the capture source revision. The Glazier origin revision remains attribution/provenance, not the active source revision. Exact-pair, installed-package and live capture acceptance remain separate.",
       "staging": [
         {
           "source": "windows/shell/adapters/services/Glazier.qml",
@@ -857,14 +863,14 @@
           "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/eec2778123d47c3555006b3af5e75fd893c7b9c2/windows/shell/adapters/modules/nexus/pages/ServicesPage.qml"
         },
         {
-          "repository": "glazier",
-          "path": "src/capture.rs",
-          "url": "https://github.com/KldsSeeGhosts/glazier/blob/37f795041cbbb32ed46cba103f3f000a3a99ac13/src/capture.rs"
+          "repository": "capture",
+          "path": "windows/capture/src/capture.rs",
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/f637fcdc6bc1a52e2a405ef1935b199276d06a9c/windows/capture/src/capture.rs"
         },
         {
-          "repository": "glazier",
-          "path": "src/recording.rs",
-          "url": "https://github.com/KldsSeeGhosts/glazier/blob/37f795041cbbb32ed46cba103f3f000a3a99ac13/src/recording.rs"
+          "repository": "capture",
+          "path": "windows/capture/src/recording.rs",
+          "url": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/f637fcdc6bc1a52e2a405ef1935b199276d06a9c/windows/capture/src/recording.rs"
         }
       ],
       "acceptanceOwners": [

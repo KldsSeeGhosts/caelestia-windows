@@ -14,6 +14,14 @@ desktop or hardware qualification. The machine-readable copy is
 [`provider-support.json`](../tests/provider-support.json); its traceability
 check is [`Test-ProviderSupport.ps1`](../tests/Test-ProviderSupport.ps1).
 
+Capture source update: the maintained helper now lives in `windows/capture`
+and builds as `caelestia-capture.exe`. Its source trace is
+[`f637fcdc6bc1a52e2a405ef1935b199276d06a9c`](https://github.com/KldsSeeGhosts/caelestia-windows/tree/f637fcdc6bc1a52e2a405ef1935b199276d06a9c/windows/capture).
+The original Glazier pin above and the older table links below remain origin
+and historical navigation references, not the maintained helper's source SHA.
+The machine-readable capture row records the updated source links. Source
+integration is not live capture, exact-package or hardware acceptance.
+
 “Staged” means a source file is included in the production staging map. It does
 not mean the corresponding native component is always loaded: several services
 are default-off, read-only, or separately opt-in. The map below describes
@@ -90,11 +98,10 @@ provider already emits all four fields. The fixed v1 provider IDs are
 - The Windows clipboard adapter uses the Caelestia Windows plugin over
   Windows' clipboard history. The inherited clipboard implementation and its
   store are not the active picker route.
-- Screenshots and recordings currently use the pinned bundled Glazier. Capture
-  lifecycle work and the first-party source/product migration are pending. Keep
-  Glazier as the current trace identity until an exact migration commit,
-  integration result, and acceptance evidence replace it; do not infer a final
-  capture identity from an in-progress candidate.
+- Screenshots and recordings use the maintained first-party capture helper,
+  with a native managed-host owner. The compatibility-named Glazier adapter is
+  not a separate dependency. See the capture source update above; live capture
+  and final candidate acceptance remain unverified here.
 
 Sources for those boundaries: [Hypr facade policy](https://github.com/KldsSeeGhosts/caelestia-windows/blob/eec2778123d47c3555006b3af5e75fd893c7b9c2/windows/services/hypr/HyprService.qml),
 [native dispatcher](https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/e6039b2b9cbb35b97473bda4dcc3f12789ae7f0c/src/windows/hyprland/dispatcher.cpp),
@@ -119,9 +126,9 @@ Two presentation/lifecycle gaps are visible in the pinned baseline:
    owns that correction and its integration evidence.
 
 These are source findings, not claims of a reproduced live failure. Capture
-lifecycle acceptance remains with the public [recorder owner](https://github.com/KldsSeeGhosts/caelestia-windows/issues/28). The active capture migration does
-not change the currently staged Glazier identity until its exact source/product
-move and acceptance are complete.
+lifecycle acceptance remains with the public [recorder owner](https://github.com/KldsSeeGhosts/caelestia-windows/issues/28).
+The managed-host implementation and first-party source move do not establish
+those live acceptance results.
 
 ## Maintaining this map
 

@@ -104,6 +104,11 @@ if (Test-Path -LiteralPath $OutputDirectory) { throw 'Source asset output must b
 if (-not $SourceRevision) { $SourceRevision = (Invoke-SourceGit $SourceRoot @('rev-parse', 'HEAD')) -join '' }
 $null = Invoke-SourceGit $SourceRoot @('cat-file', '-e', "$SourceRevision^{commit}")
 $lock = Get-SourceGitJson $SourceRoot $SourceRevision 'windows/sources.lock.json'
+if (-not $PSBoundParameters.ContainsKey('CaptureLayout') -and
+    $lock.glazier.PSObject.Properties['representation'] -and $lock.glazier.representation -ceq 'in-tree') {
+    $CaptureLayout = 'Integrated'
+    $IntegratedCapturePath = [string]$lock.glazier.path
+}
 $toolchain = Get-SourceGitJson $SourceRoot $SourceRevision 'windows/toolchain.json'
 $stageMap = Get-SourceGitJson $SourceRoot $SourceRevision 'windows/shell/sources.json'
 $projects = @([ordered]@{ id = 'shell'; repository = $recipe.shellRepository; revision = $SourceRevision; root = $SourceRoot })
@@ -251,6 +256,10 @@ try {
     $captureProject = if ($CaptureLayout -eq 'Pinned') { 'capture' } else { 'shell' }
     $noticePairs += ,@($captureProject, ($captureLicenseRoot + 'LICENSE'), 'payload/licenses/Glazier-LICENSE')
     $noticePairs += ,@($captureProject, ($captureLicenseRoot + 'THIRD_PARTY_NOTICES.md'), 'payload/licenses/Glazier-THIRD_PARTY_NOTICES.md')
+    if ($CaptureLayout -eq 'Integrated' -and $lock.glazier.PSObject.Properties['representation'] -and
+        $lock.glazier.representation -ceq 'in-tree') {
+        $noticePairs += ,@('shell', ($captureLicenseRoot + 'ORIGIN.md'), 'payload/licenses/Caelestia-Capture-ORIGIN.md')
+    }
     foreach ($pair in $noticePairs) {
         $project = @($projects | Where-Object id -CEQ $pair[0])[0]
         $object = (Invoke-SourceGit $project.root @('rev-parse', "$($project.revision):$($pair[1])")) -join ''
@@ -304,6 +313,14 @@ try {
     $referenceRules = @($referenceApp.files | ForEach-Object {
         [ordered]@{ path = $_.path; component = $owners[$_.path]; sha256 = $_.sha256 }
     })
+    if ($CaptureLayout -eq 'Integrated') {
+        # Explicit product rename rule, not a wildcard for unknown payloads.
+        $referenceRules = @($referenceRules | Where-Object path -cne 'payload/glazier.exe')
+        $referenceRules += [ordered]@{ path = 'payload/caelestia-capture.exe'; component = 'capture'; sha256 = $null }
+        foreach ($notice in $projectNotices | Where-Object payloadPath -eq 'payload/licenses/Caelestia-Capture-ORIGIN.md') {
+            $referenceRules += [ordered]@{ path = $notice.payloadPath; component = 'capture'; sha256 = $notice.sha256 }
+        }
+    }
     $components = @()
     foreach ($project in $projectRecords) {
         $components += [ordered]@{ id = $project.id; role = 'runtime'; version = $project.revision; source = $project.repository; shipped = $null }
@@ -356,7 +373,7 @@ try {
             'Recorded supplier/license expressions are data, not a new legal applicability decision.',
             'Conservative supplier source/notice inclusion does not assert that every embedded dependency is deployed.',
             'Any changed supplier version, Cargo graph, unknown file, derived notice or Qt bytes requires a bounded reviewed rule update.',
-            'Integrated capture is an explicit future input form, not a claim that migration has occurred.'
+            'Integrated capture is maintained in the shell source bundle; source preparation is not native capture acceptance.'
         )
     }
     Write-SourceJson (Join-Path $OutputDirectory 'component-inventory.json') $inventory

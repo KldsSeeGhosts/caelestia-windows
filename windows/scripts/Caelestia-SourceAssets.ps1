@@ -372,7 +372,8 @@ function Get-SourceReferenceOwners($Files) {
         $owner = 'shell'
         if ($p -eq 'payload/qs.exe' -or $p -like 'payload/qml/Quickshell/*' -or $p -like 'payload/licenses/Quickshell*' -or
             $p -match '^payload/licenses/(MaterialColor-LICENSE|LGPL-3.0.txt|GPL-3.0.txt)$') { $owner = 'backend' }
-        elseif ($p -eq 'payload/glazier.exe' -or $p -like 'payload/licenses/Glazier-*') { $owner = 'capture' }
+        elseif ($p -in @('payload/glazier.exe', 'payload/caelestia-capture.exe', 'payload/licenses/Caelestia-Capture-ORIGIN.md') -or
+            $p -like 'payload/licenses/Glazier-*') { $owner = 'capture' }
         elseif ($p -eq 'payload/m3shapes.dll' -or $p -like 'payload/qml/M3Shapes/*' -or $p -eq 'payload/licenses/M3Shapes-LICENSE') { $owner = 'm3shapes' }
         elseif ($p -like 'payload/licenses/fonts/*') { $owner = 'font-' + $p.Split('/')[3] }
         elseif ($p -like 'payload/licenses/supplemental/*') { $owner = Get-SourceSupplierId $p.Substring('payload/licenses/supplemental/'.Length) }

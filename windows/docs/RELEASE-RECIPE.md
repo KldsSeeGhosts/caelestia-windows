@@ -123,9 +123,9 @@ independently maintained dependency lock.
 
 ## Capture migration input forms
 
-Default `-CaptureLayout Pinned` reads Glazier's existing gitlink, lock and
-license/notices. It does not change pins or pretend first-party migration is
-complete. A future committed source move can explicitly select:
+For older source candidates, `-CaptureLayout Pinned` reads Glazier's gitlink,
+lock and license/notices. The current in-tree source lock automatically selects
+the integrated layout. It can also be selected explicitly:
 
 ```powershell
 .\windows\scripts\Prepare-CaelestiaSourceAssets.ps1 `
@@ -136,9 +136,10 @@ complete. A future committed source move can explicitly select:
 The integrated directory must be a committed tree, not a gitlink. Its
 `Cargo.lock`, `LICENSE` and `THIRD_PARTY_NOTICES.md` must exist and pass the same
 supplier rules. Capture then resides in the shell bundle, with no invented
-separate source revision. Product/assembler renaming and migration qualification
-still require their own reviewed integration. Coverage currently retains the
-existing Glazier payload/notice paths; a rename requires an explicit rule update.
+separate source revision. The first-party executable and origin notice have
+explicit payload ownership rules; legacy Glazier license/notice filenames remain
+compatibility aliases. Product identity and native capture acceptance still
+require their own reviewed integration and qualification.
 
 ## Rebuilding and replacing LGPL libraries
 

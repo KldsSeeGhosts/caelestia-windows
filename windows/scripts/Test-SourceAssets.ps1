@@ -249,7 +249,20 @@ $requiredLoop = @($verifierAst.FindAll({
     $node -is [Management.Automation.Language.ForEachStatementAst] -and $node.Variable.VariablePath.UserPath -eq 'required'
 }, $true))
 Assert-Recipe ($parseErrors.Count -eq 0 -and $requiredLoop.Count -eq 1) 'Cannot read verifier required-file contract'
-$requiredNames = @($requiredLoop[0].Condition.SafeGetValue()) + @('payload/licenses/supplemental/fixture-LICENSE')
+$requiredNames = @($requiredLoop[0].Condition.FindAll({
+    param($node)
+    $node -is [Management.Automation.Language.StringConstantExpressionAst] -or
+    $node -is [Management.Automation.Language.ExpandableStringExpressionAst]
+}, $true) | ForEach-Object {
+    if ($_ -is [Management.Automation.Language.ExpandableStringExpressionAst]) {
+        # Read the one known product-name seam without evaluating bundle code.
+        Assert-Recipe ($_.Value -ceq 'payload/$captureExecutable' -and
+            $_.NestedExpressions.Count -eq 1 -and
+            $_.NestedExpressions[0] -is [Management.Automation.Language.VariableExpressionAst] -and
+            $_.NestedExpressions[0].VariablePath.UserPath -ceq 'captureExecutable') 'Unknown dynamic required-file expression'
+        'payload/glazier.exe'
+    } else { $_.Value }
+}) + @('payload/licenses/supplemental/fixture-LICENSE')
 $header = "//@ pragma DataDir @CAELESTIA_PROFILE@/data`n//@ pragma StateDir @CAELESTIA_PROFILE@/state`n//@ pragma CacheDir @CAELESTIA_PROFILE@/cache`n"
 foreach ($name in $requiredNames) {
     $target = Join-Path $bundleFixture $name
@@ -277,6 +290,11 @@ $fixtureManifest = [ordered]@{
     })
 }
 $fixtureOwners = Get-SourceReferenceOwners $fixtureManifest.files
+$captureOwners = Get-SourceReferenceOwners @(
+    @{ path = 'payload/caelestia-capture.exe' },
+    @{ path = 'payload/licenses/Caelestia-Capture-ORIGIN.md' })
+Assert-Recipe ($captureOwners['payload/caelestia-capture.exe'] -ceq 'capture' -and
+    $captureOwners['payload/licenses/Caelestia-Capture-ORIGIN.md'] -ceq 'capture') 'First-party capture ownership was lost'
 $fixtureProjects = @()
 foreach ($id in @('shell', 'backend', 'capture', 'm3shapes')) {
     $fixtureBundle = Join-Path $assetFixture ('project-source/' + $id + '.bundle')

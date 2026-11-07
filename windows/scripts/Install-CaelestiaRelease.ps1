@@ -147,7 +147,8 @@ function Test-ReleaseBundle([string]$Root, [string]$ExpectedHash = '') {
         -not $manifest.files -or $manifest.relocation -ne 'profile-pragmas-v1') {
         throw 'Unsupported or incomplete release manifest.'
     }
-    $firstPartyCapture = $null -ne $manifest.dependencies.capture
+    $firstPartyCapture = $null -ne $manifest.dependencies.PSObject.Properties['capture'] -and
+        $null -ne $manifest.dependencies.capture
     $captureExecutable = if ($firstPartyCapture) { 'caelestia-capture.exe' } else { 'glazier.exe' }
     if (-not $firstPartyCapture -and $manifest.dependencies.glazier.revision -notmatch '^[a-f0-9]{40}$') {
         throw 'Missing capture release provenance.'
@@ -236,7 +237,7 @@ function Test-ReleaseBundle([string]$Root, [string]$ExpectedHash = '') {
 $BundleRoot = Assert-ReleaseDirectory $BundleRoot
 $verified = Test-ReleaseBundle $BundleRoot $ExpectedManifestSha256
 $release = $verified.Manifest
-$captureRelease = $release.dependencies.capture
+$captureRelease = if ($release.dependencies.PSObject.Properties['capture']) { $release.dependencies.capture } else { $null }
 $captureExecutable = if ($null -ne $captureRelease) { 'caelestia-capture.exe' } else { 'glazier.exe' }
 $verifiedManifestHash = $verified.Sha256
 if ((Get-FileHash -LiteralPath (Join-Path $BundleRoot 'release.json') -Algorithm SHA256).Hash -ne $verifiedManifestHash) {

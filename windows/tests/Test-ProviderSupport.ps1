@@ -89,7 +89,7 @@ function Test-ProviderSupportMatrix {
             $problems.Add("pin mismatch: $($pin.Label) matrix $($pin.Matrix) != lock $($pin.Lock).")
         }
     }
-    foreach ($repoName in @("shell", "backend", "glazier", "m3shapes")) {
+    foreach ($repoName in @("shell", "backend", "glazier", "capture", "m3shapes")) {
         $repository = Get-Field $Matrix.sourceRepositories $repoName
         $revisionField = if ($repoName -eq "shell") { "shellRevision" } elseif ($repoName -eq "backend") { "backendRevision" } else { "${repoName}Revision" }
         $baselineRevision = Get-Field $Matrix.baseline $revisionField
