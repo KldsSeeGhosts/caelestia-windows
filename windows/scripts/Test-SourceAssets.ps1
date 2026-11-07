@@ -132,7 +132,8 @@ $inventory = [pscustomobject]@{
             [pscustomobject]@{ path = 'payload/Qt6Core.dll'; component = 'qt'; sha256 = 'e' * 64 },
             [pscustomobject]@{ path = 'payload/licenses/LICENSE'; component = 'shell'; sha256 = 'd' * 64 },
             [pscustomobject]@{ path = 'payload/licenses/supplemental/LICENSE'; component = 'shell'; sha256 = 'c' * 64 },
-            [pscustomobject]@{ path = 'payload/shell/stale.qml'; component = 'shell'; sha256 = 'f' * 64 }
+            [pscustomobject]@{ path = 'payload/shell/stale.qml'; component = 'shell'; sha256 = 'f' * 64 },
+            [pscustomobject]@{ path = 'payload/Export-CaelestiaSupport.ps1'; component = 'shell'; sha256 = '9' * 64; sourcePath = 'windows/scripts/Export-CaelestiaSupport.ps1'; sourceSha256 = '9' * 64 }
         )
         staged = @([pscustomobject]@{ path = 'payload/shell/new.qml'; component = 'shell'; sha256 = 'f' * 64 })
     }
@@ -145,11 +146,12 @@ $manifest = [pscustomobject]@{
         [pscustomobject]@{ path = 'payload/Qt6Core.dll'; sha256 = 'e' * 64; size = 1 },
         [pscustomobject]@{ path = 'payload/licenses/LICENSE'; sha256 = 'd' * 64; size = 1 },
         [pscustomobject]@{ path = 'payload/licenses/supplemental/LICENSE'; sha256 = 'c' * 64; size = 1 },
-        [pscustomobject]@{ path = 'payload/shell/new.qml'; sha256 = 'f' * 64; size = 1 }
+        [pscustomobject]@{ path = 'payload/shell/new.qml'; sha256 = 'f' * 64; size = 1 },
+        [pscustomobject]@{ path = 'payload/Export-CaelestiaSupport.ps1'; sha256 = '9' * 64; size = 1 }
     )
 }
 $covered = @(Assert-SourcePayloadCoverage $inventory $manifest)
-Assert-Recipe ($covered.Count -eq 5) 'Coverage lost application files'
+Assert-Recipe ($covered.Count -eq 6) 'Coverage lost application files'
 Assert-Recipe ($inventory.components[0].shipped -and -not $inventory.components[3].shipped) 'Optional absent component falsely shipped'
 $manifest.sourceRevision = '0' * 40
 Assert-RecipeRefused { Assert-SourcePayloadCoverage $inventory $manifest } 'candidate revisions differ'
@@ -175,6 +177,12 @@ $manifest.files = $savedFiles + [pscustomobject]@{ path = 'payload/shell/stale.q
 Assert-RecipeRefused { Assert-SourcePayloadCoverage $inventory $manifest } 'not in candidate staging map'
 $manifest.files = $savedFiles + [pscustomobject]@{ path = 'payload/unknown.dll'; sha256 = 'f' * 64; size = 1 }
 Assert-RecipeRefused { Assert-SourcePayloadCoverage $inventory $manifest } 'Unknown payload'
+$manifest.files = $savedFiles
+$manifest.files[5].sha256 = '0' * 64
+Assert-RecipeRefused { Assert-SourcePayloadCoverage $inventory $manifest } 'Wrong current source payload bytes'
+$manifest.files[5].sha256 = '9' * 64
+$manifest.files = @($savedFiles | Where-Object path -ne 'payload/Export-CaelestiaSupport.ps1')
+Assert-RecipeRefused { Assert-SourcePayloadCoverage $inventory $manifest } 'Missing current source payload'
 $manifest.files = $savedFiles
 $script:cases++
 

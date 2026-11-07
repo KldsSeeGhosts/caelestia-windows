@@ -89,9 +89,10 @@ Only that successful pinned main-push pair can set `releaseEligible=true`.
 Candidate preflight and PR receipts are never relabeled as the final pair.
 Receipts are artifacts, not commits back into their own tested source.
 
-The currently pinned producer revision is provisional until its contract
-change is merged. Keep the consuming change in draft until that pin is
-updated to the reviewed producer main revision and hosted controls pass.
+The producer is pinned to reviewed backend main commit
+`ae98287c8cd96db4ea4642cc91a1cd9ba7c32a1f`, including its byte-exact validator
+digest. Hosted success/failure/cancellation controls still gate qualification;
+a merged producer is not itself a successful consumer receipt.
 The producer's shell pin supplies toolchain policy only, not the shell under
 test, so updating it does not create a pair-SHA fixed point.
 

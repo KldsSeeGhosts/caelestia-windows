@@ -304,10 +304,15 @@ function Assert-SourcePayloadCoverage($Inventory, $Manifest) {
     if ($Manifest.qtVersion -cne $Inventory.toolchain.qtVersion) { throw 'Application Qt version differs from supplier sources.' }
     $known = @{}
     $referenceHashes = @{}
+    $currentSourceHashes = @{}
     foreach ($entry in $Inventory.payloadRules.reference) {
         if ($known.ContainsKey($entry.path)) { throw 'Duplicate payload reference rule.' }
         $known[$entry.path] = $entry.component
         $referenceHashes[$entry.path] = $entry.sha256
+        if ($entry.PSObject.Properties['sourceSha256']) {
+            if ($entry.sourceSha256 -cnotmatch '^[a-f0-9]{64}$') { throw 'Invalid current source payload hash.' }
+            $currentSourceHashes[$entry.path] = $entry.sourceSha256
+        }
     }
     $staged = @{}
     foreach ($entry in $Inventory.payloadRules.staged) {
@@ -328,9 +333,15 @@ function Assert-SourcePayloadCoverage($Inventory, $Manifest) {
         if ($owner -eq 'qt' -and $referenceHashes[$file.path] -cne $file.sha256) {
             throw "Unreviewed Qt supplier bytes: $($file.path)"
         }
+        if ($currentSourceHashes.ContainsKey($file.path) -and $currentSourceHashes[$file.path] -cne $file.sha256) {
+            throw "Wrong current source payload bytes: $($file.path)"
+        }
         $record = [ordered]@{ path = $file.path; component = $owner; sha256 = $file.sha256; size = $file.size }
         $files += $record
         $actual[$file.path] = $record
+    }
+    foreach ($path in $currentSourceHashes.Keys) {
+        if (-not $actual.ContainsKey($path)) { throw "Missing current source payload: $path" }
     }
     foreach ($notice in $Inventory.notices) {
         $target = 'payload/licenses/supplemental/' + $notice.path

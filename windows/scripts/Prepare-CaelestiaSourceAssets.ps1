@@ -315,6 +315,25 @@ try {
     $referenceRules = @($referenceApp.files | ForEach-Object {
         [ordered]@{ path = $_.path; component = $owners[$_.path]; sha256 = $_.sha256 }
     })
+    # New support payloads are exact committed shell inputs, not an allowance
+    # for arbitrary scripts or documentation absent from the reference release.
+    $supportPayloads = @(
+        @('windows/scripts/Export-CaelestiaSupport.ps1', 'payload/Export-CaelestiaSupport.ps1'),
+        @('windows/scripts/Caelestia-Support.ps1', 'payload/Caelestia-Support.ps1'),
+        @('windows/docs/SUPPORT-BUNDLE.md', 'payload/docs/SUPPORT-BUNDLE.md'),
+        @('windows/support/support-bundle.schema.json', 'payload/support/support-bundle.schema.json'),
+        @('windows/support/support-bundle.example.json', 'payload/support/support-bundle.example.json')
+    )
+    $supportSources = Join-Path $scratch 'support-source-inputs'
+    Export-SourceGitMembers $SourceRoot $SourceRevision @($supportPayloads | ForEach-Object { $_[0] }) $supportSources $scratch
+    foreach ($pair in $supportPayloads) {
+        $hash = Get-SourceHash (Join-Path $supportSources $pair[0])
+        $referenceRules = @($referenceRules | Where-Object path -cne $pair[1])
+        $referenceRules += [ordered]@{
+            path = $pair[1]; component = 'shell'; sha256 = $hash
+            sourcePath = $pair[0]; sourceSha256 = $hash
+        }
+    }
     if ($CaptureLayout -eq 'Integrated') {
         # Explicit product rename rule, not a wildcard for unknown payloads.
         $referenceRules = @($referenceRules | Where-Object path -cne 'payload/glazier.exe')
