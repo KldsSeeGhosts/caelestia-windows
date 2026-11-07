@@ -1,0 +1,10 @@
+{
+    "payloadType":  "application/vnd.caelestia.update-keys+json",
+    "signatures":  [
+                       {
+                           "sig":  "v/UTDLXEoNpSnCXmaiMbry63KsYRjdilU6+woqngKldug25S3pCQQFZkpU3k22qD14GfJpBkvqcRa09NLaoxlw==",
+                           "keyid":  "f9f6c4d0f94cedcd81a6abb84b1b60b1e58b59c54cb723d4f583e22d24602893"
+                       }
+                   ],
+    "payload":  "eyJ2ZXJzaW9uIjoxLCJyZXBvc2l0b3J5IjoiS2xkc1NlZUdob3N0cy9jYWVsZXN0aWEtd2luZG93cyIsImV4cGlyZXMiOiIyMDI3LTExLTA3VDIzOjQ1OjA3WiIsInNjaGVtYSI6MSwia2V5cyI6W3siY2hhbm5lbHMiOlsiZGV2ZWxvcG1lbnQiXSwicHVibGljIjp7InkiOiJ3K3c3dW9uOCtmR1FkMjB2a0lHR0FDOHhDbFVidUNybktmTEQwMDV3enRNPSIsImtleWlkIjoiNWJlMGFiOTUwOWMzZGFkODdkYWJiZWYzNjQ3YTkzODNmZTg5ZDJkYzY1YmUwMDUyY2FmMzNjZjBhNTM5M2NiMCIsImFsZ29yaXRobSI6ImVjZHNhLXAyNTYtc2hhMjU2IiwieCI6Ijd2R3Z3S0hyTmo1c0JHWUtOK1FrY29WL0pYQW5kN0hqdnFGVlBVaENaY3c9In0sIm5vdEFmdGVyIjoiMjAyNy0xMS0wN1QyMzo0NTowN1oifV0sInR5cGUiOiJjYWVsZXN0aWEtdXBkYXRlLWtleXMiLCJ0aHJlc2hvbGQiOjF9"
+}
