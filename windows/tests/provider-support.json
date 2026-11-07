@@ -7,7 +7,7 @@
   },
   "baseline": {
     "shellRevision": "2bed3ddf26a240b967705aba2e5f9e4ee5bb0e44",
-    "backendRevision": "3855b96dff584c71a21a90c0631ddcfc062d6593",
+    "backendRevision": "ce32afa0c84bb42052c9a4313659bf53e55b7876",
     "glazierRevision": "37f795041cbbb32ed46cba103f3f000a3a99ac13",
     "captureRevision": "f637fcdc6bc1a52e2a405ef1935b199276d06a9c",
     "m3shapesRevision": "32ad9ce328bb77ed349b40a3be10ee9ea610b8ab",
@@ -21,7 +21,7 @@
     },
     "backend": {
       "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows",
-      "revision": "3855b96dff584c71a21a90c0631ddcfc062d6593",
+      "revision": "ce32afa0c84bb42052c9a4313659bf53e55b7876",
       "localRoot": "windows/deps/quickshell"
     },
     "glazier": {
@@ -143,7 +143,7 @@
         {
           "repository": "backend",
           "path": "src/windows/system/session.cpp",
-          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/3855b96dff584c71a21a90c0631ddcfc062d6593/src/windows/system/session.cpp"
+          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/ce32afa0c84bb42052c9a4313659bf53e55b7876/src/windows/system/session.cpp"
         }
       ],
       "acceptanceOwners": []
@@ -207,7 +207,7 @@
         {
           "repository": "backend",
           "path": "src/windows/tiling.cpp",
-          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/3855b96dff584c71a21a90c0631ddcfc062d6593/src/windows/tiling.cpp"
+          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/ce32afa0c84bb42052c9a4313659bf53e55b7876/src/windows/tiling.cpp"
         }
       ],
       "acceptanceOwners": [
@@ -273,7 +273,7 @@
         {
           "repository": "backend",
           "path": "src/windows/services/pipewire/pw_session_worker.cpp",
-          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/3855b96dff584c71a21a90c0631ddcfc062d6593/src/windows/services/pipewire/pw_session_worker.cpp"
+          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/ce32afa0c84bb42052c9a4313659bf53e55b7876/src/windows/services/pipewire/pw_session_worker.cpp"
         }
       ],
       "acceptanceOwners": [
@@ -343,12 +343,12 @@
         {
           "repository": "backend",
           "path": "src/windows/services/upower/device.cpp",
-          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/3855b96dff584c71a21a90c0631ddcfc062d6593/src/windows/services/upower/device.cpp"
+          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/ce32afa0c84bb42052c9a4313659bf53e55b7876/src/windows/services/upower/device.cpp"
         },
         {
           "repository": "backend",
           "path": "src/windows/services/upower/powerprofiles.cpp",
-          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/3855b96dff584c71a21a90c0631ddcfc062d6593/src/windows/services/upower/powerprofiles.cpp"
+          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/ce32afa0c84bb42052c9a4313659bf53e55b7876/src/windows/services/upower/powerprofiles.cpp"
         }
       ],
       "acceptanceOwners": [
@@ -418,7 +418,7 @@
         {
           "repository": "backend",
           "path": "src/windows/bluetooth/bluetooth.cpp",
-          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/3855b96dff584c71a21a90c0631ddcfc062d6593/src/windows/bluetooth/bluetooth.cpp"
+          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/ce32afa0c84bb42052c9a4313659bf53e55b7876/src/windows/bluetooth/bluetooth.cpp"
         }
       ],
       "acceptanceOwners": []
@@ -486,7 +486,7 @@
         {
           "repository": "backend",
           "path": "src/windows/system/brightness.cpp",
-          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/3855b96dff584c71a21a90c0631ddcfc062d6593/src/windows/system/brightness.cpp"
+          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/ce32afa0c84bb42052c9a4313659bf53e55b7876/src/windows/system/brightness.cpp"
         }
       ],
       "acceptanceOwners": [
@@ -570,7 +570,7 @@
         {
           "repository": "backend",
           "path": "src/windows/system/network_wifi.cpp",
-          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/3855b96dff584c71a21a90c0631ddcfc062d6593/src/windows/system/network_wifi.cpp"
+          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/ce32afa0c84bb42052c9a4313659bf53e55b7876/src/windows/system/network_wifi.cpp"
         }
       ],
       "acceptanceOwners": [
@@ -636,7 +636,7 @@
         {
           "repository": "backend",
           "path": "src/windows/services/mpris/gsmtc_worker.cpp",
-          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/3855b96dff584c71a21a90c0631ddcfc062d6593/src/windows/services/mpris/gsmtc_worker.cpp"
+          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/ce32afa0c84bb42052c9a4313659bf53e55b7876/src/windows/services/mpris/gsmtc_worker.cpp"
         }
       ],
       "acceptanceOwners": []
@@ -708,7 +708,7 @@
         {
           "repository": "backend",
           "path": "src/windows/services/notifications/toast_mirror.cpp",
-          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/3855b96dff584c71a21a90c0631ddcfc062d6593/src/windows/services/notifications/toast_mirror.cpp"
+          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/ce32afa0c84bb42052c9a4313659bf53e55b7876/src/windows/services/notifications/toast_mirror.cpp"
         }
       ],
       "acceptanceOwners": [
@@ -784,7 +784,7 @@
         {
           "repository": "backend",
           "path": "src/windows/hyprland/dispatcher.cpp",
-          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/3855b96dff584c71a21a90c0631ddcfc062d6593/src/windows/hyprland/dispatcher.cpp"
+          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/ce32afa0c84bb42052c9a4313659bf53e55b7876/src/windows/hyprland/dispatcher.cpp"
         }
       ],
       "acceptanceOwners": [
@@ -926,7 +926,7 @@
         {
           "repository": "backend",
           "path": "src/windows/system/idle_power.cpp",
-          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/3855b96dff584c71a21a90c0631ddcfc062d6593/src/windows/system/idle_power.cpp"
+          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/ce32afa0c84bb42052c9a4313659bf53e55b7876/src/windows/system/idle_power.cpp"
         }
       ],
       "acceptanceOwners": []
@@ -986,7 +986,7 @@
         {
           "repository": "backend",
           "path": "src/windows/system/keyboard.cpp",
-          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/3855b96dff584c71a21a90c0631ddcfc062d6593/src/windows/system/keyboard.cpp"
+          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/ce32afa0c84bb42052c9a4313659bf53e55b7876/src/windows/system/keyboard.cpp"
         }
       ],
       "acceptanceOwners": [
@@ -1052,7 +1052,7 @@
         {
           "repository": "backend",
           "path": "src/windows/services/systray/host.cpp",
-          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/3855b96dff584c71a21a90c0631ddcfc062d6593/src/windows/services/systray/host.cpp"
+          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/ce32afa0c84bb42052c9a4313659bf53e55b7876/src/windows/services/systray/host.cpp"
         }
       ],
       "acceptanceOwners": []
@@ -1120,7 +1120,7 @@
         {
           "repository": "backend",
           "path": "src/windows/system/wallpaper.cpp",
-          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/3855b96dff584c71a21a90c0631ddcfc062d6593/src/windows/system/wallpaper.cpp"
+          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/ce32afa0c84bb42052c9a4313659bf53e55b7876/src/windows/system/wallpaper.cpp"
         }
       ],
       "acceptanceOwners": [
@@ -1192,7 +1192,7 @@
         {
           "repository": "backend",
           "path": "src/windows/system/clipboard.cpp",
-          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/3855b96dff584c71a21a90c0631ddcfc062d6593/src/windows/system/clipboard.cpp"
+          "url": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows/blob/ce32afa0c84bb42052c9a4313659bf53e55b7876/src/windows/system/clipboard.cpp"
         }
       ],
       "acceptanceOwners": []
