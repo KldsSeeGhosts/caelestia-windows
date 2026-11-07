@@ -970,9 +970,7 @@ class PairTests(unittest.TestCase):
         self.assertEqual(3, len(saves))
         for condition in saves:
             self.assertIn("github.ref == 'refs/heads/main' && github.event_name == 'push'", condition)
-            # TEMPORARY PR-ref measurement writer; restore strict guard after rerun.
-            if "||" in condition:
-                self.assertIn("github.event_name == 'pull_request' && github.head_ref == 'ci/sccache-native-builds'", condition)
+            self.assertNotIn("||", condition)
         for job, kind in ((fixtures, "fixtures"), (build, "production")):
             self.assertIn(f"SCCACHE_DIR: C:\\sccache-{kind}", job)
             self.assertIn("Prepare-Sccache.ps1", job)

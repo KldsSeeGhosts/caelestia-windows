@@ -947,9 +947,7 @@ class Pipeline(unittest.TestCase):
         self.assertEqual(3, len(saves))
         for condition in saves:
             self.assertIn("github.ref == 'refs/heads/main' && github.event_name == 'push'", condition)
-            # TEMPORARY PR-ref measurement writer; restore strict guard after rerun.
-            if "||" in condition:
-                self.assertIn("github.event_name == 'pull_request' && github.head_ref == 'ci/sccache-native-builds'", condition)
+            self.assertNotIn("||", condition)
         self.assertEqual(4, text.count("key: windows-x64-tools-contract-v1-py"))
         self.assertIn("name: nexus-inputs-${{ github.run_id }}-${{ github.run_attempt }}", candidate)
         self.assertIn("path: C:/", candidate)
