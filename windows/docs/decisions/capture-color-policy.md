@@ -15,7 +15,7 @@ The shell ships three capture consumers. No other shipped QML captures screen pi
 
 | Consumer | Capture route | Output | Policy |
 | --- | --- | --- | --- |
-| Screenshot (hotkeys, launcher, IPC) | Glazier, GDI `BitBlt` into a 32-bit DIB (`windows/deps/glazier/src/capture.rs:186-188`) | PNG and `CF_DIB`, 8-bit BGRA (`src/export.rs:119`, `src/export.rs:266`) | SDR sRGB |
+| Screenshot (hotkeys, launcher, IPC) | Caelestia Capture, GDI `BitBlt` into a 32-bit DIB (`windows/capture/src/capture.rs:186-188`) | PNG and `CF_DIB`, 8-bit BGRA (`src/export.rs:119`, `src/export.rs:266`) | SDR sRGB |
 | Screen recording (Utilities card, launcher) | Glazier, WGC monitor capture with `B8G8R8A8UIntNormalized` (`src/recording_media.rs:158`, `src/recording_media.rs:178`) | H.264 MP4 from `MFVideoFormat_RGB32` (`src/recording_media.rs:335-342`) | SDR sRGB |
 | Bar active-window preview | Backend `ScreencopyView`, WGC window capture with `R8G8B8A8UIntNormalized` (`modules/bar/popouts/ActiveWindow.qml:98`, `src/windows/capture.cpp:52-53`, `src/windows/capture.cpp:526-531`) | 8-bit RGBA texture in Qt Quick (`src/windows/wayland/screencopy_view.cpp:86`, `:98`) | SDR sRGB |
 

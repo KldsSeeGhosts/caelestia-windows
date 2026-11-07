@@ -99,17 +99,17 @@ Font notice provenance is documented in
 
 ## Screenshot and recording tool
 
-Glazier is the shell's bundled screenshot and recording tool. It is built from
-the pinned source in `windows/deps/glazier` and installed beside `qs.exe` in the
-versioned payload.
+Caelestia Capture is the shell's bundled screenshot and recording tool,
+maintained from the recorded Glazier origin in `windows/capture` and installed
+as `caelestia-capture.exe` beside `qs.exe` in the versioned payload.
 
 | Component and source | Copyright holders | License | License text in repository | Installed notice |
 | --- | --- | --- | --- | --- |
-| [Glazier](https://github.com/KldsSeeGhosts/glazier) | KldsSeeGhosts and contributors; the annotation editor is ported from the Noctalia Screen Toolkit by ycf-anon and Tabler Icons by Tabler | MIT | `windows/deps/glazier/LICENSE` and `windows/deps/glazier/THIRD_PARTY_NOTICES.md` | `licenses/Glazier-LICENSE`, `licenses/Glazier-THIRD_PARTY_NOTICES.md` |
+| [Glazier origin](https://github.com/KldsSeeGhosts/glazier), maintained as Caelestia Capture | KldsSeeGhosts and contributors; the annotation editor is ported from the Noctalia Screen Toolkit by ycf-anon and Tabler Icons by Tabler | MIT | `windows/capture/LICENSE` and `windows/capture/THIRD_PARTY_NOTICES.md` | `licenses/Glazier-LICENSE`, `licenses/Glazier-THIRD_PARTY_NOTICES.md`, `licenses/Caelestia-Capture-ORIGIN.md` |
 
-The pinned Glazier revision includes its MIT licence and its upstream
-third-party notices. Its corresponding public source is recorded in the source
-lock; the versioned shell package bundles the matching executable.
+The maintained source preserves its MIT licence and upstream third-party
+notices. The source lock records its origin, in-tree source path and Cargo.lock
+digest; the versioned package records the shell source and matching executable.
 
 ## Port authorship
 

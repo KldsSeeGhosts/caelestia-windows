@@ -174,7 +174,7 @@ function Invoke-StagedQml([hashtable]$Mutation) {
 }
 
 try {
-    foreach ($dependency in @(@{name = 'backend'; directory = 'quickshell'}, @{name = 'glazier'; directory = 'glazier'}, @{name = 'm3shapes'; directory = 'm3shapes'})) {
+    foreach ($dependency in @(@{name = 'backend'; directory = 'quickshell'}, @{name = 'm3shapes'; directory = 'm3shapes'})) {
         if ($PureOnly) { continue } # JavaScript does not load native dependencies.
         $directory = Join-Path $repoRoot ('windows\deps\' + $dependency.directory)
         $topLevel = & git -C $directory rev-parse --show-toplevel
@@ -184,6 +184,15 @@ try {
         $revision = & git -C $directory rev-parse HEAD
         if ($LASTEXITCODE -ne 0 -or -not $revision) { throw "Cannot identify dependency: $($dependency.directory)" }
         $dependencies[$dependency.name] = $revision.Trim()
+    }
+    if (-not $PureOnly) {
+        . (Join-Path $repoRoot 'windows\capture\Source.ps1')
+        $captureSource = Get-CaelestiaCaptureSource $repoRoot
+        $dependencies['capture'] = [ordered]@{
+            sourceRevision = $captureSource.sourceRevision
+            cargoLockSha256 = $captureSource.cargoLockSha256
+            originRevision = $captureSource.originRevision
+        }
     }
     $node = (Get-Command node -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
     $js = Invoke-OwnedProcess $node ('--test --test-reporter=tap "' + "$repoRoot\windows\tests\StagedClipboardModels.test.js" + '"') 'javascript' $repoRoot @{}

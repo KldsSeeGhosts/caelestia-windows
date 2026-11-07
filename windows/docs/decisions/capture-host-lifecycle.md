@@ -1,9 +1,9 @@
 # Capture host lifetime and reload
 
-This is the lifecycle phase of first-party capture integration. Capture remains
-the pinned internal Rust helper at `windows/deps/glazier`; its source location,
-executable, protocol, configuration aliases, hotkeys and licensing are unchanged.
-Moving source into `windows/capture` is a separate coordinated change.
+Capture is maintained in `windows/capture` and built as
+`caelestia-capture.exe`, with origin and Cargo.lock identity recorded in the
+source lock. Legacy protocol, configuration and keybind aliases remain
+compatible; the source migration preserves licensing and origin notices.
 
 ## Ownership and interruption policy
 

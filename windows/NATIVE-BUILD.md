@@ -31,7 +31,7 @@ not interchangeable. The same VS instance must provide
 The following setup commands download development tools into a separate
 per-user directory. Run them in native Windows PowerShell. Python 3.12, Git,
 `curl.exe`, and `tar.exe` must be available. Production builds also bundle the
-Glazier recorder from the pinned `windows/deps/glazier` submodule, so the Rust
+Caelestia Capture helper from maintained `windows/capture` source, so the Rust
 toolchain (`cargo` on PATH, installed with [rustup](https://rustup.rs/)) is
 required. Install the exact Rust toolchain once:
 

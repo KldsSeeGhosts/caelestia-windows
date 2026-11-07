@@ -135,11 +135,56 @@ Invoke-Verification $case 'single helper identity'
 $case = New-Bundle 'binary-corruption'
 [IO.File]::WriteAllText("$($case.root)\payload\caelestia-capture.exe", 'Corrupt fixture bytes.')
 Invoke-Verification $case 'corrupt release file'
+# Execute the actual cleanup helpers with generated process records and a
+# recording taskkill boundary. Never enumerate or stop a user's real process.
+$cleanupAssertions = & {
+    . (Join-Path $PSScriptRoot 'Caelestia-InstallCommon.ps1')
+    $fixturePrefix = Join-Path $OutputRoot 'host-prefix'
+    $fixtureVersion = Join-Path $fixturePrefix 'versions\v1'
+    $script:cleanupStops = [Collections.Generic.List[int]]::new()
+    $script:cleanupSamples = @(
+        [pscustomobject]@{ Id = 41001; ProcessName = 'caelestia-capture'; Path = "$fixtureVersion\caelestia-capture.exe"; ExitSucceeds = $true },
+        [pscustomobject]@{ Id = 41002; ProcessName = 'glazier'; Path = "$fixtureVersion\glazier.exe"; ExitSucceeds = $true },
+        [pscustomobject]@{ Id = 41003; ProcessName = 'caelestia-capture'; Path = "$fixturePrefix\versions\v2\caelestia-capture.exe"; ExitSucceeds = $true },
+        [pscustomobject]@{ Id = 41004; ProcessName = 'caelestia-capture'; Path = "$fixturePrefix\versions-foreign\v1\caelestia-capture.exe"; ExitSucceeds = $true },
+        [pscustomobject]@{ Id = 41005; ProcessName = 'glazier'; Path = "$fixturePrefix\standalone\glazier.exe"; ExitSucceeds = $true }
+    )
+    foreach ($processRecord in $script:cleanupSamples) {
+        $processRecord | Add-Member -MemberType ScriptMethod -Name WaitForExit -Value {
+            param($milliseconds)
+            if ($milliseconds -ne 1000) { throw 'Unexpected cleanup fixture wait bound.' }
+            return $this.ExitSucceeds
+        }
+    }
+    function Get-Process {
+        [CmdletBinding()] param([string[]]$Name)
+        $script:cleanupSamples | Where-Object { $_.ProcessName -in $Name }
+    }
+    function taskkill.exe { $script:cleanupStops.Add([int]$args[1]) }
+    $allHosts = @(Get-CaelestiaHostProcesses $fixturePrefix)
+    Assert-True ($allHosts.Count -eq 3) 'Cleanup must enumerate both helper names within installed versions.'
+    $versionHosts = @(Get-CaelestiaHostProcesses $fixturePrefix $fixtureVersion)
+    Assert-True ($versionHosts.Count -eq 2 -and 41001 -in $versionHosts.Id -and 41002 -in $versionHosts.Id) `
+        'Version retirement must find both first-party and legacy hosts.'
+    Assert-True (41004 -notin $allHosts.Id -and 41005 -notin $allHosts.Id) 'Cleanup must leave foreign and standalone hosts alone.'
+    Stop-CaelestiaHosts $fixturePrefix $fixtureVersion -TimeoutSeconds 1
+    Assert-True ($script:cleanupStops.Count -eq 2 -and 41001 -in $script:cleanupStops -and 41002 -in $script:cleanupStops) `
+        'Actual stop helper must dispatch both owned names only.'
+    $script:cleanupStops.Clear()
+    Stop-CaelestiaHosts $fixturePrefix (Join-Path $fixturePrefix 'versions\absent') -TimeoutSeconds 1
+    Assert-True ($script:cleanupStops.Count -eq 0) 'No host means no stop dispatch.'
+    $script:cleanupSamples[0].ExitSucceeds = $false
+    $refusal = ''
+    try { Stop-CaelestiaHosts $fixturePrefix $fixtureVersion -TimeoutSeconds 1 } catch { $refusal = "$_" }
+    Assert-True ($refusal -match 'capture host is still running') 'A surviving first-party host must refuse payload replacement.'
+    6
+}
+$results += [ordered]@{ case = 'owned-host-cleanup'; outcome = 'pass'; assertions = $cleanupAssertions; exitCode = 0 }
 [ordered]@{
     schemaVersion = 1; suite = 'capture-release-verification'; result = 'pass'
     sourceRevision = (& git -C $repo rev-parse HEAD).Trim()
     sourceDirty = [bool](& git -C $repo status --porcelain)
-    assertions = $results.Count + 1; cases = $results
+    assertions = $results.Count + $cleanupAssertions; cases = $results
     evidenceClass = 'synthetic-verify-only-no-install'
 } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath "$OutputRoot\capture-release.json" -Encoding UTF8
-Write-Output "PASS capture release provenance ($($results.Count + 1) assertions; VerifyOnly, no installation)"
+Write-Output "PASS capture release provenance ($($results.Count + $cleanupAssertions) assertions; VerifyOnly and synthetic host cleanup, no installation)"

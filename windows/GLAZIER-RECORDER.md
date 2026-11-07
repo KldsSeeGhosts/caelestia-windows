@@ -1,7 +1,8 @@
 # Glazier recorder adapter
 
-Glazier ships with Caelestia. The adapter uses the bundled executable, resolving
-it first from the running payload (`<payload>\glazier.exe`, the sibling of
+Caelestia Capture ships with Caelestia, maintained from the recorded Glazier
+origin. The adapter uses the bundled executable, resolving
+it first from the running payload (`<payload>\caelestia-capture.exe`, the sibling of
 `qs.exe`) and only then from an explicit absolute path in the profile's
 `config\glazier.json`. `CAELESTIA_GLAZIER_EXE` is an explicit test and
 development override. There is no `%LOCALAPPDATA%\Programs\Glazier` or PATH
@@ -28,7 +29,7 @@ reload. Quit leaves an unowned host alone; for an owned host it first requires
 fresh idle status and no visible capture windows, then waits asynchronously for
 exit. Refusal or timeout leaves the shell alive with an error. The installer
 separately stops any
-`glazier.exe` under `<prefix>\versions\` before a payload swap, retirement or
+`caelestia-capture.exe` or legacy `glazier.exe` under `<prefix>\versions\` before a payload swap, retirement or
 uninstall. Those full-stop and supervisor paths retain separate acceptance;
 the lifecycle fixture does not establish their recording safety. Clean tray
 Quit stays stopped until an explicit capture. Crashes allow three recovery
