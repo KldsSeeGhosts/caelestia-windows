@@ -271,8 +271,10 @@ jobs:
         run: |
           $local = Get-Content "$env:PAIR_RESULTS\pair-local.json" -Raw | ConvertFrom-Json
           $request = Get-Content "$env:PAIR_RESULTS\pair-request.json" -Raw | ConvertFrom-Json
+          # Isolated hosted fixtures only. Echo failures into the job log;
+          # retained receipt/artifact output remains allowlisted.
           python -I -B "$env:TRUSTED_ROOT\.github\scripts\candidate_contract.py" `
-            --receipt "$env:PAIR_RESULTS\candidate-result.json" run --stage integration `
+            --receipt "$env:PAIR_RESULTS\candidate-result.json" run --stage integration --echo `
             --junit "$env:PAIR_RESULTS\integration.raw.xml" -- powershell.exe -NoProfile -NonInteractive `
             -File "$env:GITHUB_WORKSPACE\windows\ci\Invoke-PairIntegration.ps1" `
             -ShellRoot $env:GITHUB_WORKSPACE -BackendRoot $local.backendRoot `
