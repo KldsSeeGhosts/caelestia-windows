@@ -240,21 +240,18 @@ if ($SkipCapture) {
 }
 # Old payload names must never survive a rebuild in this owned output.
 Remove-Item -LiteralPath (Join-Path $installRoot 'glazier.exe') -Force -ErrorAction SilentlyContinue
-# Resolve the version and revision up front so configure works without a reachable git tag or git metadata.
+# Version is authoritative even in shallow clones. Git is provenance only.
+. (Join-Path $PSScriptRoot 'Caelestia-SemVer.ps1')
+$versionPath = Join-Path $repoRoot 'windows\release\version.json'
+$sourceVersion = (Read-CaelestiaVersion $versionPath).version
+$versionFileSha256 = (Get-FileHash -LiteralPath $versionPath -Algorithm SHA256).Hash.ToLowerInvariant()
 $ErrorActionPreference = 'Continue'
-$sourceVersion = & git -C $repoRoot describe --tags --abbrev=0 2>$null
-$describeExit = $LASTEXITCODE
 $rawShortRevision = & git -C $repoRoot rev-parse --short HEAD 2>$null
 $shortRevExit = $LASTEXITCODE
 $rawFullRevision = & git -C $repoRoot rev-parse HEAD 2>$null
 $fullRevExit = $LASTEXITCODE
 $rawDirty = & git -C $repoRoot status --porcelain 2>$null
 $ErrorActionPreference = 'Stop'
-if ($describeExit -ne 0 -or -not $sourceVersion) { $sourceVersion = '0.0.0' }
-# CMake project(VERSION) accepts numeric components, not prerelease labels.
-if ("$sourceVersion".Trim() -match '^v?(\d+\.\d+\.\d+(?:\.\d+)?)(?:[-+].*)?$') {
-    $sourceVersion = $Matches[1]
-} else { $sourceVersion = '0.0.0' }
 $sourceRevision = if ($shortRevExit -eq 0 -and $rawShortRevision) { "$rawShortRevision".Trim() } else { 'unknown' }
 if (-not $sourceRevision) { $sourceRevision = 'unknown' }
 $fullSourceRevision = if ($fullRevExit -eq 0 -and $rawFullRevision) { "$rawFullRevision".Trim() } else { $sourceRevision }
@@ -289,6 +286,7 @@ Invoke-BuildCommand 'install-plugins' @('--install', "$BuildRoot\caelestia")
     pluginTests = [bool]$PluginTests
     backendTests = [bool]$Tests
     nativeVersion = $sourceVersion
+    versionFileSha256 = $versionFileSha256
     toolchain = $toolchain
     windowsSdkVersion = $toolchain.windowsSdkVersion
     msvcToolsVersion = $toolchain.vcToolsVersion

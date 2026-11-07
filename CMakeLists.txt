@@ -1,26 +1,6 @@
 cmake_minimum_required(VERSION 3.19)
 
-if(NOT DEFINED VERSION)
-    execute_process(COMMAND git describe --tags --abbrev=0
-        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
-        OUTPUT_VARIABLE VERSION
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-        RESULT_VARIABLE GIT_DESCRIBE_RESULT
-        ERROR_QUIET
-    )
-
-    # Windows: clones without a reachable version tag must still configure.
-    if(NOT GIT_DESCRIBE_RESULT EQUAL 0 OR "${VERSION}" STREQUAL "")
-        set(VERSION "0.0.0")
-    endif()
-endif()
-
-# Release tags may carry a prerelease label; project(VERSION) must be numeric.
-if("${VERSION}" MATCHES "^v?([0-9]+\\.[0-9]+\\.[0-9]+)(\\.[0-9]+)?([-+].*)?$")
-    set(VERSION "${CMAKE_MATCH_1}${CMAKE_MATCH_2}")
-else()
-    set(VERSION "0.0.0")
-endif()
+include(cmake/CaelestiaVersion.cmake)
 
 if(NOT DEFINED GIT_REVISION)
     execute_process(COMMAND git rev-parse HEAD
