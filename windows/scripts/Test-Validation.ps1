@@ -77,9 +77,7 @@ try {
             throw 'Production staging must not include test fixtures.'
         }
         Invoke-ScriptCheck 'Test-PublicDocs'
-        Invoke-ValidationStep 'provider-support' $powershell @('-NoProfile', '-NonInteractive',
-            '-File', (Join-Path $repoRoot 'windows/tests/Test-ProviderSupport.ps1'))
-        foreach ($name in @('Test-CIChanges', 'Test-SchemeProbeGuard', 'Test-KsgSettingsImport', 'Test-ShellLifecycle', 'Test-ValidationCounts')) {
+        foreach ($name in @('Test-CIChanges', 'Test-SchemeProbeGuard', 'Test-KsgSettingsImport', 'Test-ShellLifecycle', 'Test-ValidationCounts', 'Test-RepositoryPolicy')) {
             Invoke-ScriptCheck $name
         }
         $node = (Get-Command node -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
@@ -107,6 +105,10 @@ try {
         if ($BuildRoot) { $fixtureArguments += @('-BuildRoot', $BuildRoot) }
         foreach ($name in $scripts) { Invoke-ScriptCheck $name $fixtureArguments }
         if ($Suite -eq 'Services') {
+            # This check resolves pinned backend/capture source files. The
+            # Services job checks out recursive sources; the fast Unit job does not.
+            Invoke-ValidationStep 'provider-support' $powershell @('-NoProfile', '-NonInteractive',
+                '-File', (Join-Path $repoRoot 'windows/tests/Test-ProviderSupport.ps1'))
             Invoke-ScriptCheck 'Test-StagedServiceModels' @('-QtPrefix', $QtPrefix,
                 '-OutputRoot', (Join-Path $OutputRoot 'staged-models'), '-MutationControls')
         }
