@@ -5,6 +5,8 @@ param(
     [Parameter(Mandatory)][string]$Cli11Include,
     [string]$ToolsBin,
     [string]$BuildRoot,
+    # Optional accelerator. An empty value also clears a reused CMake cache.
+    [string]$CompilerLauncher,
     # Integration-only canonical checkout, outside this shell repository.
     [string]$BackendRoot,
     [ValidatePattern('^[a-f0-9]{40}$')][string]$CandidateBackendRevision,
@@ -120,10 +122,24 @@ function Invoke-BuildCommand([string]$Name, [string[]]$CommandArguments) {
     if ($commandExit -ne 0) { throw "$Name failed. See $logRoot\$Name.log." }
 }
 
-$common = @('-G', 'Ninja', '-DCMAKE_BUILD_TYPE=Release', "-DCMAKE_CXX_COMPILER:FILEPATH=$LlvmBin\clang-cl.exe",
+if ($CompilerLauncher -and (-not [IO.Path]::IsPathRooted($CompilerLauncher) -or
+    -not (Test-Path -LiteralPath $CompilerLauncher -PathType Leaf))) {
+    throw 'CompilerLauncher must name an existing absolute executable path.'
+}
+$common = @('-G', 'Ninja', '-DCMAKE_BUILD_TYPE=Release',
+    "-DCMAKE_C_COMPILER_LAUNCHER:FILEPATH=$CompilerLauncher",
+    "-DCMAKE_CXX_COMPILER_LAUNCHER:FILEPATH=$CompilerLauncher",
+    "-DCMAKE_CXX_COMPILER:FILEPATH=$LlvmBin\clang-cl.exe",
     "-DCMAKE_MAKE_PROGRAM:FILEPATH=$((Get-Command ninja.exe -CommandType Application | Select-Object -First 1).Source)",
     "-DCMAKE_LINKER:FILEPATH=$env:VCToolsInstallDir\bin\Hostx64\x64\link.exe",
     '-DCMAKE_LINKER_TYPE=MSVC', "-DCMAKE_MT:FILEPATH=$manifestTool", "-DCMAKE_PREFIX_PATH=$QtPrefix")
+# sccache cannot cache MSVC-style precompiled-header compiles (/Yc, /Fp): with
+# PCH on, about 409 of 590 production compiles stayed uncacheable. With the
+# launcher, disable PCH everywhere (CMake-wide, plus the backend's own NO_PCH
+# switch) so every compile is cacheable. Without it, PCH stays as before.
+# Precompiled headers change compile speed only, not the translated program.
+$pchSwitch = if ($CompilerLauncher) { 'ON' } else { 'OFF' }
+$common += @("-DCMAKE_DISABLE_PRECOMPILE_HEADERS=$pchSwitch", "-DNO_PCH=$pchSwitch")
 $publicPathMappings = @()
 if ($PublicRelease) {
     $profilePath = [Environment]::GetFolderPath('UserProfile')

@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import pair_result as pair
 
 REPOSITORY = "KldsSeeGhosts/caelestia-windows"
-PRODUCER = "d91a9128294f60d3c1d0ec6d278483d80544ce98"
+PRODUCER = "bd5c68196edbdaad23db8f28ca64214d075711b4"
 VALIDATOR = "e7e890428a49812208866349a00482cf0cddbca6ebbaf71cb7a06a5c3284b5a0"
 SHA = re.compile(r"[a-f0-9]{40}")
 DIGEST = re.compile(r"[a-f0-9]{64}")

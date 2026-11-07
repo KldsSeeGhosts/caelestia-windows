@@ -146,13 +146,48 @@ versions are checked before use. Python tooling is installed fresh. The cache
 identity includes the specification and Python locks, not a floating channel. Only
 trusted pushes to `main` save this cache; pull requests and manual candidate
 dispatches may restore it but cannot save it. There are
-no native object, CMake build, Cargo target, staged-shell or installed-product
-caches shared across trust boundaries. Change the cache schema key when the
+no CMake build, Cargo target, staged-shell or installed-product caches.
+Change the cache schema key when the
 tooling selection or extraction contract changes.
 A ccache 4.14.2 object cache was measured and rejected: CMake 4.4 requests
 clang-cl dependency files with `-clang:-MD/-MT/-MF`, and ccache deliberately
 refuses `/clang:` options, so every compile was uncacheable. Do not work
 around that with `ignore_options` or sloppiness.
+
+The opt-in replacement is sccache 0.15.0, provisioned by
+`Prepare-Sccache.ps1` with the same SHA-256-pinned archive as the backend.
+Backend hosted windows-2022 measurements reduced fixture compilation from
+366 seconds cold to 104 seconds warm: 290/291 hits, zero non-cacheable
+compilations, zero errors, about 8 MB of objects. Unlike ccache, sccache handles
+CMake 4.4's clang-cl dependency flags. The backend pin also reduces fixture
+compile edges from 291 to 224 and the recovery test from about 46 to 15 seconds.
+These backend measurements are not shell end-to-end performance evidence.
+
+Fixtures and production use separate runner-local `SCCACHE_DIR` directories and
+restore-only Actions caches. Keys include schema, sccache version and canonical
+toolchain contract, then `-main-<run_id>-<attempt>`; restore prefixes omit source
+and CMake files because sccache keys each object by compiler, arguments and
+preprocessed input. Every save requires a successful trusted `main` push.
+PRs and dispatches only restore. Text/JSON statistics are retained for seven
+days and the server must stop successfully before saving. Objects, like
+extracted tools, rely on this writer trust boundary, not just archive hashes.
+No objects or cache state enter native reuse/candidate artifacts or receipts.
+
+`Build-Prototype.ps1 -CompilerLauncher <absolute executable>` is explicit opt-in;
+without it every configure clears both C/C++ launchers, including existing
+CMake caches. With a launcher it also disables precompiled headers
+(`CMAKE_DISABLE_PRECOMPILE_HEADERS=ON` plus the backend's `NO_PCH=ON`), because
+sccache cannot cache MSVC-style PCH compiles (`/Yc`, `/Fp`): on hosted CI, 409 of
+590 production compiles were uncacheable with PCH on. PCH changes compile speed,
+not the program. Locally (16 threads) the full C++ build took 88 s with PCH,
+127 s with PCH off and a cold cache, and 48 s warm, with 569/569 compiles
+cacheable. Backend `49bcf7b` added the one include that had relied on the PCH.
+Without a launcher, PCH stays on. The shared configure arguments cover backend/brightness,
+optional fixtures, M3Shapes and plugins. CI passes the launcher only to the
+production integration build and the backend fixture gate. Local developer
+builds, tooling contracts and `logs/build.json`/`nativeInputs` provenance
+semantics are unchanged. Release/debug-info flags are not changed for caching.
+Rust caching is not enabled: it needs separate measured justification.
 The archive hashes authenticate the downloaded inputs, not every byte of an
 already extracted cache tree. Reused extracted directories receive required-file,
 version and supplier-metadata checks, not a complete per-file hash comparison
@@ -255,7 +290,8 @@ artifact contains only unfinalized `candidate-result.json`, `portable.xml` and
 `C:/fixture-input` respectively. The join uploads retained pair receipts/XML,
 suite summaries and, on main pushes, the final `nexus-inputs-*` artifact.
 Toolchain and capture-Rust artifacts stay with their producing jobs.
-Only build can save the trusted-main tooling cache.
+Only build can save the trusted-main tooling cache; fixtures and build each
+save their own compiler objects on trusted main pushes.
 
 No object/CMake trees, PDBs, environment dumps or unrelated diagnostics transfer.
 The candidate checks out the exact SHA recursively,
