@@ -9,6 +9,7 @@ import json
 import io
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -28,7 +29,18 @@ import evidence_fixture
 
 MATERIAL = json.loads(os.environ.pop("NEXUS_TEST_KEY_MATERIAL"))
 
+
+def fixture_script(template, **values):
+    # Substitute delimited tokens once. Inserted paths are opaque, even when
+    # a username/8.3 path contains another token's name (e.g. RUNNER~1).
+    return re.sub(r"@@([A-Z_]+)@@", lambda match: values[match[1]], template)
+
+
 class Diagnostics(unittest.TestCase):
+    def test_fixture_template_never_reprocesses_inserted_paths(self):
+        value = "'C:\\Users\\RUNNER~1\\SOURCE ROOT PYTHON ECHO CHILD LOGS SHALLOW\\user''s\\@@B@@'"
+        self.assertEqual(value + " literal", fixture_script("@@A@@ @@B@@", A=value, B="literal"))
+
     def test_publisher_child_failure_retains_private_log_not_secret_output(self):
         with tempfile.TemporaryDirectory(prefix="nexus-command-diagnostics-") as temp:
             log = Path(temp) / "fixture.private.log"
@@ -47,7 +59,8 @@ class Diagnostics(unittest.TestCase):
 
     def test_actual_candidate_gate_exit_tail_and_log_failure(self):
         with tempfile.TemporaryDirectory(prefix="nexus-diagnostics-") as temp:
-            root = Path(temp)
+            root = Path(temp) / "RUNNER~1 SOURCE ROOT PYTHON ECHO CHILD LOGS SHALLOW user's"
+            root.mkdir()
             child = root / "child.ps1"
             child.write_text("1..100 | ForEach-Object { 'line-' + $_ + ('x' * 400) }\n"
                              "'UNDERLYING_FIXTURE_FAILURE'\nexit 7\n", encoding="utf-8")
@@ -56,7 +69,7 @@ class Diagnostics(unittest.TestCase):
             bootstrap = """
 $ErrorActionPreference = 'Stop'
 $tokens = $null; $errors = $null
-$ast = [Management.Automation.Language.Parser]::ParseFile(SOURCE, [ref]$tokens, [ref]$errors)
+$ast = [Management.Automation.Language.Parser]::ParseFile(@@SOURCE@@, [ref]$tokens, [ref]$errors)
 if ($errors.Count) { throw 'candidate source does not parse' }
 foreach ($name in @('Invoke-CandidateCommand', 'Invoke-CandidateGate')) {
     $node = $ast.Find({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and
@@ -65,25 +78,27 @@ foreach ($name in @('Invoke-CandidateCommand', 'Invoke-CandidateGate')) {
     . ([scriptblock]::Create($node.Extent.Text))
 }
 $ps = Join-Path $PSHOME 'powershell.exe'
-$Python = PYTHON
-$candidateRunner = RUNNER
-$privateLogs = ROOT
-$EchoDiagnostics = ECHO
-try { Invoke-CandidateGate 'fixture' CHILD @(); throw 'unexpected success' }
+$Python = @@PYTHON@@
+$candidateRunner = @@RUNNER@@
+$privateLogs = @@LOGS@@
+$EchoDiagnostics = @@ECHO@@
+try { Invoke-CandidateGate 'fixture' @@CHILD@@ @() @@TIMEOUT@@; throw 'unexpected success' }
 catch {
     $message = $_.Exception.Message
     Write-Output ('CAUGHT:' + $message)
-    if ($message -notlike '*exit=7*' -or $message -notlike '*fixture.log*') { exit 8 }
+    if ($message -notlike '*exit=@@EXPECTED_EXIT@@*' -or $message -notlike '*fixture.log*') { exit 8 }
 }
-""".replace("SOURCE", quote(ROOT / "windows/ci/New-NexusCandidate.ps1")).replace(
-                "ROOT", quote(root)).replace("CHILD", quote(child)).replace(
-                "PYTHON", quote(sys.executable)).replace("RUNNER", quote(ROOT / "windows/ci/nexus_process.py"))
+"""
+            values = {"SOURCE": quote(ROOT / "windows/ci/New-NexusCandidate.ps1"),
+                      "CHILD": quote(child), "PYTHON": quote(sys.executable),
+                      "RUNNER": quote(ROOT / "windows/ci/nexus_process.py"),
+                      "TIMEOUT": "", "EXPECTED_EXIT": "7"}
             for echo in (False, True):
                 logs = root / str(echo)
                 logs.mkdir()
                 script = root / ("check-" + str(echo) + ".ps1")
-                script.write_text(bootstrap.replace(quote(root), quote(logs)).replace(
-                    "ECHO", "$true" if echo else "$false"), encoding="utf-8")
+                script.write_text(fixture_script(bootstrap, **values, LOGS=quote(logs),
+                                                 ECHO="$true" if echo else "$false"), encoding="utf-8")
                 result = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-File", str(script)],
                                         capture_output=True, text=True, timeout=30)
                 self.assertEqual(0, result.returncode, result.stdout + result.stderr)
@@ -96,7 +111,7 @@ catch {
             # A failed log write must terminate even when the child succeeds.
             child.write_text("'success'\nexit 0\n", encoding="utf-8")
             blocked = root / "missing-parent" / "logs"
-            script.write_text(bootstrap.replace(quote(root), quote(blocked)).replace("ECHO", "$false"),
+            script.write_text(fixture_script(bootstrap, **values, LOGS=quote(blocked), ECHO="$false"),
                               encoding="utf-8")
             result = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-File", str(script)],
                                     capture_output=True, text=True, timeout=30)
@@ -105,9 +120,8 @@ catch {
             timeout_logs = root / "timeout"
             timeout_logs.mkdir()
             child.write_text("'before hang'\nStart-Sleep -Seconds 30\n", encoding="utf-8")
-            script.write_text(bootstrap.replace(quote(root), quote(timeout_logs)).replace(
-                "ECHO", "$true").replace(
-                quote(child) + " @()", quote(child) + " @() 1").replace("*exit=7*", "*exit=124*"),
+            script.write_text(fixture_script(bootstrap,
+                **{**values, "TIMEOUT": "1", "EXPECTED_EXIT": "124"}, LOGS=quote(timeout_logs), ECHO="$true"),
                 encoding="utf-8")
             result = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-File", str(script)],
                                     capture_output=True, text=True, timeout=30)
@@ -118,7 +132,7 @@ catch {
 
 class StageRunner(unittest.TestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(prefix="nexus-stage-")
+        self.temp = tempfile.TemporaryDirectory(prefix="nexus-stage-RUNNER~1-SHALLOW-LOGS-")
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
 
@@ -206,20 +220,21 @@ class StageRunner(unittest.TestCase):
         body = """
 $ErrorActionPreference = 'Stop'
 $tokens = $null; $errors = $null
-$ast = [Management.Automation.Language.Parser]::ParseFile(SOURCE, [ref]$tokens, [ref]$errors)
+$ast = [Management.Automation.Language.Parser]::ParseFile(@@SOURCE@@, [ref]$tokens, [ref]$errors)
 foreach ($name in @('Invoke-CandidateCommand', 'Complete-CandidateHistory')) {
     $node = $ast.Find({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $name }, $true)
     if (-not $node) { throw 'history helper missing' }
     . ([scriptblock]::Create($node.Extent.Text))
 }
-$Python = PYTHON
-$candidateRunner = RUNNER
-$privateLogs = LOGS
+$Python = @@PYTHON@@
+$candidateRunner = @@RUNNER@@
+$privateLogs = @@LOGS@@
 $EchoDiagnostics = $true
-Complete-CandidateHistory SHALLOW 'fixture'
-""".replace("SOURCE", quote(ROOT / "windows/ci/New-NexusCandidate.ps1")).replace(
-            "PYTHON", quote(sys.executable)).replace("RUNNER", quote(ROOT / "windows/ci/nexus_process.py")).replace(
-            "LOGS", quote(self.root)).replace("SHALLOW", quote(shallow))
+Complete-CandidateHistory @@SHALLOW@@ 'fixture'
+"""
+        body = fixture_script(body, SOURCE=quote(ROOT / "windows/ci/New-NexusCandidate.ps1"),
+                              PYTHON=quote(sys.executable), RUNNER=quote(ROOT / "windows/ci/nexus_process.py"),
+                              LOGS=quote(self.root), SHALLOW=quote(shallow))
         script = self.root / "history.ps1"
         script.write_text(body, encoding="utf-8")
         result = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-File", str(script)],
@@ -798,7 +813,7 @@ class Pipeline(unittest.TestCase):
 
 if __name__ == "__main__":
     suite = unittest.defaultTestLoader.loadTestsFromModule(sys.modules[__name__])
-    if suite.countTestCases() < 40:
+    if suite.countTestCases() < 41:
         raise SystemExit("Nexus behavioral test inventory unexpectedly reduced.")
     result = unittest.TextTestRunner(verbosity=2).run(suite)
     raise SystemExit(0 if result.wasSuccessful() and result.testsRun >= 32 and not result.skipped else 1)
