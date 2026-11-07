@@ -928,6 +928,11 @@ class Pipeline(unittest.TestCase):
         self.assertIn("needs.scope.outputs.native", validation)
         self.assertIn("-notin @('none', 'reuse', 'full')", validation)
         self.assertIn("needs: [scope, pair, validation]", candidate)
+        # The PR-only reuse job is a skipped ancestor on every main push; an
+        # implicit success() would silently skip delivery (main run 42411463069).
+        publish = text.split("\n  publish:\n")[1]
+        for job in (candidate, publish):
+            self.assertIn("if: >-\n      !cancelled() && github.event_name == 'push'", job)
         # Eligibility rechecks backend-main ancestry; only pair resolution
         # fetches that ref, so it must run before the trusted bootstrap.
         self.assertLess(candidate.index("Resolve-PairRequest.ps1"), candidate.index("pair_result.py\" bootstrap"))

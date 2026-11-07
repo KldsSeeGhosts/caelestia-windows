@@ -754,8 +754,12 @@ jobs:
   candidate:
     name: Assemble exact-tested release candidate
     needs: [scope, pair, validation]
+    # !cancelled(): the PR-only reuse job is skipped on every main push and sits
+    # upstream via fixtures/build -> pair. The implicit success() treats that
+    # skip as failure and silently skipped delivery. A cancelled run still does
+    # not deliver; every required result is checked explicitly below.
     if: >-
-      github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+      !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' &&
       needs.scope.result == 'success' && needs.scope.outputs.native == 'full' &&
       needs.pair.result == 'success' && needs.validation.result == 'success'
     runs-on: windows-2022
@@ -845,8 +849,10 @@ jobs:
   publish:
     name: Nexus development publication
     needs: [candidate, validation]
+    # !cancelled() for the same skipped-ancestor reason as candidate; results
+    # are checked explicitly.
     if: >-
-      github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+      !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' &&
       needs.validation.result == 'success' && needs.candidate.result == 'success' &&
       needs.candidate.outputs.candidate != '' && vars.NEXUS_DEVELOPMENT_PUBLISH == 'enabled'
     runs-on: windows-2022

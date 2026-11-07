@@ -4,7 +4,8 @@ param(
     [Parameter(Mandatory)][string]$CandidateDirectory,
     [Parameter(Mandatory)][string]$OutputDirectory,
     [Parameter(Mandatory)][string]$SourceDataRoot,
-    [Parameter(Mandatory)][string]$AssetsRoot
+    [Parameter(Mandatory)][string]$AssetsRoot,
+    [string]$Python = 'python'
 )
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot '..\scripts\Caelestia-Toolchain.ps1')
@@ -34,7 +35,34 @@ $null = & "$PSScriptRoot\..\scripts\Install-CaelestiaRelease.ps1" -BundleRoot $r
     -ExpectedManifestSha256 $release.manifestSha256
 $manifest = Read-CaelestiaStrictJsonFile "$root\release.json" 16777216 -AllowUtf8Bom
 $native = Read-CaelestiaStrictJsonFile "$CandidateDirectory\native-build.json" 1048576
-$receipt = Read-CaelestiaStrictJsonFile "$CandidateDirectory\candidate-result.json" 1048576 -AllowUtf8Bom
+# The producer receipt records fractional stage durations, which the
+# integer-only strict reader rejects by design. Extract only the measured
+# toolchain with the producer's own duplicate-key refusal, then compare that
+# extract through the unchanged strict reader.
+$receiptToolchain = Join-Path $OutputDirectory 'receipt-toolchain.json'
+$extract = @'
+import json, sys
+def pairs(rows):
+    seen = set()
+    for key, _ in rows:
+        if key.casefold() in seen:
+            raise ValueError('ambiguous-json')
+        seen.add(key.casefold())
+    return dict(rows)
+def constant(_):
+    raise ValueError('invalid-json-number')
+with open(sys.argv[1], encoding='utf-8-sig') as stream:
+    receipt = json.load(stream, object_pairs_hook=pairs, parse_constant=constant)
+actual = receipt['toolchain']['actual']
+if not isinstance(actual, dict) or not actual or not all(
+        type(value) is str or (type(value) is int and not isinstance(value, bool)) for value in actual.values()):
+    raise ValueError('invalid-receipt-toolchain')
+with open(sys.argv[2], 'x', encoding='utf-8') as output:
+    json.dump(actual, output)
+'@
+& $Python -I -B -c $extract "$CandidateDirectory\candidate-result.json" $receiptToolchain
+if ($LASTEXITCODE -ne 0) { throw 'Trusted receipt toolchain could not be read.' }
+$receiptActual = Read-CaelestiaStrictJsonFile $receiptToolchain 1048576
 $version = Read-CaelestiaVersion "$SourceDataRoot\windows\release\version.json"
 if ($manifest.sourceRevision -cne $doc.sourceRevision -or $manifest.nativeSourceRevision -cne $doc.sourceRevision -or
     $manifest.releaseId -cne $release.buildVersion -or $manifest.backendRevision -cne $release.backendRevision -or
@@ -44,9 +72,9 @@ if ($manifest.sourceRevision -cne $doc.sourceRevision -or $manifest.nativeSource
     $native.versionFileSha256 -cne (Get-FileHash "$SourceDataRoot\windows\release\version.json").Hash.ToLowerInvariant() -or
     $manifest.profileSchema -ne 1 -or $native.publicRelease -ne $true -or $native.captureBundled -ne $true -or
     $native.pluginTests -ne $true) { throw 'Candidate native/source/version identity mismatch.' }
-foreach ($field in $receipt.toolchain.actual.Keys) {
-    if ($native.toolchain[$field] -cne $receipt.toolchain.actual[$field] -or
-        $manifest.toolchain[$field] -cne $receipt.toolchain.actual[$field]) { throw 'Candidate toolchain differs from trusted receipt.' }
+foreach ($field in $receiptActual.Keys) {
+    if ($native.toolchain[$field] -cne $receiptActual[$field] -or
+        $manifest.toolchain[$field] -cne $receiptActual[$field]) { throw 'Candidate toolchain differs from trusted receipt.' }
 }
 if ($native.supervisor.sourceSha256 -ne (Get-FileHash "$root\payload\DesktopTakeover.cs").Hash -or
     $native.supervisor.assemblySha256 -ne (Get-FileHash "$root\payload\DesktopTakeover.dll").Hash) {
