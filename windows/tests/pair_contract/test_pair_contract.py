@@ -316,6 +316,48 @@ class PairTests(unittest.TestCase):
                 p.bootstrap(self.shell, self.backend, self.root / "refused")
         self.assertFalse((self.root / "refused").exists())
 
+    @unittest.skipUnless(os.name == "nt", "Windows PowerShell boundary")
+    def test_failed_integration_diagnostics_are_explicit_opt_in(self):
+        self.put("windows/toolchain.json", {
+            "qtDirectory": "fixture-qt", "llvmDirectory": "fixture-llvm",
+            "cli11Directory": "fixture-cli"})
+        scripts = self.shell / "windows/scripts"
+        scripts.mkdir()
+        marker = "SYNTHETIC_ISOLATED_FAILURE_DETAIL"
+        (scripts / "Test-Validation.ps1").write_text(
+            "param($Suite, $BuildRoot, $QtPrefix, $OutputRoot)\n"
+            "Write-Output 'EARLIER_PRIVATE_DETAIL'\n"
+            "1..100 | ForEach-Object { Write-Output ('x' * 300) }\n"
+            f"Write-Output '{marker}'\nexit 7\n")
+        for enabled in (False, True):
+            with self.subTest(echo=enabled):
+                results = self.root / ("echo" if enabled else "quiet")
+                command = [
+                    "powershell.exe", "-NoProfile", "-NonInteractive", "-File",
+                    str(ROOT / "windows/ci/Invoke-PairIntegration.ps1"),
+                    "-ShellRoot", str(self.shell), "-BackendRoot", str(self.backend),
+                    "-Mode", "pinned", "-BackendSha", self.backend_sha,
+                    "-ToolRoot", str(self.root / "tools"),
+                    "-BuildRoot", str(self.root / "unused-build"),
+                    "-Results", str(results), "-JUnit", str(results / "integration.xml"),
+                    "-Python", sys.executable]
+                if enabled:
+                    command.append("-EchoDiagnostics")
+                result = subprocess.run(command, capture_output=True, timeout=30)
+                output = result.stdout.decode(errors="replace")
+                self.assertEqual(1, result.returncode, result.stderr.decode(errors="replace"))
+                self.assertEqual(enabled, marker in output)
+                self.assertIn("stage=services exit=7", output)
+                self.assertIn("services.private.log", output)
+                self.assertNotIn("EARLIER_PRIVATE_DETAIL", output)
+                self.assertLess(len(output), 18000)
+                self.assertIn(marker, (results / "services.private.log").read_text(encoding="utf-8-sig"))
+                journal = p.read(results / "integration-stages.json")
+                self.assertEqual("failure", journal[0]["outcome"])
+                self.assertEqual(7, journal[0]["exitCode"])
+                self.assertTrue(all(row["outcome"] == "not_run" for row in journal[1:]))
+                self.assertNotIn(marker, (results / "integration.xml").read_text())
+
     def envelope_fixture(self):
         request = self.resolve()
         results = Path(self.args.results)
@@ -514,6 +556,11 @@ class PairTests(unittest.TestCase):
         self.assertIn("github.event_name == 'push'", workflow)
         self.assertIn("cancel-in-progress: ${{ github.event_name == 'pull_request' }}", workflow)
         self.assertIn("|| github.run_id", workflow)
+        self.assertIn("--stage producer --unittest --echo", workflow)
+        self.assertIn("run --stage prepare --echo", workflow)
+        self.assertIn("--stage $phase --echo", workflow)
+        self.assertIn("run --stage integration --echo", workflow)
+        self.assertIn('-JUnit "$env:PAIR_RESULTS\\integration.raw.xml" -EchoDiagnostics', workflow)
         self.assertNotIn("secrets.", workflow)
         self.assertNotIn("pull_request_target", workflow)
         release = (ROOT / "windows/scripts/New-CaelestiaRelease.ps1").read_text()

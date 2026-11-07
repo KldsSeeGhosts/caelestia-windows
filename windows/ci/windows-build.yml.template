@@ -205,7 +205,7 @@ jobs:
             --backend $local.backendRoot --shell $env:GITHUB_WORKSPACE
           if ($LASTEXITCODE -ne 0) { throw 'Exact source verification failed.' }
           python -I -B $validator --receipt "$env:PAIR_RESULTS\candidate-result.json" run `
-            --stage producer --unittest -- python -B -m unittest discover `
+            --stage producer --unittest --echo -- python -B -m unittest discover `
             -s "$env:TRUSTED_ROOT\.github\candidate-contract" -p "test_*.py"
           if ($LASTEXITCODE -ne 0) { throw 'Producer contract fixtures failed.' }
 
@@ -225,7 +225,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           python -I -B "$env:TRUSTED_ROOT\.github\scripts\candidate_contract.py" `
-            --receipt "$env:PAIR_RESULTS\candidate-result.json" run --stage prepare -- `
+            --receipt "$env:PAIR_RESULTS\candidate-result.json" run --stage prepare --echo -- `
             powershell.exe -NoProfile -NonInteractive -File "$env:GITHUB_WORKSPACE\windows\scripts\Prepare-Toolchain.ps1" `
             -ToolRoot $env:TOOL_ROOT -InstallRust
           if ($LASTEXITCODE -ne 0) { throw 'Supported public toolchain preparation failed.' }
@@ -258,7 +258,7 @@ jobs:
           foreach ($phase in @('configure', 'build', 'portable')) {
             $testArguments = if ($phase -eq 'portable') { @('--junit', "$env:PAIR_RESULTS\portable.raw.xml") } else { @() }
             python -I -B $validator --receipt "$env:PAIR_RESULTS\candidate-result.json" run `
-              --stage $phase @testArguments -- powershell.exe -NoProfile -NonInteractive -File $gate `
+              --stage $phase --echo @testArguments -- powershell.exe -NoProfile -NonInteractive -File $gate `
               -Phase $phase -ContractRoot $env:GITHUB_WORKSPACE -ToolRoot $env:TOOL_ROOT `
               -BuildRoot C:\b-fixtures -Results $env:PAIR_RESULTS -Jobs 2
             if ($LASTEXITCODE -ne 0) { throw "Backend component phase failed: $phase" }
@@ -279,7 +279,7 @@ jobs:
             -File "$env:GITHUB_WORKSPACE\windows\ci\Invoke-PairIntegration.ps1" `
             -ShellRoot $env:GITHUB_WORKSPACE -BackendRoot $local.backendRoot `
             -Mode $request.mode -BackendSha $request.backend -ToolRoot $env:TOOL_ROOT `
-            -BuildRoot $env:BUILD_ROOT -Results $env:PAIR_RESULTS -JUnit "$env:PAIR_RESULTS\integration.raw.xml"
+            -BuildRoot $env:BUILD_ROOT -Results $env:PAIR_RESULTS -JUnit "$env:PAIR_RESULTS\integration.raw.xml" -EchoDiagnostics
           if ($LASTEXITCODE -ne 0) { throw 'Consuming-shell integration failed.' }
 
       - name: Finalize exact-pair receipt
