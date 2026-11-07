@@ -196,6 +196,21 @@ $extract = Join-Path $OutputDirectory 'extracted'
 Export-SourceTarMembers $tar @('LICENSE') $extract
 Assert-Recipe ((Get-SourceHash (Join-Path $extract 'LICENSE')) -eq (Get-SourceHash (Join-Path $tarRoot 'LICENSE'))) 'Verbatim notice extraction'
 Assert-RecipeRefused { Export-SourceTarMembers $tar @('NOTICE') (Join-Path $OutputDirectory 'missing-tar') } 'Missing'
+# xz supplier archives are decompressed by Python, never handed to System32
+# tar (older runner builds stall in their external-xz fallback).
+$xzTar = Join-Path $OutputDirectory 'supplier.tar.xz'
+$python = @(Get-Command python.exe -CommandType Application)[0].Source
+$xzCode = 'import lzma,shutil,sys' + "`n" +
+    'with open(sys.argv[1], ''rb'') as s, lzma.open(sys.argv[2], ''xb'') as d: shutil.copyfileobj(s, d)'
+& $python -I -B -c $xzCode $tar $xzTar
+if ($LASTEXITCODE -ne 0) { throw 'Fixture xz creation failed.' }
+Assert-Recipe (Test-SourceXzArchive $xzTar) 'xz magic detection'
+Assert-Recipe (-not (Test-SourceXzArchive $tar)) 'Plain tar misdetected as xz'
+$xzExtract = Join-Path $OutputDirectory 'xz-extracted'
+Export-SourceTarMembers $xzTar @('LICENSE') $xzExtract
+Assert-Recipe ((Get-SourceHash (Join-Path $xzExtract 'LICENSE')) -eq (Get-SourceHash (Join-Path $tarRoot 'LICENSE'))) 'Verbatim xz notice extraction'
+Assert-Recipe (-not (Test-Path -LiteralPath "$xzExtract.tar")) 'Decompressed scratch tar was retained'
+Assert-RecipeRefused { Export-SourceTarMembers $xzTar @('NOTICE') (Join-Path $OutputDirectory 'missing-xz') } 'Missing'
 $linkTar = Join-Path $OutputDirectory 'linked.tar'
 $tarBytes = [byte[]]::new(1536)
 foreach ($field in @(@(0, 'NOTICE'), @(100, "0000777`0"), @(108, "0000000`0"), @(116, "0000000`0"),

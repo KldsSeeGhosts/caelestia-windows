@@ -170,10 +170,52 @@ function Assert-SourceToolchain($Toolchain, $Reference) {
     }
 }
 
+function Test-SourceXzArchive([string]$Path) {
+    $stream = [IO.File]::OpenRead($Path)
+    try {
+        $magic = [byte[]]::new(6)
+        $read = $stream.Read($magic, 0, 6)
+    } finally { $stream.Dispose() }
+    return $read -eq 6 -and (-join ($magic | ForEach-Object { $_.ToString('x2') })) -ceq 'fd377a585a00'
+}
+
+function Expand-SourceXzArchive([string]$Archive, [string]$Destination) {
+    # Older System32 bsdtar builds (Windows Server 2022 runners) lack liblzma
+    # and fall back to an external xz pipe that can stall indefinitely on
+    # large supplier archives. Decompress once with Python's lzma instead; the
+    # plain tar then gets the same member-only listing and extraction checks.
+    $python = @(Get-Command python.exe -CommandType Application -ErrorAction SilentlyContinue)[0]
+    if (-not $python) { throw 'Python 3 is required to read xz supplier archives.' }
+    # Single-quoted Python literals: Windows PowerShell 5.1 strips embedded
+    # double quotes from native-command arguments.
+    $code = 'import lzma,shutil,sys' + "`n" +
+        'with lzma.open(sys.argv[1]) as s, open(sys.argv[2], ''xb'') as d: shutil.copyfileobj(s, d, 1048576)'
+    & $python.Source -I -B -c $code $Archive $Destination
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $Destination -PathType Leaf)) {
+        throw 'Supplier xz archive decompression failed.'
+    }
+}
+
 function Export-SourceTarMembers([string]$Archive, [string[]]$Members, [string]$Destination) {
     $membersUnique = @($Members | Sort-Object -Unique)
     foreach ($member in $membersUnique) { Assert-SourceRelativePath $member }
     [IO.Directory]::CreateDirectory($Destination) | Out-Null
+    $plainTar = $null
+    if (Test-SourceXzArchive $Archive) {
+        $plainTar = $Destination.TrimEnd('\', '/') + '.tar'
+        if (Test-Path -LiteralPath $plainTar) { throw 'Supplier tar scratch path already exists.' }
+        Expand-SourceXzArchive $Archive $plainTar
+        $Archive = $plainTar
+    }
+    try {
+        Export-SourceTarBatches $Archive $membersUnique $Destination
+    } finally {
+        if ($plainTar) { Remove-Item -LiteralPath $plainTar -Force -ErrorAction SilentlyContinue }
+    }
+    Assert-SourceNoLinks $Destination
+}
+
+function Export-SourceTarBatches([string]$Archive, [string[]]$membersUnique, [string]$Destination) {
     # Select only recorded members. Never unpack a whole supplier tree or
     # follow archive symlinks/hardlinks. Batch below Windows' command-line limit.
     for ($offset = 0; $offset -lt $membersUnique.Count; $offset += 40) {
@@ -187,7 +229,6 @@ function Export-SourceTarMembers([string]$Archive, [string[]]$Members, [string]$
         & tar.exe -xf $Archive -C $Destination -- @batch
         if ($LASTEXITCODE -ne 0) { throw 'Supplier notice extraction failed.' }
     }
-    Assert-SourceNoLinks $Destination
 }
 
 function New-SourceBundle([string]$Source, [string]$Revision, [string]$Destination, [string]$Scratch) {
