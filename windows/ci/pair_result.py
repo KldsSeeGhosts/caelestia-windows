@@ -170,7 +170,8 @@ def bootstrap(shell, backend, target):
         require(not target.resolve().is_relative_to(root), "trusted-directory-inside-source")
     require(not target.exists(), "fresh-trusted-directory-required")
     for name in (contract["validatorPath"], ".github/scripts/Invoke-WindowsFixtureGate.ps1",
-                 ".github/candidate-contract/test_candidate_contract.py"):
+                 ".github/candidate-contract/test_candidate_contract.py",
+                 ".github/candidate-contract/v1.schema.json"):
         result = subprocess.run(["git", "-C", str(backend), "show",
                                  contract["producerRevision"] + ":" + name], capture_output=True)
         require(result.returncode == 0, "trusted-producer-blob-missing")

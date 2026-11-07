@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -282,7 +283,13 @@ class PairTests(unittest.TestCase):
         for name, content in (
                 (helper, "def validate(receipt): pass\n"),
                 (".github/scripts/Invoke-WindowsFixtureGate.ps1", "# synthetic\n"),
-                (".github/candidate-contract/test_candidate_contract.py", "# synthetic\n")):
+                (".github/candidate-contract/test_candidate_contract.py",
+                 "import json, unittest\nfrom pathlib import Path\n"
+                 "class ExtractedContractTest(unittest.TestCase):\n"
+                 "    def test_schema_is_available(self):\n"
+                 "        self.assertTrue(json.loads(Path(__file__).with_name('v1.schema.json')"
+                 ".read_text())['synthetic'])\n"),
+                (".github/candidate-contract/v1.schema.json", '{"synthetic": true}\n')):
             path = self.backend / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(content)
@@ -296,6 +303,12 @@ class PairTests(unittest.TestCase):
         with patch.object(p, "git", side_effect=self.git_without_network):
             p.bootstrap(self.shell, self.backend, self.root / "trusted")
         self.assertEqual(blob, (self.root / "trusted" / helper).read_bytes())
+        # The hosted consumer executes these tests from the extracted trust
+        # directory, not from the backend source tree.
+        extracted = subprocess.run([sys.executable, "-B", "-m", "unittest", "discover",
+                                    "-s", str(self.root / "trusted/.github/candidate-contract"),
+                                    "-p", "test_*.py"], capture_output=True)
+        self.assertEqual(0, extracted.returncode, extracted.stderr.decode(errors="replace"))
         contract["validatorSha256"] = "0" * 64
         self.put("windows/ci/pair-contract.json", contract)
         with patch.object(p, "git", side_effect=self.git_without_network):
