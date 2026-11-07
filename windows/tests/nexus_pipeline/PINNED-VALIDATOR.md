@@ -3,7 +3,7 @@
 `pinned_candidate_contract.py` is an unmodified copy of
 `.github/scripts/candidate_contract.py` from
 https://github.com/KldsSeeGhosts/caelestia-quickshell-windows at
-d91a9128294f60d3c1d0ec6d278483d80544ce98.
+bd5c68196edbdaad23db8f28ca64214d075711b4.
 
 SHA256: e7e890428a49812208866349a00482cf0cddbca6ebbaf71cb7a06a5c3284b5a0.
 

@@ -515,7 +515,8 @@ class PairTests(unittest.TestCase):
                      "Exact-pair production integration"):
             found = re.search(
                 r"(?m)^      - name: " + re.escape(name) +
-                r"\r?\n        run: \|\r?\n((?:          [^\r\n]*\r?\n|\r?\n)+)", workflow)
+                r"\r?\n(?:        env:\r?\n(?:          [^\r\n]*\r?\n)+)?"
+                r"        run: \|\r?\n((?:          [^\r\n]*\r?\n|\r?\n)+)", workflow)
             self.assertIsNotNone(found, name)
             blocks.append(found[1])
         harness.write_text(
@@ -963,10 +964,35 @@ class PairTests(unittest.TestCase):
         # The early Services run stays outside pair results and is not recorded.
         self.assertIn("-ServicesPreflightRoot C:\\ci-preflight -EchoDiagnostics", workflow)
         self.assertNotIn("--stage services", workflow)
-        # Only trusted main pushes write the single (tooling) cache.
-        self.assertEqual(1, workflow.count("uses: actions/cache/save@"))
-        self.assertIn("if: steps.tools.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main' "
-                      "&& github.event_name == 'push'\n        uses: actions/cache/save@", workflow)
+        # Every cache writer, not just tooling, requires a trusted main push.
+        saves = re.findall(r"        if: ([^\n]+)\n        uses: actions/cache/save@", workflow)
+        self.assertEqual(3, workflow.count("uses: actions/cache/save@"))
+        self.assertEqual(3, len(saves))
+        for condition in saves:
+            self.assertIn("github.ref == 'refs/heads/main' && github.event_name == 'push'", condition)
+            self.assertNotIn("||", condition)
+        for job, kind in ((fixtures, "fixtures"), (build, "production")):
+            self.assertIn(f"SCCACHE_DIR: C:\\sccache-{kind}", job)
+            self.assertIn("Prepare-Sccache.ps1", job)
+            self.assertIn("Complete-Sccache.ps1", job)
+            self.assertIn(f"windows-{kind}-objects-v1-sccache-0.15.0-", job)
+            self.assertIn("-main-${{ github.run_id }}-${{ github.run_attempt }}", job)
+            prefix = job.split("restore-keys: |\n")[1].splitlines()[0]
+            self.assertNotIn("CMake", prefix)
+            self.assertNotIn("sources.lock", prefix)
+            self.assertLess(job.index("Complete-Sccache.ps1"), job.index("name: Save " + kind))
+        self.assertIn("QS_FIXTURE_COMPILER_LAUNCHER:", fixtures)
+        self.assertIn("-CompilerLauncher $env:CI_COMPILER_LAUNCHER", build)
+        prototype = (ROOT / "windows/scripts/Build-Prototype.ps1").read_text()
+        for language in ("C", "CXX"):
+            self.assertIn(f'"-DCMAKE_{language}_COMPILER_LAUNCHER:FILEPATH=$CompilerLauncher"', prototype)
+        self.assertNotIn("RUSTC_WRAPPER", workflow)
+        prepare = (ROOT / "windows/ci/Prepare-Sccache.ps1").read_text()
+        self.assertIn("b0b257a164bf438b2dea134ca7ded41c100f59a64b3bf275a202f1e8102ab217", prepare)
+        self.assertLess(prepare.index("Get-FileHash"), prepare.index("tar.exe"))
+        complete = (ROOT / "windows/ci/Complete-Sccache.ps1").read_text()
+        self.assertIn("--show-stats --stats-format json", complete)
+        self.assertIn("--stop-server", complete)
         release = (ROOT / "windows/scripts/New-CaelestiaRelease.ps1").read_text()
         self.assertIn("$build.backendMode -cne 'pinned'", release)
 

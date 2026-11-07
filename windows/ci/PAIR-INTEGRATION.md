@@ -137,7 +137,7 @@ Candidate preflight and PR receipts are never relabeled as the final pair.
 Receipts are artifacts, not commits back into their own tested source.
 
 The producer is temporarily pinned to backend PR #24 head
-`d91a9128294f60d3c1d0ec6d278483d80544ce98`, including its byte-exact validator
+`bd5c68196edbdaad23db8f28ca64214d075711b4`, including its byte-exact validator
 digest. Hosted success/failure/cancellation controls still gate qualification;
 a merged producer is not itself a successful consumer receipt.
 Replace this temporary revision after backend #24 merges; the validator blob
