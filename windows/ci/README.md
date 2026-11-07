@@ -48,6 +48,12 @@ locked dependency graph. Rust is not selected through `stable`.
 wheels, verified aqt source, LLVM/CLI11 SHA-256, six committed Qt archive hashes,
 and the hash-checked official Rust release manifest plus rustup's component
 verification. `Build-Prototype.ps1` never installs missing tools.
+Preparation, build, release preflight, staging, smoke and shared QML fixture
+entry points explicitly load inbox Utility/Archive modules from the running
+PowerShell engine. This is process-local: loading them during preparation does
+not repair a later Python-launched child process. The regression exercises each
+entry point's real bootstrap with script-module discovery disabled and verifies
+that it leaves the caller's `PSModulePath` unchanged.
 Serviced compiler/linker file versions and Rust's official release commit are
 asserted too. The selected VS redist marker must resolve CRT DLLs matching the
 qualified `vcRedistVersion` (14.44.35211.0), not merely a plausible folder name.
