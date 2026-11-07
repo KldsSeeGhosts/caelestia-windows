@@ -36,36 +36,48 @@ if ($LASTEXITCODE -ne 0 -or -not (Test-CaelestiaDevVersion "$identity")) { throw
 $privateLogs = Join-Path $OutputDirectory 'private'
 [IO.Directory]::CreateDirectory($privateLogs) | Out-Null
 $ps = Get-WindowsPowerShellPath
-function Invoke-CandidateGate([string]$Name, [string]$Script, [string[]]$Arguments) {
+$candidateRunner = Join-Path $PSScriptRoot 'nexus_process.py'
+function Invoke-CandidateCommand([string]$Name, [string]$Executable, [string[]]$Arguments, [int]$TimeoutSeconds) {
     $log = Join-Path $privateLogs "$Name.log"
     $exitCode = 1
+    $runnerArguments = @('-I', '-B', $candidateRunner, '--name', $Name, '--log', $log, '--timeout', "$TimeoutSeconds")
+    if ($EchoDiagnostics) { $runnerArguments += '--echo' }
+    $runnerArguments += @('--', $Executable) + $Arguments
     $preference = $ErrorActionPreference
     try {
         $ErrorActionPreference = 'Continue'
         $global:LASTEXITCODE = 1
-        & $ps -NoProfile -NonInteractive -File $Script @Arguments 2>&1 | ForEach-Object { "$_" } |
-            Set-Content -LiteralPath $log -Encoding UTF8 -ErrorAction Stop
+        & $Python @runnerArguments 2>&1 | ForEach-Object { "$_" }
         $exitCode = $LASTEXITCODE
     } finally { $ErrorActionPreference = $preference }
     if ($exitCode -ne 0) {
-        if ($EchoDiagnostics) {
-            $tail = (Get-Content -LiteralPath $log -Tail 80 -Encoding UTF8 -ErrorAction Stop) -join "`n"
-            if ($tail.Length -gt 16000) { $tail = '[earlier output truncated]' + "`n" + $tail.Substring($tail.Length - 15970) }
-            Write-Output "Failed candidate stage: $Name (last 80 lines)"
-            Write-Output $tail
-        }
         throw "Candidate gate failed: $Name (exit=$exitCode). Private diagnostic log: $log. Not a release artifact."
     }
 }
+function Invoke-CandidateGate([string]$Name, [string]$Script, [string[]]$Arguments, [int]$TimeoutSeconds = 900) {
+    Invoke-CandidateCommand $Name $ps (@('-NoProfile', '-NonInteractive', '-File', $Script) + $Arguments) $TimeoutSeconds
+}
 # Self-contained public Git bundles require full histories. Fetches remain
 # anonymous/read-only source acquisition on the isolated hosted runner.
-foreach ($root in @($ShellRoot, "$ShellRoot\windows\deps\quickshell", "$ShellRoot\windows\deps\m3shapes")) {
+function Complete-CandidateHistory([string]$Root, [string]$Name) {
+    $root = $Root
     $shallow = & git -C $root rev-parse --is-shallow-repository
     if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect candidate source history.' }
     if ($shallow -eq 'true') {
-        & git -C $root fetch --unshallow origin
-        if ($LASTEXITCODE -ne 0) { throw 'Complete candidate source history is required.' }
+        $revision = & git -C $root rev-parse HEAD
+        if ($LASTEXITCODE -ne 0 -or $revision -cnotmatch '^[a-f0-9]{40}$') { throw 'Cannot identify source history.' }
+        # Fetch only this exact public commit's ancestry, not unrelated
+        # branches/tags or recursive dependency histories. Bundles still
+        # require complete history and standalone verification.
+        Invoke-CandidateCommand ('history-' + $Name) 'git' @(
+            '-c', 'credential.helper=', '-c', 'core.hooksPath=NUL', '-C', $root,
+            'fetch', '--unshallow', '--no-tags', '--recurse-submodules=no', 'origin', $revision) 300
     }
+}
+foreach ($project in @(@{ name = 'shell'; root = $ShellRoot },
+    @{ name = 'backend'; root = "$ShellRoot\windows\deps\quickshell" },
+    @{ name = 'm3shapes'; root = "$ShellRoot\windows\deps\m3shapes" })) {
+    Complete-CandidateHistory $project.root $project.name
 }
 $scripts = Join-Path $ShellRoot 'windows\scripts'
 $assets = Join-Path $OutputDirectory 'sources'
@@ -73,7 +85,7 @@ $spec = Get-Content "$ShellRoot\windows\toolchain.json" -Raw | ConvertFrom-Json
 $qt = Join-Path $ToolRoot $spec.qtDirectory
 Invoke-CandidateGate 'sources' "$scripts\Prepare-CaelestiaSourceAssets.ps1" @(
     '-SourceRoot', $ShellRoot, '-SourceRevision', $env:GITHUB_SHA, '-OutputDirectory', $assets,
-    '-CacheDirectory', (Join-Path $OutputDirectory 'source-cache'))
+    '-CacheDirectory', (Join-Path $OutputDirectory 'source-cache')) 1800
 $assembly = Join-Path $OutputDirectory 'assembly'
 Invoke-CandidateGate 'assembly' "$scripts\New-CaelestiaRelease.ps1" @(
     '-BuildRoot', $BuildRoot, '-ReleaseId', "$identity", '-OutputDirectory', $assembly,
@@ -85,9 +97,9 @@ $inventoryHash = (Get-FileHash "$assets\component-inventory.json").Hash.ToLowerI
 $coverage = Join-Path $OutputDirectory 'coverage'
 Invoke-CandidateGate 'coverage' "$scripts\Prepare-CaelestiaSourceAssets.ps1" @(
     '-AssetsRoot', $assets, '-BundleRoot', $bundle, '-ExpectedInventorySha256', $inventoryHash,
-    '-ExpectedManifestSha256', $manifestHash, '-CoverageOutputDirectory', $coverage)
+    '-ExpectedManifestSha256', $manifestHash, '-CoverageOutputDirectory', $coverage) 300
 Invoke-CandidateGate 'license-lifecycle' "$scripts\Test-InstallLicenses.ps1" @(
-    '-BuildRoot', $BuildRoot, '-QtPrefix', $qt, '-NoIntegration')
+    '-BuildRoot', $BuildRoot, '-QtPrefix', $qt, '-NoIntegration') 600
 $zip = Join-Path $assembly ($rootName + '.zip')
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $archive = [IO.Compression.ZipFile]::OpenRead($zip)
@@ -97,7 +109,7 @@ try {
 } finally { $archive.Dispose() }
 $extracted = Expand-CaelestiaUpdate $zip (Join-Path $OutputDirectory 'verify-extracted') $rootName $entries $unpacked
 Invoke-CandidateGate 'verify-original-zip' "$scripts\Install-CaelestiaRelease.ps1" @(
-    '-BundleRoot', $extracted, '-VerifyOnly', '-ExpectedManifestSha256', $manifestHash)
+    '-BundleRoot', $extracted, '-VerifyOnly', '-ExpectedManifestSha256', $manifestHash) 300
 # VerifyOnly is data-only on Server 2022. No Windows 11 install/graphics or
 # hardware claim is made. No production OS guard bypass is present.
 $out = Join-Path $OutputDirectory 'out'
@@ -141,5 +153,5 @@ Write-CaelestiaJsonAtomic "$out\candidate.json" @{
 }
 Invoke-CandidateGate 'independent-payload' "$PSScriptRoot\Test-NexusCandidatePayload.ps1" @(
     '-CandidateDirectory', $out, '-OutputDirectory', (Join-Path $OutputDirectory 'independent-payload'),
-    '-SourceDataRoot', $ShellRoot, '-AssetsRoot', $assets)
+    '-SourceDataRoot', $ShellRoot, '-AssetsRoot', $assets) 600
 Write-Output "NEXUS_CANDIDATE_PASS $identity; same tested tree; no native recompilation."

@@ -1876,11 +1876,20 @@ public static extern bool FreeLibrary(System.IntPtr module);
     [IO.Directory]::CreateDirectory($provisionRoot) | Out-Null
     @'
 param([string]$ProfileRoot)
-Start-Sleep -Seconds 1
+$phaseClock = [Diagnostics.Stopwatch]::StartNew()
+Start-Sleep -Milliseconds 100
+[IO.File]::WriteAllText((Join-Path $ProfileRoot 'fixture-phase-seconds.txt'),
+    $phaseClock.Elapsed.TotalSeconds.ToString('R', [Globalization.CultureInfo]::InvariantCulture))
 '{"available":true,"message":"ready"}'
 '@ | Set-Content -LiteralPath (Join-Path $provisionRoot 'Install-SchemeRuntime.ps1') -Encoding UTF8
     $prepared = Install-CaelestiaSchemeRuntime $provisionRoot $schemeProfile
-    Assert ($prepared.available -and $prepared.seconds -ge 1) 'Provisioning was not reported as a separate completed phase.'
+    Assert $prepared.available "Provisioning phase did not complete: message=$($prepared.message), seconds=$($prepared.seconds)."
+    $phaseSeconds = [double]::Parse([IO.File]::ReadAllText((Join-Path $schemeProfile 'fixture-phase-seconds.txt')),
+        [Globalization.CultureInfo]::InvariantCulture)
+    # Sleep may return around a timer boundary on virtualized runners. Compare
+    # nested monotonic measurements, not an assumed one-second minimum.
+    Assert ($phaseSeconds -gt 0 -and $prepared.seconds -ge $phaseSeconds) `
+        "Provisioning duration omitted completed work: reported=$($prepared.seconds), inner=$phaseSeconds."
     @'
 param([string]$ProfileRoot)
 throw 'injected provisioning failure'

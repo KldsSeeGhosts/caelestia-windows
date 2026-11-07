@@ -2,11 +2,14 @@
 import argparse
 import base64
 import copy
+import contextlib
 import hashlib
 import importlib.util
 import json
+import io
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -21,11 +24,23 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import nexus_candidate as c
 import nexus_publish as n
 import pair_result as p
+import nexus_process
 import evidence_fixture
 
 MATERIAL = json.loads(os.environ.pop("NEXUS_TEST_KEY_MATERIAL"))
 
+
+def fixture_script(template, **values):
+    # Substitute delimited tokens once. Inserted paths are opaque, even when
+    # a username/8.3 path contains another token's name (e.g. RUNNER~1).
+    return re.sub(r"@@([A-Z_]+)@@", lambda match: values[match[1]], template)
+
+
 class Diagnostics(unittest.TestCase):
+    def test_fixture_template_never_reprocesses_inserted_paths(self):
+        value = "'C:\\Users\\RUNNER~1\\SOURCE ROOT PYTHON ECHO CHILD LOGS SHALLOW\\user''s\\@@B@@'"
+        self.assertEqual(value + " literal", fixture_script("@@A@@ @@B@@", A=value, B="literal"))
+
     def test_publisher_child_failure_retains_private_log_not_secret_output(self):
         with tempfile.TemporaryDirectory(prefix="nexus-command-diagnostics-") as temp:
             log = Path(temp) / "fixture.private.log"
@@ -44,35 +59,46 @@ class Diagnostics(unittest.TestCase):
 
     def test_actual_candidate_gate_exit_tail_and_log_failure(self):
         with tempfile.TemporaryDirectory(prefix="nexus-diagnostics-") as temp:
-            root = Path(temp)
+            root = Path(temp) / "RUNNER~1 SOURCE ROOT PYTHON ECHO CHILD LOGS SHALLOW user's"
+            root.mkdir()
             child = root / "child.ps1"
             child.write_text("1..100 | ForEach-Object { 'line-' + $_ + ('x' * 400) }\n"
                              "'UNDERLYING_FIXTURE_FAILURE'\nexit 7\n", encoding="utf-8")
             quote = lambda value: "'" + str(value).replace("'", "''") + "'"
-            # Load only the real gate function, never the assembly entrypoint.
+            # Load only the real gate functions, never the assembly entrypoint.
             bootstrap = """
 $ErrorActionPreference = 'Stop'
 $tokens = $null; $errors = $null
-$ast = [Management.Automation.Language.Parser]::ParseFile(SOURCE, [ref]$tokens, [ref]$errors)
+$ast = [Management.Automation.Language.Parser]::ParseFile(@@SOURCE@@, [ref]$tokens, [ref]$errors)
 if ($errors.Count) { throw 'candidate source does not parse' }
-$node = $ast.Find({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and
-    $n.Name -eq 'Invoke-CandidateGate' }, $true)
-if (-not $node) { throw 'candidate gate missing' }
-. ([scriptblock]::Create($node.Extent.Text))
+foreach ($name in @('Invoke-CandidateCommand', 'Invoke-CandidateGate')) {
+    $node = $ast.Find({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and
+        $n.Name -eq $name }, $true)
+    if (-not $node) { throw 'candidate gate missing' }
+    . ([scriptblock]::Create($node.Extent.Text))
+}
 $ps = Join-Path $PSHOME 'powershell.exe'
-$privateLogs = ROOT
-$EchoDiagnostics = ECHO
-try { Invoke-CandidateGate 'fixture' CHILD @(); throw 'unexpected success' }
+$Python = @@PYTHON@@
+$candidateRunner = @@RUNNER@@
+$privateLogs = @@LOGS@@
+$EchoDiagnostics = @@ECHO@@
+try { Invoke-CandidateGate 'fixture' @@CHILD@@ @() @@TIMEOUT@@; throw 'unexpected success' }
 catch {
     $message = $_.Exception.Message
     Write-Output ('CAUGHT:' + $message)
-    if ($message -notlike '*exit=7*' -or $message -notlike '*fixture.log*') { exit 8 }
+    if ($message -notlike '*exit=@@EXPECTED_EXIT@@*' -or $message -notlike '*fixture.log*') { exit 8 }
 }
-""".replace("SOURCE", quote(ROOT / "windows/ci/New-NexusCandidate.ps1")).replace(
-                "ROOT", quote(root)).replace("CHILD", quote(child))
+"""
+            values = {"SOURCE": quote(ROOT / "windows/ci/New-NexusCandidate.ps1"),
+                      "CHILD": quote(child), "PYTHON": quote(sys.executable),
+                      "RUNNER": quote(ROOT / "windows/ci/nexus_process.py"),
+                      "TIMEOUT": "", "EXPECTED_EXIT": "7"}
             for echo in (False, True):
+                logs = root / str(echo)
+                logs.mkdir()
                 script = root / ("check-" + str(echo) + ".ps1")
-                script.write_text(bootstrap.replace("ECHO", "$true" if echo else "$false"), encoding="utf-8")
+                script.write_text(fixture_script(bootstrap, **values, LOGS=quote(logs),
+                                                 ECHO="$true" if echo else "$false"), encoding="utf-8")
                 result = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-File", str(script)],
                                         capture_output=True, text=True, timeout=30)
                 self.assertEqual(0, result.returncode, result.stdout + result.stderr)
@@ -81,16 +107,144 @@ catch {
                 if echo:
                     self.assertIn("[earlier output truncated]", result.stdout)
                     self.assertLess(len(result.stdout), 17000)
-            self.assertIn("UNDERLYING_FIXTURE_FAILURE", (root / "fixture.log").read_text(encoding="utf-8-sig"))
+            self.assertIn("UNDERLYING_FIXTURE_FAILURE", (logs / "fixture.log").read_text(encoding="utf-8-sig"))
             # A failed log write must terminate even when the child succeeds.
             child.write_text("'success'\nexit 0\n", encoding="utf-8")
             blocked = root / "missing-parent" / "logs"
-            script.write_text(bootstrap.replace(quote(root), quote(blocked)).replace("ECHO", "$false"),
+            script.write_text(fixture_script(bootstrap, **values, LOGS=quote(blocked), ECHO="$false"),
                               encoding="utf-8")
             result = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-File", str(script)],
                                     capture_output=True, text=True, timeout=30)
             self.assertNotEqual(0, result.returncode)
             self.assertNotIn("unexpected success", result.stdout)
+            timeout_logs = root / "timeout"
+            timeout_logs.mkdir()
+            child.write_text("'before hang'\nStart-Sleep -Seconds 30\n", encoding="utf-8")
+            script.write_text(fixture_script(bootstrap,
+                **{**values, "TIMEOUT": "1", "EXPECTED_EXIT": "124"}, LOGS=quote(timeout_logs), ECHO="$true"),
+                encoding="utf-8")
+            result = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-File", str(script)],
+                                    capture_output=True, text=True, timeout=30)
+            self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+            self.assertIn("exit=124", result.stdout)
+            state = json.loads((timeout_logs / "fixture.state.json").read_text())
+            self.assertEqual(("timeout", 1), (state["outcome"], state["timeoutSeconds"]))
+
+class StageRunner(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix="nexus-stage-RUNNER~1-SHALLOW-LOGS-")
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+
+    def execute(self, source, timeout=10, log=None, echo=False):
+        output, error = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(output), contextlib.redirect_stderr(error):
+            code = nexus_process.run_stage([sys.executable, "-I", "-B", "-c", source],
+                log or self.root / "stage.log", "fixture", timeout, heartbeat=0.2, echo=echo)
+        return code, output.getvalue(), error.getvalue()
+
+    def test_success_failure_and_private_tail_have_real_exit_and_state(self):
+        code, output, error = self.execute("print('success')", log=self.root / "success.log")
+        self.assertEqual(0, code)
+        self.assertIn("NEXUS_STAGE_START fixture", output)
+        self.assertIn("outcome=success", output)
+        self.assertEqual("", error)
+        code, output, error = self.execute(
+            "import sys; print('x'*200000); print('UNDERLYING_FAILURE'); sys.exit(7)", echo=True)
+        self.assertEqual(7, code)
+        self.assertIn("UNDERLYING_FAILURE", error)
+        self.assertLess(len(error), 17000)
+        self.assertGreater((self.root / "stage.log").stat().st_size, 200000)
+        state = json.loads((self.root / "stage.state.json").read_text())
+        self.assertEqual(("failure", 7), (state["outcome"], state["exitCode"]))
+
+    def test_hang_deadline_kills_owned_descendant_and_reports_progress(self):
+        marker = self.root / "descendant.pid"
+        source = ("import subprocess,sys,time,pathlib; "
+                  "child=subprocess.Popen([sys.executable,'-I','-c','import time; time.sleep(60)']); "
+                  f"pathlib.Path({str(marker)!r}).write_text(str(child.pid)); "
+                  "print('BEFORE_HANG',flush=True); time.sleep(60)")
+        code, output, error = self.execute(source, timeout=3, echo=True)
+        self.assertEqual(124, code)
+        self.assertIn("NEXUS_STAGE_PROGRESS fixture", output)
+        self.assertIn("BEFORE_HANG", error)
+        state = json.loads((self.root / "stage.state.json").read_text())
+        self.assertEqual(("timeout", 124), (state["outcome"], state["exitCode"]))
+        self.assertLess(state["seconds"], 15)
+        self.assertTrue(marker.exists(), "child must actually start for cleanup proof")
+        if os.name == "nt":
+            import ctypes
+            from ctypes import wintypes
+            kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+            kernel.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+            kernel.OpenProcess.restype = wintypes.HANDLE
+            kernel.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+            kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+            handle = kernel.OpenProcess(0x100000, False, int(marker.read_text()))
+            if handle:
+                try:
+                    self.assertEqual(0, kernel.WaitForSingleObject(handle, 0), "owned descendant survived timeout")
+                finally:
+                    kernel.CloseHandle(handle)
+
+    def test_log_failure_never_launches_and_signing_key_is_not_inherited(self):
+        marker = self.root / "must-not-run"
+        with self.assertRaises(OSError):
+            self.execute(f"from pathlib import Path; Path({str(marker)!r}).touch()",
+                         log=self.root / "absent" / "stage.log")
+        self.assertFalse(marker.exists())
+        with patch.dict(os.environ, {"NEXUS_SIGNING_KEY": "PRIVATE_SENTINEL"}):
+            code, _, _ = self.execute("import os; assert 'NEXUS_SIGNING_KEY' not in os.environ; print('no key')")
+        self.assertEqual(0, code)
+        self.assertNotIn("PRIVATE_SENTINEL", (self.root / "stage.log").read_text())
+
+    def test_invalid_budgets_are_rejected_before_launch(self):
+        for budget in (0, -1, float("nan"), float("inf"), 3601):
+            with self.subTest(budget=budget), self.assertRaises(ValueError):
+                self.execute("raise AssertionError('must not run')", timeout=budget)
+
+    def test_real_history_helper_unshallows_exact_head_without_other_refs(self):
+        source, shallow = self.root / "origin", self.root / "shallow"
+        source.mkdir()
+        git(source, "init", "--quiet")
+        for value in ("first", "second"):
+            (source / "source.txt").write_text(value)
+            commit(source)
+        revision = git(source, "rev-parse", "HEAD")
+        git(source, "tag", "unrelated-tag")
+        git(source, "branch", "unrelated-branch")
+        subprocess.run(["git", "clone", "--quiet", "--depth=1", "--no-tags",
+                        "--single-branch", source.as_uri(), str(shallow)], check=True, capture_output=True)
+        self.assertEqual("true", git(shallow, "rev-parse", "--is-shallow-repository"))
+        quote = lambda value: "'" + str(value).replace("'", "''") + "'"
+        body = """
+$ErrorActionPreference = 'Stop'
+$tokens = $null; $errors = $null
+$ast = [Management.Automation.Language.Parser]::ParseFile(@@SOURCE@@, [ref]$tokens, [ref]$errors)
+foreach ($name in @('Invoke-CandidateCommand', 'Complete-CandidateHistory')) {
+    $node = $ast.Find({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $name }, $true)
+    if (-not $node) { throw 'history helper missing' }
+    . ([scriptblock]::Create($node.Extent.Text))
+}
+$Python = @@PYTHON@@
+$candidateRunner = @@RUNNER@@
+$privateLogs = @@LOGS@@
+$EchoDiagnostics = $true
+Complete-CandidateHistory @@SHALLOW@@ 'fixture'
+"""
+        body = fixture_script(body, SOURCE=quote(ROOT / "windows/ci/New-NexusCandidate.ps1"),
+                              PYTHON=quote(sys.executable), RUNNER=quote(ROOT / "windows/ci/nexus_process.py"),
+                              LOGS=quote(self.root), SHALLOW=quote(shallow))
+        script = self.root / "history.ps1"
+        script.write_text(body, encoding="utf-8")
+        result = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-File", str(script)],
+                                capture_output=True, text=True, timeout=30)
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertEqual("false", git(shallow, "rev-parse", "--is-shallow-repository"))
+        self.assertEqual(revision, git(shallow, "rev-parse", "HEAD"))
+        self.assertEqual("2", git(shallow, "rev-list", "--count", "HEAD"))
+        self.assertEqual("", git(shallow, "tag", "--list"))
+        self.assertNotIn("unrelated-branch", git(shallow, "branch", "-r"))
 
 class Evidence(unittest.TestCase):
     def setUp(self):
@@ -647,6 +801,8 @@ class Pipeline(unittest.TestCase):
         self.assertNotIn("workflow_run", text)
         self.assertNotIn("pull_request_target", text)
         self.assertIn("actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131", text)
+        self.assertIn("path: C:/nexus-candidate/private/*.state.json", text)
+        self.assertNotIn("path: C:/nexus-candidate/private/*.log", text)
         for file in ("nexus-promote.yml", "nexus-refresh.yml"):
             text = (ROOT / ".github/workflows" / file).read_text()
             self.assertNotIn("workflow_run", text)
@@ -657,7 +813,7 @@ class Pipeline(unittest.TestCase):
 
 if __name__ == "__main__":
     suite = unittest.defaultTestLoader.loadTestsFromModule(sys.modules[__name__])
-    if suite.countTestCases() < 32:
+    if suite.countTestCases() < 41:
         raise SystemExit("Nexus behavioral test inventory unexpectedly reduced.")
     result = unittest.TextTestRunner(verbosity=2).run(suite)
     raise SystemExit(0 if result.wasSuccessful() and result.testsRun >= 32 and not result.skipped else 1)

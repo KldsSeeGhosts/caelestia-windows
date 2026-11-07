@@ -144,6 +144,7 @@ $scratch = Join-Path $OutputDirectory 'work'
 [IO.Directory]::CreateDirectory($scratch) | Out-Null
 Export-SourceGitMembers $SourceRoot $SourceRevision @('windows/release/source-assets.json') (Join-Path $scratch 'recipe-data') $scratch
 $committedRecipeHash = Get-SourceRecipeHash (Join-Path $scratch 'recipe-data\windows\release\source-assets.json')
+Write-Host 'SOURCE_PHASE reference-downloads'
 $supplierPath = Get-SourceDownload $recipe.referenceAssets.supplier.url $recipe.referenceAssets.supplier.sha256 $CacheDirectory -Offline:$Offline
 $appPath = Get-SourceDownload $recipe.referenceAssets.application.url $recipe.referenceAssets.application.sha256 $CacheDirectory -Offline:$Offline
 $supplierZip = Open-SourceZip $supplierPath
@@ -162,6 +163,7 @@ try {
     $archives = @()
     $archiveLookup = @{}
     foreach ($archive in @($reference.archives) + @($reference.unbundledNoticeProvenance)) {
+        Write-Host "SOURCE_ARCHIVE $($archive.path)"
         Assert-SourceRelativePath $archive.path
         if ($archiveLookup.ContainsKey($archive.path)) { throw 'Duplicate supplier archive rule.' }
         $cacheFile = Join-Path $CacheDirectory $archive.sha256
@@ -190,6 +192,7 @@ try {
     # HTML/legal interpretation. Their original provenance is retained below.
     $rawRoots = @{}
     foreach ($group in @($reference.noticeProvenance | Where-Object derivation -CEQ 'verbatim bytes from supplier archive' | Group-Object sourceArchive)) {
+        Write-Host "SOURCE_NOTICES $($group.Name)"
         if (-not $archiveLookup.ContainsKey($group.Name)) { throw "Notice has no recorded source archive: $($group.Name)" }
         $raw = Join-Path $scratch ('raw-' + $rawRoots.Count)
         Export-SourceTarMembers $archiveLookup[$group.Name] @($group.Group.sourceMember) $raw
@@ -239,6 +242,7 @@ try {
     }
     $projectRecords = @()
     foreach ($project in $projects) {
+        Write-Host "SOURCE_BUNDLE $($project.id)"
         $bundleName = $project.id + '.bundle'
         $bundle = Join-Path $projectRoot $bundleName
         New-SourceBundle $project.root $project.revision $bundle (Join-Path $scratch $project.id)
@@ -429,6 +433,7 @@ try {
         $outputStream = [IO.File]::Create((Join-Path $root 'SUPPLIER-BUILD-AND-REPLACEMENT.md'))
         try { $inputStream.CopyTo($outputStream) } finally { $outputStream.Dispose(); $inputStream.Dispose() }
     }
+    Write-Host 'SOURCE_PHASE compress-public-assets'
     New-SourceZip $projectRoot (Join-Path $OutputDirectory 'project-source.zip')
     New-SourceZip $supplierRoot (Join-Path $OutputDirectory 'supplier-source.zip')
     $hashes = @('component-inventory.json', 'project-source.zip', 'supplier-source.zip') | ForEach-Object {

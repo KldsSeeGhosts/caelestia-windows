@@ -347,6 +347,15 @@ jobs:
           retention-days: 7
           if-no-files-found: error
 
+      - name: Sanitized candidate stage states
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: nexus-stage-states-${{ github.run_id }}-${{ github.run_attempt }}
+          path: C:/nexus-candidate/private/*.state.json
+          retention-days: 3
+          if-no-files-found: ignore
+
       - name: Sanitized exact-pair receipts
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
