@@ -630,10 +630,16 @@ jobs:
         with:
           python-version: '3.12'
           architecture: x64
-      - name: Re-bootstrap trusted producer
+      - name: Resolve exact pinned pair and re-bootstrap trusted producer
+        # Resolution also fetches backend refs/remotes/origin/main, which the
+        # independent eligibility gate needs to recheck backend-main ancestry.
         run: |
+          & "$env:GITHUB_WORKSPACE\windows\ci\Resolve-PairRequest.ps1" `
+            -Mode pinned -ShellSha $env:GITHUB_SHA `
+            -ShellRoot $env:GITHUB_WORKSPACE -CandidateRoot C:\pair-backend -Results C:\candidate-request
+          $local = Get-Content C:\candidate-request\pair-local.json -Raw | ConvertFrom-Json
           python -I -B "$env:GITHUB_WORKSPACE\windows\ci\pair_result.py" bootstrap `
-            --shell $env:GITHUB_WORKSPACE --backend "$env:GITHUB_WORKSPACE\windows\deps\quickshell" --target $env:TRUSTED_ROOT
+            --shell $env:GITHUB_WORKSPACE --backend $local.backendRoot --target $env:TRUSTED_ROOT
           if ($LASTEXITCODE -ne 0) { throw 'Trusted producer extraction or digest check failed.' }
       - name: Restore versioned tooling (never save)
         uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
