@@ -213,7 +213,7 @@ jobs:
         id: tools
         uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
-          key: windows-x64-tools-contract-v1-py${{ steps.python.outputs.python-version }}-${{ hashFiles('windows/toolchain.json', 'windows/toolchain/*.lock.txt') }}
+          key: windows-x64-tools-contract-v1-py${{ steps.python.outputs.python-version }}-${{ hashFiles('windows/toolchain.json', 'windows/toolchain/*.lock.txt', 'windows/toolchain/extract_llvm.py') }}
           path: |
             C:\t-public\Qt
             C:\t-public\downloads
