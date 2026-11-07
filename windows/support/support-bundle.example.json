@@ -1,0 +1,45 @@
+{
+  "schema": "caelestia-support-bundle",
+  "version": 1,
+  "collection": { "category": "supported", "reason": "none" },
+  "sources": {
+    "install": { "category": "supported", "reason": "none" },
+    "release": { "category": "unavailable", "reason": "missing" },
+    "snapshot": { "category": "supported", "reason": "none" }
+  },
+  "identity": {
+    "trust": "declared-unverified",
+    "releaseId": "v0.1.0-preview.2",
+    "sourceRevision": "eec2778123d47c3555006b3af5e75fd893c7b9c2",
+    "nativeSourceRevision": null,
+    "backendRevision": "e6039b2b9cbb35b97473bda4dcc3f12789ae7f0c",
+    "glazierRevision": "37f795041cbbb32ed46cba103f3f000a3a99ac13",
+    "m3shapesRevision": null,
+    "schemeRevision": null,
+    "executableSha256": null,
+    "releaseManifestSha256": null
+  },
+  "modules": { "qt": null, "materialyoucolor": null, "pillow": null },
+  "environment": {
+    "windowsVersion": "10.0.26100.0",
+    "architecture": "x64",
+    "displayDriver": { "category": "unavailable", "reason": "not-collected", "version": null }
+  },
+  "providers": [
+    { "id": "shell", "category": "supported", "reason": "none", "ready": true, "requested": null, "accepted": null, "completed": null, "counters": { "failures": null, "recentFailures": null, "samples": null }, "timing": { "lastDurationMs": null, "totalDurationMs": null }, "errors": [] },
+    { "id": "tiling", "category": "supported", "reason": "none", "ready": null, "requested": null, "accepted": null, "completed": null, "counters": { "failures": 2, "recentFailures": 1, "samples": null }, "timing": { "lastDurationMs": null, "totalDurationMs": null }, "errors": [] },
+    { "id": "audio", "category": "failed", "reason": "operation-failed", "ready": false, "requested": true, "accepted": true, "completed": false, "counters": { "failures": 1, "recentFailures": 1, "samples": 1 }, "timing": { "lastDurationMs": 250, "totalDurationMs": 250 }, "errors": [{ "category": "failed", "reason": "operation-failed", "count": 1 }] },
+    { "id": "battery", "category": "unavailable", "reason": "not-collected", "ready": null, "requested": null, "accepted": null, "completed": null, "counters": { "failures": null, "recentFailures": null, "samples": null }, "timing": { "lastDurationMs": null, "totalDurationMs": null }, "errors": [] },
+    { "id": "bluetooth", "category": "unavailable", "reason": "not-collected", "ready": null, "requested": null, "accepted": null, "completed": null, "counters": { "failures": null, "recentFailures": null, "samples": null }, "timing": { "lastDurationMs": null, "totalDurationMs": null }, "errors": [] },
+    { "id": "brightness", "category": "unsupported", "reason": "unsupported", "ready": false, "requested": null, "accepted": null, "completed": null, "counters": { "failures": null, "recentFailures": null, "samples": null }, "timing": { "lastDurationMs": null, "totalDurationMs": null }, "errors": [] },
+    { "id": "network", "category": "unavailable", "reason": "not-collected", "ready": null, "requested": null, "accepted": null, "completed": null, "counters": { "failures": null, "recentFailures": null, "samples": null }, "timing": { "lastDurationMs": null, "totalDurationMs": null }, "errors": [] },
+    { "id": "media", "category": "empty", "reason": "empty", "ready": true, "requested": null, "accepted": null, "completed": null, "counters": { "failures": null, "recentFailures": null, "samples": 0 }, "timing": { "lastDurationMs": null, "totalDurationMs": null }, "errors": [] },
+    { "id": "notifications", "category": "denied", "reason": "permission-denied", "ready": false, "requested": null, "accepted": null, "completed": null, "counters": { "failures": null, "recentFailures": null, "samples": null }, "timing": { "lastDurationMs": null, "totalDurationMs": null }, "errors": [] },
+    { "id": "desktop", "category": "unavailable", "reason": "not-collected", "ready": null, "requested": null, "accepted": null, "completed": null, "counters": { "failures": null, "recentFailures": null, "samples": null }, "timing": { "lastDurationMs": null, "totalDurationMs": null }, "errors": [] },
+    { "id": "capture", "category": "transient", "reason": "completion-unobserved", "ready": null, "requested": true, "accepted": true, "completed": null, "counters": { "failures": null, "recentFailures": null, "samples": null }, "timing": { "lastDurationMs": null, "totalDurationMs": null }, "errors": [] },
+    { "id": "idleInhibit", "category": "unavailable", "reason": "not-collected", "ready": null, "requested": null, "accepted": null, "completed": null, "counters": { "failures": null, "recentFailures": null, "samples": null }, "timing": { "lastDurationMs": null, "totalDurationMs": null }, "errors": [] },
+    { "id": "keyboard", "category": "unavailable", "reason": "not-collected", "ready": null, "requested": null, "accepted": null, "completed": null, "counters": { "failures": null, "recentFailures": null, "samples": null }, "timing": { "lastDurationMs": null, "totalDurationMs": null }, "errors": [] },
+    { "id": "tray", "category": "unavailable", "reason": "not-collected", "ready": null, "requested": null, "accepted": null, "completed": null, "counters": { "failures": null, "recentFailures": null, "samples": null }, "timing": { "lastDurationMs": null, "totalDurationMs": null }, "errors": [] },
+    { "id": "wallpaper", "category": "unavailable", "reason": "not-collected", "ready": null, "requested": null, "accepted": null, "completed": null, "counters": { "failures": null, "recentFailures": null, "samples": null }, "timing": { "lastDurationMs": null, "totalDurationMs": null }, "errors": [] }
+  ]
+}

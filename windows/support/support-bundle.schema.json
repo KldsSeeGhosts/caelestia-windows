@@ -1,0 +1,127 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:caelestia:support-bundle:1",
+  "title": "Caelestia sanitized support bundle v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "version", "collection", "sources", "identity", "modules", "environment", "providers"],
+  "properties": {
+    "schema": { "const": "caelestia-support-bundle" },
+    "version": { "const": 1 },
+    "collection": { "$ref": "#/$defs/source" },
+    "sources": {
+      "type": "object", "additionalProperties": false,
+      "required": ["install", "release", "snapshot"],
+      "properties": {
+        "install": { "$ref": "#/$defs/source" },
+        "release": { "$ref": "#/$defs/source" },
+        "snapshot": { "$ref": "#/$defs/source" }
+      }
+    },
+    "identity": {
+      "type": "object", "additionalProperties": false,
+      "required": ["trust", "releaseId", "sourceRevision", "nativeSourceRevision", "backendRevision", "glazierRevision", "m3shapesRevision", "schemeRevision", "executableSha256", "releaseManifestSha256"],
+      "properties": {
+        "trust": { "const": "declared-unverified" },
+        "releaseId": { "type": ["string", "null"], "maxLength": 80, "pattern": "^v?[0-9]{1,4}\\.[0-9]{1,4}\\.[0-9]{1,4}(-(preview|alpha|beta|rc)\\.[0-9]{1,6})?(?![\\s\\S])" },
+        "sourceRevision": { "$ref": "#/$defs/revision" },
+        "nativeSourceRevision": { "$ref": "#/$defs/revision" },
+        "backendRevision": { "$ref": "#/$defs/revision" },
+        "glazierRevision": { "$ref": "#/$defs/revision" },
+        "m3shapesRevision": { "$ref": "#/$defs/revision" },
+        "schemeRevision": { "$ref": "#/$defs/revision" },
+        "executableSha256": { "$ref": "#/$defs/digest" },
+        "releaseManifestSha256": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "modules": {
+      "type": "object", "additionalProperties": false,
+      "required": ["qt", "materialyoucolor", "pillow"],
+      "properties": {
+        "qt": { "$ref": "#/$defs/version" },
+        "materialyoucolor": { "$ref": "#/$defs/version" },
+        "pillow": { "$ref": "#/$defs/version" }
+      }
+    },
+    "environment": {
+      "type": "object", "additionalProperties": false,
+      "required": ["windowsVersion", "architecture", "displayDriver"],
+      "properties": {
+        "windowsVersion": { "$ref": "#/$defs/version" },
+        "architecture": { "enum": ["x64", "x86", "arm64", null] },
+        "displayDriver": {
+          "type": "object", "additionalProperties": false,
+          "required": ["category", "reason", "version"],
+          "properties": {
+            "category": { "enum": ["supported", "unavailable"] },
+            "reason": { "$ref": "#/$defs/reason" },
+            "version": { "$ref": "#/$defs/version" }
+          }
+        }
+      }
+    },
+    "providers": {
+      "type": "array", "minItems": 15, "maxItems": 15,
+      "items": { "$ref": "#/$defs/provider" }
+    }
+  },
+  "$defs": {
+    "revision": { "type": ["string", "null"], "maxLength": 40, "pattern": "^[a-f0-9]{40}$" },
+    "digest": { "type": ["string", "null"], "maxLength": 64, "pattern": "^[a-fA-F0-9]{64}$" },
+    "version": { "type": ["string", "null"], "maxLength": 23, "pattern": "^[0-9]{1,5}(\\.[0-9]{1,5}){1,3}(?![\\s\\S])" },
+    "boolean": { "type": ["boolean", "null"] },
+    "counter": { "type": ["integer", "null"], "minimum": 0, "maximum": 1000000000 },
+    "category": { "enum": ["supported", "unsupported", "denied", "unavailable", "transient", "failed", "empty"] },
+    "reason": { "enum": ["none", "not-collected", "missing", "invalid", "oversized", "timeout", "permission-denied", "provider-unavailable", "operation-failed", "unsupported", "empty", "transient", "disabled", "completion-unobserved"] },
+    "source": {
+      "type": "object", "additionalProperties": false,
+      "required": ["category", "reason"],
+      "properties": {
+        "category": { "enum": ["supported", "unavailable"] },
+        "reason": { "$ref": "#/$defs/reason" }
+      }
+    },
+    "provider": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "category", "reason", "ready", "requested", "accepted", "completed", "counters", "timing", "errors"],
+      "properties": {
+        "id": { "enum": ["shell", "tiling", "audio", "battery", "bluetooth", "brightness", "network", "media", "notifications", "desktop", "capture", "idleInhibit", "keyboard", "tray", "wallpaper"] },
+        "category": { "$ref": "#/$defs/category" },
+        "reason": { "$ref": "#/$defs/reason" },
+        "ready": { "$ref": "#/$defs/boolean" },
+        "requested": { "$ref": "#/$defs/boolean" },
+        "accepted": { "$ref": "#/$defs/boolean" },
+        "completed": { "$ref": "#/$defs/boolean" },
+        "counters": {
+          "type": "object", "additionalProperties": false,
+          "required": ["failures", "recentFailures", "samples"],
+          "properties": {
+            "failures": { "$ref": "#/$defs/counter" },
+            "recentFailures": { "$ref": "#/$defs/counter" },
+            "samples": { "$ref": "#/$defs/counter" }
+          }
+        },
+        "timing": {
+          "type": "object", "additionalProperties": false,
+          "required": ["lastDurationMs", "totalDurationMs"],
+          "properties": {
+            "lastDurationMs": { "type": ["integer", "null"], "minimum": 0, "maximum": 600000 },
+            "totalDurationMs": { "type": ["integer", "null"], "minimum": 0, "maximum": 86400000 }
+          }
+        },
+        "errors": {
+          "type": "array", "maxItems": 4,
+          "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["category", "reason", "count"],
+            "properties": {
+              "category": { "enum": ["denied", "unavailable", "transient", "failed"] },
+              "reason": { "$ref": "#/$defs/reason" },
+              "count": { "$ref": "#/$defs/counter" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

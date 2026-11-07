@@ -162,9 +162,13 @@ try {
     Copy-Item -LiteralPath "$repoRoot\windows\shell\shell.json" -Destination "$payload\defaults\shell.json"
     Copy-Item -LiteralPath "$repoRoot\windows\shell\windows.json" -Destination "$payload\defaults\windows.json"
     Copy-Item -LiteralPath "$repoRoot\defaults\windows\keybinds.json" -Destination "$payload\defaults\keybinds.json"
-    foreach ($script in @('Start-Caelestia.ps1', 'Start-CaelestiaEntry.ps1', 'Manage-Caelestia.ps1', 'Caelestia-Versions.ps1', 'Uninstall-Caelestia.ps1', 'Caelestia-InstallCommon.ps1', 'Start-DesktopShell.ps1', 'Watch-DesktopShell.ps1', 'Restore-Desktop.ps1', 'DesktopTakeover.cs', 'Install-SchemeRuntime.ps1', 'Get-AccountPicture.ps1', 'Banner-Suppression.ps1')) {
+    foreach ($script in @('Start-Caelestia.ps1', 'Start-CaelestiaEntry.ps1', 'Manage-Caelestia.ps1', 'Caelestia-Versions.ps1', 'Uninstall-Caelestia.ps1', 'Caelestia-InstallCommon.ps1', 'Start-DesktopShell.ps1', 'Watch-DesktopShell.ps1', 'Restore-Desktop.ps1', 'DesktopTakeover.cs', 'Install-SchemeRuntime.ps1', 'Get-AccountPicture.ps1', 'Banner-Suppression.ps1', 'Export-CaelestiaSupport.ps1', 'Caelestia-Support.ps1')) {
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot $script) -Destination $payload
     }
+    New-Item -ItemType Directory -Path "$payload\docs", "$payload\support" | Out-Null
+    Copy-Item -LiteralPath "$repoRoot\windows\docs\SUPPORT-BUNDLE.md" -Destination "$payload\docs"
+    Copy-Item -LiteralPath "$repoRoot\windows\support\support-bundle.schema.json",
+        "$repoRoot\windows\support\support-bundle.example.json" -Destination "$payload\support"
     # Compile once while the old shell is alive, not on every watchdog launch.
     # Always target Windows PowerShell's .NET Framework, even from pwsh 7.
     $compile = "Add-Type -Path '" + "$payload\DesktopTakeover.cs".Replace("'", "''") +
