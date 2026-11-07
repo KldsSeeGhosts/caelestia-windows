@@ -61,6 +61,9 @@ $workflow = Get-Content -LiteralPath "$repo\.github\workflows\windows-build.yml"
 $mirror = Get-Content -LiteralPath "$repo\windows\ci\windows-build.yml.template" -Raw
 Assert-True ($workflow.Replace("`r`n", "`n") -ceq $mirror.Replace("`r`n", "`n")) 'Workflow mirror must remain exact.'
 Assert-True ($workflow.Contains('Test-CaptureRust.ps1') -and $workflow.Contains('C:/ci-capture/capture-rust.json')) 'Public gate and sanitized receipt upload required.'
+$nativeJob = ($workflow -split '(?m)^  build:\r?$')[1] -split '(?m)^  pair:\r?$' | Select-Object -First 1
+Assert-True ($nativeJob.Contains('Test-CaptureRust.ps1') -and -not $nativeJob.Contains('New-NexusCandidate.ps1')) 'Capture validation must not wait for candidate assembly.'
+Assert-True (-not $nativeJob.Contains('Invoke-WindowsFixtureGate.ps1') -and -not $nativeJob.Contains(' finalize ')) 'Capture and integration run independently of fixtures and finalization.'
 Assert-True ((Get-Content "$PSScriptRoot\New-CaelestiaRelease.ps1" -Raw).Contains("if (`$build.backendMode -cne 'pinned')")) 'Candidate-release refusal guard must remain.'
 & node "$repo\windows\tests\CaptureIntegration.test.js"
 if ($LASTEXITCODE -ne 0) { throw 'Capture adapter integration checks failed.' }

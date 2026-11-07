@@ -34,10 +34,14 @@ if (Test-Path -LiteralPath $shellWorkflow -PathType Leaf) {
     $requiredGate = 'Windows validation'
     $issueTracker = 'https://github.com/KldsSeeGhosts/caelestia-windows/issues'
     $expectedJobs = @(
+        'Change scope',
         'Fast regressions',
         'Installer and colour regressions',
+        'Backend fixtures and portable tier',
         'Native build and offscreen regressions',
+        'Exact-pair receipt',
         'Windows validation',
+        'Assemble exact-tested release candidate',
         'Nexus development publication'
     )
     $ownedPaths = @(

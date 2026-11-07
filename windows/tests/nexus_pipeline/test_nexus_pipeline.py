@@ -264,6 +264,98 @@ class Evidence(unittest.TestCase):
         self.assertNotIn(str(self.root), "".join(path.read_text() for path in output.iterdir()))
         self.assertFalse((output / "build.json").exists())
 
+    def test_integration_transfer_has_only_join_inputs(self):
+        p.write(self.results / "pair-local.json", {"backendRoot": "synthetic-local-root"})
+        transfer = self.root / "integration-transfer"
+        result = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-File",
+            str(ROOT / "windows/ci/Export-NexusCandidateInputs.ps1"), "-BuildRoot", str(self.build),
+            "-PairResults", str(self.results), "-OutputDirectory", str(transfer), "-Integration"],
+            capture_output=True, text=True)
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        pair = transfer / "ci-pair"
+        self.assertEqual(c.read(self.build / "logs/build.json")["toolchain"],
+                         c.read(pair / "actual-toolchain.json"))
+        self.assertEqual({"pair-request.json", "candidate-result.json", "pair-local.json",
+                          "actual-toolchain.json", "integration-stages.json", "integration.xml",
+                          "plugins.raw.xml", "Services/summary.json", "Services/fixture.log",
+                          "Shell/summary.json", "Shell/fixture.log"},
+                         {file.relative_to(pair).as_posix() for file in pair.rglob("*") if file.is_file()})
+
+    def test_parallel_merge_finalize_and_envelope(self):
+        module = p.validator(self.validator, c.read(self.shell / "windows/ci/pair-contract.json"))
+        complete = c.read(self.results / "candidate-result.json")
+        fixture = self.root / "fixtures"; fixture.mkdir()
+        partials = []
+        for owned, suites in (({"sources", "producer", "prepare", "configure", "build", "portable"},
+                               {"producer", "portable"}),
+                              ({"sources", "producer", "prepare", "integration"},
+                               {"producer", "integration"})):
+            receipt = copy.deepcopy(complete)
+            receipt.update(finishedAt=None, workflowOutcome=None, result="incomplete")
+            receipt["producer"] = {}
+            receipt["toolchain"]["actual"] = {}
+            empty = module.new_receipt("downstream", self.ctx["sha"], self.ctx["sha"])
+            for stage in receipt["stages"]:
+                if stage not in owned:
+                    receipt["stages"][stage] = empty["stages"][stage]
+            receipt["tests"] = {key: value for key, value in receipt["tests"].items() if key in suites}
+            partials.append(receipt)
+        p.write(fixture / "candidate-result.json", partials[0])
+        p.write(self.results / "candidate-result.json", partials[1])
+        shutil.copyfile(self.results / "portable.xml", fixture / "portable.xml")
+        actual = complete["toolchain"]["actual"]
+        p.write(fixture / "actual-toolchain.json", actual)
+        p.write(self.results / "actual-toolchain.json", {**actual, "qtVersion": "wrong"})
+        args = argparse.Namespace(fixture=str(fixture), results=str(self.results),
+                                  shell=str(self.shell), validator=str(self.validator))
+        with self.assertRaisesRegex(ValueError, "actual-toolchain-mismatch"):
+            p.join(args)
+        self.assertFalse((self.results / "integration-result.json").exists())
+        p.write(self.results / "actual-toolchain.json", actual)
+        p.join(args)
+        finalized = subprocess.run([sys.executable, "-I", "-B", str(self.validator),
+            "--receipt", str(self.results / "candidate-result.json"), "finalize",
+            "--workflow-outcome", "success", "--toolchain", str(self.results / "actual-toolchain.json"),
+            "--backend", str(self.shell / "windows/deps/quickshell"), "--shell", str(self.shell)],
+            capture_output=True, text=True)
+        self.assertEqual(0, finalized.returncode, finalized.stdout + finalized.stderr)
+        args = argparse.Namespace(results=str(self.results), shell=str(self.shell), validator=str(self.validator),
+            build_root=str(self.build), workflow_outcome="success", event="push", ref="refs/heads/main",
+            run_id=self.ctx["runId"], attempt=self.ctx["runAttempt"], workflow_sha=self.ctx["sha"])
+        self.assertEqual(0, p.envelope(args))
+        self.assertTrue(c.read(self.results / "pair-result.json")["releaseEligible"])
+
+    def test_transferred_allowlist_recomputes_evidence_and_excludes_unrelated_files(self):
+        (self.build / "object.obj").write_bytes(b"not an assembly input")
+        (self.results / "environment.json").write_text('{"private": true}')
+        transfer = self.root / "transfer"
+        result = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-File",
+                                 str(ROOT / "windows/ci/Export-NexusCandidateInputs.ps1"),
+                                 "-BuildRoot", str(self.build), "-PairResults", str(self.results),
+                                 "-OutputDirectory", str(transfer)], capture_output=True, text=True)
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        expected_build = {"logs/build.json", "quickshell/qs.exe", "install/caelestia-capture.exe",
+                          "install/DesktopTakeover.dll"}
+        expected_build.update(path.relative_to(self.build).as_posix()
+                              for path in (self.build / "install/qml").rglob("*") if path.is_file())
+        expected_pair = {"pair-request.json", "candidate-result.json", "pair-result.json",
+                         "integration-stages.json", "portable.xml", "integration.xml", "plugins.raw.xml"}
+        for suite in ("Services", "Shell"):
+            expected_pair.add(f"{suite}/summary.json")
+            expected_pair.update(f"{suite}/{row['name']}.log"
+                                 for row in c.read(self.results / suite / "summary.json")["results"])
+        self.assertEqual({f"b-public/{name}" for name in expected_build}
+                         | {f"ci-pair/{name}" for name in expected_pair},
+                         {path.relative_to(transfer).as_posix() for path in transfer.rglob("*") if path.is_file()})
+        build, results = transfer / "b-public", transfer / "ci-pair"
+        self.assertEqual("0.2.0-dev.1.8.2",
+                         c.verify_live_evidence(self.shell, build, results, self.validator, self.ctx))
+        output = self.root / "transferred-public"; output.mkdir()
+        c.export_evidence(self.shell, build, results, self.validator, self.ctx, output)
+        rerun = c.context(env({**self.ctx, "runAttempt": "3"}))
+        with self.assertRaisesRegex(ValueError, "pair-run-mismatch"):
+            c.verify_live_evidence(self.shell, build, results, self.validator, rerun)
+
     def test_forged_pass_boolean_cannot_hide_failed_receipt_or_outputs(self):
         receipt = c.read(self.results / "candidate-result.json")
         receipt["tests"]["portable"]["failed"] = 1
@@ -794,7 +886,50 @@ class Pipeline(unittest.TestCase):
         before, publish = text.split("\n  publish:\n")
         self.assertNotIn("secrets.", before)
         self.assertNotIn("contents: write", before)
-        self.assertIn("needs: [build, validation]", publish)
+        self.assertIn("needs: [candidate, validation]", publish)
+        scope = text.split("\n  scope:\n")[1].split("\n  checks:\n")[0]
+        self.assertIn("runs-on: ubuntu-24.04", scope)
+        self.assertIn("fetch-depth: 0", scope)
+        self.assertIn("Refuse mutable dispatch inputs", scope)
+        self.assertIn("Get-NativeBuildRequired.ps1", scope)
+        for job, next_job in (("checks", "packaging"), ("packaging", "fixtures"),
+                              ("fixtures", "build"), ("build", "pair")):
+            block = text.split(f"\n  {job}:\n")[1].split(f"\n  {next_job}:\n")[0]
+            self.assertIn("needs: scope", block)
+            self.assertNotIn("Get-NativeBuildRequired.ps1", block)
+            self.assertNotIn("New-NexusCandidate.ps1", block)
+        validation, candidate = text.split("\n  validation:\n")[1].split("\n  candidate:\n")
+        candidate = candidate.split("\n  publish:\n")[0]
+        self.assertIn("needs: [scope, checks, packaging, fixtures, build, pair]", validation)
+        self.assertNotIn("candidate", validation.lower())
+        self.assertIn("needs.scope.outputs.native", validation)
+        self.assertIn("-notin @('true', 'false')", validation)
+        self.assertIn("needs: [scope, pair, validation]", candidate)
+        for condition in ("needs.validation.result == 'success'", "needs.pair.result == 'success'",
+                          "needs.scope.result == 'success'", "needs.scope.outputs.native == 'true'",
+                          "github.event_name == 'push'", "github.ref == 'refs/heads/main'"):
+            self.assertIn(condition, candidate)
+        self.assertIn("New-NexusCandidate.ps1", candidate)
+        self.assertNotIn("actions/cache/save@", candidate)
+        self.assertEqual(1, text.count("actions/cache/save@"))
+        self.assertEqual(3, text.count("key: windows-x64-tools-contract-v1-py"))
+        self.assertIn("name: nexus-inputs-${{ github.run_id }}-${{ github.run_attempt }}", candidate)
+        self.assertIn("path: C:/", candidate)
+        build = text.split("\n  build:\n")[1].split("\n  pair:\n")[0]
+        self.assertIn("retention-days: 1\n", build)
+        fixtures = text.split("\n  fixtures:\n")[1].split("\n  build:\n")[0]
+        pair = text.split("\n  pair:\n")[1].split("\n  validation:\n")[0]
+        self.assertIn("needs: [scope, fixtures, build]", pair)
+        self.assertIn("needs.fixtures.result == 'success' && needs.build.result == 'success'", pair)
+        self.assertIn("Require identical actual toolchains", pair)
+        self.assertIn('pair_result.py" join', pair)
+        for command in ('pair_result.py" join', 'candidate-result.json" finalize', 'pair_result.py" envelope'):
+            self.assertEqual(1, text.count(command))
+            self.assertIn(command, pair)
+        self.assertIn("--stage $phase --echo", fixtures)
+        self.assertNotIn("--stage $phase", build)
+        self.assertNotIn("actions/cache/save@", fixtures)
+        self.assertIn("name: nexus-inputs-${{ github.run_id }}-${{ github.run_attempt }}", pair)
         self.assertIn("vars.NEXUS_DEVELOPMENT_PUBLISH == 'enabled'", publish)
         self.assertIn("environment: nexus-development", publish)
         self.assertIn("cancel-in-progress: false", publish)

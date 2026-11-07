@@ -1,8 +1,7 @@
 # Public Windows CI
 
-Nexus client work does not yet add candidate assembly, publishing, promotion
-or freshness jobs. Existing workflow permissions and exact-pair guards are
-unchanged. See [implementation boundaries](../docs/NEXUS-IMPLEMENTATION.md).
+Validation and Nexus delivery use separate jobs with read-only permissions
+outside publication. See [implementation boundaries](../docs/NEXUS-IMPLEMENTATION.md).
 
 The active workflow is
 [.github/workflows/windows-build.yml](../../.github/workflows/windows-build.yml).
@@ -15,22 +14,39 @@ semantics and coordinated backend/shell changes.
 
 ## Gates and build scheduling
 
-Every push to `main`, pull request and manual dispatch runs fast source,
-documentation, PowerShell, JavaScript and quota-provider regressions first.
-After those pass, two jobs can run independently:
+Every push to `main`, pull request and manual dispatch first runs `Change scope`
+on Ubuntu 24.04 with PowerShell, immutable dispatch guards and a full-history
+checkout. Its native decision unlocks four concurrent gates:
 
+- Fast source, documentation, PowerShell, JavaScript and quota-provider regressions.
 - Installer/rollback tests and the real colour-worker tests use isolated,
   temporary profiles and pinned Python dependencies.
-- The native job prepares the Windows tools and runs an early, unrecorded
+- `fixtures` prepares tools, records sources/producer/prepare, then runs backend
+  configure/build/portable and inventory on its own unfinalized receipt.
+- `build` prepares the Windows tools and runs an early, unrecorded
   Services preflight before compiling anything. It then runs the capture Rust
-  tests, builds and tests the backend fixtures, then runs recorded integration:
+  tests, then runs recorded integration:
   Services, the production payload/plugin-test build, the read-only release
   toolchain preflight, plugin CTest, shell fixtures and production smoke.
   Compile parallelism comes from the runner's processors and memory; test
   execution stays serial.
 
+`pair` waits for both native jobs to succeed, checks out the same recursive ref,
+re-resolves the pair and re-bootstraps the trusted producer. It requires identical
+actual-toolchain JSON records (all fields, independent of key order), merges the
+unfinalized receipts, finalizes with fresh source verification and independently
+computes the envelope. It does not compile or restore tools.
+
+Graph: `scope -> {checks, packaging, fixtures, build}`;
+`{fixtures, build} -> pair`; `{scope, checks, packaging, fixtures, build, pair}
+-> validation`; `{scope, pair, validation} -> candidate -> publish`.
+Estimated native critical path: `max(fixtures, build) + join overhead`.
+Observed stage durations of 8m45s and 9m30s suggest roughly 9m30s plus join
+instead of 18m15s sequential work, excluding checkout/tool preparation and
+artifact service variability.
+
 Only a narrow allowlist of documentation and issue-template changes skips the
-native job. Unknown files, empty diffs, first pushes and manual dispatches
+three native jobs. Unknown files, empty diffs, first pushes and manual dispatches
 require a build. The path decision itself has regression tests. Installer and
 fast checks still run for documentation changes. The final `Windows validation`
 job fails if any applicable gate failed, was cancelled or was unexpectedly
@@ -150,8 +166,56 @@ tested native bytes/toolchain/source/version identities. It prepares full
 source histories/notices, assembles without recompilation, checks final source
 coverage/privacy and runs NoIntegration license lifecycle and original ZIP
 verification. Server 2022 verification is data-only; actual install still
-requires Windows 11. The 120-minute native job budget includes source assembly
-but is not a measured first-hosted timing.
+requires Windows 11. Assembly runs in its own bounded 120-minute job,
+`Assemble exact-tested release candidate`, only after `Windows validation`
+succeeds on a native main push. It never delays the required validation result
+and cannot start after a failed packaging gate.
+
+The receipt join stages `nexus-inputs-<run_id>-<run_attempt>` for one day. Its
+allowlist preserves these paths, restored under `C:\` on the candidate runner:
+
+- `b-public/logs/build.json`: tested provenance, toolchain and native hash inventory.
+- `b-public/quickshell/qs.exe`, `b-public/install/caelestia-capture.exe`,
+  `b-public/install/DesktopTakeover.dll`: tested executable/supervisor bytes.
+- Every file recursively under `b-public/install/qml/`: tested plugins, helper
+  DLLs and module metadata, independently re-hashed before assembly.
+- `ci-pair/pair-request.json`, `candidate-result.json`, `pair-result.json`:
+  immutable request, producer receipt and independent eligibility envelope.
+- `ci-pair/integration-stages.json`: exact integration stage journal.
+- `ci-pair/portable.xml`, `integration.xml`, `plugins.raw.xml`: independently
+  recounted test reports and exported sanitized evidence.
+- `ci-pair/Services/summary.json`, `ci-pair/Shell/summary.json` and only each
+  summary's `results[].name + ".log"` files in that same suite directory:
+  source identity, command outcomes and assertion counts used to recompute
+  the envelope. These disposable CI logs are transfer-only, not release assets.
+
+The one-day `pair-integration-<run_id>-<attempt>` build-to-join artifact uses the
+same exporter with `-Integration`: the build files and suite reports/logs above,
+`pair-request.json`, unfinalized `candidate-result.json`, `pair-local.json`,
+production-measured `actual-toolchain.json`, `integration-stages.json`,
+`integration.xml` and `plugins.raw.xml`. It excludes `pair-result.json` and
+`portable.xml`. The local-root record is transfer-only, never retained or
+included in candidate inputs. The one-day `pair-fixtures-<run_id>-<attempt>`
+artifact contains only unfinalized `candidate-result.json`, `portable.xml` and
+`actual-toolchain.json`. Exact run/attempt artifacts download to `C:/` and
+`C:/fixture-input` respectively. The join uploads retained pair receipts/XML,
+suite summaries and, on main pushes, the final `nexus-inputs-*` artifact.
+Toolchain and capture-Rust artifacts stay with their producing jobs.
+Only build can save the trusted-main tooling cache.
+
+No object/CMake trees, PDBs, environment dumps or unrelated diagnostics transfer.
+The candidate checks out the exact SHA recursively,
+completes source histories as needed, re-bootstraps the same digest-pinned
+trusted producer and restores (never saves) the identical tooling cache key.
+`Prepare-Toolchain.ps1` verifies/prepares the matching Qt deployment prefix.
+`New-NexusCandidate.ps1` and its independent eligibility checks are unchanged.
+
+A candidate-only rerun fails closed: its new run attempt has no matching
+transfer artifact. Even if old evidence were supplied, the independent gate
+rejects its pair run attempt (`pair-run-mismatch`). Rerun all jobs to regenerate
+build evidence for the new attempt; after the one-day retention, a rebuild is
+also required. The hosted candidate path can only be exercised by a real main
+push, not a PR or workflow dispatch.
 
 Candidate children run through `nexus_process.py`: start/end labels,
 15-second heartbeats, private combined logs and explicit deadlines. Exact
@@ -166,8 +230,9 @@ Only stage name, outcome, exit, duration and budget enter the three-day
 Echoed failure tails remain bounded and limited to disposable CI inputs.
 These limits diagnose stalled work, not certify candidate assembly speed.
 
-The aggregate gate requires this candidate on native main pushes. Publication
-waits for build, Packaging and all aggregate validation. Its write token and
+The aggregate gate depends only on scope, fast, packaging and applicable native
+validation, never candidate output. Publication waits for candidate success and
+aggregate validation. Its write token and
 development secret exist only in the variable/environment-gated main publish
 job. Same-run artifact and exact successful prerequisite jobs are checked
 again through GitHub. No PR artifact can reach publication.
