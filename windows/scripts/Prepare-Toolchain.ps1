@@ -77,10 +77,19 @@ try {
         if (-not (Test-Path -LiteralPath (Join-Path $qtPrefix $file) -PathType Leaf)) { throw "Incomplete Qt prerequisite: $file. Reprovision a fresh ToolRoot." }
     }
     $llvm = Get-VerifiedToolchainArchive $spec.downloads.llvm
-    if (-not (Test-Path -LiteralPath (Join-Path $ToolRoot "$($spec.llvmDirectory)\bin\clang-cl.exe"))) {
-        Write-Host 'Extracting verified LLVM archive.'
-        & "$env:SystemRoot\System32\tar.exe" -xf $llvm -C $ToolRoot
+    $llvmResources = "$($spec.llvmDirectory)/lib/clang/$($spec.clangVersion.Split('.')[0])/include/stddef.h"
+    if (-not (Test-Path -LiteralPath (Join-Path $ToolRoot "$($spec.llvmDirectory)/bin/clang-cl.exe")) -or
+        -not (Test-Path -LiteralPath (Join-Path $ToolRoot $llvmResources))) {
+        # The project consumes the compiler/tools and its built-in headers and
+        # runtimes, not the LLVM development libraries or API headers. Avoid
+        # materializing that unused SDK from the same hash-verified archive.
+        Write-Host 'Extracting compiler binaries and resource headers from verified LLVM archive.'
+        & "$env:SystemRoot\System32\tar.exe" -xf $llvm -C $ToolRoot `
+            "$($spec.llvmDirectory)/bin" "$($spec.llvmDirectory)/lib/clang"
         if ($LASTEXITCODE -ne 0) { throw 'Verified LLVM extraction failed.' }
+    }
+    if (-not (Test-Path -LiteralPath (Join-Path $ToolRoot $llvmResources))) {
+        throw 'Incomplete LLVM compiler resource headers. Reprovision a fresh ToolRoot.'
     }
     $cli = Get-VerifiedToolchainArchive $spec.downloads.cli11
     if (-not (Test-Path -LiteralPath (Join-Path $ToolRoot "$($spec.cli11Directory)\CLI\CLI.hpp"))) {
