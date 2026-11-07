@@ -136,8 +136,16 @@ foreach ($project in $prepared.projects) {
     $probe = Join-Path $AssetsRoot ('git-verify-' + [guid]::NewGuid().ToString('N'))
     & git init --quiet $probe
     if ($LASTEXITCODE -ne 0) { throw 'Cannot initialize source bundle verifier.' }
-    & git -C $probe bundle verify $path 2>&1 | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw 'Source Git bundle is not self-contained.' }
+    # Git emits its successful "is okay" diagnostic on stderr. Windows
+    # PowerShell 5.1 turns redirected native stderr into ErrorRecords, so use
+    # the exit code explicitly without a false terminating error on success.
+    $priorPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        & git -c core.hooksPath=NUL -C $probe bundle verify $path 2>&1 | Out-Null
+        $bundleExitCode = $LASTEXITCODE
+    } finally { $ErrorActionPreference = $priorPreference }
+    if ($bundleExitCode -ne 0) { throw 'Source Git bundle is not self-contained.' }
     & git -C $probe fetch --quiet $path 'refs/heads/source:refs/heads/source'
     if ($LASTEXITCODE -ne 0 -or (& git -C $probe rev-parse refs/heads/source) -cne $project.revision) {
         throw 'Source Git bundle revision mismatch.'

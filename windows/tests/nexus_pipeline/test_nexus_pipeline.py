@@ -161,6 +161,7 @@ class FakeGitHub:
         self.bad_job = None
         self.bad_artifact = False
         self.hide_drafts_by_tag = False
+        self.tag_override = None
 
     def api(self, path, method="GET", body=None, missing=False):
         ctx = self.ctx
@@ -172,7 +173,7 @@ class FakeGitHub:
         if "/git/ref/tags/" in path:
             tag = path.split("/git/ref/tags/")[1]
             release = self.releases.get(tag)
-            return ({"object": {"type": "commit", "sha": release["target_commitish"]}}
+            return ({"object": {"type": "commit", "sha": self.tag_override or release["target_commitish"]}}
                     if release and not release["draft"] else None)
         if "/releases/tags/" in path:
             release = self.releases.get(path.split("/releases/tags/")[1])
@@ -382,6 +383,12 @@ class Pipeline(unittest.TestCase):
         self.assertEqual(writes, self.github.writes)
         self.assertFalse(self.branch.writes)
 
+    def test_tag_race_at_publish_never_exposes_pointer(self):
+        directory, _ = self.candidate()
+        self.github.tag_override = "0" * 40
+        with self.assertRaisesRegex(ValueError, "tag-target-mismatch"): self.develop(directory)
+        self.assertFalse(self.branch.writes)
+
     def test_invalid_pointer_is_not_first_publication(self):
         directory, _ = self.candidate()
         self.branch.documents["development"] = b'{"not":"signed"}'
@@ -516,6 +523,49 @@ class Pipeline(unittest.TestCase):
             with self.subTest(name=name), self.assertRaises(ValueError): n.extract_source(archive, target)
             self.assertFalse(target.exists())
 
+    def test_actual_gh_adapter_auth_missing_json_and_upload_controls(self):
+        github = n.GitHub()
+        for code in (401, 403):
+            response = subprocess.CompletedProcess([], 1, b"", f"HTTP {code}".encode())
+            with self.subTest(code=code), patch.object(n.subprocess, "run", return_value=response) as call:
+                with self.assertRaises(PermissionError): github.api("fixture", missing=True)
+                self.assertEqual(1, call.call_count)  # No auth retry or login.
+        response = subprocess.CompletedProcess([], 1, b"", b"HTTP 404")
+        with patch.object(n.subprocess, "run", return_value=response):
+            self.assertIsNone(github.api("fixture", missing=True))
+            with self.assertRaises(ValueError): github.api("fixture")
+        response = subprocess.CompletedProcess([], 0, b'{"id":1,"ID":2}', b"")
+        with patch.object(n.subprocess, "run", return_value=response):
+            with self.assertRaisesRegex(ValueError, "ambiguous-json"): github.api("fixture")
+        response = subprocess.CompletedProcess([], 0, b"", b"")
+        with patch.object(n.subprocess, "run", return_value=response) as call:
+            github.upload("v0.2.0-dev.1.1.1", self.root / "inert.zip")
+            argv = call.call_args.args[0]
+            self.assertEqual(["gh", "release", "upload"], argv[:3])
+            self.assertNotIn("--clobber", argv)
+            self.assertEqual(n.REPO, argv[-1])
+
+    def test_actual_gh_download_stream_size_and_hash_controls(self):
+        github = n.GitHub()
+        body = b"inert fixture transport body"
+        expected = {"size": len(body), "sha256": hashlib.sha256(body).hexdigest()}
+        popen = subprocess.Popen
+        for index, actual in enumerate((body, body[:-1], body + b"x", b"x" * len(body))):
+            target = self.root / f"transport-{index}"
+            def transport(argv, **kwargs):
+                self.assertEqual("gh", argv[0])
+                self.assertIn("Accept: application/octet-stream", argv)
+                self.assertEqual(f"repos/{n.REPO}/releases/assets/7", argv[-1])
+                return popen([sys.executable, "-I", "-c",
+                              "import sys;sys.stdout.buffer.write(" + repr(actual) + ")"], **kwargs)
+            with patch.object(n.subprocess, "Popen", side_effect=transport):
+                if index == 0:
+                    github.download({"id": 7, "size": len(body)}, target, expected)
+                    self.assertEqual(body, target.read_bytes())
+                else:
+                    with self.assertRaises(ValueError):
+                        github.download({"id": 7, "size": len(body)}, target, expected)
+
     def test_workflow_boundaries_and_template(self):
         workflow = (ROOT / ".github/workflows/windows-build.yml").read_bytes()
         self.assertEqual(workflow, (ROOT / "windows/ci/windows-build.yml.template").read_bytes())
@@ -540,7 +590,7 @@ class Pipeline(unittest.TestCase):
 
 if __name__ == "__main__":
     suite = unittest.defaultTestLoader.loadTestsFromModule(sys.modules[__name__])
-    if suite.countTestCases() < 29:
+    if suite.countTestCases() < 32:
         raise SystemExit("Nexus behavioral test inventory unexpectedly reduced.")
     result = unittest.TextTestRunner(verbosity=2).run(suite)
-    raise SystemExit(0 if result.wasSuccessful() and result.testsRun >= 29 and not result.skipped else 1)
+    raise SystemExit(0 if result.wasSuccessful() and result.testsRun >= 32 and not result.skipped else 1)

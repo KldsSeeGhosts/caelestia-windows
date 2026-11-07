@@ -24,7 +24,7 @@ import pair_result as pair
 REPO = candidate.REPOSITORY
 REMOTE = "https://github.com/" + REPO + ".git"
 BRANCH = "nexus-channels"
-GATES = ["independent-pair", "sources", "assembly", "coverage", "license-lifecycle", "verify-original-zip"]
+GATES = ["independent-pair", "sources", "assembly", "coverage", "license-lifecycle", "verify-original-zip", "independent-payload"]
 REQUIRED_JOBS = {"Fast regressions", "Installer and colour regressions",
                  "Native build and offscreen regressions", "Windows validation"}
 EVIDENCE = {"pair-result.json", "candidate-result.json", "pair-request.json", "integration-stages.json",
@@ -114,7 +114,12 @@ class GitHub:
             try:
                 while not stop.is_set():
                     block = process.stdout.read(65536)
-                    chunks.put(block)
+                    while not stop.is_set():
+                        try:
+                            chunks.put(block, timeout=0.1)
+                            break
+                        except queue.Full:
+                            continue
                     if not block:
                         return
             except (OSError, ValueError):
@@ -471,22 +476,31 @@ def find_release(github, tag):
     raise ValueError("draft-lookup-page-cap")
 
 
-def ensure_release(github, directory, release, rows, signed_record, record_name):
-    """Draft -> verified assets -> publish. Recovery never clobbers bytes."""
-    tag = release["tag"]
-    existing_ref = github.api(f"repos/{REPO}/git/ref/tags/{tag}", missing=True)
-    if existing_ref:
+def assert_tag(github, release, required=False):
+    existing_ref = github.api(f"repos/{REPO}/git/ref/tags/{release['tag']}", missing=not required)
+    require(not required or existing_ref is not None, "published-tag-missing")
+    if existing_ref is not None:
         obj = existing_ref["object"]
         if obj["type"] == "tag":
             obj = github.api(f"repos/{REPO}/git/tags/{obj['sha']}")["object"]
         require(obj["type"] == "commit" and obj["sha"] == release["sourceRevision"], "immutable-tag-target-mismatch")
+
+
+def ensure_release(github, directory, release, rows, signed_record, record_name):
+    """Draft -> verified assets -> publish. Recovery never clobbers bytes."""
+    tag = release["tag"]
+    assert_tag(github, release)
     current = find_release(github, tag)
     if current is None:
         current = github.api(f"repos/{REPO}/releases", "POST", {
             "tag_name": tag, "target_commitish": release["sourceRevision"],
             "name": release["displayVersion"], "draft": True,
             "prerelease": "-" in release["displayVersion"], "make_latest": "false",
-            "body": "Immutable tested artifact. See CHANGELOG.md and authenticated release record."})
+            "body": ("Immutable tested artifact; metadata authentication is separate from Authenticode.\n\n"
+                     f"[Changelog at tested source](https://github.com/{REPO}/blob/"
+                     + release["sourceRevision"] + "/CHANGELOG.md)\n\n"
+                     f"[Exact source](https://github.com/{REPO}/tree/" + release["sourceRevision"]
+                     + ")\n\nSee the attached authenticated release record and corresponding source assets.")})
     require(current["tag_name"] == tag and current["target_commitish"] == release["sourceRevision"]
             and current["prerelease"] == ("-" in release["displayVersion"]), "release-identity-mismatch")
     assets = current["assets"]
@@ -521,6 +535,9 @@ def ensure_release(github, directory, release, rows, signed_record, record_name)
         download.unlink()
     if current["draft"]:
         github.api(f"repos/{REPO}/releases/{current['id']}", "PATCH", {"draft": False, "make_latest": "false"})
+    # Publishing creates the tag for a new draft. Recheck the authoritative
+    # resolved tag after that transition, never expose a raced tag via pointer.
+    assert_tag(github, release, required=True)
 
 
 def release_equal(left, right):

@@ -120,7 +120,10 @@ Write-CaelestiaJsonAtomic "$out\candidate.json" @{
     event = 'push'; ref = 'refs/heads/main'; workflow = '.github/workflows/windows-build.yml'
     sourceRevision = $env:GITHUB_SHA; runId = $env:GITHUB_RUN_ID; runAttempt = $env:GITHUB_RUN_ATTEMPT
     runNumber = $env:GITHUB_RUN_NUMBER; release = $release; assets = $files
-    gates = @('independent-pair', 'sources', 'assembly', 'coverage', 'license-lifecycle', 'verify-original-zip')
+    gates = @('independent-pair', 'sources', 'assembly', 'coverage', 'license-lifecycle', 'verify-original-zip', 'independent-payload')
     qualification = 'component-offscreen-and-data-only-not-windows11-acceptance'
 }
+Invoke-CandidateGate 'independent-payload' "$PSScriptRoot\Test-NexusCandidatePayload.ps1" @(
+    '-CandidateDirectory', $out, '-OutputDirectory', (Join-Path $OutputDirectory 'independent-payload'),
+    '-SourceDataRoot', $ShellRoot, '-AssetsRoot', $assets)
 Write-Output "NEXUS_CANDIDATE_PASS $identity; same tested tree; no native recompilation."

@@ -74,10 +74,10 @@ ae98287c8cd96db4ea4642cc91a1cd9ba7c32a1f and validator digest
 - Wait for all canonical validation, including Packaging, before main-only
   gated publication. No workflow_run privileged consumption, self-hosted
   workstation runner or broad token permissions.
-- Test immutable partial-upload recovery, same-bytes idempotency, attempts,
+- Behavioral fixtures cover immutable partial-upload recovery, same-bytes idempotency, attempts,
   overlapping/superseded builds and non-fast-forward pointers using fake
   git/gh before enabling writes.
-- Implement identical-byte promotion and role-limited freshness for all
+- Identical-byte promotion and role-limited freshness cover all
   configured channels. Only offline roots renew the keys document. Publisher
   expiry renewal must not weaken client expiry rejection.
 
@@ -106,6 +106,13 @@ disposable data. These are not real HTTPS or Windows installation acceptance.
 Pipeline tests use ephemeral native CNG primitives, a fake GitHub API and a
 local bare Git remote. Guard mutation coverage remains partial, not the full
 design mutation matrix.
+
+Local CORE-local assembly and complete source preparation are also exercised
+without signing or publication. A separately labelled data-only rehearsal
+uses the unchanged local manifest/native bytes, not a forged development
+identity. Neither rehearsal establishes exact-main Actions eligibility.
+Release notes link the immutable tested changelog and source, rather than
+automatically quoting commit subjects.
 
 ## Inactive and unaccepted gates
 
