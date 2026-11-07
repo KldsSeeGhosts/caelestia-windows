@@ -236,7 +236,7 @@ function Invoke-CaelestiaUpdateInstall([string]$Prefix, [string]$ExpectedCurrent
         if ((Get-FileHash -LiteralPath $manifest -Algorithm SHA256).Hash.ToLowerInvariant() -cne $release.manifestSha256) {
             throw 'Authenticated manifest mismatch.'
         }
-        $manifestValue = Read-CaelestiaStrictJsonFile $manifest 16777216
+        $manifestValue = Read-CaelestiaStrictJsonFile $manifest 16777216 -AllowUtf8Bom
         if ($manifestValue.releaseId -cne $release.buildVersion -or
             $manifestValue.sourceRevision -cne $release.sourceRevision -or
             $manifestValue.backendRevision -cne $release.backendRevision -or

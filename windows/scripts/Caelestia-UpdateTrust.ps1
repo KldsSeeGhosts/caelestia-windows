@@ -7,8 +7,8 @@ if (-not ('Caelestia.Update.Security' -as [type])) {
 function ConvertFrom-CaelestiaStrictJson([byte[]]$Bytes, [int]$MaxBytes = 65536) {
     return ,([Caelestia.Update.Security]::Json($Bytes, $MaxBytes))
 }
-function Read-CaelestiaStrictJsonFile([string]$Path, [int]$MaxBytes = 65536) {
-    return ,([Caelestia.Update.Security]::JsonFile($Path, $MaxBytes))
+function Read-CaelestiaStrictJsonFile([string]$Path, [int]$MaxBytes = 65536, [switch]$AllowUtf8Bom) {
+    return ,([Caelestia.Update.Security]::JsonFile($Path, $MaxBytes, [bool]$AllowUtf8Bom))
 }
 function Assert-CaelestiaFields($Object, [string[]]$Fields) {
     if ($Object -isnot [Collections.Generic.Dictionary[string, object]] -or $Object.Count -ne $Fields.Count) { throw 'bad-metadata' }

@@ -131,12 +131,25 @@ namespace Caelestia.Update {
             return new StrictJson(Utf8.GetString(bytes)).Read();
         }
         public static object JsonFile(string path, int maxBytes) {
+            return JsonFile(path, maxBytes, false);
+        }
+        public static object JsonFile(string path, int maxBytes, bool allowUtf8Bom) {
             if (maxBytes < 1 || maxBytes > 16777216) throw new FormatException("Invalid JSON bound.");
             using (var input = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read))
             using (var output = new MemoryStream()) {
                 if (input.Length < 1 || input.Length > maxBytes) throw new FormatException("JSON exceeds byte bound.");
                 Transport.CopyBounded(input, output, maxBytes, input.Length, null, CancellationToken.None);
-                return Json(output.ToArray(), maxBytes);
+                byte[] bytes = output.ToArray();
+                // Existing release.json uses PowerShell 5.1 Set-Content UTF8
+                // (BOM). Its *original bytes* were already hashed. Network
+                // DSSE/keys/channel documents never use this compatibility path.
+                if (allowUtf8Bom && bytes.Length >= 3 &&
+                    bytes[0] == 239 && bytes[1] == 187 && bytes[2] == 191) {
+                    byte[] withoutBom = new byte[bytes.Length - 3];
+                    Buffer.BlockCopy(bytes, 3, withoutBom, 0, withoutBom.Length);
+                    bytes = withoutBom;
+                }
+                return Json(bytes, maxBytes);
             }
         }
     }

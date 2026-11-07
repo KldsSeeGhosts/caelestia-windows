@@ -26,6 +26,15 @@ function New-Zip([string[]]$Names, [int]$Attributes = 0, [int]$Length = 20) {
     return $path
 }
 try {
+    $manifest = Join-Path $root 'release.json'
+    # Execute the existing producer's encoding choice, not just a hand-written
+    # UTF8 fixture. Compatibility must not weaken network DSSE parsing.
+    '{"releaseId":"0.2.0-dev.1.57.1"}' | Set-Content -LiteralPath $manifest -Encoding UTF8
+    $manifestHash = (Get-FileHash -LiteralPath $manifest).Hash
+    Assert ((Read-CaelestiaStrictJsonFile $manifest 16777216 -AllowUtf8Bom).releaseId -ceq '0.2.0-dev.1.57.1') 'Existing manifest BOM compatibility.'
+    Refuse { Read-CaelestiaStrictJsonFile $manifest } 'network JSON BOM remains refused'
+    Assert ((Get-FileHash -LiteralPath $manifest).Hash -ceq $manifestHash) 'Reading changed authenticated manifest bytes.'
+    Refuse { Read-CaelestiaStrictJsonFile $manifest 2 -AllowUtf8Bom } 'JSON file allocation cap'
     foreach ($case in @(
         @{ names = @('root/../escape'); entries = 1; size = 20 },
         @{ names = @('/root/escape'); entries = 1; size = 20 },
