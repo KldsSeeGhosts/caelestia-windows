@@ -6,10 +6,35 @@ param(
     [string]$BuildRoot,
     [string]$RuntimePrefix,
     [string]$Python = 'python',
-    [string]$OutputRoot
+    [string]$OutputRoot,
+    [ValidateSet('1/2', '2/2')][string]$Shard,
+    [switch]$ListTests
 )
 
 $ErrorActionPreference = 'Stop'
+# One inventory for both the unsharded suite and hosted shards. Warm hosted
+# 42421527915/2 measured VersionedInstall at 139.45s and the remainder at
+# 145.90s. Colour regressions run only beside shard 1 in the workflow.
+$packagingTests = @(
+    @{ name = 'Test-UpdateTrust'; shard = 2 }
+    @{ name = 'Test-NexusUpdate'; shard = 2 }
+    @{ name = 'Test-NexusWorker'; shard = 2; outputParameter = '-OutputRoot'; directory = 'nexus-worker' }
+    @{ name = 'Test-SourceAssets'; shard = 2; outputParameter = '-OutputDirectory'; directory = 'source-assets' }
+    @{ name = 'Test-SupportBundle'; shard = 2; outputParameter = '-OutputDirectory'; directory = 'support-bundle' }
+    @{ name = 'Test-VersionedInstall'; shard = 1 }
+    @{ name = 'Test-UninstallTransaction'; shard = 2; outputParameter = '-OutputRoot'; directory = 'uninstall-transactions' }
+    @{ name = 'Test-CaptureRelease'; shard = 2; outputParameter = '-OutputRoot'; directory = 'capture-release' }
+)
+if (($Shard -or $ListTests) -and $Suite -ne 'Packaging') { throw 'Shard and ListTests apply only to Packaging.' }
+if (@($packagingTests | Where-Object { $_.shard -notin @(1, 2) }).Count -or
+    @($packagingTests.name | Select-Object -Unique).Count -ne $packagingTests.Count) {
+    throw 'Every packaging test requires exactly one valid shard assignment and a unique name.'
+}
+$selectedPackagingTests = @($packagingTests | Where-Object { -not $Shard -or $_.shard -eq [int]$Shard.Split('/')[0] })
+if ($ListTests) {
+    ConvertTo-Json -InputObject @($selectedPackagingTests.name)
+    return
+}
 $repoRoot = (Resolve-Path -LiteralPath "$PSScriptRoot\..\..").Path
 if (-not $OutputRoot) {
     $OutputRoot = Join-Path ([IO.Path]::GetTempPath()) ('caelestia-validation-' + [guid]::NewGuid().ToString('N'))
@@ -96,14 +121,11 @@ try {
         Invoke-ValidationStep 'javascript' $node (@('--test', '--test-reporter=tap') + $javascript) '(?m)^# tests ([0-9]+)\s*$'
         Invoke-ValidationStep 'quota-providers' $Python @('-B', '-m', 'unittest', 'discover', '-s', 'windows/tests/quota_providers', '-v') '(?m)^Ran ([0-9]+) tests?\b'
     } elseif ($Suite -eq 'Packaging') {
-        Invoke-ScriptCheck 'Test-UpdateTrust'
-        Invoke-ScriptCheck 'Test-NexusUpdate'
-        Invoke-ScriptCheck 'Test-NexusWorker' @('-OutputRoot', (Join-Path $OutputRoot 'nexus-worker'))
-        Invoke-ScriptCheck 'Test-SourceAssets' @('-OutputDirectory', (Join-Path $OutputRoot 'source-assets'))
-        Invoke-ScriptCheck 'Test-SupportBundle' @('-OutputDirectory', (Join-Path $OutputRoot 'support-bundle'))
-        Invoke-ScriptCheck 'Test-VersionedInstall'
-        Invoke-ScriptCheck 'Test-UninstallTransaction' @('-OutputRoot', (Join-Path $OutputRoot 'uninstall-transactions'))
-        Invoke-ScriptCheck 'Test-CaptureRelease' @('-OutputRoot', (Join-Path $OutputRoot 'capture-release'))
+        foreach ($test in $selectedPackagingTests) {
+            $extra = @()
+            if ($test.outputParameter) { $extra = @($test.outputParameter, (Join-Path $OutputRoot $test.directory)) }
+            Invoke-ScriptCheck $test.name $extra
+        }
     } elseif ($Suite -eq 'Scheme') {
         Invoke-ValidationStep 'scheme-worker' $Python @('-B', 'windows/scripts/scheme/test_win_scheme.py', '-v') '(?m)^Ran ([0-9]+) tests?\b'
     } else {
@@ -137,6 +159,7 @@ try {
     [ordered]@{
         schemaVersion = 1
         suite = $Suite
+        shard = $Shard
         sourceRevision = (& git -C $repoRoot rev-parse HEAD).Trim()
         sourceDirty = [bool](& git -C $repoRoot status --porcelain)
         passed = $completed -and $results.Count -gt 0 -and @($results | Where-Object { $_.exitCode -ne 0 }).Count -eq 0

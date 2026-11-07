@@ -36,7 +36,7 @@ if (Test-Path -LiteralPath $shellWorkflow -PathType Leaf) {
     $expectedJobs = @(
         'Change scope',
         'Fast regressions',
-        'Installer and colour regressions',
+        'Installer and colour regressions (${{ matrix.shard }}/2)',
         'Verified native reuse and offscreen regressions',
         'Backend fixtures and portable tier',
         'Native build and offscreen regressions',
