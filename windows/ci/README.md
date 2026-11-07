@@ -175,7 +175,14 @@ No objects or cache state enter native reuse/candidate artifacts or receipts.
 
 `Build-Prototype.ps1 -CompilerLauncher <absolute executable>` is explicit opt-in;
 without it every configure clears both C/C++ launchers, including existing
-CMake caches. The shared configure arguments cover backend/brightness,
+CMake caches. With a launcher it also disables precompiled headers
+(`CMAKE_DISABLE_PRECOMPILE_HEADERS=ON` plus the backend's `NO_PCH=ON`), because
+sccache cannot cache MSVC-style PCH compiles (`/Yc`, `/Fp`): on hosted CI, 409 of
+590 production compiles were uncacheable with PCH on. PCH changes compile speed,
+not the program. Locally (16 threads) the full C++ build took 88 s with PCH,
+127 s with PCH off and a cold cache, and 48 s warm, with 569/569 compiles
+cacheable. Backend `49bcf7b` added the one include that had relied on the PCH.
+Without a launcher, PCH stays on. The shared configure arguments cover backend/brightness,
 optional fixtures, M3Shapes and plugins. CI passes the launcher only to the
 production integration build and the backend fixture gate. Local developer
 builds, tooling contracts and `logs/build.json`/`nativeInputs` provenance

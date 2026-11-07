@@ -133,6 +133,13 @@ $common = @('-G', 'Ninja', '-DCMAKE_BUILD_TYPE=Release',
     "-DCMAKE_MAKE_PROGRAM:FILEPATH=$((Get-Command ninja.exe -CommandType Application | Select-Object -First 1).Source)",
     "-DCMAKE_LINKER:FILEPATH=$env:VCToolsInstallDir\bin\Hostx64\x64\link.exe",
     '-DCMAKE_LINKER_TYPE=MSVC', "-DCMAKE_MT:FILEPATH=$manifestTool", "-DCMAKE_PREFIX_PATH=$QtPrefix")
+# sccache cannot cache MSVC-style precompiled-header compiles (/Yc, /Fp): with
+# PCH on, about 409 of 590 production compiles stayed uncacheable. With the
+# launcher, disable PCH everywhere (CMake-wide, plus the backend's own NO_PCH
+# switch) so every compile is cacheable. Without it, PCH stays as before.
+# Precompiled headers change compile speed only, not the translated program.
+$pchSwitch = if ($CompilerLauncher) { 'ON' } else { 'OFF' }
+$common += @("-DCMAKE_DISABLE_PRECOMPILE_HEADERS=$pchSwitch", "-DNO_PCH=$pchSwitch")
 $publicPathMappings = @()
 if ($PublicRelease) {
     $profilePath = [Environment]::GetFolderPath('UserProfile')
