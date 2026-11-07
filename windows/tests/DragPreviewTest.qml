@@ -1,11 +1,13 @@
 import QtQuick
 import Quickshell
+import Quickshell.Wayland
 import qs.services
 import qs.modules.tiling
 
 // The tiling drop preview against an injected backend: no window while idle,
-// one click-through window on the drag's screen whose plate is the backend's
-// landing rectangle, and a hidden window kept for the next drag.
+// one click-through, unfocusable window on the drag's screen whose plate is
+// the backend's landing rectangle, a marker telling a swap, a split and a
+// move to this monitor apart, and a hidden window kept for the next drag.
 ShellRoot {
     id: root
 
@@ -95,24 +97,60 @@ ShellRoot {
         check(win.visible, "visible while a swap is planned");
         check(win.mask !== null, "click-through");
         check(win.exclusionMode === ExclusionMode.Ignore, "reserves no space");
+        check(win.WlrLayershell.layer === WlrLayer.Overlay, "drawn above windows");
+        check(win.WlrLayershell.keyboardFocus === WlrKeyboardFocus.None, "never takes keyboard focus");
+        check(!win.focusable, "the window is not focusable");
         check(win.anchors.left && win.anchors.right && win.anchors.top && win.anchors.bottom, "covers the screen");
         const plate = find(win.contentItem, "tilingDropPlate");
         const ghost = find(win.contentItem, "tilingDropGhost");
+        const marker = find(win.contentItem, "tilingDropMarker");
+        const icon = find(win.contentItem, "tilingDropMarkerIcon");
         check(plate !== null && ghost !== null, "plate and ghost exist");
+        check(marker !== null && icon !== null, "marker exists");
         check(sameRect(plate, backend.dragLanding), "the plate is the landing rectangle");
         check(ghost.visible && sameRect(ghost, backend.dragDisplaced), "the ghost is the displaced rectangle");
+        check(marker.visible && marker.glyph === "swap_horiz" && icon.text === "swap_horiz", "a swap shows the swap glyph");
 
-        // A Super edge insert that moves more than one other tile: no ghost.
+        // An insert beside the one tile it splits: a split marker on that side.
         backend.dragMode = "insert";
+        backend.dragLanding = Qt.rect(100, 50, 200, 300);
+        backend.dragDisplaced = Qt.rect(300, 50, 200, 300);
+        check(ghost.visible, "the split tile is outlined");
+        check(marker.glyph === "splitscreen_left", "a split left of the tile points left");
+        check(marker.glyph !== "swap_horiz", "an insert never reads as a swap");
+        backend.dragLanding = Qt.rect(100, 350, 400, 150);
+        backend.dragDisplaced = Qt.rect(100, 50, 400, 300);
+        check(marker.glyph === "splitscreen_bottom", "a split below the tile points down");
+
+        // An insert that moves more than one other tile: no ghost, a plain split.
         backend.dragLanding = Qt.rect(100, 50, 200, 300);
         backend.dragDisplaced = Qt.rect(0, 0, 0, 0);
         check(!ghost.visible, "no ghost without a single displaced tile");
+        check(marker.glyph === "splitscreen_add", "a split without its tile is shown plain");
         settle.start();
     }
 
     function afterMove(): void {
         const plate = find(win.contentItem, "tilingDropPlate");
+        const ghost = find(win.contentItem, "tilingDropGhost");
+        const marker = find(win.contentItem, "tilingDropMarker");
+        const icon = find(win.contentItem, "tilingDropMarkerIcon");
         check(sameRect(plate, backend.dragLanding), "the plate settles on the new landing");
+        check(icon.text === "splitscreen_add", "the marker glyph settles on the split");
+
+        // A move to this monitor's empty area draws where the window lands.
+        backend.dragMode = "move";
+        backend.dragLanding = Qt.rect(20, 20, 1200, 700);
+        check(win.drawing && win.visible, "a cross-monitor move draws its landing");
+        check(!ghost.visible, "a move draws no ghost");
+        check(marker.visible && marker.glyph === "move_item", "a move shows the move glyph");
+
+        // A plan for another monitor draws nothing here.
+        backend.dragScreen = "fixture-other-monitor";
+        check(!win.drawing, "another monitor's plan draws nothing on this one");
+        check(windows().length === 1, "no window for a monitor that is not there");
+        backend.dragScreen = Quickshell.screens[0].name;
+        check(win.drawing, "the plan is drawn again on its monitor");
 
         // Home draws nothing.
         backend.dragMode = "home";
