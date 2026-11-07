@@ -91,9 +91,9 @@ cache writer boundary. An untrusted or suspect extracted tree must be discarded
 and reprovisioned from the verified archives; it is not made trustworthy by a
 version string. No new cache trust or performance guarantee is claimed.
 
-All Actions are commit-pinned. Permissions stay read-only; checkout does not
-persist credentials. There is no `pull_request_target`, injected publication
-secret, installation into a user's profile, signing or release publication.
+All Actions are commit-pinned. Validation permissions stay read-only; checkout
+does not persist credentials. There is no `pull_request_target`, privileged
+`workflow_run` consumption or installation into a user's profile.
 The source and every pinned recursive dependency must remain anonymously
 accessible. Never substitute private dependency credentials.
 
@@ -141,3 +141,29 @@ fresh cold and warm hosted runs after publication before claiming a CI
 performance improvement. Hardware, input, DPI, hotplug, sleep/wake and
 long-running desktop acceptance still require the
 [live checklist](../docs/LIVE-CHECKLIST.md).
+
+## Inactive Nexus delivery
+
+After the exact-main pair gate, `New-NexusCandidate.ps1` independently
+recomputes eligibility with the pinned producer validator and checks actual
+tested native bytes/toolchain/source/version identities. It prepares full
+source histories/notices, assembles without recompilation, checks final source
+coverage/privacy and runs NoIntegration license lifecycle and original ZIP
+verification. Server 2022 verification is data-only; actual install still
+requires Windows 11. The 120-minute native job budget includes source assembly
+but is not a measured first-hosted timing.
+
+The aggregate gate requires this candidate on native main pushes. Publication
+waits for build, Packaging and all aggregate validation. Its write token and
+development secret exist only in the variable/environment-gated main publish
+job. Same-run artifact and exact successful prerequisite jobs are checked
+again through GitHub. No PR artifact can reach publication.
+
+`nexus-promote.yml` is explicit, main-only and owner-environment gated.
+`nexus-refresh.yml` separately renews development and preview/stable using
+their own roles. Every job is inert with the variables unset; trust is also
+unconfigured. See [UPDATES.md](../../UPDATES.md) for owner setup, immutable
+attempt identities, CAS/retry/rotation and remaining external acceptance.
+Unit runs native-crypto/fake-GitHub/bare-Git controls; Packaging runs disposable
+authenticated worker transactions. These fixtures do not certify real hosted
+supplier assembly, authenticated network delivery or live installation.

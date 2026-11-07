@@ -66,7 +66,8 @@ Push-Location -LiteralPath $repoRoot
 try {
     if ($Suite -eq 'Unit') {
         # Fail before running any test when a script cannot even parse.
-        foreach ($file in @(Get-ChildItem -LiteralPath $PSScriptRoot -Filter '*.ps1' -File)) {
+        foreach ($file in @((Get-ChildItem -LiteralPath $PSScriptRoot -Filter '*.ps1' -File) +
+            (Get-ChildItem -LiteralPath "$repoRoot\windows\ci" -Filter '*.ps1' -File))) {
             $tokens = $null
             $parseErrors = $null
             $null = [Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$tokens, [ref]$parseErrors)
@@ -80,6 +81,7 @@ try {
         Invoke-ScriptCheck 'Test-Toolchain'
         Invoke-ScriptCheck 'Test-Versioning'
         Invoke-ScriptCheck 'Test-PairContract'
+        Invoke-ScriptCheck 'Test-NexusPipeline' @('-Python', $Python)
         Invoke-ScriptCheck 'Test-CaptureIntegration'
         Invoke-ValidationStep 'llvm-extraction' $Python @('-I', '-B', 'windows/tests/LlvmExtract.test.py',
             '--output-root', (Join-Path $OutputRoot 'llvm-extraction'))
@@ -96,6 +98,7 @@ try {
     } elseif ($Suite -eq 'Packaging') {
         Invoke-ScriptCheck 'Test-UpdateTrust'
         Invoke-ScriptCheck 'Test-NexusUpdate'
+        Invoke-ScriptCheck 'Test-NexusWorker' @('-OutputRoot', (Join-Path $OutputRoot 'nexus-worker'))
         Invoke-ScriptCheck 'Test-SourceAssets' @('-OutputDirectory', (Join-Path $OutputRoot 'source-assets'))
         Invoke-ScriptCheck 'Test-SupportBundle' @('-OutputDirectory', (Join-Path $OutputRoot 'support-bundle'))
         Invoke-ScriptCheck 'Test-VersionedInstall'

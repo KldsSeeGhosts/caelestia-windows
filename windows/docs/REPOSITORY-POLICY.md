@@ -39,6 +39,8 @@ The shell workflow is `Windows build` and currently defines these job names:
 - `Installer and colour regressions`
 - `Native build and offscreen regressions` (conditional on the native-change classifier)
 - `Windows validation` (the always-run aggregate)
+- `Nexus development publication` (main-only, after validation, inert unless the
+  owner enables its variable and protected environment)
 
 Required shell gate: `Windows validation`.
 

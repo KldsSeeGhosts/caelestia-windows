@@ -4,10 +4,10 @@
 
 The source contains an authenticated updater client. It is **not activated**.
 Shipped trust has no public keys and says `unconfigured`. Checking therefore
-makes no network request. The candidate assembler and publication, promotion
-and freshness workflows are not implemented yet. Do not enable trust before
-those gates and disposable install tests pass. This is not a completed release
-pipeline. A source merge never changes an installed shell.
+makes no network request. Candidate assembly, publication, promotion and
+all-channel freshness are implemented but inactive. Their first independent
+hosted exact-main run and disposable Windows 11 acceptance remain gates.
+A source merge never changes an installed shell.
 
 Public previews remain manual downloads at
 https://github.com/KldsSeeGhosts/caelestia-windows/releases.
@@ -82,7 +82,7 @@ is separate from Authenticode. Payloads remain unsigned preview code.
 - Create a root-signed keys document with development-only and
   preview/stable-only roles, expiry and increasing version. Delegated keys
   cannot renew this offline-root document.
-- Once producer implementation is reviewed, protect `nexus-channels` against
+- Once implementation and hosted candidate evidence are reviewed, protect `nexus-channels` against
   force push/deletion. Restrict development publishing to main and its own
   environment/key. Require owner review and a separate promotion environment
   for preview/stable publication and freshness.
@@ -92,9 +92,30 @@ is separate from Authenticode. Payloads remain unsigned preview code.
   sequence and bound new expiry. Clients continue to reject expiry.
   Missing-first-pointer, malformed-pointer and expired-pointer cases differ.
   Root/key expiry and rotation are separate gates.
-- Enable future publisher variables last, after exact-main hosted validation,
+- Enable publisher variables last, after exact-main hosted validation,
   source/supplier/license/privacy coverage and immutable asset verification.
-  There is currently no publisher to enable.
+  `NEXUS_DEVELOPMENT_PUBLISH=enabled` enables development publication and its
+  freshness job in `nexus-development`. `NEXUS_PROMOTION_PUBLISH=enabled`
+  enables explicit promotion and preview/stable freshness in `nexus-promotion`.
+  Both environments must restrict deployment to main; promotion requires
+  owner review, including scheduled freshness. Their distinct secrets are
+  `NEXUS_DEVELOPMENT_SIGNING_KEY` and `NEXUS_PROMOTION_SIGNING_KEY`.
+  A secret is base64 PKCS8, or a JSON array of base64 PKCS8 values for a
+  distinct-key threshold. Keys remain in process memory, never repository files.
+
+Same-attempt retries recover partial drafts without replacing assets or tags.
+An Actions rerun has a new immutable attempt identity and requires the full
+producer job to rerun; it cannot adopt a previous attempt's candidate.
+Superseded builds do not move pointers. Pointer commits use non-force CAS and
+bounded revalidation/retry. Invalid pointers never become missing pointers;
+only first publication seeds a missing channel. Online freshness can renew an
+expired authentic pointer with currently authorized keys, not expired keys or
+the offline keys document. Clients still reject expired metadata.
+
+Promotion copies identical tested assets, including the unchanged development
+manifest and compiled core. Only signed alias/pointer records change. A stable
+1.0 release therefore requires tested 1.0-core bytes; 0.2 cannot be relabelled.
+No release pruning or unreferenced draft cleanup runs automatically.
 
 See [VERSIONING.md](VERSIONING.md) and the
 [implementation boundaries](windows/docs/NEXUS-IMPLEMENTATION.md).

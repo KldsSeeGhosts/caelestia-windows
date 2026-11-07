@@ -122,6 +122,17 @@ namespace Caelestia.Update {
                 return signature;
             }
         }
+        public static byte[] PublicFromPrivate(byte[] pkcs8) {
+            using (CngKey key = CngKey.Import(pkcs8, CngKeyBlobFormat.Pkcs8PrivateBlob))
+            using (var ecdsa = new ECDsaCng(key)) {
+                if (ecdsa.KeySize != 256) throw new FormatException("Only P256 is supported.");
+                byte[] blob = key.Export(CngKeyBlobFormat.EccPublicBlob);
+                if (blob.Length != 72 || blob[0] != 0x45 || blob[1] != 0x43 ||
+                    blob[2] != 0x53 || blob[3] != 0x31 || blob[4] != 32)
+                    throw new FormatException("Only CNG ECDSA P256 is supported.");
+                return blob;
+            }
+        }
         public static object Json(byte[] bytes) {
             return Json(bytes, 65536);
         }

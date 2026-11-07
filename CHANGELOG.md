@@ -5,6 +5,10 @@
 ### Added
 
 - Authoritative 0.2.0 version source and standards-conformant version comparison.
+- Inactive authenticated Nexus updates with preserved channel selection,
+  progress and rollback through the existing versioned installer.
+- Exact-tested candidate assembly and owner-gated immutable publication,
+  promotion and role-separated all-channel freshness.
 
 ### Changed
 

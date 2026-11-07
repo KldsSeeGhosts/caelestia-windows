@@ -1,0 +1,546 @@
+"""Ephemeral CNG + fake GitHub + local bare Git controls. Never live publication."""
+import argparse
+import base64
+import copy
+import hashlib
+import importlib.util
+import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+import tempfile
+import unittest
+from unittest.mock import patch
+import zipfile
+
+ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(ROOT / "windows/ci"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import nexus_candidate as c
+import nexus_publish as n
+import pair_result as p
+import evidence_fixture
+
+MATERIAL = json.loads(os.environ.pop("NEXUS_TEST_KEY_MATERIAL"))
+
+class Evidence(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix="nexus-evidence-", dir=os.environ.get("CAELESTIA_TEST_OUTPUT_ROOT"))
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.shell, self.build, self.results, self.validator, self.ctx = evidence_fixture.create(self.root, ROOT)
+
+    def verify(self):
+        return c.verify_live_evidence(self.shell, self.build, self.results, self.validator, self.ctx)
+
+    def test_real_pinned_validator_and_same_build_evidence_pass(self):
+        self.assertEqual("0.2.0-dev.1.8.2", self.verify())
+        output = self.root / "public"; output.mkdir()
+        c.export_evidence(self.shell, self.build, self.results, self.validator, self.ctx, output)
+        c.verify_receipt(self.shell, output, self.validator, self.ctx)
+        self.assertNotIn(str(self.root), "".join(path.read_text() for path in output.iterdir()))
+        self.assertFalse((output / "build.json").exists())
+
+    def test_forged_pass_boolean_cannot_hide_failed_receipt_or_outputs(self):
+        receipt = c.read(self.results / "candidate-result.json")
+        receipt["tests"]["portable"]["failed"] = 1
+        n.write(self.results / "candidate-result.json", receipt)
+        self.assertTrue(c.read(self.results / "pair-result.json")["releaseEligible"])
+        with self.assertRaises(ValueError): self.verify()
+
+    def test_actual_capture_bytes_not_an_edited_build_boolean(self):
+        (self.build / "install/caelestia-capture.exe").write_bytes(b"changed")
+        with self.assertRaises(ValueError): self.verify()
+
+    def test_native_outputs_bound_before_validation_not_only_at_packaging(self):
+        for name in ("quickshell/qs.exe", "install/DesktopTakeover.dll", "install/qml/Fixture/plugin.dll"):
+            path = self.build / name
+            original = path.read_bytes()
+            path.write_bytes(b"not the tested output")
+            with self.subTest(name=name), self.assertRaisesRegex(ValueError, "native-bytes-changed"): self.verify()
+            path.write_bytes(original)
+        (self.build / "install/qml/unrecorded.dll").write_bytes(b"extra")
+        with self.assertRaisesRegex(ValueError, "incomplete-native-inventory"): self.verify()
+    def test_wrong_validator_digest_prevents_execution(self):
+        sentinel = self.root / "must-not-execute"
+        self.validator.write_text(f"open({str(sentinel)!r}, 'w').write('unsafe')\n")
+        with self.assertRaises(ValueError): self.verify()
+        self.assertFalse(sentinel.exists())
+
+    def test_equal_fake_tool_versions_with_real_spec_hash_are_rejected(self):
+        receipt = c.read(self.results / "candidate-result.json")
+        receipt["toolchain"]["expected"]["qtVersion"] = "1.0.0"
+        receipt["toolchain"]["actual"]["qtVersion"] = "1.0.0"
+        n.write(self.results / "candidate-result.json", receipt)
+        args = argparse.Namespace(results=str(self.results), shell=str(self.shell), validator=str(self.validator),
+                                  build_root=str(self.build), workflow_outcome="success", event="push",
+                                  ref="refs/heads/main", run_id="12", attempt="2", workflow_sha=self.ctx["sha"])
+        forged = p.compute_envelope(args)
+        self.assertTrue(forged["releaseEligible"])  # Old generic envelope alone is insufficient.
+        p.write(self.results / "pair-result.json", forged)
+        with self.assertRaisesRegex(ValueError, "toolchain-version"): self.verify()
+
+    def test_zero_plugin_inventory_refuses(self):
+        (self.results / "plugins.raw.xml").write_text("<testsuite/>")
+        with self.assertRaises(ValueError): self.verify()
+
+    def test_suite_source_identity_and_version_digest_refuse(self):
+        path = self.results / "Services/summary.json"
+        summary = c.read(path); summary["sourceRevision"] = "e" * 40
+        n.write(path, summary)
+        with self.assertRaises(ValueError): self.verify()
+        summary["sourceRevision"] = self.ctx["sha"]; n.write(path, summary)
+        native = c.read(self.build / "logs/build.json"); native["versionFileSha256"] = "0" * 64
+        n.write(self.build / "logs/build.json", native)
+        with self.assertRaises(ValueError): self.verify()
+
+    def test_candidate_run_attempt_and_mode_header_refuse(self):
+        original = c.read(self.results / "pair-result.json")
+        for field, value in (("pairMode", "candidate"), ("reasons", ["candidate-mode"]), ("releaseEligible", False)):
+            changed = copy.deepcopy(original); changed[field] = value
+            n.write(self.results / "pair-result.json", changed)
+            with self.subTest(field=field), self.assertRaises(ValueError): self.verify()
+        n.write(self.results / "pair-result.json", original)
+        self.ctx["runAttempt"] = "3"
+        with self.assertRaises(ValueError): self.verify()
+
+    def test_source_dirty_refuses_before_assembly(self):
+        (self.shell / "untracked.txt").write_text("not tested")
+        with self.assertRaises(ValueError): self.verify()
+
+
+def git(root, *args):
+    return subprocess.check_output(["git", "-C", str(root), *args], stderr=subprocess.DEVNULL).decode().strip()
+
+
+def commit(root):
+    git(root, "add", "--all")
+    git(root, "-c", "user.name=Nexus Fixture", "-c", "user.email=fixture@example.invalid",
+        "commit", "--quiet", "-m", "fixture")
+    return git(root, "rev-parse", "HEAD")
+
+
+def env(ctx):
+    return {"GITHUB_ACTIONS": "true", "GITHUB_REPOSITORY": n.REPO, "GITHUB_EVENT_NAME": "push",
+            "GITHUB_REF": "refs/heads/main", "GITHUB_SHA": ctx["sha"], "GITHUB_WORKFLOW_SHA": ctx["sha"],
+            "GITHUB_WORKFLOW_REF": n.REPO + "/.github/workflows/windows-build.yml@refs/heads/main",
+            "GITHUB_RUN_ID": ctx["runId"], "GITHUB_RUN_ATTEMPT": ctx["runAttempt"], "GITHUB_RUN_NUMBER": ctx["runNumber"]}
+
+
+class FakeBranch:
+    def __init__(self):
+        self.keys = base64.b64decode(MATERIAL["keys"])
+        self.documents, self.writes, self.conflicts, self.reads = {}, [], 0, 0
+        self.on_conflict = None
+
+    def read(self, channel):
+        self.reads += 1
+        return self.keys, self.documents.get(channel)
+
+    def push(self, channel, raw):
+        if self.conflicts:
+            self.conflicts -= 1
+            if self.on_conflict:
+                self.on_conflict()
+            return False
+        self.documents[channel] = raw
+        self.writes.append(channel)
+        return True
+
+
+class FakeGitHub:
+    def __init__(self, ctx):
+        self.ctx = ctx
+        self.releases, self.bytes, self.writes = {}, {}, []
+        self.next_id = 1
+        self.fail_upload = None
+        self.fail_download_once = False
+        self.bad_run = None
+        self.bad_job = None
+        self.bad_artifact = False
+        self.hide_drafts_by_tag = False
+
+    def api(self, path, method="GET", body=None, missing=False):
+        ctx = self.ctx
+        if "/actions/runs/" in path:
+            return {"id": int(ctx["runId"]), "run_attempt": int(ctx["runAttempt"]), "run_number": int(ctx["runNumber"]),
+                    "event": self.bad_run or "push", "head_branch": "main", "head_sha": ctx["sha"],
+                    "path": ".github/workflows/windows-build.yml", "repository": {"id": 7, "full_name": n.REPO},
+                    "head_repository": {"full_name": n.REPO}, "status": "in_progress", "conclusion": None}
+        if "/git/ref/tags/" in path:
+            tag = path.split("/git/ref/tags/")[1]
+            release = self.releases.get(tag)
+            return ({"object": {"type": "commit", "sha": release["target_commitish"]}}
+                    if release and not release["draft"] else None)
+        if "/releases/tags/" in path:
+            release = self.releases.get(path.split("/releases/tags/")[1])
+            return None if release and release["draft"] and self.hide_drafts_by_tag else copy.deepcopy(release)
+        if "/releases?per_page=" in path:
+            return copy.deepcopy(list(self.releases.values()))
+        if method == "POST":
+            self.writes.append(("create", body["tag_name"]))
+            release = dict(body, id=self.next_id, assets=[])
+            self.next_id += 1
+            self.releases[body["tag_name"]] = release
+            return copy.deepcopy(release)
+        if method == "PATCH":
+            release = next(row for row in self.releases.values() if row["id"] == int(path.split("/")[-1]))
+            release["draft"] = False
+            self.writes.append(("publish", release["tag_name"]))
+            return copy.deepcopy(release)
+        raise AssertionError("Unexpected GitHub API call")
+
+    def pages(self, path, field):
+        if field == "jobs":
+            return [{"name": name, "head_sha": self.ctx["sha"],
+                     "conclusion": "failure" if name == self.bad_job else "success"} for name in n.REQUIRED_JOBS]
+        if field == "artifacts":
+            return [{"name": f"nexus-candidate-{self.ctx['runId']}-{self.ctx['runAttempt']}",
+                     "expired": self.bad_artifact, "workflow_run": {
+                         "id": int(self.ctx["runId"]), "head_sha": self.ctx["sha"], "repository_id": 7}}]
+        raise AssertionError("Unexpected GitHub page")
+
+    def upload(self, tag, path):
+        if self.fail_upload == len([row for row in self.writes if row[0] == "upload"]) + 1:
+            raise ValueError("injected-upload-interruption")
+        body = Path(path).read_bytes()
+        asset = {"name": Path(path).name, "id": self.next_id, "size": len(body),
+                 "digest": "sha256:" + hashlib.sha256(body).hexdigest()}
+        self.next_id += 1
+        self.bytes[asset["id"]] = body
+        self.releases[tag]["assets"].append(asset)
+        self.writes.append(("upload", asset["name"]))
+
+    def download(self, asset, destination, expected):
+        if self.fail_download_once:
+            self.fail_download_once = False
+            raise ValueError("injected-download-interruption")
+        body = self.bytes[asset["id"]]
+        n.require(len(body) == expected["size"] and hashlib.sha256(body).hexdigest() == expected["sha256"],
+                  "remote-asset-hash-mismatch")
+        with Path(destination).open("xb") as output:
+            output.write(body)
+
+
+class Pipeline(unittest.TestCase):
+    def setUp(self):
+        parent = os.environ.get("CAELESTIA_TEST_OUTPUT_ROOT")
+        self.temp = tempfile.TemporaryDirectory(prefix="nexus-pipeline-", dir=parent)
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.work = self.root / "work"; self.work.mkdir()
+        self.trust = self.root / "trust.json"
+        n.write(self.trust, MATERIAL["trust"])
+        self.crypto = n.Crypto(ROOT, self.work, self.trust, MATERIAL["dev"])
+        self.branch = FakeBranch()
+        self.ctx = {"repository": n.REPO, "event": "push", "ref": "refs/heads/main",
+                    "workflow": ".github/workflows/windows-build.yml", "sha": "a" * 40,
+                    "runId": "10", "runAttempt": "1", "runNumber": "5"}
+        self.github = FakeGitHub(self.ctx)
+        self.number = 0
+
+    def candidate(self, core="0.2.0"):
+        self.number += 1
+        directory = self.root / f"candidate-{self.number}"; directory.mkdir()
+        build = core + "-dev.1.5.1"
+        root = f"caelestia-windows-{build}-windows-x64"
+        for name in n.EVIDENCE | {root + ".zip"}:
+            (directory / name).write_bytes(b"synthetic data, not native qualification")
+        release = {"displayVersion": build, "buildVersion": build, "releaseId": build, "tag": "v" + build,
+                   "sourceRevision": self.ctx["sha"], "backendRevision": "b" * 40, "manifestSha256": "c" * 64,
+                   "profileSchema": 1, "minimumUpdaterSchema": 1,
+                   "notesUrl": f"https://github.com/{n.REPO}/releases/tag/v{build}",
+                   "bundle": {"name": root + ".zip", "root": root, "size": (directory / (root + ".zip")).stat().st_size,
+                              "sha256": n.digest(directory / (root + ".zip")), "entries": 1, "unpackedSize": 20,
+                              "url": f"https://github.com/{n.REPO}/releases/download/v{build}/{root}.zip"},
+                   "provenance": {"runId": self.ctx["runId"], "runAttempt": self.ctx["runAttempt"],
+                                  "pairResultSha256": n.digest(directory / "pair-result.json"),
+                                  "candidateReceiptSha256": n.digest(directory / "candidate-result.json")}}
+        doc = {"schema": "caelestia-nexus-candidate", "version": 1, "repository": n.REPO, "event": "push",
+               "ref": "refs/heads/main", "workflow": ".github/workflows/windows-build.yml", "sourceRevision": self.ctx["sha"],
+               **{key: self.ctx[key] for key in ("runId", "runAttempt", "runNumber")},
+               "release": release, "assets": n.asset_rows(directory, n.EVIDENCE | {root + ".zip"}),
+               "gates": n.GATES, "qualification": "component-offscreen-and-data-only-not-windows11-acceptance"}
+        n.write(directory / "candidate.json", doc)
+        return directory, doc
+
+    def develop(self, directory):
+        # Payload assembly/qualification is a recording external boundary here.
+        # Its independent receipt validator has separate real-fixture controls.
+        return n.development(directory, self.ctx, self.github, self.branch, self.crypto, ROOT, lambda _: None)
+
+    def pointer(self, release, channel="development", sequence=1):
+        payload = n.make_pointer(channel, release, None, 1)
+        payload["sequence"] = sequence
+        crypto = self.crypto if channel == "development" else n.Crypto(ROOT, self.work, self.trust, MATERIAL["promotion"])
+        return crypto.invoke("SignChannel", channel, self.branch.keys, payload=payload)
+
+    def test_context_refuses_pr_repo_workflow_sha_and_attempt(self):
+        self.assertEqual(self.ctx, c.context(env(self.ctx)))
+        for key, value in (("GITHUB_EVENT_NAME", "pull_request"), ("GITHUB_REPOSITORY", "fork/repo"),
+                           ("GITHUB_REF", "refs/heads/feature"), ("GITHUB_WORKFLOW_SHA", "b" * 40),
+                           ("GITHUB_RUN_ATTEMPT", "0"), ("GITHUB_RUN_NUMBER", "01"),
+                           ("GITHUB_WORKFLOW_REF", "other")):
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                c.context(dict(env(self.ctx), **{key: value}))
+
+    def test_default_entry_is_inert_without_context_or_keys(self):
+        for mode in ("development", "promote", "refresh-development", "refresh-promotion"):
+            result = subprocess.run([sys.executable, "-I", "-B", str(ROOT / "windows/ci/nexus_publish.py"),
+                                     mode, "--shell", str(ROOT), "--work", str(self.root / "never")],
+                                    capture_output=True, timeout=20, env={**os.environ, "NEXUS_SIGNING_KEY": ""})
+            self.assertNotEqual(0, result.returncode)
+            self.assertFalse((self.root / "never").exists())
+        # Correct trusted context still refuses unconfigured shipped trust.
+        environment = dict(os.environ, **env(self.ctx), NEXUS_DEVELOPMENT_PUBLISH="enabled",
+                           NEXUS_SIGNING_KEY="test-only-not-a-key", GH_TOKEN="test-only-not-a-token")
+        result = subprocess.run([sys.executable, "-I", "-B", str(ROOT / "windows/ci/nexus_publish.py"),
+                                 "development", "--shell", str(ROOT), "--work", str(self.root / "never")],
+                                capture_output=True, env=environment, timeout=20)
+        self.assertNotEqual(0, result.returncode)
+        self.assertFalse((self.root / "never").exists())
+
+    def test_candidate_binding_and_asset_negatives_before_writes(self):
+        for mutation in ("run", "attempt", "sha", "event", "gate", "hash", "extra"):
+            directory, doc = self.candidate()
+            if mutation == "run": doc["runId"] = "11"
+            elif mutation == "attempt": doc["runAttempt"] = "2"
+            elif mutation == "sha": doc["sourceRevision"] = "e" * 40
+            elif mutation == "event": doc["event"] = "pull_request"
+            elif mutation == "gate": doc["gates"] = []
+            elif mutation == "hash": (directory / "portable.xml").write_bytes(b"edited")
+            else: (directory / "unlisted.txt").write_bytes(b"extra")
+            n.write(directory / "candidate.json", doc)
+            with self.subTest(mutation=mutation), self.assertRaises(ValueError):
+                self.develop(directory)
+            self.assertFalse(self.github.writes)
+            self.assertFalse(self.branch.writes)
+
+    def test_failed_or_foreign_run_artifact_never_publishes(self):
+        for mutation in ("event", "job", "artifact"):
+            directory, _ = self.candidate()
+            self.github.bad_run = "pull_request" if mutation == "event" else None
+            self.github.bad_job = next(iter(n.REQUIRED_JOBS)) if mutation == "job" else None
+            self.github.bad_artifact = mutation == "artifact"
+            with self.subTest(mutation=mutation), self.assertRaises(ValueError):
+                self.develop(directory)
+            self.assertFalse(self.github.writes)
+
+    def test_publish_exact_bytes_and_idempotent_pointer(self):
+        directory, doc = self.candidate()
+        originals = {row["name"]: (directory / row["name"]).read_bytes() for row in doc["assets"]}
+        self.assertEqual("published", self.develop(directory))
+        release = self.github.releases[doc["release"]["tag"]]
+        self.assertFalse(release["draft"])
+        for asset in release["assets"]:
+            if asset["name"] in originals:
+                self.assertEqual(originals[asset["name"]], self.github.bytes[asset["id"]])
+        directory2, _ = self.candidate()
+        writes = list(self.github.writes)
+        self.assertEqual("unchanged", self.develop(directory2))
+        self.assertEqual(writes, self.github.writes)
+
+    def test_partial_draft_recovery_and_randomized_record_reuse(self):
+        self.github.hide_drafts_by_tag = True
+        directory, doc = self.candidate()
+        self.github.fail_download_once = True  # After all uploads, before publish.
+        with self.assertRaises(ValueError):
+            self.develop(directory)
+        release = self.github.releases[doc["release"]["tag"]]
+        self.assertTrue(release["draft"])
+        record = next(row for row in release["assets"] if row["name"] == "release-record.dsse.json")
+        record_bytes = self.github.bytes[record["id"]]
+        directory2, _ = self.candidate()
+        self.assertEqual("published", self.develop(directory2))
+        self.assertEqual(record_bytes, self.github.bytes[record["id"]])
+        self.assertEqual(1, len([row for row in self.github.writes if row == ("upload", "release-record.dsse.json")]))
+
+    def test_partial_missing_upload_resumes_without_clobber(self):
+        directory, _ = self.candidate()
+        self.github.fail_upload = 3
+        with self.assertRaises(ValueError):
+            self.develop(directory)
+        self.assertEqual(2, len([row for row in self.github.writes if row[0] == "upload"]))
+        self.github.fail_upload = None
+        directory2, _ = self.candidate()
+        self.assertEqual("published", self.develop(directory2))
+        names = [row[1] for row in self.github.writes if row[0] == "upload"]
+        self.assertEqual(len(names), len(set(names)))
+
+    def test_wrong_existing_bytes_fail_and_never_clobber(self):
+        directory, doc = self.candidate()
+        self.github.fail_download_once = True
+        with self.assertRaises(ValueError): self.develop(directory)
+        release = self.github.releases[doc["release"]["tag"]]
+        asset = next(row for row in release["assets"] if row["name"] == doc["release"]["bundle"]["name"])
+        self.github.bytes[asset["id"]] = b"corrupt"
+        writes = list(self.github.writes)
+        directory2, _ = self.candidate()
+        with self.assertRaises(ValueError): self.develop(directory2)
+        self.assertEqual(writes, self.github.writes)
+        self.assertFalse(self.branch.writes)
+
+    def test_invalid_pointer_is_not_first_publication(self):
+        directory, _ = self.candidate()
+        self.branch.documents["development"] = b'{"not":"signed"}'
+        with self.assertRaises(ValueError): self.develop(directory)
+        self.assertFalse(self.github.writes)
+
+    def test_supersession_same_version_payload_and_non_descendant(self):
+        directory, doc = self.candidate()
+        newer = copy.deepcopy(doc["release"])
+        for field in ("displayVersion", "buildVersion", "releaseId"):
+            newer[field] = "0.2.0-dev.1.6.1"
+        newer["tag"] = "v" + newer["buildVersion"]
+        z = "caelestia-windows-" + newer["buildVersion"] + "-windows-x64"
+        newer["bundle"].update(name=z + ".zip", root=z,
+                              url=f"https://github.com/{n.REPO}/releases/download/{newer['tag']}/{z}.zip")
+        newer["notesUrl"] = f"https://github.com/{n.REPO}/releases/tag/{newer['tag']}"
+        self.branch.documents["development"] = self.pointer(newer)
+        self.assertEqual("superseded", self.develop(directory))
+        self.assertFalse(self.github.writes)
+        changed = copy.deepcopy(doc["release"]); changed["bundle"]["sha256"] = "0" * 64
+        self.branch.documents["development"] = self.pointer(changed)
+        with self.assertRaises(ValueError): self.develop(directory)
+        older = copy.deepcopy(doc["release"])
+        for field in ("displayVersion", "buildVersion", "releaseId"): older[field] = "0.2.0-dev.1.4.1"
+        older["tag"] = "v" + older["buildVersion"]
+        z = "caelestia-windows-" + older["buildVersion"] + "-windows-x64"
+        older["bundle"].update(name=z + ".zip", root=z, url=f"https://github.com/{n.REPO}/releases/download/{older['tag']}/{z}.zip")
+        older["notesUrl"] = f"https://github.com/{n.REPO}/releases/tag/{older['tag']}"
+        self.branch.documents["development"] = self.pointer(older)
+        with patch.object(n, "ancestor", return_value=False), self.assertRaises(ValueError):
+            self.develop(directory)
+        self.assertFalse(self.github.writes)
+
+    def test_pointer_cas_rereads_and_bounds_retries(self):
+        directory, _ = self.candidate()
+        self.branch.conflicts = 1
+        self.assertEqual("published", self.develop(directory))
+        self.assertGreaterEqual(self.branch.reads, 2)
+        self.assertEqual(1, len([row for row in self.github.writes if row[0] == "create"]))
+        self.branch.documents.clear(); self.branch.conflicts = 3
+        directory2, _ = self.candidate()
+        with self.assertRaisesRegex(ValueError, "cas-exhausted"): self.develop(directory2)
+
+    def test_all_channel_refresh_expired_rotation_and_revocation(self):
+        for channel in ("development", "preview", "stable"):
+            self.branch.documents[channel] = base64.b64decode(MATERIAL["historical"][channel])
+        promotion = n.Crypto(ROOT, self.work, self.trust, MATERIAL["promotion"])
+        for channel, crypto in (("development", self.crypto), ("preview", promotion), ("stable", promotion)):
+            before = crypto.invoke("ReadChannel", channel, self.branch.keys, document=self.branch.documents[channel])
+            self.assertEqual("refreshed", n.refresh(channel, self.branch, crypto))
+            after = crypto.invoke("ReadChannel", channel, self.branch.keys, document=self.branch.documents[channel])
+            self.assertEqual(before["release"], after["release"])
+            self.assertEqual(before["sequence"] + 1, after["sequence"])
+        self.branch.keys = base64.b64decode(MATERIAL["keys2"])
+        self.assertEqual("refreshed", n.refresh("development", self.branch, self.crypto))
+        renewed = self.crypto.invoke("ReadChannel", "development", self.branch.keys, document=self.branch.documents["development"])
+        self.assertEqual(2, renewed["keysVersion"])
+        writes = list(self.branch.writes)
+        self.branch.keys = base64.b64decode(MATERIAL["revoked"])
+        with self.assertRaises(ValueError): n.refresh("development", self.branch, self.crypto)
+        self.assertEqual(writes, self.branch.writes)
+        self.branch.keys = base64.b64decode(MATERIAL["expiredKeys"])
+        with self.assertRaises(ValueError): n.refresh("stable", self.branch, promotion)
+
+    def test_dev_key_cannot_refresh_promotion_and_missing_is_not_seeded(self):
+        self.assertEqual("not-configured", n.refresh("stable", self.branch, self.crypto))
+        self.assertFalse(self.branch.writes)
+        for channel in ("preview", "stable"):
+            self.branch.documents[channel] = base64.b64decode(MATERIAL["historical"][channel])
+            with self.assertRaises(ValueError): n.refresh(channel, self.branch, self.crypto)
+        self.assertFalse(self.branch.writes)
+
+    def test_distinct_delegated_threshold_signatures(self):
+        _, doc = self.candidate()
+        payload = n.make_pointer("development", doc["release"], None, 2)
+        keys = base64.b64decode(MATERIAL["threshold"])
+        with self.assertRaises(ValueError):
+            self.crypto.invoke("SignChannel", "development", keys, payload=payload)
+        crypto = n.Crypto(ROOT, self.work, self.trust, json.dumps([MATERIAL["dev"], MATERIAL["secondDev"]]))
+        raw = crypto.invoke("SignChannel", "development", keys, payload=payload)
+        self.assertEqual(2, crypto.invoke("ReadChannel", "development", keys, document=raw)["keysVersion"])
+
+    def test_promote_identical_bytes_preview_then_stable_1_plus(self):
+        directory, doc = self.candidate("1.0.0")
+        self.assertEqual("published", self.develop(directory))
+        promotion = n.Crypto(ROOT, self.work, self.trust, MATERIAL["promotion"])
+        originals = {path.name: path.read_bytes() for path in directory.iterdir()}
+        for channel, alias in (("preview", "1.0.0-preview.1"), ("stable", "1.0.0")):
+            with patch.object(n, "ancestor", return_value=True), patch.object(n.pair, "git", return_value=self.ctx["sha"]):
+                self.assertEqual("published", n.promote(directory, doc["release"]["buildVersion"], channel, alias,
+                                                       self.github, self.branch, promotion, ROOT, lambda _: None))
+            target = self.github.releases["v" + alias]
+            for asset in target["assets"]:
+                if asset["name"] != "alias-record.dsse.json":
+                    self.assertEqual(originals[asset["name"]], self.github.bytes[asset["id"]])
+            # Next promotion starts from immutable development assets only.
+            (directory / "alias-record.dsse.json").unlink()
+
+    def test_promotion_rejects_core_relabel_stable_zero_and_bad_alias(self):
+        directory, doc = self.candidate()
+        for channel, alias in (("stable", "1.0.0"), ("stable", "0.2.0"), ("preview", "0.3.0-preview.1"),
+                               ("preview", "0.2.0-preview.01")):
+            with self.subTest(alias=alias), self.assertRaises(ValueError):
+                n.promote(directory, doc["release"]["buildVersion"], channel, alias,
+                          self.github, self.branch, self.crypto, ROOT, lambda _: None)
+        self.assertFalse(self.github.writes)
+
+    def test_real_bare_git_fast_forward_cas(self):
+        bare, seed = self.root / "bare.git", self.root / "seed"
+        subprocess.check_call(["git", "init", "--bare", "--quiet", str(bare)])
+        subprocess.check_call(["git", "init", "--quiet", str(seed)])
+        (seed / "v1").mkdir()
+        (seed / "v1/keys.dsse.json").write_bytes(self.branch.keys)
+        commit(seed)
+        git(seed, "push", "--quiet", str(bare), "HEAD:refs/heads/nexus-channels")
+        for name in ("one", "two"): (self.root / name).mkdir()
+        one = n.ChannelBranch(self.root / "one", str(bare))
+        two = n.ChannelBranch(self.root / "two", str(bare))
+        one.read("development"); two.read("development")
+        self.assertTrue(one.push("development", b"first"))
+        self.assertFalse(two.push("development", b"stale"))
+        self.assertEqual(b"first", two.read("development")[1])
+        self.assertTrue(two.push("development", b"second"))
+
+    def test_source_zip_paths_and_inventory_caps(self):
+        for index, name in enumerate(("../x", "/x", "C:/x", "a\\b", "CON", "a.", "a ")):
+            archive = self.root / f"unsafe-{index}.zip"
+            entry = zipfile.ZipInfo("placeholder")
+            entry.filename = name  # Bypass the writer's Windows normalization.
+            with zipfile.ZipFile(archive, "w") as stream: stream.writestr(entry, b"data")
+            target = self.root / f"extract-{index}"
+            with self.subTest(name=name), self.assertRaises(ValueError): n.extract_source(archive, target)
+            self.assertFalse(target.exists())
+
+    def test_workflow_boundaries_and_template(self):
+        workflow = (ROOT / ".github/workflows/windows-build.yml").read_bytes()
+        self.assertEqual(workflow, (ROOT / "windows/ci/windows-build.yml.template").read_bytes())
+        text = workflow.decode().replace("\r\n", "\n")
+        before, publish = text.split("\n  publish:\n")
+        self.assertNotIn("secrets.", before)
+        self.assertNotIn("contents: write", before)
+        self.assertIn("needs: [build, validation]", publish)
+        self.assertIn("vars.NEXUS_DEVELOPMENT_PUBLISH == 'enabled'", publish)
+        self.assertIn("environment: nexus-development", publish)
+        self.assertIn("cancel-in-progress: false", publish)
+        self.assertNotIn("workflow_run", text)
+        self.assertNotIn("pull_request_target", text)
+        self.assertIn("actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131", text)
+        for file in ("nexus-promote.yml", "nexus-refresh.yml"):
+            text = (ROOT / ".github/workflows" / file).read_text()
+            self.assertNotIn("workflow_run", text)
+            self.assertNotIn("self-hosted", text)
+            self.assertIn("NEXUS_PROMOTION_PUBLISH == 'enabled'", text)
+            self.assertIn("environment: nexus-promotion", text)
+
+
+if __name__ == "__main__":
+    suite = unittest.defaultTestLoader.loadTestsFromModule(sys.modules[__name__])
+    if suite.countTestCases() < 29:
+        raise SystemExit("Nexus behavioral test inventory unexpectedly reduced.")
+    result = unittest.TextTestRunner(verbosity=2).run(suite)
+    raise SystemExit(0 if result.wasSuccessful() and result.testsRun >= 29 and not result.skipped else 1)

@@ -144,7 +144,10 @@ jobs:
     needs: checks
     if: needs.checks.outputs.native == 'true'
     runs-on: windows-2022
-    timeout-minutes: 90
+    # Bound includes source/supplier preparation on main, not a timing claim.
+    timeout-minutes: 120
+    outputs:
+      candidate: ${{ steps.candidate.outcome == 'success' && format('nexus-candidate-{0}-{1}', github.run_id, github.run_attempt) || '' }}
     defaults:
       run:
         shell: pwsh
@@ -326,6 +329,24 @@ jobs:
             --run-id $env:GITHUB_RUN_ID --attempt $env:GITHUB_RUN_ATTEMPT --workflow-sha $env:GITHUB_SHA
           if ($LASTEXITCODE -ne 0) { throw 'Independent pair validation is non-pass.' }
 
+      - name: Assemble exact-tested release candidate
+        id: candidate
+        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          & powershell.exe -NoProfile -NonInteractive -File "$env:GITHUB_WORKSPACE\windows\ci\New-NexusCandidate.ps1" `
+            -ShellRoot $env:GITHUB_WORKSPACE -BuildRoot $env:BUILD_ROOT -ToolRoot $env:TOOL_ROOT `
+            -PairResults $env:PAIR_RESULTS -TrustedRoot $env:TRUSTED_ROOT -OutputDirectory C:\nexus-candidate
+          if ($LASTEXITCODE -ne 0) { throw 'Exact-tested candidate assembly failed.' }
+
+      - name: Retain exact-tested release candidate
+        if: steps.candidate.outcome == 'success'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: nexus-candidate-${{ github.run_id }}-${{ github.run_attempt }}
+          path: C:/nexus-candidate/out/
+          retention-days: 7
+          if-no-files-found: error
+
       - name: Sanitized exact-pair receipts
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
@@ -385,6 +406,8 @@ jobs:
           PACKAGING: ${{ needs.packaging.result }}
           BUILD: ${{ needs.build.result }}
           NATIVE_REQUIRED: ${{ needs.checks.outputs.native }}
+          CANDIDATE: ${{ needs.build.outputs.candidate }}
+          MAIN_PUSH: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
         run: |
           if ($env:CHECKS -ne 'success' -or $env:PACKAGING -ne 'success') {
             throw 'Source or installer validation did not pass.'
@@ -398,3 +421,51 @@ jobs:
           if ($env:NATIVE_REQUIRED -eq 'false' -and $env:BUILD -ne 'skipped') {
             throw 'Unexpected native-gate result.'
           }
+          if ($env:MAIN_PUSH -eq 'true' -and $env:NATIVE_REQUIRED -eq 'true' -and -not $env:CANDIDATE) {
+            throw 'Trusted main requires the exact-tested candidate.'
+          }
+
+  publish:
+    name: Nexus development publication
+    needs: [build, validation]
+    if: >-
+      github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+      needs.validation.result == 'success' && needs.build.result == 'success' &&
+      needs.build.outputs.candidate != '' && vars.NEXUS_DEVELOPMENT_PUBLISH == 'enabled'
+    runs-on: windows-2022
+    timeout-minutes: 120
+    environment: nexus-development
+    concurrency:
+      group: nexus-publication
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - name: Checkout exact trusted source
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          submodules: recursive
+          persist-credentials: false
+      - name: Python 3.12
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: '3.12'
+          architecture: x64
+      - name: Download this exact run and attempt only
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: ${{ needs.build.outputs.candidate }}
+          path: C:/nexus-input
+      - name: Verify immutable release and advance development pointer
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NEXUS_SIGNING_KEY: ${{ secrets.NEXUS_DEVELOPMENT_SIGNING_KEY }}
+          NEXUS_DEVELOPMENT_PUBLISH: ${{ vars.NEXUS_DEVELOPMENT_PUBLISH }}
+        run: |
+          & powershell.exe -NoProfile -NonInteractive -File "$env:GITHUB_WORKSPACE\windows\ci\Invoke-NexusPublication.ps1" `
+            -Mode development -CandidateDirectory C:\nexus-input -WorkDirectory C:\nexus-publish
+          if ($LASTEXITCODE -ne 0) { throw 'Nexus development publication refused.' }

@@ -34,8 +34,8 @@ decimal string comparison, not bounded integer parsing.
 
 Development identity is `CORE-dev.EPOCH.RUN.ATTEMPT`, replacing devFloor and the
 999999 cap. Reviewed epoch increments handle workflow replacement/reset;
-attempts get distinct immutable identities. Future publication still needs
-source ancestry, supersession and idempotency. Pointer sequence is independent.
+attempts get distinct immutable identities. Publication requires source ancestry,
+supersession and same-attempt idempotency. Pointer sequence is independent.
 
 Compiled core, signed channel alias, immutable build and selected channel are
 distinct. A stable 1.0 alias promotes tested 1.0-core bytes, never a 0.2 payload.
@@ -51,21 +51,21 @@ the unsafe unlocked-download/child-installer handoff. Profile schema changes
 fail closed; there are no automatic snapshots, migrations or unrelated profile
 reads. Security highwater survives uninstall even with profile purge.
 
-## Missing and unaccepted
+## Candidate and publication implementation
 
-S5 and S6 are missing. No candidate assembler, write-token job, publisher,
-promotion workflow or scheduled freshness task has been added. The active
-Windows workflow and its template remain unchanged, as do producer
+S5 and S6 are implemented, inert by default. The active Windows workflow and
+its template remain byte-identical, with unchanged producer
 ae98287c8cd96db4ea4642cc91a1cd9ba7c32a1f and validator digest
 220ab389252a15b8f4d9db25076aa01a927b3b07c62f3a07a76d1431d560f275.
 
-Remaining producer work:
-
-- Independently validate pinned trusted validator/receipt, raw nonzero test
+- Independently validate the pinned trusted validator/receipt, raw nonzero test
   inventories, pair request, tested outputs and exact main
   repo/event/head/run/attempt/toolchain/source identity. Do not trust an
   editable pair-result boolean or weaken existing pair eligibility.
-- Assemble from the tested native tree without recompilation. Complete
+- Assemble from the tested native tree without recompilation, including the
+  prebuilt managed supervisor. The pre-validation build inventory hashes every
+  consumed native output, rechecked before assembly and against the final
+  manifest. Complete
   histories, exact source/supplier/license notices and privacy coverage are
   mandatory. Retain only allowlisted public artifacts, not raw output.
 - Separate data-only bundle verification/NoIntegration fixtures on Server 2022
@@ -81,14 +81,43 @@ Remaining producer work:
   configured channels. Only offline roots renew the keys document. Publisher
   expiry renewal must not weaken client expiry rejection.
 
-Client tests cover primitives, persisted checks, fail-closed worker arguments,
-existing rollback/uninstall transactions and offscreen QML. They do not yet
-establish a full authenticated happy-path worker with synthetic
-installer/readiness boundaries, every queue/TOCTOU/watchdog interruption, or
-real redirected TLS download. Add those controls before configuring trust.
-Guard mutation coverage is partial, not the design's full mutation matrix.
+Candidate eligibility is recomputed through the unchanged pinned validator,
+not accepted from a pair-result boolean. Publication additionally checks the
+exact GitHub repository/event/main/workflow/run/attempt, successful prerequisite
+jobs and same-run artifact metadata. Sources/notices are independently
+reproduced; payload verification executes checkout code only. Retained assets
+are explicitly allowlisted; raw logs/build/environment/profile data stay local.
+
+Draft assets are uploaded without clobber, downloaded and hash-verified before
+finalization, then exposed by a non-force pointer CAS. Authenticated existing
+record bytes are reused on retry despite randomized signatures. Rerun attempts
+require new producer outputs. Partial old drafts stay unreferenced. Promotion
+copies identical assets and requires exact core/ancestry/monotonic aliases.
+Development and promotion freshness use distinct roles; only offline roots
+renew the keys document. Expired-pointer publisher renewal is not a client
+expiry bypass. Missing, invalid, expired and revoked metadata stay distinct.
+
+Worker tests now exercise Check, actual generated queued arguments, authenticated
+download/extract/bootstrap/install, rollback and reinstall, retained profile
+bytes and trust highwater, stale and late selectors, changed signed target,
+wrong manifest, both queue exclusions, interruption and watchdog fencing.
+Tasks, transport, readiness and integration use recording boundaries on
+disposable data. These are not real HTTPS or Windows installation acceptance.
+Pipeline tests use ephemeral native CNG primitives, a fake GitHub API and a
+local bare Git remote. Guard mutation coverage remains partial, not the full
+design mutation matrix.
+
+## Inactive and unaccepted gates
+
+Trust has no keys. Workflow variables are unset by default. Owner setup is
+documented in [UPDATES.md](../../UPDATES.md). No private key, secret,
+environment, branch, channel or release was created. The owner key-tool CLI
+acceptance was not run after an execution-policy denial and must not be
+inferred from primitive tests.
 
 Hosted independent exact-SHA validation, source-asset assembly timing,
 disposable Windows 11 update/rollback/update, interrupted downloads,
 offline/clock behavior, autostart preservation and SAC/SmartScreen acceptance
-remain gates. No release, key, secret, environment or channel was published.
+remain gates. First hosted candidate timing and supplier acquisition must be
+measured; the native job's 120-minute budget is an upper bound, not a timing
+claim. No release, key, secret, environment or channel was published.
