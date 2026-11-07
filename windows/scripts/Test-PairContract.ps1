@@ -12,6 +12,10 @@ foreach ($name in @('Resolve-PairRequest.ps1', 'Invoke-PairIntegration.ps1', 'Ge
     if ($parseErrors.Count) { throw "Pair entry point does not parse: $name" }
 }
 $workflow = [IO.File]::ReadAllText("$root\.github\workflows\windows-build.yml")
+if (-not $workflow.Contains('needs: [scope, fixtures, build]') -or
+    -not $workflow.Contains('needs: [scope, pair, validation]')) {
+    throw 'Receipt join and candidate dependencies must remain explicit.'
+}
 $blocks = [regex]::Matches($workflow, '(?m)^        run: \|\r?\n((?:          [^\r\n]*\r?\n|\r?\n)+)')
 if (-not $blocks.Count) { throw 'Workflow command blocks were not discovered.' }
 if ($blocks.Count -ne [regex]::Matches($workflow, '(?m)^        run: \|').Count) {

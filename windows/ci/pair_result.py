@@ -8,6 +8,7 @@ import math
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 import xml.etree.ElementTree as ET
@@ -441,6 +442,25 @@ def compute_envelope(args):
     return result
 
 
+def join(args):
+    """Require equal measured identities before invoking the trusted merger."""
+    fixture, results = Path(args.fixture), Path(args.results)
+    first, second = (read(root / "actual-toolchain.json") for root in (fixture, results))
+    require(isinstance(first, dict) and bool(first) and isinstance(second, dict)
+            and json.dumps(first, sort_keys=True) == json.dumps(second, sort_keys=True),
+            "actual-toolchain-mismatch")
+    validator(args.validator, read(Path(args.shell) / "windows/ci/pair-contract.json"))
+    integration = results / "integration-result.json"
+    require(not integration.exists(), "fresh-integration-receipt-required")
+    (results / "candidate-result.json").rename(integration)
+    code = subprocess.run([sys.executable, "-I", "-B", args.validator,
+                           "--receipt", str(results / "candidate-result.json"), "merge",
+                           "--fixture", str(fixture / "candidate-result.json"),
+                           "--integration", str(integration)]).returncode
+    require(code == 0, "partial-receipt-merge-failed")
+    shutil.copyfile(fixture / "portable.xml", results / "portable.xml")
+
+
 def envelope(args):
     result = compute_envelope(args)
     write(Path(args.results) / "pair-result.json", result)
@@ -464,6 +484,9 @@ def main():
     report = sub.add_parser("integration-report")
     report.add_argument("--results", required=True)
     report.add_argument("--junit", required=True)
+    merge = sub.add_parser("join")
+    for name in ("fixture", "results", "shell", "validator"):
+        merge.add_argument("--" + name, required=True)
     end = sub.add_parser("envelope")
     for name in ("results", "shell", "validator", "workflow-outcome", "build-root"):
         end.add_argument("--" + name, required=True)
@@ -477,6 +500,8 @@ def main():
             bootstrap(args.shell, args.backend, args.target)
         elif args.action == "integration-report":
             integration_report(args.results, args.junit)
+        elif args.action == "join":
+            join(args)
         else:
             return envelope(args)
         return 0

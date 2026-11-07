@@ -763,12 +763,13 @@ class PairTests(unittest.TestCase):
         harness = self.root / "validation.ps1"
         harness.write_text("$ErrorActionPreference = 'Stop'\n" + block)
         base = {**os.environ, "SCOPE": "success", "CHECKS": "success", "PACKAGING": "success",
-                "BUILD": "success", "NATIVE_REQUIRED": "true"}
-        cases = [({}, True), ({"NATIVE_REQUIRED": "false", "BUILD": "skipped"}, True)]
+                "BUILD": "success", "FIXTURES": "success", "PAIR": "success", "NATIVE_REQUIRED": "true"}
+        skipped = {"NATIVE_REQUIRED": "false", "BUILD": "skipped", "FIXTURES": "skipped", "PAIR": "skipped"}
+        cases = [({}, True), (skipped, True)]
         cases += [({"NATIVE_REQUIRED": value}, False) for value in ("", "invalid")]
-        cases += [({gate: outcome}, False) for gate in ("SCOPE", "CHECKS", "PACKAGING", "BUILD")
+        cases += [({gate: outcome}, False) for gate in ("SCOPE", "CHECKS", "PACKAGING", "FIXTURES", "BUILD", "PAIR")
                   for outcome in ("failure", "cancelled", "skipped")]
-        cases += [({"NATIVE_REQUIRED": "false", "BUILD": outcome}, False)
+        cases += [({**skipped, gate: outcome}, False) for gate in ("FIXTURES", "BUILD", "PAIR")
                   for outcome in ("success", "failure", "cancelled")]
         for changes, passed in cases:
             with self.subTest(changes=changes):
@@ -795,9 +796,21 @@ class PairTests(unittest.TestCase):
         self.assertIn("needs: [candidate, validation]", publication)
         self.assertIn("vars.NEXUS_DEVELOPMENT_PUBLISH == 'enabled'", publication)
         self.assertNotIn("pull_request_target", workflow)
-        # Parallelism is measured, never hard-coded, and reaches every compile.
+        # Three compile entry points remain: fixture loop (moved, not copied),
+        # capture Rust and production integration. The join never compiles.
         self.assertNotIn("-Jobs 2", workflow)
-        self.assertEqual(3, workflow.count("-Jobs $env:BUILD_JOBS"))
+        fixtures = workflow.split("\n  fixtures:\n")[1].split("\n  build:\n")[0]
+        build = workflow.split("\n  build:\n")[1].split("\n  pair:\n")[0]
+        pair = workflow.split("\n  pair:\n")[1].split("\n  validation:\n")[0]
+        self.assertEqual(1, fixtures.count("-Jobs $env:BUILD_JOBS"))
+        self.assertEqual(2, build.count("-Jobs $env:BUILD_JOBS"))
+        self.assertNotIn("-Jobs $env:BUILD_JOBS", pair)
+        for job in (fixtures, build):
+            self.assertIn("Get-BuildJobs.ps1", job)
+            self.assertIn("--stage producer --unittest --echo", job)
+            self.assertIn("run --stage prepare --echo", job)
+        for action in re.findall(r"uses: ([^\s]+)", workflow):
+            self.assertRegex(action, r"^[\w/-]+@[a-f0-9]{40}$")
         # The early Services run stays outside pair results and is not recorded.
         self.assertIn("-ServicesPreflightRoot C:\\ci-preflight -EchoDiagnostics", workflow)
         self.assertNotIn("--stage services", workflow)

@@ -54,9 +54,9 @@ reads. Security highwater survives uninstall even with profile purge.
 ## Candidate and publication implementation
 
 S5 and S6 are implemented, inert by default. The active Windows workflow and
-its template remain byte-identical, with unchanged producer
-ae98287c8cd96db4ea4642cc91a1cd9ba7c32a1f and validator digest
-220ab389252a15b8f4d9db25076aa01a927b3b07c62f3a07a76d1431d560f275.
+its template remain byte-identical, temporarily pinning backend PR #24 producer
+d91a9128294f60d3c1d0ec6d278483d80544ce98 and validator digest
+e7e890428a49812208866349a00482cf0cddbca6ebbaf71cb7a06a5c3284b5a0.
 
 - Independently validate the pinned trusted validator/receipt, raw nonzero test
   inventories, pair request, tested outputs and exact main

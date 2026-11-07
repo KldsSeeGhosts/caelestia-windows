@@ -1,7 +1,8 @@
 # Exact shell/backend integration
 
-The stable **Native build and offscreen regressions** check tests an exact
-shell/backend pair. **Windows validation** propagates failed, cancelled,
+The **Native build and offscreen regressions** and **Backend fixtures and
+portable tier** jobs test an exact shell/backend pair in parallel. **Exact-pair
+receipt** joins their evidence. **Windows validation** propagates failed, cancelled,
 missing and unexpectedly skipped required jobs. These checks use hosted
 Windows runners, read-only repository permissions and no release secrets or
 personal desktop. Contract fixtures are not native acceptance.
@@ -40,7 +41,15 @@ field stays `false`; explicit candidate status is recorded by the consumer.
 
 The recorded stages are source inspection, producer contract fixtures,
 canonical tool preparation, backend fixture configure/build/portable tests
-and consuming-shell integration. Integration executes:
+and consuming-shell integration. `fixtures` and `build` run in parallel, each
+with independent sources/producer/prepare stages and an unfinalized receipt.
+The `pair` join requires both jobs to succeed and their actual-toolchain records
+to be identical before trusted merge, normal finalize and independent envelope.
+One-day exact-run/attempt artifacts carry allowlisted inputs. Candidate assembly
+depends on the join and aggregate validation. Documentation-only runs must skip
+fixtures, build and pair together. Estimated critical path is
+`max(fixtures, build) + join overhead`, plus checkout/tool preparation.
+Integration executes:
 
 1. Services suite.
 2. Production `Build-Prototype.ps1 -PublicRelease -PluginTests -Jobs <jobs>`,
@@ -105,10 +114,12 @@ Only that successful pinned main-push pair can set `releaseEligible=true`.
 Candidate preflight and PR receipts are never relabeled as the final pair.
 Receipts are artifacts, not commits back into their own tested source.
 
-The producer is pinned to reviewed backend main commit
-`ae98287c8cd96db4ea4642cc91a1cd9ba7c32a1f`, including its byte-exact validator
+The producer is temporarily pinned to backend PR #24 head
+`d91a9128294f60d3c1d0ec6d278483d80544ce98`, including its byte-exact validator
 digest. Hosted success/failure/cancellation controls still gate qualification;
 a merged producer is not itself a successful consumer receipt.
+Replace this temporary revision after backend #24 merges; the validator blob
+hash remains unchanged if the PR merges without changes.
 The producer's shell pin supplies toolchain policy only, not the shell under
 test, so updating it does not create a pair-SHA fixed point.
 
