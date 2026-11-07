@@ -23,6 +23,7 @@ def main():
     root = args.output_root.resolve()
     root.mkdir(parents=True, exist_ok=True)
     helper = Path(__file__).resolve().parents[1] / "scripts/Caelestia-Toolchain.ps1"
+    prepare = helper.with_name("Prepare-Toolchain.ps1")
     archive = root / "fixture.zip"
     with zipfile.ZipFile(archive, "w") as bundle:
         bundle.writestr("fixture.txt", "verified fixture")
@@ -108,6 +109,54 @@ foreach ($case in @(
     if (-not $rejected) {{ throw 'Integrity check accepted an invalid archive.' }}
 }}
 if ($env:PSModulePath -cne $originalModulePath) {{ throw 'Initializer changed PSModulePath.' }}
+$tokens = $null
+$errors = $null
+$ast = [Management.Automation.Language.Parser]::ParseFile({quote(prepare)}, [ref]$tokens, [ref]$errors)
+if ($errors.Count) {{ throw 'Prepare source does not parse.' }}
+$definition = $ast.Find({{
+    param($node)
+    $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
+        $node.Name -eq 'Get-VerifiedToolchainArchive'
+}}, $true)
+if ($null -eq $definition) {{ throw 'Missing production archive function.' }}
+. ([scriptblock]::Create($definition.Extent.Text))
+$downloads = {quote(root / (name + "-downloads"))}
+$null = [IO.Directory]::CreateDirectory($downloads)
+$script:fixtureArchive = {quote(archive)}
+$script:curlCalls = 0
+$script:curlFails = $false
+function curl.exe {{
+    $script:curlCalls++
+    $script:curlArguments = @($args)
+    if ($script:curlFails) {{ $global:LASTEXITCODE = 28; return }}
+    $outputIndex = [Array]::IndexOf($script:curlArguments, '-o') + 1
+    if ($outputIndex -eq 0) {{ throw 'Archive output argument missing.' }}
+    [IO.File]::WriteAllBytes($script:curlArguments[$outputIndex], [IO.File]::ReadAllBytes($script:fixtureArchive))
+    $global:LASTEXITCODE = 0
+}}
+$download = [pscustomobject]@{{ file = 'synthetic.zip'; url = 'https://fixture.invalid/never-contacted'; sha256 = '{digest}' }}
+$resolved = Get-VerifiedToolchainArchive $download
+foreach ($bound in @(@('--connect-timeout', '30'), @('--max-time', '600'), @('--retry', '2'))) {{
+    $index = [Array]::IndexOf($script:curlArguments, $bound[0])
+    if ($index -lt 0 -or $script:curlArguments[$index + 1] -cne $bound[1]) {{
+        throw "Production download is not bounded: $($bound[0])"
+    }}
+}}
+if ($resolved -cne (Join-Path $downloads $download.file)) {{ throw 'Archive function returned extra output.' }}
+$null = Get-VerifiedToolchainArchive $download
+if ($script:curlCalls -ne 1) {{ throw 'Verified cached archive was downloaded again.' }}
+$bad = [pscustomobject]@{{ file = 'bad.zip'; url = $download.url; sha256 = ('0' * 64) }}
+$rejected = $false
+try {{ $null = Get-VerifiedToolchainArchive $bad }}
+catch {{ if ($_.Exception.Message -notmatch 'checksum mismatch') {{ throw }}; $rejected = $true }}
+if (-not $rejected) {{ throw 'Downloaded bytes bypassed the pinned hash.' }}
+$script:curlFails = $true
+$bad.file = 'timeout.zip'
+$rejected = $false
+try {{ $null = Get-VerifiedToolchainArchive $bad }}
+catch {{ if ($_.Exception.Message -notmatch 'Download failed') {{ throw }}; $rejected = $true }}
+if (-not $rejected) {{ throw 'Download timeout was accepted.' }}
+'PASS {name}: production archive download bounds, cache, checksum and timeout refusal (fake curl; no network)'
 'PASS {name}: verified hash, extraction, invalid hash, malformed hash, missing file, unchanged module path'
 """
         result = run(name + "-restored-pass", body, inherited)
