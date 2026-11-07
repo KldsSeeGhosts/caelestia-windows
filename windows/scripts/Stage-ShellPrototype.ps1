@@ -9,6 +9,8 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'Caelestia-Toolchain.ps1')
+Initialize-CaelestiaToolchainModules
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
 $Destination = [IO.Path]::GetFullPath($Destination)
 $ProfileRoot = [IO.Path]::GetFullPath($ProfileRoot)

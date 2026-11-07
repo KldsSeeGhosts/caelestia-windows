@@ -8,6 +8,8 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'Caelestia-Toolchain.ps1')
+Initialize-CaelestiaToolchainModules
 $repoRoot = (Resolve-Path -LiteralPath "$PSScriptRoot\..\..").Path
 if (-not $OutputRoot) {
     $OutputRoot = Join-Path ([IO.Path]::GetTempPath()) ('caelestia-staged-results-' + [guid]::NewGuid().ToString('N'))

@@ -30,6 +30,8 @@ param(
 # A pass removes the run directory; a failure keeps it and prints its path.
 # Exit code is 0 on pass and 1 on failure.
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'Caelestia-Toolchain.ps1')
+Initialize-CaelestiaToolchainModules
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
 $BuildRoot = [IO.Path]::GetFullPath($BuildRoot)
 $QtPrefix = [IO.Path]::GetFullPath($QtPrefix)

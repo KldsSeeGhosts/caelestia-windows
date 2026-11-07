@@ -406,12 +406,13 @@ changes and return to the system default when disabled, unmanaged or on normal
 shell exit. Older Windows skips colouring. These settings reload live.
 See [the complete tiling schema](../services/tiling/README.md).
 
-To rearrange tiles, drag a window by its title bar onto another tile and the
-two swap. Super+drag is the precise gesture: release in the middle of a tile
-to swap, or near one of its edges to put the window on that side (dwindle
-only; master and scrolling always swap). While you drag, a tinted outline
-shows exactly where the window will land, and a thin one shows where the
-other window goes. Releasing on the window's own slot or the bar puts it
+To rearrange tiles, drag a window by its title bar or with Super+drag; both
+work the same way. Release in the middle of another tile to swap the two, or
+near one of its edges to put the window on that side (dwindle only; master
+and scrolling always swap). While you drag, a tinted outline shows exactly
+where the window will land, with a swap, split or move marker on it, and a
+thin one shows where the other window goes. The release does what the
+outline last showed. Releasing on the window's own slot or the bar puts it
 back; releasing on another monitor's empty area moves it there. See
 [dragging tiled windows](../services/tiling/README.md#dragging-tiled-windows).
 

@@ -14,6 +14,7 @@ param(
 
 . (Join-Path $PSScriptRoot 'Caelestia-InstallCommon.ps1')
 . (Join-Path $PSScriptRoot 'Caelestia-Toolchain.ps1')
+Initialize-CaelestiaToolchainModules
 if ($env:OS -ne 'Windows_NT' -or -not [Environment]::Is64BitProcess) {
     throw 'Packaging requires 64-bit Windows PowerShell and the existing native build tools.'
 }

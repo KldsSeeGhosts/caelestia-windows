@@ -48,6 +48,12 @@ locked dependency graph. Rust is not selected through `stable`.
 wheels, verified aqt source, LLVM/CLI11 SHA-256, six committed Qt archive hashes,
 and the hash-checked official Rust release manifest plus rustup's component
 verification. `Build-Prototype.ps1` never installs missing tools.
+Preparation, build, release preflight, staging, smoke and shared QML fixture
+entry points explicitly load inbox Utility/Archive modules from the running
+PowerShell engine. This is process-local: loading them during preparation does
+not repair a later Python-launched child process. The regression exercises each
+entry point's real bootstrap with script-module discovery disabled and verifies
+that it leaves the caller's `PSModulePath` unchanged.
 Serviced compiler/linker file versions and Rust's official release commit are
 asserted too. The selected VS redist marker must resolve CRT DLLs matching the
 qualified `vcRedistVersion` (14.44.35211.0), not merely a plausible folder name.
@@ -87,10 +93,23 @@ logs, profiles and provider data are not uploaded. Native jobs always upload
 path-free `toolchain.json` receipts from preparation and build, including the
 specification/lock digest and actual versions. Raw `build.json`, environment
 reports and build logs contain deployment paths and are not artifact inputs.
-The pair recorder suppresses raw native output and retains bounded diagnostic
-categories in the public receipt instead.
+The pair recorder retains bounded diagnostic categories in the public receipt.
+On isolated hosted fixtures the workflow explicitly enables its `--echo` mode,
+so producer, preparation, compile and test failures remain visible in the job
+log. Nested integration failures also report the failed stage, exit code and
+local log location. `-EchoDiagnostics` shows at most 80 lines / 16,000 characters
+from the failed nested stage in that job log. Raw fixture logs are still excluded
+from uploaded receipts and artifacts.
 Its exact-pair receipts and sanitized JUnit have seven-day retention, as
 documented in the [pair contract](PAIR-INTEGRATION.md#execution-and-receipts).
+
+When debugging a pair failure, start with the first failed stage in
+`integration-stages.json`, not a later receipt-finalization or envelope refusal.
+Read that stage's output in the hosted job log, or its `<stage>.private.log`
+under the local results directory. Quiet local mode still names the failing
+stage, exit code and log path. Use `-EchoDiagnostics` only with disposable,
+isolated fixtures. Never enable raw-output echo for a command that could read
+personal data, credentials or secrets.
 
 The native job runs the release assembler's read-only toolchain preflight on
 the build receipt. Fast checks exercise supported receipts plus incompatible
