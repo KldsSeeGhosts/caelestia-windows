@@ -2,11 +2,13 @@
 
 ## Current status
 
-The source contains an authenticated updater client. It is **not activated**.
-Shipped trust has no public keys and says `unconfigured`. Checking therefore
-makes no network request. Candidate assembly, publication, promotion and
-all-channel freshness are implemented but inactive. Their first independent
-hosted exact-main run and disposable Windows 11 acceptance remain gates.
+Shipped trust is configured for development activation with root fingerprint
+`f9f6c4d0f94cedcd81a6abb84b1b60b1e58b59c54cb723d4f583e22d24602893`,
+root version 1 and threshold 1. Explicit checks now use authenticated network
+transport. Development publication and freshness require the owner setup below.
+Preview/stable promotion and freshness stay inactive.
+The first independent hosted exact-main candidate run and disposable Windows 11
+acceptance remain release gates.
 A source merge never changes an installed shell.
 
 Public previews remain manual downloads at
@@ -53,10 +55,16 @@ The existing Preview 2 shell has no updater and cannot update itself.
 Keep its original ZIP. After producer/client acceptance, rehearse first in a
 disposable Windows 11 profile or VM:
 
-1. Authenticate the first updater-enabled bundle's signed release record using
-   a reviewed checkout and independently confirmed root fingerprints. A hash
-   beside the same untrusted download is not authentication. Initial trust
-   establishment is an owner action.
+1. Use a reviewed checkout and independently confirm the full root fingerprint
+   above. Run Windows PowerShell 5.1:
+   `powershell.exe -NoProfile -NonInteractive -File windows\ci\Get-NexusBootstrapRelease.ps1 -OutputDirectory D:\NexusBootstrap`.
+   The directory must not exist and must be outside the checkout. The tool
+   fetches `v1/keys.dsse.json` and `v1/development.dsse.json`, executes the
+   unchanged client verifier against shipped trust, and downloads the signed
+   pointer's bundle with its exact size and SHA-256. The client requires no
+   separate signed release record for development installation. The tool saves
+   both authenticated envelopes and prints the manifest digest, build version,
+   source revision and exact installer command. It does not extract or install.
 2. Extract outside prefix and profile. Run its installer with
    `-ExpectedManifestSha256 <authenticated-digest> -Restart`. Add `-Autostart`
    only if already opted in. No optional scheme download is needed.
@@ -66,26 +74,77 @@ disposable Windows 11 profile or VM:
 This work does not alter the user's existing Preview 2 install. Live bootstrap
 requires separate explicit authorization.
 
-## Operator setup, after the remaining gates
+## Operator setup
 
 This is DSSE with a custom role policy, not full TUF. Metadata authentication
 is separate from Authenticode. Payloads remain unsigned preview code.
 
-- Generate offline root keys using `windows/ci/New-NexusSigningKey.ps1` into
-  a new private directory outside source/output/payload trees, preferably an
-  encrypted offline volume. Its PKCS8 output is unencrypted; secure it and
-  never commit/upload it. Online development/promotion keys must be distinct.
-- Review a public-key-only trust PR with fingerprints and threshold. Increment
-  `rootVersion` for root-set/threshold changes. Highwater rejects older roots
-  or different anchors at the same version. Ship overlapping old/new roots
-  through the old authorized chain before removing old roots.
-- Create a root-signed keys document with development-only and
-  preview/stable-only roles, expiry and increasing version. Delegated keys
-  cannot renew this offline-root document.
-- Once implementation and hosted candidate evidence are reviewed, protect `nexus-channels` against
-  force push/deletion. Restrict development publishing to main and its own
-  environment/key. Require owner review and a separate promotion environment
-  for preview/stable publication and freshness.
+Perform these owner actions in order. This source change does not create
+GitHub settings, credentials, metadata branches or releases.
+
+1. Generate keys offline with `windows/ci/New-NexusSigningKey.ps1` into new
+   private directories outside source/output/payload trees, preferably on an
+   encrypted offline volume. The owner has already generated the shipped root.
+   Its private PKCS8 is unencrypted. Never commit/upload it. Generate a distinct
+   online development key. A future promotion key must also be distinct.
+2. Run `windows/ci/New-NexusKeysDocument.ps1` with the offline root, public
+   delegated keys, an increasing `-Version`, and an external new `-OutputPath`.
+   For example:
+
+   ```powershell
+   powershell.exe -NoProfile -NonInteractive -File windows\ci\New-NexusKeysDocument.ps1 -RootPrivateKeyPath D:\OfflineRoot\private.pkcs8 -DelegatedKeysPath D:\NexusPublic\delegations.json -Version 1 -OutputPath D:\NexusPublic\keys.dsse.json
+   ```
+
+   `delegations.json` is a JSON array such as
+   `[{"publicPath":"development/public.json","channels":["development"]}]`.
+   Public paths are relative to that descriptor. Each entry can specify
+   `notAfter` in UTC `yyyy-MM-ddTHH:mm:ssZ` format. Otherwise it uses `-Expires`,
+   which defaults to 365 days. `-Expires` sets document expiry.
+   `-Threshold` defaults to 1 and sets the delegated signing threshold.
+   `-TrustPath` defaults to shipped trust. For root thresholds use
+   `-RootPrivateKeyListPath D:\OfflineRoot\roots.json`, a JSON array of binary
+   PKCS8 paths relative to the list file. This works with PowerShell 5.1
+   `-NoProfile -NonInteractive -File` without native array/quote passing.
+   Every signer must be a distinct authorized root. The tool self-verifies and
+   prints public ids, roles, version, expiry and envelope SHA-256 only.
+   Keep development separate from preview/stable. Only offline roots can renew
+   this document. Do not give the root private key to Actions.
+3. Create an orphan `nexus-channels` branch containing only
+   `v1/keys.dsse.json`. Protect it against deletion and force-push. Allow the
+   repository Actions token to make normal non-force pointer commits, without
+   a required PR/review rule that would block this publication path.
+   Do not seed `v1/development.dsse.json` manually. The publisher seeds a missing
+   pointer at sequence 1. A missing branch or keys document blocks publication;
+   an invalid existing pointer fails closed. Freshness never seeds a pointer.
+4. Create environment `nexus-development`, with deployment branches restricted
+   to `main`. Add environment secret `NEXUS_DEVELOPMENT_SIGNING_KEY`, the
+   development private binary PKCS8 encoded as base64. A distinct-key threshold
+   uses a JSON array of base64 PKCS8 strings. Keep this credential out of source
+   and logs. Required reviewers, if added, must approve scheduled freshness too.
+5. Set repository Actions variable `NEXUS_DEVELOPMENT_PUBLISH=enabled`.
+   Leave `NEXUS_PROMOTION_PUBLISH` unset. Do not create/enable promotion as part
+   of this activation.
+6. Let the first push to `main` complete Windows validation, exact-run candidate
+   assembly and development publication. Publication requires successful
+   `candidate` and `validation` jobs, a nonempty same-run/attempt candidate,
+   and an exact clean trusted checkout. Resolve failed gates before bootstrap.
+7. Bootstrap with `Get-NexusBootstrapRelease.ps1` as described above, then
+   rehearse update/rollback/update in a disposable Windows 11 profile or VM
+   before any separately authorized live installation.
+
+Development publication uses `contents: write` and `actions: read` job
+permissions. Development freshness uses `contents: write`, runs Mondays at
+08:23 UTC or via `workflow_dispatch` on `main`, and shares concurrency group
+`nexus-publication` with publication. Both use `GH_TOKEN=${{ github.token }}`,
+`NEXUS_SIGNING_KEY=${{ secrets.NEXUS_DEVELOPMENT_SIGNING_KEY }}` and
+`NEXUS_DEVELOPMENT_PUBLISH=${{ vars.NEXUS_DEVELOPMENT_PUBLISH }}`.
+Repository/organization Actions policies and metadata-branch protections must
+allow those token permissions and normal branch pushes. No PAT is required.
+
+- For later root-set/threshold changes, review public keys and increment
+  `rootVersion`. Highwater rejects older roots or different anchors at the same
+  version. Ship overlapping old/new roots through the old authorized chain
+  before removing old roots.
 - Renew **every configured channel**, without changing its release.
   Development credentials must never refresh preview/stable. Expired
   publisher renewal must still verify the old signed document, increment
@@ -97,7 +156,7 @@ is separate from Authenticode. Payloads remain unsigned preview code.
   `NEXUS_DEVELOPMENT_PUBLISH=enabled` enables development publication and its
   freshness job in `nexus-development`. `NEXUS_PROMOTION_PUBLISH=enabled`
   enables explicit promotion and preview/stable freshness in `nexus-promotion`.
-  Both environments must restrict deployment to main; promotion requires
+  Both environments must restrict deployment to main; future promotion requires
   owner review, including scheduled freshness. Their distinct secrets are
   `NEXUS_DEVELOPMENT_SIGNING_KEY` and `NEXUS_PROMOTION_SIGNING_KEY`.
   A secret is base64 PKCS8, or a JSON array of base64 PKCS8 values for a

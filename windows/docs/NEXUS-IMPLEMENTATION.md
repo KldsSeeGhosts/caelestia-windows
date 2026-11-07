@@ -53,7 +53,7 @@ reads. Security highwater survives uninstall even with profile purge.
 
 ## Candidate and publication implementation
 
-S5 and S6 are implemented, inert by default. The active Windows workflow and
+S5 and S6 are implemented, gated by owner-controlled variables. The active Windows workflow and
 its template remain byte-identical, temporarily pinning backend PR #24 producer
 bd5c68196edbdaad23db8f28ca64214d075711b4 and validator digest
 e7e890428a49812208866349a00482cf0cddbca6ebbaf71cb7a06a5c3284b5a0.
@@ -125,11 +125,24 @@ automatically quoting commit subjects.
 
 ## Inactive and unaccepted gates
 
-Trust has no keys. Workflow variables are unset by default. Owner setup is
-documented in [UPDATES.md](../../UPDATES.md). No private key, secret,
-environment, branch, channel or release was created. The owner key-tool CLI
-acceptance was not run after an execution-policy denial and must not be
-inferred from primitive tests.
+Shipped trust is configured with root
+`f9f6c4d0f94cedcd81a6abb84b1b60b1e58b59c54cb723d4f583e22d24602893`,
+root version 1 and threshold 1, for development activation. Preview/stable
+promotion and freshness remain inactive. Workflow variables are unset by
+default. The ordered owner procedure in [UPDATES.md](../../UPDATES.md) covers
+offline generation, `New-NexusKeysDocument.ps1`, the keys-only orphan
+`nexus-channels` branch, branch protection, the main-only `nexus-development`
+environment/secret, `NEXUS_DEVELOPMENT_PUBLISH=enabled`, first main publication
+and `Get-NexusBootstrapRelease.ps1`.
+
+No private owner key, GitHub secret, environment, metadata branch, channel or
+release was created by this change. Owner-tool CLI tests use ephemeral keys
+and disposable files under Windows PowerShell 5.1. Bootstrap tests use recording
+transport, not real HTTPS. The client verifier and trust loader are unchanged.
+First publication seeds a missing development pointer, but requires an existing
+branch and valid root-signed keys document. Freshness skips missing pointers;
+it does not bootstrap them. Branch rules that prevent Actions non-force pushes
+or token write permissions would block publication.
 
 Hosted independent exact-SHA validation, source-asset assembly timing,
 disposable Windows 11 update/rollback/update, interrupted downloads,
