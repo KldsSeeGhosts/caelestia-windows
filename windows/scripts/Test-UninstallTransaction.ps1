@@ -125,6 +125,11 @@ Add-Content -LiteralPath (Join-Path $env:CAELESTIA_FIXTURE_CONTROL 'boundaries.t
     $releaseScript = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'Install-CaelestiaRelease.ps1'))
     $releaseImport = ". (Join-Path `$payloadSource 'Caelestia-InstallCommon.ps1')"
     $releaseScript = Replace-Exactly $releaseScript $releaseImport ($releaseImport + $importBoundary)
+    # This copy installs inert data through mocked launch/integration boundaries,
+    # including on Server 2022 CI. It does not qualify the real Windows 11 app.
+    # Keep the native Windows/x64 checks; exclude only the app's OS-build floor.
+    $releaseScript = Replace-Exactly $releaseScript `
+        ' -or [Environment]::OSVersion.Version.Build -lt 22000' ''
     # The machine's VC runtime is not a prerequisite for data-only fixtures.
     $releaseScript = Replace-Exactly $releaseScript `
         'if (-not (Test-ReleaseVCRuntime ([version]$release.prerequisites.visualCppRuntime.minimumVersion))) {' `
