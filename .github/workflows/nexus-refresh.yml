@@ -1,0 +1,68 @@
+name: Nexus authenticated freshness
+on:
+  schedule:
+    - cron: '23 8 * * 1'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  development:
+    if: github.ref == 'refs/heads/main' && vars.NEXUS_DEVELOPMENT_PUBLISH == 'enabled'
+    runs-on: windows-2022
+    timeout-minutes: 10
+    environment: nexus-development
+    concurrency:
+      group: nexus-publication
+      cancel-in-progress: false
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          submodules: recursive
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: '3.12'
+      - name: Development role renews development only
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NEXUS_SIGNING_KEY: ${{ secrets.NEXUS_DEVELOPMENT_SIGNING_KEY }}
+          NEXUS_DEVELOPMENT_PUBLISH: ${{ vars.NEXUS_DEVELOPMENT_PUBLISH }}
+        run: |
+          & powershell.exe -NoProfile -NonInteractive -File "$env:GITHUB_WORKSPACE\windows\ci\Invoke-NexusPublication.ps1" `
+            -Mode refresh-development -WorkDirectory C:\nexus-refresh-development
+          if ($LASTEXITCODE -ne 0) { throw 'Development freshness refused.' }
+  promotion:
+    if: github.ref == 'refs/heads/main' && vars.NEXUS_PROMOTION_PUBLISH == 'enabled'
+    runs-on: windows-2022
+    timeout-minutes: 10
+    environment: nexus-promotion
+    concurrency:
+      group: nexus-publication
+      cancel-in-progress: false
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          submodules: recursive
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: '3.12'
+      - name: Owner-reviewed promotion role renews preview and stable
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NEXUS_SIGNING_KEY: ${{ secrets.NEXUS_PROMOTION_SIGNING_KEY }}
+          NEXUS_PROMOTION_PUBLISH: ${{ vars.NEXUS_PROMOTION_PUBLISH }}
+        run: |
+          & powershell.exe -NoProfile -NonInteractive -File "$env:GITHUB_WORKSPACE\windows\ci\Invoke-NexusPublication.ps1" `
+            -Mode refresh-promotion -WorkDirectory C:\nexus-refresh-promotion
+          if ($LASTEXITCODE -ne 0) { throw 'Promotion freshness refused.' }

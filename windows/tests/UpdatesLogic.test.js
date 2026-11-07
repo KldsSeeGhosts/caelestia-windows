@@ -62,3 +62,33 @@ test("a download link or claimed future capability is not proof of an implemente
     assert.equal(status.remoteVersionChecked, false);
     assert.equal(status.automaticUpdatesAvailable, false);
 });
+test("configured capability is explicit; channel and build identities remain separate", () => {
+    const result = logic.normalize({updatesConfigured: true, automaticUpdatesAvailable: true,
+        channel: "stable", releaseVersion: "1.0.0-dev.1.5.1", displayVersion: "1.0.0"});
+    assert.equal(result.automaticUpdatesAvailable, true);
+    assert.equal(result.channel, "stable");
+    assert.equal(result.releaseVersion, "1.0.0-dev.1.5.1");
+    assert.equal(result.displayVersion, "1.0.0");
+    assert.equal(result.remoteVersionChecked, false);
+    assert.equal(logic.normalize({channel: "evil"}).channel, "preview");
+});
+test("checks validate states, identities, bounds and release links", () => {
+    const available = {buildVersion: "0.2.0-dev.1.57.1", displayVersion: "0.2.0-preview.1",
+        bundle: {size: 1024}, notesUrl: "javascript:alert(1)"};
+    const data = {schema: 1, state: "available", channel: "preview", available};
+    assert.equal(logic.parseCheck(0, JSON.stringify(data)).available.notesUrl, manual);
+    for (const state of ["not-newer", "not-configured", "offline", "http", "too-large",
+        "bad-signature", "bad-metadata", "expired", "clock", "replay", "unsupported", "busy"]) {
+        const result = logic.parseCheck(0, JSON.stringify({...data, state}));
+        assert.equal(result.state, state);
+        assert.equal(result.available, null);
+        assert.equal(typeof logic.checkLabel(state), "string");
+    }
+    for (const mutation of [
+        {...data, state: "invented"}, {...data, channel: "arbitrary"}, {...data, schema: 2},
+        {...data, available: {...available, buildVersion: "0.2.0-dev.01.57.1"}},
+        {...data, available: {...available, bundle: {size: 0}}},
+        {...data, available: {...available, bundle: {size: 1073741825}}}
+    ]) assert.equal(logic.parseCheck(0, JSON.stringify(mutation)), null);
+    assert.equal(logic.parseCheck(1, JSON.stringify(data)), null);
+});

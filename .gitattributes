@@ -2,3 +2,10 @@
 windows/licenses/fonts/**/LICENSE -text -whitespace
 # Preserve bundled font bytes checked by sources.lock.json.
 assets/google-sans-flex/* -text
+# Signed/version source inputs have canonical bytes on Windows checkouts too.
+windows/release/version.json text eol=lf
+windows/release/update-trust.json text eol=lf
+windows/scripts/Caelestia-SemVer.ps1 text eol=lf
+windows/scripts/Caelestia-Update*.ps1 text eol=lf
+windows/scripts/Caelestia-UpdateSecurity.cs text eol=lf
+windows/tests/nexus_pipeline/pinned_candidate_contract.py -text

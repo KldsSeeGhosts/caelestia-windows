@@ -37,7 +37,8 @@ if (Test-Path -LiteralPath $shellWorkflow -PathType Leaf) {
         'Fast regressions',
         'Installer and colour regressions',
         'Native build and offscreen regressions',
-        'Windows validation'
+        'Windows validation',
+        'Nexus development publication'
     )
     $ownedPaths = @(
         '/.github/workflows/',

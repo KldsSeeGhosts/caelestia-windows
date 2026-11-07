@@ -1,0 +1,145 @@
+#requires -Version 5.1
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory)][string]$ShellRoot,
+    [Parameter(Mandatory)][string]$BuildRoot,
+    [Parameter(Mandatory)][string]$ToolRoot,
+    [Parameter(Mandatory)][string]$PairResults,
+    [Parameter(Mandatory)][string]$TrustedRoot,
+    [Parameter(Mandatory)][string]$OutputDirectory,
+    [string]$Python = 'python',
+    # Only disposable CI source/build diagnostics may be echoed. Logs never
+    # enter the public candidate directory or its release assets.
+    [switch]$EchoDiagnostics
+)
+$ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot '..\scripts\Caelestia-Toolchain.ps1')
+Initialize-CaelestiaToolchainModules
+. "$PSScriptRoot\..\scripts\Caelestia-InstallCommon.ps1"
+. "$PSScriptRoot\..\scripts\Caelestia-Update.ps1"
+foreach ($name in @('ShellRoot', 'BuildRoot', 'ToolRoot', 'PairResults', 'TrustedRoot', 'OutputDirectory')) {
+    Set-Variable -Name $name -Value (Resolve-CaelestiaDirectory (Get-Variable -Name $name -ValueOnly))
+}
+if ($ShellRoot -ne (Resolve-Path "$PSScriptRoot\..\..").Path) { throw 'Use the candidate checkout entrypoint.' }
+foreach ($root in @($ShellRoot, $BuildRoot, $ToolRoot, $PairResults, $TrustedRoot)) {
+    if ($OutputDirectory -eq $root -or $OutputDirectory.StartsWith($root + '\', [StringComparison]::OrdinalIgnoreCase) -or
+        $root.StartsWith($OutputDirectory + '\', [StringComparison]::OrdinalIgnoreCase)) { throw 'Candidate output overlaps an input.' }
+}
+if (Test-Path -LiteralPath $OutputDirectory) { throw 'Candidate assembly requires fresh output.' }
+$validator = Join-Path $TrustedRoot '.github\scripts\candidate_contract.py'
+$identity = & $Python -I -B "$PSScriptRoot\nexus_candidate.py" --shell $ShellRoot --build $BuildRoot `
+    --results $PairResults --validator $validator
+if ($LASTEXITCODE -ne 0 -or -not (Test-CaelestiaDevVersion "$identity")) { throw 'Independent candidate eligibility refused before assembly.' }
+# Only the independent exact-main gate above may reach source acquisition,
+# assembly, or any output creation. This script never calls a compiler/build.
+[IO.Directory]::CreateDirectory($OutputDirectory) | Out-Null
+$privateLogs = Join-Path $OutputDirectory 'private'
+[IO.Directory]::CreateDirectory($privateLogs) | Out-Null
+$ps = Get-WindowsPowerShellPath
+function Invoke-CandidateGate([string]$Name, [string]$Script, [string[]]$Arguments) {
+    $log = Join-Path $privateLogs "$Name.log"
+    $exitCode = 1
+    $preference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        $global:LASTEXITCODE = 1
+        & $ps -NoProfile -NonInteractive -File $Script @Arguments 2>&1 | ForEach-Object { "$_" } |
+            Set-Content -LiteralPath $log -Encoding UTF8 -ErrorAction Stop
+        $exitCode = $LASTEXITCODE
+    } finally { $ErrorActionPreference = $preference }
+    if ($exitCode -ne 0) {
+        if ($EchoDiagnostics) {
+            $tail = (Get-Content -LiteralPath $log -Tail 80 -Encoding UTF8 -ErrorAction Stop) -join "`n"
+            if ($tail.Length -gt 16000) { $tail = '[earlier output truncated]' + "`n" + $tail.Substring($tail.Length - 15970) }
+            Write-Output "Failed candidate stage: $Name (last 80 lines)"
+            Write-Output $tail
+        }
+        throw "Candidate gate failed: $Name (exit=$exitCode). Private diagnostic log: $log. Not a release artifact."
+    }
+}
+# Self-contained public Git bundles require full histories. Fetches remain
+# anonymous/read-only source acquisition on the isolated hosted runner.
+foreach ($root in @($ShellRoot, "$ShellRoot\windows\deps\quickshell", "$ShellRoot\windows\deps\m3shapes")) {
+    $shallow = & git -C $root rev-parse --is-shallow-repository
+    if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect candidate source history.' }
+    if ($shallow -eq 'true') {
+        & git -C $root fetch --unshallow origin
+        if ($LASTEXITCODE -ne 0) { throw 'Complete candidate source history is required.' }
+    }
+}
+$scripts = Join-Path $ShellRoot 'windows\scripts'
+$assets = Join-Path $OutputDirectory 'sources'
+$spec = Get-Content "$ShellRoot\windows\toolchain.json" -Raw | ConvertFrom-Json
+$qt = Join-Path $ToolRoot $spec.qtDirectory
+Invoke-CandidateGate 'sources' "$scripts\Prepare-CaelestiaSourceAssets.ps1" @(
+    '-SourceRoot', $ShellRoot, '-SourceRevision', $env:GITHUB_SHA, '-OutputDirectory', $assets,
+    '-CacheDirectory', (Join-Path $OutputDirectory 'source-cache'))
+$assembly = Join-Path $OutputDirectory 'assembly'
+Invoke-CandidateGate 'assembly' "$scripts\New-CaelestiaRelease.ps1" @(
+    '-BuildRoot', $BuildRoot, '-ReleaseId', "$identity", '-OutputDirectory', $assembly,
+    '-SupplementalNoticesRoot', (Join-Path $assets 'notices'), '-QtPrefix', $qt)
+$rootName = "caelestia-windows-$identity-windows-x64"
+$bundle = Join-Path $assembly $rootName
+$manifestHash = (Get-FileHash "$bundle\release.json").Hash.ToLowerInvariant()
+$inventoryHash = (Get-FileHash "$assets\component-inventory.json").Hash.ToLowerInvariant()
+$coverage = Join-Path $OutputDirectory 'coverage'
+Invoke-CandidateGate 'coverage' "$scripts\Prepare-CaelestiaSourceAssets.ps1" @(
+    '-AssetsRoot', $assets, '-BundleRoot', $bundle, '-ExpectedInventorySha256', $inventoryHash,
+    '-ExpectedManifestSha256', $manifestHash, '-CoverageOutputDirectory', $coverage)
+Invoke-CandidateGate 'license-lifecycle' "$scripts\Test-InstallLicenses.ps1" @(
+    '-BuildRoot', $BuildRoot, '-QtPrefix', $qt, '-NoIntegration')
+$zip = Join-Path $assembly ($rootName + '.zip')
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+$archive = [IO.Compression.ZipFile]::OpenRead($zip)
+try {
+    $entries = $archive.Entries.Count
+    $unpacked = [long](($archive.Entries | Measure-Object Length -Sum).Sum)
+} finally { $archive.Dispose() }
+$extracted = Expand-CaelestiaUpdate $zip (Join-Path $OutputDirectory 'verify-extracted') $rootName $entries $unpacked
+Invoke-CandidateGate 'verify-original-zip' "$scripts\Install-CaelestiaRelease.ps1" @(
+    '-BundleRoot', $extracted, '-VerifyOnly', '-ExpectedManifestSha256', $manifestHash)
+# VerifyOnly is data-only on Server 2022. No Windows 11 install/graphics or
+# hardware claim is made. No production OS guard bypass is present.
+$out = Join-Path $OutputDirectory 'out'
+[IO.Directory]::CreateDirectory($out) | Out-Null
+& $Python -I -B "$PSScriptRoot\nexus_candidate.py" --shell $ShellRoot --build $BuildRoot `
+    --results $PairResults --validator $validator --export-evidence $out
+if ($LASTEXITCODE -ne 0) { throw 'Final independent evidence or privacy check failed.' }
+Copy-Item -LiteralPath $zip -Destination $out
+Copy-Item -LiteralPath "$assets\project-source.zip", "$assets\supplier-source.zip" -Destination $out
+Copy-Item -LiteralPath "$coverage\component-inventory.json" -Destination $out
+Copy-Item -LiteralPath "$assets\component-inventory.json" -Destination "$out\source-assets-inventory.json"
+[IO.File]::WriteAllText("$out\manifest.sha256", ($manifestHash + "  release.json`n"), [Text.Encoding]::ASCII)
+$manifest = Read-CaelestiaStrictJsonFile "$bundle\release.json" 16777216 -AllowUtf8Bom
+$release = [ordered]@{
+    displayVersion = "$identity"; buildVersion = "$identity"; releaseId = "$identity"; tag = "v$identity"
+    sourceRevision = $env:GITHUB_SHA; backendRevision = $manifest.backendRevision
+    bundle = [ordered]@{
+        name = "$rootName.zip"; root = $rootName
+        url = "https://github.com/KldsSeeGhosts/caelestia-windows/releases/download/v$identity/$rootName.zip"
+        size = (Get-Item -LiteralPath $zip).Length; sha256 = (Get-FileHash $zip).Hash.ToLowerInvariant()
+        entries = $entries; unpackedSize = $unpacked
+    }
+    manifestSha256 = $manifestHash; profileSchema = 1; minimumUpdaterSchema = 1
+    notesUrl = "https://github.com/KldsSeeGhosts/caelestia-windows/releases/tag/v$identity"
+    provenance = @{
+        runId = $env:GITHUB_RUN_ID; runAttempt = $env:GITHUB_RUN_ATTEMPT
+        pairResultSha256 = (Get-FileHash "$out\pair-result.json").Hash.ToLowerInvariant()
+        candidateReceiptSha256 = (Get-FileHash "$out\candidate-result.json").Hash.ToLowerInvariant()
+    }
+}
+$files = @(Get-ChildItem -LiteralPath $out -File | Sort-Object Name | ForEach-Object {
+    @{ name = $_.Name; size = $_.Length; sha256 = (Get-FileHash -LiteralPath $_.FullName).Hash.ToLowerInvariant() }
+})
+Write-CaelestiaJsonAtomic "$out\candidate.json" @{
+    schema = 'caelestia-nexus-candidate'; version = 1; repository = 'KldsSeeGhosts/caelestia-windows'
+    event = 'push'; ref = 'refs/heads/main'; workflow = '.github/workflows/windows-build.yml'
+    sourceRevision = $env:GITHUB_SHA; runId = $env:GITHUB_RUN_ID; runAttempt = $env:GITHUB_RUN_ATTEMPT
+    runNumber = $env:GITHUB_RUN_NUMBER; release = $release; assets = $files
+    gates = @('independent-pair', 'sources', 'assembly', 'coverage', 'license-lifecycle', 'verify-original-zip', 'independent-payload')
+    qualification = 'component-offscreen-and-data-only-not-windows11-acceptance'
+}
+Invoke-CandidateGate 'independent-payload' "$PSScriptRoot\Test-NexusCandidatePayload.ps1" @(
+    '-CandidateDirectory', $out, '-OutputDirectory', (Join-Path $OutputDirectory 'independent-payload'),
+    '-SourceDataRoot', $ShellRoot, '-AssetsRoot', $assets)
+Write-Output "NEXUS_CANDIDATE_PASS $identity; same tested tree; no native recompilation."

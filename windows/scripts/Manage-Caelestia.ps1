@@ -1,11 +1,14 @@
 [CmdletBinding()]
 param(
     [string]$Prefix = $PSScriptRoot,
-    [ValidateSet('Status', 'Rollback', 'Watch')][string]$Command = 'Status',
+    [ValidateSet('Status', 'Rollback', 'Watch', 'CheckUpdate', 'SetChannel', 'Update')][string]$Command = 'Status',
     # A GUI request queues maintenance outside the shell's process tree.
     [switch]$Wait,
     [string]$TaskName,
     [string]$ExpectedCurrent,
+    [string]$ExpectedBuild,
+    [ValidateSet('development', 'preview', 'stable')][string]$Channel,
+    [switch]$AcceptDevelopment,
     # Watchdog operation. Its queued maintenance task writes these phases.
     [string]$OperationId,
     # Bound for a queued rollback's queued/working phase. When the deadline
@@ -14,7 +17,20 @@ param(
     [ValidateRange(1, 86400)][int]$PhaseTimeoutSeconds = 300
 )
 . (Join-Path $PSScriptRoot 'Caelestia-InstallCommon.ps1')
+. (Join-Path $PSScriptRoot 'Caelestia-Update.ps1')
 $Prefix = Resolve-CaelestiaDirectory $Prefix
+if ($Command -eq 'Update' -and -not $PSBoundParameters.ContainsKey('PhaseTimeoutSeconds')) { $PhaseTimeoutSeconds = 1800 }
+$trustPath = Join-Path $PSScriptRoot 'update-trust.json'
+$trust = if (Test-Path -LiteralPath $trustPath -PathType Leaf) {
+    Read-CaelestiaStrictJsonFile $trustPath
+} else { @{ status = 'unconfigured'; rootKeys = @() } }
+if ($Command -eq 'CheckUpdate') {
+    $record = Read-CaelestiaInstall $Prefix
+    $current = Read-CaelestiaInstall (Resolve-CaelestiaRuntimePrefix $Prefix)
+    if (-not $Channel) { $Channel = Get-CaelestiaUpdateChannel $record.profile $current.appVersion }
+    Invoke-CaelestiaUpdateCheck $trust $Channel $current.releaseId (Get-CaelestiaUpdateStatePath) | ConvertTo-Json -Depth 10 -Compress
+    return
+}
 if ($Command -eq 'Status') {
     $record = Read-CaelestiaInstall $Prefix
     $runtime = Resolve-CaelestiaRuntimePrefix $Prefix
@@ -23,22 +39,30 @@ if ($Command -eq 'Status') {
     if ($record.version -eq 2 -and $record.previous) {
         $previous = Read-CaelestiaInstall (Get-CaelestiaVersionPrefix $Prefix $record.previous)
     }
+    $releaseVersion = ''
+    if ($current.releaseId) {
+        try { $releaseVersion = (ConvertTo-CaelestiaSemVer $current.releaseId).Version } catch { }
+    }
     [ordered]@{
         schema = 1; versioned = $record.version -eq 2
         current = $(if ($current.versionId) { $current.versionId } else { 'legacy' })
         sourceRevision = $current.sourceRevision
+        releaseVersion = $releaseVersion
+        displayVersion = $(if ($current.displayVersion) { $current.displayVersion } else { $releaseVersion })
+        channel = Get-CaelestiaUpdateChannel $record.profile $current.appVersion
+        updatesConfigured = Test-CaelestiaTrustConfigured $trust
         previous = $(if ($previous) { $previous.versionId } else { '' })
         previousRevision = $(if ($previous) { $previous.sourceRevision } else { '' })
         canRollback = $null -ne $previous
         # Public previews are manually downloadable. This command reads only
         # installed state; it neither checks remote versions nor downloads.
-        automaticUpdatesAvailable = $false
+        automaticUpdatesAvailable = Test-CaelestiaTrustConfigured $trust
         remoteVersionChecked = $false
         latestVersion = $null
         manualReleaseUrl = 'https://github.com/KldsSeeGhosts/caelestia-windows/releases'
         # Compatibility field: means an automatic/authenticated channel,
         # never the existence of a public manual download.
-        downloadChannelAvailable = $false
+        downloadChannelAvailable = Test-CaelestiaTrustConfigured $trust
         releasesUrl = 'https://github.com/KldsSeeGhosts/caelestia-windows/releases'
     } | ConvertTo-Json
     return
@@ -48,9 +72,14 @@ $operationFile = ''
 $tracked = $false
 $terminalWritten = $false
 $queuedTask = ''
-function Write-Operation([string]$Id, [string]$Phase) {
+$operationKind = if ($Command -eq 'Update') { 'update' } else { 'rollback' }
+function Write-Operation([string]$Id, [string]$Phase, [string]$Step = '') {
     Write-CaelestiaJsonAtomic $operationFile @{
         schema = 1; operationId = $Id; phase = $Phase
+        kind = $operationKind
+        step = $Step
+        expectedCurrent = $(if ($ExpectedCurrent) { $ExpectedCurrent } else { $record.current })
+        expectedBuild = $ExpectedBuild; channel = $Channel
         prefix = $Prefix; installId = $record.installId
         # Bound a queued request even if its watchdog never starts or retries.
         # A later request can fence the expired worker under the prefix lock.
@@ -89,6 +118,16 @@ try {
         return
     }
     $record = Read-CaelestiaInstall $Prefix
+    if ($Command -eq 'SetChannel') {
+        if (-not $Channel) { throw 'A channel is required.' }
+        if ($Channel -eq 'development' -and -not $AcceptDevelopment) { throw 'Development updates require explicit acceptance.' }
+        $settingsFile = Join-Path $record.profile 'state\updates\settings.json'
+        Assert-CaelestiaUpdatePath $settingsFile
+        [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($settingsFile)) | Out-Null
+        Write-CaelestiaJsonAtomic $settingsFile @{ schema = 1; channel = $Channel }
+        @{ schema = 1; channel = $Channel } | ConvertTo-Json -Compress
+        return
+    }
     if ($Command -eq 'Watch' -or -not $Wait -or $TaskName) {
         $operationFile = Join-Path (Resolve-CaelestiaDirectory $record.profile) 'state\update-operation.json'
     }
@@ -99,6 +138,7 @@ try {
     if ($Command -eq 'Watch') {
         $state = Read-Operation
         if ($state -and [string]$state.operationId -eq $OperationId -and $state.phase -in @('queued', 'working')) {
+            if ($state.kind -eq 'update') { $operationKind = 'update' }
             Write-Operation $OperationId 'failed'
         }
         Unregister-ScheduledTask -TaskName ('Caelestia-MaintenanceWatch-' + $OperationId) -Confirm:$false -ErrorAction SilentlyContinue
@@ -106,8 +146,14 @@ try {
         return
     }
     if ($ExpectedCurrent) { Assert-CaelestiaVersionId $ExpectedCurrent }
+    if ($Command -eq 'Update') {
+        if (-not $ExpectedCurrent -or -not (Test-CaelestiaDevVersion $ExpectedBuild) -or -not $Channel) {
+            throw 'An update requires exact current, build and channel identities.'
+        }
+        if (-not (Test-CaelestiaTrustConfigured $trust)) { throw 'Updates are not configured.' }
+    }
     if (-not $Wait) {
-        if ($record.version -ne 2 -or -not $record.previous) { throw 'No previous version is retained.' }
+        if ($record.version -ne 2 -or ($Command -eq 'Rollback' -and -not $record.previous)) { throw 'No previous version is retained.' }
         if ($ExpectedCurrent -and $record.current -ne $ExpectedCurrent) { throw 'The selected version changed. Refresh before requesting rollback.' }
         $pending = Read-Operation
         if ($pending -and $pending.phase -in @('queued', 'working')) {
@@ -134,8 +180,9 @@ try {
         $name = 'Caelestia-Maintenance-' + $operationId
         $action = New-ScheduledTaskAction -Execute (Get-WindowsPowerShellPath) -WorkingDirectory $Prefix `
             -Argument ('-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + (Join-Path $Prefix 'Manage-Caelestia.ps1') +
-                '" -Prefix "' + $Prefix + '" -Command Rollback -Wait -TaskName "' + $name +
-                '" -ExpectedCurrent "' + $record.current + '"')
+                '" -Prefix "' + $Prefix + '" -Command ' + $Command + ' -Wait -TaskName "' + $name +
+                '" -ExpectedCurrent "' + $record.current + '" -PhaseTimeoutSeconds ' + $PhaseTimeoutSeconds +
+                $(if ($Command -eq 'Update') { ' -ExpectedBuild "' + $ExpectedBuild + '" -Channel ' + $Channel } else { '' }))
         $principal = New-ScheduledTaskPrincipal -UserId ([Security.Principal.WindowsIdentity]::GetCurrent().Name) -LogonType Interactive -RunLevel Limited
         # The worker's existing hard execution bound releases a hung worker's
         # lock. One-minute scheduler retries are configured but not assumed
@@ -172,13 +219,23 @@ try {
             if (-not $state -or $state.operationId -ne $operationId -or $state.phase -ne 'queued') {
                 throw 'The queued rollback no longer owns this operation.'
             }
+            if (($state.kind -and $state.kind -cne $operationKind) -or
+                ($state.expectedCurrent -and $state.expectedCurrent -cne $ExpectedCurrent) -or
+                ($Command -eq 'Update' -and ($state.expectedBuild -cne $ExpectedBuild -or $state.channel -cne $Channel))) {
+                throw 'The worker arguments do not match the accepted operation.'
+            }
             $tracked = $true
         }
         try {
-            if ($record.version -ne 2 -or -not $record.previous) { throw 'No previous version is retained.' }
+            if ($record.version -ne 2 -or ($Command -eq 'Rollback' -and -not $record.previous)) { throw 'No previous version is retained.' }
             if ($ExpectedCurrent -and $record.current -ne $ExpectedCurrent) { throw 'The selected version changed before rollback could start.' }
             if ($tracked) { Write-Operation $operationId 'working' }
-            Switch-CaelestiaVersion $Prefix $record.previous -Restart
+            if ($Command -eq 'Update') {
+                Invoke-CaelestiaUpdateInstall $Prefix $ExpectedCurrent $ExpectedBuild $Channel $trust {
+                    param($step)
+                    if ($tracked) { Write-Operation $operationId 'working' $step }
+                }
+            } else { Switch-CaelestiaVersion $Prefix $record.previous -Restart }
             if ($tracked) { Write-Operation $operationId 'complete'; $terminalWritten = $true }
         } catch {
             if ($tracked) { Write-Operation $operationId 'failed'; $terminalWritten = $true }

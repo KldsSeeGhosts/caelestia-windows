@@ -1,5 +1,10 @@
 # Windows release checklist
 
+Nexus remains unconfigured. Do not enable root trust or channel publication
+until the missing producer and client acceptance gates in
+[NEXUS-IMPLEMENTATION.md](NEXUS-IMPLEMENTATION.md) are complete. The current
+client tests do not certify a release or authorize a live bootstrap.
+
 This is a maintainer checklist, not an authorization to change repository
 visibility, tag, push, enable workflows or publish. Keep the existing Linux
 release workflows disabled. Record failures and untested cases rather than

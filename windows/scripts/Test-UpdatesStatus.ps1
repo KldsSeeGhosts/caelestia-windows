@@ -2,6 +2,8 @@
 [CmdletBinding()]
 param()
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'Caelestia-Toolchain.ps1')
+Initialize-CaelestiaToolchainModules
 . "$PSScriptRoot\Caelestia-InstallCommon.ps1"
 $root = Join-Path ([IO.Path]::GetTempPath()) ('caelestia-updates-status-' + [guid]::NewGuid().ToString('N'))
 [IO.Directory]::CreateDirectory($root) | Out-Null

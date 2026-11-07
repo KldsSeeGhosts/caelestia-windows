@@ -1,0 +1,13 @@
+{
+  "schema": "caelestia-update-trust",
+  "version": 1,
+  "rootVersion": 1,
+  "status": "unconfigured",
+  "repository": "KldsSeeGhosts/caelestia-windows",
+  "metadataBase": "https://raw.githubusercontent.com/KldsSeeGhosts/caelestia-windows/nexus-channels/v1/",
+  "assetPrefix": "https://github.com/KldsSeeGhosts/caelestia-windows/releases/download/",
+  "redirectHosts": ["objects.githubusercontent.com", "release-assets.githubusercontent.com"],
+  "rootKeys": [],
+  "rootThreshold": 1,
+  "requireAuthenticode": false
+}

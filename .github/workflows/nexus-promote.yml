@@ -1,0 +1,55 @@
+name: Nexus deliberate promotion
+on:
+  workflow_dispatch:
+    inputs:
+      build_version:
+        description: Exact immutable CORE-dev.EPOCH.RUN.ATTEMPT
+        type: string
+        required: true
+      channel:
+        description: Owner-approved promotion channel
+        type: choice
+        options: [preview, stable]
+        required: true
+      alias:
+        description: Matching-core preview.N, rc.N or stable core (1.0+ only)
+        type: string
+        required: true
+permissions:
+  contents: read
+jobs:
+  promote:
+    if: github.ref == 'refs/heads/main' && vars.NEXUS_PROMOTION_PUBLISH == 'enabled'
+    runs-on: windows-2022
+    timeout-minutes: 120
+    environment: nexus-promotion
+    concurrency:
+      group: nexus-publication
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          submodules: recursive
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: '3.12'
+          architecture: x64
+      - name: Authenticate retained build and promote identical bytes
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NEXUS_SIGNING_KEY: ${{ secrets.NEXUS_PROMOTION_SIGNING_KEY }}
+          NEXUS_PROMOTION_PUBLISH: ${{ vars.NEXUS_PROMOTION_PUBLISH }}
+          NEXUS_BUILD_VERSION: ${{ inputs.build_version }}
+          NEXUS_CHANNEL: ${{ inputs.channel }}
+          NEXUS_ALIAS: ${{ inputs.alias }}
+        run: |
+          & powershell.exe -NoProfile -NonInteractive -File "$env:GITHUB_WORKSPACE\windows\ci\Invoke-NexusPublication.ps1" `
+            -Mode promote -WorkDirectory C:\nexus-promote
+          if ($LASTEXITCODE -ne 0) { throw 'Nexus promotion refused.' }

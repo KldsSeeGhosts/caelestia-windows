@@ -766,7 +766,12 @@ class PairTests(unittest.TestCase):
         self.assertIn("--stage $phase --echo", workflow)
         self.assertIn("run --stage integration --echo", workflow)
         self.assertIn('-JUnit "$env:PAIR_RESULTS\\integration.raw.xml" -EchoDiagnostics', workflow)
-        self.assertNotIn("secrets.", workflow)
+        readonly, publication = workflow.split("\n  publish:\n")
+        self.assertNotIn("secrets.", readonly)
+        self.assertNotIn("contents: write", readonly)
+        self.assertEqual(1, publication.count("contents: write"))
+        self.assertIn("needs: [build, validation]", publication)
+        self.assertIn("vars.NEXUS_DEVELOPMENT_PUBLISH == 'enabled'", publication)
         self.assertNotIn("pull_request_target", workflow)
         # Parallelism is measured, never hard-coded, and reaches every compile.
         self.assertNotIn("-Jobs 2", workflow)

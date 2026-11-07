@@ -162,6 +162,10 @@ try {
     foreach ($script in @('Start-Caelestia.ps1', 'Start-CaelestiaEntry.ps1', 'Manage-Caelestia.ps1', 'Caelestia-Versions.ps1', 'Uninstall-Caelestia.ps1', 'Caelestia-InstallCommon.ps1', 'Start-DesktopShell.ps1', 'Watch-DesktopShell.ps1', 'Restore-Desktop.ps1', 'DesktopTakeover.cs', 'Install-SchemeRuntime.ps1', 'Get-AccountPicture.ps1', 'Banner-Suppression.ps1', 'Export-CaelestiaSupport.ps1', 'Caelestia-Support.ps1')) {
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot $script) -Destination $payload
     }
+    foreach ($script in @('Caelestia-SemVer.ps1', 'Caelestia-UpdateTrust.ps1', 'Caelestia-Update.ps1', 'Caelestia-UpdateSecurity.cs')) {
+        Copy-Item -LiteralPath (Join-Path $PSScriptRoot $script) -Destination $payload
+    }
+    Copy-Item -LiteralPath "$repoRoot\windows\release\version.json", "$repoRoot\windows\release\update-trust.json" -Destination $payload
     New-Item -ItemType Directory -Path "$payload\docs", "$payload\support" | Out-Null
     Copy-Item -LiteralPath "$repoRoot\windows\docs\SUPPORT-BUNDLE.md" -Destination "$payload\docs"
     Copy-Item -LiteralPath "$repoRoot\windows\support\support-bundle.schema.json",
@@ -174,7 +178,15 @@ try {
     $phaseClock.Restart()
     $supervisorSourceHash = (Get-FileHash -LiteralPath "$payload\DesktopTakeover.cs").Hash
     $supervisorCached = $false
-    if ($old -and -not $NoSupervisorCache) {
+    if (-not $NoSupervisorCache -and $buildInfo.supervisor -and
+        $buildInfo.supervisor.sourceSha256 -eq $supervisorSourceHash -and
+        $buildInfo.supervisor.clrVersion -eq [Environment]::Version.ToString() -and
+        (Test-Path -LiteralPath "$BuildRoot\install\DesktopTakeover.dll" -PathType Leaf) -and
+        (Get-FileHash -LiteralPath "$BuildRoot\install\DesktopTakeover.dll").Hash -eq $buildInfo.supervisor.assemblySha256) {
+        Copy-Item -LiteralPath "$BuildRoot\install\DesktopTakeover.dll" -Destination "$payload\DesktopTakeover.dll"
+        $supervisorCached = $true
+    }
+    if (-not $supervisorCached -and $old -and -not $NoSupervisorCache) {
         $prior = if ($old.version -eq 2) { Get-CaelestiaVersionPrefix $Prefix $old.current } else { $Prefix }
         $priorMetadata = Join-Path $prior 'DesktopTakeover.build.json'
         $priorAssembly = Join-Path $prior 'DesktopTakeover.dll'
@@ -273,9 +285,13 @@ try {
     $timings.deployQtSeconds = $phaseClock.Elapsed.TotalSeconds
     @('[Paths]', 'Prefix=.', 'Plugins=plugins', 'QmlImports=qml') | Set-Content -LiteralPath "$payload\qt.conf" -Encoding ASCII
     # install.json is written last: a staging directory without it is not an install.
+    . (Join-Path $PSScriptRoot 'Caelestia-SemVer.ps1')
+    $appVersion = Read-CaelestiaVersion "$payload\version.json"
     [ordered]@{
         product = 'caelestia-windows'; version = 1; prefix = $Prefix; profile = $ProfileRoot
         installId = $installId
+        appVersion = $appVersion.version; profileSchema = $appVersion.profileSchema
+        releaseId = $appVersion.version + '-local'
         sourceRevision = (& git -C $repoRoot rev-parse HEAD).Trim()
         backendRevision = $(if ($buildInfo) { $buildInfo.backendRevision } else { '' })
         glazierRevision = $(if ($buildInfo) { [string]$buildInfo.glazierRevision } else { '' })
