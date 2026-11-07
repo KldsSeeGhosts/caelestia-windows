@@ -281,6 +281,29 @@ class Evidence(unittest.TestCase):
                           "Shell/summary.json", "Shell/fixture.log"},
                          {file.relative_to(pair).as_posix() for file in pair.rglob("*") if file.is_file()})
 
+    def test_native_reuse_transfer_has_only_native_and_plugin_test_inputs(self):
+        tests = self.build / "caelestia/src"
+        tests.mkdir(parents=True)
+        for name in ("fixture.exe", "fixture.dll", "CTestTestfile.cmake", "private.pdb", "object.obj"):
+            (tests / name).write_bytes(b"inert")
+        (self.build / "caelestia/CTestTestfile.cmake").write_bytes(b"inert")
+        transfer = self.root / "reuse-transfer"
+        result = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-File",
+            str(ROOT / "windows/ci/Export-NexusCandidateInputs.ps1"), "-BuildRoot", str(self.build),
+            "-OutputDirectory", str(transfer), "-Reuse"], capture_output=True, text=True)
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertEqual({"b-public", "reuse-files.json"}, {p.name for p in transfer.iterdir()})
+        restored = transfer / "b-public"
+        c.check_native_outputs(restored, c.read(restored / "logs/build.json"))
+        inventory = c.read(transfer / "reuse-files.json")
+        self.assertEqual({p.relative_to(restored).as_posix() for p in restored.rglob("*") if p.is_file()},
+                         {row["path"] for row in inventory})
+        for row in inventory:
+            self.assertEqual(c.digest(restored / row["path"]), row["sha256"])
+            self.assertNotIn(Path(row["path"]).suffix, (".pdb", ".obj"))
+            self.assertNotIn("ci-pair", row["path"])
+        self.assertEqual(4, sum(row["path"].startswith("caelestia/") for row in inventory))
+
     def test_parallel_merge_finalize_and_envelope(self):
         module = p.validator(self.validator, c.read(self.shell / "windows/ci/pair-contract.json"))
         complete = c.read(self.results / "candidate-result.json")
@@ -892,30 +915,30 @@ class Pipeline(unittest.TestCase):
         self.assertIn("fetch-depth: 0", scope)
         self.assertIn("Refuse mutable dispatch inputs", scope)
         self.assertIn("Get-NativeBuildRequired.ps1", scope)
-        for job, next_job in (("checks", "packaging"), ("packaging", "fixtures"),
+        for job, next_job in (("checks", "packaging"), ("packaging", "reuse"),
                               ("fixtures", "build"), ("build", "pair")):
             block = text.split(f"\n  {job}:\n")[1].split(f"\n  {next_job}:\n")[0]
-            self.assertIn("needs: scope", block)
+            self.assertIn("needs: " + ("[scope, reuse]" if job in ("fixtures", "build") else "scope"), block)
             self.assertNotIn("Get-NativeBuildRequired.ps1", block)
             self.assertNotIn("New-NexusCandidate.ps1", block)
         validation, candidate = text.split("\n  validation:\n")[1].split("\n  candidate:\n")
         candidate = candidate.split("\n  publish:\n")[0]
-        self.assertIn("needs: [scope, checks, packaging, fixtures, build, pair]", validation)
+        self.assertIn("needs: [scope, checks, packaging, reuse, fixtures, build, pair]", validation)
         self.assertNotIn("candidate", validation.lower())
         self.assertIn("needs.scope.outputs.native", validation)
-        self.assertIn("-notin @('true', 'false')", validation)
+        self.assertIn("-notin @('none', 'reuse', 'full')", validation)
         self.assertIn("needs: [scope, pair, validation]", candidate)
         # Eligibility rechecks backend-main ancestry; only pair resolution
         # fetches that ref, so it must run before the trusted bootstrap.
         self.assertLess(candidate.index("Resolve-PairRequest.ps1"), candidate.index("pair_result.py\" bootstrap"))
         for condition in ("needs.validation.result == 'success'", "needs.pair.result == 'success'",
-                          "needs.scope.result == 'success'", "needs.scope.outputs.native == 'true'",
+                          "needs.scope.result == 'success'", "needs.scope.outputs.native == 'full'",
                           "github.event_name == 'push'", "github.ref == 'refs/heads/main'"):
             self.assertIn(condition, candidate)
         self.assertIn("New-NexusCandidate.ps1", candidate)
         self.assertNotIn("actions/cache/save@", candidate)
         self.assertEqual(1, text.count("actions/cache/save@"))
-        self.assertEqual(3, text.count("key: windows-x64-tools-contract-v1-py"))
+        self.assertEqual(4, text.count("key: windows-x64-tools-contract-v1-py"))
         self.assertIn("name: nexus-inputs-${{ github.run_id }}-${{ github.run_attempt }}", candidate)
         self.assertIn("path: C:/", candidate)
         build = text.split("\n  build:\n")[1].split("\n  pair:\n")[0]

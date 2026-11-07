@@ -16,6 +16,10 @@ if (-not $workflow.Contains('needs: [scope, fixtures, build]') -or
     -not $workflow.Contains('needs: [scope, pair, validation]')) {
     throw 'Receipt join and candidate dependencies must remain explicit.'
 }
+if (-not $workflow.Contains('needs: [scope, checks, packaging, reuse, fixtures, build, pair]') -or
+    -not $workflow.Contains('-TestOnly -ShellRoot')) {
+    throw 'Reuse must remain a required aggregate input with test-only execution.'
+}
 $blocks = [regex]::Matches($workflow, '(?m)^        run: \|\r?\n((?:          [^\r\n]*\r?\n|\r?\n)+)')
 if (-not $blocks.Count) { throw 'Workflow command blocks were not discovered.' }
 if ($blocks.Count -ne [regex]::Matches($workflow, '(?m)^        run: \|').Count) {

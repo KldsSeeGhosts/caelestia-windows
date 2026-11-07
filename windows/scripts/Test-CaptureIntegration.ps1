@@ -23,7 +23,16 @@ foreach ($inputPath in @('windows/capture/src/main.rs', 'windows/capture/assets/
     'windows/sources.lock.json', 'elsewhere/implementation.rs', 'windows/toolchain.json',
     'windows/scripts/Build-Prototype.ps1')) {
     Assert-True (Test-CaelestiaCaptureNativeInput $inputPath) "Native reuse must refuse: $inputPath"
+    Assert-True (Test-CaelestiaCiNativeInput $inputPath) "CI native reuse must refuse: $inputPath"
 }
+# The installer/release override still permits local script edits; CI does not.
+foreach ($inputPath in @('windows/scripts/Test-Validation.ps1', '.github/ISSUE_TEMPLATE/bug_report.yml',
+    'windows/ci/README.md', 'windows/tests/pair_contract/test_pair_contract.py', 'unknown-input.txt',
+    'windows/shell/undeclared.qml', 'windows/shell/../shell.qml')) {
+    Assert-True (Test-CaelestiaCiNativeInput $inputPath) "CI native reuse must refuse: $inputPath"
+}
+Assert-True (-not (Test-CaelestiaCaptureNativeInput 'windows/scripts/Test-Validation.ps1')) 'Installer QML/script override unchanged.'
+Assert-True (-not (Test-CaelestiaCiNativeInput 'windows/shell/shell.qml')) 'Declared QML may reuse in CI.'
 Assert-True (-not (Test-CaelestiaCaptureNativeInput 'windows/shell/shell.qml')) 'QML-only reuse remains possible.'
 $fixture = Join-Path ([IO.Path]::GetTempPath()) ('caelestia-capture-contract-' + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path "$fixture\windows\capture" -Force | Out-Null
@@ -59,7 +68,10 @@ Add-Content -LiteralPath "$fixture\windows\capture\Cargo.lock" -Value '# corrupt
 Assert-Rejected { Get-CaelestiaCaptureSource $fixture } 'Cargo.lock does not match'
 $workflow = Get-Content -LiteralPath "$repo\.github\workflows\windows-build.yml" -Raw
 $mirror = Get-Content -LiteralPath "$repo\windows\ci\windows-build.yml.template" -Raw
-Assert-True ($workflow.Replace("`r`n", "`n") -ceq $mirror.Replace("`r`n", "`n")) 'Workflow mirror must remain exact.'
+Assert-True ([Convert]::ToBase64String([IO.File]::ReadAllBytes("$repo\.github\workflows\windows-build.yml")) -ceq
+    [Convert]::ToBase64String([IO.File]::ReadAllBytes("$repo\windows\ci\windows-build.yml.template"))) 'Workflow mirror must remain byte-identical.'
+Assert-True ($workflow.Contains('name: native-reuse-${{ github.sha }}') -and
+    $workflow.Contains('retention-days: 14')) 'Trusted native reuse artifact must be retained.'
 Assert-True ($workflow.Contains('Test-CaptureRust.ps1') -and $workflow.Contains('C:/ci-capture/capture-rust.json')) 'Public gate and sanitized receipt upload required.'
 $nativeJob = ($workflow -split '(?m)^  build:\r?$')[1] -split '(?m)^  pair:\r?$' | Select-Object -First 1
 Assert-True ($nativeJob.Contains('Test-CaptureRust.ps1') -and -not $nativeJob.Contains('New-NexusCandidate.ps1')) 'Capture validation must not wait for candidate assembly.'
