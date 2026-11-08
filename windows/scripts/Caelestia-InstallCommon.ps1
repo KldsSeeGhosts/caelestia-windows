@@ -14,6 +14,9 @@ function Get-CaelestiaLongPath([string]$Path) {
     $full = [IO.Path]::GetFullPath($Path)
     $root = [IO.Path]::GetPathRoot($full)
     if ($full.Length -gt $root.Length) { $full = $full.TrimEnd('\', '/') }
+    # A volume root is already its own canonical spelling. Returning here keeps
+    # root checks free of I/O, including a UNC share that does not answer.
+    if ($full -eq $root) { return $full }
     try {
         $item = Get-Item -LiteralPath $full -Force -ErrorAction Stop
         if ($item.FullName) {
@@ -42,8 +45,16 @@ function Resolve-CaelestiaDirectory([string]$Path) {
     if (-not $Path -or $Path.IndexOfAny([char[]]@('"', "`r", "`n")) -ge 0) {
         throw 'A nonempty Windows directory path is required.'
     }
+    # A bare drive is drive-relative: GetFullPath resolves it against whatever
+    # directory is current on that drive, which can be the volume root or any
+    # user location. Refuse it before that process state is consulted.
+    if ($Path -match '^[A-Za-z]:$') { throw "Unsafe directory: $Path" }
     $full = Get-CaelestiaLongPath $Path
-    if ($full -eq [IO.Path]::GetPathRoot($full).TrimEnd('\')) { throw "Unsafe directory: $full" }
+    # Get-CaelestiaLongPath keeps the trailing separator of a volume root, so
+    # compare both spellings without it. Without the trim, D:\ would pass the
+    # guard and an uninstall with -Purge could remove the whole volume.
+    $root = [IO.Path]::GetPathRoot($full)
+    if ($root -and $full.TrimEnd('\', '/') -eq $root.TrimEnd('\', '/')) { throw "Unsafe directory: $full" }
     foreach ($protected in @($env:USERPROFILE, $env:WINDIR, $env:ProgramFiles, ${env:ProgramFiles(x86)}, $env:LOCALAPPDATA, $env:APPDATA, $env:TEMP)) {
         if (-not $protected) { continue }
         $protectedFull = Get-CaelestiaLongPath $protected

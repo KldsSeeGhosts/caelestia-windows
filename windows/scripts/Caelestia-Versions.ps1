@@ -174,16 +174,44 @@ function Install-CaelestiaVersion([string]$Prefix, [string]$Payload, [switch]$Re
         ($old -and (-not (Test-CaelestiaSamePath $old.profile $candidate.profile) -or $old.installId -ne $candidate.installId))) {
         throw 'Prepared payload does not match this installation and profile.'
     }
-    # A Run value that cannot fit must fail before the selector changes. The
-    # root launcher is the file whose 8.3 name can shorten the command, so an
-    # existing install can be checked now; a first install defers the check
-    # until Copy-CaelestiaRootEntries has placed that launcher.
-    $deferRunPreflight = $false
+    # A Run value that cannot fit must fail before publication, not after a new
+    # version directory and new root scripts already exist. An existing install
+    # already has the launcher, whose 8.3 name can shorten the command. A
+    # baseline install (the layout main still writes) has none, so copy the
+    # prepared launcher into place just long enough to build the exact command,
+    # then remove it again. A refusal leaves the prefix unchanged, and the
+    # command checked here is the one Copy-CaelestiaRootEntries makes possible.
     if (-not $NoIntegration) {
-        if (Test-Path -LiteralPath (Join-Path $Prefix 'Caelestia-Launcher.ps1') -PathType Leaf) {
+        $launcher = Join-Path $Prefix 'Caelestia-Launcher.ps1'
+        $probeLauncher = $false
+        $probeRoot = $false
+        # A fresh prefix has no registration yet, so its first install only
+        # needs the probe when autostart was requested. An existing prefix may
+        # own a Run value, which the helper below refreshes on an upgrade.
+        if (-not (Test-Path -LiteralPath $launcher -PathType Leaf) -and
+            ($Autostart -or (Test-Path -LiteralPath $Prefix -PathType Container))) {
+            $launcherSource = Join-Path $Payload 'Caelestia-Launcher.ps1'
+            if (Test-Path -LiteralPath $launcherSource -PathType Leaf) {
+                if (-not (Test-Path -LiteralPath $Prefix -PathType Container)) {
+                    [IO.Directory]::CreateDirectory($Prefix) | Out-Null
+                    $probeRoot = $true
+                }
+                [IO.File]::Copy($launcherSource, $launcher, $false)
+                $probeLauncher = $true
+            }
+        }
+        try {
             Assert-CaelestiaRunValuePreflight $Prefix -Autostart:$Autostart
-        } else {
-            $deferRunPreflight = $true
+        } finally {
+            if ($probeLauncher) {
+                try { [IO.File]::Delete($launcher) }
+                catch { Write-Warning "Could not remove the launcher preflight probe: $($_.Exception.Message)" }
+            }
+            if ($probeRoot) {
+                try {
+                    if (@(Get-ChildItem -LiteralPath $Prefix -Force).Count -eq 0) { [IO.Directory]::Delete($Prefix) }
+                } catch { Write-Warning "Could not remove the empty preflight prefix: $($_.Exception.Message)" }
+            }
         }
     }
     $revision = if ($candidate.sourceRevision -match '^[a-f0-9]{8,40}$') { $candidate.sourceRevision.Substring(0, 8) } else { 'local' }
@@ -228,7 +256,6 @@ function Install-CaelestiaVersion([string]$Prefix, [string]$Payload, [switch]$Re
         }
         Stop-CaelestiaHosts $Prefix
         Copy-CaelestiaRootEntries $Prefix $runtime
-        if ($deferRunPreflight) { Assert-CaelestiaRunValuePreflight $Prefix -Autostart:$Autostart }
         Write-CaelestiaJsonAtomic (Join-Path $Prefix 'install.json') (New-CaelestiaRootRecord $Prefix $newRecord $previous)
         # Point runtime.json at the generation verified above before the
         # readiness clock starts. If none was found, activation starts fixed.

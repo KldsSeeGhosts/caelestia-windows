@@ -110,6 +110,31 @@ function Read-Shortcut([string]$Path) {
     }
 }
 Assert-IntegrationNaming
+
+# The resolver is the destructive-path guard used before any prefix or profile
+# is published, switched or purged. A volume root in any spelling must be
+# refused, and the profile, home and Windows-directory refusals must survive.
+# This only reads: no root, user directory or missing drive is created or
+# touched, and the resolver returns before I/O for a root.
+$systemDrive = $env:SystemDrive.TrimEnd('\')
+foreach ($unsafe in @(
+    $systemDrive, $systemDrive + '\', $systemDrive + '/', $systemDrive.ToLowerInvariant() + '\',
+    '\\?\' + $systemDrive + '\',
+    'D:', 'D:\', 'D:/', 'd:\', '\\?\D:\',
+    '\\server\share', '\\server\share\', '\\?\UNC\server\share', '\\?\UNC\server\share\'
+)) {
+    $refused = $false
+    try { $null = Resolve-CaelestiaDirectory $unsafe } catch { $refused = $true }
+    Assert $refused ("Resolve-CaelestiaDirectory accepted the unsafe root '{0}'." -f $unsafe)
+}
+foreach ($protected in @($env:USERPROFILE, $env:WINDIR, (Split-Path -Parent $env:USERPROFILE))) {
+    $refused = $false
+    try { $null = Resolve-CaelestiaDirectory $protected } catch { $refused = $true }
+    Assert $refused ("Resolve-CaelestiaDirectory accepted the protected location '{0}'." -f $protected)
+}
+Assert ((Resolve-CaelestiaDirectory $root) -eq $root) 'The resolver refused its own resolved test root.'
+Write-Output 'PASS resolver refusals: every volume-root and UNC spelling, the profile, home and Windows directory are refused read-only.'
+
 function New-Payload([string]$Prefix, [string]$Label, [string]$AppVersion = '') {
     $path = Join-Path $root ('payload-' + [guid]::NewGuid().ToString('N'))
     [IO.Directory]::CreateDirectory($path) | Out-Null
@@ -1268,24 +1293,23 @@ $hasWindow = [CaelestiaLauncherProbe.Native]::GetConsoleWindow() -ne [IntPtr]::Z
     Write-Output 'PASS launch length: a command that cannot fit is refused and leaves the existing Run value untouched.'
 
     # An upgrade whose existing Run value fits main's format but whose new
-    # command does not must fail before activation, with the selected version
-    # and every entry untouched. A late refusal during integration must also
-    # roll back to the previous version without rebuilding the refused command.
-    # Both need a volume that creates no 8.3 names; elsewhere the launcher short
-    # path makes the fixture fit.
-    $preflightNameLength = 80 - $shortRoot.Length - 1
-    if ($preflightNameLength -lt 4) {
-        Write-Output 'SKIP run-value preflight: TEMP is too deep for the 80-character prefix fixture.'
-    } else {
-        $preflightPrefix = Join-Path $shortRoot ('pf-' + ('x' * ($preflightNameLength - 3)))
-        Assert ($preflightPrefix.Length -eq 80) 'The preflight fixture prefix has the wrong length.'
-        [IO.Directory]::CreateDirectory($preflightPrefix) | Out-Null
-        $null = Install-CaelestiaVersion $preflightPrefix (New-Payload $preflightPrefix 'pf-a')
-        $preflightA = (Read-CaelestiaInstall $preflightPrefix).current
-        $preflightLauncher = Join-Path $preflightPrefix 'Caelestia-Launcher.ps1'
-        if (Get-CaelestiaShortPath $preflightLauncher) {
-            Write-Output 'SKIP run-value preflight: the test volume creates 8.3 short names, so the 80-character prefix still fits.'
+    # command does not must fail before publication, with the selected version,
+    # root scripts and every entry untouched. A late refusal during integration
+    # must also roll back to the previous version without rebuilding the
+    # refused command. Shortening is disabled for this scenario so it runs on
+    # every volume; the filesystem-dependent shortening test above is separate.
+    $savedShortPath = ${function:Get-CaelestiaShortPath}
+    ${function:Get-CaelestiaShortPath} = { param([string]$Path) return '' }
+    try {
+        $preflightNameLength = 80 - $shortRoot.Length - 1
+        if ($preflightNameLength -lt 4) {
+            Write-Output 'SKIP run-value preflight: TEMP is too deep for the 80-character prefix fixture.'
         } else {
+            $preflightPrefix = Join-Path $shortRoot ('pf-' + ('x' * ($preflightNameLength - 3)))
+            Assert ($preflightPrefix.Length -eq 80) 'The preflight fixture prefix has the wrong length.'
+            [IO.Directory]::CreateDirectory($preflightPrefix) | Out-Null
+            $null = Install-CaelestiaVersion $preflightPrefix (New-Payload $preflightPrefix 'pf-a')
+            $preflightA = (Read-CaelestiaInstall $preflightPrefix).current
             $preflightIntegration = Get-CaelestiaIntegration $preflightPrefix
             $preflightRunKey = Get-CaelestiaAutostartKey
             $oldFormatRun = '"' + (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') +
@@ -1339,8 +1363,49 @@ $hasWindow = [CaelestiaLauncherProbe.Native]::GetConsoleWindow() -ne [IntPtr]::Z
             } finally {
                 Remove-ItemProperty -LiteralPath $preflightRunKey -Name $preflightIntegration.RunName -ErrorAction SilentlyContinue
             }
-            Write-Output 'PASS run-value preflight: a command that no longer fits fails before activation and a late refusal rolls back untouched.'
+
+            # Baseline upgrade: main installs directly into the prefix and has
+            # no root launcher. A refusal must still happen before a version
+            # directory, replaced root scripts or a probe launcher is left.
+            $baselinePrefix = Join-Path $shortRoot ('bl-' + ('b' * ($preflightNameLength - 3)))
+            Assert ($baselinePrefix.Length -eq 80) 'The baseline fixture prefix has the wrong length.'
+            [IO.Directory]::CreateDirectory($baselinePrefix) | Out-Null
+            $baselinePayload = New-Payload $baselinePrefix 'baseline'
+            foreach ($baselineFile in @(Get-ChildItem -LiteralPath $baselinePayload -File)) {
+                [IO.File]::Move($baselineFile.FullName, (Join-Path $baselinePrefix $baselineFile.Name))
+            }
+            [IO.Directory]::Delete($baselinePayload)
+            Remove-Item -LiteralPath (Join-Path $baselinePrefix 'Caelestia-Launcher.ps1') -Force
+            $baselineRecord = Get-Content -LiteralPath (Join-Path $baselinePrefix 'install.json') -Raw
+            $baselineStart = Get-Content -LiteralPath (Join-Path $baselinePrefix 'Start-Caelestia.ps1') -Raw
+            $baselineIntegration = Get-CaelestiaIntegration $baselinePrefix
+            $baselineRunKey = Get-CaelestiaAutostartKey
+            $baselineRun = '"' + (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') +
+                '" -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' +
+                (Join-Path $baselinePrefix 'Start-Caelestia.ps1') + '"'
+            New-CaelestiaRegistryKey $baselineRunKey
+            New-ItemProperty -Path $baselineRunKey -Name $baselineIntegration.RunName -PropertyType String `
+                -Value $baselineRun -Force | Out-Null
+            try {
+                $baselineFailed = $false
+                $baselineText = ''
+                try { $null = Install-CaelestiaVersion $baselinePrefix (New-Payload $baselinePrefix 'baseline-update') }
+                catch { $baselineFailed = $true; $baselineText = $_.Exception.Message }
+                Assert $baselineFailed 'A baseline upgrade with an oversized Run value was accepted.'
+                Assert ($baselineText -match '260') 'A refused baseline upgrade did not explain the 260-character limit.'
+                Assert (-not (Test-Path -LiteralPath (Join-Path $baselinePrefix 'versions'))) 'A refused baseline upgrade published a version.'
+                Assert (-not (Test-Path -LiteralPath (Join-Path $baselinePrefix 'Caelestia-Launcher.ps1'))) 'A refused baseline upgrade left a launcher probe behind.'
+                Assert ((Get-Content -LiteralPath (Join-Path $baselinePrefix 'install.json') -Raw) -eq $baselineRecord) 'A refused baseline upgrade rewrote the root record.'
+                Assert ((Get-Content -LiteralPath (Join-Path $baselinePrefix 'Start-Caelestia.ps1') -Raw) -eq $baselineStart) 'A refused baseline upgrade replaced a root script.'
+                $baselineKept = Get-ItemProperty -LiteralPath $baselineRunKey -Name $baselineIntegration.RunName -ErrorAction SilentlyContinue
+                Assert ($null -ne $baselineKept -and [string]$baselineKept.($baselineIntegration.RunName) -eq $baselineRun) 'A refused baseline upgrade changed the existing Run value.'
+            } finally {
+                Remove-ItemProperty -LiteralPath $baselineRunKey -Name $baselineIntegration.RunName -ErrorAction SilentlyContinue
+            }
+            Write-Output 'PASS run-value preflight: a command that no longer fits fails before publication, including a baseline upgrade without a launcher, and a late refusal rolls back untouched.'
         }
+    } finally {
+        Set-Item -Path function:Get-CaelestiaShortPath -Value $savedShortPath
     }
 
     # Regression: TEMP itself can be an 8.3 short path (hosted runners use

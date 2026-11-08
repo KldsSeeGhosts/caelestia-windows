@@ -33,7 +33,7 @@ $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
 if ($SourceRoot) { $repoRoot = (Resolve-Path -LiteralPath $SourceRoot).Path }
 . (Join-Path $repoRoot 'windows\capture\Source.ps1')
 if ($NoIntegration -and ($Restart -or $Autostart -or $DesktopShortcut -or
-    [IO.Path]::GetFullPath($Prefix).TrimEnd('\') -eq [IO.Path]::GetFullPath((Join-Path $env:LOCALAPPDATA 'Programs\caelestia-windows')).TrimEnd('\'))) {
+    (Test-CaelestiaSamePath $Prefix (Join-Path $env:LOCALAPPDATA 'Programs\caelestia-windows')))) {
     throw '-NoIntegration requires a separate prefix and cannot launch or register autostart or a desktop shortcut.'
 }
 $timings = [ordered]@{}
@@ -106,8 +106,12 @@ foreach ($dll in @('msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll')) {
 }
 $Prefix = Resolve-CaelestiaDirectory $Prefix
 $ProfileRoot = Resolve-CaelestiaDirectory $ProfileRoot
+$prefixFull = Get-CaelestiaLongPath $Prefix
 foreach ($sourceRoot in @($BuildRoot, $QtPrefix, $VCRuntimeRoot, $repoRoot, $ProfileRoot)) {
-    if ($Prefix -eq $sourceRoot -or $sourceRoot.StartsWith($Prefix + '\', [StringComparison]::OrdinalIgnoreCase) -or $Prefix.StartsWith($sourceRoot + '\', [StringComparison]::OrdinalIgnoreCase)) {
+    $sourceFull = Get-CaelestiaLongPath $sourceRoot
+    if ([string]::Equals($prefixFull, $sourceFull, [StringComparison]::OrdinalIgnoreCase) -or
+        $sourceFull.StartsWith($prefixFull + '\', [StringComparison]::OrdinalIgnoreCase) -or
+        $prefixFull.StartsWith($sourceFull + '\', [StringComparison]::OrdinalIgnoreCase)) {
         throw "Installation prefix must be separate from sources, build, Qt and profile: $sourceRoot"
     }
 }

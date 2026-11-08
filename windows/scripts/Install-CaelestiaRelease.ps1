@@ -276,8 +276,11 @@ if (-not $ProfileRoot) {
 }
 $ProfileRoot = Assert-ReleaseDirectory (Resolve-CaelestiaDirectory $ProfileRoot)
 foreach ($pair in @(@($Prefix, $ProfileRoot), @($Prefix, $BundleRoot), @($ProfileRoot, $BundleRoot))) {
-    if ($pair[0] -eq $pair[1] -or $pair[0].StartsWith($pair[1] + '\', [StringComparison]::OrdinalIgnoreCase) -or
-        $pair[1].StartsWith($pair[0] + '\', [StringComparison]::OrdinalIgnoreCase)) {
+    $left = Get-CaelestiaLongPath $pair[0]
+    $right = Get-CaelestiaLongPath $pair[1]
+    if ([string]::Equals($left, $right, [StringComparison]::OrdinalIgnoreCase) -or
+        $left.StartsWith($right + '\', [StringComparison]::OrdinalIgnoreCase) -or
+        $right.StartsWith($left + '\', [StringComparison]::OrdinalIgnoreCase)) {
         throw 'Prefix, profile and extracted release must be separate, non-nested directories.'
     }
 }
