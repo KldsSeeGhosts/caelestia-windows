@@ -20,9 +20,10 @@
         the native outputs the packager consumes;
       * completeness against the reviewed inventories and release.json,
         including deleted capture host, supervisor, bootstrap, script and Qt DLL;
-      * exact publisher subjects, including a lookalike rejection;
-      * the reviewed Qt publisher identity, including lookalike, prefix and
-        impostor-field rejections;
+      * exact publisher subjects, including lookalike and .NET-encoded quoted or
+        escaped CN/O rejections;
+      * the reviewed Qt publisher identity, including lookalike, prefix,
+        impostor-field and .NET-encoded quoted or escaped CN/O rejections;
       * signature acceptance, missing timestamps and unexpected signers;
       * end-to-end exit codes of Test-AuthenticodeSignatures.ps1 on a synthetic
         bundle, including a rejected untrusted chain.
@@ -230,24 +231,34 @@ try {
     $passed += 4
 
     # --- Checked-in inventory versus the real payload lists -----------------
-    # A payload script added to either installer, or dropped from one, must be
-    # reflected in windows/release/signing-inventory.json or this fails.
-    $inventoryScripts = @($realExpected.signed | Where-Object { $_ -cmatch '\.ps1$' } |
+    # The two installers deploy different sets on purpose, so each list is
+    # compared separately. A script dropped from either list fails here even
+    # while the other installer still deploys it. The developer assembler
+    # deploys two support scripts the release installer omits; the release
+    # installer deploys itself, which the assembler does not.
+    $inventoryPayloadScripts = @($realExpected.signed | Where-Object { $_ -cmatch '^payload/[^/]+\.ps1$' } |
         ForEach-Object { ($_ -split '/')[-1] } | Sort-Object -CaseSensitive -Unique)
-    $buildScripts = Get-InstallerScriptNames (Join-Path $PSScriptRoot 'Install-Caelestia.ps1')
-    $releaseScripts = Get-InstallerScriptNames (Join-Path $PSScriptRoot 'Install-CaelestiaRelease.ps1')
-    $deployedScripts = @(@($buildScripts) + @($releaseScripts) | Sort-Object -CaseSensitive -Unique)
-    Assert-True (@($deployedScripts | Where-Object { $inventoryScripts -cnotcontains $_ }).Count -eq 0) `
-        'every script the installers deploy is in the signed inventory'
-    Assert-True (@($inventoryScripts | Where-Object { $deployedScripts -cnotcontains $_ }).Count -eq 0) `
-        'the signed inventory lists only scripts the installers deploy'
-    Assert-True ($buildScripts -ccontains 'Start-Caelestia.ps1' -and $buildScripts -ccontains 'Caelestia-Update.ps1') `
-        'the developer assembler script list was read'
+    $buildOnlyScripts = @('Caelestia-Support.ps1', 'Export-CaelestiaSupport.ps1')
+    $releaseOnlyScripts = @('Install-CaelestiaRelease.ps1')
+    $buildScripts = @(Get-InstallerScriptNames (Join-Path $PSScriptRoot 'Install-Caelestia.ps1'))
+    $releaseScripts = @(Get-InstallerScriptNames (Join-Path $PSScriptRoot 'Install-CaelestiaRelease.ps1'))
+    Assert-True (($buildScripts -join '|') -ceq ($inventoryPayloadScripts -join '|')) `
+        "the developer assembler script list differs from the signed inventory: $($buildScripts -join ', ')"
+    $expectedReleaseScripts = @(@($inventoryPayloadScripts | Where-Object { $buildOnlyScripts -cnotcontains $_ }) +
+        $releaseOnlyScripts | Sort-Object -CaseSensitive -Unique)
+    Assert-True (($releaseScripts -join '|') -ceq ($expectedReleaseScripts -join '|')) `
+        "the release installer script list differs from the signed inventory: $($releaseScripts -join ', ')"
+    Assert-True (@($realExpected.signed) -ccontains 'Install-CaelestiaRelease.ps1') `
+        'the signed inventory includes the release bootstrap script'
     $passed += 3
 
-    # The native build supplies the first-party PE files. Each inventory entry
-    # must follow the assembler's copy rules, and the packager's input list must
-    # not grow without an inventory update.
+    # The native build supplies the first-party PE files. This fixture has no
+    # build root: Build-Prototype.ps1 writes it to a caller-chosen directory.
+    # It therefore checks the packager's literal input list (including the
+    # install/qml directory) rather than a real file listing. A native output
+    # renamed or removed under install/qml is caught only when the inventory or
+    # this expected list changes with it. Check a real build with
+    # Test-AuthenticodeSignatures.ps1 -BundleRoot once the bundle exists.
     $nativeInputs = Get-NativePackagerInputs (Join-Path $PSScriptRoot 'New-CaelestiaRelease.ps1')
     $expectedNative = @('install/DesktopTakeover.dll', 'install/caelestia-capture.exe', 'install/qml', 'quickshell/qs.exe') |
         Sort-Object -CaseSensitive
@@ -379,6 +390,40 @@ try {
     Assert-True (-not $decision.ok -and ($decision.reasons -contains 'unexpected-signer')) 'lookalike publisher is rejected'
     $decision = Test-CaelestiaSignatureRecord $good -ExpectedSignerSubject 'CN=SignPath Foundation' -RequireTimestamp
     Assert-True (-not $decision.ok -and ($decision.reasons -contains 'unexpected-signer')) 'a subject prefix is not accepted'
+    # The project publisher is an exact literal subject too. .NET keeps quoted
+    # and escaped CN/O renderings distinct, so a certificate that only reuses
+    # the approved values in another encoding is a different subject and fails.
+    $encodedProjectSubjects = @(
+        'CN="SignPath Foundation", O=SignPath Foundation'
+        'CN=SignPath Foundation, O="SignPath Foundation"'
+        'CN=SignPath \Foundation, O=SignPath Foundation'
+        'CN=SignPath Foundation, O=SignPath \Foundation'
+        'CN="SignPath Foundation, Impostor", O=SignPath Foundation'
+    ) | ForEach-Object {
+        [Security.Cryptography.X509Certificates.X500DistinguishedName]::new($_).Name
+    }
+    foreach ($encodedSubject in $encodedProjectSubjects) {
+        $encodedRecord = [pscustomobject]@{
+            Status = 'Valid'
+            SignerCertificate = [pscustomobject]@{ Subject = $encodedSubject }
+            TimeStamperCertificate = $timestamp
+        }
+        $decision = Test-CaelestiaSignatureRecord $encodedRecord -ExpectedSignerSubject $projectSubject -RequireTimestamp
+        Assert-True (-not [string]::Equals($encodedSubject, $projectSubject, [StringComparison]::OrdinalIgnoreCase)) `
+            "the encoded project subject differs from the reviewed literal: $encodedSubject"
+        Assert-True (-not $decision.ok -and ($decision.reasons -contains 'unexpected-signer')) `
+            "the encoded project subject is rejected: $encodedSubject"
+        $passed += 2
+    }
+    $wrongCaseProject = 'CN=signpath foundation, O=SignPath Foundation'
+    $decision = Test-CaelestiaSignatureRecord ([pscustomobject]@{
+            Status = 'Valid'
+            SignerCertificate = [pscustomobject]@{ Subject = $wrongCaseProject }
+            TimeStamperCertificate = $timestamp
+        }) -ExpectedSignerSubject $projectSubject -RequireTimestamp
+    Assert-True (-not $decision.ok -and ($decision.reasons -contains 'unexpected-signer')) `
+        'a differently cased project subject is rejected'
+    $passed++
     $noTimestamp = [pscustomobject]@{
         Status = 'Valid'
         SignerCertificate = [pscustomobject]@{ Subject = $projectSubject }
@@ -392,8 +437,9 @@ try {
 
     # --- Reviewed Qt publisher identity -------------------------------------
     # The approved subjects are the ones measured with Get-AuthenticodeSignature
-    # on the 90 reviewed Qt DLLs. Matching is on the whole CN and O values, so a
-    # suffix, shared prefix or unrelated organization never passes.
+    # on the 90 reviewed Qt DLLs. Matching is the exact literal subject only, so
+    # a suffix, shared prefix, unrelated organization, duplicate field or a
+    # quoted/escaped rendering of the approved CN and O never passes.
     $approvedQtSubjects = @(Get-CaelestiaQtSignerSubjects)
     Assert-True ($approvedQtSubjects.Count -ge 1) 'the reviewed Qt subject list is not empty'
     foreach ($qtSubject in $approvedQtSubjects) {
@@ -412,15 +458,43 @@ try {
         'CN=Qt, O=The QT Company Oy'
         'CN=The QT Company Oy'
         'The QT Company Oy'
+        'CN=the qt company oy, O=The QT Company Oy'
         'CN="The QT Company Oy, Impostor", O=The QT Company Oy'
         'CN=The QT Company Oy\, Impostor, O=The QT Company Oy'
     )
     foreach ($qtSubject in $qtLookalikes) {
         Assert-True (-not (Test-CaelestiaQtSignerSubject $qtSubject)) "the Qt lookalike is rejected: $qtSubject"
     }
+    # .NET keeps quoted and escaped CN/O values in the rendered subject. These
+    # certificates reuse the approved values but are not the measured literal,
+    # so both the identity check and the signature decision reject them.
+    $encodedQtSubjects = @(
+        'CN="The ""QT"" Company Oy", O=The QT Company Oy'
+        'CN=The Q\T Company Oy, O=The QT Company Oy'
+        'CN=The QT Company Oy, O="The ""QT"" Company Oy"'
+        'CN=The QT Company Oy, O=The Q\T Company Oy'
+        'CN="The ""QT"" Company Oy", O="The ""QT"" Company Oy"'
+        'CN=The Q\T Company Oy, O=The Q\T Company Oy'
+    ) | ForEach-Object {
+        [Security.Cryptography.X509Certificates.X500DistinguishedName]::new($_).Name
+    }
+    foreach ($qtSubject in $encodedQtSubjects) {
+        Assert-True (-not (Test-CaelestiaQtSignerSubject $qtSubject)) `
+            "the encoded Qt subject is rejected: $qtSubject"
+        $decision = Test-CaelestiaSignatureRecord ([pscustomobject]@{
+                Status = 'Valid'
+                SignerCertificate = [pscustomobject]@{ Subject = $qtSubject }
+                TimeStamperCertificate = $timestamp
+            }) -QtVendorSigner -RequireTimestamp
+        Assert-True (-not $decision.ok -and ($decision.reasons -contains 'unexpected-signer')) `
+            "the encoded Qt subject fails the signature decision: $qtSubject"
+        $passed += 2
+    }
+    # A renewed Qt certificate, even with the same CN and O, is a new literal.
+    # It must fail until a reviewed change adds the measured subject above.
     $reissuedQtSubject = 'CN=The QT Company Oy, O=The QT Company Oy, C=FI, SERIALNUMBER=9999999-9'
-    Assert-True (Test-CaelestiaQtSignerSubject $reissuedQtSubject) `
-        'a re-issued certificate from the reviewed Qt organization is accepted'
+    Assert-True (-not (Test-CaelestiaQtSignerSubject $reissuedQtSubject)) `
+        'a re-issued Qt certificate fails until its literal is reviewed'
     $passed += 1 + $approvedQtSubjects.Count + $qtLookalikes.Count + 1
 
     # --- Policy decisions with an injected provider -------------------------

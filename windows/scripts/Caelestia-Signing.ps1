@@ -14,14 +14,14 @@
 #   CN=The QT Company Oy, O=The QT Company Oy, L=Espoo, S=Uusimaa, C=FI,
 #   SERIALNUMBER=2637805-2, OID.2.5.4.15=Private Organization,
 #   OID.1.3.6.1.4.1.311.60.2.1.3=FI
-# Matching accepts that literal subject, or a re-issued certificate whose parsed
-# CN and O fields are exactly the approved values. A substring, prefix or
-# lookalike subject is rejected; there is no pattern fallback.
+# Matching is the exact literal subject only. Do not parse CN and O and rebuild
+# an identity from the fields: .NET renders quoted and escaped values as
+# different strings, and normalising them would let an impostor that reuses the
+# trusted CN and O values pass. A future Qt certificate renewal changes this
+# subject, so verification fails with `unexpected-signer` until a reviewed
+# update measures the new Qt DLLs and adds the new literal subject here.
 $script:CaelestiaApprovedQtSubjects = @(
     'CN=The QT Company Oy, O=The QT Company Oy, L=Espoo, S=Uusimaa, C=FI, SERIALNUMBER=2637805-2, OID.2.5.4.15=Private Organization, OID.1.3.6.1.4.1.311.60.2.1.3=FI'
-)
-$script:CaelestiaApprovedQtNames = @(
-    [pscustomobject]@{ commonName = 'The QT Company Oy'; organization = 'The QT Company Oy' }
 )
 
 # $PSScriptRoot is the caller's script after this file is dot-sourced, so
@@ -33,65 +33,15 @@ function Get-CaelestiaQtSignerSubjects {
     return @($script:CaelestiaApprovedQtSubjects)
 }
 
-# Splits an X.500 subject rendered by .NET into name/value fields. Values may be
-# quoted and may contain escaped commas; anything unparseable returns $null so
-# the caller rejects it instead of matching a fragment.
-function Split-CaelestiaSignerSubject {
-    param([AllowEmptyString()][string]$Subject)
-    if ([string]::IsNullOrWhiteSpace($Subject)) { return $null }
-    $fields = New-Object 'System.Collections.Generic.List[string]'
-    $builder = [Text.StringBuilder]::new()
-    $quoted = $false
-    for ($index = 0; $index -lt $Subject.Length; $index++) {
-        $character = $Subject[$index]
-        if ($character -eq '\') {
-            if ($index + 1 -ge $Subject.Length) { return $null }
-            $index++
-            $null = $builder.Append($Subject[$index])
-            continue
-        }
-        if ($character -eq '"') { $quoted = -not $quoted; continue }
-        if ($character -eq ',' -and -not $quoted) {
-            $fields.Add($builder.ToString())
-            $null = $builder.Clear()
-            continue
-        }
-        $null = $builder.Append($character)
-    }
-    if ($quoted) { return $null }
-    $fields.Add($builder.ToString())
-    $parsed = New-Object 'System.Collections.Generic.List[object]'
-    foreach ($field in $fields) {
-        $separator = $field.IndexOf('=')
-        if ($separator -lt 1) { return $null }
-        $name = $field.Substring(0, $separator).Trim()
-        $value = $field.Substring($separator + 1).Trim()
-        if (-not $name -or -not $value) { return $null }
-        $parsed.Add([pscustomobject]@{ name = $name; value = $value })
-    }
-    return $parsed.ToArray()
-}
-
-# True only for the reviewed Qt publisher identity. CN and O are compared as
-# whole field values, so an impostor suffix, a shared prefix or an extra "Qt"
-# word never matches.
+# True only for a reviewed Qt subject literal. There is deliberately no parsed
+# fallback: .NET can render quoted or escaped CN and O values, and reconstructing
+# the identity from those fields would accept a certificate that is not the
+# measured one. A renewal must be reviewed and its exact subject added above.
 function Test-CaelestiaQtSignerSubject {
     param([AllowEmptyString()][string]$Subject)
     if ([string]::IsNullOrWhiteSpace($Subject)) { return $false }
     foreach ($approved in $script:CaelestiaApprovedQtSubjects) {
-        if ([string]::Equals($Subject, $approved, [StringComparison]::OrdinalIgnoreCase)) { return $true }
-    }
-    $fields = @(Split-CaelestiaSignerSubject $Subject | Where-Object { $null -ne $_ })
-    if ($fields.Count -eq 0) { return $false }
-    $commonNames = @($fields | Where-Object { $_.name -ieq 'CN' })
-    $organizations = @($fields | Where-Object { $_.name -ieq 'O' })
-    # Exactly one of each: a duplicate field could hide a second identity.
-    if ($commonNames.Count -ne 1 -or $organizations.Count -ne 1) { return $false }
-    foreach ($approved in $script:CaelestiaApprovedQtNames) {
-        if ([string]::Equals($commonNames[0].value, $approved.commonName, [StringComparison]::OrdinalIgnoreCase) -and
-            [string]::Equals($organizations[0].value, $approved.organization, [StringComparison]::OrdinalIgnoreCase)) {
-            return $true
-        }
+        if ([string]::Equals($Subject, $approved, [StringComparison]::Ordinal)) { return $true }
     }
     return $false
 }
@@ -325,8 +275,10 @@ function Assert-CaelestiaReleaseCompleteness {
 
 # Pure decision for one signature record. The project publisher is the exact
 # certificate subject recorded from the first accepted signing request, compared
-# as a literal string. QtVendorSigner is only for the reviewed Qt publisher
-# identity; never pass a project publisher through it.
+# as a literal string. A certificate renewal with a new or differently rendered
+# subject is rejected until a reviewed change records the new literal.
+# QtVendorSigner is only for the reviewed Qt publisher identity; never pass a
+# project publisher through it.
 function Test-CaelestiaSignatureRecord {
     param(
         [Parameter(Mandatory)][AllowNull()]$Record,
@@ -348,7 +300,7 @@ function Test-CaelestiaSignatureRecord {
     if ($QtVendorSigner) {
         if (-not (Test-CaelestiaQtSignerSubject $subject)) { $reasons.Add('unexpected-signer') }
     } elseif ($ExpectedSignerSubject -and
-        -not [string]::Equals($subject, $ExpectedSignerSubject, [StringComparison]::OrdinalIgnoreCase)) {
+        -not [string]::Equals($subject, $ExpectedSignerSubject, [StringComparison]::Ordinal)) {
         $reasons.Add('unexpected-signer')
     }
     $timestampSubject = ''
@@ -408,7 +360,7 @@ function Test-CaelestiaSigningPolicy {
         foreach ($row in $Inventory.otherPe) {
             $decision = Test-CaelestiaSignatureRecord (Get-Record $row.path) -ExpectedSignerSubject $null
             if ($decision.subject -and
-                [string]::Equals($decision.subject, $ExpectedSignerSubject, [StringComparison]::OrdinalIgnoreCase)) {
+                [string]::Equals($decision.subject, $ExpectedSignerSubject, [StringComparison]::Ordinal)) {
                 $failures.Add([ordered]@{ path = $row.path; kind = 'other-pe'; reasons = @('third-party-file-signed-by-project') })
             }
         }

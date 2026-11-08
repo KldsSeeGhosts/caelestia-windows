@@ -97,7 +97,22 @@ the Caelestia QML modules. Add it to each build:
 [artifact configuration](../signpath/caelestia-windows-stable.xml) restrictions;
 do not remove them to make a request pass.
 
-## 6. Activation conditions
+## 6. Qt publisher certificate renewal
+
+The verifier accepts only the exact literal subject measured on the 90 reviewed
+Qt DLLs. It does not rebuild the identity from parsed CN and O fields, because
+.NET renders quoted and escaped values as different strings and a parsed match
+would accept a certificate that merely reuses the trusted names. A renewed Qt
+certificate changes the subject, so every Qt file fails with
+`unexpected-signer` and the release is not verified.
+
+When Qt renews its certificate, measure the new subject on every reviewed Qt DLL
+with `Get-AuthenticodeSignature`, confirm the deployed set still comes from The
+Qt Company, and update the literal allow-list in
+[Caelestia-Signing.ps1](../scripts/Caelestia-Signing.ps1) in a reviewed change.
+Do not restore a parsed CN/O fallback to make the old check pass.
+
+## 7. Activation conditions
 
 Signing may start only when all of these are true:
 

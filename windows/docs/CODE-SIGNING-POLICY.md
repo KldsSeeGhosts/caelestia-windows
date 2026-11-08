@@ -164,9 +164,10 @@ Once a signed stable release exists, these steps apply:
    It first checks the reviewed file set against
    `windows/release/signing-inventory.json` and
    `windows/release/vendor-privacy-review.json`, then confirms that Qt DLLs keep
-   a valid signature from the reviewed Qt publisher (`CN` and `O` both equal
-   `The QT Company Oy`) and that no third-party file was re-signed with the
-   project certificate.
+   a valid signature from the exact reviewed Qt certificate subject and that no
+   third-party file was re-signed with the project certificate. A Qt certificate
+   renewal fails with `unexpected-signer` until a reviewed change records the new
+   literal subject.
 5. Run the installer with `-ExpectedManifestSha256` from trusted release
    metadata, as described in [INSTALL-RELEASE.md](INSTALL-RELEASE.md).
 
@@ -196,19 +197,21 @@ changes part of that behavior.
 
 This section is the privacy statement referenced by the code signing policy. It
 replaces the blanket sentence that nothing leaves the machine: the installed
-shell and its staged scripts make the outbound requests below and no others. The
-shell sends no telemetry, and local profile settings, window titles, notification
-contents and clipboard data are not included in any request. Each row states
-whether the transfer is automatic while a feature is active, opt-in, or a user
-action.
+shell and its staged scripts make the automatic and opt-in requests below and no
+others. The shell sends no telemetry. Automatic shell requests include no local
+profile settings, window titles, notification contents or clipboard data.
+Notification links and clipboard items leave the machine only when the user
+explicitly opens one, and they then go to the destination the user chose. Each
+row states whether the transfer is automatic while a feature is active, opt-in,
+or a user action.
 
 | Service | When it is contacted | Data sent | Privacy policy |
 | --- | --- | --- | --- |
-| CPA Manager / CLIProxyAPI management endpoint from `cpa-agents.json` | Opt-in through the config file, then automatic while the Agent usage panel is on: the summary request runs as the endpoint loads and on each refresh (`windows/quota/services/Quota.qml:668`), and the spend requests run after the summary accepts the key. Refresh now skips the wait. The file's content is not read and in-flight requests are aborted while the panel is off. | The configured management key in `Authorization: Bearer`, the requested summary or analytics range and fields, ordinary request headers and the source IP address. The key travels over HTTPS, or over plain HTTP only to loopback, a private network address or Tailscale when Detailed usage is enabled. The response carries account labels, quota windows, reset times and spend. No local profile data is sent. | No project-run service: the endpoint is the user's own CPA Manager or CLIProxyAPI instance, so its operator's policy applies. |
-| OpenAI (Codex) through the CPA endpoint | Automatic in hub mode when `quota/summary` answers 404 (stock CLIProxyAPI), or opt-in with Nexus > Services > Detailed usage via CLIProxyAPI (`windows.quota.cpaHub`), while the panel is on. The helper lists the hub's logins and sends usage reads to `chatgpt.com/backend-api/wham/usage`, `wham/rate-limit-reset-credits` and the daily usage report through the hub's `api-call` tunnel (`windows/quota/providers/codex.py`, `hub.py`). | The management key and auth index go to the configured CPA endpoint. The hub substitutes its stored OpenAI token (`$TOKEN$`) and forwards the query, so the token never reaches this PC. The request carries the usage query, the ChatGPT account id header when the login supplies one, and OpenAI client headers. | [OpenAI privacy policy](https://openai.com/policies/privacy-policy/) |
-| Anthropic (Claude) through the CPA endpoint | The same hub-mode trigger. `claude.py` reads `api.anthropic.com/api/oauth/usage`, `api/oauth/profile` and the reset-grant read (`cedar_ember`). | The management key to the CPA endpoint, with the provider token kept by the hub. The forwarded query carries the usage or profile request and a Claude Code user agent. | [Anthropic privacy policy](https://www.anthropic.com/legal/privacy) |
-| Google (Antigravity) through the CPA endpoint | The same hub-mode trigger. `antigravity.py` reads `cloudcode-pa.googleapis.com` and `daily-cloudcode-pa.googleapis.com` (`retrieveUserQuotaSummary`, `loadCodeAssist`). | The management key to the CPA endpoint, with the Google token kept by the hub. The forwarded query carries quota and plan reads and an Antigravity user agent. | [Google privacy policy](https://policies.google.com/privacy) |
-| OpenAI, Google and Z.AI through the CPA inference endpoint | User action only: the drawer's Keepalive menu entry runs `scripts/cpa_keepalive.py`. It sends one real chat completion per enabled login (`gpt-5.6-luna`, `gemini-3.7-flash`, `glm-5.3-flash`) to the inference endpoint from `--inference-url`, `CPA_INFERENCE_URL` or `inferenceUrl`, or to loopback `127.0.0.1:8317` when `baseUrl` is loopback. If the completion cannot run, it falls back to management reads through the CPA endpoint: `chatgpt.com` usage, the Google quota and model URLs, or `https://api.z.ai/api/anthropic/v1/messages` (or the login's own `base_url`). | The inference key from `CPA_API_KEY` (or the `environment.d/cpa.conf` fallback), the literal prompt `ping`, the model name, `max_tokens` 8 or 16, and the source IP address. Provider tokens stay in the hub, except that a Z.AI login exposing `access_token` in the auth inventory has that token passed back to the configured CPA endpoint in the `api-call` envelope. Nothing is sent until the user chooses Keepalive, and switching the panel off stops a running helper. | [OpenAI privacy policy](https://openai.com/policies/privacy-policy/), [Google privacy policy](https://policies.google.com/privacy), [Z.AI privacy policy](https://docs.z.ai/legal-agreement/privacy-policy) |
+| CPA Manager / CLIProxyAPI management endpoint from `cpa-agents.json` | Opt-in through the config file, then automatic while the Agent usage panel is on: the summary request runs as the endpoint loads and on each refresh (`windows/quota/services/Quota.qml:668`), and the spend requests run after the summary accepts the key. Refresh now skips the wait. The file's content is not read and in-flight requests are aborted while the panel is off. | The configured management key in `Authorization: Bearer`, the requested summary or analytics range and fields, ordinary request headers and the source IP address. The summary and spend reads use HTTPS, or plain HTTP only when `baseUrl` is loopback; the QML transport refuses any other plain-HTTP host (`Quota.qml:574`). The response carries account labels, quota windows, reset times and spend. No local profile data is sent. | No project-run service: the endpoint is the user's own CPA Manager or CLIProxyAPI instance, so its operator's policy applies. |
+| OpenAI (Codex) through the CPA endpoint | Automatic in hub mode when `quota/summary` answers 404 (stock CLIProxyAPI), or opt-in with Nexus > Services > Detailed usage via CLIProxyAPI (`windows.quota.cpaHub`), while the panel is on. The helper lists the hub's logins and sends usage reads to `chatgpt.com/backend-api/wham/usage`, `wham/rate-limit-reset-credits` and the daily usage report through the hub's `api-call` tunnel (`windows/quota/providers/codex.py`, `hub.py`). | The management key and auth index go to the configured CPA endpoint. That management transport uses HTTPS, or plain HTTP to loopback, a checked RFC 1918 address or Tailscale when Detailed usage is on (or to loopback for the stock 404 fallback). `hub.py:85` resolves the host and requires every address to pass before the key is sent. The hub substitutes its stored OpenAI token (`$TOKEN$`) and forwards the query, so the token never reaches this PC. The request carries the usage query, the ChatGPT account id header when the login supplies one, and OpenAI client headers. | [OpenAI privacy policy](https://openai.com/policies/privacy-policy/) |
+| Anthropic (Claude) through the CPA endpoint | The same hub-mode trigger. `claude.py` reads `api.anthropic.com/api/oauth/usage`, `api/oauth/profile` and the reset-grant read (`cedar_ember`). | The management key goes to the configured CPA endpoint over the same checked transport, with the provider token kept by the hub. The forwarded query carries the usage or profile request and a Claude Code user agent. | [Anthropic privacy policy](https://www.anthropic.com/legal/privacy) |
+| Google (Antigravity) through the CPA endpoint | The same hub-mode trigger. `antigravity.py` reads `cloudcode-pa.googleapis.com`, `daily-cloudcode-pa.googleapis.com` and `daily-cloudcode-pa.sandbox.googleapis.com` (`retrieveUserQuotaSummary`, `loadCodeAssist`). | The management key goes to the configured CPA endpoint over the same checked transport, with the Google token kept by the hub. The forwarded query carries quota and plan reads and an Antigravity user agent. | [Google privacy policy](https://policies.google.com/privacy) |
+| OpenAI, Google and Z.AI through the CPA inference endpoint | User action only: the drawer's Keepalive menu entry runs `scripts/cpa_keepalive.py`. Before any inference it reads `GET /v0/management/auth-files` with the management key to list the enabled logins (`cpa_keepalive.py:273`), even when the later inference succeeds. That management read, and any fallback `api-call`, use HTTPS, or plain HTTP to loopback, a checked RFC 1918 address or Tailscale. The action does not require Detailed usage: `Quota.qml:268` checks only that the panel is configured, enabled and not refused, so `hub.py:85` permits the private-network plain-HTTP addresses on its own. It then sends one real chat completion per enabled login (`gpt-5.6-luna`, `gemini-3.7-flash`, `glm-5.3-flash`) to the inference endpoint from `--inference-url`, `CPA_INFERENCE_URL` or `inferenceUrl`, or to loopback `127.0.0.1:8317` when `baseUrl` is loopback. If the completion cannot run, it falls back to management reads through the CPA endpoint: `chatgpt.com` usage, the Google quota and model URLs including `daily-cloudcode-pa.sandbox.googleapis.com`, or `https://api.z.ai/api/anthropic/v1/messages` (or the login's own `base_url`). | The management key in `Authorization: Bearer` to the configured CPA endpoint for `auth-files` and any fallback `api-call`, together with the auth index and query. The inference key from `CPA_API_KEY` (or the `environment.d/cpa.conf` fallback) goes to the inference endpoint over HTTPS, or over plain HTTP only to loopback (`cpa_keepalive.py:112`), with the literal prompt `ping`, the model name, `max_tokens` 8 or 16, and the source IP address. Provider tokens stay in the hub, except that a Z.AI login exposing `access_token` in the auth inventory has that token passed back to the configured CPA endpoint in the `api-call` envelope. Nothing is sent until the user chooses Keepalive, and switching the panel off stops a running helper. | [OpenAI privacy policy](https://openai.com/policies/privacy-policy/), [Google privacy policy](https://policies.google.com/privacy), [Z.AI privacy policy](https://docs.z.ai/legal-agreement/privacy-policy) |
 | ipapi.co (Kloudend, Inc.) | Automatic: a weather surface loads (the dashboard tab or the lock screen) and `services.weatherLocation` is blank. The shell waits 15 minutes after a successful lookup before asking again, and backs off after a rate limit (`services/Weather.qml:57`). | The source IP address and ordinary HTTPS request headers. The response supplies approximate latitude, longitude and city. The shell shows the returned city directly and does not look it up again. No account or profile data is sent. | [ipapi.co/privacy](https://ipapi.co/privacy/) |
 | OpenStreetMap Nominatim | Automatic only when `services.weatherLocation` is a coordinate pair and that exact pair is not already in the local city cache (`services/Weather.qml:50,175`). A configured city never calls it, and a blank location never does. | Coordinates, preferred language (`accept-language`) and a `User-Agent` with the shell version. The server also sees the source IP address. | [OpenStreetMap Foundation privacy policy](https://osmfoundation.org/wiki/Privacy_Policy) |
 | Open-Meteo | Automatic: a configured city calls the geocoding API at `geocoding-api.open-meteo.com` when that city is not the last one that failed, and every weather load calls `api.open-meteo.com/v1/forecast`. A blank location and a coordinate pair call only the forecast endpoint. | A city name or coordinates, the requested weather fields, language and time zone. Open-Meteo's logs may contain coordinates and IP addresses. | [Open-Meteo terms and privacy](https://open-meteo.com/en/terms#privacy) |
@@ -227,12 +230,28 @@ theme icon names or as files inside the staged assets directory
 (`NotificationsService.qml`); a remote notification image is dropped, not
 fetched.
 
-Two links are opened in the user's browser rather than fetched by the shell. The
-updates page's manual-download link goes to the GitHub releases page, and after a
-crash the Quickshell crash reporter's Report button opens the upstream issue
-template (`github.com/outfoxxed/quickshell/issues/new?template=crash2.yml`, or
-`QS_CRASHREPORT_URL` when set). The shell uploads nothing for either; the browser
-makes the request when the user clicks.
+### User-opened destinations
+
+The shell does not fetch these URLs itself. When the user opens one, the URL or
+text is handed to the default Windows handler, normally the browser, which makes
+the request under the destination's privacy policy. The destination can be any
+host because the notification sender or the clipboard supplied it. These actions
+are separate from the automatic and opt-in shell requests in the table above.
+
+| User action | What is handed to the handler | Source |
+| --- | --- | --- |
+| Click a link in an expanded notification | The link from the notification body, as supplied by the app that posted it. The shell does not fetch it and uploads nothing. | `modules/notifications/Notification.qml:483`, `modules/sidebar/Notif.qml:148` |
+| Open a single-line HTTP or HTTPS clipboard item | The clipboard text exactly as copied. The shell does not preview or fetch it. | `plugin/src/Caelestia/Windows/Clipboard/windowsclipboardworker.cpp:1197`, `windows/services/clipboard/ClipboardHistory.qml:157` |
+| Open release notes or the manual download link on the Updates page | A GitHub release-tag or releases URL that `UpdatesLogic.js` restricts to this repository. | `windows/shell/adapters/modules/nexus/pages/UpdatesPage.qml:36,404,413` |
+| Open Report in the Quickshell crash reporter | The upstream issue-template URL (`github.com/outfoxxed/quickshell/issues/new?template=crash2.yml`), or `QS_CRASHREPORT_URL` when that environment variable is set. | `windows/deps/quickshell/src/crash/interface.cpp:121` |
+
+The shell also opens local files and folders through the registered Windows
+handler (`windows/shell/adapters/utils/Paths.qml:129,133`; the crash reporter's
+report folder at `interface.cpp:118`), opens `ms-settings:` pages for network,
+Bluetooth, notifications, clipboard and lock-screen settings, and activates an
+installed app or a `windowsdefender:` URI when a notification is clicked. Those
+targets stay local. The clipboard Open action likewise opens `file://` items,
+images and a temporary text file through local handlers.
 
 Ways to avoid or limit the requests:
 
@@ -257,7 +276,12 @@ Ways to avoid or limit the requests:
 - The Agent usage drawer is inactive without `cpa-agents.json`, and the Agent
   usage panel switch stops its requests live. Hub mode is a separate opt-in,
   except for a stock CLIProxyAPI summary 404, where it is the only source.
-  Keepalive runs only when the user chooses it.
+  Keepalive runs only when the user chooses it, but its `auth-files` management
+  read can use a checked RFC 1918 or Tailscale plain-HTTP endpoint even when
+  Detailed usage is off. Run Keepalive only against an endpoint you trust.
+- Notification links and clipboard items reach Windows only on an explicit
+  click or Open action. Copying text sends nothing. Do not open a link or
+  clipboard item whose destination you do not trust.
 - Media artwork is loaded from the local cache while a player is active and the
   artwork is visible. The YouTube thumbnail fallback is unreachable at the
   pinned backend.
