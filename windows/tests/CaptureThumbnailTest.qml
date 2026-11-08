@@ -235,12 +235,15 @@ ShellRoot {
         GlobalConfig.windows = { capture: Object.assign({ ui: "shell" }, capture) };
     }
 
-    // Selects a rectangle in the open picker and releases the mouse.
-    function drag(x1, y1, x2, y2): void {
+    // Selects a rectangle in the open picker, releases the mouse, and then
+    // chooses "save" or "copy" in the editor that the selection opens.
+    function drag(x1, y1, x2, y2, kind = "save"): void {
         const area = find(pickerWindows()[0].contentItem, "areaPicker");
         area.pressAt(Qt.LeftButton, x1, y1);
         area.moveTo(x2, y2);
         area.releaseAt(Qt.LeftButton, x2, y2);
+        check(picker.editing && !picker.saving, "the selection opens the editor and saves nothing");
+        picker.editPicker.exportEdit(kind);
     }
 
     Component.onCompleted: Qt.callLater(() => step(setup))
@@ -271,9 +274,10 @@ ShellRoot {
     }
 
     function afterSave(): void {
-        const message = toastWith("Saved to");
-        savedPath = message.substring(message.indexOf("Saved to ") + 9).replace(/\\/g, "/");
-        check(WindowsFiles.isFile(savedPath), "the file was saved");
+        check(thumbs.entries.length === 1, "the thumbnail is the feedback");
+        check(toastWith("Saved to") === "" && toastWith("Screenshot taken") === "", "and there is no success toast");
+        savedPath = thumbs.entries[0].path;
+        check(WindowsFiles.isFile(savedPath), "the file was saved: " + savedPath);
         check(!picker.opened && !thumbs.suspended, "the picker closed");
         check(thumbs.entries.length === 1, "one thumbnail after a save");
         const entry = thumbs.entries[0];
@@ -325,11 +329,11 @@ ShellRoot {
     function copyCapture(): void {
         check(CaptureUi.screenshot("openClip") === true, "openClip is asked to open");
         later(400, () => step(() => {
-            check(picker.opened && picker.clipboardOnly, "a clipboard capture");
+            check(picker.opened, "the picker opened for a clipboard capture");
             check(panels()[0].visible === false && thumbs.suspended, "the thumbnails step aside while the picker is open");
             readyAll();
             later(300, () => step(() => {
-                drag(10, 10, 70, 60);
+                drag(10, 10, 70, 60, "copy");
                 later(1600, () => step(afterCopy));
             }));
         }));
@@ -387,7 +391,7 @@ ShellRoot {
         check(entry.path.indexOf(root.saveRoot + "/Screenshots/annotate-") === 0 && entry.path.endsWith(".png"), "in Screenshots with the default name: " + entry.path);
         check(WindowsFiles.isFile(entry.path), "the file exists");
         check(!WindowsFiles.isFile(preview) && entry.temp === "", "the preview file is gone");
-        check(toastWith("Saved to") !== "", "with a toast");
+        check(toastWith("Saved to") === "", "and no toast, because the thumbnail is the feedback");
         check(thumbs.saveEntry(entry) === true && entry.path.indexOf("(2)") < 0, "saving again does nothing");
         shot.source = "file:///" + entry.path;
         check(shot.status === Image.Ready && shot.sourceSize.width === 60 && shot.sourceSize.height === 50, "the saved file holds the same image");
@@ -620,7 +624,7 @@ ShellRoot {
         later(400, () => step(() => {
             readyAll();
             later(300, () => step(() => {
-                drag(10, 10, 40, 40);
+                drag(10, 10, 40, 40, "copy");
                 later(1600, () => step(() => {
                     check(toastWith("could not be copied") !== "", "the refused copy is reported");
                     check(thumbs.entries.length === 1, "and adds no thumbnail");
@@ -648,7 +652,7 @@ ShellRoot {
                     later(400, () => step(() => {
                         readyAll();
                         later(300, () => step(() => {
-                            drag(10, 10, 40, 40);
+                            drag(10, 10, 40, 40, "copy");
                             later(1600, () => step(offResult));
                         }));
                     }));

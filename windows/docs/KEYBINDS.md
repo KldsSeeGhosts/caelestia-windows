@@ -157,21 +157,34 @@ a picker drawn by the shell itself. Every entry point follows the setting: the
 
 The picker freezes every screen first, then lets you drag a region, click a
 window to select it, or click where no window is to select the whole monitor.
-Esc or a right click cancels. Releasing the mouse saves at once to
-`Pictures\Screenshots` (or `Pictures` if that folder cannot be created) as
-`annotate-%Y-%m-%d_%H-%M-%S.png`, adding ` (2)`, ` (3)` for a repeat. The
-clipboard variants (`openClip`, `openFreezeClip`) copy the image instead. There
-is no editor yet, so a capture is saved or copied exactly as selected, and the
-selection cannot span monitors. The picker always freezes the screen: the
-`open` and `openClip` names behave like `openFreeze` and `openFreezeClip`.
+Esc or a right click cancels. Releasing the mouse opens the editor over the
+selection and saves nothing. The `open`, `openFreeze`, `openClip` and
+`openFreezeClip` names all do this, as the classic tool treats them alike. The
+selection cannot span monitors, and the picker always freezes the screen.
+
+The editor has Pencil (`P`), Highlighter (`H`), Line (`L`), Arrow (`A`),
+Rectangle (`R`) and Circle (`C`), a colour and size popover (nine colours, S, M
+and L), Undo (`Ctrl+Z`), Redo (`Ctrl+Y` or `Ctrl+Shift+Z`), Clear (press twice),
+Copy (`Ctrl+C`), Save (`Ctrl+S`) and Close (`Esc`, which first closes an open
+popover). The toolbar sits below the selection, above it when there is no room,
+or inside it, and it can be dragged. Text, Blur, numbered steps, the ruler, the
+eraser and zoom are not there yet.
+
+Nothing is written until you choose Save. Save writes the image with its
+annotations to `Pictures\Screenshots` (or `Pictures` if that folder cannot be created) as
+`annotate-%Y-%m-%d_%H-%M-%S.png`, adding ` (2)`, ` (3)` for a repeat. Copy puts
+it on the clipboard. Each closes the editor and shows the thumbnail, which is
+the only confirmation: there is no success toast. With the thumbnail turned off,
+Save shows a toast with the file name, as the classic tool does. A failed Save
+or Copy shows an error and keeps the editor open.
 
 After a capture the picker shows a thumbnail at the bottom right of the work
 area, as the classic tool does. Up to five exist in total, across all monitors.
 Each monitor stacks its own upward with the newest at the bottom, and a sixth
 removes the oldest one wherever it is. Hovering shows buttons for Copy, Save (only for a capture that was
 copied and not saved), Show in folder and Close, and pauses the timeout. Clicking
-the card opens the image with the default application, because the editor does
-not exist yet. Dragging the file out of the card is not supported yet.
+the card opens the image with the default application, because reopening it in
+the editor is not built yet. Dragging the file out of the card is not supported yet.
 Two keys in `shell.json` control it:
 
 ```json
@@ -181,7 +194,7 @@ Two keys in `shell.json` control it:
 `thumbnail` set to `false` turns the thumbnail off. `thumbnailSeconds` is how long
 a thumbnail stays, and `0` keeps it until it is closed. A capture that was only
 copied keeps a preview file in the temp directory until its thumbnail closes.
-Save writes it to `Pictures\Screenshots` with the picker's naming. Show in
+Save writes it to `Pictures\Screenshots` with the picker's naming, without a toast. Show in
 folder saves it first and opens the folder.
 
 A development or recovery build can be pointed at another Glazier with an

@@ -209,6 +209,7 @@ Scope {
 
     // Writes a copy-only capture to the screenshots folder with the picker's
     // naming, and then shows that file. Returns whether the capture is saved.
+    // The thumbnail is on screen, so there is no success toast.
     function saveEntry(entry: var): bool {
         if (entry.saved)
             return true;
@@ -223,7 +224,6 @@ Scope {
         // file released, so it can never be deleted under a card that shows it.
         entry.imagePath = dest;
         release(entry);
-        Toaster.toast(Tr.tr("Screenshot taken"), Tr.tr("Saved to %1").arg(dest), "screenshot_region");
         return true;
     }
 

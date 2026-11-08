@@ -219,16 +219,18 @@ function uniquePath(dir, stem, exists) {
     return path;
 }
 
-// The IPC function and shortcut names mean the same thing on Windows as on
-// upstream, except that the picker always freezes the screen first: a
-// Windows ScreencopyView never starts capturing while hidden, so there is no
-// separate live mode.
+// The IPC function and shortcut names are upstream's. On Windows all four open
+// the same picker and then the same editor, as the classic tool treats them:
+// the picker always freezes the screen first (a Windows ScreencopyView never
+// starts capturing while hidden, so there is no separate live mode), and Copy
+// or Save in the editor, not the name, decides where the image goes. `freeze`
+// records what upstream's name asks for.
 function pickerOptions(name) {
     var table = {
-        open: { freeze: false, clipboardOnly: false },
-        openFreeze: { freeze: true, clipboardOnly: false },
-        openClip: { freeze: false, clipboardOnly: true },
-        openFreezeClip: { freeze: true, clipboardOnly: true }
+        open: { freeze: false },
+        openFreeze: { freeze: true },
+        openClip: { freeze: false },
+        openFreezeClip: { freeze: true }
     };
     return table[name] || null;
 }
