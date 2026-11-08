@@ -412,6 +412,7 @@ Singleton {
                 // (issue #28): a failed QSaveFile::commit() is only logged.
                 // Read the file back through a separate view before applying.
                 root.configSaveVerifying = true;
+                configVerify.path = root.settingsPath;
                 configVerify.reload();
             } else {
                 root.lastError = "";
@@ -435,7 +436,9 @@ Singleton {
     // workaround can go when the backend reports the failure.
     FileView {
         id: configVerify
-        path: root.settingsPath
+        // Assigned when a save needs checking. Starting empty avoids a
+        // startup read whose completion could race the verification.
+        path: ""
         watchChanges: false
         printErrors: false
         onLoaded: {
