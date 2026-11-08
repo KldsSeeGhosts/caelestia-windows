@@ -39,12 +39,34 @@ values and arbitrary commands are consumed as `unsupported`.
 | `suspend`, `systemctl suspend` | suspend | `Session.suspend()` | no |
 | `hibernate`, `systemctl hibernate` | hibernate | `Session.hibernate()`, only while `canHibernate` | no |
 | `firmware`, `firmware-reboot`, `firmware_reboot`, `reboot-to-firmware` | firmware | `Session.rebootToFirmware()` | yes |
+| `switch-back`, `switchback`, `switch-back-to-windows` | switchback | detached `Start-Caelestia.ps1 -Command Quit`, optionally with `-DisableAutostart` | no |
 | `suspendThenHibernate` | — | none; Windows has no combined operation | — |
 
 Names are normalized like upstream: `-` and `_` are removed and the token is
 lowercased. The upstream `systemctl`/`loginctl` two-token aliases and the
 `loginctl terminate-user ''` logout alias are preserved. A canonical command
 with extra arguments is refused rather than partially executed.
+
+### Switch back to Windows
+
+`switchback` is the shell-side "Switch back to Windows" action. It is not a
+native `Quickshell.Windows.Session` call. The native facade starts the installed
+stable-root `Start-Caelestia.ps1` as a detached process, so the existing IPC
+Quit, supervisor stop, taskbar/work-area restore and `Restore-Desktop.ps1`
+recovery all run outside the shell that is exiting. The facade implements no
+second process-cleanup or restore path. `Process.startDetached()` disowns the
+child handles before the shell quits.
+
+The backend also reports `switchBackSupported`. It is false unless
+`CAELESTIA_SHELL_LIVE=1`, the session is not a smoke run, `CAELESTIA_INSTALL_ROOT`
+holds `Start-Caelestia.ps1` and `install.json`, and the inbox Windows PowerShell
+exists. The UI keeps the action visible but disabled with that reason.
+
+Before `exec(["switch-back"])`, the session UI sets
+`switchBackDisableAutostart`. When true, the launcher removes only this
+installation's own HKCU Run entry through the registration helper shared with
+install, then follows the same Quit path. The session drawer and Nexus > Services
+both offer the choice; it is off by default.
 
 ## Outcomes and capability
 

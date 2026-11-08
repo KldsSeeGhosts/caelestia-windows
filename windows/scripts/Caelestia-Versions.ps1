@@ -356,6 +356,39 @@ function Get-CaelestiaAutostartKey {
     return 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
 }
 
+# One command shape for this installation's Start-menu shortcut and HKCU Run
+# entry. Install and the shell's switch-back path both use it, so what is
+# registered and what is removed cannot drift.
+function Get-CaelestiaAutostartArguments([string]$Prefix) {
+    return '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + (Join-Path $Prefix 'Start-Caelestia.ps1') + '"'
+}
+
+function Get-CaelestiaAutostartValue([string]$Prefix) {
+    $powershell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+    return '"' + $powershell + '" ' + (Get-CaelestiaAutostartArguments $Prefix)
+}
+
+function Test-CaelestiaAutostart([string]$Prefix) {
+    $integration = Get-CaelestiaIntegration $Prefix
+    return $null -ne (Get-ItemProperty -LiteralPath (Get-CaelestiaAutostartKey) `
+        -Name $integration.RunName -ErrorAction SilentlyContinue)
+}
+
+# Additive hook for the shell's "Switch back to Windows" choice. Disable
+# removes only this installation's own Run entry; it never touches another
+# application's value or another prefix's hashed name.
+function Set-CaelestiaAutostart([string]$Prefix, [bool]$Enabled) {
+    $integration = Get-CaelestiaIntegration $Prefix
+    $run = Get-CaelestiaAutostartKey
+    if (-not $Enabled) {
+        Remove-ItemProperty -LiteralPath $run -Name $integration.RunName -ErrorAction SilentlyContinue
+        return
+    }
+    if (-not (Test-Path -LiteralPath $run)) { New-Item -Path $run | Out-Null }
+    New-ItemProperty -Path $run -Name $integration.RunName -PropertyType String `
+        -Value (Get-CaelestiaAutostartValue $Prefix) -Force | Out-Null
+}
+
 # The Start-menu shortcut and the optional HKCU Run entry are part of the
 # activation transaction: a failure here must not leave a selector claiming a
 # replacement the user was told failed, or a half-written integration behind.
@@ -379,7 +412,8 @@ function Complete-CaelestiaInstallIntegration {
         if (-not $RunName) { $RunName = $integration.RunName }
     }
     $powershell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
-    $arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + (Join-Path $Prefix 'Start-Caelestia.ps1') + '"'
+    $arguments = Get-CaelestiaAutostartArguments $Prefix
+    $autostartValue = Get-CaelestiaAutostartValue $Prefix
     $run = Get-CaelestiaAutostartKey
     $backup = $null
     $runExisted = $false
@@ -415,7 +449,7 @@ function Complete-CaelestiaInstallIntegration {
             # key empty and deletes every other application's startup entry.
             if (-not (Test-Path -LiteralPath $run)) { New-Item -Path $run | Out-Null }
             $runWriteAttempted = $true
-            New-ItemProperty -Path $run -Name $RunName -PropertyType String -Value ('"' + $powershell + '" ' + $arguments) -Force | Out-Null
+            New-ItemProperty -Path $run -Name $RunName -PropertyType String -Value $autostartValue -Force | Out-Null
         }
         # A backup that cannot be deleted is not an integration failure: never
         # roll back a completed install over a cleanup problem.

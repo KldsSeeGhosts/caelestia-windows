@@ -22,7 +22,7 @@ It runs the original Caelestia QML components, Material 3 Expressive shapes (`M3
 - **Dashboard:** Four-tab top drawer with user profile, calendar, weather forecast, media player controls (via Windows GSMTC), and live hardware performance graphs (CPU, GPU, RAM, storage, and network throughput sparklines).
 - **Desktop background:** Original Caelestia wallpaper surface (with shader transitions), desktop clock, and audio visualizer layer embedded directly into the Windows `Progman`/`WorkerW` desktop plane (either behind or above Explorer desktop icons).
 - **Notifications and sidebar:** Toast popups, core shell toasts, and a right-edge notification history drawer. Supports local shell notifications by default and opt-in Windows system toast mirroring.
-- **On-screen display (OSD) and utilities:** Volume and hardware monitor brightness sliders, quick toggles (Wi-Fi, Bluetooth, Do Not Disturb), keep-awake (idle inhibit), fullscreen `ffmpeg` screen recorder, and a session menu (lock, sign out, sleep, hibernate, reboot, shut down).
+- **On-screen display (OSD) and utilities:** Volume and hardware monitor brightness sliders, quick toggles (Wi-Fi, Bluetooth, Do Not Disturb), keep-awake (idle inhibit), fullscreen `ffmpeg` screen recorder, and a session menu (lock, sign out, sleep, hibernate, reboot, shut down, and **Switch back to Windows**).
 - **Window tiling:** Automatic DWM window tiling (`dwindle`, `master`, and `scrolling` layouts) with configurable inner/outer gaps, window inclusion/exclusion rules, and automatic floating with toast explanations when an app refuses to fit its tile.
 - **Workspaces on virtual desktops:** Maps Caelestia's workspace bar and workspace dispatchers onto Windows 11 virtual desktops.
 
@@ -106,6 +106,11 @@ To disable autostart without uninstalling:
 # Disable autostart while keeping Caelestia installed
 Remove-ItemProperty -LiteralPath 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name CaelestiaWindows -ErrorAction SilentlyContinue
 ```
+
+The shell also offers this while leaving: **Switch back to Windows** in the
+session menu or **Nexus > Services** quits Caelestia, restores the Windows
+taskbar and desktop through the existing supervisor, and can turn off this
+installation's autostart entry at the same time. The choice is off by default.
 
 The command above applies to the default prefix. Custom prefixes use the hash-suffixed Run entry shown by `Get-CaelestiaIntegration` in `Caelestia-InstallCommon.ps1`. There is no `-AutostartOnly` uninstall flag.
 
