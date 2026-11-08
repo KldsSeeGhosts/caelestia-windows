@@ -1,4 +1,5 @@
 module Caelestia.Services
+SessionService 1.0 SessionService.qml
 singleton SessionManager 1.0 SessionManager.qml
 singleton Cpu 1.0 Cpu.qml
 singleton Memory 1.0 Memory.qml
