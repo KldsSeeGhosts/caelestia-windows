@@ -36,7 +36,7 @@ $profileExists = Test-Path -LiteralPath $profile
 $purgeAllowed = $false
 if ($profileExists) {
     $owner = Read-CaelestiaProfileOwner $profile
-    $purgeAllowed = $null -ne $owner -and $owner.prefix -eq $Prefix -and $owner.exclusive -eq $true -and
+    $purgeAllowed = $null -ne $owner -and (Test-CaelestiaSamePath $owner.prefix $Prefix) -and $owner.exclusive -eq $true -and
         (-not $record.installId -or $owner.installId -eq $record.installId)
 }
 if ($Purge -and $profileExists) {
@@ -64,7 +64,7 @@ foreach ($task in @(Get-ScheduledTask -TaskPath '\' -TaskName 'Caelestia-Mainten
     if ($task.TaskName -notmatch '^Caelestia-Maintenance(?:Watch)?-([a-f0-9]{32})$') { continue }
     $taskOperation = $Matches[1]
     $actions = @($task.Actions)
-    if ($actions.Count -ne 1 -or $actions[0].WorkingDirectory -ne $Prefix -or
+    if ($actions.Count -ne 1 -or -not (Test-CaelestiaSamePath $actions[0].WorkingDirectory $Prefix) -or
         ([string]$actions[0].Arguments).IndexOf('-File "' + (Join-Path $Prefix 'Manage-Caelestia.ps1') + '"', [StringComparison]::OrdinalIgnoreCase) -lt 0 -or
         ([string]$actions[0].Arguments).IndexOf('-Prefix "' + $Prefix + '"', [StringComparison]::OrdinalIgnoreCase) -lt 0) { continue }
     Stop-ScheduledTask -TaskPath '\' -TaskName $task.TaskName -ErrorAction Stop
@@ -80,9 +80,9 @@ if (Test-Path -LiteralPath $operationFile -PathType Leaf) {
     try { $operation = Get-Content -LiteralPath $operationFile -Raw -Encoding UTF8 | ConvertFrom-Json -ErrorAction Stop }
     catch { }
     if ($operation.schema -eq 1 -and $operation.operationId -match '^[a-f0-9]{32}$' -and
-        (-not $operation.prefix -or $operation.prefix -eq $Prefix) -and
+        (-not $operation.prefix -or (Test-CaelestiaSamePath $operation.prefix $Prefix)) -and
         (-not $operation.installId -or $operation.installId -eq $record.installId)) {
-        $ownsOperation = ($operation.prefix -eq $Prefix -and $operation.installId -eq $record.installId) -or
+        $ownsOperation = ((Test-CaelestiaSamePath $operation.prefix $Prefix) -and $operation.installId -eq $record.installId) -or
             $operation.operationId -in $cancelledOperations
         if ($ownsOperation -and $operation.phase -in @('queued', 'working')) {
             $operation.phase = 'failed'

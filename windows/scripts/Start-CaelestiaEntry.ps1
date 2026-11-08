@@ -36,7 +36,7 @@ if ($Command -eq 'Quit' -and $DisableAutostart) {
 # NotifyTest uses the selected launcher, even if an older payload is running:
 # it submits to Windows independently of the shell's IPC or runtime version.
 $runtime = Resolve-CaelestiaRuntimePrefix $Prefix -Running:($Command -notin @('Start', 'NotifyTest'))
-if ($runtime -eq $PSScriptRoot) { throw 'Installation migration is incomplete. Run the installer again.' }
+if (Test-CaelestiaSamePath $runtime $PSScriptRoot) { throw 'Installation migration is incomplete. Run the installer again.' }
 if ($Command -eq 'Settings') {
     if ($Smoke) { throw '-Smoke requires -Command Start.' }
     $null = Invoke-CaelestiaIpc $runtime settings

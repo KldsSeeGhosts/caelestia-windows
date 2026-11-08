@@ -91,7 +91,7 @@ function Read-Operation {
     try { $state = Get-Content -LiteralPath $operationFile -Raw -Encoding UTF8 | ConvertFrom-Json -ErrorAction Stop }
     catch { throw 'The rollback operation journal is unreadable. Inspect it before requesting maintenance.' }
     if ($state.schema -ne 1 -or $state.operationId -notmatch '^[a-f0-9]{32}$' -or
-        ($state.prefix -and $state.prefix -ne $Prefix) -or
+        ($state.prefix -and -not (Test-CaelestiaSamePath $state.prefix $Prefix)) -or
         ($state.installId -and $state.installId -ne $record.installId)) { return $null }
     return $state
 }
@@ -99,7 +99,7 @@ function Get-OperationTasks([string]$Id) {
     foreach ($name in @("Caelestia-Maintenance-$Id", "Caelestia-MaintenanceWatch-$Id")) {
         foreach ($task in @(Get-ScheduledTask -TaskPath '\' -TaskName $name -ErrorAction SilentlyContinue)) {
             $actions = @($task.Actions)
-            if ($actions.Count -eq 1 -and $actions[0].WorkingDirectory -eq $Prefix -and
+            if ($actions.Count -eq 1 -and (Test-CaelestiaSamePath $actions[0].WorkingDirectory $Prefix) -and
                 ([string]$actions[0].Arguments).IndexOf('-File "' + (Join-Path $Prefix 'Manage-Caelestia.ps1') + '"', [StringComparison]::OrdinalIgnoreCase) -ge 0 -and
                 ([string]$actions[0].Arguments).IndexOf('-Prefix "' + $Prefix + '"', [StringComparison]::OrdinalIgnoreCase) -ge 0) { $task }
         }

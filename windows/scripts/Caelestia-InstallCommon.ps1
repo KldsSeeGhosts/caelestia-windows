@@ -1,14 +1,53 @@
 # Shared by repository and installed scripts. No machine-wide changes.
 $ErrorActionPreference = 'Stop'
 
+# One long spelling for a path that is compared or matched. Windows can name
+# the same directory with an 8.3 short name, forward slashes, a \\?\ prefix or
+# a trailing separator. GetFullPath normalises the spelling and expands an
+# existing 8.3 name on Windows PowerShell 5.1; Get-Item returns the long name
+# even where GetFullPath leaves a short one. The path need not exist, so a
+# prefix that is about to be created still resolves consistently.
+function Get-CaelestiaLongPath([string]$Path) {
+    if (-not $Path) { throw 'A nonempty path is required.' }
+    if ($Path.StartsWith('\\?\UNC\', [StringComparison]::OrdinalIgnoreCase)) { $Path = '\\' + $Path.Substring(8) }
+    elseif ($Path.StartsWith('\\?\', [StringComparison]::Ordinal) -or $Path.StartsWith('\\.\', [StringComparison]::Ordinal)) { $Path = $Path.Substring(4) }
+    $full = [IO.Path]::GetFullPath($Path)
+    $root = [IO.Path]::GetPathRoot($full)
+    if ($full.Length -gt $root.Length) { $full = $full.TrimEnd('\', '/') }
+    try {
+        $item = Get-Item -LiteralPath $full -Force -ErrorAction Stop
+        if ($item.FullName) {
+            $full = $item.FullName
+            if ($full.Length -gt $root.Length) { $full = $full.TrimEnd('\', '/') }
+        }
+    } catch { }
+    return $full
+}
+
+# Compare two path spellings as the same Windows location. Both sides go
+# through the one normaliser above, so a short prefix, a long record path and a
+# differently cased drive all name the same installation. Empty on both sides
+# compares equal so optional record fields stay optional; empty on one side
+# does not.
+function Test-CaelestiaSamePath([string]$Left, [string]$Right) {
+    if (-not $Left -or -not $Right) { return (-not $Left -and -not $Right) }
+    try {
+        return [string]::Equals((Get-CaelestiaLongPath $Left), (Get-CaelestiaLongPath $Right), [StringComparison]::OrdinalIgnoreCase)
+    } catch {
+        return $false
+    }
+}
+
 function Resolve-CaelestiaDirectory([string]$Path) {
     if (-not $Path -or $Path.IndexOfAny([char[]]@('"', "`r", "`n")) -ge 0) {
         throw 'A nonempty Windows directory path is required.'
     }
-    $full = [IO.Path]::GetFullPath($Path).TrimEnd('\')
+    $full = Get-CaelestiaLongPath $Path
     if ($full -eq [IO.Path]::GetPathRoot($full).TrimEnd('\')) { throw "Unsafe directory: $full" }
     foreach ($protected in @($env:USERPROFILE, $env:WINDIR, $env:ProgramFiles, ${env:ProgramFiles(x86)}, $env:LOCALAPPDATA, $env:APPDATA, $env:TEMP)) {
-        if ($protected -and ($protected -eq $full -or $protected.StartsWith($full + '\', [StringComparison]::OrdinalIgnoreCase))) {
+        if (-not $protected) { continue }
+        $protectedFull = Get-CaelestiaLongPath $protected
+        if ($protectedFull -eq $full -or $protectedFull.StartsWith($full + '\', [StringComparison]::OrdinalIgnoreCase)) {
             throw "Directory contains a protected Windows/user location: $full"
         }
     }
@@ -28,7 +67,11 @@ function Resolve-CaelestiaDirectory([string]$Path) {
 
 function Read-CaelestiaInstall([string]$Prefix) {
     $record = Get-Content -LiteralPath (Join-Path $Prefix 'install.json') -Raw -Encoding UTF8 | ConvertFrom-Json
-    if ($record.product -ne 'caelestia-windows' -or $record.version -notin @(1, 2) -or $record.prefix -ne $Prefix) {
+    # install.json records the prefix it was written for. A record written
+    # through a long path must still be readable through a short one (and the
+    # reverse), so both spellings are compared after normalisation.
+    if (-not $Prefix -or -not $record.prefix -or $record.product -ne 'caelestia-windows' -or
+        $record.version -notin @(1, 2) -or -not (Test-CaelestiaSamePath $record.prefix $Prefix)) {
         throw "Not a recognized Caelestia installation: $Prefix"
     }
     if ($record.version -eq 2) {
@@ -39,11 +82,18 @@ function Read-CaelestiaInstall([string]$Prefix) {
 }
 
 function Get-CaelestiaProcesses([string]$Prefix) {
-    $exe = Join-Path $Prefix 'qs.exe'
-    $versions = Join-Path $Prefix 'versions'
+    $exe = Get-CaelestiaLongPath (Join-Path $Prefix 'qs.exe')
+    $versions = Get-CaelestiaLongPath (Join-Path $Prefix 'versions')
     return @(Get-Process -Name qs -ErrorAction SilentlyContinue | Where-Object {
-        $_.Path -eq $exe -or ($_.Path -and
-            [IO.Path]::GetDirectoryName([IO.Path]::GetDirectoryName($_.Path)) -eq $versions)
+        try {
+            if (-not $_.Path) { return $false }
+            # Process.Path is normally long, but the prefix passed here may be
+            # short. Normalise both before deciding ownership.
+            $path = Get-CaelestiaLongPath $_.Path
+            $path -eq $exe -or [IO.Path]::GetDirectoryName([IO.Path]::GetDirectoryName($path)) -eq $versions
+        } catch {
+            $false
+        }
     })
 }
 
@@ -52,10 +102,10 @@ function Get-CaelestiaProcesses([string]$Prefix) {
 # never touched.
 function Get-CaelestiaHostProcesses([string]$Prefix, [string]$VersionRoot = '') {
     $root = $(if ($VersionRoot) { $VersionRoot } else { Join-Path $Prefix 'versions' })
-    $versions = $root.TrimEnd('\') + '\'
+    $versions = (Get-CaelestiaLongPath $root) + '\'
     return @(Get-Process -Name caelestia-capture, glazier -ErrorAction SilentlyContinue | Where-Object {
         try {
-            $_.Path -and $_.Path.StartsWith($versions, [StringComparison]::OrdinalIgnoreCase)
+            $_.Path -and (Get-CaelestiaLongPath $_.Path).StartsWith($versions, [StringComparison]::OrdinalIgnoreCase)
         } catch {
             $false
         }
@@ -190,14 +240,12 @@ function Test-CaelestiaSchemeGeneration([string]$Generation) {
 # directory (trailing separators, forward slashes, \\?\ prefix, 8.3 short
 # names, letter case) names the same lock. The directory need not exist.
 function Get-CaelestiaCanonicalPath([string]$Path) {
-    if (-not $Path) { throw 'A nonempty path is required.' }
-    if ($Path.StartsWith('\\?\UNC\', [StringComparison]::OrdinalIgnoreCase)) { $Path = '\\' + $Path.Substring(8) }
-    elseif ($Path.StartsWith('\\?\', [StringComparison]::Ordinal) -or $Path.StartsWith('\\.\', [StringComparison]::Ordinal)) { $Path = $Path.Substring(4) }
-    $full = [IO.Path]::GetFullPath($Path)
+    $full = Get-CaelestiaLongPath $Path
     $root = [IO.Path]::GetPathRoot($full)
-    if ($full.Length -gt $root.Length) { $full = $full.TrimEnd('\', '/') }
     if ($full.IndexOf('~') -ge 0 -and $full.Length -gt $root.Length) {
         # A directory pattern also matches 8.3 names and returns the long name.
+        # This covers an intermediate segment that Get-Item could not resolve
+        # because the full directory does not exist yet.
         $current = $root
         foreach ($segment in $full.Substring($root.Length).TrimStart('\').Split('\')) {
             if ($segment.IndexOf('~') -ge 0) {
@@ -1229,7 +1277,8 @@ function Restore-CaelestiaUpdate([string]$Prefix, [string]$ProfileRoot, [string]
     # Recovery must also work after a failed/partial mirror, where the new
     # launch script may not exist. Use the untouched backup's launcher to quit.
     $record = Get-Content -LiteralPath (Join-Path $Backup 'install.json') -Raw -Encoding UTF8 | ConvertFrom-Json
-    if ($record.product -ne 'caelestia-windows' -or $record.prefix -ne $Prefix -or $record.profile -ne $ProfileRoot) {
+    if ($record.product -ne 'caelestia-windows' -or -not (Test-CaelestiaSamePath $record.prefix $Prefix) -or
+        -not (Test-CaelestiaSamePath $record.profile $ProfileRoot)) {
         throw 'Rollback does not belong to this installation.'
     }
     $running = (Get-CaelestiaProcesses $Prefix) -or @(Get-CaelestiaSupervisors $ProfileRoot).Count
@@ -1333,11 +1382,15 @@ function Get-CaelestiaIntegration([string]$Prefix) {
     $testRoots = Get-CaelestiaIntegrationTestRoots
     $programs = if ($testRoots) { $testRoots.Programs } else { [Environment]::GetFolderPath('Programs') }
     $desktop = if ($testRoots) { $testRoots.Desktop } else { [Environment]::GetFolderPath('Desktop') }
-    $default = [IO.Path]::GetFullPath((Join-Path $env:LOCALAPPDATA 'Programs\caelestia-windows')).TrimEnd('\')
+    # One canonical spelling feeds both the default comparison and the hash, so
+    # a prefix named short at install time and long at uninstall time derives
+    # the same entries.
+    $default = Get-CaelestiaLongPath (Join-Path $env:LOCALAPPDATA 'Programs\caelestia-windows')
+    $canonicalPrefix = Get-CaelestiaLongPath $Prefix
     $suffix = ''
-    if ($Prefix -ne $default) {
+    if (-not [string]::Equals($canonicalPrefix, $default, [StringComparison]::OrdinalIgnoreCase)) {
         $hash = [Security.Cryptography.SHA256]::Create()
-        try { $suffix = '-' + ([BitConverter]::ToString($hash.ComputeHash([Text.Encoding]::UTF8.GetBytes($Prefix.ToLowerInvariant())))).Replace('-', '').Substring(0, 12) }
+        try { $suffix = '-' + ([BitConverter]::ToString($hash.ComputeHash([Text.Encoding]::UTF8.GetBytes($canonicalPrefix.ToLowerInvariant())))).Replace('-', '').Substring(0, 12) }
         finally { $hash.Dispose() }
     }
     return @{
@@ -1392,7 +1445,9 @@ function New-CaelestiaLaunchCommand([string]$Conhost, [string]$PowerShell, [stri
 # path can be shortened: the 8.3 name is the same file, and it is kept only when
 # it resolves back to that file. An empty result means no safe shortening.
 function Get-CaelestiaShortPath([string]$Path) {
-    $full = [IO.Path]::GetFullPath($Path)
+    # The generated Run value keeps the short spelling as-is. Only the proof
+    # that it names the same file goes through the long-path normaliser.
+    $full = Get-CaelestiaLongPath $Path
     $short = ''
     $fileSystem = $null
     try {
@@ -1405,7 +1460,7 @@ function Get-CaelestiaShortPath([string]$Path) {
     }
     if (-not $short -or $short.Length -ge $full.Length) { return '' }
     try {
-        $resolved = [IO.Path]::GetFullPath((Get-Item -LiteralPath $short -Force -ErrorAction Stop).FullName)
+        $resolved = Get-CaelestiaLongPath ((Get-Item -LiteralPath $short -Force -ErrorAction Stop).FullName)
     } catch {
         return ''
     }
@@ -1854,9 +1909,12 @@ No: keep starting Caelestia automatically at sign-in.
 }
 
 # Prefix-derived key shared by the new Global lock and the legacy Local name.
+# The canonical long spelling is hashed so a short and a long spelling of the
+# same prefix take the same lock.
 function Get-CaelestiaInstallLockKey([string]$Prefix) {
+    $canonical = Get-CaelestiaLongPath $Prefix
     $hash = [Security.Cryptography.SHA256]::Create()
-    try { return [BitConverter]::ToString($hash.ComputeHash([Text.Encoding]::UTF8.GetBytes($Prefix.ToLowerInvariant()))).Replace('-', '') }
+    try { return [BitConverter]::ToString($hash.ComputeHash([Text.Encoding]::UTF8.GetBytes($canonical.ToLowerInvariant()))).Replace('-', '') }
     finally { $hash.Dispose() }
 }
 
@@ -1935,7 +1993,7 @@ function Initialize-CaelestiaInstall([string]$Prefix, [string]$ProfileRoot, [swi
             throw "Refusing to touch unowned backup directory without install.json: $backup"
         }
         $backupRecord = Get-Content -LiteralPath $backupInstall -Raw -Encoding UTF8 | ConvertFrom-Json
-        if ($backupRecord.product -ne 'caelestia-windows' -or $backupRecord.prefix -ne $Prefix) {
+        if ($backupRecord.product -ne 'caelestia-windows' -or -not (Test-CaelestiaSamePath $backupRecord.prefix $Prefix)) {
             throw "Refusing to touch backup directory belonging to another installation: $backup"
         }
         if (-not (Test-Path -LiteralPath $Prefix)) { [IO.Directory]::Move($backup, $Prefix) }
@@ -1946,10 +2004,10 @@ function Initialize-CaelestiaInstall([string]$Prefix, [string]$ProfileRoot, [swi
     if ((Test-Path -LiteralPath $Prefix) -and (Get-ChildItem -LiteralPath $Prefix -Force | Select-Object -First 1)) {
         if (Test-Path -LiteralPath (Join-Path $Prefix 'install.json')) {
             $old = Read-CaelestiaInstall $Prefix
-            if ($old.installRoot -and $old.installRoot -ne $Prefix) {
+            if ($old.installRoot -and -not (Test-CaelestiaSamePath $old.installRoot $Prefix)) {
                 throw 'Do not install into an immutable version directory. Use its stable installRoot.'
             }
-            if ($old.profile -ne $ProfileRoot) { throw 'An update must retain the installed ProfileRoot.' }
+            if (-not (Test-CaelestiaSamePath $old.profile $ProfileRoot)) { throw 'An update must retain the installed ProfileRoot.' }
         } elseif (-not $Force -or -not ((Test-Path -LiteralPath (Join-Path $Prefix 'qs.exe')) -or (Test-Path -LiteralPath (Join-Path $Prefix 'Start-Caelestia.ps1')))) {
             throw "$Prefix is not a recognized Caelestia installation. A partial install of Caelestia can be replaced with -Force."
         }
@@ -1962,7 +2020,7 @@ function Initialize-CaelestiaInstall([string]$Prefix, [string]$ProfileRoot, [swi
     if (-not (Test-CaelestiaProfileEmpty $ProfileRoot)) {
         $owner = Read-CaelestiaProfileOwner $ProfileRoot
         if ($owner) {
-            if ($owner.prefix -ne $Prefix) {
+            if (-not (Test-CaelestiaSamePath $owner.prefix $Prefix)) {
                 if (-not $Force) { throw "ProfileRoot $ProfileRoot belongs to another Caelestia installation ($($owner.prefix)). Choose a separate profile, or pass -Force to share it." }
                 $profileExclusive = $false
             } else { $profileExclusive = [bool]$owner.exclusive }

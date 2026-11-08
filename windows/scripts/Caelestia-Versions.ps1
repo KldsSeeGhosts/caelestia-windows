@@ -10,12 +10,12 @@ function Get-CaelestiaVersionPrefix([string]$Prefix, [string]$Id) {
     Assert-CaelestiaVersionId $Id
     $runtime = Resolve-CaelestiaDirectory (Join-Path $Prefix "versions\$Id")
     $record = Read-CaelestiaInstall $runtime
-    if ($record.version -ne 1 -or $record.installRoot -ne $Prefix -or $record.versionId -ne $Id) {
+    if ($record.version -ne 1 -or -not (Test-CaelestiaSamePath $record.installRoot $Prefix) -or $record.versionId -ne $Id) {
         throw 'Version payload does not belong to this installation.'
     }
     if (Test-Path -LiteralPath (Join-Path $Prefix 'install.json')) {
         $owner = Read-CaelestiaInstall $Prefix
-        if ($owner.profile -ne $record.profile -or $owner.installId -ne $record.installId) {
+        if (-not (Test-CaelestiaSamePath $owner.profile $record.profile) -or $owner.installId -ne $record.installId) {
             throw 'Version payload has a different profile or installation owner.'
         }
     }
@@ -164,14 +164,14 @@ function Select-CaelestiaExistingVersion([string]$Prefix, [string[]]$Exclude = @
 
 function Install-CaelestiaVersion([string]$Prefix, [string]$Payload, [switch]$Restart, [switch]$Autostart, [switch]$NoIntegration) {
     $old = if (Test-Path -LiteralPath (Join-Path $Prefix 'install.json')) { Read-CaelestiaInstall $Prefix } else { $null }
-    if ($old -and $old.installRoot -and $old.installRoot -ne $Prefix) {
+    if ($old -and $old.installRoot -and -not (Test-CaelestiaSamePath $old.installRoot $Prefix)) {
         throw 'Do not install into an immutable version directory. Use its stable installRoot.'
     }
     $legacy = $old -and $old.version -eq 1
     $previous = if ($old -and -not $legacy) { [string]$old.current } else { '' }
     $candidate = Get-Content -LiteralPath (Join-Path $Payload 'install.json') -Raw -Encoding UTF8 | ConvertFrom-Json
     if ($candidate.product -ne 'caelestia-windows' -or $candidate.version -ne 1 -or
-        ($old -and ($old.profile -ne $candidate.profile -or $old.installId -ne $candidate.installId))) {
+        ($old -and (-not (Test-CaelestiaSamePath $old.profile $candidate.profile) -or $old.installId -ne $candidate.installId))) {
         throw 'Prepared payload does not match this installation and profile.'
     }
     # A Run value that cannot fit must fail before the selector changes. The
@@ -633,14 +633,29 @@ function Complete-CaelestiaInstallIntegration {
     } catch {
         $failure = $_
         if ($Previous) {
-            try {
-                # The failed transaction restored every entry it snapshotted, so
-                # the previous version's integration is untouched. Select it
-                # without rebuilding the command that was just refused.
-                Switch-CaelestiaVersion $Prefix $Previous -Restart:$Restart -SkipIntegration
+            # The failed transaction restored every entry it snapshotted, so the
+            # previous version's integration is untouched. Select it without
+            # rebuilding the command that was just refused.
+            #
+            # An integration retry after an earlier rollback can arrive when the
+            # previous version is already selected. Switching would throw
+            # "That version is already selected" and replace the real failure
+            # with a misleading rollback error, so treat that state as restored.
+            $selected = ''
+            try { $selected = [string](Read-CaelestiaInstall $Prefix).current } catch { }
+            if ($selected -eq $Previous) {
                 Write-Warning 'Installation integration failed; the previous version was selected again.'
-            } catch {
-                throw "Installation integration failed: $($failure.Exception.Message). Rollback to $Previous failed: $($_.Exception.Message)"
+            } else {
+                try {
+                    Switch-CaelestiaVersion $Prefix $Previous -Restart:$Restart -SkipIntegration
+                    # Do not report a rollback that did not reach the real
+                    # previous version.
+                    $restored = [string](Read-CaelestiaInstall $Prefix).current
+                    if ($restored -ne $Previous) { throw "the selector still names $restored." }
+                    Write-Warning 'Installation integration failed; the previous version was selected again.'
+                } catch {
+                    throw "Installation integration failed: $($failure.Exception.Message). Rollback to $Previous failed: $($_.Exception.Message)"
+                }
             }
         }
         throw $failure
@@ -650,9 +665,10 @@ function Complete-CaelestiaInstallIntegration {
 function Remove-CaelestiaRetiredVersions([string]$Prefix) {
     $record = Read-CaelestiaInstall $Prefix
     if ($record.version -ne 2) { return }
-    $running = @(Get-CaelestiaProcesses $Prefix | ForEach-Object { [IO.Path]::GetDirectoryName($_.Path) })
+    $running = @(Get-CaelestiaProcesses $Prefix | ForEach-Object { Get-CaelestiaLongPath ([IO.Path]::GetDirectoryName($_.Path)) })
     foreach ($directory in Get-ChildItem -LiteralPath (Join-Path $Prefix 'versions') -Directory) {
-        if ($directory.Name -in @($record.current, $record.previous) -or $directory.FullName -in $running) { continue }
+        if ($directory.Name -in @($record.current, $record.previous) -or
+            (Get-CaelestiaLongPath $directory.FullName) -in $running) { continue }
         try {
             # Ownership, exact child path and link refusal are checked before
             # every recursive removal. Unknown directories are never adopted.

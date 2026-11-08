@@ -679,6 +679,19 @@ try {
         Assert ($null -ne $runNow -and [string]$runNow.$autoRunName -eq $autoRunValue) 'A failed -Autostart integration removed a pre-existing Run entry it never wrote.'
         Assert ((Read-CaelestiaInstall $autoPrefix).current -eq $autoA) 'An -Autostart integration failure did not select the previous version again.'
         Assert ((Get-Content -LiteralPath $autoShortcut -Raw).Trim() -eq 'previous shortcut') 'An -Autostart integration failure did not restore the previous shortcut.'
+
+        # A retry can fail again after the first rollback already selected the
+        # previous version. The rollback must be a no-op there, not replace the
+        # integration failure with "That version is already selected."
+        $masked = $false
+        $maskedMessage = ''
+        try {
+            Complete-CaelestiaInstallIntegration $autoPrefix (Join-Path $autoPrefix "versions\$autoB") -Previous $autoA -Autostart `
+                -Shortcut $autoShortcut -RunName $autoRunName
+        } catch { $masked = $true; $maskedMessage = $_.Exception.Message }
+        Assert $masked 'A repeated integration failure was hidden.'
+        Assert ($maskedMessage -notmatch 'already selected|Rollback to') 'An already-selected previous version masked the integration failure.'
+        Assert ((Read-CaelestiaInstall $autoPrefix).current -eq $autoA) 'A masked rollback changed the selected version.'
     } finally {
         Remove-ItemProperty -LiteralPath $runKey -Name $autoRunName -ErrorAction SilentlyContinue
         ${function:New-CaelestiaShortcut} = $originalShortcut
@@ -1034,8 +1047,11 @@ function Show-CaelestiaHandoffDialog([string]$Message) {
     Assert ((Read-CaelestiaInstall $ui2Prefix).current -eq $ui2A) 'The lifecycle rollback did not select the first version.'
     $entry = Get-ItemProperty -LiteralPath $ui2KeyPath
     Assert ($entry.DisplayVersion -eq '1.0.0') 'Rollback left a stale Apps & features version.'
-    Assert ($entry.DisplayIcon -eq ((Join-Path $ui2Prefix "versions\$ui2A") + '\qs.exe,0')) 'Rollback left the Apps & features icon on the replaced version.'
-    Assert ((Read-Shortcut $ui2.Shortcut).IconLocation -eq ((Join-Path $ui2Prefix "versions\$ui2A") + '\qs.exe,0')) 'Rollback left the launch shortcut icon on the replaced version.'
+    # The rollback resolves the payload itself, so its icon path can be the
+    # long spelling of a prefix the caller passed short. Compare the location,
+    # not the spelling.
+    Assert (Test-CaelestiaSamePath ($entry.DisplayIcon -replace ',0$', '') (Join-Path $ui2Prefix "versions\$ui2A\qs.exe")) 'Rollback left the Apps & features icon on the replaced version.'
+    Assert (Test-CaelestiaSamePath ((Read-Shortcut $ui2.Shortcut).IconLocation -replace ',0$', '') (Join-Path $ui2Prefix "versions\$ui2A\qs.exe")) 'Rollback left the launch shortcut icon on the replaced version.'
     Assert ((Test-Path -LiteralPath $ui2.SwitchBackShortcut) -and (Test-Path -LiteralPath $ui2.DesktopShortcut)) 'Rollback removed an existing integration entry.'
     Write-Output 'PASS integration rollback: version and icon follow the selected payload, entries stay valid.'
 
@@ -1148,6 +1164,39 @@ $hasWindow = [CaelestiaLauncherProbe.Native]::GetConsoleWindow() -ne [IntPtr]::Z
     $failureExit = Invoke-Launcher (Join-Path $failurePrefix 'Caelestia-Launcher.ps1') $failurePrefix 'start' $failureOutcome
     Assert ($failureExit -eq 1) 'The launcher did not propagate a failed action.'
     Assert ((Get-Content -LiteralPath $failureOutcome -Raw | ConvertFrom-Json).exitCode -eq 1) 'The failed-action outcome is wrong.'
+
+    # A shortcut or sign-in command can name the launcher through an 8.3 path.
+    # The launcher must derive and compare one long prefix, not refuse its own
+    # installation because the invocation spelling differs.
+    $shortLauncherRoot = Join-Path (Get-CaelestiaLongPath $root) ('launcher-short-' + [guid]::NewGuid().ToString('N'))
+    [IO.Directory]::CreateDirectory($shortLauncherRoot) | Out-Null
+    Copy-Item -LiteralPath $launcher -Destination $shortLauncherRoot
+    '{"product":"caelestia-windows"}' | Set-Content -LiteralPath (Join-Path $shortLauncherRoot 'install.json') -Encoding UTF8
+    $shortLauncherMarker = Join-Path $root 'launcher-short-marker.txt'
+    $startScript.Replace('__MARKER__', $shortLauncherMarker.Replace("'", "''")) |
+        Set-Content -LiteralPath (Join-Path $shortLauncherRoot 'Start-Caelestia.ps1') -Encoding UTF8
+    $shortLauncherDir = ''
+    $fileSystem = $null
+    try {
+        $fileSystem = New-Object -ComObject Scripting.FileSystemObject
+        $shortLauncherDir = [string]$fileSystem.GetFolder($shortLauncherRoot).ShortPath
+    } catch { } finally {
+        if ($fileSystem) { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($fileSystem) }
+    }
+    if (-not $shortLauncherDir -or [string]::Equals($shortLauncherDir, $shortLauncherRoot, [StringComparison]::OrdinalIgnoreCase)) {
+        Write-Output 'SKIP short launcher: the test volume creates no 8.3 short names.'
+    } else {
+        $shortLauncherOutcome = Join-Path $root 'launcher-short.json'
+        Remove-Item -LiteralPath $shortLauncherMarker, $shortLauncherOutcome -ErrorAction SilentlyContinue
+        $shortLauncherExit = Invoke-Launcher (Join-Path $shortLauncherDir 'Caelestia-Launcher.ps1') '' 'start' $shortLauncherOutcome
+        Assert ($shortLauncherExit -eq 0) 'The launcher refused a short spelling of its own path.'
+        Assert ((Get-Content -LiteralPath $shortLauncherMarker -Raw).Trim() -match ('^started:' + [regex]::Escape($shortLauncherRoot) + ':consoleWindow=')) 'The launcher did not normalize a short invocation path.'
+        Remove-Item -LiteralPath $shortLauncherMarker, $shortLauncherOutcome -ErrorAction SilentlyContinue
+        $shortPrefixExit = Invoke-Launcher (Join-Path $shortLauncherRoot 'Caelestia-Launcher.ps1') $shortLauncherDir 'start' $shortLauncherOutcome
+        Assert ($shortPrefixExit -eq 0) 'The launcher refused the short spelling of its own prefix.'
+        Assert ((Get-Content -LiteralPath $shortLauncherMarker -Raw).Trim() -match ('^started:' + [regex]::Escape($shortLauncherRoot) + ':consoleWindow=')) 'The launcher passed the short spelling to the installed script.'
+        Write-Output 'PASS launcher short path: a short invocation and a short -Prefix match the long installation.'
+    }
     Write-Output 'PASS launcher: conhost --headless starts the installed script with no console window, and exit codes and refusals are correct.'
 
     # Windows limits a Run value to 260 characters. The generated command no
@@ -1292,6 +1341,45 @@ $hasWindow = [CaelestiaLauncherProbe.Native]::GetConsoleWindow() -ne [IntPtr]::Z
             }
             Write-Output 'PASS run-value preflight: a command that no longer fits fails before activation and a late refusal rolls back untouched.'
         }
+    }
+
+    # Regression: TEMP itself can be an 8.3 short path (hosted runners use
+    # C:\Users\RUNNER~1\AppData\Local\Temp). Records are written through the
+    # long path while a caller can name the same prefix short. Install, upgrade,
+    # integration and rollback must agree that both spellings are one install.
+    $shortFormParent = Join-Path $root ('short-prefix-' + [guid]::NewGuid().ToString('N'))
+    [IO.Directory]::CreateDirectory($shortFormParent) | Out-Null
+    $shortFormPrefix = ''
+    $fileSystem = $null
+    try {
+        $fileSystem = New-Object -ComObject Scripting.FileSystemObject
+        $shortFormPrefix = [string]$fileSystem.GetFolder($shortFormParent).ShortPath
+    } catch { } finally {
+        if ($fileSystem) { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($fileSystem) }
+    }
+    if (-not $shortFormPrefix -or [string]::Equals($shortFormPrefix, $shortFormParent, [StringComparison]::OrdinalIgnoreCase)) {
+        Write-Output 'SKIP short-form prefix: the test volume creates no 8.3 short names.'
+    } else {
+        Assert ((Get-CaelestiaInstallLockKey $shortFormPrefix) -eq (Get-CaelestiaInstallLockKey $shortFormParent)) 'Two spellings of one prefix took different install locks.'
+        Assert ((& $script:realGetIntegration $shortFormPrefix).RunName -eq (& $script:realGetIntegration $shortFormParent).RunName) 'Two spellings of one prefix derived different integration names.'
+        $null = Install-CaelestiaVersion $shortFormPrefix (New-Payload $shortFormPrefix 'short-a' '1.0.0')
+        $shortA = (Read-CaelestiaInstall $shortFormPrefix).current
+        $null = Install-CaelestiaVersion $shortFormPrefix (New-Payload $shortFormPrefix 'short-b' '2.0.0')
+        $shortB = (Read-CaelestiaInstall $shortFormPrefix).current
+        Assert ($shortB -ne $shortA) 'A short-form prefix upgrade did not publish a new version.'
+        # The caller holds the short runtime spelling; the record was written
+        # through the long one.
+        $shortBRuntime = Join-Path $shortFormPrefix "versions\$shortB"
+        Assert ((Read-CaelestiaInstall $shortBRuntime).versionId -eq $shortB) 'A short runtime path did not read its long-path record.'
+        $shortKeyPath = Get-CaelestiaUninstallKeyPath $shortFormPrefix
+        Complete-CaelestiaInstallIntegration $shortFormPrefix $shortBRuntime -Previous $shortA
+        Assert ((Read-CaelestiaInstall $shortFormPrefix).current -eq $shortB) 'A short-form integration changed the selected version.'
+        Assert ((Get-ItemProperty -LiteralPath $shortKeyPath -Name 'DisplayVersion').DisplayVersion -eq '2.0.0') 'A short-form integration did not describe the upgraded version.'
+        $null = Switch-CaelestiaVersion $shortFormPrefix $shortA
+        Assert ((Read-CaelestiaInstall $shortFormPrefix).current -eq $shortA) 'A short-form rollback did not select the previous version.'
+        Assert ((Get-ItemProperty -LiteralPath $shortKeyPath -Name 'DisplayVersion').DisplayVersion -eq '1.0.0') 'A short-form rollback left the Apps & features version on the replaced payload.'
+        Assert (Test-CaelestiaSamePath (Get-CaelestiaVersionPrefix $shortFormPrefix $shortA) (Join-Path $shortFormParent "versions\$shortA")) 'A short-form rollback resolved the wrong payload.'
+        Write-Output 'PASS short-form prefix: install, upgrade, integration and rollback accept an 8.3 prefix spelling.'
     }
 
     # Behavioural switch-back delegation: the wrapper only collects the

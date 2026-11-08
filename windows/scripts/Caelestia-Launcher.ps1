@@ -36,8 +36,25 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# The launcher's own path and a caller-supplied -Prefix can be spelled long or
+# 8.3-short. Compare one long form so a short TEMP or a short shortcut path
+# still matches the installation it names. This stays local because the
+# launcher validates its prefix before loading any code from it.
 function Get-NormalizedPath([string]$Path) {
-    return [IO.Path]::GetFullPath($Path).TrimEnd([char[]]@('\', '/'))
+    if (-not $Path) { return '' }
+    if ($Path.StartsWith('\\?\UNC\', [StringComparison]::OrdinalIgnoreCase)) { $Path = '\\' + $Path.Substring(8) }
+    elseif ($Path.StartsWith('\\?\', [StringComparison]::Ordinal) -or $Path.StartsWith('\\.\', [StringComparison]::Ordinal)) { $Path = $Path.Substring(4) }
+    $full = [IO.Path]::GetFullPath($Path)
+    $root = [IO.Path]::GetPathRoot($full)
+    if ($full.Length -gt $root.Length) { $full = $full.TrimEnd([char[]]@('\', '/')) }
+    try {
+        $item = Get-Item -LiteralPath $full -Force -ErrorAction Stop
+        if ($item.FullName) {
+            $full = $item.FullName
+            if ($full.Length -gt $root.Length) { $full = $full.TrimEnd([char[]]@('\', '/')) }
+        }
+    } catch { }
+    return $full
 }
 
 function Write-LauncherOutcome([int]$Code, [string]$Message) {
