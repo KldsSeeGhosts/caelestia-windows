@@ -63,7 +63,11 @@ PageBase {
             return Tr.tr("Install Wallpaper Engine to use it; Caelestia keeps its own wallpaper.");
         if (!WallpaperEngine.running)
             return Tr.tr("Start Wallpaper Engine to use it; Caelestia keeps its own wallpaper.");
-        return Tr.tr("Wallpaper Engine is running; its wallpaper covers the desktop until the process quits.");
+        // Acknowledged handback: the process still runs, but the desktop is
+        // the shell's again. Saying otherwise here contradicted what is shown.
+        if (WallpaperEngine.desktopHandedBack)
+            return Tr.tr("Wallpaper Engine handed the desktop back; Caelestia shows its own wallpaper while the process keeps running.");
+        return Tr.tr("Wallpaper Engine is running and has not handed the desktop back; its wallpaper covers the desktop until it does.");
     }
 
     // Same allowlisted command and autostart choice as the session drawer.
@@ -365,10 +369,10 @@ PageBase {
         ToggleRow {
             first: true
             text: Tr.tr("Wallpaper Engine wallpapers")
-            // A running engine owns a visible window. The shell cannot place
-            // its own background above it with the pinned backend, so this
-            // toggle states the limitation instead of promising otherwise.
-            subtext: Tr.tr("Needs Wallpaper Engine installed and running. While it runs, its own wallpaper still covers the desktop until it quits")
+            // A running engine owns a visible window until it hands the
+            // desktop back. The pinned backend cannot place the shell's own
+            // background above that window, so the limitation is stated.
+            subtext: Tr.tr("Needs Wallpaper Engine installed and running. Until it hands the desktop back, its wallpaper covers Caelestia's")
             checked: WallpaperEngine.enabled
             onToggled: WallpaperEngine.setEnabled(checked)
         }

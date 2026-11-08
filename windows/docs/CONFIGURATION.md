@@ -322,54 +322,63 @@ another display. The shell retains its own image beneath the external output,
 and an enabled but missing or stopped Wallpaper Engine leaves that image
 visible instead of blanking the desktop.
 
-The shell also records which wallpaper source this profile follows in
+The shell records the wallpaper picks a fresh profile made in Caelestia in
 `state/caelestia/wallpaper/desktop.json`:
 
 ```json
 {
   "version": 1,
-  "source": "default",
-  "monitors": {"<display-target-id>": "user"},
-  "seen": {"<display-target-id>": "C:\\Windows\\Web\\Wallpaper\\Windows\\img0.jpg"}
+  "wallpaper": "D:\\Wallpapers\\space.jpg",
+  "monitors": {"<display-target-id>": "D:\\Wallpapers\\other.jpg"}
 }
 ```
 
-`source` is the profile baseline: `default` keeps the bundled
-`assets/wallpaper.webp`, and `user` follows the Windows wallpaper, where
-Caelestia writes picks. `monitors` overrides the baseline for one display, so
-picking on one monitor never imports the other monitors' older Windows images.
-`seen` is a one-time comparison baseline: the Windows image a default display
-had when the shell first observed it. It is never the chosen image and is never
-moved when a running engine changes the Windows wallpaper. A difference that is
-already present when the shell starts is rollback evidence: once no engine is
-running, that display follows the image observed at startup. A difference that
-appears after startup, including one a disabled engine writes, is ignored and
-never becomes a per-display `user` choice; the bundled default stays until the
-user picks explicitly. The choice itself is never stored as a path.
+`wallpaper` is the profile-wide pick. `monitors` stores per-display picks, so a
+pick on one monitor leaves the other monitors on their own pick or on the
+profile-wide one. The record is only written when the user picks a wallpaper in
+Caelestia (the launcher picker or Nexus). A fresh profile shows the bundled
+`assets/wallpaper.webp` until the first pick and only Caelestia picks after
+that. It does not follow the Windows desktop wallpaper: a change made in
+Windows Settings, by Wallpaper Engine, by another application or by an older
+Caelestia build is not adopted. A pick may still also apply the image to the
+Windows wallpaper, but the shell's source of truth is the recorded pick, not
+the Windows setting. On a fresh install, change the wallpaper in Caelestia, not
+in Windows Settings.
 
-A profile upgrading from an older build has no record. The shell classifies it
-once through `state/caelestia/wallpaper/profile.json`, written synchronously at
-startup before theme tokens, palette state or the wallpaper record can be
-created. When that marker is missing, the presence of the Caelestia state
-directory `state/caelestia` means an earlier build ran: the installer's empty
-`state` directory is not used because every start, fresh or upgrade, creates
-it. The result is recorded in the marker, so a first start that crashes after
-writing `theme-tokens.json` is still treated as the same fresh profile on the
-next start. An existing profile keeps its saved Windows wallpaper and
-per-display choices; a fresh one starts on the bundled default. A record with
-malformed JSON, an unknown `version` or an unexpected field is never
-reinterpreted or rewritten on load: the saved Windows wallpaper stays visible
-until the user makes a new choice.
+A profile upgrading from an older build behaves exactly as before this change.
+The shell follows the Windows wallpaper, including per-display images and
+changes made in Windows Settings. It does not consult or write the pick record.
 
-Deleting `desktop.json` removes the saved choice. The profile marker then
-decides what remains: a fresh profile returns to the bundled default, and an
-existing profile keeps its Windows wallpaper.
+The shell classifies a profile once through
+`state/caelestia/wallpaper/profile.json`, written synchronously at startup
+before theme tokens, palette state or the wallpaper record can be created. When
+that marker is missing, the presence of the Caelestia state directory
+`state/caelestia` means an earlier build ran: the installer's empty `state`
+directory is not used because every start, fresh or upgrade, creates it. The
+result is recorded in the marker, so a first start that crashes after writing
+`theme-tokens.json` is still treated as the same fresh profile on the next
+start. A record with malformed JSON or an unknown `version` is never
+reinterpreted or rewritten on load: a fresh profile keeps showing the bundled
+asset until an explicit pick replaces the record.
 
-A Wallpaper Engine process that is running but not enabled still owns a visible
-wallpaper window. The pinned backend places marked backgrounds below every
-visible foreign child and refuses an above-icons embed while one exists, so the
-bundled background is mounted and ready but the engine's window covers it until
-the process quits. Covering a running engine would need a backend change.
+A rollback is safe by design. An older Caelestia build may change the Windows
+wallpaper without updating the pick record. When the newer build runs again,
+the fresh profile keeps its recorded Caelestia pick, or the bundled asset when
+it has none, and ignores that change. This is intended, not a migration
+failure; the old build cannot know the newer record.
+
+Deleting `desktop.json` removes the saved fresh-profile picks. A fresh profile
+then returns to the bundled asset. An existing profile is unaffected because it
+follows Windows.
+
+An acknowledged Wallpaper Engine handback returns the desktop to Caelestia even
+while the engine process keeps running. A Wallpaper Engine process that is
+running but not enabled, or has not handed the desktop back, still owns a
+visible wallpaper window. The pinned backend places marked backgrounds below
+every visible foreign child and refuses an above-icons embed while one exists,
+so the bundled background is mounted and ready but the engine's window covers
+it until the process quits or hands the desktop back. Covering a running engine
+before a handback would need a backend change.
 
 Windows banner replacement is also configured in `config/windows.json`:
 

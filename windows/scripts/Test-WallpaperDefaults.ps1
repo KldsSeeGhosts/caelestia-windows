@@ -11,11 +11,14 @@ if ($null -eq $defaults.windows.wallpaperEngine -or
     throw 'windows/shell/windows.json must ship windows.wallpaperEngine.enabled=false.'
 }
 # Nexus hosts the opt-in. Keep the explanation and unavailable states wired to
-# the facade instead of a dead row that only flips a local toggle.
+# the facade instead of a dead row that only flips a local toggle. A handed-back
+# engine still runs but no longer covers the desktop, so the status must not
+# claim that it does.
 $servicesPage = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..\shell\adapters\modules\nexus\pages\ServicesPage.qml') -Raw -Encoding UTF8
 foreach ($required in @(
     'Needs Wallpaper Engine installed and running',
-    'its own wallpaper still covers the desktop until it quits',
+    'handed the desktop back',
+    'its wallpaper covers the desktop until it does',
     'checked: WallpaperEngine.enabled',
     'onToggled: WallpaperEngine.setEnabled(checked)',
     'Not installed',
@@ -26,28 +29,27 @@ foreach ($required in @(
     }
 }
 . "$PSScriptRoot\Caelestia-QmlFixture.ps1"
-# Each fixture runs in its own process because the wallpaper source decision
-# is made once per profile. Separate profiles are how the fresh, upgrade,
-# rollback and damaged-record migrations are exercised for real.
+# Each fixture runs in its own process because a profile is classified and a
+# wallpaper source resolved once per start. Separate profiles are how the fresh
+# restart, upgrade, pick restart, damaged-record and retry paths are exercised
+# for real.
 $fixtures = @(
     [ordered]@{ name = 'wallpaper-defaults'; source = 'windows/tests/WallpaperDefaultsTest.qml'
-        marker = 'CAELESTIA_WALLPAPER_DEFAULTS'; minimum = 65 },
+        marker = 'CAELESTIA_WALLPAPER_DEFAULTS'; minimum = 95 },
     [ordered]@{ name = 'wallpaper-engine-off'; source = 'windows/tests/WallpaperEngineDisabledTest.qml'
-        marker = 'CAELESTIA_WALLPAPER_ENGINE_OFF'; minimum = 18 },
+        marker = 'CAELESTIA_WALLPAPER_ENGINE_OFF'; minimum = 24 },
+    [ordered]@{ name = 'wallpaper-restart'; source = 'windows/tests/WallpaperRestartTest.qml'
+        marker = 'CAELESTIA_WALLPAPER_RESTART'; minimum = 25 },
     [ordered]@{ name = 'wallpaper-upgrade'; source = 'windows/tests/WallpaperUpgradeTest.qml'
-        marker = 'CAELESTIA_WALLPAPER_UPGRADE'; minimum = 14 },
+        marker = 'CAELESTIA_WALLPAPER_UPGRADE'; minimum = 18 },
     [ordered]@{ name = 'wallpaper-provenance'; source = 'windows/tests/WallpaperProvenanceTest.qml'
         marker = 'CAELESTIA_WALLPAPER_PROVENANCE'; minimum = 8 },
-    [ordered]@{ name = 'wallpaper-rollback'; source = 'windows/tests/WallpaperRollbackTest.qml'
-        marker = 'CAELESTIA_WALLPAPER_ROLLBACK'; minimum = 11 },
-    [ordered]@{ name = 'wallpaper-rollback-engine'; source = 'windows/tests/WallpaperRollbackEngineTest.qml'
-        marker = 'CAELESTIA_WALLPAPER_ROLLBACK_ENGINE'; minimum = 15 },
     [ordered]@{ name = 'wallpaper-record-retry'; source = 'windows/tests/WallpaperRecordRetryTest.qml'
-        marker = 'CAELESTIA_WALLPAPER_RECORD_RETRY'; minimum = 18 },
+        marker = 'CAELESTIA_WALLPAPER_RECORD_RETRY'; minimum = 25 },
     [ordered]@{ name = 'wallpaper-invalid-record'; source = 'windows/tests/WallpaperInvalidRecordTest.qml'
-        marker = 'CAELESTIA_WALLPAPER_INVALID'; minimum = 10 },
+        marker = 'CAELESTIA_WALLPAPER_INVALID'; minimum = 12 },
     [ordered]@{ name = 'wallpaper-future-record'; source = 'windows/tests/WallpaperFutureRecordTest.qml'
-        marker = 'CAELESTIA_WALLPAPER_FUTURE'; minimum = 6 }
+        marker = 'CAELESTIA_WALLPAPER_FUTURE'; minimum = 7 }
 )
 foreach ($fixture in $fixtures) {
     $result = Invoke-QmlFixture -QtPrefix $QtPrefix -BuildRoot $BuildRoot -Name $fixture.name -ShellFixture `

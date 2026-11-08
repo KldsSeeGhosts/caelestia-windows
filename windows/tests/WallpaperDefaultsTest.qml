@@ -3,17 +3,25 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Windows as Native
 import qs.services
+import qs.utils
 
 // Fresh-install wallpaper defaults. The complete production Wallpapers,
 // WallpaperProvenance and WallpaperEngine singletons own the decision; only
 // native I/O, the sidecar and the scheme generator are faked. There is no
-// saved record and no earlier Caelestia state in the fixture profile, which is
-// the fresh-install state.
+// profile marker and no earlier Caelestia state in the fixture profile, which
+// is the fresh-install state.
 //
-// The Nexus toggle must outlive an onLoaded callback and an asynchronous
-// write, so the toggle and colour stages advance through the event loop.
+// A fresh profile shows the bundled asset until the user picks a wallpaper in
+// Caelestia. Windows Settings and Wallpaper Engine changes are never followed;
+// a picker or Nexus pick, profile-wide or per display, is recorded so a later
+// start keeps it. The Nexus toggle must outlive an onLoaded callback and an
+// asynchronous write, so the toggle and colour stages advance through the
+// event loop.
 QtObject {
     id: root
+
+    readonly property string markerPath: Paths.state + "/wallpaper/profile.json"
+    readonly property string recordPath: Paths.state + "/wallpaper/desktop.json"
 
     property int assertions: 0
     property var nextStep: null
@@ -23,10 +31,10 @@ QtObject {
             throw new Error(description);
     }
     function record(): var {
-        return JSON.parse(Files.contents[Wallpapers.sourceRecordPath] ?? "{}");
+        return JSON.parse(Files.contents[root.recordPath] ?? "{}");
     }
     function marker(): var {
-        return JSON.parse(Files.contents[WallpaperProvenance.markerPath] ?? "{}");
+        return JSON.parse(Files.contents[root.markerPath] ?? "{}");
     }
     function reloadConfig(document): void {
         Files.contents[WallpaperEngine.settingsPath] = JSON.stringify(document);
@@ -68,35 +76,37 @@ QtObject {
             // per-display pick can prove it leaves the other one alone.
             Native.FsUtils.existingFiles = ["C:/fixture/assets/wallpaper.webp",
                 "C:/walls/windows-default.jpg", "C:/walls/primary.jpg",
-                "C:/walls/secondary.jpg", "C:/walls/picked.jpg"];
+                "C:/walls/secondary.jpg", "C:/walls/picked.jpg",
+                "C:/walls/picked2.jpg", "C:/walls/settings-primary.jpg",
+                "C:/walls/settings-secondary.jpg"];
             Quickshell.screens = [{name: "primary"}, {name: "secondary"}];
             WallpaperEngine.options = {};
 
-            // 1. A fresh profile shows the bundled asset on every display and
-            // records that decision. It never writes the Windows wallpaper.
-            // Provenance is recorded before any other current-run writer.
+            // 1. A fresh profile shows the bundled asset on every display. It
+            // records provenance, writes no wallpaper record before a pick and
+            // never writes the Windows wallpaper.
             check(WallpaperProvenance.ready && !WallpaperProvenance.existing,
                 "the fresh profile was not classified before startup writers");
             check(marker().version === 1 && marker().profile === "fresh",
                 "the fresh provenance marker was not written");
+            check(Wallpapers.sourceFresh, "the fresh profile did not resolve as fresh");
             check(Wallpapers.sourceInitialized, "the fresh wallpaper source resolved");
-            check(!Wallpapers.sourceChosen, "a fresh profile is on the bundled default");
-            check(Wallpapers.sourceRecordHealth === "valid", "the fresh record was not written");
+            check(Wallpapers.sourceRecordHealth === "missing", "the fresh profile found a record");
+            check(Wallpapers.profilePick === "", "a fresh profile has a profile-wide pick");
             check(Wallpapers.fileCurrent === Wallpapers.fallback, "fresh fileCurrent is the bundled asset");
             check(Wallpapers.current === Wallpapers.fallback, "fresh current is the bundled asset");
             check(Wallpapers.currentImage === Wallpapers.fallback, "fresh palette source is the bundled asset");
+            check(Wallpapers.lastGoodFile === Wallpapers.fallback, "fresh good file is the bundled asset");
             check(Wallpapers.currentForScreen({name: "primary"}) === Wallpapers.fallback,
                 "the primary display did not start on the bundled asset");
             check(Wallpapers.currentForScreen({name: "secondary"}) === Wallpapers.fallback,
                 "the secondary display did not start on the bundled asset");
             check(Native.Wallpaper.calls.length === 0 && Native.Wallpaper.screenCalls.length === 0,
                 "a fresh profile wrote the Windows wallpaper");
-            let saved = record();
-            check(saved.version === 1 && saved.source === "default", "the fresh record is invalid");
-            check(saved.seen["primary-id"] === "C:/walls/primary.jpg"
-                && saved.seen["secondary-id"] === "C:/walls/secondary.jpg",
-                "the fresh record did not baseline the Windows images");
-            check(saved.monitors === undefined, "a fresh profile recorded a monitor override");
+            check(Files.contents[root.recordPath] === undefined,
+                "a fresh profile wrote a wallpaper record before a pick");
+            check(Native.FsUtils.makePathCalls === 0,
+                "a fresh profile created the record directory before a pick");
 
             // A detected installation does not override the opt-in.
             check(!WallpaperEngine.enabled, "a missing enabled key enabled the integration");
@@ -154,12 +164,27 @@ QtObject {
             WallpaperEngine.detected = false;
             WallpaperEngine.monitors = {};
             WallpaperEngine.items = [];
-            check(Wallpapers.currentForScreen({name: "primary"}) === Wallpapers.fallback,
-                "disabling the engine changed the display");
 
-            // 4. One display's pick records only that display. The untouched
-            // display keeps the bundled asset even after the native change
-            // notification that follows a real wallpaper write.
+            // 4. A Windows Settings change on a fresh profile is not followed.
+            // The bundled asset stays even though Windows now names another
+            // image, and no record is created.
+            Native.Wallpaper.currentPath = "C:/walls/windows-default.jpg";
+            Native.Wallpaper.screenPaths = {primary: "C:/walls/settings-primary.jpg",
+                secondary: "C:/walls/settings-secondary.jpg"};
+            Native.DesktopLayer.wallpaperChanged();
+            check(Wallpapers.fileCurrent === Wallpapers.fallback,
+                "a Windows Settings change replaced the fresh source");
+            check(Wallpapers.currentImage === Wallpapers.fallback,
+                "a Windows Settings change supplied the palette source");
+            check(Wallpapers.currentForScreen({name: "primary"}) === Wallpapers.fallback,
+                "a Windows Settings change reached the primary display");
+            check(Wallpapers.currentForScreen({name: "secondary"}) === Wallpapers.fallback,
+                "a Windows Settings change reached the secondary display");
+            check(Files.contents[root.recordPath] === undefined,
+                "a Windows Settings change created a wallpaper record");
+
+            // A Caelestia pick does switch to its image, and is recorded. The
+            // per-display pick records only that display.
             check(Wallpapers.setWallpaper("C:/walls/picked.jpg", {name: "secondary"}),
                 "the secondary display pick was rejected");
             check(Native.Wallpaper.calls.length === 0, "the display pick used the global setter");
@@ -168,18 +193,19 @@ QtObject {
                 "the first display pick changed the untouched display");
             check(Wallpapers.currentForScreen({name: "secondary"}) === "C:/walls/picked.jpg",
                 "the picked display did not show its image");
+            Native.Wallpaper.screenPaths = {primary: "C:/walls/settings-primary.jpg",
+                secondary: "C:/walls/picked.jpg"};
             Native.DesktopLayer.wallpaperChanged();
             check(Wallpapers.currentForScreen({name: "primary"}) === Wallpapers.fallback,
                 "the native notification imported the untouched display's Windows image");
             check(Wallpapers.currentForScreen({name: "secondary"}) === "C:/walls/picked.jpg",
                 "the native notification lost the picked display");
-            saved = record();
-            check(saved.source === "default", "a display pick changed the profile baseline");
-            check(saved.monitors["secondary-id"] === "user", "the display pick was not recorded");
+            let saved = record();
+            check(saved.version === 1, "the display pick wrote an unversioned record");
+            check(saved.wallpaper === undefined, "a display pick set the profile-wide pick");
+            check(saved.monitors["secondary-id"] === "C:/walls/picked.jpg",
+                "the display pick was not recorded");
             check(saved.monitors["primary-id"] === undefined, "the display pick recorded another display");
-            check(saved.seen["primary-id"] === "C:/walls/primary.jpg",
-                "the untouched display lost its baseline");
-            check(saved.path === undefined, "the record stored a wallpaper path");
 
             // The palette source must not keep naming a display that has
             // disconnected. The remaining display shows the bundled default.
@@ -194,14 +220,30 @@ QtObject {
             check(Wallpapers.currentImage === "C:/walls/picked.jpg",
                 "the reconnected pick did not return as the palette source");
 
-            // 5. A global pick opts the profile in and keeps the saved
-            // wallpaper while the engine is enabled but unavailable.
-            check(Wallpapers.setWallpaper("C:/walls/picked.jpg"), "the global pick was rejected");
+            // 5. A profile-wide pick applies to every display and supersedes
+            // per-display picks. A later Windows Settings change still cannot
+            // replace it.
+            check(Wallpapers.setWallpaper("C:/walls/picked2.jpg"), "the global pick was rejected");
             check(Native.Wallpaper.calls.length === 1, "the global pick was not applied once");
-            check(Wallpapers.sourceChosen, "the global pick did not opt the profile in");
-            check(Wallpapers.current === "C:/walls/picked.jpg", "the global pick is not visible");
-            saved = record();
-            check(saved.source === "user", "the global pick did not record the user source");
+            check(Wallpapers.profilePick === "C:/walls/picked2.jpg", "the global pick was not stored");
+            check(Wallpapers.current === "C:/walls/picked2.jpg", "the global pick is not visible");
+            check(Wallpapers.currentForScreen({name: "primary"}) === "C:/walls/picked2.jpg",
+                "the global pick did not reach the primary display");
+            checkedGlobalRecord(saved);
+            Native.Wallpaper.currentPath = "C:/walls/windows-default.jpg";
+            Native.Wallpaper.screenPaths = {primary: "C:/walls/settings-primary.jpg",
+                secondary: "C:/walls/settings-secondary.jpg"};
+            Native.DesktopLayer.wallpaperChanged();
+            check(Wallpapers.currentForScreen({name: "primary"}) === "C:/walls/picked2.jpg"
+                && Wallpapers.currentForScreen({name: "secondary"}) === "C:/walls/picked2.jpg",
+                "a later Windows Settings change replaced the Caelestia pick");
+            check(Wallpapers.currentImage === "C:/walls/picked2.jpg",
+                "a later Windows Settings change supplied the palette source");
+            check(record().wallpaper === "C:/walls/picked2.jpg",
+                "a later Windows Settings change rewrote the record");
+
+            // An enabled but unavailable engine keeps the saved pick; a
+            // handed-back running engine also shows it again.
             WallpaperEngine.options = {enabled: true};
             WallpaperEngine.snapshotReady = true;
             WallpaperEngine.running = false;
@@ -209,22 +251,17 @@ QtObject {
             WallpaperEngine.desktopHandedBack = false;
             check(!WallpaperEngine.ownsDesktop, "an unavailable engine claimed the desktop");
             check(!Wallpapers.externalWallpaperActive, "an unavailable engine became the external owner");
-            check(Wallpapers.current === "C:/walls/picked.jpg",
+            check(Wallpapers.current === "C:/walls/picked2.jpg",
                 "enabled-but-unavailable did not keep the saved wallpaper");
-            check(Wallpapers.currentForScreen({name: "primary"}) === "C:/walls/picked.jpg",
+            check(Wallpapers.currentForScreen({name: "primary"}) === "C:/walls/picked2.jpg",
                 "enabled-but-unavailable changed the saved display");
             WallpaperEngine.detected = true;
             check(WallpaperEngine.picker === "files",
                 "an installed but stopped engine took over the picker");
-            WallpaperEngine.detected = false;
-
-            // A running engine that has handed the desktop back also shows
-            // the Caelestia source, not a blank frame.
-            WallpaperEngine.detected = true;
             WallpaperEngine.running = true;
             WallpaperEngine.desktopHandedBack = true;
             check(!WallpaperEngine.ownsDesktop, "a handed-back engine kept the desktop claim");
-            check(Wallpapers.current === "C:/walls/picked.jpg",
+            check(Wallpapers.current === "C:/walls/picked2.jpg",
                 "a handed-back engine did not keep the saved wallpaper");
             WallpaperEngine.running = false;
             WallpaperEngine.desktopHandedBack = false;
@@ -232,6 +269,15 @@ QtObject {
             WallpaperEngine.options = {};
             root.later(runToggle);
         });
+    }
+
+    function checkedGlobalRecord(previous): void {
+        const saved = record();
+        check(saved.version === 1, "the global pick wrote an unversioned record");
+        check(saved.wallpaper === "C:/walls/picked2.jpg", "the global pick was not recorded");
+        check(!saved.monitors || Object.keys(saved.monitors).length === 0,
+            "the global pick kept a per-display pick");
+        check(saved !== previous, "the global pick reused the display record");
     }
 
     function runToggle(): void {

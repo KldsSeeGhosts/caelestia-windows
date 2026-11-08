@@ -10,13 +10,16 @@ installed or not running, the shell selects its own wallpaper and derives its
 palette from that image. A running engine still owns a visible wallpaper
 window: the pinned backend places marked backgrounds below every visible
 foreign child and refuses an above-icons embed while one exists, so the engine
-covers the shell's image until the process quits. A fresh profile starts on
-`assets/wallpaper.webp`; provenance is recorded once in
+covers the shell's image until the process quits or hands the desktop back. A
+fresh profile starts on `assets/wallpaper.webp` and then follows only
+Caelestia picks: provenance is recorded once in
 `state/caelestia/wallpaper/profile.json` before any other start-up writer, and
-the chosen source is recorded in `state/caelestia/wallpaper/desktop.json`. An
-upgrade keeps the Windows wallpaper it already showed, whether or not the
-optional colour runtime produced a palette. See the configuration reference for
-the record, the comparison baseline and the missing-key rule.
+the profile-wide and per-display picks are recorded in
+`state/caelestia/wallpaper/desktop.json`. A Windows Settings change, an engine
+write or an older build's rollback is not followed on a fresh profile. A
+profile that already existed keeps following the Windows wallpaper it showed
+before, whether or not the optional colour runtime produced a palette. See the
+configuration reference for the pick record and the missing-key rule.
 
 The active config is
 `<user>.general.wallpaperconfig.selectedwallpapers.MonitorN.file`. Saved/recent
@@ -127,11 +130,12 @@ that missing information. Keeping a shell overlay above the external HWND
 would instead risk covering legitimate wallpaper content.
 
 Helper failure also cannot prove that an engine-era system wallpaper is an
-own-file choice. Without successful ownership discovery at startup, the
-existing system-source adoption path still needs live scrutiny. A reload with
-an engine already running has no persisted last-own source. Process start/stop
-remains bounded by the existing status scan; a helper timeout cannot establish
-whether external output has stopped.
+own-file choice. A fresh profile never adopts a Windows image, so the question
+no longer arises there. An existing profile still follows Windows as before, so
+its system-source path still needs live scrutiny. A reload with an engine
+already running has no persisted last-own source. Process start/stop remains
+bounded by the existing status scan; a helper timeout cannot establish whether
+external output has stopped.
 
 Windows keeps WallpaperImpl's texture provider alive between its own image
 transitions, rather than recreating the shader input at capture time.

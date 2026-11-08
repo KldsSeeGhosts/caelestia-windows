@@ -21,11 +21,16 @@ release and Actions runs.
 - **Wallpaper Engine while disabled:** a running engine keeps a visible
   wallpaper window that the shell cannot place its own background above. The
   bundled wallpaper and palette stay selected, but the engine's window covers
-  the desktop until the process quits. Fixing that needs a backend change.
+  the desktop until the process quits or hands the desktop back. After an
+  acknowledged handback the shell shows its own wallpaper again. Fixing the
+  pre-handback case needs a backend change.
 - **Wallpaper provenance:** the fresh-or-upgrade marker records its decision
   once. An existing profile whose entire `state/caelestia` directory was
   removed is indistinguishable from a fresh one; deleting only
-  `wallpaper/desktop.json` keeps the recorded provenance.
+  `wallpaper/desktop.json` keeps the recorded provenance. A fresh profile does
+  not follow Windows wallpaper changes, including one made by an older
+  Caelestia build after a rollback; it keeps its Caelestia pick or the bundled
+  asset. An existing profile keeps following Windows as before.
 - **Capture:** shipped screenshots, recordings and previews are 8-bit SDR sRGB.
   They do not preserve an HDR source as an HDR output. See
   [capture color policy](CAPTURE-COLOR.md).
