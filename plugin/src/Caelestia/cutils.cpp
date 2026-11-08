@@ -1,6 +1,5 @@
 #include "cutils.hpp"
 
-#include <qdatetime.h>
 #include <qdir.h>
 #include <qfile.h>
 #include <qfileinfo.h>
@@ -11,7 +10,6 @@
 #include <qquickwindow.h>
 #include <qregularexpression.h>
 #include <qsavefile.h>
-#include <qstandardpaths.h>
 #include <qtconcurrentrun.h>
 #include <quuid.h>
 
@@ -25,19 +23,6 @@ namespace {
 
 Q_LOGGING_CATEGORY(lcCUtils, "caelestia.cutils", QtInfoMsg)
 
-// The shell state folder, as the other native state code resolves it.
-QString stateRoot() {
-    const auto isolated = qEnvironmentVariable("CAELESTIA_STATE_DIR");
-    const auto root = isolated.isEmpty()
-        ? QStandardPaths::writableLocation(QStandardPaths::GenericStateLocation) + QStringLiteral("/caelestia")
-        : isolated;
-    return QDir::cleanPath(QFileInfo(root).absoluteFilePath());
-}
-
-QString captureFolder() {
-    return stateRoot() + QStringLiteral("/capture");
-}
-
 // A junction, a symlink or any other reparse point. Anything that cannot be
 // inspected counts as one, so cleanup refuses rather than guesses.
 bool isReparsePoint(const QString& path) {
@@ -50,7 +35,7 @@ bool isReparsePoint(const QString& path) {
 }
 
 const QRegularExpression& captureTempName() {
-    static const QRegularExpression name(QStringLiteral("^clipboard-[0-9a-f]{32}\\.png$"));
+    static const QRegularExpression name(QStringLiteral("^[0-9a-f]{32}\\.png\\z"));
     return name;
 }
 
@@ -183,51 +168,36 @@ bool CUtils::deleteFile(const QUrl& path) {
 }
 
 QString CUtils::newCaptureTempPath() {
-    const auto folder = captureFolder();
-    if (!QDir().mkpath(folder)) {
-        qCWarning(lcCUtils) << "newCaptureTempPath: cannot create the capture folder";
-        return {};
-    }
-
     // A random 128-bit name, created with NewOnly: it can never collide with a
     // file of another picker, another reload or another process.
     for (int attempt = 0; attempt < 4; attempt++) {
-        const auto path = folder + QStringLiteral("/clipboard-") + QUuid::createUuid().toString(QUuid::Id128)
-            + QStringLiteral(".png");
+        const auto path = QDir::tempPath() + QStringLiteral("/caelestia-clipboard-")
+            + QUuid::createUuid().toString(QUuid::Id128) + QStringLiteral(".png");
         QFile file(path);
         if (file.open(QIODevice::WriteOnly | QIODevice::NewOnly))
             return path;
     }
 
-    qCWarning(lcCUtils) << "newCaptureTempPath: cannot create a hand-over file";
+    qCWarning(lcCUtils) << "newCaptureTempPath: cannot create a hand-over file in the temp directory";
     return {};
 }
 
-int CUtils::removeStaleCaptureTemps() {
-    const auto state = stateRoot();
-    const auto folder = captureFolder();
-    if (!QFileInfo(folder).isDir())
-        return 0;
-
-    // The capture folder and its only ancestor up to the state folder must be
-    // ordinary directories. QDir::NoSymLinks below filters entries, not these.
-    if (isReparsePoint(folder) || isReparsePoint(state)) {
-        qCWarning(lcCUtils) << "removeStaleCaptureTemps: the capture folder is behind a link; nothing removed";
-        return 0;
+bool CUtils::removeCaptureTemp(const QString& path) {
+    const auto prefix = QDir::tempPath() + QStringLiteral("/caelestia-clipboard-");
+    // Paths on Windows are case-insensitive; the name part below is lower case hex.
+    if (!path.startsWith(prefix, Qt::CaseInsensitive)
+        || !captureTempName().match(QStringView(path).mid(prefix.size())).hasMatch()) {
+        qCWarning(lcCUtils) << "removeCaptureTemp: not a capture hand-over file path";
+        return false;
     }
 
-    const auto limit = QDateTime::currentDateTime().addSecs(-60);
-    int removed = 0;
-    const auto files = QDir(folder).entryInfoList(QDir::Files | QDir::NoSymLinks | QDir::NoDotAndDotDot);
-    for (const auto& info : files) {
-        if (!info.isFile() || !captureTempName().match(info.fileName()).hasMatch())
-            continue;
-        if (isReparsePoint(info.absoluteFilePath()) || info.lastModified() >= limit)
-            continue;
-        if (QFile::remove(info.absoluteFilePath()))
-            removed++;
+    const QFileInfo info(path);
+    if (!info.isFile() || isReparsePoint(path)) {
+        qCWarning(lcCUtils) << "removeCaptureTemp: not a regular file";
+        return false;
     }
-    return removed;
+
+    return QFile::remove(path);
 }
 
 QString CUtils::toLocalFile(const QUrl& url) {

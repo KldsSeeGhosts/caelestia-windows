@@ -11,7 +11,6 @@ import qs.components.containers
 import qs.services
 import qs.utils
 import "CaptureLogic.js" as Logic
-import "../../utils/FileUrls.js" as FileUrls
 
 // Windows adaptation of upstream modules/areapicker/AreaPicker.qml.
 //
@@ -48,7 +47,8 @@ Scope {
     // Where files go. Screenshots are written to <saveRoot>/Screenshots, and
     // to <saveRoot> itself when that folder cannot be created. Fixtures redirect
     // it. The clipboard hand-over files are named and placed by the plugin
-    // (CUtils.newCaptureTempPath), under the shell state folder.
+    // (CUtils.newCaptureTempPath), in the OS temp directory. A crash while a
+    // clipboard save is under way can leave one caelestia-clipboard-*.png there.
     property string saveRoot: Paths.pictures
     // The screens the picker serves. Fixtures replace the list to simulate a
     // monitor being unplugged.
@@ -85,8 +85,6 @@ Scope {
         stack = Array.from(Hyprland.windowStack());
         openScreenNames = screenNames;
         session++;
-        // Hand-over files left by a crash or a reload are removed after a minute.
-        CUtils.removeStaleCaptureTemps();
         opened = true;
         return true;
     }
@@ -100,7 +98,7 @@ Scope {
         session++;
         saving = false;
         if (activeTemp) {
-            removeFile(activeTemp);
+            removeTemp(activeTemp);
             activeTemp = "";
         }
     }
@@ -121,8 +119,10 @@ Scope {
         invalidate();
     }
 
-    function removeFile(path: string): void {
-        CUtils.deleteFile(FileUrls.fromLocalPath(path));
+    // Deletes one hand-over file. The plugin accepts only the exact path scheme it
+    // creates in the temp directory, and refuses everything else.
+    function removeTemp(path: string): void {
+        CUtils.removeCaptureTemp(path);
     }
 
     // A new, empty hand-over file for this clipboard save, or "" if none could
@@ -146,11 +146,11 @@ Scope {
     // lands after its session ended deletes its own file and copies nothing.
     function copyFinished(started: int, path: string): void {
         if (started !== session) {
-            removeFile(path);
+            removeTemp(path);
             return;
         }
         const accepted = clipboard.copyImageFile(path);
-        removeFile(path);
+        removeTemp(path);
         activeTemp = "";
         if (accepted) {
             Toaster.toast(Tr.tr("Screenshot taken"), Tr.tr("Copying screenshot to clipboard\u2026"), "screenshot_region");
@@ -208,7 +208,7 @@ Scope {
         if (CaptureUi.picker === root)
             CaptureUi.picker = null;
         if (activeTemp)
-            removeFile(activeTemp);
+            removeTemp(activeTemp);
     }
 
     LazyLoader {

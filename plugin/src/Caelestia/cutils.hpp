@@ -27,16 +27,15 @@ public:
 
     Q_INVOKABLE static bool copyFile(const QUrl& source, const QUrl& target, bool overwrite = true);
     Q_INVOKABLE static bool deleteFile(const QUrl& path);
-    // Screenshot hand-over files. The capture folder is <state>/capture, resolved
-    // here from CAELESTIA_STATE_DIR (or the user state folder); QML never names
-    // the folder or a pattern. newCaptureTempPath() creates a new empty file
-    // clipboard-<uuid>.png exclusively and returns its path, or an empty string.
-    // removeStaleCaptureTemps() deletes regular files in the capture folder whose
-    // names match that scheme and that are older than a minute. It does nothing
-    // if the capture folder or the state folder is a junction or symlink. It
-    // returns how many files it removed.
+    // Screenshot hand-over files, kept in the OS temp directory.
+    // newCaptureTempPath() creates a new empty file
+    // <QDir::tempPath()>/caelestia-clipboard-<uuid>.png exclusively (NewOnly) and
+    // returns its path, or an empty string. removeCaptureTemp(path) deletes one
+    // such file. It accepts only a path exactly equal to the temp directory plus
+    // that name scheme, and it refuses anything else, including `..` paths, other
+    // names, directories and reparse points. It returns whether it deleted the file.
     Q_INVOKABLE static QString newCaptureTempPath();
-    Q_INVOKABLE static int removeStaleCaptureTemps();
+    Q_INVOKABLE static bool removeCaptureTemp(const QString& path);
 
     Q_INVOKABLE static QString toLocalFile(const QUrl& url);
 

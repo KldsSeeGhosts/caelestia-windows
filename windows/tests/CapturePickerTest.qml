@@ -21,9 +21,10 @@ ShellRoot {
     property bool surfacesHiddenNow: true
     property string saveRoot: (Quickshell.env("CAELESTIA_STATE_DIR") || "").replace(/\\/g, "/") + "/picker-test"
     property string savedPath: ""
-    // The plugin resolves the capture folder itself, from the same state folder.
+    // Hand-over files live in the OS temp directory. The fixture runner points
+    // TEMP and TMP at a disposable folder, so nothing lands in the real one.
+    property string tempFolder: (Quickshell.env("TEMP") || "").split("\\").join("/")
     property string stateFolder: (Quickshell.env("CAELESTIA_STATE_DIR") || "").split("\\").join("/")
-    property string captureFolder: stateFolder + "/capture"
 
     property QtObject glazier: QtObject {
         property bool ready: true
@@ -149,6 +150,11 @@ ShellRoot {
         shell.command = [Quickshell.env("SystemRoot") + "\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
             "-NoProfile", "-NonInteractive", "-Command", script];
         shell.running = true;
+    }
+
+    function inTemp(path): bool {
+        return root.tempFolder !== "" && path.toLowerCase().indexOf(root.tempFolder.toLowerCase() + "/") === 0
+            && path.indexOf("/", root.tempFolder.length + 1) < 0;
     }
 
     function winPath(path): string {
@@ -381,8 +387,8 @@ ShellRoot {
     function afterClipboard(): void {
         check(clipboardRecorder.copied.length === 1, "the image is handed to the clipboard once");
         const path = clipboardRecorder.copied[0].split("\\").join("/");
-        check(path.indexOf(root.captureFolder + "/clipboard-") === 0 && /clipboard-[0-9a-f]{32}\.png$/.test(path),
-            "from this save's own uniquely named file in the capture folder under the state folder: " + path);
+        check(inTemp(path) && /\/caelestia-clipboard-[0-9a-f]{32}\.png$/.test(path),
+            "from this save's own uniquely named file in the temp directory: " + path);
         check(clipboardRecorder.existedAtCall, "the file existed when the clipboard call ran");
         check(clipboardRecorder.sizeAtCall.width === 60 && clipboardRecorder.sizeAtCall.height === 50,
             "and held the selection: " + clipboardRecorder.sizeAtCall);
@@ -585,8 +591,8 @@ ShellRoot {
     }
 
     function staleSweep(): void {
-        // Two fresh pickers, both at session 0, reserve different files: names do
-        // not depend on the session.
+        // Two fresh pickers, both at session 0, reserve different files in the
+        // temp directory: names do not depend on the session.
         const first = extraPicker.createObject(root);
         const second = extraPicker.createObject(root);
         CaptureUi.picker = picker;
@@ -594,69 +600,56 @@ ShellRoot {
         const pathOne = first.beginClipboard();
         const pathTwo = second.beginClipboard();
         check(pathOne !== "" && pathTwo !== "" && pathOne !== pathTwo, "but get different hand-over paths");
-        check(pathOne.indexOf(root.captureFolder + "/clipboard-") === 0 && WindowsFiles.isFile(pathOne) && WindowsFiles.isFile(pathTwo),
-            "each created exclusively in the capture folder");
+        check(inTemp(pathOne) && inTemp(pathTwo) && WindowsFiles.isFile(pathOne) && WindowsFiles.isFile(pathTwo),
+            "each created exclusively, directly in the temp directory");
         first.invalidate();
+        check(!WindowsFiles.isFile(pathOne) && WindowsFiles.isFile(pathTwo), "a picker deletes only its own file");
         second.invalidate();
-        check(!WindowsFiles.isFile(pathOne) && !WindowsFiles.isFile(pathTwo), "and each picker deletes only its own");
+        check(!WindowsFiles.isFile(pathTwo), "the other deletes its own");
         first.destroy();
         second.destroy();
-
-        // The start-of-picker sweep deletes only old temp files in the capture
-        // folder. Fresh files, other names, folders and files outside survive.
-        const old = CUtils.newCaptureTempPath().split("\\").join("/");
-        const fresh = CUtils.newCaptureTempPath().split("\\").join("/");
-        const hex = "0123456789abcdef0123456789abcdef";
-        const other = root.captureFolder + "/other-" + hex + ".png";
-        const tooShort = root.captureFolder + "/clipboard-1.png";
-        const sibling = root.stateFolder + "/sibling";
-        const outside = sibling + "/clipboard-" + hex + ".png";
-        const parentFile = root.stateFolder + "/clipboard-" + hex + ".png";
-        const folderLike = root.captureFolder + "/clipboard-" + "fedcba9876543210fedcba9876543210" + ".png";
-        const setup = "$ErrorActionPreference='Stop'; $old=(Get-Date).AddMinutes(-5); "
-            + "New-Item -ItemType Directory -Force -Path '" + winPath(sibling) + "','" + winPath(folderLike) + "' | Out-Null; "
-            + "foreach ($p in '" + winPath(old) + "','" + winPath(other) + "','" + winPath(tooShort) + "','" + winPath(outside) + "','" + winPath(parentFile) + "') { "
-            + "if (-not (Test-Path -LiteralPath $p)) { New-Item -ItemType File -Path $p | Out-Null }; (Get-Item -LiteralPath $p).LastWriteTime = $old }";
-        powershell(setup, code => {
-            check(code === 0, "the sweep fixture was set up");
-            check(CUtils.removeStaleCaptureTemps() === 1, "the sweep removes exactly the one old hand-over file");
-            check(CUtils.removeStaleCaptureTemps.length === 0, "the sweep takes no directory or pattern argument");
-            try {
-                CUtils.removeStaleCaptureTemps("../sibling", "*", 0);
-            } catch (error) {
-                // Either a refusal or an ignored argument is fine; what matters is below.
-            }
-            check(!WindowsFiles.isFile(old), "an old hand-over file in the capture folder is removed");
-            check(WindowsFiles.isFile(fresh), "a fresh one survives");
-            check(WindowsFiles.isFile(other) && WindowsFiles.isFile(tooShort), "files with other names survive, even old");
-            check(WindowsFiles.isFile(outside) && WindowsFiles.isFile(parentFile), "old files outside the capture folder survive, even with a matching name");
-            check(!WindowsFiles.isFile(folderLike), "a folder is not a file");
-            junctionStep(fresh, hex);
-        });
+        removeScope();
     }
 
-    function junctionStep(fresh, hex): void {
-        // The capture folder is replaced by a junction to another folder holding an
-        // old, matching file. The sweep must refuse and delete nothing in the target.
+    function removeScope(): void {
+        // CUtils.removeCaptureTemp accepts only the exact name scheme in the temp
+        // directory.
+        const hex = "0123456789abcdef0123456789abcdef";
+        const mine = CUtils.newCaptureTempPath();
+        const base = mine.substring(mine.lastIndexOf("/") + 1);
+        const wrongName = root.tempFolder + "/caelestia-clipboard-" + hex.substring(1) + ".png";
+        const upper = root.tempFolder + "/caelestia-clipboard-" + hex.toUpperCase() + ".png";
+        const unrelated = root.tempFolder + "/unrelated-" + hex + ".png";
+        const elsewhere = root.stateFolder + "/caelestia-clipboard-" + hex + ".png";
+        const sub = root.tempFolder + "/sub";
+        const dotted = sub + "/../" + base;
+        const linkName = root.tempFolder + "/caelestia-clipboard-fedcba9876543210fedcba9876543210.png";
         const target = root.stateFolder + "/junction-target";
-        const victim = target + "/clipboard-" + hex + ".png";
-        const script = "$ErrorActionPreference='Stop'; $old=(Get-Date).AddMinutes(-5); "
-            + "Remove-Item -LiteralPath '" + winPath(root.captureFolder) + "' -Recurse -Force; "
-            + "New-Item -ItemType Directory -Force -Path '" + winPath(target) + "' | Out-Null; "
-            + "New-Item -ItemType File -Path '" + winPath(victim) + "' | Out-Null; (Get-Item -LiteralPath '" + winPath(victim) + "').LastWriteTime = $old; "
-            + "New-Item -ItemType Junction -Path '" + winPath(root.captureFolder) + "' -Target '" + winPath(target) + "' | Out-Null";
-        powershell(script, code => {
-            check(code === 0, "the junction was created");
-            check(WindowsFiles.isFile(victim), "the target holds an old matching file");
-            check(CUtils.removeStaleCaptureTemps() === 0, "the sweep refuses a junction in place of the capture folder");
-            check(WindowsFiles.isFile(victim), "and deletes nothing in its target");
+        const setup = "$ErrorActionPreference='Stop'; "
+            + "New-Item -ItemType Directory -Force -Path '" + winPath(sub) + "','" + winPath(target) + "' | Out-Null; "
+            + "foreach ($p in '" + winPath(wrongName) + "','" + winPath(upper) + "','" + winPath(unrelated) + "','" + winPath(elsewhere) + "') { "
+            + "if (-not (Test-Path -LiteralPath $p)) { New-Item -ItemType File -Path $p | Out-Null } }; "
+            + "New-Item -ItemType File -Force -Path '" + winPath(target) + "\\keep.txt' | Out-Null; "
+            + "New-Item -ItemType Junction -Path '" + winPath(linkName) + "' -Target '" + winPath(target) + "' | Out-Null";
+        powershell(setup, code => {
+            check(code === 0, "the refusal cases were set up");
+            check(WindowsFiles.isFile(mine), "a hand-over file exists");
+            check(CUtils.removeCaptureTemp(dotted) === false && WindowsFiles.isFile(mine), "a path with .. is refused");
+            check(CUtils.removeCaptureTemp(winPath(mine)) === false && WindowsFiles.isFile(mine), "so is the same path with other separators");
+            check(CUtils.removeCaptureTemp(wrongName) === false && WindowsFiles.isFile(wrongName), "a name of the wrong length is refused");
+            check(CUtils.removeCaptureTemp(upper) === false && WindowsFiles.isFile(upper), "so is upper case hex");
+            check(CUtils.removeCaptureTemp(unrelated) === false && WindowsFiles.isFile(unrelated), "so is another name in the temp directory");
+            check(CUtils.removeCaptureTemp(elsewhere) === false && WindowsFiles.isFile(elsewhere), "so is a matching name in another directory");
+            check(CUtils.removeCaptureTemp(sub) === false && CUtils.removeCaptureTemp(root.tempFolder) === false, "so are directories");
+            check(CUtils.removeCaptureTemp("") === false && CUtils.removeCaptureTemp(mine + "\n") === false, "so are an empty path and a trailing newline");
+            check(CUtils.removeCaptureTemp(linkName) === false && WindowsFiles.isFile(target + "/keep.txt"),
+                "a junction with a matching name is refused and its target is untouched");
+            check(CUtils.removeCaptureTemp(mine) === true && !WindowsFiles.isFile(mine), "the exact path is deleted");
+            check(CUtils.removeCaptureTemp(mine) === false, "and deleting it again does nothing");
             // Remove only the link, never its contents.
-            powershell("cmd /c rmdir \"" + winPath(root.captureFolder) + "\"", removed => {
-                check(removed === 0 && WindowsFiles.isFile(victim), "the junction is removed and the target is intact");
-                check(CUtils.removeStaleCaptureTemps() === 0, "with no capture folder the sweep does nothing");
-                check(CaptureUi.screenshot("open") === true && picker.opened, "the picker opens for the sweep case");
-                picker.cancel();
-                later(900, () => step(monitorStep));
+            powershell("cmd /c rmdir \"" + winPath(linkName) + "\"", removed => {
+                check(removed === 0 && WindowsFiles.isFile(target + "/keep.txt"), "the junction is removed and the target is intact");
+                monitorStep();
             });
         });
     }
