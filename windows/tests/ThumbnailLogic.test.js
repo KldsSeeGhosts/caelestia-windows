@@ -176,17 +176,33 @@ test("Save is offered only for a capture that was not saved", () => {
     assert.deepEqual(plain(logic.actions(true)), ["copy", "reveal", "close"]);
 });
 
-test("the button pill is centred and 9 px above the bottom edge", () => {
+// The shell measures the pill (its buttons plus Tokens padding) and passes it in.
+const onPixel = (value, scale) => Math.abs(value * scale - Math.round(value * scale)) < 1e-6;
+
+test("the button pill is centred and its bottom margin above the bottom edge", () => {
     const card = { width: 260, height: 174 };
-    // Four 30 px buttons, three 2 px gaps and 3 px of padding on each side.
-    assert.deepEqual(plain(logic.pillRect(card, 4)), { x: 64, y: 174 - 9 - 36, width: 132, height: 36 });
-    // Three buttons: 90 + 4 + 6 = 100 wide.
-    assert.deepEqual(plain(logic.pillRect(card, 3)), { x: 80, y: 129, width: 100, height: 36 });
+    // Four 28 px buttons, three 4 px gaps and 4 px of padding on each side.
+    const four = { width: 4 * 28 + 3 * 4 + 8, height: 28 + 8 };
+    assert.deepEqual(plain(logic.pillRect(card, four, { scale: 1, bottom: 8 })), { x: 64, y: 174 - 8 - 36, width: 132, height: 36 });
+    // Three buttons.
+    const three = { width: 3 * 28 + 2 * 4 + 8, height: 36 };
+    assert.deepEqual(plain(logic.pillRect(card, three, { scale: 1, bottom: 8 })), { x: 80, y: 130, width: 100, height: 36 });
+    assert.equal(logic.pillRect(card, three, { scale: 1, bottom: 12 }).y, 126, "the bottom margin is an input");
+});
+
+test("the pill sits on whole device pixels at every scale", () => {
+    const card = { width: 260, height: 174 };
+    for (const scale of [1, 1.25, 1.5, 1.75, 2]) {
+        const pill = logic.pillRect(card, { width: 131.3, height: 36.6 }, { scale, bottom: 8 });
+        for (const key of ["x", "y", "width", "height"])
+            assert.ok(onPixel(pill[key], scale), `${key} = ${pill[key]} at ${scale}`);
+        assert.ok(pill.width >= 131.3 && pill.height >= 36.6, "rounded up, so the buttons keep their room");
+    }
 });
 
 test("the pill fits the smallest card", () => {
     const size = logic.previewSize({ width: 1920, height: 720 });
-    const pill = logic.pillRect(size, 4);
+    const pill = logic.pillRect(size, { width: 132, height: 36 }, { scale: 1, bottom: 8 });
     assert.ok(pill.x >= 0 && pill.x + pill.width <= size.width);
     assert.ok(pill.y >= 0 && pill.y + pill.height <= size.height);
 });

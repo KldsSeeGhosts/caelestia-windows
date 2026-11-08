@@ -2,9 +2,11 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Controls
+import Quickshell
 import Caelestia.Config
 import Caelestia.I18n
 import qs.components
+import qs.components.controls
 import qs.components.effects
 import qs.services
 import "ThumbnailLogic.js" as Logic
@@ -12,11 +14,11 @@ import "../../utils/FileUrls.js" as FileUrls
 
 // One post-capture preview, drawn by Thumbnails.qml inside its panel.
 //
-// The look follows the classic capture tool's thumbnail (260 x 174, surface
-// fill, 1 px primaryContainer border, the image fitted 20 px in from every
-// edge, a pill of 30 px buttons on surfaceVariant while the pointer is over
-// it), built from Caelestia components and motion. The card owns only its own
-// presentation and timeout. Everything that touches files or the clipboard is a
+// The card is 260 x 174 with a surface fill, a primaryContainer border and the
+// image fitted 20 px in from every edge, as the classic tool's thumbnail was.
+// The buttons that show while the pointer is over it are Caelestia IconButtons
+// in a row on surfaceVariant, sized by the control and by Tokens. The card owns
+// only its own presentation and timeout. Everything that touches files or the clipboard is a
 // function on `owner` (Thumbnails.qml).
 Item {
     id: root
@@ -64,9 +66,18 @@ Item {
         fade = target;
     }
 
+    // The card starts on a whole device pixel, so everything placed in it with
+    // whole device offsets (the pill, the buttons, their icons) is on one too. A
+    // card sliding in is between pixels until it settles. The pixels are those of
+    // the window the card is in, as Qt renders it now. `entry.dpr` is the ratio of
+    // the capture and only sizes the image; the screen can change after a capture,
+    // and the window announces that change.
+    readonly property real windowDpr: (QsWindow.window as QsWindow)?.devicePixelRatio ?? 1
+    readonly property real dpr: windowDpr > 0 ? windowDpr : 1
+
     objectName: "captureThumbnail"
-    x: slot.x
-    y: slot.y
+    x: Logic.snap(slot.x, dpr)
+    y: Logic.snap(slot.y, dpr)
     width: slot.width
     height: slot.height
     opacity: fade
@@ -222,14 +233,16 @@ Item {
         id: pill
 
         readonly property var names: Logic.actions(root.entry.saved)
-        readonly property var geometry: Logic.pillRect({ width: root.width, height: root.height }, names.length)
+        readonly property var geometry: Logic.pillRect({ width: root.width, height: root.height },
+            { width: row.implicitWidth + Tokens.padding.extraSmall * 2, height: row.implicitHeight + Tokens.padding.extraSmall * 2 },
+            { scale: root.dpr, bottom: Tokens.spacing.small })
 
         objectName: "captureThumbnailActions"
         x: geometry.x
         y: geometry.y
         width: geometry.width
         height: geometry.height
-        radius: Tokens.rounding.medium
+        radius: Tokens.rounding.large
         color: Colours.palette.m3surfaceVariant
         opacity: root.hovered ? 1 : 0
         visible: opacity > 0
@@ -241,8 +254,12 @@ Item {
         }
 
         Row {
-            anchors.centerIn: parent
-            spacing: Logic.BUTTON_GAP
+            id: row
+
+            // Centred on a whole device pixel, so the buttons' edges are sharp too.
+            x: Logic.snap((pill.width - width) / 2, root.dpr)
+            y: Logic.snap((pill.height - height) / 2, root.dpr)
+            spacing: Tokens.spacing.extraSmall
 
             Repeater {
                 model: pill.names
@@ -254,7 +271,7 @@ Item {
         }
     }
 
-    component ActionButton: StyledRect {
+    component ActionButton: IconButton {
         id: button
 
         required property string modelData
@@ -268,30 +285,23 @@ Item {
         signal triggered(string name)
 
         objectName: "captureThumbnailAction-" + modelData
-        implicitWidth: Logic.BUTTON
-        implicitHeight: Logic.BUTTON
-        radius: Tokens.rounding.small
+        type: IconButton.Text
+        icon: spec.icon
+        onClicked: triggered(modelData)
 
-        ToolTip.visible: layer.containsMouse
-        ToolTip.delay: 300
+        // The control nudges its icon by a logical pixel. The icon goes to a
+        // whole device pixel (see PixelSnap).
+        label.transform: PixelSnap {
+            target: button.label
+            surface: root
+            dpr: root.dpr
+        }
+
+        ToolTip.visible: hovered
+        ToolTip.delay: 500
         ToolTip.text: spec.label
         Accessible.role: Accessible.Button
         Accessible.name: spec.label
-        Accessible.onPressAction: button.triggered(button.modelData)
-
-        StateLayer {
-            id: layer
-
-            radius: button.radius
-            onClicked: button.triggered(button.modelData)
-        }
-
-        MaterialIcon {
-            anchors.centerIn: parent
-            anchors.verticalCenterOffset: 1
-            text: button.spec.icon
-            color: Colours.palette.m3primary
-            fontStyle: Tokens.font.icon.medium
-        }
+        Accessible.onPressAction: button.clicked()
     }
 }

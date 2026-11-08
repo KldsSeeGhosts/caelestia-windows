@@ -6,9 +6,11 @@
 // Coordinates. The editor works in one screen's logical (device independent)
 // pixels. Rectangles are { x, y, width, height }. A stroke's coordinates are
 // relative to the selection's top left corner, and sizes are logical pixels, so
-// a stroke looks the same at any scale. The numbers come from the classic
-// capture tool (windows/capture/src: toolbar.rs, placement.rs, strokes.rs,
-// overlay.rs, theme.rs).
+// a stroke looks the same at any scale. The drawing rules (pencil width, arrow
+// head, history) follow the classic capture tool's behaviour. The toolbar has no
+// sizes of its own. The shell passes in the measured sizes of its Caelestia
+// controls and the Tokens spacing, and this file places everything on whole
+// device pixels.
 
 // ---- tools, colours and sizes -------------------------------------------
 
@@ -92,7 +94,7 @@ function clamp(value, low, high) {
     return Math.min(Math.max(value, low), high);
 }
 
-// ---- placement (placement.rs) -------------------------------------------
+// ---- placement -----------------------------------------------------------
 
 // Clamps one axis to [low, high], using the work area's hard edge when the
 // margin-preferred range is too small, and the low hard edge when the surface is
@@ -140,64 +142,94 @@ function controls(work, region, width, height, gap, margin) {
     return { x: x, y: y, inside: inside };
 }
 
-// ---- toolbar (toolbar.rs) -----------------------------------------------
+// ---- device pixels --------------------------------------------------------
 
-var BAR_HEIGHT = 44;
-var BAR_PADDING = 6;
-var BUTTON = 30;
-var ITEM_GAP = 2;
-var GROUP_GAP = 8;
-var SEPARATOR_GAP = 6;
-var SEPARATOR_HEIGHT = 18;
-var TAIL_GAP = 4;
-// The distance from the selection, and the distance kept from the screen edge.
-var BAR_SELECTION_GAP = 10;
-var BAR_MARGIN = 6;
-// A labelled button is its text plus this much for the icon and padding.
-var LABEL_EXTRA = 39;
+// Rounds to a whole device pixel. `scale` is the device pixel ratio (1.25 at 125%
+// scaling). Text and one pixel edges stay sharp only on whole device pixels.
+function snap(value, scale) {
+    var s = scale > 0 ? scale : 1;
+    return Math.round(value * s) / s;
+}
+
+// Rounds up to a whole device pixel, for a size that must not clip its content.
+// The small subtraction keeps 35.000000001 device pixels from becoming 36.
+function snapUp(value, scale) {
+    var s = scale > 0 ? scale : 1;
+    return Math.ceil(value * s - 1e-6) / s;
+}
+
+// Rounds a point to whole device pixels without leaving the work area.
+function snapPoint(work, point, width, height, scale) {
+    var right = work.x + work.width - width;
+    var bottom = work.y + work.height - height;
+    return {
+        x: clamp(snap(point.x, scale), work.x, Math.max(work.x, right)),
+        y: clamp(snap(point.y, scale), work.y, Math.max(work.y, bottom))
+    };
+}
+
+// ---- toolbar ----------------------------------------------------------------
+
 var CLEAR_ARM_MS = 2400;
 
+// The shell passes the numbers that decide the toolbar's size, and none of them
+// is fixed here:
+//   metrics: { scale, padding, spacing, groupSpacing, separatorSpacing,
+//              separatorInset, gap, margin } from Tokens. `gap` is the distance
+//              from the selection and from the bar to the popover, `margin` the
+//              distance kept from the work area's edge.
+//   button, clear, copy: { width, height }, the implicit sizes of the controls.
+//              Clear's size is its current one, so it grows when armed.
+
 // Lays the bar's items out along one row. Positions are relative to the bar's top
-// left corner. `copyWidth` and `clearWidth` are the widths of the Copy button and
-// of the armed Clear button, which depend on measured text.
-// Options: { showOptions, clearArmed, copyWidth, clearWidth }
+// left corner and sit on whole device pixels. A size is rounded up so the control
+// keeps room for its content.
+// Options: { metrics, button, clear, copy, showOptions }
 function barLayout(options) {
     var opts = options || {};
+    var m = opts.metrics || {};
+    var scale = m.scale;
+    var button = opts.button || { width: 0, height: 0 };
+    var clear = opts.clear || button;
+    var copy = opts.copy || button;
+    var padding = m.padding || 0;
+    var spacing = m.spacing || 0;
+    var tallest = Math.max(button.height, clear.height, copy.height);
+    var height = snapUp(tallest + 2 * padding, scale);
     var items = [];
     var gap = 0;
-    var position = BAR_PADDING;
-    function add(id, width, height) {
-        var before = items.length === 0 ? 0 : gap;
-        position += before;
-        items.push({ id: id, x: position, y: (BAR_HEIGHT - height) / 2, width: width, height: height });
-        position += width;
-        gap = ITEM_GAP;
+    var position = padding;
+    function add(id, width, h) {
+        position += items.length === 0 ? 0 : gap;
+        var w = snapUp(width, scale);
+        var hh = snapUp(h, scale);
+        items.push({ id: id, x: snap(position, scale), y: snap((height - hh) / 2, scale), width: w, height: hh });
+        position = items[items.length - 1].x + w;
+        gap = spacing;
     }
     function separator() {
-        gap = SEPARATOR_GAP;
-        add("separator", 1, SEPARATOR_HEIGHT);
-        gap = SEPARATOR_GAP;
+        gap = m.separatorSpacing || 0;
+        add("separator", 1 / (scale > 0 ? scale : 1), Math.max(0, button.height - 2 * (m.separatorInset || 0)));
+        gap = m.separatorSpacing || 0;
     }
     for (var g = 0; g < groupCount(); g++) {
         if (g > 0)
-            gap = GROUP_GAP;
-        toolsInGroup(g).forEach(function (tool) { add("tool:" + tool.id, BUTTON, BUTTON); });
+            gap = m.groupSpacing || 0;
+        toolsInGroup(g).forEach(function (tool) { add("tool:" + tool.id, button.width, button.height); });
     }
     if (opts.showOptions !== false) {
         separator();
-        add("color", BUTTON, BUTTON);
+        add("color", button.width, button.height);
     }
     separator();
-    add("undo", BUTTON, BUTTON);
-    add("redo", BUTTON, BUTTON);
-    add("clear", opts.clearArmed ? (opts.clearWidth || BUTTON) : BUTTON, BUTTON);
+    add("undo", button.width, button.height);
+    add("redo", button.width, button.height);
+    add("clear", clear.width, clear.height);
     separator();
-    add("save", BUTTON, BUTTON);
-    gap = TAIL_GAP;
-    add("copy", opts.copyWidth || BUTTON + LABEL_EXTRA, BUTTON);
-    gap = TAIL_GAP;
-    add("close", BUTTON, BUTTON);
-    return { width: position + BAR_PADDING, height: BAR_HEIGHT, items: items };
+    add("save", button.width, button.height);
+    add("copy", copy.width, copy.height);
+    add("close", button.width, button.height);
+    return { width: snapUp(position + padding, scale), height: height, items: items };
 }
 
 function itemRect(layout, id) {
@@ -208,57 +240,89 @@ function itemRect(layout, id) {
     return null;
 }
 
-// Where the bar sits. `userPos` is where the user dragged it, or null. The bar's
-// size comes from barLayout.
-function barPosition(work, region, size, userPos) {
-    if (userPos)
-        return clampPoint(work, userPos.x, userPos.y, size.width, size.height, BAR_MARGIN);
-    var auto = controls(work, region, size.width, size.height, BAR_SELECTION_GAP, BAR_MARGIN);
-    return { x: auto.x, y: auto.y };
+// Where the bar sits, on whole device pixels. `userPos` is where the user
+// dragged it, or null. `size` is the measured { width, height } of the bar.
+// `metrics` is as for barLayout.
+function barPosition(work, region, size, userPos, metrics) {
+    var m = metrics || {};
+    var margin = m.margin || 0;
+    var point;
+    if (userPos) {
+        point = clampPoint(work, userPos.x, userPos.y, size.width, size.height, margin);
+    } else {
+        var auto = controls(work, region, size.width, size.height, m.gap || 0, margin);
+        point = { x: auto.x, y: auto.y };
+    }
+    return snapPoint(work, point, size.width, size.height, m.scale);
 }
 
-// The colour popover: nine colour dots, a divider and the S, M and L sizes.
-// Rectangles are relative to the popover's top left corner.
-var POPOVER_PADDING = 12;
-var POPOVER_DOT = 20;
-var POPOVER_DOT_GAP = 8;
-var POPOVER_GAP = 8;
-
-function inkPopover() {
-    var pad = POPOVER_PADDING;
-    var count = COLORS.length;
-    var contentWidth = count * POPOVER_DOT + (count - 1) * POPOVER_DOT_GAP;
-    var colors = COLORS.map(function (color, i) {
-        return { index: i, x: pad + i * (POPOVER_DOT + POPOVER_DOT_GAP) - 2, y: pad - 2, width: POPOVER_DOT + 4, height: POPOVER_DOT + 4 };
-    });
-    var line = pad + POPOVER_DOT + 12;
-    var track = rect(pad, line + 1 + 12, contentWidth, 32);
-    var segment = (contentWidth - 4) / SIZES.length;
-    var sizes = SIZES.map(function (entry, i) {
-        return { index: i, size: entry.size, label: entry.label, x: track.x + 2 + i * segment, y: track.y + 2, width: segment, height: 28 };
-    });
+// The colour popover: a row of colour cells, a divider and a row of size
+// segments. Rectangles are relative to the popover's top left corner.
+// Options: { metrics, colors, cell, sizes, segment }
+//   colors, sizes: how many of each.
+//   cell: { width, height }, the measured size of one colour cell.
+//   segment: { width, height }, the measured size of one size button. The
+//   segments share the width of the colour row.
+function inkPopover(options) {
+    var opts = options || {};
+    var m = opts.metrics || {};
+    var scale = m.scale;
+    var count = opts.colors === undefined ? COLORS.length : opts.colors;
+    var sizeCount = opts.sizes === undefined ? SIZES.length : opts.sizes;
+    var cell = opts.cell || { width: 0, height: 0 };
+    var segment = opts.segment || { width: 0, height: 0 };
+    var padding = m.padding || 0;
+    var spacing = m.spacing || 0;
+    var hairline = 1 / (scale > 0 ? scale : 1);
+    var cellWidth = snapUp(cell.width, scale);
+    var cellHeight = snapUp(cell.height, scale);
+    var rowWidth = count > 0 ? count * cellWidth + (count - 1) * spacing : 0;
+    // A size button never gets narrower than it needs, even if the colours are few.
+    var contentWidth = snapUp(Math.max(rowWidth, sizeCount * segment.width + Math.max(0, sizeCount - 1) * spacing), scale);
+    var colors = [];
+    var slack = count > 1 ? (contentWidth - count * cellWidth) / (count - 1) : 0;
+    for (var i = 0; i < count; i++)
+        colors.push({ index: i, x: snap(padding + i * (cellWidth + (count > 1 ? slack : 0)), scale), y: padding, width: cellWidth, height: cellHeight });
+    var line = snap(padding + cellHeight + (m.separatorSpacing || 0), scale);
+    var trackY = snap(line + hairline + (m.separatorSpacing || 0), scale);
+    var segmentWidth = sizeCount > 0 ? snapUp((contentWidth - (sizeCount - 1) * spacing) / sizeCount, scale) : 0;
+    var segmentHeight = snapUp(segment.height, scale);
+    var sizes = [];
+    for (var j = 0; j < sizeCount; j++) {
+        var entry = SIZES[j] || {};
+        sizes.push({ index: j, size: entry.size, label: entry.label, x: snap(padding + j * (segmentWidth + spacing), scale), y: trackY, width: segmentWidth, height: segmentHeight });
+    }
+    var last = sizes.length > 0 ? sizes[sizes.length - 1] : null;
     return {
-        width: contentWidth + pad * 2,
-        height: track.y + track.height + pad,
+        width: snapUp(Math.max(contentWidth, last ? last.x + last.width - padding : 0) + 2 * padding, scale),
+        height: snapUp(trackY + segmentHeight + padding, scale),
         colors: colors,
-        divider: rect(pad, line, contentWidth, 1),
-        track: track,
+        divider: { x: padding, y: line, width: contentWidth, height: hairline },
         sizes: sizes
     };
 }
 
 // The popover opens above the bar when there is room, otherwise below it, and is
-// centred on the button that opened it.
-function popoverPosition(work, bar, anchor, size) {
+// centred on the button that opened it. It sits on whole device pixels.
+function popoverPosition(work, bar, anchor, size, metrics) {
+    var m = metrics || {};
+    var margin = m.margin || 0;
+    var gap = m.gap || 0;
     var centre = anchor.x + anchor.width / 2;
-    var above = bar.y - POPOVER_GAP - size.height;
-    var y = above >= work.y + BAR_MARGIN ? above : bar.y + bar.height + POPOVER_GAP;
-    return clampPoint(work, centre - size.width / 2, y, size.width, size.height, BAR_MARGIN);
+    var above = bar.y - gap - size.height;
+    var y = above >= work.y + margin ? above : bar.y + bar.height + gap;
+    var point = clampPoint(work, centre - size.width / 2, y, size.width, size.height, margin);
+    return snapPoint(work, point, size.width, size.height, m.scale);
 }
 
-// The diameter of the colour button's dot, which also shows the line size.
-function dotDiameter(size) {
-    return clamp(8 + 1.3 * size, 9, 19);
+// The diameter of the colour button's dot, which also shows the line size. It
+// runs from a third to two thirds of `available` (the button's height) across
+// the sizes S to L, and is rounded to a whole device pixel.
+function dotDiameter(size, available, scale) {
+    var low = SIZES[0].size;
+    var high = SIZES[SIZES.length - 1].size;
+    var t = clamp((size - low) / (high - low), 0, 1);
+    return snap(available * (1 / 3 + t / 3), scale);
 }
 
 // Clear needs two presses within CLEAR_ARM_MS. The first arms it, the second

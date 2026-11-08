@@ -2,9 +2,11 @@ import QtQuick
 import Quickshell
 import Quickshell.Wayland
 import Quickshell.Io
+import QtTest
 import Caelestia
 import Caelestia.Config
 import Caelestia.Windows
+import qs.components.controls
 import qs.services
 import qs.modules.areapicker
 
@@ -14,6 +16,15 @@ import qs.modules.areapicker
 // frames is reported by hand because an offscreen screen has nothing to copy.
 ShellRoot {
     id: root
+
+    // The toolbar and the buttons are sized by the controls' fonts, so the test
+    // loads the shell's fonts and a screen for Tokens, as the shell does.
+    Tokens.screen: Quickshell.screens[0]?.name ?? ""
+
+    FontLoader {
+        source: Quickshell.shellPath("assets/google-sans-flex/GoogleSansFlex-VariableFont_GRAD,ROND,opsz,slnt,wdth,wght.ttf")
+    }
+    FontLoader { source: Quickshell.shellPath("assets/material-symbols-rounded/MaterialSymbolsRounded.ttf") }
 
     property int assertions: 0
     property int classicCalls: 0
@@ -92,6 +103,12 @@ ShellRoot {
                 root.step(() => callback(code));
         }
     }
+
+    // Sends real pointer events to a window. QtTest's mouse functions go through
+    // the window system, so the controls see hover enter and leave as they do for a
+    // user, including the hover that Qt re-delivers after an item moves or resizes.
+    property var input: null
+    property Component inputComponent: Component { TestCase { when: false } }
 
     Component {
         id: extraPicker
@@ -393,18 +410,37 @@ ShellRoot {
         check(canvas.x === 20 && canvas.y === 30 && canvas.width === 60 && canvas.height === 40, "the drawing surface covers the selection");
         check(canvas.cursorShape === Qt.CrossCursor, "with a cross cursor");
 
-        // Geometry of the bar: 44 px tall, 10 px below the selection, kept 6 px from the left edge.
+        // Geometry of the bar. Its sizes come from the Caelestia controls and Tokens:
+        // the padding around the row, the gap below the selection and the margin
+        // from the screen edge. The selection is 20, 30, 60 x 40 and the screen is
+        // offscreen at a device pixel ratio of 1.
         const bar = find(editorItem, "editorToolbar");
-        check(bar.height === 44, "the toolbar is 44 px tall");
-        check(bar.y === 80 && bar.x === 6, "10 px below the selection and 6 px from the edge: " + bar.x + ", " + bar.y);
-        check(bar.width > 500, "wide enough for every item: " + bar.width);
+        const pencil = find(bar, "editorTool-pencil");
+        const margin = Tokens.spacing.small;
+        const padding = Tokens.padding.small;
+        check(pencil !== null && pencil.width > 0 && pencil.width === pencil.height, "the tool buttons are square, from IconButton: " + pencil.width);
+        check(bar.height === pencil.height + 2 * padding, "the bar is a button plus the padding: " + bar.height);
+        check(bar.y === 70 + Tokens.spacing.small && bar.x === margin, "below the selection by the gap, and the margin from the edge: " + bar.x + ", " + bar.y);
+        check(bar.width > 10 * pencil.width, "wide enough for every item: " + bar.width);
         for (const id of ["pencil", "highlighter", "line", "arrow", "rect", "circle"]) {
             const button = find(bar, "editorTool-" + id);
-            check(button !== null && button.width === 30 && button.height === 30, "a 30 px button for " + id);
+            check(button !== null && button.width === pencil.width && button.height === pencil.height, "the same size button for " + id);
+            check(button.stateLayer !== undefined && button.type === IconButton.Text, id + " is a Caelestia IconButton");
         }
-        for (const name of ["editorColor", "editor-undo", "editor-redo", "editor-clear", "editor-save", "editor-copy", "editor-close"])
-            check(find(bar, name) !== null && find(bar, name).height === 30, "the " + name + " button");
-        check(find(bar, "editor-copy").width > 30, "Copy has a label");
+        for (const name of ["editorColor", "editor-undo", "editor-redo", "editor-save", "editor-close"])
+            check(find(bar, name) !== null && find(bar, name).width === pencil.width && find(bar, name).height === pencil.height, "the " + name + " button");
+        for (const name of ["editor-clear", "editor-copy"])
+            check(find(bar, name) !== null && find(bar, name).height === pencil.height, "the " + name + " button has the same height");
+        check(find(bar, "editor-copy").width > 2 * pencil.width, "Copy has a label");
+        check(find(bar, "editor-clear").width === pencil.width, "and Clear is an icon until it is armed");
+        const copyLabel = find(bar, "editor-copy").label;
+        check(copyLabel.text === "Copy" && copyLabel.font.pointSize === Tokens.font.body.small.pointSize
+            && copyLabel.font.family === Tokens.font.body.small.family, "Copy is set in the shell's body font");
+        for (const name of ["editorTool-pencil", "editorTool-circle", "editorColor", "editor-undo", "editor-redo", "editor-clear", "editor-save", "editor-copy", "editor-close"]) {
+            const item = find(bar, name);
+            check(Number.isInteger(item.x) && Number.isInteger(item.y) && Number.isInteger(item.width) && Number.isInteger(item.height),
+                name + " is on whole pixels at a ratio of 1");
+        }
         check(find(bar, "editorTool-text") === null && find(bar, "editorTool-blur") === null, "no tool from a later part");
         check(find(bar, "editor-undo").disabled && find(bar, "editor-redo").disabled, "undo and redo are off with nothing drawn");
         later(100, () => step(() => toolsStep(window, area)));
@@ -502,15 +538,57 @@ ShellRoot {
         check(editor.clearArmed, "armed again");
         editor.setTool("pencil");
         check(!editor.clearArmed, "choosing a tool disarms it");
-        clear.clicked();
-        check(editor.clearArmed, "armed for the pointer check");
-        find(clear, "editor-clear-layer").exited();
-        check(!editor.clearArmed && editor.strokes.length === 1, "leaving the button disarms it");
-        clear.clicked();
-        check(editor.clearArmed, "armed once more");
+        later(50, () => step(() => clearPointerStep(window, area)));
+    }
+
+    // The pointer goes onto Clear and presses it. Clear grows, and Qt re-delivers
+    // the hover over the new size on the next frames. The pointer is on its last
+    // pixel, the corner that a growing button is most likely to leave, so a
+    // resize that moved the button away would disarm it here. Moving off the
+    // button then disarms it.
+    function clearPointerStep(window, area): void {
+        const editor = picker.editor;
+        const bar = find(window.contentItem, "editorToolbar");
+        const clear = find(bar, "editor-clear");
+        const save = find(bar, "editor-save");
+        if (!input)
+            input = inputComponent.createObject(window.contentItem);
+        check(!editor.clearArmed && editor.strokes.length === 1, "calm, with one stroke");
+        const calm = { x: clear.x, y: clear.y, width: clear.width, height: clear.height };
+        input.mouseMove(save, save.width / 2, save.height / 2);
+        input.mouseMove(clear, clear.width - 1, clear.height - 1);
+        later(150, () => step(() => {
+            check(clear.hovered, "the pointer is over Clear");
+            check(!editor.clearArmed, "and hovering does not arm it");
+            input.mouseClick(clear, clear.width - 1, clear.height - 1);
+            check(editor.clearArmed && editor.strokes.length === 1, "a click arms Clear");
+            check(clear.width > calm.width && clear.x === calm.x && clear.y === calm.y && clear.height === calm.height,
+                "it grows to the right: " + calm.width + " to " + clear.width);
+            later(300, () => step(() => {
+                check(editor.clearArmed, "Clear is still armed after the resize and the hover that follows it");
+                check(clear.hovered, "and the pointer is still on it");
+                check(editor.strokes.length === 1, "nothing was cleared by arming");
+                input.mouseMove(save, save.width / 2, save.height / 2);
+                later(150, () => step(() => {
+                    check(!clear.hovered && !editor.clearArmed && editor.strokes.length === 1, "moving off the button disarms it");
+                    check(clear.width === calm.width, "and it shrinks back");
+                    clearTimeoutStep(window, area);
+                }));
+            }));
+        }));
+    }
+
+    function clearTimeoutStep(window, area): void {
+        const editor = picker.editor;
+        const bar = find(window.contentItem, "editorToolbar");
+        const clear = find(bar, "editor-clear");
+        input.mouseMove(clear, 1, 1);
+        input.mouseClick(clear, 1, 1);
+        check(editor.clearArmed, "armed once more, from its first pixel");
         later(2800, () => step(() => {
             check(!editor.clearArmed && editor.strokes.length === 1, "it disarms after 2.4 s and keeps the stroke");
-            inkStep(window, area);
+            input.mouseMove(find(bar, "editor-save"), 2, 2);
+            later(100, () => step(() => inkStep(window, area)));
         }));
     }
 
@@ -521,18 +599,25 @@ ShellRoot {
         check(!popover.visible, "the colour popover starts closed");
         find(bar, "editorColor").clicked();
         check(editor.inkOpen && popover.visible, "the colour button opens it");
-        check(popover.width === 268 && popover.height === 101, "268 x 101");
-        check(popover.y === bar.y - 8 - popover.height || popover.y === bar.y + bar.height + 8, "8 px above or below the bar");
+        const cell = find(popover, "editorColor-0");
+        check(popover.width === 9 * cell.width + 8 * Tokens.spacing.extraSmall + 2 * Tokens.padding.small,
+            "the popover is nine colour cells, their spacing and the padding: " + popover.width);
+        const gap = Tokens.spacing.small;
+        check(popover.y === bar.y - gap - popover.height || popover.y === bar.y + bar.height + gap, "a gap above or below the bar");
+        check(find(popover, "editorColor-0").stateLayer !== undefined && find(popover, "editorSize-M").stateLayer !== undefined,
+            "the cells and the size buttons are Caelestia buttons");
         for (let i = 0; i < 9; i++)
             check(find(popover, "editorColor-" + i) !== null, "colour " + i);
         check(find(popover, "editorColor-9") === null, "nine colours");
-        find(popover, "editorColor-4").clicked(null);
+        find(popover, "editorColor-4").clicked();
         check(editor.color === "#44AAFF", "a colour dot picks it");
-        find(popover, "editorSize-M").clicked(null);
+        find(popover, "editorSize-M").clicked();
         check(editor.size === 4, "M is 4 px");
-        find(popover, "editorSize-L").clicked(null);
-        find(popover, "editorSize-S").clicked(null);
+        check(find(popover, "editorSize-M").internalChecked && !find(popover, "editorSize-S").internalChecked, "and only M looks chosen");
+        find(popover, "editorSize-L").clicked();
+        find(popover, "editorSize-S").clicked();
         check(editor.size === 2 && editor.inkOpen, "S is 2 px, and the popover stays open");
+        check(find(popover, "editorSize-S").internalChecked && !find(popover, "editorSize-M").internalChecked, "S looks chosen now");
 
         // Esc closes the popover first and the editor second.
         area.dismissByKey();
@@ -545,11 +630,12 @@ ShellRoot {
 
         // Dragging the bar moves it, and it stays on the screen.
         editor.barPosition = { x: -500, y: 90000 };
-        check(bar.x === 6 && bar.y === window.height - 44 - 6, "a dragged bar keeps 6 px from the edges: " + bar.x + ", " + bar.y);
+        const margin = Tokens.spacing.small;
+        check(bar.x === margin && bar.y === window.height - bar.height - margin, "a dragged bar keeps the margin from the edges: " + bar.x + ", " + bar.y);
         editor.barPosition = { x: 100, y: 200 };
         check(bar.x === 100 && bar.y === 200, "and goes where it was put");
         editor.barPosition = null;
-        check(bar.x === 6 && bar.y === 80, "automatic placement returns");
+        check(bar.x === margin && bar.y === 70 + Tokens.spacing.small, "automatic placement returns");
 
         // A right press does nothing in the editor. A left press outside the
         // selection and the bar closes it.

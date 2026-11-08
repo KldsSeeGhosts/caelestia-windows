@@ -4,8 +4,9 @@
 //
 // All sizes are logical (device independent) pixels. The thumbnail panel covers
 // the work area of one screen, so a rectangle here is relative to the panel's
-// top left corner. The numbers are the ones the classic capture tool uses
-// (windows/capture/src/thumbnail.rs).
+// top left corner. The stack follows the classic capture tool's behaviour. The
+// hover buttons have no sizes of their own: the shell passes the measured size
+// of its Caelestia controls, and this file places them on whole device pixels.
 
 var MAX_PREVIEWS = 5;
 var GAP = 12;
@@ -15,11 +16,6 @@ var IMAGE_INSET = 20;
 var DEFAULT_SECONDS = 6;
 // How far a preview drifts to the right while it enters and leaves.
 var DRIFT = 60;
-var BUTTON = 30;
-var BUTTON_GAP = 2;
-var PILL_PADDING = 3;
-// Distance from the card's bottom edge to the bottom of the button pill.
-var PILL_BOTTOM = 9;
 
 // Reads windows.capture. `thumbnail` turns the preview off only when it is the
 // boolean false. `thumbnailSeconds` is a whole number of seconds, 0 means the
@@ -111,12 +107,29 @@ function actions(saved) {
     return list;
 }
 
-// Where the button pill sits in a card: centred horizontally, `PILL_BOTTOM` above
-// the bottom edge. Buttons are BUTTON wide with BUTTON_GAP between them and
-// PILL_PADDING around.
-function pillRect(card, count) {
-    var inner = count * BUTTON + (count - 1) * BUTTON_GAP;
-    var width = inner + 2 * PILL_PADDING;
-    var height = BUTTON + 2 * PILL_PADDING;
-    return { x: Math.round((card.width - width) / 2), y: card.height - PILL_BOTTOM - height, width: width, height: height };
+// Rounds to a whole device pixel. `scale` is the device pixel ratio.
+function snap(value, scale) {
+    var s = scale > 0 ? scale : 1;
+    return Math.round(value * s) / s;
+}
+
+// Rounds up to a whole device pixel, so the pill keeps room for its buttons.
+function snapUp(value, scale) {
+    var s = scale > 0 ? scale : 1;
+    return Math.ceil(value * s - 1e-6) / s;
+}
+
+// Where the button pill sits in a card: centred horizontally, `metrics.bottom`
+// above the bottom edge, on whole device pixels. `pill` is the measured
+// { width, height } of the pill. `metrics` is { scale, bottom }.
+function pillRect(card, pill, metrics) {
+    var m = metrics || {};
+    var width = snapUp(pill.width, m.scale);
+    var height = snapUp(pill.height, m.scale);
+    return {
+        x: snap((card.width - width) / 2, m.scale),
+        y: snap(card.height - (m.bottom || 0) - height, m.scale),
+        width: width,
+        height: height
+    };
 }

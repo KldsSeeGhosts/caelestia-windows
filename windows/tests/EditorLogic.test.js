@@ -14,7 +14,7 @@ const plain = value => JSON.parse(JSON.stringify(value));
 const same = (actual, expected, message) => assert.deepEqual(plain(actual), plain(expected), message);
 const near = (actual, expected, message) => assert.ok(Math.abs(actual - expected) < 1e-9, `${message}: ${actual} vs ${expected}`);
 
-// ---- placement (windows/capture/src/placement.rs tests) -------------------
+// ---- placement ------------------------------------------------------------
 
 const work = { x: 0, y: 0, width: 1920, height: 1080 };
 
@@ -68,108 +68,223 @@ test("a dragged toolbar stays inside the work area with the margin", () => {
     same(plain(logic.clampPoint(work, 5000, 5000, 500, 44, 6)), { x: 1414, y: 1030 });
     same(plain(logic.clampPoint(work, 300, 400, 500, 44, 6)), { x: 300, y: 400 });
     const size = { width: 500, height: 44 };
-    same(plain(logic.barPosition(work, { x: 0, y: 0, width: 10, height: 10 }, size, { x: -9, y: 9000 })), { x: 6, y: 1030 });
-    same(plain(logic.barPosition(work, { x: 300, y: 200, width: 500, height: 300 }, size, null)), { x: 300, y: 510 });
+    const rules = { scale: 1, gap: 10, margin: 6 };
+    same(plain(logic.barPosition(work, { x: 0, y: 0, width: 10, height: 10 }, size, { x: -9, y: 9000 }, rules)), { x: 6, y: 1030 });
+    same(plain(logic.barPosition(work, { x: 300, y: 200, width: 500, height: 300 }, size, null, rules)), { x: 300, y: 510 });
 });
 
-// ---- toolbar layout (windows/capture/src/toolbar.rs) ----------------------
+test("the bar's position is rounded to whole device pixels and stays inside the work area", () => {
+    const onPixel = (value, scale) => Math.abs(value * scale - Math.round(value * scale)) < 1e-6;
+    for (const scale of [1.25, 1.5, 1.75]) {
+        const rules = { scale, gap: 8, margin: 8 };
+        const size = { width: 523.2, height: 44.8 };
+        for (const user of [null, { x: 100.37, y: 200.61 }, { x: -50, y: 9000 }]) {
+            const place = logic.barPosition(work, { x: 301.3, y: 200.7, width: 500.1, height: 300.2 }, size, user, rules);
+            assert.ok(onPixel(place.x, scale) && onPixel(place.y, scale), `${JSON.stringify(user)} at ${scale}: ${place.x}, ${place.y}`);
+            assert.ok(place.x >= 0 && place.y >= 0 && place.x + size.width <= 1920 + 1e-9 && place.y + size.height <= 1080 + 1e-9);
+        }
+    }
+});
+
+// ---- toolbar layout, from measured sizes ---------------------------------
+
+// What the shell measures: the implicit sizes of its controls, and Tokens. None of
+// these numbers is fixed in EditorLogic.js, so the tests pick their own.
+const metrics = (scale = 1) => ({
+    scale, padding: 8, spacing: 4, groupSpacing: 8, separatorSpacing: 8, separatorInset: 8, gap: 8, margin: 8
+});
+const sizes = (scale = 1, extra = {}) => Object.assign({
+    metrics: metrics(scale), button: { width: 28, height: 28 }, clear: { width: 28, height: 28 }, copy: { width: 80, height: 28 }
+}, extra);
+const onDevicePixel = (value, scale) => Math.abs(value * scale - Math.round(value * scale)) < 1e-6;
 
 function ids(layout) {
     return layout.items.map(item => item.id);
 }
 
 test("the bar lists the six tools, the colour, undo and redo, clear, save, copy and close", () => {
-    const layout = logic.barLayout({});
+    const layout = logic.barLayout(sizes());
     same(ids(layout), [
         "tool:pencil", "tool:highlighter", "tool:line", "tool:arrow", "tool:rect", "tool:circle",
         "separator", "color", "separator", "undo", "redo", "clear", "separator", "save", "copy", "close"
     ]);
-    assert.equal(layout.height, 44);
 });
 
-test("buttons are 30 px with 2 px gaps, 8 px between groups and 6 px around separators", () => {
-    const layout = logic.barLayout({});
-    const x = id => layout.items.find(item => item.id === id).x;
-    assert.equal(x("tool:pencil"), 6, "6 px padding");
-    assert.equal(x("tool:highlighter") - x("tool:pencil"), 32);
-    assert.equal(x("tool:line") - (x("tool:highlighter") + 30), 8, "8 px between groups");
-    assert.equal(x("tool:arrow") - x("tool:line"), 32);
+test("the layout follows the measured sizes and the spacing it is given", () => {
+    const layout = logic.barLayout(sizes());
+    const x = id => logic.itemRect(layout, id).x;
+    assert.equal(layout.height, 28 + 2 * 8, "the tallest control plus the padding on both sides");
+    assert.equal(x("tool:pencil"), 8, "the padding");
+    assert.equal(x("tool:highlighter") - x("tool:pencil"), 28 + 4, "the control and the spacing");
+    assert.equal(x("tool:line") - (x("tool:highlighter") + 28), 8, "the group spacing");
     const separators = layout.items.filter(item => item.id === "separator");
     assert.equal(separators.length, 3);
-    assert.ok(separators.every(item => item.width === 1 && item.height === 18 && item.y === 13), "1 x 18, centred");
-    assert.equal(separators[0].x - (x("tool:circle") + 30), 6);
-    assert.equal(x("color") - (separators[0].x + 1), 6);
-    assert.ok(layout.items.filter(item => item.id !== "separator").every(item => item.width >= 30 && item.height === 30 && item.y === 7), "30 px buttons, centred");
+    assert.ok(separators.every(item => item.width === 1 && item.height === 28 - 16 && item.y === 16), "a hairline, inset from the button height, centred");
+    assert.equal(separators[0].x - (x("tool:circle") + 28), 8, "the separator spacing before");
+    assert.equal(x("color") - (separators[0].x + 1), 8, "and after");
+    assert.equal(x("copy") - (x("save") + 28), 4);
+    assert.equal(logic.itemRect(layout, "copy").width, 80, "Copy keeps its measured width");
+    assert.equal(logic.itemRect(layout, "close").x, x("copy") + 80 + 4);
+    const last = layout.items[layout.items.length - 1];
+    assert.equal(layout.width, last.x + last.width + 8, "the padding closes the bar");
+    assert.equal(layout.width, 523);
+
+    const bigger = logic.barLayout(sizes(1, { button: { width: 40, height: 40 } }));
+    assert.equal(bigger.height, 56, "a taller control makes a taller bar");
+    assert.ok(bigger.width > layout.width, "and a wider one");
+    assert.equal(logic.itemRect(bigger, "tool:pencil").height, 40);
+    assert.equal(logic.itemRect(bigger, "copy").y, (56 - 28) / 2, "a control shorter than the row is centred");
 });
 
-test("the bar's width is the sum of its parts with the padding on both ends", () => {
-    const layout = logic.barLayout({});
-    const last = layout.items[layout.items.length - 1];
-    assert.equal(last.id, "close");
-    assert.equal(layout.width, last.x + last.width + 6);
-    assert.equal(logic.itemRect(layout, "copy").x - (logic.itemRect(layout, "save").x + 30), 4, "4 px before Copy");
-    assert.equal(logic.itemRect(layout, "close").x - (logic.itemRect(layout, "copy").x + logic.itemRect(layout, "copy").width), 4, "4 px before Close");
-    assert.equal(layout.width, 508, "with the default Copy width of 69 px");
-    assert.equal(logic.barLayout({ copyWidth: 80 }).width, 519, "a wider Copy label widens the bar");
+test("a wider Copy label widens the bar and nothing before it moves", () => {
+    const narrow = logic.barLayout(sizes());
+    const wide = logic.barLayout(sizes(1, { copy: { width: 100, height: 28 } }));
+    assert.equal(wide.width - narrow.width, 20);
+    for (const id of ["tool:pencil", "save", "color"])
+        assert.equal(logic.itemRect(wide, id).x, logic.itemRect(narrow, id).x);
+    assert.equal(logic.itemRect(wide, "close").x - logic.itemRect(narrow, "close").x, 20);
 });
 
 test("items never overlap and stay inside the bar", () => {
-    for (const options of [{}, { clearArmed: true, clearWidth: 90 }, { showOptions: false }]) {
-        const layout = logic.barLayout(options);
-        let end = 0;
-        for (const item of layout.items) {
-            assert.ok(item.x >= end, `${item.id} starts after the previous item ends`);
-            end = item.x + item.width;
+    for (const scale of [1, 1.25, 1.5, 1.75, 2]) {
+        const fractional = sizes(scale, { clear: { width: 91.3, height: 28.4 }, copy: { width: 83.77, height: 28.4 } });
+        for (const options of [sizes(scale), fractional, Object.assign(sizes(scale), { showOptions: false })]) {
+            const layout = logic.barLayout(options);
+            let end = 0;
+            for (const item of layout.items) {
+                assert.ok(item.x >= end - 1e-9, `${item.id} starts after the previous item ends (scale ${scale})`);
+                assert.ok(item.y >= 0 && item.y + item.height <= layout.height + 1e-9, `${item.id} fits the bar's height`);
+                end = item.x + item.width;
+            }
+            assert.ok(end + 8 <= layout.width + 1e-9);
         }
-        assert.ok(end + 6 === layout.width);
+    }
+});
+
+test("every position and size is on a whole device pixel at 100 to 200 percent", () => {
+    for (const scale of [1, 1.25, 1.5, 1.75, 2]) {
+        const options = sizes(scale, {
+            button: { width: 28.6, height: 28.6 }, clear: { width: 91.3, height: 28.9 }, copy: { width: 83.77, height: 28.9 }
+        });
+        const layout = logic.barLayout(options);
+        assert.ok(onDevicePixel(layout.width, scale) && onDevicePixel(layout.height, scale), `the bar at ${scale}`);
+        for (const item of layout.items) {
+            for (const key of ["x", "y", "width", "height"])
+                assert.ok(onDevicePixel(item[key], scale), `${item.id}.${key} = ${item[key]} at ${scale}`);
+        }
+        assert.ok(logic.itemRect(layout, "copy").width >= 83.77, "a size is rounded up, so the label keeps its room");
+        assert.ok(logic.itemRect(layout, "tool:pencil").width >= 28.6);
     }
 });
 
 test("the armed Clear button grows and pushes the rest right; the colour button can be left out", () => {
-    const calm = logic.barLayout({});
-    const armed = logic.barLayout({ clearArmed: true, clearWidth: 90 });
+    const calm = logic.barLayout(sizes());
+    const armed = logic.barLayout(sizes(1, { clear: { width: 90, height: 28 } }));
     assert.equal(logic.itemRect(armed, "clear").width, 90);
-    assert.equal(logic.itemRect(calm, "clear").width, 30);
-    assert.equal(armed.width - calm.width, 60);
+    assert.equal(logic.itemRect(calm, "clear").width, 28);
+    assert.equal(armed.width - calm.width, 62);
     assert.equal(logic.itemRect(armed, "tool:pencil").x, logic.itemRect(calm, "tool:pencil").x);
-    assert.equal(logic.itemRect(logic.barLayout({ showOptions: false }), "color"), null);
+    assert.equal(logic.itemRect(armed, "clear").x, logic.itemRect(calm, "clear").x, "Clear grows to the right and keeps its left edge");
+    assert.equal(logic.itemRect(armed, "clear").y, logic.itemRect(calm, "clear").y);
+    assert.equal(logic.itemRect(armed, "clear").height, logic.itemRect(calm, "clear").height);
+    assert.equal(logic.itemRect(logic.barLayout(Object.assign(sizes(), { showOptions: false })), "color"), null);
 });
 
-test("the colour popover has nine colours, a divider and the S, M and L sizes", () => {
-    const popover = logic.inkPopover();
+// The pointer is on Clear when it arms. If Clear then grew away from it, the
+// move-off rule would disarm Clear at once. Every point of the calm button, with
+// its corner pixels, must be inside the armed button. CapturePickerTest.qml checks
+// the same thing with real pointer events on the real controls.
+test("a pointer anywhere on Clear is still on it after Clear arms and grows", () => {
+    for (const scale of [1, 1.25, 1.5, 1.75, 2]) {
+        for (const [calmSize, armedSize] of [
+            [{ width: 28, height: 28 }, { width: 90, height: 28 }],
+            [{ width: 28.6, height: 28.6 }, { width: 91.31, height: 28.6 }]
+        ]) {
+            const calm = logic.itemRect(logic.barLayout(sizes(scale, { clear: calmSize })), "clear");
+            const armed = logic.itemRect(logic.barLayout(sizes(scale, { clear: armedSize })), "clear");
+            for (const fx of [0, 0.5, 1 - 1e-9]) {
+                for (const fy of [0, 0.5, 1 - 1e-9]) {
+                    const px = calm.x + fx * calm.width;
+                    const py = calm.y + fy * calm.height;
+                    assert.ok(logic.contains(calm, px, py));
+                    assert.ok(logic.contains(armed, px, py), `(${fx}, ${fy}) of Clear at ${scale} stays inside the armed button`);
+                }
+            }
+            assert.ok(armed.x === calm.x && armed.y === calm.y && armed.height >= calm.height && armed.width >= calm.width);
+        }
+    }
+});
+
+test("the colour popover is built from measured cells and segments", () => {
+    const options = { metrics: metrics(), cell: { width: 28, height: 28 }, segment: { width: 36, height: 32 } };
+    const popover = logic.inkPopover(options);
     assert.equal(popover.colors.length, 9);
     same(logic.COLORS, ["#FF4444", "#FF8C00", "#FFD700", "#44FF88", "#44AAFF", "#CC44FF", "#FF44CC", "#FFFFFF", "#000000"]);
     same(plain(logic.SIZES), [{ size: 2, label: "S" }, { size: 4, label: "M" }, { size: 7, label: "L" }]);
-    assert.equal(popover.width, 268);
-    assert.equal(popover.height, 101);
-    same(plain(popover.divider), { x: 12, y: 44, width: 244, height: 1 });
-    same(plain(popover.track), { x: 12, y: 57, width: 244, height: 32 });
-    same(plain(popover.colors[0]), { index: 0, x: 10, y: 10, width: 24, height: 24 });
-    assert.equal(popover.colors[1].x - popover.colors[0].x, 28);
+    assert.equal(popover.width, 9 * 28 + 8 * 4 + 16, "the colour row and the padding");
+    assert.equal(popover.height, 93);
+    same(plain(popover.divider), { x: 8, y: 44, width: 284, height: 1 });
+    same(plain(popover.colors[0]), { index: 0, x: 8, y: 8, width: 28, height: 28 });
+    assert.equal(popover.colors[1].x - popover.colors[0].x, 28 + 4);
     assert.equal(popover.sizes.length, 3);
-    near(popover.sizes[0].width, 80, "a third of the track");
-    near(popover.sizes[1].x - popover.sizes[0].x, 80, "segment spacing");
+    same(popover.sizes.map(entry => entry.x), [8, 104, 200]);
+    assert.ok(popover.sizes.every(entry => entry.width === 92 && entry.height === 32 && entry.y === 53), "the segments share the colour row's width");
     assert.equal(popover.sizes[2].label, "L");
+    assert.equal(popover.sizes[2].x + popover.sizes[2].width, popover.width - 8, "and end with it");
+});
+
+test("the popover grows when the size buttons need more room than the colours", () => {
+    const popover = logic.inkPopover({ metrics: metrics(), colors: 2, cell: { width: 28, height: 28 }, segment: { width: 60, height: 32 } });
+    assert.equal(popover.width, 3 * 60 + 2 * 4 + 16);
+    assert.ok(popover.sizes.every(entry => entry.width >= 60));
+});
+
+test("the popover is on whole device pixels at every scale", () => {
+    for (const scale of [1, 1.25, 1.5, 1.75, 2]) {
+        const popover = logic.inkPopover({ metrics: metrics(scale), cell: { width: 28.6, height: 28.6 }, segment: { width: 37.2, height: 32.4 } });
+        const all = [popover, popover.divider].concat(popover.colors, popover.sizes);
+        for (const entry of all) {
+            for (const key of ["x", "y", "width", "height"]) {
+                if (entry[key] !== undefined)
+                    assert.ok(onDevicePixel(entry[key], scale), `${key} = ${entry[key]} at ${scale}`);
+            }
+        }
+    }
 });
 
 test("the popover opens above the bar and below it when there is no room", () => {
-    const size = logic.inkPopover();
-    const bar = { x: 700, y: 510, width: 508, height: 44 };
-    const anchor = { x: 915, y: 517, width: 30, height: 30 };
-    const above = logic.popoverPosition(work, bar, anchor, size);
-    assert.equal(above.y, 510 - 8 - 101);
-    assert.equal(above.x, 930 - 134);
-    const top = logic.popoverPosition(work, { x: 700, y: 20, width: 508, height: 44 }, anchor, size);
+    const size = logic.inkPopover({ metrics: metrics(), cell: { width: 28, height: 28 }, segment: { width: 36, height: 32 } });
+    const bar = { x: 700, y: 510, width: 523, height: 44 };
+    const anchor = { x: 917, y: 518, width: 28, height: 28 };
+    const above = logic.popoverPosition(work, bar, anchor, size, metrics());
+    assert.equal(above.y, 510 - 8 - 93);
+    assert.equal(above.x, 931 - 150);
+    const top = logic.popoverPosition(work, { x: 700, y: 20, width: 523, height: 44 }, anchor, size, metrics());
     assert.equal(top.y, 20 + 44 + 8, "below when above would leave the work area");
-    const edge = logic.popoverPosition(work, bar, { x: 0, y: 517, width: 30, height: 30 }, size);
-    assert.equal(edge.x, 6, "clamped to the margin");
+    const edge = logic.popoverPosition(work, bar, { x: 0, y: 518, width: 28, height: 28 }, size, metrics());
+    assert.equal(edge.x, 8, "clamped to the margin");
+    for (const scale of [1.25, 1.5, 1.75]) {
+        const place = logic.popoverPosition(work, { x: 700.3, y: 510.7, width: 523.2, height: 44.4 }, { x: 917.1, y: 518.2, width: 28.8, height: 28.8 }, size, metrics(scale));
+        assert.ok(onDevicePixel(place.x, scale) && onDevicePixel(place.y, scale), `rounded at ${scale}`);
+    }
 });
 
-test("the colour button's dot grows with the line size within 9 and 19 px", () => {
-    near(logic.dotDiameter(2), 10.6, "S");
-    near(logic.dotDiameter(7), 17.1, "L");
-    assert.equal(logic.dotDiameter(0.1), 9);
-    assert.equal(logic.dotDiameter(50), 19);
+test("the colour button's dot grows with the line size from a third to two thirds of the button", () => {
+    near(logic.dotDiameter(2, 30, 1), 10, "S");
+    near(logic.dotDiameter(7, 30, 1), 20, "L");
+    near(logic.dotDiameter(4.5, 30, 1), 15, "halfway between S and L");
+    assert.equal(logic.dotDiameter(0.1, 30, 1), 10, "never below S");
+    assert.equal(logic.dotDiameter(50, 30, 1), 20, "never above L");
+    assert.ok(onDevicePixel(logic.dotDiameter(3, 28.6, 1.25), 1.25));
+});
+
+test("a position rounds to a whole device pixel and stays in the work area", () => {
+    assert.equal(logic.snap(10.3, 1), 10);
+    assert.equal(logic.snap(10.3, 1.25), 10.4);
+    assert.equal(logic.snapUp(10.01, 1), 11);
+    assert.equal(logic.snapUp(35 / 1.25, 1.25), 28, "an exact device size is not pushed up");
+    assert.equal(logic.snap(5, 0), 5, "no scale means 1");
+    same(plain(logic.snapPoint(work, { x: -0.4, y: 1079.6 }, 100, 20, 1)), { x: 0, y: 1060 });
 });
 
 test("Clear needs two presses", () => {
