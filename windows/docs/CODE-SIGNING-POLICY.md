@@ -111,14 +111,16 @@ configured.
 
 SignPath Foundation requires the project team to name the people behind three
 roles. The project has a single maintainer today; the owner fills in the real
-handles before applying and keeps this list current. Replace each placeholder
-with a GitHub handle or team link.
+handles before applying and keeps this list current. Every entry below is a
+deliberate placeholder, not a real identity: replace `<author-github-handle>`,
+`<reviewer-github-handle>` and `<approver-github-handle>` with GitHub handles or
+team links before the application is submitted.
 
 | Role | Who | Responsibility |
 | --- | --- | --- |
-| Authors | `<author-github-handle>`, repository [CODEOWNERS](../../.github/CODEOWNERS) | May change source and build scripts without an additional review. |
-| Reviewers | `<reviewer-github-handle>` | Reviews every proposed change from someone who is not a committer. |
-| Approvers | `<approver-github-handle>` | Decides whether a specific release may be signed. The owner is the single approver. |
+| Authors | PLACEHOLDER `<author-github-handle>`; repository [CODEOWNERS](../../.github/CODEOWNERS) | May change source and build scripts without an additional review. |
+| Reviewers | PLACEHOLDER `<reviewer-github-handle>` | Reviews every proposed change from someone who is not a committer. |
+| Approvers | PLACEHOLDER `<approver-github-handle>` | Decides whether a specific release may be signed. The owner is the single approver. |
 
 Every signing request would need a manual approval. The approver would confirm
 that the request belongs to the exact tested stable release, that the workflow
@@ -161,8 +163,9 @@ Once a signed stable release exists, these steps apply:
 
    It first checks the reviewed file set against
    `windows/release/signing-inventory.json` and
-   `windows/release/vendor-privacy-review.json`, then confirms that Qt DLLs kept
-   their Qt signature and that no third-party file was re-signed with the
+   `windows/release/vendor-privacy-review.json`, then confirms that Qt DLLs keep
+   a valid signature from the reviewed Qt publisher (`CN` and `O` both equal
+   `The QT Company Oy`) and that no third-party file was re-signed with the
    project certificate.
 5. Run the installer with `-ExpectedManifestSha256` from trusted release
    metadata, as described in [INSTALL-RELEASE.md](INSTALL-RELEASE.md).
@@ -172,10 +175,11 @@ Once a signed stable release exists, these steps apply:
 Windows treats signed and unsigned software differently, and a signature only
 changes part of that behavior.
 
-- Publisher identity and SmartScreen reputation are separate. A valid signature
-  identifies who signed the bytes. SmartScreen's "unknown publisher" warning and
-  its app reputation come from Microsoft's own data and can still warn for a
-  newly signed release while reputation accumulates. A signature does not grant
+- A valid signature supplies publisher identity: Windows shows who signed the
+  bytes. SmartScreen reputation is separate. A newly signed app can still trigger
+  the "Windows protected your PC" prompt, which calls the app an "unrecognized
+  app" until Microsoft's reputation data includes it. That prompt describes the
+  app's reputation, not an unknown signer. A signature does not grant
   reputation.
 - Smart App Control only allows software it considers safe. A valid signature
   helps, but Smart App Control also weighs its own reputation data. Because
@@ -191,37 +195,72 @@ changes part of that behavior.
 ## Privacy
 
 This section is the privacy statement referenced by the code signing policy. It
-replaces the blanket sentence that nothing leaves the machine: some features send
-specific data to specific services, described below. The shell sends no
-telemetry. Local profile settings, window titles, notification contents and
-clipboard data are not included in these requests.
+replaces the blanket sentence that nothing leaves the machine: the installed
+shell and its staged scripts make the outbound requests below and no others. The
+shell sends no telemetry, and local profile settings, window titles, notification
+contents and clipboard data are not included in any request. Each row states
+whether the transfer is automatic while a feature is active, opt-in, or a user
+action.
 
 | Service | When it is contacted | Data sent | Privacy policy |
 | --- | --- | --- | --- |
-| ipapi.co (Kloudend, Inc.) | A weather surface loads (the dashboard and lock screen show weather) and `services.weatherLocation` is blank. The shell asks for an approximate location at most once per refresh window; it backs off on rate limits. | The source IP address and ordinary HTTPS request headers. The response supplies approximate latitude, longitude and city. No account or profile data is sent. | [ipapi.co/privacy](https://ipapi.co/privacy/) |
-| OpenStreetMap Nominatim | After the shell has coordinates, to turn them into a place name. | Coordinates, preferred language (`accept-language`) and a `User-Agent` with the shell version. The server also sees the source IP address. | [OpenStreetMap Foundation privacy policy](https://osmfoundation.org/wiki/Privacy_Policy) |
-| Open-Meteo | When a city name is configured (geocoding search), and whenever the weather widget loads a forecast. | A city name or coordinates, the requested weather fields, language and time zone. Open-Meteo's logs may contain coordinates and IP addresses. | [Open-Meteo terms and privacy](https://open-meteo.com/en/terms#privacy) |
-| GitHub | Settings > Updates checks for updates when the user asks it to. The shell fetches the authenticated `nexus-channels` metadata from `raw.githubusercontent.com` and, if the user installs, the release ZIP from `github.com`. | Source IP address, requested URL, `If-None-Match` and ordinary HTTPS request headers. No GitHub account, token or profile data is sent. | [GitHub privacy statement](https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement) |
-| YouTube (Google) | A media player is playing a track whose URL is a YouTube watch page, and the media artwork is visible. The shell loads the video thumbnail as cover art. | The video ID in the thumbnail URL, source IP address and ordinary image-request headers. | [Google privacy policy](https://policies.google.com/privacy) |
-| PyPI | Only when the user opts into preparing the colour-scheme runtime. `pip` downloads locked packages (`materialyoucolor`, `pillow`) from the package index. | Package names and versions, a Python/pip user agent and the source IP address. No profile data is sent. | [PyPI privacy help](https://pypi.org/help/#privacy) |
+| CPA Manager / CLIProxyAPI management endpoint from `cpa-agents.json` | Opt-in through the config file, then automatic while the Agent usage panel is on: the summary request runs as the endpoint loads and on each refresh (`windows/quota/services/Quota.qml:668`), and the spend requests run after the summary accepts the key. Refresh now skips the wait. The file's content is not read and in-flight requests are aborted while the panel is off. | The configured management key in `Authorization: Bearer`, the requested summary or analytics range and fields, ordinary request headers and the source IP address. The key travels over HTTPS, or over plain HTTP only to loopback, a private network address or Tailscale when Detailed usage is enabled. The response carries account labels, quota windows, reset times and spend. No local profile data is sent. | No project-run service: the endpoint is the user's own CPA Manager or CLIProxyAPI instance, so its operator's policy applies. |
+| OpenAI (Codex) through the CPA endpoint | Automatic in hub mode when `quota/summary` answers 404 (stock CLIProxyAPI), or opt-in with Nexus > Services > Detailed usage via CLIProxyAPI (`windows.quota.cpaHub`), while the panel is on. The helper lists the hub's logins and sends usage reads to `chatgpt.com/backend-api/wham/usage`, `wham/rate-limit-reset-credits` and the daily usage report through the hub's `api-call` tunnel (`windows/quota/providers/codex.py`, `hub.py`). | The management key and auth index go to the configured CPA endpoint. The hub substitutes its stored OpenAI token (`$TOKEN$`) and forwards the query, so the token never reaches this PC. The request carries the usage query, the ChatGPT account id header when the login supplies one, and OpenAI client headers. | [OpenAI privacy policy](https://openai.com/policies/privacy-policy/) |
+| Anthropic (Claude) through the CPA endpoint | The same hub-mode trigger. `claude.py` reads `api.anthropic.com/api/oauth/usage`, `api/oauth/profile` and the reset-grant read (`cedar_ember`). | The management key to the CPA endpoint, with the provider token kept by the hub. The forwarded query carries the usage or profile request and a Claude Code user agent. | [Anthropic privacy policy](https://www.anthropic.com/legal/privacy) |
+| Google (Antigravity) through the CPA endpoint | The same hub-mode trigger. `antigravity.py` reads `cloudcode-pa.googleapis.com` and `daily-cloudcode-pa.googleapis.com` (`retrieveUserQuotaSummary`, `loadCodeAssist`). | The management key to the CPA endpoint, with the Google token kept by the hub. The forwarded query carries quota and plan reads and an Antigravity user agent. | [Google privacy policy](https://policies.google.com/privacy) |
+| OpenAI, Google and Z.AI through the CPA inference endpoint | User action only: the drawer's Keepalive menu entry runs `scripts/cpa_keepalive.py`. It sends one real chat completion per enabled login (`gpt-5.6-luna`, `gemini-3.7-flash`, `glm-5.3-flash`) to the inference endpoint from `--inference-url`, `CPA_INFERENCE_URL` or `inferenceUrl`, or to loopback `127.0.0.1:8317` when `baseUrl` is loopback. If the completion cannot run, it falls back to management reads through the CPA endpoint: `chatgpt.com` usage, the Google quota and model URLs, or `https://api.z.ai/api/anthropic/v1/messages` (or the login's own `base_url`). | The inference key from `CPA_API_KEY` (or the `environment.d/cpa.conf` fallback), the literal prompt `ping`, the model name, `max_tokens` 8 or 16, and the source IP address. Provider tokens stay in the hub, except that a Z.AI login exposing `access_token` in the auth inventory has that token passed back to the configured CPA endpoint in the `api-call` envelope. Nothing is sent until the user chooses Keepalive, and switching the panel off stops a running helper. | [OpenAI privacy policy](https://openai.com/policies/privacy-policy/), [Google privacy policy](https://policies.google.com/privacy), [Z.AI privacy policy](https://docs.z.ai/legal-agreement/privacy-policy) |
+| ipapi.co (Kloudend, Inc.) | Automatic: a weather surface loads (the dashboard tab or the lock screen) and `services.weatherLocation` is blank. The shell waits 15 minutes after a successful lookup before asking again, and backs off after a rate limit (`services/Weather.qml:57`). | The source IP address and ordinary HTTPS request headers. The response supplies approximate latitude, longitude and city. The shell shows the returned city directly and does not look it up again. No account or profile data is sent. | [ipapi.co/privacy](https://ipapi.co/privacy/) |
+| OpenStreetMap Nominatim | Automatic only when `services.weatherLocation` is a coordinate pair and that exact pair is not already in the local city cache (`services/Weather.qml:50,175`). A configured city never calls it, and a blank location never does. | Coordinates, preferred language (`accept-language`) and a `User-Agent` with the shell version. The server also sees the source IP address. | [OpenStreetMap Foundation privacy policy](https://osmfoundation.org/wiki/Privacy_Policy) |
+| Open-Meteo | Automatic: a configured city calls the geocoding API at `geocoding-api.open-meteo.com` when that city is not the last one that failed, and every weather load calls `api.open-meteo.com/v1/forecast`. A blank location and a coordinate pair call only the forecast endpoint. | A city name or coordinates, the requested weather fields, language and time zone. Open-Meteo's logs may contain coordinates and IP addresses. | [Open-Meteo terms and privacy](https://open-meteo.com/en/terms#privacy) |
+| GitHub update metadata and release downloads | User action: Settings > Updates checks when the user asks, and installing downloads the chosen ZIP. Metadata comes from `raw.githubusercontent.com/.../nexus-channels/v1/`; the ZIP from `github.com/.../releases/download/`, with redirects allowed only to `objects.githubusercontent.com` and `release-assets.githubusercontent.com` (`windows/scripts/Caelestia-Update.ps1`). | Source IP address, the requested URL, `If-None-Match` and ordinary HTTPS request headers. No GitHub account, token or profile data is sent. | [GitHub privacy statement](https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement) |
+| PyPI | Opt-in: the user prepares the colour-scheme runtime. `pip` downloads the locked binary wheels for `materialyoucolor` and `pillow`. | Package names and versions, a Python/pip user agent, the source IP address and pip's own cache traffic. No profile data is sent. | [PyPI privacy help](https://pypi.org/help/#privacy) |
 | GitHub (Git) | The same opt-in colour-scheme preparation installs the Caelestia CLI from a pinned commit over `git+https`. | Source IP address and the repository/commit requested. No GitHub account or token is sent. | [GitHub privacy statement](https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement) |
-| Microsoft | Never automatically. If the Visual C++ runtime is missing, the installer prints Microsoft's official download link and leaves the decision to the user. | If the user follows the link, Microsoft sees the request under its own terms. | [Microsoft privacy statement](https://privacy.microsoft.com/privacystatement) |
+| Microsoft | User action only. If the Visual C++ runtime is missing, the installer prints Microsoft's official download link and leaves the decision to the user. | If the user follows the link, Microsoft sees the request under its own terms. | [Microsoft privacy statement](https://privacy.microsoft.com/privacystatement) |
+| YouTube (Google) | Does not happen today. The staged fallback that turned a `xesam:url` YouTube watch URL into `img.youtube.com` artwork (`windows/services/media/PlayersService.qml:146`) cannot fire: the pinned backend's metadata map (`player.cpp:257`) has no `xesam:url`, and artwork comes from the local `trackArtUrl` cache. The row becomes active only if a future backend reports that field. | If it ever fires: the video ID in the thumbnail URL, source IP address and ordinary image-request headers. | [Google privacy policy](https://policies.google.com/privacy) |
 | SignPath.io | Only a future release-signing pipeline, which does not exist. The installed shell never contacts SignPath. | The release artifact and its workflow, repository, commit and run metadata. No end-user profile data. | [SignPath privacy policy](https://signpath.io/privacy-policy) |
 
-Ways to avoid or limit the automatic requests:
+Media artwork in the shipped shell is local. The backend caches the current
+session's thumbnail under the shell cache and reports it as `trackArtUrl`
+(`windows/deps/quickshell/src/windows/services/mpris/gsmtc_worker.cpp`), so
+showing artwork makes no request. Notification images are accepted only as
+theme icon names or as files inside the staged assets directory
+(`NotificationsService.qml`); a remote notification image is dropped, not
+fetched.
 
-- Set `services.weatherLocation` to a fixed city or coordinates in
-  `shell.json`. No ipapi.co lookup is made then, and Nominatim is not needed.
-  The weather surfaces still request the forecast from Open-Meteo. The shell
-  does not currently expose a separate switch that disables weather network
-  access altogether.
+Two links are opened in the user's browser rather than fetched by the shell. The
+updates page's manual-download link goes to the GitHub releases page, and after a
+crash the Quickshell crash reporter's Report button opens the upstream issue
+template (`github.com/outfoxxed/quickshell/issues/new?template=crash2.yml`, or
+`QS_CRASHREPORT_URL` when set). The shell uploads nothing for either; the browser
+makes the request when the user clicks.
+
+Ways to avoid or limit the requests:
+
+- Configured city: set `services.weatherLocation` to a city name. The shell
+  geocodes it with Open-Meteo and requests the forecast from Open-Meteo. It
+  contacts neither ipapi.co nor Nominatim. The forecast request still runs on
+  every weather load.
+- Configured coordinates: set `services.weatherLocation` to
+  `latitude,longitude`. The forecast still comes from Open-Meteo, and the first
+  load for that pair also asks Nominatim for a place name unless the pair is in
+  the local city cache. Only a configured city avoids both ipapi.co and
+  Nominatim.
+- Blank location: remove `services.weatherLocation`. The shell asks ipapi.co for
+  approximate coordinates and a city, shows the returned city directly, and
+  requests the forecast from Open-Meteo. It does not contact Nominatim for this
+  case. The shell has no separate switch that disables weather network access
+  altogether.
 - Update checks are user-initiated from Settings > Updates. They do not run on
   startup.
 - Colour-scheme runtime preparation is opt-in. Basic use does not download
   packages.
-- Media artwork is only loaded while a player is active and the artwork is
-  visible. The URL can come from the player or, for YouTube URLs, from the
-  thumbnail fallback.
+- The Agent usage drawer is inactive without `cpa-agents.json`, and the Agent
+  usage panel switch stops its requests live. Hub mode is a separate opt-in,
+  except for a stock CLIProxyAPI summary 404, where it is the only source.
+  Keepalive runs only when the user chooses it.
+- Media artwork is loaded from the local cache while a player is active and the
+  artwork is visible. The YouTube thumbnail fallback is unreachable at the
+  pinned backend.
 
 Signing does not add a network feature to the installed shell. SignPath would see
 the release workflow and artifact, not the user's machine.

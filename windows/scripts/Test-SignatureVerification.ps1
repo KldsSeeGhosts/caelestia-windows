@@ -16,9 +16,13 @@
       * release-channel classification for development, preview and stable;
       * the owned / Qt / third-party file classification;
       * the checked-in inventory against the reviewed Qt supplier list;
+      * the checked-in inventory against the installer payload script lists and
+        the native outputs the packager consumes;
       * completeness against the reviewed inventories and release.json,
         including deleted capture host, supervisor, bootstrap, script and Qt DLL;
       * exact publisher subjects, including a lookalike rejection;
+      * the reviewed Qt publisher identity, including lookalike, prefix and
+        impostor-field rejections;
       * signature acceptance, missing timestamps and unexpected signers;
       * end-to-end exit codes of Test-AuthenticodeSignatures.ps1 on a synthetic
         bundle, including a rejected untrusted chain.
@@ -113,6 +117,59 @@ function Remove-ManifestEntry([string]$BundleRoot, [string]$RelativePath) {
     $manifest | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $manifestPath -Encoding UTF8
 }
 
+# Every PowerShell file either assembler deploys or requires. This reads the
+# checked-in scripts, so it fails when a payload script is added or removed
+# without updating windows/release/signing-inventory.json (and the reverse).
+function Get-InstallerScriptNames([string]$Path) {
+    $tokens = $null
+    $errors = $null
+    $ast = [System.Management.Automation.Language.Parser]::ParseFile(
+        [IO.Path]::GetFullPath($Path), [ref]$tokens, [ref]$errors)
+    if ($errors.Count) { throw "Cannot parse $Path for the payload script list." }
+    $names = New-Object 'System.Collections.Generic.List[string]'
+    foreach ($node in $ast.FindAll({
+                param($item)
+                $item -is [System.Management.Automation.Language.StringConstantExpressionAst]
+            }, $true)) {
+        $value = [string]$node.Value
+        if ($value -cmatch '^payload/[A-Za-z0-9._-]+\.ps1$') { $names.Add($value.Substring('payload/'.Length)) }
+        elseif ($value -cmatch '^[A-Za-z0-9._-]+\.ps1$') { $names.Add($value) }
+    }
+    return @($names | Sort-Object -CaseSensitive -Unique)
+}
+
+# Literal payload PE paths the release installer requires. Expandable strings
+# such as "payload/$captureExecutable" are resolved by the inventory names below.
+function Get-InstallerPayloadPePaths([string]$Path) {
+    $tokens = $null
+    $errors = $null
+    $ast = [System.Management.Automation.Language.Parser]::ParseFile(
+        [IO.Path]::GetFullPath($Path), [ref]$tokens, [ref]$errors)
+    if ($errors.Count) { throw "Cannot parse $Path for the payload PE list." }
+    $paths = New-Object 'System.Collections.Generic.List[string]'
+    foreach ($node in $ast.FindAll({
+                param($item)
+                $item -is [System.Management.Automation.Language.StringConstantExpressionAst]
+            }, $true)) {
+        $value = [string]$node.Value
+        if ($value -cmatch '^payload/[A-Za-z0-9._/-]+\.(exe|dll)$') { $paths.Add($value) }
+    }
+    return @($paths | Sort-Object -CaseSensitive -Unique)
+}
+
+# The read-only native build outputs New-CaelestiaRelease.ps1 packages. They are
+# the only source of the first-party PE files, so this list cannot drift without
+# a deliberate inventory update.
+function Get-NativePackagerInputs([string]$Path) {
+    $raw = [IO.File]::ReadAllText([IO.Path]::GetFullPath($Path))
+    $start = $raw.IndexOf('function Get-NativeReleaseInputs')
+    $end = $raw.IndexOf('$nativeInputs = Get-NativeReleaseInputs')
+    if ($start -lt 0 -or $end -le $start) { throw 'Native packaging inputs moved; update the signing fixtures and inventory.' }
+    return @([regex]::Matches($raw.Substring($start, $end - $start), '\$BuildRoot\\([^"'']+)') |
+        ForEach-Object { $_.Groups[1].Value.Replace('\', '/') } |
+        Sort-Object -CaseSensitive -Unique)
+}
+
 try {
     # --- Release channel classification -------------------------------------
     $channels = @(
@@ -171,6 +228,62 @@ try {
     Assert-True (@($realExpected.signed) -contains 'payload/DesktopTakeover.dll') 'reviewed inventory includes the supervisor'
     Assert-True (@($realExpected.signed) -contains 'payload/Caelestia-Update.ps1') 'reviewed inventory includes current maintenance scripts'
     $passed += 4
+
+    # --- Checked-in inventory versus the real payload lists -----------------
+    # A payload script added to either installer, or dropped from one, must be
+    # reflected in windows/release/signing-inventory.json or this fails.
+    $inventoryScripts = @($realExpected.signed | Where-Object { $_ -cmatch '\.ps1$' } |
+        ForEach-Object { ($_ -split '/')[-1] } | Sort-Object -CaseSensitive -Unique)
+    $buildScripts = Get-InstallerScriptNames (Join-Path $PSScriptRoot 'Install-Caelestia.ps1')
+    $releaseScripts = Get-InstallerScriptNames (Join-Path $PSScriptRoot 'Install-CaelestiaRelease.ps1')
+    $deployedScripts = @(@($buildScripts) + @($releaseScripts) | Sort-Object -CaseSensitive -Unique)
+    Assert-True (@($deployedScripts | Where-Object { $inventoryScripts -cnotcontains $_ }).Count -eq 0) `
+        'every script the installers deploy is in the signed inventory'
+    Assert-True (@($inventoryScripts | Where-Object { $deployedScripts -cnotcontains $_ }).Count -eq 0) `
+        'the signed inventory lists only scripts the installers deploy'
+    Assert-True ($buildScripts -ccontains 'Start-Caelestia.ps1' -and $buildScripts -ccontains 'Caelestia-Update.ps1') `
+        'the developer assembler script list was read'
+    $passed += 3
+
+    # The native build supplies the first-party PE files. Each inventory entry
+    # must follow the assembler's copy rules, and the packager's input list must
+    # not grow without an inventory update.
+    $nativeInputs = Get-NativePackagerInputs (Join-Path $PSScriptRoot 'New-CaelestiaRelease.ps1')
+    $expectedNative = @('install/DesktopTakeover.dll', 'install/caelestia-capture.exe', 'install/qml', 'quickshell/qs.exe') |
+        Sort-Object -CaseSensitive
+    Assert-True (($nativeInputs -join '|') -ceq (@($expectedNative) -join '|')) `
+        "native packaging inputs changed without a signed-inventory update: $($nativeInputs -join ', ')"
+    $signedPe = @($realExpected.signed | Where-Object { $_ -cmatch '\.(exe|dll)$' })
+    Assert-True (@($signedPe | Where-Object { $_ -cin @('payload/caelestia-capture.exe', 'payload/DesktopTakeover.dll') }).Count -eq 2) `
+        'the native capture host and supervisor are signed'
+    $rootHelpers = @($signedPe | Where-Object { $_ -cmatch '^payload/caelestia-[^/]+\.dll$' })
+    $libHelpers = @($signedPe | Where-Object { $_ -cmatch '^payload/qml/Caelestia/lib/caelestia-[^/]+\.dll$' })
+    Assert-True ($rootHelpers.Count -gt 0 -and $rootHelpers.Count -eq $libHelpers.Count) `
+        'the payload-root helper DLLs and their qml lib copies are the same set size'
+    foreach ($helper in $rootHelpers) {
+        $twin = 'payload/qml/Caelestia/lib/' + ($helper -split '/')[-1]
+        Assert-True ($libHelpers -ccontains $twin) "helper DLL $helper has no qml lib copy in the inventory"
+    }
+    Assert-True (@($signedPe | Where-Object { $_ -cmatch '^payload/qml/' -and $_ -cnotmatch '^payload/qml/Caelestia/' }).Count -eq 0) `
+        'the signed inventory owns no DLL outside the Caelestia QML tree'
+    Assert-True (@($signedPe | Where-Object {
+                $_ -cmatch '^payload/qml/Caelestia/' -and
+                $_ -cnotmatch '^payload/qml/Caelestia/(.+/)?caelestia-[A-Za-z0-9._-]+plugin\.dll$' -and
+                $_ -cnotmatch '^payload/qml/Caelestia/lib/caelestia-[A-Za-z0-9._-]+\.dll$'
+            }).Count -eq 0) 'every signed QML module is a first-party Caelestia plugin or helper library'
+    Assert-True ($realExpected.signed -cnotcontains 'payload/qs.exe' -and
+        $realExpected.signed -cnotcontains 'payload/m3shapes.dll') `
+        'the inventory leaves the upstream binary and m3shapes unsigned'
+    foreach ($path in @(Get-InstallerPayloadPePaths (Join-Path $PSScriptRoot 'Install-CaelestiaRelease.ps1'))) {
+        if ((Get-CaelestiaSigningKind $path) -ceq 'owned-pe') {
+            Assert-True ($realExpected.signed -ccontains $path) `
+                "the release installer requires first-party $path but the inventory omits it"
+        } else {
+            Assert-True ($realExpected.signed -cnotcontains $path) `
+                "the release installer requires third-party $path but the inventory signs it"
+        }
+    }
+    $passed += 5
 
     # --- Synthetic bundle and disposable signing certificate ----------------
     $bundle = Join-Path $scratch 'caelestia-windows-fixture-windows-x64'
@@ -277,12 +390,45 @@ try {
     Assert-True (-not $decision.ok -and ($decision.reasons -contains 'unsigned')) 'unsigned file is rejected'
     $passed += 6
 
+    # --- Reviewed Qt publisher identity -------------------------------------
+    # The approved subjects are the ones measured with Get-AuthenticodeSignature
+    # on the 90 reviewed Qt DLLs. Matching is on the whole CN and O values, so a
+    # suffix, shared prefix or unrelated organization never passes.
+    $approvedQtSubjects = @(Get-CaelestiaQtSignerSubjects)
+    Assert-True ($approvedQtSubjects.Count -ge 1) 'the reviewed Qt subject list is not empty'
+    foreach ($qtSubject in $approvedQtSubjects) {
+        $decision = Test-CaelestiaSignatureRecord ([pscustomobject]@{
+                Status = 'Valid'
+                SignerCertificate = [pscustomobject]@{ Subject = $qtSubject }
+                TimeStamperCertificate = $timestamp
+            }) -QtVendorSigner -RequireTimestamp
+        Assert-True $decision.ok "the reviewed Qt subject is accepted: $qtSubject"
+    }
+    $qtLookalikes = @(
+        'CN=The QT Company Oy Impostor, O=Example'
+        'CN=The QT Company Oy, O=The QT Company Oy Impostor'
+        'CN=The QT Company Oy, O=Nominally The QT Company Oy'
+        'CN=The QT Company OyX, O=The QT Company Oy'
+        'CN=Qt, O=The QT Company Oy'
+        'CN=The QT Company Oy'
+        'The QT Company Oy'
+        'CN="The QT Company Oy, Impostor", O=The QT Company Oy'
+        'CN=The QT Company Oy\, Impostor, O=The QT Company Oy'
+    )
+    foreach ($qtSubject in $qtLookalikes) {
+        Assert-True (-not (Test-CaelestiaQtSignerSubject $qtSubject)) "the Qt lookalike is rejected: $qtSubject"
+    }
+    $reissuedQtSubject = 'CN=The QT Company Oy, O=The QT Company Oy, C=FI, SERIALNUMBER=9999999-9'
+    Assert-True (Test-CaelestiaQtSignerSubject $reissuedQtSubject) `
+        'a re-issued certificate from the reviewed Qt organization is accepted'
+    $passed += 1 + $approvedQtSubjects.Count + $qtLookalikes.Count + 1
+
     # --- Policy decisions with an injected provider -------------------------
     $validProvider = {
         param($Path)
         $leaf = Split-Path -Leaf $Path
         $subject = switch -Regex ($leaf) {
-            '^(Qt6.*\.dll|qwindows\.dll)$' { 'CN=The QT Company Oy, O=The QT Company Oy, C=FI' }
+            '^(Qt6.*\.dll|qwindows\.dll)$' { $approvedQtSubjects[0] }
             '^(caelestia-.*\.(dll|exe)|DesktopTakeover\.dll|Install-CaelestiaRelease\.ps1|Start-Caelestia\.ps1)$' { 'CN=SignPath Foundation, O=SignPath Foundation' }
             default { $null }
         }
@@ -318,6 +464,35 @@ try {
     Assert-True (-not $previewFailure.ok) 'preview policy rejects a Qt DLL without a vendor signature'
     Assert-True (@($previewFailure.failures | Where-Object { $_.kind -eq 'qt-pe' }).Count -eq 2) 'both Qt files fail without a signature'
     $passed += 2
+
+    # A lookalike Qt publisher must fail exactly like an unsigned Qt DLL, and a
+    # bare prefix must not pass either.
+    foreach ($qtImpostor in @(
+            'CN=The QT Company Oy Impostor, O=Example'
+            'CN=The QT Company Oy'
+        )) {
+        $qtImpostorSubject = $qtImpostor
+        $qtImpostorProvider = {
+            param($Path)
+            $leaf = Split-Path -Leaf $Path
+            $subject = if ($leaf -like 'Qt6*' -or $leaf -eq 'qwindows.dll') {
+                $qtImpostorSubject
+            } else {
+                'CN=SignPath Foundation, O=SignPath Foundation'
+            }
+            [pscustomobject]@{
+                Status = 'Valid'; SignerCertificate = [pscustomobject]@{ Subject = $subject }
+                TimeStamperCertificate = [pscustomobject]@{ Subject = 'CN=Example Timestamp Authority' }
+            }
+        }
+        $impostorResult = Test-CaelestiaSigningPolicy -Inventory $inventory -Channel preview `
+            -SignatureProvider $qtImpostorProvider
+        Assert-True (-not $impostorResult.ok) "preview policy rejects the Qt impostor: $qtImpostorSubject"
+        Assert-True (@($impostorResult.failures | Where-Object {
+                    $_.kind -ceq 'qt-pe' -and $_.reasons -contains 'unexpected-signer'
+                }).Count -eq 2) "both Qt DLLs fail with an unexpected signer: $qtImpostorSubject"
+        $passed += 2
+    }
 
     $projectSignedThirdParty = {
         param($Path)
@@ -404,7 +579,7 @@ try {
     Assert-True (($output -join "`n") -match 'payload/Qt6Core\.dll') 'preview verification names the Qt file'
     $passed += 2
 
-    Write-Output "PASS signing policy: $passed fixture assertions across channels, inventory completeness, exact publisher subjects, signatures and CLI exit codes."
+    Write-Output "PASS signing policy: $passed fixture assertions across channels, inventory completeness and payload-list drift, exact publisher and Qt vendor identities, signatures and CLI exit codes."
 } finally {
     if ($store) {
         try {

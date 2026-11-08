@@ -7,17 +7,93 @@
 # windows/scripts/Test-AuthenticodeSignatures.ps1. Nothing here is wired into
 # CI: the verifier is a standalone tool until a signing pipeline exists.
 
-# Qt 6.11 Windows binaries are signed by The Qt Company. Accept the spellings
-# used across Qt release series without accepting an arbitrary "Qt" subject.
-$script:CaelestiaQtSignerPattern = '(?i)\bthe\s+qt\s+company\s+oyj?\b|\bqt\s+group\s+(?:oyj?|plc)\b'
+# Qt 6.11 Windows binaries are signed by The Qt Company. All 90 Qt DLLs in the
+# reviewed supplier list (windows/release/vendor-privacy-review.json) carry this
+# exact subject, read with Get-AuthenticodeSignature from the pinned
+# Qt 6.11.2 msvc2022_64 toolchain:
+#   CN=The QT Company Oy, O=The QT Company Oy, L=Espoo, S=Uusimaa, C=FI,
+#   SERIALNUMBER=2637805-2, OID.2.5.4.15=Private Organization,
+#   OID.1.3.6.1.4.1.311.60.2.1.3=FI
+# Matching accepts that literal subject, or a re-issued certificate whose parsed
+# CN and O fields are exactly the approved values. A substring, prefix or
+# lookalike subject is rejected; there is no pattern fallback.
+$script:CaelestiaApprovedQtSubjects = @(
+    'CN=The QT Company Oy, O=The QT Company Oy, L=Espoo, S=Uusimaa, C=FI, SERIALNUMBER=2637805-2, OID.2.5.4.15=Private Organization, OID.1.3.6.1.4.1.311.60.2.1.3=FI'
+)
+$script:CaelestiaApprovedQtNames = @(
+    [pscustomobject]@{ commonName = 'The QT Company Oy'; organization = 'The QT Company Oy' }
+)
 
 # $PSScriptRoot is the caller's script after this file is dot-sourced, so
 # remember this file's own directory for the helper this module loads itself.
 $script:CaelestiaSigningRoot = $PSScriptRoot
 . (Join-Path $script:CaelestiaSigningRoot 'Caelestia-SemVer.ps1')
 
-function Get-CaelestiaQtSignerPattern {
-    return $script:CaelestiaQtSignerPattern
+function Get-CaelestiaQtSignerSubjects {
+    return @($script:CaelestiaApprovedQtSubjects)
+}
+
+# Splits an X.500 subject rendered by .NET into name/value fields. Values may be
+# quoted and may contain escaped commas; anything unparseable returns $null so
+# the caller rejects it instead of matching a fragment.
+function Split-CaelestiaSignerSubject {
+    param([AllowEmptyString()][string]$Subject)
+    if ([string]::IsNullOrWhiteSpace($Subject)) { return $null }
+    $fields = New-Object 'System.Collections.Generic.List[string]'
+    $builder = [Text.StringBuilder]::new()
+    $quoted = $false
+    for ($index = 0; $index -lt $Subject.Length; $index++) {
+        $character = $Subject[$index]
+        if ($character -eq '\') {
+            if ($index + 1 -ge $Subject.Length) { return $null }
+            $index++
+            $null = $builder.Append($Subject[$index])
+            continue
+        }
+        if ($character -eq '"') { $quoted = -not $quoted; continue }
+        if ($character -eq ',' -and -not $quoted) {
+            $fields.Add($builder.ToString())
+            $null = $builder.Clear()
+            continue
+        }
+        $null = $builder.Append($character)
+    }
+    if ($quoted) { return $null }
+    $fields.Add($builder.ToString())
+    $parsed = New-Object 'System.Collections.Generic.List[object]'
+    foreach ($field in $fields) {
+        $separator = $field.IndexOf('=')
+        if ($separator -lt 1) { return $null }
+        $name = $field.Substring(0, $separator).Trim()
+        $value = $field.Substring($separator + 1).Trim()
+        if (-not $name -or -not $value) { return $null }
+        $parsed.Add([pscustomobject]@{ name = $name; value = $value })
+    }
+    return $parsed.ToArray()
+}
+
+# True only for the reviewed Qt publisher identity. CN and O are compared as
+# whole field values, so an impostor suffix, a shared prefix or an extra "Qt"
+# word never matches.
+function Test-CaelestiaQtSignerSubject {
+    param([AllowEmptyString()][string]$Subject)
+    if ([string]::IsNullOrWhiteSpace($Subject)) { return $false }
+    foreach ($approved in $script:CaelestiaApprovedQtSubjects) {
+        if ([string]::Equals($Subject, $approved, [StringComparison]::OrdinalIgnoreCase)) { return $true }
+    }
+    $fields = @(Split-CaelestiaSignerSubject $Subject | Where-Object { $null -ne $_ })
+    if ($fields.Count -eq 0) { return $false }
+    $commonNames = @($fields | Where-Object { $_.name -ieq 'CN' })
+    $organizations = @($fields | Where-Object { $_.name -ieq 'O' })
+    # Exactly one of each: a duplicate field could hide a second identity.
+    if ($commonNames.Count -ne 1 -or $organizations.Count -ne 1) { return $false }
+    foreach ($approved in $script:CaelestiaApprovedQtNames) {
+        if ([string]::Equals($commonNames[0].value, $approved.commonName, [StringComparison]::OrdinalIgnoreCase) -and
+            [string]::Equals($organizations[0].value, $approved.organization, [StringComparison]::OrdinalIgnoreCase)) {
+            return $true
+        }
+    }
+    return $false
 }
 
 # Classifies a release reference. `stable` is the only channel the policy signs.
@@ -249,18 +325,17 @@ function Assert-CaelestiaReleaseCompleteness {
 
 # Pure decision for one signature record. The project publisher is the exact
 # certificate subject recorded from the first accepted signing request, compared
-# as a literal string. ExpectedVendorPattern is only for the Qt vendor identity,
-# whose subject spelling varies between Qt release series; never pass a project
-# publisher through it.
+# as a literal string. QtVendorSigner is only for the reviewed Qt publisher
+# identity; never pass a project publisher through it.
 function Test-CaelestiaSignatureRecord {
     param(
         [Parameter(Mandatory)][AllowNull()]$Record,
         [string]$ExpectedSignerSubject,
-        [string]$ExpectedVendorPattern,
+        [switch]$QtVendorSigner,
         [switch]$RequireTimestamp
     )
-    if ($ExpectedSignerSubject -and $ExpectedVendorPattern) {
-        throw 'A signature decision accepts an exact subject or a vendor pattern, not both.'
+    if ($ExpectedSignerSubject -and $QtVendorSigner) {
+        throw 'A signature decision accepts a project subject or the Qt vendor identity, not both.'
     }
     $reasons = New-Object 'System.Collections.Generic.List[string]'
     if ($null -eq $Record -or -not $Record.SignerCertificate) {
@@ -270,8 +345,8 @@ function Test-CaelestiaSignatureRecord {
     $subject = [string]$Record.SignerCertificate.Subject
     $status = [string]$Record.Status
     if ($status -cne 'Valid') { $reasons.Add('signature-status-' + ($status -replace '[^A-Za-z0-9]', '')) }
-    if ($ExpectedVendorPattern) {
-        if ($subject -cnotmatch $ExpectedVendorPattern) { $reasons.Add('unexpected-signer') }
+    if ($QtVendorSigner) {
+        if (-not (Test-CaelestiaQtSignerSubject $subject)) { $reasons.Add('unexpected-signer') }
     } elseif ($ExpectedSignerSubject -and
         -not [string]::Equals($subject, $ExpectedSignerSubject, [StringComparison]::OrdinalIgnoreCase)) {
         $reasons.Add('unexpected-signer')
@@ -305,7 +380,6 @@ function Test-CaelestiaSigningPolicy {
         [scriptblock]$SignatureProvider = { param($Path) Get-AuthenticodeSignature -LiteralPath $Path }
     )
     if ($Channel -eq 'stable' -and -not $ExpectedSignerSubject) { throw 'Stable signature verification requires the expected signer subject.' }
-    $qtPattern = Get-CaelestiaQtSignerPattern
     $failures = New-Object 'System.Collections.Generic.List[object]'
     $signatures = @{}
     function Get-Record([string]$RelativePath) {
@@ -315,7 +389,7 @@ function Test-CaelestiaSigningPolicy {
         return $record
     }
     foreach ($row in $Inventory.qtPe) {
-        $decision = Test-CaelestiaSignatureRecord (Get-Record $row.path) -ExpectedVendorPattern $qtPattern -RequireTimestamp
+        $decision = Test-CaelestiaSignatureRecord (Get-Record $row.path) -QtVendorSigner -RequireTimestamp
         if (-not $decision.ok) {
             $failures.Add([ordered]@{ path = $row.path; kind = 'qt-pe'; reasons = $decision.reasons })
         }

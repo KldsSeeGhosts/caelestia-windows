@@ -108,10 +108,21 @@ Signing may start only when all of these are true:
   signing policy exist, and manual approval is enforced.
 - The artifact configuration is registered from the reviewed draft, and the
   registered copy matches the repository copy.
+- The installer displays the privacy policy and lets the user disable the
+  automatic data transfers listed in it at installation time, and the installed
+  shell honours that choice. A runtime switch alone does not satisfy this.
 - A signing-aware release has been verified end to end on a disposable machine,
   including a failed-signing case that publishes nothing.
 
 SignPath's terms also require the privacy policy to be shown during installation
-and a way to disable transfers that are not specified by the user. The current
-installer does not display this policy, and the shell has no separate weather
-network switch. Resolve both before claiming signing readiness.
+and a way for users to disable the data transfers that are not required by the
+application's specification. That control must exist when the user installs, not
+only later through a runtime switch such as Nexus > Services. The installer must
+present the policy and persist an explicit opt-out for the automatic transfers
+in [CODE-SIGNING-POLICY.md](CODE-SIGNING-POLICY.md#privacy) (the weather
+lookups, and any future automatic request), and the installed shell must honour
+it. The current installer shows neither, and the shell's only weather control is
+`services.weatherLocation`. The opt-in CPA and colour-scheme requests are already
+off until the user supplies a configuration or chooses the action, but they must
+be named in the same installation-time choice. Resolve all of this before
+claiming signing readiness.
