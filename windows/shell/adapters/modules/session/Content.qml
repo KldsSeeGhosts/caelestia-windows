@@ -9,11 +9,30 @@ import qs.components
 import qs.components.controls
 import qs.services
 import qs.utils
+import qs.modules.nexus.common
 
 Column {
     id: root
 
     required property ScreenState screenState
+
+    // Windows adaptation: the same allowlisted command and gate the four native
+    // session buttons use. The action is present even while unavailable so the
+    // user can see why, with the existing disabled styling.
+    readonly property var switchBackAction: SessionManager.sessionActionGating === true
+        && SessionManager.sessionAction ? SessionManager.sessionAction(["switch-back"]) : null
+    readonly property bool switchBackAvailable: switchBackAction !== null
+        && switchBackAction.dispatchable === true
+
+    function switchBack(): void {
+        if (!root.switchBackAvailable)
+            return;
+        // The service backend starts Start-Caelestia.ps1 as a detached
+        // process; that existing launcher owns Quit and the supervisor's
+        // desktop restore after this shell exits.
+        SessionManager.switchBackDisableAutostart = autostart.checked;
+        SessionManager.exec(["switch-back"]);
+    }
 
     padding: Tokens.padding.large
     rightPadding: CUtils.clamp(padding - Config.border.thickness, 0, padding)
@@ -21,17 +40,19 @@ Column {
 
     SessionButton {
         id: logout
+        objectName: "logoutButton"
 
         icon: Config.session.icons.logout
         command: Config.session.commands.logout
         accessibleName: "Log out"
 
+        KeyNavigation.up: autostart.visible ? autostart : switchBackButton
         KeyNavigation.down: shutdown
-        // Windows a11y fix: every button names both Tab neighbours,
-        // so traversal is a closed cycle over the four buttons and never falls
+        // Windows a11y fix: every control names both Tab neighbours, so
+        // traversal is a closed cycle over the session drawer and never falls
         // back to Qt's default chain, which leaves the drawer for the bar.
         KeyNavigation.tab: shutdown
-        KeyNavigation.backtab: reboot
+        KeyNavigation.backtab: autostart.visible ? autostart : switchBackButton
 
         Component.onCompleted: forceActiveFocus()
 
@@ -47,6 +68,7 @@ Column {
 
     SessionButton {
         id: shutdown
+        objectName: "shutdownButton"
 
         icon: Config.session.icons.shutdown
         command: Config.session.commands.shutdown
@@ -76,6 +98,7 @@ Column {
 
     SessionButton {
         id: hibernate
+        objectName: "hibernateButton"
 
         icon: Config.session.icons.hibernate
         command: Config.session.commands.hibernate
@@ -89,14 +112,158 @@ Column {
 
     SessionButton {
         id: reboot
+        objectName: "rebootButton"
 
         icon: Config.session.icons.reboot
         command: Config.session.commands.reboot
         accessibleName: "Reboot"
 
         KeyNavigation.up: hibernate
-        KeyNavigation.tab: logout
+        KeyNavigation.down: switchBackButton
+        KeyNavigation.tab: switchBackButton
         KeyNavigation.backtab: hibernate
+    }
+
+    // Clearly labelled because this action leaves Windows instead of acting on
+    // the current session. It uses the same focus indicator and keyboard paths
+    // as the icon buttons above.
+    IconTextButton {
+        id: switchBackButton
+        objectName: "switchBackButton"
+
+        property bool pointerUsed
+        readonly property bool focusVisible: activeFocus && !pointerUsed
+
+        onActiveFocusChanged: pointerUsed = false
+        onPressedChanged: if (pressed) pointerUsed = true
+
+        icon: "desktop_windows"
+        text: SessionManager.switchBackPending ? "Switching back to Windows..." : "Switch back to Windows"
+        type: TextButton.Filled
+        font: Tokens.font.body.small
+        disabled: !root.switchBackAvailable
+
+        inactiveColour: switchBackButton.activeFocus ? Colours.palette.m3secondaryContainer : Colours.tPalette.m3surfaceContainer
+        inactiveOnColour: switchBackButton.activeFocus ? Colours.palette.m3onSecondaryContainer : Colours.palette.m3onSurface
+
+        KeyNavigation.up: reboot
+        KeyNavigation.down: autostart.visible ? autostart : logout
+        KeyNavigation.tab: autostart.visible ? autostart : logout
+        KeyNavigation.backtab: reboot
+
+        Accessible.role: Accessible.Button
+        Accessible.name: "Switch back to Windows"
+        Accessible.description: root.switchBackAvailable
+            ? "Quit Caelestia and restore the Windows taskbar and desktop."
+            : String(root.switchBackAction?.reason ?? "Switching back to Windows is unavailable.")
+        Accessible.onPressAction: root.switchBack()
+
+        onClicked: root.switchBack()
+
+        FocusRing {
+            showing: switchBackButton.focusVisible
+            radius: switchBackButton.radius
+        }
+
+        Keys.onEnterPressed: root.switchBack()
+        Keys.onReturnPressed: root.switchBack()
+        Keys.onSpacePressed: root.switchBack()
+        Keys.onEscapePressed: root.screenState.session = false
+        Keys.onPressed: event => {
+            if (!Config.session.vimKeybinds)
+                return;
+
+            if (event.modifiers & Qt.ControlModifier) {
+                if ((event.key === Qt.Key_J || event.key === Qt.Key_N) && KeyNavigation.down) {
+                    KeyNavigation.down.focus = true;
+                    event.accepted = true;
+                } else if ((event.key === Qt.Key_K || event.key === Qt.Key_P) && KeyNavigation.up) {
+                    KeyNavigation.up.focus = true;
+                    event.accepted = true;
+                }
+            } else if (event.key === Qt.Key_Backtab || (event.key === Qt.Key_Tab && (event.modifiers & Qt.ShiftModifier))) {
+                if (KeyNavigation.backtab) {
+                    KeyNavigation.backtab.focus = true;
+                    event.accepted = true;
+                }
+            } else if (event.key === Qt.Key_Tab) {
+                if (KeyNavigation.tab) {
+                    KeyNavigation.tab.focus = true;
+                    event.accepted = true;
+                }
+            }
+        }
+    }
+
+    // The choice is offered here, before the shell leaves. Off by default so
+    // switching back does not silently change a sign-in preference; the
+    // installed launcher removes only this installation's own Run entry.
+    ToggleRow {
+        id: autostart
+        objectName: "autostartToggle"
+
+        visible: root.switchBackAvailable
+        text: "Turn off autostart"
+        subtext: "When switching back to Windows"
+        checked: SessionManager.switchBackDisableAutostart
+        onToggled: SessionManager.switchBackDisableAutostart = checked
+
+        KeyNavigation.up: switchBackButton
+        KeyNavigation.down: logout
+        KeyNavigation.tab: logout
+        KeyNavigation.backtab: switchBackButton
+
+        Accessible.name: "Turn off autostart when switching back to Windows"
+
+        // StyledSwitch handles Return/Enter in its own Keys.onPressed handler.
+        // This row replaces that handler so vim navigation reaches the toggle;
+        // keep the same activation here.
+        function activate(): void {
+            if (autostart.disabled)
+                return;
+            autostart.toggle();
+            autostart.toggled();
+        }
+
+        Keys.onEnterPressed: autostart.activate()
+        Keys.onReturnPressed: autostart.activate()
+        Keys.onEscapePressed: root.screenState.session = false
+        Keys.onTabPressed: {
+            if (KeyNavigation.tab)
+                KeyNavigation.tab.focus = true;
+        }
+        Keys.onBacktabPressed: {
+            if (KeyNavigation.backtab)
+                KeyNavigation.backtab.focus = true;
+        }
+        Keys.onPressed: event => {
+            if (!Config.session.vimKeybinds)
+                return;
+
+            // Same vim controls as the session buttons and the switch-back
+            // button. Tab and Escape keep their dedicated handlers above.
+            if (event.modifiers & Qt.ControlModifier) {
+                if ((event.key === Qt.Key_J || event.key === Qt.Key_N) && KeyNavigation.down) {
+                    KeyNavigation.down.focus = true;
+                    event.accepted = true;
+                } else if ((event.key === Qt.Key_K || event.key === Qt.Key_P) && KeyNavigation.up) {
+                    KeyNavigation.up.focus = true;
+                    event.accepted = true;
+                }
+            }
+        }
+    }
+
+    StyledText {
+        id: switchBackErrorText
+        objectName: "switchBackError"
+
+        visible: SessionManager.switchBackError !== ""
+        text: SessionManager.switchBackError
+        color: Colours.palette.m3error
+        font: Tokens.font.label.small
+        width: root.width - root.leftPadding - root.rightPadding
+        wrapMode: Text.Wrap
     }
 
     component SessionButton: IconButton {

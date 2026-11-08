@@ -14,6 +14,12 @@ import QtQuick
 // execution when the adapter advertises it. A Windows command is dispatched only
 // through the explicit allowlist below and only after both opt-ins.
 //
+// `switchback` is the shell-side "Switch back to Windows" action. It is not a
+// native Session method: its backend method starts the installed launcher
+// outside the shell, so Quit, supervisor restore and desktop handback complete
+// after this shell exits. The service still owns the gate and the autostart
+// choice; it starts no process and has no detached-execution path.
+//
 // Backend result gap: Quickshell.Windows.Session methods return void and only
 // log failures (windows/deps/quickshell/src/windows/system/session.cpp lines
 // 45-49, 51-55, 57-71, 73-87, 89-93, 95-99, 101-115, 117-121). The outcome
@@ -39,6 +45,11 @@ QtObject {
     // status exists in that state.
     property string backendError: ""
 
+    // Set by the session UI before exec(["switch-back"]). The backend removes
+    // this installation's autostart entry from the installed launcher, reusing
+    // the same HKCU Run registration as install. False keeps it.
+    property bool switchBackDisableAutostart: false
+
     // Destructive actions dispatch directly, as in upstream Caelestia: its
     // session panel calls exec() straight through with no confirmation step.
     // The allowlist and both opt-ins are the only gates; nothing is held back
@@ -58,6 +69,21 @@ QtObject {
     readonly property bool hibernateSupported: available && backend !== null && backend.canHibernate === true
     // Compatibility spelling for hosts that read the native property name.
     readonly property bool canHibernate: hibernateSupported
+
+    // The installed launcher exists and can hand Quit to a process outside the
+    // shell. The UI must use this instead of assuming a development session has
+    // the installed scripts.
+    readonly property bool switchBackSupported: available && backend !== null
+        && backend.switchBackSupported === true
+
+    // Observable handoff progress from the backend. A successful switch back
+    // exits this shell, so the only state the UI can show is "waiting" or a
+    // bounded timeout error that also clears the backend's dispatched guard so
+    // the user can retry.
+    readonly property bool switchBackPending: available && backend !== null
+        && backend.switchBackPending === true
+    readonly property string switchBackError: available && backend !== null
+        ? String(backend.switchBackError ?? "") : ""
 
     readonly property string status: {
         if (!enabled)
@@ -90,6 +116,7 @@ QtObject {
         suspend: { method: "suspend", destructive: false, supported: true },
         hibernate: { method: "hibernate", destructive: false, supported: true },
         firmware: { method: "rebootToFirmware", destructive: true, supported: true },
+        switchback: { method: "switchBack", destructive: false, supported: true },
         suspendthenhibernate: {
             method: "",
             destructive: false,
@@ -99,7 +126,7 @@ QtObject {
     })
 
     readonly property var actionNames: [
-        "lock", "logout", "shutdown", "reboot", "suspend", "hibernate", "firmware"
+        "lock", "logout", "shutdown", "reboot", "suspend", "hibernate", "firmware", "switchback"
     ]
 
     // Copy a QML list<string>/JS array into plain tokens. A string, null,
@@ -149,6 +176,9 @@ QtObject {
         case "rebootfirmware":
         case "reboottofirmware":
             return "firmware";
+        case "switchback":
+        case "switchbacktowindows":
+            return "switchback";
         case "suspendthenhibernate":
             return "suspendthenhibernate";
         default:
@@ -182,7 +212,8 @@ QtObject {
 
         const supported = definition.supported === true;
         const capability = supported && available
-            && (action !== "hibernate" || hibernateSupported);
+            && (action !== "hibernate" || hibernateSupported)
+            && (action !== "switchback" || switchBackSupported);
         const dispatchable = capability && dispatchEnabled;
         const uiAvailable = dispatchable;
 
@@ -197,6 +228,8 @@ QtObject {
             infoReason = definition.reason;
         else if (action === "hibernate" && !hibernateSupported)
             infoReason = "Hibernation is not available on this system.";
+        else if (action === "switchback" && !switchBackSupported)
+            infoReason = "Switching back to Windows needs an installed Caelestia launcher.";
         else if (!actionsEnabled)
             infoReason = "Windows session action dispatch is disabled.";
         else
@@ -272,6 +305,9 @@ QtObject {
         if (action === "hibernate" && !hibernateSupported)
             return recordResult(tokens, action, "unsupported", false,
                 "Hibernation is not available on this system; the request was not sent.");
+        if (action === "switchback" && !switchBackSupported)
+            return recordResult(tokens, action, "unsupported", false,
+                "Switching back to Windows needs an installed Caelestia launcher; the request was not sent.");
         if (!dispatchEnabled)
             return recordResult(tokens, action, "actions-disabled", false,
                 "Windows session action dispatch is disabled; observation still reports capabilities only.");
@@ -301,12 +337,28 @@ QtObject {
                 "The Windows session backend does not expose " + (method || "this action") + ".");
         }
 
+        let accepted = true;
         try {
-            backend[method]();
+            if (action === "switchback")
+                accepted = backend[method](switchBackDisableAutostart === true) !== false;
+            else
+                backend[method]();
         } catch (error) {
             return recordResult(command, action, "failed", false,
                 "The native session call threw instead of returning a result: " + error);
         }
+
+        if (!accepted)
+            return recordResult(command, action, "failed", false,
+                "The Windows session backend did not start another switch-back handoff. "
+                + "A previous handoff may still be pending, or the installed launcher is unavailable.");
+
+        if (action === "switchback")
+            return recordResult(command, action, "requested", true,
+                "Requested switchBack(); the installed launcher is started outside the shell so "
+                + "Quit, supervisor restore and desktop handback complete after this shell exits. "
+                + "Success is acknowledged by this shell exiting; a bounded timeout exposes a "
+                + "retryable error if it stays alive. This is not a success result.");
 
         return recordResult(command, action, "requested", true,
             "Requested " + method + "(); the native method returns void and only logs failures "
