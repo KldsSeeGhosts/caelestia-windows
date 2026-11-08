@@ -408,7 +408,7 @@ function Test-CaelestiaAutostart([string]$Prefix) {
 # removes only this installation's own Run entry; it never touches another
 # application's value or another prefix's hashed name. Returns a result instead
 # of hiding failures: Quit proceeds so the desktop still comes back, but
-# Start-Caelestia reports a removal error through a notification and a nonzero
+# Start-Caelestia reports a removal error through a native dialog and a nonzero
 # exit after restoring the desktop.
 function Set-CaelestiaAutostart([string]$Prefix, [bool]$Enabled) {
     $integration = Get-CaelestiaIntegration $Prefix
@@ -492,47 +492,42 @@ function Set-CaelestiaAutostart([string]$Prefix, [bool]$Enabled) {
     return $result
 }
 
-# Best-effort visible report for a failed autostart removal. Quit still runs so
-# the desktop is handed back, but the user must know the sign-in entry remains.
-# No settings, permissions or notification consent are changed.
-function Show-CaelestiaHandoffWarning([string]$Message) {
-    if ($env:OS -ne 'Windows_NT' -or $env:CAELESTIA_TEST_SUPPRESS_TOAST -eq '1') { return }
+# Native report for a failed autostart removal. It cannot depend on Windows
+# notifications: those can be disabled, unregistered or silently dropped, and
+# the detached launcher discards stdout and stderr. Quit has already restored
+# the desktop when the caller shows this, so a modal box is the only report the
+# user is guaranteed to see. No settings, permissions or consent are changed.
+# Test seam: fixture scripts replace this function to record the message; tests
+# can also set CAELESTIA_TEST_SUPPRESS_DIALOG=1 so no real dialog is shown.
+function Show-CaelestiaHandoffDialog([string]$Message) {
+    if ($env:CAELESTIA_TEST_SUPPRESS_DIALOG -eq '1') { return }
     try {
-        $null = [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime]
-        $null = [Windows.UI.Notifications.ToastNotification, Windows.UI.Notifications, ContentType = WindowsRuntime]
-        $null = [Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime]
-        $appId = '{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\WindowsPowerShell\v1.0\powershell.exe'
-        $notifier = [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier($appId)
-        if ($notifier.Setting.ToString() -ne 'Enabled') { return }
-        $xml = [Windows.Data.Xml.Dom.XmlDocument]::new()
-        $xml.LoadXml('<toast><visual><binding template="ToastGeneric"><text>Caelestia autostart</text><text>' +
-            [Security.SecurityElement]::Escape($Message) + '</text></binding></visual></toast>')
-        $notifier.Show([Windows.UI.Notifications.ToastNotification]::new($xml))
+        Add-Type -AssemblyName System.Windows.Forms -ErrorAction Stop
+        $null = [Windows.Forms.MessageBox]::Show($Message, 'Caelestia autostart',
+            [Windows.Forms.MessageBoxButtons]::OK, [Windows.Forms.MessageBoxIcon]::Warning)
     } catch {
-        # Notification permission or WinRT projection can be unavailable; the
-        # warning and nonzero exit below still record the failure.
+        # Presentation must never change the caller's exit status or recovery.
     }
 }
 
 # Stable-root and payload launchers share one Quit autostart policy: remove only
-# this installation's entry, surface a failure, and let Quit continue. Returns
-# the failure text (empty on success) so the caller can rethrow it after Quit.
+# this installation's entry, let Quit continue, and return the failure text. The
+# caller reports it after the supervisor restores the desktop, because the shell
+# has exited by then and cannot report anything itself.
 function Disable-CaelestiaAutostartForQuit([string]$Prefix) {
     $failure = ''
     try {
         $result = Set-CaelestiaAutostart -Prefix $Prefix -Enabled:$false
         if ($result.ok -ne $true -or $result.present -eq $true) {
-            $failure = "Caelestia could not remove its Windows autostart entry. Quit will continue and restore the desktop. "
+            $failure = "Caelestia could not remove its Windows autostart entry, so it will start again at the next sign-in. "
             if ($result.error) { $failure += $result.error + ' ' }
-            $failure += "Remove the '$($result.valueName)' entry from Settings > Apps > Startup if it remains."
+            $failure += "Remove the '$($result.valueName)' entry in Settings > Apps > Startup."
         }
     } catch {
-        $failure = "Caelestia could not remove its Windows autostart entry. Quit will continue and restore the desktop. $($_.Exception.Message)"
+        $failure = "Caelestia could not remove its Windows autostart entry, so it may start again at the next sign-in. " +
+            "Remove this installation's Caelestia entry in Settings > Apps > Startup. $($_.Exception.Message)"
     }
-    if ($failure) {
-        Write-Warning $failure
-        Show-CaelestiaHandoffWarning $failure
-    }
+    if ($failure) { Write-Warning $failure }
     return $failure
 }
 

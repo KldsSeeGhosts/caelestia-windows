@@ -73,8 +73,8 @@ if ($Command -eq 'AutostartStatus') {
 $autostartFailure = ''
 if ($Command -eq 'Quit' -and $DisableAutostart) {
     # The user asked to leave Caelestia, so a failed Run-entry removal must not
-    # cancel Quit or desktop restoration. Report it before the shell exits, then
-    # fail the launcher call after restoration so callers can surface it too.
+    # cancel Quit or desktop restoration. Report it after the shell exits, then
+    # fail the launcher call so the caller cannot mistake the choice as applied.
     $autostartFailure = Disable-CaelestiaAutostartForQuit $Prefix
 }
 # Repository callers can still target the stable root. Route before building
@@ -94,7 +94,13 @@ if ($record.version -eq 2) {
         $arguments[$key] = $PSBoundParameters[$key]
     }
     $arguments.Prefix = $runtime
-    & (Join-Path $runtime 'Start-Caelestia.ps1') @arguments
+    try {
+        & (Join-Path $runtime 'Start-Caelestia.ps1') @arguments
+    } finally {
+        # The versioned Quit has finished and the desktop is restored. The shell
+        # has exited, so this launcher owns the visible report before it fails.
+        if ($autostartFailure) { Show-CaelestiaHandoffDialog $autostartFailure }
+    }
     # The stable root owns the Run entry. Re-raise its removal failure after the
     # versioned launcher has finished Quit and desktop restoration.
     if ($autostartFailure) { throw $autostartFailure }
@@ -348,7 +354,12 @@ if ($Command -ne 'Start') {
         }
     }
     Write-Output $output
-    if ($autostartFailure) { throw $autostartFailure }
+    if ($autostartFailure) {
+        # Quit and desktop restoration are complete and the shell is gone, so
+        # this launcher shows the report before failing the call.
+        Show-CaelestiaHandoffDialog $autostartFailure
+        throw $autostartFailure
+    }
     return
 }
 

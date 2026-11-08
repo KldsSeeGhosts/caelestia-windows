@@ -66,5 +66,12 @@ if ($arguments.ContainsKey('PreparedSchemeRuntime')) {
     }
 }
 $arguments.Prefix = $runtime
-& (Join-Path $runtime 'Start-Caelestia.ps1') @arguments
+try {
+    & (Join-Path $runtime 'Start-Caelestia.ps1') @arguments
+} finally {
+    # The runtime Quit has finished and the supervisor has restored the desktop.
+    # The shell has exited, so this launcher owns the visible report; notify even
+    # though the throw below still fails the call.
+    if ($autostartFailure) { Show-CaelestiaHandoffDialog $autostartFailure }
+}
 if ($autostartFailure) { throw $autostartFailure }

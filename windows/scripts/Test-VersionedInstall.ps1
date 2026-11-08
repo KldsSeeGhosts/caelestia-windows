@@ -744,11 +744,25 @@ Set-Content -LiteralPath '$($entryQuit.Replace("'", "''"))' -Value `$Command
     $entryKeyPattern = "(function Get-CaelestiaAutostartKey \{\r?\n    return ')[^']+(')"
     $entryPatched = [regex]::Replace($entryVersionsText, $entryKeyPattern, ('$1' + $runKey + '$2'))
     if ($entryPatched -eq $entryVersionsText) { throw 'Could not redirect the stable-root fixture autostart key.' }
+    # Record the native handoff report instead of opening a real dialog. The
+    # denied-removal case below proves the report is reached when notifications
+    # are unavailable.
+    $entryReport = Join-Path $root 'entry-report.txt'
+    $entryStub = @'
+
+# Test seam: record the native handoff report instead of opening a dialog.
+function Show-CaelestiaHandoffDialog([string]$Message) {
+    Set-Content -LiteralPath 'REPORT_PATH' -Value $Message
+}
+'@
+    $entryPatched += "`r`n" + $entryStub.Replace('REPORT_PATH', $entryReport.Replace("'", "''"))
     [IO.File]::WriteAllText($entryVersions, $entryPatched, (New-Object Text.UTF8Encoding($false)))
     $entryLauncher = Join-Path $entryFixture 'Start-Caelestia.ps1'
     $entryRunName = (Get-CaelestiaIntegration $entryPrefix).RunName
     try {
-        $env:CAELESTIA_TEST_SUPPRESS_TOAST = '1'
+        # No notifications are available in this fixture, so a failure can only
+        # be reported through the native dialog the stub replaces.
+        $env:CAELESTIA_TEST_SUPPRESS_DIALOG = '1'
         $entrySet = Set-CaelestiaAutostart -Prefix $entryPrefix -Enabled:$true
         Assert ($entrySet.ok -and $entrySet.present) 'The stable-root fixture did not register its Run entry.'
         $entryStatus = & $entryLauncher -Prefix $entryPrefix -Command AutostartStatus | ConvertFrom-Json
@@ -760,8 +774,11 @@ Set-Content -LiteralPath '$($entryQuit.Replace("'", "''"))' -Value `$Command
         Assert (-not (Test-CaelestiaAutostart $entryPrefix)) 'The stable-root entry did not remove its Run entry.'
 
         # A denied removal must not stop Quit, but the launcher must fail after
-        # routing and the status must still show the entry that remains.
+        # routing. Remove the earlier call's markers so this run proves Quit
+        # still arrives and that the fallback report is the visible failure.
         $null = Set-CaelestiaAutostart -Prefix $entryPrefix -Enabled:$true
+        Remove-Item -LiteralPath $entryQuit -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $entryReport -ErrorAction SilentlyContinue
         $originalEntryRemove = ${function:Remove-ItemProperty}
         try {
             ${function:Remove-ItemProperty} = {
@@ -777,11 +794,22 @@ Set-Content -LiteralPath '$($entryQuit.Replace("'", "''"))' -Value `$Command
             ${function:Remove-ItemProperty} = $originalEntryRemove
         }
         Assert $entryFailed 'The stable-root entry hid an autostart removal failure.'
+        Assert (Test-Path -LiteralPath $entryQuit) `
+            'A denied autostart removal stopped Quit before the versioned launcher.'
+        Assert ((Get-Content -LiteralPath $entryQuit -Raw).Trim() -eq 'Quit') `
+            'The versioned launcher received something other than Quit.'
+        Assert (Test-Path -LiteralPath $entryReport) `
+            'A denied autostart removal with notifications unavailable showed no failure report.'
+        $entryMessage = [IO.File]::ReadAllText($entryReport)
+        Assert ($entryMessage.Contains($entryRunName)) `
+            'The failure report did not name the Run entry that remains.'
+        Assert ($entryMessage -match 'Settings > Apps > Startup') `
+            'The failure report did not say how to remove the remaining entry.'
         Assert (Test-CaelestiaAutostart $entryPrefix) 'The stable-root entry removed the Run entry despite a denied removal.'
         $entryStatus = & $entryLauncher -Prefix $entryPrefix -Command AutostartStatus | ConvertFrom-Json
         Assert ($entryStatus.enabled -eq $true) 'The stable-root status did not verify the remaining Run entry.'
     } finally {
-        $env:CAELESTIA_TEST_SUPPRESS_TOAST = $null
+        $env:CAELESTIA_TEST_SUPPRESS_DIALOG = $null
         Remove-ItemProperty -LiteralPath $runKey -Name $entryRunName -ErrorAction SilentlyContinue
     }
     Write-Output 'PASS stable root: AutostartStatus and Quit -DisableAutostart route without hiding removal failures.'

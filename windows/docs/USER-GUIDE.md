@@ -111,6 +111,8 @@ The shell also offers this while leaving: **Switch back to Windows** in the
 session menu or **Nexus > Services** quits Caelestia, restores the Windows
 taskbar and desktop through the existing supervisor, and can turn off this
 installation's autostart entry at the same time. The choice is off by default.
+If that entry cannot be removed, Caelestia still quits and restores the desktop,
+then reports which entry remains and where to remove it.
 
 The command above applies to the default prefix. Custom prefixes use the hash-suffixed Run entry shown by `Get-CaelestiaIntegration` in `Caelestia-InstallCommon.ps1`. There is no `-AutostartOnly` uninstall flag.
 
