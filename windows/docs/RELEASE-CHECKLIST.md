@@ -86,23 +86,53 @@ GitHub pull-request refs, edited discussion history or attachments.
 
 ## Code signing
 
-Unsigned previews have explicit policy limitations. Do not disable Smart App
-Control, antivirus or organizational protections to run them. The following
-checks apply before claiming a signed release:
+Development (`v*-dev.*`) and preview packages are unsigned by policy; that is
+not a defect and must not be described as signed. Do not disable Smart App
+Control, antivirus or organizational protections to run them. The owner's
+decision is that stable releases will be signed through SignPath Foundation, but
+no release is signed today and no signing pipeline exists. The full policy is
+[CODE-SIGNING-POLICY.md](CODE-SIGNING-POLICY.md);
+[INSTALL-RELEASE.md](INSTALL-RELEASE.md) has the user-facing verification
+steps, and [SIGNING-ROADMAP.md](SIGNING-ROADMAP.md) lists the work that must land
+before signing can start.
 
-- [ ] Once both repositories are public, apply to SignPath Foundation's free
-  open-source code signing. Paid alternatives (Azure Artifact Signing, an OV
-  certificate) need a separate maintainer decision.
-- [ ] Add a Windows CI job that builds from the tagged sources and signs every
-  shipped `.exe` and `.dll` (`qs.exe`, Caelestia plugins,
-  `caelestia-settings.dll`) with an RFC 3161 timestamp. Keep signing
-  credentials in the signing service, never in the repository.
-- [ ] Before packaging, fail the release if any shipped native binary is
-  unsigned or has an invalid Authenticode signature
-  (`Get-AuthenticodeSignature`).
+The checks below become release gates only after that roadmap is implemented.
+They are not satisfied today:
+
+- [ ] The stable assembly and publication contract exists; the channel is
+  enforced before any signing hook, development assets and DSSE records are
+  immutable, and signed stable bytes have separate authenticated metadata.
+- [ ] The signing job consumes the exact verified producer artifact by run and
+  source identity, never a release-supplied ZIP or checksum, and never executes
+  downloaded code in the job that holds the signing token.
+- [ ] The installer verifier accepts an explicit signing-receipt location
+  without widening its root-file allowlist beyond reviewed names.
+- [ ] `dependencies.capture.sha256`, the supervisor `assemblySha256`, the
+  candidate supervisor comparison and the source-asset hashes describe the
+  signed bytes, while `nativeInputs` keeps the unsigned provenance.
+- [ ] The first-party PE files carry a `VERSIONINFO` resource with product name
+  `Caelestia Windows` and the release core version. The draft artifact
+  configuration enforces that metadata, so a request fails closed without it.
+- [ ] SignPath onboarding is complete: application accepted, project and signing
+  policy with manual owner approval, artifact configuration registered from the
+  reviewed draft, and a scoped token held only by the protected signing job.
+- [ ] Every signed release's reviewed first-party `.exe`, `.dll` and `.ps1` files
+  pass
+  `Test-AuthenticodeSignatures.ps1 -Channel stable -ExpectedSignerSubject '<exact subject>'`:
+  Valid signature, RFC 3161 timestamp and the recorded publisher subject.
+- [ ] Qt DLLs, Qt plugins and Qt QML modules still carry Qt's signature and were
+  not re-signed. `m3shapes.dll`, `payload/qml/M3Shapes/**` and `qs.exe` are not
+  signed by the project certificate.
+- [ ] `release.json` `files[]` sizes and hashes, the ZIP SHA-256 sidecar and the
+  manifest SHA-256 sidecar all describe the signed bytes. The ZIP and its
+  sidecars are the ones the signing run produced, not an earlier unsigned build.
 - [ ] On a machine with Smart App Control **on**, install the signed payload
   and confirm that `Microsoft-Windows-CodeIntegrity/Operational` logs no
-  3033 or 3077 events for the install prefix.
+  3033 or 3077 events for the install prefix. Record that `qs.exe` is unsigned
+  and may still be refused; that is a known limitation, not a signing failure.
+- [ ] Signing credentials stayed in SignPath and the protected signing job. No
+  token, certificate or private key appears in the repository, logs or
+  artifacts.
 
 ## Tag and publish
 

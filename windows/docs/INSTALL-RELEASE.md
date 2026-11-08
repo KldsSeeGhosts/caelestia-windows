@@ -28,20 +28,54 @@ receive Microsoft servicing independently of Caelestia. See
 [Microsoft's deployment guidance](https://learn.microsoft.com/en-us/cpp/windows/deployment-in-visual-cpp?view=msvc-170#central-deployment).
 Qt and the project's own DLLs remain included.
 
-## Trust and unsigned previews
+## Trust, signing and unsigned previews
 
-Preview packages are currently unsigned. There is no invented certificate or
-publisher signature. SHA256 checks detect damage or changes against a trusted
-digest; a manifest stored beside its files does not authenticate its publisher.
-Obtain the ZIP and its published SHA256 from the project's actual GitHub release,
-not an unrelated mirror. Check the ZIP with `Get-FileHash -Algorithm SHA256`
-before executing anything from it. If supplied, keep the separately published
-manifest digest for `-ExpectedManifestSha256`.
+The [code signing policy](CODE-SIGNING-POLICY.md) describes the intended stable
+behaviour. Development (`v*-dev.*`) and preview (`v*-preview.*`, `v*-rc.*`)
+packages are unsigned: there is no invented certificate or publisher signature,
+and their first-party executables and scripts carry no Authenticode signature.
+Deployed Qt DLLs keep Qt's signature in every channel.
+
+The owner's decision is that stable releases
+(`vMAJOR.MINOR.PATCH`, 1.0.0 or newer) will be signed through SignPath Foundation
+once a signing pipeline exists. No release is signed today. The intended signed
+set is the first-party executables and PowerShell scripts in the ZIP. Qt's DLLs
+keep Qt's own signature, the M3Shapes DLL and `qs.exe` are not signed by this
+project, `Install.cmd` is a batch file that cannot be signed, and the ZIP itself
+is not signed. [SIGNING-ROADMAP.md](SIGNING-ROADMAP.md) lists the pipeline work
+that must land before this changes.
+
+SHA256 checks detect damage or changes against a trusted digest; a manifest
+stored beside its files does not authenticate its publisher. Obtain the ZIP and
+its published SHA256 from the project's actual GitHub release, not an unrelated
+mirror. Check the ZIP with `Get-FileHash -Algorithm SHA256` before executing
+anything from it. If supplied, keep the separately published manifest digest for
+`-ExpectedManifestSha256`.
+
+When a signed stable release exists, you will be able to check the publisher
+yourself:
+
+```powershell
+Get-AuthenticodeSignature .\payload\caelestia-capture.exe | Format-List Status, SignerCertificate, TimeStamperCertificate
+```
+
+`Status` must be `Valid`, the signer must be the exact recorded SignPath
+Foundation subject, and a timestamp must be present. For the whole bundle, run
+`windows\scripts\Test-AuthenticodeSignatures.ps1 -BundleRoot <extracted> -Channel stable -ExpectedSignerSubject '<exact subject>'`
+from a reviewed checkout. It first checks the reviewed file inventory and the
+bundle manifest, then confirms that every Qt DLL kept its Qt signature and that
+no third-party file was re-signed with the project certificate. A stable release
+would fail this check if any reviewed first-party file is missing, has no
+timestamp, or names another publisher. The verifier is standalone; no CI job
+runs it. Do not install a package that claims to be signed but fails it.
 
 Windows policy, Smart App Control, antivirus or organizational policy may block
-unsigned scripts or executables. Do not disable those protections. A blocked
-preview is not supported on that machine until an approved, externally signed
-release is available. Packaging does not sign anything or alter machine policy.
+unsigned scripts or executables, and may still block a signed stable release:
+Smart App Control weighs its own reputation data, and `qs.exe` is not signed by
+this project. Do not disable those protections. A blocked preview is not
+supported on that machine until an approved, externally signed release is
+available. Packaging does not sign anything today and never alters machine
+policy.
 Like the existing product launchers, `Install.cmd` uses `-ExecutionPolicy Bypass`
 for its own PowerShell process only, to run the unsigned preview bootstrap.
 This is not a signature or a trust check. It changes no persistent policy and
@@ -151,7 +185,11 @@ version, the system Visual C++ runtime prerequisite, read-only native input
 digests, and size/SHA256 for every shipped file
 except the manifest itself. It contains no raw build/install record or machine
 paths. Its external digest covers the manifest. The ZIP digest covers the
-entire deliverable, including bootstrap and manifest.
+entire deliverable, including bootstrap and manifest. `signing` is
+`unsigned-preview` for every current package. A future signed release needs a
+reviewed manifest and receipt contract first; see
+[SIGNING-ROADMAP.md](SIGNING-ROADMAP.md). Never edit the manifest of a signed
+bundle: the signatures cover the files, not the manifest.
 
 Only the three exact profile-directory pragmas in `shell/shell.qml` are
 relocatable. Their placeholder hashes are verified before relocation. The
@@ -214,7 +252,12 @@ independent privacy review and exact-payload Windows validation remain gates.
 
 Signing, tag naming, source/license distribution obligations, publication and
 release acceptance remain external release-owner responsibilities. Nothing in
-this script changes current licensing declarations or starts CI.
+this script changes current licensing declarations or starts CI. This packager
+does not sign and has no signing hook. The standalone verifier and the draft
+artifact configuration are not a signing pipeline;
+[CODE-SIGNING-POLICY.md](CODE-SIGNING-POLICY.md) states the intended policy and
+[SIGNING-ROADMAP.md](SIGNING-ROADMAP.md) lists the pipeline work that must land
+before any signed stable release.
 
 ## Nexus bootstrap status
 
