@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Controls
+import Quickshell
 import Caelestia.Config
 import Caelestia.I18n
 import qs.components
@@ -67,8 +68,12 @@ Item {
 
     // The card starts on a whole device pixel, so everything placed in it with
     // whole device offsets (the pill, the buttons, their icons) is on one too. A
-    // card sliding in is between pixels until it settles.
-    readonly property real dpr: entry.dpr > 0 ? entry.dpr : 1
+    // card sliding in is between pixels until it settles. The pixels are those of
+    // the window the card is in, as Qt renders it now. `entry.dpr` is the ratio of
+    // the capture and only sizes the image; the screen can change after a capture,
+    // and the window announces that change.
+    readonly property real windowDpr: (QsWindow.window as QsWindow)?.devicePixelRatio ?? 1
+    readonly property real dpr: windowDpr > 0 ? windowDpr : 1
 
     objectName: "captureThumbnail"
     x: Logic.snap(slot.x, dpr)

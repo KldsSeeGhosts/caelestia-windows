@@ -7,13 +7,17 @@ import "modules/areapicker/ThumbnailLogic.js" as Thumb
 // Every label and icon of the capture interface lies on a whole device pixel.
 //
 // The text type is NativeRendering, so a glyph run at a fractional device position
-// is drawn soft or with uneven letters at 125% and 150% scaling. The offscreen
-// screen has a ratio of 1, so this fixture gives the toolbar and the cards the
-// ratio the way the picker does (EditorState.scale, the entry's dpr) and maps
-// each StyledText and MaterialIcon to the window with mapToItem(null, ...)
-// times that ratio. It covers the editor toolbar (placed below, above and inside
-// a selection, after a drag, with Clear armed), the colour and size popover and
-// the thumbnail cards on the production stack layout of a 1600 x 900 work area.
+// is drawn soft or with uneven letters at 125% and 150% scaling. Test-CapturePicker.ps1
+// starts this fixture once per case with QT_SCALE_FACTOR, so the window has a real
+// device pixel ratio, and the fixture measures that ratio from the window itself
+// (devicePixelRatio of the FloatingWindow). The ratio of the capture (the entry's
+// dpr, EditorState.scale) is a separate input: a capture made at 125% can be shown
+// in a window that has since moved to 150%, and the labels must follow the window.
+// Each StyledText and MaterialIcon is mapped to the window with mapToItem(null, ...)
+// times the window's ratio. The fixture covers the editor toolbar (placed below,
+// above and inside a selection, after a drag, with Clear armed), the colour and size
+// popover and the thumbnail cards on the production stack layout of a 1600 x 900
+// work area.
 ShellRoot {
     id: root
 
@@ -24,18 +28,23 @@ ShellRoot {
     }
     FontLoader { source: Quickshell.shellPath("assets/material-symbols-rounded/MaterialSymbolsRounded.ttf") }
 
-    readonly property var scales: [1, 1.25, 1.5]
+    // The ratio the window must have (set by QT_SCALE_FACTOR) and the ratio of the
+    // capture. They differ in the cases that model a screen changed after a capture.
+    readonly property real expectedWindow: Number(Quickshell.env("CAELESTIA_PIXELS_WINDOW_DPR") || 1)
+    readonly property real captureScale: Number(Quickshell.env("CAELESTIA_PIXELS_CAPTURE_DPR") || 1)
+    // The real device pixel ratio of the window, which is what Qt renders at.
+    readonly property real scale: win.devicePixelRatio
+    readonly property int minimumItems: 110
     readonly property var work: ({ x: 0, y: 0, width: 1600, height: 900 })
     property int assertions: 0
     property int items: 0
     property var misplaced: []
-    property real scale: 1
     property var region: ({ x: 300, y: 200, width: 500, height: 300 })
 
     EditorState {
         id: state
 
-        scale: root.scale
+        scale: root.captureScale
     }
 
     QtObject {
@@ -52,11 +61,11 @@ ShellRoot {
         function finish(): void {}
     }
 
-    Window {
-        id: window
+    FloatingWindow {
+        id: win
 
-        width: 1600
-        height: 900
+        implicitWidth: 1600
+        implicitHeight: 900
         visible: true
         color: "#202020"
 
@@ -106,7 +115,7 @@ ShellRoot {
                         property bool saved: false
                         property int imageWidth: 600
                         property int imageHeight: 400
-                        property real dpr: root.scale
+                        property real dpr: root.captureScale
                         property string path: ""
                         property string imagePath: ""
                     }
@@ -189,24 +198,32 @@ ShellRoot {
         }
     }
 
-    Component.onCompleted: Qt.callLater(() => step(() => scaleStep(0)))
+    Component.onCompleted: Qt.callLater(() => step(() => start()))
 
-    // 1. The toolbar and the popover, at each ratio, in each placement.
-    function scaleStep(index): void {
-        if (index >= scales.length) {
-            // Every misplaced item is counted, with one example for each group.
-            const groups = {};
-            for (const entry of misplaced) {
-                groups[entry.group] = groups[entry.group] ?? { count: 0, example: entry.text };
-                groups[entry.group].count++;
-            }
-            check(misplaced.length === 0, misplaced.length + " of " + items + " texts are off the device pixel grid:\n"
-                + Object.keys(groups).map(name => groups[name].count + " in " + name + ", for example " + groups[name].example).join("\n"));
-            console.log("CAELESTIA_CAPTURE_PIXELS_PASS " + assertions);
-            Qt.quit();
-            return;
+    function finish(): void {
+        // Every misplaced item is counted, with one example for each group.
+        const groups = {};
+        for (const entry of misplaced) {
+            groups[entry.group] = groups[entry.group] ?? { count: 0, example: entry.text };
+            groups[entry.group].count++;
         }
-        scale = scales[index];
+        check(misplaced.length === 0, misplaced.length + " of " + items + " texts are off the device pixel grid:\n"
+            + Object.keys(groups).map(name => groups[name].count + " in " + name + ", for example " + groups[name].example).join("\n"));
+        check(Math.abs(toolbar.dpr - scale) < 1e-9, "the toolbar snaps to the window's ratio " + scale + ", not " + toolbar.dpr);
+        check(Math.abs(cards.itemAt(0).dpr - scale) < 1e-9, "the cards snap to the window's ratio " + scale + ", not " + cards.itemAt(0).dpr);
+        // A run that checked next to nothing proves nothing.
+        check(items >= minimumItems, "only " + items + " texts were checked, expected at least " + minimumItems);
+        console.log("CAELESTIA_CAPTURE_PIXELS_PASS " + assertions);
+        Qt.quit();
+    }
+
+    // 1. The toolbar and the popover in each placement, then the cards.
+    function start(): void {
+        // The window must really run at the requested ratio, or every result
+        // below would describe a different one.
+        check(Math.abs(scale - expectedWindow) < 1e-9,
+            "the window has a device pixel ratio of " + scale + ", expected " + expectedWindow + " (QT_SCALE_FACTOR)");
+        check(Math.abs(state.scale - captureScale) < 1e-9, "the editor keeps the capture's ratio " + captureScale);
         state.reset();
         state.inkOpen = false;
         const cases = [
@@ -218,12 +235,12 @@ ShellRoot {
             { name: "with the popover above the bar", region: { x: 300.4, y: 640.3, width: 500, height: 240 }, drag: { x: 217.77, y: 301.33 }, ink: true, arm: false },
             { name: "with Clear armed", region: { x: 300, y: 200, width: 500, height: 300 }, drag: null, ink: false, arm: true }
         ];
-        caseStep(index, cases, 0);
+        caseStep(cases, 0);
     }
 
-    function caseStep(scaleIndex, cases, caseIndex): void {
+    function caseStep(cases, caseIndex): void {
         if (caseIndex >= cases.length) {
-            cardStep(scaleIndex);
+            cardStep();
             return;
         }
         const current = cases[caseIndex];
@@ -248,12 +265,12 @@ ShellRoot {
                 checkTexts(texts(popover, []), 3, label + " popover");
             const copy = all.find(item => item.text === "Copy" && item.font.pointSize === Tokens.font.body.small.pointSize);
             check(copy !== undefined, label + ": the Copy label is among them");
-            caseStep(scaleIndex, cases, caseIndex + 1);
+            caseStep(cases, caseIndex + 1);
         }));
     }
 
     // 2. A settled card of the production stack, with its buttons showing.
-    function cardStep(scaleIndex): void {
+    function cardStep(): void {
         state.reset();
         later(900, () => step(() => {
             for (let i = 0; i < 5; i++) {
@@ -267,7 +284,7 @@ ShellRoot {
                 if (!whole(edge.x * scale) || !whole(edge.y * scale))
                     misplaced.push({ group: label + " at " + scale, text: label + ": the card starts at device " + (edge.x * scale) + ", " + (edge.y * scale) });
             }
-            scaleStep(scaleIndex + 1);
+            finish();
         }));
     }
 }

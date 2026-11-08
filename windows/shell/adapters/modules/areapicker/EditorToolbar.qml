@@ -3,6 +3,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Effects
+import Quickshell
 import Caelestia.Config
 import Caelestia.I18n
 import qs.components
@@ -38,8 +39,12 @@ Item {
     signal saveRequested
     signal closeRequested
 
-    // The device pixel ratio of the screen this toolbar is on.
-    readonly property real dpr: editor.scale > 0 ? editor.scale : 1
+    // The device pixel ratio of the window this toolbar is in, as Qt renders it
+    // now. Positions and labels snap to it. `editor.scale` is the ratio when
+    // editing began and belongs to the export; the screen can change after that,
+    // and the window announces the change.
+    readonly property real windowDpr: (QsWindow.window as QsWindow)?.devicePixelRatio ?? 1
+    readonly property real dpr: windowDpr > 0 ? windowDpr : 1
     readonly property var metrics: ({
         scale: dpr,
         padding: Tokens.padding.small,
