@@ -519,7 +519,7 @@ in the task list.
 
 A third-party shell can create an activatable, taskbar-hidden popup that exposes
 none of those properties. Add typed selectors for those windows under
-`windows.shellSurfaces.extra` in `config/shell.json`; the list is empty by
+`windows.shellSurfaces.extra` in `config/shell.json`; the user list is empty by
 default and changes apply live:
 
 ```json
@@ -535,6 +535,14 @@ here because a shell surface is not monitor-scoped. A malformed selector is
 ignored and logged by index, never by pattern text. Marking a window here
 excludes it from the task model, the active-window fallback and tiling, and
 prevents it from seeding AppBar fullscreen.
+
+The bundled capture tool's topmost windows are always treated as shell
+surfaces: `class:GlazierOverlay` (picker and editor), `class:GlazierThumbnail`,
+`class:GlazierRecording` and `class:GlazierRecordingBorder`. The shell merges
+them ahead of `windows.shellSurfaces.extra`, so the user list adds entries and
+cannot remove the capture windows. The panels stay below those windows, so a
+selection drag can start on the bar or border and the capture controls keep
+their input when they overlap the panels.
 
 ---
 

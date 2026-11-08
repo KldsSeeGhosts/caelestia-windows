@@ -495,7 +495,11 @@ If a third-party shell's popup still appears as an app or gets tiled, add it to
 `windows.shellSurfaces.extra` in `config/shell.json`, for example
 `{"windows":{"shellSurfaces":{"extra":["exe:some-shell.exe"]}}}`. Selectors use
 the tiling dialect (unprefixed rules match executable or class, and `screen:` is
-rejected) and apply live; the list is empty by default. See
+rejected) and apply live; the user list is empty by default. The bundled capture
+tool's topmost windows (its picker and editor overlay, thumbnail and recording
+controls) are always treated as shell surfaces, so a Glazier selection can start
+on the bar or border, and the user list adds to that set without being able to
+remove those entries. See
 [shell-surface selectors](CONFIGURATION.md#shell-surface-selectors).
 
 Production supports `-TilingMode Disabled|Observe|Interactive`, `-TilingIncluded`
