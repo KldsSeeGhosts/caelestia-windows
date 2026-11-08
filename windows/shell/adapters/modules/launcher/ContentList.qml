@@ -5,8 +5,8 @@ import Caelestia.Config
 import Caelestia.I18n
 import qs.components
 import qs.components.controls
+import qs.components.wallpaper
 import qs.services
-import qs.utils
 
 Item {
     id: root
@@ -48,7 +48,10 @@ Item {
 
             PropertyChanges {
                 root.implicitWidth: Math.max(root.Tokens.sizes.launcher.itemWidth * 1.2, wallpaperList.implicitWidth)
-                root.implicitHeight: root.Tokens.sizes.launcher.wallpaperHeight
+                // The Windows picker puts the folder path and its two actions
+                // above the carousel, so keep the carousel's own height and add
+                // the header instead of squeezing the tiles.
+                root.implicitHeight: root.Tokens.sizes.launcher.wallpaperHeight + (wallpaperList.item?.headerHeight ?? 0)
             }
         }
     ]
@@ -139,13 +142,25 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
 
             StyledText {
-                text: root.state === "wallpapers" ? Tr.tr("No wallpapers found") : Tr.tr("No results")
+                visible: root.state !== "wallpapers" || !emptyState.folderEmpty
+                text: root.state === "wallpapers" ? Tr.tr("No wallpapers match") : Tr.tr("No results")
                 color: Colours.palette.m3onSurfaceVariant
                 font: Tokens.font.body.builders.large.weight(Font.Medium).build()
             }
 
+            // Windows port: the wallpaper picker names the scanned folder and
+            // explains the Add wallpaper… action it now offers above the
+            // carousel. The app state keeps upstream's generic search hint.
+            WallpaperEmptyState {
+                id: emptyState
+
+                anchors.horizontalCenter: parent.horizontalCenter
+                visible: root.state === "wallpapers" && emptyState.folderEmpty
+            }
+
             StyledText {
-                text: root.state === "wallpapers" && Wallpapers.list.length === 0 ? Tr.tr("Try putting some wallpapers in %1").arg(Paths.shortenHome(Paths.wallsdir)) : Tr.tr("Try searching for something else")
+                visible: root.state !== "wallpapers" || !emptyState.folderEmpty
+                text: Tr.tr("Try searching for something else")
                 color: Colours.palette.m3onSurfaceVariant
                 font: Tokens.font.body.medium
             }
