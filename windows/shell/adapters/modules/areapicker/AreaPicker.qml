@@ -59,6 +59,9 @@ Scope {
     // one that arrives after the picker closed or reopened is dropped.
     property int session
     property var openScreenNames: []
+    // The hand-over file of the clipboard save in progress, if any. Each save
+    // has its own name, so one session never touches another's file.
+    property string activeTemp: ""
     // Needs a local file path. Fixtures replace it with a recorder so that no
     // test writes the real clipboard.
     property var clipboard: Native.Clipboard
@@ -81,14 +84,31 @@ Scope {
         stack = Array.from(Hyprland.windowStack());
         openScreenNames = screenNames;
         session++;
+        // A file left by a crash or a reload is gone after a minute.
+        CUtils.removeStale(FileUrls.fromLocalPath(tempDirectory), "clipboard*.png", 60);
         opened = true;
         return true;
     }
 
-    // Esc and a right click land here. Nothing is saved.
+    // Every operation ends here before anything else happens: a result, a
+    // failure, the timeout, Esc and a right click all call it first. It
+    // invalidates the session, so a result that arrives later is dropped, and
+    // clears `saving`, which stops the timeout. The fade that follows is only
+    // cosmetic. The operation's hand-over file goes with it.
+    function invalidate(): void {
+        session++;
+        saving = false;
+        if (activeTemp) {
+            removeFile(activeTemp);
+            activeTemp = "";
+        }
+    }
+
+    // Esc and a right click land here. Nothing more is saved.
     function cancel(): void {
         if (!opened || closing)
             return;
+        invalidate();
         closing = true;
     }
 
@@ -97,18 +117,17 @@ Scope {
     function finishClose(): void {
         opened = false;
         closing = false;
-        saving = false;
-        session++;
-        removeTemp();
+        invalidate();
     }
 
-    function tempPath(): string {
-        return tempDirectory + "/clipboard.png";
+    function removeFile(path: string): void {
+        CUtils.deleteFile(FileUrls.fromLocalPath(path));
     }
 
-    // The clipboard image is only a hand-over file; it never outlives the call.
-    function removeTemp(): void {
-        CUtils.deleteFile(FileUrls.fromLocalPath(tempPath()));
+    // The path for this clipboard save, unique to the session.
+    function beginClipboard(): string {
+        activeTemp = tempDirectory + "/clipboard-" + session + ".png";
+        return activeTemp;
     }
 
     // Results from Picker. Each ignores a result from an earlier session.
@@ -121,14 +140,16 @@ Scope {
 
     // copyImageFile reads the whole file before it returns, then decodes and
     // writes the clipboard later with no completion result. A true return
-    // therefore means the copy was started, and the toast says so.
+    // therefore means the copy was started, and the toast says so. A write that
+    // lands after its session ended deletes its own file and copies nothing.
     function copyFinished(started: int, path: string): void {
         if (started !== session) {
-            removeTemp();
+            removeFile(path);
             return;
         }
         const accepted = clipboard.copyImageFile(path);
-        removeTemp();
+        removeFile(path);
+        activeTemp = "";
         if (accepted) {
             Toaster.toast(Tr.tr("Screenshot taken"), Tr.tr("Copying screenshot to clipboard\u2026"), "screenshot_region");
             cancel();
@@ -184,8 +205,8 @@ Scope {
     Component.onDestruction: {
         if (CaptureUi.picker === root)
             CaptureUi.picker = null;
-        if (opened)
-            removeTemp();
+        if (activeTemp)
+            removeFile(activeTemp);
     }
 
     LazyLoader {

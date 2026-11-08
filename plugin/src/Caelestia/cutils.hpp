@@ -27,6 +27,10 @@ public:
 
     Q_INVOKABLE static bool copyFile(const QUrl& source, const QUrl& target, bool overwrite = true);
     Q_INVOKABLE static bool deleteFile(const QUrl& path);
+    // Removes files in `directory` that match a plain file name pattern (no path
+    // separators) and were last modified at least `olderThanSeconds` ago. Returns
+    // how many were removed.
+    Q_INVOKABLE static int removeStale(const QUrl& directory, const QString& pattern, int olderThanSeconds);
     Q_INVOKABLE static QString toLocalFile(const QUrl& url);
 
     Q_INVOKABLE static qreal clamp(qreal value, qreal min, qreal max);

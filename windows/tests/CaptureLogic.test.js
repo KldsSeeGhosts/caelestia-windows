@@ -153,6 +153,7 @@ test("a selection that already fits is never shortened (2560 wide at 150%)", () 
     // Native origin 2, width 3838.5 - 0.25 rounds to 3838, so the edge is exactly 3840.
     assert.deepEqual(plain(plan.logical), { x: 1, y: 0, width: 2559, height: 1440 });
     assert.deepEqual(plain(plan.physical), { x: 2, y: 0, width: 3838, height: 2160 });
+    assert.deepEqual(plain(plan.crop), { x: 2, y: 0, width: 3838, height: 2160 });
     assert.equal(plan.valid, true);
 });
 
@@ -172,43 +173,60 @@ test("the native crop at the right and bottom edges, at 125% and 175%", () => {
         assert.deepEqual(plain(plan.image), image, `${width} at ${dpr}`);
         assert.deepEqual(plain(plan.physical), physical, `${width} at ${dpr}, inset ${inset}`);
         assert.deepEqual(plain(plan.logical), { x: inset, y: inset, width: width - inset, height: height - inset }, "not shortened");
+        assert.deepEqual(plain(plan.crop), physical, "and nothing is clipped");
         assert.equal(plan.valid, true);
     }
 });
 
-test("only a real overflow of the native crop shortens the selection, by one pixel at a time", () => {
-    // 5 logical px at 125% is a 6 px image (6.25 rounds down). Origin 2 gives native
-    // x 3 (2.5 rounds up), and 3 * 1.25 + (2.5 - 3) / 2 = 3.5 rounds to 4: the edge
-    // is 7, one past the image.
-    const screen = { name: "s", x: 0, y: 0, width: 5, height: 4 };
-    assert.deepEqual(plain(logic.physicalExport({ x: 2, y: 0, width: 3, height: 4 }, 1.25)), { x: 3, y: 0, width: 4, height: 5 });
-    const plan = logic.exportPlan({ x: 2, y: 0, width: 3, height: 4 }, screen, 1.25);
-    assert.deepEqual(plain(plan.image), { width: 6, height: 5 });
-    // Two logical px: 2.5 - 0.25 rounds to 2, so the edge is 5.
-    assert.deepEqual(plain(plan.logical), { x: 2, y: 0, width: 2, height: 4 });
-    assert.deepEqual(plain(plan.physical), { x: 3, y: 0, width: 2, height: 5 });
+test("a native crop that passes the image edge is clipped to the image, not shortened", () => {
+    // 1537 logical px at 125% is a 1921 px image (1921.25). Origin 2 gives native
+    // x 3 (2.5 rounds up); 1535 * 1.25 = 1918.75 - 0.25 = 1918.5 rounds to 1919, so
+    // Qt's crop ends at 1922. The image has 1918 columns from 3 on, and all are saved.
+    const wide = { name: "s", x: 0, y: 0, width: 1537, height: 100 };
+    const plan = logic.exportPlan({ x: 2, y: 0, width: 1535, height: 100 }, wide, 1.25);
+    assert.deepEqual(plain(plan.image), { width: 1921, height: 125 });
+    assert.deepEqual(plain(plan.logical), { x: 2, y: 0, width: 1535, height: 100 });
+    assert.deepEqual(plain(plan.physical), { x: 3, y: 0, width: 1919, height: 125 });
+    assert.deepEqual(plain(plan.crop), { x: 3, y: 0, width: 1918, height: 125 });
     assert.equal(plan.valid, true);
-    assert.equal(logic.exportPlan({ x: 5, y: 5, width: 0, height: 0 }, screen, 1).valid, false);
+
+    // The sliver: the last logical column of a 1003 px screen at 175%. The image is
+    // 1755 px (1755.25) and Qt's crop is [1754, 1756), one valid column.
+    const sliver = { name: "s", x: 0, y: 0, width: 1003, height: 10 };
+    const edge = logic.exportPlan({ x: 1002, y: 0, width: 1, height: 10 }, sliver, 1.75);
+    assert.deepEqual(plain(edge.image), { width: 1755, height: 18 });
+    assert.deepEqual(plain(edge.physical), { x: 1754, y: 0, width: 2, height: 18 });
+    assert.deepEqual(plain(edge.crop), { x: 1754, y: 0, width: 1, height: 18 });
+    assert.equal(edge.valid, true);
+
+    // A crop wholly outside the image is not a selection.
+    const outside = { name: "s", x: 0, y: 0, width: 5, height: 4 };
+    assert.equal(logic.exportPlan({ x: 4, y: 0, width: 1, height: 4 }, outside, 1.75).valid, true);
+    assert.equal(logic.exportPlan({ x: 5, y: 5, width: 0, height: 0 }, outside, 1).valid, false);
 });
 
-test("an exported rectangle is always inside the image, and shrinks only when the full one would not fit", () => {
+test("the saved crop is Qt's crop intersected with the image, at every origin and scale", () => {
     for (const percent of [100, 125, 150, 175, 200, 225]) {
         const dpr = percent / 100;
-        for (let width = 2; width <= 40; width++) {
+        for (let width = 2; width <= 60; width++) {
             const screen = { name: "s", x: 0, y: 0, width, height: 9 };
             const image = logic.grabSize(screen, dpr);
             for (let x = 0; x < width; x++) {
                 const plan = logic.exportPlan({ x, y: 0, width: width - x, height: 9 }, screen, dpr);
-                if (!plan.valid) {
-                    // Only a one pixel wide sliver on the last column can have no
-                    // native crop inside the image; it cannot be shortened further.
-                    assert.equal(plan.logical.width, 1, `w=${width} x=${x} at ${percent}%`);
+                assert.deepEqual(plain(plan.logical), { x, y: 0, width: width - x, height: 9 }, "the logical rectangle is never shortened");
+                const [nx, nw] = percent === 100 ? [x, width - x] : nativeSpan(x, width - x, percent);
+                const first = Math.max(0, nx);
+                const end = Math.min(nx + nw, image.width);
+                if (end - first < 1) {
+                    assert.equal(plan.valid, false, `w=${width} x=${x} at ${percent}%`);
                     continue;
                 }
-                assert.ok(plan.physical.x + plan.physical.width <= image.width, `w=${width} x=${x} at ${percent}%`);
-                const [nx, nw] = percent === 100 ? [x, width - x] : nativeSpan(x, width - x, percent);
-                const fits = nx + nw <= image.width;
-                assert.equal(plan.logical.width === width - x, fits, `shrinks only on overflow: w=${width} x=${x} at ${percent}%`);
+                assert.equal(plan.valid, true, `w=${width} x=${x} at ${percent}%`);
+                // No valid column is lost: the crop starts where Qt's does and ends at
+                // the nearer of Qt's end and the image edge.
+                assert.equal(plan.crop.x, first, `w=${width} x=${x} at ${percent}%`);
+                assert.equal(plan.crop.x + plan.crop.width, end, `w=${width} x=${x} at ${percent}%`);
+                assert.ok(plan.crop.x + plan.crop.width <= image.width);
             }
         }
     }

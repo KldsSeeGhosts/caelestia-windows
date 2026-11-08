@@ -120,6 +120,20 @@ ShellRoot {
             picker.noteContent(screen.name, true);
     }
 
+    function toastCount(part): int {
+        const toasts = Toaster.toasts;
+        let count = 0;
+        for (let i = 0; i < toasts.length; i++) {
+            if (toasts[i].message.indexOf(part) >= 0)
+                count++;
+        }
+        return count;
+    }
+
+    function fileUrl(path): string {
+        return "file:///" + path;
+    }
+
     // The text of the toast that contains `part`, or "". Toast order is not
     // part of the contract, so every open toast is searched.
     function toastWith(part): string {
@@ -332,7 +346,8 @@ ShellRoot {
     function afterClipboard(): void {
         check(clipboardRecorder.copied.length === 1, "the image is handed to the clipboard once");
         const path = clipboardRecorder.copied[0].split("\\").join("/");
-        check(path === root.saveRoot + "/tmp/clipboard.png", "from the temporary file under the state folder: " + path);
+        check(path.indexOf(root.saveRoot + "/tmp/clipboard-") === 0 && path.endsWith(".png"),
+            "from this save's own temporary file under the state folder: " + path);
         check(clipboardRecorder.existedAtCall, "the file existed when the clipboard call ran");
         check(clipboardRecorder.sizeAtCall.width === 60 && clipboardRecorder.sizeAtCall.height === 50,
             "and held the selection: " + clipboardRecorder.sizeAtCall);
@@ -360,7 +375,7 @@ ShellRoot {
     function afterCopyFail(): void {
         check(clipboardRecorder.copied.length === 2, "the clipboard was asked again");
         check(toastWith("could not be copied") !== "", "a refused copy is reported");
-        check(!WindowsFiles.isFile(root.saveRoot + "/tmp/clipboard.png"), "and its file is deleted too");
+        check(!WindowsFiles.isFile(clipboardRecorder.copied[1].split("\\").join("/")), "and its file is deleted too");
         check(!picker.opened, "the picker closes");
         clipboardRecorder.result = true;
 
@@ -370,19 +385,24 @@ ShellRoot {
         later(300, () => step(tempCancelStep));
     }
 
+    property string leftover: ""
+
     function tempCancelStep(): void {
+        // A save is under way with its own file; Esc invalidates it and removes the file.
         const view = find(windows()[0].contentItem, "areaPickerView");
-        CUtils.saveItem(view, "file:///" + root.saveRoot + "/tmp/clipboard.png", Qt.rect(0, 0, 4, 4), () => {}, () => {});
+        leftover = picker.beginClipboard();
+        CUtils.saveItem(view, fileUrl(leftover), Qt.rect(0, 0, 4, 4), () => {}, () => {});
         later(500, () => step(() => {
-            check(WindowsFiles.isFile(root.saveRoot + "/tmp/clipboard.png"), "a hand-over file exists before the cancel");
+            check(WindowsFiles.isFile(leftover), "a hand-over file exists before the cancel");
             areaOf(windows()[0]).dismissByKey();
+            check(picker.activeTemp === "" && !WindowsFiles.isFile(leftover), "Esc deletes it at once, before the fade ends");
             later(1200, () => step(afterTempCancel));
         }));
     }
 
     function afterTempCancel(): void {
         check(!picker.opened, "Esc closed the picker");
-        check(!WindowsFiles.isFile(root.saveRoot + "/tmp/clipboard.png"), "a cancel deletes the hand-over file");
+        check(!WindowsFiles.isFile(leftover), "and the file stays deleted");
         check(clipboardRecorder.copied.length === 2, "and copies nothing");
 
         // A save that cannot write anywhere reports a failure. The save folder
@@ -422,7 +442,140 @@ ShellRoot {
     function afterStall(): void {
         check(toastWith("timed out") !== "", "a stalled save shows a failure toast");
         check(!picker.opened && !picker.saving, "and the picker closes");
+
+        // Completion first: the operation is terminal at once, so the timeout
+        // that is still counting never fires.
+        picker.saveTimeout = 400;
+        check(CaptureUi.screenshot("open") === true && picker.opened, "the picker opens for the completion race");
+        readyAll();
+        later(300, () => step(raceCompletion));
+    }
+
+    function raceCompletion(): void {
+        const started = picker.session;
+        const timeouts = toastCount("timed out");
+        picker.saving = true;
+        later(150, () => step(() => {
+            picker.fileFinished(started, "C:/race/done.png");
+            check(!picker.saving && picker.session !== started, "completion invalidates the session and clears saving at once");
+            check(toastCount("Saved to C:/race/done.png") === 1, "one result is shown");
+            picker.fileFinished(started, "C:/race/done.png");
+            picker.saveFailed(started, "late failure");
+            check(toastCount("Saved to C:/race/done.png") === 1 && toastWith("late failure") === "", "a second result for the same save is dropped");
+            later(900, () => step(() => {
+                check(toastCount("timed out") === timeouts, "the timeout never fires after a completion");
+                check(!picker.opened, "the picker closed");
+                raceTimeout();
+            }));
+        }));
+    }
+
+    function raceTimeout(): void {
+        // Timeout first: a completion that arrives afterwards is dropped.
+        check(CaptureUi.screenshot("open") === true && picker.opened, "the picker opens for the timeout race");
+        readyAll();
+        later(300, () => step(() => {
+            const started = picker.session;
+            const timeouts = toastCount("timed out");
+            picker.saving = true;
+            later(700, () => step(() => {
+                check(toastCount("timed out") === timeouts + 1, "the timeout shows once");
+                check(picker.session !== started && !picker.saving, "and ends the operation");
+                picker.fileFinished(started, "C:/race/late.png");
+                check(toastCount("C:/race/late.png") === 0, "a completion after the timeout is dropped");
+                later(900, () => step(() => {
+                    check(toastCount("timed out") === timeouts + 1, "and the timeout does not repeat");
+                    check(!picker.opened, "the picker closed");
+                    resultAfterEsc();
+                }));
+            }));
+        }));
+    }
+
+    function resultAfterEsc(): void {
+        // A clipboard save whose write lands after Esc must copy nothing and
+        // leave no file.
+        const copies = clipboardRecorder.copied.length;
+        const toasts = toastCount("Copying screenshot to clipboard");
+        check(CaptureUi.screenshot("openClip") === true && picker.opened, "openClip opens for the Esc race");
+        readyAll();
+        later(300, () => step(() => {
+            const started = picker.session;
+            const path = picker.beginClipboard();
+            const view = find(windows()[0].contentItem, "areaPickerView");
+            areaOf(windows()[0]).dismissByKey();
+            check(picker.closing && picker.session !== started, "Esc invalidates the save before its write");
+            // The grab was requested after Esc and lands in the next frames.
+            CUtils.saveItem(view, fileUrl(path), Qt.rect(0, 0, 4, 4), saved => picker.copyFinished(started, saved), () => {});
+            later(900, () => step(() => {
+                check(clipboardRecorder.copied.length === copies, "a result after Esc does not copy");
+                check(toastCount("Copying screenshot to clipboard") === toasts, "and shows no toast");
+                check(!WindowsFiles.isFile(path), "and its late file is deleted by the late callback");
+                check(!picker.opened, "the picker closed");
+                overlapStep();
+            }));
+        }));
+    }
+
+    function overlapStep(): void {
+        // Save A is cancelled, save B begins. A's late result must delete only
+        // A's file.
+        check(CaptureUi.screenshot("openClip") === true && picker.opened, "openClip opens for the overlap");
+        readyAll();
+        later(300, () => step(() => {
+            const copies = clipboardRecorder.copied.length;
+            const sessionA = picker.session - 1; // An earlier, ended session.
+            const pathA = picker.tempDirectory + "/clipboard-" + sessionA + ".png";
+            const sessionB = picker.session;
+            const pathB = picker.beginClipboard();
+            check(pathA !== pathB && pathB.indexOf("clipboard-" + sessionB + ".png") > 0, "each save has its own path: " + pathB);
+            const view = find(windows()[0].contentItem, "areaPickerView");
+            CUtils.saveItem(view, fileUrl(pathB), Qt.rect(0, 0, 6, 6), () => {}, () => {});
+            CUtils.saveItem(view, fileUrl(pathA), Qt.rect(0, 0, 6, 6), () => {}, () => {});
+            later(500, () => step(() => {
+                check(WindowsFiles.isFile(pathA) && WindowsFiles.isFile(pathB), "both hand-over files exist");
+                picker.copyFinished(sessionA, pathA);
+                check(!WindowsFiles.isFile(pathA), "A's late result deletes A's file");
+                check(WindowsFiles.isFile(pathB), "and leaves B's file alone");
+                check(clipboardRecorder.copied.length === copies && picker.opened && picker.activeTemp === pathB, "and does not disturb B");
+                picker.copyFinished(sessionB, pathB);
+                check(clipboardRecorder.copied.length === copies + 1 && clipboardRecorder.copied[copies] === pathB, "B copies its own file");
+                check(!WindowsFiles.isFile(pathB), "and deletes it");
+                later(900, () => step(() => {
+                    check(!picker.opened, "the picker closed");
+                    staleSweep();
+                }));
+            }));
+        }));
+    }
+
+    function staleSweep(): void {
+        // The start-of-picker sweep removes old clipboard files and nothing else.
+        // A fresh file is "old" only for a zero-second limit.
         picker.saveTimeout = 10000;
+        check(CaptureUi.screenshot("open") === true && picker.opened, "the picker opens for the sweep");
+        readyAll();
+        later(300, () => step(() => {
+            const view = find(windows()[0].contentItem, "areaPickerView");
+            const stale = root.saveRoot + "/tmp/clipboard-stale.png";
+            const other = root.saveRoot + "/tmp/other-stale.png";
+            const folder = fileUrl(root.saveRoot + "/tmp");
+            CUtils.saveItem(view, fileUrl(stale), Qt.rect(0, 0, 3, 3), () => {}, () => {});
+            CUtils.saveItem(view, fileUrl(other), Qt.rect(0, 0, 3, 3), () => {}, () => {});
+            later(500, () => step(() => {
+                check(WindowsFiles.isFile(stale) && WindowsFiles.isFile(other), "two files exist");
+                check(CUtils.removeStale(folder, "clipboard*.png", 60) === 0 && WindowsFiles.isFile(stale), "a fresh file survives the one-minute sweep");
+                check(CUtils.removeStale(folder, "../clipboard*.png", 0) === 0 && CUtils.removeStale(folder, "a/b", 0) === 0, "a pattern with a path is refused");
+                check(CUtils.removeStale(folder, "clipboard*.png", 0) === 1, "an old matching file is removed");
+                check(!WindowsFiles.isFile(stale) && WindowsFiles.isFile(other), "and a different name is kept");
+                picker.cancel();
+                later(900, () => step(monitorStep));
+            }));
+        }));
+    }
+
+    function monitorStep(): void {
+        check(!picker.opened, "the picker is closed before the monitor case");
 
         // A monitor change while open cancels the picker.
         check(CaptureUi.screenshot("open") === true && picker.opened, "the picker opens for the monitor change");
@@ -452,9 +605,26 @@ ShellRoot {
         CUtils.saveItem(shot, target, Qt.rect(0, 0, 1, 1), onSaved, onFailed);
         CUtils.saveItem(empty, target, Qt.rect(0, 0, 1, 1), onSaved, onFailed);
         check(failed === 0, "the callbacks run from the event loop, not inside the call");
-        later(500, () => step(() => {
+
+        // A crop that sticks out of the image is clipped to it, not padded; one
+        // wholly outside fails.
+        const view = find(window.contentItem, "areaPickerView");
+        const edge = root.saveRoot + "/clipped-edge.png";
+        const gone = root.saveRoot + "/clipped-outside.png";
+        let clippedSaved = 0;
+        let clippedFailed = 0;
+        const width = Math.round(window.width);
+        CUtils.saveItem(view, fileUrl(edge), Qt.rect(width - 10, 0, 40, 20), () => { clippedSaved++; }, () => { clippedFailed++; });
+        CUtils.saveItem(view, fileUrl(gone), Qt.rect(width + 10, 0, 20, 20), () => { clippedSaved++; }, () => { clippedFailed++; });
+        later(700, () => step(() => {
             check(failed === 4 && saved === 0, "no target, a remote URL, no window and an empty item each call onFailed: " + failed);
             check(!WindowsFiles.isFile(root.saveRoot + "/rejected.png"), "and nothing is written");
+            check(clippedSaved === 1 && clippedFailed === 1, "a crop past the edge saves and one wholly outside fails: " + clippedSaved + "/" + clippedFailed);
+            shot.source = fileUrl(edge);
+            check(shot.status === Image.Ready && shot.sourceSize.width === 10 && shot.sourceSize.height === 20,
+                "the crop past the edge is cut to the image, 10 x 20: " + shot.sourceSize);
+            check(!WindowsFiles.isFile(gone), "and the outside one writes no file");
+            shot.source = "";
             empty.destroy();
             picker.cancel();
             later(1200, () => step(panelTimeoutStep));

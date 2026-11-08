@@ -131,30 +131,28 @@ function grabSize(screen, dpr) {
     return { width: Math.round(screen.width * dpr), height: Math.round(screen.height * dpr) };
 }
 
-// Everything the saver needs: the logical and physical rectangles, and whether
-// the physical one lies inside the grabbed image. At a fractional scale the
-// rounded far edge can still land one pixel past the image, and QImage::copy
-// would pad that pixel with transparent black. Only then is the logical size
-// shortened by one, until the real native rectangle fits.
+function intersect(a, b) {
+    var left = Math.max(a.x, b.x);
+    var top = Math.max(a.y, b.y);
+    var right = Math.min(a.x + a.width, b.x + b.width);
+    var bottom = Math.min(a.y + a.height, b.y + b.height);
+    return rect(left, top, Math.max(0, right - left), Math.max(0, bottom - top));
+}
+
+// Everything the saver needs. `physical` is the native crop Qt computes from the
+// logical rectangle. At a fractional scale its far edge can land a pixel past the
+// grabbed image. CUtils.saveItem clips the crop to the image before cutting, so
+// `crop` (the intersection with the image) is exactly what is saved, and no
+// column or row that lies inside both the selection and the image is lost.
+// The selection is valid when that intersection is not empty.
 function exportPlan(sel, screen, dpr) {
     var logical = logicalExport(sel, screen);
     if (!logical)
-        return { valid: false, logical: null, physical: null };
+        return { valid: false, logical: null, physical: null, crop: null };
     var image = grabSize(screen, dpr);
     var physical = physicalExport(logical, dpr);
-    while (logical.width > 1 && physical.x + physical.width > image.width) {
-        logical = rect(logical.x, logical.y, logical.width - 1, logical.height);
-        physical = physicalExport(logical, dpr);
-    }
-    while (logical.height > 1 && physical.y + physical.height > image.height) {
-        logical = rect(logical.x, logical.y, logical.width, logical.height - 1);
-        physical = physicalExport(logical, dpr);
-    }
-    var inside = physical.width >= 1 && physical.height >= 1
-        && physical.x >= 0 && physical.y >= 0
-        && physical.x + physical.width <= image.width
-        && physical.y + physical.height <= image.height;
-    return { valid: inside, logical: logical, physical: physical, image: image };
+    var crop = intersect(physical, rect(0, 0, image.width, image.height));
+    return { valid: crop.width >= 1 && crop.height >= 1, logical: logical, physical: physical, crop: crop, image: image };
 }
 
 // The tint appears only when every screen has a frozen frame, so a partial

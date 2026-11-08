@@ -59,7 +59,7 @@ MouseArea {
     property real lastX
     property real lastY
     readonly property real borderWidth: 2
-    readonly property bool showSelection: owner.allReady && (containsMouse || down || owner.saving)
+    readonly property bool showSelection: owner.allReady && (containsMouse || down || owner.saving || owner.closing)
 
     function select(rect: var): void {
         rsx = rect.x;
@@ -92,7 +92,7 @@ MouseArea {
     // item may be gone by then.
     function save(selection: var): void {
         // Nothing to cut from until the view is in a window.
-        if (owner.saving || !view.Window.window)
+        if (owner.saving || owner.closing || !view.Window.window)
             return;
         const plan = Logic.exportPlan(selection, geometry, dpr);
         if (!plan.valid)
@@ -107,11 +107,13 @@ MouseArea {
     }
 
     function saveToClipboard(rect: rect): void {
-        // One fixed temporary file under the shell state folder. The owner
-        // deletes it as soon as the clipboard call returns, and on every close.
+        // A temporary file of its own under the shell state folder. The owner
+        // deletes it as soon as the clipboard call returns, and when the save is
+        // cancelled or invalidated.
         const o = owner;
         const session = o.session;
-        CUtils.saveItem(view, FileUrls.fromLocalPath(o.tempPath()), rect, saved => o.copyFinished(session, saved),
+        const path = o.beginClipboard();
+        CUtils.saveItem(view, FileUrls.fromLocalPath(path), rect, saved => o.copyFinished(session, saved),
             () => o.saveFailed(session, Tr.tr("The image could not be saved.")));
     }
 
@@ -165,7 +167,7 @@ MouseArea {
             owner.cancel();
             return;
         }
-        if (owner.saving || !owner.allReady)
+        if (owner.saving || owner.closing || !owner.allReady)
             return;
         down = true;
         startX = x;
@@ -174,7 +176,7 @@ MouseArea {
     }
 
     function moveTo(x: real, y: real): void {
-        if (owner.saving || !owner.allReady)
+        if (owner.saving || owner.closing || !owner.allReady)
             return;
         if (down) {
             if (!dragging && Logic.isDrag(startX, startY, x, y))
@@ -194,7 +196,7 @@ MouseArea {
             return;
         const wasDown = down;
         down = false;
-        if (!wasDown || owner.saving || !owner.allReady)
+        if (!wasDown || owner.saving || owner.closing || !owner.allReady)
             return;
         save(targetForRelease(x, y));
     }

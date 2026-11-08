@@ -1,6 +1,8 @@
 #include "cutils.hpp"
 
+#include <qdatetime.h>
 #include <qdir.h>
+#include <qfile.h>
 #include <qfileinfo.h>
 #include <qloggingcategory.h>
 #include <qmetaobject.h>
@@ -66,7 +68,17 @@ void CUtils::saveItem(
         grabResult.data(), &QQuickItemGrabResult::ready, this,
         [grabResult, scaledRect, path, onSaved, onFailed, this] {
             QtConcurrent::run([image = grabResult->image(), scaledRect, file = path.toLocalFile()] {
-                const auto img = scaledRect.isValid() ? image.copy(scaledRect) : image;
+                // Clip to the image: QImage::copy pads a rectangle that sticks out
+                // with transparent pixels, and rounding at a fractional scale can
+                // push the far edge a pixel past it. A crop with nothing inside
+                // the image must fail; QImage::copy would return the whole image
+                // for an empty rectangle, so a null image is used instead, which
+                // fails to save.
+                auto img = image;
+                if (scaledRect.isValid()) {
+                    const auto clip = scaledRect.intersected(image.rect());
+                    img = clip.isEmpty() ? QImage() : image.copy(clip);
+                }
                 const auto parent = QFileInfo(file).absolutePath();
                 return QDir().mkpath(parent) && img.save(file);
             }).then(this, [path, onSaved, onFailed](bool ok) {
@@ -133,6 +145,21 @@ bool CUtils::deleteFile(const QUrl& path) {
     }
 
     return QFile::remove(path.toLocalFile());
+}
+
+int CUtils::removeStale(const QUrl& directory, const QString& pattern, int olderThanSeconds) {
+    if (!directory.isLocalFile() || pattern.isEmpty() || pattern.contains(QLatin1Char('/'))
+        || pattern.contains(QLatin1Char('\\')) || olderThanSeconds < 0)
+        return 0;
+
+    const auto limit = QDateTime::currentDateTime().addSecs(-olderThanSeconds);
+    int removed = 0;
+    const auto files = QDir(directory.toLocalFile()).entryInfoList({ pattern }, QDir::Files | QDir::NoSymLinks);
+    for (const auto& info : files) {
+        if (info.lastModified() <= limit && QFile::remove(info.absoluteFilePath()))
+            removed++;
+    }
+    return removed;
 }
 
 QString CUtils::toLocalFile(const QUrl& url) {
