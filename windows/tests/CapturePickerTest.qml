@@ -55,11 +55,27 @@ ShellRoot {
         }
     }
 
+    // Stands in for Thumbnails.qml and records what the picker hands it.
+    property QtObject thumbRecorder: QtObject {
+        property bool enabled: true
+        property var saved: []
+        property var copies: []
+        function addSaved(info, path) {
+            saved = saved.concat([{ info: info, path: path }]);
+            return true;
+        }
+        function addCopy(info, path) {
+            copies = copies.concat([{ info: info, path: path }]);
+            return true;
+        }
+    }
+
     AreaPicker {
         id: picker
 
         saveRoot: root.saveRoot
         clipboard: root.clipboardRecorder
+        thumbnails: root.thumbRecorder
     }
 
     // Runs a PowerShell command to set up a disposable file system state that
@@ -130,6 +146,17 @@ ShellRoot {
                 return found;
         }
         return null;
+    }
+
+    function findAll(item, name): var {
+        let list = [];
+        if (!item)
+            return list;
+        if (item.objectName === name)
+            list.push(item);
+        for (const child of item.children)
+            list = list.concat(findAll(child, name));
+        return list;
     }
 
     function windows(): var {
@@ -241,7 +268,6 @@ ShellRoot {
 
     function openedStep(): void {
         check(picker.opened, "the picker opens once the panels are hidden");
-        check(!picker.clipboardOnly, "openFreeze saves to a file");
         const list = windows();
         check(list.length === Quickshell.screens.length, "one picker window per screen");
         for (const window of list) {
@@ -323,23 +349,268 @@ ShellRoot {
         area.moveTo(5, 10);
         check(area.rsx === 5 && area.rsy === 10 && area.sw === 15 && area.sh === 20, "a drag may go up and left");
         area.moveTo(80, 70);
-        // Releasing saves straight away to <saveRoot>/Screenshots.
+        // Releasing opens the editor over the selection. Nothing is saved.
         area.releaseAt(Qt.LeftButton, 80, 70);
-        check(picker.saving, "release starts the save");
-        later(1200, () => step(() => savedStep(window)));
+        check(picker.editing && !picker.saving, "release opens the editor and starts no save");
+        check(picker.editScreen === window.screen.name && picker.editPicker === area, "on the screen of the selection");
+        const logical = picker.editPlan.logical;
+        check(logical.x === 20 && logical.y === 30 && logical.width === 60 && logical.height === 40, "with the selection as its region");
+        later(800, () => step(() => noAutoSave(window, area)));
     }
 
-    function savedStep(window): void {
-        const message = toastWith("Saved to");
-        check(message.indexOf("/Screenshots/annotate-") >= 0 && message.endsWith(".png"), "saved under Screenshots with the default name: " + message);
-        savedPath = message.substring(message.indexOf("Saved to ") + 9).replace(/\\/g, "/");
+    // The screenshots folder is written only when the user chooses Save.
+    function noAutoSave(window, area): void {
+        check(picker.opened && picker.editing && !picker.saving && !picker.closing, "the editor stays open after the selection");
+        check(toastWith("Saved to") === "" && toastWith("Screenshot taken") === "" && toastWith("Copying screenshot") === "",
+            "and no success toast was shown");
+        check(thumbRecorder.saved.length === 0 && thumbRecorder.copies.length === 0 && clipboardRecorder.copied.length === 0,
+            "nothing reached the thumbnail or the clipboard");
+        powershell("if (Test-Path -LiteralPath '" + winPath(root.saveRoot) + "') { exit 1 } else { exit 0 }", code => {
+            check(code === 0, "nothing was written: the save folder does not exist");
+            editorLook(window, area);
+        });
+    }
+
+    function editorLook(window, area): void {
+        const editorItem = find(window.contentItem, "captureEditor");
+        check(editorItem !== null && editorItem.visible, "the editor interface is loaded on the selection's screen");
+        check(find(window.contentItem, "areaPickerOverlay").visible === false || find(window.contentItem, "areaPickerOverlay").opacity < 1,
+            "the picker's tint is on its way out");
+        check(area.cursorShape === Qt.ArrowCursor, "no cross cursor outside the drawing surface");
+        check(!area.showSelection, "the picker's outline is gone");
+        const composed = find(window.contentItem, "areaPickerComposed");
+        check(composed !== null && find(composed, "areaPickerView") !== null && find(composed, "areaPickerAnnotations") !== null,
+            "the exported item holds the frozen frame and the annotation layer");
+        check(find(composed, "editorToolbar") === null && find(composed, "captureEditor") === null && find(composed, "areaPickerTint") === null,
+            "and neither the toolbar, the wash nor the tint");
+        const annotations = find(composed, "areaPickerAnnotations");
+        check(annotations.visible && annotations.clip && annotations.x === 20 && annotations.y === 30
+            && annotations.width === 60 && annotations.height === 40, "the annotation layer is the selection, clipped to it");
+        check(findAll(editorItem, "captureEditorWash").length === 4, "four washes around the selection");
+        for (const wash of findAll(editorItem, "captureEditorWash"))
+            check(Math.abs(wash.color.a - 0.55) < 0.01 && wash.color.r === 0, "55 percent black");
+        const canvas = find(editorItem, "captureEditorCanvas");
+        check(canvas.x === 20 && canvas.y === 30 && canvas.width === 60 && canvas.height === 40, "the drawing surface covers the selection");
+        check(canvas.cursorShape === Qt.CrossCursor, "with a cross cursor");
+
+        // Geometry of the bar: 44 px tall, 10 px below the selection, kept 6 px from the left edge.
+        const bar = find(editorItem, "editorToolbar");
+        check(bar.height === 44, "the toolbar is 44 px tall");
+        check(bar.y === 80 && bar.x === 6, "10 px below the selection and 6 px from the edge: " + bar.x + ", " + bar.y);
+        check(bar.width > 500, "wide enough for every item: " + bar.width);
+        for (const id of ["pencil", "highlighter", "line", "arrow", "rect", "circle"]) {
+            const button = find(bar, "editorTool-" + id);
+            check(button !== null && button.width === 30 && button.height === 30, "a 30 px button for " + id);
+        }
+        for (const name of ["editorColor", "editor-undo", "editor-redo", "editor-clear", "editor-save", "editor-copy", "editor-close"])
+            check(find(bar, name) !== null && find(bar, name).height === 30, "the " + name + " button");
+        check(find(bar, "editor-copy").width > 30, "Copy has a label");
+        check(find(bar, "editorTool-text") === null && find(bar, "editorTool-blur") === null, "no tool from a later part");
+        check(find(bar, "editor-undo").disabled && find(bar, "editor-redo").disabled, "undo and redo are off with nothing drawn");
+        later(100, () => step(() => toolsStep(window, area)));
+    }
+
+    function toolsStep(window, area): void {
+        const editor = picker.editor;
+        const bar = find(window.contentItem, "editorToolbar");
+        check(editor.tool === "pencil" && editor.color === "#FF4444" && editor.size === 3, "Pencil, red, 3 px to begin with");
+
+        // Each button picks its tool, and so does its key.
+        for (const id of ["highlighter", "line", "arrow", "rect", "circle", "pencil"]) {
+            find(bar, "editorTool-" + id).clicked();
+            check(editor.tool === id, "the " + id + " button picks " + id);
+        }
+        const keys = { H: "highlighter", L: "line", A: "arrow", R: "rect", C: "circle", P: "pencil" };
+        for (const letter of Object.keys(keys)) {
+            check(picker.editorKey(letter.charCodeAt(0), false, false, false) && editor.tool === keys[letter], "the key " + letter + " picks " + keys[letter]);
+        }
+        check(picker.editorKey(0x54, false, false, false) === false && editor.tool === "pencil", "T is not a tool in this part");
+
+        // Draw with every tool, in region coordinates.
+        const drawings = {
+            pencil: [[5, 5], [12, 9], [20, 14], [30, 12], [40, 6]],
+            highlighter: [[5, 30], [25, 32], [45, 30]],
+            line: [[5, 5], [55, 35]],
+            arrow: [[10, 35], [50, 8]],
+            rect: [[8, 8], [40, 30]],
+            circle: [[30, 20], [45, 28]]
+        };
+        for (const id of Object.keys(drawings)) {
+            editor.setTool(id);
+            const points = drawings[id];
+            editor.pressAt(points[0][0], points[0][1]);
+            check(editor.drawing, "a press starts a " + id + " stroke");
+            for (let i = 1; i < points.length; i++)
+                editor.moveTo(points[i][0], points[i][1]);
+            editor.releaseAt();
+            check(!editor.drawing, "a release ends it");
+        }
+        check(editor.strokes.length === 6, "six strokes: " + editor.strokes.length);
+        check(editor.strokes.map(s => s.tool).join() === "pencil,highlighter,line,arrow,rect,circle", "in drawing order");
+        const annotations = find(window.contentItem, "areaPickerAnnotations");
+        const kinds = findAll(annotations, "annotationPrimitive");
+        check(kinds.length >= 7, "the layer draws them as Shapes: " + kinds.length);
+
+        // A shape that was never dragged is not kept.
+        editor.setTool("line");
+        editor.pressAt(3, 3);
+        editor.releaseAt();
+        check(editor.strokes.length === 6, "a click with a shape tool adds nothing");
+
+        // Undo and redo, by button and by key.
+        check(!find(bar, "editor-undo").disabled && find(bar, "editor-redo").disabled, "undo is on, redo is off");
+        find(bar, "editor-undo").clicked();
+        check(editor.strokes.length === 5 && editor.canRedo && !find(bar, "editor-redo").disabled, "undo takes the last stroke off");
+        find(bar, "editor-redo").clicked();
+        check(editor.strokes.length === 6 && !editor.canRedo, "redo puts it back");
+        check(picker.editorKey(0x5A, true, false, false) && editor.strokes.length === 5, "Ctrl+Z undoes");
+        check(picker.editorKey(0x5A, true, true, false) && editor.strokes.length === 6, "Ctrl+Shift+Z redoes");
+        check(picker.editorKey(0x5A, true, false, false) && picker.editorKey(0x5A, true, false, false) && editor.strokes.length === 4, "two more undos");
+        check(picker.editorKey(0x59, true, false, false) && editor.strokes.length === 5, "Ctrl+Y redoes");
+        editor.setTool("rect");
+        editor.pressAt(2, 2);
+        editor.moveTo(20, 20);
+        editor.releaseAt();
+        check(editor.strokes.length === 6 && !editor.canRedo, "a new stroke empties the redo stack");
+        check(editor.strokes[5].tool === "rect" && editor.strokes[3].tool === "arrow", "the new rectangle is last, after the arrow and the first rectangle");
+
+        // Keys are ignored while a stroke is being drawn.
+        editor.pressAt(1, 1);
+        check(picker.editorKey(0x5A, true, false, false) === false && editor.strokes.length === 6, "no undo mid stroke");
+        editor.abandon();
+        check(!editor.drawing && editor.strokes.length === 6, "an abandoned stroke is dropped, not committed");
+        later(100, () => step(() => clearStep(window, area)));
+    }
+
+    function clearStep(window, area): void {
+        const editor = picker.editor;
+        const bar = find(window.contentItem, "editorToolbar");
+        const clear = find(bar, "editor-clear");
+        const width = clear.width;
+        clear.clicked();
+        check(editor.clearArmed && editor.strokes.length === 6, "the first press only arms Clear");
+        check(clear.width > width, "the armed button shows its label");
+        clear.clicked();
+        check(!editor.clearArmed && editor.strokes.length === 0 && !editor.canUndo && !editor.canRedo, "the second clears everything, redo too");
+
+        // Clear disarms by itself, and when the user does something else.
+        editor.setTool("line");
+        editor.pressAt(5, 5);
+        editor.moveTo(30, 30);
+        editor.releaseAt();
+        clear.clicked();
+        check(editor.clearArmed, "armed again");
+        editor.setTool("pencil");
+        check(!editor.clearArmed, "choosing a tool disarms it");
+        clear.clicked();
+        check(editor.clearArmed, "armed for the pointer check");
+        find(clear, "editor-clear-layer").exited();
+        check(!editor.clearArmed && editor.strokes.length === 1, "leaving the button disarms it");
+        clear.clicked();
+        check(editor.clearArmed, "armed once more");
+        later(2800, () => step(() => {
+            check(!editor.clearArmed && editor.strokes.length === 1, "it disarms after 2.4 s and keeps the stroke");
+            inkStep(window, area);
+        }));
+    }
+
+    function inkStep(window, area): void {
+        const editor = picker.editor;
+        const bar = find(window.contentItem, "editorToolbar");
+        const popover = find(window.contentItem, "editorInkPopover");
+        check(!popover.visible, "the colour popover starts closed");
+        find(bar, "editorColor").clicked();
+        check(editor.inkOpen && popover.visible, "the colour button opens it");
+        check(popover.width === 268 && popover.height === 101, "268 x 101");
+        check(popover.y === bar.y - 8 - popover.height || popover.y === bar.y + bar.height + 8, "8 px above or below the bar");
+        for (let i = 0; i < 9; i++)
+            check(find(popover, "editorColor-" + i) !== null, "colour " + i);
+        check(find(popover, "editorColor-9") === null, "nine colours");
+        find(popover, "editorColor-4").clicked(null);
+        check(editor.color === "#44AAFF", "a colour dot picks it");
+        find(popover, "editorSize-M").clicked(null);
+        check(editor.size === 4, "M is 4 px");
+        find(popover, "editorSize-L").clicked(null);
+        find(popover, "editorSize-S").clicked(null);
+        check(editor.size === 2 && editor.inkOpen, "S is 2 px, and the popover stays open");
+
+        // Esc closes the popover first and the editor second.
+        area.dismissByKey();
+        check(!editor.inkOpen && !picker.closing && picker.editing, "Esc closes the popover only");
+        find(bar, "editorColor").clicked();
+        check(editor.inkOpen, "open again");
+        editor.pressAt(10, 10);
+        check(!editor.inkOpen, "pressing the drawing surface closes it");
+        editor.abandon();
+
+        // Dragging the bar moves it, and it stays on the screen.
+        editor.barPosition = { x: -500, y: 90000 };
+        check(bar.x === 6 && bar.y === window.height - 44 - 6, "a dragged bar keeps 6 px from the edges: " + bar.x + ", " + bar.y);
+        editor.barPosition = { x: 100, y: 200 };
+        check(bar.x === 100 && bar.y === 200, "and goes where it was put");
+        editor.barPosition = null;
+        check(bar.x === 6 && bar.y === 80, "automatic placement returns");
+
+        // A right press does nothing in the editor. A left press outside the
+        // selection and the bar closes it.
+        area.pressAt(Qt.RightButton, window.width - 50, window.height - 50);
+        check(!picker.closing && picker.editing, "a right press does not close the editor");
+        area.moveTo(100, 100);
+        check(area.rsx === 20 && area.sw === 60, "moving the pointer does not retarget the selection");
+        later(100, () => step(() => saveStep(window, area)));
+    }
+
+    // Save writes one file with the annotations in it.
+    function saveStep(window, area): void {
+        const editor = picker.editor;
+        const bar = find(window.contentItem, "editorToolbar");
+        editor.setColor(0);
+        editor.setSize(2);
+        editor.setTool("line");
+        editor.pressAt(5, 20);
+        editor.moveTo(55, 20);
+        editor.releaseAt();
+        check(editor.strokes.length === 2, "a thick red line is added");
+        find(bar, "editor-save").clicked();
+        check(picker.saving, "Save starts the export");
+        check(find(window.contentItem, "captureEditor").busy, "and the editor is busy");
+        const screenName = window.screen.name;
+        later(1500, () => step(() => savedStep(screenName)));
+    }
+
+    function savedStep(screenName): void {
+        check(toastWith("Saved to") === "" && toastWith("Screenshot taken") === "", "no success toast");
+        check(thumbRecorder.saved.length === 1 && thumbRecorder.copies.length === 0, "the thumbnail was given the saved file");
+        savedPath = thumbRecorder.saved[0].path;
+        const info = thumbRecorder.saved[0].info;
+        check(info.screen === screenName && info.width === 60 && info.height === 40 && info.dpr === 1, "with the capture's screen and size");
+        check(savedPath.indexOf("/Screenshots/annotate-") >= 0 && savedPath.endsWith(".png"), "saved under Screenshots with the default name: " + savedPath);
         check(WindowsFiles.isFile(savedPath), "the file exists: " + savedPath);
         shot.source = "file:///" + savedPath;
         check(shot.status === Image.Ready, "the file is a readable image");
         check(shot.sourceSize.width === 60 && shot.sourceSize.height === 40, "the image has the selection's size: " + shot.sourceSize);
-        check(!picker.opened, "the picker closes after saving");
+        shot.source = "";
+        check(clipboardRecorder.copied.length === 0, "Save does not touch the clipboard");
+        check(!picker.opened, "Save closes the editor");
         check(windows().length === 0, "its windows are gone");
-        escapeStep();
+        // The line is in the file: red at its middle, and the pixel above it is
+        // empty because the layer holds only the annotations over an empty frame.
+        const script = "$ErrorActionPreference='Stop'; Add-Type -AssemblyName System.Drawing; "
+            + "$b = New-Object System.Drawing.Bitmap('" + savedPath + "'); "
+            + "$line = $b.GetPixel(30, 20); $above = $b.GetPixel(30, 8); $b.Dispose(); "
+            + "if ($line.R -eq 255 -and $line.G -eq 68 -and $line.B -eq 68 -and $line.A -eq 255 -and $above.A -eq 0) { exit 0 } "
+            + "else { [Console]::Error.WriteLine('line=' + $line + ' above=' + $above); exit 3 }";
+        powershell(script, code => {
+            check(code === 0, "the annotation is drawn into the saved image at native scale (exit " + code + ")");
+            countScreenshots();
+        });
+    }
+
+    function countScreenshots(): void {
+        powershell("$n = @(Get-ChildItem -LiteralPath '" + winPath(root.saveRoot) + "/Screenshots' -File).Count; exit $n", code => {
+            check(code === 1, "Save wrote exactly one file: " + code);
+            escapeStep();
+        });
     }
 
     function escapeStep(): void {
@@ -369,18 +640,34 @@ ShellRoot {
     function afterRightClick(): void {
         check(!picker.opened && windows().length === 0, "a right click closes every window");
 
-        // The clipboard variants write the image to a temporary file in the OS
-        // temp directory and hand that path to the clipboard.
-        check(CaptureUi.screenshot("openClip") === true && picker.opened && picker.clipboardOnly, "openClip opens a clipboard capture");
+        // openClip opens the same editor as the other names. Copy in the editor
+        // writes the image to a temporary file in the OS temp directory and hands
+        // that path to the clipboard.
+        check(CaptureUi.screenshot("openClip") === true && picker.opened, "openClip opens the picker");
         readyAll();
         later(300, () => step(clipboardDrag));
     }
 
+    // Selects a region and returns the editor's toolbar.
+    function selectRegion(x1, y1, x2, y2): var {
+        const window = windows()[0];
+        const area = areaOf(window);
+        area.pressAt(Qt.LeftButton, x1, y1);
+        area.moveTo(x2, y2);
+        area.releaseAt(Qt.LeftButton, x2, y2);
+        check(picker.editing && !picker.saving, "the selection opens the editor and saves nothing");
+        return find(window.contentItem, "editorToolbar");
+    }
+
     function clipboardDrag(): void {
-        const area = areaOf(windows()[0]);
-        area.pressAt(Qt.LeftButton, 10, 10);
-        area.moveTo(70, 60);
-        area.releaseAt(Qt.LeftButton, 70, 60);
+        const bar = selectRegion(10, 10, 70, 60);
+        check(clipboardRecorder.copied.length === 0 && picker.activeTemp === "", "nothing is copied by the selection");
+        picker.editor.setTool("rect");
+        picker.editor.pressAt(5, 5);
+        picker.editor.moveTo(30, 30);
+        picker.editor.releaseAt();
+        find(bar, "editor-copy").clicked();
+        check(picker.saving, "Copy starts the export");
         later(1200, () => step(afterClipboard));
     }
 
@@ -393,9 +680,11 @@ ShellRoot {
         check(clipboardRecorder.sizeAtCall.width === 60 && clipboardRecorder.sizeAtCall.height === 50,
             "and held the selection: " + clipboardRecorder.sizeAtCall);
         check(!WindowsFiles.isFile(path), "the temporary file is deleted right after the call");
-        check(toastWith("Copying screenshot to clipboard") !== "", "the toast says the copy started");
-        check(toastWith("copied to clipboard") === "", "and does not claim it finished");
-        check(!picker.opened, "the picker closes after copying");
+        check(toastWith("Copying screenshot") === "" && toastWith("Screenshot taken") === "" && toastWith("copied to clipboard") === "",
+            "no toast: the thumbnail is the feedback");
+        check(thumbRecorder.copies.length === 1 && thumbRecorder.copies[0].path === clipboardRecorder.copied[0], "the thumbnail was given the copy");
+        check(thumbRecorder.saved.length === 1, "and Copy saved no file");
+        check(!picker.opened, "Copy closes the editor");
         shot.source = "";
 
         // A refused copy reports a failure and still removes the file.
@@ -406,24 +695,36 @@ ShellRoot {
     }
 
     function copyFailDrag(): void {
-        const area = areaOf(windows()[0]);
-        area.pressAt(Qt.LeftButton, 10, 10);
-        area.moveTo(40, 40);
-        area.releaseAt(Qt.LeftButton, 40, 40);
+        const bar = selectRegion(10, 10, 40, 40);
+        picker.editor.setTool("circle");
+        picker.editor.pressAt(10, 10);
+        picker.editor.moveTo(20, 20);
+        picker.editor.releaseAt();
+        find(bar, "editor-copy").clicked();
         later(1200, () => step(afterCopyFail));
     }
 
+    // A failed export keeps the editor and its annotations, so the user can try
+    // again. Only an error toast is shown.
     function afterCopyFail(): void {
         check(clipboardRecorder.copied.length === 2, "the clipboard was asked again");
         check(toastWith("could not be copied") !== "", "a refused copy is reported");
         check(!WindowsFiles.isFile(clipboardRecorder.copied[1].split("\\").join("/")), "and its file is deleted too");
-        check(!picker.opened, "the picker closes");
+        check(picker.opened && picker.editing && !picker.saving && !picker.closing, "the editor stays open");
+        check(picker.editor.strokes.length === 1 && picker.editor.strokes[0].tool === "circle", "with its annotations");
+        check(thumbRecorder.copies.length === 1, "and no thumbnail is added for the failed copy");
         clipboardRecorder.result = true;
+        const bar = find(windows()[0].contentItem, "editorToolbar");
+        find(bar, "editor-copy").clicked();
+        later(1200, () => step(() => {
+            check(clipboardRecorder.copied.length === 3 && thumbRecorder.copies.length === 2, "trying again copies and adds the thumbnail");
+            check(!picker.opened, "and closes the editor");
 
-        // Cancelling removes a leftover hand-over file.
-        check(CaptureUi.screenshot("openClip") === true && picker.opened, "openClip opens for the cancel case");
-        readyAll();
-        later(300, () => step(tempCancelStep));
+            // Cancelling removes a leftover hand-over file.
+            check(CaptureUi.screenshot("openClip") === true && picker.opened, "openClip opens for the cancel case");
+            readyAll();
+            later(300, () => step(tempCancelStep));
+        }));
     }
 
     property string leftover: ""
@@ -444,7 +745,7 @@ ShellRoot {
     function afterTempCancel(): void {
         check(!picker.opened, "Esc closed the picker");
         check(!WindowsFiles.isFile(leftover), "and the file stays deleted");
-        check(clipboardRecorder.copied.length === 2, "and copies nothing");
+        check(clipboardRecorder.copied.length === 3, "and copies nothing");
 
         // A save that cannot write anywhere reports a failure. The save folder
         // is made a path below an existing file, so neither Screenshots nor the
@@ -456,33 +757,45 @@ ShellRoot {
     }
 
     function failingSaveDrag(): void {
-        const area = areaOf(windows()[0]);
-        area.pressAt(Qt.LeftButton, 10, 10);
-        area.moveTo(40, 40);
-        area.releaseAt(Qt.LeftButton, 40, 40);
+        const bar = selectRegion(10, 10, 40, 40);
+        find(bar, "editor-save").clicked();
         check(picker.saving, "the failing save starts");
         later(1200, () => step(afterFailingSave));
     }
 
     function afterFailingSave(): void {
         check(toastWith("The image could not be saved") !== "", "a save that fails is reported");
-        check(!picker.opened && !picker.saving, "and the picker closes");
+        check(picker.opened && picker.editing && !picker.saving && !picker.closing, "and the editor stays open for another try");
+        check(thumbRecorder.saved.length === 1, "with no thumbnail for it");
         picker.saveRoot = root.saveRoot;
+        closePicker(() => {
+            // A save that never answers ends in a bounded failure.
+            picker.saveTimeout = 300;
+            check(CaptureUi.screenshot("open") === true && picker.opened, "the picker opens for the stalled save");
+            readyAll();
+            later(300, () => step(() => {
+                picker.saving = true;
+                check(picker.opened, "a save is pending");
+                later(1200, () => step(afterStall));
+            }));
+        });
+    }
 
-        // A save that never answers ends in a bounded failure.
-        picker.saveTimeout = 300;
-        check(CaptureUi.screenshot("open") === true && picker.opened, "the picker opens for the stalled save");
-        readyAll();
-        later(300, () => step(() => {
-            picker.saving = true;
-            check(picker.opened, "a save is pending");
-            later(1200, () => step(afterStall));
+    function closePicker(next): void {
+        picker.cancel();
+        later(1200, () => step(() => {
+            check(!picker.opened && !picker.editing, "the picker closed: opened=" + picker.opened + " editing=" + picker.editing + " closing=" + picker.closing + " saving=" + picker.saving);
+            next();
         }));
     }
 
     function afterStall(): void {
         check(toastWith("timed out") !== "", "a stalled save shows a failure toast");
-        check(!picker.opened && !picker.saving, "and the picker closes");
+        check(picker.opened && !picker.saving, "and the picker stays open");
+        closePicker(stalledClosed);
+    }
+
+    function stalledClosed(): void {
 
         // Completion first: the operation is terminal at once, so the timeout
         // that is still counting never fires.
@@ -499,13 +812,30 @@ ShellRoot {
         later(150, () => step(() => {
             picker.fileFinished(started, "C:/race/done.png");
             check(!picker.saving && picker.session !== started, "completion invalidates the session and clears saving at once");
-            check(toastCount("Saved to C:/race/done.png") === 1, "one result is shown");
+            check(toastCount("C:/race/done.png") === 0, "no success toast: the thumbnail is the feedback");
             picker.fileFinished(started, "C:/race/done.png");
             picker.saveFailed(started, "late failure");
-            check(toastCount("Saved to C:/race/done.png") === 1 && toastWith("late failure") === "", "a second result for the same save is dropped");
+            check(toastCount("C:/race/done.png") === 0 && toastWith("late failure") === "", "a second result for the same save is dropped");
             later(900, () => step(() => {
                 check(toastCount("timed out") === timeouts, "the timeout never fires after a completion");
                 check(!picker.opened, "the picker closed");
+                thumbnailOffStep();
+            }));
+        }));
+    }
+
+    // With the thumbnail switched off nothing else would say where a saved file
+    // went, so Save announces it, as the classic tool does. Copy never does.
+    function thumbnailOffStep(): void {
+        check(CaptureUi.screenshot("open") === true && picker.opened, "the picker opens for the thumbnail-off case");
+        readyAll();
+        later(300, () => step(() => {
+            thumbRecorder.enabled = false;
+            picker.fileFinished(picker.session, "C:/off/saved.png");
+            check(toastCount("Saved to C:/off/saved.png") === 1, "a save with the thumbnail off is announced");
+            thumbRecorder.enabled = true;
+            later(1200, () => step(() => {
+                check(!picker.opened, "and the picker closed");
                 raceTimeout();
             }));
         }));
@@ -522,12 +852,13 @@ ShellRoot {
             later(700, () => step(() => {
                 check(toastCount("timed out") === timeouts + 1, "the timeout shows once");
                 check(picker.session !== started && !picker.saving, "and ends the operation");
-                picker.fileFinished(started, "C:/race/late.png");
-                check(toastCount("C:/race/late.png") === 0, "a completion after the timeout is dropped");
+                const saved = thumbRecorder.saved.length;
+                picker.fileFinished(started, "C:/race/late.png", { screen: "x", width: 1, height: 1, dpr: 1 });
+                check(thumbRecorder.saved.length === saved, "a completion after the timeout is dropped");
+                check(picker.opened && !picker.closing, "and the editor stays open after the timeout");
                 later(900, () => step(() => {
                     check(toastCount("timed out") === timeouts + 1, "and the timeout does not repeat");
-                    check(!picker.opened, "the picker closed");
-                    resultAfterEsc();
+                    closePicker(resultAfterEsc);
                 }));
             }));
         }));

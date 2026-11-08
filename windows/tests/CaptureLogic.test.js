@@ -273,10 +273,10 @@ test("file names follow the current tool's default and number duplicates from (2
 });
 
 test("IPC function names keep their upstream meaning", () => {
-    assert.deepEqual(plain(logic.pickerOptions("open")), { freeze: false, clipboardOnly: false });
-    assert.deepEqual(plain(logic.pickerOptions("openFreeze")), { freeze: true, clipboardOnly: false });
-    assert.deepEqual(plain(logic.pickerOptions("openClip")), { freeze: false, clipboardOnly: true });
-    assert.deepEqual(plain(logic.pickerOptions("openFreezeClip")), { freeze: true, clipboardOnly: true });
+    assert.deepEqual(plain(logic.pickerOptions("open")), { freeze: false });
+    assert.deepEqual(plain(logic.pickerOptions("openFreeze")), { freeze: true });
+    assert.deepEqual(plain(logic.pickerOptions("openClip")), { freeze: false });
+    assert.deepEqual(plain(logic.pickerOptions("openFreezeClip")), { freeze: true });
     assert.equal(logic.pickerOptions("nope"), null);
 });
 

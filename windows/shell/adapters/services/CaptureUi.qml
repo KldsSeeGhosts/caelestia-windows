@@ -42,8 +42,9 @@ Singleton {
     readonly property bool shellAvailable: route === "shell" && picker !== null
 
     // `name` is the upstream picker function: open, openFreeze, openClip or
-    // openFreezeClip. The classic tool treats all four alike. The return value
-    // means accepted, as Glazier.capture() does.
+    // openFreezeClip. The classic tool treats all four alike, and so does the
+    // picker: a selection opens the editor, whose Copy and Save decide the
+    // output. The return value means accepted, as Glazier.capture() does.
     function screenshot(name = "open"): bool {
         if (route !== "shell")
             return glazierProvider.capture();
@@ -78,7 +79,7 @@ Singleton {
             pending = null;
             wait.stop();
             if (picker)
-                picker.open(options.clipboardOnly);
+                picker.open();
         } else if (Date.now() - pendingSince > glazierProvider.hiddenTimeout) {
             pending = null;
             wait.stop();

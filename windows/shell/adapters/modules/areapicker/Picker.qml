@@ -23,8 +23,10 @@ import "../../utils/FileUrls.js" as FileUrls
 //   pointer enters a screen's window, that screen shows only the tint.
 // - Hypr.options (border size and rounding) becomes the fixed 2 px outline and
 //   square corners of the current capture tool.
-// - Output is saved with CUtils.saveItem over the frozen view, then written to
-//   Pictures\Screenshots or copied with Clipboard.copyImageFile.
+// - Releasing a selection opens the editor over it (Editor.qml) and saves
+//   nothing. Copy and Save in the editor export the composed item, the frozen
+//   view plus the annotation layer, with CUtils.saveItem. Save writes
+//   Pictures\Screenshots and Copy hands the image to Clipboard.copyImageFile.
 MouseArea {
     id: root
 
@@ -41,6 +43,11 @@ MouseArea {
     })
     readonly property bool hasContent: view.hasContent
     readonly property real dpr: Window.window ? Window.window.devicePixelRatio : screen.devicePixelRatio
+    // The editor is shared by every screen's window. Only the screen that holds
+    // the selection shows its toolbar and annotations.
+    readonly property var editor: owner.editor
+    readonly property bool editsHere: owner.editing && owner.editScreen === screen.name
+    readonly property var editRegion: editsHere ? owner.editPlan.logical : ({ x: 0, y: 0, width: 0, height: 0 })
 
     // Topmost first, in this screen's own coordinates. Fixed at open.
     property var windows: []
@@ -59,7 +66,7 @@ MouseArea {
     property real lastX
     property real lastY
     readonly property real borderWidth: 2
-    readonly property bool showSelection: owner.allReady && (containsMouse || down || owner.saving || owner.closing)
+    readonly property bool showSelection: owner.allReady && !owner.editing && (containsMouse || down || owner.closing)
 
     function select(rect: var): void {
         rsx = rect.x;
@@ -85,25 +92,38 @@ MouseArea {
         return Logic.targetAt(windows, x, y, geometry).rect;
     }
 
-    // Cut the selection out of the frozen view. saveItem grabs `view` itself, so
-    // the tint, the outline and any fade are never part of the image. Results go
-    // to the owner with this session's number, so a result that arrives after the
-    // picker has closed is ignored. Callbacks use `o`, never `root`, because this
-    // item may be gone by then.
-    function save(selection: var): void {
+    // Releasing the pointer opens the editor over the selection. Nothing is
+    // written here: only Copy and Save in the editor produce an image.
+    function beginEdit(selection: var): void {
         // Nothing to cut from until the view is in a window.
-        if (owner.saving || owner.closing || !view.Window.window)
+        if (owner.saving || owner.closing || owner.editing || !view.Window.window)
             return;
         const plan = Logic.exportPlan(selection, geometry, dpr);
         if (!plan.valid)
             return;
-        owner.saving = true;
         select(plan.logical);
+        owner.startEditing(root, plan);
+    }
+
+    // Cut the selection out of the composed item, the frozen view plus the
+    // annotation layer. saveItem grabs `composed` itself, so the tint, the wash,
+    // the toolbar and any fade are never part of the image. `kind` is "copy" or
+    // "save". Results go to the owner with this session's number, so a result
+    // that arrives after the picker has closed is ignored. Callbacks use `o`,
+    // never `root`, because this item may be gone by then.
+    function exportEdit(kind: string): void {
+        if (!editsHere || owner.saving || owner.closing || !composed.Window.window)
+            return;
+        // A stroke still under the pointer is not part of the image.
+        editor.abandon();
+        editor.inkOpen = false;
+        owner.saving = true;
+        const plan = owner.editPlan;
         const rect = Qt.rect(plan.logical.x, plan.logical.y, plan.logical.width, plan.logical.height);
         // What the thumbnail needs to draw this capture: the screen it was taken
         // on and the saved size in physical pixels.
         const info = { screen: screen.name, width: plan.crop.width, height: plan.crop.height, dpr: dpr };
-        if (owner.clipboardOnly)
+        if (kind === "copy")
             saveToClipboard(rect, info);
         else
             saveToFile(rect, owner.saveRoot + "/Screenshots", true, info);
@@ -120,7 +140,7 @@ MouseArea {
             o.saveFailed(session, Tr.tr("The image could not be saved."));
             return;
         }
-        CUtils.saveItem(view, FileUrls.fromLocalPath(path), rect, saved => o.copyFinished(session, saved, info),
+        CUtils.saveItem(composed, FileUrls.fromLocalPath(path), rect, saved => o.copyFinished(session, saved, info),
             () => o.saveFailed(session, Tr.tr("The image could not be saved.")));
     }
 
@@ -130,7 +150,7 @@ MouseArea {
         const session = o.session;
         const stem = Logic.fileStem(new Date(), "");
         const path = Logic.uniquePath(directory, stem, candidate => WindowsFiles.isFile(candidate));
-        CUtils.saveItem(view, FileUrls.fromLocalPath(path), rect, saved => o.fileFinished(session, saved, info), () => {
+        CUtils.saveItem(composed, FileUrls.fromLocalPath(path), rect, saved => o.fileFinished(session, saved, info), () => {
             if (session !== o.session)
                 return;
             if (firstTry)
@@ -143,7 +163,7 @@ MouseArea {
     objectName: "areaPicker"
     anchors.fill: parent
     hoverEnabled: true
-    cursorShape: Qt.CrossCursor
+    cursorShape: owner.editing ? Qt.ArrowCursor : Qt.CrossCursor
     acceptedButtons: Qt.LeftButton | Qt.RightButton
     focus: true
     opacity: owner.closing ? 0 : 1
@@ -170,6 +190,15 @@ MouseArea {
     // The pointer handlers delegate to these functions so the fixture can drive
     // the same logic without synthesising window input.
     function pressAt(button: int, x: real, y: real): void {
+        if (owner.editing) {
+            // The editor's own surfaces take their presses before this one. A left
+            // press that gets here is outside the selection and the toolbar: it
+            // closes an open popover, and otherwise ends the editor. A right
+            // press does nothing. It is for the eraser, which comes later.
+            if (button === Qt.LeftButton && !owner.saving && !owner.closing)
+                owner.dismiss();
+            return;
+        }
         if (button === Qt.RightButton) {
             owner.cancel();
             return;
@@ -183,7 +212,7 @@ MouseArea {
     }
 
     function moveTo(x: real, y: real): void {
-        if (owner.saving || owner.closing || !owner.allReady)
+        if (owner.editing || owner.saving || owner.closing || !owner.allReady)
             return;
         if (down) {
             if (!dragging && Logic.isDrag(startX, startY, x, y))
@@ -203,9 +232,9 @@ MouseArea {
             return;
         const wasDown = down;
         down = false;
-        if (!wasDown || owner.saving || owner.closing || !owner.allReady)
+        if (!wasDown || owner.editing || owner.saving || owner.closing || !owner.allReady)
             return;
-        save(targetForRelease(x, y));
+        beginEdit(targetForRelease(x, y));
     }
 
     onPressed: mouse => pressAt(mouse.button, mouse.x, mouse.y)
@@ -218,21 +247,49 @@ MouseArea {
     }
 
     function dismissByKey(): void {
-        owner.cancel();
+        owner.dismiss();
     }
 
     Keys.onEscapePressed: dismissByKey()
 
-    // The frozen desktop. It is never hidden: a Windows ScreencopyView does not
-    // start capturing while invisible. It sits outside the fading overlay, so the
-    // freeze appears at once and only the tint fades in.
-    ScreencopyView {
-        id: view
+    // The editor's shortcuts work from whichever screen's window has the focus.
+    Keys.onPressed: event => {
+        const modifiers = event.modifiers;
+        if (owner.editorKey(event.key, !!(modifiers & Qt.ControlModifier), !!(modifiers & Qt.ShiftModifier), !!(modifiers & Qt.AltModifier)))
+            event.accepted = true;
+    }
 
-        objectName: "areaPickerView"
+    // What gets exported: the frozen desktop and the annotations over it, and
+    // nothing else. The tint, the wash and the toolbar are siblings of this item.
+    Item {
+        id: composed
+
+        objectName: "areaPickerComposed"
         anchors.fill: parent
-        captureSource: root.screen
-        live: false
+
+        // The frozen desktop. It is never hidden: a Windows ScreencopyView does
+        // not start capturing while invisible. It sits outside the fading
+        // overlay, so the freeze appears at once and only the tint fades in.
+        ScreencopyView {
+            id: view
+
+            objectName: "areaPickerView"
+            anchors.fill: parent
+            captureSource: root.screen
+            live: false
+        }
+
+        Annotations {
+            objectName: "areaPickerAnnotations"
+            visible: root.editsHere
+            x: root.editRegion.x
+            y: root.editRegion.y
+            width: root.editRegion.width
+            height: root.editRegion.height
+            strokes: root.editor.strokes
+            draft: root.editor.draft
+            revision: root.editor.revision
+        }
     }
 
     Item {
@@ -240,7 +297,7 @@ MouseArea {
 
         objectName: "areaPickerOverlay"
         anchors.fill: parent
-        opacity: root.owner.allReady ? 1 : 0
+        opacity: root.owner.allReady && !root.owner.editing ? 1 : 0
         visible: opacity > 0
 
         StyledRect {
@@ -298,6 +355,37 @@ MouseArea {
             Anim {
                 type: Anim.Standard
             }
+        }
+    }
+
+    // The other screens go dark while the editor is open, as the classic tool's
+    // does, and a press on them ends it.
+    Rectangle {
+        objectName: "captureEditorOtherWash"
+        anchors.fill: parent
+        color: Qt.rgba(0, 0, 0, 0.55)
+        opacity: root.owner.editing && !root.editsHere ? 1 : 0
+        visible: opacity > 0
+
+        Behavior on opacity {
+            Anim {
+                type: Anim.Standard
+            }
+        }
+    }
+
+    Loader {
+        anchors.fill: parent
+        active: root.editsHere
+
+        sourceComponent: Editor {
+            editor: root.editor
+            region: root.editRegion
+            backdrop: view
+            busy: root.owner.saving
+            onCopyRequested: root.exportEdit("copy")
+            onSaveRequested: root.exportEdit("save")
+            onCloseRequested: root.owner.cancel()
         }
     }
 

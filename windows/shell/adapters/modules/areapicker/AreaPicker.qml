@@ -27,14 +27,17 @@ import "CaptureLogic.js" as Logic
 //   capturing while it is hidden, so upstream's live mode, which hides the view
 //   and re-shows it, cannot work. CaptureUi accepts the four upstream names, and
 //   open and openFreeze (and the Clip pair) therefore behave the same.
-// - Output goes to Pictures\Screenshots or the clipboard, not swappy or wl-copy.
+// - A selection opens the editor over the frozen frame (EditorState.qml,
+//   Editor.qml). Nothing is written until the user chooses Save or Copy there.
+//   Save writes Pictures\Screenshots, Copy writes the clipboard, and both then
+//   close the editor and show the thumbnail. open, openFreeze and the Clip pair
+//   all behave the same, as the classic tool does.
 Scope {
     id: root
 
     // The production host turns this off during smoke, which must never freeze
     // a real desktop.
     property bool interactionEnabled: true
-    property bool clipboardOnly
     property bool opened
     property bool closing
     property bool saving
@@ -42,6 +45,14 @@ Scope {
     property var ready: ({})
     property bool allReady
     property double openedAt
+    // The editor is open on one screen. `editPlan` is the selection's export
+    // plan (CaptureLogic.exportPlan) and `editPicker` the Picker that holds it.
+    property bool editing
+    property string editScreen
+    property var editPlan: null
+    property var editPicker: null
+    // The tool state and annotations, shared by every screen's window.
+    readonly property EditorState editor: EditorState {}
     // Window stack taken once when the picker opens, topmost first.
     property var stack: []
     // Where files go. Screenshots are written to <saveRoot>/Screenshots, and
@@ -73,15 +84,15 @@ Scope {
     readonly property var screenNames: screenList.map(screen => screen.name)
     readonly property var windows: loader.item ? loader.item.instances : []
 
-    function open(toClipboard: bool): bool {
+    function open(): bool {
         if (!interactionEnabled)
             return false;
         if (opened)
             return true;
         openedAt = Date.now();
-        clipboardOnly = toClipboard;
         closing = false;
         saving = false;
+        endEditing();
         ready = ({});
         allReady = false;
         // One read-only enumeration for every screen, before any window exists.
@@ -106,6 +117,25 @@ Scope {
         }
     }
 
+    // A Picker calls this when the user releases a selection. The editor opens
+    // over it and nothing is saved.
+    function startEditing(picker: var, plan: var): void {
+        editor.reset();
+        editor.scale = picker.dpr;
+        editPlan = plan;
+        editPicker = picker;
+        editScreen = picker.screen.name;
+        editing = true;
+    }
+
+    function endEditing(): void {
+        editing = false;
+        editScreen = "";
+        editPlan = null;
+        editPicker = null;
+        editor.reset();
+    }
+
     // Esc and a right click land here. Nothing more is saved.
     function cancel(): void {
         if (!opened || closing)
@@ -114,12 +144,31 @@ Scope {
         closing = true;
     }
 
+    // Esc first closes the colour popover, then the editor.
+    function dismiss(): void {
+        if (editing && editor.inkOpen && !saving)
+            editor.inkOpen = false;
+        else
+            cancel();
+    }
+
+    // The editor's keys, for any screen's window. Returns whether the key was used.
+    function editorKey(key: int, ctrl: bool, shift: bool, alt: bool): bool {
+        if (!editing || closing || saving || !editPicker)
+            return false;
+        const result = editor.shortcut(key, ctrl, shift, alt);
+        if (result === "copy" || result === "save")
+            editPicker.exportEdit(result);
+        return result !== "";
+    }
+
     // Called by a picker when its fade out has finished, or at once when the
     // animation is disabled.
     function finishClose(): void {
         opened = false;
         closing = false;
         invalidate();
+        endEditing();
     }
 
     // Deletes one hand-over file. The plugin accepts only the exact path scheme it
@@ -135,22 +184,28 @@ Scope {
         return activeTemp;
     }
 
-    // Results from Picker. Each ignores a result from an earlier session.
-    // `info` is { screen, width, height, dpr } for the thumbnail, and null when
-    // the caller has none.
+    // Results from the editor's exports. Each ignores a result from an earlier
+    // session. `info` is { screen, width, height, dpr } for the thumbnail, and
+    // null when the caller has none.
+    //
+    // The thumbnail is the feedback for a finished capture, so no success toast
+    // is shown. The one exception is the classic tool's: a saved file is announced
+    // when the thumbnail is switched off, because nothing else would say so.
+    // Copying never announces itself.
     function fileFinished(started: int, path: string, info = null): void {
         if (started !== session)
             return;
-        Toaster.toast(Tr.tr("Screenshot taken"), Tr.tr("Saved to %1").arg(path), "screenshot_region");
         if (thumbnails && info)
             thumbnails.addSaved(info, path);
+        if (thumbnails && !thumbnails.enabled)
+            Toaster.toast(Tr.tr("Screenshot saved"), Tr.tr("Saved to %1").arg(path), "screenshot_region");
         cancel();
     }
 
     // copyImageFile reads the whole file before it returns, then decodes and
     // writes the clipboard later with no completion result. A true return
-    // therefore means the copy was started, and the toast says so. A write that
-    // lands after its session ended deletes its own file and copies nothing.
+    // therefore means the copy was started. A write that lands after its session
+    // ended deletes its own file and copies nothing.
     // The thumbnail copies the file before it is deleted below, because the
     // hand-over file does not outlive this call.
     function copyFinished(started: int, path: string, info = null): void {
@@ -163,19 +218,20 @@ Scope {
             thumbnails.addCopy(info, path);
         removeTemp(path);
         activeTemp = "";
-        if (accepted) {
-            Toaster.toast(Tr.tr("Screenshot taken"), Tr.tr("Copying screenshot to clipboard\u2026"), "screenshot_region");
+        if (accepted)
             cancel();
-        } else {
+        else
             saveFailed(started, Tr.tr("The image could not be copied."));
-        }
     }
 
+    // An export that failed is reported and ends, but the editor stays open with
+    // its annotations, as the classic tool's does, so the user can try again.
+    // Anything that arrives late for this export is dropped.
     function saveFailed(started: int, message: string): void {
         if (started !== session)
             return;
         Toaster.toast(Tr.tr("Screenshot failed"), message, "screenshot_region", Toast.Error);
-        cancel();
+        invalidate();
     }
 
     // A monitor was added or removed while open. The frozen frames and the
