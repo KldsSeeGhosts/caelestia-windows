@@ -75,6 +75,10 @@ Item {
     function run(): void {
         try {
             Quickshell.environment = environmentValues;
+            // This fixture covers the enabled integration's ownership
+            // boundary; the fresh disabled default is covered by
+            // WallpaperDefaultsTest.
+            WallpaperEngine.options = {enabled: true};
             WallpaperEngine.monitors = {Monitor0: {path: "C:/we/project.json", preview: "file:///we-preview.png"}};
             // The real screens expression expands the catalog on our own
             // desktop and closes when the host is not embedded.

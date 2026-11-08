@@ -123,8 +123,9 @@ keyboard observation or tray interception work.
 - **Wallpaper:** KSG has no wallpaper path in its settings schema.
   The wallpaper belongs to Windows. A fresh Caelestia profile starts on the
   bundled Caelestia asset; choosing a wallpaper through Caelestia writes it to
-  Windows and records the choice. A profile that already has a generated
-  palette source keeps the Windows wallpaper it showed before the upgrade.
+  Windows and records the choice. A profile that already has earlier Caelestia
+  state, such as the theme-token export, keeps the Windows wallpaper it showed
+  before the upgrade without needing the optional colour runtime.
   Switching shells does not require copying the image into a config field.
   `paths.wallpaperDir` is a collection directory, not the current image.
 - **Theme/accent:** KSG reads Windows appearance and accent live through

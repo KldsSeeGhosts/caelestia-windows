@@ -19,6 +19,11 @@ QtObject {
     function setWallpaper(path, ignored): bool {
         calls.push(path);
         currentPath = path;
+        // IDesktopWallpaper::SetWallpaper(nullptr) applies to every monitor.
+        const next = {};
+        for (const name of Object.keys(screenPaths))
+            next[name] = path;
+        screenPaths = next;
         return true;
     }
 }

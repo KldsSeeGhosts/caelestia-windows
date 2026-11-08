@@ -322,17 +322,38 @@ another display. The shell retains its own image beneath the external output,
 and an enabled but missing or stopped Wallpaper Engine leaves that image
 visible instead of blanking the desktop.
 
-The shell also records whether this profile has chosen its own wallpaper in
-`state/caelestia/wallpaper/desktop.json`. The record stores only
-`{"version": 1, "source": "default" or "user"}`, never an image path. `default`
-keeps the bundled `assets/wallpaper.webp` on every monitor; `user` shows the
-Windows wallpaper, where Caelestia writes picks. A profile upgrading from an
-older build has no record. If it already has a generated palette source
-(`state/caelestia/wallpaper/path.txt`), the shell preserves its current Windows
-wallpaper. Otherwise the missing record takes the bundled default, matching the
-missing-key rule above. Deleting the record resets the profile to the bundled
-default; choosing a wallpaper, or changing the Windows wallpaper while the
-Caelestia desktop is visible, records `user` again.
+The shell also records which wallpaper source this profile follows in
+`state/caelestia/wallpaper/desktop.json`:
+
+```json
+{
+  "version": 1,
+  "source": "default",
+  "monitors": {"<display-target-id>": "user"},
+  "seen": {"<display-target-id>": "C:\\Windows\\Web\\Wallpaper\\Windows\\img0.jpg"}
+}
+```
+
+`source` is the profile baseline: `default` keeps the bundled
+`assets/wallpaper.webp`, and `user` follows the Windows wallpaper, where
+Caelestia writes picks. `monitors` overrides the baseline for one display, so
+picking on one monitor never imports the other monitors' older Windows images.
+`seen` holds the Windows image each display on the bundled default had when the
+shell last resolved. It is a comparison baseline, not the chosen image: if that
+Windows path later changes, an older build or Windows Settings made a newer
+selection, and the shell adopts it for that display. The choice itself is never
+stored as a path.
+
+A profile upgrading from an older build has no record. The shell treats the
+profile as an upgrade when it already holds earlier Caelestia state, including
+`state/caelestia/theme-tokens.json` (written by every earlier build, whether or
+not the optional colour runtime is installed), `scheme.json`, `wallpaper/path.txt`
+or `recordings.json`; it then keeps the saved Windows wallpaper and per-display
+choices. A profile with none of those files is a fresh install and starts on the
+bundled default. A record with malformed JSON, an unknown `version` or an
+unexpected field is never reinterpreted or rewritten on load: the saved Windows
+wallpaper stays visible until the user makes a new choice. Deleting a valid
+record resets the profile to the bundled default.
 
 Windows banner replacement is also configured in `config/windows.json`:
 

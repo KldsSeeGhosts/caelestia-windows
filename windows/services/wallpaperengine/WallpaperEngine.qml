@@ -247,16 +247,26 @@ Singleton {
         lastError = "";
     }
 
-    // Nexus writes the opt-in here. Re-read before merging so keys this
-    // facade does not own (taskbar, notifications, picker, monitor) survive.
-    // A malformed document is never replaced by a partial one.
+    // Nexus writes the opt-in here. reload() is asynchronous once this view
+    // has loaded, so the merge happens from onLoaded (or onLoadFailed) with
+    // the text that read returned. Reading text() straight after reload()
+    // merges the stale document and drops keys written since the last watch
+    // event. A malformed or unreadable existing file is never replaced.
+    property bool togglePending: false
+    property bool toggleValue: false
+
     function setEnabled(on: bool): void {
+        // Rapid clicks collapse into one merge with the latest value.
+        root.toggleValue = on === true;
+        root.togglePending = true;
         configFile.reload();
-        const content = String(configFile.text() ?? "").replace(/^\uFEFF/, "").trim();
+    }
+    function commitToggle(content): void {
+        const text = String(content ?? "").replace(/^\uFEFF/, "").trim();
         let document = {};
-        if (content.length > 0) {
+        if (text.length > 0) {
             try {
-                const parsed = JSON.parse(content);
+                const parsed = JSON.parse(text);
                 if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
                     throw new Error("the document is not an object");
                 document = parsed;
@@ -265,12 +275,12 @@ Singleton {
                 return;
             }
         }
-        const next = JSON.parse(JSON.stringify(document ?? {}));
+        const next = JSON.parse(JSON.stringify(document));
         if (!next.windows || typeof next.windows !== "object" || Array.isArray(next.windows))
             next.windows = {};
         const current = next.windows.wallpaperEngine;
         next.windows.wallpaperEngine = current && typeof current === "object" && !Array.isArray(current)
-            ? Object.assign({}, current, {enabled: on === true}) : {enabled: on === true};
+            ? Object.assign({}, current, {enabled: root.toggleValue}) : {enabled: root.toggleValue};
         root.configDocument = next;
         root.options = next.windows.wallpaperEngine;
         root.configLoaded = true;
@@ -317,8 +327,9 @@ Singleton {
         printErrors: false
         onFileChanged: reload()
         onLoaded: {
+            const content = text();
             try {
-                const parsed = JSON.parse(text().replace(/^\uFEFF/, ""));
+                const parsed = JSON.parse(String(content).replace(/^\uFEFF/, ""));
                 if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
                     throw new Error("windows.json is not an object");
                 root.configDocument = parsed;
@@ -329,10 +340,26 @@ Singleton {
                 root.configLoaded = true;
                 root.lastError = String(error);
             }
+            // This load is the fresh read the toggle asked for.
+            if (root.togglePending) {
+                root.togglePending = false;
+                root.commitToggle(content);
+            }
         }
-        onLoadFailed: {
-            // The sidecar is seeded with the profile. A missing or unreadable
-            // file is a fresh install, not a reason to enable the integration.
+        onLoadFailed: error => {
+            // The sidecar is seeded with the profile. A missing file is a
+            // fresh install, not a reason to enable the integration.
+            if (root.togglePending) {
+                root.togglePending = false;
+                if (error === FileViewError.FileNotFound) {
+                    root.commitToggle("");
+                    return;
+                }
+                // The file exists but could not be read. Writing a document
+                // built from nothing would drop every key it holds.
+                root.lastError = "Wallpaper Engine settings could not be read";
+                return;
+            }
             root.configDocument = {};
             root.options = {};
             root.configLoaded = true;

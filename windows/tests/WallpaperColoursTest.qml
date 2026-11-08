@@ -29,6 +29,9 @@ QtObject {
     function run(): void {
         try {
             Wallpapers.stopPreview();
+            // This fixture exercises the enabled engine's palette ownership;
+            // the fresh, disabled default is covered by WallpaperDefaultsTest.
+            WallpaperEngine.options = {enabled: true};
             // Simulate a profile that already chose its own wallpaper; the
             // fresh default is covered by WallpaperDefaultsTest.
             Wallpapers.sourceInitialized = true;

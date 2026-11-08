@@ -22,8 +22,10 @@ QtObject {
 
     function run(): void {
         try {
-            // A profile that already chose its own wallpaper; the fresh
-            // default source is covered by WallpaperDefaultsTest.
+            // A profile that already chose its own wallpaper and opted into
+            // the engine; the fresh disabled default is covered by
+            // WallpaperDefaultsTest.
+            WallpaperEngine.options = {enabled: true};
             Wallpapers.sourceInitialized = true;
             Wallpapers.sourceChosen = true;
             WallpaperEngine.running = true;

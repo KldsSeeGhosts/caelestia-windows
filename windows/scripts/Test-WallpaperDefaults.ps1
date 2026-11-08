@@ -25,9 +25,30 @@ foreach ($required in @(
     }
 }
 . "$PSScriptRoot\Caelestia-QmlFixture.ps1"
-$result = Invoke-QmlFixture -QtPrefix $QtPrefix -BuildRoot $BuildRoot -Name wallpaper-defaults -ShellFixture `
-    -FakeDirectories @('windows/tests/fakes/shell', 'windows/tests/fakes/native', 'windows/tests/fakes/wallpaper') `
-    -Sources @('windows/tests/WallpaperDefaultsTest.qml') -FixtureFile 'windows/tests/WallpaperDefaultsTest.qml' `
-    -Marker CAELESTIA_WALLPAPER_DEFAULTS -MinimumAssertions 40
-$result | ConvertTo-Json -Depth 8
-if (-not $result.passed) { throw "Wallpaper defaults fixture failed. See $($result.stderr)." }
+# Each fixture runs in its own process because the wallpaper source decision
+# is made once per profile. Separate profiles are how the fresh, upgrade,
+# rollback and damaged-record migrations are exercised for real.
+$fixtures = @(
+    [ordered]@{ name = 'wallpaper-defaults'; source = 'windows/tests/WallpaperDefaultsTest.qml'
+        marker = 'CAELESTIA_WALLPAPER_DEFAULTS'; minimum = 55 },
+    [ordered]@{ name = 'wallpaper-engine-off'; source = 'windows/tests/WallpaperEngineDisabledTest.qml'
+        marker = 'CAELESTIA_WALLPAPER_ENGINE_OFF'; minimum = 18 },
+    [ordered]@{ name = 'wallpaper-upgrade'; source = 'windows/tests/WallpaperUpgradeTest.qml'
+        marker = 'CAELESTIA_WALLPAPER_UPGRADE'; minimum = 11 },
+    [ordered]@{ name = 'wallpaper-rollback'; source = 'windows/tests/WallpaperRollbackTest.qml'
+        marker = 'CAELESTIA_WALLPAPER_ROLLBACK'; minimum = 11 },
+    [ordered]@{ name = 'wallpaper-invalid-record'; source = 'windows/tests/WallpaperInvalidRecordTest.qml'
+        marker = 'CAELESTIA_WALLPAPER_INVALID'; minimum = 10 },
+    [ordered]@{ name = 'wallpaper-future-record'; source = 'windows/tests/WallpaperFutureRecordTest.qml'
+        marker = 'CAELESTIA_WALLPAPER_FUTURE'; minimum = 6 }
+)
+foreach ($fixture in $fixtures) {
+    $result = Invoke-QmlFixture -QtPrefix $QtPrefix -BuildRoot $BuildRoot -Name $fixture.name -ShellFixture `
+        -FakeDirectories @('windows/tests/fakes/shell', 'windows/tests/fakes/native', 'windows/tests/fakes/wallpaper') `
+        -Sources @($fixture.source) -FixtureFile $fixture.source `
+        -Marker $fixture.marker -MinimumAssertions $fixture.minimum
+    $result | ConvertTo-Json -Depth 8
+    if (-not $result.passed) {
+        throw "Wallpaper fixture '$($fixture.name)' failed. See $($result.stderr)."
+    }
+}
