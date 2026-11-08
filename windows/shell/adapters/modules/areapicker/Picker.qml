@@ -85,21 +85,11 @@ MouseArea {
         return Logic.targetAt(windows, x, y, geometry).rect;
     }
 
-    function fail(message: string): void {
-        Toaster.toast(Tr.tr("Screenshot failed"), message, "screenshot_region", Toast.Error);
-        owner.cancel();
-    }
-
-    function finish(path: string, copied: bool): void {
-        if (copied)
-            Toaster.toast(Tr.tr("Screenshot taken"), Tr.tr("Screenshot copied to clipboard"), "screenshot_region");
-        else
-            Toaster.toast(Tr.tr("Screenshot taken"), Tr.tr("Saved to %1").arg(path), "screenshot_region");
-        owner.cancel();
-    }
-
     // Cut the selection out of the frozen view. saveItem grabs `view` itself, so
-    // the tint, the outline and any fade are never part of the image.
+    // the tint, the outline and any fade are never part of the image. Results go
+    // to the owner with this session's number, so a result that arrives after the
+    // picker has closed is ignored. Callbacks use `o`, never `root`, because this
+    // item may be gone by then.
     function save(selection: var): void {
         // Nothing to cut from until the view is in a window.
         if (owner.saving || !view.Window.window)
@@ -117,26 +107,27 @@ MouseArea {
     }
 
     function saveToClipboard(rect: rect): void {
-        // One fixed temporary file under the shell state folder. copyImageFile
-        // reads it before it returns, so the next capture may overwrite it.
-        const path = owner.tempDirectory + "/clipboard.png";
-        CUtils.saveItem(view, FileUrls.fromLocalPath(path), rect, saved => {
-            if (owner.clipboard.copyImageFile(saved))
-                root.finish(saved, true);
-            else
-                root.fail(Tr.tr("The image could not be copied."));
-        }, () => root.fail(Tr.tr("The image could not be saved.")));
+        // One fixed temporary file under the shell state folder. The owner
+        // deletes it as soon as the clipboard call returns, and on every close.
+        const o = owner;
+        const session = o.session;
+        CUtils.saveItem(view, FileUrls.fromLocalPath(o.tempPath()), rect, saved => o.copyFinished(session, saved),
+            () => o.saveFailed(session, Tr.tr("The image could not be saved.")));
     }
 
     // Screenshots, then Pictures when that folder cannot be created or written.
     function saveToFile(rect: rect, directory: string, firstTry: bool): void {
+        const o = owner;
+        const session = o.session;
         const stem = Logic.fileStem(new Date(), "");
         const path = Logic.uniquePath(directory, stem, candidate => WindowsFiles.isFile(candidate));
-        CUtils.saveItem(view, FileUrls.fromLocalPath(path), rect, saved => root.finish(saved, false), () => {
+        CUtils.saveItem(view, FileUrls.fromLocalPath(path), rect, saved => o.fileFinished(session, saved), () => {
+            if (session !== o.session)
+                return;
             if (firstTry)
-                root.saveToFile(rect, owner.saveRoot, false);
+                root.saveToFile(rect, o.saveRoot, false);
             else
-                root.fail(Tr.tr("The image could not be saved."));
+                o.saveFailed(session, Tr.tr("The image could not be saved."));
         });
     }
 
@@ -248,7 +239,7 @@ MouseArea {
 
             objectName: "areaPickerTint"
             anchors.fill: parent
-            color: Colours.palette.m3surfaceContainer
+            color: Colours.palette.m3surfaceContainerHighest
             opacity: 0.3
 
             layer.enabled: true

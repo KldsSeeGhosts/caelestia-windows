@@ -5,10 +5,13 @@ import Quickshell
 import Quickshell.Wayland
 import Quickshell.Hyprland
 import Quickshell.Windows as Native
+import Caelestia
+import Caelestia.I18n
 import qs.components.containers
 import qs.services
 import qs.utils
 import "CaptureLogic.js" as Logic
+import "../../utils/FileUrls.js" as FileUrls
 
 // Windows adaptation of upstream modules/areapicker/AreaPicker.qml.
 //
@@ -47,11 +50,20 @@ Scope {
     // clipboard image lives under the shell state folder. Fixtures redirect both.
     property string saveRoot: Paths.pictures
     property string tempDirectory: Paths.state + "/capture"
+    // The screens the picker serves. Fixtures replace the list to simulate a
+    // monitor being unplugged.
+    property var screenList: Screens.screens
+    // Longest time a save may take before the picker reports a failure.
+    property int saveTimeout: 10000
+    // Counts opens and closes. A result carries the number it started with, so
+    // one that arrives after the picker closed or reopened is dropped.
+    property int session
+    property var openScreenNames: []
     // Needs a local file path. Fixtures replace it with a recorder so that no
     // test writes the real clipboard.
     property var clipboard: Native.Clipboard
 
-    readonly property var screenNames: Screens.screens.map(screen => screen.name)
+    readonly property var screenNames: screenList.map(screen => screen.name)
     readonly property var windows: loader.item ? loader.item.instances : []
 
     function open(toClipboard: bool): bool {
@@ -67,6 +79,8 @@ Scope {
         allReady = false;
         // One read-only enumeration for every screen, before any window exists.
         stack = Array.from(Hyprland.windowStack());
+        openScreenNames = screenNames;
+        session++;
         opened = true;
         return true;
     }
@@ -84,6 +98,66 @@ Scope {
         opened = false;
         closing = false;
         saving = false;
+        session++;
+        removeTemp();
+    }
+
+    function tempPath(): string {
+        return tempDirectory + "/clipboard.png";
+    }
+
+    // The clipboard image is only a hand-over file; it never outlives the call.
+    function removeTemp(): void {
+        CUtils.deleteFile(FileUrls.fromLocalPath(tempPath()));
+    }
+
+    // Results from Picker. Each ignores a result from an earlier session.
+    function fileFinished(started: int, path: string): void {
+        if (started !== session)
+            return;
+        Toaster.toast(Tr.tr("Screenshot taken"), Tr.tr("Saved to %1").arg(path), "screenshot_region");
+        cancel();
+    }
+
+    // copyImageFile reads the whole file before it returns, then decodes and
+    // writes the clipboard later with no completion result. A true return
+    // therefore means the copy was started, and the toast says so.
+    function copyFinished(started: int, path: string): void {
+        if (started !== session) {
+            removeTemp();
+            return;
+        }
+        const accepted = clipboard.copyImageFile(path);
+        removeTemp();
+        if (accepted) {
+            Toaster.toast(Tr.tr("Screenshot taken"), Tr.tr("Copying screenshot to clipboard\u2026"), "screenshot_region");
+            cancel();
+        } else {
+            saveFailed(started, Tr.tr("The image could not be copied."));
+        }
+    }
+
+    function saveFailed(started: int, message: string): void {
+        if (started !== session)
+            return;
+        Toaster.toast(Tr.tr("Screenshot failed"), message, "screenshot_region", Toast.Error);
+        cancel();
+    }
+
+    // A monitor was added or removed while open. The frozen frames and the
+    // readiness map describe the old layout, so the picker closes at once.
+    onScreenNamesChanged: {
+        if (!opened || closing || Logic.sameNames(openScreenNames, screenNames))
+            return;
+        Toaster.toast(Tr.tr("Screenshot cancelled"), Tr.tr("The monitors changed."), "screenshot_region");
+        finishClose();
+    }
+
+    // A save that never reports back must not leave the screen frozen.
+    Timer {
+        interval: root.saveTimeout
+        running: root.saving && root.opened
+        onTriggered: root.saveFailed(root.session, Tr.tr("Saving the screenshot timed out."))
     }
 
     // Each ScreencopyView reports here. The tint appears only when every screen
@@ -110,6 +184,8 @@ Scope {
     Component.onDestruction: {
         if (CaptureUi.picker === root)
             CaptureUi.picker = null;
+        if (opened)
+            removeTemp();
     }
 
     LazyLoader {
@@ -118,7 +194,7 @@ Scope {
         active: root.opened
 
         Variants {
-            model: Screens.screens
+            model: root.screenList
 
             StyledWindow {
                 id: win

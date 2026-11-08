@@ -109,50 +109,107 @@ test("the saved rectangle never grows past the selection and stays on the screen
     assert.equal(logic.logicalExport({ x: 3000, y: 10, width: 20, height: 20 }, right), null);
 });
 
-test("export arithmetic matches CUtils.saveItem for the display scale", () => {
+// QRectF::toRect in Qt 6.11.2 (qrect.h): nx = round(x); nw = round(w + (x - nx) / 2),
+// halves rounding up. This reference uses exact integer arithmetic with the scale
+// given in percent, so it does not share floating point behaviour with the code
+// under test. Returns the one dimension [origin, size] for a logical [x, w].
+function nativeSpan(x, w, percent) {
+    const nx = Math.floor((2 * x * percent + 100) / 200);
+    const n = 2 * w * percent + x * percent - 100 * nx;
+    return [nx, Math.floor((n + 100) / 200)];
+}
+
+test("export arithmetic is Qt's QRectF::toRect over the scaled rectangle", () => {
     const logical = { x: 11, y: 21, width: 50, height: 29 };
     assert.deepEqual(plain(logic.physicalExport(logical, 1)), logical);
-    // 11 * 1.5 = 16.5 rounds to 17, 21 * 1.5 = 31.5 to 32, 29 * 1.5 = 43.5 to 44.
-    assert.deepEqual(plain(logic.physicalExport(logical, 1.5)), { x: 17, y: 32, width: 75, height: 44 });
+    // 11 * 1.5 = 16.5 rounds to 17 and the width 75 loses half of 0.5: 74.75 is 75.
+    // 21 * 1.5 = 31.5 rounds to 32 and 43.5 - 0.25 = 43.25 is 43.
+    assert.deepEqual(plain(logic.physicalExport(logical, 1.5)), { x: 17, y: 32, width: 75, height: 43 });
     assert.deepEqual(plain(logic.physicalExport(logical, 2)), { x: 22, y: 42, width: 100, height: 58 });
     assert.deepEqual(plain(logic.grabSize(left, 1.75)), { width: 3840, height: 2160 });
+    for (const percent of [125, 150, 175, 200, 225]) {
+        for (let x = 0; x < 40; x++) {
+            for (let w = 1; w < 40; w++) {
+                const got = logic.physicalExport({ x, y: x, width: w, height: w }, percent / 100);
+                const [nx, nw] = nativeSpan(x, w, percent);
+                assert.deepEqual([got.x, got.width, got.y, got.height], [nx, nw, nx, nw], `x=${x} w=${w} at ${percent}%`);
+            }
+        }
+    }
 });
 
 test("a full-screen selection fits the grabbed image at every common scale", () => {
     for (const [screen, dpr] of [[right, 1], [right, 1.25], [right, 1.5], [right, 2], [left, 1.75], [left, 1.25]]) {
         const plan = logic.exportPlan({ x: 0, y: 0, width: screen.width, height: screen.height }, screen, dpr);
         assert.equal(plan.valid, true, `${screen.width}x${screen.height} at ${dpr}`);
-        assert.ok(plan.physical.x + plan.physical.width <= plan.image.width);
-        assert.ok(plan.physical.y + plan.physical.height <= plan.image.height);
+        assert.deepEqual(plain(plan.physical), { x: 0, y: 0, width: plan.image.width, height: plan.image.height });
     }
 });
 
-test("a rectangle whose rounding passes the image edge is shortened by one pixel", () => {
-    // 666 logical px at 1.5 is a 999 px image. Origin 1 rounds to 2 and size 665
-    // rounds to 998, so the far edge would be 1000, one pixel past the image.
-    const screen = { name: "s", x: 0, y: 0, width: 666, height: 100 };
-    const plan = logic.exportPlan({ x: 1, y: 0, width: 665, height: 100 }, screen, 1.5);
-    assert.deepEqual(plain(plan.image), { width: 999, height: 150 });
+test("a selection that already fits is never shortened (2560 wide at 150%)", () => {
+    const screen = { name: "s", x: 0, y: 0, width: 2560, height: 1440 };
+    const plan = logic.exportPlan({ x: 1, y: 0, width: 2559, height: 1440 }, screen, 1.5);
+    assert.deepEqual(plain(plan.image), { width: 3840, height: 2160 });
+    // Native origin 2, width 3838.5 - 0.25 rounds to 3838, so the edge is exactly 3840.
+    assert.deepEqual(plain(plan.logical), { x: 1, y: 0, width: 2559, height: 1440 });
+    assert.deepEqual(plain(plan.physical), { x: 2, y: 0, width: 3838, height: 2160 });
     assert.equal(plan.valid, true);
-    assert.deepEqual(plain(plan.logical), { x: 1, y: 0, width: 664, height: 100 });
-    assert.deepEqual(plain(plan.physical), { x: 2, y: 0, width: 996, height: 150 });
-    const same = logic.exportPlan({ x: 0, y: 0, width: 666, height: 100 }, screen, 1.5);
-    assert.deepEqual(plain(same.logical), { x: 0, y: 0, width: 666, height: 100 });
+});
+
+test("the native crop at the right and bottom edges, at 125% and 175%", () => {
+    const cases = [
+        // [screen width, height, scale, inset, expected native crop, image]
+        [2048, 1152, 1.25, 1, { x: 1, y: 1, width: 2559, height: 1439 }, { width: 2560, height: 1440 }],
+        [2048, 1152, 1.25, 2, { x: 3, y: 3, width: 2557, height: 1437 }, { width: 2560, height: 1440 }],
+        [2048, 1152, 1.25, 3, { x: 4, y: 4, width: 2556, height: 1436 }, { width: 2560, height: 1440 }],
+        [1920, 1080, 1.75, 1, { x: 2, y: 2, width: 3358, height: 1888 }, { width: 3360, height: 1890 }],
+        [1920, 1080, 1.75, 2, { x: 4, y: 4, width: 3356, height: 1886 }, { width: 3360, height: 1890 }],
+        [1920, 1080, 1.75, 3, { x: 5, y: 5, width: 3355, height: 1885 }, { width: 3360, height: 1890 }],
+    ];
+    for (const [width, height, dpr, inset, physical, image] of cases) {
+        const screen = { name: "s", x: 0, y: 0, width, height };
+        const plan = logic.exportPlan({ x: inset, y: inset, width: width - inset, height: height - inset }, screen, dpr);
+        assert.deepEqual(plain(plan.image), image, `${width} at ${dpr}`);
+        assert.deepEqual(plain(plan.physical), physical, `${width} at ${dpr}, inset ${inset}`);
+        assert.deepEqual(plain(plan.logical), { x: inset, y: inset, width: width - inset, height: height - inset }, "not shortened");
+        assert.equal(plan.valid, true);
+    }
+});
+
+test("only a real overflow of the native crop shortens the selection, by one pixel at a time", () => {
+    // 5 logical px at 125% is a 6 px image (6.25 rounds down). Origin 2 gives native
+    // x 3 (2.5 rounds up), and 3 * 1.25 + (2.5 - 3) / 2 = 3.5 rounds to 4: the edge
+    // is 7, one past the image.
+    const screen = { name: "s", x: 0, y: 0, width: 5, height: 4 };
+    assert.deepEqual(plain(logic.physicalExport({ x: 2, y: 0, width: 3, height: 4 }, 1.25)), { x: 3, y: 0, width: 4, height: 5 });
+    const plan = logic.exportPlan({ x: 2, y: 0, width: 3, height: 4 }, screen, 1.25);
+    assert.deepEqual(plain(plan.image), { width: 6, height: 5 });
+    // Two logical px: 2.5 - 0.25 rounds to 2, so the edge is 5.
+    assert.deepEqual(plain(plan.logical), { x: 2, y: 0, width: 2, height: 4 });
+    assert.deepEqual(plain(plan.physical), { x: 3, y: 0, width: 2, height: 5 });
+    assert.equal(plan.valid, true);
     assert.equal(logic.exportPlan({ x: 5, y: 5, width: 0, height: 0 }, screen, 1).valid, false);
 });
 
-test("an exported rectangle is always inside the image, for every width at common scales", () => {
-    for (const dpr of [1, 1.25, 1.5, 1.75, 2]) {
-        for (let width = 3; width <= 40; width++) {
+test("an exported rectangle is always inside the image, and shrinks only when the full one would not fit", () => {
+    for (const percent of [100, 125, 150, 175, 200, 225]) {
+        const dpr = percent / 100;
+        for (let width = 2; width <= 40; width++) {
             const screen = { name: "s", x: 0, y: 0, width, height: 9 };
+            const image = logic.grabSize(screen, dpr);
             for (let x = 0; x < width; x++) {
                 const plan = logic.exportPlan({ x, y: 0, width: width - x, height: 9 }, screen, dpr);
-                if (!plan.valid)
+                if (!plan.valid) {
+                    // Only a one pixel wide sliver on the last column can have no
+                    // native crop inside the image; it cannot be shortened further.
+                    assert.equal(plan.logical.width, 1, `w=${width} x=${x} at ${percent}%`);
                     continue;
-                assert.ok(plan.physical.x + plan.physical.width <= plan.image.width, `w=${width} x=${x} dpr=${dpr}`);
+                }
+                assert.ok(plan.physical.x + plan.physical.width <= image.width, `w=${width} x=${x} at ${percent}%`);
+                const [nx, nw] = percent === 100 ? [x, width - x] : nativeSpan(x, width - x, percent);
+                const fits = nx + nw <= image.width;
+                assert.equal(plan.logical.width === width - x, fits, `shrinks only on overflow: w=${width} x=${x} at ${percent}%`);
             }
-            const full = logic.exportPlan({ x: 0, y: 0, width, height: 9 }, screen, dpr);
-            assert.equal(full.valid, true, `full w=${width} dpr=${dpr}`);
         }
     }
 });
@@ -166,6 +223,15 @@ test("the tint waits until every screen has frozen content", () => {
     assert.equal(logic.allReady({ [left.name]: true }, [left.name]), true);
     assert.equal(logic.allReady({ [left.name]: true }, []), false);
     assert.equal(logic.allReady(null, names), false);
+});
+
+test("the same monitors are recognised in any order", () => {
+    assert.equal(logic.sameNames(["a", "b"], ["b", "a"]), true);
+    assert.equal(logic.sameNames(["a"], ["a", "b"]), false);
+    assert.equal(logic.sameNames(["a", "b"], ["a", "c"]), false);
+    assert.equal(logic.sameNames([], []), true);
+    assert.equal(logic.sameNames(sequence(["a"]), ["a"]), true);
+    assert.equal(logic.sameNames(null, ["a"]), false);
 });
 
 test("file names follow the current tool's default and number duplicates from (2)", () => {

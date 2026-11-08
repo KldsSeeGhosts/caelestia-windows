@@ -36,9 +36,17 @@ ShellRoot {
     // Records the clipboard writes. The real clipboard is never touched.
     property QtObject clipboardRecorder: QtObject {
         property var copied: []
+        property bool result: true
+        // What the file held at the moment of the call: the backend reads it
+        // before copyImageFile returns, so it must exist and be readable then.
+        property bool existedAtCall: false
+        property size sizeAtCall: Qt.size(0, 0)
         function copyImageFile(path: string): bool {
             copied = copied.concat([path]);
-            return true;
+            existedAtCall = WindowsFiles.isFile(path);
+            shot.source = "file:///" + path.split("\\").join("/");
+            sizeAtCall = shot.status === Image.Ready ? shot.sourceSize : Qt.size(0, 0);
+            return result;
         }
     }
 
@@ -325,12 +333,136 @@ ShellRoot {
         check(clipboardRecorder.copied.length === 1, "the image is handed to the clipboard once");
         const path = clipboardRecorder.copied[0].split("\\").join("/");
         check(path === root.saveRoot + "/tmp/clipboard.png", "from the temporary file under the state folder: " + path);
-        check(WindowsFiles.isFile(path), "that file exists");
-        shot.source = "file:///" + path;
-        check(shot.status === Image.Ready && shot.sourceSize.width === 60 && shot.sourceSize.height === 50, "and holds the selection: " + shot.sourceSize);
-        check(toastWith("copied to clipboard") !== "", "the user is told");
+        check(clipboardRecorder.existedAtCall, "the file existed when the clipboard call ran");
+        check(clipboardRecorder.sizeAtCall.width === 60 && clipboardRecorder.sizeAtCall.height === 50,
+            "and held the selection: " + clipboardRecorder.sizeAtCall);
+        check(!WindowsFiles.isFile(path), "the temporary file is deleted right after the call");
+        check(toastWith("Copying screenshot to clipboard") !== "", "the toast says the copy started");
+        check(toastWith("copied to clipboard") === "", "and does not claim it finished");
         check(!picker.opened, "the picker closes after copying");
+        shot.source = "";
 
+        // A refused copy reports a failure and still removes the file.
+        clipboardRecorder.result = false;
+        check(CaptureUi.screenshot("openClip") === true && picker.opened, "openClip opens again");
+        readyAll();
+        later(300, () => step(copyFailDrag));
+    }
+
+    function copyFailDrag(): void {
+        const area = areaOf(windows()[0]);
+        area.pressAt(Qt.LeftButton, 10, 10);
+        area.moveTo(40, 40);
+        area.releaseAt(Qt.LeftButton, 40, 40);
+        later(1200, () => step(afterCopyFail));
+    }
+
+    function afterCopyFail(): void {
+        check(clipboardRecorder.copied.length === 2, "the clipboard was asked again");
+        check(toastWith("could not be copied") !== "", "a refused copy is reported");
+        check(!WindowsFiles.isFile(root.saveRoot + "/tmp/clipboard.png"), "and its file is deleted too");
+        check(!picker.opened, "the picker closes");
+        clipboardRecorder.result = true;
+
+        // Cancelling removes a leftover hand-over file.
+        check(CaptureUi.screenshot("openClip") === true && picker.opened, "openClip opens for the cancel case");
+        readyAll();
+        later(300, () => step(tempCancelStep));
+    }
+
+    function tempCancelStep(): void {
+        const view = find(windows()[0].contentItem, "areaPickerView");
+        CUtils.saveItem(view, "file:///" + root.saveRoot + "/tmp/clipboard.png", Qt.rect(0, 0, 4, 4), () => {}, () => {});
+        later(500, () => step(() => {
+            check(WindowsFiles.isFile(root.saveRoot + "/tmp/clipboard.png"), "a hand-over file exists before the cancel");
+            areaOf(windows()[0]).dismissByKey();
+            later(1200, () => step(afterTempCancel));
+        }));
+    }
+
+    function afterTempCancel(): void {
+        check(!picker.opened, "Esc closed the picker");
+        check(!WindowsFiles.isFile(root.saveRoot + "/tmp/clipboard.png"), "a cancel deletes the hand-over file");
+        check(clipboardRecorder.copied.length === 2, "and copies nothing");
+
+        // A save that cannot write anywhere reports a failure. The save folder
+        // is made a path below an existing file, so neither Screenshots nor the
+        // folder itself can be created.
+        picker.saveRoot = savedPath;
+        check(CaptureUi.screenshot("open") === true && picker.opened, "the picker opens for the failing save");
+        readyAll();
+        later(300, () => step(failingSaveDrag));
+    }
+
+    function failingSaveDrag(): void {
+        const area = areaOf(windows()[0]);
+        area.pressAt(Qt.LeftButton, 10, 10);
+        area.moveTo(40, 40);
+        area.releaseAt(Qt.LeftButton, 40, 40);
+        check(picker.saving, "the failing save starts");
+        later(1200, () => step(afterFailingSave));
+    }
+
+    function afterFailingSave(): void {
+        check(toastWith("The image could not be saved") !== "", "a save that fails is reported");
+        check(!picker.opened && !picker.saving, "and the picker closes");
+        picker.saveRoot = root.saveRoot;
+
+        // A save that never answers ends in a bounded failure.
+        picker.saveTimeout = 300;
+        check(CaptureUi.screenshot("open") === true && picker.opened, "the picker opens for the stalled save");
+        readyAll();
+        later(300, () => step(() => {
+            picker.saving = true;
+            check(picker.opened, "a save is pending");
+            later(1200, () => step(afterStall));
+        }));
+    }
+
+    function afterStall(): void {
+        check(toastWith("timed out") !== "", "a stalled save shows a failure toast");
+        check(!picker.opened && !picker.saving, "and the picker closes");
+        picker.saveTimeout = 10000;
+
+        // A monitor change while open cancels the picker.
+        check(CaptureUi.screenshot("open") === true && picker.opened, "the picker opens for the monitor change");
+        readyAll();
+        picker.screenList = [];
+        check(!picker.opened, "removing a monitor closes the picker at once");
+        check(toastWith("monitors changed") !== "", "with a toast");
+        check(windows().length === 0, "and no windows are left");
+        picker.screenList = Qt.binding(() => Screens.screens);
+        check(CaptureUi.screenshot("open") === true && picker.opened, "the picker opens normally afterwards");
+        check(windows().length === Quickshell.screens.length, "with a window per screen again");
+        readyAll();
+        later(300, () => step(rejectionStep));
+    }
+
+    function rejectionStep(): void {
+        // Every way saveItem can refuse a request reports through onFailed.
+        let failed = 0;
+        let saved = 0;
+        const target = "file:///" + root.saveRoot + "/rejected.png";
+        const onSaved = () => { saved++; };
+        const onFailed = () => { failed++; };
+        const window = windows()[0];
+        const empty = Qt.createQmlObject("import QtQuick; Item {}", window.contentItem);
+        CUtils.saveItem(null, target, Qt.rect(0, 0, 1, 1), onSaved, onFailed);
+        CUtils.saveItem(find(window.contentItem, "areaPickerView"), "https://example.invalid/x.png", Qt.rect(0, 0, 1, 1), onSaved, onFailed);
+        CUtils.saveItem(shot, target, Qt.rect(0, 0, 1, 1), onSaved, onFailed);
+        CUtils.saveItem(empty, target, Qt.rect(0, 0, 1, 1), onSaved, onFailed);
+        check(failed === 0, "the callbacks run from the event loop, not inside the call");
+        later(500, () => step(() => {
+            check(failed === 4 && saved === 0, "no target, a remote URL, no window and an empty item each call onFailed: " + failed);
+            check(!WindowsFiles.isFile(root.saveRoot + "/rejected.png"), "and nothing is written");
+            empty.destroy();
+            picker.cancel();
+            later(1200, () => step(panelTimeoutStep));
+        }));
+    }
+
+    function panelTimeoutStep(): void {
+        check(!picker.opened, "the picker is closed before the panel case");
         // A panel that never hides: the request times out and nothing opens.
         glazier.hiddenTimeout = 50;
         surfacesHiddenNow = false;

@@ -104,14 +104,26 @@ function logicalExport(sel, screen) {
     return rect(x, y, width, height);
 }
 
+// Qt's qRound for the non-negative values used here: halves round up.
+function qRound(value) {
+    return Math.floor(value + 0.5);
+}
+
 // CUtils.saveItem multiplies the rectangle by the window's device pixel ratio
-// and calls QRectF::toRect, which rounds the origin and the size separately.
-// This is the same arithmetic, so a test can check the pixels that are cut out.
+// (unless the ratio is 1) and calls QRectF::toRect. Qt 6.11.2 qrect.h rounds
+// the origin first, then rounds the size after adding half of the origin's
+// rounding error:
+//   nx = round(x); nw = round(w + (x - nx) / 2)
+// so the far edge stays within a pixel of the exact value. This is the same
+// arithmetic, so a test can check the pixels that are cut out.
 function physicalExport(logical, dpr) {
     if (Math.abs(dpr - 1) < 1e-9)
         return rect(logical.x, logical.y, logical.width, logical.height);
-    return rect(Math.round(logical.x * dpr), Math.round(logical.y * dpr),
-        Math.round(logical.width * dpr), Math.round(logical.height * dpr));
+    var x = logical.x * dpr;
+    var y = logical.y * dpr;
+    var nx = qRound(x);
+    var ny = qRound(y);
+    return rect(nx, ny, qRound(logical.width * dpr + (x - nx) / 2), qRound(logical.height * dpr + (y - ny) / 2));
 }
 
 // The size of the grabbed item image: the item size times the ratio, rounded.
@@ -120,11 +132,10 @@ function grabSize(screen, dpr) {
 }
 
 // Everything the saver needs: the logical and physical rectangles, and whether
-// the physical one lies inside the grabbed image. Rounding the origin and the
-// size separately can push the far edge one pixel past the image at a
-// fractional scale, and QImage::copy would pad that pixel with transparent
-// black. The logical size is shortened by one until the rectangle fits, which
-// loses at most a pixel at the screen edge.
+// the physical one lies inside the grabbed image. At a fractional scale the
+// rounded far edge can still land one pixel past the image, and QImage::copy
+// would pad that pixel with transparent black. Only then is the logical size
+// shortened by one, until the real native rectangle fits.
 function exportPlan(sel, screen, dpr) {
     var logical = logicalExport(sel, screen);
     if (!logical)
@@ -153,6 +164,19 @@ function allReady(ready, names) {
         return false;
     for (var i = 0; i < names.length; i++) {
         if (!ready || ready[names[i]] !== true)
+            return false;
+    }
+    return true;
+}
+
+// Whether two screen name lists describe the same monitors, in any order.
+function sameNames(a, b) {
+    var left = Array.from(a || []).slice().sort();
+    var right = Array.from(b || []).slice().sort();
+    if (left.length !== right.length)
+        return false;
+    for (var i = 0; i < left.length; i++) {
+        if (left[i] !== right[i])
             return false;
     }
     return true;

@@ -31,20 +31,25 @@ void CUtils::saveItem(QQuickItem* target, const QUrl& path, const QJSValue& onSa
 
 void CUtils::saveItem(
     QQuickItem* target, const QUrl& path, const QRect& rect, const QJSValue& onSaved, const QJSValue& onFailed) {
-    if (!target) {
-        qCWarning(lcCUtils) << "saveItem: a target is required";
-        return;
-    }
+    // Every rejection reports through onFailed, so a caller that waits for a
+    // result is never left waiting. The callback runs from the event loop, as it
+    // does for a failure while saving.
+    const auto reject = [this, &path, &onFailed](const char* reason) {
+        qCWarning(lcCUtils) << "saveItem:" << reason;
+        if (onFailed.isCallable()) {
+            QMetaObject::invokeMethod(
+                this, [onFailed, file = path.toLocalFile()] { onFailed.call({ file }); }, Qt::QueuedConnection);
+        }
+    };
 
-    if (!path.isLocalFile()) {
-        qCWarning(lcCUtils) << "saveItem:" << path << "is not a local file";
-        return;
-    }
+    if (!target)
+        return reject("a target is required");
 
-    if (!target->window()) {
-        qCWarning(lcCUtils) << "saveItem: unable to save target" << target << "without a window";
-        return;
-    }
+    if (!path.isLocalFile())
+        return reject("the path is not a local file");
+
+    if (!target->window())
+        return reject("unable to save a target without a window");
 
     auto scaledRect = rect;
     const auto scale = target->window()->devicePixelRatio();
@@ -54,10 +59,8 @@ void CUtils::saveItem(
     }
 
     const auto grabResult = target->grabToImage();
-    if (!grabResult) {
-        qCWarning(lcCUtils) << "saveItem: failed to grab" << target;
-        return;
-    }
+    if (!grabResult)
+        return reject("failed to grab the target");
 
     QObject::connect(
         grabResult.data(), &QQuickItemGrabResult::ready, this,
