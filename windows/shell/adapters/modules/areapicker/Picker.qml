@@ -107,12 +107,16 @@ MouseArea {
     }
 
     function saveToClipboard(rect: rect): void {
-        // A temporary file of its own under the shell state folder. The owner
+        // A hand-over file of its own, named by the plugin. The owner
         // deletes it as soon as the clipboard call returns, and when the save is
         // cancelled or invalidated.
         const o = owner;
         const session = o.session;
         const path = o.beginClipboard();
+        if (!path) {
+            o.saveFailed(session, Tr.tr("The image could not be saved."));
+            return;
+        }
         CUtils.saveItem(view, FileUrls.fromLocalPath(path), rect, saved => o.copyFinished(session, saved),
             () => o.saveFailed(session, Tr.tr("The image could not be saved.")));
     }

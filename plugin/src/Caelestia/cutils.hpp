@@ -27,10 +27,17 @@ public:
 
     Q_INVOKABLE static bool copyFile(const QUrl& source, const QUrl& target, bool overwrite = true);
     Q_INVOKABLE static bool deleteFile(const QUrl& path);
-    // Removes files in `directory` that match a plain file name pattern (no path
-    // separators) and were last modified at least `olderThanSeconds` ago. Returns
-    // how many were removed.
-    Q_INVOKABLE static int removeStale(const QUrl& directory, const QString& pattern, int olderThanSeconds);
+    // Screenshot hand-over files. The capture folder is <state>/capture, resolved
+    // here from CAELESTIA_STATE_DIR (or the user state folder); QML never names
+    // the folder or a pattern. newCaptureTempPath() creates a new empty file
+    // clipboard-<uuid>.png exclusively and returns its path, or an empty string.
+    // removeStaleCaptureTemps() deletes regular files in the capture folder whose
+    // names match that scheme and that are older than a minute. It does nothing
+    // if the capture folder or the state folder is a junction or symlink. It
+    // returns how many files it removed.
+    Q_INVOKABLE static QString newCaptureTempPath();
+    Q_INVOKABLE static int removeStaleCaptureTemps();
+
     Q_INVOKABLE static QString toLocalFile(const QUrl& url);
 
     Q_INVOKABLE static qreal clamp(qreal value, qreal min, qreal max);

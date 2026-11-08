@@ -46,21 +46,22 @@ Scope {
     // Window stack taken once when the picker opens, topmost first.
     property var stack: []
     // Where files go. Screenshots are written to <saveRoot>/Screenshots, and
-    // to <saveRoot> itself when that folder cannot be created. The temporary
-    // clipboard image lives under the shell state folder. Fixtures redirect both.
+    // to <saveRoot> itself when that folder cannot be created. Fixtures redirect
+    // it. The clipboard hand-over files are named and placed by the plugin
+    // (CUtils.newCaptureTempPath), under the shell state folder.
     property string saveRoot: Paths.pictures
-    property string tempDirectory: Paths.state + "/capture"
     // The screens the picker serves. Fixtures replace the list to simulate a
     // monitor being unplugged.
     property var screenList: Screens.screens
     // Longest time a save may take before the picker reports a failure.
     property int saveTimeout: 10000
     // Counts opens and closes. A result carries the number it started with, so
-    // one that arrives after the picker closed or reopened is dropped.
+    // one that arrives after the picker closed or reopened is dropped. It only
+    // routes results; file names do not use it.
     property int session
     property var openScreenNames: []
-    // The hand-over file of the clipboard save in progress, if any. Each save
-    // has its own name, so one session never touches another's file.
+    // The hand-over file of the clipboard save in progress, if any. Its name is
+    // unique across pickers, reloads and processes, so no one else touches it.
     property string activeTemp: ""
     // Needs a local file path. Fixtures replace it with a recorder so that no
     // test writes the real clipboard.
@@ -84,8 +85,8 @@ Scope {
         stack = Array.from(Hyprland.windowStack());
         openScreenNames = screenNames;
         session++;
-        // A file left by a crash or a reload is gone after a minute.
-        CUtils.removeStale(FileUrls.fromLocalPath(tempDirectory), "clipboard*.png", 60);
+        // Hand-over files left by a crash or a reload are removed after a minute.
+        CUtils.removeStaleCaptureTemps();
         opened = true;
         return true;
     }
@@ -124,9 +125,10 @@ Scope {
         CUtils.deleteFile(FileUrls.fromLocalPath(path));
     }
 
-    // The path for this clipboard save, unique to the session.
+    // A new, empty hand-over file for this clipboard save, or "" if none could
+    // be created.
     function beginClipboard(): string {
-        activeTemp = tempDirectory + "/clipboard-" + session + ".png";
+        activeTemp = CUtils.newCaptureTempPath().split("\\").join("/");
         return activeTemp;
     }
 
