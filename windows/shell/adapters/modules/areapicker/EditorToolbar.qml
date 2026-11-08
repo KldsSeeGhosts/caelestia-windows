@@ -215,6 +215,7 @@ Item {
             labelFont: Tokens.font.body.small
             labelColor: Colours.palette.m3error
             onClicked: root.editor.pressClear()
+            onExited: root.editor.disarmClear()
         }
 
         Cell {
@@ -489,6 +490,8 @@ Item {
         default property alias content: extra.data
 
         signal clicked
+        // The pointer left the button. Clear disarms on it, as the classic tool does.
+        signal exited
 
         radius: Tokens.rounding.small
         color: highlighted ? Qt.alpha(Colours.palette.m3surfaceContainerHighest, 0.8) : fill
@@ -499,9 +502,11 @@ Item {
         Accessible.onPressAction: button.clicked()
 
         StateLayer {
+            objectName: button.objectName + "-layer"
             color: button.stateColor
             disabled: button.disabled
             onClicked: button.clicked()
+            onExited: button.exited()
         }
 
         Row {

@@ -503,6 +503,10 @@ ShellRoot {
         editor.setTool("pencil");
         check(!editor.clearArmed, "choosing a tool disarms it");
         clear.clicked();
+        check(editor.clearArmed, "armed for the pointer check");
+        find(clear, "editor-clear-layer").exited();
+        check(!editor.clearArmed && editor.strokes.length === 1, "leaving the button disarms it");
+        clear.clicked();
         check(editor.clearArmed, "armed once more");
         later(2800, () => step(() => {
             check(!editor.clearArmed && editor.strokes.length === 1, "it disarms after 2.4 s and keeps the stroke");
