@@ -19,6 +19,7 @@ mod theme;
 mod theme_tokens;
 mod thumbnail;
 mod toolbar;
+mod zorder;
 
 use windows::Win32::Foundation::*;
 use windows::Win32::System::Ole::{OleInitialize, OleUninitialize};

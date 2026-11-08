@@ -133,6 +133,9 @@ ShellRoot {
     // and border swallow the press that starts a selection. The built-ins come
     // first, so a user list can add entries but cannot remove them.
     function shellSurfaceSelectors(extra: var): var {
+        // The backend splits only a top-level string, not strings in a list.
+        if (typeof extra === "string")
+            extra = extra.split(";");
         return ["class:GlazierOverlay", "class:GlazierThumbnail",
             "class:GlazierRecording", "class:GlazierRecordingBorder"].concat(extra ?? []);
     }

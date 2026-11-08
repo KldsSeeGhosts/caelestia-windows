@@ -543,6 +543,8 @@ them ahead of `windows.shellSurfaces.extra`, so the user list adds entries and
 cannot remove the capture windows. The panels stay below those windows, so a
 selection drag can start on the bar or border and the capture controls keep
 their input when they overlap the panels.
+Backend selector diagnostic indexes and rule counts include these four
+built-ins before the user entries.
 
 ---
 

@@ -1,5 +1,6 @@
-//! Opt-in live desktop regression. Requires the release app already running.
+//! Opt-in live desktop regressions. Input tests require the release app running.
 //! cargo test real_input_desktop -- --ignored --nocapture --test-threads=1
+//! cargo test real_desktop_capture_zorder -- --ignored --nocapture --test-threads=1
 
 use crate::{capture, gfx, host, toolbar};
 use std::time::{Duration, Instant};
@@ -16,6 +17,214 @@ use windows::Win32::UI::HiDpi::*;
 use windows::Win32::UI::Input::KeyboardAndMouse::*;
 use windows::Win32::UI::WindowsAndMessaging::*;
 use windows::core::*;
+
+#[test]
+#[ignore = "native acceptance: creates visible topmost windows on the real desktop"]
+fn real_desktop_capture_zorder() {
+    use crate::zorder;
+    use std::cell::Cell;
+    thread_local! {
+        static RAISES: Cell<usize> = const { Cell::new(0) };
+        static REPAIRS: Cell<usize> = const { Cell::new(0) };
+    }
+    unsafe extern "system" fn proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
+        if msg == zorder::WM_REPAIR {
+            REPAIRS.set(REPAIRS.get() + 1);
+            RAISES.set(RAISES.get() + zorder::repair());
+            LRESULT(0)
+        } else {
+            unsafe { DefWindowProcW(hwnd, msg, wp, lp) }
+        }
+    }
+    struct Windows {
+        handles: Vec<HWND>,
+        classes: Vec<PCWSTR>,
+        instance: HINSTANCE,
+    }
+    struct Foreign {
+        hwnd: HWND,
+        thread: u32,
+        worker: Option<std::thread::JoinHandle<()>>,
+    }
+    impl Drop for Foreign {
+        fn drop(&mut self) {
+            unsafe {
+                let _ = PostThreadMessageW(self.thread, WM_QUIT, WPARAM(0), LPARAM(0));
+            }
+            let _ = self.worker.take().unwrap().join();
+        }
+    }
+    impl Drop for Windows {
+        fn drop(&mut self) {
+            unsafe {
+                for hwnd in self.handles.iter().rev() {
+                    let _ = DestroyWindow(*hwnd);
+                }
+                for class in &self.classes {
+                    let _ = UnregisterClassW(*class, Some(self.instance));
+                }
+            }
+        }
+    }
+    // Bound message draining too: a raise loop must fail, not hang the test.
+    fn settle() {
+        let start = Instant::now();
+        while start.elapsed() < Duration::from_millis(300) {
+            unsafe {
+                let mut msg = MSG::default();
+                while PeekMessageW(&mut msg, None, 0, 0, PM_REMOVE).as_bool() {
+                    DispatchMessageW(&msg);
+                    assert!(REPAIRS.get() < 64, "capture windows kept scheduling repairs");
+                }
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
+    fn above(a: HWND, b: HWND) -> bool {
+        unsafe {
+            let mut window = GetWindow(b, GW_HWNDPREV).unwrap_or_default();
+            while !window.is_invalid() {
+                if window == a {
+                    return true;
+                }
+                window = GetWindow(window, GW_HWNDPREV).unwrap_or_default();
+            }
+            false
+        }
+    }
+    unsafe {
+        let foreground = GetForegroundWindow();
+        let instance: HINSTANCE = windows::Win32::System::LibraryLoader::GetModuleHandleW(None).unwrap().into();
+        let mut windows = Windows { handles: Vec::new(), classes: Vec::new(), instance };
+        // Synthetic windows exercise the production hook and all four class
+        // identities without launching a capture, recording, or a shell.
+        for class in [
+            w!("GlazierZorderRegression"),
+            w!("GlazierOverlay"),
+            w!("GlazierThumbnail"),
+            w!("GlazierRecording"),
+            w!("GlazierRecordingBorder"),
+        ] {
+            assert_ne!(
+                RegisterClassW(&WNDCLASSW {
+                    lpfnWndProc: Some(proc),
+                    hInstance: instance,
+                    lpszClassName: class,
+                    ..Default::default()
+                }),
+                0
+            );
+            windows.classes.push(class);
+            let hwnd = CreateWindowExW(
+                WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
+                class,
+                w!("Capture z-order regression"),
+                WS_POPUP,
+                100,
+                100,
+                120,
+                100,
+                None,
+                None,
+                Some(instance),
+                None,
+            )
+            .unwrap();
+            windows.handles.push(hwnd);
+            if windows.handles.len() > 1 {
+                let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+            }
+        }
+        let receiver = windows.handles[0];
+        let captures = &windows.handles[1..];
+        // A second UI thread is foreign to the guard, like the shell's panels.
+        let (send, receive) = std::sync::mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            let hwnd = CreateWindowExW(
+                WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
+                w!("STATIC"),
+                w!("Foreign topmost regression"),
+                WS_POPUP,
+                100,
+                100,
+                120,
+                100,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+            send.send((hwnd.0 as isize, GetCurrentThreadId())).unwrap();
+            let mut msg = MSG::default();
+            while GetMessageW(&mut msg, None, 0, 0).0 > 0 {
+                DispatchMessageW(&msg);
+            }
+            let _ = DestroyWindow(hwnd);
+        });
+        let (handle, thread) = receive.recv().unwrap();
+        let foreign = Foreign { hwnd: HWND(handle as *mut _), thread, worker: Some(worker) };
+        let _guard = zorder::Guard::start(receiver).unwrap();
+        settle();
+        // The tool's own non-capture UI must not provoke a restack.
+        let initial = RAISES.get();
+        SetWindowPos(
+            receiver,
+            Some(HWND_TOPMOST),
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW,
+        )
+        .unwrap();
+        settle();
+        assert_eq!(RAISES.get(), initial, "capture raised above its own UI");
+        let _ = ShowWindow(receiver, SW_HIDE);
+        let foreign = foreign.hwnd;
+        let initial = RAISES.get();
+
+        // Simulates the panel being raised after a different foreign topmost
+        // window triggered its repair. The hook, not a manual repair, responds.
+        SetWindowPos(
+            foreign,
+            Some(HWND_TOPMOST),
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW,
+        )
+        .unwrap();
+        settle();
+        assert_eq!(RAISES.get() - initial, captures.len(), "one bottom-to-top group repair must suffice");
+        assert!(captures.iter().all(|hwnd| above(*hwnd, foreign)));
+        for pair in captures.windows(2) {
+            assert!(above(pair[1], pair[0]), "capture-to-capture order changed");
+        }
+        assert_eq!(GetForegroundWindow(), foreground, "z-order repair activated a capture window");
+        let raised = RAISES.get();
+        settle();
+        assert_eq!(RAISES.get(), raised, "capture windows raised each other after settling");
+
+        // A long recording may be interrupted repeatedly, not just at show.
+        SetWindowPos(foreign, Some(HWND_TOPMOST), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE).unwrap();
+        settle();
+        assert_eq!(RAISES.get() - raised, captures.len());
+        assert!(captures.iter().all(|hwnd| above(*hwnd, foreign)));
+
+        // Hidden screenshot/recording/thumbnail windows must stay hidden.
+        for hwnd in captures {
+            let _ = ShowWindow(*hwnd, SW_HIDE);
+        }
+        let raised = RAISES.get();
+        SetWindowPos(foreign, Some(HWND_TOPMOST), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE).unwrap();
+        settle();
+        assert_eq!(RAISES.get(), raised);
+        assert!(captures.iter().all(|hwnd| !IsWindowVisible(*hwnd).as_bool()));
+        assert_eq!(GetForegroundWindow(), foreground);
+    }
+}
 
 fn pump() {
     unsafe {

@@ -60,9 +60,17 @@ test("the binding keeps the built-ins when the user list is missing or empty", (
     assert.deepEqual(boundSelectors(null), builtins);
 });
 
-test("a semicolon-separated user string stays one entry for the backend", () => {
-    // The backend splits a string value itself; merging must not do it early.
-    assert.deepEqual(boundSelectors("exe:a.exe;class:Foo"), [...builtins, "exe:a.exe;class:Foo"]);
+test("a top-level semicolon string is split before it becomes a backend list", () => {
+    assert.deepEqual(boundSelectors("exe:a.exe;class:Foo"), [...builtins, "exe:a.exe", "class:Foo"]);
+    // Keep screen: separate so the backend still rejects it as a screen rule.
+    assert.deepEqual(boundSelectors("class:Foo;screen:*"), [...builtins, "class:Foo", "screen:*"]);
+    // Like QString::split, preserve whitespace and empty parts for validation.
+    assert.deepEqual(boundSelectors("; class:Foo;;"), [...builtins, "", " class:Foo", "", ""]);
+});
+
+test("strings already in a user array are not split", () => {
+    const user = ["exe:a.exe;class:Foo", "class:Foo;screen:*"];
+    assert.deepEqual(boundSelectors(user), [...builtins, ...user]);
 });
 
 test("non-string user entries are passed through, never coerced to selectors", () => {

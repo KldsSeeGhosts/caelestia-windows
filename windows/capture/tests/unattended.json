@@ -46,6 +46,8 @@
     "thumbnail::tests::reopen_clamps_and_centers_without_resampling",
     "thumbnail::tests::dismissal_counts_only_unpaused_time_and_zero_never_expires",
     "thumbnail::tests::temp_names_are_unique_and_cleanup_preserves_foreign_files",
-    "toolbar::tests::size_label_uses_on_primary_only_for_external_theme"
+    "toolbar::tests::size_label_uses_on_primary_only_for_external_theme",
+    "zorder::tests::foreign_repair_preserves_capture_order_and_settles",
+    "zorder::tests::unrelated_windows_do_not_trigger_a_raise"
   ]
 }

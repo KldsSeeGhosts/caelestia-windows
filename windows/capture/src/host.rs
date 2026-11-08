@@ -107,6 +107,7 @@ pub fn run(options: Options) -> Result<()> {
             None,
         )?;
         HOST.store(hwnd.0 as isize, Ordering::SeqCst);
+        let _capture_zorder = crate::zorder::Guard::start(hwnd)?;
 
         let (cfg, error) = load_config(options.theme_file.as_deref());
         let taskbar_created = RegisterWindowMessageW(w!("TaskbarCreated"));
@@ -211,6 +212,9 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
                 }
             }
             WM_APP_RECORDING_CHANGED => update_recording_tray(),
+            crate::zorder::WM_REPAIR => {
+                crate::zorder::repair();
+            }
             control::WM_CONTROL => control::dispatch(),
             WM_APP_ALREADY_RUNNING => notify("Caelestia capture is running", &hotkey_hint(), None, false),
             WM_TIMER if wp.0 == TIMER_RECAPTURE => {
