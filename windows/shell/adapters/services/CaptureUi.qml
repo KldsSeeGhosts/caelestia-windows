@@ -25,6 +25,9 @@ Singleton {
     property var glazierProvider: Glazier
     // Set by the AreaPicker instance in shell.qml, cleared when it goes away.
     property var picker: null
+    // Set by the Thumbnails instance in shell.qml. The picker hands it each
+    // finished capture.
+    property var thumbnails: null
     property var pending: null
     property double pendingSince
 

@@ -846,6 +846,14 @@
           "destination": "modules/areapicker/Picker.qml"
         },
         {
+          "source": "windows/shell/adapters/modules/areapicker/ThumbnailCard.qml",
+          "destination": "modules/areapicker/ThumbnailCard.qml"
+        },
+        {
+          "source": "windows/shell/adapters/modules/areapicker/Thumbnails.qml",
+          "destination": "modules/areapicker/Thumbnails.qml"
+        },
+        {
           "source": "windows/shell/adapters/daemons/Shortcuts.qml",
           "destination": "daemons/Shortcuts.qml"
         },
