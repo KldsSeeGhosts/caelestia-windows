@@ -762,7 +762,6 @@ function Show-CaelestiaHandoffDialog([string]$Message) {
     try {
         # No notifications are available in this fixture, so a failure can only
         # be reported through the native dialog the stub replaces.
-        $env:CAELESTIA_TEST_SUPPRESS_DIALOG = '1'
         $entrySet = Set-CaelestiaAutostart -Prefix $entryPrefix -Enabled:$true
         Assert ($entrySet.ok -and $entrySet.present) 'The stable-root fixture did not register its Run entry.'
         $entryStatus = & $entryLauncher -Prefix $entryPrefix -Command AutostartStatus | ConvertFrom-Json
@@ -809,7 +808,6 @@ function Show-CaelestiaHandoffDialog([string]$Message) {
         $entryStatus = & $entryLauncher -Prefix $entryPrefix -Command AutostartStatus | ConvertFrom-Json
         Assert ($entryStatus.enabled -eq $true) 'The stable-root status did not verify the remaining Run entry.'
     } finally {
-        $env:CAELESTIA_TEST_SUPPRESS_DIALOG = $null
         Remove-ItemProperty -LiteralPath $runKey -Name $entryRunName -ErrorAction SilentlyContinue
     }
     Write-Output 'PASS stable root: AutostartStatus and Quit -DisableAutostart route without hiding removal failures.'

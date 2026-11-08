@@ -497,16 +497,24 @@ function Set-CaelestiaAutostart([string]$Prefix, [bool]$Enabled) {
 # the detached launcher discards stdout and stderr. Quit has already restored
 # the desktop when the caller shows this, so a modal box is the only report the
 # user is guaranteed to see. No settings, permissions or consent are changed.
-# Test seam: fixture scripts replace this function to record the message; tests
-# can also set CAELESTIA_TEST_SUPPRESS_DIALOG=1 so no real dialog is shown.
+# Test seam: fixture scripts replace this function to record the message.
+# The launcher is hidden and has no window, so the box would have no owner and
+# foreground-lock rules could leave it behind whatever the user activated while
+# the desktop was restored. MB_TOPMOST keeps it above other windows and
+# MB_SETFOREGROUND asks for activation; both are plain user32 MessageBox flags.
 function Show-CaelestiaHandoffDialog([string]$Message) {
-    if ($env:CAELESTIA_TEST_SUPPRESS_DIALOG -eq '1') { return }
     try {
-        Add-Type -AssemblyName System.Windows.Forms -ErrorAction Stop
-        $null = [Windows.Forms.MessageBox]::Show($Message, 'Caelestia autostart',
-            [Windows.Forms.MessageBoxButtons]::OK, [Windows.Forms.MessageBoxIcon]::Warning)
+        if (-not ('Caelestia.HandoffDialog' -as [type])) {
+            Add-Type -Namespace Caelestia -Name HandoffDialog -ErrorAction Stop -MemberDefinition @'
+[System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+public static extern int MessageBoxW(System.IntPtr owner, string text, string caption, uint type);
+'@
+        }
+        # MB_OK | MB_ICONWARNING | MB_SETFOREGROUND | MB_TOPMOST
+        $null = [Caelestia.HandoffDialog]::MessageBoxW([IntPtr]::Zero, $Message, 'Caelestia autostart', [uint32]0x00050030)
     } catch {
         # Presentation must never change the caller's exit status or recovery.
+        # The caller has already written the same text with Write-Warning.
     }
 }
 
