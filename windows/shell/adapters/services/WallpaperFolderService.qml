@@ -24,13 +24,20 @@ import qs.utils
 // QDir::mkpath ran. The process talks to this singleton through environment
 // variables, so no user path is ever interpolated into a command line.
 //
-// A copy writes a unique `.caelestia-import-<id>.partial` file in the scanned
-// folder and publishes it with a no-overwrite rename only after the bytes are
-// complete. The scan lists only image extensions, so a temporary is never a
-// wallpaper. If the shell is killed mid-copy the child dies with it and the
-// temporary is left behind; the next copy removes temporaries of that pattern
-// that are more than an hour old. A retry therefore still finds the plain name
-// free instead of dropping a full-size truncated file beside a numbered copy.
+// A copy writes a unique `.caelestia-import-<32 hex>.partial` file in the
+// hidden `.caelestia-import-staging` folder inside the scanned folder, then
+// publishes it with a no-overwrite rename only after the bytes are complete.
+// Staging inside the destination keeps publishing a same-volume rename. The
+// scan lists only image extensions and never descends into subfolders, and the
+// staging folder is hidden, so neither it nor a temporary is ever a wallpaper.
+//
+// If the shell is killed mid-copy the child dies with it and the temporary is
+// left behind. The next copy removes abandoned temporaries only inside its own
+// staging folder, only names matching the exact `.caelestia-import-<32 hex
+// GUID>.partial` pattern, and only when they are more than an hour old. A
+// retry therefore still finds the plain name free instead of dropping a
+// full-size truncated file beside a numbered copy. Nothing in the user's
+// wallpapers folder itself is ever deleted.
 //
 // A job that never reports is killed after five minutes and the kill is
 // followed by a short grace period, because an unavailable network folder used
@@ -103,24 +110,51 @@ try {
         exit 2
     }
     [IO.Directory]::CreateDirectory($folder) | Out-Null
-    # A killed shell leaves its copy behind as a temporary. Only this pattern
-    # is ours, and only an old one is removed: another shell instance may still
-    # be writing a fresh one.
-    $staleBefore = [DateTime]::UtcNow.AddMinutes(-60)
-    foreach ($stale in [IO.Directory]::EnumerateFiles($folder, '.caelestia-import-*.partial')) {
-        try {
-            if ([IO.File]::GetLastWriteTimeUtc($stale) -lt $staleBefore) {
-                [IO.File]::Delete($stale)
-            }
-        } catch {
+    # The service owns this staging folder. It sits inside the scanned folder
+    # so publishing stays a same-volume rename, and it is hidden so Explorer
+    # users do not see half-written copies.
+    $staging = [IO.Path]::Combine($folder, '.caelestia-import-staging')
+    [IO.Directory]::CreateDirectory($staging) | Out-Null
+    try {
+        $attributes = [IO.File]::GetAttributes($staging)
+        if (($attributes -band [IO.FileAttributes]::Hidden) -eq 0) {
+            [IO.File]::SetAttributes($staging, $attributes -bor [IO.FileAttributes]::Hidden)
         }
+    } catch {
+    }
+    # A killed shell leaves its copy behind as a temporary. Cleanup only ever
+    # looks inside the staging folder, only at the exact name this service
+    # writes (a real 32-hex GUID), and only at an old one: another shell
+    # instance may still be writing a fresh one. A user file in the wallpapers
+    # folder is never touched, whatever its name. Cleanup is best-effort: a
+    # denied or unreadable staging folder must not stop the copy, which reports
+    # the access failure itself.
+    try {
+        $staleBefore = [DateTime]::UtcNow.AddMinutes(-60)
+        foreach ($stale in [IO.Directory]::EnumerateFiles($staging, '.caelestia-import-*.partial')) {
+            $staleName = [IO.Path]::GetFileName($stale)
+            if ($staleName.Length -ne 58 -or -not $staleName.StartsWith('.caelestia-import-') -or -not $staleName.EndsWith('.partial')) {
+                continue
+            }
+            $identifier = [Guid]::Empty
+            if (-not [Guid]::TryParseExact($staleName.Substring(18, 32), 'N', [ref]$identifier)) {
+                continue
+            }
+            try {
+                if ([IO.File]::GetLastWriteTimeUtc($stale) -lt $staleBefore) {
+                    [IO.File]::Delete($stale)
+                }
+            } catch {
+            }
+        }
+    } catch {
     }
     $name = [IO.Path]::GetFileName($source)
     $stem = [IO.Path]::GetFileNameWithoutExtension($name)
     $extension = [IO.Path]::GetExtension($name)
     # Same folder as the published name, so publishing is a same-volume rename
     # and not a second copy that can be interrupted under the final name.
-    $temporary = [IO.Path]::Combine($folder, '.caelestia-import-' + [Guid]::NewGuid().ToString('N') + '.partial')
+    $temporary = [IO.Path]::Combine($staging, '.caelestia-import-' + [Guid]::NewGuid().ToString('N') + '.partial')
     try {
         [IO.File]::Copy($source, $temporary, $false)
         $index = 1
@@ -157,8 +191,16 @@ try {
         }
     }
 } catch {
-    $type = $_.Exception.GetType().Name
-    [Console]::Error.WriteLine($type + ': ' + $_.Exception.Message)
+    # PowerShell wraps failures from a .NET call in MethodInvocationException.
+    # Walk down to the real exception so an inner UnauthorizedAccessException
+    # is not reported as a generic io failure.
+    $exception = $_.Exception
+    while ($null -ne $exception.InnerException -and $exception.InnerException -ne $exception) {
+        $exception = $exception.InnerException
+    }
+    $type = $exception.GetType().Name
+    [Console]::Error.WriteLine($type + ': ' + $exception.Message)
+    [Console]::Error.WriteLine('HRESULT: 0x' + $exception.HResult.ToString('X8'))
     if ($type -eq 'UnauthorizedAccessException') {
         [Console]::Out.WriteLine('ERROR:access')
     } elseif ($type -eq 'FileNotFoundException' -or $type -eq 'DirectoryNotFoundException') {
@@ -263,12 +305,20 @@ try {
             : Tr.tr("Adding the image took too long and was stopped");
     }
 
-    // One diagnostic line per stopped or failed job. The child's stderr names
-    // the exception behind a generic marker, and it is bounded so a chatty
-    // provider cannot flood the shell log.
+    // One diagnostic line per stopped or failed job. The child's stderr can
+    // contain a drive or UNC path, and core/redact.hpp treats path identifiers
+    // as private, so only the exception type name and the numeric HRESULT are
+    // copied out of it. The message itself never reaches the log.
+    function safeDiagnostic(error): string {
+        const text = String(error ?? "");
+        const firstLine = text.split(/\r?\n/, 1)[0] ?? "";
+        const type = /^\s*([A-Za-z][A-Za-z0-9]*Exception)\s*:/.exec(firstLine);
+        const hresult = /HResult\s*[:=]?\s*(0x[0-9A-Fa-f]{8})\b/i.exec(text);
+        return (type ? " exception=" + type[1].slice(0, 64) : "") + (hresult ? " hresult=" + hresult[1].toLowerCase() : "");
+    }
+
     function reportJob(kind, code, category, error): void {
-        const detail = String(error ?? "").replace(/\s+/g, " ").trim();
-        console.log("CAELESTIA_WALLPAPER_FOLDER_DIAG kind=" + kind + " result=failed code=" + code + " category=" + (category || "unknown") + (detail.length > 0 ? " stderr=" + detail.slice(0, 300) : ""));
+        console.log("CAELESTIA_WALLPAPER_FOLDER_DIAG kind=" + kind + " result=failed code=" + code + " category=" + (category || "unknown") + root.safeDiagnostic(error));
     }
 
     // Finishes the active job. Public so offscreen fixtures can answer the

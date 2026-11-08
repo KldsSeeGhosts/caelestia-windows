@@ -19,6 +19,14 @@ $runRoot = Join-Path $OutputRoot ('wallpaper-folder-' + [guid]::NewGuid().ToStri
 $sourceDirectory = Join-Path $runRoot 'source'
 $retryDirectory = Join-Path $runRoot 'retry-source'
 $wallsDirectory = Join-Path $runRoot 'walls'
+# A permission-denied destination for the real marker test. Only this
+# disposable staging directory is changed, and the deny is removed in finally.
+$stagingName = '.caelestia-import-staging'
+$deniedDirectory = Join-Path $runRoot 'denied-walls'
+$deniedStaging = Join-Path $deniedDirectory $stagingName
+$icacls = Join-Path $env:SystemRoot 'System32\icacls.exe'
+$currentSid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+$denyApplied = $false
 $env:CAELESTIA_TEST_OUTPUT_ROOT = $runRoot
 try {
     New-Item -ItemType Directory -Force -Path $sourceDirectory, $retryDirectory | Out-Null
@@ -59,6 +67,15 @@ try {
     $retrySource = Join-Path $retryDirectory 'Interrupted Copy.png'
     Copy-Item -LiteralPath $sourcePath -Destination $retrySource
 
+    # A real permission failure, so the marker comes from the job script's own
+    # unwrapped exception rather than a pre-formatted fixture string. The
+    # staging cleanup is best-effort, and the copy that follows reports the
+    # denied write.
+    New-Item -ItemType Directory -Force -Path $deniedStaging | Out-Null
+    & $icacls $deniedStaging /deny "*${currentSid}:(OI)(CI)(W)" 2>$null | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'Could not create the permission-denied fixture folder.' }
+    $denyApplied = $true
+
     $result = Invoke-QmlFixture -QtPrefix $QtPrefix -BuildRoot $BuildRoot -Name wallpaper-folder -ShellFixture -UseQuickshell `
         -Environment @{
             CAELESTIA_WALLPAPER_DIR = $wallsDirectory.Replace('\', '/')
@@ -66,6 +83,7 @@ try {
             CAELESTIA_WALLPAPER_CLEANUP_SOURCE = $cleanupSource.Replace('\', '/')
             CAELESTIA_WALLPAPER_LARGE_SOURCE = $largeSource.Replace('\', '/')
             CAELESTIA_WALLPAPER_RETRY_SOURCE = $retrySource.Replace('\', '/')
+            CAELESTIA_WALLPAPER_DENIED_DIR = $deniedDirectory.Replace('\', '/')
         } `
         -Sources @('windows/tests/WallpaperFolderTest.qml') -FixtureFile 'windows/tests/WallpaperFolderTest.qml' `
         -Marker CAELESTIA_WALLPAPER_FOLDER -MinimumAssertions 160 -TimeoutMs 150000
@@ -84,6 +102,23 @@ try {
     }
     if ($fixtureLog -notmatch 'CAELESTIA_WALLPAPER_FOLDER_DIAG kind=folder result=failed [^\r\n]*category=timeout') {
         throw 'A timed-out folder job did not report its timeout in the diagnostics.'
+    }
+    # The permission failure is real, so its marker and inner exception type
+    # prove the script unwrapped MethodInvocationException. The HRESULT is the
+    # only numeric detail the log may copy from the exception.
+    if ($fixtureLog -notmatch 'CAELESTIA_WALLPAPER_FOLDER_DIAG kind=copy result=failed code=2 category=access exception=UnauthorizedAccessException hresult=0x[0-9a-f]{8}') {
+        throw 'A real permission failure did not report its inner exception and HRESULT.'
+    }
+    # core/redact.hpp treats paths as private. No diagnostic line may carry the
+    # exception message, a drive path, a UNC path, or either fixture canary.
+    $diagnostics = [regex]::Matches($fixtureLog, '(?m)^.*CAELESTIA_WALLPAPER_FOLDER_DIAG[^\r\n]*')
+    if ($diagnostics.Count -lt 3) { throw 'The fixture did not emit the expected diagnostic lines.' }
+    foreach ($match in $diagnostics) {
+        $line = $match.Value
+        if ($line -match 'stderr=') { throw "A diagnostic line still carries raw stderr: $line" }
+        if ($line -match 'canary-drive-private|canary-unc-private') { throw "A diagnostic line carries a user path: $line" }
+        if ($line -match [regex]::Escape($runRoot)) { throw "A diagnostic line carries the fixture path: $line" }
+        if ($line -match '[A-Za-z]:[\\/]|\\\\') { throw "A diagnostic line carries a filesystem path: $line" }
     }
 
     # The fixture loads both real adapters. These text checks keep each surface
@@ -110,9 +145,28 @@ try {
         throw 'The wallpaper folder service calls a synchronous filesystem API on the GUI thread.'
     }
     if ($service -notmatch '\.caelestia-import-') { throw 'The wallpaper folder service lost its temporary copy name.' }
+    if ($service -notmatch '\.caelestia-import-staging') { throw 'The wallpaper folder service lost its hidden staging folder.' }
+    if ($service -notmatch 'EnumerateFiles\(\$staging') {
+        throw 'The wallpaper folder cleanup no longer enumerates only its own staging folder.'
+    }
+    if ($service -match 'EnumerateFiles\(\$folder') {
+        throw 'The wallpaper folder cleanup enumerates the user wallpapers folder.'
+    }
+    if ($service -notmatch 'Guid\]::TryParseExact') {
+        throw 'The wallpaper folder cleanup no longer requires an exact GUID temporary name.'
+    }
+    if ($service -match 'stderr=') { throw 'The wallpaper folder diagnostic still logs raw stderr.' }
     if ($service -notmatch 'File\]::Move') { throw 'The wallpaper folder service no longer publishes with a rename.' }
     if ($service -notmatch 'jobTimeoutMs') { throw 'The wallpaper folder service lost its job timeout.' }
 } finally {
+    # Remove the temporary deny before the run root is deleted. The deny only
+    # covers a disposable directory below OutputRoot.
+    if ($denyApplied) {
+        try {
+            & $icacls $deniedDirectory /remove:d "*${currentSid}" /T 2>$null | Out-Null
+        } catch {
+        }
+    }
     # The run root holds the large source image. It is disposable and must not
     # outlive this test.
     $resolvedRun = [IO.Path]::GetFullPath($runRoot)
@@ -120,5 +174,8 @@ try {
     if ($resolvedRun.StartsWith($resolvedOut, [StringComparison]::OrdinalIgnoreCase) -and
         (Split-Path -Leaf $resolvedRun) -like 'wallpaper-folder-*') {
         Remove-Item -LiteralPath $resolvedRun -Recurse -Force -ErrorAction SilentlyContinue
+        if (Test-Path -LiteralPath $resolvedRun) {
+            Write-Warning "Could not remove the disposable wallpaper folder test root: $resolvedRun"
+        }
     }
 }

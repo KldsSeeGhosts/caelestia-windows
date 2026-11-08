@@ -43,7 +43,7 @@ ShellRoot {
     property var defaultStartJob: null
     property var defaultReload: null
     property var defaultReveal: null
-    property var defaultJobCommand: null
+    property var defaultJobCommand: WallpaperFolderService.jobCommand
     property int defaultJobTimeout: 0
     property int defaultJobExitGrace: 0
     property string externalName: ""
@@ -58,14 +58,27 @@ ShellRoot {
     property bool partialSeen: false
     property bool tempSeedDone: false
     property int tempSeedCode: -1
+    property bool stagingProbeDone: false
+    property string stagingAttributes: ""
+    property bool deniedDone: false
+    property int deniedCode: -1
+    property string deniedOutput: ""
+    property string deniedError: ""
 
     readonly property string wallsPath: Quickshell.env("CAELESTIA_WALLPAPER_DIR") || ""
     readonly property string realSourcePath: Quickshell.env("CAELESTIA_WALLPAPER_SOURCE") || ""
     readonly property string cleanupSourcePath: Quickshell.env("CAELESTIA_WALLPAPER_CLEANUP_SOURCE") || ""
     readonly property string largeSourcePath: Quickshell.env("CAELESTIA_WALLPAPER_LARGE_SOURCE") || ""
     readonly property string retrySourcePath: Quickshell.env("CAELESTIA_WALLPAPER_RETRY_SOURCE") || ""
+    readonly property string deniedFolderPath: Quickshell.env("CAELESTIA_WALLPAPER_DENIED_DIR") || ""
+    // The service owns this hidden folder. Nothing in the wallpapers folder
+    // itself is staged or cleaned.
+    readonly property string stagingFolderName: ".caelestia-import-staging"
+    readonly property string stagingPath: Paths.joinPath(Paths.wallsdir, stagingFolderName)
     readonly property string staleTempName: ".caelestia-import-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.partial"
     readonly property string freshTempName: ".caelestia-import-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.partial"
+    readonly property string userGuidTempName: ".caelestia-import-cccccccccccccccccccccccccccccccc.partial"
+    readonly property string lookalikeTempName: ".caelestia-import-family-holiday.partial"
 
     readonly property Component inputComponent: Component {
         TestCase { when: false }
@@ -117,19 +130,37 @@ ShellRoot {
     readonly property string externalCopyScript: `$ErrorActionPreference = 'Stop'
 [IO.Directory]::CreateDirectory($env:CAELESTIA_TEST_FOLDER) | Out-Null
 [IO.File]::Copy($env:CAELESTIA_TEST_SOURCE, [IO.Path]::Combine($env:CAELESTIA_TEST_FOLDER, $env:CAELESTIA_TEST_NAME), $false)`
-    // One old temporary of the copy script's own pattern, one fresh temporary,
-    // and one user file that only happens to end in .partial.
+    // One old temporary of the copy script's own pattern and one fresh one in
+    // the service staging folder, then user files in the wallpapers folder
+    // itself: a lookalike name, a GUID-shaped name and an unrelated
+    // `.partial`. The next real copy may remove only the old owned one.
     readonly property string tempSeedScript: `$ErrorActionPreference = 'Stop'
 $folder = $env:CAELESTIA_TEST_FOLDER
-[IO.Directory]::CreateDirectory($folder) | Out-Null
-$stale = [IO.Path]::Combine($folder, '.caelestia-import-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.partial')
-$fresh = [IO.Path]::Combine($folder, '.caelestia-import-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.partial')
-$user = [IO.Path]::Combine($folder, 'notes.partial')
+$staging = [IO.Path]::Combine($folder, $env:CAELESTIA_TEST_STAGING)
+[IO.Directory]::CreateDirectory($staging) | Out-Null
+$stale = [IO.Path]::Combine($staging, $env:CAELESTIA_TEST_STALE)
+$fresh = [IO.Path]::Combine($staging, $env:CAELESTIA_TEST_FRESH)
+$lookalike = [IO.Path]::Combine($folder, $env:CAELESTIA_TEST_LOOKALIKE)
+$userTemp = [IO.Path]::Combine($folder, $env:CAELESTIA_TEST_USER_GUID)
+$userPartial = [IO.Path]::Combine($folder, 'notes.partial')
 [IO.File]::WriteAllText($stale, 'stale')
 [IO.File]::WriteAllText($fresh, 'fresh')
-[IO.File]::WriteAllText($user, 'user')
+[IO.File]::WriteAllText($lookalike, 'lookalike')
+[IO.File]::WriteAllText($userTemp, 'user')
+[IO.File]::WriteAllText($userPartial, 'user')
 [IO.File]::SetLastWriteTimeUtc($stale, [DateTime]::UtcNow.AddHours(-2))
-[IO.File]::SetLastWriteTimeUtc($user, [DateTime]::UtcNow.AddHours(-2))`
+[IO.File]::SetLastWriteTimeUtc($lookalike, [DateTime]::UtcNow.AddHours(-2))
+[IO.File]::SetLastWriteTimeUtc($userTemp, [DateTime]::UtcNow.AddHours(-2))
+[IO.File]::SetLastWriteTimeUtc($userPartial, [DateTime]::UtcNow.AddHours(-2))`
+    // The staging folder must be hidden, because it sits in the user's
+    // wallpapers folder where Explorer would otherwise show it.
+    readonly property string stagingProbeScript: `$ErrorActionPreference = 'Stop'
+$attributes = [IO.File]::GetAttributes($env:CAELESTIA_TEST_STAGING)
+if (($attributes -band [IO.FileAttributes]::Hidden) -ne 0) {
+    [Console]::Out.WriteLine('HIDDEN')
+} else {
+    [Console]::Out.WriteLine('VISIBLE')
+}`
 
     FloatingWindow {
         id: win
@@ -185,13 +216,61 @@ $user = [IO.Path]::Combine($folder, 'notes.partial')
 
         command: ["powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", root.tempSeedScript]
         environment: ({
-                CAELESTIA_TEST_FOLDER: Paths.wallsdir
+                CAELESTIA_TEST_FOLDER: Paths.wallsdir,
+                CAELESTIA_TEST_STAGING: root.stagingFolderName,
+                CAELESTIA_TEST_STALE: root.staleTempName,
+                CAELESTIA_TEST_FRESH: root.freshTempName,
+                CAELESTIA_TEST_USER_GUID: root.userGuidTempName,
+                CAELESTIA_TEST_LOOKALIKE: root.lookalikeTempName
             })
         stdout: StdioCollector {}
         stderr: StdioCollector {}
         onExited: code => {
             root.tempSeedCode = code;
             root.tempSeedDone = true;
+        }
+    }
+
+    Process {
+        id: stagingProbe
+
+        command: ["powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", root.stagingProbeScript]
+        environment: ({
+                CAELESTIA_TEST_STAGING: root.stagingPath
+            })
+        stdout: StdioCollector {
+            id: stagingProbeOutput
+        }
+        stderr: StdioCollector {}
+        onExited: code => {
+            root.stagingAttributes = code === 0 ? stagingProbeOutput.text.trim() : "ERROR " + code;
+            root.stagingProbeDone = true;
+        }
+    }
+
+    // The production job script against a real permission-denied folder, so
+    // the emitted marker comes from a wrapped .NET failure rather than a
+    // fixture string.
+    Process {
+        id: deniedJob
+
+        command: root.defaultJobCommand
+        environment: ({
+                CAELESTIA_WALLPAPER_JOB_MODE: "copy",
+                CAELESTIA_WALLPAPER_JOB_SOURCE: root.realSourcePath,
+                CAELESTIA_WALLPAPER_JOB_FOLDER: root.deniedFolderPath
+            })
+        stdout: StdioCollector {
+            id: deniedJobOutput
+        }
+        stderr: StdioCollector {
+            id: deniedJobError
+        }
+        onExited: code => {
+            root.deniedCode = code;
+            root.deniedOutput = deniedJobOutput.text;
+            root.deniedError = deniedJobError.text;
+            root.deniedDone = true;
         }
     }
 
@@ -217,7 +296,7 @@ $user = [IO.Path]::Combine($folder, 'notes.partial')
         interval: 40
         repeat: true
         running: root.watchingPartial && !root.partialSeen
-        onTriggered: root.startListing()
+        onTriggered: root.startListing(root.stagingPath)
     }
 
     Component.onCompleted: Qt.callLater(run)
@@ -261,24 +340,29 @@ $user = [IO.Path]::Combine($folder, 'notes.partial')
 
     // Real directory listing through the facade. The copy's temporary is not
     // part of Wallpapers.files by design, so the test looks at the directory.
-    function startListing(): void {
+    // The staging folder is hidden, but a direct listing still answers.
+    function startListing(path): void {
         root.probeEntries = [];
         root.probeDone = false;
-        root.probeRequest = Native.FsUtils.listDirAsync(Paths.wallsdir);
+        root.probeRequest = Native.FsUtils.listDirAsync(path ?? Paths.wallsdir);
     }
 
-    function listFolder(): var {
-        root.startListing();
+    function listPath(path): var {
+        root.startListing(path);
         root.waitFor(() => root.probeDone, 5000, "the folder listing did not answer");
         return root.probeEntries;
     }
 
-    function folderNames(): var {
-        return root.listFolder().map(entry => entry.name);
+    function listFolder(): var {
+        return root.listPath(Paths.wallsdir);
     }
 
-    function folderHas(name): bool {
-        return root.folderNames().indexOf(name) >= 0;
+    function listStaging(): var {
+        return root.listPath(root.stagingPath);
+    }
+
+    function folderNames(): var {
+        return root.listFolder().map(entry => entry.name);
     }
 
     function releaseJob(): void {
@@ -831,8 +915,10 @@ $user = [IO.Path]::Combine($folder, 'notes.partial')
                 "an interrupted copy left a file under its final name");
             root.check(Native.FsUtils.classify(WallpaperFolderService.targetPath(largeName, 2)) === "invalid",
                 "an interrupted copy left a numbered file");
-            root.check(root.folderNames().some(name => /^\.caelestia-import-.*\.partial$/.test(name)),
-                "the interrupted copy did not leave its temporary for cleanup");
+            root.check(root.listStaging().some(entry => /^\.caelestia-import-[0-9a-f]{32}\.partial$/.test(entry.name)),
+                "the interrupted copy did not leave an owned temporary in staging for cleanup");
+            root.check(!root.folderNames().some(name => /\.partial$/i.test(name)),
+                "an interrupted copy left a temporary in the wallpapers folder");
             // The retry comes from another folder but keeps the same name.
             root.check(WallpaperFolderService.addWallpaper(Paths.absolutePath(root.retrySourcePath)) === true,
                 "the retry was refused");
@@ -844,26 +930,68 @@ $user = [IO.Path]::Combine($folder, 'notes.partial')
             root.check(root.toastBodies().includes("Added Interrupted Copy.png"),
                 "the retry did not report the published name");
 
-            // 25. The next copy removes only old temporaries of its own pattern.
+            // 25. The next copy cleans only an old abandoned temporary of its
+            // own exact pattern, and only inside its hidden staging folder. A
+            // user file in the wallpapers folder survives even when its name
+            // looks like the service pattern.
             root.tempSeedDone = false;
             root.tempSeedCode = -1;
             seedTemps.running = true;
             root.check(seedTemps.running, "the temporary seed did not start");
             root.waitFor(() => root.tempSeedDone, 15000, "the temporary seed did not finish");
             root.check(root.tempSeedCode === 0, "the temporary seed failed");
-            root.check(root.folderHas(root.staleTempName) && root.folderHas(root.freshTempName),
-                "the seeded temporaries are missing");
+            root.check(Native.FsUtils.classify(Paths.joinPath(root.stagingPath, root.staleTempName)) === "file"
+                && Native.FsUtils.classify(Paths.joinPath(root.stagingPath, root.freshTempName)) === "file",
+                "the seeded staging temporaries are missing");
+            root.check(Native.FsUtils.classify(Paths.joinPath(Paths.wallsdir, root.lookalikeTempName)) === "file"
+                && Native.FsUtils.classify(Paths.joinPath(Paths.wallsdir, root.userGuidTempName)) === "file"
+                && Native.FsUtils.classify(Paths.joinPath(Paths.wallsdir, "notes.partial")) === "file",
+                "the seeded user files are missing");
             root.check(WallpaperFolderService.addWallpaper(Paths.absolutePath(root.cleanupSourcePath)) === true,
                 "the cleanup copy was refused");
             root.waitFor(() => !WallpaperFolderService.busy, 30000, "the cleanup copy did not finish");
-            const cleanupNames = root.folderNames();
-            root.check(cleanupNames.indexOf(root.staleTempName) < 0, "an old abandoned temporary was not removed");
-            root.check(cleanupNames.indexOf(root.freshTempName) >= 0, "a fresh temporary was removed");
-            root.check(cleanupNames.indexOf("notes.partial") >= 0, "cleanup removed a file outside its own pattern");
-            root.check(cleanupNames.indexOf("Cleanup Probe.png") >= 0, "the cleanup copy was not published");
+            root.check(Native.FsUtils.classify(Paths.joinPath(root.stagingPath, root.staleTempName)) === "invalid",
+                "an old owned temporary in staging was not removed");
+            root.check(Native.FsUtils.classify(Paths.joinPath(root.stagingPath, root.freshTempName)) === "file",
+                "a fresh temporary in staging was removed");
+            root.check(Native.FsUtils.classify(Paths.joinPath(Paths.wallsdir, root.lookalikeTempName)) === "file",
+                "cleanup removed a user lookalike in the wallpapers folder");
+            root.check(Native.FsUtils.classify(Paths.joinPath(Paths.wallsdir, root.userGuidTempName)) === "file",
+                "cleanup reached into the wallpapers folder itself");
+            root.check(Native.FsUtils.classify(Paths.joinPath(Paths.wallsdir, "notes.partial")) === "file",
+                "cleanup removed a file outside its own pattern");
+            root.check(Native.FsUtils.classify(Paths.joinPath(Paths.wallsdir, "Cleanup Probe.png")) === "file",
+                "the cleanup copy was not published");
             root.waitFor(() => root.hasFile("Cleanup Probe.png"), 10000, "the cleanup copy did not appear in the scan");
             root.check(!Wallpapers.files.some(file => file.name.endsWith(".partial")),
                 "the folder scan listed a temporary file");
+            root.check(!Wallpapers.files.some(file => file.name.includes(".caelestia-import")),
+                "the folder scan listed the staging folder or its contents");
+            stagingProbe.running = true;
+            root.waitFor(() => root.stagingProbeDone, 10000, "the staging attribute probe did not answer");
+            root.check(root.stagingAttributes === "HIDDEN",
+                `the staging folder attributes are "${root.stagingAttributes}"`);
+
+            // 26. A real permission failure emits its inner exception's marker,
+            // and the diagnostic line carries no message or path.
+            root.check(root.deniedFolderPath.length > 0, "the fixture supplied no permission-denied folder");
+            root.check(Native.FsUtils.classify(root.deniedFolderPath) === "dir", "the permission-denied folder is missing");
+            root.check(Native.FsUtils.classify(Paths.joinPath(root.deniedFolderPath, root.stagingFolderName)) === "dir",
+                "the permission-denied staging folder is missing");
+            root.deniedDone = false;
+            deniedJob.running = true;
+            root.check(deniedJob.running, "the permission-denied copy did not start");
+            root.waitFor(() => root.deniedDone, 30000, "the permission-denied copy did not finish");
+            root.check(root.deniedCode === 2, `the permission-denied copy exited with ${root.deniedCode}`);
+            root.check(root.deniedOutput.trim() === "ERROR:access",
+                `the permission-denied copy emitted "${root.deniedOutput.trim()}"`);
+            root.check(/UnauthorizedAccessException:/.test(root.deniedError),
+                "the permission-denied copy did not name its inner exception");
+            WallpaperFolderService.reportJob("copy", root.deniedCode, "access", root.deniedError);
+            WallpaperFolderService.reportJob("copy", 2, "io",
+                "IOException: Access to the path 'C:\\Users\\canary-drive-private\\secret.png' is denied.");
+            WallpaperFolderService.reportJob("copy", 2, "io",
+                "IOException: The network path '\\\\canary-unc-private\\share\\secret.png' is unavailable.");
 
             console.log("CAELESTIA_WALLPAPER_FOLDER_PASS " + assertions);
             Qt.quit();
