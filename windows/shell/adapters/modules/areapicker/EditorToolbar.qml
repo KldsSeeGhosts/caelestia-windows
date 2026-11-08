@@ -1,19 +1,23 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import QtQuick.Controls
 import QtQuick.Effects
 import Caelestia.Config
 import Caelestia.I18n
 import qs.components
+import qs.components.controls
 import qs.components.effects
 import qs.services
 import "EditorLogic.js" as Logic
 
 // The editor's toolbar and its colour and size popover (windows.capture.ui =
-// "shell"). The sizes, order and placement are the classic tool's: 44 px tall,
-// 6 px padding, 30 px buttons, 10 px below the selection or above it or inside
-// it, 6 px from the screen edge, draggable. EditorLogic.js computes every
-// rectangle, and this file draws them with Caelestia components.
+// "shell"). Every button is a Caelestia control (IconButton, IconTextButton,
+// TextButton, ButtonBase) with the shell's fonts, padding and state layers. The
+// sizes come from those controls and from Tokens. EditorLogic.js takes the
+// measured sizes, decides where everything goes (below, above or inside the
+// selection, clamped to the screen, draggable) and rounds each position to a
+// whole device pixel, so text stays sharp at any display scaling.
 //
 // The surfaces are glass: a blur of the frozen frame under them, a tint of
 // surfaceContainer, an outline edge and an elevation shadow.
@@ -34,33 +38,57 @@ Item {
     signal saveRequested
     signal closeRequested
 
-    readonly property var layout: Logic.barLayout({
-        clearArmed: editor.clearArmed,
-        copyWidth: Logic.LABEL_EXTRA + copyMetrics.advanceWidth,
-        clearWidth: Logic.LABEL_EXTRA + clearMetrics.advanceWidth
+    // The device pixel ratio of the screen this toolbar is on.
+    readonly property real dpr: editor.scale > 0 ? editor.scale : 1
+    readonly property var metrics: ({
+        scale: dpr,
+        padding: Tokens.padding.small,
+        spacing: Tokens.spacing.extraSmall,
+        groupSpacing: Tokens.spacing.small,
+        separatorSpacing: Tokens.spacing.small,
+        separatorInset: Tokens.spacing.small,
+        gap: Tokens.spacing.small,
+        margin: Tokens.spacing.small
     })
-    readonly property var barPlace: Logic.barPosition(work, region, layout, editor.barPosition)
-    readonly property var ink: Logic.inkPopover()
+    readonly property var buttonSize: ({ width: probe.implicitWidth, height: probe.implicitHeight })
+
+    readonly property var layout: Logic.barLayout({
+        metrics: metrics,
+        button: buttonSize,
+        clear: { width: clearButton.implicitWidth, height: clearButton.implicitHeight },
+        copy: { width: copyButton.implicitWidth, height: copyButton.implicitHeight }
+    })
+    readonly property var barPlace: Logic.barPosition(work, region, layout, editor.barPosition, metrics)
+    readonly property var ink: Logic.inkPopover({
+        metrics: metrics,
+        cell: buttonSize,
+        segment: { width: segmentProbe.implicitWidth, height: segmentProbe.implicitHeight }
+    })
     readonly property var inkAnchor: Logic.itemRect(layout, "color")
     readonly property var inkPlace: Logic.popoverPosition(work,
         { x: barPlace.x, y: barPlace.y, width: layout.width, height: layout.height },
-        { x: barPlace.x + inkAnchor.x, y: barPlace.y + inkAnchor.y, width: inkAnchor.width, height: inkAnchor.height }, ink)
+        { x: barPlace.x + inkAnchor.x, y: barPlace.y + inkAnchor.y, width: inkAnchor.width, height: inkAnchor.height },
+        ink, metrics)
 
     enabled: !busy
     opacity: busy ? 0.6 : 1
 
-    TextMetrics {
-        id: copyMetrics
+    // Unseen copies of a button and a segment. Their implicit sizes are what
+    // the layout measures, so every icon button on the bar has the same size.
+    IconButton {
+        id: probe
 
-        font: Tokens.font.body.medium
-        text: Tr.tr("Copy")
+        visible: false
+        type: IconButton.Text
+        icon: "edit"
     }
 
-    TextMetrics {
-        id: clearMetrics
+    TextButton {
+        id: segmentProbe
 
-        font: Tokens.font.body.small
-        text: Tr.tr("Clear all?")
+        visible: false
+        type: TextButton.Tonal
+        text: "M"
     }
 
     // ---- bar -----------------------------------------------------------
@@ -97,7 +125,7 @@ Item {
             }
         }
 
-        // The selection highlight glides to the chosen tool.
+        // The chosen tool has a tonal container that glides to it.
         StyledRect {
             id: indicator
 
@@ -107,7 +135,7 @@ Item {
             y: target ? target.y : 0
             width: target ? target.width : 0
             height: target ? target.height : 0
-            radius: Tokens.rounding.small
+            radius: Tokens.rounding.medium
             color: Colours.palette.m3secondaryContainer
 
             Behavior on x {
@@ -115,6 +143,19 @@ Item {
                     type: Anim.DefaultSpatial
                 }
             }
+        }
+
+        // The colour button has a container while its popover is open.
+        StyledRect {
+            readonly property var target: Logic.itemRect(root.layout, "color")
+
+            visible: root.editor.inkOpen
+            x: target ? target.x : 0
+            y: target ? target.y : 0
+            width: target ? target.width : 0
+            height: target ? target.height : 0
+            radius: Tokens.rounding.medium
+            color: Colours.palette.m3surfaceContainerHighest
         }
 
         Repeater {
@@ -127,123 +168,125 @@ Item {
                 y: modelData.y
                 width: modelData.width
                 height: modelData.height
-                color: Qt.alpha(Colours.palette.m3outline, 0.5)
+                color: Colours.palette.m3outlineVariant
             }
         }
 
         Repeater {
             model: Logic.TOOLS
 
-            Cell {
-                id: toolCell
+            BarIcon {
+                id: toolButton
 
                 required property var modelData
                 readonly property bool selected: root.editor.tool === modelData.id
 
                 cellId: "tool:" + modelData.id
                 objectName: "editorTool-" + modelData.id
-                name: modelData.label
+                tip: modelData.label
                 icon: modelData.icon
-                iconRotation: modelData.rotation ?? 0
-                iconColor: selected ? Colours.palette.m3onSecondaryContainer : Colours.palette.m3onSurface
+                checked: selected
+                activeOnColour: Colours.palette.m3onSecondaryContainer
                 onClicked: root.editor.setTool(modelData.id)
+
+                // Material Symbols has no plain diagonal line, so the dash is turned.
+                label.rotation: modelData.rotation ?? 0
             }
         }
 
-        Cell {
+        BarIcon {
             cellId: "color"
             objectName: "editorColor"
-            name: Tr.tr("Color and line size")
-            highlighted: root.editor.inkOpen
+            tip: Tr.tr("Colour and size")
             onClicked: root.editor.toggleInk()
 
-            // The dot shows the colour, and its size the line size. It has a ring
-            // so it reads on any colour.
+            // The dot shows the colour, and its size the line size. Its edge keeps
+            // it visible on any colour.
             Rectangle {
-                readonly property real d: Logic.dotDiameter(root.editor.size)
-
                 anchors.centerIn: parent
-                width: d + 5
+                width: Logic.dotDiameter(root.editor.size, root.buttonSize.height, root.dpr)
                 height: width
                 radius: width / 2
-                color: Qt.alpha(Colours.palette.m3outline, 0.5)
-
-                Rectangle {
-                    anchors.centerIn: parent
-                    width: parent.d + 3
-                    height: width
-                    radius: width / 2
-                    color: Colours.palette.m3surfaceContainer
-
-                    Rectangle {
-                        anchors.centerIn: parent
-                        width: parent.parent.d
-                        height: width
-                        radius: width / 2
-                        color: root.editor.color
-                    }
-                }
+                color: root.editor.color
+                border.width: 1 / root.dpr
+                border.color: Colours.palette.m3outline
             }
         }
 
-        Cell {
+        BarIcon {
             cellId: "undo"
             objectName: "editor-undo"
-            name: Tr.tr("Undo")
+            tip: Tr.tr("Undo")
             icon: "undo"
             disabled: !root.editor.canUndo
             onClicked: root.editor.undo()
         }
 
-        Cell {
+        BarIcon {
             cellId: "redo"
             objectName: "editor-redo"
-            name: Tr.tr("Redo")
+            tip: Tr.tr("Redo")
             icon: "redo"
             disabled: !root.editor.canRedo
             onClicked: root.editor.redo()
         }
 
-        Cell {
+        // One button for both states, so the pointer stays on the same control
+        // while it grows. A second control swapped in would make the first lose
+        // the pointer and disarm at once.
+        BarText {
+            id: clearButton
+
+            readonly property bool armed: root.editor.clearArmed
+
             cellId: "clear"
             objectName: "editor-clear"
-            name: root.editor.clearArmed ? Tr.tr("Click again to clear all") : Tr.tr("Clear all")
+            tip: armed ? Tr.tr("Click again to clear") : Tr.tr("Clear all")
             icon: "delete"
-            iconColor: root.editor.clearArmed ? Colours.palette.m3error : Colours.palette.m3onSurface
-            fill: root.editor.clearArmed ? Qt.alpha(Colours.palette.m3error, 0.15) : "transparent"
-            label: root.editor.clearArmed ? Tr.tr("Clear all?") : ""
-            labelFont: Tokens.font.body.small
-            labelColor: Colours.palette.m3error
+            text: armed ? Tr.tr("Clear all?") : ""
+            spacing: armed ? Tokens.spacing.small : 0
+            horizontalPadding: armed ? Tokens.padding.small : Tokens.padding.extraSmall / 2
+            type: armed ? IconTextButton.Filled : IconTextButton.Text
+            inactiveColour: Colours.palette.m3error
+            inactiveOnColour: armed ? Colours.palette.m3onError : Colours.palette.m3onSurfaceVariant
+            implicitWidth: Math.max(probe.implicitWidth,
+                iconLabel.implicitWidth + (armed ? spacing + label.implicitWidth : 0) + horizontalPadding * 2)
             onClicked: root.editor.pressClear()
-            onExited: root.editor.disarmClear()
+
+            // Moving off the button disarms it, as the classic tool does.
+            Connections {
+                target: clearButton.stateLayer
+
+                function onExited(): void {
+                    root.editor.disarmClear();
+                }
+            }
         }
 
-        Cell {
+        BarIcon {
             cellId: "save"
             objectName: "editor-save"
-            name: Tr.tr("Save")
+            tip: Tr.tr("Save")
             icon: "download"
             onClicked: root.saveRequested()
         }
 
-        Cell {
+        BarText {
+            id: copyButton
+
             cellId: "copy"
             objectName: "editor-copy"
-            name: Tr.tr("Copy annotated image")
+            tip: Tr.tr("Copy")
             icon: "content_copy"
-            iconColor: Colours.palette.m3onPrimary
-            fill: Colours.palette.m3primary
-            stateColor: Colours.palette.m3onPrimary
-            label: Tr.tr("Copy")
-            labelFont: Tokens.font.body.medium
-            labelColor: Colours.palette.m3onPrimary
+            text: Tr.tr("Copy")
+            type: IconTextButton.Filled
             onClicked: root.copyRequested()
         }
 
-        Cell {
+        BarIcon {
             cellId: "close"
             objectName: "editor-close"
-            name: Tr.tr("Close")
+            tip: Tr.tr("Close")
             icon: "close"
             onClicked: root.closeRequested()
         }
@@ -266,27 +309,18 @@ Item {
             anchors.fill: parent
         }
 
-        StyledRect {
+        Rectangle {
             x: root.ink.divider.x
             y: root.ink.divider.y
             width: root.ink.divider.width
             height: root.ink.divider.height
-            color: Qt.alpha(Colours.palette.m3outline, 0.5)
-        }
-
-        StyledRect {
-            x: root.ink.track.x
-            y: root.ink.track.y
-            width: root.ink.track.width
-            height: root.ink.track.height
-            radius: Tokens.rounding.small
-            color: Colours.palette.m3surfaceContainerHigh
+            color: Colours.palette.m3outlineVariant
         }
 
         Repeater {
             model: root.ink.colors
 
-            MouseArea {
+            ButtonBase {
                 id: dot
 
                 required property var modelData
@@ -298,48 +332,36 @@ Item {
                 y: modelData.y
                 width: modelData.width
                 height: modelData.height
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
+                implicitWidth: modelData.width
+                implicitHeight: modelData.height
+                type: ButtonBase.Text
+                isRound: true
+                inactiveOnColour: Colours.palette.m3onSurface
+                activeOnColour: Colours.palette.m3onSurface
                 onClicked: root.editor.setColor(modelData.index)
 
                 Accessible.role: Accessible.Button
                 Accessible.name: dot.value
+                Accessible.onPressAction: dot.clicked()
 
-                // The chosen colour has a ring of foreground and surface colour.
+                // The chosen colour has a ring in the foreground colour.
                 Rectangle {
-                    anchors.centerIn: parent
+                    anchors.fill: parent
                     visible: dot.selected
-                    width: swatch.width + 7
-                    height: width
                     radius: width / 2
-                    color: Colours.palette.m3onSurface
+                    color: "transparent"
+                    border.width: Tokens.spacing.extraSmall / 2
+                    border.color: Colours.palette.m3onSurface
                 }
 
                 Rectangle {
                     anchors.centerIn: parent
-                    visible: dot.selected
-                    width: swatch.width + 4
-                    height: width
-                    radius: width / 2
-                    color: Colours.palette.m3surfaceContainer
-                }
-
-                Rectangle {
-                    id: swatch
-
-                    anchors.centerIn: parent
-                    width: dot.containsMouse ? 22.4 : 20
+                    width: parent.width - Tokens.spacing.extraSmall * 2
                     height: width
                     radius: width / 2
                     color: dot.value
-                    border.width: 1
-                    border.color: Qt.alpha("black", 0.18)
-
-                    Behavior on width {
-                        Anim {
-                            type: Anim.FastSpatial
-                        }
-                    }
+                    border.width: 1 / root.dpr
+                    border.color: Colours.palette.m3outline
                 }
             }
         }
@@ -347,7 +369,7 @@ Item {
         Repeater {
             model: root.ink.sizes
 
-            MouseArea {
+            TextButton {
                 id: segment
 
                 required property var modelData
@@ -358,39 +380,17 @@ Item {
                 y: modelData.y
                 width: modelData.width
                 height: modelData.height
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
+                type: TextButton.Tonal
+                checked: selected
+                text: modelData.label
                 onClicked: root.editor.setSize(modelData.index)
 
+                ToolTip.visible: hovered
+                ToolTip.delay: 500
+                ToolTip.text: [Tr.tr("Thin line"), Tr.tr("Medium line"), Tr.tr("Thick line")][modelData.index] ?? ""
                 Accessible.role: Accessible.Button
-                Accessible.name: modelData.label
-
-                StyledRect {
-                    anchors.fill: parent
-                    radius: Tokens.rounding.small
-                    color: segment.selected ? Colours.palette.m3primary
-                        : (segment.containsMouse ? Qt.alpha(Colours.palette.m3surfaceContainerHighest, 0.8) : "transparent")
-                }
-
-                // A sample of the line in the chosen colour, then its letter.
-                Row {
-                    anchors.centerIn: parent
-                    spacing: 8
-
-                    Rectangle {
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: 22
-                        height: segment.modelData.size
-                        radius: height / 2
-                        color: root.editor.color
-                    }
-
-                    StyledText {
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: segment.modelData.label
-                        color: segment.selected ? Colours.palette.m3onPrimary : Colours.palette.m3onSurfaceVariant
-                    }
-                }
+                Accessible.name: ToolTip.text
+                Accessible.onPressAction: segment.clicked()
             }
         }
     }
@@ -456,85 +456,56 @@ Item {
             x: glass.cornerRadius
             y: 1
             width: glass.width - glass.cornerRadius * 2
-            height: 1
+            height: 1 / root.dpr
             color: Qt.alpha(Colours.palette.m3onSurface, 0.07)
         }
     }
 
-    // A bar button placed where EditorLogic.barLayout() puts the item `cellId`.
-    component Cell: BarButton {
+    // An IconButton placed where EditorLogic.barLayout() puts the item `cellId`.
+    component BarIcon: IconButton {
+        id: button
+
         required property string cellId
+        // The tooltip and the accessible name.
+        property string tip
         readonly property var spot: Logic.itemRect(root.layout, cellId)
 
         x: spot ? spot.x : 0
         y: spot ? spot.y : 0
-        width: spot ? spot.width : 0
-        height: spot ? spot.height : 0
+        width: spot ? spot.width : implicitWidth
+        height: spot ? spot.height : implicitHeight
+        type: IconButton.Text
+
+        ToolTip.visible: hovered
+        ToolTip.delay: 500
+        ToolTip.text: tip
+        Accessible.role: Accessible.Button
+        Accessible.name: tip
+        Accessible.onPressAction: button.clicked()
     }
 
-    // A 30 px button. `label` makes it a pill with an icon and text.
-    component BarButton: StyledRect {
+    // An IconTextButton placed like BarIcon. It takes the height of the icon
+    // buttons and their icon size, so a row of both reads as one.
+    component BarText: IconTextButton {
         id: button
 
-        property string name
-        property string icon
-        property real iconRotation
-        property color iconColor: Colours.palette.m3onSurface
-        property color fill: "transparent"
-        property color stateColor: Colours.palette.m3onSurface
-        property bool highlighted
-        property bool disabled
-        property string label
-        property font labelFont: Tokens.font.body.medium
-        property color labelColor: Colours.palette.m3onSurface
-        default property alias content: extra.data
+        required property string cellId
+        property string tip
+        readonly property var spot: Logic.itemRect(root.layout, cellId)
 
-        signal clicked
-        // The pointer left the button. Clear disarms on it, as the classic tool does.
-        signal exited
+        x: spot ? spot.x : 0
+        y: spot ? spot.y : 0
+        width: spot ? spot.width : implicitWidth
+        height: spot ? spot.height : implicitHeight
+        iconLabel.fontStyle: Tokens.font.icon.medium
+        verticalPadding: Tokens.padding.extraSmall / 2
+        implicitHeight: Math.max(probe.implicitHeight, Math.max(iconLabel.implicitHeight, label.implicitHeight) + verticalPadding * 2)
 
-        radius: Tokens.rounding.small
-        color: highlighted ? Qt.alpha(Colours.palette.m3surfaceContainerHighest, 0.8) : fill
-        opacity: disabled ? 0.3 : 1
-
+        ToolTip.visible: hovered
+        ToolTip.delay: 500
+        ToolTip.text: tip
         Accessible.role: Accessible.Button
-        Accessible.name: name
+        Accessible.name: tip
         Accessible.onPressAction: button.clicked()
-
-        StateLayer {
-            objectName: button.objectName + "-layer"
-            color: button.stateColor
-            disabled: button.disabled
-            onClicked: button.clicked()
-            onExited: button.exited()
-        }
-
-        Row {
-            anchors.centerIn: parent
-            spacing: 6
-
-            MaterialIcon {
-                anchors.verticalCenter: parent.verticalCenter
-                visible: button.icon !== ""
-                text: button.icon
-                rotation: button.iconRotation
-                color: button.iconColor
-                fontStyle: Tokens.font.icon.medium
-            }
-
-            StyledText {
-                anchors.verticalCenter: parent.verticalCenter
-                visible: button.label !== ""
-                text: button.label
-                font: button.labelFont
-                color: button.labelColor
-            }
-        }
-
-        Item {
-            id: extra
-
-            anchors.fill: parent
-        }
     }
 }

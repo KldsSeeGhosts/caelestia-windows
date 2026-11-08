@@ -16,6 +16,15 @@ import qs.modules.areapicker
 ShellRoot {
     id: root
 
+    // The toolbar and the buttons are sized by the controls' fonts, so the test
+    // loads the shell's fonts and a screen for Tokens, as the shell does.
+    Tokens.screen: Quickshell.screens[0]?.name ?? ""
+
+    FontLoader {
+        source: Quickshell.shellPath("assets/google-sans-flex/GoogleSansFlex-VariableFont_GRAD,ROND,opsz,slnt,wdth,wght.ttf")
+    }
+    FontLoader { source: Quickshell.shellPath("assets/material-symbols-rounded/MaterialSymbolsRounded.ttf") }
+
     property int assertions: 0
     property bool surfacesHiddenNow: true
     property string saveRoot: (Quickshell.env("CAELESTIA_STATE_DIR") || "").replace(/\\/g, "/") + "/thumbnail-test"
@@ -314,12 +323,20 @@ ShellRoot {
         check(find(card, "captureThumbnailAction-copy") && find(card, "captureThumbnailAction-reveal") && find(card, "captureThumbnailAction-close"),
             "Copy, Show in folder and Close are offered");
         check(find(card, "captureThumbnailAction-save") === null, "Save is not, because the capture is saved");
-        check(find(card, "captureThumbnailAction-copy").width === 30 && find(card, "captureThumbnailAction-copy").height === 30, "30 px buttons");
+        const copy = find(card, "captureThumbnailAction-copy");
+        check(copy.stateLayer !== undefined && copy.type === 2, "the buttons are Caelestia IconButtons of the text type");
+        check(copy.width === copy.height && copy.width > 0, "square, sized by the control: " + copy.width);
+        const buttons = ["copy", "reveal", "close"].map(name => find(card, "captureThumbnailAction-" + name));
+        check(buttons.every(button => button.width === copy.width && button.height === copy.height), "all the same size");
+        check(buttons[1].x - (buttons[0].x + buttons[0].width) === Tokens.spacing.extraSmall, "spaced by Tokens");
+        check(pill.width === 3 * copy.width + 2 * Tokens.spacing.extraSmall + 2 * Tokens.padding.extraSmall
+            && pill.height === copy.height + 2 * Tokens.padding.extraSmall, "the pill is its buttons plus Tokens padding");
         card.manualHover = true;
         later(600, () => step(() => {
             check(pill.visible && pill.opacity === 1, "the buttons show while the pointer is over the card");
             check(card.paused, "which pauses the timeout");
-            check(pill.y + pill.height === card.height - 9, "9 px above the bottom edge");
+            check(pill.y + pill.height === card.height - Tokens.spacing.small, "a small gap above the bottom edge");
+            check(pill.x === Math.round((card.width - pill.width) / 2), "centred on whole pixels");
             card.manualHover = false;
             copyCapture();
         }));
@@ -375,7 +392,7 @@ ShellRoot {
     function actionsStep(): void {
         const entry = thumbs.entries[1];
         const card = cardFor(entry);
-        find(card, "captureThumbnailAction-copy").triggered("copy");
+        find(card, "captureThumbnailAction-copy").clicked();
         check(clipboardRecorder.copied.length === 2 && clipboardRecorder.copied[1] === entry.path && clipboardRecorder.existedAtCall,
             "Copy puts the preview file on the clipboard");
         check(thumbs.entries.length === 2, "and leaves the thumbnail");
@@ -386,7 +403,7 @@ ShellRoot {
 
         // Save writes to Screenshots with the picker's naming.
         const preview = entry.temp;
-        find(card, "captureThumbnailAction-save").triggered("save");
+        find(card, "captureThumbnailAction-save").clicked();
         check(entry.saved && entry.path !== preview, "Save saves the capture");
         check(entry.path.indexOf(root.saveRoot + "/Screenshots/annotate-") === 0 && entry.path.endsWith(".png"), "in Screenshots with the default name: " + entry.path);
         check(WindowsFiles.isFile(entry.path), "the file exists");
@@ -544,7 +561,7 @@ ShellRoot {
     function closeCard(entry, temp): void {
         const card = cardFor(entry);
         check(card.slide === 1 && card.maskItem.x === card.x, "after the slide the region is the card");
-        find(card, "captureThumbnailAction-close").triggered("close");
+        find(card, "captureThumbnailAction-close").clicked();
         check(entry.closing, "Close starts the exit");
         later(1500, () => step(() => {
             check(thumbs.entries.length === 4 && !thumbs.entries.includes(entry), "the thumbnail is gone after the exit");
