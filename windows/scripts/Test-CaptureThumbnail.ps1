@@ -11,7 +11,7 @@ New-Item -ItemType Directory -Path $fixtureTemp | Out-Null
 try {
     $result = Invoke-QmlFixture -QtPrefix $QtPrefix -BuildRoot $BuildRoot -Name capture-thumbnail -ShellFixture -UseQuickshell `
         -Sources @('windows/tests/CaptureThumbnailTest.qml') -FixtureFile 'windows/tests/CaptureThumbnailTest.qml' `
-        -Marker CAELESTIA_CAPTURE_THUMBNAIL -MinimumAssertions 220 -TimeoutMs 120000 `
+        -Marker CAELESTIA_CAPTURE_THUMBNAIL -MinimumAssertions 250 -TimeoutMs 120000 `
         -Environment @{ TEMP = $fixtureTemp; TMP = $fixtureTemp }
 } finally {
     $resolved = [IO.Path]::GetFullPath($fixtureTemp)

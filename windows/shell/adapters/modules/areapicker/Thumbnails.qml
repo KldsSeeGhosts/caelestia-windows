@@ -55,6 +55,9 @@ Scope {
     // Preview files that could not be deleted yet (a viewer holds them open).
     // Not saved anywhere: a shell reload forgets them.
     property var pendingTemps: []
+    property int pendingLimit: 20
+    // How many paths were dropped from a full list.
+    property int droppedCount
     property int retryInterval: 30000
 
     readonly property var settings: Logic.settings(GlobalConfig.windows?.capture)
@@ -109,6 +112,7 @@ Scope {
             serial: ++lastId,
             screen: info.screen,
             path: path,
+            imagePath: path,
             temp: temp,
             saved: saved,
             imageWidth: info.width ?? 0,
@@ -149,20 +153,37 @@ Scope {
     // Deletes the entry's own preview file. Only an exact capture temp path is
     // ever removed (the plugin refuses everything else), and a saved capture has
     // no temp path, so a file the user keeps is never touched.
+    // A file a live card is showing is never released: Save points the card at the
+    // saved file first, and a discarded entry has left `entries` before this runs.
+    // So a path on the retry list is never one that a card could reload.
     function release(entry: var): void {
-        if (!entry.temp)
+        if (!entry.temp || isShown(entry.temp))
             return;
         const path = entry.temp;
         entry.temp = "";
         deleteTemp(path);
     }
 
+    // Whether a live card draws this file.
+    function isShown(path: string): bool {
+        return entries.some(entry => entry.imagePath === path);
+    }
+
     // Deletes one preview file. A viewer can hold it open without delete sharing,
     // so a file that is still there is put on the retry list, which this scope
-    // owns and which outlives the entry.
+    // owns and which outlives the entry. The list holds at most `pendingLimit`
+    // paths. When it is full the oldest path is dropped and logged once. That
+    // file stays in the temp directory, as one left by a crash does.
     function deleteTemp(path: string): void {
-        if (!tryRemove(path) && !pendingTemps.includes(path))
-            pendingTemps = pendingTemps.concat([path]);
+        if (tryRemove(path) || pendingTemps.includes(path))
+            return;
+        const list = pendingTemps.concat([path]);
+        while (list.length > pendingLimit) {
+            const dropped = list.shift();
+            droppedCount++;
+            console.warn("Thumbnail preview file left in the temp directory (retry list full):", dropped);
+        }
+        pendingTemps = list;
     }
 
     function tryRemove(path: string): bool {
@@ -198,6 +219,9 @@ Scope {
         }
         entry.path = dest;
         entry.saved = true;
+        // The card switches to the saved file first. Only then is the preview
+        // file released, so it can never be deleted under a card that shows it.
+        entry.imagePath = dest;
         release(entry);
         Toaster.toast(Tr.tr("Screenshot taken"), Tr.tr("Saved to %1").arg(dest), "screenshot_region");
         return true;
@@ -250,7 +274,10 @@ Scope {
     Component.onDestruction: {
         if (CaptureUi.thumbnails === root)
             CaptureUi.thumbnails = null;
-        for (const entry of entries)
+        // The cards go with this scope, so none of them shows a file any more.
+        const gone = entries;
+        entries = [];
+        for (const entry of gone)
             release(entry);
         retryTemps();
     }
@@ -273,6 +300,9 @@ Scope {
             required property int serial
             required property string screen
             property string path
+            // The file the card draws. It is `path` until Save moves the capture,
+            // and it changes before the preview file is released.
+            property string imagePath
             // The preview file made for a copy-only capture, or "".
             property string temp
             property bool saved

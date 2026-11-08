@@ -22,7 +22,8 @@ Item {
     id: root
 
     required property var owner
-    // A Thumbnails entry: path, saved, closing, imageWidth, imageHeight, dpr.
+    // A Thumbnails entry: path, imagePath, saved, closing, imageWidth,
+    // imageHeight, dpr.
     required property var entry
     // This card's rectangle in the panel, from ThumbnailLogic.stackRects().
     required property var slot
@@ -192,23 +193,20 @@ Item {
     Image {
         id: image
 
-        property url target
-
         objectName: "captureThumbnailImage"
         anchors.centerIn: parent
         width: root.fit.width
         height: root.fit.height
-        // The file may be replaced or deleted later (Save moves a preview file
-        // into Screenshots), so the picture is read once.
-        source: target
+        // The owner points `imagePath` at the saved file before it deletes a
+        // preview file, so this source never names a file that is about to go.
+        // Any later reload (a new size or scale) reads the saved file.
+        source: FileUrls.fromLocalPath(root.entry.imagePath)
         sourceSize: Qt.size(Math.ceil(root.fit.width * root.entry.dpr), Math.ceil(root.fit.height * root.entry.dpr))
         fillMode: Image.PreserveAspectFit
         asynchronous: true
         cache: false
         smooth: true
         mipmap: true
-
-        Component.onCompleted: target = FileUrls.fromLocalPath(root.entry.path)
     }
 
     // The card body opens the image. Nothing here edits it: the editor does not

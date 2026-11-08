@@ -686,15 +686,18 @@ ShellRoot {
     // a viewer does, so Windows refuses to delete it until the helper lets go.
     // It creates a flag file once it holds the file and lets go when a second flag
     // file appears.
+    // `path` is one path or a list of paths, all held by the same helper.
     function holdFile(path, callback): void {
         const base = root.stateFolder + "/thumbnail-lock-" + (++lockCount);
         held.flag = base + ".held";
         held.release = base + ".release";
+        const list = (Array.isArray(path) ? path : [path]).map(item => "'" + winPath(item) + "'").join(",");
         holder.command = [Quickshell.env("SystemRoot") + "\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
             "-NoProfile", "-NonInteractive", "-Command",
-            "$f = [IO.File]::Open('" + winPath(path) + "', 'Open', 'Read', 'Read'); "
+            "$held = @(foreach ($p in @(" + list + ")) { [IO.File]::Open($p, 'Open', 'Read', 'Read') }); "
             + "New-Item -ItemType File -Force -Path '" + winPath(held.flag) + "' | Out-Null; "
-            + "while (-not (Test-Path -LiteralPath '" + winPath(held.release) + "')) { Start-Sleep -Milliseconds 50 }; $f.Close()"];
+            + "while (-not (Test-Path -LiteralPath '" + winPath(held.release) + "')) { Start-Sleep -Milliseconds 50 }; "
+            + "foreach ($f in $held) { $f.Close() }"];
         holder.running = true;
         waitFor(() => WindowsFiles.isFile(held.flag), callback, 200);
     }
@@ -758,8 +761,73 @@ ShellRoot {
                         check(thumbs.addSaved(info(), savedPath), "the next capture arrives");
                         check(!WindowsFiles.isFile(temp) && thumbs.pendingTemps.length === 0, "and retries the deletion at once");
                         check(!thumbs.retrying, "so the timer stops");
-                        reloadWithLock();
+                        saveWhileLocked();
                     }));
+                }));
+            }));
+        }));
+    }
+
+    // Save while a viewer holds the preview file, then a retry, then a reload of
+    // the card's image. The card must already show the saved file by then.
+    function saveWhileLocked(): void {
+        thumbs.retryInterval = 300;
+        check(thumbs.addCopy(info(), savedPath), "a copy-only thumbnail");
+        const entry = thumbs.entries[thumbs.entries.length - 1];
+        const temp = entry.temp;
+        check(entry.imagePath === temp, "the card shows the preview file");
+        later(700, () => step(() => {
+            const image = find(cardFor(entry), "captureThumbnailImage");
+            check(image.status === Image.Ready && decodeURIComponent(String(image.source)).endsWith(temp), "and has loaded it");
+            holdFile(temp, () => step(() => {
+                check(thumbs.saveEntry(entry) === true && entry.saved, "Save works while the preview file is locked");
+                check(entry.imagePath === entry.path && entry.path !== temp, "the card now shows the saved file");
+                check(decodeURIComponent(String(image.source)).endsWith(entry.path), "its image source changed first");
+                check(entry.temp === "" && WindowsFiles.isFile(temp) && thumbs.pendingTemps.includes(temp), "then the locked preview file went on the retry list");
+                check(!thumbs.isShown(temp), "no live card shows a file on the list");
+                later(500, () => step(() => {
+                    check(image.status === Image.Ready, "the saved file is loaded");
+                    letGo(() => step(() => {
+                        later(900, () => step(() => {
+                            check(!WindowsFiles.isFile(temp) && thumbs.pendingTemps.length === 0, "the retry deleted the preview file");
+                            // A new size makes the image load again. It reads the saved file.
+                            const before = image.sourceSize.width;
+                            entry.imageWidth = 3000;
+                            entry.imageHeight = 2000;
+                            check(image.sourceSize.width > 0 && image.sourceSize.width !== before, "a new size asks for a new decode: " + before + " then " + image.sourceSize.width);
+                            later(600, () => step(() => {
+                                check(image.status === Image.Ready, "and the image stays valid after the preview file is gone");
+                                capStep();
+                            }));
+                        }));
+                    }));
+                }));
+            }));
+        }));
+    }
+
+    // The retry list holds at most pendingLimit paths.
+    function capStep(): void {
+        thumbs.pendingLimit = 3;
+        const paths = [];
+        for (let i = 0; i < 4; i++)
+            paths.push(CUtils.newCaptureTempPath().split("\\").join("/"));
+        check(paths.every(path => path !== "" && WindowsFiles.isFile(path)), "four temp files");
+        holdFile(paths, () => step(() => {
+            const dropped = thumbs.droppedCount;
+            for (const path of paths)
+                thumbs.deleteTemp(path);
+            check(thumbs.pendingTemps.length === 3 && thumbs.droppedCount === dropped + 1, "the list stops at its limit and drops one");
+            check(thumbs.pendingTemps[0] === paths[1] && thumbs.pendingTemps[2] === paths[3], "the oldest path");
+            check(WindowsFiles.isFile(paths[0]), "whose file stays in the temp directory");
+            thumbs.deleteTemp(paths[3]);
+            check(thumbs.pendingTemps.length === 3 && thumbs.droppedCount === dropped + 1, "a path already on the list is not added twice");
+            letGo(() => step(() => {
+                later(900, () => step(() => {
+                    check(thumbs.pendingTemps.length === 0 && paths.slice(1).every(path => !WindowsFiles.isFile(path)), "the three that were kept are deleted once released");
+                    check(CUtils.removeCaptureTemp(paths[0]) === true, "the dropped one can still be removed by hand");
+                    thumbs.pendingLimit = 20;
+                    reloadWithLock();
                 }));
             }));
         }));
