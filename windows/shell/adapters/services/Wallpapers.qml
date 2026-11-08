@@ -88,10 +88,14 @@ Singleton {
     // WallpaperEngine.ownsDesktop keeps the physical claim even for a running
     // process this profile did not opt into, so the underlay, handback latch
     // and above-icons guard still protect issue #25's ownership boundary.
-    // The adapter, however, only treats that foreign output as its visible
-    // source when the integration is enabled. With the toggle off, the desktop
-    // and the palette use Caelestia's own wallpaper, as a fresh profile does.
-    readonly property bool externalWallpaperActive: WallpaperEngine.enabled && WallpaperEngine.ownsDesktop
+    // The enabled-dependent visible source applies only to a fresh profile.
+    // An existing profile keeps the released build's behaviour exactly: a
+    // running engine owns the visible desktop whether or not this profile
+    // enabled the integration, so a saved enabled:false does not change what
+    // it shows. A fresh profile shows Caelestia's own wallpaper while the
+    // integration is off.
+    readonly property bool externalWallpaperActive: WallpaperEngine.ownsDesktop
+        && (!root.sourceFresh || WallpaperEngine.enabled)
     property var files: []
     property int listRequest: 0
     // Nexus's Wallpaper & style pages (modules/nexus/pages/wallandstyle) group
@@ -179,8 +183,13 @@ Singleton {
         // display that follows Windows.
         if (externalWallpaperActive || WallpaperEngine.desktopHandedBack)
             return;
-        root.refreshScreenFiles();
+        if (root.sourceFresh) {
+            root.refreshFreshScreenFiles();
+            root.noteGoodFile(root.fileCurrent);
+            return;
+        }
         root.noteGoodFile(root.fileCurrent);
+        root.refreshScreenFiles();
     }
 
     // A display shows its own pick, else the profile-wide pick, else the
@@ -264,8 +273,10 @@ Singleton {
     function resolveInitialSource(): void {
         root.sourceInitialized = true;
         if (!root.sourceFresh) {
+            // Exactly the released build's startup source: the saved Windows
+            // wallpaper, or the bundled asset when Windows reports no path.
             const current = Native.Wallpaper.currentWallpaper().replace(/\\/g, "/");
-            root.fileCurrent = root.usableFile(current) ? current : root.fallback;
+            root.fileCurrent = current || root.fallback;
             root.refreshScreenFiles();
             if (!root.externalWallpaperActive)
                 root.noteGoodFile(root.fileCurrent);

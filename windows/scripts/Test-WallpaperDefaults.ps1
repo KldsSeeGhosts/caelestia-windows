@@ -49,12 +49,26 @@ $fixtures = @(
     [ordered]@{ name = 'wallpaper-invalid-record'; source = 'windows/tests/WallpaperInvalidRecordTest.qml'
         marker = 'CAELESTIA_WALLPAPER_INVALID'; minimum = 12 },
     [ordered]@{ name = 'wallpaper-future-record'; source = 'windows/tests/WallpaperFutureRecordTest.qml'
-        marker = 'CAELESTIA_WALLPAPER_FUTURE'; minimum = 7 }
+        marker = 'CAELESTIA_WALLPAPER_FUTURE'; minimum = 7 },
+    [ordered]@{ name = 'wallpaper-engine-config'; source = 'windows/tests/WallpaperEngineConfigTest.qml'
+        marker = 'CAELESTIA_WALLPAPER_ENGINE_CONFIG'; minimum = 16 },
+    # One scenario, two profiles: the released behaviour for an existing
+    # profile and the fresh-profile policy are asserted from the same code.
+    [ordered]@{ name = 'wallpaper-engine-handback-existing'; source = 'windows/tests/WallpaperEngineHandbackExistingTest.qml'
+        extraSources = @('windows/tests/WallpaperEngineHandbackScenario.qml')
+        marker = 'CAELESTIA_WALLPAPER_ENGINE_HANDBACK'; minimum = 14 },
+    [ordered]@{ name = 'wallpaper-engine-handback-fresh'; source = 'windows/tests/WallpaperEngineHandbackFreshTest.qml'
+        extraSources = @('windows/tests/WallpaperEngineHandbackScenario.qml')
+        marker = 'CAELESTIA_WALLPAPER_ENGINE_HANDBACK'; minimum = 12 }
 )
 foreach ($fixture in $fixtures) {
+    $sources = @($fixture.source)
+    if ($fixture.Contains('extraSources')) {
+        $sources += $fixture.extraSources
+    }
     $result = Invoke-QmlFixture -QtPrefix $QtPrefix -BuildRoot $BuildRoot -Name $fixture.name -ShellFixture `
         -FakeDirectories @('windows/tests/fakes/shell', 'windows/tests/fakes/native', 'windows/tests/fakes/wallpaper') `
-        -Sources @($fixture.source) -FixtureFile $fixture.source `
+        -Sources $sources -FixtureFile $fixture.source `
         -Marker $fixture.marker -MinimumAssertions $fixture.minimum
     $result | ConvertTo-Json -Depth 8
     if (-not $result.passed) {

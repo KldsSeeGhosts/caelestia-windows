@@ -378,7 +378,10 @@ Singleton {
                 root.options = parsed.windows?.wallpaperEngine ?? {};
                 root.configLoaded = true;
             } catch (error) {
-                root.options = {};
+                // A malformed read can be a writer's partial document. Keep
+                // the last successfully loaded settings instead of disabling
+                // an integration this profile opted into. A missing key in the
+                // document just defaults to off, as before.
                 root.configLoaded = true;
                 root.lastError = String(error);
             }
@@ -402,9 +405,17 @@ Singleton {
                 root.lastError = "Wallpaper Engine settings could not be read";
                 return;
             }
-            root.configDocument = {};
-            root.options = {};
+            // A transient lock is not evidence that the saved setting went
+            // away. Keep the last successfully loaded document and options;
+            // unlocking the file may not raise another change event. Only a
+            // missing file clears them, so an absent key defaults to off.
+            if (error === FileViewError.FileNotFound) {
+                root.configDocument = {};
+                root.options = {};
+            }
             root.configLoaded = true;
+            if (error !== FileViewError.FileNotFound)
+                root.lastError = "Wallpaper Engine settings could not be read";
         }
         onSaved: {
             if (root.configSavePending) {
