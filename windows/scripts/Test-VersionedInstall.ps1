@@ -774,7 +774,7 @@ try {
     # The Run value has one builder. The autostart writer must use the same
     # no-window launch command as the Start-menu shortcut and Apps & features
     # entry, so a signed launcher (#20) changes in one place.
-    $existingLaunch = Get-Command Get-CaelestiaLaunchCommand -CommandType Function -ErrorAction SilentlyContinue
+    $existingLaunch = ${function:Get-CaelestiaLaunchCommand}
     function Get-CaelestiaLaunchCommand([string]$Prefix, [string]$Action) {
         return [pscustomobject]@{ Target = 'conhost.exe'; Arguments = ''; CommandLine = 'hidden:' + $Action + ':' + $Prefix }
     }
@@ -786,8 +786,8 @@ try {
             'Set-CaelestiaAutostart did not use the single hidden launch command builder.'
         $null = Set-CaelestiaAutostart -Prefix $removePrefix -Enabled:$false
     } finally {
-        if ($existingLaunch) {
-            Set-Item -Path function:Get-CaelestiaLaunchCommand -Value $existingLaunch.ScriptBlock
+        if ($null -ne $existingLaunch) {
+            Set-Item -Path function:Get-CaelestiaLaunchCommand -Value $existingLaunch
         } else {
             Remove-Item function:Get-CaelestiaLaunchCommand -ErrorAction SilentlyContinue
         }
@@ -836,6 +836,11 @@ function Show-CaelestiaHandoffDialog([string]$Message) {
     $entryPatched += "`r`n" + $entryStub.Replace('REPORT_PATH', $entryReport.Replace("'", "''"))
     [IO.File]::WriteAllText($entryVersions, $entryPatched, (New-Object Text.UTF8Encoding($false)))
     $entryLauncher = Join-Path $entryFixture 'Start-Caelestia.ps1'
+    # The stable-root fixture runs in a child process without this test's
+    # function overrides. Use the real integration naming helper here too, so
+    # the parent and the child agree on the Run value name.
+    $savedEntryIntegration = ${function:Get-CaelestiaIntegration}
+    ${function:Get-CaelestiaIntegration} = $script:realGetIntegration
     $entryRunName = (Get-CaelestiaIntegration $entryPrefix).RunName
     try {
         # No notifications are available in this fixture, so a failure can only
@@ -887,6 +892,7 @@ function Show-CaelestiaHandoffDialog([string]$Message) {
         Assert ($entryStatus.enabled -eq $true) 'The stable-root status did not verify the remaining Run entry.'
     } finally {
         Remove-ItemProperty -LiteralPath $runKey -Name $entryRunName -ErrorAction SilentlyContinue
+        ${function:Get-CaelestiaIntegration} = $savedEntryIntegration
     }
     Write-Output 'PASS stable root: AutostartStatus and Quit -DisableAutostart route without hiding removal failures.'
     # An upgrade refreshes an existing owned Run value even without -Autostart,
@@ -1160,7 +1166,7 @@ if ('__BEHAVIOUR__' -eq 'throw') { throw 'Injected quit or desktop restore failu
     Assert ($success.ExitCode -eq 0) 'Switch back failed after a successful stable Quit.'
     Assert ($success.Output -match 'taskbar and desktop are back') 'Switch back did not report a successful Quit.'
     Assert ((Get-Content -LiteralPath (Join-Path $root 'switch-back-success\entry.txt') -Raw).Trim() -eq 'Quit|Disable=False') 'Switch back changed the autostart choice without one.'
-    $asked = Invoke-SwitchBackCase (New-SwitchBackCase 'asked' 'ok' -AutostartEnabled)
+    $asked = Invoke-SwitchBackCase (New-SwitchBackCase 'asked' 'ok' -AutostartEnabled) 'Disable'
     Assert ($asked.ExitCode -eq 0) 'Switch back failed after an accepted autostart choice.'
     Assert ((Get-Content -LiteralPath (Join-Path $root 'switch-back-asked\entry.txt') -Raw).Trim() -eq 'Quit|Disable=True') 'Switch back did not pass the chosen autostart removal to the stable entry.'
     $kept = Invoke-SwitchBackCase (New-SwitchBackCase 'kept' 'ok' -AutostartEnabled) 'Keep'
