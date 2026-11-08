@@ -76,8 +76,15 @@ requires separate explicit authorization.
 
 ## Operator setup
 
-This is DSSE with a custom role policy, not full TUF. Metadata authentication
-is separate from Authenticode. Payloads remain unsigned preview code.
+This is DSSE with a custom role policy, not full TUF. Metadata authentication is
+separate from Authenticode. Development and preview payloads remain unsigned.
+The owner's decision is that stable releases will be signed through SignPath
+Foundation, but no release is signed today and no signing pipeline or credential
+exists. See the
+[code signing policy](windows/docs/CODE-SIGNING-POLICY.md) for the intended
+signed set, roles and verification steps, and
+[SIGNING-ROADMAP.md](windows/docs/SIGNING-ROADMAP.md) for what a real signing
+pipeline still needs.
 
 Perform these owner actions in order. This source change does not create
 GitHub settings, credentials, metadata branches or releases.

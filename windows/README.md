@@ -48,6 +48,8 @@ the revisions and scenarios it was recorded against, not a release guarantee.
 - [Configuration reference](docs/CONFIGURATION.md)
 - [Keybinds reference](docs/KEYBINDS.md)
 - [Native build](NATIVE-BUILD.md)
+- [Code signing policy](docs/CODE-SIGNING-POLICY.md)
+- [Signing roadmap](docs/SIGNING-ROADMAP.md)
 - [Release checklist](docs/RELEASE-CHECKLIST.md)
 - [Roadmap and acceptance gates](ROADMAP.md)
 - [Third-party notices](../THIRD-PARTY-NOTICES.md)

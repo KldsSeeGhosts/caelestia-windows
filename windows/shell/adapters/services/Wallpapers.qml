@@ -15,7 +15,44 @@ Singleton {
 
     readonly property bool controlsEnabled: Quickshell.env("CAELESTIA_COMBINED_LIVE") === "1" && Quickshell.env("CAELESTIA_SHELL_SMOKE") !== "1"
     readonly property string fallback: Quickshell.shellPath("assets/wallpaper.webp")
-    property string fileCurrent: Native.Wallpaper.currentWallpaper().replace(/\\/g, "/") || fallback
+    // Two profiles behave differently. A profile this build first created (the
+    // WallpaperProvenance marker says "fresh") shows the bundled asset until
+    // the user picks a wallpaper in Caelestia, then shows only Caelestia picks:
+    // a Windows Settings or Wallpaper Engine change is never followed. A
+    // profile that existed before (marker "existing", or classified as existing
+    // by the state/caelestia rule) follows Windows exactly as before.
+    //
+    // Only a fresh profile persists picks, in desktop.json. The record keeps
+    // the profile-wide pick and the per-display picks. There is no baseline to
+    // compare, because a Windows image can no longer become a source here.
+    // Unknown top-level keys survive a rewrite, and a malformed or
+    // unknown-version record is preserved until an explicit pick replaces it.
+    readonly property string sourceRecordPath: `${Paths.state}/wallpaper/desktop.json`
+    property bool sourceComponentReady: false
+    property bool sourceInitialized: false
+    property bool sourceFresh: false
+    property string profilePick: ""
+    property var monitorPicks: ({})
+    // "valid", "missing" or "invalid". Read at startup; only a fresh profile
+    // uses the picks.
+    property string sourceRecordHealth: ""
+    property var sourceRecordDocument: null
+    // Pending is the last proposed text; confirmed is the text FileView
+    // reported as saved. A failed write stays pending and retries instead of
+    // being mistaken for a saved choice.
+    property string sourceRecordPending: ""
+    property string sourceRecordConfirmed: ""
+    property string sourceRecordWritingText: ""
+    property bool sourceRecordWriting: false
+    property bool sourceRecordVerifying: false
+    property int sourceRecordFailures: 0
+    property int sourceRecordRetryInterval: 2000
+    property bool sourceRecordDirty: false
+    property string sourceRecordError: ""
+    // Start on the bundled asset so the first frame is Caelestia even before
+    // the record and the user's Windows wallpaper are read. Resolution below
+    // replaces it for a profile that follows Windows or saved a pick.
+    property string fileCurrent: fallback
     // the last local wallpaper this desktop actually showed before an
     // engine took it over. IDesktopWallpaper can report an empty, missing or
     // system-black path at handback, and an Image with that source paints
@@ -48,7 +85,17 @@ Singleton {
     // not proof that the external renderer has presented anything.
     readonly property string current: externalWallpaperActive ? handbackWallpaper
         : showPreview ? previewPath : currentImage
+    // WallpaperEngine.ownsDesktop keeps the physical claim even for a running
+    // process this profile did not opt into, so the underlay, handback latch
+    // and above-icons guard still protect issue #25's ownership boundary.
+    // The enabled-dependent visible source applies only to a fresh profile.
+    // An existing profile keeps the released build's behaviour exactly: a
+    // running engine owns the visible desktop whether or not this profile
+    // enabled the integration, so a saved enabled:false does not change what
+    // it shows. A fresh profile shows Caelestia's own wallpaper while the
+    // integration is off.
     readonly property bool externalWallpaperActive: WallpaperEngine.ownsDesktop
+        && (!root.sourceFresh || WallpaperEngine.enabled)
     property var files: []
     property int listRequest: 0
     // Nexus's Wallpaper & style pages (modules/nexus/pages/wallandstyle) group
@@ -71,10 +118,21 @@ Singleton {
             onDisk: entry.onDisk !== false
         });
     }
+    // Windows adaptation (PR #66): a picker may show the scanned local folder
+    // while Wallpaper Engine's own picker choice hides it, so an imported image
+    // is not silently invisible. This changes only what the pickers display;
+    // the engine integration, its default and the saved setting are untouched.
+    property bool showLocalSource: false
+    // The local-only override is for the engine picker only, which is the one
+    // source that hides local files. "files" already shows them, and forcing
+    // "both" to local-only dropped every engine entry while the switch-back
+    // control (shown only for "engine") stayed hidden.
+    readonly property bool localSourceOverride: showLocalSource && WallpaperEngine.picker === "engine"
+    readonly property string activeSource: localSourceOverride ? "files" : WallpaperEngine.picker
     readonly property var list: {
         const engine = WallpaperEngine.enabled && WallpaperEngine.detected ? WallpaperEngine.items : [];
-        const raw = WallpaperEngine.picker === "engine" ? engine
-            : WallpaperEngine.picker === "both" ? [...engine, ...files] : files;
+        const raw = activeSource === "engine" ? engine
+            : activeSource === "both" ? [...engine, ...files] : files;
         return raw.map(normalize).filter(entry => entry !== null);
     }
     property bool previewColourLock: false
@@ -94,29 +152,244 @@ Singleton {
     readonly property bool schemeStateReady: schemeNameLoaded && schemeSourceLoaded
 
     Component.onCompleted: {
+        // WallpaperProvenance has already classified and recorded this profile
+        // before this object exists in production. An existing profile
+        // resolves from Windows at once; a fresh one waits for the record read
+        // so a saved pick is known before the first frame settles.
+        root.sourceFresh = !WallpaperProvenance.existing;
+        root.sourceComponentReady = true;
+        root.maybeResolve();
         reload();
-        refreshScreenFiles();
-        if (!externalWallpaperActive)
-            root.noteGoodFile(root.fileCurrent);
     }
     onCurrentImageChanged: applyPalette(false)
-    // Both files have been read (or found missing) once: the startup check.
-    onSchemeStateReadyChanged: applyPalette(false)
+    // The record decides between a saved wallpaper and the bundled default,
+    // and the default must be decided even when the optional colour runtime
+    // never writes scheme.json. Resolution therefore runs at completion;
+    // these files only gate colour generation.
+    onSchemeStateReadyChanged: root.applyPalette(false)
     // Only the own desktop contributes a known-good file. While an engine
     // claims the desktop its preview is visible, and the system wallpaper it
     // leaves behind is not a source this shell chose.
     onFileCurrentChanged: {
-        if (!externalWallpaperActive)
-            root.noteGoodFile(root.fileCurrent);
+        if (externalWallpaperActive)
+            return;
+        root.noteGoodFile(root.fileCurrent);
     }
     onExternalWallpaperActiveChanged: {
         // A handback releases the claim and adopts its source in the
         // WallpaperEngine connection below; noting fileCurrent first would
-        // remember the path the engine just left.
-        if (!externalWallpaperActive && !WallpaperEngine.desktopHandedBack) {
+        // remember the path the engine just left. Otherwise refreshScreenFiles
+        // decides whether the own desktop shows the bundled asset, a pick or a
+        // display that follows Windows.
+        if (externalWallpaperActive || WallpaperEngine.desktopHandedBack)
+            return;
+        if (root.sourceFresh) {
+            root.refreshFreshScreenFiles();
             root.noteGoodFile(root.fileCurrent);
-            root.refreshScreenFiles();
+            return;
         }
+        root.noteGoodFile(root.fileCurrent);
+        root.refreshScreenFiles();
+    }
+
+    // A display shows its own pick, else the profile-wide pick, else the
+    // bundled asset. A pick whose file is gone is skipped, so a deleted image
+    // can never paint an empty desktop.
+    function pickForScreen(id): string {
+        const own = root.monitorPicks[id];
+        if (typeof own === "string" && root.usableFile(own))
+            return own;
+        return root.usableFile(root.profilePick) ? root.profilePick : "";
+    }
+    function firstPickFile(): string {
+        for (const screen of Quickshell.screens) {
+            const id = Native.Wallpaper.screenTargetId(screen.name);
+            if (!id)
+                continue;
+            const pick = root.pickForScreen(id);
+            if (pick !== "")
+                return pick;
+        }
+        return root.usableFile(root.profilePick) ? root.profilePick : "";
+    }
+    // Strict schema check. A truncated record, or one written by a build with
+    // another schema version, is not a set of picks this build may apply:
+    // returning null keeps it on disk and shows the bundled asset until an
+    // explicit pick replaces it. Unknown top-level keys are preserved.
+    function parseSourceRecord(content): var {
+        let document = null;
+        try { document = JSON.parse(String(content ?? "")); } catch (_) { return null; }
+        if (!document || typeof document !== "object" || Array.isArray(document))
+            return null;
+        if (document.version !== 1)
+            return null;
+        if (document.wallpaper !== undefined && typeof document.wallpaper !== "string")
+            return null;
+        const monitors = {};
+        if (document.monitors !== undefined) {
+            if (!document.monitors || typeof document.monitors !== "object"
+                    || Array.isArray(document.monitors))
+                return null;
+            for (const id of Object.keys(document.monitors)) {
+                const value = document.monitors[id];
+                if (typeof value !== "string" || value.length === 0)
+                    return null;
+                monitors[id] = value;
+            }
+        }
+        return {wallpaper: String(document.wallpaper ?? ""), monitors: monitors, document: document};
+    }
+    function readSourceRecord(content, missing): void {
+        if (root.sourceRecordHealth !== "")
+            return;
+        if (missing === true) {
+            root.sourceRecordHealth = "missing";
+        } else {
+            const parsed = root.parseSourceRecord(content);
+            if (!parsed) {
+                root.sourceRecordHealth = "invalid";
+            } else {
+                root.sourceRecordHealth = "valid";
+                root.sourceRecordDocument = parsed.document;
+                root.profilePick = parsed.wallpaper;
+                root.monitorPicks = parsed.monitors;
+            }
+        }
+        root.maybeResolve();
+    }
+    function maybeResolve(): void {
+        if (root.sourceInitialized || !root.sourceComponentReady)
+            return;
+        // A fresh profile waits for the record read; its absence is itself the
+        // answer (bundled asset). An existing profile never consults it.
+        if (root.sourceFresh && root.sourceRecordHealth === "")
+            return;
+        root.resolveInitialSource();
+    }
+    // Decide the own wallpaper once per process. An existing profile follows
+    // Windows, as every build before this change did. A fresh profile shows
+    // the saved Caelestia picks or the bundled asset, and never adopts a
+    // Windows image.
+    function resolveInitialSource(): void {
+        root.sourceInitialized = true;
+        if (!root.sourceFresh) {
+            // Exactly the released build's startup source: the saved Windows
+            // wallpaper, or the bundled asset when Windows reports no path.
+            const current = Native.Wallpaper.currentWallpaper().replace(/\\/g, "/");
+            root.fileCurrent = current || root.fallback;
+            root.refreshScreenFiles();
+            if (!root.externalWallpaperActive)
+                root.noteGoodFile(root.fileCurrent);
+            root.applyPalette(false);
+            return;
+        }
+        // A missing record means no Caelestia pick yet. A damaged or
+        // unknown-version record cannot name a pick; an explicit pick may
+        // replace it.
+        if (root.sourceRecordHealth !== "valid") {
+            root.profilePick = "";
+            root.monitorPicks = {};
+        }
+        root.refreshFreshScreenFiles();
+        root.applyPalette(false);
+    }
+    // Persist only what a fresh profile's user chose, and only after a pick.
+    // A damaged or unknown-version record is left untouched unless an explicit
+    // pick (force) replaces it. The marker writer has already created the
+    // directory; a retry repairs it if it disappeared.
+    function persistPicks(force): void {
+        if (!root.sourceFresh || !root.sourceInitialized)
+            return;
+        const invalid = root.sourceRecordHealth === "invalid";
+        if (invalid && force !== true)
+            return;
+        const base = !invalid && root.sourceRecordDocument
+            && typeof root.sourceRecordDocument === "object"
+            ? JSON.parse(JSON.stringify(root.sourceRecordDocument)) : {};
+        base.version = 1;
+        if (root.profilePick !== "" || base.wallpaper !== undefined)
+            base.wallpaper = root.profilePick;
+        // monitorPicks is the complete saved set: loading replaces it and a
+        // pick adds to it. Writing it as-is lets a profile-wide pick clear the
+        // old per-display picks instead of merging them back in.
+        const picks = Object.assign({}, root.monitorPicks);
+        if (Object.keys(picks).length > 0 || base.monitors !== undefined)
+            base.monitors = picks;
+        const text = JSON.stringify(base, null, 2) + "\n";
+        if (root.sourceRecordConfirmed === text && !root.sourceRecordWriting) {
+            root.sourceRecordDirty = false;
+            return;
+        }
+        // The desired document can move ahead of the saved one. Only saved()
+        // confirms it; a failure leaves this pending text in place to retry.
+        root.sourceRecordPending = text;
+        root.sourceRecordDirty = text !== root.sourceRecordConfirmed;
+        root.sourceRecordDocument = base;
+        if (invalid || root.sourceRecordHealth === "missing")
+            root.sourceRecordHealth = "valid";
+        root.writeSourceRecord();
+    }
+    // The marker writer creates the record directory at startup. If it is
+    // removed while the shell runs, a retry has to repair it before the atomic
+    // write can create the replacement file.
+    function ensureSourceRecordDirectory(): void {
+        const slash = root.sourceRecordPath.lastIndexOf("/");
+        if (slash <= 0)
+            return;
+        const dir = root.sourceRecordPath.slice(0, slash);
+        if (Native.FsUtils.classify(dir) !== "dir")
+            Native.FsUtils.makePath(dir);
+    }
+    function writeSourceRecord(): void {
+        if (!root.sourceInitialized || root.sourceRecordWriting
+                || root.sourceRecordPending === root.sourceRecordConfirmed)
+            return;
+        root.ensureSourceRecordDirectory();
+        root.sourceRecordWriting = true;
+        root.sourceRecordWritingText = root.sourceRecordPending;
+        // The pinned backend keeps the attempted bytes cached after a failed
+        // write, so an identical setText() is dropped and no completion ever
+        // arrives (backend issue #28). Recreate the writer for every attempt;
+        // the workaround can go when the backend stops caching failed writes.
+        sourceRecordWriter.active = false;
+        sourceRecordWriter.active = true;
+    }
+    function confirmSourceRecord(): void {
+        if (!root.sourceRecordWriting || root.sourceRecordVerifying)
+            return;
+        // saved() alone does not prove the bytes reached disk on this backend:
+        // a failed atomic commit is only logged (backend issue #28). Read the
+        // file back independently before treating the choice as saved.
+        root.sourceRecordVerifying = true;
+        sourceRecord.reload();
+    }
+    function acceptSourceRecord(): void {
+        // The proposed text can advance while a write is in flight. Confirm
+        // only the text that was actually handed to the writer, then write the
+        // newer proposal if one exists.
+        root.sourceRecordConfirmed = root.sourceRecordWritingText;
+        root.sourceRecordWritingText = "";
+        root.sourceRecordWriting = false;
+        root.sourceRecordFailures = 0;
+        root.sourceRecordError = "";
+        root.sourceRecordDirty = root.sourceRecordPending !== root.sourceRecordConfirmed;
+        // saved() still runs inside FileView's operation completion. A write
+        // issued here would cancel that completion and lose its own saved().
+        if (root.sourceRecordDirty)
+            Qt.callLater(root.writeSourceRecord);
+    }
+    function failSourceRecord(error): void {
+        root.sourceRecordVerifying = false;
+        root.sourceRecordWritingText = "";
+        root.sourceRecordWriting = false;
+        root.sourceRecordFailures++;
+        root.sourceRecordDirty = root.sourceRecordPending !== root.sourceRecordConfirmed;
+        root.sourceRecordError = "could not save the wallpaper record: " + String(error);
+        // One retry is normal after a transient lock. A third consecutive
+        // failure is persistent and is reported once so it is not silent.
+        if (root.sourceRecordFailures === 3)
+            console.warn("CAELESTIA_WALLPAPER_RECORD_FAIL " + root.sourceRecordError);
+        recordRetry.restart();
     }
 
     // A wallpaper source is usable only when it names a local file that still
@@ -135,14 +408,33 @@ Singleton {
         if (lastGoodFile !== value)
             lastGoodFile = value;
     }
-    // An explicit pick is a Caelestia choice even while an engine owns the
-    // desktop: it becomes the file a handback returns to, and an intentionally
-    // black image is as valid as any other. This is the only source adoption
-    // allowed while the desktop is handed back.
+    // An explicit global pick is a Caelestia choice even while an engine owns
+    // the desktop: it becomes the file a handback returns to, and an
+    // intentionally black image is as valid as any other. On a fresh profile
+    // it is the profile-wide pick and supersedes per-display picks; on an
+    // existing profile it is just the Windows wallpaper change of before.
     function adoptPickedFile(path): void {
         const local = String(path).replace(/^file:\/\/\//, "");
         fileCurrent = local;
         root.noteGoodFile(local);
+        if (!root.sourceFresh)
+            return;
+        root.profilePick = local;
+        root.monitorPicks = {};
+        root.persistPicks(root.sourceRecordHealth === "invalid");
+        root.refreshFreshScreenFiles();
+    }
+    // A pick made on one display records that display only. On a fresh profile
+    // the other displays keep their own pick or the profile-wide pick, and a
+    // later Windows notification cannot import old wallpapers onto them. On an
+    // existing profile the display file is kept by setWallpaper, as before.
+    function adoptPickedScreen(targetId, path): void {
+        if (!root.sourceFresh)
+            return;
+        const local = String(path).replace(/^file:\/\/\//, "");
+        root.monitorPicks = Object.assign({}, root.monitorPicks, {[targetId]: local});
+        root.persistPicks(root.sourceRecordHealth === "invalid");
+        root.refreshFreshScreenFiles();
     }
     // A genuine handback must show a loadable Caelestia image, never the WE
     // preview and never the path the engine left behind. Reuse the last file
@@ -169,7 +461,12 @@ Singleton {
             return null;
         return {name: screen.name, targetId: id};
     }
-    function refreshScreenFiles(): void {
+    // A fresh profile's displays show their picks or the bundled asset. Nothing
+    // in this function reads Windows: an image written there by Windows
+    // Settings, Wallpaper Engine or an older build is never adopted.
+    function refreshFreshScreenFiles(): void {
+        if (!root.sourceInitialized)
+            return;
         if (externalWallpaperActive || WallpaperEngine.desktopHandedBack)
             return;
         const next = {};
@@ -177,8 +474,36 @@ Singleton {
             const id = Native.Wallpaper.screenTargetId(screen.name);
             if (!id)
                 continue;
+            next[id] = root.pickForScreen(id) || root.fallback;
+        }
+        root.screenFiles = next;
+        // The palette follows the first display with a pick. Recomputing it on
+        // every topology change keeps a disconnected display from staying the
+        // colour source while the remaining monitor shows something else.
+        const first = root.firstPickFile();
+        root.fileCurrent = first !== "" ? first : root.fallback;
+        if (!root.externalWallpaperActive)
+            root.noteGoodFile(root.fileCurrent);
+    }
+    // An existing profile reads each display's Windows wallpaper, as every
+    // build before this change did. One display's pick never imports the other
+    // displays' older images because each display is read independently.
+    function refreshScreenFiles(): void {
+        if (!root.sourceInitialized)
+            return;
+        if (externalWallpaperActive || WallpaperEngine.desktopHandedBack)
+            return;
+        if (root.sourceFresh) {
+            root.refreshFreshScreenFiles();
+            return;
+        }
+        const next = {};
+        for (const screen of Quickshell.screens) {
+            const id = Native.Wallpaper.screenTargetId(screen.name);
+            if (!id)
+                continue;
             const file = Native.Wallpaper.currentWallpaperForScreen(screen.name).replace(/\\/g, "/");
-            next[id] = usableFile(file) ? file : screenFiles[id] || handbackWallpaper;
+            next[id] = root.usableFile(file) ? file : screenFiles[id] || handbackWallpaper;
         }
         screenFiles = next;
     }
@@ -197,7 +522,7 @@ Singleton {
         function onScreensChanged(): void { root.refreshScreenFiles(); }
     }
     function applyPalette(force): void {
-        if (!SchemeGenerator.available || schemeName !== "dynamic" || currentImage === "")
+        if (!sourceInitialized || !SchemeGenerator.available || schemeName !== "dynamic" || currentImage === "")
             return;
         // Wallpaper Engine discovery can briefly report the Windows wallpaper
         // at startup; wait for it and the persisted state before comparing.
@@ -252,6 +577,75 @@ Singleton {
         onLoaded: root.setSchemeSource(text())
         onFileChanged: reload()
         onLoadFailed: root.setSchemeSource("")
+    }
+
+    // Owned by the shell and never watched: a pick or a saved pick is the only
+    // reader, and reloading our own write has no new decision to make. The
+    // reader and writer are separate views because a save issued from the
+    // read's onLoaded callback would cancel that read and lose the writer's
+    // saved() signal. Atomic writes keep a crash from leaving a partial
+    // record. Errors stay in a property instead of being logged: a normal
+    // fresh start must emit no QML diagnostic.
+    FileView {
+        id: sourceRecord
+
+        path: root.sourceRecordPath
+        blockLoading: true
+        watchChanges: false
+        printErrors: false
+        onLoaded: {
+            if (root.sourceRecordVerifying) {
+                // saved() is not proof of the bytes on this backend (issue
+                // #28), so the record is confirmed only after an independent
+                // read returns exactly what the writer was given.
+                root.sourceRecordVerifying = false;
+                if (text() === root.sourceRecordWritingText)
+                    root.acceptSourceRecord();
+                else
+                    root.failSourceRecord("the saved record did not match the file");
+                return;
+            }
+            root.readSourceRecord(text(), false);
+        }
+        onLoadFailed: error => {
+            if (root.sourceRecordVerifying) {
+                root.sourceRecordVerifying = false;
+                root.failSourceRecord("the saved record could not be read back");
+                return;
+            }
+            root.readSourceRecord("", error === FileViewError.FileNotFound);
+        }
+    }
+
+    // Recreated for every attempt. A FileView that failed a write caches the
+    // attempted bytes, so reusing it would drop an identical retry (backend
+    // issue #28). This can become a plain FileView when that lands.
+    Loader {
+        id: sourceRecordWriter
+
+        active: false
+        sourceComponent: Component {
+            FileView {
+                path: root.sourceRecordPath
+                preload: false
+                atomicWrites: true
+                watchChanges: false
+                printErrors: false
+                onSaved: root.confirmSourceRecord()
+                onSaveFailed: error => root.failSourceRecord(error)
+            }
+        }
+        onLoaded: {
+            if (root.sourceRecordWriting)
+                item.setText(root.sourceRecordWritingText);
+        }
+    }
+
+    Timer {
+        id: recordRetry
+        interval: root.sourceRecordRetryInterval
+        repeat: false
+        onTriggered: root.writeSourceRecord()
     }
 
     Connections {
@@ -375,10 +769,16 @@ Singleton {
         const ok = target ? Native.Wallpaper.setWallpaperForScreen(local, target.name)
             : Native.Wallpaper.setWallpaper(local, false);
         if (ok) {
+            // An explicit pick is recorded before any native notification: a
+            // global pick sets the profile-wide pick on a fresh profile or
+            // changes every display on an existing one, while a display pick
+            // records only that display. Untouched displays keep their own
+            // source and are not re-read from Windows on a fresh profile.
             root.markOpened(local);
-            if (target)
+            if (target) {
                 screenFiles = Object.assign({}, screenFiles, {[target.targetId]: local});
-            else {
+                root.adoptPickedScreen(target.targetId, local);
+            } else {
                 screenFiles = {};
                 root.adoptPickedFile(local);
             }
@@ -408,6 +808,12 @@ Singleton {
     Connections {
         target: Native.DesktopLayer
         function onWallpaperChanged(): void {
+            // A fresh profile does not follow Windows. A Windows Settings
+            // change, a Wallpaper Engine write and an older build's rollback
+            // are all changes to an image Caelestia did not choose, so the
+            // bundled asset or the saved Caelestia pick stays.
+            if (root.sourceFresh)
+                return;
             // after the handback the shell owns the visible wallpaper
             // again, so a native change is the engine's own bookkeeping (or an
             // event independent of the handback), never proof that Caelestia
@@ -416,7 +822,7 @@ Singleton {
             // claim is released, promote it to lastGoodFile, so every later
             // handback would return to it. Explicit picks apply through
             // adoptPickedFile and are kept, including intentional black ones.
-            if (WallpaperEngine.desktopHandedBack)
+            if (WallpaperEngine.desktopHandedBack || !root.sourceInitialized)
                 return;
             const next = Native.Wallpaper.currentWallpaper().replace(/\\/g, "/");
             root.fileCurrent = next || root.fallback;

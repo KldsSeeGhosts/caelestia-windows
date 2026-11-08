@@ -43,6 +43,33 @@ PageBase {
     readonly property bool agentUsageOn: GlobalConfig.windows?.quota?.enabled ?? true
     readonly property bool cpaHubOn: GlobalConfig.windows?.quota?.cpaHub ?? false
 
+    readonly property string engineStatus: {
+        if (!WallpaperEngine.enabled)
+            return Tr.tr("Off");
+        if (!WallpaperEngine.python)
+            return Tr.tr("Unavailable");
+        if (!WallpaperEngine.detected)
+            return Tr.tr("Not installed");
+        if (!WallpaperEngine.running)
+            return Tr.tr("Installed, not running");
+        return Tr.tr("Running");
+    }
+    readonly property string engineUnavailableHint: {
+        if (!WallpaperEngine.enabled)
+            return Tr.tr("Caelestia selects its own wallpaper. A running Wallpaper Engine can still cover it until it quits.");
+        if (!WallpaperEngine.python)
+            return Tr.tr("The settings bridge is unavailable; Caelestia keeps its own wallpaper.");
+        if (!WallpaperEngine.detected)
+            return Tr.tr("Install Wallpaper Engine to use it; Caelestia keeps its own wallpaper.");
+        if (!WallpaperEngine.running)
+            return Tr.tr("Start Wallpaper Engine to use it; Caelestia keeps its own wallpaper.");
+        // Acknowledged handback: the process still runs, but the desktop is
+        // the shell's again. Saying otherwise here contradicted what is shown.
+        if (WallpaperEngine.desktopHandedBack)
+            return Tr.tr("Wallpaper Engine handed the desktop back; Caelestia shows its own wallpaper while the process keeps running.");
+        return Tr.tr("Wallpaper Engine is running and has not handed the desktop back; its wallpaper covers the desktop until it does.");
+    }
+
     // Same allowlisted command and autostart choice as the session drawer.
     // The action is shown while unavailable so its reason is visible.
     readonly property var switchBackAction: SessionManager.sessionActionGating === true
@@ -330,6 +357,30 @@ PageBase {
             menuItems: root.gpuItems
             active: root.gpuItems[GlobalConfig.services.gpuType]
             onSelected: item => GlobalConfig.services.gpuType = root.gpuItems.indexOf(item)
+        }
+
+        // Wallpaper Engine is an optional third-party integration, not part of
+        // a fresh install. It is off until this toggle writes it; a saved value
+        // from an older profile is left alone until the user changes it here.
+        SectionHeader {
+            text: Tr.tr("Wallpaper Engine")
+        }
+
+        ToggleRow {
+            first: true
+            text: Tr.tr("Wallpaper Engine wallpapers")
+            // A running engine owns a visible window until it hands the
+            // desktop back. The pinned backend cannot place the shell's own
+            // background above that window, so the limitation is stated.
+            subtext: Tr.tr("Needs Wallpaper Engine installed and running. Until it hands the desktop back, its wallpaper covers Caelestia's")
+            checked: WallpaperEngine.enabled
+            onToggled: WallpaperEngine.setEnabled(checked)
+        }
+
+        InfoRow {
+            label: Tr.tr("Status")
+            subtext: root.engineUnavailableHint
+            value: root.engineStatus
         }
     }
 }

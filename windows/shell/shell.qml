@@ -28,6 +28,10 @@ import qs.modules.tiling
 ShellRoot {
     id: root
 
+    // Establish fresh-or-upgrade provenance before ThemeTokens (below) or any
+    // other current-run writer can create state. This binding is evaluated
+    // while the root object is created, ahead of its child objects.
+    readonly property bool wallpaperProfileReady: WallpaperProvenance.ready
     // Changes on a successful QML reload, not on a watchdog/process restart alone.
     readonly property string generation: Date.now().toString(36) + Math.random().toString(36).slice(2)
     // A keybind's panel-off request waiting for the keyboard hook to see the

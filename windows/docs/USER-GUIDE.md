@@ -281,9 +281,22 @@ without probing, and with nothing verified (or a busy scheme lock) it starts on
 the fixed palette. If a prune cannot restore a retired generation after a late
 mapping, it records the restore in `scheme/prune-restore.json`; each later prune
 makes one restore attempt before any deletion, and `logs/scheme-runtime.log`
-records the count. Wallpaper Engine is detected automatically, supplies the
-launcher picker and palette preview, and retains ownership of the desktop
-background. The desktop clock defaults off.
+records the count. Wallpaper Engine is opt-in and off for a fresh profile, so
+the first frame uses the bundled Caelestia wallpaper. Turn it on in Nexus >
+Services once Wallpaper Engine is installed and running; it then supplies the
+launcher picker and palette preview and retains ownership of the desktop
+background. An existing profile keeps a saved `true` or the older `"auto"`
+value. With the integration off, a running engine still covers the bundled
+wallpaper with its own window until it quits or hands the desktop back; the
+shell cannot place its background above it without a backend change.
+
+On a fresh install, choose your wallpaper in Caelestia (the launcher wallpaper
+picker or Nexus > Wallpaper & style), not in Windows Settings. A fresh profile
+shows the bundled space wallpaper until you pick one, then shows only the
+wallpapers you picked in Caelestia, per profile or per monitor. Changes made in
+Windows Settings, by Wallpaper Engine or by an older Caelestia build are not
+followed. A profile upgraded from an older Caelestia build keeps following the
+Windows wallpaper exactly as before. The desktop clock defaults off.
 
 ### What to expect on first launch
 

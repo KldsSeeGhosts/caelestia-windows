@@ -121,9 +121,14 @@ keyboard observation or tray interception work.
   nexus actions, not these tiler operations, and ConfigRoot has no keybind
   field. No shortcut is silently reassigned to a different action.
 - **Wallpaper:** KSG has no wallpaper path in its settings schema.
-  The wallpaper belongs to Windows and is already read by the Windows
-  Caelestia wallpaper adapter via `Wallpaper.currentWallpaper()`. Switching
-  shells does not require copying it into a nonexistent config field.
+  The wallpaper belongs to Windows. A fresh Caelestia profile starts on the
+  bundled Caelestia asset and then follows only wallpapers picked in Caelestia;
+  choosing one there still writes it to Windows and records the choice, while a
+  later Windows Settings change is not followed. A profile that already has
+  earlier Caelestia state, such as the theme-token export, keeps following the
+  Windows wallpaper it showed before the upgrade, without needing the optional
+  colour runtime.
+  Switching shells does not require copying the image into a config field.
   `paths.wallpaperDir` is a collection directory, not the current image.
 - **Theme/accent:** KSG reads Windows appearance and accent live through
   `appearance.rs`; these are not per-user KSG overrides. Caelestia's fixed
