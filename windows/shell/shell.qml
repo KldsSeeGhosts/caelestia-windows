@@ -16,6 +16,7 @@ import Caelestia.Windows
 import Quickshell.Windows as Native
 import qs.services
 import qs.daemons
+import qs.modules.areapicker
 import qs.modules.background
 import qs.modules.drawers
 import qs.modules.clipboard
@@ -64,6 +65,12 @@ ShellRoot {
     // Windows' own clipboard history behind the Caelestia picker. Gated by
     // windows.clipboard.enabled; smoke never opens it or reads the history.
     ClipboardOverlay {
+        interactionEnabled: !root.smoke
+    }
+
+    // The QML screenshot picker behind windows.capture.ui = "shell". It makes
+    // no window until CaptureUi opens it, and smoke never opens it.
+    AreaPicker {
         interactionEnabled: !root.smoke
     }
 

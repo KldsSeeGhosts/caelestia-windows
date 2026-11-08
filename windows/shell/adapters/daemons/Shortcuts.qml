@@ -39,23 +39,25 @@ Scope {
         id: screenshotShortcut
         name: "screenshot"
         description: "Screenshot with Glazier"
-        onPressed: Glazier.capture()
+        onPressed: CaptureUi.screenshot("open")
     }
-    // Windows: the upstream picker variants all open Glazier's frozen editor.
+    // Windows: the upstream picker variants all open Glazier's frozen editor on
+    // the classic path. With windows.capture.ui set to "shell", CaptureUi opens
+    // the QML picker, which clips for the Clip variants.
     CustomShortcut {
         name: "screenshotFreeze"
         description: "Screenshot with Glazier"
-        onPressed: Glazier.capture()
+        onPressed: CaptureUi.screenshot("openFreeze")
     }
     CustomShortcut {
         name: "screenshotClip"
         description: "Screenshot with Glazier"
-        onPressed: Glazier.capture()
+        onPressed: CaptureUi.screenshot("openClip")
     }
     CustomShortcut {
         name: "screenshotFreezeClip"
         description: "Screenshot with Glazier"
-        onPressed: Glazier.capture()
+        onPressed: CaptureUi.screenshot("openFreezeClip")
     }
     // Glazier's own recording hotkey toggles; the shell owns the chord and
     // forwards the same explicit capture/record commands.

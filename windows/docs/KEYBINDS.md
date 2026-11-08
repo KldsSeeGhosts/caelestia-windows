@@ -142,6 +142,29 @@ use `screenshot capture` or the upstream `picker open`, `openFreeze`,
 `openClip`, and `openFreezeClip` functions. All open Glazier's frozen picker and
 editor; Glazier determines how the resulting image is saved or copied.
 
+#### QML screenshot picker (preview)
+
+`windows.capture.ui` in `shell.json` chooses the screenshot interface:
+`"classic"` (the default) starts Glazier as described above, and `"shell"` opens
+a picker drawn by the shell itself. Every entry point follows the setting: the
+`PrintScreen` and `Win+Shift+S` chords, the launcher Screenshot action, IPC
+`screenshot capture` and the `picker` functions. A `glazier.exe` override
+(`glazier.json`) always uses the classic tool, and recording is always classic.
+
+```json
+{"windows":{"capture":{"ui":"shell"}}}
+```
+
+The picker freezes every screen first, then lets you drag a region, click a
+window to select it, or click where no window is to select the whole monitor.
+Esc or a right click cancels. Releasing the mouse saves at once to
+`Pictures\Screenshots` (or `Pictures` if that folder cannot be created) as
+`annotate-%Y-%m-%d_%H-%M-%S.png`, adding ` (2)`, ` (3)` for a repeat. The
+clipboard variants (`openClip`, `openFreezeClip`) copy the image instead. There
+is no editor yet, so a capture is saved or copied exactly as selected, and the
+selection cannot span monitors. The picker always freezes the screen: the
+`open` and `openClip` names behave like `openFreeze` and `openFreezeClip`.
+
 A development or recovery build can be pointed at another Glazier with an
 absolute path in `%LOCALAPPDATA%\caelestia-windows\config\glazier.json`:
 
