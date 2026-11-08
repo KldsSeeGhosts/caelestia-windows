@@ -500,21 +500,45 @@ function Set-CaelestiaAutostart([string]$Prefix, [bool]$Enabled) {
 # Test seam: fixture scripts replace this function to record the message.
 # The launcher is hidden and has no window, so the box would have no owner and
 # foreground-lock rules could leave it behind whatever the user activated while
-# the desktop was restored. MB_TOPMOST keeps it above other windows and
-# MB_SETFOREGROUND asks for activation; both are plain user32 MessageBox flags.
+# the desktop was restored. Both presenters keep the box topmost. The native
+# user32 path needs Add-Type compilation; if that is denied, the Windows Forms
+# path needs none. Fully Constrained Language Mode blocks both, and then only
+# the caller's Write-Warning and nonzero exit remain.
 function Show-CaelestiaHandoffDialog([string]$Message) {
     try {
-        if (-not ('Caelestia.HandoffDialog' -as [type])) {
-            Add-Type -Namespace Caelestia -Name HandoffDialog -ErrorAction Stop -MemberDefinition @'
+        Show-CaelestiaTopmostNativeBox $Message
+        return
+    } catch { }
+    try {
+        Show-CaelestiaTopmostFormsBox $Message
+    } catch {
+        # Presentation must never change the caller's exit status or recovery.
+    }
+}
+
+# MB_OK | MB_ICONWARNING | MB_SETFOREGROUND | MB_TOPMOST. Throws if Add-Type is
+# blocked so the caller can fall back.
+function Show-CaelestiaTopmostNativeBox([string]$Message) {
+    if (-not ('Caelestia.HandoffDialog' -as [type])) {
+        Add-Type -Namespace Caelestia -Name HandoffDialog -ErrorAction Stop -MemberDefinition @'
 [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
 public static extern int MessageBoxW(System.IntPtr owner, string text, string caption, uint type);
 '@
-        }
-        # MB_OK | MB_ICONWARNING | MB_SETFOREGROUND | MB_TOPMOST
-        $null = [Caelestia.HandoffDialog]::MessageBoxW([IntPtr]::Zero, $Message, 'Caelestia autostart', [uint32]0x00050030)
-    } catch {
-        # Presentation must never change the caller's exit status or recovery.
-        # The caller has already written the same text with Write-Warning.
+    }
+    $null = [Caelestia.HandoffDialog]::MessageBoxW([IntPtr]::Zero, $Message, 'Caelestia autostart', [uint32]0x00050030)
+}
+
+# Compiler-free fallback: a hidden topmost owner keeps the owned box topmost.
+function Show-CaelestiaTopmostFormsBox([string]$Message) {
+    Add-Type -AssemblyName System.Windows.Forms -ErrorAction Stop
+    $owner = New-Object System.Windows.Forms.Form
+    try {
+        $owner.TopMost = $true
+        $owner.ShowInTaskbar = $false
+        $null = [System.Windows.Forms.MessageBox]::Show($owner, $Message, 'Caelestia autostart',
+            [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)
+    } finally {
+        $owner.Dispose()
     }
 }
 

@@ -693,6 +693,31 @@ try {
     }
     Write-Output 'PASS autostart removal: isolated names, already-absent success and verified denied failure.'
 
+    # The failure report falls back to the compiler-free presenter when the
+    # native one cannot compile, and never throws. Both presenters are
+    # replaced here, so no real dialog appears.
+    $originalNativeBox = ${function:Show-CaelestiaTopmostNativeBox}
+    $originalFormsBox = ${function:Show-CaelestiaTopmostFormsBox}
+    $script:presented = @()
+    try {
+        ${function:Show-CaelestiaTopmostNativeBox} = { param($Message) $script:presented += "native:$Message" }
+        ${function:Show-CaelestiaTopmostFormsBox} = { param($Message) $script:presented += "forms:$Message" }
+        Show-CaelestiaHandoffDialog 'one'
+        Assert (($script:presented -join '|') -eq 'native:one') 'The native report did not run alone when it succeeded.'
+
+        $script:presented = @()
+        ${function:Show-CaelestiaTopmostNativeBox} = { param($Message) throw 'Injected Add-Type denial.' }
+        Show-CaelestiaHandoffDialog 'two'
+        Assert (($script:presented -join '|') -eq 'forms:two') 'A native compile failure did not fall back to the Forms report.'
+
+        ${function:Show-CaelestiaTopmostFormsBox} = { param($Message) throw 'Injected Forms denial.' }
+        Show-CaelestiaHandoffDialog 'three'
+    } finally {
+        ${function:Show-CaelestiaTopmostNativeBox} = $originalNativeBox
+        ${function:Show-CaelestiaTopmostFormsBox} = $originalFormsBox
+    }
+    Write-Output 'PASS failure report: native topmost box, Forms fallback when compilation is denied, never throws.'
+
     # The Run value has one builder. When the no-console launcher helper exists,
     # the autostart writer must use it instead of the old direct PowerShell
     # command; installer PR #65 can then change the launch command in one place.
