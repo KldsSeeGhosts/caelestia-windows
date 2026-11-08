@@ -630,9 +630,11 @@ class Pipeline(unittest.TestCase):
                                     capture_output=True, timeout=20, env={**os.environ, "NEXUS_SIGNING_KEY": ""})
             self.assertNotEqual(0, result.returncode)
             self.assertFalse((self.root / "never").exists())
-        # Correct trusted context still refuses unconfigured shipped trust.
+        # Configured shipped trust does not authorize a mismatched source SHA.
+        # This fails before work creation, GitHub API calls or supplier fetches.
         environment = dict(os.environ, **env(self.ctx), NEXUS_DEVELOPMENT_PUBLISH="enabled",
                            NEXUS_SIGNING_KEY="test-only-not-a-key", GH_TOKEN="test-only-not-a-token")
+        environment["GITHUB_SHA"] = "0" * 40
         result = subprocess.run([sys.executable, "-I", "-B", str(ROOT / "windows/ci/nexus_publish.py"),
                                  "development", "--shell", str(ROOT), "--work", str(self.root / "never")],
                                 capture_output=True, env=environment, timeout=20)

@@ -2,12 +2,17 @@
   "schema": "caelestia-update-trust",
   "version": 1,
   "rootVersion": 1,
-  "status": "unconfigured",
+  "status": "configured",
   "repository": "KldsSeeGhosts/caelestia-windows",
   "metadataBase": "https://raw.githubusercontent.com/KldsSeeGhosts/caelestia-windows/nexus-channels/v1/",
   "assetPrefix": "https://github.com/KldsSeeGhosts/caelestia-windows/releases/download/",
   "redirectHosts": ["objects.githubusercontent.com", "release-assets.githubusercontent.com"],
-  "rootKeys": [],
+  "rootKeys": [{
+    "keyid": "f9f6c4d0f94cedcd81a6abb84b1b60b1e58b59c54cb723d4f583e22d24602893",
+    "algorithm": "ecdsa-p256-sha256",
+    "x": "AFtXL4egsK1yk54mCJ0rZJ6r4MMf/DBEvkGJ+FwnC/U=",
+    "y": "aCj8s1qBDQobrqixi7QeIFl7vF2SXlKgCkJCD/3bRgI="
+  }],
   "rootThreshold": 1,
   "requireAuthenticode": false
 }

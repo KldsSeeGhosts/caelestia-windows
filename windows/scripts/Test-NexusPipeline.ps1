@@ -2,6 +2,7 @@
 [CmdletBinding()]
 param([string]$Python = 'python')
 $ErrorActionPreference = 'Stop'
+& "$PSScriptRoot\Test-NexusOwnerTools.ps1"
 . "$PSScriptRoot\Caelestia-InstallCommon.ps1"
 . "$PSScriptRoot\Caelestia-Update.ps1"
 $tokens = $null; $errors = $null

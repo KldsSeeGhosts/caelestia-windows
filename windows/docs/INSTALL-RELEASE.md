@@ -219,7 +219,8 @@ this script changes current licensing declarations or starts CI.
 ## Nexus bootstrap status
 
 Preview 2 has no updater. Source merges do not update it. The new client
-remains unconfigured, and candidate publication/promotion work is incomplete.
+ships configured development root trust. Development publication requires owner
+setup; preview/stable promotion remains inactive.
 Do not replace the existing install during source validation. See
 [UPDATES.md](https://github.com/KldsSeeGhosts/caelestia-windows/blob/main/UPDATES.md)
 for owner-only bootstrap and remaining gates.

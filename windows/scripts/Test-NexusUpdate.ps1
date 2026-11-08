@@ -109,7 +109,12 @@ try {
         $inner = Enter-CaelestiaInstallLock $prefix
         Assert ($null -ne $outer -and $null -ne $inner) 'Same-thread nested installer deadlock.'
     } finally { Exit-CaelestiaInstallLock $inner; Exit-CaelestiaInstallLock $outer }
-    # Exercise actual worker CLI validation, not a grep of its argument string.
+    # Exercise an explicitly unconfigured disposable installation, never the
+    # configured shipped trust or real transport. Configured workers have
+    # recording-transport coverage in Test-NexusWorker.
+    $scripts = Join-Path $root 'scripts'
+    Copy-Item -LiteralPath $PSScriptRoot -Destination $scripts -Recurse
+    Write-CaelestiaJsonAtomic (Join-Path $scripts 'update-trust.json') @{ status = 'unconfigured'; rootKeys = @() }
     [IO.Directory]::CreateDirectory($prefix) | Out-Null
     Write-CaelestiaJsonAtomic (Join-Path $prefix 'install.json') @{
         product = 'caelestia-windows'; version = 1; prefix = $prefix; profile = (Join-Path $root 'profile')
@@ -117,14 +122,14 @@ try {
     }
     $before = [IO.File]::ReadAllBytes((Join-Path $prefix 'install.json'))
     $ErrorActionPreference = 'Continue'
-    $output = & (Get-WindowsPowerShellPath) -NoProfile -NonInteractive -File "$PSScriptRoot\Manage-Caelestia.ps1" `
+    $output = & (Get-WindowsPowerShellPath) -NoProfile -NonInteractive -File "$scripts\Manage-Caelestia.ps1" `
         -Prefix $prefix -Command Update -Wait -ExpectedCurrent 'fixture' -ExpectedBuild '0.2.0-dev.1.1.1' -Channel development 2>&1
     $exitCode = $LASTEXITCODE
     $ErrorActionPreference = 'Stop'
     Assert ($exitCode -ne 0 -and "$output" -match 'Updates are not configured') 'Production worker did not fail closed.'
     Assert ([Convert]::ToBase64String($before) -ceq [Convert]::ToBase64String([IO.File]::ReadAllBytes((Join-Path $prefix 'install.json')))) 'Refused worker changed selector.'
     Assert (-not (Test-Path -LiteralPath (Join-Path $root 'profile'))) 'Refused worker created profile/journal.'
-    $check = & (Get-WindowsPowerShellPath) -NoProfile -NonInteractive -File "$PSScriptRoot\Manage-Caelestia.ps1" `
+    $check = & (Get-WindowsPowerShellPath) -NoProfile -NonInteractive -File "$scripts\Manage-Caelestia.ps1" `
         -Prefix $prefix -Command CheckUpdate -Channel development | ConvertFrom-Json
     Assert ($LASTEXITCODE -eq 0 -and $check.state -ceq 'not-configured') 'Production CheckUpdate contract.'
     $global:LASTEXITCODE = 0
