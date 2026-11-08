@@ -84,31 +84,38 @@ test("a work area narrower than a preview still keeps it on the panel", () => {
     assert.ok(rects[0].x >= 0);
 });
 
-test("the stack bounds hold every preview", () => {
-    const work = { width: 1920, height: 1040 };
-    const size = logic.previewSize(work);
-    assert.equal(logic.stackBounds([]), null);
-    const bounds = logic.stackBounds(logic.stackRects(work, 5, size));
-    assert.deepEqual(plain(bounds), { x: 1648, y: 1040 - 12 - (5 * 174 + 4 * 12), width: 260, height: 5 * 174 + 4 * 12 });
+test("the limit of five previews is global, not per screen", () => {
+    assert.deepEqual(plain(logic.evictions(["A", "A", "A", "A"])), []);
+    assert.deepEqual(plain(logic.evictions([])), []);
+    // Five on A and a new one on B: the oldest, which is on A, goes.
+    assert.deepEqual(plain(logic.evictions(["A", "A", "A", "A", "A"])), [0]);
+    // Mixed screens count together. Five open, so the oldest goes wherever it is.
+    assert.deepEqual(plain(logic.evictions(["B", "A", "A", "B", "A"])), [0]);
+    assert.deepEqual(plain(logic.evictions(["A", "B", "B", "B", "B"])), [0]);
+    // Four on A and one on B: still five in total.
+    assert.deepEqual(plain(logic.evictions(["A", "A", "A", "A", "B"])), [0]);
 });
 
-test("a sixth preview pushes out the oldest of its own screen", () => {
-    assert.deepEqual(plain(logic.evictions(["A", "A", "A", "A"], "A")), []);
-    assert.deepEqual(plain(logic.evictions(["A", "A", "A", "A", "A"], "A")), [0]);
-    // Five of the seven belong to A, so only A's oldest (index 0) goes.
-    assert.deepEqual(plain(logic.evictions(["A", "B", "A", "A", "B", "A", "A"], "A")), [0]);
-    assert.deepEqual(plain(logic.evictions(["A", "B", "A", "A", "A", "A", "A"], "A")), [0, 2]);
+test("more than the limit pushes out as many of the oldest as needed", () => {
+    assert.deepEqual(plain(logic.evictions(["A", "B", "A", "B", "A", "B", "A"])), [0, 1, 2]);
 });
 
-test("screens do not push each other out", () => {
-    assert.deepEqual(plain(logic.evictions(["A", "A", "A", "A", "A"], "B")), []);
-    assert.deepEqual(plain(logic.evictions(["A", "B", "B", "B", "B", "B"], "B")), [1]);
-    assert.deepEqual(plain(logic.evictions([], "A")), []);
+test("the limit can be changed", () => {
+    assert.deepEqual(plain(logic.evictions(["A", "A", "A"], 2)), [0, 1]);
+    assert.deepEqual(plain(logic.evictions(["A", "A"], 3)), []);
+    assert.deepEqual(plain(logic.evictions(["A"], 1)), [0]);
 });
 
-test("the limit can be changed and a small one evicts more", () => {
-    assert.deepEqual(plain(logic.evictions(["A", "A", "A"], "A", 2)), [0, 1]);
-    assert.deepEqual(plain(logic.evictions(["A", "A"], "A", 3)), []);
+test("each screen still places its own previews from the bottom right", () => {
+    // Placement depends only on the screen's work area and its own count.
+    const small = { width: 1280, height: 720 };
+    const large = { width: 2560, height: 1400 };
+    const onSmall = logic.stackRects(small, 2, logic.previewSize(small));
+    const onLarge = logic.stackRects(large, 3, logic.previewSize(large));
+    assert.equal(onSmall[1].x + onSmall[1].width, small.width - 12);
+    assert.equal(onSmall[1].y + onSmall[1].height, small.height - 12);
+    assert.equal(onLarge[2].x + onLarge[2].width, large.width - 12);
+    assert.equal(onLarge[2].y + onLarge[2].height, large.height - 12);
 });
 
 test("the image is fitted 20 px in from every edge and never scaled up", () => {

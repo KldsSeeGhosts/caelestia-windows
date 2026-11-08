@@ -21,17 +21,21 @@ import "../../utils/FileUrls.js" as FileUrls
 //
 // One overlay panel per screen that has previews. The panel covers the screen's
 // work area, is excluded from capture and takes no keyboard focus. Its input
-// mask is only the stack of previews, so every other press passes through to
-// the desktop. Up to five previews stack upward from the bottom right corner
-// with the newest at the bottom, and a sixth pushes out the oldest.
+// mask is one region per card, following the card's drawn position, so every
+// other press (including the gaps between cards) passes through to the desktop.
+// Up to five previews exist in total, as in the classic tool. Each screen stacks
+// its own from the bottom right corner with the newest at the bottom, and a
+// sixth preview anywhere pushes out the oldest.
 //
 // Files. A capture that was saved is shown from its file. A capture that was
 // only copied is shown from a preview file in the OS temp directory, made by
 // copying the picker's hand-over file before the picker deletes it. That file
 // has the same exact-path scheme as the hand-over files (CUtils.newCaptureTempPath),
-// belongs to the preview alone and is deleted when the preview goes away.
-// A crash can leave one caelestia-clipboard-*.png behind, as it can for the
-// picker.
+// belongs to the preview alone and is deleted when the preview goes away. If a
+// viewer holds it open, its path goes on a retry list owned by this scope and
+// is tried again on a timer and at the next capture. A shell reload drops that
+// list, and a crash can leave one caelestia-clipboard-*.png behind, as it can
+// for the picker.
 Scope {
     id: root
 
@@ -48,6 +52,10 @@ Scope {
     property var openUrl: url => Qt.openUrlExternally(url)
     property var entries: []
     property int lastId
+    // Preview files that could not be deleted yet (a viewer holds them open).
+    // Not saved anywhere: a shell reload forgets them.
+    property var pendingTemps: []
+    property int retryInterval: 30000
 
     readonly property var settings: Logic.settings(GlobalConfig.windows?.capture)
     readonly property bool enabled: settings.enabled
@@ -63,24 +71,26 @@ Scope {
     // size in physical pixels and the screen's device pixel ratio.
     // Both functions return whether a preview was added.
     function addSaved(info: var, path: string): bool {
+        retryTemps();
         return add(info, path, "", true);
     }
 
     // `source` is the picker's hand-over file, which the picker deletes right
     // after the clipboard call. The preview keeps its own copy.
     function addCopy(info: var, source: string): bool {
+        retryTemps();
         if (!canAdd(info))
             return false;
         const temp = CUtils.newCaptureTempPath().split("\\").join("/");
         if (!temp)
             return false;
         if (!CUtils.copyFile(FileUrls.fromLocalPath(source), FileUrls.fromLocalPath(temp), true)) {
-            CUtils.removeCaptureTemp(temp);
+            deleteTemp(temp);
             return false;
         }
         if (add(info, temp, temp, false))
             return true;
-        CUtils.removeCaptureTemp(temp);
+        deleteTemp(temp);
         return false;
     }
 
@@ -91,9 +101,10 @@ Scope {
     function add(info: var, path: string, temp: string, saved: bool): bool {
         if (!canAdd(info) || !path)
             return false;
-        // Each screen keeps its own stack. The oldest preview of this screen goes
-        // when it already holds five.
-        const doomed = Logic.evictions(entries.map(entry => entry.screen), info.screen, Logic.MAX_PREVIEWS).map(index => entries[index]);
+        // At most five previews exist in total, as in the classic tool. The oldest
+        // goes first, on whichever screen it is. Each screen still lays out its
+        // own previews.
+        const doomed = Logic.evictions(entries.map(entry => entry.screen), Logic.MAX_PREVIEWS).map(index => entries[index]);
         const entry = entryComponent.createObject(root, {
             serial: ++lastId,
             screen: info.screen,
@@ -137,14 +148,35 @@ Scope {
 
     // Deletes the entry's own preview file. Only an exact capture temp path is
     // ever removed (the plugin refuses everything else), and a saved capture has
-    // no temp path, so a file the user keeps is never touched. A viewer may still
-    // hold the file open, in which case the path stays for the next attempt.
+    // no temp path, so a file the user keeps is never touched.
     function release(entry: var): void {
         if (!entry.temp)
             return;
-        CUtils.removeCaptureTemp(entry.temp);
-        if (!WindowsFiles.isFile(entry.temp))
-            entry.temp = "";
+        const path = entry.temp;
+        entry.temp = "";
+        deleteTemp(path);
+    }
+
+    // Deletes one preview file. A viewer can hold it open without delete sharing,
+    // so a file that is still there is put on the retry list, which this scope
+    // owns and which outlives the entry.
+    function deleteTemp(path: string): void {
+        if (!tryRemove(path) && !pendingTemps.includes(path))
+            pendingTemps = pendingTemps.concat([path]);
+    }
+
+    function tryRemove(path: string): bool {
+        CUtils.removeCaptureTemp(path);
+        return !WindowsFiles.isFile(path);
+    }
+
+    // Tries every file on the retry list again. It runs on a timer while the list
+    // is not empty and whenever a new capture arrives. A shell reload drops the
+    // list, so a file still locked at that moment stays in the temp directory.
+    function retryTemps(): void {
+        if (pendingTemps.length === 0)
+            return;
+        pendingTemps = pendingTemps.filter(path => !tryRemove(path));
     }
 
     function copyEntry(entry: var): bool {
@@ -220,6 +252,18 @@ Scope {
             CaptureUi.thumbnails = null;
         for (const entry of entries)
             release(entry);
+        retryTemps();
+    }
+
+    readonly property alias retrying: retryTimer.running
+
+    Timer {
+        id: retryTimer
+
+        interval: root.retryInterval
+        repeat: true
+        running: root.pendingTemps.length > 0
+        onTriggered: root.retryTemps()
     }
 
     Component {
@@ -253,7 +297,8 @@ Scope {
             readonly property var area: ({ width: width, height: height })
             readonly property var size: Logic.previewSize(area)
             readonly property var rects: Logic.stackRects(area, stack.length, size)
-            readonly property var bounds: Logic.stackBounds(rects)
+            // The cards that exist, for the input mask.
+            property var cardItems: []
 
             screen: modelData
             name: "capture-thumbnail"
@@ -265,9 +310,10 @@ Scope {
             WlrLayershell.layer: WlrLayer.Overlay
             WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
             visible: !root.suspended
-            // Presses outside the stack reach the windows below.
+            // Only the cards take presses. One region per card, so the gaps
+            // between cards and the rest of the work area reach the windows below.
             mask: Region {
-                item: stackBox
+                regions: maskRegions.instances
             }
 
             anchors.top: true
@@ -275,20 +321,27 @@ Scope {
             anchors.left: true
             anchors.right: true
 
-            Item {
-                id: stackBox
+            Variants {
+                id: maskRegions
 
-                objectName: "captureThumbnailStack"
-                x: win.bounds ? win.bounds.x : 0
-                y: win.bounds ? win.bounds.y : 0
-                width: win.bounds ? win.bounds.width : 0
-                height: win.bounds ? win.bounds.height : 0
+                model: win.cardItems
+
+                // Each card's mask item follows the card's drawn rectangle,
+                // including the slide, which a Region does not notice by itself.
+                Region {
+                    required property var modelData
+
+                    item: modelData.maskItem
+                }
             }
 
             Repeater {
                 model: ScriptModel {
                     values: win.stack
                 }
+
+                onItemAdded: (index, item) => win.cardItems = win.cardItems.concat([item])
+                onItemRemoved: (index, item) => win.cardItems = win.cardItems.filter(card => card !== item)
 
                 ThumbnailCard {
                     required property var modelData

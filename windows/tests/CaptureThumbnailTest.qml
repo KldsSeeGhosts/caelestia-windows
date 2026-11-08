@@ -90,6 +90,11 @@ ShellRoot {
         }
     }
 
+    // Holds a preview file open for the locked-file cases.
+    Process {
+        id: holder
+    }
+
     Image {
         id: shot
 
@@ -162,6 +167,19 @@ ShellRoot {
         const window = panels()[0];
         const list = window ? findAll(window.contentItem, "captureThumbnail", []) : [];
         return list.sort((a, b) => a.y - b.y);
+    }
+
+    // The rectangles of a panel's input mask, as the backend reads them: each
+    // child region's item, in panel coordinates.
+    function maskRects(window): var {
+        return Array.from(window.mask.regions).map(region => region.item).map(item => {
+            const origin = window.contentItem.mapFromItem(item, 0, 0);
+            return { x: origin.x, y: origin.y, width: item.width, height: item.height };
+        });
+    }
+
+    function inMask(rects, x, y): bool {
+        return rects.some(r => x >= r.x && y >= r.y && x < r.x + r.width && y < r.y + r.height);
     }
 
     function cardFor(entry): var {
@@ -461,9 +479,23 @@ ShellRoot {
             check(list[i].y + list[i].height + 12 === list[i + 1].y, "12 px between cards " + i + " and " + (i + 1));
         check(list[4].y + list[4].height === window.height - 12, "the newest on the bottom edge gap");
         check(list[0].y >= 0, "the oldest is inside the panel");
-        const box = find(window.contentItem, "captureThumbnailStack");
-        check(box.y === list[0].y && box.height === list[4].y + list[4].height - list[0].y && box.width === list[0].width,
-            "the input area is the stack and nothing else");
+        // The input mask is one region per card. It covers every card and nothing
+        // else: not the gaps between cards, not the margin, not the rest of the panel.
+        const rects = maskRects(window);
+        check(rects.length === 5, "one mask region per card: " + rects.length);
+        for (let i = 0; i < 5; i++) {
+            const card = list[i];
+            for (const [px, py] of [[card.x + 1, card.y + 1], [card.x + card.width / 2, card.y + card.height / 2],
+                    [card.x + card.width - 1, card.y + card.height - 1]])
+                check(inMask(rects, px, py), "a point on card " + i + " is inside the mask");
+            check(!inMask(rects, card.x + card.width / 2, card.y - 1), "the row above card " + i + " is outside");
+            check(!inMask(rects, card.x - 1, card.y + card.height / 2), "and the column left of it");
+            check(!inMask(rects, card.x + card.width + 1, card.y + card.height / 2), "and the column right of it");
+        }
+        for (let i = 0; i < 4; i++)
+            check(!inMask(rects, list[i].x + list[i].width / 2, list[i].y + list[i].height + 6), "the middle of the gap under card " + i + " is outside the mask");
+        check(!inMask(rects, 5, 5) && !inMask(rects, window.width / 2, window.height / 2) && !inMask(rects, window.width - 3, window.height - 3),
+            "so is the rest of the panel, including its corner margin");
         // A sixth pushes out the oldest, a copy-only one, and its file with it.
         const firstSerial = thumbs.entries[1].serial;
         thumbs.addSaved(info(), savedPath);
@@ -492,16 +524,30 @@ ShellRoot {
         const entry = thumbs.entries[4];
         const temp = entry.temp;
         check(thumbs.entries.length === 5 && WindowsFiles.isFile(temp), "it pushed the oldest out");
-        later(700, () => step(() => {
+        // While it slides in, its mask region is where the card is drawn.
+        later(60, () => step(() => {
             const card = cardFor(entry);
-            find(card, "captureThumbnailAction-close").triggered("close");
-            check(entry.closing, "Close starts the exit");
-            later(1500, () => step(() => {
-                check(thumbs.entries.length === 4 && !thumbs.entries.includes(entry), "the thumbnail is gone after the exit");
-                check(!WindowsFiles.isFile(temp), "and so is its preview file");
-                check(cards().length === 4, "with its card");
-                timeoutStep();
-            }));
+            const rects = maskRects(panels()[0]);
+            const mask = card.maskItem;
+            check(rects.length === 5, "a mask region per card while the oldest one leaves and the new one enters");
+            check(mask.x === card.x + (1 - card.slide) * 60 && mask.y === card.y, "the region follows the slide: " + mask.x + " for card x " + card.x + " at slide " + card.slide);
+            check(card.slide >= 1 || mask.x > card.x, "a card still sliding in is masked where it is drawn, to the right of its place");
+            check(card.fade > 0 ? mask.width === card.width : mask.width === 0, "and takes no presses until it is visible");
+            later(700, () => step(() => closeCard(entry, temp)));
+        }));
+    }
+
+    function closeCard(entry, temp): void {
+        const card = cardFor(entry);
+        check(card.slide === 1 && card.maskItem.x === card.x, "after the slide the region is the card");
+        find(card, "captureThumbnailAction-close").triggered("close");
+        check(entry.closing, "Close starts the exit");
+        later(1500, () => step(() => {
+            check(thumbs.entries.length === 4 && !thumbs.entries.includes(entry), "the thumbnail is gone after the exit");
+            check(!WindowsFiles.isFile(temp), "and so is its preview file");
+            check(cards().length === 4, "with its card");
+            check(maskRects(panels()[0]).length === 4, "and its mask region");
+            timeoutStep();
         }));
     }
 
@@ -630,7 +676,113 @@ ShellRoot {
             check(!WindowsFiles.isFile(temp), "destroying the instance deletes the preview file");
             check(CaptureUi.thumbnails === null, "and unregisters it");
             CaptureUi.thumbnails = thumbs;
-            finalStep();
+            lockStep();
+        }));
+    }
+
+    // 11. A preview file that a viewer holds open is deleted later.
+    //
+    // The helper opens the file for reading without delete sharing, which is what
+    // a viewer does, so Windows refuses to delete it until the helper lets go.
+    // It creates a flag file once it holds the file and lets go when a second flag
+    // file appears.
+    function holdFile(path, callback): void {
+        const base = root.stateFolder + "/thumbnail-lock-" + (++lockCount);
+        held.flag = base + ".held";
+        held.release = base + ".release";
+        holder.command = [Quickshell.env("SystemRoot") + "\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+            "-NoProfile", "-NonInteractive", "-Command",
+            "$f = [IO.File]::Open('" + winPath(path) + "', 'Open', 'Read', 'Read'); "
+            + "New-Item -ItemType File -Force -Path '" + winPath(held.flag) + "' | Out-Null; "
+            + "while (-not (Test-Path -LiteralPath '" + winPath(held.release) + "')) { Start-Sleep -Milliseconds 50 }; $f.Close()"];
+        holder.running = true;
+        waitFor(() => WindowsFiles.isFile(held.flag), callback, 200);
+    }
+
+    function letGo(callback): void {
+        powershell("New-Item -ItemType File -Force -Path '" + winPath(held.release) + "' | Out-Null", code => {
+            check(code === 0, "the lock is released");
+            waitFor(() => !holder.running, callback, 200);
+        });
+    }
+
+    // Polls every 50 ms until `condition` holds, then calls `callback`.
+    function waitFor(condition, callback, tries): void {
+        check(tries > 0, "the awaited condition came true");
+        if (condition())
+            callback();
+        else
+            later(50, () => step(() => waitFor(condition, callback, tries - 1)));
+    }
+
+    property int lockCount: 0
+
+    function lockStep(): void {
+        check(thumbs.entries.length === 0 && thumbs.pendingTemps.length === 0 && !thumbs.retrying, "nothing is waiting to be deleted yet");
+        thumbs.retryInterval = 300;
+        check(thumbs.addCopy(info(), savedPath), "a copy-only thumbnail");
+        const entry = thumbs.entries[0];
+        const temp = entry.temp;
+        holdFile(temp, () => step(() => {
+            thumbs.close(entry);
+            later(1200, () => step(() => {
+                check(!thumbs.entries.includes(entry), "the thumbnail closed");
+                check(WindowsFiles.isFile(temp), "but Windows kept its locked preview file");
+                check(thumbs.pendingTemps.length === 1 && thumbs.pendingTemps[0] === temp, "which the scope remembers");
+                check(thumbs.retrying, "and retries on a timer");
+                // The retries so far (every 300 ms) all failed and kept the file.
+                letGo(() => step(() => {
+                    later(900, () => step(() => {
+                        check(!WindowsFiles.isFile(temp), "once the viewer lets go, a retry deletes it");
+                        check(thumbs.pendingTemps.length === 0 && !thumbs.retrying, "and the retry timer stops");
+                        nextCaptureRetry();
+                    }));
+                }));
+            }));
+        }));
+    }
+
+    function nextCaptureRetry(): void {
+        // A very long interval, so only the next capture can retry.
+        thumbs.retryInterval = 600000;
+        check(thumbs.addCopy(info(), savedPath), "another copy-only thumbnail");
+        const entry = thumbs.entries[0];
+        const temp = entry.temp;
+        holdFile(temp, () => step(() => {
+            thumbs.close(entry);
+            later(1200, () => step(() => {
+                check(WindowsFiles.isFile(temp) && thumbs.pendingTemps.includes(temp), "the locked file is remembered again");
+                letGo(() => step(() => {
+                    later(500, () => step(() => {
+                        check(WindowsFiles.isFile(temp), "with a long interval nothing retries by itself");
+                        check(thumbs.addSaved(info(), savedPath), "the next capture arrives");
+                        check(!WindowsFiles.isFile(temp) && thumbs.pendingTemps.length === 0, "and retries the deletion at once");
+                        check(!thumbs.retrying, "so the timer stops");
+                        reloadWithLock();
+                    }));
+                }));
+            }));
+        }));
+    }
+
+    // A reload forgets the list, but still makes one last attempt.
+    function reloadWithLock(): void {
+        const extra = extraThumbnails.createObject(root);
+        check(extra.addCopy(info(), savedPath), "a new instance holds a copy-only thumbnail");
+        const temp = extra.entries[0].temp;
+        holdFile(temp, () => step(() => {
+            extra.destroy();
+            later(300, () => step(() => {
+                check(WindowsFiles.isFile(temp), "a file that is still locked when the shell reloads stays");
+                letGo(() => step(() => {
+                    // The file belongs to the temp scheme, so a later cleanup
+                    // (here the fixture's) can remove it.
+                    check(CUtils.removeCaptureTemp(temp) === true && !WindowsFiles.isFile(temp), "and can be removed once released");
+                    CaptureUi.thumbnails = thumbs;
+                    thumbs.retryInterval = 30000;
+                    finalStep();
+                }));
+            }));
         }));
     }
 

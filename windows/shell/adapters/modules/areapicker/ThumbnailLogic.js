@@ -59,36 +59,18 @@ function stackRects(work, count, size) {
     return rects;
 }
 
-// The rectangle that holds a whole stack, or null for an empty one.
-function stackBounds(rects) {
-    if (!rects || rects.length === 0)
-        return null;
-    var left = rects[0].x;
-    var top = rects[0].y;
-    var right = rects[0].x + rects[0].width;
-    var bottom = rects[0].y + rects[0].height;
-    for (var i = 1; i < rects.length; i++) {
-        left = Math.min(left, rects[i].x);
-        top = Math.min(top, rects[i].y);
-        right = Math.max(right, rects[i].x + rects[i].width);
-        bottom = Math.max(bottom, rects[i].y + rects[i].height);
-    }
-    return { x: left, y: top, width: right - left, height: bottom - top };
-}
-
-// Which entries a new preview pushes out. `screens` lists the screen name of
-// every open preview, oldest first, and `screen` is the one that gets the new
-// preview. Each screen keeps its own stack. Returns indices into `screens`, the
-// oldest ones of that screen, so the stack holds at most `max` with the new one.
-function evictions(screens, screen, max) {
+// Which previews a new one pushes out. The limit is global, as in the classic
+// tool: at most `max` previews exist at once, across all screens, and the oldest
+// one goes first wherever it is. `screens` lists the screen name of every open
+// preview, oldest first. Returns indices into `screens`. Where a preview is
+// drawn is still decided per screen (stackRects).
+function evictions(screens, max) {
     var limit = max === undefined ? MAX_PREVIEWS : max;
-    var own = [];
-    for (var i = 0; i < screens.length; i++) {
-        if (screens[i] === screen)
-            own.push(i);
-    }
-    var excess = own.length + 1 - limit;
-    return excess > 0 ? own.slice(0, excess) : [];
+    var excess = screens.length + 1 - limit;
+    var result = [];
+    for (var i = 0; i < excess && i < screens.length; i++)
+        result.push(i);
+    return result;
 }
 
 // The size the image is drawn at inside a card, in logical pixels. `image` is in

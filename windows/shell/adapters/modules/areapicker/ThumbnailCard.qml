@@ -152,6 +152,24 @@ Item {
         id: hover
     }
 
+    // The rectangle this card occupies on screen, for the panel's input mask. It
+    // is a sibling of the card, not a child, and follows the card's slide, so the
+    // mask moves with the card as it enters and leaves. A region only watches an
+    // item's x, y, width and height, and the slide is a transform. A card that
+    // is fully transparent takes no presses.
+    readonly property Item maskItem: maskArea
+
+    Item {
+        id: maskArea
+
+        objectName: "captureThumbnailMask"
+        parent: root.parent
+        x: root.x + (1 - root.slide) * Logic.DRIFT
+        y: root.y
+        width: root.fade > 0 ? root.width : 0
+        height: root.fade > 0 ? root.height : 0
+    }
+
     Elevation {
         anchors.fill: card
         radius: card.radius
