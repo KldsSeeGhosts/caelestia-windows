@@ -67,6 +67,12 @@ ColumnLayout {
             WallpaperFolderService.toggleLocalSource();
     }
 
+    // Stops a running copy or folder job. The service also stops one on its
+    // own after its deadline, so this is the immediate option.
+    function cancelJob(): void {
+        WallpaperFolderService.cancelJob("cancel");
+    }
+
     Connections {
         target: WallpaperFolderService
 
@@ -257,6 +263,37 @@ ColumnLayout {
                 objectName: "sourceFocusRing"
                 showing: sourceButton.activeFocus
                 radius: sourceButton.radius
+            }
+        }
+
+        // The only enabled action while a job runs. A stalled destination would
+        // otherwise keep every folder action disabled until its deadline.
+        IconButton {
+            id: cancelButton
+
+            objectName: "wallpaperCancelButton"
+            icon: "close"
+            type: IconButton.Text
+            visible: root.busy
+            activeFocusOnTab: true
+            Keys.onPressed: event => {
+                if (event.key !== Qt.Key_Return && event.key !== Qt.Key_Enter && event.key !== Qt.Key_Space)
+                    return;
+                event.accepted = true;
+                if (!event.isAutoRepeat) {
+                    stateLayer.press(width / 2, height / 2);
+                    root.cancelJob();
+                }
+            }
+            Accessible.role: Accessible.Button
+            Accessible.name: Tr.tr("Cancel the wallpaper folder job")
+            Accessible.onPressAction: root.cancelJob()
+            onClicked: root.cancelJob()
+
+            FocusRing {
+                objectName: "cancelFocusRing"
+                showing: cancelButton.activeFocus
+                radius: cancelButton.radius
             }
         }
     }

@@ -42,12 +42,30 @@ ShellRoot {
     property int reveals: 0
     property var defaultStartJob: null
     property var defaultReload: null
+    property var defaultReveal: null
+    property var defaultJobCommand: null
+    property int defaultJobTimeout: 0
+    property int defaultJobExitGrace: 0
     property string externalName: ""
     property int externalCode: -1
     property bool productionPickerActive: false
+    // The real facade's asynchronous folder listing. The interruption phase
+    // polls it for the temporary file the copy writes.
+    property bool probeDone: false
+    property var probeEntries: []
+    property int probeRequest: -1
+    property bool watchingPartial: false
+    property bool partialSeen: false
+    property bool tempSeedDone: false
+    property int tempSeedCode: -1
 
     readonly property string wallsPath: Quickshell.env("CAELESTIA_WALLPAPER_DIR") || ""
     readonly property string realSourcePath: Quickshell.env("CAELESTIA_WALLPAPER_SOURCE") || ""
+    readonly property string cleanupSourcePath: Quickshell.env("CAELESTIA_WALLPAPER_CLEANUP_SOURCE") || ""
+    readonly property string largeSourcePath: Quickshell.env("CAELESTIA_WALLPAPER_LARGE_SOURCE") || ""
+    readonly property string retrySourcePath: Quickshell.env("CAELESTIA_WALLPAPER_RETRY_SOURCE") || ""
+    readonly property string staleTempName: ".caelestia-import-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.partial"
+    readonly property string freshTempName: ".caelestia-import-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.partial"
 
     readonly property Component inputComponent: Component {
         TestCase { when: false }
@@ -99,6 +117,19 @@ ShellRoot {
     readonly property string externalCopyScript: `$ErrorActionPreference = 'Stop'
 [IO.Directory]::CreateDirectory($env:CAELESTIA_TEST_FOLDER) | Out-Null
 [IO.File]::Copy($env:CAELESTIA_TEST_SOURCE, [IO.Path]::Combine($env:CAELESTIA_TEST_FOLDER, $env:CAELESTIA_TEST_NAME), $false)`
+    // One old temporary of the copy script's own pattern, one fresh temporary,
+    // and one user file that only happens to end in .partial.
+    readonly property string tempSeedScript: `$ErrorActionPreference = 'Stop'
+$folder = $env:CAELESTIA_TEST_FOLDER
+[IO.Directory]::CreateDirectory($folder) | Out-Null
+$stale = [IO.Path]::Combine($folder, '.caelestia-import-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.partial')
+$fresh = [IO.Path]::Combine($folder, '.caelestia-import-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.partial')
+$user = [IO.Path]::Combine($folder, 'notes.partial')
+[IO.File]::WriteAllText($stale, 'stale')
+[IO.File]::WriteAllText($fresh, 'fresh')
+[IO.File]::WriteAllText($user, 'user')
+[IO.File]::SetLastWriteTimeUtc($stale, [DateTime]::UtcNow.AddHours(-2))
+[IO.File]::SetLastWriteTimeUtc($user, [DateTime]::UtcNow.AddHours(-2))`
 
     FloatingWindow {
         id: win
@@ -145,6 +176,50 @@ ShellRoot {
         onExited: code => root.externalCode = code
     }
 
+    // Test-only files in the disposable folder: an old and a fresh temporary
+    // of the copy script's pattern, plus a user file that only ends in
+    // .partial. The next real copy may remove the old temporary and nothing
+    // else.
+    Process {
+        id: seedTemps
+
+        command: ["powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", root.tempSeedScript]
+        environment: ({
+                CAELESTIA_TEST_FOLDER: Paths.wallsdir
+            })
+        stdout: StdioCollector {}
+        stderr: StdioCollector {}
+        onExited: code => {
+            root.tempSeedCode = code;
+            root.tempSeedDone = true;
+        }
+    }
+
+    // The interruption phase watches every listing for the copy's temporary.
+    Connections {
+        target: Native.FsUtils
+
+        function onListDirFinished(request, path, entries): void {
+            if (request !== root.probeRequest)
+                return;
+            root.probeEntries = entries;
+            root.probeDone = true;
+            if (root.watchingPartial && entries.some(entry => /^\.caelestia-import-[0-9a-f]+\.partial$/.test(entry.name))) {
+                root.partialSeen = true;
+                root.watchingPartial = false;
+            }
+        }
+    }
+
+    Timer {
+        id: partialPoller
+
+        interval: 40
+        repeat: true
+        running: root.watchingPartial && !root.partialSeen
+        onTriggered: root.startListing()
+    }
+
     Component.onCompleted: Qt.callLater(run)
 
     function check(value, message): void {
@@ -182,6 +257,28 @@ ShellRoot {
 
     function hasFile(name): bool {
         return Wallpapers.files.some(file => file.name === name);
+    }
+
+    // Real directory listing through the facade. The copy's temporary is not
+    // part of Wallpapers.files by design, so the test looks at the directory.
+    function startListing(): void {
+        root.probeEntries = [];
+        root.probeDone = false;
+        root.probeRequest = Native.FsUtils.listDirAsync(Paths.wallsdir);
+    }
+
+    function listFolder(): var {
+        root.startListing();
+        root.waitFor(() => root.probeDone, 5000, "the folder listing did not answer");
+        return root.probeEntries;
+    }
+
+    function folderNames(): var {
+        return root.listFolder().map(entry => entry.name);
+    }
+
+    function folderHas(name): bool {
+        return root.folderNames().indexOf(name) >= 0;
     }
 
     function releaseJob(): void {
@@ -224,13 +321,14 @@ ShellRoot {
     // notifications and rescan/reveal calls.
     function useRealJobs(): void {
         WallpaperFolderService.startFileJob = root.defaultStartJob;
+        WallpaperFolderService.jobCommand = root.defaultJobCommand;
         WallpaperFolderService.reloadWallpapers = () => {
             root.reloads++;
             root.defaultReload();
         };
         WallpaperFolderService.revealLocalFiles = () => {
             root.reveals++;
-            Wallpapers.showLocalSource = true;
+            root.defaultReveal();
         };
     }
 
@@ -238,6 +336,10 @@ ShellRoot {
         try {
             root.defaultStartJob = WallpaperFolderService.startFileJob;
             root.defaultReload = WallpaperFolderService.reloadWallpapers;
+            root.defaultReveal = WallpaperFolderService.revealLocalFiles;
+            root.defaultJobCommand = WallpaperFolderService.jobCommand;
+            root.defaultJobTimeout = WallpaperFolderService.jobTimeoutMs;
+            root.defaultJobExitGrace = WallpaperFolderService.jobExitGraceMs;
             WallpaperEngine.options = {enabled: false};
             Wallpapers.showLocalSource = false;
             Wallpapers.files = [];
@@ -268,8 +370,15 @@ ShellRoot {
             const addButton = root.find(root.folder, "wallpaperAddButton");
             const refreshButton = root.find(root.folder, "wallpaperRefreshButton");
             const sourceButton = root.find(root.folder, "wallpaperSourceButton");
+            const cancelButton = root.find(root.folder, "wallpaperCancelButton");
             root.check(openButton !== null && addButton !== null && refreshButton !== null && sourceButton !== null,
                 "the folder actions are missing");
+            root.check(cancelButton !== null && !cancelButton.visible, "the cancel control shows while no job runs");
+            root.check(cancelButton.activeFocusOnTab, "Cancel the wallpaper folder job is not in the tab chain");
+            root.check(cancelButton.Accessible.role === Accessible.Button, "Cancel has no button role");
+            root.check(cancelButton.Accessible.name === "Cancel the wallpaper folder job",
+                `Cancel is named "${cancelButton.Accessible.name}"`);
+            root.check(root.find(cancelButton, "cancelFocusRing") !== null, "Cancel has no focus treatment");
             root.check(openButton.activeFocusOnTab, "Open wallpapers folder is not in the tab chain");
             root.check(openButton.Accessible.role === Accessible.Button, "Open wallpapers folder has no button role");
             root.check(openButton.Accessible.name === "Open wallpapers folder",
@@ -295,6 +404,7 @@ ShellRoot {
             root.check(WallpaperFolderService.busy, "a running folder job is not marked busy");
             root.check(openButton.disabled && addButton.disabled && refreshButton.disabled,
                 "the actions stay enabled while a folder job runs");
+            root.check(cancelButton.visible, "a running folder job has no cancel control");
             WallpaperFolderService.finishJob(0, "FOLDER_OK\n");
             root.check(!WallpaperFolderService.busy, "a finished folder job is still busy");
             root.check(root.opened.length === 1 && Paths.samePath(root.opened[0], root.folder.folderPath),
@@ -381,14 +491,28 @@ ShellRoot {
             root.check(root.toastBodies().includes("Only PNG, JPEG, BMP and WebP"),
                 "an unsupported type had no explanation");
 
-            // 10. A failed copy leaves the list alone and explains the failure.
+            // 10. A failed copy leaves the list alone and names its category.
             root.reloads = 0;
             root.reveals = 0;
             root.check(WallpaperFolderService.addWallpaper("file:///C:/fixtures/Broken.png") === true,
                 "the failing copy was not accepted");
-            WallpaperFolderService.finishJob(2, "ERROR:io\n");
+            WallpaperFolderService.finishJob(2, "ERROR:io\n", "IOException: There is not enough space on the disk.\n");
             root.check(root.reloads === 0 && root.reveals === 0, "a failed copy refreshed the folder");
-            root.check(root.toastBodies().includes("Could not add"), "a failed copy had no explanation");
+            root.check(root.toastBodies().includes("Windows could not copy that image"),
+                "a failed copy had no explanation");
+
+            // 10b. The child's stderr names the category when the script could
+            // not write a marker, and a source failure says the image is gone.
+            root.check(WallpaperFolderService.addWallpaper("file:///C:/fixtures/Denied.png") === true,
+                "the access failure was not accepted");
+            WallpaperFolderService.finishJob(2, "", "UnauthorizedAccessException: Access is denied.\n");
+            root.check(root.toastBodies().includes("Windows denied access to the wallpapers folder"),
+                "a stderr-only failure had no category");
+            root.check(WallpaperFolderService.addWallpaper("file:///C:/fixtures/Gone.png") === true,
+                "the missing-source failure was not accepted");
+            WallpaperFolderService.finishJob(2, "ERROR:source\n");
+            root.check(root.toastBodies().includes("could not be read"),
+                "a missing source did not name its category");
 
             // 11. A backslash path from Explorer-like input also yields a name.
             root.check(WallpaperFolderService.addWallpaper("C:\\fixtures\\Backslash.jpg") === true,
@@ -402,7 +526,8 @@ ShellRoot {
             root.check(WallpaperFolderService.addWallpaper("file:///C:/fixtures/Start.png") === false,
                 "a copy that could not start was accepted");
             root.check(!WallpaperFolderService.busy, "a failed copy start stayed busy");
-            root.check(root.toastBodies().includes("Could not add"), "a failed copy start had no explanation");
+            root.check(root.toastBodies().includes("Windows could not copy that image"),
+                "a failed copy start had no explanation");
             root.resetActions();
 
             // 13. An engine picker hides local files. Importing reveals them,
@@ -576,13 +701,169 @@ ShellRoot {
             root.check(launcherPathAfter !== null && launcherPathAfter.width > 0,
                 "the folder path collapsed with real wallpapers present");
             const requestsBeforeRefresh = Wallpapers.listRequest;
+            const filesBeforeRefresh = Wallpapers.files;
             refreshAfter.clicked();
             root.waitFor(() => Wallpapers.listRequest !== requestsBeforeRefresh, 5000,
                 "Refresh did not request a new folder scan");
-            root.check(Wallpapers.showLocalSource, "Refresh did not show the folder it rescans");
+            root.check(Wallpapers.activeSource === "files", "Refresh changed the displayed source");
             root.check(!WallpaperFolderService.busy, "Refresh left the folder job busy");
+            root.waitFor(() => Wallpapers.files !== filesBeforeRefresh, 10000, "the Refresh rescan did not answer");
             root.productionPickerActive = false;
             root.picker = null;
+
+            // 22. With the configured source "both", importing or refreshing
+            // must keep the engine entries. The local-only override may only
+            // replace a source that hides local files.
+            Wallpapers.files = [{
+                path: Paths.absolutePath(Quickshell.shellPath("assets/wallpaper.webp")),
+                relativePath: "both-local.png",
+                name: "both-local.png",
+                parentDir: Paths.wallsdir,
+                onDisk: true
+            }];
+            WallpaperEngine.detected = true;
+            WallpaperEngine.items = [{
+                path: "C:/engine/both.png",
+                name: "Both",
+                preview: "C:/engine/both.png"
+            }];
+            WallpaperEngine.options = {enabled: true, picker: "both"};
+            Wallpapers.showLocalSource = false;
+            root.resetActions();
+            WallpaperFolderService.revealLocalFiles = root.defaultReveal;
+            root.check(WallpaperEngine.picker === "both", "the both picker was not selected");
+            root.check(Wallpapers.activeSource === "both", "both is not the active source");
+            root.check(Wallpapers.list.length === 2, "both did not list the engine and local entries");
+            root.check(WallpaperFolderService.addWallpaper("file:///C:/fixtures/Both%20Import.png") === true,
+                "the both-mode import was refused");
+            WallpaperFolderService.finishJob(0, "COPY_OK 1\n");
+            root.check(!Wallpapers.showLocalSource, "an import set the local-only override in both mode");
+            root.check(Wallpapers.list.length === 2 && Wallpapers.list.some(entry => entry.path === "C:/engine/both.png"),
+                "an import hid the engine entries in both mode");
+            root.check(Wallpapers.activeSource === "both", "an import changed the active source in both mode");
+            // A direct override assignment must leave both alone as well, so a
+            // later caller cannot reintroduce the bug.
+            Wallpapers.showLocalSource = true;
+            root.check(Wallpapers.list.length === 2, "the local-only override hid the engine entries in both mode");
+            root.check(Wallpapers.activeSource === "both", "the local-only override replaced both mode");
+            Wallpapers.showLocalSource = false;
+            root.resetActions();
+            WallpaperFolderService.revealLocalFiles = root.defaultReveal;
+            refreshButton.clicked();
+            root.input.wait(20);
+            root.check(root.reloads === 1, "Refresh did not rescan in both mode");
+            root.check(!Wallpapers.showLocalSource, "Refresh set the local-only override in both mode");
+            root.check(Wallpapers.list.length === 2,
+                `Refresh hid the engine entries in both mode (source ${Wallpapers.activeSource}, picker ${WallpaperEngine.picker}, override ${Wallpapers.showLocalSource}, detected ${WallpaperEngine.detected}, items ${WallpaperEngine.items.length}, files ${Wallpapers.files.length}, list ${Wallpapers.list.length})`);
+            root.check(!sourceButton.visible, "the switch-back button appeared for both mode");
+            // The same Refresh in engine mode still reveals the folder.
+            WallpaperEngine.options = {enabled: true, picker: "engine"};
+            refreshButton.clicked();
+            root.input.wait(20);
+            root.check(Wallpapers.showLocalSource, "Refresh did not reveal the folder in engine mode");
+            root.check(Wallpapers.activeSource === "files", "the engine picker did not switch to the folder");
+            WallpaperEngine.options = {enabled: false};
+            WallpaperEngine.detected = false;
+            WallpaperEngine.items = [];
+            Wallpapers.files = [];
+            Wallpapers.showLocalSource = false;
+            root.resetActions();
+
+            // 23. A child that never answers is killed after the job deadline
+            // and finishes with a timeout; the visible cancel control stops one
+            // sooner. Either way busy clears so the folder actions return.
+            root.check(WallpaperFolderService.jobTimeoutMs === 300000 && WallpaperFolderService.jobExitGraceMs === 5000,
+                "the production job deadline changed");
+            root.resetActions();
+            WallpaperFolderService.startFileJob = root.defaultStartJob;
+            WallpaperFolderService.jobCommand = ["powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive",
+                "-Command", "Start-Sleep -Seconds 120"];
+            WallpaperFolderService.jobTimeoutMs = 4000;
+            WallpaperFolderService.jobExitGraceMs = 3000;
+            root.check(!root.folder.waitingForFolder, "the folder opener started waiting");
+            openButton.clicked();
+            root.check(WallpaperFolderService.busy, "the stalled folder job is not busy");
+            root.check(openButton.disabled && addButton.disabled && refreshButton.disabled && cancelButton.visible,
+                "a stalled job did not disable the folder actions");
+            root.waitFor(() => !WallpaperFolderService.busy, 20000, "the watchdog did not stop the stalled folder job");
+            root.check(!WallpaperFolderService.jobRunning, "the watchdog left its child running");
+            root.check(root.toastBodies().includes("took too long"), "a timed-out job had no explanation");
+            root.check(!root.folder.waitingForFolder, "a timed-out folder job left the opener waiting");
+            root.check(root.opened.length === 0, "a timed-out folder job opened Explorer");
+            root.check(!cancelButton.visible, "the cancel control stayed visible after the job");
+            // The visible cancel control stops a running copy at once.
+            root.notifications = [];
+            WallpaperFolderService.jobTimeoutMs = 120000;
+            root.check(WallpaperFolderService.addWallpaper(Paths.absolutePath(root.retrySourcePath)) === true,
+                "the stalled copy was refused");
+            root.waitFor(() => WallpaperFolderService.busy && !WallpaperFolderService.jobStarted, 10000,
+                "the stalled copy did not report its start");
+            root.check(WallpaperFolderService.jobRunning, "the stalled copy has no live child");
+            cancelButton.clicked();
+            root.waitFor(() => !WallpaperFolderService.busy, 10000, "the cancel control did not stop the copy");
+            root.check(!WallpaperFolderService.jobRunning, "the cancelled copy left its child running");
+            root.check(root.toastBodies().includes("was cancelled"), "a cancelled copy had no explanation");
+            WallpaperFolderService.jobCommand = root.defaultJobCommand;
+            WallpaperFolderService.jobTimeoutMs = root.defaultJobTimeout;
+            WallpaperFolderService.jobExitGraceMs = root.defaultJobExitGrace;
+            root.resetActions();
+
+            // 24. A copy killed mid-write leaves no file under its final name:
+            // it writes a temporary the scan ignores and publishes by rename. A
+            // retry therefore still gets the plain name.
+            root.resetActions();
+            root.useRealJobs();
+            root.check(Native.FsUtils.classify(root.largeSourcePath) === "file", "the large fixture source is missing");
+            root.check(Native.FsUtils.classify(root.retrySourcePath) === "file", "the retry fixture source is missing");
+            const largeSource = Paths.absolutePath(root.largeSourcePath);
+            const largeName = WallpaperFolderService.wallpaperName(largeSource);
+            root.check(largeName === "Interrupted Copy.png", `the interrupted source name is "${largeName}"`);
+            root.check(root.folderNames().indexOf(largeName) < 0, "the interrupted target name was already taken");
+            root.partialSeen = false;
+            root.watchingPartial = true;
+            root.check(WallpaperFolderService.addWallpaper(largeSource) === true, "the interrupted copy was refused");
+            root.check(WallpaperFolderService.busy, "the interrupted copy is not busy");
+            root.waitFor(() => root.partialSeen, 20000, "the copy did not write a temporary file");
+            root.check(WallpaperFolderService.cancelJob("cancel") === true, "the interrupted copy could not be stopped");
+            root.waitFor(() => !WallpaperFolderService.busy, 15000, "the interrupted copy stayed busy");
+            root.watchingPartial = false;
+            root.check(Native.FsUtils.classify(WallpaperFolderService.targetPath(largeName, 1)) === "invalid",
+                "an interrupted copy left a file under its final name");
+            root.check(Native.FsUtils.classify(WallpaperFolderService.targetPath(largeName, 2)) === "invalid",
+                "an interrupted copy left a numbered file");
+            root.check(root.folderNames().some(name => /^\.caelestia-import-.*\.partial$/.test(name)),
+                "the interrupted copy did not leave its temporary for cleanup");
+            // The retry comes from another folder but keeps the same name.
+            root.check(WallpaperFolderService.addWallpaper(Paths.absolutePath(root.retrySourcePath)) === true,
+                "the retry was refused");
+            root.waitFor(() => !WallpaperFolderService.busy, 30000, "the retry did not finish");
+            root.check(Native.FsUtils.classify(WallpaperFolderService.targetPath(largeName, 1)) === "file",
+                "a retry after an interrupted copy did not get the plain name");
+            root.check(Native.FsUtils.classify(WallpaperFolderService.targetPath(largeName, 2)) === "invalid",
+                "a retry after an interrupted copy created a numbered duplicate");
+            root.check(root.toastBodies().includes("Added Interrupted Copy.png"),
+                "the retry did not report the published name");
+
+            // 25. The next copy removes only old temporaries of its own pattern.
+            root.tempSeedDone = false;
+            root.tempSeedCode = -1;
+            seedTemps.running = true;
+            root.check(seedTemps.running, "the temporary seed did not start");
+            root.waitFor(() => root.tempSeedDone, 15000, "the temporary seed did not finish");
+            root.check(root.tempSeedCode === 0, "the temporary seed failed");
+            root.check(root.folderHas(root.staleTempName) && root.folderHas(root.freshTempName),
+                "the seeded temporaries are missing");
+            root.check(WallpaperFolderService.addWallpaper(Paths.absolutePath(root.cleanupSourcePath)) === true,
+                "the cleanup copy was refused");
+            root.waitFor(() => !WallpaperFolderService.busy, 30000, "the cleanup copy did not finish");
+            const cleanupNames = root.folderNames();
+            root.check(cleanupNames.indexOf(root.staleTempName) < 0, "an old abandoned temporary was not removed");
+            root.check(cleanupNames.indexOf(root.freshTempName) >= 0, "a fresh temporary was removed");
+            root.check(cleanupNames.indexOf("notes.partial") >= 0, "cleanup removed a file outside its own pattern");
+            root.check(cleanupNames.indexOf("Cleanup Probe.png") >= 0, "the cleanup copy was not published");
+            root.waitFor(() => root.hasFile("Cleanup Probe.png"), 10000, "the cleanup copy did not appear in the scan");
+            root.check(!Wallpapers.files.some(file => file.name.endsWith(".partial")),
+                "the folder scan listed a temporary file");
 
             console.log("CAELESTIA_WALLPAPER_FOLDER_PASS " + assertions);
             Qt.quit();

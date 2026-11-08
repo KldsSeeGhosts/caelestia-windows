@@ -76,7 +76,12 @@ Singleton {
     // is not silently invisible. This changes only what the pickers display;
     // the engine integration, its default and the saved setting are untouched.
     property bool showLocalSource: false
-    readonly property string activeSource: showLocalSource ? "files" : WallpaperEngine.picker
+    // The local-only override is for the engine picker only, which is the one
+    // source that hides local files. "files" already shows them, and forcing
+    // "both" to local-only dropped every engine entry while the switch-back
+    // control (shown only for "engine") stayed hidden.
+    readonly property bool localSourceOverride: showLocalSource && WallpaperEngine.picker === "engine"
+    readonly property string activeSource: localSourceOverride ? "files" : WallpaperEngine.picker
     readonly property var list: {
         const engine = WallpaperEngine.enabled && WallpaperEngine.detected ? WallpaperEngine.items : [];
         const raw = activeSource === "engine" ? engine
