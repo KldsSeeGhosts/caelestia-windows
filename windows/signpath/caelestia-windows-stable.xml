@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  DRAFT: no release is signed and this configuration is not registered with
+  SignPath. A stable signing pipeline does not exist yet; see
+  windows/docs/SIGNING-ROADMAP.md for the work that must land first.
+
+  Draft SignPath artifact configuration for a stable Caelestia Windows release
+  ZIP. If registration ever happens, the checked-in copy is the reviewed source
+  of truth for the registered slug; windows/signpath/README.md explains how to
+  keep the copies in sync.
+
+  The uploaded artifact is the release ZIP that New-CaelestiaRelease.ps1
+  produces, uploaded with actions/upload-artifact archive: false. Its single
+  root directory is caelestia-windows-<releaseId>-windows-x64, so the literal
+  path segment is version-specific:
+
+    caelestia-windows-*-windows-x64/payload/...
+
+  Only first-party files are signed. Qt DLLs keep Qt's signature, m3shapes
+  stays third-party, qs.exe is an upstream-derived Quickshell build, and
+  Install.cmd is a batch file that cannot carry an Authenticode signature.
+  windows/scripts/Test-AuthenticodeSignatures.ps1 independently verifies the
+  same ownership rules after signing. No CI job runs that tool today.
+
+  product-name/product-version are the metadata restrictions SignPath
+  Foundation requires. They need the first-party binaries to carry a
+  VERSIONINFO resource, which the current build does not emit yet; see
+  windows/docs/CODE-SIGNING-POLICY.md. Until that build change lands, a signing
+  request fails closed here instead of producing a non-compliant signature.
+-->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <parameters>
+    <!-- The reviewed core version from windows/release/version.json. -->
+    <parameter name="productVersion" required="true" />
+  </parameters>
+  <zip-file>
+    <!-- Depth is deliberately explicit: SignPath wildcards cannot express
+         zero-or-more segments unambiguously. The verifier fails the release if
+         any first-party DLL is not signed, so a deeper module cannot be
+         skipped silently. -->
+    <pe-file path="caelestia-windows-*-windows-x64/payload/caelestia-capture.exe"
+             product-name="Caelestia Windows" product-version="${productVersion}">
+      <authenticode-sign hash-algorithm="sha256" description="Caelestia Windows capture host" description-url="https://github.com/KldsSeeGhosts/caelestia-windows" />
+    </pe-file>
+    <pe-file path="caelestia-windows-*-windows-x64/payload/DesktopTakeover.dll"
+             product-name="Caelestia Windows" product-version="${productVersion}">
+      <authenticode-sign hash-algorithm="sha256" description="Caelestia Windows desktop supervisor" description-url="https://github.com/KldsSeeGhosts/caelestia-windows" />
+    </pe-file>
+    <pe-file path="caelestia-windows-*-windows-x64/payload/caelestia-*.dll" max-matches="unbounded"
+             product-name="Caelestia Windows" product-version="${productVersion}">
+      <authenticode-sign hash-algorithm="sha256" description="Caelestia Windows shell module" description-url="https://github.com/KldsSeeGhosts/caelestia-windows" />
+    </pe-file>
+    <pe-file path="caelestia-windows-*-windows-x64/payload/qml/Caelestia/caelestia-*.dll" min-matches="0" max-matches="unbounded"
+             product-name="Caelestia Windows" product-version="${productVersion}">
+      <authenticode-sign hash-algorithm="sha256" description="Caelestia Windows QML module" description-url="https://github.com/KldsSeeGhosts/caelestia-windows" />
+    </pe-file>
+    <pe-file path="caelestia-windows-*-windows-x64/payload/qml/Caelestia/*/caelestia-*.dll" min-matches="0" max-matches="unbounded"
+             product-name="Caelestia Windows" product-version="${productVersion}">
+      <authenticode-sign hash-algorithm="sha256" description="Caelestia Windows QML module" description-url="https://github.com/KldsSeeGhosts/caelestia-windows" />
+    </pe-file>
+    <pe-file path="caelestia-windows-*-windows-x64/payload/qml/Caelestia/*/*/caelestia-*.dll" min-matches="0" max-matches="unbounded"
+             product-name="Caelestia Windows" product-version="${productVersion}">
+      <authenticode-sign hash-algorithm="sha256" description="Caelestia Windows QML module" description-url="https://github.com/KldsSeeGhosts/caelestia-windows" />
+    </pe-file>
+    <!-- The bundle-root bootstrap plus the 17 payload maintenance scripts. -->
+    <powershell-file-set>
+      <include path="caelestia-windows-*-windows-x64/Install-CaelestiaRelease.ps1" />
+      <include path="caelestia-windows-*-windows-x64/payload/*.ps1" max-matches="unbounded" />
+      <for-each>
+        <authenticode-sign hash-algorithm="sha256" description="Caelestia Windows release script" description-url="https://github.com/KldsSeeGhosts/caelestia-windows" />
+      </for-each>
+    </powershell-file-set>
+  </zip-file>
+</artifact-configuration>

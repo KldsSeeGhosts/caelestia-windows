@@ -1,0 +1,117 @@
+# Signing roadmap
+
+Design note for a signing pipeline that can produce a signed stable release.
+Nothing in this document is implemented. The development channel stays unsigned;
+only stable releases will be signed, and only after this work lands and the
+owner's SignPath application is accepted.
+
+The standalone verifier in
+[Test-AuthenticodeSignatures.ps1](../scripts/Test-AuthenticodeSignatures.ps1)
+checks an extracted bundle. It is not wired into CI and is not a signing
+pipeline.
+
+## 1. Stable assembly and publication contract
+
+A signing hook cannot be bolted onto the development packager. The channel must
+be part of assembly:
+
+- `New-CaelestiaRelease.ps1:89` currently rejects stable release IDs. It accepts a
+  development identity or `CORE-local`, and the error says it will never accept a
+  promotion alias. A stable path needs its own contract, not a relaxation of that
+  guard.
+- Channel selection must be explicit and enforced before any signing code runs.
+  A development tag, a branch ref, a pull request or a re-run of a development
+  candidate must never reach a signing hook.
+- Development assets and their DSSE records are immutable. A stable release must
+  be assembled from the tested source and native inputs at the stable tag, not
+  relabelled from a development bundle. Nexus promotion currently keeps the
+  development bundle bytes; a stable publication path needs separate,
+  authenticated metadata that describes the signed stable bytes.
+- The release manifest, ZIP digest and Nexus metadata must describe the signed
+  bytes that users download. `nativeInputs` keeps the unsigned build provenance.
+
+## 2. Trust boundary for the signing job
+
+The signing job holds a SignPath token and must not be a general build or test
+job.
+
+- It consumes the exact producer artifact from the verified producer run. It
+  authenticates that artifact by run identity, repository, commit and workflow
+  identity (for example through a GitHub artifact attestation or OIDC-issued
+  identity), not by a ZIP or checksum supplied by a release workflow or a human.
+- It never executes code from the downloaded artifact. Verification and any
+  repackaging happen in a separate least-privilege job; only the signing job
+  receives the token.
+- Pull requests, fork runs and ordinary build jobs cannot obtain the token. The
+  signing environment requires explicit owner approval.
+- A missing, mismatched or unverifiable producer artifact fails closed. There is
+  no fallback to an arbitrary download URL, a manually uploaded ZIP or a
+  hand-written checksum.
+
+## 3. Signing receipt and the installer verifier
+
+The signed bytes need a bridge between the unsigned build provenance and the
+deployed files.
+
+- `Install-CaelestiaRelease.ps1:165` allows only `release.json`, `Install.cmd`,
+  `Install-CaelestiaRelease.ps1` and `INSTALL-RELEASE.md` as bundle-root files.
+  A signing receipt must be either embedded in one of those files or added to
+  that allowlist by a reviewed change, and it must be named explicitly. Do not
+  drop an unlisted `signing-receipt.json` into the root and expect the installer
+  to accept it.
+- The receipt should record, for every signed file, the unsigned SHA-256, the
+  signed SHA-256 and the signing identity. `nativeInputs` stays unsigned.
+- The installer must verify the receipt location and shape before using it. A
+  signed package without a valid receipt fails verification.
+
+## 4. Refresh deployed-byte metadata after signing
+
+Signing changes the deployed bytes. Every equality check that compares unsigned
+build output with the payload must be updated together, not weakened:
+
+- `release.json` `dependencies.capture.sha256` (the capture host's recorded
+  build hash).
+- The supervisor's `DesktopTakeover.build.json` `assemblySha256`.
+- The supervisor comparison in
+  `windows/ci/Test-NexusCandidatePayload.ps1:80`.
+- The current source-script hashes compared in
+  `windows/scripts/Caelestia-SourceAssets.ps1:377`.
+
+The rule is: keep the unsigned hashes in `nativeInputs`, add the signed digest
+where the deployed bytes are checked, and prove that only the reviewed signed
+set changed. Do not delete these checks or make them non-strict.
+
+## 5. PE metadata for SignPath
+
+SignPath Foundation requires product name and product version metadata
+restrictions on every signed PE file. The build must emit a `VERSIONINFO`
+resource with:
+
+- product name `Caelestia Windows`;
+- product version set to the same reviewed core version in every first-party PE.
+
+The resource is missing today in the capture host, the managed supervisor and
+the Caelestia QML modules. Add it to each build:
+[windows/capture](../capture) (Rust resource), the
+`DesktopTakeover.cs` compile, and the CMake module targets. Keep the draft
+[artifact configuration](../signpath/caelestia-windows-stable.xml) restrictions;
+do not remove them to make a request pass.
+
+## 6. Activation conditions
+
+Signing may start only when all of these are true:
+
+- This roadmap's stable assembly contract, trust boundary, receipt and metadata
+  refresh are implemented and reviewed.
+- Every signed PE has the required `VERSIONINFO`.
+- The owner's SignPath Foundation application is accepted, the project and
+  signing policy exist, and manual approval is enforced.
+- The artifact configuration is registered from the reviewed draft, and the
+  registered copy matches the repository copy.
+- A signing-aware release has been verified end to end on a disposable machine,
+  including a failed-signing case that publishes nothing.
+
+SignPath's terms also require the privacy policy to be shown during installation
+and a way to disable transfers that are not specified by the user. The current
+installer does not display this policy, and the shell has no separate weather
+network switch. Resolve both before claiming signing readiness.
