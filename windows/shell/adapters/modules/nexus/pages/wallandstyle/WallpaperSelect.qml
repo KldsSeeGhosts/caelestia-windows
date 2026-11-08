@@ -10,6 +10,7 @@ import Caelestia.I18n
 import qs.components
 import qs.components.controls
 import qs.components.filedialog
+import qs.components.wallpaper
 import qs.services
 import qs.utils
 import qs.modules.nexus.common
@@ -103,6 +104,37 @@ PageBase {
                 onClicked: {
                     Wallpapers.setRandom(root.QsWindow.window?.screen);
                     root.nState.closeSubPage();
+                }
+            }
+        }
+
+        // Windows port: name the folder this page scans and offer the same
+        // two actions as the launcher picker. The facade does not watch the
+        // directory, so Add wallpaper… refreshes it after a successful copy.
+        StyledRect {
+            Layout.fillWidth: true
+            Layout.bottomMargin: Tokens.spacing.medium
+            color: Colours.tPalette.m3surfaceContainer
+            radius: Tokens.rounding.extraLarge
+            implicitHeight: folderColumn.implicitHeight + Tokens.padding.large * 2
+
+            ColumnLayout {
+                id: folderColumn
+
+                anchors.fill: parent
+                anchors.margins: Tokens.padding.large
+                spacing: Tokens.spacing.medium
+
+                StyledText {
+                    text: Tr.tr("Wallpaper folder")
+                    font: Tokens.font.title.small
+                }
+
+                WallpaperFolder {
+                    id: folderActions
+
+                    objectName: "nexusWallpaperFolder"
+                    Layout.fillWidth: true
                 }
             }
         }
@@ -207,8 +239,11 @@ PageBase {
             asynchronous: true
             // The grid model pads itself with null placeholders up to
             // wallpapersPerRow, so grid.count is never zero. The real list
-            // length decides whether there is anything to show.
-            active: root.localWalls.length === 0
+            // length decides whether there is anything to show. Only a truly
+            // empty scanned folder gets the add-wallpaper explanation; an
+            // engine-only picker with local files present is not an empty
+            // folder.
+            active: root.localWalls.length === 0 && Wallpapers.files.length === 0
             visible: active
 
             sourceComponent: StyledRect {
@@ -229,11 +264,11 @@ PageBase {
                         fontStyle: Tokens.font.icon.extraLarge
                     }
 
-                    StyledText {
+                    WallpaperEmptyState {
+                        objectName: "nexusWallpaperEmpty"
+                        Layout.fillWidth: true
+                        Layout.maximumWidth: 420
                         Layout.alignment: Qt.AlignHCenter
-                        text: Tr.tr("No local wallpapers found")
-                        color: Colours.palette.m3outline
-                        font: Tokens.font.title.small
                     }
                 }
             }
