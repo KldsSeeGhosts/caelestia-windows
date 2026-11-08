@@ -654,6 +654,13 @@ jobs:
         run: |
           $local = Get-Content "$env:PAIR_RESULTS\pair-local.json" -Raw | ConvertFrom-Json
           $request = Get-Content "$env:PAIR_RESULTS\pair-request.json" -Raw | ConvertFrom-Json
+          # sccache is optional. Without a launcher, pass neither it nor the Rust
+          # cache directory (Build-Prototype rejects a Rust cache alone).
+          $launcherArguments = @()
+          if ($env:CI_COMPILER_LAUNCHER) {
+            $launcherArguments = @('-CompilerLauncher', $env:CI_COMPILER_LAUNCHER,
+              '-RustCacheDirectory', $env:RUST_CACHE_DIR)
+          }
           # Isolated hosted fixtures only. Echo failures into the job log;
           # retained receipt/artifact output remains allowlisted.
           python -I -B "$env:TRUSTED_ROOT\.github\scripts\candidate_contract.py" `
@@ -662,8 +669,7 @@ jobs:
             -File "$env:GITHUB_WORKSPACE\windows\ci\Invoke-PairIntegration.ps1" `
             -ShellRoot $env:GITHUB_WORKSPACE -BackendRoot $local.backendRoot `
             -Mode $request.mode -BackendSha $request.backend -ToolRoot $env:TOOL_ROOT -Jobs $env:BUILD_JOBS `
-            -CompilerLauncher $env:CI_COMPILER_LAUNCHER `
-            -RustCacheDirectory $env:RUST_CACHE_DIR `
+            @launcherArguments `
             -BuildRoot $env:BUILD_ROOT -Results $env:PAIR_RESULTS -JUnit "$env:PAIR_RESULTS\integration.raw.xml" -EchoDiagnostics
           if ($LASTEXITCODE -ne 0) { throw 'Consuming-shell integration failed.' }
 
