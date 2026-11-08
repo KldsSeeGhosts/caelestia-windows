@@ -100,13 +100,16 @@ MouseArea {
         owner.saving = true;
         select(plan.logical);
         const rect = Qt.rect(plan.logical.x, plan.logical.y, plan.logical.width, plan.logical.height);
+        // What the thumbnail needs to draw this capture: the screen it was taken
+        // on and the saved size in physical pixels.
+        const info = { screen: screen.name, width: plan.crop.width, height: plan.crop.height, dpr: dpr };
         if (owner.clipboardOnly)
-            saveToClipboard(rect);
+            saveToClipboard(rect, info);
         else
-            saveToFile(rect, owner.saveRoot + "/Screenshots", true);
+            saveToFile(rect, owner.saveRoot + "/Screenshots", true, info);
     }
 
-    function saveToClipboard(rect: rect): void {
+    function saveToClipboard(rect: rect, info: var): void {
         // A hand-over file of its own, named by the plugin. The owner
         // deletes it as soon as the clipboard call returns, and when the save is
         // cancelled or invalidated.
@@ -117,21 +120,21 @@ MouseArea {
             o.saveFailed(session, Tr.tr("The image could not be saved."));
             return;
         }
-        CUtils.saveItem(view, FileUrls.fromLocalPath(path), rect, saved => o.copyFinished(session, saved),
+        CUtils.saveItem(view, FileUrls.fromLocalPath(path), rect, saved => o.copyFinished(session, saved, info),
             () => o.saveFailed(session, Tr.tr("The image could not be saved.")));
     }
 
     // Screenshots, then Pictures when that folder cannot be created or written.
-    function saveToFile(rect: rect, directory: string, firstTry: bool): void {
+    function saveToFile(rect: rect, directory: string, firstTry: bool, info: var): void {
         const o = owner;
         const session = o.session;
         const stem = Logic.fileStem(new Date(), "");
         const path = Logic.uniquePath(directory, stem, candidate => WindowsFiles.isFile(candidate));
-        CUtils.saveItem(view, FileUrls.fromLocalPath(path), rect, saved => o.fileFinished(session, saved), () => {
+        CUtils.saveItem(view, FileUrls.fromLocalPath(path), rect, saved => o.fileFinished(session, saved, info), () => {
             if (session !== o.session)
                 return;
             if (firstTry)
-                root.saveToFile(rect, o.saveRoot, false);
+                root.saveToFile(rect, o.saveRoot, false, info);
             else
                 o.saveFailed(session, Tr.tr("The image could not be saved."));
         });

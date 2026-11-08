@@ -66,6 +66,9 @@ Scope {
     // Needs a local file path. Fixtures replace it with a recorder so that no
     // test writes the real clipboard.
     property var clipboard: Native.Clipboard
+    // Shows the finished capture. Thumbnails.qml registers itself with CaptureUi;
+    // fixtures replace it, and without one no thumbnail is shown.
+    property var thumbnails: CaptureUi.thumbnails
 
     readonly property var screenNames: screenList.map(screen => screen.name)
     readonly property var windows: loader.item ? loader.item.instances : []
@@ -133,10 +136,14 @@ Scope {
     }
 
     // Results from Picker. Each ignores a result from an earlier session.
-    function fileFinished(started: int, path: string): void {
+    // `info` is { screen, width, height, dpr } for the thumbnail, and null when
+    // the caller has none.
+    function fileFinished(started: int, path: string, info = null): void {
         if (started !== session)
             return;
         Toaster.toast(Tr.tr("Screenshot taken"), Tr.tr("Saved to %1").arg(path), "screenshot_region");
+        if (thumbnails && info)
+            thumbnails.addSaved(info, path);
         cancel();
     }
 
@@ -144,12 +151,16 @@ Scope {
     // writes the clipboard later with no completion result. A true return
     // therefore means the copy was started, and the toast says so. A write that
     // lands after its session ended deletes its own file and copies nothing.
-    function copyFinished(started: int, path: string): void {
+    // The thumbnail copies the file before it is deleted below, because the
+    // hand-over file does not outlive this call.
+    function copyFinished(started: int, path: string, info = null): void {
         if (started !== session) {
             removeTemp(path);
             return;
         }
         const accepted = clipboard.copyImageFile(path);
+        if (accepted && thumbnails && info)
+            thumbnails.addCopy(info, path);
         removeTemp(path);
         activeTemp = "";
         if (accepted) {

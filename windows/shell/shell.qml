@@ -74,6 +74,12 @@ ShellRoot {
         interactionEnabled: !root.smoke
     }
 
+    // The post-capture preview of that picker. No window until a capture
+    // finishes, and smoke never takes one.
+    Thumbnails {
+        interactionEnabled: !root.smoke
+    }
+
     // Where a dragged tiled window will land. Makes no window until the first
     // drag on a screen, and nothing at all while tiling is off.
     DragPreview {}

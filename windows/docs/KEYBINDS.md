@@ -165,6 +165,25 @@ is no editor yet, so a capture is saved or copied exactly as selected, and the
 selection cannot span monitors. The picker always freezes the screen: the
 `open` and `openClip` names behave like `openFreeze` and `openFreezeClip`.
 
+After a capture the picker shows a thumbnail at the bottom right of the work
+area, as the classic tool does. Up to five exist in total, across all monitors.
+Each monitor stacks its own upward with the newest at the bottom, and a sixth
+removes the oldest one wherever it is. Hovering shows buttons for Copy, Save (only for a capture that was
+copied and not saved), Show in folder and Close, and pauses the timeout. Clicking
+the card opens the image with the default application, because the editor does
+not exist yet. Dragging the file out of the card is not supported yet.
+Two keys in `shell.json` control it:
+
+```json
+{"windows":{"capture":{"thumbnail":true,"thumbnailSeconds":6}}}
+```
+
+`thumbnail` set to `false` turns the thumbnail off. `thumbnailSeconds` is how long
+a thumbnail stays, and `0` keeps it until it is closed. A capture that was only
+copied keeps a preview file in the temp directory until its thumbnail closes.
+Save writes it to `Pictures\Screenshots` with the picker's naming. Show in
+folder saves it first and opens the folder.
+
 A development or recovery build can be pointed at another Glazier with an
 absolute path in `%LOCALAPPDATA%\caelestia-windows\config\glazier.json`:
 
