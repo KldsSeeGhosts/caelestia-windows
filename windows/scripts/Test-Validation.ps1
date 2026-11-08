@@ -132,8 +132,8 @@ try {
         $scripts = if ($Suite -eq 'Services') {
             @(Get-ChildItem -LiteralPath $PSScriptRoot -Filter 'Test-*Service.ps1' -File | Sort-Object Name | ForEach-Object BaseName)
         } else {
-            @('Test-AccessibilityLauncher', 'Test-AccessibilityNotifications', 'Test-DragPreview',
-              'Test-HotplugTeardown', 'Test-IdleInhibitStatus', 'Test-LauncherHoverClose',
+            @('Test-AccessibilityLauncher', 'Test-AccessibilityNotifications',
+              'Test-CaptureBackendApi', 'Test-DragPreview', 'Test-HotplugTeardown', 'Test-IdleInhibitStatus', 'Test-LauncherHoverClose',
               'Test-PerMonitorFullscreen', 'Test-PinnedPopoutFocus', 'Test-QuotaPopovers',
               'Test-QuotaProviderKeyboard', 'Test-SessionSwitchBack', 'Test-WallpaperColours',
               'Test-WallpaperDefaults', 'Test-WallpaperFolder', 'Test-WallpaperHandback',
