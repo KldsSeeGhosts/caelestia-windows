@@ -58,7 +58,11 @@ Item {
         return visible;
     }
 
-    implicitWidth: Math.max(pathView.implicitWidth, folderBar.implicitWidth)
+    // The folder path has its own row and cannot drive the picker width; the
+    // header's action row is its real minimum. With zero or one wallpaper the
+    // carousel contributes nothing, so without this the path collapsed to the
+    // width of the buttons and disappeared.
+    implicitWidth: Math.max(pathView.implicitWidth, folderBar.minimumWidth)
     implicitHeight: headerHeight + Tokens.sizes.launcher.wallpaperHeight
 
     function decrementCurrentIndex(): void {

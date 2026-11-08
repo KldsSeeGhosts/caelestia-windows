@@ -71,10 +71,16 @@ Singleton {
             onDisk: entry.onDisk !== false
         });
     }
+    // Windows adaptation (PR #66): a picker may show the scanned local folder
+    // while Wallpaper Engine's own picker choice hides it, so an imported image
+    // is not silently invisible. This changes only what the pickers display;
+    // the engine integration, its default and the saved setting are untouched.
+    property bool showLocalSource: false
+    readonly property string activeSource: showLocalSource ? "files" : WallpaperEngine.picker
     readonly property var list: {
         const engine = WallpaperEngine.enabled && WallpaperEngine.detected ? WallpaperEngine.items : [];
-        const raw = WallpaperEngine.picker === "engine" ? engine
-            : WallpaperEngine.picker === "both" ? [...engine, ...files] : files;
+        const raw = activeSource === "engine" ? engine
+            : activeSource === "both" ? [...engine, ...files] : files;
         return raw.map(normalize).filter(entry => entry !== null);
     }
     property bool previewColourLock: false
