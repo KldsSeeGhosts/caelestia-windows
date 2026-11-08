@@ -22,6 +22,11 @@ QtObject {
 
     function run(): void {
         try {
+            // This fixture emulates an existing profile that follows Windows;
+            // the fresh disabled default is covered by WallpaperDefaultsTest.
+            WallpaperEngine.options = {enabled: true};
+            Wallpapers.sourceInitialized = true;
+            Wallpapers.sourceFresh = false;
             WallpaperEngine.running = true;
             WallpaperEngine.monitors = {Monitor0: {path: "C:/we/project.json", preview: "C:/we/preview.jpg"}};
             // 1. Fresh profile, engine already running and acknowledged. The

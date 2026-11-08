@@ -15,8 +15,14 @@ QtObject {
         try {
             const primary = {name: "primary"};
             const secondary = {name: "secondary"};
+            // This fixture exercises targeting, so opt in as a user would and
+            // follow Windows as an existing profile does. The fresh default is
+            // covered by WallpaperDefaultsTest.
+            WallpaperEngine.options = {enabled: true};
             WallpaperEngine.snapshotReady = true;
             WallpaperEngine.running = false;
+            Wallpapers.sourceFresh = false;
+            Wallpapers.sourceInitialized = true;
             Native.FsUtils.existingFiles = [Wallpapers.fallback, "C:/walls/primary.jpg",
                 "C:/walls/secondary.jpg", "C:/walls/picked.jpg", "C:/walls/preview.jpg"];
             // The same fixture can demonstrate the old global-setter defect.

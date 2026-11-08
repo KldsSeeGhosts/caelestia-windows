@@ -16,6 +16,9 @@ QtObject {
     function run(): void {
         try {
             Quickshell.environment = {CAELESTIA_WINDOWS_BACKGROUND: "1"};
+            // This fixture covers an enabled integration on a legacy
+            // backend; the fresh disabled default is covered elsewhere.
+            WallpaperEngine.options = {enabled: true};
             Screens.screens = [screen];
             Native.DesktopLayer.active = true;
             check(!subject.underlaySupported && !subject.underlayActive, "legacy feature detection");

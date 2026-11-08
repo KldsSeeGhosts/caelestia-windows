@@ -5,6 +5,22 @@ Python bridge discovers Steam via HKCU `Software\Valve\Steam\SteamPath`, reads
 `steamapps/libraryfolders.vdf` and `appmanifest_431960.acf`, and checks the running
 process list. No Steam or workshop installation path is hardcoded.
 
+When the integration is disabled, or enabled but Wallpaper Engine is not
+installed or not running, the shell selects its own wallpaper and derives its
+palette from that image. A running engine still owns a visible wallpaper
+window: the pinned backend places marked backgrounds below every visible
+foreign child and refuses an above-icons embed while one exists, so the engine
+covers the shell's image until the process quits or hands the desktop back. A
+fresh profile starts on `assets/wallpaper.webp` and then follows only
+Caelestia picks: provenance is recorded once in
+`state/caelestia/wallpaper/profile.json` before any other start-up writer, and
+the profile-wide and per-display picks are recorded in
+`state/caelestia/wallpaper/desktop.json`. A Windows Settings change, an engine
+write or an older build's rollback is not followed on a fresh profile. A
+profile that already existed keeps following the Windows wallpaper it showed
+before, whether or not the optional colour runtime produced a palette. See the
+configuration reference for the pick record and the missing-key rule.
+
 The active config is
 `<user>.general.wallpaperconfig.selectedwallpapers.MonitorN.file`. Saved/recent
 layouts are deliberately excluded. Each selected media/package path resolves to
@@ -30,7 +46,7 @@ Windows-only settings live in the isolated `config/windows.json` sidecar:
 {
   "windows": {
     "wallpaperEngine": {
-      "enabled": "auto",
+      "enabled": false,
       "picker": "engine",
       "monitor": "Monitor0"
     }
@@ -38,13 +54,20 @@ Windows-only settings live in the isolated `config/windows.json` sidecar:
 }
 ```
 
-`enabled` accepts `false`, `true` or `"auto"` (default). Auto activates when the
-installation and process are detected. `picker` accepts `"engine"`, `"files"` or
-`"both"`; its default is engine while WE is running, files otherwise. `monitor`
-defaults to `Monitor0`, WE's primary monitor; set e.g. `Monitor1` to match a bar on
-another monitor. An unknown monitor yields no palette rather than silently
-sampling another display. `services.smartScheme` still controls smart
-light/dark/variant selection.
+`enabled` defaults to `false` when the key is absent. A fresh install therefore
+shows the bundled Caelestia wallpaper and does not depend on Wallpaper Engine;
+the Nexus Services page opt-in writes `true`. A saved `true` keeps the
+integration on. The older `"auto"` value is still accepted for existing
+profiles and activates automatically when the installation and process are
+detected. The old default is distinguishable from absence: `"auto"` is a
+present string and stays on, while a missing key stays off. Loading never
+rewrites a saved value; the toggle writes `true` or `false` only when the user
+changes it. `picker` accepts `"engine"`, `"files"` or `"both"`; its default is
+engine while WE is running, files otherwise. `monitor` defaults to `Monitor0`,
+WE's primary monitor; set e.g. `Monitor1` to match a bar on another monitor. An
+unknown monitor yields no palette rather than silently sampling another
+display. `services.smartScheme` still controls smart light/dark/variant
+selection.
 
 Put these settings in the profile's `config/windows.json` sidecar. Runtime
 edits to that file are watched. The pinned C++
@@ -107,11 +130,12 @@ that missing information. Keeping a shell overlay above the external HWND
 would instead risk covering legitimate wallpaper content.
 
 Helper failure also cannot prove that an engine-era system wallpaper is an
-own-file choice. Without successful ownership discovery at startup, the
-existing system-source adoption path still needs live scrutiny. A reload with
-an engine already running has no persisted last-own source. Process start/stop
-remains bounded by the existing status scan; a helper timeout cannot establish
-whether external output has stopped.
+own-file choice. A fresh profile never adopts a Windows image, so the question
+no longer arises there. An existing profile still follows Windows as before, so
+its system-source path still needs live scrutiny. A reload with an engine
+already running has no persisted last-own source. Process start/stop remains
+bounded by the existing status scan; a helper timeout cannot establish whether
+external output has stopped.
 
 Windows keeps WallpaperImpl's texture provider alive between its own image
 transitions, rather than recreating the shader input at capture time.

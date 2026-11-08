@@ -29,6 +29,14 @@ QtObject {
     function run(): void {
         try {
             Wallpapers.stopPreview();
+            // This fixture exercises the enabled engine's palette ownership
+            // and follows Windows, as an existing profile does; the fresh,
+            // disabled default is covered by WallpaperDefaultsTest.
+            WallpaperEngine.options = {enabled: true};
+            Wallpapers.sourceFresh = false;
+            Wallpapers.sourceInitialized = true;
+            Wallpapers.fileCurrent = Native.Wallpaper.currentWallpaper().replace(/\\/g, "/");
+            Wallpapers.refreshScreenFiles();
             WallpaperEngine.snapshotReady = false;
             WallpaperEngine.running = true;
             persist("dynamic", "C:/we/preview.jpg");

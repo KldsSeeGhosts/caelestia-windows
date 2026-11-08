@@ -7,7 +7,7 @@
       "keepSystemBanners": []
     },
     "wallpaperEngine": {
-      "enabled": "auto"
+      "enabled": false
     }
   }
 }

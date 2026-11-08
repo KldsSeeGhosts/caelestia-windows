@@ -11,8 +11,15 @@ Singleton {
 
     readonly property string python: Quickshell.env("CAELESTIA_WE_PYTHON") || ""
     readonly property string helper: Quickshell.shellPath("services/wallpaperengine_bridge.py")
+    readonly property string settingsPath: Quickshell.env("CAELESTIA_CONFIG_DIR") + "/windows.json"
     property var options: ({})
-    readonly property bool enabled: options.enabled !== false
+    property var configDocument: ({})
+    property bool configLoaded: false
+    // An absent key is an install that has not opted in; a saved "auto" is a
+    // value an older build wrote and keeps automatic activation. The old
+    // default therefore stays distinguishable from no value at all. Nothing
+    // rewrites a saved choice on load.
+    readonly property bool enabled: options.enabled === true || options.enabled === "auto"
     readonly property bool controlsEnabled: enabled && running && detected
         && Quickshell.env("CAELESTIA_COMBINED_LIVE") === "1"
         && Quickshell.env("CAELESTIA_SHELL_SMOKE") !== "1"
@@ -240,6 +247,89 @@ Singleton {
         lastError = "";
     }
 
+    // Nexus writes the opt-in here. reload() is asynchronous once this view
+    // has loaded, so the merge happens from onLoaded (or onLoadFailed) with
+    // the text that read returned. Reading text() straight after reload()
+    // merges the stale document and drops keys written since the last watch
+    // event. A malformed or unreadable existing file is never replaced.
+    //
+    // setText() cannot run from onLoaded: the native view still owns the read
+    // operation when it emits loaded(), so a save issued there replaces the
+    // live operation and its saved() is dropped. The write is queued after
+    // that callback, and the facade value only changes in saved().
+    property bool togglePending: false
+    property bool toggleValue: false
+    property bool configSavePending: false
+    // A save has finished and its bytes are being read back. saved() alone
+    // does not prove the destination changed on the pinned backend (issue
+    // #28), so the toggle is applied only after the file matches.
+    property bool configSaveVerifying: false
+    property var pendingConfigDocument: null
+    property string pendingConfigText: ""
+
+    function setEnabled(on: bool): void {
+        // Rapid clicks collapse into one merge with the latest value. A save
+        // in flight finishes first; saved() then reruns the latest value.
+        root.toggleValue = on === true;
+        if (root.configSavePending)
+            return;
+        root.togglePending = true;
+        configFile.reload();
+    }
+    function commitToggle(content): void {
+        const text = String(content ?? "").replace(/^\uFEFF/, "").trim();
+        let document = {};
+        if (text.length > 0) {
+            try {
+                const parsed = JSON.parse(text);
+                if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+                    throw new Error("the document is not an object");
+                document = parsed;
+            } catch (error) {
+                root.lastError = "Wallpaper Engine settings are not valid JSON: " + String(error);
+                return;
+            }
+        }
+        const next = JSON.parse(JSON.stringify(document));
+        if (!next.windows || typeof next.windows !== "object" || Array.isArray(next.windows))
+            next.windows = {};
+        const current = next.windows.wallpaperEngine;
+        next.windows.wallpaperEngine = current && typeof current === "object" && !Array.isArray(current)
+            ? Object.assign({}, current, {enabled: root.toggleValue}) : {enabled: root.toggleValue};
+        const serialized = JSON.stringify(next, null, 2) + "\n";
+        root.pendingConfigDocument = next;
+        root.pendingConfigText = serialized;
+        // FileView drops an identical setText(), so a toggle that returns to
+        // the document already on disk would never emit saved(). Complete it
+        // here instead of leaving configSavePending set and blocking every
+        // later toggle (backend issue #28).
+        if (serialized === String(content ?? "").replace(/^\uFEFF/, "")) {
+            root.applyToggle();
+            return;
+        }
+        root.configSavePending = true;
+        root.lastError = "";
+        Qt.callLater(() => {
+            if (root.configSavePending)
+                configFile.setText(root.pendingConfigText);
+        });
+    }
+    function applyToggle(): void {
+        const next = root.pendingConfigDocument;
+        root.configSavePending = false;
+        root.configSaveVerifying = false;
+        root.pendingConfigDocument = null;
+        root.pendingConfigText = "";
+        root.configDocument = next;
+        root.options = next?.windows?.wallpaperEngine ?? {};
+        root.configLoaded = true;
+        root.lastError = "";
+        // A click made while the write was in flight keeps only the latest
+        // value; merge it against the file that was just saved.
+        if (root.toggleValue !== root.enabled)
+            Qt.callLater(() => root.setEnabled(root.toggleValue));
+    }
+
     function open(path: string, screen): bool {
         if (!controlsEnabled || action.running || !items.some(item => item.path === path))
             return false;
@@ -272,13 +362,117 @@ Singleton {
     }
 
     FileView {
-        path: Quickshell.env("CAELESTIA_CONFIG_DIR") + "/windows.json"
+        id: configFile
+        path: root.settingsPath
         watchChanges: true
+        blockLoading: true
         printErrors: false
         onFileChanged: reload()
         onLoaded: {
-            try { root.options = JSON.parse(text()).windows?.wallpaperEngine ?? {}; }
-            catch (error) { root.lastError = String(error); }
+            const content = text();
+            try {
+                const parsed = JSON.parse(String(content).replace(/^\uFEFF/, ""));
+                if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+                    throw new Error("windows.json is not an object");
+                root.configDocument = parsed;
+                root.options = parsed.windows?.wallpaperEngine ?? {};
+                root.configLoaded = true;
+            } catch (error) {
+                // A malformed read can be a writer's partial document. Keep
+                // the last successfully loaded settings instead of disabling
+                // an integration this profile opted into. A missing key in the
+                // document just defaults to off, as before.
+                root.configLoaded = true;
+                root.lastError = String(error);
+            }
+            // This load is the fresh read the toggle asked for.
+            if (root.togglePending) {
+                root.togglePending = false;
+                root.commitToggle(content);
+            }
+        }
+        onLoadFailed: error => {
+            // The sidecar is seeded with the profile. A missing file is a
+            // fresh install, not a reason to enable the integration.
+            if (root.togglePending) {
+                root.togglePending = false;
+                if (error === FileViewError.FileNotFound) {
+                    root.commitToggle("");
+                    return;
+                }
+                // The file exists but could not be read. Writing a document
+                // built from nothing would drop every key it holds.
+                root.lastError = "Wallpaper Engine settings could not be read";
+                return;
+            }
+            // A transient lock is not evidence that the saved setting went
+            // away. Keep the last successfully loaded document and options;
+            // unlocking the file may not raise another change event. Only a
+            // missing file clears them, so an absent key defaults to off.
+            if (error === FileViewError.FileNotFound) {
+                root.configDocument = {};
+                root.options = {};
+            }
+            root.configLoaded = true;
+            if (error !== FileViewError.FileNotFound)
+                root.lastError = "Wallpaper Engine settings could not be read";
+        }
+        onSaved: {
+            if (root.configSavePending) {
+                // saved() alone does not prove the bytes on this backend
+                // (issue #28): a failed QSaveFile::commit() is only logged.
+                // Read the file back through a separate view before applying.
+                root.configSaveVerifying = true;
+                configVerify.path = root.settingsPath;
+                configVerify.reload();
+            } else {
+                root.lastError = "";
+            }
+        }
+        onSaveFailed: error => {
+            if (root.configSavePending) {
+                // Never apply a value that did not reach disk. The switch
+                // stays on the saved state and the error stays visible.
+                root.configSavePending = false;
+                root.configSaveVerifying = false;
+                root.pendingConfigDocument = null;
+                root.pendingConfigText = "";
+            }
+            root.lastError = "Could not save Wallpaper Engine settings: " + String(error);
+        }
+    }
+    // Independent read-back of the settings write. The saving view cannot
+    // reload itself from its own saved() callback, and on the pinned backend
+    // saved() is emitted even when the atomic commit failed (issue #28). This
+    // workaround can go when the backend reports the failure.
+    FileView {
+        id: configVerify
+        // Assigned when a save needs checking. Starting empty avoids a
+        // startup read whose completion could race the verification.
+        path: ""
+        watchChanges: false
+        printErrors: false
+        onLoaded: {
+            if (!root.configSaveVerifying)
+                return;
+            root.configSaveVerifying = false;
+            if (String(text()).replace(/^\uFEFF/, "") === root.pendingConfigText) {
+                root.applyToggle();
+            } else {
+                root.configSavePending = false;
+                root.pendingConfigDocument = null;
+                root.pendingConfigText = "";
+                root.lastError = "Could not save Wallpaper Engine settings: the saved file did not match";
+            }
+        }
+        onLoadFailed: {
+            if (!root.configSaveVerifying)
+                return;
+            root.configSaveVerifying = false;
+            root.configSavePending = false;
+            root.pendingConfigDocument = null;
+            root.pendingConfigText = "";
+            root.lastError = "Could not save Wallpaper Engine settings: the saved file could not be read back";
         }
     }
     FileView {

@@ -68,7 +68,7 @@ QtObject {
             check(manager.submitted && manager.deadline.running, "queued journal changed deadline");
             journal(firstId, "working");
             check(manager.submitted && manager.deadline.running, "working journal changed deadline");
-            manager.operationFile.loadFailed();
+            manager.operationFile.loadFailed(3);
             check(manager.submitted && manager.deadline.running, "transient journal failure ended the deadline early");
             afterFirst.start();
         } catch (error) { fail(error); }
@@ -100,7 +100,7 @@ QtObject {
             check(manager.process.command[0] === "late-ack", "unacknowledged request duplicated");
             acknowledge(secondId);
             check(manager.unconfirmed && manager.operationId === secondId, "late acknowledgement reset outcome");
-            manager.operationFile.loadFailed();
+            manager.operationFile.loadFailed(3);
             check(manager.unconfirmed && !manager.failed, "missing journal fabricated failure");
             journal(firstId, "failed");
             check(manager.unconfirmed, "stale operation failure applied");

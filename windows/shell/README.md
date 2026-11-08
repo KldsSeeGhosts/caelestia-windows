@@ -161,8 +161,10 @@ seeds these files once, preserving edits across restart/update/uninstall:
   disabled with 10/10 DIP gaps. Native Config watches edits.
 - `config/keybinds.json`: shipped `defaults/windows/keybinds.json`. The backend
   watches edits; see [KEYBINDS.md](../docs/KEYBINDS.md).
-- `config/windows.json`: `{"windows":{"hideTaskbar":false,"restartOnCrash":true}}`.
-  These supervisor settings apply at the next launch.
+- `config/windows.json`: `{"windows":{"hideTaskbar":false,"restartOnCrash":true,"wallpaperEngine":{"enabled":false}}}`.
+  These supervisor settings apply at the next launch. Wallpaper Engine is
+  opt-in; a missing `enabled` key is off, while an existing saved value
+  (including the older `"auto"`) is kept.
 
 The installer provisions the pinned Caelestia CLI and Python dependencies in an
 immutable generation under `scheme/runtimes/<generation>` before activation.

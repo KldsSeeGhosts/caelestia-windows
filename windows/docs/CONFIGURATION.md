@@ -306,14 +306,80 @@ Controls the top dashboard drawer and platform service intervals/units.
 - `lock`: Ignored on Windows; locking always invokes the native Windows lock screen (`Win+L`).
 
 Wallpaper Engine settings live in `config/windows.json` under
-`windows.wallpaperEngine`: `enabled` defaults to `"auto"`, `picker` accepts
-`"engine"`, `"files"` or `"both"`, and `monitor` defaults to `"Monitor0"`.
+`windows.wallpaperEngine`. `enabled` defaults to `false` when the key is absent,
+so a fresh install and a profile that never opted in keep the bundled Caelestia
+wallpaper. Set it to `true` (or use the Nexus toggle) to opt in. The old
+`"auto"` value is still accepted for existing profiles and enables automatic
+activation when Wallpaper Engine is detected and running; a saved `"auto"` is a
+value, not the new default, so no upgrade rewrites it. Nexus writes `true` or
+`false` only when the user changes the toggle. `picker` accepts `"engine"`,
+`"files"` or `"both"`, and `monitor` defaults to `"Monitor0"`.
 The picker targets its owning display, for both images and Wallpaper Engine
 projects. `monitor` remains the default palette source and the target for
 requests without a display. Explicit display requests never fall back to it.
 Wallpaper Engine targeting requires a unique active device-path selection or
 managed monitor-map entry; an unavailable mapping is reported without changing
-another display. The shell retains its own image beneath the external output.
+another display. The shell retains its own image beneath the external output,
+and an enabled but missing or stopped Wallpaper Engine leaves that image
+visible instead of blanking the desktop.
+
+The shell records the wallpaper picks a fresh profile made in Caelestia in
+`state/caelestia/wallpaper/desktop.json`:
+
+```json
+{
+  "version": 1,
+  "wallpaper": "D:\\Wallpapers\\space.jpg",
+  "monitors": {"<display-target-id>": "D:\\Wallpapers\\other.jpg"}
+}
+```
+
+`wallpaper` is the profile-wide pick. `monitors` stores per-display picks, so a
+pick on one monitor leaves the other monitors on their own pick or on the
+profile-wide one. The record is only written when the user picks a wallpaper in
+Caelestia (the launcher picker or Nexus). A fresh profile shows the bundled
+`assets/wallpaper.webp` until the first pick and only Caelestia picks after
+that. It does not follow the Windows desktop wallpaper: a change made in
+Windows Settings, by Wallpaper Engine, by another application or by an older
+Caelestia build is not adopted. A pick may still also apply the image to the
+Windows wallpaper, but the shell's source of truth is the recorded pick, not
+the Windows setting. On a fresh install, change the wallpaper in Caelestia, not
+in Windows Settings.
+
+A profile upgrading from an older build behaves exactly as before this change.
+The shell follows the Windows wallpaper, including per-display images and
+changes made in Windows Settings. It does not consult or write the pick record.
+
+The shell classifies a profile once through
+`state/caelestia/wallpaper/profile.json`, written synchronously at startup
+before theme tokens, palette state or the wallpaper record can be created. When
+that marker is missing, the presence of the Caelestia state directory
+`state/caelestia` means an earlier build ran: the installer's empty `state`
+directory is not used because every start, fresh or upgrade, creates it. The
+result is recorded in the marker, so a first start that crashes after writing
+`theme-tokens.json` is still treated as the same fresh profile on the next
+start. A record with malformed JSON or an unknown `version` is never
+reinterpreted or rewritten on load: a fresh profile keeps showing the bundled
+asset until an explicit pick replaces the record.
+
+A rollback is safe by design. An older Caelestia build may change the Windows
+wallpaper without updating the pick record. When the newer build runs again,
+the fresh profile keeps its recorded Caelestia pick, or the bundled asset when
+it has none, and ignores that change. This is intended, not a migration
+failure; the old build cannot know the newer record.
+
+Deleting `desktop.json` removes the saved fresh-profile picks. A fresh profile
+then returns to the bundled asset. An existing profile is unaffected because it
+follows Windows.
+
+An acknowledged Wallpaper Engine handback returns the desktop to Caelestia even
+while the engine process keeps running. A Wallpaper Engine process that is
+running but not enabled, or has not handed the desktop back, still owns a
+visible wallpaper window. The pinned backend places marked backgrounds below
+every visible foreign child and refuses an above-icons embed while one exists,
+so the bundled background is mounted and ready but the engine's window covers
+it until the process quits or hands the desktop back. Covering a running engine
+before a handback would need a backend change.
 
 Windows banner replacement is also configured in `config/windows.json`:
 
