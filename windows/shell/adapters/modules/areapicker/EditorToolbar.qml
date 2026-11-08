@@ -385,6 +385,12 @@ Item {
                 text: modelData.label
                 onClicked: root.editor.setSize(modelData.index)
 
+                label.transform: PixelSnap {
+                    target: segment.label
+                    surface: popover
+                    dpr: root.dpr
+                }
+
                 ToolTip.visible: hovered
                 ToolTip.delay: 500
                 ToolTip.text: [Tr.tr("Thin line"), Tr.tr("Medium line"), Tr.tr("Thick line")][modelData.index] ?? ""
@@ -476,6 +482,14 @@ Item {
         height: spot ? spot.height : implicitHeight
         type: IconButton.Text
 
+        // The control offsets its icon by logical pixels. The icon goes to a
+        // whole device pixel (see PixelSnap).
+        label.transform: PixelSnap {
+            target: button.label
+            surface: bar
+            dpr: root.dpr
+        }
+
         ToolTip.visible: hovered
         ToolTip.delay: 500
         ToolTip.text: tip
@@ -500,6 +514,19 @@ Item {
         iconLabel.fontStyle: Tokens.font.icon.medium
         verticalPadding: Tokens.padding.extraSmall / 2
         implicitHeight: Math.max(probe.implicitHeight, Math.max(iconLabel.implicitHeight, label.implicitHeight) + verticalPadding * 2)
+
+        // The row of icon and label is centred, and the label is nudged down by
+        // a pixel, so both can be between device pixels. Each goes to a whole one.
+        iconLabel.transform: PixelSnap {
+            target: button.iconLabel
+            surface: bar
+            dpr: root.dpr
+        }
+        label.transform: PixelSnap {
+            target: button.label
+            surface: bar
+            dpr: root.dpr
+        }
 
         ToolTip.visible: hovered
         ToolTip.delay: 500

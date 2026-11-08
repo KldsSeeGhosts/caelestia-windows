@@ -300,6 +300,7 @@
   "windows/shell/adapters/modules/areapicker/EditorState.qml": "modules/areapicker/EditorState.qml",
   "windows/shell/adapters/modules/areapicker/EditorToolbar.qml": "modules/areapicker/EditorToolbar.qml",
   "windows/shell/adapters/modules/areapicker/Picker.qml": "modules/areapicker/Picker.qml",
+  "windows/shell/adapters/modules/areapicker/PixelSnap.qml": "modules/areapicker/PixelSnap.qml",
   "windows/shell/adapters/modules/areapicker/ThumbnailCard.qml": "modules/areapicker/ThumbnailCard.qml",
   "windows/shell/adapters/modules/areapicker/ThumbnailLogic.js": "modules/areapicker/ThumbnailLogic.js",
   "windows/shell/adapters/modules/areapicker/Thumbnails.qml": "modules/areapicker/Thumbnails.qml",

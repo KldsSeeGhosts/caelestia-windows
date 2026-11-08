@@ -65,9 +65,14 @@ Item {
         fade = target;
     }
 
+    // The card starts on a whole device pixel, so everything placed in it with
+    // whole device offsets (the pill, the buttons, their icons) is on one too. A
+    // card sliding in is between pixels until it settles.
+    readonly property real dpr: entry.dpr > 0 ? entry.dpr : 1
+
     objectName: "captureThumbnail"
-    x: slot.x
-    y: slot.y
+    x: Logic.snap(slot.x, dpr)
+    y: Logic.snap(slot.y, dpr)
     width: slot.width
     height: slot.height
     opacity: fade
@@ -225,7 +230,7 @@ Item {
         readonly property var names: Logic.actions(root.entry.saved)
         readonly property var geometry: Logic.pillRect({ width: root.width, height: root.height },
             { width: row.implicitWidth + Tokens.padding.extraSmall * 2, height: row.implicitHeight + Tokens.padding.extraSmall * 2 },
-            { scale: root.entry.dpr, bottom: Tokens.spacing.small })
+            { scale: root.dpr, bottom: Tokens.spacing.small })
 
         objectName: "captureThumbnailActions"
         x: geometry.x
@@ -246,7 +251,9 @@ Item {
         Row {
             id: row
 
-            anchors.centerIn: parent
+            // Centred on a whole device pixel, so the buttons' edges are sharp too.
+            x: Logic.snap((pill.width - width) / 2, root.dpr)
+            y: Logic.snap((pill.height - height) / 2, root.dpr)
             spacing: Tokens.spacing.extraSmall
 
             Repeater {
@@ -276,6 +283,14 @@ Item {
         type: IconButton.Text
         icon: spec.icon
         onClicked: triggered(modelData)
+
+        // The control nudges its icon by a logical pixel. The icon goes to a
+        // whole device pixel (see PixelSnap).
+        label.transform: PixelSnap {
+            target: button.label
+            surface: root
+            dpr: root.dpr
+        }
 
         ToolTip.visible: hovered
         ToolTip.delay: 500

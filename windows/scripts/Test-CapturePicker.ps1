@@ -12,6 +12,13 @@ try {
         -Sources @('windows/tests/CapturePickerTest.qml') -FixtureFile 'windows/tests/CapturePickerTest.qml' `
         -Marker CAELESTIA_CAPTURE_PICKER -MinimumAssertions 150 -TimeoutMs 60000 `
         -Environment @{ TEMP = $fixtureTemp; TMP = $fixtureTemp }
+    # Every label and icon of the toolbar, its popover and the thumbnail cards
+    # lies on a whole device pixel at 100%, 125% and 150% scaling. It places the
+    # real components itself, with no picker.
+    $pixels = Invoke-QmlFixture -QtPrefix $QtPrefix -BuildRoot $BuildRoot -Name capture-pixels -ShellFixture -UseQuickshell `
+        -Sources @('windows/tests/CapturePixelsTest.qml') -FixtureFile 'windows/tests/CapturePixelsTest.qml' `
+        -Marker CAELESTIA_CAPTURE_PIXELS -MinimumAssertions 500 -TimeoutMs 90000 `
+        -Environment @{ TEMP = $fixtureTemp; TMP = $fixtureTemp }
 } finally {
     $resolved = [IO.Path]::GetFullPath($fixtureTemp)
     if ($resolved.StartsWith($tempRoot + '\', [StringComparison]::OrdinalIgnoreCase) -and
@@ -20,4 +27,6 @@ try {
     }
 }
 $result | ConvertTo-Json -Depth 8
+$pixels | ConvertTo-Json -Depth 8
 if (-not $result.passed) { throw "Capture picker fixture failed. See $($result.stderr)." }
+if (-not $pixels.passed) { throw "Capture device pixel fixture failed. See $($pixels.stdout) and $($pixels.stderr)." }
