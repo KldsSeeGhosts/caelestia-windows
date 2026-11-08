@@ -7,6 +7,10 @@ QtObject {
     property var unreadable: ({})
     // Paths whose next write must fail, with the FileViewError value to emit.
     property var saveFailures: ({})
+    // Paths whose atomic commit fails without an error. The pinned backend
+    // logs the failed commit and still emits saved(), leaving the destination
+    // unchanged (backend issue #28). The attempted bytes stay cached.
+    property var commitFailures: ({})
     // When set, setText queues completion instead of delivering saved() from
     // inside the call. The native view writes on a worker thread and reports
     // later; tests pump it with flushWrites().
@@ -49,12 +53,27 @@ QtObject {
     }
     function deliverWrite(view, text): void {
         view.pendingText = "";
+        const value = String(text);
         if (saveFailures[view.path]) {
+            // The native view keeps the attempted bytes cached even when the
+            // write fails, so an identical setText() is dropped.
+            view.cachedText = value;
             view.saveFailed(saveFailures[view.path]);
             return;
         }
-        contents[view.path] = String(text);
-        view.cachedText = String(text);
+        if (commitFailures[view.path]) {
+            // QSaveFile::commit() failed, but no error is set: saved() is
+            // emitted and the destination is unchanged.
+            view.cachedText = value;
+            view.emittingSaved = true;
+            view.saved();
+            view.emittingSaved = false;
+            if (view.watchChanges)
+                view.fileChanged();
+            return;
+        }
+        contents[view.path] = value;
+        view.cachedText = value;
         view.emittingSaved = true;
         view.saved();
         view.emittingSaved = false;

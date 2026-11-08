@@ -95,6 +95,22 @@ QtObject {
                 "disabling left the engine preview as the palette source");
             check(WallpaperEngine.ownsDesktop, "disabling dropped the physical claim");
 
+            // The process stops without an acknowledged handback. The image
+            // it wrote while running must not be adopted when the comparison
+            // is resolved: it was not present when this run started.
+            WallpaperEngine.running = false;
+            check(Wallpapers.currentForScreen({name: "primary"}) === Wallpapers.fallback,
+                "the stopped engine's wallpaper became the primary source");
+            check(Wallpapers.currentForScreen({name: "secondary"}) === Wallpapers.fallback,
+                "the stopped engine's wallpaper became the secondary source");
+            check(Wallpapers.currentImage === Wallpapers.fallback,
+                "the stopped engine's wallpaper became the palette source");
+            check(!Wallpapers.sourceChosen, "the stopped engine opted the profile in");
+            saved = record();
+            check(saved.monitors === undefined, "the stopped engine recorded a display choice");
+            check(saved.seen["primary-id"] === "C:/walls/primary.jpg",
+                "the stopped engine moved the stored comparison baseline");
+
             console.log("CAELESTIA_WALLPAPER_ENGINE_OFF_PASS " + assertions);
             Qt.quit();
         } catch (error) {

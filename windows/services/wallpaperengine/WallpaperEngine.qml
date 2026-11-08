@@ -260,6 +260,10 @@ Singleton {
     property bool togglePending: false
     property bool toggleValue: false
     property bool configSavePending: false
+    // A save has finished and its bytes are being read back. saved() alone
+    // does not prove the destination changed on the pinned backend (issue
+    // #28), so the toggle is applied only after the file matches.
+    property bool configSaveVerifying: false
     property var pendingConfigDocument: null
     property string pendingConfigText: ""
 
@@ -292,8 +296,17 @@ Singleton {
         const current = next.windows.wallpaperEngine;
         next.windows.wallpaperEngine = current && typeof current === "object" && !Array.isArray(current)
             ? Object.assign({}, current, {enabled: root.toggleValue}) : {enabled: root.toggleValue};
+        const serialized = JSON.stringify(next, null, 2) + "\n";
         root.pendingConfigDocument = next;
-        root.pendingConfigText = JSON.stringify(next, null, 2) + "\n";
+        root.pendingConfigText = serialized;
+        // FileView drops an identical setText(), so a toggle that returns to
+        // the document already on disk would never emit saved(). Complete it
+        // here instead of leaving configSavePending set and blocking every
+        // later toggle (backend issue #28).
+        if (serialized === String(content ?? "").replace(/^\uFEFF/, "")) {
+            root.applyToggle();
+            return;
+        }
         root.configSavePending = true;
         root.lastError = "";
         Qt.callLater(() => {
@@ -304,6 +317,7 @@ Singleton {
     function applyToggle(): void {
         const next = root.pendingConfigDocument;
         root.configSavePending = false;
+        root.configSaveVerifying = false;
         root.pendingConfigDocument = null;
         root.pendingConfigText = "";
         root.configDocument = next;
@@ -393,20 +407,58 @@ Singleton {
             root.configLoaded = true;
         }
         onSaved: {
-            if (root.configSavePending)
-                root.applyToggle();
-            else
+            if (root.configSavePending) {
+                // saved() alone does not prove the bytes on this backend
+                // (issue #28): a failed QSaveFile::commit() is only logged.
+                // Read the file back through a separate view before applying.
+                root.configSaveVerifying = true;
+                configVerify.reload();
+            } else {
                 root.lastError = "";
+            }
         }
         onSaveFailed: error => {
             if (root.configSavePending) {
                 // Never apply a value that did not reach disk. The switch
                 // stays on the saved state and the error stays visible.
                 root.configSavePending = false;
+                root.configSaveVerifying = false;
                 root.pendingConfigDocument = null;
                 root.pendingConfigText = "";
             }
             root.lastError = "Could not save Wallpaper Engine settings: " + String(error);
+        }
+    }
+    // Independent read-back of the settings write. The saving view cannot
+    // reload itself from its own saved() callback, and on the pinned backend
+    // saved() is emitted even when the atomic commit failed (issue #28). This
+    // workaround can go when the backend reports the failure.
+    FileView {
+        id: configVerify
+        path: root.settingsPath
+        watchChanges: false
+        printErrors: false
+        onLoaded: {
+            if (!root.configSaveVerifying)
+                return;
+            root.configSaveVerifying = false;
+            if (String(text()).replace(/^\uFEFF/, "") === root.pendingConfigText) {
+                root.applyToggle();
+            } else {
+                root.configSavePending = false;
+                root.pendingConfigDocument = null;
+                root.pendingConfigText = "";
+                root.lastError = "Could not save Wallpaper Engine settings: the saved file did not match";
+            }
+        }
+        onLoadFailed: {
+            if (!root.configSaveVerifying)
+                return;
+            root.configSaveVerifying = false;
+            root.configSavePending = false;
+            root.pendingConfigDocument = null;
+            root.pendingConfigText = "";
+            root.lastError = "Could not save Wallpaper Engine settings: the saved file could not be read back";
         }
     }
     FileView {

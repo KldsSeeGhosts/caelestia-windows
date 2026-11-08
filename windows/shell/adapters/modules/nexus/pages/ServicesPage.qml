@@ -56,14 +56,14 @@ PageBase {
     }
     readonly property string engineUnavailableHint: {
         if (!WallpaperEngine.enabled)
-            return Tr.tr("Caelestia shows its own wallpaper.");
+            return Tr.tr("Caelestia selects its own wallpaper. A running Wallpaper Engine can still cover it until it quits.");
         if (!WallpaperEngine.python)
             return Tr.tr("The settings bridge is unavailable; Caelestia keeps its own wallpaper.");
         if (!WallpaperEngine.detected)
             return Tr.tr("Install Wallpaper Engine to use it; Caelestia keeps its own wallpaper.");
         if (!WallpaperEngine.running)
             return Tr.tr("Start Wallpaper Engine to use it; Caelestia keeps its own wallpaper.");
-        return Tr.tr("Wallpaper Engine is ready.");
+        return Tr.tr("Wallpaper Engine is running; its wallpaper covers the desktop until the process quits.");
     }
 
     // Same allowlisted command and autostart choice as the session drawer.

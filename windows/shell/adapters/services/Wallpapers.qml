@@ -26,9 +26,8 @@ Singleton {
     // before any writer runs, and records it. The record below is only read
     // after that decision exists. `seen` is a one-time baseline: it is written
     // when a display is first observed on the bundled default and is never
-    // moved by a running engine. A later Windows change therefore stays
-    // visible as evidence until it can be resolved, instead of being erased
-    // before an older build's pick is compared.
+    // moved by a running engine. Only a difference already present at startup
+    // is rollback evidence; a change that appears later is ignored.
     readonly property string sourceRecordPath: `${Paths.state}/wallpaper/desktop.json`
     property bool sourceComponentReady: false
     property bool sourceInitialized: false
@@ -40,6 +39,11 @@ Singleton {
     // a Caelestia profile chose the image.
     property var sourceMonitors: ({})
     property var sourceSeen: ({})
+    // The Windows image each display had when this run first observed it,
+    // frozen before any engine can write again. Only a difference that is
+    // already present at startup is rollback evidence; a difference that
+    // appears later is bookkeeping and never becomes a choice.
+    property var sourceStartup: ({})
     // "valid", "missing" or "invalid". An invalid or unknown-version record
     // is never trusted or rewritten without an explicit user pick.
     property string sourceRecordHealth: ""
@@ -51,6 +55,7 @@ Singleton {
     property string sourceRecordConfirmed: ""
     property string sourceRecordWritingText: ""
     property bool sourceRecordWriting: false
+    property bool sourceRecordVerifying: false
     property int sourceRecordFailures: 0
     property int sourceRecordRetryInterval: 2000
     property bool sourceRecordDirty: false
@@ -324,15 +329,41 @@ Singleton {
             root.sourceRecordHealth = "valid";
         root.writeSourceRecord();
     }
+    // The marker writer creates the record directory at startup. If it is
+    // removed while the shell runs, a retry has to repair it before the atomic
+    // write can create the replacement file.
+    function ensureSourceRecordDirectory(): void {
+        const slash = root.sourceRecordPath.lastIndexOf("/");
+        if (slash <= 0)
+            return;
+        const dir = root.sourceRecordPath.slice(0, slash);
+        if (Native.FsUtils.classify(dir) !== "dir")
+            Native.FsUtils.makePath(dir);
+    }
     function writeSourceRecord(): void {
         if (!root.sourceInitialized || root.sourceRecordWriting
                 || root.sourceRecordPending === root.sourceRecordConfirmed)
             return;
+        root.ensureSourceRecordDirectory();
         root.sourceRecordWriting = true;
         root.sourceRecordWritingText = root.sourceRecordPending;
-        sourceRecordWriter.setText(root.sourceRecordWritingText);
+        // The pinned backend keeps the attempted bytes cached after a failed
+        // write, so an identical setText() is dropped and no completion ever
+        // arrives (backend issue #28). Recreate the writer for every attempt;
+        // the workaround can go when the backend stops caching failed writes.
+        sourceRecordWriter.active = false;
+        sourceRecordWriter.active = true;
     }
     function confirmSourceRecord(): void {
+        if (!root.sourceRecordWriting || root.sourceRecordVerifying)
+            return;
+        // saved() alone does not prove the bytes reached disk on this backend:
+        // a failed atomic commit is only logged (backend issue #28). Read the
+        // file back independently before treating the choice as saved.
+        root.sourceRecordVerifying = true;
+        sourceRecord.reload();
+    }
+    function acceptSourceRecord(): void {
         // The proposed text can advance while a write is in flight. Confirm
         // only the text that was actually handed to the writer, then write the
         // newer proposal if one exists.
@@ -348,6 +379,7 @@ Singleton {
             Qt.callLater(root.writeSourceRecord);
     }
     function failSourceRecord(error): void {
+        root.sourceRecordVerifying = false;
         root.sourceRecordWritingText = "";
         root.sourceRecordWriting = false;
         root.sourceRecordFailures++;
@@ -426,12 +458,13 @@ Singleton {
     }
     // Read each display's Windows wallpaper. A display on the bundled default
     // keeps the bundled asset even when Windows still has an older image, so
-    // one display's pick never imports the others. `seen` is the frozen value
-    // first observed for that display, never the image an engine just wrote.
-    // A difference is therefore kept until it can be resolved: while discovery
-    // is unsettled or an engine is running it is not treated as a choice, and
-    // once those writers are gone that display follows Windows. An unobserved
-    // display is baselined only when no engine can be writing it.
+    // one display's pick never imports the others. `seen` is the stored
+    // baseline from the record, never the image an engine just wrote. The
+    // startup value is frozen when the display is first observed: a difference
+    // that is already present then is rollback evidence and is adopted once
+    // the engine is gone. A difference that appears later, including one a
+    // disabled engine writes, is bookkeeping and is ignored for the rest of
+    // the run; the bundled fallback stays.
     function refreshScreenFiles(): void {
         if (!root.sourceInitialized)
             return;
@@ -450,23 +483,28 @@ Singleton {
                 next[id] = root.usableFile(windows) ? windows : screenFiles[id] || root.handbackWallpaper;
                 continue;
             }
+            if (typeof root.sourceStartup[id] !== "string")
+                root.sourceStartup = Object.assign({}, root.sourceStartup, {[id]: windows});
+            const startup = root.sourceStartup[id];
             const seen = root.sourceSeen[id];
-            if (typeof seen === "string" && seen.length > 0 && windows.length > 0
-                    && !Paths.samePath(seen, windows)) {
+            if (typeof seen === "string" && seen.length > 0
+                    && typeof startup === "string" && startup.length > 0
+                    && !Paths.samePath(seen, startup)) {
                 if (!settled || engineRunning) {
                     next[id] = root.fallback;
                     continue;
                 }
                 root.sourceMonitors = Object.assign({}, root.sourceMonitors, {[id]: "user"});
                 root.sourceRecordDirty = true;
-                if (adopted === "" && root.usableFile(windows))
-                    adopted = windows;
-                next[id] = root.usableFile(windows) ? windows : root.fallback;
+                if (adopted === "" && root.usableFile(startup))
+                    adopted = startup;
+                next[id] = root.usableFile(startup) ? startup : root.fallback;
                 continue;
             }
-            if ((typeof seen !== "string" || seen.length === 0) && windows.length > 0
+            if ((typeof seen !== "string" || seen.length === 0)
+                    && typeof startup === "string" && startup.length > 0
                     && settled && !engineRunning) {
-                root.sourceSeen = Object.assign({}, root.sourceSeen, {[id]: windows});
+                root.sourceSeen = Object.assign({}, root.sourceSeen, {[id]: startup});
                 root.sourceRecordDirty = true;
             }
             next[id] = root.fallback;
@@ -573,20 +611,52 @@ Singleton {
         blockLoading: true
         watchChanges: false
         printErrors: false
-        onLoaded: root.readSourceRecord(text(), false)
-        onLoadFailed: error => root.readSourceRecord("", error === FileViewError.FileNotFound)
+        onLoaded: {
+            if (root.sourceRecordVerifying) {
+                // saved() is not proof of the bytes on this backend (issue
+                // #28), so the record is confirmed only after an independent
+                // read returns exactly what the writer was given.
+                root.sourceRecordVerifying = false;
+                if (text() === root.sourceRecordWritingText)
+                    root.acceptSourceRecord();
+                else
+                    root.failSourceRecord("the saved record did not match the file");
+                return;
+            }
+            root.readSourceRecord(text(), false);
+        }
+        onLoadFailed: error => {
+            if (root.sourceRecordVerifying) {
+                root.sourceRecordVerifying = false;
+                root.failSourceRecord("the saved record could not be read back");
+                return;
+            }
+            root.readSourceRecord("", error === FileViewError.FileNotFound);
+        }
     }
 
-    FileView {
+    // Recreated for every attempt. A FileView that failed a write caches the
+    // attempted bytes, so reusing it would drop an identical retry (backend
+    // issue #28). This can become a plain FileView when that lands.
+    Loader {
         id: sourceRecordWriter
 
-        path: root.sourceRecordPath
-        preload: false
-        atomicWrites: true
-        watchChanges: false
-        printErrors: false
-        onSaved: root.confirmSourceRecord()
-        onSaveFailed: error => root.failSourceRecord(error)
+        active: false
+        sourceComponent: Component {
+            FileView {
+                path: root.sourceRecordPath
+                preload: false
+                atomicWrites: true
+                watchChanges: false
+                printErrors: false
+                onSaved: root.confirmSourceRecord()
+                onSaveFailed: error => root.failSourceRecord(error)
+            }
+        }
+        onLoaded: {
+            if (root.sourceRecordWriting)
+                item.setText(root.sourceRecordWritingText);
+        }
     }
 
     Timer {
@@ -778,9 +848,9 @@ Singleton {
             // it, but it never becomes the remembered own source. On the own
             // desktop a baseline that already follows Windows keeps tracking
             // it. A profile on the bundled default is decided per display by
-            // refreshScreenFiles, which adopts only a display whose Windows
-            // image actually changed; flipping the whole profile here would
-            // import old wallpapers onto every untouched monitor.
+            // refreshScreenFiles, which only adopts a difference that was
+            // present when the run started; flipping the whole profile here
+            // would import old wallpapers onto every untouched monitor.
             if (next && (root.externalWallpaperActive || root.sourceChosen))
                 root.fileCurrent = next;
             root.refreshScreenFiles();

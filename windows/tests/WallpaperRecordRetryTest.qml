@@ -12,7 +12,10 @@ QtObject {
     id: root
 
     readonly property string recordPath: "C:/fixture/state/wallpaper/desktop.json"
+    readonly property string recordDir: "C:/fixture/state/wallpaper"
     property int assertions: 0
+    property int makePathsBefore: 0
+    property int writesBeforeCommit: 0
     property var nextStep: null
 
     function check(value, description): void {
@@ -54,6 +57,7 @@ QtObject {
             Files.asyncWrites = true;
             Native.FsUtils.existingFiles = ["C:/fixture/assets/wallpaper.webp",
                 "C:/walls/windows-default.jpg", "C:/walls/primary.jpg"];
+            Native.FsUtils.existingDirs = [root.recordDir];
             Files.saveFailures[root.recordPath] = 3;
             Quickshell.screens = [{name: "primary"}];
 
@@ -69,8 +73,12 @@ QtObject {
             check(Wallpapers.sourceRecordDirty, "the failed write was dropped instead of retried");
             check(record().source === undefined, "the failed write reached the file");
 
-            // The same pending text must be retried after the failure.
+            // The same pending text must be retried after the failure, and the
+            // retry must repair a record directory that disappeared while the
+            // write was failing.
             delete Files.saveFailures[root.recordPath];
+            Native.FsUtils.existingDirs = [];
+            root.makePathsBefore = Native.FsUtils.makePathCalls;
             root.later(afterRetry);
         });
     }
@@ -84,6 +92,10 @@ QtObject {
             check(Wallpapers.sourceRecordError === "", "the recovered write kept its error");
             check(record().source === "default", "the retried record was not written");
             check(Files.writeRequests >= 2, "only one write was attempted");
+            check(Native.FsUtils.makePathCalls > root.makePathsBefore,
+                "the retry did not repair the missing record directory");
+            check(Native.FsUtils.existingDirs.includes(root.recordDir),
+                "the record directory was not recreated");
 
             // A persistent failure must keep the work pending and visible.
             Files.saveFailures[root.recordPath] = 3;
@@ -125,6 +137,35 @@ QtObject {
             check(!Wallpapers.sourceRecordDirty, "the recovered write stayed dirty");
             check(record().monitors["extra-id"] === "user", "the recovered choice was lost");
             check(Files.writeRequests >= 4, "the failed work was not retried");
+
+            // saved() is emitted even when the atomic commit fails on the
+            // pinned backend (issue #28). The read-back must reject that, and
+            // the retry must write again even though the writer cached the
+            // attempted bytes.
+            Files.commitFailures[root.recordPath] = true;
+            Wallpapers.sourceMonitors = {"commit-id": "user"};
+            Wallpapers.persistSourceChoice(true);
+            root.writesBeforeCommit = Files.writeRequests;
+            Files.flushWrites();
+            check(Wallpapers.sourceRecordFailures === 1, "a failed commit was not treated as a failure");
+            check(Wallpapers.sourceRecordConfirmed !== Wallpapers.sourceRecordPending,
+                "a failed commit was confirmed");
+            check(Wallpapers.sourceRecordError !== "", "a failed commit was silent");
+            check(record().monitors["commit-id"] === undefined, "a failed commit reached the file");
+            delete Files.commitFailures[root.recordPath];
+            root.later(afterCommitRetry);
+        });
+    }
+
+    function afterCommitRetry(): void {
+        guard(function() {
+            Files.flushWrites();
+            check(Files.writeRequests > root.writesBeforeCommit,
+                "the commit retry did not write again");
+            check(Wallpapers.sourceRecordConfirmed === Wallpapers.sourceRecordPending,
+                "the commit retry was not confirmed");
+            check(Wallpapers.sourceRecordError === "", "the commit retry kept its error");
+            check(record().monitors["commit-id"] === "user", "the commit retry was not written");
 
             console.log("CAELESTIA_WALLPAPER_RECORD_RETRY_PASS " + assertions);
             Qt.quit();

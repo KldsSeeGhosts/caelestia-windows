@@ -340,10 +340,12 @@ Caelestia writes picks. `monitors` overrides the baseline for one display, so
 picking on one monitor never imports the other monitors' older Windows images.
 `seen` is a one-time comparison baseline: the Windows image a default display
 had when the shell first observed it. It is never the chosen image and is never
-moved when a running engine changes the Windows wallpaper. If that path later
-differs, an older build, Windows Settings or an engine made a selection; the
-shell keeps the difference and, once no engine is running, follows Windows for
-that display. The choice itself is never stored as a path.
+moved when a running engine changes the Windows wallpaper. A difference that is
+already present when the shell starts is rollback evidence: once no engine is
+running, that display follows the image observed at startup. A difference that
+appears after startup, including one a disabled engine writes, is ignored and
+never becomes a per-display `user` choice; the bundled default stays until the
+user picks explicitly. The choice itself is never stored as a path.
 
 A profile upgrading from an older build has no record. The shell classifies it
 once through `state/caelestia/wallpaper/profile.json`, written synchronously at

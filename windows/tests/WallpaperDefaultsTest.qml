@@ -274,6 +274,7 @@ QtObject {
             // before reading the applied facade value.
             Files.flushWrites();
             Files.deferReloads = false;
+            Files.flushReloads();
             const saved = JSON.parse(Files.contents[WallpaperEngine.settingsPath]);
             check(saved.windows.hideTaskbar === true, "the toggle dropped hideTaskbar");
             check(saved.windows.notifications.replaceSystemBanners === false,
@@ -353,11 +354,102 @@ QtObject {
         guard(function() {
             Files.flushWrites();
             Files.deferReloads = false;
+            Files.flushReloads();
             Files.asyncWrites = false;
             const created = JSON.parse(Files.contents[WallpaperEngine.settingsPath]);
             check(created.windows.wallpaperEngine.enabled === true, "the toggle did not create the sidecar");
             check(WallpaperEngine.enabled, "the created sidecar was not applied");
             check(Files.droppedWrites === 0, "the create path issued a write inside a callback");
+            root.later(runCommitFailure);
+        });
+    }
+
+    function runCommitFailure(): void {
+        guard(function() {
+            // A failed atomic commit still emits saved() on the pinned backend
+            // (issue #28). The read-back must reject it instead of applying
+            // the value that never reached the file.
+            const off = {windows: {wallpaperEngine: {enabled: false}}};
+            Files.contents[WallpaperEngine.settingsPath] = JSON.stringify(off);
+            Files.changed(WallpaperEngine.settingsPath);
+            check(!WallpaperEngine.enabled, "the commit-failure fixture did not start off");
+            Files.asyncWrites = true;
+            Files.commitFailures[WallpaperEngine.settingsPath] = true;
+            Files.pendingReloads = [];
+            Files.deferReloads = true;
+            WallpaperEngine.setEnabled(true);
+            Files.flushReloads();
+            root.later(deliverCommitFailure);
+        });
+    }
+
+    function deliverCommitFailure(): void {
+        guard(function() {
+            Files.flushWrites();
+            Files.deferReloads = false;
+            delete Files.commitFailures[WallpaperEngine.settingsPath];
+            root.later(checkCommitFailure);
+        });
+    }
+
+    function checkCommitFailure(): void {
+        guard(function() {
+            Files.flushReloads();
+            Files.flushWrites();
+            check(!WallpaperEngine.enabled, "a failed commit applied the new value");
+            check(WallpaperEngine.lastError !== "", "a failed commit was not reported");
+            check(!WallpaperEngine.configSavePending, "a failed commit kept a pending save");
+            check(!WallpaperEngine.configSaveVerifying, "a failed commit stayed in verification");
+            WallpaperEngine.lastError = "";
+            Files.asyncWrites = false;
+            root.later(runNoOpToggle);
+        });
+    }
+
+    function runNoOpToggle(): void {
+        guard(function() {
+            // A toggle that lands back on the saved document must complete
+            // immediately. FileView drops an identical setText(), so leaving
+            // it pending would block every later toggle (issue #28).
+            const savedOff = {windows: {wallpaperEngine: {enabled: false}}};
+            Files.contents[WallpaperEngine.settingsPath] = JSON.stringify(savedOff, null, 2) + "\n";
+            Files.changed(WallpaperEngine.settingsPath);
+            check(!WallpaperEngine.enabled, "the no-op fixture did not start off");
+            const writes = Files.writeRequests;
+            Files.pendingReloads = [];
+            Files.deferReloads = true;
+            WallpaperEngine.setEnabled(true);
+            WallpaperEngine.setEnabled(false);
+            Files.flushReloads();
+            check(!WallpaperEngine.configSavePending, "a no-op toggle kept a pending save");
+            check(!WallpaperEngine.enabled, "a no-op toggle changed the saved value");
+            check(Files.writeRequests === writes, "a no-op toggle wrote the unchanged document");
+            check(WallpaperEngine.lastError === "", "a no-op toggle reported an error");
+            Files.deferReloads = false;
+            root.later(runNoOpRetry);
+        });
+    }
+
+    function runNoOpRetry(): void {
+        guard(function() {
+            // A later toggle must still work after the no-op completed.
+            Files.pendingReloads = [];
+            Files.deferReloads = true;
+            WallpaperEngine.setEnabled(true);
+            Files.flushReloads();
+            root.later(checkNoOpRetry);
+        });
+    }
+
+    function checkNoOpRetry(): void {
+        guard(function() {
+            Files.deferReloads = false;
+            Files.flushReloads();
+            Files.flushWrites();
+            check(WallpaperEngine.enabled, "a later toggle stayed blocked");
+            check(!WallpaperEngine.configSavePending, "a later toggle kept a pending save");
+            check(WallpaperEngine.lastError === "",
+                "a later toggle reported an error: " + WallpaperEngine.lastError);
             root.later(runColours);
         });
     }
