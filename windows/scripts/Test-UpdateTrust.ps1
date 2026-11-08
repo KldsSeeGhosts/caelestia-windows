@@ -29,6 +29,15 @@ function New-Key {
 function Sign($Value, [string]$Type, $Key) {
     return ,(New-CaelestiaDsse (JsonBytes $Value) ('application/vnd.caelestia.update-' + $Type + '+json') $Key.Public.keyid $Key.Private)
 }
+$shipped = Read-CaelestiaStrictJsonFile "$PSScriptRoot\..\release\update-trust.json"
+Assert-CaelestiaTrust $shipped
+Assert ($shipped.status -ceq 'configured' -and $shipped.rootVersion -eq 1 -and
+    $shipped.rootThreshold -eq 1 -and $shipped.rootKeys.Count -eq 1) 'Shipped root set/threshold changed.'
+$anchor = $shipped.rootKeys[0]
+Assert ((Get-CaelestiaPublicKeyId $anchor) -ceq 'f9f6c4d0f94cedcd81a6abb84b1b60b1e58b59c54cb723d4f583e22d24602893' -and
+    $anchor.algorithm -ceq 'ecdsa-p256-sha256' -and
+    $anchor.x -ceq 'AFtXL4egsK1yk54mCJ0rZJ6r4MMf/DBEvkGJ+FwnC/U=' -and
+    $anchor.y -ceq 'aCj8s1qBDQobrqixi7QeIFl7vF2SXlKgCkJCD/3bRgI=') 'Shipped root fingerprint/coordinates changed.'
 $root = New-Key; $dev = New-Key; $promotion = New-Key
 $backup = New-Key
 $now = [DateTime]::UtcNow

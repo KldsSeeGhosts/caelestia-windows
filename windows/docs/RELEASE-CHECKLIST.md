@@ -1,8 +1,9 @@
 # Windows release checklist
 
-Nexus remains unconfigured. Do not enable root trust or channel publication
-until the missing producer and client acceptance gates in
-[NEXUS-IMPLEMENTATION.md](NEXUS-IMPLEMENTATION.md) are complete. The current
+Nexus ships configured development root trust. Development publication requires
+the ordered owner setup in [UPDATES.md](../../UPDATES.md). Preview/stable
+promotion stays inactive. The remaining producer and client acceptance gates in
+[NEXUS-IMPLEMENTATION.md](NEXUS-IMPLEMENTATION.md) still apply. The current
 client tests do not certify a release or authorize a live bootstrap.
 
 This is a maintainer checklist, not an authorization to change repository

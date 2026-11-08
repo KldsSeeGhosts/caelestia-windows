@@ -349,8 +349,9 @@ again through GitHub. No PR artifact can reach publication.
 
 `nexus-promote.yml` is explicit, main-only and owner-environment gated.
 `nexus-refresh.yml` separately renews development and preview/stable using
-their own roles. Every job is inert with the variables unset; trust is also
-unconfigured. See [UPDATES.md](../../UPDATES.md) for owner setup, immutable
+their own roles. Every job is inert with the variables unset. Shipped development
+root trust is configured with threshold 1; preview/stable promotion stays
+inactive. See [UPDATES.md](../../UPDATES.md) for owner setup, immutable
 attempt identities, CAS/retry/rotation and remaining external acceptance.
 Unit runs native-crypto/fake-GitHub/bare-Git controls; Packaging runs disposable
 authenticated worker transactions. These fixtures do not certify real hosted
