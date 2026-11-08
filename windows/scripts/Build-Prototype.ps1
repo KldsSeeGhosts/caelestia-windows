@@ -117,10 +117,16 @@ function Invoke-BuildCommand([string]$Name, [string[]]$CommandArguments) {
     # Windows PowerShell represents native stderr as error records, including
     # harmless CMake warnings. The native exit code is the failure criterion.
     $ErrorActionPreference = 'Continue'
+    $commandClock = [Diagnostics.Stopwatch]::StartNew()
     & cmake @CommandArguments 2>&1 | ForEach-Object { "$_" } |
         Tee-Object -FilePath (Join-Path $logRoot "$Name.log")
     $commandExit = $LASTEXITCODE
     $ErrorActionPreference = 'Stop'
+    # Like capture timing, retain only duration and exit status, not arguments.
+    [ordered]@{
+        durationSeconds = [Math]::Round($commandClock.Elapsed.TotalSeconds, 6)
+        exitCode = $commandExit
+    } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $logRoot "$Name-timing.json") -Encoding UTF8
     if ($commandExit -ne 0) { throw "$Name failed. See $logRoot\$Name.log." }
 }
 

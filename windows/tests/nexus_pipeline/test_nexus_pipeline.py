@@ -920,12 +920,23 @@ class Pipeline(unittest.TestCase):
         for job, next_job in (("checks", "packaging"), ("packaging", "reuse"),
                               ("fixtures", "build"), ("build", "pair")):
             block = text.split(f"\n  {job}:\n")[1].split(f"\n  {next_job}:\n")[0]
-            self.assertIn("needs: " + ("[scope, reuse]" if job in ("fixtures", "build") else "scope"), block)
+            if job in ("fixtures", "build"):
+                self.assertIn("needs: [scope, reuse]", block)
+            else:
+                self.assertNotIn("needs:", block)
+                guard = scope.split("    steps:\n")[1].split("      - name: Checkout")[0]
+                self.assertTrue(block.split("    steps:\n")[1].startswith(guard))
             self.assertNotIn("Get-NativeBuildRequired.ps1", block)
             self.assertNotIn("New-NexusCandidate.ps1", block)
         validation, candidate = text.split("\n  validation:\n")[1].split("\n  candidate:\n")
         candidate = candidate.split("\n  publish:\n")[0]
         self.assertIn("needs: [scope, checks, packaging, reuse, fixtures, build, pair]", validation)
+        for shard in (1, 2):
+            self.assertIn(f"Installer and colour regressions ({shard}/2)", n.REQUIRED_JOBS)
+            self.github.bad_job = f"Installer and colour regressions ({shard}/2)"
+            with self.assertRaisesRegex(ValueError, "required-job-nonpass"):
+                n.validate_run(self.github, self.ctx)
+        self.github.bad_job = None
         self.assertNotIn("candidate", validation.lower())
         self.assertIn("needs.scope.outputs.native", validation)
         self.assertIn("-notin @('none', 'reuse', 'full')", validation)

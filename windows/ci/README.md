@@ -14,13 +14,21 @@ semantics and coordinated backend/shell changes.
 
 ## Gates and build scheduling
 
-Every push to `main`, pull request and manual dispatch first runs `Change scope`
-on Ubuntu 24.04 with PowerShell, immutable dispatch guards and a full-history
-checkout. Its `native=none|reuse|full` decision unlocks concurrent gates:
+Every push to `main`, pull request and manual dispatch starts `Change scope`
+on Ubuntu 24.04 alongside Fast regressions and two packaging shards on separate
+Windows runners. Each of these jobs refuses mutable dispatch inputs before
+checkout. Scope uses a full-history checkout; its `native=none|reuse|full`
+decision unlocks the applicable native gates:
 
 - Fast source, documentation, PowerShell, JavaScript and quota-provider regressions.
 - Installer/rollback tests and the real colour-worker tests use isolated,
-  temporary profiles and pinned Python dependencies.
+  temporary profiles and pinned Python dependencies. The Packaging inventory in
+  `Test-Validation.ps1` assigns VersionedInstall to `-Shard 1/2` and the remaining
+  seven tests to `-Shard 2/2`. Warm run 42421527915 attempt 2 measured 139.45s
+  and 145.90s respectively. Colour tests run beside shard 1 only. Matrix
+  fail-fast is disabled; validation requires the entire matrix to succeed.
+  Omitting `-Shard` still runs the complete inventory. `-ListTests` reports
+  the selected names without executing tests.
 - `fixtures` prepares tools, records sources/producer/prepare, then runs backend
   configure/build/portable and inventory on its own unfinalized receipt. It also
   runs the first-party capture Rust regressions and retains `capture-rust-*`.
@@ -38,7 +46,8 @@ actual-toolchain JSON records (all fields, independent of key order), merges the
 unfinalized receipts, finalizes with fresh source verification and independently
 computes the envelope. It does not compile or restore tools.
 
-Full-build graph: `scope -> {checks, packaging, fixtures, build}`;
+Full-build graph: `{scope, checks, packaging[1/2], packaging[2/2]}` start together;
+`scope -> {fixtures, build}`;
 `{fixtures, build} -> pair`; `{scope, checks, packaging, fixtures, build, pair}
 -> validation`; `{scope, pair, validation} -> candidate -> publish`.
 Estimated native critical path: `max(fixtures, build) + join overhead`.
@@ -230,6 +239,13 @@ logs, profiles and provider data are not uploaded. Native jobs always upload
 path-free `toolchain.json` receipts from preparation and build, including the
 specification/lock digest and actual versions. Raw `build.json`, environment
 reports and build logs contain deployment paths and are not artifact inputs.
+Separate seven-day tooling diagnostics contain fixed directory labels, byte/file
+counts before and after preparation, and phase durations for venv, each pip
+install, aqt, Rust and final assertions. Production retains each native CMake
+configure/build/install duration beside capture timing. These files contain no
+commands or machine paths and never enter pair receipts, envelopes or Nexus
+inputs. Tool caches and writer restrictions are unchanged; prepared Python
+environments are still created fresh.
 The pair recorder retains bounded diagnostic categories in the public receipt.
 On isolated hosted fixtures the workflow explicitly enables its `--echo` mode,
 so producer, preparation, compile and test failures remain visible in the job

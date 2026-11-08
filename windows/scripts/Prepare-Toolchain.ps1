@@ -17,6 +17,20 @@ if ($ToolRoot -eq $repoRoot -or $ToolRoot.StartsWith($repoRoot + '\', [StringCom
 }
 $downloads = Join-Path $ToolRoot 'downloads'
 New-Item -ItemType Directory -Force -Path $ToolRoot, $downloads | Out-Null
+$timingRoot = Join-Path $ToolRoot 'logs'
+New-Item -ItemType Directory -Force -Path $timingRoot | Out-Null
+$timings = New-Object 'System.Collections.Generic.List[object]'
+$prepareClock = [Diagnostics.Stopwatch]::StartNew()
+function Save-ToolchainTiming([string]$Phase, $Clock, $ExitCode, [string]$Outcome = '') {
+    if (-not $Outcome) { $Outcome = if ($ExitCode -eq 0) { 'success' } else { 'failure' } }
+    $timings.Add([ordered]@{
+        phase = $Phase; durationSeconds = [Math]::Round($Clock.Elapsed.TotalSeconds, 6)
+        exitCode = $ExitCode; outcome = $Outcome
+    })
+    # Labels and numbers only. Never retain commands, paths or exception text.
+    [ordered]@{ schemaVersion = 1; phases = @($timings.ToArray()) } |
+        ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $timingRoot 'prepare-timing.json') -Encoding UTF8
+}
 
 function Get-VerifiedToolchainArchive($Download) {
     $path = Join-Path $downloads $Download.file
@@ -39,16 +53,22 @@ try {
     if ($LASTEXITCODE -ne 0 -or ($pythonVersion -join '') -ne "$($spec.pythonVersion)-64") {
         throw "Tool provisioning requires Python $($spec.pythonVersion) x64. Supply -Python <python.exe>."
     }
+    $clock = [Diagnostics.Stopwatch]::StartNew()
     & $Python -m venv (Join-Path $ToolRoot 'tools')
+    Save-ToolchainTiming 'venv' $clock $LASTEXITCODE
     if ($LASTEXITCODE -ne 0) { throw 'Python tool environment creation failed.' }
     $venvPython = Join-Path $ToolRoot 'tools\Scripts\python.exe'
     foreach ($lock in @('python-bootstrap.lock.txt', 'python-tools.lock.txt')) {
+        $clock = [Diagnostics.Stopwatch]::StartNew()
         & $venvPython -m pip install --disable-pip-version-check --only-binary=:all: --require-hashes `
             -r (Join-Path $PSScriptRoot "..\toolchain\$lock")
+        Save-ToolchainTiming "pip-$lock" $clock $LASTEXITCODE
         if ($LASTEXITCODE -ne 0) { throw "Hash-locked Python provisioning failed ($lock). Use Python 3.12 x64 and the committed public inputs." }
     }
     $aqtArchive = Get-VerifiedToolchainArchive $spec.downloads.aqt
+    $clock = [Diagnostics.Stopwatch]::StartNew()
     & $venvPython -m pip install --disable-pip-version-check --no-deps --no-build-isolation $aqtArchive
+    Save-ToolchainTiming 'pip-aqt' $clock $LASTEXITCODE
     if ($LASTEXITCODE -ne 0) { throw 'Verified aqt installation failed.' }
 
     $qtPrefix = Join-Path $ToolRoot $spec.qtDirectory
@@ -57,10 +77,14 @@ try {
     if (-not (Test-Path -LiteralPath "$qtPrefix\bin\qtpaths.exe" -PathType Leaf)) {
         # aqt verifies upstream SHA-256 before extraction. Retain the bytes
         # and check the committed hashes as well, before any compilation.
+        $clock = [Diagnostics.Stopwatch]::StartNew()
         & $venvPython -m aqt install-qt windows desktop $spec.qtVersion $spec.qtArchitecture `
             -O (Join-Path $ToolRoot 'Qt') --modules @($spec.qtModules) --archives @($spec.qtArchives) `
             --keep --archive-dest $qtDownloads
+        Save-ToolchainTiming 'aqt-install-qt' $clock $LASTEXITCODE
         if ($LASTEXITCODE -ne 0) { throw 'Qt provisioning failed; do not disable aqt checksum verification.' }
+    } else {
+        Save-ToolchainTiming 'aqt-install-qt' ([Diagnostics.Stopwatch]::new()) $null 'skipped'
     }
     foreach ($archive in $spec.qtDownloads) {
         $file = "$($archive.module)-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z"
@@ -109,16 +133,28 @@ try {
         $null = Get-VerifiedToolchainArchive $spec.rustManifest
         Write-Host 'Installing the pinned Rust toolchain.'
         # rustup verifies component hashes from this exact public manifest.
+        $clock = [Diagnostics.Stopwatch]::StartNew()
         & rustup.exe toolchain install "$($spec.rustVersion)-$($spec.rustTarget)" --profile minimal --target $spec.rustTarget
+        Save-ToolchainTiming 'rust-install' $clock $LASTEXITCODE
         if ($LASTEXITCODE -ne 0) { throw 'Pinned Rust installation failed. Check public access without changing credentials.' }
+    } else {
+        Save-ToolchainTiming 'rust-install' ([Diagnostics.Stopwatch]::new()) $null 'skipped'
     }
-    $instance = Enter-CaelestiaToolchain -QtPrefix $qtPrefix `
-        -LlvmBin (Join-Path $ToolRoot "$($spec.llvmDirectory)\bin") -ToolsBin (Join-Path $ToolRoot 'tools\Scripts')
-    Select-CaelestiaRust
-    $receipt = Get-CaelestiaActualToolchain -QtPrefix $qtPrefix -Cli11Include (Join-Path $ToolRoot $spec.cli11Directory)
-    $receipt | Add-Member -NotePropertyName vsInstallationVersion -NotePropertyValue $instance.installationVersion
-    $receipt | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $ToolRoot 'toolchain.json') -Encoding UTF8
+    $clock = [Diagnostics.Stopwatch]::StartNew()
+    $assertionOutcome = 'failure'
+    try {
+        $instance = Enter-CaelestiaToolchain -QtPrefix $qtPrefix `
+            -LlvmBin (Join-Path $ToolRoot "$($spec.llvmDirectory)\bin") -ToolsBin (Join-Path $ToolRoot 'tools\Scripts')
+        Select-CaelestiaRust
+        $receipt = Get-CaelestiaActualToolchain -QtPrefix $qtPrefix -Cli11Include (Join-Path $ToolRoot $spec.cli11Directory)
+        $receipt | Add-Member -NotePropertyName vsInstallationVersion -NotePropertyValue $instance.installationVersion
+        $receipt | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $ToolRoot 'toolchain.json') -Encoding UTF8
+        $assertionOutcome = 'success'
+    } finally {
+        Save-ToolchainTiming 'final-assertions' $clock $null $assertionOutcome
+    }
     Write-Host 'Supported toolchain prepared and asserted. toolchain.json contains only public version/hash fields.'
 } finally {
+    Save-ToolchainTiming 'total' $prepareClock $null 'elapsed'
     Pop-Location
 }
