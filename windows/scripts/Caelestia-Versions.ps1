@@ -162,7 +162,7 @@ function Select-CaelestiaExistingVersion([string]$Prefix, [string[]]$Exclude = @
     return ''
 }
 
-function Install-CaelestiaVersion([string]$Prefix, [string]$Payload, [switch]$Restart) {
+function Install-CaelestiaVersion([string]$Prefix, [string]$Payload, [switch]$Restart, [switch]$Autostart, [switch]$NoIntegration) {
     $old = if (Test-Path -LiteralPath (Join-Path $Prefix 'install.json')) { Read-CaelestiaInstall $Prefix } else { $null }
     if ($old -and $old.installRoot -and $old.installRoot -ne $Prefix) {
         throw 'Do not install into an immutable version directory. Use its stable installRoot.'
@@ -173,6 +173,18 @@ function Install-CaelestiaVersion([string]$Prefix, [string]$Payload, [switch]$Re
     if ($candidate.product -ne 'caelestia-windows' -or $candidate.version -ne 1 -or
         ($old -and ($old.profile -ne $candidate.profile -or $old.installId -ne $candidate.installId))) {
         throw 'Prepared payload does not match this installation and profile.'
+    }
+    # A Run value that cannot fit must fail before the selector changes. The
+    # root launcher is the file whose 8.3 name can shorten the command, so an
+    # existing install can be checked now; a first install defers the check
+    # until Copy-CaelestiaRootEntries has placed that launcher.
+    $deferRunPreflight = $false
+    if (-not $NoIntegration) {
+        if (Test-Path -LiteralPath (Join-Path $Prefix 'Caelestia-Launcher.ps1') -PathType Leaf) {
+            Assert-CaelestiaRunValuePreflight $Prefix -Autostart:$Autostart
+        } else {
+            $deferRunPreflight = $true
+        }
     }
     $revision = if ($candidate.sourceRevision -match '^[a-f0-9]{8,40}$') { $candidate.sourceRevision.Substring(0, 8) } else { 'local' }
     $id = [DateTime]::UtcNow.ToString('yyyyMMddTHHmmssZ') + '-' + $revision + '-' + [guid]::NewGuid().ToString('N').Substring(0, 8)
@@ -216,6 +228,7 @@ function Install-CaelestiaVersion([string]$Prefix, [string]$Payload, [switch]$Re
         }
         Stop-CaelestiaHosts $Prefix
         Copy-CaelestiaRootEntries $Prefix $runtime
+        if ($deferRunPreflight) { Assert-CaelestiaRunValuePreflight $Prefix -Autostart:$Autostart }
         Write-CaelestiaJsonAtomic (Join-Path $Prefix 'install.json') (New-CaelestiaRootRecord $Prefix $newRecord $previous)
         # Point runtime.json at the generation verified above before the
         # readiness clock starts. If none was found, activation starts fixed.
@@ -287,7 +300,7 @@ function Install-CaelestiaVersion([string]$Prefix, [string]$Payload, [switch]$Re
     }
 }
 
-function Switch-CaelestiaVersion([string]$Prefix, [string]$Id, [switch]$Restart) {
+function Switch-CaelestiaVersion([string]$Prefix, [string]$Id, [switch]$Restart, [switch]$SkipIntegration) {
     $old = Read-CaelestiaInstall $Prefix
     if ($old.version -ne 2) { throw 'This legacy install has no retained versions. Install an update first.' }
     if ($Id -eq $old.current) { throw 'That version is already selected.' }
@@ -322,7 +335,11 @@ function Switch-CaelestiaVersion([string]$Prefix, [string]$Id, [switch]$Restart)
         # Existing integration entries follow the selected version: the
         # Apps & features DisplayVersion and the shortcut icon must name the
         # payload the user is actually running, not the one just replaced.
-        Update-CaelestiaIntegrationRecords $Prefix $runtime
+        # A rollback from a failed integration passes -SkipIntegration: that
+        # transaction restored its snapshot, so the previous version's entries
+        # are already in place and rebuilding them would repeat the command
+        # that was just refused.
+        if (-not $SkipIntegration) { Update-CaelestiaIntegrationRecords $Prefix $runtime }
         if ($Restart) { Start-CaelestiaDetached $Prefix -LegacyReady -TaskName $launchTask -PreparedSchemeRuntime }
     } catch {
         $failure = $_
@@ -337,9 +354,12 @@ function Switch-CaelestiaVersion([string]$Prefix, [string]$Id, [switch]$Restart)
             # The integration refresh itself may have failed, or the restart
             # after it did. Put the previous version's entries back before the
             # reported failure, so Apps & features never describes a version
-            # that is no longer selected.
-            try { Update-CaelestiaIntegrationRecords $Prefix $previousRuntime }
-            catch { Write-Warning 'The previous version was selected again, but its Apps & features entry could not be refreshed.' }
+            # that is no longer selected. A skipped refresh has nothing to put
+            # back: the failed transaction already restored its snapshot.
+            if (-not $SkipIntegration) {
+                try { Update-CaelestiaIntegrationRecords $Prefix $previousRuntime }
+                catch { Write-Warning 'The previous version was selected again, but its Apps & features entry could not be refreshed.' }
+            }
             if ($Restart) { Start-CaelestiaDetached $Prefix -LegacyReady -PreparedSchemeRuntime }
         } elseif ($Restart -and -not @(Get-CaelestiaProcesses $Prefix).Count -and -not @(Get-CaelestiaSupervisors $old.profile).Count) {
             $null = Set-CaelestiaSchemeRuntimeForRevision $old.profile $previousRevision $previousRuntime -Verified $restoreScheme
@@ -381,6 +401,22 @@ function Get-CaelestiaAutostartKey {
 # write when even the launcher's 8.3 path does not fit.
 function Get-CaelestiaAutostartValue([string]$Prefix) {
     return (Get-CaelestiaLaunchCommand $Prefix 'start' -MaxLength 260).CommandLine
+}
+
+# Fail before the selector changes when the Run value this install would write
+# cannot fit Windows' 260-character limit. An upgrade refreshes an existing
+# owned value even without -Autostart, so that case is checked too. The caller
+# runs this before activation: a refusal leaves the selected version and every
+# integration entry untouched.
+function Assert-CaelestiaRunValuePreflight([string]$Prefix, [switch]$Autostart) {
+    $integration = Get-CaelestiaIntegration $Prefix
+    if (-not $integration.RunName) { return }
+    if (-not $Autostart) {
+        $existing = Get-ItemProperty -LiteralPath (Get-CaelestiaAutostartKey) `
+            -Name $integration.RunName -ErrorAction SilentlyContinue
+        if ($null -eq $existing) { return }
+    }
+    $null = Get-CaelestiaAutostartValue $Prefix
 }
 
 # Autostart contract shared with the installer slice (PR #65):
@@ -598,7 +634,10 @@ function Complete-CaelestiaInstallIntegration {
         $failure = $_
         if ($Previous) {
             try {
-                Switch-CaelestiaVersion $Prefix $Previous -Restart:$Restart
+                # The failed transaction restored every entry it snapshotted, so
+                # the previous version's integration is untouched. Select it
+                # without rebuilding the command that was just refused.
+                Switch-CaelestiaVersion $Prefix $Previous -Restart:$Restart -SkipIntegration
                 Write-Warning 'Installation integration failed; the previous version was selected again.'
             } catch {
                 throw "Installation integration failed: $($failure.Exception.Message). Rollback to $Previous failed: $($_.Exception.Message)"

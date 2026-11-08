@@ -355,7 +355,7 @@ try {
         $scheme = Install-CaelestiaSchemeRuntime $payload $ProfileRoot
         if (-not $scheme.available) { Write-Warning 'Optional scheme runtime unavailable; the shell will use its fixed palette.' }
     }
-    $runtime = Install-CaelestiaVersion $Prefix $payload -Restart:$Restart
+    $runtime = Install-CaelestiaVersion $Prefix $payload -Restart:$Restart -Autostart:$Autostart -NoIntegration:$NoIntegration
     Remove-CaelestiaSchemeGenerations $Prefix $ProfileRoot
     $installed = Read-CaelestiaInstall $Prefix
     if (-not $NoIntegration) {

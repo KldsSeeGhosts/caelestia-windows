@@ -324,7 +324,7 @@ try {
         }
     }
     $phaseClock.Restart()
-    $runtimePrefix = Install-CaelestiaVersion $Prefix $payload -Restart:$Restart
+    $runtimePrefix = Install-CaelestiaVersion $Prefix $payload -Restart:$Restart -Autostart:$Autostart -NoIntegration:$NoIntegration
     $timings.versionSelectionSeconds = $phaseClock.Elapsed.TotalSeconds
     # Pruning is deferred while any shell or supervisor can still be using a
     # generation; the next install without a live shell removes the rest.

@@ -4,6 +4,12 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'Caelestia-InstallCommon.ps1')
 $root = Resolve-CaelestiaDirectory (Join-Path $env:TEMP ('caelestia-version-test-' + [guid]::NewGuid().ToString('N')))
 [IO.Directory]::CreateDirectory($root) | Out-Null
+# Integration fixtures that do not exercise the 260-character Run limit use a
+# short root directly under TEMP. A prefix under $root is already long enough
+# that its Run command needs 8.3 shortening, and a volume may create no short
+# names (for example a non-system volume with 8.3 disabled).
+$shortRoot = Join-Path $env:TEMP ('cvt-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
+[IO.Directory]::CreateDirectory($shortRoot) | Out-Null
 $script:registryTestId = [guid]::NewGuid().ToString('N')
 $script:registryTestRoot = 'HKCU:\Software\CaelestiaWindowsTests\' + $script:registryTestId
 # Exercise the real registry operations, but never Windows' live startup key or
@@ -598,7 +604,7 @@ try {
     # Integration is part of the activation transaction. A shortcut or Run
     # entry that cannot be written restores the previous integration, selects
     # the previous version again, and leaves no half-written shortcut behind.
-    $uiPrefix = Join-Path $root 'ui'
+    $uiPrefix = Join-Path $shortRoot 'ui'
     $null = Install-CaelestiaVersion $uiPrefix (New-Payload $uiPrefix 'ui-a')
     $uiA = (Read-CaelestiaInstall $uiPrefix).current
     $null = Install-CaelestiaVersion $uiPrefix (New-Payload $uiPrefix 'ui-b')
@@ -622,7 +628,7 @@ try {
         Assert ((Read-CaelestiaInstall $uiPrefix).current -eq $uiA) 'An integration failure did not select the previous version again.'
         # A first install has no previous payload: the partial integration is
         # removed and the installed version stays selected.
-        $freshPrefix = Join-Path $root 'fresh-ui'
+        $freshPrefix = Join-Path $shortRoot 'fresh'
         $null = Install-CaelestiaVersion $freshPrefix (New-Payload $freshPrefix 'fresh')
         $freshId = (Read-CaelestiaInstall $freshPrefix).current
         $freshShortcut = Join-Path $root 'fresh-shortcut\Caelestia.lnk'
@@ -641,7 +647,7 @@ try {
     # Regression: the Run value is snapshotted before any work that can fail.
     # A shortcut failure must not remove a pre-existing autostart entry that
     # this transaction never wrote.
-    $autoPrefix = Join-Path $root 'auto-ui'
+    $autoPrefix = Join-Path $shortRoot 'auto'
     $null = Install-CaelestiaVersion $autoPrefix (New-Payload $autoPrefix 'auto-a')
     $autoA = (Read-CaelestiaInstall $autoPrefix).current
     $null = Install-CaelestiaVersion $autoPrefix (New-Payload $autoPrefix 'auto-b')
@@ -804,7 +810,7 @@ try {
     # The stable root is a copy of Start-CaelestiaEntry.ps1, not the payload's
     # Start-Caelestia.ps1. It must accept the shell's Quit -DisableAutostart and
     # AutostartStatus commands, or the detached launcher fails before Quit.
-    $entryPrefix = Join-Path $root 'entry-route'
+    $entryPrefix = Join-Path $shortRoot 'entry'
     $null = Install-CaelestiaVersion $entryPrefix (New-Payload $entryPrefix 'entry-a')
     $entryRuntime = Resolve-CaelestiaRuntimePrefix $entryPrefix
     $entryQuit = Join-Path $root 'entry-quit.txt'
@@ -924,7 +930,7 @@ function Show-CaelestiaHandoffDialog([string]$Message) {
     # Regression: an existing shortcut that cannot be snapshotted aborts
     # integration before any write. The armed shortcut writer must not run, so
     # the original file survives instead of being deleted as a partial file.
-    $snapshotPrefix = Join-Path $root 'snapshot-ui'
+    $snapshotPrefix = Join-Path $shortRoot 'snap'
     $null = Install-CaelestiaVersion $snapshotPrefix (New-Payload $snapshotPrefix 'snapshot-a')
     $snapshotA = (Read-CaelestiaInstall $snapshotPrefix).current
     $null = Install-CaelestiaVersion $snapshotPrefix (New-Payload $snapshotPrefix 'snapshot-b')
@@ -964,7 +970,7 @@ function Show-CaelestiaHandoffDialog([string]$Message) {
     # Settings > Apps > Installed apps entry. Version selection and rollback
     # must keep them pointing at the version that is actually selected, and
     # uninstall must remove exactly these prefix-derived entries.
-    $ui2Prefix = Join-Path $root 'integration-lifecycle'
+    $ui2Prefix = Join-Path $shortRoot 'life'
     $null = Install-CaelestiaVersion $ui2Prefix (New-Payload $ui2Prefix 'life-a' '1.0.0')
     $ui2A = (Read-CaelestiaInstall $ui2Prefix).current
     $null = Install-CaelestiaVersion $ui2Prefix (New-Payload $ui2Prefix 'life-b' '2.0.0')
@@ -1017,8 +1023,8 @@ function Show-CaelestiaHandoffDialog([string]$Message) {
     Assert (Test-Path -LiteralPath $ui2.DesktopShortcut) 'The opt-in desktop shortcut was not created.'
     $run = Get-ItemProperty -LiteralPath (Get-CaelestiaAutostartKey) -Name $ui2.RunName -ErrorAction SilentlyContinue
     $runValue = if ($null -ne $run) { [string]$run.($ui2.RunName) } else { '' }
-    # A deep fixture prefix makes the Run value use the launcher's 8.3 name, so
-    # check the command shape and that the single builder produced this value.
+    # The fixture uses the same single builder as every other entry; check the
+    # command shape and that the builder produced this value.
     Assert ($runValue -match '^".*conhost\.exe" --headless ".+\\powershell\.exe" .*\.ps1" -Action start$') 'Autostart does not use the no-window launcher.'
     Assert ($runValue -eq (Get-CaelestiaAutostartValue $ui2Prefix)) 'Autostart is not the single launch command for this prefix.'
     Assert ($runValue -notmatch '-Prefix|-WindowStyle') 'The autostart command repeats the prefix or hides a redundant window style.'
@@ -1147,8 +1153,8 @@ $hasWindow = [CaelestiaLauncherProbe.Native]::GetConsoleWindow() -ne [IntPtr]::Z
     # Windows limits a Run value to 260 characters. The generated command no
     # longer repeats the prefix, so a default installation stays under the limit
     # even with the longest supported user name (20 characters). A longer custom
-    # prefix uses the launcher's 8.3 name, and a command that still does not fit
-    # is refused before anything is registered.
+    # prefix can use the launcher's 8.3 name, and a command that still does not
+    # fit is refused before anything is registered.
     $defaultPrefix = 'C:\Users\' + ('a' * 20) + '\AppData\Local\Programs\caelestia-windows'
     $defaultLaunch = Get-CaelestiaLaunchCommand $defaultPrefix 'start'
     Assert ($defaultLaunch.CommandLine.Length -le 260) ('The default-prefix launch command is {0} characters; a Run value allows 260.' -f $defaultLaunch.CommandLine.Length)
@@ -1157,29 +1163,36 @@ $hasWindow = [CaelestiaLauncherProbe.Native]::GetConsoleWindow() -ne [IntPtr]::Z
     Assert ($defaultLaunch.Arguments -notmatch '-Prefix|-WindowStyle') 'The launch command repeats the prefix or hides a redundant window style.'
     Write-Output 'PASS launch length: the default prefix stays inside the 260-character Run-value limit.'
 
+    # Real shortening: a deep custom prefix still registers autostart by using
+    # the launcher's 8.3 name. That depends on the test volume creating short
+    # names, so skip with a clear message where they are disabled. The refusal
+    # case below does not depend on them.
     $longPrefix = Join-Path $root ('long-prefix-' + ('x' * 120))
     [IO.Directory]::CreateDirectory($longPrefix) | Out-Null
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Caelestia-Launcher.ps1') -Destination $longPrefix
     '{"product":"caelestia-windows"}' | Set-Content -LiteralPath (Join-Path $longPrefix 'install.json') -Encoding UTF8
-    $longRunName = (Get-CaelestiaIntegration $longPrefix).RunName
-    try {
-        $longResult = Set-CaelestiaAutostart -Prefix $longPrefix -Enabled:$true
-        $longEntry = Get-ItemProperty -LiteralPath (Get-CaelestiaAutostartKey) -Name $longRunName -ErrorAction SilentlyContinue
-        if ($longResult.ok) {
+    $longLauncher = Join-Path $longPrefix 'Caelestia-Launcher.ps1'
+    $shortLauncher = Get-CaelestiaShortPath $longLauncher
+    if (-not $shortLauncher) {
+        Write-Output 'SKIP launch shortening: the test volume creates no 8.3 short names for the long-prefix fixture.'
+    } else {
+        $longRunName = (Get-CaelestiaIntegration $longPrefix).RunName
+        try {
+            $longResult = Set-CaelestiaAutostart -Prefix $longPrefix -Enabled:$true
+            Assert ($longResult.ok) 'Autostart refused a long prefix that has a usable 8.3 name.'
+            $longEntry = Get-ItemProperty -LiteralPath (Get-CaelestiaAutostartKey) -Name $longRunName -ErrorAction SilentlyContinue
             Assert ($null -ne $longEntry) 'Autostart reported success for a long prefix without writing its Run value.'
             $longValue = [string]$longEntry.$longRunName
             Assert ($longValue.Length -le 260) 'A long-prefix Run value exceeds the 260-character limit.'
-            $shortLauncher = Get-CaelestiaShortPath (Join-Path $longPrefix 'Caelestia-Launcher.ps1')
-            Assert ($shortLauncher -and $longValue.Contains($shortLauncher)) 'A long-prefix Run value did not use the launcher short path.'
-        } else {
-            Assert ($longResult.error -match '260') 'A refused long-prefix autostart did not explain the Run-value length limit.'
-            Assert ($null -eq $longEntry) 'A refused long-prefix autostart still wrote its Run value.'
+            Assert ($longValue.Contains($shortLauncher)) 'A long-prefix Run value did not use the launcher short path.'
+        } finally {
+            Remove-ItemProperty -LiteralPath (Get-CaelestiaAutostartKey) -Name $longRunName -ErrorAction SilentlyContinue
         }
-    } finally {
-        Remove-ItemProperty -LiteralPath (Get-CaelestiaAutostartKey) -Name $longRunName -ErrorAction SilentlyContinue
+        Write-Output 'PASS launch length: a long custom prefix uses the launcher short path.'
     }
-    Write-Output 'PASS launch length: a long custom prefix shortens the launcher or refuses without writing.'
 
+    # Clean refusal: no short name can make the command fit. Nothing may be
+    # written, and an existing owned Run value must survive.
     $tooLongPrefix = Join-Path $root 'too-long-command'
     [IO.Directory]::CreateDirectory($tooLongPrefix) | Out-Null
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Caelestia-Launcher.ps1') -Destination $tooLongPrefix
@@ -1204,6 +1217,82 @@ $hasWindow = [CaelestiaLauncherProbe.Native]::GetConsoleWindow() -ne [IntPtr]::Z
         Remove-ItemProperty -LiteralPath (Get-CaelestiaAutostartKey) -Name $tooLongRunName -ErrorAction SilentlyContinue
     }
     Write-Output 'PASS launch length: a command that cannot fit is refused and leaves the existing Run value untouched.'
+
+    # An upgrade whose existing Run value fits main's format but whose new
+    # command does not must fail before activation, with the selected version
+    # and every entry untouched. A late refusal during integration must also
+    # roll back to the previous version without rebuilding the refused command.
+    # Both need a volume that creates no 8.3 names; elsewhere the launcher short
+    # path makes the fixture fit.
+    $preflightNameLength = 80 - $shortRoot.Length - 1
+    if ($preflightNameLength -lt 4) {
+        Write-Output 'SKIP run-value preflight: TEMP is too deep for the 80-character prefix fixture.'
+    } else {
+        $preflightPrefix = Join-Path $shortRoot ('pf-' + ('x' * ($preflightNameLength - 3)))
+        Assert ($preflightPrefix.Length -eq 80) 'The preflight fixture prefix has the wrong length.'
+        [IO.Directory]::CreateDirectory($preflightPrefix) | Out-Null
+        $null = Install-CaelestiaVersion $preflightPrefix (New-Payload $preflightPrefix 'pf-a')
+        $preflightA = (Read-CaelestiaInstall $preflightPrefix).current
+        $preflightLauncher = Join-Path $preflightPrefix 'Caelestia-Launcher.ps1'
+        if (Get-CaelestiaShortPath $preflightLauncher) {
+            Write-Output 'SKIP run-value preflight: the test volume creates 8.3 short names, so the 80-character prefix still fits.'
+        } else {
+            $preflightIntegration = Get-CaelestiaIntegration $preflightPrefix
+            $preflightRunKey = Get-CaelestiaAutostartKey
+            $oldFormatRun = '"' + (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') +
+                '" -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' +
+                (Join-Path $preflightPrefix 'Start-Caelestia.ps1') + '"'
+            Assert ($oldFormatRun.Length -le 260) 'The preflight fixture''s existing Run value does not fit.'
+            Assert ((Get-CaelestiaLaunchCommand $preflightPrefix 'start').CommandLine.Length -gt 260) `
+                'The preflight fixture''s new Run command fits; the fixture cannot reproduce the refusal.'
+            New-CaelestiaRegistryKey $preflightRunKey
+            New-ItemProperty -Path $preflightRunKey -Name $preflightIntegration.RunName -PropertyType String `
+                -Value $oldFormatRun -Force | Out-Null
+            $preflightShortcut = $preflightIntegration.Shortcut
+            [IO.Directory]::CreateDirectory((Split-Path -Parent $preflightShortcut)) | Out-Null
+            'existing shortcut' | Set-Content -LiteralPath $preflightShortcut -Encoding UTF8
+            $preflightUninstallKey = Get-CaelestiaUninstallKeyPath $preflightPrefix
+            New-CaelestiaRegistryKey $preflightUninstallKey
+            New-ItemProperty -LiteralPath $preflightUninstallKey -Name 'DisplayVersion' -PropertyType String `
+                -Value '1.0.0' -Force | Out-Null
+            try {
+                $beforeVersions = @(Get-ChildItem -LiteralPath (Join-Path $preflightPrefix 'versions') -Directory).Count
+                $failed = $false
+                try { $null = Install-CaelestiaVersion $preflightPrefix (New-Payload $preflightPrefix 'pf-b') }
+                catch { $failed = $true }
+                Assert $failed 'A Run value that exceeds 260 characters was accepted during activation.'
+                Assert ((Read-CaelestiaInstall $preflightPrefix).current -eq $preflightA) 'A refused Run value changed the selected version.'
+                Assert (@(Get-ChildItem -LiteralPath (Join-Path $preflightPrefix 'versions') -Directory).Count -eq $beforeVersions) 'A refused Run value published a version.'
+                $keptRun = Get-ItemProperty -LiteralPath $preflightRunKey -Name $preflightIntegration.RunName -ErrorAction SilentlyContinue
+                Assert ($null -ne $keptRun -and [string]$keptRun.($preflightIntegration.RunName) -eq $oldFormatRun) 'A refused Run value changed the existing entry.'
+                Assert ((Get-Content -LiteralPath $preflightShortcut -Raw).Trim() -eq 'existing shortcut') 'A refused Run value changed the existing shortcut.'
+
+                # Late refusal: activate the replacement first, then let the
+                # integration step refuse. The rollback must select the previous
+                # version and keep its untouched entries.
+                Remove-ItemProperty -LiteralPath $preflightRunKey -Name $preflightIntegration.RunName -ErrorAction SilentlyContinue
+                $null = Install-CaelestiaVersion $preflightPrefix (New-Payload $preflightPrefix 'pf-c')
+                $preflightB = (Read-CaelestiaInstall $preflightPrefix).current
+                New-ItemProperty -Path $preflightRunKey -Name $preflightIntegration.RunName -PropertyType String `
+                    -Value $oldFormatRun -Force | Out-Null
+                $failed = $false
+                $failureText = ''
+                try {
+                    Complete-CaelestiaInstallIntegration $preflightPrefix (Join-Path $preflightPrefix "versions\$preflightB") -Previous $preflightA
+                } catch { $failed = $true; $failureText = $_.Exception.Message }
+                Assert $failed 'A Run value that exceeds 260 characters was accepted during integration.'
+                Assert ($failureText -notmatch 'Rollback to') 'A late Run-value refusal failed its rollback.'
+                Assert ((Read-CaelestiaInstall $preflightPrefix).current -eq $preflightA) 'A late Run-value refusal left the replacement selected.'
+                $keptRun = Get-ItemProperty -LiteralPath $preflightRunKey -Name $preflightIntegration.RunName -ErrorAction SilentlyContinue
+                Assert ($null -ne $keptRun -and [string]$keptRun.($preflightIntegration.RunName) -eq $oldFormatRun) 'A late Run-value refusal rebuilt or changed the untouched entry.'
+                Assert ((Get-Content -LiteralPath $preflightShortcut -Raw).Trim() -eq 'existing shortcut') 'A late Run-value refusal changed the untouched shortcut.'
+                Assert ((Get-ItemProperty -LiteralPath $preflightUninstallKey -Name 'DisplayVersion').DisplayVersion -eq '1.0.0') 'A late Run-value refusal changed the untouched Apps & features entry.'
+            } finally {
+                Remove-ItemProperty -LiteralPath $preflightRunKey -Name $preflightIntegration.RunName -ErrorAction SilentlyContinue
+            }
+            Write-Output 'PASS run-value preflight: a command that no longer fits fails before activation and a late refusal rolls back untouched.'
+        }
+    }
 
     # Behavioural switch-back delegation: the wrapper only collects the
     # autostart choice and calls the stable-root Quit entry. It must not keep
@@ -2563,10 +2652,17 @@ public static class LegacyInstallLockFixture {
         Remove-Item -LiteralPath $script:registryTestRoot -Recurse -Force
     }
     $safe = Resolve-CaelestiaDirectory $root
-    if ((Split-Path -Parent $safe) -ne [IO.Path]::GetFullPath($env:TEMP).TrimEnd('\') -or
-        (Split-Path -Leaf $safe) -notlike 'caelestia-version-test-*') { throw 'Unsafe test cleanup.' }
+    $shortSafe = Resolve-CaelestiaDirectory $shortRoot
+    $tempRoot = [IO.Path]::GetFullPath($env:TEMP).TrimEnd('\')
+    if ((Split-Path -Parent $safe) -ne $tempRoot -or
+        (Split-Path -Leaf $safe) -notlike 'caelestia-version-test-*' -or
+        (Split-Path -Parent $shortSafe) -ne $tempRoot -or
+        (Split-Path -Leaf $shortSafe) -notlike 'cvt-*') { throw 'Unsafe test cleanup.' }
     Assert-CaelestiaNoReparsePoints $safe
+    Assert-CaelestiaNoReparsePoints $shortSafe
     # A cleanup problem is reported, but must not hide the failure that got us here.
-    try { Remove-Item -LiteralPath $safe -Recurse -Force -ErrorAction Stop }
-    catch { Write-Warning "Test directory was not fully deleted: $safe" }
+    foreach ($directory in @($safe, $shortSafe)) {
+        try { Remove-Item -LiteralPath $directory -Recurse -Force -ErrorAction Stop }
+        catch { Write-Warning "Test directory was not fully deleted: $directory" }
+    }
 }
