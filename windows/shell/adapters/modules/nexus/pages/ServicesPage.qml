@@ -4,6 +4,7 @@ import Quickshell
 import Caelestia.Config
 import Caelestia.I18n
 import Caelestia.Services
+import qs.components
 import qs.components.controls
 import qs.services
 import qs.modules.nexus.common
@@ -65,6 +66,23 @@ PageBase {
         return Tr.tr("Wallpaper Engine is ready.");
     }
 
+    // Same allowlisted command and autostart choice as the session drawer.
+    // The action is shown while unavailable so its reason is visible.
+    readonly property var switchBackAction: SessionManager.sessionActionGating === true
+        && SessionManager.sessionAction ? SessionManager.sessionAction(["switch-back"]) : null
+    readonly property bool switchBackAvailable: switchBackAction !== null
+        && switchBackAction.dispatchable === true
+    readonly property string switchBackReason: switchBackAction !== null
+        ? String(switchBackAction.reason ?? "") : ""
+    readonly property bool switchBackPending: SessionManager.switchBackPending === true
+    readonly property string switchBackError: String(SessionManager.switchBackError ?? "")
+
+    function switchBack(): void {
+        if (!root.switchBackAvailable)
+            return;
+        SessionManager.exec(["switch-back"]);
+    }
+
     // GlobalConfig.windows is one QVariantMap, not a sub-object: copy it and
     // write it back whole, as the window management page does.
     function setQuota(key: string, on: bool): void {
@@ -109,6 +127,46 @@ PageBase {
             text: Tr.tr("Notifications")
             subtext: Tr.tr("Notifications, toasts, timeouts")
             onClicked: root.nState.openSubPage(1)
+        }
+
+        // Windows session
+        SectionHeader {
+            text: Tr.tr("Windows session")
+        }
+
+        RowButton {
+            objectName: "switchBackButton"
+            first: true
+            icon: "desktop_windows"
+            text: Tr.tr("Switch back to Windows")
+            subtext: !root.switchBackAvailable
+                ? root.switchBackReason
+                : root.switchBackPending
+                    ? Tr.tr("Waiting for Caelestia to quit")
+                    : Tr.tr("Quit Caelestia and restore the Windows taskbar and desktop")
+            disabled: !root.switchBackAvailable
+            onClicked: root.switchBack()
+        }
+
+        ToggleRow {
+            objectName: "switchBackAutostartToggle"
+            last: root.switchBackError === ""
+            text: Tr.tr("Turn off autostart when switching back")
+            subtext: Tr.tr("Removes Caelestia's Windows sign-in entry")
+            checked: SessionManager.switchBackDisableAutostart
+            onToggled: SessionManager.switchBackDisableAutostart = checked
+            disabled: !root.switchBackAvailable
+        }
+
+        StyledText {
+            objectName: "switchBackError"
+
+            visible: root.switchBackError !== ""
+            text: root.switchBackError
+            color: Colours.palette.m3error
+            font: Tokens.font.label.small
+            wrapMode: Text.Wrap
+            Layout.fillWidth: true
         }
 
         // Glazier ships with the shell. These rows state the chords the shell

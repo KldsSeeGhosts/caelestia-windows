@@ -16,6 +16,12 @@ import Quickshell
 // components' detached fallback cannot run. allowDetachedFallback is the
 // localized UI hook: upstream native SessionManager lacks the property, so Linux
 // keeps its fallback; this Windows adapter sets it false.
+//
+// The Windows session menu and Nexus use the same allowlisted `switchback`
+// command. Its backend starts the installed launcher as a detached process, so
+// the existing Quit and Restore-Desktop path completes after this shell exits.
+// The UI sets switchBackDisableAutostart before exec() only when the user
+// chooses to remove the installation's HKCU Run entry.
 SessionService {
     id: root
 

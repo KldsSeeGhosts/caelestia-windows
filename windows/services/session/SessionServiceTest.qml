@@ -11,6 +11,9 @@ QtObject {
 
     component FakeBackend: QtObject {
         property bool canHibernate: false
+        property bool switchBackSupported: true
+        property bool switchBackPending: false
+        property string switchBackError: ""
         property var calls: []
 
         function lock(): void { calls.push("lock"); }
@@ -20,18 +23,40 @@ QtObject {
         function suspend(): void { calls.push("suspend"); }
         function hibernate(): void { calls.push("hibernate"); }
         function rebootToFirmware(): void { calls.push("rebootToFirmware"); }
+        function switchBack(disableAutostart): bool {
+            calls.push(disableAutostart === true ? "switchBack:no-autostart" : "switchBack:keep-autostart");
+            return true;
+        }
+    }
+
+    // A backend that declines a new handoff (for example because a previous one
+    // is still pending) must be reported as not dispatched, not as requested.
+    component DecliningBackend: QtObject {
+        property bool canHibernate: false
+        property bool switchBackSupported: true
+        property bool switchBackPending: true
+        property string switchBackError: "A previous handoff is still pending."
+        property var calls: []
+
+        function switchBack(disableAutostart): bool {
+            calls.push(disableAutostart === true ? "declined:no-autostart" : "declined:keep-autostart");
+            return false;
+        }
     }
 
     component ThrowingBackend: QtObject {
         property bool canHibernate: true
+        property bool switchBackSupported: true
         property var calls: []
 
         function lock(): void { throw new Error("fixture failure"); }
+        function switchBack(): void { throw new Error("fixture switch-back failure"); }
     }
 
     readonly property SessionService service: SessionService {}
     readonly property FakeBackend backend: FakeBackend {}
     readonly property ThrowingBackend throwing: ThrowingBackend {}
+    readonly property DecliningBackend declining: DecliningBackend {}
 
     property int assertions: 0
 
@@ -98,11 +123,15 @@ QtObject {
         equal(service.hibernateCapabilityKnown, false, "disabled hibernate unknown");
         equal(service.hibernateSupported, false, "disabled hibernate unsupported");
         equal(service.canHibernate, false, "disabled canHibernate false");
+        equal(service.switchBackSupported, false, "disabled switch back unsupported");
+        equal(service.switchBackPending, false, "disabled switch back not pending");
+        equal(service.switchBackError, "", "disabled switch back has no error");
+        equal(service.switchBackDisableAutostart, false, "switch back keeps autostart by default");
         // The confirmation gate is gone: destructive actions dispatch directly,
         // so no confirm surface exists on the service.
         equal(service.confirm, undefined, "no confirm step");
-        check(service.actionNames.length === 7, "seven explicit actions");
-        for (const action of ["lock", "logout", "shutdown", "reboot", "suspend", "hibernate", "firmware"]) {
+        check(service.actionNames.length === 8, "eight explicit actions");
+        for (const action of ["lock", "logout", "shutdown", "reboot", "suspend", "hibernate", "firmware", "switchback"]) {
             check(service.actionDefinitions[action], "definition " + action);
         }
         check(service.actionDefinitions.suspendthenhibernate, "explicit unsupported combined action");
@@ -131,6 +160,10 @@ QtObject {
         equal(service.resolveCommand(["firmware"]), "firmware", "canonical firmware");
         equal(service.resolveCommand(["firmware-reboot"]), "firmware", "hyphenated firmware");
         equal(service.resolveCommand(["Firmware_Reboot"]), "firmware", "case/underscore firmware");
+        equal(service.resolveCommand(["switch-back"]), "switchback", "hyphenated switch back");
+        equal(service.resolveCommand(["Switch_Back"]), "switchback", "case/underscore switch back");
+        equal(service.resolveCommand(["switch-back-to-windows"]), "switchback", "explicit switch back target");
+        equal(service.resolveCommand(["switch-back", "now"]), "", "switch back extra arguments refused");
         equal(service.resolveCommand(["suspendThenHibernate"]), "suspendthenhibernate", "combined action recognized");
         equal(service.resolveCommand(["reboot", "now"]), "", "extra arguments refused");
         equal(service.resolveCommand(["loginctl", "reboot", "now"]), "", "aliased extra arguments refused");
@@ -144,6 +177,8 @@ QtObject {
         equal(service.sessionAction("lock").available, false, "lock unavailable while disabled");
         equal(service.sessionAction(["logout"]).destructive, true, "logout is destructive (information only)");
         equal(service.sessionAction(["logout"]).available, false, "logout unavailable while disabled");
+        equal(service.sessionAction(["switch-back"]).supported, true, "switch back supported contract");
+        equal(service.sessionAction(["switch-back"]).available, false, "switch back unavailable while disabled");
         equal(service.sessionAction("bogus").supported, false, "unknown action unsupported");
         equal(service.sessionAction([]).supported, false, "empty action unsupported");
 
@@ -151,10 +186,12 @@ QtObject {
         service.enabled = true;
         equal(service.status, "unavailable", "enabled without backend unavailable");
         equal(service.available, false, "enabled without backend not available");
+        equal(service.switchBackSupported, false, "enabled without backend switch back unsupported");
         equal(service.exec(["lock"]), true, "missing backend command consumed");
         expectOutcome("unavailable", "missing backend outcome");
         expectConsumedNoDispatch("missing backend");
         equal(service.sessionAction("lock").capability, false, "missing backend lock capability false");
+        equal(service.sessionAction("switchback").capability, false, "missing backend switch back capability false");
 
         service.backendError = "Fixture facade load failure";
         equal(service.status, "unavailable", "facade failure unavailable");
@@ -175,6 +212,9 @@ QtObject {
         equal(service.sessionAction("lock").capability, true, "observe lock capability observed");
         equal(service.sessionAction("lock").dispatchable, false, "observe lock not dispatchable");
         equal(service.sessionAction("lock").available, false, "observe lock unavailable for UI");
+        equal(service.switchBackSupported, true, "observe switch back capability observed");
+        equal(service.sessionAction("switchback").capability, true, "observe switch back capability");
+        equal(service.sessionAction("switchback").available, false, "observe switch back unavailable for UI");
         equal(service.dispatchEnabled, false, "observe mode keeps dispatch disabled");
         expectActionsUnavailable("observe mode");
 
@@ -197,6 +237,8 @@ QtObject {
         equal(service.sessionAction("suspend").available, true, "suspend available with actions opt-in");
         equal(service.sessionAction("hibernate").available, false, "hibernate unavailable without capability");
         equal(service.sessionAction("hibernate").capability, false, "hibernate capability false");
+        equal(service.sessionAction("switchback").available, true, "switch back available with actions opt-in");
+        equal(service.sessionAction("switchback").capability, true, "switch back capability true");
 
         reset();
         equal(service.exec(["lock"]), true, "lock exec consumed");
@@ -217,6 +259,48 @@ QtObject {
         reset();
         service.request(["systemctl", "suspend"]);
         expectRequested("suspend", "suspend alias dispatch");
+
+        // --- Switch back to Windows ----------------------------------------
+        // The shell acknowledges the action like any other session command and
+        // hands the autostart choice to the installed launcher. Neither branch
+        // has a detached fallback in this service.
+        reset();
+        service.switchBackDisableAutostart = true;
+        equal(service.exec(["switch-back"]), true, "switch back exec consumed");
+        expectRequested("switchBack:no-autostart", "switch back dispatch removes autostart");
+        equal(service.lastResult.action, "switchback", "switch back action recorded");
+        equal(service.lastResult.command.length, 1, "switch back command recorded");
+        equal(service.lastResult.command[0], "switch-back", "switch back token recorded");
+        callsAre(["switchBack:no-autostart"], "switch back called once");
+
+        reset();
+        service.switchBackDisableAutostart = false;
+        service.request(["switchback"]);
+        expectRequested("switchBack:keep-autostart", "switch back dispatch keeps autostart");
+        equal(service.lastResult.action, "switchback", "native switch back spelling recorded");
+
+        // Pending/error are observable pass-throughs from the backend so the UI
+        // can acknowledge the handoff and show the bounded timeout failure.
+        reset();
+        backend.switchBackPending = true;
+        backend.switchBackError = "Fixture handoff timeout.";
+        equal(service.switchBackPending, true, "pending handoff is observable");
+        equal(service.switchBackError, "Fixture handoff timeout.", "handoff error is observable");
+        backend.switchBackPending = false;
+        backend.switchBackError = "";
+
+        // The installed launcher is the capability. Without it the command is
+        // still consumed so the caller can never reach execDetached.
+        reset();
+        backend.switchBackSupported = false;
+        equal(service.switchBackSupported, false, "switch back capability follows backend");
+        equal(service.sessionAction("switchback").capability, false, "gated switch back capability false");
+        equal(service.sessionAction("switchback").available, false, "gated switch back unavailable");
+        equal(service.exec(["switch-back"]), true, "gated switch back consumed");
+        expectOutcome("unsupported", "gated switch back outcome");
+        expectConsumedNoDispatch("gated switch back");
+        callsAre([], "gated switch back sends no call");
+        backend.switchBackSupported = true;
 
         reset();
         backend.canHibernate = true;
@@ -314,6 +398,11 @@ QtObject {
         expectOutcome("unsupported", "missing backend method unsupported");
         expectConsumedNoDispatch("missing backend method");
         callsAre([], "missing backend method sends no call");
+        equal(service.switchBackSupported, false, "bare backend switch back unsupported");
+        equal(service.exec(["switch-back"]), true, "bare backend switch back consumed");
+        expectOutcome("unsupported", "missing switch back method unsupported");
+        expectConsumedNoDispatch("missing switch back method");
+        callsAre([], "missing switch back method sends no call");
 
         service.backend = {canHibernate: 1};
         equal(service.hibernateSupported, false, "non-boolean hibernate capability rejected");
@@ -326,7 +415,22 @@ QtObject {
         equal(service.lastResult.dispatched, false, "throwing backend not dispatched");
         equal(service.lastResult.succeeded, false, "throwing backend not succeeded");
         callsAre([], "throwing backend records no successful call");
+        equal(service.exec(["switch-back"]), true, "throwing switch back consumed");
+        expectOutcome("failed", "throwing switch back outcome");
+        equal(service.lastResult.dispatched, false, "throwing switch back not dispatched");
+        callsAre([], "throwing switch back records no successful call");
 
+        // A declined handoff is not a request. The backend is the only layer
+        // that can see its own pending guard, so its false result is honored.
+        service.backend = declining;
+        equal(service.switchBackPending, true, "declining backend pending state observed");
+        equal(service.switchBackError, "A previous handoff is still pending.", "declining backend error observed");
+        equal(service.exec(["switch-back"]), true, "declined switch back consumed");
+        expectOutcome("failed", "declined switch back outcome");
+        equal(service.lastResult.dispatched, false, "declined switch back not dispatched");
+        equal(service.lastResult.succeeded, false, "declined switch back not succeeded");
+        equal(JSON.stringify(declining.calls), JSON.stringify(["declined:keep-autostart"]),
+            "declined switch back called once");
         service.backend = backend;
         reset();
         backend.canHibernate = true;

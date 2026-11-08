@@ -1,7 +1,11 @@
 [CmdletBinding()]
 param(
     [string]$Prefix,
-    [ValidateSet('Start', 'State', 'Quit', 'Restart', 'Settings', 'NotifyTest')][string]$Command = 'Start',
+    [ValidateSet('Start', 'State', 'Quit', 'Restart', 'Settings', 'NotifyTest', 'AutostartStatus')][string]$Command = 'Start',
+    # Quit only. Removes this installation's own HKCU Run entry before the
+    # shell and supervisor hand the desktop back. The shell cannot wait for
+    # that work after it exits, so its detached launcher passes this switch.
+    [switch]$DisableAutostart,
     [switch]$Smoke,
     [ValidateRange(0, 15)][int]$ScreenIndex,
     [ValidateSet('Disabled', 'Observe', 'Interactive')][string]$TilingMode = 'Disabled',
@@ -16,6 +20,7 @@ param(
 
 if ($Smoke -and $Command -ne 'Start') { throw '-Smoke requires -Command Start.' }
 if ($PSBoundParameters.ContainsKey('ScreenIndex') -and -not $Smoke) { throw '-ScreenIndex requires -Smoke.' }
+if ($DisableAutostart -and $Command -ne 'Quit') { throw '-DisableAutostart requires -Command Quit.' }
 
 # Send through Windows, not notifySend()/QML. The existing WinRT listener will
 # mirror this like any other app only if the user has already allowed mirroring.
@@ -57,6 +62,21 @@ if (-not $Prefix) {
 }
 $Prefix = Resolve-CaelestiaDirectory $Prefix
 $record = Read-CaelestiaInstall $Prefix
+# The autostart entry is owned by the stable prefix, never by a version
+# payload. Answer and remove it before the versioned-route below can replace
+# $Prefix with versions\<id> and hash the wrong Run name.
+if ($Command -eq 'AutostartStatus') {
+    [ordered]@{ schema = 1; enabled = (Test-CaelestiaAutostart $Prefix) } |
+        ConvertTo-Json -Compress
+    return
+}
+$autostartFailure = ''
+if ($Command -eq 'Quit' -and $DisableAutostart) {
+    # The user asked to leave Caelestia, so a failed Run-entry removal must not
+    # cancel Quit or desktop restoration. Report it after the shell exits, then
+    # fail the launcher call so the caller cannot mistake the choice as applied.
+    $autostartFailure = Disable-CaelestiaAutostartForQuit $Prefix
+}
 # Repository callers can still target the stable root. Route before building
 # a ProcessStartInfo so leftover legacy qs.exe files are never launched.
 if ($record.version -eq 2) {
@@ -67,9 +87,23 @@ if ($record.version -eq 2) {
         return
     }
     $arguments = @{}
-    foreach ($key in $PSBoundParameters.Keys) { $arguments[$key] = $PSBoundParameters[$key] }
+    foreach ($key in $PSBoundParameters.Keys) {
+        # The stable root already consumed this switch; the runtime prefix must
+        # not compute a different, hashed Run name.
+        if ($key -eq 'DisableAutostart') { continue }
+        $arguments[$key] = $PSBoundParameters[$key]
+    }
     $arguments.Prefix = $runtime
-    & (Join-Path $runtime 'Start-Caelestia.ps1') @arguments
+    try {
+        & (Join-Path $runtime 'Start-Caelestia.ps1') @arguments
+    } finally {
+        # The versioned Quit has finished and the desktop is restored. The shell
+        # has exited, so this launcher owns the visible report before it fails.
+        if ($autostartFailure) { Show-CaelestiaHandoffDialog $autostartFailure }
+    }
+    # The stable root owns the Run entry. Re-raise its removal failure after the
+    # versioned launcher has finished Quit and desktop restoration.
+    if ($autostartFailure) { throw $autostartFailure }
     return
 }
 $installRoot = if ($record.installRoot) { [string]$record.installRoot } else { $Prefix }
@@ -320,6 +354,12 @@ if ($Command -ne 'Start') {
         }
     }
     Write-Output $output
+    if ($autostartFailure) {
+        # Quit and desktop restoration are complete and the shell is gone, so
+        # this launcher shows the report before failing the call.
+        Show-CaelestiaHandoffDialog $autostartFailure
+        throw $autostartFailure
+    }
     return
 }
 
