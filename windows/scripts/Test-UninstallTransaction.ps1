@@ -575,6 +575,34 @@ try {
             if (Test-Path -LiteralPath $registryRoot) { Remove-Item -LiteralPath $registryRoot -Recurse -Force }
         }
     }
+    # A snapshot that fails on the second shortcut must not leak the backup it
+    # already made for the first one. The lock denies reads, so the snapshot copy
+    # fails before the tombstone rename and nothing is written.
+    $case = New-Case 'snapshot-partial-backup' -RealIntegration
+    $registryRoot = Get-IntegrationRegistryRoot $case
+    try {
+        Initialize-RealIntegration $case $registryRoot
+        $before = Snapshot $case
+        $switchBackPath = Join-Path $case 'integration\switch-back.lnk'
+        $lock = [IO.File]::Open($switchBackPath, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::None)
+        try {
+            $worker = Start-Worker $case 'Uninstall' '' $false $false $false $false '' -RealIntegration
+            Assert-Result $worker 'Error'
+            Finish-ErrorWorker $worker
+        } finally {
+            $lock.Dispose()
+        }
+        Assert ((Snapshot $case) -ceq $before) 'A failed snapshot changed the installation or left a backup behind.'
+        Assert (@(Get-ChildItem -LiteralPath (Join-Path $case 'integration') -Filter '*.integration-*' -Force).Count -eq 0) 'A failed snapshot leaked a shortcut backup.'
+        Assert (@(Get-ChildItem -LiteralPath $case -Directory -Filter 'prefix.uninstall-*').Count -eq 0) 'A failed snapshot left a tombstone.'
+        $retry = Start-Worker $case 'Uninstall' '' $false $false $false $false '' -RealIntegration
+        Assert-Result $retry 'Success'
+        Finish-Worker $retry
+        Assert-Uninstalled $case $false
+        $script:scenarios += 'snapshot-partial-backup'
+    } finally {
+        if (Test-Path -LiteralPath $registryRoot) { Remove-Item -LiteralPath $registryRoot -Recurse -Force }
+    }
     $case = New-Case 'busy-before-manifest-read'
     $owner = Start-Worker $case 'Install' 'processes'
     Wait-Marker $owner 'ready'

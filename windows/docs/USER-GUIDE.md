@@ -118,8 +118,10 @@ The installed `.ps1` files are unsigned. Under App Control or Smart App
 Control, Windows may block the launcher or action scripts until
 [issue #20](https://github.com/KldsSeeGhosts/caelestia-windows/issues/20)
 provides publisher signing; this is not a trust exemption. The entries fail
-closed when policy blocks them, and the PowerShell commands in this guide still
-work. Smart App Control and SmartScreen also judge the unsigned
+closed when policy blocks them. The PowerShell commands in this guide run the
+same unsigned scripts, so they work only where that policy allows them; they
+are an alternative to the entries, not a way around a block. Smart App Control
+and SmartScreen also judge the unsigned
 `qs.exe` and `caelestia-capture.exe`.
 
 ### Opt-in autostart

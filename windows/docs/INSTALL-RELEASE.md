@@ -57,9 +57,11 @@ provides publisher signing. Smart App Control and SmartScreen also judge
 Caelestia's own unsigned native files (`qs.exe`, `caelestia-capture.exe`), which
 are the other signing targets for #20. The entries use `-ExecutionPolicy Bypass`
 only for that single PowerShell process; they change no machine or user policy
-and add no trust decision of their own. If policy blocks the scripts, the
-entries fail closed and the PowerShell commands in this guide still work. A
-signed launcher EXE (#20) replaces the conhost command in one helper
+and add no trust decision of their own. If policy blocks the unsigned scripts,
+the entries fail closed. The PowerShell commands in this guide run the same
+unsigned scripts, so they work only where that policy allows them; they are an
+alternative to the entries, not a way around a block. A signed launcher EXE
+(#20) replaces the conhost command in one helper
 (`Get-CaelestiaLaunchCommand`) and removes the unsigned script from the launch
 path.
 

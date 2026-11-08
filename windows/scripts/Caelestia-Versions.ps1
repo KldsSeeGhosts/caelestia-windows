@@ -376,9 +376,11 @@ function Get-CaelestiaAutostartKey {
 # Get-CaelestiaAutostartKey. Install and the shell's switch-back path share this
 # function. The command itself comes from Get-CaelestiaLaunchCommand, the same
 # no-window conhost helper the Start-menu shortcut and Apps & features entry use,
-# so a future signed launcher (#20) changes in one place.
+# so a future signed launcher (#20) changes in one place. A Run value is limited
+# to 260 characters, so the builder enforces that limit and throws before any
+# write when even the launcher's 8.3 path does not fit.
 function Get-CaelestiaAutostartValue([string]$Prefix) {
-    return (Get-CaelestiaLaunchCommand $Prefix 'start').CommandLine
+    return (Get-CaelestiaLaunchCommand $Prefix 'start' -MaxLength 260).CommandLine
 }
 
 # Autostart contract shared with the installer slice (PR #65):
@@ -471,9 +473,12 @@ function Set-CaelestiaAutostart([string]$Prefix, [bool]$Enabled) {
     }
 
     try {
+        # Build the value before creating or writing anything. A prefix whose
+        # command cannot fit a Run value fails here with no change at all.
+        $autostartValue = Get-CaelestiaAutostartValue $Prefix
         if (-not (Test-Path -LiteralPath $run)) { New-Item -Path $run -ErrorAction Stop | Out-Null }
         New-ItemProperty -Path $run -Name $integration.RunName -PropertyType String `
-            -Value (Get-CaelestiaAutostartValue $Prefix) -Force -ErrorAction Stop | Out-Null
+            -Value $autostartValue -Force -ErrorAction Stop | Out-Null
         $result.changed = $true
         $result.present = Test-CaelestiaAutostart $Prefix
         if (-not $result.present) {

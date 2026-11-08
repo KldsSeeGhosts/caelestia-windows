@@ -1369,25 +1369,66 @@ function Get-CaelestiaUninstallKeyPath([string]$Prefix) {
 # switch-back shortcuts, the optional desktop shortcut, the HKCU Run value and
 # the Apps & features UninstallString. conhost.exe --headless gives Windows
 # PowerShell a console without a window, so the entries never flash a console
-# and never need VBScript or another Windows Script Host engine. A future signed
-# launcher EXE (#20) replaces this helper and Caelestia-Launcher.ps1, nothing
-# else.
-function Get-CaelestiaLaunchCommand([string]$Prefix, [string]$Action) {
+# and never need VBScript or another Windows Script Host engine. The launcher
+# derives its own prefix, so the command does not repeat the path and stays
+# under Windows' 260-character limit for a Run value. A future signed launcher
+# EXE (#20) replaces this helper and Caelestia-Launcher.ps1, nothing else.
+function New-CaelestiaLaunchCommand([string]$Conhost, [string]$PowerShell, [string]$Launcher, [string]$Action) {
+    # --headless must be followed directly by the child command. The action and
+    # the quoted launcher path are data; no cmd.exe or script host parses them.
+    # Both executables are fully qualified so neither a PATH entry nor a
+    # user-writable current directory can substitute one.
+    $arguments = '--headless "' + $PowerShell + '" -NoProfile -ExecutionPolicy Bypass -File "' +
+        $Launcher + '" -Action ' + $Action
+    return [pscustomobject]@{
+        Target = $Conhost
+        Arguments = $arguments
+        CommandLine = '"' + $Conhost + '" ' + $arguments
+        Launcher = $Launcher
+    }
+}
+
+# Windows' documented limit for a Run value is 260 characters. Only the launcher
+# path can be shortened: the 8.3 name is the same file, and it is kept only when
+# it resolves back to that file. An empty result means no safe shortening.
+function Get-CaelestiaShortPath([string]$Path) {
+    $full = [IO.Path]::GetFullPath($Path)
+    $short = ''
+    $fileSystem = $null
+    try {
+        $fileSystem = New-Object -ComObject Scripting.FileSystemObject
+        $short = [string]$fileSystem.GetFile($full).ShortPath
+    } catch {
+        return ''
+    } finally {
+        if ($fileSystem) { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($fileSystem) }
+    }
+    if (-not $short -or $short.Length -ge $full.Length) { return '' }
+    try {
+        $resolved = [IO.Path]::GetFullPath((Get-Item -LiteralPath $short -Force -ErrorAction Stop).FullName)
+    } catch {
+        return ''
+    }
+    if (-not [string]::Equals($resolved, $full, [StringComparison]::OrdinalIgnoreCase)) { return '' }
+    return $short
+}
+
+function Get-CaelestiaLaunchCommand([string]$Prefix, [string]$Action, [int]$MaxLength = 0) {
     if ($Action -notin @('start', 'switch-back', 'uninstall', 'uninstall-quiet')) {
         throw "Unknown Caelestia launch action: $Action"
     }
     $conhost = Join-Path $env:SystemRoot 'System32\conhost.exe'
     $powershell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
     $launcher = Join-Path $Prefix 'Caelestia-Launcher.ps1'
-    # --headless must be followed directly by the child command. The action and
-    # the quoted prefix are data; no cmd.exe or script host parses them.
-    $arguments = '--headless "' + $powershell + '" -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' +
-        $launcher + '" -Action ' + $Action + ' -Prefix "' + $Prefix + '"'
-    return [pscustomobject]@{
-        Target = $conhost
-        Arguments = $arguments
-        CommandLine = '"' + $conhost + '" ' + $arguments
+    $command = New-CaelestiaLaunchCommand $conhost $powershell $launcher $Action
+    if (-not $MaxLength -or $command.CommandLine.Length -le $MaxLength) { return $command }
+    $short = Get-CaelestiaShortPath $launcher
+    if ($short) {
+        $shortCommand = New-CaelestiaLaunchCommand $conhost $powershell $short $Action
+        if ($shortCommand.CommandLine.Length -le $MaxLength) { return $shortCommand }
     }
+    throw ("The Caelestia launch command for $Prefix is longer than the Windows limit of $MaxLength characters. " +
+        'Choose a shorter installation folder, then retry. Nothing was registered or changed.')
 }
 
 # App version from the installed payload, never from the root router: a rollback
@@ -1526,26 +1567,36 @@ function Copy-CaelestiaIntegrationBackup([string]$Path) {
 function Get-CaelestiaUserIntegrationSnapshot([string]$Prefix, $Integration = $null) {
     if (-not $Integration) { $Integration = Get-CaelestiaIntegration $Prefix }
     $files = @()
-    foreach ($path in @($Integration.Shortcut, $Integration.SwitchBackShortcut, $Integration.DesktopShortcut)) {
-        if (-not $path) { continue }
-        $entry = @{ Path = $path; Existed = [IO.File]::Exists($path); Backup = '' }
-        if ($entry.Existed) { $entry.Backup = Copy-CaelestiaIntegrationBackup $path }
-        $files += $entry
+    try {
+        foreach ($path in @($Integration.Shortcut, $Integration.SwitchBackShortcut, $Integration.DesktopShortcut)) {
+            if (-not $path) { continue }
+            $entry = @{ Path = $path; Existed = [IO.File]::Exists($path); Backup = '' }
+            if ($entry.Existed) { $entry.Backup = Copy-CaelestiaIntegrationBackup $path }
+            $files += $entry
+        }
+        $run = $null
+        if ($Integration.RunName) {
+            $runKey = Get-CaelestiaAutostartKey
+            $existing = Get-ItemProperty -LiteralPath $runKey -Name $Integration.RunName -ErrorAction SilentlyContinue
+            $run = @{ Key = $runKey; Name = $Integration.RunName; Existed = ($null -ne $existing); Value = '' }
+            if ($run.Existed) { $run.Value = [string]$existing.($Integration.RunName) }
+        }
+        $key = $null
+        if ($Integration.UninstallKey) {
+            $keyPath = Get-CaelestiaUninstallKeyPath $Prefix
+            $names = @(Get-CaelestiaAppsFeaturesValueNames)
+            $key = @{ Path = $keyPath; Names = $names; Snapshot = (Get-CaelestiaRegistrySnapshot $keyPath $names) }
+        }
+        return @{ Files = $files; Run = $run; Key = $key }
+    } catch {
+        # Snapshot creation aborts the uninstall before the tombstone rename, so
+        # remove the backups this attempt already made. A leftover .integration-*
+        # copy would otherwise survive a failed uninstall.
+        foreach ($file in $files) {
+            if ($file.Backup) { try { [IO.File]::Delete($file.Backup) } catch { } }
+        }
+        throw
     }
-    $run = $null
-    if ($Integration.RunName) {
-        $runKey = Get-CaelestiaAutostartKey
-        $existing = Get-ItemProperty -LiteralPath $runKey -Name $Integration.RunName -ErrorAction SilentlyContinue
-        $run = @{ Key = $runKey; Name = $Integration.RunName; Existed = ($null -ne $existing); Value = '' }
-        if ($run.Existed) { $run.Value = [string]$existing.($Integration.RunName) }
-    }
-    $key = $null
-    if ($Integration.UninstallKey) {
-        $keyPath = Get-CaelestiaUninstallKeyPath $Prefix
-        $names = @(Get-CaelestiaAppsFeaturesValueNames)
-        $key = @{ Path = $keyPath; Names = $names; Snapshot = (Get-CaelestiaRegistrySnapshot $keyPath $names) }
-    }
-    return @{ Files = $files; Run = $run; Key = $key }
 }
 
 # Restore exactly the snapshot above. The caller restores the prefix first, so
@@ -1641,6 +1692,11 @@ function Set-CaelestiaUserIntegration {
         }
     }
     $writeRun = $Autostart -or $runExisted
+    # Build the Run command before the first write. It refuses a prefix whose
+    # command would exceed Windows' 260-character limit for a Run value, and a
+    # refusal here must leave every existing entry untouched.
+    $runCommand = ''
+    if ($writeRun) { $runCommand = Get-CaelestiaAutostartValue $Prefix }
     $keyNames = @(Get-CaelestiaAppsFeaturesValueNames)
     $keyPath = ''
     $keySnapshot = $null
@@ -1675,7 +1731,7 @@ function Set-CaelestiaUserIntegration {
             New-CaelestiaRegistryKey $runKey
             $runWriteAttempted = $true
             New-ItemProperty -Path $runKey -Name $Integration.RunName -PropertyType String `
-                -Value (Get-CaelestiaAutostartValue $Prefix) -Force | Out-Null
+                -Value $runCommand -Force | Out-Null
         }
         if ($keySnapshot) { Write-CaelestiaAppsFeaturesEntry $Prefix $RuntimePrefix }
     } catch {

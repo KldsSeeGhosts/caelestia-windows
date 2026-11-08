@@ -704,6 +704,12 @@ try {
     $removeIntegration = Get-CaelestiaIntegration $removePrefix
     $otherIntegration = Get-CaelestiaIntegration $otherPrefix
     Assert ($removeIntegration.RunName -ne $otherIntegration.RunName) 'Two prefixes produced the same Run name.'
+    # This block tests the add/remove state machine, not command generation. The
+    # fixture prefix is deeper than a real installation, so its generated Run
+    # value may need the launcher's 8.3 path; use a short fixture value here and
+    # exercise the real builder in the length tests below.
+    $savedAutostartValue = ${function:Get-CaelestiaAutostartValue}
+    ${function:Get-CaelestiaAutostartValue} = { param([string]$Prefix) return 'fixture-run:' + $Prefix }
     try {
         $removeEnabled = Set-CaelestiaAutostart -Prefix $removePrefix -Enabled:$true
         $otherEnabled = Set-CaelestiaAutostart -Prefix $otherPrefix -Enabled:$true
@@ -743,6 +749,7 @@ try {
     } finally {
         Remove-ItemProperty -LiteralPath $runKey `
             -Name $removeIntegration.RunName, $otherIntegration.RunName -ErrorAction SilentlyContinue
+        Set-Item -Path function:Get-CaelestiaAutostartValue -Value $savedAutostartValue
     }
     Write-Output 'PASS autostart removal: isolated names, already-absent success and verified denied failure.'
 
@@ -775,7 +782,7 @@ try {
     # no-window launch command as the Start-menu shortcut and Apps & features
     # entry, so a signed launcher (#20) changes in one place.
     $existingLaunch = ${function:Get-CaelestiaLaunchCommand}
-    function Get-CaelestiaLaunchCommand([string]$Prefix, [string]$Action) {
+    function Get-CaelestiaLaunchCommand([string]$Prefix, [string]$Action, [int]$MaxLength = 0) {
         return [pscustomobject]@{ Target = 'conhost.exe'; Arguments = ''; CommandLine = 'hidden:' + $Action + ':' + $Prefix }
     }
     try {
@@ -971,12 +978,14 @@ function Show-CaelestiaHandoffDialog([string]$Message) {
     Assert (Test-Path -LiteralPath $ui2KeyPath) 'The Apps & features entry was not created.'
     $launch = Read-Shortcut $ui2.Shortcut
     Assert ((Split-Path -Leaf $launch.TargetPath) -eq 'conhost.exe') 'The launch shortcut does not use the no-window console host.'
-    Assert ($launch.Arguments -match '^--headless ".+\\powershell\.exe" -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' +
-        [regex]::Escape((Join-Path $ui2Prefix 'Caelestia-Launcher.ps1')) + '" -Action start -Prefix "' + [regex]::Escape($ui2Prefix) + '"$') 'The launch shortcut does not start through the hidden launcher.'
+    Assert ($launch.Arguments -match ('^--headless ".+\\powershell\.exe" -NoProfile -ExecutionPolicy Bypass -File "' +
+        [regex]::Escape((Join-Path $ui2Prefix 'Caelestia-Launcher.ps1')) + '" -Action start$')) 'The launch shortcut does not start through the hidden launcher.'
+    Assert ($launch.Arguments -notmatch '-Prefix|-WindowStyle') 'The launch shortcut repeats the prefix or hides a redundant window style.'
     Assert ($launch.IconLocation -eq ((Join-Path $ui2Prefix "versions\$ui2B") + '\qs.exe,0')) 'The launch shortcut icon does not name the installed version.'
     $switchBack = Read-Shortcut $ui2.SwitchBackShortcut
     Assert ((Split-Path -Leaf $switchBack.TargetPath) -eq 'conhost.exe') 'The switch-back shortcut does not use the no-window console host.'
-    Assert ($switchBack.Arguments -match '-Action switch-back -Prefix "' + [regex]::Escape($ui2Prefix) + '"$') 'The switch-back shortcut does not use the switch-back action.'
+    Assert ($switchBack.Arguments -match '-Action switch-back$') 'The switch-back shortcut does not use the switch-back action.'
+    Assert ($switchBack.Arguments -notmatch '-Prefix|-WindowStyle') 'The switch-back shortcut repeats the prefix or hides a redundant window style.'
     $entry = Get-ItemProperty -LiteralPath $ui2KeyPath
     Assert ($entry.DisplayName -eq 'Caelestia for Windows') 'The Apps & features display name changed.'
     Assert ($entry.DisplayVersion -eq '2.0.0') 'The Apps & features entry has the wrong version.'
@@ -985,9 +994,10 @@ function Show-CaelestiaHandoffDialog([string]$Message) {
     Assert ($entry.NoModify -eq 1 -and $entry.NoRepair -eq 1) 'The Apps & features entry must disable modify and repair.'
     Assert ($entry.EstimatedSize -ge 1) 'The Apps & features entry has no size.'
     Assert ($entry.DisplayIcon -eq ((Join-Path $ui2Prefix "versions\$ui2B") + '\qs.exe,0')) 'The Apps & features icon does not name the installed version.'
-    Assert ($entry.UninstallString -match '^".*conhost\.exe" --headless ".+\\powershell\.exe" .*Caelestia-Launcher\.ps1" -Action uninstall -Prefix "' + [regex]::Escape($ui2Prefix) + '"$') 'Uninstall from Settings is not the conhost uninstall command.'
+    Assert ($entry.UninstallString -match '^".*conhost\.exe" --headless ".+\\powershell\.exe" .*Caelestia-Launcher\.ps1" -Action uninstall$') 'Uninstall from Settings is not the conhost uninstall command.'
     Assert ($entry.UninstallString -notmatch 'uninstall-quiet') 'The interactive uninstall command asks no purge question.'
-    Assert ($entry.QuietUninstallString -match '-Action uninstall-quiet -Prefix "' + [regex]::Escape($ui2Prefix) + '"$') 'The quiet uninstall command is wrong.'
+    Assert ($entry.QuietUninstallString -match '-Action uninstall-quiet$') 'The quiet uninstall command is wrong.'
+    Assert ($entry.UninstallString -notmatch '-Prefix|-WindowStyle') 'Uninstall from Settings repeats the prefix or hides a redundant window style.'
     $launcherText = [IO.File]::ReadAllText((Join-Path $ui2Prefix 'Caelestia-Launcher.ps1'))
     Assert ($launcherText -match 'Switch-CaelestiaToWindows\.ps1' -and $launcherText -match 'Uninstall-Caelestia\.ps1') 'The launcher does not map its actions to the installed scripts.'
     Assert ($launcherText -match 'AskPurge\s*=\s*\$true' -and $launcherText -match 'uninstall-quiet') 'The launcher does not use the purge prompt or the quiet action.'
@@ -1006,7 +1016,12 @@ function Show-CaelestiaHandoffDialog([string]$Message) {
     Complete-CaelestiaInstallIntegration $ui2Prefix (Join-Path $ui2Prefix "versions\$ui2B") -Autostart -DesktopShortcut
     Assert (Test-Path -LiteralPath $ui2.DesktopShortcut) 'The opt-in desktop shortcut was not created.'
     $run = Get-ItemProperty -LiteralPath (Get-CaelestiaAutostartKey) -Name $ui2.RunName -ErrorAction SilentlyContinue
-    Assert ($null -ne $run -and [string]$run.($ui2.RunName) -match '^".*conhost\.exe" --headless ".+\\powershell\.exe" .*Caelestia-Launcher\.ps1" -Action start -Prefix "' + [regex]::Escape($ui2Prefix) + '"$') 'Autostart does not use the no-window launcher.'
+    $runValue = if ($null -ne $run) { [string]$run.($ui2.RunName) } else { '' }
+    # A deep fixture prefix makes the Run value use the launcher's 8.3 name, so
+    # check the command shape and that the single builder produced this value.
+    Assert ($runValue -match '^".*conhost\.exe" --headless ".+\\powershell\.exe" .*\.ps1" -Action start$') 'Autostart does not use the no-window launcher.'
+    Assert ($runValue -eq (Get-CaelestiaAutostartValue $ui2Prefix)) 'Autostart is not the single launch command for this prefix.'
+    Assert ($runValue -notmatch '-Prefix|-WindowStyle') 'The autostart command repeats the prefix or hides a redundant window style.'
     Write-Output 'PASS integration desktop/autostart: the opt-in entries use the same hidden launch path.'
 
     $null = Switch-CaelestiaVersion $ui2Prefix $ui2A
@@ -1037,8 +1052,9 @@ function Show-CaelestiaHandoffDialog([string]$Message) {
     # script records its console state and that it ran; no real shell,
     # supervisor or desktop is involved.
     function Invoke-Launcher([string]$LauncherPath, [string]$PrefixArgument, [string]$ActionName, [string]$OutcomePath) {
-        $launcherArguments = '-NoProfile -ExecutionPolicy Bypass -File "' + $LauncherPath + '" -Action ' + $ActionName +
-            ' -Prefix "' + $PrefixArgument + '" -NoDialogs'
+        $launcherArguments = '-NoProfile -ExecutionPolicy Bypass -File "' + $LauncherPath + '" -Action ' + $ActionName
+        if ($PrefixArgument) { $launcherArguments += ' -Prefix "' + $PrefixArgument + '"' }
+        $launcherArguments += ' -NoDialogs'
         if ($OutcomePath) { $launcherArguments += ' -OutcomeFile "' + $OutcomePath + '"' }
         return (Start-Process -FilePath (Get-WindowsPowerShellPath) -ArgumentList $launcherArguments -Wait -PassThru).ExitCode
     }
@@ -1067,6 +1083,19 @@ $hasWindow = [CaelestiaLauncherProbe.Native]::GetConsoleWindow() -ne [IntPtr]::Z
     Assert ($marker -match ('^started:' + [regex]::Escape($launcherPrefix) + ':consoleWindow=')) 'The launcher passed the wrong prefix.'
     $directResult = Get-Content -LiteralPath $directOutcome -Raw | ConvertFrom-Json
     Assert ($directResult.exitCode -eq 0 -and $directResult.action -eq 'start') 'The direct launcher outcome is wrong.'
+
+    # The generated command no longer names the prefix, so the launcher must
+    # derive it from its own path. A copied shortcut that names a different
+    # directory is still refused in the checks below.
+    $derivedOutcome = Join-Path $root 'launcher-derived.json'
+    Remove-Item -LiteralPath $launcherMarker, $derivedOutcome -ErrorAction SilentlyContinue
+    $derivedExit = Invoke-Launcher $launcher '' 'start' $derivedOutcome
+    Assert ($derivedExit -eq 0) 'The launcher did not derive its own prefix.'
+    Assert (Test-Path -LiteralPath $launcherMarker) 'The launcher did not start the installed script without -Prefix.'
+    $marker = (Get-Content -LiteralPath $launcherMarker -Raw).Trim()
+    Assert ($marker -match ('^started:' + [regex]::Escape($launcherPrefix) + ':consoleWindow=')) 'The launcher derived the wrong prefix.'
+    $derivedResult = Get-Content -LiteralPath $derivedOutcome -Raw | ConvertFrom-Json
+    Assert ($derivedResult.exitCode -eq 0 -and $derivedResult.prefix -eq $launcherPrefix) 'The launcher outcome did not report its derived prefix.'
 
     # The installed Start-menu target: conhost --headless, then the same launcher.
     # conhost returns 0 even when the child fails (microsoft/terminal#17178), so
@@ -1114,6 +1143,67 @@ $hasWindow = [CaelestiaLauncherProbe.Native]::GetConsoleWindow() -ne [IntPtr]::Z
     Assert ($failureExit -eq 1) 'The launcher did not propagate a failed action.'
     Assert ((Get-Content -LiteralPath $failureOutcome -Raw | ConvertFrom-Json).exitCode -eq 1) 'The failed-action outcome is wrong.'
     Write-Output 'PASS launcher: conhost --headless starts the installed script with no console window, and exit codes and refusals are correct.'
+
+    # Windows limits a Run value to 260 characters. The generated command no
+    # longer repeats the prefix, so a default installation stays under the limit
+    # even with the longest supported user name (20 characters). A longer custom
+    # prefix uses the launcher's 8.3 name, and a command that still does not fit
+    # is refused before anything is registered.
+    $defaultPrefix = 'C:\Users\' + ('a' * 20) + '\AppData\Local\Programs\caelestia-windows'
+    $defaultLaunch = Get-CaelestiaLaunchCommand $defaultPrefix 'start'
+    Assert ($defaultLaunch.CommandLine.Length -le 260) ('The default-prefix launch command is {0} characters; a Run value allows 260.' -f $defaultLaunch.CommandLine.Length)
+    Assert ((Get-CaelestiaAutostartValue $defaultPrefix).Length -le 260) 'The default-prefix Run value exceeds 260 characters.'
+    Assert ($defaultLaunch.CommandLine -match '^".*conhost\.exe" --headless ".*powershell\.exe" -NoProfile -ExecutionPolicy Bypass -File "') 'The launch command does not start through the fully qualified conhost and PowerShell paths.'
+    Assert ($defaultLaunch.Arguments -notmatch '-Prefix|-WindowStyle') 'The launch command repeats the prefix or hides a redundant window style.'
+    Write-Output 'PASS launch length: the default prefix stays inside the 260-character Run-value limit.'
+
+    $longPrefix = Join-Path $root ('long-prefix-' + ('x' * 120))
+    [IO.Directory]::CreateDirectory($longPrefix) | Out-Null
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Caelestia-Launcher.ps1') -Destination $longPrefix
+    '{"product":"caelestia-windows"}' | Set-Content -LiteralPath (Join-Path $longPrefix 'install.json') -Encoding UTF8
+    $longRunName = (Get-CaelestiaIntegration $longPrefix).RunName
+    try {
+        $longResult = Set-CaelestiaAutostart -Prefix $longPrefix -Enabled:$true
+        $longEntry = Get-ItemProperty -LiteralPath (Get-CaelestiaAutostartKey) -Name $longRunName -ErrorAction SilentlyContinue
+        if ($longResult.ok) {
+            Assert ($null -ne $longEntry) 'Autostart reported success for a long prefix without writing its Run value.'
+            $longValue = [string]$longEntry.$longRunName
+            Assert ($longValue.Length -le 260) 'A long-prefix Run value exceeds the 260-character limit.'
+            $shortLauncher = Get-CaelestiaShortPath (Join-Path $longPrefix 'Caelestia-Launcher.ps1')
+            Assert ($shortLauncher -and $longValue.Contains($shortLauncher)) 'A long-prefix Run value did not use the launcher short path.'
+        } else {
+            Assert ($longResult.error -match '260') 'A refused long-prefix autostart did not explain the Run-value length limit.'
+            Assert ($null -eq $longEntry) 'A refused long-prefix autostart still wrote its Run value.'
+        }
+    } finally {
+        Remove-ItemProperty -LiteralPath (Get-CaelestiaAutostartKey) -Name $longRunName -ErrorAction SilentlyContinue
+    }
+    Write-Output 'PASS launch length: a long custom prefix shortens the launcher or refuses without writing.'
+
+    $tooLongPrefix = Join-Path $root 'too-long-command'
+    [IO.Directory]::CreateDirectory($tooLongPrefix) | Out-Null
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Caelestia-Launcher.ps1') -Destination $tooLongPrefix
+    '{"product":"caelestia-windows"}' | Set-Content -LiteralPath (Join-Path $tooLongPrefix 'install.json') -Encoding UTF8
+    $tooLongRunName = (Get-CaelestiaIntegration $tooLongPrefix).RunName
+    $savedSystemRoot = $env:SystemRoot
+    try {
+        New-CaelestiaRegistryKey (Get-CaelestiaAutostartKey)
+        New-ItemProperty -Path (Get-CaelestiaAutostartKey) -Name $tooLongRunName -PropertyType String `
+            -Value 'existing owned value' -Force | Out-Null
+        # Force a command that no launcher shortening can fit, so the refusal
+        # path is exercised without a filesystem deep enough to defeat the 8.3
+        # name.
+        $env:SystemRoot = Join-Path $root ('system-root-' + ('y' * 120))
+        $refused = Set-CaelestiaAutostart -Prefix $tooLongPrefix -Enabled:$true
+        Assert (-not $refused.ok) 'A launch command longer than a Run value was accepted.'
+        Assert ($refused.error -match '260') 'A refused launch command did not explain the 260-character limit.'
+        $keptEntry = Get-ItemProperty -LiteralPath (Get-CaelestiaAutostartKey) -Name $tooLongRunName -ErrorAction SilentlyContinue
+        Assert ($null -ne $keptEntry -and [string]$keptEntry.$tooLongRunName -eq 'existing owned value') 'A refused launch command changed the existing Run value.'
+    } finally {
+        $env:SystemRoot = $savedSystemRoot
+        Remove-ItemProperty -LiteralPath (Get-CaelestiaAutostartKey) -Name $tooLongRunName -ErrorAction SilentlyContinue
+    }
+    Write-Output 'PASS launch length: a command that cannot fit is refused and leaves the existing Run value untouched.'
 
     # Behavioural switch-back delegation: the wrapper only collects the
     # autostart choice and calls the stable-root Quit entry. It must not keep
