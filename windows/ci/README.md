@@ -166,6 +166,13 @@ around that with `ignore_options` or sloppiness.
 
 The opt-in replacement is sccache 0.15.0, provisioned by
 `Prepare-Sccache.ps1` with the same SHA-256-pinned archive as the backend.
+It is only an accelerator: if the download fails (for example GitHub release
+5xx errors), the script deletes the partial archive, writes a `::warning::`,
+sets no `CI_COMPILER_LAUNCHER` and exits 0, and the jobs build without a compiler
+launcher. The workflow then passes neither `-CompilerLauncher` nor
+`-RustCacheDirectory` to the production integration, skips the statistics steps
+and saves no cache. A checksum mismatch, extraction failure or version mismatch
+still fails the step.
 Backend hosted windows-2022 measurements reduced fixture compilation from
 366 seconds cold to 104 seconds warm: 290/291 hits, zero non-cacheable
 compilations, zero errors, about 8 MB of objects. Unlike ccache, sccache handles

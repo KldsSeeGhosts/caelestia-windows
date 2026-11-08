@@ -546,6 +546,54 @@ class PairTests(unittest.TestCase):
         self.assertTrue(any("-JUnit" in args for args in compile_calls))
 
     @unittest.skipUnless(os.name == "nt", "Windows PowerShell boundary")
+    def test_integration_launcher_arguments_follow_launcher_variable(self):
+        workflow = (ROOT / ".github/workflows/windows-build.yml").read_text()
+        results = self.root / "launcher-results"
+        p.write(results / "pair-local.json", {"backendRoot": str(self.backend)})
+        p.write(results / "pair-request.json", {"mode": "pinned", "backend": self.backend_sha})
+        found = re.search(
+            r"(?m)^      - name: Exact-pair production integration\r?\n"
+            r"        run: \|\r?\n((?:          [^\r\n]*\r?\n|\r?\n)+)", workflow)
+        self.assertIsNotNone(found)
+        harness = self.root / "launcher.ps1"
+        harness.write_text(
+            "$ErrorActionPreference = 'Stop'\n"
+            "function Save-Call([string]$Executable, [object[]]$Arguments) {\n"
+            " [ordered]@{ executable = $Executable; arguments = $Arguments } |"
+            " ConvertTo-Json -Compress | Add-Content -LiteralPath $env:WORKFLOW_CALLS\n"
+            " $global:LASTEXITCODE = 0\n"
+            "}\n"
+            "function python { Save-Call 'python' $args }\n" + found[1])
+        launcher = str(self.root / "sccache.exe")
+        rust_cache = str(self.root / "rust-cache")
+        for case, launcher_value in (("set", launcher), ("unset", None), ("empty", "")):
+            calls = self.root / f"launcher-{case}.jsonl"
+            env = dict(os.environ, BUILD_JOBS="5", PAIR_RESULTS=str(results),
+                       GITHUB_WORKSPACE=str(ROOT), TRUSTED_ROOT=str(self.root / "trusted"),
+                       TOOL_ROOT=str(self.root / "tools"), BUILD_ROOT=str(self.root / "build"),
+                       RUST_CACHE_DIR=rust_cache, WORKFLOW_CALLS=str(calls))
+            env.pop("CI_COMPILER_LAUNCHER", None)
+            if launcher_value is not None:
+                env["CI_COMPILER_LAUNCHER"] = launcher_value
+            result = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive",
+                                     "-File", str(harness)], capture_output=True, timeout=30, env=env)
+            self.assertEqual(0, result.returncode, (result.stdout + result.stderr).decode(errors="replace"))
+            rows = [json.loads(line) for line in calls.read_text(encoding="utf-8-sig").splitlines()]
+            self.assertEqual(1, len(rows), case)
+            arguments = rows[0]["arguments"]
+            jobs = arguments.index("-Jobs")
+            if launcher_value:
+                # Exactly the command line the integration script received before this change.
+                self.assertEqual(["-Jobs", "5", "-CompilerLauncher", launcher,
+                                  "-RustCacheDirectory", rust_cache, "-BuildRoot"],
+                                 arguments[jobs:jobs + 7], case)
+                self.assertEqual(1, arguments.count("-CompilerLauncher"))
+            else:
+                self.assertNotIn("-CompilerLauncher", arguments, case)
+                self.assertNotIn("-RustCacheDirectory", arguments, case)
+                self.assertEqual(["-Jobs", "5", "-BuildRoot"], arguments[jobs:jobs + 3], case)
+
+    @unittest.skipUnless(os.name == "nt", "Windows PowerShell boundary")
     def test_production_receives_selected_jobs_and_rejects_out_of_range(self):
         scripts = self.synthetic_scripts("exit 0\n")
         arguments = self.root / "production-arguments.txt"
@@ -994,11 +1042,22 @@ class PairTests(unittest.TestCase):
             self.assertNotIn("sources.lock", prefix)
             self.assertLess(job.index("Complete-Sccache.ps1"), job.index("name: Save " + kind))
         self.assertIn("QS_FIXTURE_COMPILER_LAUNCHER:", fixtures)
-        self.assertIn("-CompilerLauncher $env:CI_COMPILER_LAUNCHER", build)
+        # The launcher and the Rust cache directory reach the integration step
+        # together, and only when CI_COMPILER_LAUNCHER is set. The behavior is
+        # exercised in test_integration_launcher_arguments_follow_launcher_variable.
+        self.assertRegex(build, re.compile(
+            r"\$launcherArguments = @\(\)\n"
+            r"\s+if \(\$env:CI_COMPILER_LAUNCHER\) \{\n"
+            r"\s+\$launcherArguments = @\('-CompilerLauncher', \$env:CI_COMPILER_LAUNCHER,\n"
+            r"\s+'-RustCacheDirectory', \$env:RUST_CACHE_DIR\)\n"
+            r"\s+\}\n"))
+        self.assertEqual(1, build.count("@launcherArguments `"))
+        self.assertRegex(build, r"-Jobs \$env:BUILD_JOBS `\n\s+@launcherArguments `\n\s+-BuildRoot ")
+        self.assertNotIn("-CompilerLauncher $env:CI_COMPILER_LAUNCHER `", build)
         prototype = (ROOT / "windows/scripts/Build-Prototype.ps1").read_text()
         for language in ("C", "CXX"):
             self.assertIn(f'"-DCMAKE_{language}_COMPILER_LAUNCHER:FILEPATH=$CompilerLauncher"', prototype)
-        self.assertIn("-RustCacheDirectory $env:RUST_CACHE_DIR", build)
+        self.assertIn("RUST_CACHE_DIR: C:\\sccache-rust-production", build)
         self.assertIn("path: C:\\sccache-rust-production", build)
         self.assertIn("windows-production-rust-v1-sccache-0.15.0-", build)
         self.assertIn("SCCACHE_SERVER_PORT: '4227'", build)
