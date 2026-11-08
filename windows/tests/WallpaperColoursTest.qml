@@ -29,6 +29,12 @@ QtObject {
     function run(): void {
         try {
             Wallpapers.stopPreview();
+            // Simulate a profile that already chose its own wallpaper; the
+            // fresh default is covered by WallpaperDefaultsTest.
+            Wallpapers.sourceInitialized = true;
+            Wallpapers.sourceChosen = true;
+            Wallpapers.fileCurrent = Native.Wallpaper.currentWallpaper().replace(/\\/g, "/");
+            Wallpapers.refreshScreenFiles();
             WallpaperEngine.snapshotReady = false;
             WallpaperEngine.running = true;
             persist("dynamic", "C:/we/preview.jpg");

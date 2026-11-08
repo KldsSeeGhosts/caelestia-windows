@@ -135,8 +135,9 @@ try {
             @('Test-AccessibilityLauncher', 'Test-AccessibilityNotifications', 'Test-DragPreview',
               'Test-HotplugTeardown', 'Test-IdleInhibitStatus', 'Test-LauncherHoverClose',
               'Test-PerMonitorFullscreen', 'Test-PinnedPopoutFocus', 'Test-QuotaPopovers',
-              'Test-QuotaProviderKeyboard', 'Test-WallpaperColours', 'Test-WallpaperHandback',
-              'Test-WallpaperPreview', 'Test-WindowsBackground', 'Test-UpdateManager', 'Test-UpdatesPage', 'Test-FileUrls')
+              'Test-QuotaProviderKeyboard', 'Test-WallpaperColours', 'Test-WallpaperDefaults',
+              'Test-WallpaperHandback', 'Test-WallpaperPreview', 'Test-WindowsBackground',
+              'Test-UpdateManager', 'Test-UpdatesPage', 'Test-FileUrls')
         }
         if (-not $scripts.Count) { throw 'No QML regressions were discovered.' }
         $fixtureArguments = @('-QtPrefix', $QtPrefix)

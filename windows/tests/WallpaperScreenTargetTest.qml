@@ -15,6 +15,9 @@ QtObject {
         try {
             const primary = {name: "primary"};
             const secondary = {name: "secondary"};
+            // This fixture exercises targeting, so opt in as a user would.
+            // The fresh default is covered by WallpaperDefaultsTest.
+            WallpaperEngine.options = {enabled: true};
             WallpaperEngine.snapshotReady = true;
             WallpaperEngine.running = false;
             Native.FsUtils.existingFiles = [Wallpapers.fallback, "C:/walls/primary.jpg",

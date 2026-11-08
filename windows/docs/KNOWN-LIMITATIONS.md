@@ -13,9 +13,11 @@ release and Actions runs.
   have been exercised, but complete Narrator, high-contrast, reduced-motion and
   visible-focus certification is not established. Session-menu focus return on
   every same-monitor configuration is not certified.
-- **Wallpaper Engine:** selection and restoration are supported through the
-  production bridge. Rare desktop flashes and unsolicited brightness overlays
-  remain unqualified; seamless presented-frame handoff is not guaranteed.
+- **Wallpaper Engine:** the integration is opt-in and off for a fresh profile;
+  Nexus > Services enables it once Wallpaper Engine is installed and running.
+  Selection and restoration are supported through the production bridge. Rare
+  desktop flashes and unsolicited brightness overlays remain unqualified;
+  seamless presented-frame handoff is not guaranteed.
 - **Capture:** shipped screenshots, recordings and previews are 8-bit SDR sRGB.
   They do not preserve an HDR source as an HDR output. See
   [capture color policy](CAPTURE-COLOR.md).

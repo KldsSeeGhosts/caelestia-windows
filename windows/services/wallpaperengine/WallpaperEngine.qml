@@ -11,8 +11,15 @@ Singleton {
 
     readonly property string python: Quickshell.env("CAELESTIA_WE_PYTHON") || ""
     readonly property string helper: Quickshell.shellPath("services/wallpaperengine_bridge.py")
+    readonly property string settingsPath: Quickshell.env("CAELESTIA_CONFIG_DIR") + "/windows.json"
     property var options: ({})
-    readonly property bool enabled: options.enabled !== false
+    property var configDocument: ({})
+    property bool configLoaded: false
+    // An absent key is an install that has not opted in; a saved "auto" is a
+    // value an older build wrote and keeps automatic activation. The old
+    // default therefore stays distinguishable from no value at all. Nothing
+    // rewrites a saved choice on load.
+    readonly property bool enabled: options.enabled === true || options.enabled === "auto"
     readonly property bool controlsEnabled: enabled && running && detected
         && Quickshell.env("CAELESTIA_COMBINED_LIVE") === "1"
         && Quickshell.env("CAELESTIA_SHELL_SMOKE") !== "1"
@@ -240,6 +247,37 @@ Singleton {
         lastError = "";
     }
 
+    // Nexus writes the opt-in here. Re-read before merging so keys this
+    // facade does not own (taskbar, notifications, picker, monitor) survive.
+    // A malformed document is never replaced by a partial one.
+    function setEnabled(on: bool): void {
+        configFile.reload();
+        const content = String(configFile.text() ?? "").replace(/^\uFEFF/, "").trim();
+        let document = {};
+        if (content.length > 0) {
+            try {
+                const parsed = JSON.parse(content);
+                if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+                    throw new Error("the document is not an object");
+                document = parsed;
+            } catch (error) {
+                root.lastError = "Wallpaper Engine settings are not valid JSON: " + String(error);
+                return;
+            }
+        }
+        const next = JSON.parse(JSON.stringify(document ?? {}));
+        if (!next.windows || typeof next.windows !== "object" || Array.isArray(next.windows))
+            next.windows = {};
+        const current = next.windows.wallpaperEngine;
+        next.windows.wallpaperEngine = current && typeof current === "object" && !Array.isArray(current)
+            ? Object.assign({}, current, {enabled: on === true}) : {enabled: on === true};
+        root.configDocument = next;
+        root.options = next.windows.wallpaperEngine;
+        root.configLoaded = true;
+        root.lastError = "";
+        configFile.setText(JSON.stringify(next, null, 2) + "\n");
+    }
+
     function open(path: string, screen): bool {
         if (!controlsEnabled || action.running || !items.some(item => item.path === path))
             return false;
@@ -272,13 +310,36 @@ Singleton {
     }
 
     FileView {
-        path: Quickshell.env("CAELESTIA_CONFIG_DIR") + "/windows.json"
+        id: configFile
+        path: root.settingsPath
         watchChanges: true
+        blockLoading: true
         printErrors: false
         onFileChanged: reload()
         onLoaded: {
-            try { root.options = JSON.parse(text()).windows?.wallpaperEngine ?? {}; }
-            catch (error) { root.lastError = String(error); }
+            try {
+                const parsed = JSON.parse(text().replace(/^\uFEFF/, ""));
+                if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+                    throw new Error("windows.json is not an object");
+                root.configDocument = parsed;
+                root.options = parsed.windows?.wallpaperEngine ?? {};
+                root.configLoaded = true;
+            } catch (error) {
+                root.options = {};
+                root.configLoaded = true;
+                root.lastError = String(error);
+            }
+        }
+        onLoadFailed: {
+            // The sidecar is seeded with the profile. A missing or unreadable
+            // file is a fresh install, not a reason to enable the integration.
+            root.configDocument = {};
+            root.options = {};
+            root.configLoaded = true;
+        }
+        onSaved: root.lastError = ""
+        onSaveFailed: error => {
+            root.lastError = "Could not save Wallpaper Engine settings: " + String(error);
         }
     }
     FileView {

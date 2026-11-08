@@ -42,6 +42,29 @@ PageBase {
     readonly property bool agentUsageOn: GlobalConfig.windows?.quota?.enabled ?? true
     readonly property bool cpaHubOn: GlobalConfig.windows?.quota?.cpaHub ?? false
 
+    readonly property string engineStatus: {
+        if (!WallpaperEngine.enabled)
+            return Tr.tr("Off");
+        if (!WallpaperEngine.python)
+            return Tr.tr("Unavailable");
+        if (!WallpaperEngine.detected)
+            return Tr.tr("Not installed");
+        if (!WallpaperEngine.running)
+            return Tr.tr("Installed, not running");
+        return Tr.tr("Running");
+    }
+    readonly property string engineUnavailableHint: {
+        if (!WallpaperEngine.enabled)
+            return Tr.tr("Caelestia shows its own wallpaper.");
+        if (!WallpaperEngine.python)
+            return Tr.tr("The settings bridge is unavailable; Caelestia keeps its own wallpaper.");
+        if (!WallpaperEngine.detected)
+            return Tr.tr("Install Wallpaper Engine to use it; Caelestia keeps its own wallpaper.");
+        if (!WallpaperEngine.running)
+            return Tr.tr("Start Wallpaper Engine to use it; Caelestia keeps its own wallpaper.");
+        return Tr.tr("Wallpaper Engine is ready.");
+    }
+
     // GlobalConfig.windows is one QVariantMap, not a sub-object: copy it and
     // write it back whole, as the window management page does.
     function setQuota(key: string, on: bool): void {
@@ -272,6 +295,27 @@ PageBase {
             menuItems: root.gpuItems
             active: root.gpuItems[GlobalConfig.services.gpuType]
             onSelected: item => GlobalConfig.services.gpuType = root.gpuItems.indexOf(item)
+        }
+
+        // Wallpaper Engine is an optional third-party integration, not part of
+        // a fresh install. It is off until this toggle writes it; a saved value
+        // from an older profile is left alone until the user changes it here.
+        SectionHeader {
+            text: Tr.tr("Wallpaper Engine")
+        }
+
+        ToggleRow {
+            first: true
+            text: Tr.tr("Wallpaper Engine wallpapers")
+            subtext: Tr.tr("Needs Wallpaper Engine installed and running. Otherwise Caelestia keeps its own wallpaper")
+            checked: WallpaperEngine.enabled
+            onToggled: WallpaperEngine.setEnabled(checked)
+        }
+
+        InfoRow {
+            label: Tr.tr("Status")
+            subtext: root.engineUnavailableHint
+            value: root.engineStatus
         }
     }
 }

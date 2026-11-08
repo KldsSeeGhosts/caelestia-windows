@@ -15,7 +15,23 @@ Singleton {
 
     readonly property bool controlsEnabled: Quickshell.env("CAELESTIA_COMBINED_LIVE") === "1" && Quickshell.env("CAELESTIA_SHELL_SMOKE") !== "1"
     readonly property string fallback: Quickshell.shellPath("assets/wallpaper.webp")
-    property string fileCurrent: Native.Wallpaper.currentWallpaper().replace(/\\/g, "/") || fallback
+    // Which own wallpaper this profile shows is a Caelestia choice, not
+    // whatever Windows happened to have before install. The small record keeps
+    // that decision across restarts without copying the image: "user" adopts
+    // the Windows wallpaper (where picks are written), "default" keeps the
+    // bundled Caelestia asset. A physical file cannot be distinguished from a
+    // stock Windows wallpaper, so the record is the opt-in boundary, not a
+    // filter on the path.
+    readonly property string sourceRecordPath: `${Paths.state}/wallpaper/desktop.json`
+    property bool sourceRecordLoaded: false
+    property string sourceRecordState: ""
+    property bool sourceInitialized: false
+    property bool sourceChosen: false
+    property string persistedSourceRecord: ""
+    // Start on the bundled asset so the first frame is Caelestia even before
+    // the record and the user's Windows wallpaper are read. Resolution below
+    // replaces it only for a profile that already chose a wallpaper.
+    property string fileCurrent: fallback
     // the last local wallpaper this desktop actually showed before an
     // engine took it over. IDesktopWallpaper can report an empty, missing or
     // system-black path at handback, and an Image with that source paints
@@ -96,27 +112,108 @@ Singleton {
     Component.onCompleted: {
         reload();
         refreshScreenFiles();
-        if (!externalWallpaperActive)
-            root.noteGoodFile(root.fileCurrent);
     }
     onCurrentImageChanged: applyPalette(false)
     // Both files have been read (or found missing) once: the startup check.
-    onSchemeStateReadyChanged: applyPalette(false)
+    // The record decides between a saved wallpaper and the bundled default;
+    // the palette must not run from the provisional default first.
+    onSchemeStateReadyChanged: {
+        root.resolveInitialSource();
+        root.applyPalette(false);
+    }
     // Only the own desktop contributes a known-good file. While an engine
     // claims the desktop its preview is visible, and the system wallpaper it
     // leaves behind is not a source this shell chose.
     onFileCurrentChanged: {
-        if (!externalWallpaperActive)
-            root.noteGoodFile(root.fileCurrent);
+        if (externalWallpaperActive)
+            return;
+        root.noteGoodFile(root.fileCurrent);
+        if (root.sourceInitialized && root.sourceChosen)
+            root.persistSourceChoice();
     }
     onExternalWallpaperActiveChanged: {
         // A handback releases the claim and adopts its source in the
         // WallpaperEngine connection below; noting fileCurrent first would
         // remember the path the engine just left.
-        if (!externalWallpaperActive && !WallpaperEngine.desktopHandedBack) {
-            root.noteGoodFile(root.fileCurrent);
-            root.refreshScreenFiles();
+        if (externalWallpaperActive || WallpaperEngine.desktopHandedBack)
+            return;
+        if (root.sourceInitialized && !root.sourceChosen) {
+            // A fresh profile made no Caelestia choice. An engine that stopped
+            // without handing back leaves its system wallpaper in fileCurrent;
+            // that is not a choice and must not replace the bundled desktop.
+            if (!Paths.samePath(root.fileCurrent, root.fallback))
+                root.fileCurrent = root.fallback;
+            root.screenFiles = {};
         }
+        root.noteGoodFile(root.fileCurrent);
+        root.refreshScreenFiles();
+    }
+
+    function applySourceRecord(content): void {
+        root.sourceRecordLoaded = true;
+        const raw = String(content ?? "").trim();
+        let parsed = null;
+        try { parsed = JSON.parse(raw); } catch (_) {}
+        const source = parsed && typeof parsed === "object" ? parsed.source : "";
+        if (source === "user") {
+            root.sourceRecordState = "user";
+            root.sourceChosen = true;
+        } else if (source === "default" || raw.length > 0) {
+            // A damaged record is still this profile's decision, so it falls
+            // back to the bundled default instead of migrating a stock
+            // Windows wallpaper back in.
+            root.sourceRecordState = "default";
+            root.sourceChosen = false;
+        } else {
+            // No record from this version. A profile that already produced a
+            // palette has a saved wallpaper in path.txt; a fresh profile has
+            // never generated one.
+            root.sourceRecordState = "";
+            root.sourceChosen = false;
+        }
+        const wasInitialized = root.sourceInitialized;
+        root.resolveInitialSource();
+        // The scheme-state change already generated when it settled first;
+        // only a record that loaded after it needs to start the palette here.
+        if (!wasInitialized && root.sourceInitialized)
+            root.applyPalette(false);
+    }
+    // Decide the own wallpaper once per process, after both the record and the
+    // existing palette source have been read. A record wins. Without one, an
+    // existing palette source means this is an upgrade and keeps the Windows
+    // wallpaper the shell already showed; otherwise the bundled asset is the
+    // fresh default. The record uses "user" or "default", never a path: picks
+    // are written to Windows, and a path could not distinguish a Caelestia
+    // choice from the stock wallpaper that happened to be there.
+    function resolveInitialSource(): void {
+        if (root.sourceInitialized || !root.sourceRecordLoaded || !root.schemeSourceLoaded)
+            return;
+        if (root.sourceRecordState === "") {
+            root.sourceChosen = String(root.schemeSource ?? "").trim().length > 0;
+        }
+        if (root.sourceChosen) {
+            const current = Native.Wallpaper.currentWallpaper().replace(/\\/g, "/");
+            if (root.usableFile(current))
+                root.fileCurrent = current;
+        } else {
+            root.fileCurrent = root.fallback;
+            root.screenFiles = {};
+        }
+        root.sourceInitialized = true;
+        root.persistSourceChoice();
+        if (root.sourceChosen && !root.externalWallpaperActive)
+            root.noteGoodFile(root.fileCurrent);
+        root.refreshScreenFiles();
+    }
+    function persistSourceChoice(): void {
+        if (!root.sourceInitialized)
+            return;
+        const text = JSON.stringify({version: 1, source: root.sourceChosen ? "user" : "default"}) + "\n";
+        if (root.persistedSourceRecord === text)
+            return;
+        root.persistedSourceRecord = text;
+        root.sourceRecordState = root.sourceChosen ? "user" : "default";
+        sourceRecord.setText(text);
     }
 
     // A wallpaper source is usable only when it names a local file that still
@@ -141,8 +238,11 @@ Singleton {
     // allowed while the desktop is handed back.
     function adoptPickedFile(path): void {
         const local = String(path).replace(/^file:\/\/\//, "");
+        root.sourceChosen = true;
         fileCurrent = local;
         root.noteGoodFile(local);
+        if (root.sourceInitialized)
+            root.persistSourceChoice();
     }
     // A genuine handback must show a loadable Caelestia image, never the WE
     // preview and never the path the engine left behind. Reuse the last file
@@ -170,8 +270,14 @@ Singleton {
         return {name: screen.name, targetId: id};
     }
     function refreshScreenFiles(): void {
-        if (externalWallpaperActive || WallpaperEngine.desktopHandedBack)
+        if (!sourceChosen || externalWallpaperActive || WallpaperEngine.desktopHandedBack) {
+            // A fresh profile keeps the bundled asset on every monitor too.
+            // Reading the per-monitor Windows wallpapers here would put the
+            // stock desktop back on each screen.
+            if (Object.keys(screenFiles).length > 0)
+                root.screenFiles = {};
             return;
+        }
         const next = {};
         for (const screen of Quickshell.screens) {
             const id = Native.Wallpaper.screenTargetId(screen.name);
@@ -197,7 +303,7 @@ Singleton {
         function onScreensChanged(): void { root.refreshScreenFiles(); }
     }
     function applyPalette(force): void {
-        if (!SchemeGenerator.available || schemeName !== "dynamic" || currentImage === "")
+        if (!sourceInitialized || !SchemeGenerator.available || schemeName !== "dynamic" || currentImage === "")
             return;
         // Wallpaper Engine discovery can briefly report the Windows wallpaper
         // at startup; wait for it and the persisted state before comparing.
@@ -252,6 +358,22 @@ Singleton {
         onLoaded: root.setSchemeSource(text())
         onFileChanged: reload()
         onLoadFailed: root.setSchemeSource("")
+    }
+
+    // Owned by the shell and never watched: a pick or a resolved default is
+    // the only writer, and reloading our own write has no new decision to
+    // make. Atomic writes are used so a crash cannot leave a partial record.
+    FileView {
+        id: sourceRecord
+
+        path: root.sourceRecordPath
+        blockLoading: true
+        atomicWrites: true
+        watchChanges: false
+        printErrors: false
+        onLoaded: root.applySourceRecord(text())
+        onLoadFailed: root.applySourceRecord("")
+        onSaveFailed: error => console.warn("Caelestia wallpaper source record:", String(error))
     }
 
     Connections {
@@ -375,6 +497,10 @@ Singleton {
         const ok = target ? Native.Wallpaper.setWallpaperForScreen(local, target.name)
             : Native.Wallpaper.setWallpaper(local, false);
         if (ok) {
+            // An explicit pick opts this profile into its own wallpaper, for
+            // this display or globally. The record makes it survive restarts
+            // even before the native notification arrives.
+            root.sourceChosen = true;
             root.markOpened(local);
             if (target)
                 screenFiles = Object.assign({}, screenFiles, {[target.targetId]: local});
@@ -382,6 +508,7 @@ Singleton {
                 screenFiles = {};
                 root.adoptPickedFile(local);
             }
+            root.persistSourceChoice();
             stopPreview();
             // Native change notifications refresh the global palette source;
             // a per-display pick must not replace another display's image.
@@ -416,8 +543,16 @@ Singleton {
             // claim is released, promote it to lastGoodFile, so every later
             // handback would return to it. Explicit picks apply through
             // adoptPickedFile and are kept, including intentional black ones.
-            if (WallpaperEngine.desktopHandedBack)
+            if (WallpaperEngine.desktopHandedBack || !root.sourceInitialized)
                 return;
+            // A change while the own desktop is visible is a user choice even
+            // when this profile started on the bundled default. During an
+            // engine era it is bookkeeping: fileCurrent may follow it, but it
+            // never becomes the remembered own source.
+            if (!root.externalWallpaperActive && !root.sourceChosen) {
+                root.sourceChosen = true;
+                root.persistSourceChoice();
+            }
             const next = Native.Wallpaper.currentWallpaper().replace(/\\/g, "/");
             root.fileCurrent = next || root.fallback;
             root.refreshScreenFiles();

@@ -22,6 +22,10 @@ QtObject {
 
     function run(): void {
         try {
+            // A profile that already chose its own wallpaper; the fresh
+            // default source is covered by WallpaperDefaultsTest.
+            Wallpapers.sourceInitialized = true;
+            Wallpapers.sourceChosen = true;
             WallpaperEngine.running = true;
             WallpaperEngine.monitors = {Monitor0: {path: "C:/we/project.json", preview: "C:/we/preview.jpg"}};
             // 1. Fresh profile, engine already running and acknowledged. The

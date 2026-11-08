@@ -5,6 +5,13 @@ Python bridge discovers Steam via HKCU `Software\Valve\Steam\SteamPath`, reads
 `steamapps/libraryfolders.vdf` and `appmanifest_431960.acf`, and checks the running
 process list. No Steam or workshop installation path is hardcoded.
 
+When the integration is disabled, or enabled but Wallpaper Engine is not
+installed or not running, the shell keeps its own wallpaper visible. A fresh
+profile starts on `assets/wallpaper.webp` and records that default in
+`state/caelestia/wallpaper/desktop.json`; an upgrade with an existing palette
+source keeps the Windows wallpaper it already showed. See the configuration
+reference for the record and the missing-key rule.
+
 The active config is
 `<user>.general.wallpaperconfig.selectedwallpapers.MonitorN.file`. Saved/recent
 layouts are deliberately excluded. Each selected media/package path resolves to
@@ -30,7 +37,7 @@ Windows-only settings live in the isolated `config/windows.json` sidecar:
 {
   "windows": {
     "wallpaperEngine": {
-      "enabled": "auto",
+      "enabled": false,
       "picker": "engine",
       "monitor": "Monitor0"
     }
@@ -38,13 +45,20 @@ Windows-only settings live in the isolated `config/windows.json` sidecar:
 }
 ```
 
-`enabled` accepts `false`, `true` or `"auto"` (default). Auto activates when the
-installation and process are detected. `picker` accepts `"engine"`, `"files"` or
-`"both"`; its default is engine while WE is running, files otherwise. `monitor`
-defaults to `Monitor0`, WE's primary monitor; set e.g. `Monitor1` to match a bar on
-another monitor. An unknown monitor yields no palette rather than silently
-sampling another display. `services.smartScheme` still controls smart
-light/dark/variant selection.
+`enabled` defaults to `false` when the key is absent. A fresh install therefore
+shows the bundled Caelestia wallpaper and does not depend on Wallpaper Engine;
+the Nexus Services page opt-in writes `true`. A saved `true` keeps the
+integration on. The older `"auto"` value is still accepted for existing
+profiles and activates automatically when the installation and process are
+detected. The old default is distinguishable from absence: `"auto"` is a
+present string and stays on, while a missing key stays off. Loading never
+rewrites a saved value; the toggle writes `true` or `false` only when the user
+changes it. `picker` accepts `"engine"`, `"files"` or `"both"`; its default is
+engine while WE is running, files otherwise. `monitor` defaults to `Monitor0`,
+WE's primary monitor; set e.g. `Monitor1` to match a bar on another monitor. An
+unknown monitor yields no palette rather than silently sampling another
+display. `services.smartScheme` still controls smart light/dark/variant
+selection.
 
 Put these settings in the profile's `config/windows.json` sidecar. Runtime
 edits to that file are watched. The pinned C++

@@ -305,14 +305,34 @@ Controls the top dashboard drawer and platform service intervals/units.
 - `lock`: Ignored on Windows; locking always invokes the native Windows lock screen (`Win+L`).
 
 Wallpaper Engine settings live in `config/windows.json` under
-`windows.wallpaperEngine`: `enabled` defaults to `"auto"`, `picker` accepts
-`"engine"`, `"files"` or `"both"`, and `monitor` defaults to `"Monitor0"`.
+`windows.wallpaperEngine`. `enabled` defaults to `false` when the key is absent,
+so a fresh install and a profile that never opted in keep the bundled Caelestia
+wallpaper. Set it to `true` (or use the Nexus toggle) to opt in. The old
+`"auto"` value is still accepted for existing profiles and enables automatic
+activation when Wallpaper Engine is detected and running; a saved `"auto"` is a
+value, not the new default, so no upgrade rewrites it. Nexus writes `true` or
+`false` only when the user changes the toggle. `picker` accepts `"engine"`,
+`"files"` or `"both"`, and `monitor` defaults to `"Monitor0"`.
 The picker targets its owning display, for both images and Wallpaper Engine
 projects. `monitor` remains the default palette source and the target for
 requests without a display. Explicit display requests never fall back to it.
 Wallpaper Engine targeting requires a unique active device-path selection or
 managed monitor-map entry; an unavailable mapping is reported without changing
-another display. The shell retains its own image beneath the external output.
+another display. The shell retains its own image beneath the external output,
+and an enabled but missing or stopped Wallpaper Engine leaves that image
+visible instead of blanking the desktop.
+
+The shell also records whether this profile has chosen its own wallpaper in
+`state/caelestia/wallpaper/desktop.json`. The record stores only
+`{"version": 1, "source": "default" or "user"}`, never an image path. `default`
+keeps the bundled `assets/wallpaper.webp` on every monitor; `user` shows the
+Windows wallpaper, where Caelestia writes picks. A profile upgrading from an
+older build has no record. If it already has a generated palette source
+(`state/caelestia/wallpaper/path.txt`), the shell preserves its current Windows
+wallpaper. Otherwise the missing record takes the bundled default, matching the
+missing-key rule above. Deleting the record resets the profile to the bundled
+default; choosing a wallpaper, or changing the Windows wallpaper while the
+Caelestia desktop is visible, records `user` again.
 
 Windows banner replacement is also configured in `config/windows.json`:
 
