@@ -104,9 +104,10 @@ PowerShell window and never change your execution policy.
   `Start-Caelestia.ps1`.
 - Start menu > **Caelestia - Switch back to Windows** quits this installation,
   restores the native taskbar and desktop, and offers to turn autostart off.
-  It reuses `Start-Caelestia.ps1 -Command Quit` and `Restore-Desktop.ps1`, so it
-  still works when the shell is hung. Start the shell again with the launch
-  entry.
+  It calls the stable-root `Start-Caelestia.ps1 -Command Quit` entry, the
+  same path the shell uses; that entry stops the shell or supervisor and
+  restores the native desktop, so it still works when the shell is hung. Start
+  the shell again with the launch entry.
 - Settings > Apps > Installed apps > **Caelestia for Windows** > Uninstall runs
   the installed `Uninstall-Caelestia.ps1`. It asks whether to also delete
   settings and profile data; the default keeps them.

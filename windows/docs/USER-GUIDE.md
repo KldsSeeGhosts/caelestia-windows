@@ -98,9 +98,9 @@ process; your execution policy is never changed.
   through `Start-Caelestia.ps1`. The optional desktop shortcut does the same.
 - **Switch back to Windows:** Start menu > **Caelestia - Switch back to Windows**
   quits this installation, restores the native taskbar and work areas, and offers
-  to turn autostart off. It reuses `Start-Caelestia.ps1 -Command Quit` and
-  `Restore-Desktop.ps1`, so it does not depend on the shell answering and also
-  works when the shell is hung. Start Caelestia again with the launch entry.
+  to turn autostart off. It calls the stable-root `Start-Caelestia.ps1 -Command Quit` entry, the same
+  path the shell uses; that entry does not depend on the shell answering and
+  also works when the shell is hung. Start Caelestia again with the launch entry.
 - **Uninstall:** Settings > Apps > Installed apps > **Caelestia for Windows** >
   Uninstall. See [Uninstall](#uninstall) below.
 
