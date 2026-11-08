@@ -1,6 +1,7 @@
 #include "cutils.hpp"
 
 #include <qdir.h>
+#include <qfile.h>
 #include <qfileinfo.h>
 #include <qloggingcategory.h>
 #include <qmetaobject.h>
@@ -10,12 +11,33 @@
 #include <qregularexpression.h>
 #include <qsavefile.h>
 #include <qtconcurrentrun.h>
+#include <quuid.h>
+
+#ifdef Q_OS_WIN
+#include <qt_windows.h>
+#endif
 
 #include "util/metaenum.hpp"
 
 namespace {
 
 Q_LOGGING_CATEGORY(lcCUtils, "caelestia.cutils", QtInfoMsg)
+
+// A junction, a symlink or any other reparse point. Anything that cannot be
+// inspected counts as one, so cleanup refuses rather than guesses.
+bool isReparsePoint(const QString& path) {
+#ifdef Q_OS_WIN
+    const auto attributes = GetFileAttributesW(reinterpret_cast<LPCWSTR>(QDir::toNativeSeparators(path).utf16()));
+    return attributes == INVALID_FILE_ATTRIBUTES || (attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0;
+#else
+    return QFileInfo(path).isSymLink();
+#endif
+}
+
+const QRegularExpression& captureTempName() {
+    static const QRegularExpression name(QStringLiteral("^[0-9a-f]{32}\\.png\\z"));
+    return name;
+}
 
 } // namespace
 
@@ -31,20 +53,25 @@ void CUtils::saveItem(QQuickItem* target, const QUrl& path, const QJSValue& onSa
 
 void CUtils::saveItem(
     QQuickItem* target, const QUrl& path, const QRect& rect, const QJSValue& onSaved, const QJSValue& onFailed) {
-    if (!target) {
-        qCWarning(lcCUtils) << "saveItem: a target is required";
-        return;
-    }
+    // Every rejection reports through onFailed, so a caller that waits for a
+    // result is never left waiting. The callback runs from the event loop, as it
+    // does for a failure while saving.
+    const auto reject = [this, &path, &onFailed](const char* reason) {
+        qCWarning(lcCUtils) << "saveItem:" << reason;
+        if (onFailed.isCallable()) {
+            QMetaObject::invokeMethod(
+                this, [onFailed, file = path.toLocalFile()] { onFailed.call({ file }); }, Qt::QueuedConnection);
+        }
+    };
 
-    if (!path.isLocalFile()) {
-        qCWarning(lcCUtils) << "saveItem:" << path << "is not a local file";
-        return;
-    }
+    if (!target)
+        return reject("a target is required");
 
-    if (!target->window()) {
-        qCWarning(lcCUtils) << "saveItem: unable to save target" << target << "without a window";
-        return;
-    }
+    if (!path.isLocalFile())
+        return reject("the path is not a local file");
+
+    if (!target->window())
+        return reject("unable to save a target without a window");
 
     auto scaledRect = rect;
     const auto scale = target->window()->devicePixelRatio();
@@ -54,16 +81,24 @@ void CUtils::saveItem(
     }
 
     const auto grabResult = target->grabToImage();
-    if (!grabResult) {
-        qCWarning(lcCUtils) << "saveItem: failed to grab" << target;
-        return;
-    }
+    if (!grabResult)
+        return reject("failed to grab the target");
 
     QObject::connect(
         grabResult.data(), &QQuickItemGrabResult::ready, this,
         [grabResult, scaledRect, path, onSaved, onFailed, this] {
             QtConcurrent::run([image = grabResult->image(), scaledRect, file = path.toLocalFile()] {
-                const auto img = scaledRect.isValid() ? image.copy(scaledRect) : image;
+                // Clip to the image: QImage::copy pads a rectangle that sticks out
+                // with transparent pixels, and rounding at a fractional scale can
+                // push the far edge a pixel past it. A crop with nothing inside
+                // the image must fail; QImage::copy would return the whole image
+                // for an empty rectangle, so a null image is used instead, which
+                // fails to save.
+                auto img = image;
+                if (scaledRect.isValid()) {
+                    const auto clip = scaledRect.intersected(image.rect());
+                    img = clip.isEmpty() ? QImage() : image.copy(clip);
+                }
                 const auto parent = QFileInfo(file).absolutePath();
                 return QDir().mkpath(parent) && img.save(file);
             }).then(this, [path, onSaved, onFailed](bool ok) {
@@ -130,6 +165,39 @@ bool CUtils::deleteFile(const QUrl& path) {
     }
 
     return QFile::remove(path.toLocalFile());
+}
+
+QString CUtils::newCaptureTempPath() {
+    // A random 128-bit name, created with NewOnly: it can never collide with a
+    // file of another picker, another reload or another process.
+    for (int attempt = 0; attempt < 4; attempt++) {
+        const auto path = QDir::tempPath() + QStringLiteral("/caelestia-clipboard-")
+            + QUuid::createUuid().toString(QUuid::Id128) + QStringLiteral(".png");
+        QFile file(path);
+        if (file.open(QIODevice::WriteOnly | QIODevice::NewOnly))
+            return path;
+    }
+
+    qCWarning(lcCUtils) << "newCaptureTempPath: cannot create a hand-over file in the temp directory";
+    return {};
+}
+
+bool CUtils::removeCaptureTemp(const QString& path) {
+    const auto prefix = QDir::tempPath() + QStringLiteral("/caelestia-clipboard-");
+    // Paths on Windows are case-insensitive; the name part below is lower case hex.
+    if (!path.startsWith(prefix, Qt::CaseInsensitive)
+        || !captureTempName().match(QStringView(path).mid(prefix.size())).hasMatch()) {
+        qCWarning(lcCUtils) << "removeCaptureTemp: not a capture hand-over file path";
+        return false;
+    }
+
+    const QFileInfo info(path);
+    if (!info.isFile() || isReparsePoint(path)) {
+        qCWarning(lcCUtils) << "removeCaptureTemp: not a regular file";
+        return false;
+    }
+
+    return QFile::remove(path);
 }
 
 QString CUtils::toLocalFile(const QUrl& url) {

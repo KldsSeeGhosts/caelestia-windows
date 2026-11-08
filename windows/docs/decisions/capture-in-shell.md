@@ -32,7 +32,7 @@ Keep the current geometry and behaviour, and swap the drawing primitives for Cae
 | Icons | Tabler font | Material Symbols through `MaterialIcon`, matching the rest of the shell. Mapping table in the phase 3 PR. The owner may revert to Tabler, which is MIT-licensed and already bundled |
 | Font | Segoe UI Variable | `Tokens.font` (Google Sans Flex) |
 | Motion | 100 ms cubic ease-out for the hover target and fades; 300 ms back-out for the tool indicator; thumbnail slide-in | Caelestia `Anim` types: fast spatial for target moves, expressive spatial for the indicator, standard for fades. Respect the shell's reduced-motion handling |
-| Picker | 30% tint outside the selection, 2 px primary outline, cross cursor | Same. The outline radius stays 0 to match the selection |
+| Picker | 30% tint outside the selection, 2 px primary outline, cross cursor | Same. The picker tint is surfaceContainerHighest at 30%, as in the current tool (`overlay.rs` picker tint), not the surfaceContainer that the editor tint and solid use. The outline radius stays 0 to match the selection |
 | Editor wash | 55% black outside the selection | Same |
 | Thumbnail | 260 x 174, bottom-right, stack of 5, 6 s timeout, hover row Copy/Save/Folder/Close, click reopens the editor, drag-out | Same behaviour as a Caelestia overlay panel with Caelestia motion |
 | Recording controls | 52 px capsule, Record/Pause/Stop/Mic/Sound/Discard, pulsing dot, MM:SS timer | Same, driving `Recorder.qml` |
@@ -67,7 +67,7 @@ Keep the current geometry and behaviour, and swap the drawing primitives for Cae
 - **Export:** `CUtils.saveItem(item, url, rect)` (`plugin/src/Caelestia/cutils.cpp:32-79`). The item is the editor's composed item (frozen image plus annotation layer), at the native pixel scale.
 - **Gate:** phase 2 must prove that `grabToImage` reads back a Windows `ScreencopyView` (a D3D11 texture) correctly. If not, the backend adds `ScreencopyView.saveFrame(path, rect)`, and the editor composes the strokes over the saved frame.
 - **Clipboard:** `Clipboard.copyImageFile(path)` writes CF_DIB only. The current tool writes PNG and DIB. Adding PNG is a backend follow-up, not a blocker.
-- **Files:** the default save directory is Pictures\Screenshots, then Pictures. Names use the current `filename_format` default, with " (n)" numbering. The temporary file goes under the shell state folder, not `/tmp`.
+- **Files:** the default save directory is Pictures\Screenshots, then Pictures. Names use the current `filename_format` default, with " (n)" numbering. The clipboard hand-over image goes in the OS temp directory as `caelestia-clipboard-<UUID>.png`, not `/tmp`. The picker deletes only its own file, and a crash in the middle of a save can leave one file behind.
 
 ### Editor
 

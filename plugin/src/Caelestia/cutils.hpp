@@ -27,6 +27,16 @@ public:
 
     Q_INVOKABLE static bool copyFile(const QUrl& source, const QUrl& target, bool overwrite = true);
     Q_INVOKABLE static bool deleteFile(const QUrl& path);
+    // Screenshot hand-over files, kept in the OS temp directory.
+    // newCaptureTempPath() creates a new empty file
+    // <QDir::tempPath()>/caelestia-clipboard-<uuid>.png exclusively (NewOnly) and
+    // returns its path, or an empty string. removeCaptureTemp(path) deletes one
+    // such file. It accepts only a path exactly equal to the temp directory plus
+    // that name scheme, and it refuses anything else, including `..` paths, other
+    // names, directories and reparse points. It returns whether it deleted the file.
+    Q_INVOKABLE static QString newCaptureTempPath();
+    Q_INVOKABLE static bool removeCaptureTemp(const QString& path);
+
     Q_INVOKABLE static QString toLocalFile(const QUrl& url);
 
     Q_INVOKABLE static qreal clamp(qreal value, qreal min, qreal max);

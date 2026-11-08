@@ -47,7 +47,7 @@ The following global options are read only from the root `%LOCALAPPDATA%\caelest
 - `paths`: `lyricsDir`, `wallpaperDir`
 - `services`: `audioIncrement`, `brightnessIncrement`, `clockFormat`, `dataUnits`, `defaultPlayer`, `gpuType`, `lyricsBackend`, `maxVolume`, `playerAliases`, `sensorUnits`, `smartScheme`, `visualiserBars`, `weatherLocation`, `weatherUnits`
 - `utilities`: `toasts.*`, `vpn.*`
-- `windows`: `clipboard.*`, `focusFollowsMouse.*`, `tiling.*` (Windows extensions)
+- `windows`: `capture.ui` (`"classic"` or `"shell"`, see `docs/KEYBINDS.md`), `clipboard.*`, `focusFollowsMouse.*`, `tiling.*` (Windows extensions)
 
 ---
 

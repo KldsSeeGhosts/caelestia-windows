@@ -62,7 +62,7 @@ Searcher {
             } else if (command[0] === "chooseWallpaper") {
                 Wallpapers.choose(list.QsWindow.window?.screen);
             } else if (command[0] === "screenshot") {
-                Glazier.capture();
+                CaptureUi.screenshot("open");
             } else if (command[0] === "record") {
                 Glazier.record();
             } else if ((command[0] === "setMode" || command[0] === "generateMode") && command.length > 1) {

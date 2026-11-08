@@ -331,17 +331,19 @@ Singleton {
                 console.warn("CAELESTIA_CAPTURE_CLOSE refused or failed:", root.hostState.error);
         }
     }
+    // The IPC names stay here. CaptureUi picks the classic tool (capture()
+    // above) or the QML picker from windows.capture.ui.
     IpcHandler {
         target: "screenshot"
-        function capture(): bool { return root.capture(); }
-        function isAvailable(): bool { return root.available; }
+        function capture(): bool { return CaptureUi.screenshot("open"); }
+        function isAvailable(): bool { return CaptureUi.route === "shell" ? CaptureUi.shellAvailable : root.available; }
     }
     IpcHandler {
         target: "picker"
-        function open(): void { root.capture(); }
-        function openFreeze(): void { root.capture(); }
-        function openClip(): void { root.capture(); }
-        function openFreezeClip(): void { root.capture(); }
-        function isAvailable(): bool { return root.available; }
+        function open(): void { CaptureUi.screenshot("open"); }
+        function openFreeze(): void { CaptureUi.screenshot("openFreeze"); }
+        function openClip(): void { CaptureUi.screenshot("openClip"); }
+        function openFreezeClip(): void { CaptureUi.screenshot("openFreezeClip"); }
+        function isAvailable(): bool { return CaptureUi.route === "shell" ? CaptureUi.shellAvailable : root.available; }
     }
 }

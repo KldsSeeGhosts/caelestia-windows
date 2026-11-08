@@ -834,6 +834,18 @@
           "destination": "services/Recorder.qml"
         },
         {
+          "source": "windows/shell/adapters/services/CaptureUi.qml",
+          "destination": "services/CaptureUi.qml"
+        },
+        {
+          "source": "windows/shell/adapters/modules/areapicker/AreaPicker.qml",
+          "destination": "modules/areapicker/AreaPicker.qml"
+        },
+        {
+          "source": "windows/shell/adapters/modules/areapicker/Picker.qml",
+          "destination": "modules/areapicker/Picker.qml"
+        },
+        {
           "source": "windows/shell/adapters/daemons/Shortcuts.qml",
           "destination": "daemons/Shortcuts.qml"
         },
