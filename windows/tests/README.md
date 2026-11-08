@@ -20,8 +20,9 @@ servers rather than real provider accounts.
   workspace dispatch and wallpaper-target service contracts. The staged-model
   lane additionally runs five QML scenarios, 36 assertions and five behavioral
   mutation controls against production components with synthetic providers.
-- `-Suite Shell`: launcher/notification accessibility contracts, drag
-  previews, teardown, idle status, launcher hover, fullscreen routing,
+- `-Suite Shell`: launcher/notification accessibility contracts, a smoke
+  that `PanelWindow.excludeFromCapture` and `Hyprland.windowStack()` are
+  reachable from QML, drag previews, teardown, idle status, launcher hover, fullscreen routing,
   focus-return policy, quota interaction, wallpaper/background ownership and
   rollback consumer acknowledgement/deadline/late-result state, plus local
   file-URL round trips and preview/copy boundaries with synthetic files.
