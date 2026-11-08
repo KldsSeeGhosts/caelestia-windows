@@ -72,10 +72,15 @@ Test copies have exact-match, fail-closed injections only:
   race. No production transaction body is replaced.
 * Replace the release's machine VC runtime probe call with success. All other
   release validation runs against the synthetic manifest and file hashes.
-* Redirect uninstall's literal live HKCU Run path to the case's fake integration
-  directory. Fixture `Get-ItemProperty`/`Remove-ItemProperty` refuse any other
-  path/name and operate on a plain file. Shortcut discovery returns another
-  case-owned file, not the user's Start menu.
+* Replace the single production integration-cleanup function with a
+  case-owned implementation. It removes plain files in the case's fake
+  integration directory (Run value, launch shortcut, switch-back shortcut,
+  desktop shortcut and Apps & features record), keeping the `integration` and
+  `remove-integration` barriers in the production order. Fixture
+  `Get-ItemProperty`/`Remove-ItemProperty` refuse any other path/name, and
+  shortcut discovery returns another case-owned file, not the user's Start
+  menu. The real writer is never reached because every install here uses
+  `-NoIntegration`.
 * Synthetic launchers accept only this prefix's `Quit` and record that boundary.
   Payload EXE/DLL files are never executed. No real shell, Glazier, supervisor,
   task, desktop, registry value, menu, authentication or ACL is changed.
@@ -95,8 +100,8 @@ and worker has a bounded timeout.
 
 The receipt records the scenario/assertion counts, plus fail-closed boundary
 checks. The extended run includes eight queue-recovery, duplicate and malformed
-journal cases in addition to the earlier 38 scenarios / 665 assertions.
-Coverage includes:
+journal cases. On Windows 11 build 26300 with Windows PowerShell 5.1 this
+revision reported 46 scenarios and 830 assertions. Coverage includes:
 
 * Install-held and rollback-held versus uninstall, normal and purge. Busy
   uninstall preserves every prefix/profile/integration/unrelated-profile byte.
@@ -118,6 +123,11 @@ Coverage includes:
 * Foreign profile ownership refuses purge with all managed bytes unchanged.
 * Tombstones are removed, purge removes only the owned profile, ordinary
   uninstall preserves config, and the unrelated profile sentinel survives.
+* Every case starts with five owned per-user integration artifacts (Run value,
+  launch shortcut, switch-back shortcut, desktop shortcut and Apps & features
+  record). Each non-uninstall transaction must leave all five byte-identical;
+  each successful uninstall must empty the directory, and an interrupted
+  post-rename uninstall must leave them for the retry to remove.
 * Direct rollback success and injected exception both preserve an existing
   journal, or leave an absent state directory absent.
 * Purge versus a paused real rollback manifest read; purge completed before a

@@ -47,6 +47,22 @@ for its own PowerShell process only, to run the unsigned preview bootstrap.
 This is not a signature or a trust check. It changes no persistent policy and
 does not disable Smart App Control, antivirus or enforced organizational policy.
 
+The generated Start-menu and Settings entries start `conhost.exe --headless`
+with Windows PowerShell. `conhost` and PowerShell are signed Windows components,
+and `--headless` keeps the console window from appearing. The installed `.ps1`
+files are unsigned data for those hosts. That is not a trust exemption: under
+App Control or Smart App Control, Windows may block the unsigned launcher and
+action scripts until [issue #20](https://github.com/KldsSeeGhosts/caelestia-windows/issues/20)
+provides publisher signing. Smart App Control and SmartScreen also judge
+Caelestia's own unsigned native files (`qs.exe`, `caelestia-capture.exe`), which
+are the other signing targets for #20. The entries use `-ExecutionPolicy Bypass`
+only for that single PowerShell process; they change no machine or user policy
+and add no trust decision of their own. If policy blocks the scripts, the
+entries fail closed and the PowerShell commands in this guide still work. A
+signed launcher EXE (#20) replaces the conhost command in one helper
+(`Get-CaelestiaLaunchCommand`) and removes the unsigned script from the launch
+path.
+
 ## Install
 
 Extract the **whole** verified ZIP into a local directory. Do not run from the
@@ -67,8 +83,10 @@ but is only a self-consistency check. The bootstrap itself must be trusted by
 checking the ZIP before running it.
 
 After the runtime prerequisite is met, installation is per-user and does not need elevation. It does not start the
-shell, register autostart, hide the taskbar or enable tiling. A Start-menu
-shortcut is created unless `-NoIntegration` is supplied. Defaults:
+shell, register autostart, hide the taskbar or enable tiling. Unless
+`-NoIntegration` is supplied, it creates two Start-menu entries and a per-user
+Settings > Apps uninstall entry. `-DesktopShortcut` adds an optional desktop
+shortcut. Defaults:
 
 - Product: `%LOCALAPPDATA%\Programs\caelestia-windows`
 - Profile: `%LOCALAPPDATA%\caelestia-windows`
@@ -76,6 +94,35 @@ shortcut is created unless `-NoIntegration` is supplied. Defaults:
 Use `-Prefix` and `-ProfileRoot` for separate local installations. Paths may contain
 spaces or non-ASCII characters. Bundle, prefix and profile must not contain each
 other. A populated foreign profile or unowned prefix is refused, not adopted.
+
+## Start, switch back and uninstall without a terminal
+
+Three generated entries cover the whole lifecycle. They never open a
+PowerShell window and never change your execution policy.
+
+- Start menu > **Caelestia Windows** starts the installed shell through
+  `Start-Caelestia.ps1`.
+- Start menu > **Caelestia - Switch back to Windows** quits this installation,
+  restores the native taskbar and desktop, and offers to turn autostart off.
+  It reuses `Start-Caelestia.ps1 -Command Quit` and `Restore-Desktop.ps1`, so it
+  still works when the shell is hung. Start the shell again with the launch
+  entry.
+- Settings > Apps > Installed apps > **Caelestia for Windows** > Uninstall runs
+  the installed `Uninstall-Caelestia.ps1`. It asks whether to also delete
+  settings and profile data; the default keeps them.
+
+> Screenshot placeholder: Start menu with "Caelestia Windows" and
+> "Caelestia - Switch back to Windows". Added after live desktop acceptance.
+
+> Screenshot placeholder: Settings > Apps > Installed apps showing Caelestia for
+> Windows and its uninstall action. Added after live desktop acceptance.
+
+The uninstall dialog explains that Windows update trust data in
+`%LOCALAPPDATA%\caelestia-update-trust` is kept. That record is deliberately
+outside the installation and profile: the client stores the newest signed update
+metadata it has accepted there so a rollback or a reinstall cannot roll update
+security back to older metadata. Uninstall therefore never deletes it, even with
+`-Purge`; remove it manually only if you understand that consequence.
 
 Start without provisioning any optional Python tools:
 
@@ -137,11 +184,15 @@ maintenance scripts remain authoritative:
 ```
 
 Rollback intentionally starts the retained version and checks readiness.
-Uninstall preserves the profile by default. Add `-Purge` only to request deletion
-of a profile exclusively owned by this installation. Autostart is opt-in via
-`-Autostart` on install/update. `-NoIntegration` skips shortcut and Run entry
-writes; it cannot be combined with `-Autostart`. No automatic release downloader
-or authenticated update feed is implied by this manual release installer.
+The Settings entry follows the selected version: update and rollback rewrite
+`DisplayVersion`, the entry icon and the shortcut icons, so no stale version or
+dangling shortcut is left behind. Uninstall preserves the profile by default.
+Add `-Purge` only to request deletion of a profile exclusively owned by this
+installation. Autostart is opt-in via `-Autostart` on install/update.
+`-NoIntegration` skips every per-user entry (Start menu, switch-back, desktop
+and the Settings uninstall entry) and cannot be combined with `-Autostart` or
+`-DesktopShortcut`. No automatic release downloader or authenticated update feed
+is implied by this manual release installer.
 
 ## Bundle format and developer packaging
 

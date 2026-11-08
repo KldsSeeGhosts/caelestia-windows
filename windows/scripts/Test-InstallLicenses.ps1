@@ -23,7 +23,14 @@ if ($NoIntegration) {
     # when its native inputs are unchanged. No -Force or receipt rewriting.
     $arguments.SourceRoot = $repoRoot
 }
+# Confine every integration entry to disposable roots. The test used to create
+# temporary-prefix shortcuts in the real Start menu and HKCU, including the
+# Apps & features entry; a manual run without -NoIntegration now writes only
+# under this test root.
+$env:CAELESTIA_TEST_INTEGRATION_ROOT = Join-Path $testRoot 'integration'
+$testRoots = Get-CaelestiaIntegrationTestRoots
 $integration = Get-CaelestiaIntegration $prefix
+$uninstallKey = Get-CaelestiaUninstallKeyPath $prefix
 $pairs = [ordered]@{
     'LICENSE' = 'LICENSE'
     'THIRD-PARTY-NOTICES.md' = 'THIRD-PARTY-NOTICES.md'
@@ -135,14 +142,22 @@ try {
         if ((Get-FileHash -LiteralPath $marker).Hash -ne $markerHash) { throw 'Profile changed.' }
         if ($NoIntegration) {
             if (Test-Path -LiteralPath $integration.Shortcut) { throw 'NoIntegration unexpectedly created a shortcut.' }
-        } elseif (-not (Test-Path -LiteralPath $integration.Shortcut)) { throw 'Install shortcut missing.' }
+            if (Test-Path -LiteralPath $integration.SwitchBackShortcut) { throw 'NoIntegration unexpectedly created a switch-back shortcut.' }
+            if (Test-Path -LiteralPath $uninstallKey) { throw 'NoIntegration unexpectedly registered an Apps & features entry.' }
+        } else {
+            if (-not (Test-Path -LiteralPath $integration.Shortcut)) { throw 'Install shortcut missing.' }
+            if (-not (Test-Path -LiteralPath $integration.SwitchBackShortcut)) { throw 'Install switch-back shortcut missing.' }
+            if (-not (Test-Path -LiteralPath $uninstallKey)) { throw 'Install Apps & features entry missing.' }
+        }
         Write-Output "LICENSE_${phase}_PASS"
     }
-    & "$PSScriptRoot\Uninstall-Caelestia.ps1" -Prefix $prefix
+    & "$PSScriptRoot\Uninstall-Caelestia.ps1" -Prefix $prefix -NoDialogs
     if (Test-Path -LiteralPath $prefix) { throw 'Prefix and its licenses remain after uninstall.' }
     if (Test-Path -LiteralPath $integration.Shortcut) { throw 'Shortcut remains after uninstall.' }
+    if (Test-Path -LiteralPath $integration.SwitchBackShortcut) { throw 'Switch-back shortcut remains after uninstall.' }
+    if (Test-Path -LiteralPath $uninstallKey) { throw 'Apps & features entry remains after uninstall.' }
     if ((Get-FileHash -LiteralPath $marker).Hash -ne $markerHash) { throw 'Uninstall changed the retained profile.' }
-    if (Get-ItemProperty -LiteralPath 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name $integration.RunName -ErrorAction SilentlyContinue) {
+    if (Get-ItemProperty -LiteralPath (Get-CaelestiaAutostartKey) -Name $integration.RunName -ErrorAction SilentlyContinue) {
         throw 'Unexpected autostart entry.'
     }
     Write-Output 'LICENSE_UNINSTALL_PASS'
@@ -150,8 +165,12 @@ try {
     Write-Output "License lifecycle mode: NoIntegration=$([bool]$NoIntegration); no payload launch."
 } finally {
     if (Test-Path -LiteralPath "$prefix\install.json") {
-        & "$PSScriptRoot\Uninstall-Caelestia.ps1" -Prefix $prefix
+        & "$PSScriptRoot\Uninstall-Caelestia.ps1" -Prefix $prefix -NoDialogs
     }
+    if ($testRoots -and (Test-Path -LiteralPath $testRoots.Registry)) {
+        Remove-Item -LiteralPath $testRoots.Registry -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    Remove-Item Env:\CAELESTIA_TEST_INTEGRATION_ROOT -ErrorAction SilentlyContinue
     # Only this invocation's resolved TEMP child can be recursively removed.
     $safeRoot = Resolve-CaelestiaDirectory $testRoot
     if ((Split-Path -Parent $safeRoot) -ne [IO.Path]::GetFullPath($env:TEMP).TrimEnd('\') -or

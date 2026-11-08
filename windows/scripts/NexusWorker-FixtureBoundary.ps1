@@ -5,7 +5,7 @@
 function Get-CaelestiaAutostartKey { Join-Path $env:CAELESTIA_FIXTURE_CASE 'integration' }
 function Get-CaelestiaUpdateStatePath { Join-Path $env:CAELESTIA_FIXTURE_CASE 'trust\highwater.json' }
 function Complete-CaelestiaInstallIntegration {
-    param($Prefix, $Runtime, $Previous, [switch]$Restart, [switch]$Autostart)
+    param($Prefix, $Runtime, $Previous, [switch]$Restart, [switch]$Autostart, [switch]$DesktopShortcut)
     Assert-FixturePrefix $Prefix
     if (-not $Restart -or -not $Autostart) { throw 'Existing fixture autostart opt-in was not preserved.' }
     Invoke-FixtureBoundary 'complete-integration'

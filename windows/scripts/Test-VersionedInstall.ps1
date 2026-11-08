@@ -6,8 +6,40 @@ $root = Resolve-CaelestiaDirectory (Join-Path $env:TEMP ('caelestia-version-test
 [IO.Directory]::CreateDirectory($root) | Out-Null
 $script:registryTestId = [guid]::NewGuid().ToString('N')
 $script:registryTestRoot = 'HKCU:\Software\CaelestiaWindowsTests\' + $script:registryTestId
-# Exercise the real registry operations, but never Windows' live startup key.
+# Exercise the real registry operations, but never Windows' live startup key or
+# Apps & features root.
 function Get-CaelestiaAutostartKey { return $script:registryTestRoot + '\Run' }
+function Get-CaelestiaUninstallKeyRoot { return $script:registryTestRoot + '\Uninstall' }
+# Keep the production naming helper for its naming assertions, then route every
+# write to disposable paths owned by this test. The process is a test, not the
+# user's live installation.
+$script:realGetIntegration = ${function:Get-CaelestiaIntegration}
+function Get-CaelestiaIntegration([string]$Prefix) {
+    $key = (Get-CaelestiaInstallLockKey $Prefix).Substring(0, 16)
+    $directory = Join-Path $root ('integration\' + $key)
+    return @{
+        RunName = 'CaelestiaTestRun-' + $key.Substring(0, 8)
+        UninstallKey = 'CaelestiaTest-' + $key
+        Shortcut = Join-Path $directory 'Caelestia Windows.lnk'
+        SwitchBackShortcut = Join-Path $directory 'Switch back to Windows.lnk'
+        DesktopShortcut = Join-Path $directory 'Desktop.lnk'
+        Launcher = Join-Path $Prefix 'Caelestia-Launcher.ps1'
+    }
+}
+function Assert-IntegrationNaming {
+    $defaultPrefix = [IO.Path]::GetFullPath((Join-Path $env:LOCALAPPDATA 'Programs\caelestia-windows')).TrimEnd('\')
+    $default = & $script:realGetIntegration $defaultPrefix
+    Assert ($default.RunName -eq 'CaelestiaWindows' -and $default.UninstallKey -eq 'CaelestiaWindows') 'The default prefix lost its unsuffixed integration names.'
+    Assert ((Split-Path -Leaf $default.Shortcut) -eq 'Caelestia Windows.lnk') 'The default Start-menu shortcut name changed.'
+    $customA = & $script:realGetIntegration (Join-Path $root 'custom-a')
+    $customB = & $script:realGetIntegration (Join-Path $root 'custom-b')
+    $pattern = '^CaelestiaWindows-[a-f0-9]{12}$'
+    Assert ($customA.RunName -match $pattern -and $customA.UninstallKey -match $pattern) 'A non-default prefix does not use the hash-suffixed Apps & features name.'
+    Assert ($customA.UninstallKey -eq $customA.RunName) 'Run and Apps & features names must share the prefix-derived suffix.'
+    Assert ((Split-Path -Leaf $customA.Shortcut) -match '^Caelestia Windows-[a-f0-9]{12}\.lnk$') 'The Start-menu shortcut does not carry the prefix suffix.'
+    Assert ((Split-Path -Leaf $customA.SwitchBackShortcut) -match '^Caelestia - Switch back to Windows-[a-f0-9]{12}\.lnk$') 'The switch-back shortcut does not carry the prefix suffix.'
+    Assert ($customA.RunName -ne $customB.RunName -and $customA.UninstallKey -ne $customB.UninstallKey) 'Two non-default prefixes collide.'
+}
 $script:started = 0
 $script:failStart = $false
 $script:runningPaths = @()
@@ -55,22 +87,42 @@ function Start-CaelestiaDetached {
     }
 }
 function Assert($Condition, [string]$Message) { if (-not $Condition) { throw $Message } }
-function New-Payload([string]$Prefix, [string]$Label) {
+function Read-Shortcut([string]$Path) {
+    $wsh = New-Object -ComObject WScript.Shell
+    $shortcut = $null
+    try {
+        $shortcut = $wsh.CreateShortcut($Path)
+        return [pscustomobject]@{
+            TargetPath = [string]$shortcut.TargetPath
+            Arguments = [string]$shortcut.Arguments
+            WorkingDirectory = [string]$shortcut.WorkingDirectory
+            IconLocation = [string]$shortcut.IconLocation
+        }
+    } finally {
+        if ($shortcut) { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($shortcut) }
+        [void][Runtime.InteropServices.Marshal]::ReleaseComObject($wsh)
+    }
+}
+Assert-IntegrationNaming
+function New-Payload([string]$Prefix, [string]$Label, [string]$AppVersion = '') {
     $path = Join-Path $root ('payload-' + [guid]::NewGuid().ToString('N'))
     [IO.Directory]::CreateDirectory($path) | Out-Null
     [IO.File]::WriteAllText((Join-Path $path 'qs.exe'), $Label)
     [IO.File]::WriteAllText((Join-Path $path 'Start-Caelestia.ps1'), 'param($Prefix,$Command = "Start") if ($Command -eq "State") { "fixture" } elseif ($Command -eq "Start") { "fixture-start" }')
-    foreach ($name in @('Start-CaelestiaEntry.ps1', 'Caelestia-InstallCommon.ps1', 'Caelestia-Versions.ps1', 'Manage-Caelestia.ps1', 'Uninstall-Caelestia.ps1')) {
+    foreach ($name in @('Start-CaelestiaEntry.ps1', 'Switch-CaelestiaToWindows.ps1', 'Caelestia-Launcher.ps1',
+        'Caelestia-InstallCommon.ps1', 'Caelestia-Versions.ps1', 'Manage-Caelestia.ps1', 'Uninstall-Caelestia.ps1')) {
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $path
     }
     foreach ($name in @('Caelestia-SemVer.ps1', 'Caelestia-UpdateTrust.ps1', 'Caelestia-Update.ps1', 'Caelestia-UpdateSecurity.cs')) {
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $path
     }
-    @{
+    $record = @{
         product = 'caelestia-windows'; version = 1; prefix = $Prefix
         profile = (Join-Path $root 'profile'); installId = 'version-test'
         sourceRevision = $Label; executableSha256 = (Get-FileHash (Join-Path $path 'qs.exe')).Hash
-    } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $path 'install.json') -Encoding UTF8
+    }
+    if ($AppVersion) { $record['appVersion'] = $AppVersion }
+    $record | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $path 'install.json') -Encoding UTF8
     return $path
 }
 function Get-SchemeQsFixture {
@@ -275,7 +327,8 @@ function New-LauncherPayload([string]$Prefix, [string]$ProfileRoot, [string]$Lab
     $path = Join-Path $root ('launcher-' + [guid]::NewGuid().ToString('N'))
     [IO.Directory]::CreateDirectory($path) | Out-Null
     Copy-Item -LiteralPath (Get-SchemeQsFixture) -Destination (Join-Path $path 'qs.exe')
-    foreach ($name in @('Start-CaelestiaEntry.ps1', 'Caelestia-InstallCommon.ps1', 'Caelestia-Versions.ps1', 'Manage-Caelestia.ps1', 'Uninstall-Caelestia.ps1')) {
+    foreach ($name in @('Start-CaelestiaEntry.ps1', 'Switch-CaelestiaToWindows.ps1', 'Caelestia-Launcher.ps1',
+        'Caelestia-InstallCommon.ps1', 'Caelestia-Versions.ps1', 'Manage-Caelestia.ps1', 'Uninstall-Caelestia.ps1')) {
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $path
     }
     foreach ($name in @('Caelestia-SemVer.ps1', 'Caelestia-UpdateTrust.ps1', 'Caelestia-Update.ps1', 'Caelestia-UpdateSecurity.cs')) {
@@ -718,12 +771,12 @@ try {
     }
     Write-Output 'PASS failure report: native topmost box, Forms fallback when compilation is denied, never throws.'
 
-    # The Run value has one builder. When the no-console launcher helper exists,
-    # the autostart writer must use it instead of the old direct PowerShell
-    # command; installer PR #65 can then change the launch command in one place.
-    $existingHidden = Get-Command New-CaelestiaHiddenCommand -CommandType Function -ErrorAction SilentlyContinue
-    function New-CaelestiaHiddenCommand([string]$Prefix, [string]$Action) {
-        return 'hidden:' + $Action + ':' + $Prefix
+    # The Run value has one builder. The autostart writer must use the same
+    # no-window launch command as the Start-menu shortcut and Apps & features
+    # entry, so a signed launcher (#20) changes in one place.
+    $existingLaunch = Get-Command Get-CaelestiaLaunchCommand -CommandType Function -ErrorAction SilentlyContinue
+    function Get-CaelestiaLaunchCommand([string]$Prefix, [string]$Action) {
+        return [pscustomobject]@{ Target = 'conhost.exe'; Arguments = ''; CommandLine = 'hidden:' + $Action + ':' + $Prefix }
     }
     try {
         $hiddenSet = Set-CaelestiaAutostart -Prefix $removePrefix -Enabled:$true
@@ -733,10 +786,10 @@ try {
             'Set-CaelestiaAutostart did not use the single hidden launch command builder.'
         $null = Set-CaelestiaAutostart -Prefix $removePrefix -Enabled:$false
     } finally {
-        if ($existingHidden) {
-            Set-Item -Path function:New-CaelestiaHiddenCommand -Value $existingHidden.ScriptBlock
+        if ($existingLaunch) {
+            Set-Item -Path function:Get-CaelestiaLaunchCommand -Value $existingLaunch.ScriptBlock
         } else {
-            Remove-Item function:New-CaelestiaHiddenCommand -ErrorAction SilentlyContinue
+            Remove-Item function:Get-CaelestiaLaunchCommand -ErrorAction SilentlyContinue
         }
     }
     Write-Output 'PASS autostart command: the Run value comes from the single launch-command builder.'
@@ -766,7 +819,7 @@ Set-Content -LiteralPath '$($entryQuit.Replace("'", "''"))' -Value `$Command
         -Destination (Join-Path $entryFixture 'Start-Caelestia.ps1')
     $entryVersions = Join-Path $entryFixture 'Caelestia-Versions.ps1'
     $entryVersionsText = [IO.File]::ReadAllText($entryVersions)
-    $entryKeyPattern = "(function Get-CaelestiaAutostartKey \{\r?\n    return ')[^']+(')"
+    $entryKeyPattern = "(function Get-CaelestiaAutostartKey \{(?s:.*?)return ')[^']+(')"
     $entryPatched = [regex]::Replace($entryVersionsText, $entryKeyPattern, ('$1' + $runKey + '$2'))
     if ($entryPatched -eq $entryVersionsText) { throw 'Could not redirect the stable-root fixture autostart key.' }
     # Record the native handoff report instead of opening a real dialog. The
@@ -836,6 +889,24 @@ function Show-CaelestiaHandoffDialog([string]$Message) {
         Remove-ItemProperty -LiteralPath $runKey -Name $entryRunName -ErrorAction SilentlyContinue
     }
     Write-Output 'PASS stable root: AutostartStatus and Quit -DisableAutostart route without hiding removal failures.'
+    # An upgrade refreshes an existing owned Run value even without -Autostart,
+    # so the old console-flashing command is replaced. It must never create the
+    # value for a user who never enabled autostart.
+    $refreshRunName = 'CaelestiaTestRefresh-' + [guid]::NewGuid().ToString('N')
+    New-ItemProperty -Path $runKey -Name $refreshRunName -PropertyType String -Value '"C:\old\Caelestia-Launcher.vbs"' -Force | Out-Null
+    try {
+        Complete-CaelestiaInstallIntegration $autoPrefix (Join-Path $autoPrefix "versions\$autoB") -Previous $autoA `
+            -Shortcut (Join-Path $root 'auto-shortcut\Refresh.lnk') -RunName $refreshRunName
+        $refreshed = Get-ItemProperty -LiteralPath $runKey -Name $refreshRunName -ErrorAction SilentlyContinue
+        Assert ($null -ne $refreshed -and [string]$refreshed.$refreshRunName -match 'conhost\.exe.*-Action start') 'An upgrade did not refresh an existing owned Run value.'
+        $absentRunName = 'CaelestiaTestAbsent-' + [guid]::NewGuid().ToString('N')
+        Complete-CaelestiaInstallIntegration $autoPrefix (Join-Path $autoPrefix "versions\$autoB") -Previous $autoA `
+            -Shortcut (Join-Path $root 'auto-shortcut\NoAutostart.lnk') -RunName $absentRunName
+        Assert ($null -eq (Get-ItemProperty -LiteralPath $runKey -Name $absentRunName -ErrorAction SilentlyContinue)) 'An upgrade enabled autostart for a user who never did.'
+    } finally {
+        Remove-ItemProperty -LiteralPath $runKey -Name $refreshRunName -ErrorAction SilentlyContinue
+    }
+    Write-Output 'PASS integration autostart: an existing owned Run value is refreshed without enabling autostart.'
 
     # Regression: an existing shortcut that cannot be snapshotted aborts
     # integration before any write. The armed shortcut writer must not run, so
@@ -874,6 +945,227 @@ function Show-CaelestiaHandoffDialog([string]$Message) {
     }
     Assert ((Get-Content -LiteralPath $snapshotShortcut -Raw).Trim() -eq 'original shortcut') 'A shortcut backup failure changed the original shortcut.'
     Write-Output 'PASS integration snapshot: an unreadable existing shortcut aborts before it can be replaced or deleted.'
+
+    # Every user-visible path without a terminal: Start-menu launch and
+    # switch-back entries, the optional desktop entry, autostart and the
+    # Settings > Apps > Installed apps entry. Version selection and rollback
+    # must keep them pointing at the version that is actually selected, and
+    # uninstall must remove exactly these prefix-derived entries.
+    $ui2Prefix = Join-Path $root 'integration-lifecycle'
+    $null = Install-CaelestiaVersion $ui2Prefix (New-Payload $ui2Prefix 'life-a' '1.0.0')
+    $ui2A = (Read-CaelestiaInstall $ui2Prefix).current
+    $null = Install-CaelestiaVersion $ui2Prefix (New-Payload $ui2Prefix 'life-b' '2.0.0')
+    $ui2B = (Read-CaelestiaInstall $ui2Prefix).current
+    $ui2 = Get-CaelestiaIntegration $ui2Prefix
+    $ui2KeyPath = Get-CaelestiaUninstallKeyPath $ui2Prefix
+    Complete-CaelestiaInstallIntegration $ui2Prefix (Join-Path $ui2Prefix "versions\$ui2B")
+    Assert (Test-Path -LiteralPath $ui2.Shortcut) 'The launch shortcut was not created.'
+    Assert (Test-Path -LiteralPath $ui2.SwitchBackShortcut) 'The switch-back shortcut was not created.'
+    Assert (-not (Test-Path -LiteralPath $ui2.DesktopShortcut)) 'A desktop shortcut was created without the opt-in switch.'
+    Assert (Test-Path -LiteralPath $ui2KeyPath) 'The Apps & features entry was not created.'
+    $launch = Read-Shortcut $ui2.Shortcut
+    Assert ((Split-Path -Leaf $launch.TargetPath) -eq 'conhost.exe') 'The launch shortcut does not use the no-window console host.'
+    Assert ($launch.Arguments -match '^--headless ".+\\powershell\.exe" -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' +
+        [regex]::Escape((Join-Path $ui2Prefix 'Caelestia-Launcher.ps1')) + '" -Action start -Prefix "' + [regex]::Escape($ui2Prefix) + '"$') 'The launch shortcut does not start through the hidden launcher.'
+    Assert ($launch.IconLocation -eq ((Join-Path $ui2Prefix "versions\$ui2B") + '\qs.exe,0')) 'The launch shortcut icon does not name the installed version.'
+    $switchBack = Read-Shortcut $ui2.SwitchBackShortcut
+    Assert ((Split-Path -Leaf $switchBack.TargetPath) -eq 'conhost.exe') 'The switch-back shortcut does not use the no-window console host.'
+    Assert ($switchBack.Arguments -match '-Action switch-back -Prefix "' + [regex]::Escape($ui2Prefix) + '"$') 'The switch-back shortcut does not use the switch-back action.'
+    $entry = Get-ItemProperty -LiteralPath $ui2KeyPath
+    Assert ($entry.DisplayName -eq 'Caelestia for Windows') 'The Apps & features display name changed.'
+    Assert ($entry.DisplayVersion -eq '2.0.0') 'The Apps & features entry has the wrong version.'
+    Assert ($entry.Publisher -eq 'KldsSeeGhosts') 'The Apps & features publisher is missing.'
+    Assert ($entry.InstallLocation -eq $ui2Prefix) 'The Apps & features install location is wrong.'
+    Assert ($entry.NoModify -eq 1 -and $entry.NoRepair -eq 1) 'The Apps & features entry must disable modify and repair.'
+    Assert ($entry.EstimatedSize -ge 1) 'The Apps & features entry has no size.'
+    Assert ($entry.DisplayIcon -eq ((Join-Path $ui2Prefix "versions\$ui2B") + '\qs.exe,0')) 'The Apps & features icon does not name the installed version.'
+    Assert ($entry.UninstallString -match '^".*conhost\.exe" --headless ".+\\powershell\.exe" .*Caelestia-Launcher\.ps1" -Action uninstall -Prefix "' + [regex]::Escape($ui2Prefix) + '"$') 'Uninstall from Settings is not the conhost uninstall command.'
+    Assert ($entry.UninstallString -notmatch 'uninstall-quiet') 'The interactive uninstall command asks no purge question.'
+    Assert ($entry.QuietUninstallString -match '-Action uninstall-quiet -Prefix "' + [regex]::Escape($ui2Prefix) + '"$') 'The quiet uninstall command is wrong.'
+    $launcherText = [IO.File]::ReadAllText((Join-Path $ui2Prefix 'Caelestia-Launcher.ps1'))
+    Assert ($launcherText -match 'Switch-CaelestiaToWindows\.ps1' -and $launcherText -match 'Uninstall-Caelestia\.ps1') 'The launcher does not map its actions to the installed scripts.'
+    Assert ($launcherText -match 'AskPurge\s*=\s*\$true' -and $launcherText -match 'uninstall-quiet') 'The launcher does not use the purge prompt or the quiet action.'
+    Assert ($launcherText -notmatch 'wscript\.exe|Caelestia-Launcher\.vbs') 'The launcher still depends on Windows Script Host or VBScript.'
+    Assert (@(Get-ChildItem -LiteralPath $ui2Prefix -Filter '*.vbs' -Recurse -File).Count -eq 0) 'A VBS launcher was installed.'
+    $switchText = [IO.File]::ReadAllText((Join-Path $ui2Prefix 'Switch-CaelestiaToWindows.ps1'))
+    Assert ($switchText -match 'Start-Caelestia\.ps1' -and $switchText -match '-Command Quit' -and
+        $switchText -match 'DisableAutostart') 'Switch back does not delegate Quit and the autostart choice to the stable root.'
+    Assert ($switchText -notmatch 'Restore-Desktop\.ps1') 'Switch back kept its own desktop restore fallback.'
+    Assert ($switchText -notmatch 'Remove-ItemProperty') 'Switch back still removes the Run entry itself.'
+    $purgeText = Get-CaelestiaPurgePromptText (Join-Path $root 'profile')
+    Assert ($purgeText -match 'caelestia-update-trust' -and $purgeText -match 'kept') 'The uninstall dialog does not explain update-trust retention.'
+    Assert ($purgeText -match 'No \(default\)') 'The uninstall dialog does not default to keeping settings.'
+    Write-Output 'PASS integration entries: the launch, switch-back and Apps & features entries are created and described.'
+
+    Complete-CaelestiaInstallIntegration $ui2Prefix (Join-Path $ui2Prefix "versions\$ui2B") -Autostart -DesktopShortcut
+    Assert (Test-Path -LiteralPath $ui2.DesktopShortcut) 'The opt-in desktop shortcut was not created.'
+    $run = Get-ItemProperty -LiteralPath (Get-CaelestiaAutostartKey) -Name $ui2.RunName -ErrorAction SilentlyContinue
+    Assert ($null -ne $run -and [string]$run.($ui2.RunName) -match '^".*conhost\.exe" --headless ".+\\powershell\.exe" .*Caelestia-Launcher\.ps1" -Action start -Prefix "' + [regex]::Escape($ui2Prefix) + '"$') 'Autostart does not use the no-window launcher.'
+    Write-Output 'PASS integration desktop/autostart: the opt-in entries use the same hidden launch path.'
+
+    $null = Switch-CaelestiaVersion $ui2Prefix $ui2A
+    Assert ((Read-CaelestiaInstall $ui2Prefix).current -eq $ui2A) 'The lifecycle rollback did not select the first version.'
+    $entry = Get-ItemProperty -LiteralPath $ui2KeyPath
+    Assert ($entry.DisplayVersion -eq '1.0.0') 'Rollback left a stale Apps & features version.'
+    Assert ($entry.DisplayIcon -eq ((Join-Path $ui2Prefix "versions\$ui2A") + '\qs.exe,0')) 'Rollback left the Apps & features icon on the replaced version.'
+    Assert ((Read-Shortcut $ui2.Shortcut).IconLocation -eq ((Join-Path $ui2Prefix "versions\$ui2A") + '\qs.exe,0')) 'Rollback left the launch shortcut icon on the replaced version.'
+    Assert ((Test-Path -LiteralPath $ui2.SwitchBackShortcut) -and (Test-Path -LiteralPath $ui2.DesktopShortcut)) 'Rollback removed an existing integration entry.'
+    Write-Output 'PASS integration rollback: version and icon follow the selected payload, entries stay valid.'
+
+    Remove-CaelestiaUserIntegration $ui2Prefix
+    foreach ($path in @($ui2.Shortcut, $ui2.SwitchBackShortcut, $ui2.DesktopShortcut)) {
+        Assert (-not (Test-Path -LiteralPath $path)) 'Uninstall cleanup left an integration shortcut behind.'
+    }
+    Assert (-not (Test-Path -LiteralPath $ui2KeyPath)) 'Uninstall cleanup left the Apps & features entry behind.'
+    Assert ($null -eq (Get-ItemProperty -LiteralPath (Get-CaelestiaAutostartKey) -Name $ui2.RunName -ErrorAction SilentlyContinue)) 'Uninstall cleanup left the autostart entry behind.'
+    # Refresh-only (rollback) must never recreate entries for an installation
+    # that deliberately registered none, such as a NoIntegration packaging
+    # prefix. Only the installer's explicit integration step creates them.
+    Update-CaelestiaIntegrationRecords $ui2Prefix (Join-Path $ui2Prefix "versions\$ui2A")
+    Assert (-not (Test-Path -LiteralPath $ui2.Shortcut) -and -not (Test-Path -LiteralPath $ui2KeyPath)) 'A refresh recreated integration entries that did not exist.'
+    Write-Output 'PASS integration cleanup: uninstall removes shortcuts, autostart and the Apps & features entry; refresh never creates them.'
+
+    # The no-window entrypoint itself: the generated conhost command starts the
+    # installed script, and the launcher refuses a copied shortcut that names
+    # another prefix or a directory without install.json. A synthetic start
+    # script records its console state and that it ran; no real shell,
+    # supervisor or desktop is involved.
+    function Invoke-Launcher([string]$LauncherPath, [string]$PrefixArgument, [string]$ActionName, [string]$OutcomePath) {
+        $launcherArguments = '-NoProfile -ExecutionPolicy Bypass -File "' + $LauncherPath + '" -Action ' + $ActionName +
+            ' -Prefix "' + $PrefixArgument + '" -NoDialogs'
+        if ($OutcomePath) { $launcherArguments += ' -OutcomeFile "' + $OutcomePath + '"' }
+        return (Start-Process -FilePath (Get-WindowsPowerShellPath) -ArgumentList $launcherArguments -Wait -PassThru).ExitCode
+    }
+    $launcherPrefix = Join-Path $root 'launcher'
+    [IO.Directory]::CreateDirectory($launcherPrefix) | Out-Null
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Caelestia-Launcher.ps1') -Destination $launcherPrefix
+    '{"product":"caelestia-windows"}' | Set-Content -LiteralPath (Join-Path $launcherPrefix 'install.json') -Encoding UTF8
+    $launcherMarker = Join-Path $root 'launcher-marker.txt'
+    $startScript = @'
+param([string]$Prefix, [string]$Command = 'Start')
+Add-Type -Namespace CaelestiaLauncherProbe -Name Native -MemberDefinition '[System.Runtime.InteropServices.DllImport("kernel32.dll")] public static extern System.IntPtr GetConsoleWindow();'
+$hasWindow = [CaelestiaLauncherProbe.Native]::GetConsoleWindow() -ne [IntPtr]::Zero
+[IO.File]::WriteAllText('__MARKER__', ('started:' + $Prefix + ':consoleWindow=' + $hasWindow))
+'@
+    $startScript.Replace('__MARKER__', $launcherMarker.Replace("'", "''")) |
+        Set-Content -LiteralPath (Join-Path $launcherPrefix 'Start-Caelestia.ps1') -Encoding UTF8
+    $launcher = Join-Path $launcherPrefix 'Caelestia-Launcher.ps1'
+    # Touch the same script shape the Start-menu entry uses, then invoke the
+    # launcher directly so its own exit codes are observable.
+    $directOutcome = Join-Path $root 'launcher-direct.json'
+    Remove-Item -LiteralPath $launcherMarker, $directOutcome -ErrorAction SilentlyContinue
+    $directExit = Invoke-Launcher $launcher $launcherPrefix 'start' $directOutcome
+    Assert ($directExit -eq 0) 'The launcher refused its own installed prefix.'
+    Assert (Test-Path -LiteralPath $launcherMarker) 'The launcher did not start the installed script.'
+    $marker = (Get-Content -LiteralPath $launcherMarker -Raw).Trim()
+    Assert ($marker -match ('^started:' + [regex]::Escape($launcherPrefix) + ':consoleWindow=')) 'The launcher passed the wrong prefix.'
+    $directResult = Get-Content -LiteralPath $directOutcome -Raw | ConvertFrom-Json
+    Assert ($directResult.exitCode -eq 0 -and $directResult.action -eq 'start') 'The direct launcher outcome is wrong.'
+
+    # The installed Start-menu target: conhost --headless, then the same launcher.
+    # conhost returns 0 even when the child fails (microsoft/terminal#17178), so
+    # the outcome file, not conhost's status, carries the launcher result.
+    $launchCommand = Get-CaelestiaLaunchCommand $launcherPrefix 'start'
+    $conhostOutcome = Join-Path $root 'launcher-conhost.json'
+    Remove-Item -LiteralPath $launcherMarker, $conhostOutcome -ErrorAction SilentlyContinue
+    $conhostExit = (Start-Process -FilePath $launchCommand.Target `
+        -ArgumentList ($launchCommand.Arguments + ' -OutcomeFile "' + $conhostOutcome + '"') -Wait -PassThru).ExitCode
+    Assert ($conhostExit -eq 0) 'The conhost launch failed.'
+    $markerClock = [Diagnostics.Stopwatch]::StartNew()
+    while (-not (Test-Path -LiteralPath $launcherMarker) -and $markerClock.Elapsed.TotalSeconds -lt 15) { Start-Sleep -Milliseconds 50 }
+    Assert (Test-Path -LiteralPath $launcherMarker) 'The conhost launch did not start the installed script.'
+    $marker = (Get-Content -LiteralPath $launcherMarker -Raw).Trim()
+    Assert ($marker -eq ('started:' + $launcherPrefix + ':consoleWindow=False')) 'The installed Start-menu target created a console window.'
+    Assert ((Get-Content -LiteralPath $conhostOutcome -Raw | ConvertFrom-Json).exitCode -eq 0) 'The conhost launch outcome is wrong.'
+
+    $wrongPrefix = Join-Path $root 'not-the-launcher-directory'
+    [IO.Directory]::CreateDirectory($wrongPrefix) | Out-Null
+    $wrongOutcome = Join-Path $root 'launcher-wrong-prefix.json'
+    $wrongExit = Invoke-Launcher $launcher $wrongPrefix 'start' $wrongOutcome
+    Assert ($wrongExit -eq 3) 'The launcher accepted a prefix that does not own it.'
+    Assert ((Get-Content -LiteralPath $wrongOutcome -Raw | ConvertFrom-Json).exitCode -eq 3) 'The foreign-prefix outcome is wrong.'
+    $missingPrefix = Join-Path $root 'launcher-missing-install'
+    [IO.Directory]::CreateDirectory($missingPrefix) | Out-Null
+    Copy-Item -LiteralPath $launcher -Destination $missingPrefix
+    $missingOutcome = Join-Path $root 'launcher-missing-install.json'
+    $missingExit = Invoke-Launcher (Join-Path $missingPrefix 'Caelestia-Launcher.ps1') $missingPrefix 'start' $missingOutcome
+    Assert ($missingExit -eq 4) 'The launcher ran a directory without install.json.'
+    $unknownExit = Invoke-Launcher $launcher $launcherPrefix 'not-an-action' (Join-Path $root 'launcher-unknown.json')
+    Assert ($unknownExit -eq 2) 'The launcher accepted an unknown action.'
+    $missingTargetPrefix = Join-Path $root 'launcher-missing-target'
+    [IO.Directory]::CreateDirectory($missingTargetPrefix) | Out-Null
+    Copy-Item -LiteralPath $launcher -Destination $missingTargetPrefix
+    '{"product":"caelestia-windows"}' | Set-Content -LiteralPath (Join-Path $missingTargetPrefix 'install.json') -Encoding UTF8
+    $missingTargetExit = Invoke-Launcher (Join-Path $missingTargetPrefix 'Caelestia-Launcher.ps1') $missingTargetPrefix 'start' (Join-Path $root 'launcher-missing-target.json')
+    Assert ($missingTargetExit -eq 5) 'The launcher ignored a missing action script.'
+    $failurePrefix = Join-Path $root 'launcher-failure'
+    [IO.Directory]::CreateDirectory($failurePrefix) | Out-Null
+    Copy-Item -LiteralPath $launcher -Destination $failurePrefix
+    '{"product":"caelestia-windows"}' | Set-Content -LiteralPath (Join-Path $failurePrefix 'install.json') -Encoding UTF8
+    'throw "Injected start failure."' | Set-Content -LiteralPath (Join-Path $failurePrefix 'Start-Caelestia.ps1') -Encoding UTF8
+    $failureOutcome = Join-Path $root 'launcher-failure.json'
+    $failureExit = Invoke-Launcher (Join-Path $failurePrefix 'Caelestia-Launcher.ps1') $failurePrefix 'start' $failureOutcome
+    Assert ($failureExit -eq 1) 'The launcher did not propagate a failed action.'
+    Assert ((Get-Content -LiteralPath $failureOutcome -Raw | ConvertFrom-Json).exitCode -eq 1) 'The failed-action outcome is wrong.'
+    Write-Output 'PASS launcher: conhost --headless starts the installed script with no console window, and exit codes and refusals are correct.'
+
+    # Behavioural switch-back delegation: the wrapper only collects the
+    # autostart choice and calls the stable-root Quit entry. It must not keep
+    # its own restore fallback or remove the Run entry. A disposable prefix
+    # drives the real wrapper against a stub common layer and a stub entry.
+    $switchBackStub = @'
+function Resolve-CaelestiaDirectory([string]$Path) { return [IO.Path]::GetFullPath($Path).TrimEnd('\') }
+function Test-CaelestiaAutostart([string]$Prefix) {
+    return [IO.File]::Exists((Join-Path $PSScriptRoot 'autostart-enabled.txt'))
+}
+function Read-CaelestiaConfirmation { param([string]$Title, [string]$Text, [switch]$DefaultYes) return $true }
+function Get-CaelestiaAutostartPromptText { return 'stub prompt' }
+function Show-CaelestiaHandoffDialog { param([string]$Message)
+    Set-Content -LiteralPath (Join-Path $PSScriptRoot 'dialog.txt') -Value $Message }
+'@
+    function New-SwitchBackCase([string]$Name, [string]$EntryBehaviour, [switch]$AutostartEnabled) {
+        $case = Join-Path $root ('switch-back-' + $Name)
+        [IO.Directory]::CreateDirectory($case) | Out-Null
+        Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Switch-CaelestiaToWindows.ps1') -Destination $case
+        $switchBackStub | Set-Content -LiteralPath (Join-Path $case 'Caelestia-InstallCommon.ps1') -Encoding UTF8
+        '{"product":"caelestia-windows","version":2}' | Set-Content -LiteralPath (Join-Path $case 'install.json') -Encoding UTF8
+        if ($AutostartEnabled) { 'enabled' | Set-Content -LiteralPath (Join-Path $case 'autostart-enabled.txt') -Encoding UTF8 }
+        $entry = @'
+param([string]$Prefix, [string]$Command = 'Start', [switch]$DisableAutostart)
+[IO.File]::WriteAllText((Join-Path $PSScriptRoot 'entry.txt'), ($Command + '|Disable=' + $DisableAutostart))
+if ('__BEHAVIOUR__' -eq 'throw') { throw 'Injected quit or desktop restore failure.' }
+'@
+        $entry.Replace('__BEHAVIOUR__', $EntryBehaviour) |
+            Set-Content -LiteralPath (Join-Path $case 'Start-Caelestia.ps1') -Encoding UTF8
+        return $case
+    }
+    function Invoke-SwitchBackCase([string]$Case, [string]$AutostartMode = 'Ask') {
+        $stdout = Join-Path $Case 'stdout.txt'
+        $stderr = Join-Path $Case 'stderr.txt'
+        $process = Start-Process -FilePath (Get-WindowsPowerShellPath) -ArgumentList (
+            '-NoProfile -ExecutionPolicy Bypass -File "' + (Join-Path $Case 'Switch-CaelestiaToWindows.ps1') +
+            '" -Prefix "' + $Case + '" -Autostart ' + $AutostartMode + ' -NoDialogs') -Wait -PassThru `
+            -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+        return [pscustomobject]@{
+            ExitCode = $process.ExitCode
+            Output = $(if (Test-Path -LiteralPath $stdout) { [IO.File]::ReadAllText($stdout) } else { '' }) +
+                $(if (Test-Path -LiteralPath $stderr) { [IO.File]::ReadAllText($stderr) } else { '' })
+        }
+    }
+    $failed = Invoke-SwitchBackCase (New-SwitchBackCase 'failed' 'throw')
+    Assert ($failed.ExitCode -ne 0) 'Switch back reported success when the stable Quit entry failed.'
+    Assert ($failed.Output -notmatch 'taskbar and desktop are back') 'Switch back claimed success after the stable Quit entry failed.'
+    Assert (Test-Path -LiteralPath (Join-Path $root 'switch-back-failed\entry.txt')) 'Switch back did not call the stable Quit entry.'
+    $success = Invoke-SwitchBackCase (New-SwitchBackCase 'success' 'ok')
+    Assert ($success.ExitCode -eq 0) 'Switch back failed after a successful stable Quit.'
+    Assert ($success.Output -match 'taskbar and desktop are back') 'Switch back did not report a successful Quit.'
+    Assert ((Get-Content -LiteralPath (Join-Path $root 'switch-back-success\entry.txt') -Raw).Trim() -eq 'Quit|Disable=False') 'Switch back changed the autostart choice without one.'
+    $asked = Invoke-SwitchBackCase (New-SwitchBackCase 'asked' 'ok' -AutostartEnabled)
+    Assert ($asked.ExitCode -eq 0) 'Switch back failed after an accepted autostart choice.'
+    Assert ((Get-Content -LiteralPath (Join-Path $root 'switch-back-asked\entry.txt') -Raw).Trim() -eq 'Quit|Disable=True') 'Switch back did not pass the chosen autostart removal to the stable entry.'
+    $kept = Invoke-SwitchBackCase (New-SwitchBackCase 'kept' 'ok' -AutostartEnabled) 'Keep'
+    Assert ((Get-Content -LiteralPath (Join-Path $root 'switch-back-kept\entry.txt') -Raw).Trim() -eq 'Quit|Disable=False') 'Switch back ignored the Keep choice.'
+    Write-Output 'PASS switch back: only the stable Quit entry runs; failures are reported and the autostart choice is delegated.'
 
     foreach ($injectFailure in @($false, $true)) {
         $legacy = Join-Path $root ('legacy-' + $injectFailure)
@@ -2157,13 +2449,13 @@ public static class LegacyInstallLockFixture {
     $heldStream = [IO.File]::Open($held, 'Open', 'Read', 'None')
     try {
         $refused = $false
-        try { & (Join-Path $PSScriptRoot 'Uninstall-Caelestia.ps1') -Prefix $lockedApp }
+        try { & (Join-Path $PSScriptRoot 'Uninstall-Caelestia.ps1') -Prefix $lockedApp -NoDialogs }
         catch { $refused = $true }
         Assert $refused 'Uninstall did not refuse an installation with an open file.'
         Assert (Test-Path -LiteralPath (Join-Path $lockedApp 'install.json')) 'A locked uninstall damaged the installation.'
         Assert (@(Get-ChildItem -LiteralPath $root -Directory -Filter 'locked-app.uninstall-*').Count -eq 0) 'A locked uninstall left a tombstone.'
     } finally { $heldStream.Dispose() }
-    $null = & (Join-Path $PSScriptRoot 'Uninstall-Caelestia.ps1') -Prefix $lockedApp
+    $null = & (Join-Path $PSScriptRoot 'Uninstall-Caelestia.ps1') -Prefix $lockedApp -NoDialogs
     Assert (-not (Test-Path -LiteralPath $lockedApp)) 'Uninstall left the prefix.'
     Assert (@(Get-ChildItem -LiteralPath $root -Directory -Filter 'locked-app.uninstall-*').Count -eq 0) 'Uninstall left a tombstone.'
     Write-Output 'PASS uninstall: a locked installation is unchanged; a clean run removes prefix and tombstone.'

@@ -94,7 +94,9 @@ function Copy-CaelestiaRootEntries([string]$Prefix, [string]$Runtime) {
         @('Uninstall-Caelestia.ps1', 'Uninstall-Caelestia.ps1'),
         @('Manage-Caelestia.ps1', 'Manage-Caelestia.ps1'),
         @('Caelestia-InstallCommon.ps1', 'Caelestia-InstallCommon.ps1'),
-        @('Caelestia-Versions.ps1', 'Caelestia-Versions.ps1')
+        @('Caelestia-Versions.ps1', 'Caelestia-Versions.ps1'),
+        @('Switch-CaelestiaToWindows.ps1', 'Switch-CaelestiaToWindows.ps1'),
+        @('Caelestia-Launcher.ps1', 'Caelestia-Launcher.ps1')
     )) {
         $target = Join-Path $Prefix $pair[1]
         if ((Test-Path -LiteralPath $target) -and ((Get-Item -LiteralPath $target -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) {
@@ -317,6 +319,10 @@ function Switch-CaelestiaVersion([string]$Prefix, [string]$Id, [switch]$Restart)
         # clock; a missing one leaves the fixed palette.
         $null = Set-CaelestiaSchemeRuntimeForRevision $old.profile $targetRevision $runtime -Verified $verifiedScheme
         $activated = $true
+        # Existing integration entries follow the selected version: the
+        # Apps & features DisplayVersion and the shortcut icon must name the
+        # payload the user is actually running, not the one just replaced.
+        Update-CaelestiaIntegrationRecords $Prefix $runtime
         if ($Restart) { Start-CaelestiaDetached $Prefix -LegacyReady -TaskName $launchTask -PreparedSchemeRuntime }
     } catch {
         $failure = $_
@@ -328,6 +334,12 @@ function Switch-CaelestiaVersion([string]$Prefix, [string]$Id, [switch]$Restart)
             Stop-CaelestiaHosts $Prefix
             Write-CaelestiaJsonAtomic (Join-Path $Prefix 'install.json') $old
             $null = Set-CaelestiaSchemeRuntimeForRevision $old.profile $previousRevision $previousRuntime -Verified $restoreScheme
+            # The integration refresh itself may have failed, or the restart
+            # after it did. Put the previous version's entries back before the
+            # reported failure, so Apps & features never describes a version
+            # that is no longer selected.
+            try { Update-CaelestiaIntegrationRecords $Prefix $previousRuntime }
+            catch { Write-Warning 'The previous version was selected again, but its Apps & features entry could not be refreshed.' }
             if ($Restart) { Start-CaelestiaDetached $Prefix -LegacyReady -PreparedSchemeRuntime }
         } elseif ($Restart -and -not @(Get-CaelestiaProcesses $Prefix).Count -and -not @(Get-CaelestiaSupervisors $old.profile).Count) {
             $null = Set-CaelestiaSchemeRuntimeForRevision $old.profile $previousRevision $previousRuntime -Verified $restoreScheme
@@ -339,7 +351,7 @@ function Switch-CaelestiaVersion([string]$Prefix, [string]$Id, [switch]$Restart)
     }
 }
 
-# Test seam: writes the Start-menu shortcut. A throw reports an integration
+# Test seam: writes one integration shortcut. A throw reports an integration
 # failure; the caller restores whatever the shortcut held before.
 function New-CaelestiaShortcut([string]$Path, [string]$PowerShellPath, [string]$Arguments, [string]$WorkingDirectory, [string]$Icon) {
     $wsh = New-Object -ComObject WScript.Shell
@@ -353,32 +365,20 @@ function New-CaelestiaShortcut([string]$Path, [string]$PowerShellPath, [string]$
 }
 
 function Get-CaelestiaAutostartKey {
+    $testRoots = Get-CaelestiaIntegrationTestRoots
+    if ($testRoots) { return $testRoots.Registry + '\Run' }
     return 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
-}
-
-# Shortcut-only arguments. The HKCU Run value has one builder below, so a new
-# launcher command cannot leave the sign-in path on the old console host.
-function Get-CaelestiaAutostartArguments([string]$Prefix) {
-    return '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + (Join-Path $Prefix 'Start-Caelestia.ps1') + '"'
 }
 
 # Autostart contract: this is the only function that builds the complete HKCU
 # Run value. Test-CaelestiaAutostart detects and Set-CaelestiaAutostart
 # writes/removes it, always through Get-CaelestiaIntegration and
 # Get-CaelestiaAutostartKey. Install and the shell's switch-back path share this
-# function. When the no-console launcher helper exists (installer PR #65 adds
-# New-CaelestiaHiddenCommand to Caelestia-InstallCommon.ps1), use it so the
-# launch command changes in one place; otherwise keep the legacy direct Windows
-# PowerShell command for the current payload.
+# function. The command itself comes from Get-CaelestiaLaunchCommand, the same
+# no-window conhost helper the Start-menu shortcut and Apps & features entry use,
+# so a future signed launcher (#20) changes in one place.
 function Get-CaelestiaAutostartValue([string]$Prefix) {
-    $hidden = Get-Command New-CaelestiaHiddenCommand -CommandType Function -ErrorAction SilentlyContinue
-    if ($hidden) {
-        return New-CaelestiaHiddenCommand $Prefix 'start'
-    }
-    $powershell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
-    $arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' +
-        (Join-Path $Prefix 'Start-Caelestia.ps1') + '"'
-    return '"' + $powershell + '" ' + $arguments
+    return (Get-CaelestiaLaunchCommand $Prefix 'start').CommandLine
 }
 
 # Autostart contract shared with the installer slice (PR #65):
@@ -563,13 +563,15 @@ function Disable-CaelestiaAutostartForQuit([string]$Prefix) {
     return $failure
 }
 
-# The Start-menu shortcut and the optional HKCU Run entry are part of the
+# The Start-menu launch and switch-back entries, the optional desktop entry,
+# the optional HKCU Run value and the Apps & features key are part of the
 # activation transaction: a failure here must not leave a selector claiming a
 # replacement the user was told failed, or a half-written integration behind.
-# Snapshot both before writing, undo only what this transaction changed, then
-# select the previous version again (and restart when the install did). A first
-# install has no previous payload, so only the integration is removed and the
-# error is rethrown; the version stays installed.
+# Set-CaelestiaUserIntegration snapshots every artifact before writing and
+# restores only what this transaction changed. Then select the previous version
+# again (and restart when the install did). A first install has no previous
+# payload, so only the integration is removed and the error is rethrown; the
+# version stays installed.
 function Complete-CaelestiaInstallIntegration {
     param(
         [string]$Prefix,
@@ -577,75 +579,18 @@ function Complete-CaelestiaInstallIntegration {
         [string]$Previous = '',
         [switch]$Restart,
         [switch]$Autostart,
+        [switch]$DesktopShortcut,
         [string]$Shortcut = '',
         [string]$RunName = ''
     )
-    if (-not $Shortcut -or -not $RunName) {
-        $integration = Get-CaelestiaIntegration $Prefix
-        if (-not $Shortcut) { $Shortcut = $integration.Shortcut }
-        if (-not $RunName) { $RunName = $integration.RunName }
-    }
-    $powershell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
-    $arguments = Get-CaelestiaAutostartArguments $Prefix
-    $autostartValue = Get-CaelestiaAutostartValue $Prefix
-    $run = Get-CaelestiaAutostartKey
-    $backup = $null
-    $runExisted = $false
-    $runValue = ''
-    $runWriteAttempted = $false
-    $shortcutExisted = $false
-    $shortcutWriteAttempted = $false
+    $integration = Get-CaelestiaIntegration $Prefix
+    if ($Shortcut) { $integration['Shortcut'] = $Shortcut }
+    if ($RunName) { $integration['RunName'] = $RunName }
     try {
-        # Snapshot the Run value before any work that can fail. Otherwise a
-        # failure during directory or shortcut setup would leave $runExisted
-        # false and cleanup would remove an entry this transaction never wrote.
-        if ($Autostart) {
-            $existing = Get-ItemProperty -LiteralPath $run -Name $RunName -ErrorAction SilentlyContinue
-            if ($null -ne $existing) { $runExisted = $true; $runValue = [string]$existing.$RunName }
-        }
-        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Shortcut) | Out-Null
-        $shortcutExisted = [IO.File]::Exists($Shortcut)
-        if ($shortcutExisted) {
-            $backupPath = $Shortcut + '.integration-' + [guid]::NewGuid().ToString('N')
-            try { [IO.File]::Copy($Shortcut, $backupPath) }
-            catch {
-                # Without a snapshot a later failure cannot tell the original
-                # from a half-written replacement, so abort before touching it.
-                try { if ([IO.File]::Exists($backupPath)) { [IO.File]::Delete($backupPath) } } catch { }
-                throw "Could not snapshot the existing shortcut; integration was aborted: $($_.Exception.Message)"
-            }
-            $backup = $backupPath
-        }
-        $shortcutWriteAttempted = $true
-        New-CaelestiaShortcut $Shortcut $powershell $arguments $Prefix ($RuntimePrefix.TrimEnd('\') + '\qs.exe,0')
-        if ($Autostart) {
-            # Never New-Item -Force an existing registry key: it recreates the
-            # key empty and deletes every other application's startup entry.
-            if (-not (Test-Path -LiteralPath $run)) { New-Item -Path $run | Out-Null }
-            $runWriteAttempted = $true
-            New-ItemProperty -Path $run -Name $RunName -PropertyType String -Value $autostartValue -Force | Out-Null
-        }
-        # A backup that cannot be deleted is not an integration failure: never
-        # roll back a completed install over a cleanup problem.
-        if ($backup) { try { [IO.File]::Delete($backup) } catch { } }
+        Set-CaelestiaUserIntegration $Prefix $RuntimePrefix -Integration $integration `
+            -Autostart:$Autostart -DesktopShortcut:$DesktopShortcut
     } catch {
         $failure = $_
-        try {
-            if ($backup -and [IO.File]::Exists($backup)) {
-                [IO.File]::Copy($backup, $Shortcut, $true)
-                [IO.File]::Delete($backup)
-            } elseif ($shortcutWriteAttempted -and -not $shortcutExisted -and [IO.File]::Exists($Shortcut)) {
-                # Only a shortcut this transaction created is removed; a
-                # pre-existing one is restored from its snapshot or left alone.
-                [IO.File]::Delete($Shortcut)
-            }
-        } catch { }
-        try {
-            if ($runWriteAttempted) {
-                if ($runExisted) { New-ItemProperty -Path $run -Name $RunName -PropertyType String -Value $runValue -Force | Out-Null }
-                else { Remove-ItemProperty -LiteralPath $run -Name $RunName -ErrorAction SilentlyContinue }
-            }
-        } catch { }
         if ($Previous) {
             try {
                 Switch-CaelestiaVersion $Prefix $Previous -Restart:$Restart

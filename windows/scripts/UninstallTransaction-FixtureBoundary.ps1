@@ -35,9 +35,48 @@ function Stop-CaelestiaHosts([string]$Prefix, [string]$VersionRoot = '', [int]$T
 }
 function Get-CaelestiaIntegration([string]$Prefix) {
     Assert-FixturePrefix $Prefix
+    $directory = Join-Path $env:CAELESTIA_FIXTURE_CASE 'integration'
+    if ($env:CAELESTIA_FIXTURE_INTEGRATION_MODE -eq 'real') {
+        # The real cleanup runs against these disposable paths and the
+        # worker-generated HKCU test root. No live shortcut or registry root.
+        return @{
+            RunName = 'fixture-run'
+            UninstallKey = 'fixture-apps'
+            Shortcut = Join-Path $directory 'shortcut.lnk'
+            SwitchBackShortcut = Join-Path $directory 'switch-back.lnk'
+            DesktopShortcut = Join-Path $directory 'desktop.lnk'
+            Launcher = Join-Path $env:CAELESTIA_FIXTURE_PREFIX 'Caelestia-Launcher.ps1'
+        }
+    }
     Invoke-FixtureBoundary 'integration'
-    return @{ RunName = 'fixture-run'; Shortcut = Join-Path $env:CAELESTIA_FIXTURE_CASE 'integration\shortcut.lnk' }
+    return @{ RunName = 'fixture-run'; Shortcut = Join-Path $directory 'shortcut.lnk' }
 }
+if ($env:CAELESTIA_FIXTURE_INTEGRATION_MODE -eq 'real') {
+    # Real cleanup needs the production Run/Uninstall roots, redirected to a
+    # disposable HKCU test key that the controller creates and removes.
+    function Get-CaelestiaAutostartKey { return $env:CAELESTIA_FIXTURE_REGISTRY + '\Run' }
+    function Get-CaelestiaUninstallKeyRoot { return $env:CAELESTIA_FIXTURE_REGISTRY + '\Uninstall' }
+    if ($env:CAELESTIA_FIXTURE_INTEGRATION_FAILURE -eq 'registry-denial') {
+        function Remove-Item {
+            param([string]$LiteralPath, [switch]$Recurse, [switch]$Force, $ErrorAction)
+            if ($LiteralPath -eq (Get-CaelestiaUninstallKeyPath $env:CAELESTIA_FIXTURE_PREFIX)) {
+                throw 'Injected Apps & features registry denial.'
+            }
+            $params = @{ LiteralPath = $LiteralPath; Recurse = $Recurse; Force = $Force }
+            if ($ErrorAction) { $params.ErrorAction = $ErrorAction }
+            Microsoft.PowerShell.Management\Remove-Item @params
+        }
+    }
+} else {
+# The simulated cleanup below replaces the real one, so it needs no real
+# snapshot. The dedicated real-integration cases exercise that path against
+# disposable files and registry keys.
+function Get-CaelestiaUserIntegrationSnapshot {
+    param([string]$Prefix, $Integration = $null)
+    return @{ Files = @(); Run = $null; Key = $null }
+}
+function Restore-CaelestiaUserIntegrationSnapshot { param($Snapshot) return @() }
+function Remove-CaelestiaUserIntegrationSnapshot { param($Snapshot) }
 function Get-ItemProperty {
     param([string]$LiteralPath, [string]$Name, $ErrorAction)
     if ($LiteralPath -ne (Join-Path $env:CAELESTIA_FIXTURE_CASE 'integration') -or $Name -ne 'fixture-run') {
@@ -45,13 +84,21 @@ function Get-ItemProperty {
     }
     if (Test-Path -LiteralPath (Join-Path $LiteralPath $Name)) { return @{ 'fixture-run' = 'owned' } }
 }
-function Remove-ItemProperty {
-    param([string]$LiteralPath, [string]$Name)
-    if ($LiteralPath -ne (Join-Path $env:CAELESTIA_FIXTURE_CASE 'integration') -or $Name -ne 'fixture-run') {
-        throw 'Blocked removal outside fixture integration.'
+function Remove-CaelestiaUserIntegration([string]$Prefix, $Integration = $null) {
+    Assert-FixturePrefix $Prefix
+    if ($null -eq $Integration) { throw 'Uninstall did not pass the integration record it resolved.' }
+    # The pending cleanup is entered here, after the real tombstone rename, and
+    # the post-removal boundary is where the tree cleanup begins.
+    foreach ($name in @('fixture-run', 'shortcut.lnk', 'switch-back.lnk', 'desktop.lnk', 'apps-features.json')) {
+        $path = Join-Path $env:CAELESTIA_FIXTURE_CASE "integration\$name"
+        if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Force }
     }
     Invoke-FixtureBoundary 'remove-integration'
-    Remove-Item -LiteralPath (Join-Path $LiteralPath $Name)
+}
+function Remove-ItemProperty {
+    param([string]$LiteralPath, [string]$Name, $ErrorAction)
+    throw 'Blocked registry removal outside the fixture integration boundary.'
+}
 }
 # Scheme provisioning/probes and task-backed launches are external boundaries,
 # not the version publication/selection/rollback transaction under test.
