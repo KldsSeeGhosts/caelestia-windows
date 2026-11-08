@@ -115,6 +115,12 @@ try {
     # users do not see half-written copies.
     $staging = [IO.Path]::Combine($folder, '.caelestia-import-staging')
     [IO.Directory]::CreateDirectory($staging) | Out-Null
+    # A junction or symlink here would point cleanup and copies at another
+    # folder. The service only uses a real directory it can own.
+    if (([IO.File]::GetAttributes($staging) -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+        [Console]::Out.WriteLine('ERROR:staging')
+        exit 2
+    }
     try {
         $attributes = [IO.File]::GetAttributes($staging)
         if (($attributes -band [IO.FileAttributes]::Hidden) -eq 0) {
@@ -293,6 +299,8 @@ try {
             return Tr.tr("Windows denied access to the wallpapers folder");
         if (category === "names")
             return Tr.tr("The wallpapers folder has no free name for that image");
+        if (category === "staging")
+            return Tr.tr("The .caelestia-import-staging folder in your wallpapers folder is a link. Remove it and try again");
         if (category === "io")
             return Tr.tr("Windows could not copy that image to the wallpapers folder");
         return Tr.tr("Could not add that image to the wallpapers folder");

@@ -25,6 +25,12 @@ $stagingName = '.caelestia-import-staging'
 $deniedDirectory = Join-Path $runRoot 'denied-walls'
 $deniedStaging = Join-Path $deniedDirectory $stagingName
 $icacls = Join-Path $env:SystemRoot 'System32\icacls.exe'
+# A wallpapers folder whose staging folder is a junction to an outside folder
+# holding an old, validly named temporary. The import must refuse and leave it.
+$junctionDirectory = Join-Path $runRoot 'junction-walls'
+$junctionStaging = Join-Path $junctionDirectory $stagingName
+$junctionOutside = Join-Path $runRoot 'junction-outside'
+$junctionVictim = Join-Path $junctionOutside ('.caelestia-import-' + ('a' * 32) + '.partial')
 $currentSid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
 $denyApplied = $false
 $env:CAELESTIA_TEST_OUTPUT_ROOT = $runRoot
@@ -76,6 +82,14 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Could not create the permission-denied fixture folder.' }
     $denyApplied = $true
 
+    New-Item -ItemType Directory -Force -Path $junctionDirectory, $junctionOutside | Out-Null
+    [IO.File]::WriteAllText($junctionVictim, 'outside')
+    [IO.File]::SetLastWriteTimeUtc($junctionVictim, [DateTime]::UtcNow.AddHours(-2))
+    New-Item -ItemType Junction -Path $junctionStaging -Target $junctionOutside | Out-Null
+    if (-not (([IO.File]::GetAttributes($junctionStaging)) -band [IO.FileAttributes]::ReparsePoint)) {
+        throw 'Could not create the junction staging fixture.'
+    }
+
     $result = Invoke-QmlFixture -QtPrefix $QtPrefix -BuildRoot $BuildRoot -Name wallpaper-folder -ShellFixture -UseQuickshell `
         -Environment @{
             CAELESTIA_WALLPAPER_DIR = $wallsDirectory.Replace('\', '/')
@@ -84,6 +98,7 @@ try {
             CAELESTIA_WALLPAPER_LARGE_SOURCE = $largeSource.Replace('\', '/')
             CAELESTIA_WALLPAPER_RETRY_SOURCE = $retrySource.Replace('\', '/')
             CAELESTIA_WALLPAPER_DENIED_DIR = $deniedDirectory.Replace('\', '/')
+            CAELESTIA_WALLPAPER_JUNCTION_DIR = $junctionDirectory.Replace('\', '/')
         } `
         -Sources @('windows/tests/WallpaperFolderTest.qml') -FixtureFile 'windows/tests/WallpaperFolderTest.qml' `
         -Marker CAELESTIA_WALLPAPER_FOLDER -MinimumAssertions 160 -TimeoutMs 150000
@@ -92,6 +107,10 @@ try {
         Get-Content -LiteralPath $result.stdout -Tail 80 -Encoding UTF8 | Write-Output
         Get-Content -LiteralPath $result.stderr -Tail 20 -Encoding UTF8 | Write-Output
         throw "Wallpaper folder fixture failed. See $($result.stderr)."
+    }
+
+    if (-not (Test-Path -LiteralPath $junctionVictim)) {
+        throw 'An import through a junction staging folder deleted a file outside the wallpapers folder.'
     }
 
     # The failure and timeout categories must reach the diagnostics, not only
@@ -158,6 +177,7 @@ try {
     if ($service -match 'stderr=') { throw 'The wallpaper folder diagnostic still logs raw stderr.' }
     if ($service -notmatch 'File\]::Move') { throw 'The wallpaper folder service no longer publishes with a rename.' }
     if ($service -notmatch 'jobTimeoutMs') { throw 'The wallpaper folder service lost its job timeout.' }
+    if ($service -notmatch 'ReparsePoint') { throw 'The wallpaper folder service no longer refuses a linked staging folder.' }
 } finally {
     # Remove the temporary deny before the run root is deleted. The deny only
     # covers a disposable directory below OutputRoot.
@@ -166,6 +186,10 @@ try {
             & $icacls $deniedDirectory /remove:d "*${currentSid}" /T 2>$null | Out-Null
         } catch {
         }
+    }
+    # Remove the junction itself first, so recursive deletion cannot follow it.
+    if (Test-Path -LiteralPath $junctionStaging) {
+        try { [IO.Directory]::Delete($junctionStaging) } catch { }
     }
     # The run root holds the large source image. It is disposable and must not
     # outlive this test.

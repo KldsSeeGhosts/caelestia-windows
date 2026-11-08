@@ -71,6 +71,10 @@ ShellRoot {
     readonly property string largeSourcePath: Quickshell.env("CAELESTIA_WALLPAPER_LARGE_SOURCE") || ""
     readonly property string retrySourcePath: Quickshell.env("CAELESTIA_WALLPAPER_RETRY_SOURCE") || ""
     readonly property string deniedFolderPath: Quickshell.env("CAELESTIA_WALLPAPER_DENIED_DIR") || ""
+    readonly property string junctionFolderPath: Quickshell.env("CAELESTIA_WALLPAPER_JUNCTION_DIR") || ""
+    property bool junctionDone: false
+    property int junctionCode: -1
+    property string junctionOutput: ""
     // The service owns this hidden folder. Nothing in the wallpapers folder
     // itself is staged or cleaned.
     readonly property string stagingFolderName: ".caelestia-import-staging"
@@ -245,6 +249,27 @@ if (($attributes -band [IO.FileAttributes]::Hidden) -ne 0) {
         onExited: code => {
             root.stagingAttributes = code === 0 ? stagingProbeOutput.text.trim() : "ERROR " + code;
             root.stagingProbeDone = true;
+        }
+    }
+
+    // The production job script against a staging folder that is a junction to
+    // another folder. It must refuse before cleanup or copying.
+    Process {
+        id: junctionJob
+
+        command: root.defaultJobCommand
+        environment: ({
+                CAELESTIA_WALLPAPER_JOB_MODE: "copy",
+                CAELESTIA_WALLPAPER_JOB_SOURCE: root.realSourcePath,
+                CAELESTIA_WALLPAPER_JOB_FOLDER: root.junctionFolderPath
+            })
+        stdout: StdioCollector {
+            id: junctionJobOutput
+        }
+        onExited: code => {
+            root.junctionCode = code;
+            root.junctionOutput = junctionJobOutput.text;
+            root.junctionDone = true;
         }
     }
 
@@ -992,6 +1017,18 @@ if (($attributes -band [IO.FileAttributes]::Hidden) -ne 0) {
                 "IOException: Access to the path 'C:\\Users\\canary-drive-private\\secret.png' is denied.");
             WallpaperFolderService.reportJob("copy", 2, "io",
                 "IOException: The network path '\\\\canary-unc-private\\share\\secret.png' is unavailable.");
+
+            // 27. A staging folder that is a junction is refused before any
+            // cleanup or copy. The script checks the outside folder afterwards.
+            root.check(root.junctionFolderPath.length > 0, "the fixture supplied no junction staging folder");
+            junctionJob.running = true;
+            root.check(junctionJob.running, "the junction-staging copy did not start");
+            root.waitFor(() => root.junctionDone, 30000, "the junction-staging copy did not finish");
+            root.check(root.junctionCode === 2, `the junction-staging copy exited with ${root.junctionCode}`);
+            root.check(root.junctionOutput.trim() === "ERROR:staging",
+                `the junction-staging copy emitted "${root.junctionOutput.trim()}"`);
+            root.check(WallpaperFolderService.failureMessage("copy", "staging").length > 0,
+                "a junction staging folder has no user message");
 
             console.log("CAELESTIA_WALLPAPER_FOLDER_PASS " + assertions);
             Qt.quit();
