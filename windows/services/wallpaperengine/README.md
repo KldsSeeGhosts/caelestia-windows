@@ -6,13 +6,17 @@ Python bridge discovers Steam via HKCU `Software\Valve\Steam\SteamPath`, reads
 process list. No Steam or workshop installation path is hardcoded.
 
 When the integration is disabled, or enabled but Wallpaper Engine is not
-installed or not running, the shell keeps its own wallpaper visible and derives
-its palette from that image, even while a Wallpaper Engine process is running.
-A fresh profile starts on `assets/wallpaper.webp` and records that source in
-`state/caelestia/wallpaper/desktop.json`; an upgrade with earlier Caelestia
-state keeps the Windows wallpaper it already showed, whether or not the
+installed or not running, the shell selects its own wallpaper and derives its
+palette from that image. A running engine still owns a visible wallpaper
+window: the pinned backend places marked backgrounds below every visible
+foreign child and refuses an above-icons embed while one exists, so the engine
+covers the shell's image until the process quits. A fresh profile starts on
+`assets/wallpaper.webp`; provenance is recorded once in
+`state/caelestia/wallpaper/profile.json` before any other start-up writer, and
+the chosen source is recorded in `state/caelestia/wallpaper/desktop.json`. An
+upgrade keeps the Windows wallpaper it already showed, whether or not the
 optional colour runtime produced a palette. See the configuration reference for
-the record and the missing-key rule.
+the record, the comparison baseline and the missing-key rule.
 
 The active config is
 `<user>.general.wallpaperconfig.selectedwallpapers.MonitorN.file`. Saved/recent

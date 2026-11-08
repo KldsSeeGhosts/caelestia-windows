@@ -307,7 +307,10 @@ PageBase {
         ToggleRow {
             first: true
             text: Tr.tr("Wallpaper Engine wallpapers")
-            subtext: Tr.tr("Needs Wallpaper Engine installed and running. Otherwise Caelestia keeps its own wallpaper")
+            // A running engine owns a visible window. The shell cannot place
+            // its own background above it with the pinned backend, so this
+            // toggle states the limitation instead of promising otherwise.
+            subtext: Tr.tr("Needs Wallpaper Engine installed and running. While it runs, its own wallpaper still covers the desktop until it quits")
             checked: WallpaperEngine.enabled
             onToggled: WallpaperEngine.setEnabled(checked)
         }

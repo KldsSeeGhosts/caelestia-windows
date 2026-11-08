@@ -226,7 +226,9 @@ the first frame uses the bundled Caelestia wallpaper. Turn it on in Nexus >
 Services once Wallpaper Engine is installed and running; it then supplies the
 launcher picker and palette preview and retains ownership of the desktop
 background. An existing profile keeps a saved `true` or the older `"auto"`
-value. The desktop clock defaults off.
+value. With the integration off, a running engine still covers the bundled
+wallpaper with its own window until it quits; the shell cannot place its
+background above it without a backend change. The desktop clock defaults off.
 
 ### What to expect on first launch
 

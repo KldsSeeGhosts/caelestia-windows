@@ -370,6 +370,7 @@
   "windows/shell/adapters/services/Time.qml": "services/Time.qml",
   "windows/shell/adapters/services/TransparentPalette.qml": "services/TransparentPalette.qml",
   "windows/shell/adapters/services/UpdateManager.qml": "services/UpdateManager.qml",
+  "windows/shell/adapters/services/WallpaperProvenance.qml": "services/WallpaperProvenance.qml",
   "windows/shell/adapters/services/Wallpapers.qml": "services/Wallpapers.qml",
   "windows/shell/adapters/utils/Paths.qml": "utils/Paths.qml",
   "windows/shell/adapters/utils/FileUrls.js": "utils/FileUrls.js",

@@ -252,12 +252,23 @@ Singleton {
     // the text that read returned. Reading text() straight after reload()
     // merges the stale document and drops keys written since the last watch
     // event. A malformed or unreadable existing file is never replaced.
+    //
+    // setText() cannot run from onLoaded: the native view still owns the read
+    // operation when it emits loaded(), so a save issued there replaces the
+    // live operation and its saved() is dropped. The write is queued after
+    // that callback, and the facade value only changes in saved().
     property bool togglePending: false
     property bool toggleValue: false
+    property bool configSavePending: false
+    property var pendingConfigDocument: null
+    property string pendingConfigText: ""
 
     function setEnabled(on: bool): void {
-        // Rapid clicks collapse into one merge with the latest value.
+        // Rapid clicks collapse into one merge with the latest value. A save
+        // in flight finishes first; saved() then reruns the latest value.
         root.toggleValue = on === true;
+        if (root.configSavePending)
+            return;
         root.togglePending = true;
         configFile.reload();
     }
@@ -281,11 +292,28 @@ Singleton {
         const current = next.windows.wallpaperEngine;
         next.windows.wallpaperEngine = current && typeof current === "object" && !Array.isArray(current)
             ? Object.assign({}, current, {enabled: root.toggleValue}) : {enabled: root.toggleValue};
+        root.pendingConfigDocument = next;
+        root.pendingConfigText = JSON.stringify(next, null, 2) + "\n";
+        root.configSavePending = true;
+        root.lastError = "";
+        Qt.callLater(() => {
+            if (root.configSavePending)
+                configFile.setText(root.pendingConfigText);
+        });
+    }
+    function applyToggle(): void {
+        const next = root.pendingConfigDocument;
+        root.configSavePending = false;
+        root.pendingConfigDocument = null;
+        root.pendingConfigText = "";
         root.configDocument = next;
-        root.options = next.windows.wallpaperEngine;
+        root.options = next?.windows?.wallpaperEngine ?? {};
         root.configLoaded = true;
         root.lastError = "";
-        configFile.setText(JSON.stringify(next, null, 2) + "\n");
+        // A click made while the write was in flight keeps only the latest
+        // value; merge it against the file that was just saved.
+        if (root.toggleValue !== root.enabled)
+            Qt.callLater(() => root.setEnabled(root.toggleValue));
     }
 
     function open(path: string, screen): bool {
@@ -364,8 +392,20 @@ Singleton {
             root.options = {};
             root.configLoaded = true;
         }
-        onSaved: root.lastError = ""
+        onSaved: {
+            if (root.configSavePending)
+                root.applyToggle();
+            else
+                root.lastError = "";
+        }
         onSaveFailed: error => {
+            if (root.configSavePending) {
+                // Never apply a value that did not reach disk. The switch
+                // stays on the saved state and the error stays visible.
+                root.configSavePending = false;
+                root.pendingConfigDocument = null;
+                root.pendingConfigText = "";
+            }
             root.lastError = "Could not save Wallpaper Engine settings: " + String(error);
         }
     }

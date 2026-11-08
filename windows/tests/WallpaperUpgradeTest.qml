@@ -4,10 +4,9 @@ import Quickshell.Io
 import Quickshell.Windows as Native
 import qs.services
 
-// Upgrade migration without colour-generation history. The profile has the
-// theme-token export every earlier build wrote but no wallpaper record and no
-// scheme.json or wallpaper/path.txt, which is a user without the optional
-// colour runtime. The migration must keep the saved Windows wallpaper and
+// Upgrade migration without any of the optional state files older builds
+// wrote. The only signal is the Caelestia state directory every earlier build
+// created. The migration must keep the saved Windows wallpaper and
 // per-display images and record that decision; it must not save the bundled
 // default over them.
 QtObject {
@@ -22,6 +21,9 @@ QtObject {
     function record(): var {
         return JSON.parse(Files.contents[Wallpapers.sourceRecordPath] ?? "{}");
     }
+    function marker(): var {
+        return JSON.parse(Files.contents[WallpaperProvenance.markerPath] ?? "{}");
+    }
 
     Component.onCompleted: Qt.callLater(run)
 
@@ -29,10 +31,18 @@ QtObject {
         try {
             Native.FsUtils.existingFiles = ["C:/fixture/assets/wallpaper.webp",
                 "C:/walls/windows-default.jpg", "C:/walls/primary.jpg",
-                "C:/walls/secondary.jpg", "C:/fixture/state/theme-tokens.json"];
+                "C:/walls/secondary.jpg"];
+            // No theme-tokens.json, scheme.json, wallpaper/path.txt or
+            // recordings.json. The existing state directory alone is the
+            // evidence an earlier Caelestia run left behind.
+            Native.FsUtils.existingDirs = ["C:/fixture/state"];
             Native.Wallpaper.currentPath = "C:/walls/windows-default.jpg";
             Quickshell.screens = [{name: "primary"}, {name: "secondary"}];
 
+            check(WallpaperProvenance.ready && WallpaperProvenance.existing,
+                "the existing profile was not classified from its state directory");
+            check(marker().version === 1 && marker().profile === "existing",
+                "the existing provenance marker was not written");
             check(Wallpapers.sourceInitialized, "the upgrade source resolved");
             check(Wallpapers.sourceRecordHealth === "valid", "the migration record was not written");
             check(Wallpapers.sourceChosen, "the upgrade was treated as a fresh install");

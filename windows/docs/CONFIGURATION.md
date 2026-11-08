@@ -338,22 +338,36 @@ The shell also records which wallpaper source this profile follows in
 `assets/wallpaper.webp`, and `user` follows the Windows wallpaper, where
 Caelestia writes picks. `monitors` overrides the baseline for one display, so
 picking on one monitor never imports the other monitors' older Windows images.
-`seen` holds the Windows image each display on the bundled default had when the
-shell last resolved. It is a comparison baseline, not the chosen image: if that
-Windows path later changes, an older build or Windows Settings made a newer
-selection, and the shell adopts it for that display. The choice itself is never
-stored as a path.
+`seen` is a one-time comparison baseline: the Windows image a default display
+had when the shell first observed it. It is never the chosen image and is never
+moved when a running engine changes the Windows wallpaper. If that path later
+differs, an older build, Windows Settings or an engine made a selection; the
+shell keeps the difference and, once no engine is running, follows Windows for
+that display. The choice itself is never stored as a path.
 
-A profile upgrading from an older build has no record. The shell treats the
-profile as an upgrade when it already holds earlier Caelestia state, including
-`state/caelestia/theme-tokens.json` (written by every earlier build, whether or
-not the optional colour runtime is installed), `scheme.json`, `wallpaper/path.txt`
-or `recordings.json`; it then keeps the saved Windows wallpaper and per-display
-choices. A profile with none of those files is a fresh install and starts on the
-bundled default. A record with malformed JSON, an unknown `version` or an
-unexpected field is never reinterpreted or rewritten on load: the saved Windows
-wallpaper stays visible until the user makes a new choice. Deleting a valid
-record resets the profile to the bundled default.
+A profile upgrading from an older build has no record. The shell classifies it
+once through `state/caelestia/wallpaper/profile.json`, written synchronously at
+startup before theme tokens, palette state or the wallpaper record can be
+created. When that marker is missing, the presence of the Caelestia state
+directory `state/caelestia` means an earlier build ran: the installer's empty
+`state` directory is not used because every start, fresh or upgrade, creates
+it. The result is recorded in the marker, so a first start that crashes after
+writing `theme-tokens.json` is still treated as the same fresh profile on the
+next start. An existing profile keeps its saved Windows wallpaper and
+per-display choices; a fresh one starts on the bundled default. A record with
+malformed JSON, an unknown `version` or an unexpected field is never
+reinterpreted or rewritten on load: the saved Windows wallpaper stays visible
+until the user makes a new choice.
+
+Deleting `desktop.json` removes the saved choice. The profile marker then
+decides what remains: a fresh profile returns to the bundled default, and an
+existing profile keeps its Windows wallpaper.
+
+A Wallpaper Engine process that is running but not enabled still owns a visible
+wallpaper window. The pinned backend places marked backgrounds below every
+visible foreign child and refuses an above-icons embed while one exists, so the
+bundled background is mounted and ready but the engine's window covers it until
+the process quits. Covering a running engine would need a backend change.
 
 Windows banner replacement is also configured in `config/windows.json`:
 

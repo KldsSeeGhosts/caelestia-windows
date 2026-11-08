@@ -15,6 +15,7 @@ if ($null -eq $defaults.windows.wallpaperEngine -or
 $servicesPage = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..\shell\adapters\modules\nexus\pages\ServicesPage.qml') -Raw -Encoding UTF8
 foreach ($required in @(
     'Needs Wallpaper Engine installed and running',
+    'its own wallpaper still covers the desktop until it quits',
     'checked: WallpaperEngine.enabled',
     'onToggled: WallpaperEngine.setEnabled(checked)',
     'Not installed',
@@ -30,13 +31,19 @@ foreach ($required in @(
 # rollback and damaged-record migrations are exercised for real.
 $fixtures = @(
     [ordered]@{ name = 'wallpaper-defaults'; source = 'windows/tests/WallpaperDefaultsTest.qml'
-        marker = 'CAELESTIA_WALLPAPER_DEFAULTS'; minimum = 55 },
+        marker = 'CAELESTIA_WALLPAPER_DEFAULTS'; minimum = 65 },
     [ordered]@{ name = 'wallpaper-engine-off'; source = 'windows/tests/WallpaperEngineDisabledTest.qml'
         marker = 'CAELESTIA_WALLPAPER_ENGINE_OFF'; minimum = 18 },
     [ordered]@{ name = 'wallpaper-upgrade'; source = 'windows/tests/WallpaperUpgradeTest.qml'
-        marker = 'CAELESTIA_WALLPAPER_UPGRADE'; minimum = 11 },
+        marker = 'CAELESTIA_WALLPAPER_UPGRADE'; minimum = 14 },
+    [ordered]@{ name = 'wallpaper-provenance'; source = 'windows/tests/WallpaperProvenanceTest.qml'
+        marker = 'CAELESTIA_WALLPAPER_PROVENANCE'; minimum = 8 },
     [ordered]@{ name = 'wallpaper-rollback'; source = 'windows/tests/WallpaperRollbackTest.qml'
         marker = 'CAELESTIA_WALLPAPER_ROLLBACK'; minimum = 11 },
+    [ordered]@{ name = 'wallpaper-rollback-engine'; source = 'windows/tests/WallpaperRollbackEngineTest.qml'
+        marker = 'CAELESTIA_WALLPAPER_ROLLBACK_ENGINE'; minimum = 15 },
+    [ordered]@{ name = 'wallpaper-record-retry'; source = 'windows/tests/WallpaperRecordRetryTest.qml'
+        marker = 'CAELESTIA_WALLPAPER_RECORD_RETRY'; minimum = 18 },
     [ordered]@{ name = 'wallpaper-invalid-record'; source = 'windows/tests/WallpaperInvalidRecordTest.qml'
         marker = 'CAELESTIA_WALLPAPER_INVALID'; minimum = 10 },
     [ordered]@{ name = 'wallpaper-future-record'; source = 'windows/tests/WallpaperFutureRecordTest.qml'

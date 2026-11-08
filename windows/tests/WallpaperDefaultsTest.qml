@@ -4,14 +4,19 @@ import Quickshell.Io
 import Quickshell.Windows as Native
 import qs.services
 
-// Fresh-install wallpaper defaults. The complete production Wallpapers and
-// WallpaperEngine singletons own the decision; only native I/O, the sidecar
-// and the scheme generator are faked. There is no saved record and no earlier
-// Caelestia state in the fixture profile, which is the fresh-install state.
+// Fresh-install wallpaper defaults. The complete production Wallpapers,
+// WallpaperProvenance and WallpaperEngine singletons own the decision; only
+// native I/O, the sidecar and the scheme generator are faked. There is no
+// saved record and no earlier Caelestia state in the fixture profile, which is
+// the fresh-install state.
+//
+// The Nexus toggle must outlive an onLoaded callback and an asynchronous
+// write, so the toggle and colour stages advance through the event loop.
 QtObject {
     id: root
 
     property int assertions: 0
+    property var nextStep: null
     function check(value, description): void {
         assertions++;
         if (!value)
@@ -20,15 +25,45 @@ QtObject {
     function record(): var {
         return JSON.parse(Files.contents[Wallpapers.sourceRecordPath] ?? "{}");
     }
+    function marker(): var {
+        return JSON.parse(Files.contents[WallpaperProvenance.markerPath] ?? "{}");
+    }
     function reloadConfig(document): void {
         Files.contents[WallpaperEngine.settingsPath] = JSON.stringify(document);
         Files.changed(WallpaperEngine.settingsPath);
+    }
+    function later(step): void {
+        root.nextStep = step;
+        tick.restart();
+    }
+    function guard(step): void {
+        try {
+            step();
+        } catch (error) {
+            console.error("CAELESTIA_WALLPAPER_DEFAULTS_FAIL " + error);
+            Qt.exit(1);
+        }
+    }
+    function finish(): void {
+        console.log("CAELESTIA_WALLPAPER_DEFAULTS_PASS " + assertions);
+        Qt.quit();
+    }
+
+    property Timer tick: Timer {
+        interval: 1
+        repeat: false
+        onTriggered: {
+            const step = root.nextStep;
+            root.nextStep = null;
+            if (step)
+                root.guard(step);
+        }
     }
 
     Component.onCompleted: Qt.callLater(run)
 
     function run(): void {
-        try {
+        guard(function() {
             // Seed the profile before the singletons exist. Two displays so a
             // per-display pick can prove it leaves the other one alone.
             Native.FsUtils.existingFiles = ["C:/fixture/assets/wallpaper.webp",
@@ -39,6 +74,11 @@ QtObject {
 
             // 1. A fresh profile shows the bundled asset on every display and
             // records that decision. It never writes the Windows wallpaper.
+            // Provenance is recorded before any other current-run writer.
+            check(WallpaperProvenance.ready && !WallpaperProvenance.existing,
+                "the fresh profile was not classified before startup writers");
+            check(marker().version === 1 && marker().profile === "fresh",
+                "the fresh provenance marker was not written");
             check(Wallpapers.sourceInitialized, "the fresh wallpaper source resolved");
             check(!Wallpapers.sourceChosen, "a fresh profile is on the bundled default");
             check(Wallpapers.sourceRecordHealth === "valid", "the fresh record was not written");
@@ -51,8 +91,6 @@ QtObject {
                 "the secondary display did not start on the bundled asset");
             check(Native.Wallpaper.calls.length === 0 && Native.Wallpaper.screenCalls.length === 0,
                 "a fresh profile wrote the Windows wallpaper");
-            check(Native.FsUtils.madePaths.includes("C:/fixture/state/wallpaper"),
-                "the record directory was not created before the write");
             let saved = record();
             check(saved.version === 1 && saved.source === "default", "the fresh record is invalid");
             check(saved.seen["primary-id"] === "C:/walls/primary.jpg"
@@ -143,6 +181,19 @@ QtObject {
                 "the untouched display lost its baseline");
             check(saved.path === undefined, "the record stored a wallpaper path");
 
+            // The palette source must not keep naming a display that has
+            // disconnected. The remaining display shows the bundled default.
+            Quickshell.screens = [{name: "primary"}];
+            check(Wallpapers.currentForScreen({name: "primary"}) === Wallpapers.fallback,
+                "the disconnected pick stayed as the visible source");
+            check(Wallpapers.currentImage === Wallpapers.fallback,
+                "the disconnected pick stayed as the palette source");
+            Quickshell.screens = [{name: "primary"}, {name: "secondary"}];
+            check(Wallpapers.currentForScreen({name: "secondary"}) === "C:/walls/picked.jpg",
+                "reconnecting the picked display lost its image");
+            check(Wallpapers.currentImage === "C:/walls/picked.jpg",
+                "the reconnected pick did not return as the palette source");
+
             // 5. A global pick opts the profile in and keeps the saved
             // wallpaper while the engine is enabled but unavailable.
             check(Wallpapers.setWallpaper("C:/walls/picked.jpg"), "the global pick was rejected");
@@ -179,12 +230,18 @@ QtObject {
             WallpaperEngine.desktopHandedBack = false;
             WallpaperEngine.detected = false;
             WallpaperEngine.options = {};
+            root.later(runToggle);
+        });
+    }
 
+    function runToggle(): void {
+        guard(function() {
             // 6. The Nexus toggle merges only after the reload completes. The
             // view's cached document is stale here: the file gained
             // hideTaskbar and a new unrelated key after the last load, exactly
             // as a merge by another process would leave it. A read-then-text
             // merge would revert hideTaskbar and drop the new key.
+            Files.asyncWrites = true;
             reloadConfig({
                 windows: {
                     hideTaskbar: false,
@@ -192,8 +249,6 @@ QtObject {
                 }
             });
             check(WallpaperEngine.enabled, "the saved auto value was not loaded before the toggle");
-            // A newer merge lands behind the view's back: the cached text is
-            // still the document above.
             let advanced = {
                 windows: {
                     hideTaskbar: true,
@@ -209,8 +264,17 @@ QtObject {
             check(JSON.parse(Files.contents[WallpaperEngine.settingsPath]).windows.hideTaskbar === true,
                 "the toggle wrote before its fresh read completed");
             Files.flushReloads();
+            root.later(checkToggleMerge);
+        });
+    }
+
+    function checkToggleMerge(): void {
+        guard(function() {
+            // The deferred setText queued an asynchronous write. Deliver it
+            // before reading the applied facade value.
+            Files.flushWrites();
             Files.deferReloads = false;
-            saved = JSON.parse(Files.contents[WallpaperEngine.settingsPath]);
+            const saved = JSON.parse(Files.contents[WallpaperEngine.settingsPath]);
             check(saved.windows.hideTaskbar === true, "the toggle dropped hideTaskbar");
             check(saved.windows.notifications.replaceSystemBanners === false,
                 "the toggle dropped notification settings");
@@ -220,6 +284,8 @@ QtObject {
             check(saved.windows.newSection.keep === "me", "the toggle dropped an unrelated new key");
             check(!WallpaperEngine.enabled, "the toggle did not apply off");
             check(WallpaperEngine.lastError === "", "the toggle reported an error: " + WallpaperEngine.lastError);
+            check(!WallpaperEngine.configSavePending, "the toggle kept a pending save");
+            check(Files.droppedWrites === 0, "a write issued inside a FileView callback was dropped");
 
             // An existing but unreadable file is rejected instead of replaced
             // with a document built from nothing.
@@ -241,20 +307,78 @@ QtObject {
             check(!WallpaperEngine.enabled, "a failed read changed the in-memory value");
             WallpaperEngine.lastError = "";
 
+            // A save failure must not apply the new value and must remain
+            // visible. The document on disk is unchanged.
+            const beforeFailure = JSON.stringify({
+                windows: {hideTaskbar: true, wallpaperEngine: {enabled: false}}
+            });
+            Files.contents[WallpaperEngine.settingsPath] = beforeFailure;
+            Files.changed(WallpaperEngine.settingsPath);
+            check(!WallpaperEngine.enabled, "the save-failure fixture did not start off");
+            Files.saveFailures[WallpaperEngine.settingsPath] = 3;
+            Files.pendingReloads = [];
+            Files.deferReloads = true;
+            WallpaperEngine.setEnabled(true);
+            Files.flushReloads();
+            root.later(checkToggleFailure);
+            check(beforeFailure === Files.contents[WallpaperEngine.settingsPath],
+                "a save failure changed the document");
+        });
+    }
+
+    function checkToggleFailure(): void {
+        guard(function() {
+            Files.flushWrites();
+            Files.deferReloads = false;
+            delete Files.saveFailures[WallpaperEngine.settingsPath];
+            check(!WallpaperEngine.enabled, "a failed save applied the new value");
+            check(WallpaperEngine.lastError !== "", "a failed save was not reported");
+            check(!WallpaperEngine.configSavePending, "a failed save kept a pending write");
+            WallpaperEngine.lastError = "";
+
             // A profile without the sidecar can still opt in: a missing file
             // is a fresh install, so the write creates it.
             delete Files.contents[WallpaperEngine.settingsPath];
             Files.changed(WallpaperEngine.settingsPath);
             check(!WallpaperEngine.enabled, "a removed sidecar did not return to off");
+            Files.pendingReloads = [];
+            Files.deferReloads = true;
             WallpaperEngine.setEnabled(true);
+            Files.flushReloads();
+            root.later(checkToggleCreated);
+        });
+    }
+
+    function checkToggleCreated(): void {
+        guard(function() {
+            Files.flushWrites();
+            Files.deferReloads = false;
+            Files.asyncWrites = false;
             const created = JSON.parse(Files.contents[WallpaperEngine.settingsPath]);
             check(created.windows.wallpaperEngine.enabled === true, "the toggle did not create the sidecar");
             check(WallpaperEngine.enabled, "the created sidecar was not applied");
+            check(Files.droppedWrites === 0, "the create path issued a write inside a callback");
+            root.later(runColours);
+        });
+    }
 
-            // 7. First-run colour derivation uses the bundled wallpaper when
-            // the optional runtime is available, and makes no call when it is
-            // absent. This runs last: the fake generator replaces the whole
-            // file map when it reports a palette.
+    function runColours(): void {
+        guard(function() {
+            // 7. A real missing-scheme start settles on the documented fixed
+            // palette and makes no generator call. Only once scheme state says
+            // dynamic does first-run colour derivation use the bundled image.
+            delete Files.contents[Wallpapers.schemeStatePath];
+            delete Files.contents[Wallpapers.schemeSourcePath];
+            Wallpapers.schemeNameLoaded = false;
+            Wallpapers.schemeSourceLoaded = false;
+            Wallpapers.reloadSchemeState();
+            check(Wallpapers.schemeStateReady, "a missing scheme did not settle");
+            check(Wallpapers.schemeName === "", "a missing scheme loaded as dynamic");
+            const missingCalls = SchemeGenerator.calls.length;
+            Wallpapers.applyPalette(false);
+            check(SchemeGenerator.calls.length === missingCalls,
+                "a missing scheme still generated a palette");
+
             Files.contents[Wallpapers.schemeStatePath] = JSON.stringify({name: "dynamic"});
             Files.contents[Wallpapers.schemeSourcePath] = "C:/we/other.jpg";
             Wallpapers.reloadSchemeState();
@@ -271,11 +395,7 @@ QtObject {
                 "the absent colour runtime still generated a palette");
             SchemeGenerator.available = true;
 
-            console.log("CAELESTIA_WALLPAPER_DEFAULTS_PASS " + assertions);
-            Qt.quit();
-        } catch (error) {
-            console.error("CAELESTIA_WALLPAPER_DEFAULTS_FAIL " + error);
-            Qt.exit(1);
-        }
+            root.finish();
+        });
     }
 }

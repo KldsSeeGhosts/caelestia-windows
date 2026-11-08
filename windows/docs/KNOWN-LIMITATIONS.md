@@ -18,6 +18,14 @@ release and Actions runs.
   Selection and restoration are supported through the production bridge. Rare
   desktop flashes and unsolicited brightness overlays remain unqualified;
   seamless presented-frame handoff is not guaranteed.
+- **Wallpaper Engine while disabled:** a running engine keeps a visible
+  wallpaper window that the shell cannot place its own background above. The
+  bundled wallpaper and palette stay selected, but the engine's window covers
+  the desktop until the process quits. Fixing that needs a backend change.
+- **Wallpaper provenance:** the fresh-or-upgrade marker records its decision
+  once. An existing profile whose entire `state/caelestia` directory was
+  removed is indistinguishable from a fresh one; deleting only
+  `wallpaper/desktop.json` keeps the recorded provenance.
 - **Capture:** shipped screenshots, recordings and previews are 8-bit SDR sRGB.
   They do not preserve an HDR source as an HDR output. See
   [capture color policy](CAPTURE-COLOR.md).

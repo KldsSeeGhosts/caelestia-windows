@@ -58,8 +58,10 @@ QtObject {
             check(WallpaperEngine.picker === "files", "the disabled engine kept the picker");
 
             // The engine changes the Windows wallpaper itself. That is not a
-            // Caelestia choice: the displays stay on the bundled default and
-            // only the comparison baseline moves.
+            // Caelestia choice: the displays stay on the bundled default.
+            // Process presence cannot identify the writer, so the comparison
+            // baseline is left alone instead of being moved to the engine
+            // image; that evidence stays available for when the engine exits.
             Native.Wallpaper.currentPath = "C:/we/primary.jpg";
             Native.Wallpaper.screenPaths = {primary: "C:/we/primary.jpg", secondary: "C:/we/secondary.jpg"};
             Native.DesktopLayer.wallpaperChanged();
@@ -70,11 +72,11 @@ QtObject {
             check(Wallpapers.currentImage === Wallpapers.fallback,
                 "the engine-written wallpaper became the palette source");
             check(!Wallpapers.sourceChosen, "an engine-written wallpaper opted the profile in");
-            check(Wallpapers.sourceSeen["primary-id"] === "C:/we/primary.jpg",
-                "the engine wallpaper was not baselined");
+            check(Wallpapers.sourceSeen["primary-id"] === "C:/walls/primary.jpg",
+                "the comparison baseline was overwritten while the engine ran");
             saved = record();
-            check(saved.seen["primary-id"] === "C:/we/primary.jpg",
-                "the record kept a stale engine baseline");
+            check(saved.seen["primary-id"] === "C:/walls/primary.jpg",
+                "the stored comparison baseline moved while the engine ran");
             check(saved.source === "default", "the engine wallpaper changed the profile baseline");
             check(Native.Wallpaper.calls.length === 0 && Native.Wallpaper.screenCalls.length === 0,
                 "the disabled engine wrote a Windows wallpaper");
