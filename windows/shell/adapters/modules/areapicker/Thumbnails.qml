@@ -50,6 +50,15 @@ Scope {
     // Opens a file or folder URL with the default application. Fixtures replace
     // it with a recorder so that no test starts a program.
     property var openUrl: url => Qt.openUrlExternally(url)
+    // Runs the system drag of an image file, offering the file and the image for
+    // copy only, and returns once the drag has ended. It gets the file's path and
+    // the Item that draws the image, for the drag picture. It returns false when
+    // no drag could start. Fixtures replace it with a recorder so that no test
+    // starts a real drag.
+    property var startDrag: (path, item) => CUtils.startImageDrag(path, item)
+    // How far, in device pixels, a press has to move before it becomes a drag:
+    // { width, height }. Fixtures replace it.
+    property var dragDistance: () => CUtils.dragDistance()
     property var entries: []
     property int lastId
     // Preview files that could not be deleted yet (a viewer holds them open).
@@ -106,8 +115,12 @@ Scope {
             return false;
         // At most five previews exist in total, as in the classic tool. The oldest
         // goes first, on whichever screen it is. Each screen still lays out its
-        // own previews.
-        const doomed = Logic.evictions(entries.map(entry => entry.screen), Logic.MAX_PREVIEWS).map(index => entries[index]);
+        // own previews. A preview that is being dragged is not pushed out under
+        // the drag: the oldest one that is not goes instead, and the dragged
+        // preview counts toward the limit.
+        const idle = entries.filter(entry => !entry.dragging);
+        const busy = entries.length - idle.length;
+        const doomed = Logic.evictions(idle.map(entry => entry.screen), Logic.MAX_PREVIEWS - busy).map(index => idle[index]);
         const entry = entryComponent.createObject(root, {
             serial: ++lastId,
             screen: info.screen,
@@ -127,8 +140,14 @@ Scope {
         return true;
     }
 
-    // Starts the exit animation. The card calls finish() when it is done.
+    // Starts the exit animation. The card calls finish() when it is done. A
+    // preview that is being dragged stays as it is, because the target may still
+    // be reading its file, and closes as soon as the drag has ended.
     function close(entry: var): void {
+        if (entry.dragging) {
+            entry.closeAfterDrag = true;
+            return;
+        }
         entry.closing = true;
     }
 
@@ -137,10 +156,15 @@ Scope {
             close(entry);
     }
 
-    // Removes a preview and its temporary file at once.
+    // Removes a preview and its temporary file at once. A preview that is being
+    // dragged is removed when the drag ends (see drag()).
     function finish(entry: var): void {
         if (!entries.includes(entry))
             return;
+        if (entry.dragging) {
+            entry.closeAfterDrag = true;
+            return;
+        }
         entries = entries.filter(other => other !== entry);
         discard(entry);
     }
@@ -253,6 +277,47 @@ Scope {
             Toaster.toast(Tr.tr("Screenshot failed"), Tr.tr("The image could not be opened."), "screenshot_region", Toast.Error);
     }
 
+    // The card body was pulled past the drag distance: drags the image out of the
+    // shell. `item` is the Item that draws the image, for the drag picture. A
+    // saved capture drags its saved file. A copy-only capture drags its preview
+    // file, which stays in the temp directory until the preview closes, as it does
+    // without a drag. A drag writes nothing: it does not save a copy-only capture
+    // and it makes no copy of the file. Returns whether a drag ran. Dropping
+    // nowhere or cancelling with Esc is a drag that ran and changes nothing.
+    // While the drag runs the preview cannot close, be pushed out or lose its
+    // file. A close that arrives meanwhile happens when the drag has ended.
+    function drag(entry: var, item: Item): bool {
+        if (entry.dragging || !entries.includes(entry))
+            return false;
+        if (!WindowsFiles.isFile(entry.path)) {
+            Toaster.toast(Tr.tr("Screenshot failed"), Tr.tr("The image could not be dragged."), "screenshot_region", Toast.Error);
+            return false;
+        }
+        let ran = false;
+        entry.dragging = true;
+        try {
+            ran = startDrag(entry.path, item) === true;
+        } finally {
+            // A shell reload destroys the preview while its drag runs.
+            if (entries.includes(entry))
+                entry.dragging = false;
+        }
+        if (!entries.includes(entry))
+            return ran;
+        if (!ran)
+            Toaster.toast(Tr.tr("Screenshot failed"), Tr.tr("The image could not be dragged."), "screenshot_region", Toast.Error);
+        if (entry.closeAfterDrag) {
+            entry.closeAfterDrag = false;
+            // A preview whose screen went away during the drag has no panel to
+            // run its exit.
+            if (Array.from(screenList).some(screen => screen.name === entry.screen))
+                close(entry);
+            else
+                finish(entry);
+        }
+        return ran;
+    }
+
     // Turning the thumbnail off closes the ones on screen.
     onEnabledChanged: {
         if (!enabled)
@@ -310,6 +375,10 @@ Scope {
             property int imageHeight
             property real dpr: 1
             property bool closing
+            // The system drag of this preview's file is running.
+            property bool dragging
+            // A close came in while it ran.
+            property bool closeAfterDrag
         }
     }
 

@@ -133,3 +133,19 @@ function pillRect(card, pill, metrics) {
         height: height
     };
 }
+
+// Whether a press at `origin` has moved far enough, at `point`, to become a
+// drag. Both points are in logical pixels of the card. `distance` is the
+// system's { width, height } in device pixels (SM_CXDRAG and SM_CYDRAG), and
+// `scale` is the device pixel ratio. Like the classic tool, the pointer starts
+// a drag when it has moved the distance on either axis, and it never starts one
+// without a press. Distances below one device pixel count as one.
+function dragStarts(origin, point, distance, scale) {
+    if (!origin || !point)
+        return false;
+    var s = scale > 0 ? scale : 1;
+    var d = distance || {};
+    var across = d.width >= 1 ? d.width : 1;
+    var down = d.height >= 1 ? d.height : 1;
+    return Math.abs(point.x - origin.x) * s >= across || Math.abs(point.y - origin.y) * s >= down;
+}

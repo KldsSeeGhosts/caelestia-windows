@@ -37,6 +37,19 @@ public:
     Q_INVOKABLE static QString newCaptureTempPath();
     Q_INVOKABLE static bool removeCaptureTemp(const QString& path);
 
+    // Drags the image file at `path` out of the shell, Windows only. It offers
+    // the file (CF_HDROP) and the decoded image (PNG, CF_DIB), allows copy only
+    // and shows `preview` (an Item that draws the image) under the pointer. The
+    // call returns when the drag has ended, wherever it was dropped or whether
+    // Esc cancelled it. It returns false when no drag ran: the path is not an
+    // image file, another drag is running, or the platform is not Windows. It
+    // never writes a file. Call it from a pointer handler while the left button
+    // is down.
+    Q_INVOKABLE bool startImageDrag(const QString& path, QQuickItem* preview = nullptr);
+    // How far the pointer has to move, in device pixels, before a press becomes
+    // a drag: { width, height }.
+    Q_INVOKABLE static QSize dragDistance();
+
     Q_INVOKABLE static QString toLocalFile(const QUrl& url);
 
     Q_INVOKABLE static qreal clamp(qreal value, qreal min, qreal max);

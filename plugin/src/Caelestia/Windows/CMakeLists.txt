@@ -82,10 +82,31 @@ if(CAELESTIA_WINDOWS_TESTS)
     target_compile_definitions(wasapi-format-tests PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
     target_link_libraries(wasapi-format-tests PRIVATE Qt::Core Qt::Test)
 
-    foreach(fixture clipboard-logic clipboard-qml displaypower focus-follows-mouse knownfolders windowsfocusguard wasapi-format)
+    # The thumbnail's drag: what it offers and the picture under the pointer.
+    # The source file is shared with the plugin (caelestia-core).
+    add_executable(imagedrag-tests test/imagedrag_test.cpp ../imagedrag.cpp ../imagedrag.hpp)
+    target_include_directories(imagedrag-tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/..")
+    target_compile_definitions(imagedrag-tests PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+    target_link_libraries(imagedrag-tests PRIVATE Qt::Core Qt::Gui Qt::Test user32)
+
+    foreach(fixture clipboard-logic clipboard-qml displaypower focus-follows-mouse knownfolders windowsfocusguard wasapi-format imagedrag)
         add_test(NAME ${fixture} COMMAND ${fixture}-tests)
         set_tests_properties(${fixture} PROPERTIES TIMEOUT 60 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     endforeach()
+
+    # The Windows data object that the drag hands a target, read back through
+    # OLE: CF_HDROP, PNG, CF_DIB and the rest. It needs Qt's real windows platform
+    # plugin and replaces the clipboard content, so it is off by default and never
+    # registered with CTest. No CI gate runs it. After building with it on, run
+    # lib\imagedrag-desktop-tests.exe from the build directory (the Qt bin
+    # directory on PATH, QT_QPA_PLATFORM unset).
+    option(CAELESTIA_WINDOWS_DESKTOP_TESTS "Build the interactive desktop drag test" OFF)
+    if(CAELESTIA_WINDOWS_DESKTOP_TESTS)
+        add_executable(imagedrag-desktop-tests test/imagedrag_desktop_test.cpp ../imagedrag.cpp ../imagedrag.hpp)
+        target_include_directories(imagedrag-desktop-tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/..")
+        target_compile_definitions(imagedrag-desktop-tests PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+        target_link_libraries(imagedrag-desktop-tests PRIVATE Qt::Core Qt::Gui Qt::Test user32 ole32 shell32)
+    endif()
 endif()
 
 # WASAPI loopback analysis: CavaProvider/BeatTracker/ServiceRef for the

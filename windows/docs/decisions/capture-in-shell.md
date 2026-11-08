@@ -91,7 +91,15 @@ Rules for every control the tool draws:
 
 ### Thumbnail
 
-An overlay panel, also excluded from capture, bottom-right of the work area. It behaves as today, including dragging the file out. Drag-out needs a native OLE drag source, which the backend may lack. If so, phase 2b ships without drag-out and records it as a gap.
+An overlay panel, also excluded from capture, bottom-right of the work area. It behaves as today, including dragging the image out.
+
+**Drag-out.** Pressing the card body and moving past the system drag distance (`SM_CXDRAG` and `SM_CYDRAG`, in device pixels, either axis) drags the image into another program. A press on an action button never starts a drag, and a click that does not move opens the image as before.
+
+- **Where it lives.** The shell plugin, not the backend. `CUtils.startImageDrag(path, item)` (`plugin/src/Caelestia/imagedrag.cpp`) runs a Qt `QDrag` with copy as the only action, and `item` is the card's image, which gives the drag picture. The pinned backend is unchanged. Qt's Windows data object supplies the formats, so there is no hand-written OLE code.
+- **What the target receives.** The real file as `CF_HDROP`, the decoded image as `PNG`, `CF_DIB` and `CF_DIBV5`, the file as a `UniformResourceLocator(W)` link, and `Preferred DropEffect` set to copy. A target takes the format it prefers. `plugin/src/Caelestia/Windows/test/imagedrag_desktop_test.cpp` reads these back through OLE.
+- **Which file.** A saved capture drags its saved file. A copy-only capture drags the card's own preview file in the temp directory, which stays until the card closes, as it does without a drag. A drag writes nothing: it does not save a copy-only capture, it makes no copy and nothing reaches the screenshots folder. Esc, or a drop where nothing accepts it, changes nothing.
+- **The card during a drag.** The drag runs its own message loop, so the owner marks the preview as dragging for its duration. The timeout does not count meanwhile, and the card does not slide, close, get pushed out by a sixth capture or lose its file. A close that arrives meanwhile (timeout, Close, the thumbnail being turned off, a removed screen) happens when the drag ends. The timeout then goes on from where it stopped, as after hover.
+- **File name.** The target sees the file's real name. A saved capture keeps its screenshot name. A copy-only capture is `caelestia-clipboard-<uuid>.png`, because the temp scheme (`CUtils.newCaptureTempPath` and `removeCaptureTemp`) allows only that exact name. A friendlier name needs a new, equally strict scheme and is not part of this change.
 
 ### Recording
 
@@ -116,7 +124,7 @@ An overlay panel, also excluded from capture, bottom-right of the work area. It 
 1. **`excludeFromCapture`** on panel windows: `SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE)`, which falls back to no effect on systems without it. Include a fixture test.
 2. **Window stack snapshot** for QML: visible, non-cloaked, non-shell application windows in z-order, with frame bounds in Qt logical global coordinates. Include a fixture test.
 3. **Only if phase 2's gate fails:** `ScreencopyView.saveFrame(path, rect)`.
-4. **Follow-up, not blocking:** PNG clipboard format, and an OLE drag source for files.
+4. **Follow-up, not blocking:** PNG clipboard format. The drag source for files is not backend work: the thumbnail's drag-out uses Qt's `QDrag` in the shell plugin (see Thumbnail).
 
 ## Phases and PRs
 

@@ -1,4 +1,4 @@
-set(caelestia_core_sources cutils.cpp requests.cpp toaster.cpp circularbuffer.cpp)
+set(caelestia_core_sources cutils.cpp imagedrag.cpp requests.cpp toaster.cpp circularbuffer.cpp)
 set(caelestia_core_libraries Qt::Gui Qt::Quick Qt::Concurrent Qt::Network)
 if(NOT CAELESTIA_PORTABLE_UI)
     list(APPEND caelestia_core_sources qalculator.cpp)

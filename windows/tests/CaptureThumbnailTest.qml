@@ -63,6 +63,22 @@ ShellRoot {
         property bool result: true
     }
 
+    // Stands in for the system drag, which runs a modal loop of its own. The
+    // owner calls it with the entry marked as dragging, as it does for the real
+    // one, and `during` runs inside it, where the drag would be waiting for the
+    // button to be released.
+    property QtObject dragRecorder: QtObject {
+        property var calls: []
+        property bool result: true
+        property var during: null
+        function start(path, item): bool {
+            calls = calls.concat([{ path: path, item: item, existed: WindowsFiles.isFile(path) }]);
+            if (during)
+                during(path, item);
+            return result;
+        }
+    }
+
     AreaPicker {
         id: picker
 
@@ -79,6 +95,8 @@ ShellRoot {
             root.opener.urls = root.opener.urls.concat([String(url)]);
             return root.opener.result;
         }
+        startDrag: (path, item) => root.dragRecorder.start(path, item)
+        dragDistance: () => ({ width: 4, height: 4 })
     }
 
     Component {
@@ -568,7 +586,223 @@ ShellRoot {
             check(!WindowsFiles.isFile(temp), "and so is its preview file");
             check(cards().length === 4, "with its card");
             check(maskRects(panels()[0]).length === 4, "and its mask region");
-            timeoutStep();
+            dragStep();
+        }));
+    }
+
+    // 5b. Dragging the image out.
+    //
+    // The real drag runs a modal loop and needs a button held down, which an
+    // offscreen window cannot have. The card turns a press and movement into a
+    // call to the owner (bodyPressed, bodyMoved), which marks the entry as
+    // dragging and calls `startDrag`. Here that is a recorder.
+
+    // Exits with the number of files in a folder.
+    function countFiles(folder, callback): void {
+        powershell("exit @(Get-ChildItem -LiteralPath '" + winPath(folder) + "' -File -ErrorAction SilentlyContinue).Count", callback);
+    }
+
+    function dragStep(): void {
+        thumbs.closeAll();
+        later(1500, () => step(() => {
+            check(thumbs.entries.length === 0, "the stack is empty before the drag cases");
+            config({ thumbnailSeconds: 0 });
+            thumbs.addSaved(info(), savedPath);
+            later(900, () => step(dragThreshold));
+        }));
+    }
+
+    function dragThreshold(): void {
+        const entry = thumbs.entries[0];
+        const card = cardFor(entry);
+        const body = find(card, "captureThumbnailBody");
+        const image = find(card, "captureThumbnailImage");
+        check(card && body && image, "a saved capture with a card");
+        check(!card.dragging && !card.armed && !entry.dragging, "nothing is dragging yet");
+
+        // A click that does not move keeps its behaviour: it opens the image.
+        const opened = opener.urls.length;
+        card.bodyPressed(30, 40);
+        check(card.armed, "a press on the body arms it");
+        card.bodyMoved(30, 40);
+        card.bodyMoved(32, 42);
+        card.bodyMoved(33, 40);
+        check(dragRecorder.calls.length === 0 && card.armed && !card.dragging, "movement below the system distance (4 px) starts nothing");
+        card.bodyReleased();
+        check(!card.armed, "the release disarms it");
+        body.clicked(null);
+        check(opener.urls.length === opened + 1 && decodeURIComponent(opener.urls[opened]).endsWith(entry.path), "so the click opens the image");
+
+        // A move without a press does nothing.
+        card.bodyMoved(100, 100);
+        check(dragRecorder.calls.length === 0, "a move with no press starts nothing");
+
+        // Past the distance on either axis the press becomes a drag. Inside the
+        // drag the card holds still, and nothing can close or move it.
+        const before = { x: card.x, y: card.y };
+        const seen = {};
+        dragRecorder.during = (path, item) => {
+            seen.path = path;
+            seen.item = item;
+            check(entry.dragging && card.dragging, "the card and the entry know it is dragging");
+            check(card.paused, "which pauses its timeout");
+            check(!card.armed, "the press is spent");
+            check(card.fade === 1 && card.slide === 1 && card.shown, "the card is fully shown");
+            thumbs.close(entry);
+            check(!entry.closing && entry.closeAfterDrag, "a close during the drag waits for its end");
+            thumbs.finish(entry);
+            check(thumbs.entries.includes(entry), "so does a removal");
+            check(thumbs.drag(entry, item) === false, "a second drag of the same preview does not start");
+            check(WindowsFiles.isFile(path), "the file is there while it is dragged");
+        };
+        card.bodyPressed(30, 40);
+        card.bodyMoved(32, 40);
+        check(dragRecorder.calls.length === 0, "2 px across is not enough");
+        card.bodyMoved(34, 40);
+        dragRecorder.during = null;
+        check(dragRecorder.calls.length === 1, "4 px across starts one drag");
+        check(seen.path === entry.path && seen.path === savedPath, "of the saved file: " + seen.path);
+        check(seen.item === image && image.objectName === "captureThumbnailImage", "with the image as the drag picture");
+        check(dragRecorder.calls[0].existed, "which existed");
+        check(!entry.dragging && !card.dragging, "the drag is over");
+        check(card.dragged && !card.armed, "the click that its end can leave is not a click");
+        check(entry.closing && !entry.closeAfterDrag, "and the close that arrived during it happens now");
+        check(WindowsFiles.isFile(savedPath), "a saved file is never deleted by a drag");
+        check(before.x === card.x && before.y === card.y, "the card did not move during it: " + card.x + ", " + card.y);
+        check(opener.urls.length === opened + 1, "and the drag opened nothing");
+        body.clicked(null);
+        check(opener.urls.length === opened + 1, "a click that follows a drag does not open the image");
+        later(1500, () => step(() => {
+            check(!thumbs.entries.includes(entry), "the closed preview is gone after its exit");
+            dragButtons();
+        }));
+    }
+
+    function dragButtons(): void {
+        check(thumbs.addCopy(info(), savedPath), "a copy-only thumbnail");
+        later(900, () => step(() => {
+            const entry = thumbs.entries[0];
+            const card = cardFor(entry);
+            const pill = find(card, "captureThumbnailActions");
+            const calls = dragRecorder.calls.length;
+            // The buttons are above the body. A press on a button never reaches
+            // it, so it cannot become a drag. The body is below.
+            card.manualHover = true;
+            later(600, () => step(() => {
+                check(pill.visible, "the buttons are showing");
+                for (const name of ["copy", "save", "reveal", "close"]) {
+                    const button = find(card, "captureThumbnailAction-" + name);
+                    const centre = card.mapFromItem(button, button.width / 2, button.height / 2);
+                    check(card.childAt(centre.x, centre.y) === pill, "a press on " + name + " lands on the buttons, not on the card body");
+                    check(button.enabled && button.visible, name + " takes the press");
+                }
+                const outside = find(card, "captureThumbnailBody");
+                check(card.childAt(card.width / 2, 8) === outside, "the card body is under a press away from the buttons");
+                check(dragRecorder.calls.length === calls, "no drag started");
+                card.manualHover = false;
+                dragCopy(entry);
+            }));
+        }));
+    }
+
+    function dragCopy(entry): void {
+        const card = cardFor(entry);
+        const temp = entry.temp;
+        check(!entry.saved && temp !== "" && entry.path === temp && WindowsFiles.isFile(temp), "a copy-only capture shows its preview file");
+        countTemp(filesBefore => countFiles(saveRoot + "/Screenshots", shotsBefore => {
+            dragRecorder.during = path => {
+                check(path === temp && WindowsFiles.isFile(path), "a copy-only capture drags its own preview file: " + path);
+                check(/\/caelestia-clipboard-[0-9a-f]{32}\.png$/.test(path) && inTemp(path), "which has the exact-path temp name");
+            };
+            card.bodyPressed(10, 10);
+            card.bodyMoved(10, 30);
+            dragRecorder.during = null;
+            const call = dragRecorder.calls[dragRecorder.calls.length - 1];
+            check(call.path === temp, "the drag was of the preview file");
+            check(!entry.saved && entry.temp === temp && entry.path === temp && entry.imagePath === temp, "the capture is still copy-only, and not saved by being dragged");
+            check(WindowsFiles.isFile(temp), "the preview file survives the drag");
+            check(thumbs.entries.includes(entry) && !entry.closing && !entry.dragging, "and the card stays");
+            countTemp(filesAfter => countFiles(saveRoot + "/Screenshots", shotsAfter => {
+                check(filesAfter === filesBefore, "no file was made in the temp directory: " + filesBefore + " then " + filesAfter);
+                check(shotsAfter === shotsBefore, "and none in the screenshots folder: " + shotsBefore + " then " + shotsAfter);
+                check(toastWith("could not be dragged") === "", "with no error");
+                // Esc or a drop nowhere is a drag that ran. A drag that could not
+                // start is reported.
+                card.bodyPressed(10, 10);
+                dragRecorder.result = false;
+                card.bodyMoved(10, 30);
+                dragRecorder.result = true;
+                check(toastWith("could not be dragged") !== "", "a drag that cannot start is reported");
+                check(!entry.dragging && thumbs.entries.includes(entry) && WindowsFiles.isFile(temp), "and changes nothing");
+                dragMissing(entry);
+            }));
+        }));
+    }
+
+    function dragMissing(entry): void {
+        // The file of a saved capture may have been deleted by the user.
+        const calls = dragRecorder.calls.length;
+        const path = entry.path;
+        const gone = CUtils.newCaptureTempPath().split("\\").join("/");
+        check(gone !== "" && CUtils.removeCaptureTemp(gone), "a path to a missing file");
+        entry.path = gone;
+        check(thumbs.drag(entry, null) === false && dragRecorder.calls.length === calls, "a missing file starts no drag");
+        entry.path = path;
+        check(!entry.dragging, "and leaves the preview as it was");
+        dragPaused();
+    }
+
+    // The timeout stands still for as long as the drag runs, and then goes on
+    // from where it was, as after hover.
+    function dragPaused(): void {
+        thumbs.closeAll();
+        later(1500, () => step(() => {
+            check(thumbs.entries.length === 0, "the stack is empty");
+            config({ thumbnailSeconds: 1 });
+            thumbs.addSaved(info(), savedPath);
+            later(250, () => step(() => {
+                const entry = thumbs.entries[0];
+                const card = cardFor(entry);
+                // What the owner does for the length of the real drag.
+                entry.dragging = true;
+                check(card.dragging && card.paused, "a dragging card is paused");
+                const elapsed = card.elapsed;
+                later(2200, () => step(() => {
+                    check(thumbs.entries.includes(entry) && !entry.closing, "2 s into a 1 s timeout, the dragged preview is still there");
+                    check(card.elapsed === elapsed, "it used no time: " + elapsed + " then " + card.elapsed);
+                    entry.dragging = false;
+                    check(card.afterDrag && !card.hovered && !card.paused, "when the drag ends the pointer is not taken to still be over the card");
+                    later(1800, () => step(() => {
+                        check(!thumbs.entries.includes(entry), "and the timeout runs out as it does after hover");
+                        dragEviction();
+                    }));
+                }));
+            }));
+        }));
+    }
+
+    // A sixth preview does not push out one that is being dragged.
+    function dragEviction(): void {
+        config({ thumbnailSeconds: 0 });
+        for (let i = 0; i < 5; i++)
+            check(thumbs.addSaved(info(), savedPath), "a saved thumbnail is added");
+        check(thumbs.entries.length === 5, "five thumbnails");
+        const oldest = thumbs.entries[0];
+        const second = thumbs.entries[1];
+        oldest.dragging = true;
+        check(thumbs.addSaved(info(), savedPath), "a sixth arrives during a drag");
+        check(thumbs.entries.length === 5 && thumbs.entries.includes(oldest), "the dragged preview stays: five in all");
+        check(!thumbs.entries.includes(second), "and the next oldest is pushed out");
+        thumbs.closeAll();
+        check(oldest.closeAfterDrag && !oldest.closing, "closing everything waits for the drag too");
+        oldest.dragging = false;
+        later(1500, () => step(() => {
+            check(thumbs.entries.length === 1 && thumbs.entries[0] === oldest, "the others went");
+            thumbs.close(oldest);
+            later(1500, () => step(() => {
+                check(thumbs.entries.length === 0, "and the dragged one closes once it is let go");
+                timeoutStep();
+            }));
         }));
     }
 

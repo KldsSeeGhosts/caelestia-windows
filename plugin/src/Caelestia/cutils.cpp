@@ -17,6 +17,7 @@
 #include <qt_windows.h>
 #endif
 
+#include "imagedrag.hpp"
 #include "util/metaenum.hpp"
 
 namespace {
@@ -198,6 +199,30 @@ bool CUtils::removeCaptureTemp(const QString& path) {
     }
 
     return QFile::remove(path);
+}
+
+bool CUtils::startImageDrag(const QString& path, QQuickItem* preview) {
+#ifdef Q_OS_WIN
+    auto data = imagedrag::mimeData(path);
+    if (!data) {
+        qCWarning(lcCUtils) << "startImageDrag: cannot offer" << path;
+        return false;
+    }
+
+    const auto scale = preview && preview->window() ? preview->window()->devicePixelRatio() : 1.0;
+    const auto look = imagedrag::preview(
+        *data, preview ? QSizeF(preview->width(), preview->height()) : QSizeF(), scale);
+    return imagedrag::run(std::move(data), look, this).has_value();
+#else
+    Q_UNUSED(path);
+    Q_UNUSED(preview);
+    qCWarning(lcCUtils) << "startImageDrag: only supported on Windows";
+    return false;
+#endif
+}
+
+QSize CUtils::dragDistance() {
+    return imagedrag::dragDistance();
 }
 
 QString CUtils::toLocalFile(const QUrl& url) {
