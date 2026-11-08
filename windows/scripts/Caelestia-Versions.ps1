@@ -356,37 +356,184 @@ function Get-CaelestiaAutostartKey {
     return 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
 }
 
-# One command shape for this installation's Start-menu shortcut and HKCU Run
-# entry. Install and the shell's switch-back path both use it, so what is
-# registered and what is removed cannot drift.
+# Shortcut-only arguments. The HKCU Run value has one builder below, so a new
+# launcher command cannot leave the sign-in path on the old console host.
 function Get-CaelestiaAutostartArguments([string]$Prefix) {
     return '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + (Join-Path $Prefix 'Start-Caelestia.ps1') + '"'
 }
 
+# Autostart contract: this is the only function that builds the complete HKCU
+# Run value. Test-CaelestiaAutostart detects and Set-CaelestiaAutostart
+# writes/removes it, always through Get-CaelestiaIntegration and
+# Get-CaelestiaAutostartKey. Install and the shell's switch-back path share this
+# function. When the no-console launcher helper exists (installer PR #65 adds
+# New-CaelestiaHiddenCommand to Caelestia-InstallCommon.ps1), use it so the
+# launch command changes in one place; otherwise keep the legacy direct Windows
+# PowerShell command for the current payload.
 function Get-CaelestiaAutostartValue([string]$Prefix) {
+    $hidden = Get-Command New-CaelestiaHiddenCommand -CommandType Function -ErrorAction SilentlyContinue
+    if ($hidden) {
+        return New-CaelestiaHiddenCommand $Prefix 'start'
+    }
     $powershell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
-    return '"' + $powershell + '" ' + (Get-CaelestiaAutostartArguments $Prefix)
+    $arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' +
+        (Join-Path $Prefix 'Start-Caelestia.ps1') + '"'
+    return '"' + $powershell + '" ' + $arguments
 }
 
+# Autostart contract shared with the installer slice (PR #65):
+# - Get-CaelestiaAutostartKey() returns the registry key; fixtures override it.
+# - Get-CaelestiaIntegration($Prefix).RunName returns the value name.
+# - Test-CaelestiaAutostart($Prefix) returns the observed state; an unreadable
+#   key throws instead of reporting the entry as absent.
+# - Set-CaelestiaAutostart($Prefix, $Enabled) returns an object with ok, present,
+#   changed, verified, error, key, valueName and enabled.
+# - Get-CaelestiaAutostartValue($Prefix) is the only HKCU Run command builder.
 function Test-CaelestiaAutostart([string]$Prefix) {
     $integration = Get-CaelestiaIntegration $Prefix
-    return $null -ne (Get-ItemProperty -LiteralPath (Get-CaelestiaAutostartKey) `
-        -Name $integration.RunName -ErrorAction SilentlyContinue)
+    $run = Get-CaelestiaAutostartKey
+    try {
+        if (-not (Test-Path -LiteralPath $run)) { return $false }
+        $entry = Get-ItemProperty -LiteralPath $run -ErrorAction Stop
+    } catch {
+        # An unreadable key is not evidence that the entry is absent. Callers
+        # that only paint status can catch this; Set-CaelestiaAutostart reports
+        # it as an unverified removal failure.
+        throw "Could not read the Windows autostart entry '$($integration.RunName)': $($_.Exception.Message)"
+    }
+    return $null -ne $entry.PSObject.Properties[$integration.RunName]
 }
 
 # Additive hook for the shell's "Switch back to Windows" choice. Disable
 # removes only this installation's own Run entry; it never touches another
-# application's value or another prefix's hashed name.
+# application's value or another prefix's hashed name. Returns a result instead
+# of hiding failures: Quit proceeds so the desktop still comes back, but
+# Start-Caelestia reports a removal error through a notification and a nonzero
+# exit after restoring the desktop.
 function Set-CaelestiaAutostart([string]$Prefix, [bool]$Enabled) {
     $integration = Get-CaelestiaIntegration $Prefix
     $run = Get-CaelestiaAutostartKey
-    if (-not $Enabled) {
-        Remove-ItemProperty -LiteralPath $run -Name $integration.RunName -ErrorAction SilentlyContinue
-        return
+    $result = [pscustomobject]@{
+        enabled = $Enabled
+        key = $run
+        valueName = $integration.RunName
+        changed = $false
+        present = $false
+        verified = $true
+        ok = $true
+        error = ''
     }
-    if (-not (Test-Path -LiteralPath $run)) { New-Item -Path $run | Out-Null }
-    New-ItemProperty -Path $run -Name $integration.RunName -PropertyType String `
-        -Value (Get-CaelestiaAutostartValue $Prefix) -Force | Out-Null
+
+    if (-not $Enabled) {
+        try {
+            if (-not (Test-CaelestiaAutostart $Prefix)) {
+                # Already absent is the requested end state, not an error.
+                return $result
+            }
+        } catch {
+            $result.ok = $false
+            $result.verified = $false
+            $result.error = $_.Exception.Message
+            return $result
+        }
+
+        try {
+            Remove-ItemProperty -LiteralPath $run -Name $integration.RunName -ErrorAction Stop
+            $result.changed = $true
+        } catch {
+            # The verification below decides whether this was a real failure or
+            # a benign missing-property race. Permission and other errors that
+            # leave the entry present are reported.
+            $result.ok = $false
+            $result.error = $_.Exception.Message
+        }
+
+        try {
+            $result.present = Test-CaelestiaAutostart $Prefix
+        } catch {
+            $result.ok = $false
+            $result.verified = $false
+            if (-not $result.error) { $result.error = $_.Exception.Message }
+            return $result
+        }
+
+        if ($result.present) {
+            $result.ok = $false
+            if (-not $result.error) {
+                $result.error = "The Windows autostart entry '$($integration.RunName)' is still present after removal."
+            }
+        } elseif ($result.error) {
+            # Removal reported an error even though the entry is gone. Report
+            # the observed end state, and keep the diagnostic for logs.
+            $result.ok = $true
+        }
+        return $result
+    }
+
+    try {
+        if (-not (Test-Path -LiteralPath $run)) { New-Item -Path $run -ErrorAction Stop | Out-Null }
+        New-ItemProperty -Path $run -Name $integration.RunName -PropertyType String `
+            -Value (Get-CaelestiaAutostartValue $Prefix) -Force -ErrorAction Stop | Out-Null
+        $result.changed = $true
+        $result.present = Test-CaelestiaAutostart $Prefix
+        if (-not $result.present) {
+            $result.ok = $false
+            $result.error = "The Windows autostart entry '$($integration.RunName)' is still absent after it was written."
+        }
+    } catch {
+        $result.ok = $false
+        $result.error = $_.Exception.Message
+        try {
+            $result.present = Test-CaelestiaAutostart $Prefix
+        } catch {
+            $result.verified = $false
+        }
+    }
+    return $result
+}
+
+# Best-effort visible report for a failed autostart removal. Quit still runs so
+# the desktop is handed back, but the user must know the sign-in entry remains.
+# No settings, permissions or notification consent are changed.
+function Show-CaelestiaHandoffWarning([string]$Message) {
+    if ($env:OS -ne 'Windows_NT' -or $env:CAELESTIA_TEST_SUPPRESS_TOAST -eq '1') { return }
+    try {
+        $null = [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime]
+        $null = [Windows.UI.Notifications.ToastNotification, Windows.UI.Notifications, ContentType = WindowsRuntime]
+        $null = [Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime]
+        $appId = '{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\WindowsPowerShell\v1.0\powershell.exe'
+        $notifier = [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier($appId)
+        if ($notifier.Setting.ToString() -ne 'Enabled') { return }
+        $xml = [Windows.Data.Xml.Dom.XmlDocument]::new()
+        $xml.LoadXml('<toast><visual><binding template="ToastGeneric"><text>Caelestia autostart</text><text>' +
+            [Security.SecurityElement]::Escape($Message) + '</text></binding></visual></toast>')
+        $notifier.Show([Windows.UI.Notifications.ToastNotification]::new($xml))
+    } catch {
+        # Notification permission or WinRT projection can be unavailable; the
+        # warning and nonzero exit below still record the failure.
+    }
+}
+
+# Stable-root and payload launchers share one Quit autostart policy: remove only
+# this installation's entry, surface a failure, and let Quit continue. Returns
+# the failure text (empty on success) so the caller can rethrow it after Quit.
+function Disable-CaelestiaAutostartForQuit([string]$Prefix) {
+    $failure = ''
+    try {
+        $result = Set-CaelestiaAutostart -Prefix $Prefix -Enabled:$false
+        if ($result.ok -ne $true -or $result.present -eq $true) {
+            $failure = "Caelestia could not remove its Windows autostart entry. Quit will continue and restore the desktop. "
+            if ($result.error) { $failure += $result.error + ' ' }
+            $failure += "Remove the '$($result.valueName)' entry from Settings > Apps > Startup if it remains."
+        }
+    } catch {
+        $failure = "Caelestia could not remove its Windows autostart entry. Quit will continue and restore the desktop. $($_.Exception.Message)"
+    }
+    if ($failure) {
+        Write-Warning $failure
+        Show-CaelestiaHandoffWarning $failure
+    }
+    return $failure
 }
 
 # The Start-menu shortcut and the optional HKCU Run entry are part of the

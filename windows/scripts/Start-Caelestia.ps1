@@ -70,8 +70,12 @@ if ($Command -eq 'AutostartStatus') {
         ConvertTo-Json -Compress
     return
 }
+$autostartFailure = ''
 if ($Command -eq 'Quit' -and $DisableAutostart) {
-    Set-CaelestiaAutostart -Prefix $Prefix -Enabled:$false
+    # The user asked to leave Caelestia, so a failed Run-entry removal must not
+    # cancel Quit or desktop restoration. Report it before the shell exits, then
+    # fail the launcher call after restoration so callers can surface it too.
+    $autostartFailure = Disable-CaelestiaAutostartForQuit $Prefix
 }
 # Repository callers can still target the stable root. Route before building
 # a ProcessStartInfo so leftover legacy qs.exe files are never launched.
@@ -91,6 +95,9 @@ if ($record.version -eq 2) {
     }
     $arguments.Prefix = $runtime
     & (Join-Path $runtime 'Start-Caelestia.ps1') @arguments
+    # The stable root owns the Run entry. Re-raise its removal failure after the
+    # versioned launcher has finished Quit and desktop restoration.
+    if ($autostartFailure) { throw $autostartFailure }
     return
 }
 $installRoot = if ($record.installRoot) { [string]$record.installRoot } else { $Prefix }
@@ -341,6 +348,7 @@ if ($Command -ne 'Start') {
         }
     }
     Write-Output $output
+    if ($autostartFailure) { throw $autostartFailure }
     return
 }
 

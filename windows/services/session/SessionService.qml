@@ -76,6 +76,15 @@ QtObject {
     readonly property bool switchBackSupported: available && backend !== null
         && backend.switchBackSupported === true
 
+    // Observable handoff progress from the backend. A successful switch back
+    // exits this shell, so the only state the UI can show is "waiting" or a
+    // bounded timeout error that also clears the backend's dispatched guard so
+    // the user can retry.
+    readonly property bool switchBackPending: available && backend !== null
+        && backend.switchBackPending === true
+    readonly property string switchBackError: available && backend !== null
+        ? String(backend.switchBackError ?? "") : ""
+
     readonly property string status: {
         if (!enabled)
             return "disabled";
@@ -328,9 +337,10 @@ QtObject {
                 "The Windows session backend does not expose " + (method || "this action") + ".");
         }
 
+        let accepted = true;
         try {
             if (action === "switchback")
-                backend[method](switchBackDisableAutostart === true);
+                accepted = backend[method](switchBackDisableAutostart === true) !== false;
             else
                 backend[method]();
         } catch (error) {
@@ -338,11 +348,17 @@ QtObject {
                 "The native session call threw instead of returning a result: " + error);
         }
 
+        if (!accepted)
+            return recordResult(command, action, "failed", false,
+                "The Windows session backend did not start another switch-back handoff. "
+                + "A previous handoff may still be pending, or the installed launcher is unavailable.");
+
         if (action === "switchback")
             return recordResult(command, action, "requested", true,
                 "Requested switchBack(); the installed launcher is started outside the shell so "
                 + "Quit, supervisor restore and desktop handback complete after this shell exits. "
-                + "This is not a success result.");
+                + "Success is acknowledged by this shell exiting; a bounded timeout exposes a "
+                + "retryable error if it stays alive. This is not a success result.");
 
         return recordResult(command, action, "requested", true,
             "Requested " + method + "(); the native method returns void and only logs failures "

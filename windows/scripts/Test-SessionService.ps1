@@ -23,6 +23,7 @@ $backendSource = Get-Content -LiteralPath (Join-Path $repoRoot 'windows\services
 $contentSource = Get-Content -LiteralPath (Join-Path $repoRoot 'windows\shell\adapters\modules\session\Content.qml') -Raw
 $nexusSource = Get-Content -LiteralPath (Join-Path $repoRoot 'windows\shell\adapters\modules\nexus\pages\ServicesPage.qml') -Raw
 $startSource = Get-Content -LiteralPath (Join-Path $repoRoot 'windows\scripts\Start-Caelestia.ps1') -Raw
+$entrySource = Get-Content -LiteralPath (Join-Path $repoRoot 'windows\scripts\Start-CaelestiaEntry.ps1') -Raw
 $versionsSource = Get-Content -LiteralPath (Join-Path $repoRoot 'windows\scripts\Caelestia-Versions.ps1') -Raw
 $fallbackGuard = $contentSource.IndexOf('SessionManager.allowDetachedFallback === false')
 $detachedCall = $contentSource.IndexOf('Quickshell.execDetached')
@@ -40,11 +41,16 @@ $switchBackChecks = [ordered]@{
     nexusHasSwitchBack = $nexusSource -match 'Switch back to Windows'
     nexusDispatchesSwitchBack = $nexusSource -match 'SessionManager\.exec\(\["switch-back"\]\)'
     launcherAnswersAutostartStatus = $startSource -match "'AutostartStatus'"
-    launcherDisablesAutostartForQuit = $startSource -match '\$DisableAutostart' -and $startSource -match 'Set-CaelestiaAutostart'
+    launcherDisablesAutostartForQuit = $startSource -match '\$DisableAutostart' -and $startSource -match 'Disable-CaelestiaAutostartForQuit'
     launcherReadsExistingRegistration = $startSource -match 'Test-CaelestiaAutostart'
+    stableRootAnswersAutostartStatus = $entrySource -match "'AutostartStatus'"
+    stableRootDisablesAutostartForQuit = $entrySource -match '\$DisableAutostart' -and
+        $entrySource -match 'Disable-CaelestiaAutostartForQuit'
     registrationHasAutostartHelpers = ($versionsSource -match 'function Get-CaelestiaAutostartValue') -and
         ($versionsSource -match 'function Set-CaelestiaAutostart') -and
         ($versionsSource -match 'function Test-CaelestiaAutostart')
+    registrationUsesSingleLaunchCommand = $versionsSource -match 'Get-CaelestiaAutostartValue \$Prefix' -and
+        $versionsSource -match 'New-CaelestiaHiddenCommand'
 }
 $structuralFailures = @($switchBackChecks.Keys | Where-Object { -not $switchBackChecks[$_] })
 $result.fallbackPaths = $fallbackPaths.Count

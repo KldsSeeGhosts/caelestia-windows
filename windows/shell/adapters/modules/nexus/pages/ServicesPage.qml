@@ -4,6 +4,7 @@ import Quickshell
 import Caelestia.Config
 import Caelestia.I18n
 import Caelestia.Services
+import qs.components
 import qs.components.controls
 import qs.services
 import qs.modules.nexus.common
@@ -50,6 +51,8 @@ PageBase {
         && switchBackAction.dispatchable === true
     readonly property string switchBackReason: switchBackAction !== null
         ? String(switchBackAction.reason ?? "") : ""
+    readonly property bool switchBackPending: SessionManager.switchBackPending === true
+    readonly property string switchBackError: String(SessionManager.switchBackError ?? "")
 
     function switchBack(): void {
         if (!root.switchBackAvailable)
@@ -113,21 +116,34 @@ PageBase {
             first: true
             icon: "desktop_windows"
             text: Tr.tr("Switch back to Windows")
-            subtext: root.switchBackAvailable
-                ? Tr.tr("Quit Caelestia and restore the Windows taskbar and desktop")
-                : root.switchBackReason
+            subtext: !root.switchBackAvailable
+                ? root.switchBackReason
+                : root.switchBackPending
+                    ? Tr.tr("Waiting for Caelestia to quit")
+                    : Tr.tr("Quit Caelestia and restore the Windows taskbar and desktop")
             disabled: !root.switchBackAvailable
             onClicked: root.switchBack()
         }
 
         ToggleRow {
             objectName: "switchBackAutostartToggle"
-            last: true
+            last: root.switchBackError === ""
             text: Tr.tr("Turn off autostart when switching back")
             subtext: Tr.tr("Removes Caelestia's Windows sign-in entry")
             checked: SessionManager.switchBackDisableAutostart
             onToggled: SessionManager.switchBackDisableAutostart = checked
             disabled: !root.switchBackAvailable
+        }
+
+        StyledText {
+            objectName: "switchBackError"
+
+            visible: root.switchBackError !== ""
+            text: root.switchBackError
+            color: Colours.palette.m3error
+            font: Tokens.font.label.small
+            wrapMode: Text.Wrap
+            Layout.fillWidth: true
         }
 
         // Glazier ships with the shell. These rows state the chords the shell

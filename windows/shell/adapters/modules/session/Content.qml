@@ -40,6 +40,7 @@ Column {
 
     SessionButton {
         id: logout
+        objectName: "logoutButton"
 
         icon: Config.session.icons.logout
         command: Config.session.commands.logout
@@ -67,6 +68,7 @@ Column {
 
     SessionButton {
         id: shutdown
+        objectName: "shutdownButton"
 
         icon: Config.session.icons.shutdown
         command: Config.session.commands.shutdown
@@ -96,6 +98,7 @@ Column {
 
     SessionButton {
         id: hibernate
+        objectName: "hibernateButton"
 
         icon: Config.session.icons.hibernate
         command: Config.session.commands.hibernate
@@ -109,6 +112,7 @@ Column {
 
     SessionButton {
         id: reboot
+        objectName: "rebootButton"
 
         icon: Config.session.icons.reboot
         command: Config.session.commands.reboot
@@ -125,6 +129,7 @@ Column {
     // as the icon buttons above.
     IconTextButton {
         id: switchBackButton
+        objectName: "switchBackButton"
 
         property bool pointerUsed
         readonly property bool focusVisible: activeFocus && !pointerUsed
@@ -133,7 +138,7 @@ Column {
         onPressedChanged: if (pressed) pointerUsed = true
 
         icon: "desktop_windows"
-        text: "Switch back to Windows"
+        text: SessionManager.switchBackPending ? "Switching back to Windows..." : "Switch back to Windows"
         type: TextButton.Filled
         font: Tokens.font.body.small
         disabled: !root.switchBackAvailable
@@ -195,6 +200,7 @@ Column {
     // installed launcher removes only this installation's own Run entry.
     ToggleRow {
         id: autostart
+        objectName: "autostartToggle"
 
         visible: root.switchBackAvailable
         text: "Turn off autostart"
@@ -209,6 +215,18 @@ Column {
 
         Accessible.name: "Turn off autostart when switching back to Windows"
 
+        // StyledSwitch handles Return/Enter in its own Keys.onPressed handler.
+        // This row replaces that handler so vim navigation reaches the toggle;
+        // keep the same activation here.
+        function activate(): void {
+            if (autostart.disabled)
+                return;
+            autostart.toggle();
+            autostart.toggled();
+        }
+
+        Keys.onEnterPressed: autostart.activate()
+        Keys.onReturnPressed: autostart.activate()
         Keys.onEscapePressed: root.screenState.session = false
         Keys.onTabPressed: {
             if (KeyNavigation.tab)
@@ -218,6 +236,34 @@ Column {
             if (KeyNavigation.backtab)
                 KeyNavigation.backtab.focus = true;
         }
+        Keys.onPressed: event => {
+            if (!Config.session.vimKeybinds)
+                return;
+
+            // Same vim controls as the session buttons and the switch-back
+            // button. Tab and Escape keep their dedicated handlers above.
+            if (event.modifiers & Qt.ControlModifier) {
+                if ((event.key === Qt.Key_J || event.key === Qt.Key_N) && KeyNavigation.down) {
+                    KeyNavigation.down.focus = true;
+                    event.accepted = true;
+                } else if ((event.key === Qt.Key_K || event.key === Qt.Key_P) && KeyNavigation.up) {
+                    KeyNavigation.up.focus = true;
+                    event.accepted = true;
+                }
+            }
+        }
+    }
+
+    StyledText {
+        id: switchBackErrorText
+        objectName: "switchBackError"
+
+        visible: SessionManager.switchBackError !== ""
+        text: SessionManager.switchBackError
+        color: Colours.palette.m3error
+        font: Tokens.font.label.small
+        width: root.width - root.leftPadding - root.rightPadding
+        wrapMode: Text.Wrap
     }
 
     component SessionButton: IconButton {

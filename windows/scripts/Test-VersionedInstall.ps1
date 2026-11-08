@@ -643,6 +643,149 @@ try {
     }
     Write-Output 'PASS integration autostart: other applications'' Run entries survive.'
 
+    # Removal reports the observed registry state instead of hiding every
+    # error. The disposable root from Get-CaelestiaAutostartKey is the only key
+    # touched here, never Windows' live Run key.
+    $removePrefix = Join-Path $root 'autostart-remove'
+    $otherPrefix = Join-Path $root 'autostart-other'
+    $removeIntegration = Get-CaelestiaIntegration $removePrefix
+    $otherIntegration = Get-CaelestiaIntegration $otherPrefix
+    Assert ($removeIntegration.RunName -ne $otherIntegration.RunName) 'Two prefixes produced the same Run name.'
+    try {
+        $removeEnabled = Set-CaelestiaAutostart -Prefix $removePrefix -Enabled:$true
+        $otherEnabled = Set-CaelestiaAutostart -Prefix $otherPrefix -Enabled:$true
+        Assert ($removeEnabled.ok -and $removeEnabled.present -and $removeEnabled.changed -and $removeEnabled.verified) `
+            'Enabling autostart did not report the written entry.'
+        Assert ($otherEnabled.ok -and $otherEnabled.present) 'Enabling the second prefix did not report its entry.'
+
+        $removed = Set-CaelestiaAutostart -Prefix $removePrefix -Enabled:$false
+        Assert ($removed.ok -and $removed.verified -and -not $removed.present -and $removed.changed) `
+            'Removing autostart did not report the removed entry.'
+        Assert (-not (Test-CaelestiaAutostart $removePrefix)) 'The removed Run entry is still present.'
+        Assert (Test-CaelestiaAutostart $otherPrefix) 'Removing one prefix removed another prefix''s Run entry.'
+
+        # Already absent is the requested end state, not a removal failure.
+        $already = Set-CaelestiaAutostart -Prefix $removePrefix -Enabled:$false
+        Assert ($already.ok -and $already.verified -and -not $already.present -and -not $already.changed) `
+            'An already-absent Run entry was reported as a failure.'
+
+        # Deny removal and prove the call reports the failure while the entry
+        # remains, rather than returning success with the Run value intact.
+        $originalRemove = ${function:Remove-ItemProperty}
+        try {
+            ${function:Remove-ItemProperty} = {
+                throw [System.UnauthorizedAccessException]::new('Injected registry access denied.')
+            }
+            $denied = Set-CaelestiaAutostart -Prefix $otherPrefix -Enabled:$false
+        } finally {
+            ${function:Remove-ItemProperty} = $originalRemove
+        }
+        Assert (-not $denied.ok -and $denied.verified -and $denied.present) `
+            'A denied Run removal was reported as success or as absent.'
+        Assert ($denied.error -match 'Injected registry access denied') 'The denied removal did not report its error.'
+        Assert (Test-CaelestiaAutostart $otherPrefix) 'The denied removal changed the Run entry.'
+
+        $final = Set-CaelestiaAutostart -Prefix $otherPrefix -Enabled:$false
+        Assert ($final.ok -and $final.verified -and -not $final.present) 'The final Run removal did not succeed.'
+    } finally {
+        Remove-ItemProperty -LiteralPath $runKey `
+            -Name $removeIntegration.RunName, $otherIntegration.RunName -ErrorAction SilentlyContinue
+    }
+    Write-Output 'PASS autostart removal: isolated names, already-absent success and verified denied failure.'
+
+    # The Run value has one builder. When the no-console launcher helper exists,
+    # the autostart writer must use it instead of the old direct PowerShell
+    # command; installer PR #65 can then change the launch command in one place.
+    $existingHidden = Get-Command New-CaelestiaHiddenCommand -CommandType Function -ErrorAction SilentlyContinue
+    function New-CaelestiaHiddenCommand([string]$Prefix, [string]$Action) {
+        return 'hidden:' + $Action + ':' + $Prefix
+    }
+    try {
+        $hiddenSet = Set-CaelestiaAutostart -Prefix $removePrefix -Enabled:$true
+        Assert ($hiddenSet.ok -and $hiddenSet.present) 'The hidden-command fixture did not write its Run entry.'
+        $hiddenValueNow = Get-ItemProperty -LiteralPath $runKey -Name (Get-CaelestiaIntegration $removePrefix).RunName
+        Assert ($hiddenValueNow.((Get-CaelestiaIntegration $removePrefix).RunName) -eq "hidden:start:$removePrefix") `
+            'Set-CaelestiaAutostart did not use the single hidden launch command builder.'
+        $null = Set-CaelestiaAutostart -Prefix $removePrefix -Enabled:$false
+    } finally {
+        if ($existingHidden) {
+            Set-Item -Path function:New-CaelestiaHiddenCommand -Value $existingHidden.ScriptBlock
+        } else {
+            Remove-Item function:New-CaelestiaHiddenCommand -ErrorAction SilentlyContinue
+        }
+    }
+    Write-Output 'PASS autostart command: the Run value comes from the single launch-command builder.'
+
+    # The stable root is a copy of Start-CaelestiaEntry.ps1, not the payload's
+    # Start-Caelestia.ps1. It must accept the shell's Quit -DisableAutostart and
+    # AutostartStatus commands, or the detached launcher fails before Quit.
+    $entryPrefix = Join-Path $root 'entry-route'
+    $null = Install-CaelestiaVersion $entryPrefix (New-Payload $entryPrefix 'entry-a')
+    $entryRuntime = Resolve-CaelestiaRuntimePrefix $entryPrefix
+    $entryQuit = Join-Path $root 'entry-quit.txt'
+    @"
+param([string]`$Prefix, [string]`$Command = 'Start')
+Set-Content -LiteralPath '$($entryQuit.Replace("'", "''"))' -Value `$Command
+"@ | Set-Content -LiteralPath (Join-Path $entryRuntime 'Start-Caelestia.ps1') -Encoding UTF8
+    # Run a copy of the stable root so its autostart key can point at the same
+    # disposable test key. The real HKCU Run key is never read or written.
+    $entryFixture = Join-Path $root 'entry-fixture'
+    [IO.Directory]::CreateDirectory($entryFixture) | Out-Null
+    foreach ($name in @('Caelestia-InstallCommon.ps1', 'Caelestia-Versions.ps1', 'Caelestia-SemVer.ps1',
+        'Caelestia-UpdateTrust.ps1', 'Caelestia-Update.ps1', 'Caelestia-UpdateSecurity.cs')) {
+        Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $entryFixture
+    }
+    # The installer copies Start-CaelestiaEntry.ps1 to this exact name at the
+    # stable root, which is the path NativeSessionBackend invokes.
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Start-CaelestiaEntry.ps1') `
+        -Destination (Join-Path $entryFixture 'Start-Caelestia.ps1')
+    $entryVersions = Join-Path $entryFixture 'Caelestia-Versions.ps1'
+    $entryVersionsText = [IO.File]::ReadAllText($entryVersions)
+    $entryKeyPattern = "(function Get-CaelestiaAutostartKey \{\r?\n    return ')[^']+(')"
+    $entryPatched = [regex]::Replace($entryVersionsText, $entryKeyPattern, ('$1' + $runKey + '$2'))
+    if ($entryPatched -eq $entryVersionsText) { throw 'Could not redirect the stable-root fixture autostart key.' }
+    [IO.File]::WriteAllText($entryVersions, $entryPatched, (New-Object Text.UTF8Encoding($false)))
+    $entryLauncher = Join-Path $entryFixture 'Start-Caelestia.ps1'
+    $entryRunName = (Get-CaelestiaIntegration $entryPrefix).RunName
+    try {
+        $env:CAELESTIA_TEST_SUPPRESS_TOAST = '1'
+        $entrySet = Set-CaelestiaAutostart -Prefix $entryPrefix -Enabled:$true
+        Assert ($entrySet.ok -and $entrySet.present) 'The stable-root fixture did not register its Run entry.'
+        $entryStatus = & $entryLauncher -Prefix $entryPrefix -Command AutostartStatus | ConvertFrom-Json
+        Assert ($entryStatus.schema -eq 1 -and $entryStatus.enabled -eq $true) `
+            'The stable-root entry did not report its autostart status.'
+
+        & $entryLauncher -Prefix $entryPrefix -Command Quit -DisableAutostart
+        Assert ((Get-Content -LiteralPath $entryQuit -Raw).Trim() -eq 'Quit') 'Quit did not reach the versioned launcher.'
+        Assert (-not (Test-CaelestiaAutostart $entryPrefix)) 'The stable-root entry did not remove its Run entry.'
+
+        # A denied removal must not stop Quit, but the launcher must fail after
+        # routing and the status must still show the entry that remains.
+        $null = Set-CaelestiaAutostart -Prefix $entryPrefix -Enabled:$true
+        $originalEntryRemove = ${function:Remove-ItemProperty}
+        try {
+            ${function:Remove-ItemProperty} = {
+                throw [System.UnauthorizedAccessException]::new('Injected registry access denied.')
+            }
+            $entryFailed = $false
+            try {
+                & $entryLauncher -Prefix $entryPrefix -Command Quit -DisableAutostart 2>$null 3>$null
+            } catch {
+                $entryFailed = $true
+            }
+        } finally {
+            ${function:Remove-ItemProperty} = $originalEntryRemove
+        }
+        Assert $entryFailed 'The stable-root entry hid an autostart removal failure.'
+        Assert (Test-CaelestiaAutostart $entryPrefix) 'The stable-root entry removed the Run entry despite a denied removal.'
+        $entryStatus = & $entryLauncher -Prefix $entryPrefix -Command AutostartStatus | ConvertFrom-Json
+        Assert ($entryStatus.enabled -eq $true) 'The stable-root status did not verify the remaining Run entry.'
+    } finally {
+        $env:CAELESTIA_TEST_SUPPRESS_TOAST = $null
+        Remove-ItemProperty -LiteralPath $runKey -Name $entryRunName -ErrorAction SilentlyContinue
+    }
+    Write-Output 'PASS stable root: AutostartStatus and Quit -DisableAutostart route without hiding removal failures.'
+
     # Regression: an existing shortcut that cannot be snapshotted aborts
     # integration before any write. The armed shortcut writer must not run, so
     # the original file survives instead of being deleted as a partial file.
